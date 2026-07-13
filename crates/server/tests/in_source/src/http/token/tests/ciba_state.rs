@@ -5,12 +5,17 @@ use fred::prelude::{
     Builder as ValkeyBuilder, Client as ValkeyClient, Config as ValkeyConfig, ConnectionConfig,
     PerformanceConfig,
 };
-use std::collections::VecDeque;
-use std::sync::{
-    Arc,
-    atomic::{AtomicUsize, Ordering},
+use nazo_auth::{
+    CibaDecisionEvaluation, CibaPollTransition, evaluate_ciba_decision, evaluate_ciba_poll,
 };
+use nazo_valkey::AtomicResult as ValkeyAtomicResult;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration as StdDuration;
+
+fn ciba_request_key(auth_req_id: &str) -> String {
+    format!("oauth:ciba:{}", blake3_hex(auth_req_id))
+}
 
 fn pending_state(now: i64) -> CibaRequestState {
     CibaRequestState {
@@ -186,12 +191,13 @@ async fn legacy_ciba_state_migrates_from_actual_expiretime() {
     .to_string();
     stage_at_deadline(&valkey, &key, &raw, deadline).await;
 
-    let stored = load_ciba_request_state(&connection, &auth_req_id)
+    let stored = CibaStore::new(&connection)
+        .load(&auth_req_id)
         .await
         .unwrap()
         .unwrap();
 
-    assert_eq!(stored.state.retention_expires_at, deadline);
+    assert_eq!(stored.value().retention_expires_at, deadline);
     let snapshot = valkey_atomic_snapshot(&valkey, &key)
         .await
         .unwrap()
@@ -220,11 +226,12 @@ async fn ciba_state_rejects_deadline_that_disagrees_with_expiretime() {
     )
     .await;
 
-    let error = load_ciba_request_state(&connection, &auth_req_id)
+    let error = CibaService::new(CibaStore::new(&connection))
+        .load(&auth_req_id)
         .await
         .expect_err("mismatched deadline must fail closed");
 
-    assert!(matches!(error, CibaStateError::Malformed(_)));
+    assert_eq!(error, CibaStatePortError::CorruptData);
 }
 
 #[actix_web::test]
@@ -239,25 +246,29 @@ async fn ciba_compare_set_persists_legacy_deadline_without_refreshing_it() {
     let state = pending_state(now);
 
     assert_eq!(
-        create_ciba_request_state(&connection, &auth_req_id, &state)
+        CibaStore::new(&connection)
+            .create(&auth_req_id, &state)
             .await
             .unwrap(),
-        CibaAtomicResult::Applied
+        ValkeyAtomicResult::Applied
     );
-    let stored = load_ciba_request_state(&connection, &auth_req_id)
+    let stored = CibaStore::new(&connection)
+        .load(&auth_req_id)
         .await
         .unwrap()
         .unwrap();
-    let CibaPollTransition::AuthorizationPending(next) = evaluate_ciba_poll(&stored.state, now + 1)
+    let CibaPollTransition::AuthorizationPending(next) =
+        evaluate_ciba_poll(stored.value(), now + 1)
     else {
         panic!("poll should remain pending")
     };
 
     assert_eq!(
-        replace_ciba_request_state(&connection, &auth_req_id, &stored, &next)
+        CibaStore::new(&connection)
+            .replace(&auth_req_id, &stored, &next)
             .await
             .unwrap(),
-        CibaAtomicResult::Applied
+        ValkeyAtomicResult::Applied
     );
     let snapshot = valkey_atomic_snapshot(&valkey, &key)
         .await
@@ -282,10 +293,11 @@ async fn ciba_creation_retries_collision_without_overwriting_existing_state() {
     let mut occupied = state.clone();
     occupied.client_id = "existing-client".to_owned();
     assert_eq!(
-        create_ciba_request_state(&connection, &occupied_id, &occupied)
+        CibaStore::new(&connection)
+            .create(&occupied_id, &occupied)
             .await
             .unwrap(),
-        CibaAtomicResult::Applied
+        ValkeyAtomicResult::Applied
     );
     let occupied_raw = valkey_atomic_snapshot(&valkey, &ciba_request_key(&occupied_id))
         .await
@@ -294,11 +306,12 @@ async fn ciba_creation_retries_collision_without_overwriting_existing_state() {
         .raw;
     let mut candidates = VecDeque::from([occupied_id.clone(), created_id.clone()]);
 
-    let actual = create_unique_ciba_request(&connection, &state, || {
-        candidates.pop_front().expect("candidate should exist")
-    })
-    .await
-    .unwrap();
+    let actual = CibaService::new(CibaStore::new(&connection))
+        .create_unique(&state, || {
+            candidates.pop_front().expect("candidate should exist")
+        })
+        .await
+        .unwrap();
 
     assert_eq!(actual, created_id);
     assert_eq!(
@@ -310,12 +323,13 @@ async fn ciba_creation_retries_collision_without_overwriting_existing_state() {
         occupied_raw
     );
     assert_eq!(
-        load_ciba_request_state(&connection, &actual)
+        CibaService::new(CibaStore::new(&connection))
+            .load(&actual)
             .await
             .unwrap()
             .unwrap()
-            .state,
-        state
+            .state(),
+        &state
     );
 }
 
@@ -332,19 +346,21 @@ async fn ciba_creation_stops_after_four_collisions() {
         .collect::<Vec<_>>();
     for auth_req_id in &ids {
         assert_eq!(
-            create_ciba_request_state(&connection, auth_req_id, &state)
+            CibaStore::new(&connection)
+                .create(auth_req_id, &state)
                 .await
                 .unwrap(),
-            CibaAtomicResult::Applied
+            ValkeyAtomicResult::Applied
         );
     }
     let mut candidates = VecDeque::from(ids);
 
-    let error = create_unique_ciba_request(&connection, &state, || {
-        candidates.pop_front().expect("candidate should exist")
-    })
-    .await
-    .expect_err("four collisions must fail closed");
+    let error = CibaService::new(CibaStore::new(&connection))
+        .create_unique(&state, || {
+            candidates.pop_front().expect("candidate should exist")
+        })
+        .await
+        .expect_err("four collisions must fail closed");
 
     assert!(matches!(error, CibaCreateFailure::CollisionLimit));
 }
@@ -358,22 +374,24 @@ async fn concurrent_ciba_decisions_commit_exactly_one_terminal_state() {
     let now = valkey_server_time(&valkey).await;
     let state = pending_state(now);
     let auth_req_id = format!("decision-race-{}", Uuid::now_v7());
-    create_ciba_request_state(&connection, &auth_req_id, &state)
+    CibaStore::new(&connection)
+        .create(&auth_req_id, &state)
         .await
         .unwrap();
 
+    let service = CibaService::new(CibaStore::new(&connection));
     let (approve, deny) = tokio::join!(
-        commit_ciba_decision(
-            &connection,
+        service.decide(
             &auth_req_id,
             CibaDecision::Approve,
-            Some(state.user_id)
+            Some(state.user_id),
+            || now
         ),
-        commit_ciba_decision(
-            &connection,
+        service.decide(
             &auth_req_id,
             CibaDecision::Deny,
-            Some(state.user_id)
+            Some(state.user_id),
+            || now
         )
     );
 
@@ -382,12 +400,9 @@ async fn concurrent_ciba_decisions_commit_exactly_one_terminal_state() {
         approve.as_ref().err().or_else(|| deny.as_ref().err()),
         Some(CibaDecisionFailure::AlreadyHandled)
     ));
-    let stored = load_ciba_request_state(&connection, &auth_req_id)
-        .await
-        .unwrap()
-        .unwrap();
+    let stored = service.load(&auth_req_id).await.unwrap().unwrap();
     assert!(matches!(
-        stored.state.status,
+        stored.state().status,
         CibaStatus::Approved | CibaStatus::Denied
     ));
 }
@@ -401,26 +416,25 @@ async fn ciba_decision_rejects_user_mismatch_without_mutation() {
     let now = valkey_server_time(&valkey).await;
     let state = pending_state(now);
     let auth_req_id = format!("decision-user-{}", Uuid::now_v7());
-    create_ciba_request_state(&connection, &auth_req_id, &state)
+    CibaStore::new(&connection)
+        .create(&auth_req_id, &state)
         .await
         .unwrap();
 
-    let result = commit_ciba_decision(
-        &connection,
-        &auth_req_id,
-        CibaDecision::Approve,
-        Some(Uuid::now_v7()),
-    )
-    .await;
+    let service = CibaService::new(CibaStore::new(&connection));
+    let result = service
+        .decide(
+            &auth_req_id,
+            CibaDecision::Approve,
+            Some(Uuid::now_v7()),
+            || now,
+        )
+        .await;
 
     assert!(matches!(result, Err(CibaDecisionFailure::UserMismatch)));
     assert_eq!(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .unwrap()
-            .state,
-        state
+        service.load(&auth_req_id).await.unwrap().unwrap().state(),
+        &state
     );
 }
 
@@ -435,31 +449,23 @@ async fn expired_ciba_decision_consumes_state_without_success_outcome() {
     state.expires_at = now - 1;
     state.retention_expires_at = now + 60;
     let auth_req_id = format!("decision-expired-{}", Uuid::now_v7());
-    create_ciba_request_state(&connection, &auth_req_id, &state)
+    CibaStore::new(&connection)
+        .create(&auth_req_id, &state)
         .await
         .unwrap();
 
-    let result = commit_ciba_decision(
-        &connection,
-        &auth_req_id,
-        CibaDecision::Approve,
-        Some(state.user_id),
-    )
-    .await;
+    let service = CibaService::new(CibaStore::new(&connection));
+    let result = service
+        .decide(
+            &auth_req_id,
+            CibaDecision::Approve,
+            Some(state.user_id),
+            || now,
+        )
+        .await;
 
     assert!(matches!(result, Err(CibaDecisionFailure::Expired)));
-    assert!(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .is_none()
-    );
-}
-
-async fn authorized_poll(stored: StoredCibaRequest) -> AuthorizedCibaPoll {
-    authorize_ciba_poll(stored, || async { Ok::<(), HttpResponse>(()) })
-        .await
-        .expect("test assertion should be accepted")
+    assert!(service.load(&auth_req_id).await.unwrap().is_none());
 }
 
 #[actix_web::test]
@@ -472,48 +478,29 @@ async fn three_concurrent_premature_polls_each_add_exactly_five_seconds() {
     let mut state = pending_state(now);
     state.last_poll_at = Some(now);
     let auth_req_id = format!("poll-slow-down-{}", Uuid::now_v7());
-    create_ciba_request_state(&connection, &auth_req_id, &state)
+    CibaStore::new(&connection)
+        .create(&auth_req_id, &state)
         .await
         .unwrap();
-    let first = authorized_poll(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .unwrap(),
-    )
-    .await;
-    let second = authorized_poll(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .unwrap(),
-    )
-    .await;
-    let third = authorized_poll(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .unwrap(),
-    )
-    .await;
+    let service = CibaService::new(CibaStore::new(&connection));
+    let first = service.load(&auth_req_id).await.unwrap().unwrap();
+    let second = service.load(&auth_req_id).await.unwrap().unwrap();
+    let third = service.load(&auth_req_id).await.unwrap().unwrap();
 
     let (one, two, three) = tokio::join!(
-        commit_ciba_poll(&connection, &auth_req_id, &state.client_id, first),
-        commit_ciba_poll(&connection, &auth_req_id, &state.client_id, second),
-        commit_ciba_poll(&connection, &auth_req_id, &state.client_id, third)
+        service.poll(&auth_req_id, &state.client_id, first, || now),
+        service.poll(&auth_req_id, &state.client_id, second, || now),
+        service.poll(&auth_req_id, &state.client_id, third, || now)
     );
 
     for result in [one, two, three] {
         assert!(matches!(result, Ok(CibaPollCommit::SlowDown)));
     }
-    let stored = load_ciba_request_state(&connection, &auth_req_id)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(stored.state.interval_seconds, state.interval_seconds + 15);
-    assert_eq!(stored.state.expires_at, state.expires_at);
+    let stored = service.load(&auth_req_id).await.unwrap().unwrap();
+    assert_eq!(stored.state().interval_seconds, state.interval_seconds + 15);
+    assert_eq!(stored.state().expires_at, state.expires_at);
     assert_eq!(
-        stored.state.retention_expires_at,
+        stored.state().retention_expires_at,
         state.retention_expires_at
     );
 }
@@ -528,27 +515,17 @@ async fn concurrent_approved_consumers_produce_exactly_one_issuance_outcome() {
     let mut state = pending_state(now);
     state.status = CibaStatus::Approved;
     let auth_req_id = format!("poll-approved-{}", Uuid::now_v7());
-    create_ciba_request_state(&connection, &auth_req_id, &state)
+    CibaStore::new(&connection)
+        .create(&auth_req_id, &state)
         .await
         .unwrap();
-    let first = authorized_poll(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .unwrap(),
-    )
-    .await;
-    let second = authorized_poll(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .unwrap(),
-    )
-    .await;
+    let service = CibaService::new(CibaStore::new(&connection));
+    let first = service.load(&auth_req_id).await.unwrap().unwrap();
+    let second = service.load(&auth_req_id).await.unwrap().unwrap();
 
     let (one, two) = tokio::join!(
-        commit_ciba_poll(&connection, &auth_req_id, &state.client_id, first),
-        commit_ciba_poll(&connection, &auth_req_id, &state.client_id, second)
+        service.poll(&auth_req_id, &state.client_id, first, || now),
+        service.poll(&auth_req_id, &state.client_id, second, || now)
     );
 
     let approved_count = [&one, &two]
@@ -561,12 +538,7 @@ async fn concurrent_approved_consumers_produce_exactly_one_issuance_outcome() {
         .count();
     assert_eq!(approved_count, 1);
     assert_eq!(missing_count, 1);
-    assert!(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .is_none()
-    );
+    assert!(service.load(&auth_req_id).await.unwrap().is_none());
 }
 
 #[actix_web::test]
@@ -578,34 +550,35 @@ async fn ciba_poll_conflict_retry_consumes_assertion_once() {
     let now = valkey_server_time(&valkey).await;
     let state = pending_state(now);
     let auth_req_id = format!("poll-assertion-{}", Uuid::now_v7());
-    create_ciba_request_state(&connection, &auth_req_id, &state)
+    CibaStore::new(&connection)
+        .create(&auth_req_id, &state)
         .await
         .unwrap();
-    let initial = load_ciba_request_state(&connection, &auth_req_id)
+    let service = CibaService::new(CibaStore::new(&connection));
+    let initial = service.load(&auth_req_id).await.unwrap().unwrap();
+    let assertion_calls = AtomicUsize::new(0);
+    assertion_calls.fetch_add(1, Ordering::SeqCst);
+    let winner_version = CibaStore::new(&connection)
+        .load(&auth_req_id)
         .await
         .unwrap()
         .unwrap();
-    let assertion_calls = Arc::new(AtomicUsize::new(0));
-    let counted = Arc::clone(&assertion_calls);
-    let authorized = authorize_ciba_poll(initial.clone(), move || async move {
-        counted.fetch_add(1, Ordering::SeqCst);
-        Ok::<(), HttpResponse>(())
-    })
-    .await
-    .unwrap();
-    let mut winner = initial.state.clone();
+    let mut winner = winner_version.value().clone();
     winner.interval_seconds = 6;
     assert_eq!(
-        replace_ciba_request_state(&connection, &auth_req_id, &initial, &winner)
+        CibaStore::new(&connection)
+            .replace(&auth_req_id, &winner_version, &winner)
             .await
             .unwrap(),
-        CibaAtomicResult::Applied
+        ValkeyAtomicResult::Applied
     );
 
-    let result = commit_ciba_poll(&connection, &auth_req_id, &state.client_id, authorized).await;
+    let result = service
+        .poll(&auth_req_id, &state.client_id, initial, || now + 1)
+        .await;
 
     assert!(matches!(result, Ok(CibaPollCommit::AuthorizationPending)));
-    assert_eq!(assertion_calls.as_ref().load(Ordering::SeqCst), 1);
+    assert_eq!(assertion_calls.load(Ordering::SeqCst), 1);
 }
 
 #[actix_web::test]
@@ -618,27 +591,19 @@ async fn consumed_approved_state_is_not_restored_after_downstream_failure() {
     let mut state = pending_state(now);
     state.status = CibaStatus::Approved;
     let auth_req_id = format!("poll-downstream-{}", Uuid::now_v7());
-    create_ciba_request_state(&connection, &auth_req_id, &state)
+    CibaStore::new(&connection)
+        .create(&auth_req_id, &state)
         .await
         .unwrap();
-    let authorized = authorized_poll(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .unwrap(),
-    )
-    .await;
+    let service = CibaService::new(CibaStore::new(&connection));
+    let initial = service.load(&auth_req_id).await.unwrap().unwrap();
 
-    let committed = commit_ciba_poll(&connection, &auth_req_id, &state.client_id, authorized)
+    let committed = service
+        .poll(&auth_req_id, &state.client_id, initial, || now)
         .await
         .unwrap();
     assert!(matches!(committed, CibaPollCommit::Approved(_)));
     let downstream_result: Result<(), &str> = Err("deliberate issuance failure");
     assert!(downstream_result.is_err());
-    assert!(
-        load_ciba_request_state(&connection, &auth_req_id)
-            .await
-            .unwrap()
-            .is_none()
-    );
+    assert!(service.load(&auth_req_id).await.unwrap().is_none());
 }

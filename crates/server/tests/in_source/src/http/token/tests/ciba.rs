@@ -207,10 +207,9 @@ fn ciba_start_audit_fields_are_redacted() {
     assert_eq!(fields.get("source_ip_hash"), Some(&json!("source-ip-hash")));
 }
 
-fn committed_decision_fixture(decision: CibaDecision) -> CommittedCibaDecision {
+fn committed_decision_fixture(decision: CibaDecision) -> CibaCommittedDecision {
     let now = Utc::now().timestamp();
-    CommittedCibaDecision {
-        auth_req_id_hash: blake3_hex("auth-req-id"),
+    CibaCommittedDecision {
         state: CibaRequestState {
             client_id: "client-1".to_owned(),
             user_id: Uuid::now_v7(),
@@ -244,10 +243,11 @@ fn ciba_decision_audit_is_emitted_only_for_committed_outcome() {
             CibaDecisionFailure::AlreadyHandled,
             CibaDecisionFailure::Expired,
             CibaDecisionFailure::Contended,
-            CibaDecisionFailure::Storage(CibaStateError::Malformed("bad state".to_owned())),
+            CibaDecisionFailure::Storage(CibaStatePortError::CorruptData),
         ] {
             let _ = complete_ciba_decision(
                 Err(failure),
+                "auth-req-id",
                 CibaDecisionSource::User,
                 Some("source-ip-hash".to_owned()),
             );
@@ -256,6 +256,7 @@ fn ciba_decision_audit_is_emitted_only_for_committed_outcome() {
 
         let response = complete_ciba_decision(
             Ok(committed_decision_fixture(CibaDecision::Approve)),
+            "auth-req-id",
             CibaDecisionSource::User,
             Some("source-ip-hash".to_owned()),
         );
@@ -274,6 +275,7 @@ fn ciba_audit_writer_failure_does_not_change_committed_response() {
     let response = tracing::subscriber::with_default(subscriber, || {
         complete_ciba_decision(
             Ok(committed_decision_fixture(CibaDecision::Deny)),
+            "auth-req-id",
             CibaDecisionSource::Automation,
             None,
         )
@@ -285,9 +287,10 @@ fn ciba_audit_writer_failure_does_not_change_committed_response() {
 #[test]
 fn ciba_decision_storage_failure_maps_to_non_cacheable_server_error() {
     let response = complete_ciba_decision(
-        Err(CibaDecisionFailure::Storage(CibaStateError::Malformed(
-            "bad state".to_owned(),
-        ))),
+        Err(CibaDecisionFailure::Storage(
+            CibaStatePortError::CorruptData,
+        )),
+        "auth-req-id",
         CibaDecisionSource::User,
         None,
     );
@@ -311,9 +314,8 @@ fn ciba_decision_storage_failure_maps_to_non_cacheable_server_error() {
 
 #[test]
 fn ciba_poll_storage_failure_returns_503_and_never_protocol_progress() {
-    let response = ciba_poll_failure_response(CibaPollFailure::Storage(CibaStateError::Malformed(
-        "bad state".to_owned(),
-    )));
+    let response =
+        ciba_poll_failure_response(CibaPollFailure::Storage(CibaStatePortError::CorruptData));
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(

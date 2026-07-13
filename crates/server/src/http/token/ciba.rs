@@ -25,11 +25,16 @@ use actix_web::web::{Bytes, Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
+use nazo_auth::{
+    CibaCommittedDecision, CibaCreateFailure, CibaDecision, CibaDecisionFailure, CibaPollCommit,
+    CibaPollFailure, CibaRequestState, CibaService, CibaStatePortError, CibaStatus,
+    ciba_retention_deadline,
+};
 use nazo_http_actix::{cookie_value, csrf_error};
+use nazo_valkey::CibaStore;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
-mod state;
 
 use super::{
     TokenForm, TokenManagementClientAuthError, consume_token_client_assertion,
@@ -38,8 +43,7 @@ use super::{
 };
 use actix_web::web::Payload;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use state::*;
-use std::{collections::HashSet, future::Future};
+use std::collections::HashSet;
 
 pub(crate) const CIBA_GRANT_TYPE: &str = "urn:openid:params:grant-type:ciba";
 const CIBA_REQUEST_OBJECT_MAX_TTL_SECONDS: i64 = 300;
@@ -113,13 +117,6 @@ struct CibaAuthorizationRequestView {
     expires_at: DateTime<Utc>,
 }
 
-#[derive(Clone, Debug)]
-struct CommittedCibaDecision {
-    auth_req_id_hash: String,
-    state: CibaRequestState,
-    decision: CibaDecision,
-}
-
 #[derive(Clone, Copy, Debug)]
 enum CibaDecisionSource {
     User,
@@ -133,37 +130,6 @@ impl CibaDecisionSource {
             Self::Automation => "automation",
         }
     }
-}
-
-#[derive(Debug)]
-enum CibaDecisionFailure {
-    Missing,
-    UserMismatch,
-    AlreadyHandled,
-    Expired,
-    Storage(CibaStateError),
-    Contended,
-}
-
-struct AuthorizedCibaPoll {
-    initial: StoredCibaRequest,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum CibaPollCommit {
-    AuthorizationPending,
-    SlowDown,
-    Approved(CibaRequestState),
-    Denied,
-    Expired,
-}
-
-#[derive(Debug)]
-enum CibaPollFailure {
-    Missing,
-    ClientMismatch,
-    Storage(CibaStateError),
-    Contended,
 }
 
 pub(crate) async fn backchannel_authentication(
@@ -349,16 +315,23 @@ pub(crate) async fn backchannel_authentication(
         retention_expires_at: ciba_retention_deadline(expires_at),
         last_poll_at: None,
     };
-    let auth_req_id = match create_unique_ciba_request(
-        &state.valkey_connection(),
-        &state_payload,
-        random_urlsafe_token,
-    )
-    .await
+    let valkey = state.valkey_connection();
+    let ciba_service = CibaService::new(CibaStore::new(&valkey));
+    let auth_req_id = match ciba_service
+        .create_unique(&state_payload, random_urlsafe_token)
+        .await
     {
         Ok(auth_req_id) => auth_req_id,
-        Err(error) => {
+        Err(CibaCreateFailure::Storage(error)) => {
             tracing::warn!(%error, "failed to create CIBA auth_req_id");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "CIBA failed.",
+            );
+        }
+        Err(CibaCreateFailure::DeadlineElapsed | CibaCreateFailure::CollisionLimit) => {
+            tracing::warn!("failed to allocate a unique CIBA auth_req_id");
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -1009,78 +982,23 @@ async fn set_ciba_request_decision(
     source: CibaDecisionSource,
     source_ip_hash: Option<String>,
 ) -> HttpResponse {
+    let valkey = state.valkey_connection();
+    let ciba_service = CibaService::new(CibaStore::new(&valkey));
     complete_ciba_decision(
-        commit_ciba_decision(
-            &state.valkey_connection(),
-            auth_req_id,
-            decision,
-            expected_user_id,
-        )
-        .await,
+        ciba_service
+            .decide(auth_req_id, decision, expected_user_id, || {
+                Utc::now().timestamp()
+            })
+            .await,
+        auth_req_id,
         source,
         source_ip_hash,
     )
 }
 
-async fn commit_ciba_decision(
-    valkey: &nazo_valkey::ValkeyConnection,
-    auth_req_id: &str,
-    decision: CibaDecision,
-    expected_user_id: Option<Uuid>,
-) -> Result<CommittedCibaDecision, CibaDecisionFailure> {
-    for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
-        let stored = load_ciba_request_state(valkey, auth_req_id)
-            .await
-            .map_err(CibaDecisionFailure::Storage)?
-            .ok_or(CibaDecisionFailure::Missing)?;
-        match evaluate_ciba_decision(
-            &stored.state,
-            expected_user_id,
-            decision,
-            Utc::now().timestamp(),
-        ) {
-            CibaDecisionEvaluation::UserMismatch => {
-                return Err(CibaDecisionFailure::UserMismatch);
-            }
-            CibaDecisionEvaluation::AlreadyHandled => {
-                return Err(CibaDecisionFailure::AlreadyHandled);
-            }
-            CibaDecisionEvaluation::Expired => {
-                match delete_ciba_request_state(valkey, auth_req_id, &stored)
-                    .await
-                    .map_err(CibaDecisionFailure::Storage)?
-                {
-                    CibaAtomicResult::Applied | CibaAtomicResult::DeadlineElapsed => {
-                        return Err(CibaDecisionFailure::Expired);
-                    }
-                    CibaAtomicResult::Conflict => continue,
-                }
-            }
-            CibaDecisionEvaluation::Commit(next) => {
-                match replace_ciba_request_state(valkey, auth_req_id, &stored, &next)
-                    .await
-                    .map_err(CibaDecisionFailure::Storage)?
-                {
-                    CibaAtomicResult::Applied => {
-                        return Ok(CommittedCibaDecision {
-                            auth_req_id_hash: blake3_hex(auth_req_id),
-                            state: next,
-                            decision,
-                        });
-                    }
-                    CibaAtomicResult::Conflict => continue,
-                    CibaAtomicResult::DeadlineElapsed => {
-                        return Err(CibaDecisionFailure::Expired);
-                    }
-                }
-            }
-        }
-    }
-    Err(CibaDecisionFailure::Contended)
-}
-
 fn complete_ciba_decision(
-    result: Result<CommittedCibaDecision, CibaDecisionFailure>,
+    result: Result<CibaCommittedDecision, CibaDecisionFailure>,
+    auth_req_id: &str,
     source: CibaDecisionSource,
     source_ip_hash: Option<String>,
 ) -> HttpResponse {
@@ -1093,7 +1011,7 @@ fn complete_ciba_decision(
             let mut fields = audit_fields(&[
                 ("client_id", json!(committed.state.client_id)),
                 ("user_id", json!(committed.state.user_id)),
-                ("auth_req_id_hash", json!(committed.auth_req_id_hash)),
+                ("auth_req_id_hash", json!(blake3_hex(auth_req_id))),
                 ("decision_source", json!(source.as_str())),
             ]);
             if let Some(source_ip_hash) = source_ip_hash {
@@ -1155,94 +1073,6 @@ async fn ciba_authorization_request_view(
         issued_at: DateTime::<Utc>::from_timestamp(payload.issued_at, 0).unwrap_or_else(Utc::now),
         expires_at: DateTime::<Utc>::from_timestamp(payload.expires_at, 0).unwrap_or_else(Utc::now),
     }))
-}
-
-async fn authorize_ciba_poll<F, Fut>(
-    initial: StoredCibaRequest,
-    consume_assertion: F,
-) -> Result<AuthorizedCibaPoll, HttpResponse>
-where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = Result<(), HttpResponse>>,
-{
-    consume_assertion().await?;
-    Ok(AuthorizedCibaPoll { initial })
-}
-
-async fn commit_ciba_poll(
-    valkey: &nazo_valkey::ValkeyConnection,
-    auth_req_id: &str,
-    expected_client_id: &str,
-    authorized: AuthorizedCibaPoll,
-) -> Result<CibaPollCommit, CibaPollFailure> {
-    let mut stored = authorized.initial;
-    for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
-        if stored.state.client_id != expected_client_id {
-            return Err(CibaPollFailure::ClientMismatch);
-        }
-        let result = match evaluate_ciba_poll(&stored.state, Utc::now().timestamp()) {
-            CibaPollTransition::AuthorizationPending(next) => {
-                match replace_ciba_request_state(valkey, auth_req_id, &stored, &next)
-                    .await
-                    .map_err(CibaPollFailure::Storage)?
-                {
-                    CibaAtomicResult::Applied => {
-                        return Ok(CibaPollCommit::AuthorizationPending);
-                    }
-                    result => result,
-                }
-            }
-            CibaPollTransition::SlowDown(next) => {
-                match replace_ciba_request_state(valkey, auth_req_id, &stored, &next)
-                    .await
-                    .map_err(CibaPollFailure::Storage)?
-                {
-                    CibaAtomicResult::Applied => return Ok(CibaPollCommit::SlowDown),
-                    result => result,
-                }
-            }
-            CibaPollTransition::Approved => {
-                match delete_ciba_request_state(valkey, auth_req_id, &stored)
-                    .await
-                    .map_err(CibaPollFailure::Storage)?
-                {
-                    CibaAtomicResult::Applied => {
-                        return Ok(CibaPollCommit::Approved(stored.state));
-                    }
-                    result => result,
-                }
-            }
-            CibaPollTransition::Denied => {
-                match delete_ciba_request_state(valkey, auth_req_id, &stored)
-                    .await
-                    .map_err(CibaPollFailure::Storage)?
-                {
-                    CibaAtomicResult::Applied => return Ok(CibaPollCommit::Denied),
-                    result => result,
-                }
-            }
-            CibaPollTransition::Expired => {
-                match delete_ciba_request_state(valkey, auth_req_id, &stored)
-                    .await
-                    .map_err(CibaPollFailure::Storage)?
-                {
-                    CibaAtomicResult::Applied => return Ok(CibaPollCommit::Expired),
-                    result => result,
-                }
-            }
-        };
-        match result {
-            CibaAtomicResult::Conflict => {
-                stored = load_ciba_request_state(valkey, auth_req_id)
-                    .await
-                    .map_err(CibaPollFailure::Storage)?
-                    .ok_or(CibaPollFailure::Missing)?;
-            }
-            CibaAtomicResult::DeadlineElapsed => return Ok(CibaPollCommit::Expired),
-            CibaAtomicResult::Applied => unreachable!("applied transitions return immediately"),
-        }
-    }
-    Err(CibaPollFailure::Contended)
 }
 
 fn ciba_poll_failure_response(failure: CibaPollFailure) -> HttpResponse {
@@ -1318,7 +1148,9 @@ pub(crate) async fn token_ciba(
         Ok(binding) => binding,
         Err(response) => return response,
     };
-    let initial = match load_ciba_request_state(&state.valkey_connection(), auth_req_id).await {
+    let valkey = state.valkey_connection();
+    let ciba_service = CibaService::new(CibaStore::new(&valkey));
+    let initial = match ciba_service.load(auth_req_id).await {
         Ok(Some(value)) => value,
         Ok(None) => {
             return oauth_token_error(
@@ -1330,24 +1162,17 @@ pub(crate) async fn token_ciba(
         }
         Err(error) => return ciba_poll_failure_response(CibaPollFailure::Storage(error)),
     };
-    if let Some(response) = ciba_auth_req_id_client_error(&initial.state, client) {
+    if let Some(response) = ciba_auth_req_id_client_error(initial.state(), client) {
         return response;
     }
-    let authorized = match authorize_ciba_poll(initial, || async {
-        consume_token_client_assertion(state, client, client_assertion).await
-    })
-    .await
-    {
-        Ok(authorized) => authorized,
-        Err(response) => return response,
-    };
-    let ciba = match commit_ciba_poll(
-        &state.valkey_connection(),
-        auth_req_id,
-        &client.client_id,
-        authorized,
-    )
-    .await
+    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+        return response;
+    }
+    let ciba = match ciba_service
+        .poll(auth_req_id, &client.client_id, initial, || {
+            Utc::now().timestamp()
+        })
+        .await
     {
         Ok(CibaPollCommit::AuthorizationPending) => {
             return oauth_token_error(
@@ -1528,13 +1353,15 @@ async fn load_ciba_request_payload(
     state: &AppState,
     auth_req_id: &str,
 ) -> Result<Option<CibaRequestState>, HttpResponse> {
-    load_ciba_request_state(&state.valkey_connection(), auth_req_id)
+    let valkey = state.valkey_connection();
+    CibaService::new(CibaStore::new(&valkey))
+        .load(auth_req_id)
         .await
-        .map(|stored| stored.map(|stored| stored.state))
+        .map(|stored| stored.map(|stored| stored.into_state()))
         .map_err(ciba_state_error_response)
 }
 
-fn ciba_state_error_response(error: CibaStateError) -> HttpResponse {
+fn ciba_state_error_response(error: CibaStatePortError) -> HttpResponse {
     tracing::warn!(%error, "failed to load CIBA state");
     ciba_error_no_store(
         StatusCode::SERVICE_UNAVAILABLE,
