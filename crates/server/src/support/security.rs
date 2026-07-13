@@ -62,6 +62,13 @@ pub(crate) enum PasswordVerificationError {
     WorkerFailed,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PasswordHashingError {
+    Saturated,
+    WorkerFailed,
+    HashFailed,
+}
+
 pub(crate) fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     if left.len() != right.len() {
         return false;
@@ -152,6 +159,20 @@ pub(crate) async fn verify_password_blocking_limited(
         .map_err(|_| PasswordVerificationError::WorkerFailed)
 }
 
+pub(crate) async fn hash_password_blocking_limited(
+    password: String,
+) -> Result<String, PasswordHashingError> {
+    let acquire = password_hash_concurrency_limit().clone().acquire_owned();
+    let Ok(Ok(_permit)) = timeout(password_hash_queue_timeout(), acquire).await else {
+        return Err(PasswordHashingError::Saturated);
+    };
+
+    tokio::task::spawn_blocking(move || hash_password(&password))
+        .await
+        .map_err(|_| PasswordHashingError::WorkerFailed)?
+        .map_err(|_| PasswordHashingError::HashFailed)
+}
+
 pub(crate) fn hash_client_secret(secret: &str, pepper: &str) -> String {
     let salt = random_urlsafe_token();
     client_secret_digest(secret, pepper, &salt)
@@ -213,6 +234,7 @@ pub(crate) fn random_urlsafe_token() -> String {
     URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>())
 }
 
+#[cfg(test)]
 pub(crate) fn random_numeric_code() -> String {
     const RANGE: u32 = 1_000_000;
     const LIMIT: u32 = u32::MAX - (u32::MAX % RANGE);

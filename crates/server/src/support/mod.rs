@@ -37,8 +37,7 @@ pub(crate) use dpop::{
     issue_dpop_nonce, validate_dpop_proof,
 };
 pub(crate) use email::{
-    email_delivery_configured, normalize_email_address, parse_email_recipient,
-    send_verification_email,
+    SmtpVerificationEmailDelivery, email_delivery_configured, normalize_email_address,
 };
 pub(crate) use fapi_http_signatures::verify_client_http_message;
 pub(crate) use jwe::{ClientJweKey, JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
@@ -83,24 +82,27 @@ pub(crate) use passkeys::{
     store_passkey_ceremony, take_passkey_ceremony,
 };
 pub(crate) use rate_limit::{
-    RateLimitPolicy, clear_login_failures, enforce_login_failure_throttle, enforce_rate_limit,
-    enforce_rate_limit_with_store, rate_limited_response, record_login_failure,
+    AuthRateLimitConfig, RateLimitPolicy, clear_login_failures, enforce_auth_rate_limit,
+    enforce_login_failure_throttle, enforce_rate_limit, enforce_rate_limit_with_store,
+    rate_limited_response, record_login_failure,
 };
 pub(crate) use sector_identifier::{fetch_sector_identifier_uris, sector_identifier_hostname};
 pub(crate) use security::{
     AccessTokenJwtInput, BackchannelLogoutTokenInput, ClientAssertionError, ClientCredentials,
-    IdTokenInput, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, PasswordVerificationError,
-    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-    ValidatedClientAssertion, access_delivery_token, access_token_tenant_id, blake3_hex,
-    client_jwt_algorithm_from_name, client_jwt_decoding_key, client_secret_digest,
-    configure_password_hash_limits, constant_time_eq, consume_private_key_jwt,
-    consume_private_key_jwt_with_authorization_service, consume_private_key_jwt_with_store,
-    decode_access_claims, default_password_hash_max_concurrency,
-    default_password_hash_queue_timeout_ms, dummy_password_hash, extract_client_credentials,
+    IdTokenInput, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, PasswordHashingError,
+    PasswordVerificationError, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, ValidatedClientAssertion, access_delivery_token,
+    access_token_tenant_id, blake3_hex, client_jwt_algorithm_from_name, client_jwt_decoding_key,
+    client_secret_digest, configure_password_hash_limits, constant_time_eq,
+    consume_private_key_jwt, consume_private_key_jwt_with_authorization_service,
+    consume_private_key_jwt_with_store, decode_access_claims,
+    default_password_hash_max_concurrency, default_password_hash_queue_timeout_ms,
+    dummy_password_hash, extract_client_credentials,
     extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
-    hash_client_secret, hash_password, initialize_dummy_password_hash, jwt_decoding_key_from_jwk,
-    make_backchannel_logout_token, make_id_token, make_jwt, pkce_s256, random_numeric_code,
-    random_urlsafe_token, sign_response_jwt, supported_client_jwt_algorithm_name, verify_password,
+    hash_client_secret, hash_password, hash_password_blocking_limited,
+    initialize_dummy_password_hash, jwt_decoding_key_from_jwk, make_backchannel_logout_token,
+    make_id_token, make_jwt, pkce_s256, random_numeric_code, random_urlsafe_token,
+    sign_response_jwt, supported_client_jwt_algorithm_name, verify_password,
     verify_password_blocking_limited, verify_private_key_jwt_claims,
     verify_private_key_jwt_claims_for_issuer,
 };

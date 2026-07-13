@@ -2,7 +2,18 @@ use super::*;
 use std::{sync::Arc, time::Duration as StdDuration};
 
 use crate::config::ConfigSource;
+use crate::domain::{AppState, DatabaseUserFixture};
+use crate::settings::Settings;
+use crate::support::{
+    DEFAULT_TENANT_ID, default_tenant_context, hash_password, normalize_email_address, valkey_get,
+    valkey_set_ex,
+};
+use crate::test_support::registration_service;
+use chrono::Utc;
 use nazo_postgres::create_pool;
+use nazo_postgres::get_conn;
+use serde_json::Value;
+use uuid::Uuid;
 
 use diesel::sql_query;
 use diesel::sql_types::{Text, Uuid as SqlUuid};
@@ -64,6 +75,30 @@ fn register_request() -> RegisterRequest {
         verification_code: padded_valid_verification_code(),
         password: test_register_password(),
     }
+}
+
+#[test]
+fn register_handler_keeps_identity_and_infrastructure_orchestration_outside_transport() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/http/auth/register.rs"
+    ));
+    for forbidden in [
+        "AppState",
+        "UserRepository",
+        "AuthenticationStore",
+        "hash_password(",
+        "verify_password(",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "registration transport must not depend on {forbidden}"
+        );
+    }
+}
+
+async fn register_for_state(state: Data<AppState>, payload: RegisterRequest) -> HttpResponse {
+    register_after_rate_limit(registration_service(state.get_ref()), payload).await
 }
 
 struct LiveRegisterFixture {
@@ -250,7 +285,7 @@ async fn register_rejects_invalid_email_before_database_or_code_lookup() {
     payload.email = "not an email address".to_owned();
 
     let (status, body) =
-        response_json(register_after_rate_limit(invalid_register_state(), payload).await).await;
+        response_json(register_for_state(invalid_register_state(), payload).await).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
@@ -264,7 +299,7 @@ async fn register_reports_code_lookup_failure_without_consuming_credentials() {
     let payload = register_request();
 
     let (status, body) =
-        response_json(register_after_rate_limit(invalid_register_state(), payload).await).await;
+        response_json(register_for_state(invalid_register_state(), payload).await).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["error"], "server_error");
@@ -311,7 +346,7 @@ async fn register_rejects_existing_email_without_consuming_verification_code() {
     payload.email = email.to_uppercase();
 
     let (status, body) =
-        response_json(register_after_rate_limit(fixture.state.clone(), payload).await).await;
+        response_json(register_for_state(fixture.state.clone(), payload).await).await;
 
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"], "invalid_request");
@@ -346,7 +381,7 @@ async fn register_does_not_reveal_existing_email_without_valid_verification_code
     payload.email = email;
 
     let (status, body) =
-        response_json(register_after_rate_limit(fixture.state.clone(), payload).await).await;
+        response_json(register_for_state(fixture.state.clone(), payload).await).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_grant");
@@ -369,7 +404,7 @@ async fn register_rejects_invalid_verification_code_without_creating_user() {
     payload.email = email.clone();
 
     let (status, body) =
-        response_json(register_after_rate_limit(fixture.state.clone(), payload).await).await;
+        response_json(register_for_state(fixture.state.clone(), payload).await).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_grant");
@@ -400,7 +435,7 @@ async fn register_creates_verified_user_and_consumes_verification_code() {
     payload.email = email.to_uppercase();
 
     let (status, body) =
-        response_json(register_after_rate_limit(fixture.state.clone(), payload).await).await;
+        response_json(register_for_state(fixture.state.clone(), payload).await).await;
 
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["email"], email);
@@ -414,4 +449,52 @@ async fn register_creates_verified_user_and_consumes_verification_code() {
         !fixture.verification_code_exists(&email).await,
         "successful registrations must consume the one-time verification code"
     );
+}
+
+#[actix_web::test]
+async fn concurrent_registration_consumes_a_verification_code_at_most_once() {
+    let Some(fixture) = LiveRegisterFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let email = format!("register-race-{suffix}@example.com");
+    fixture
+        .store_verification_code(&email, &valid_verification_code())
+        .await;
+
+    let mut first = register_request();
+    first.email = email.clone();
+    let mut second = register_request();
+    second.email = email.clone();
+    let (first, second) = tokio::join!(
+        register_for_state(fixture.state.clone(), first),
+        register_for_state(fixture.state.clone(), second),
+    );
+    let ((first_status, first_body), (second_status, second_body)) =
+        tokio::join!(response_json(first), response_json(second));
+
+    let outcomes = [
+        (first_status, first_body["error"].as_str()),
+        (second_status, second_body["error"].as_str()),
+    ];
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|(status, _)| *status == StatusCode::CREATED)
+            .count(),
+        1,
+        "exactly one concurrent registration may consume the code"
+    );
+    assert_eq!(
+        outcomes
+            .iter()
+            .filter(|(status, error)| {
+                (*status == StatusCode::BAD_REQUEST && *error == Some("invalid_grant"))
+                    || (*status == StatusCode::CONFLICT && *error == Some("invalid_request"))
+            })
+            .count(),
+        1,
+        "the losing registration must fail after the code or account is claimed"
+    );
+    assert!(!fixture.verification_code_exists(&email).await);
 }

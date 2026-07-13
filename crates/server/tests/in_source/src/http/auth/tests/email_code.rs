@@ -4,7 +4,15 @@ use std::{sync::Arc, time::Duration as StdDuration};
 use actix_web::test::TestRequest;
 
 use crate::config::ConfigSource;
-use nazo_postgres::create_pool;
+use crate::domain::{AppState, DatabaseUserFixture};
+use crate::settings::Settings;
+use crate::support::{
+    blake3_hex, default_tenant_context, normalize_email_address, valkey_get, valkey_set_ex,
+};
+use crate::test_support::{email_code_http_config, registration_service};
+use nazo_postgres::{create_pool, get_conn};
+use serde_json::Value;
+use uuid::Uuid;
 
 use crate::settings::{EmailDelivery, SmtpEmailSettings, SmtpTlsMode};
 use diesel::sql_query;
@@ -20,6 +28,40 @@ fn send_code_request(email: &str) -> SendCodeRequest {
     SendCodeRequest {
         email: email.to_owned(),
     }
+}
+
+#[test]
+fn send_code_handler_keeps_identity_and_infrastructure_orchestration_outside_transport() {
+    let source = include_str!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/http/auth/email_code.rs"
+    ));
+    for forbidden in [
+        "AppState",
+        "UserRepository",
+        "AuthenticationStore",
+        "hash_password(",
+        "send_verification_email(",
+    ] {
+        assert!(
+            !source.contains(forbidden),
+            "email-code transport must not depend on {forbidden}"
+        );
+    }
+}
+
+async fn send_code_for_state(
+    state: Data<AppState>,
+    req: actix_web::HttpRequest,
+    payload: SendCodeRequest,
+) -> HttpResponse {
+    send_code_after_rate_limit(
+        registration_service(state.get_ref()),
+        email_code_http_config(state.get_ref()),
+        req,
+        payload,
+    )
+    .await
 }
 
 fn email_code_state(configure_email: bool) -> Data<AppState> {
@@ -209,7 +251,7 @@ async fn send_code_rejects_invalid_email_before_delivery_or_user_lookup() {
     let req = TestRequest::default().to_http_request();
 
     let (status, body) = status_json(
-        send_code_after_rate_limit(
+        send_code_for_state(
             email_code_state(false),
             req,
             send_code_request("not an email address"),
@@ -228,7 +270,7 @@ async fn send_code_requires_configured_delivery_before_user_enumeration_paths() 
     let req = TestRequest::default().to_http_request();
 
     let (status, body) = status_json(
-        send_code_after_rate_limit(
+        send_code_for_state(
             email_code_state(false),
             req,
             send_code_request("user@example.com"),
@@ -248,7 +290,7 @@ async fn send_code_reports_user_lookup_failure_without_exposing_registration_sta
     let req = TestRequest::default().to_http_request();
 
     let (status, body) = status_json(
-        send_code_after_rate_limit(
+        send_code_for_state(
             email_code_state(true),
             req,
             send_code_request("user@example.com"),
@@ -278,7 +320,7 @@ async fn send_code_existing_user_returns_uniform_success_without_mutating_rate_l
     let peer_key = email_code_peer_cooldown_key(&req);
 
     let (status, body) = status_json(
-        send_code_after_rate_limit(
+        send_code_for_state(
             fixture.state.clone(),
             req,
             send_code_request(&email.to_uppercase()),
@@ -329,7 +371,7 @@ async fn send_code_peer_cooldown_short_circuits_without_writing_email_state() {
     .expect("peer cooldown should seed");
 
     let (status, body) = status_json(
-        send_code_after_rate_limit(fixture.state.clone(), req, send_code_request(&email)).await,
+        send_code_for_state(fixture.state.clone(), req, send_code_request(&email)).await,
     )
     .await;
 
@@ -378,7 +420,7 @@ async fn send_code_email_cooldown_short_circuits_without_rotating_verification_c
     .expect("email cooldown should seed");
 
     let (status, body) = status_json(
-        send_code_after_rate_limit(fixture.state.clone(), req, send_code_request(&email)).await,
+        send_code_for_state(fixture.state.clone(), req, send_code_request(&email)).await,
     )
     .await;
 

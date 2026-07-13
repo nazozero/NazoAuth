@@ -4,6 +4,7 @@ use nazo_http_actix::{authorization_error_response, oauth_error};
 
 #[cfg(test)]
 use super::blake3_hex;
+use super::client_ip::{ClientIpConfig, client_ip_with_config};
 use super::{ClientIpHeaderMode, IpCidr, client_ip, client_ip::client_ip_with_context};
 use crate::domain::AppState;
 use crate::settings::{RateLimitSettings, Settings};
@@ -11,6 +12,21 @@ use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
 use actix_web::{HttpRequest, HttpResponse};
+
+#[derive(Clone, Copy)]
+pub(crate) struct AuthRateLimitConfig {
+    window_seconds: u64,
+    max_requests: u64,
+}
+
+impl AuthRateLimitConfig {
+    pub(crate) fn new(window_seconds: u64, max_requests: u64) -> Self {
+        Self {
+            window_seconds,
+            max_requests,
+        }
+    }
+}
 
 #[derive(Clone, Copy)]
 pub(crate) enum RateLimitPolicy {
@@ -93,6 +109,33 @@ pub(crate) async fn enforce_rate_limit_with_store(
 
     if count > max_requests {
         return Err(rate_limited_response(window_seconds));
+    }
+    Ok(())
+}
+
+pub(crate) async fn enforce_auth_rate_limit(
+    store: &nazo_valkey::RateLimitStore,
+    req: &HttpRequest,
+    config: AuthRateLimitConfig,
+    client_ip: &ClientIpConfig,
+) -> Result<(), HttpResponse> {
+    let count = store
+        .increment(
+            nazo_valkey::RateDimension::Auth,
+            &client_ip_with_config(req, client_ip),
+            config.window_seconds,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "rate limit increment failed");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "请求频率校验失败.",
+            )
+        })?;
+    if count > config.max_requests {
+        return Err(rate_limited_response(config.window_seconds));
     }
     Ok(())
 }

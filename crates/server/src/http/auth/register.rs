@@ -1,28 +1,16 @@
 //! 用户注册端点。
-use crate::domain::AppState;
-#[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-#[cfg(test)]
-use crate::settings::Settings;
-use crate::support::{
-    DEFAULT_TENANT_ID, RateLimitPolicy, default_tenant_context, enforce_rate_limit, hash_password,
-    normalize_email_address, verify_password,
-};
-#[cfg(test)]
-use crate::support::{valkey_get, valkey_set_ex};
+
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
-#[cfg(test)]
-use chrono::Utc;
 use nazo_http_actix::{json_response_status, oauth_error};
-use nazo_identity::PublicAccount;
+use nazo_identity::{PublicAccount, RegisterLocalAccountError, RegisterLocalAccountInput};
 use serde::Deserialize;
-#[cfg(test)]
-use serde_json::Value;
 use serde_json::json;
-use uuid::Uuid;
-// 注册只接受已验证邮箱，密码进入数据库前必须完成 Argon2 哈希。
+
+use crate::bootstrap::LocalRegistrationService;
+use crate::support::client_ip::ClientIpConfig;
+use crate::support::{AuthRateLimitConfig, enforce_auth_rate_limit, normalize_email_address};
 
 #[derive(Deserialize)]
 pub(crate) struct RegisterRequest {
@@ -33,120 +21,74 @@ pub(crate) struct RegisterRequest {
 
 /// 使用邮箱验证码创建本地用户。
 pub(crate) async fn register(
-    state: Data<AppState>,
+    rate_limits: Data<nazo_valkey::RateLimitStore>,
+    rate_limit_config: Data<AuthRateLimitConfig>,
+    client_ip_config: Data<ClientIpConfig>,
+    registration: Data<LocalRegistrationService>,
     req: HttpRequest,
     Json(payload): Json<RegisterRequest>,
 ) -> HttpResponse {
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+    if let Err(response) = enforce_auth_rate_limit(
+        rate_limits.get_ref(),
+        &req,
+        *rate_limit_config.get_ref(),
+        client_ip_config.get_ref(),
+    )
+    .await
+    {
         return response;
     }
 
-    register_after_rate_limit(state, payload).await
+    register_after_rate_limit(registration, payload).await
 }
 
 pub(crate) async fn register_after_rate_limit(
-    state: Data<AppState>,
+    registration: Data<LocalRegistrationService>,
     payload: RegisterRequest,
 ) -> HttpResponse {
     let Ok(email) = normalize_email_address(&payload.email) else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "邮箱格式无效.");
     };
-    let code = verification_code_for_lookup(&payload);
-    let store = nazo_valkey::AuthenticationStore::new(&state.valkey_connection());
-    let stored = match store.load_email_code(&email).await {
-        Ok(value) => value,
-        Err(_) => {
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "验证码校验失败.",
-            );
-        }
+    let input = RegisterLocalAccountInput {
+        email,
+        verification_code: verification_code_for_lookup(&payload),
+        password: payload.password,
     };
-    if !stored
-        .as_deref()
-        .is_some_and(|stored| verify_password(&code, stored))
-    {
-        return oauth_error(
+    match registration.register_local_account(input).await {
+        Ok(account) => register_success_response(account),
+        Err(RegisterLocalAccountError::InvalidVerificationCode) => oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "验证码错误或已过期.",
-        );
-    }
-
-    match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-        .public_account_by_email(
-            nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
-            &email,
-        )
-        .await
-    {
-        Ok(Some(_)) => {
-            return oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.");
-        }
-        Ok(None) => {}
-        Err(_) => {
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "数据库连接失败.",
-            );
-        }
-    }
-
-    let password_hash = match hash_password(&payload.password) {
-        Ok(v) => v,
-        Err(_) => {
-            return oauth_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "server_error",
-                "密码哈希失败.",
-            );
-        }
-    };
-    let password_hash = match nazo_identity::ports::PasswordHashInput::new(password_hash) {
-        Ok(hash) => hash,
-        Err(error) => {
-            tracing::error!(%error, "generated password hash is invalid");
-            return oauth_error(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "server_error",
-                "密码哈希失败.",
-            );
-        }
-    };
-    let username = format!("user_{}", Uuid::now_v7());
-    let tenant = default_tenant_context();
-    let row = nazo_postgres::UserRepository::new(state.diesel_db.clone())
-        .create(nazo_identity::ports::NewUser {
-            tenant: tenant
-                .as_identity_context()
-                .expect("default tenant identifiers are valid"),
-            username,
-            email: email.clone(),
-            password_hash,
-            email_verified: true,
-        })
-        .await;
-    match row {
-        Ok(user) => {
-            if !tenant.includes_user(&user) {
-                tracing::warn!("created user returned outside the default tenant context");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "用户创建失败.",
-                );
-            }
-            let _ = store.delete_email_code(&email).await;
-            register_success_response(user)
-        }
-        Err(nazo_identity::ports::RepositoryError::Conflict) => {
-            let _ = store.delete_email_code(&email).await;
+        ),
+        Err(RegisterLocalAccountError::VerificationUnavailable(_)) => oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "验证码校验失败.",
+        ),
+        Err(RegisterLocalAccountError::AccountLookup(_)) => oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "数据库连接失败.",
+        ),
+        Err(RegisterLocalAccountError::Conflict) => {
             oauth_error(StatusCode::CONFLICT, "invalid_request", "该邮箱已注册.")
         }
-        Err(error) => {
+        Err(RegisterLocalAccountError::PasswordHash(_)) => oauth_error(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "server_error",
+            "密码哈希失败.",
+        ),
+        Err(RegisterLocalAccountError::Create(error)) => {
             tracing::warn!(%error, "failed to create user");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "用户创建失败.",
+            )
+        }
+        Err(RegisterLocalAccountError::Consistency) => {
+            tracing::warn!("created user returned outside the default tenant context");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",

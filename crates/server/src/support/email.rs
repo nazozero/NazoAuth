@@ -1,6 +1,6 @@
 //! 邮件投递封装。
 
-use std::time::Duration;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::{Context, bail};
 use lettre::{
@@ -16,6 +16,7 @@ use crate::settings::{EmailDelivery, Settings, SmtpEmailSettings, SmtpTlsMode};
 
 use super::email_templates::VerificationEmail;
 
+#[cfg(test)]
 pub(crate) struct EmailRecipient {
     pub(crate) normalized: String,
     pub(crate) mailbox: Mailbox,
@@ -32,6 +33,7 @@ fn parse_email_address(raw: &str) -> anyhow::Result<Address> {
         .context("email address is invalid")
 }
 
+#[cfg(test)]
 pub(crate) fn parse_email_recipient(raw: &str) -> anyhow::Result<EmailRecipient> {
     let address = parse_email_address(raw)?;
     let normalized = address.to_string();
@@ -45,10 +47,11 @@ pub(crate) fn email_delivery_configured(settings: &Settings) -> bool {
     matches!(&settings.identity().email.delivery, EmailDelivery::Smtp(_))
 }
 
-pub(crate) async fn send_verification_email(
+async fn send_verification_email_with_ttl(
     settings: &Settings,
     recipient: Mailbox,
     code: &str,
+    code_ttl_seconds: u64,
 ) -> anyhow::Result<()> {
     let identity = settings.identity();
     let EmailDelivery::Smtp(smtp) = &identity.email.delivery else {
@@ -60,7 +63,7 @@ pub(crate) async fn send_verification_email(
         .to(recipient)
         .subject("Nazo OAuth 注册验证码")
         .singlepart(html_part(
-            VerificationEmail::new(code, identity.email.code_ttl_seconds).render_html(),
+            VerificationEmail::new(code, code_ttl_seconds).render_html(),
         ))
         .context("failed to build verification email")?;
 
@@ -69,6 +72,40 @@ pub(crate) async fn send_verification_email(
         .await
         .context("failed to send verification email")?;
     Ok(())
+}
+
+#[derive(Clone)]
+pub(crate) struct SmtpVerificationEmailDelivery {
+    settings: Arc<Settings>,
+}
+
+impl SmtpVerificationEmailDelivery {
+    pub(crate) fn new(settings: Arc<Settings>) -> Self {
+        Self { settings }
+    }
+}
+
+impl nazo_identity::ports::VerificationEmailDeliveryPort for SmtpVerificationEmailDelivery {
+    fn deliver<'a>(
+        &'a self,
+        normalized_email: &'a str,
+        code: &'a str,
+        code_ttl_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            let address = parse_email_address(normalized_email).map_err(|error| {
+                nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
+            })?;
+            send_verification_email_with_ttl(
+                &self.settings,
+                Mailbox::new(None, address),
+                code,
+                code_ttl_seconds,
+            )
+            .await
+            .map_err(|error| nazo_identity::ports::RepositoryError::Unexpected(error.to_string()))
+        })
+    }
 }
 
 fn build_smtp_transport(

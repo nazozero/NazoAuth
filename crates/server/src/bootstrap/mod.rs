@@ -4,10 +4,12 @@
 mod cors;
 mod observability;
 mod profile_services;
+mod registration_services;
 pub(crate) mod routes;
 pub(crate) use profile_services::{
     AccountProfileService, ClientAccessProfileService, FederationProfileService,
 };
+pub(crate) use registration_services::{LocalRegistrationService, RegistrationSecretHasher};
 
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
@@ -21,6 +23,7 @@ use crate::domain::{
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::AdminClientConfig;
+use crate::http::auth::email_code::EmailCodeHttpConfig;
 use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
@@ -29,8 +32,9 @@ use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
 use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
 use crate::support::{
-    configure_password_hash_limits, default_password_hash_max_concurrency,
-    default_password_hash_queue_timeout_ms, initialize_dummy_password_hash,
+    AuthRateLimitConfig, SmtpVerificationEmailDelivery, configure_password_hash_limits,
+    default_password_hash_max_concurrency, default_password_hash_queue_timeout_ms,
+    default_tenant_context, email_delivery_configured, initialize_dummy_password_hash,
 };
 #[cfg(test)]
 use actix_web::http::header;
@@ -237,6 +241,31 @@ pub async fn run() -> anyhow::Result<()> {
         endpoint.trusted_proxy_cidrs,
         endpoint.client_ip_header_mode,
     ));
+    let identity = state.settings.identity();
+    let registration_rate_limits =
+        web::Data::new(nazo_valkey::RateLimitStore::new(&state.valkey_connection()));
+    let auth_rate_limit_config = web::Data::new(AuthRateLimitConfig::new(
+        identity.rate_limit.window_seconds,
+        identity.rate_limit.auth_max_requests,
+    ));
+    let email_code_http_config = web::Data::new(EmailCodeHttpConfig::new(
+        identity.email_code_dev_response_enabled,
+    ));
+    let registration = web::Data::new(LocalRegistrationService::new(
+        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
+        RegistrationSecretHasher,
+        SmtpVerificationEmailDelivery::new(state.settings.clone()),
+        default_tenant_context()
+            .as_identity_context()
+            .expect("default tenant identifiers are valid"),
+        nazo_identity::RegistrationServiceConfig {
+            delivery_enabled: email_delivery_configured(&state.settings),
+            send_peer_cooldown_seconds: identity.email.send_peer_cooldown_seconds,
+            send_cooldown_seconds: identity.email.send_cooldown_seconds,
+            code_ttl_seconds: identity.email.code_ttl_seconds,
+        },
+    ));
     spawn_backchannel_logout_delivery_worker(state.clone());
 
     let bind = config.string("BIND", "0.0.0.0:8000");
@@ -298,6 +327,10 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_client_config.clone())
             .app_data(admin_client_keyset.clone())
             .app_data(client_ip_config.clone())
+            .app_data(registration_rate_limits.clone())
+            .app_data(auth_rate_limit_config.clone())
+            .app_data(email_code_http_config.clone())
+            .app_data(registration.clone())
             .app_data(dynamic_registration_handles.clone())
             .app_data(scim_endpoint.clone());
         app.configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))

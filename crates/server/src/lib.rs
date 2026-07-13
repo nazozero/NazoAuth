@@ -56,6 +56,35 @@ pub(crate) mod test_support {
         access_request_profiles(state)
     }
 
+    pub(crate) fn registration_service(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::bootstrap::LocalRegistrationService> {
+        let identity = state.settings.identity();
+        actix_web::web::Data::new(crate::bootstrap::LocalRegistrationService::new(
+            nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+            nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
+            crate::bootstrap::RegistrationSecretHasher,
+            crate::support::SmtpVerificationEmailDelivery::new(state.settings.clone()),
+            crate::support::default_tenant_context()
+                .as_identity_context()
+                .expect("default tenant identifiers are valid"),
+            nazo_identity::RegistrationServiceConfig {
+                delivery_enabled: crate::support::email_delivery_configured(&state.settings),
+                send_peer_cooldown_seconds: identity.email.send_peer_cooldown_seconds,
+                send_cooldown_seconds: identity.email.send_cooldown_seconds,
+                code_ttl_seconds: identity.email.code_ttl_seconds,
+            },
+        ))
+    }
+
+    pub(crate) fn email_code_http_config(
+        state: &crate::domain::AppState,
+    ) -> actix_web::web::Data<crate::http::auth::email_code::EmailCodeHttpConfig> {
+        actix_web::web::Data::new(crate::http::auth::email_code::EmailCodeHttpConfig::new(
+            state.settings.identity().email_code_dev_response_enabled,
+        ))
+    }
+
     pub(crate) struct ClientSigningFixture {
         algorithm: jsonwebtoken::Algorithm,
         private_pkcs8_der: Vec<u8>,
