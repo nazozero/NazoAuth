@@ -2240,8 +2240,14 @@ dependencies = [
 name = "nazo-http-signatures"
 version = "0.1.0"
 dependencies = [
+ "base64",
+ "ed25519-dalek 3.0.0",
  "httpsig",
+ "jsonwebtoken",
+ "openssl",
+ "p256 0.14.0",
  "proptest",
+ "serde_json",
  "sfv 0.15.0",
  "sha2 0.11.0",
  "subtle",
