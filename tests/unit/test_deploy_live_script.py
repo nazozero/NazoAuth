@@ -179,6 +179,7 @@ class FakeLifecycle:
                 "FAKE_STATE": bash_path(self.fake_state),
                 "FAKE_BACKEND_COMMIT": self.backend_commit,
                 "FAKE_OLD_IMAGE": self.OLD_IMAGE,
+                "MSYS": "winsymlinks:sys",
             }
         )
 
@@ -262,9 +263,22 @@ printf '%s\n' ok
         )
 
     def record_status(self) -> str:
-        records = list((self.deployment / "deployments").glob("*.json"))
+        records = [
+            record
+            for record in (self.deployment / "deployments").glob("*.json")
+            if record.name != "current.json"
+        ]
         self.assert_one(records)
         return json.loads(records[0].read_text(encoding="utf-8"))["status"]
+
+    def deployment_record(self) -> Path:
+        records = [
+            record
+            for record in (self.deployment / "deployments").glob("*.json")
+            if record.name != "current.json"
+        ]
+        self.assert_one(records)
+        return records[0]
 
     @staticmethod
     def assert_one(items: list[Path]) -> None:
@@ -288,6 +302,32 @@ class DeployLiveContractTests(unittest.TestCase):
         )
         self.assertIn("ui-releases", self.source)
         self.assertIn("FrontendCommit", self.source)
+
+    def test_remote_host_rejects_ssh_options_and_shell_metacharacters(self) -> None:
+        valid_commit = "0" * 40
+        for remote_host in (
+            "-oProxyCommand=malicious",
+            "hostinger;touch-owned",
+            "user@host extra",
+            "user@@host",
+            "/tmp/socket",
+        ):
+            with self.subTest(remote_host=remote_host):
+                completed = subprocess.run(
+                    [
+                        "pwsh", "-NoLogo", "-NoProfile", "-NonInteractive",
+                        "-File", str(SCRIPT), "-RemoteHost", remote_host,
+                        "-BackendCommit", valid_commit,
+                        "-FrontendCommit", valid_commit,
+                    ],
+                    cwd=ROOT, capture_output=True, text=True, errors="replace",
+                    timeout=10, check=False,
+                )
+                self.assertNotEqual(completed.returncode, 0)
+                self.assertIn(
+                    "RemoteHost must be a safe SSH host alias, hostname, or user@host",
+                    completed.stdout + completed.stderr,
+                )
 
     def test_source_commits_are_bound_to_clean_worktrees_and_frontend_manifest(self) -> None:
         self.assertIn("Unable to discover sibling NazoAuthWeb repository", self.source)
@@ -362,6 +402,8 @@ class DeployLiveContractTests(unittest.TestCase):
         )
         self.assertIn("CURRENT_LINK_TEMP", self.source)
         self.assertRegex(self.source, r'mv\s+-T\s+"`\$CURRENT_LINK_TEMP"\s+"`\$DEPLOYMENTS/current\.json"')
+        self.assertIn('fsync_parent "`$DEPLOYMENTS/current.json"', self.source)
+        self.assertIn('fsync_parent "`$STATE_FILE"', self.source)
 
     def test_existing_network_subnet_and_gateway_are_exactly_validated(self) -> None:
         self.assertIn("podman network inspect", self.source)
@@ -533,11 +575,40 @@ bash "$1" deploy
     def test_fake_lifecycle_old_image_run_failure_is_nonzero_and_preserves_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             lifecycle = FakeLifecycle(Path(directory))
+            ui = lifecycle.deployment / "ui"
+            ui.mkdir()
+            (ui / "index.html").write_text("old-ui", encoding="utf-8")
+            deployments = lifecycle.deployment / "deployments"
+            deployments.mkdir()
+            previous_record = deployments / "previous-record"
+            previous_record.write_text("previous\n", encoding="utf-8")
+            current = deployments / "current.json"
+            subprocess.run(
+                [
+                    git_bash(), "-lc", 'ln -s "$1" "$2"', "_",
+                    bash_path(previous_record), bash_path(current),
+                ],
+                check=True, capture_output=True, env=lifecycle.env,
+            )
             deployed = lifecycle.run("deploy")
             self.assertEqual(deployed.returncode, 0, deployed.stderr)
+            candidate_record = lifecycle.deployment_record()
+            subprocess.run(
+                [
+                    git_bash(), "-lc", 'rm -f "$1"; ln -s "$2" "$1"', "_",
+                    bash_path(current), bash_path(candidate_record),
+                ],
+                check=True, capture_output=True, env=lifecycle.env,
+            )
             failed = lifecycle.run("rollback", FAIL_OLD_IMAGE_RUN="1")
             self.assertNotEqual(failed.returncode, 0)
             self.assertEqual(lifecycle.record_status(), "rollback-failed")
+            self.assertEqual((ui / "index.html").read_text(encoding="utf-8"), "old-ui")
+            restored_current = subprocess.run(
+                [git_bash(), "-lc", 'readlink "$1"', "_", bash_path(current)],
+                check=True, capture_output=True, text=True, env=lifecycle.env,
+            ).stdout.strip()
+            self.assertEqual(restored_current, bash_path(previous_record))
             self.assertTrue(lifecycle.state.exists())
             self.assertTrue(lifecycle.script.exists())
             self.assertTrue((lifecycle.deployment / "deployments" / "active-deployment").exists())

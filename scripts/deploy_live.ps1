@@ -39,6 +39,11 @@ $ExpectedBackendBranch = "codex/modular-workspace-architecture"
 $ExpectedFrontendRemote = "https://github.com/nazozero/NazoAuthWeb"
 $ExpectedFrontendBranch = "codex/modular-workspace-architecture"
 
+if ($RemoteHost.StartsWith('-') -or
+    $RemoteHost -notmatch '^(?:[A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$') {
+    throw "RemoteHost must be a safe SSH host alias, hostname, or user@host"
+}
+
 function Invoke-Checked {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
@@ -330,13 +335,27 @@ run_server() {
     "`$selected_image" nazo-oauth-server >/dev/null
 }
 
+fsync_parent() {
+  python3 - "`$1" <<'PY'
+import os, pathlib, sys
+if os.name == "nt":
+    raise SystemExit(0)
+parent = pathlib.Path(sys.argv[1]).parent
+descriptor = os.open(parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+try:
+    os.fsync(descriptor)
+finally:
+    os.close(descriptor)
+PY
+}
+
 write_record() {
   local status="`$1"
   python3 - "`$RECORD" "`$status" "`$BACKEND_COMMIT" "`$FRONTEND_COMMIT" \
     "`$DEPLOYMENT_ID" "`$IMAGE" "`$EXPECTED_IMAGE_ID" "`$FRONTEND_ARTIFACT_SHA256" \
     "`${previous_image_id:-}" "`${previous_image_name:-}" \
     "`${previous_container_id:-}" "`${previous_ui_target:-}" "`${candidate_container_id:-}" <<'PY'
-import json, pathlib, sys, time
+import json, os, pathlib, sys, time
 path = pathlib.Path(sys.argv[1])
 payload = {
     "status": sys.argv[2],
@@ -355,8 +374,17 @@ payload = {
 }
 path.parent.mkdir(parents=True, exist_ok=True)
 temporary = path.with_suffix(".json.tmp")
-temporary.write_text(json.dumps(payload, sort_keys=True) + "\n", encoding="utf-8")
+with temporary.open("w", encoding="utf-8") as handle:
+    handle.write(json.dumps(payload, sort_keys=True) + "\n")
+    handle.flush()
+    os.fsync(handle.fileno())
 temporary.replace(path)
+if os.name != "nt":
+    descriptor = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
 PY
 }
 
@@ -391,6 +419,7 @@ PY
   fi
   validate_state_file "`$state_temp" >/dev/null || { rm -f "`$state_temp"; return 1; }
   mv -f "`$state_temp" "`$STATE_FILE"
+  fsync_parent "`$STATE_FILE"
 }
 
 validate_state_file() {
@@ -432,12 +461,15 @@ load_state() {
 
 rollback() {
   load_state || { write_record "rollback-failed" || true; return 1; }
-  local failed=0 restored_image
+  local image_failed=0 ui_failed=0 pointer_failed=0 restored_image
   if [ "`$candidate_started" = "1" ]; then
-    if podman container exists "`$CONTAINER_NAME" && ! podman rm -f "`$CONTAINER_NAME" >/dev/null; then failed=1; fi
+    if podman container exists "`$CONTAINER_NAME" && ! podman rm -f "`$CONTAINER_NAME" >/dev/null; then image_failed=1; fi
     if [ -n "`$previous_image_id" ]; then
-      podman image exists "`$previous_image_id" || failed=1
-      if [ "`$failed" = "0" ]; then run_server "`$previous_image_id" || failed=1; fi
+      if ! podman image exists "`$previous_image_id"; then
+        image_failed=1
+      elif ! run_server "`$previous_image_id"; then
+        image_failed=1
+      fi
     fi
   fi
   if [ "`$ui_switched" = "1" ]; then
@@ -445,48 +477,64 @@ rollback() {
       if [ -L "`$UI_PATH" ] && [ "`$(readlink "`$UI_PATH")" = "`$previous_ui_target" ]; then
         :
       elif { [ -L "`$UI_PATH" ] || [ -e "`$UI_PATH" ]; } && ! rm -rf "`$UI_PATH"; then
-        failed=1
+        ui_failed=1
       elif [ -n "`$previous_ui_target" ]; then
-        ln -s "`$previous_ui_target" "`$UI_PATH" || failed=1
+        ln -s "`$previous_ui_target" "`$UI_PATH" || ui_failed=1
       else
-        failed=1
+        ui_failed=1
       fi
     elif [ "`$previous_ui_kind" = "directory" ]; then
       if [ -n "`$legacy_ui_release" ] && [ -d "`$legacy_ui_release" ]; then
-        if { [ -L "`$UI_PATH" ] || [ -e "`$UI_PATH" ]; } && ! rm -rf "`$UI_PATH"; then failed=1; fi
-        if [ "`$failed" = "0" ]; then mv -T "`$legacy_ui_release" "`$UI_PATH" || failed=1; fi
+        if { [ -L "`$UI_PATH" ] || [ -e "`$UI_PATH" ]; } && ! rm -rf "`$UI_PATH"; then ui_failed=1; fi
+        if [ "`$ui_failed" = "0" ]; then mv -T "`$legacy_ui_release" "`$UI_PATH" || ui_failed=1; fi
       elif [ -d "`$UI_PATH" ] && [ ! -L "`$UI_PATH" ]; then
         : # The old directory was never moved; leave it intact.
       else
-        failed=1
+        ui_failed=1
       fi
     elif { [ -L "`$UI_PATH" ] || [ -e "`$UI_PATH" ]; } && ! rm -rf "`$UI_PATH"; then
-      failed=1
+      ui_failed=1
     fi
   fi
   if [ -L "`$DEPLOYMENTS/current.json" ] && [ "`$(readlink "`$DEPLOYMENTS/current.json")" = "`$RECORD" ]; then
-    rm -f "`$DEPLOYMENTS/current.json" || failed=1
-    if [ -n "`$previous_current_target" ]; then
-      ln -s "`$previous_current_target" "`$CURRENT_LINK_TEMP" &&
-        mv -T "`$CURRENT_LINK_TEMP" "`$DEPLOYMENTS/current.json" || failed=1
+    if ! rm -f "`$DEPLOYMENTS/current.json"; then
+      pointer_failed=1
+    elif [ -n "`$previous_current_target" ]; then
+      rm -f "`$CURRENT_LINK_TEMP"
+      if ln -s "`$previous_current_target" "`$CURRENT_LINK_TEMP" &&
+        mv -T "`$CURRENT_LINK_TEMP" "`$DEPLOYMENTS/current.json" &&
+        fsync_parent "`$DEPLOYMENTS/current.json"; then
+        :
+      else
+        pointer_failed=1
+        rm -f "`$CURRENT_LINK_TEMP" || true
+      fi
+    elif ! fsync_parent "`$DEPLOYMENTS/current.json"; then
+      pointer_failed=1
     fi
   fi
   if [ -n "`$previous_image_id" ]; then
-    podman container exists "`$CONTAINER_NAME" || failed=1
-    restored_image="`$(podman inspect "`$CONTAINER_NAME" --format '{{.Image}}' 2>/dev/null)" || failed=1
-    [ "`$restored_image" = "`$previous_image_id" ] || failed=1
-    curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/health" >/dev/null || failed=1
+    podman container exists "`$CONTAINER_NAME" || image_failed=1
+    restored_image="`$(podman inspect "`$CONTAINER_NAME" --format '{{.Image}}' 2>/dev/null)" || image_failed=1
+    [ "`$restored_image" = "`$previous_image_id" ] || image_failed=1
+    curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/health" >/dev/null || image_failed=1
   elif podman container exists "`$CONTAINER_NAME"; then
-    failed=1
+    image_failed=1
   fi
   if [ "`$previous_ui_kind" = "symlink" ]; then
-    [ -L "`$UI_PATH" ] && [ "`$(readlink "`$UI_PATH")" = "`$previous_ui_target" ] || failed=1
+    [ -L "`$UI_PATH" ] && [ "`$(readlink "`$UI_PATH")" = "`$previous_ui_target" ] || ui_failed=1
   elif [ "`$previous_ui_kind" = "directory" ]; then
-    [ -d "`$UI_PATH" ] && [ ! -L "`$UI_PATH" ] || failed=1
+    [ -d "`$UI_PATH" ] && [ ! -L "`$UI_PATH" ] || ui_failed=1
   else
-    [ ! -e "`$UI_PATH" ] && [ ! -L "`$UI_PATH" ] || failed=1
+    [ ! -e "`$UI_PATH" ] && [ ! -L "`$UI_PATH" ] || ui_failed=1
   fi
-  if [ "`$failed" != "0" ]; then
+  if [ -n "`$previous_current_target" ]; then
+    [ -L "`$DEPLOYMENTS/current.json" ] &&
+      [ "`$(readlink "`$DEPLOYMENTS/current.json")" = "`$previous_current_target" ] || pointer_failed=1
+  else
+    [ ! -e "`$DEPLOYMENTS/current.json" ] && [ ! -L "`$DEPLOYMENTS/current.json" ] || pointer_failed=1
+  fi
+  if [ "`$image_failed" != "0" ] || [ "`$ui_failed" != "0" ] || [ "`$pointer_failed" != "0" ]; then
     write_record "rollback-failed" || true
     return 1
   fi
@@ -692,6 +740,7 @@ commit_deployment() {
   rm -f "`$CURRENT_LINK_TEMP"
   ln -s "`$RECORD" "`$CURRENT_LINK_TEMP"
   mv -T "`$CURRENT_LINK_TEMP" "`$DEPLOYMENTS/current.json"
+  fsync_parent "`$DEPLOYMENTS/current.json"
   mv "`$LEASE_PENDING" "`$LEASE_COMMITTED"
   stop_watchdog
   flock -u 9
