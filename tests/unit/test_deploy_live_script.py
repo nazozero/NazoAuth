@@ -489,6 +489,11 @@ class DeployLiveContractTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             rendered = render_fixture(root)
+            self.assertNotIn(
+                b"\r",
+                rendered.read_bytes(),
+                "remote Linux shell scripts must be emitted as UTF-8 with LF line endings",
+            )
             syntax = subprocess.run(
                 [git_bash(), "-n", str(rendered)],
                 capture_output=True,

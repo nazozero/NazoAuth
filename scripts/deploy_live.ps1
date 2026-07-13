@@ -74,6 +74,19 @@ function ConvertTo-ShellLiteral {
     return $singleQuote + $Value.Replace($singleQuote, $escapedQuote) + $singleQuote
 }
 
+function Write-Utf8LfFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Content
+    )
+    $normalized = $Content.Replace("`r`n", "`n").Replace("`r", "`n")
+    [System.IO.File]::WriteAllText(
+        $Path,
+        $normalized,
+        [System.Text.UTF8Encoding]::new($false)
+    )
+}
+
 function Assert-CleanGitCommit {
     param(
         [Parameter(Mandatory = $true)][string]$Worktree,
@@ -896,10 +909,10 @@ esac
 "@
 
 if ($RenderRemoteScriptPath) {
-    Set-Content -LiteralPath $RenderRemoteScriptPath -Value $remoteBody -Encoding UTF8
+    Write-Utf8LfFile -Path $RenderRemoteScriptPath -Content $remoteBody
     return
 }
-Set-Content -LiteralPath $localRemoteScript -Value $remoteBody -Encoding UTF8
+Write-Utf8LfFile -Path $localRemoteScript -Content $remoteBody
 $remoteStarted = $false
 $remoteScriptLiteral = ConvertTo-ShellLiteral $remoteScript
 $deployCommand = "bash $remoteScriptLiteral deploy"
