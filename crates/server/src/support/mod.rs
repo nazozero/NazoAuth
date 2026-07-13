@@ -48,10 +48,13 @@ pub(crate) use jwe::{ClientJweKey, JwePayloadKind, client_jwe_key, encrypt_compa
 pub(crate) use mfa::MFA_BACKUP_CODE_COUNT;
 pub(crate) use mfa::{
     MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, MFA_TOTP_DIGITS,
-    MFA_TOTP_PERIOD_SECONDS, MfaVerificationMethod, clear_user_mfa_state,
-    generate_backup_codes_and_hashes, remember_mfa_device, remembered_mfa_device_valid,
-    replace_backup_codes, verify_user_mfa_code,
+    MFA_TOTP_PERIOD_SECONDS, MfaVerificationMethod, clear_user_mfa_state_with_repository,
+    generate_backup_codes_and_hashes, remember_mfa_device_with_repository,
+    remembered_mfa_device_valid, replace_backup_codes_with_repository,
+    verify_user_mfa_code_with_repository,
 };
+#[cfg(test)]
+pub(crate) use mfa::{remember_mfa_device, replace_backup_codes, verify_user_mfa_code};
 pub(crate) use mtls::{
     client_mtls_certificate_matches, request_mtls_client_certificate, request_mtls_thumbprint,
 };
@@ -85,10 +88,10 @@ pub(crate) use rate_limit::{
 };
 pub(crate) use responses::{
     OAuthJsonErrorFields, ResourceAccessToken, authorization_error_response, bytes_response,
-    csrf_error, empty_response, empty_response_no_store, has_valid_csrf_token, json_response,
-    json_response_no_store, json_response_status, json_response_status_no_store,
-    login_required_response, oauth_bearer_error, oauth_error, oauth_token_error, redirect_found,
-    request_uses_form_urlencoded, resource_access_token,
+    csrf_error, empty_response, empty_response_no_store, has_valid_csrf_token,
+    has_valid_csrf_token_for_cookies, json_response, json_response_no_store, json_response_status,
+    json_response_status_no_store, login_required_response, oauth_bearer_error, oauth_error,
+    oauth_token_error, redirect_found, request_uses_form_urlencoded, resource_access_token,
 };
 pub(crate) use sector_identifier::{fetch_sector_identifier_uris, sector_identifier_hostname};
 pub(crate) use security::{
@@ -111,10 +114,9 @@ pub(crate) use security::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, IssuedAccessToken, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
 };
 pub(crate) use sessions::{
-    CurrentSession, SessionPayload, SessionRotation, complete_mfa_session,
-    current_pending_mfa_session, current_session, current_user, current_user_or_login_required,
-    require_active_session_principal, require_admin_or_forbidden, step_up_current_session,
-    store_session,
+    CurrentSession, SessionPayload, SessionRotation, current_pending_mfa_session, current_session,
+    current_user, current_user_or_login_required, require_active_session_principal,
+    require_admin_or_forbidden, store_session,
 };
 #[cfg(test)]
 pub(crate) use tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};

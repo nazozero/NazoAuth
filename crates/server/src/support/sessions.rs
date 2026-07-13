@@ -63,6 +63,7 @@ pub(crate) struct AdminSessionHandles {
 /// The profile transport only receives the concrete session/user stores and the
 /// small amount of HTTP/runtime configuration it consumes. It cannot reach the
 /// application database pool, raw Valkey connection, keyset, or complete settings.
+#[derive(Clone)]
 pub(crate) struct SessionProfileHandles {
     sessions: SessionStore,
     users: UserRepository,
@@ -204,6 +205,53 @@ impl SessionProfileHandles {
         .await
     }
 
+    pub(crate) async fn current_pending_mfa_session(
+        &self,
+        req: &HttpRequest,
+    ) -> anyhow::Result<Option<CurrentSession>> {
+        current_pending_mfa_session_from_handles(
+            &self.sessions,
+            &self.users,
+            self.http.session_cookie_name(),
+            req,
+        )
+        .await
+    }
+
+    pub(crate) async fn complete_mfa_session(
+        &self,
+        req: &HttpRequest,
+        method: &str,
+        session_ttl_seconds: u64,
+    ) -> anyhow::Result<Option<SessionRotation>> {
+        record_mfa_step_up_with_store(
+            &self.sessions,
+            self.http.session_cookie_name(),
+            session_ttl_seconds,
+            req,
+            method,
+            true,
+        )
+        .await
+    }
+
+    pub(crate) async fn step_up_current_session(
+        &self,
+        req: &HttpRequest,
+        method: &str,
+        session_ttl_seconds: u64,
+    ) -> anyhow::Result<Option<SessionRotation>> {
+        record_mfa_step_up_with_store(
+            &self.sessions,
+            self.http.session_cookie_name(),
+            session_ttl_seconds,
+            req,
+            method,
+            false,
+        )
+        .await
+    }
+
     #[cfg(not(test))]
     pub(crate) fn permits_existing_session_management_transaction(&self) -> bool {
         nazo_auth::module_admissible(
@@ -337,10 +385,26 @@ pub(crate) async fn current_pending_mfa_session(
     state: &AppState,
     req: &HttpRequest,
 ) -> anyhow::Result<Option<CurrentSession>> {
-    let Some(sid) = cookie_value(req, state.settings.session().session_cookie_name) else {
+    let store = SessionStore::new(&state.valkey_connection());
+    let users = UserRepository::new(state.diesel_db.clone());
+    current_pending_mfa_session_from_handles(
+        &store,
+        &users,
+        state.settings.session().session_cookie_name,
+        req,
+    )
+    .await
+}
+
+async fn current_pending_mfa_session_from_handles(
+    store: &SessionStore,
+    users: &UserRepository,
+    session_cookie_name: &str,
+    req: &HttpRequest,
+) -> anyhow::Result<Option<CurrentSession>> {
+    let Some(sid) = cookie_value(req, session_cookie_name) else {
         return Ok(None);
     };
-    let store = nazo_valkey::SessionStore::new(&state.valkey_connection());
     let stored = match store.load(&sid).await {
         Ok(stored) => stored,
         Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
@@ -365,10 +429,10 @@ pub(crate) async fn current_pending_mfa_session(
     if !payload.pending_mfa {
         return Ok(None);
     }
-    let users = UserRepository::new(state.diesel_db.clone());
-    session_from_payload(&store, &users, &sid, payload).await
+    session_from_payload(store, users, &sid, payload).await
 }
 
+#[cfg(test)]
 pub(crate) async fn complete_mfa_session(
     state: &AppState,
     req: &HttpRequest,
@@ -377,6 +441,7 @@ pub(crate) async fn complete_mfa_session(
     record_mfa_step_up(state, req, method, true).await
 }
 
+#[cfg(test)]
 pub(crate) async fn step_up_current_session(
     state: &AppState,
     req: &HttpRequest,
@@ -385,16 +450,36 @@ pub(crate) async fn step_up_current_session(
     record_mfa_step_up(state, req, method, false).await
 }
 
+#[cfg(test)]
 async fn record_mfa_step_up(
     state: &AppState,
     req: &HttpRequest,
     method: &str,
     require_pending_mfa: bool,
 ) -> anyhow::Result<Option<SessionRotation>> {
-    let Some(sid) = cookie_value(req, state.settings.session().session_cookie_name) else {
+    let store = SessionStore::new(&state.valkey_connection());
+    record_mfa_step_up_with_store(
+        &store,
+        state.settings.session().session_cookie_name,
+        state.settings.session().session_ttl_seconds,
+        req,
+        method,
+        require_pending_mfa,
+    )
+    .await
+}
+
+async fn record_mfa_step_up_with_store(
+    store: &SessionStore,
+    session_cookie_name: &str,
+    session_ttl_seconds: u64,
+    req: &HttpRequest,
+    method: &str,
+    require_pending_mfa: bool,
+) -> anyhow::Result<Option<SessionRotation>> {
+    let Some(sid) = cookie_value(req, session_cookie_name) else {
         return Ok(None);
     };
-    let store = nazo_valkey::SessionStore::new(&state.valkey_connection());
     let stored = match store.load(&sid).await {
         Ok(stored) => stored,
         Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
@@ -423,7 +508,7 @@ async fn record_mfa_step_up(
             &stored,
             &new_session_id,
             &payload.to_record()?,
-            state.settings.session().session_ttl_seconds,
+            session_ttl_seconds,
         )
         .await?;
     match result {

@@ -13,6 +13,8 @@ use fred::prelude::{
 };
 
 use crate::config::ConfigSource;
+use crate::domain::AppState;
+use crate::support::{remember_mfa_device, replace_backup_codes, verify_user_mfa_code};
 use nazo_postgres::create_pool;
 
 use crate::schema::{user_mfa_backup_codes, user_mfa_remembered_devices};
@@ -41,6 +43,10 @@ fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
             "active-session",
         ))
         .to_http_request()
+}
+
+fn mfa_handles(state: &Data<AppState>) -> Data<MfaProfileHandles> {
+    Data::new(MfaProfileHandles::from_app_state(state))
 }
 
 struct LiveMfaFixture {
@@ -366,7 +372,7 @@ async fn mfa_totp_begin_rejects_session_request_without_csrf_before_enrollment_s
     let state = Data::new(test_state());
     let req = request_with_session_but_no_csrf(&state);
 
-    assert_mfa_endpoint_rejects_missing_csrf(mfa_totp_begin(state, req).await).await;
+    assert_mfa_endpoint_rejects_missing_csrf(mfa_totp_begin(mfa_handles(&state), req).await).await;
 }
 
 #[actix_web::test]
@@ -374,7 +380,7 @@ async fn mfa_totp_begin_requires_login_before_enrollment_secret() {
     let state = Data::new(test_state());
     let req = actix_web::test::TestRequest::default().to_http_request();
 
-    assert_mfa_endpoint_requires_login(mfa_totp_begin(state, req).await).await;
+    assert_mfa_endpoint_requires_login(mfa_totp_begin(mfa_handles(&state), req).await).await;
 }
 
 #[actix_web::test]
@@ -403,9 +409,10 @@ async fn mfa_totp_begin_replaces_unconfirmed_enrollment_and_clears_replay_state(
         .await
         .expect("stale unconfirmed TOTP credential should insert");
 
-    let (status, body, has_set_cookie) =
-        response_json(mfa_totp_begin(fixture.state.clone(), fixture.request(&sid, &csrf)).await)
-            .await;
+    let (status, body, has_set_cookie) = response_json(
+        mfa_totp_begin(mfa_handles(&fixture.state), fixture.request(&sid, &csrf)).await,
+    )
+    .await;
 
     assert_eq!(status, StatusCode::OK);
     assert!(!has_set_cookie);
@@ -438,7 +445,7 @@ async fn mfa_totp_confirm_rejects_session_request_without_csrf_before_backup_cod
 
     assert_mfa_endpoint_rejects_missing_csrf(
         mfa_totp_confirm(
-            state,
+            mfa_handles(&state),
             req,
             Json(ConfirmTotpRequest {
                 code: "123456".into(),
@@ -456,7 +463,7 @@ async fn mfa_totp_confirm_requires_login_before_verifying_code() {
 
     assert_mfa_endpoint_requires_login(
         mfa_totp_confirm(
-            state,
+            mfa_handles(&state),
             req,
             Json(ConfirmTotpRequest {
                 code: "123456".into(),
@@ -495,7 +502,7 @@ async fn mfa_totp_confirm_rejects_wrong_code_without_enabling_mfa_or_backup_code
 
     let (status, body, has_set_cookie) = response_json(
         mfa_totp_confirm(
-            fixture.state.clone(),
+            mfa_handles(&fixture.state),
             fixture.request(&sid, &csrf),
             Json(ConfirmTotpRequest {
                 code: "000000".to_owned(),
@@ -549,7 +556,7 @@ async fn mfa_totp_confirm_rotates_session_and_csrf_after_valid_code() {
     .expect("TOTP code should generate");
 
     let response = mfa_totp_confirm(
-        fixture.state.clone(),
+        mfa_handles(&fixture.state),
         fixture.request(&sid, &csrf),
         Json(ConfirmTotpRequest { code }),
     )
@@ -583,7 +590,7 @@ async fn mfa_verify_rejects_session_request_without_csrf_before_completing_chall
 
     assert_mfa_endpoint_rejects_missing_csrf(
         mfa_verify(
-            state,
+            mfa_handles(&state),
             req,
             Json(MfaChallengeRequest {
                 code: "123456".into(),
@@ -602,7 +609,7 @@ async fn mfa_backup_codes_regenerate_rejects_session_request_without_csrf_before
 
     assert_mfa_endpoint_rejects_missing_csrf(
         mfa_backup_codes_regenerate(
-            state,
+            mfa_handles(&state),
             req,
             Json(MfaProtectedRequest {
                 code: "123456".into(),
@@ -620,7 +627,7 @@ async fn mfa_backup_codes_regenerate_requires_login_before_code_rotation() {
 
     assert_mfa_endpoint_requires_login(
         mfa_backup_codes_regenerate(
-            state,
+            mfa_handles(&state),
             req,
             Json(MfaProtectedRequest {
                 code: "123456".into(),
@@ -638,7 +645,7 @@ async fn mfa_disable_rejects_session_request_without_csrf_before_clearing_mfa_st
 
     assert_mfa_endpoint_rejects_missing_csrf(
         mfa_disable(
-            state,
+            mfa_handles(&state),
             req,
             Json(MfaProtectedRequest {
                 code: "123456".into(),
@@ -656,7 +663,7 @@ async fn mfa_disable_requires_login_before_clearing_mfa_state() {
 
     assert_mfa_endpoint_requires_login(
         mfa_disable(
-            state,
+            mfa_handles(&state),
             req,
             Json(MfaProtectedRequest {
                 code: "123456".into(),
@@ -679,7 +686,7 @@ async fn mfa_verify_rejects_non_pending_session_without_consuming_mfa_code() {
     fixture.store_session(&user, &sid, false).await;
 
     let response = mfa_verify(
-        fixture.state.clone(),
+        mfa_handles(&fixture.state),
         fixture.request(&sid, &csrf),
         Json(MfaChallengeRequest {
             code: "123456".into(),
@@ -717,7 +724,7 @@ async fn mfa_verify_completes_pending_totp_challenge_and_updates_session_amr() {
     .expect("TOTP code should generate");
 
     let response = mfa_verify(
-        fixture.state.clone(),
+        mfa_handles(&fixture.state),
         fixture.request(&sid, &csrf),
         Json(MfaChallengeRequest {
             code,
@@ -789,7 +796,7 @@ async fn mfa_verify_reports_session_lookup_failure_after_rate_limit_for_pending_
 
     let (status, body, has_set_cookie) = response_json(
         mfa_verify(
-            state,
+            mfa_handles(&state),
             req,
             Json(MfaChallengeRequest {
                 code: "123456".into(),
@@ -838,7 +845,7 @@ async fn mfa_verify_remember_device_sets_cookie_and_persists_remembered_device()
         .to_http_request();
 
     let response = mfa_verify(
-        fixture.state.clone(),
+        mfa_handles(&fixture.state),
         req,
         Json(MfaChallengeRequest {
             code,
@@ -889,7 +896,7 @@ async fn mfa_backup_codes_regenerate_rejects_when_mfa_is_not_enabled() {
 
     let (status, body, has_set_cookie) = response_json(
         mfa_backup_codes_regenerate(
-            fixture.state.clone(),
+            mfa_handles(&fixture.state),
             fixture.request(&sid, &csrf),
             Json(MfaProtectedRequest {
                 code: "123456".into(),
@@ -927,7 +934,7 @@ async fn mfa_backup_codes_regenerate_rotates_codes_after_valid_totp() {
     .expect("TOTP code should generate");
 
     let response = mfa_backup_codes_regenerate(
-        fixture.state.clone(),
+        mfa_handles(&fixture.state),
         fixture.request(&sid, &csrf),
         Json(MfaProtectedRequest { code }),
     )
@@ -996,7 +1003,7 @@ async fn mfa_backup_codes_regenerate_rejects_wrong_totp_without_rotating_codes()
 
     let (status, body, has_set_cookie) = response_json(
         mfa_backup_codes_regenerate(
-            fixture.state.clone(),
+            mfa_handles(&fixture.state),
             fixture.request(&sid, &csrf),
             Json(MfaProtectedRequest {
                 code: "000000".to_owned(),
@@ -1056,7 +1063,7 @@ async fn mfa_disable_clears_totp_backup_codes_and_remembered_devices() {
     .expect("TOTP code should generate");
 
     let response = mfa_disable(
-        fixture.state.clone(),
+        mfa_handles(&fixture.state),
         fixture.request(&sid, &csrf),
         Json(MfaProtectedRequest { code }),
     )
@@ -1088,9 +1095,10 @@ async fn mfa_totp_begin_rejects_confirmed_credential_without_rotating_secret() {
     fixture.store_session(&user, &sid, false).await;
     fixture.insert_confirmed_totp(&user, secret).await;
 
-    let (status, body, has_set_cookie) =
-        response_json(mfa_totp_begin(fixture.state.clone(), fixture.request(&sid, &csrf)).await)
-            .await;
+    let (status, body, has_set_cookie) = response_json(
+        mfa_totp_begin(mfa_handles(&fixture.state), fixture.request(&sid, &csrf)).await,
+    )
+    .await;
 
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["error"], "invalid_request");
@@ -1119,7 +1127,7 @@ async fn mfa_verify_rejects_wrong_code_without_completing_session_or_remembering
 
     let (status, body, has_set_cookie) = response_json(
         mfa_verify(
-            fixture.state.clone(),
+            mfa_handles(&fixture.state),
             fixture.request(&sid, &csrf),
             Json(MfaChallengeRequest {
                 code: "000000".to_owned(),
@@ -1166,7 +1174,7 @@ async fn mfa_disable_rejects_wrong_code_without_clearing_existing_state() {
 
     let (status, body, has_set_cookie) = response_json(
         mfa_disable(
-            fixture.state.clone(),
+            mfa_handles(&fixture.state),
             fixture.request(&sid, &csrf),
             Json(MfaProtectedRequest {
                 code: "000000".to_owned(),
