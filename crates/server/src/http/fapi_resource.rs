@@ -30,7 +30,7 @@ fn fapi_http_signature_replay_key(fingerprint: &[u8; 32]) -> String {
 
 #[cfg(test)]
 async fn consume_fapi_http_signature_replay(
-    client: &fred::prelude::Client,
+    client: &nazo_valkey::test_support::Client,
     fingerprint: &[u8; 32],
     max_age_seconds: i64,
 ) -> ReplayConsumption {

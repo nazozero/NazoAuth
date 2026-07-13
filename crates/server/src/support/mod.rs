@@ -69,8 +69,8 @@ pub(crate) mod prelude {
     };
     pub(crate) use chrono::Utc;
     #[cfg(test)]
-    pub(crate) use fred::prelude::{
-        Client as ValkeyClient, Error as ValkeyError, Expiration, KeysInterface,
+    pub(crate) use nazo_valkey::test_support::{
+        Client as TestValkeyConnection, Error as ValkeyError, Expiration, KeysInterface,
     };
     pub(crate) use serde::{Deserialize, Serialize};
     pub(crate) use serde_json::{Value, json};

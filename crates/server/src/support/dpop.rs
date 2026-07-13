@@ -1,5 +1,5 @@
-use serde::Deserialize;
 pub(crate) use nazo_http_actix::{AccessTokenAuthScheme, authorization_access_token};
+use serde::Deserialize;
 
 #[cfg(test)]
 use nazo_auth::is_valid_dpop_jkt;

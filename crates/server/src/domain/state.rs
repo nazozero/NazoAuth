@@ -3,7 +3,7 @@
 use std::sync::Arc;
 
 #[cfg(test)]
-use fred::prelude::Client as ValkeyClient;
+use nazo_valkey::test_support::Client as ValkeyTestClient;
 
 use crate::settings::Settings;
 use nazo_postgres::DbPool;
@@ -15,7 +15,7 @@ pub(crate) struct AppState {
     #[cfg(not(test))]
     pub(crate) valkey: nazo_valkey::ValkeyConnection,
     #[cfg(test)]
-    pub(crate) valkey: ValkeyClient,
+    pub(crate) valkey: ValkeyTestClient,
     pub(crate) settings: Arc<Settings>,
     pub(crate) keyset: nazo_key_management::KeyManager,
 }

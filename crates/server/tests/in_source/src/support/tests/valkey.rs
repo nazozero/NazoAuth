@@ -5,7 +5,7 @@ use fred::prelude::{
 };
 use std::time::Duration as StdDuration;
 
-async fn live_valkey() -> Option<ValkeyClient> {
+async fn live_valkey() -> Option<TestValkeyConnection> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let mut builder =
         ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL"));
@@ -22,7 +22,7 @@ async fn live_valkey() -> Option<ValkeyClient> {
     Some(valkey)
 }
 
-async fn valkey_server_time(valkey: &ValkeyClient) -> i64 {
+async fn valkey_server_time(valkey: &TestValkeyConnection) -> i64 {
     valkey_eval_string(
         valkey,
         "return tostring(redis.call('TIME')[1])",

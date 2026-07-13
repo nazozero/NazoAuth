@@ -12,6 +12,8 @@ mod keys;
 mod rate_limit;
 mod replay;
 mod session;
+#[doc(hidden)]
+pub mod test_support;
 mod token_state;
 
 pub use authentication::AuthenticationStore;
