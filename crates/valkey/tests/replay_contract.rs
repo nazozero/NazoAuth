@@ -149,15 +149,15 @@ async fn dpop_nonce_preserves_exact_key_and_is_consumed_once() {
         .expect("an explicitly configured Valkey must be available");
     let store = ReplayStore::new(&connection);
     let inspector = inspection_client(&url).await;
-    let nonce = "opaque-nonce";
+    let nonce = uuid::Uuid::now_v7().to_string();
     let key = format!(
         "oauth:dpop:nonce:{}",
         blake3::hash(nonce.as_bytes()).to_hex()
     );
     let _: i64 = inspector.del(&key).await.unwrap();
 
-    store.issue_dpop_nonce(nonce, 30).await.unwrap();
+    store.issue_dpop_nonce(&nonce, 30).await.unwrap();
     assert_eq!(inspector.get::<String, _>(&key).await.unwrap(), "1");
-    assert!(store.consume_dpop_nonce(nonce).await.unwrap());
-    assert!(!store.consume_dpop_nonce(nonce).await.unwrap());
+    assert!(store.consume_dpop_nonce(&nonce).await.unwrap());
+    assert!(!store.consume_dpop_nonce(&nonce).await.unwrap());
 }
