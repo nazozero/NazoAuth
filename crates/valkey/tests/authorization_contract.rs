@@ -268,3 +268,117 @@ async fn par_compare_delete_preserves_a_concurrent_replacement() {
         replacement.client_id
     );
 }
+
+#[tokio::test]
+async fn par_compare_delete_accepts_semantically_equal_reordered_multi_parameter_json() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
+    let observed = PushedAuthorizationRequest {
+        client_id: "client-a".to_owned(),
+        params: HashMap::from([
+            (
+                "redirect_uri".to_owned(),
+                "https://client.example/cb".to_owned(),
+            ),
+            ("scope".to_owned(), "openid profile".to_owned()),
+        ]),
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
+        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+    };
+    let key = format!(
+        "oauth:par:{}",
+        blake3::hash(request_uri.as_bytes()).to_hex()
+    );
+    let reordered = format!(
+        r#"{{"expires_at":{},"params":{{"scope":{},"redirect_uri":{}}},"client_id":{},"issued_at":{}}}"#,
+        serde_json::to_string(&observed.expires_at).unwrap(),
+        serde_json::to_string(&observed.params["scope"]).unwrap(),
+        serde_json::to_string(&observed.params["redirect_uri"]).unwrap(),
+        serde_json::to_string(&observed.client_id).unwrap(),
+        serde_json::to_string(&observed.issued_at).unwrap(),
+    );
+    inspector
+        .set::<(), _, _>(&key, reordered, None, None, false)
+        .await
+        .unwrap();
+
+    assert!(
+        store
+            .compare_and_delete_par(&request_uri, &observed)
+            .await
+            .unwrap()
+    );
+    assert!(!inspector.exists::<bool, _>(&key).await.unwrap());
+}
+
+#[tokio::test]
+async fn consent_json_compare_is_nested_order_independent_but_preserves_array_object_types() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let key = format!("oauth:consent:{request_id}");
+    let mut observed = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+    observed.authorization_details = json!([{
+        "type": "payment_initiation",
+        "actions": {"alpha": 1, "beta": 2}
+    }]);
+    let canonical = serde_json::to_string(&observed).unwrap();
+    let reordered = canonical.replace(
+        r#""actions":{"alpha":1,"beta":2}"#,
+        r#""actions":{"beta":2,"alpha":1}"#,
+    );
+    assert_ne!(canonical, reordered);
+    inspector
+        .set::<(), _, _>(&key, reordered, None, None, false)
+        .await
+        .unwrap();
+    assert!(
+        store
+            .compare_and_delete_consent(&request_id, &observed)
+            .await
+            .unwrap()
+    );
+
+    let array = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+    let object_replacement = serde_json::to_string(&array).unwrap().replace(
+        r#""authorization_details":[]"#,
+        r#""authorization_details":{}"#,
+    );
+    inspector
+        .set::<(), _, _>(&key, object_replacement, None, None, false)
+        .await
+        .unwrap();
+    assert!(
+        !store
+            .compare_and_delete_consent(&request_id, &array)
+            .await
+            .unwrap()
+    );
+    assert!(inspector.exists::<bool, _>(&key).await.unwrap());
+}
+
+#[tokio::test]
+async fn malformed_json_compare_delete_fails_closed_without_deleting() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let key = format!("oauth:consent:{request_id}");
+    let expected = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+    inspector
+        .set::<(), _, _>(&key, "{", None, None, false)
+        .await
+        .unwrap();
+
+    let error = store
+        .compare_and_delete_consent(&request_id, &expected)
+        .await
+        .unwrap_err();
+    assert_eq!(error.kind(), nazo_valkey::ErrorKind::CorruptData);
+    assert!(inspector.exists::<bool, _>(&key).await.unwrap());
+}

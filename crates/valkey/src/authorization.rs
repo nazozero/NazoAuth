@@ -318,7 +318,7 @@ impl AuthorizationStore {
                 "failed to serialize expected authorization state: {error}"
             ))
         })?;
-        command::compare_delete(&self.connection, key, &expected)
+        command::compare_delete_json(&self.connection, key, &expected)
             .await
             .map(|outcome| matches!(outcome, command::CompareDelete::Deleted))
     }
