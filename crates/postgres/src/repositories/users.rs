@@ -261,18 +261,25 @@ impl UserRepository {
         row.try_into()
             .map_err(|error: identity::ConversionError| RepositoryError::Consistency(error.0))
     }
-    pub async fn page(&self, limit: i64, offset: i64) -> Result<UserPage, RepositoryError> {
+    pub async fn page(
+        &self,
+        tenant_id: TenantId,
+        limit: i64,
+        offset: i64,
+    ) -> Result<UserPage, RepositoryError> {
         let mut connection = self
             .pool
             .get()
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let total = users::table
+            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
             .select(diesel::dsl::count_star())
             .first::<i64>(&mut connection)
             .await
             .map_err(map_error)?;
         let rows = users::table
+            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
             .select(PublicAccountRow::as_select())
             .order(users::created_at.desc())
             .limit(limit)
