@@ -150,7 +150,29 @@ pub struct AuthorizationApprovalInput<'a> {
 pub fn pushed_authorization_request_digest(
     request: &PushedAuthorizationRequest,
 ) -> Result<String, AuthorizationPortError> {
-    serde_json::to_vec(request)
+    #[derive(serde::Serialize)]
+    struct CanonicalPushedAuthorizationRequest<'a> {
+        client_id: &'a str,
+        params: std::collections::BTreeMap<&'a str, &'a str>,
+        dpop_jkt: Option<&'a str>,
+        mtls_x5t_s256: Option<&'a str>,
+        issued_at: &'a DateTime<Utc>,
+        expires_at: &'a DateTime<Utc>,
+    }
+
+    let canonical = CanonicalPushedAuthorizationRequest {
+        client_id: &request.client_id,
+        params: request
+            .params
+            .iter()
+            .map(|(name, value)| (name.as_str(), value.as_str()))
+            .collect(),
+        dpop_jkt: request.dpop_jkt.as_deref(),
+        mtls_x5t_s256: request.mtls_x5t_s256.as_deref(),
+        issued_at: &request.issued_at,
+        expires_at: &request.expires_at,
+    };
+    serde_json::to_vec(&canonical)
         .map(|encoded| blake3::hash(&encoded).to_hex().to_string())
         .map_err(|_| AuthorizationPortError::Unexpected)
 }
@@ -1206,6 +1228,29 @@ mod tests {
             &["https://other.example".to_owned()],
             &json!([]),
         ));
+    }
+
+    #[test]
+    fn pushed_request_digest_is_independent_of_hash_map_iteration_order() {
+        let mut first = pushed();
+        first.params.insert("scope".to_owned(), "openid".to_owned());
+        first.params.insert(
+            "redirect_uri".to_owned(),
+            "https://client.example/cb".to_owned(),
+        );
+        let mut second = pushed();
+        second.params.insert(
+            "redirect_uri".to_owned(),
+            "https://client.example/cb".to_owned(),
+        );
+        second
+            .params
+            .insert("scope".to_owned(), "openid".to_owned());
+
+        assert_eq!(
+            super::pushed_authorization_request_digest(&first).unwrap(),
+            super::pushed_authorization_request_digest(&second).unwrap()
+        );
     }
 
     #[test]
