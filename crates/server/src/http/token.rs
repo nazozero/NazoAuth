@@ -95,4 +95,23 @@ mod lifecycle_boundary_tests {
             }
         }
     }
+
+    #[test]
+    fn userinfo_transport_does_not_construct_storage_adapters() {
+        let source = include_str!("token/userinfo.rs");
+        for forbidden in [
+            "nazo_postgres",
+            "nazo_valkey",
+            "diesel_db",
+            "TokenRepository::new",
+            "OAuthClientRepository::new",
+            "UserRepository::new",
+            "TokenStateStore::new",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "userinfo handler reintroduced forbidden dependency {forbidden}"
+            );
+        }
+    }
 }

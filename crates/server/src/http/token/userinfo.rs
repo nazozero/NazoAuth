@@ -1,13 +1,14 @@
 //! OIDC userinfo 端点。
+use super::ServerTokenService;
+use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
-use crate::domain::{AppState, ClientRow};
 use crate::settings::Settings;
 use crate::support::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, JwePayloadKind, access_token_tenant_id,
-    blake3_hex, client_jwe_key, constant_time_eq, decode_access_claims, dpop_error_response,
-    encrypt_compact_jwe, issue_dpop_nonce, oidc_user_claims, parse_scope, request_mtls_thumbprint,
-    sign_response_jwt, signing_algorithm_from_name, token_audience_contains, validate_dpop_proof,
+    blake3_hex, client_jwe_key, constant_time_eq, dpop_error_response, encrypt_compact_jwe,
+    issue_dpop_nonce, oidc_user_claims, parse_scope, request_mtls_thumbprint, sign_response_jwt,
+    signing_algorithm_from_name, token_audience_contains, validate_dpop_proof,
 };
 #[cfg(test)]
 use crate::support::{
@@ -21,7 +22,7 @@ use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::{Duration, Utc};
-use nazo_auth::Claims;
+use nazo_auth::{Claims, OAuthClient};
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{ResourceAccessToken, resource_access_token};
@@ -32,7 +33,12 @@ use uuid::Uuid;
 #[cfg(test)]
 use super::access_token_subject_key;
 
-pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+pub(crate) async fn userinfo(
+    state: Data<AppState>,
+    token_service: Data<ServerTokenService>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
     let (scheme, token) = match resource_access_token(&req, &body, false) {
         ResourceAccessToken::Present(scheme, token) => (scheme, token),
         ResourceAccessToken::Missing => {
@@ -46,12 +52,26 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             );
         }
     };
-    let Some(claims) = decode_access_claims(&state, &token) else {
-        return oauth_bearer_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_token",
-            "访问令牌无效或已过期.",
-        );
+    let claims = match token_service
+        .decode_access_token(&state.settings.endpoint.issuer, &token)
+        .await
+    {
+        Ok(Some(claims)) => claims,
+        Ok(None) => {
+            return oauth_bearer_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_token",
+                "访问令牌无效或已过期.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to decode userinfo access token");
+            return oauth_bearer_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "userinfo 查询失败.",
+            );
+        }
     };
     if !userinfo_audience_allowed(&state.settings, &claims.aud) {
         return oauth_bearer_error(
@@ -67,7 +87,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             "访问令牌租户边界无效.",
         );
     };
-    let revoked = match nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+    let revoked = match token_service
         .access_token_revoked(tenant_id, &claims.jti)
         .await
     {
@@ -143,7 +163,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
         );
     }
     let scopes = parse_scope(&claims.scope);
-    let user_id = match access_token_user_id(&state, tenant_id, &claims).await {
+    let user_id = match access_token_user_id(&token_service, tenant_id, &claims).await {
         Ok(Some(user_id)) => user_id,
         Ok(None) => {
             return oauth_bearer_error(
@@ -161,33 +181,19 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             );
         }
     };
-    let tenant = match nazo_identity::TenantId::new(tenant_id) {
-        Ok(tenant) => tenant,
-        Err(error) => {
-            tracing::warn!(%error, "userinfo token contains invalid tenant ID");
-            return oauth_bearer_error(
-                StatusCode::UNAUTHORIZED,
-                "invalid_token",
-                "访问令牌主体不存在或已停用.",
-            );
-        }
-    };
-    let identity_user_id = match nazo_identity::UserId::new(user_id) {
-        Ok(user_id) => user_id,
-        Err(error) => {
-            tracing::warn!(%error, "userinfo token contains invalid user ID");
-            return oauth_bearer_error(
-                StatusCode::UNAUTHORIZED,
-                "invalid_token",
-                "访问令牌主体不存在或已停用.",
-            );
-        }
-    };
-    let repository = nazo_postgres::UserRepository::new(state.diesel_db.clone());
-    let subject_claims = repository
-        .active_subject_claims_by_tenant_id(tenant, identity_user_id)
-        .await;
-    let subject_claims = match subject_claims {
+    if nazo_identity::TenantId::new(tenant_id).is_err()
+        || nazo_identity::UserId::new(user_id).is_err()
+    {
+        return oauth_bearer_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            "访问令牌主体不存在或已停用.",
+        );
+    }
+    let subject_claims = match token_service
+        .active_subject_claims(tenant_id, user_id)
+        .await
+    {
         Ok(Some(claims)) => claims,
         Ok(None) => {
             return oauth_bearer_error(
@@ -205,8 +211,8 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
             );
         }
     };
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(tenant_id, &claims.client_id)
+    let client = match token_service
+        .client_by_protocol_id(tenant_id, &claims.client_id)
         .await
     {
         Ok(Some(client)) if client.is_active => client,
@@ -257,7 +263,7 @@ pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Byte
 
 async fn userinfo_success_response(
     state: &AppState,
-    client: &ClientRow,
+    client: &OAuthClient,
     mut claims: Value,
 ) -> anyhow::Result<HttpResponse> {
     let signing_alg = match client.userinfo_signed_response_alg.as_deref() {
@@ -311,7 +317,7 @@ async fn userinfo_success_response(
 }
 
 async fn access_token_user_id(
-    state: &AppState,
+    token_service: &ServerTokenService,
     tenant_id: Uuid,
     claims: &Claims,
 ) -> anyhow::Result<Option<Uuid>> {
@@ -322,11 +328,10 @@ async fn access_token_user_id(
     {
         return Ok(Some(user_id));
     }
-    Ok(
-        nazo_valkey::TokenStateStore::new(&state.valkey_connection())
-            .load_access_token_subject(tenant_id, &claims.jti)
-            .await?,
-    )
+    token_service
+        .load_access_token_subject(tenant_id, &claims.jti)
+        .await
+        .map_err(anyhow::Error::from)
 }
 
 fn userinfo_audience_allowed(settings: &Settings, audience: &Value) -> bool {

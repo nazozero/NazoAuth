@@ -57,6 +57,16 @@ fn userinfo_test_state() -> AppState {
     }
 }
 
+async fn call_userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    let connection = state.valkey_connection();
+    let token_service = Data::new(ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
+        state.keyset.clone(),
+    ));
+    userinfo(state, token_service, req, body).await
+}
+
 async fn live_userinfo_state() -> Option<Data<AppState>> {
     let database_url = std::env::var("DATABASE_URL").ok()?;
     live_userinfo_state_from_database_url(database_url).await
@@ -526,7 +536,7 @@ async fn userinfo_error_for_token(
         .uri("/userinfo")
         .insert_header((header::AUTHORIZATION, format!("{scheme} {token}")))
         .to_http_request();
-    userinfo(state, req, Bytes::new()).await
+    call_userinfo(state, req, Bytes::new()).await
 }
 
 async fn userinfo_response_for_active_user(
@@ -559,7 +569,7 @@ async fn userinfo_response_for_active_user(
         .uri("/userinfo")
         .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
         .to_http_request();
-    userinfo(state, req, Bytes::new()).await
+    call_userinfo(state, req, Bytes::new()).await
 }
 
 fn oauth_error_code(response: &HttpResponse) -> Option<String> {
@@ -1019,7 +1029,7 @@ async fn userinfo_rejects_missing_or_conflicting_access_token_transport_before_d
     let missing_req = actix_web::test::TestRequest::get()
         .uri("/userinfo")
         .to_http_request();
-    let missing = userinfo(state.clone(), missing_req, Bytes::new()).await;
+    let missing = call_userinfo(state.clone(), missing_req, Bytes::new()).await;
     assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(oauth_error_code(&missing).as_deref(), Some("invalid_token"));
     assert_eq!(
@@ -1042,7 +1052,7 @@ async fn userinfo_rejects_missing_or_conflicting_access_token_transport_before_d
         .insert_header((header::AUTHORIZATION, "Bearer header-token"))
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
         .to_http_request();
-    let duplicate = userinfo(
+    let duplicate = call_userinfo(
         state,
         duplicate_req,
         Bytes::from_static(b"access_token=body-token"),
@@ -1079,7 +1089,7 @@ async fn userinfo_rejects_unverifiable_access_token_before_revocation_lookup() {
         .insert_header((header::AUTHORIZATION, "Bearer not-a-jwt"))
         .to_http_request();
 
-    let response = userinfo(state, req, Bytes::new()).await;
+    let response = call_userinfo(state, req, Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(
@@ -1228,7 +1238,7 @@ async fn userinfo_rejects_mtls_bound_token_with_mismatched_verified_certificate(
         ))
         .to_http_request();
 
-    let response = userinfo(state, req, Bytes::new()).await;
+    let response = call_userinfo(state, req, Bytes::new()).await;
 
     assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
     assert_eq!(

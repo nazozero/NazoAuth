@@ -444,6 +444,22 @@ where
         self.signer.sign_access_token(input).await
     }
 
+    pub async fn decode_access_token(
+        &self,
+        issuer: &str,
+        raw_token: &str,
+    ) -> Result<Option<Claims>, TokenPortError> {
+        self.signer.decode_access_token(issuer, raw_token).await
+    }
+
+    pub async fn access_token_revoked(
+        &self,
+        tenant_id: Uuid,
+        jti: &str,
+    ) -> Result<bool, TokenPortError> {
+        self.repository.access_token_revoked(tenant_id, jti).await
+    }
+
     pub async fn sign_id_token(
         &self,
         input: IdTokenSignInput<'_>,
