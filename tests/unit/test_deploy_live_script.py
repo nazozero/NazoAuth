@@ -186,7 +186,8 @@ class FakeLifecycle:
         self.deployment = root / "remote-deployment"
         self.remote_temp = root / "remote-temp"
         self.public_root = root / "public"
-        self.ui_path = self.public_root / "ui" / "auth"
+        self.web_root = self.public_root / "auth"
+        self.ui_path = self.web_root / "ui"
         self.ui_releases = self.public_root / "auth-releases"
         self.keys = self.deployment / "runtime" / "keys"
         self.avatars = self.deployment / "runtime" / "avatars"
@@ -376,7 +377,7 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn("FrontendCommit", self.source)
 
     def test_public_ui_defaults_are_worker_traversable_and_probed_before_commit(self) -> None:
-        self.assertIn('[string]$RemoteUiPath = "/usr/local/angie/html/auth"', self.source)
+        self.assertIn('[string]$RemoteUiPath = "/usr/local/angie/html/auth/ui"', self.source)
         self.assertIn('[string]$AngieWorkerUser = "www"', self.source)
         self.assertIn('[string]$UiUrl = "https://auth.nazo.run/ui/auth"', self.source)
         worker_probe = self.source.index('runuser -u "`$ANGIE_WORKER_USER" -- test -r "`$UI_PATH/index.html"')
@@ -819,7 +820,7 @@ bash "$1" deploy
             runuser_log = (lifecycle.fake_state / "runuser.log").read_text(encoding="utf-8")
             self.assertIn("-u www -- test -r", runuser_log)
             self.assertIn("auth-releases", runuser_log)
-            self.assertIn("/ui/auth/index.html", runuser_log)
+            self.assertIn("/auth/ui/index.html", runuser_log)
             if os.name != "nt":
                 for directory_path in (lifecycle.public_root, lifecycle.ui_releases, release):
                     self.assertEqual(
@@ -834,14 +835,14 @@ bash "$1" deploy
 
             if os.name != "nt":
                 handler = lambda *args, **kwargs: http.server.SimpleHTTPRequestHandler(
-                    *args, directory=str(lifecycle.public_root), **kwargs
+                    *args, directory=str(lifecycle.web_root), **kwargs
                 )
                 server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
                 thread = threading.Thread(target=server.serve_forever, daemon=True)
                 thread.start()
                 try:
                     with urllib.request.urlopen(
-                        f"http://127.0.0.1:{server.server_port}/ui/auth",
+                        f"http://127.0.0.1:{server.server_port}/ui/index.html",
                         timeout=5,
                     ) as response:
                         self.assertEqual(response.status, 200)

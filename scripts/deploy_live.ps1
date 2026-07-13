@@ -17,7 +17,7 @@ param(
     [string]$RemoteConfigPath = "/opt/nazo-oauth/.env.yaml",
     [string]$RemoteKeysPath = "/opt/nazo-oauth/runtime/keys",
     [string]$RemoteAvatarsPath = "/opt/nazo-oauth/runtime/avatars",
-    [string]$RemoteUiPath = "/usr/local/angie/html/auth",
+    [string]$RemoteUiPath = "/usr/local/angie/html/auth/ui",
     [string]$RemoteUiReleasesRoot = "/usr/local/angie/html/auth-releases",
     [string]$AngieWorkerUser = "www",
     [string]$RemoteDeploymentRoot = "/opt/nazo-oauth",

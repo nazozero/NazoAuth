@@ -133,7 +133,7 @@ docker run -d --name nazo-oauth-server \
 | Health URL | `https://auth.nazo.run/health` |
 | Discovery URL | `https://auth.nazo.run/.well-known/openid-configuration` |
 | Expected issuer | `https://auth.nazo.run` |
-| UI 路径 | `/usr/local/angie/html/auth` |
+| UI 路径 | `/usr/local/angie/html/auth/ui` |
 | UI release | `/usr/local/angie/html/auth-releases/<frontend-sha>` |
 | Angie worker | `www` |
 | 公网 UI 探针 | `https://auth.nazo.run/ui/auth` 及其引用的一个 `/ui/assets/...` 制品 |

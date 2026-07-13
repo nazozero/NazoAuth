@@ -148,7 +148,7 @@ Default live assumptions:
 | Health URL | `https://auth.nazo.run/health` |
 | Discovery URL | `https://auth.nazo.run/.well-known/openid-configuration` |
 | Expected issuer | `https://auth.nazo.run` |
-| UI path | `/usr/local/angie/html/auth` |
+| UI path | `/usr/local/angie/html/auth/ui` |
 | UI releases | `/usr/local/angie/html/auth-releases/<frontend-sha>` |
 | Angie worker | `www` |
 | Public UI probe | `https://auth.nazo.run/ui/auth` plus one referenced `/ui/assets/...` resource |
