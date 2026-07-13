@@ -110,7 +110,7 @@ docker run -d --name nazo-oauth-server \
 
 ## 在线部署脚本
 
-仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)。脚本要求后端和前端 worktree 均干净且 HEAD 与指定完整 SHA 一致；它使用前端锁文件执行 `npm ci` 和 `npm run build`，校验 `dist` 摘要，从已验证的后端 worktree 构建镜像，并在远端加载后再次校验不可变 image ID。候选服务启动后，独立于 SSH 会话的验证 watchdog 会一直保留回滚租约；只有公网 health/discovery 验证完成并提交租约后部署才成功，否则自动恢复先前的不可变镜像和 UI target。
+仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)。脚本要求后端和前端 worktree 均干净且 HEAD 与指定完整 SHA 一致，并固定核对分支 `codex/modular-workspace-architecture` 以及精确 HTTPS origin `https://github.com/nazozero/NazoAuth[.git]`、`https://github.com/nazozero/NazoAuthWeb[.git]`。它使用前端锁文件执行 `npm ci` 和 `npm run build`，校验 `dist` 摘要，从已验证的后端 worktree 构建镜像，并在远端加载后再次校验不可变 image ID。远端事务状态持久化后立即启动独立于 SSH 会话的 watchdog，因此租约覆盖制品 staging、镜像加载、数据库迁移、容器切换和公网验证；只有公网 health/discovery 验证完成并提交租约后部署才成功。
 
 默认 live 假设：
 
@@ -153,6 +153,12 @@ pwsh scripts/deploy_live.ps1 `
 `-SkipFrontendBuild`，这两个参数只用于测试中渲染远端脚本。每次部署使用
 backend SHA、frontend SHA 和 deployment ID 组成唯一记录文件名，不会覆盖既有成功记录；
 `current.json` 通过临时 symlink 和 `mv -T` 原子切换。
+
+只有旧不可变镜像、UI target、部署指针和应用 health 全部恢复并验证成功，脚本才会写入
+`rolled-back` 并清理事务。任一步骤失败都会非零退出、写入 `rollback-failed`，且保留 state、
+远端脚本、lease marker、active owner 和部署记录供人工恢复。state 使用 schema 校验的 JSON，
+通过同目录 mode `0600` 临时文件完整写入后原子 rename；缺失、部分写入、损坏或 owner 不匹配
+均 fail closed。
 
 该脚本通过指定的 SSH 目标部署 `auth.nazo.run` 环境。迁移到其他主机前，必须重新检查监听器、反向代理、容器网络、TLS 设置和 expected issuer。
 

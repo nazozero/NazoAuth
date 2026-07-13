@@ -2,6 +2,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -24,13 +25,14 @@ def init_repo(path: Path, files: dict[str, str]) -> str:
         ["git", "config", "user.name", "Deploy Test"],
         ["git", "add", "."],
         ["git", "commit", "-qm", "fixture"],
+        ["git", "branch", "-M", "codex/modular-workspace-architecture"],
     ):
         subprocess.run(command, cwd=path, check=True, capture_output=True)
-    if path.name == "frontend":
-        subprocess.run(
-            ["git", "remote", "add", "origin", "https://github.com/nazozero/NazoAuthWeb"],
-            cwd=path, check=True, capture_output=True,
-        )
+    repository = "NazoAuthWeb" if path.name in {"frontend", "NazoAuthWeb"} else "NazoAuth"
+    subprocess.run(
+        ["git", "remote", "add", "origin", f"https://github.com/nazozero/{repository}"],
+        cwd=path, check=True, capture_output=True,
+    )
     return subprocess.run(
         ["git", "rev-parse", "HEAD"],
         cwd=path,
@@ -74,7 +76,20 @@ def bash_path(path: Path) -> str:
     return completed.stdout.strip()
 
 
-def render_fixture(root: Path, extra_arguments: list[str] | None = None) -> Path:
+def windows_path(path: str) -> Path:
+    completed = subprocess.run(
+        [git_bash(), "-lc", 'cygpath -w "$1"', "_", path],
+        capture_output=True, text=True, check=True,
+    )
+    return Path(completed.stdout.strip())
+
+
+def render_fixture(
+    root: Path,
+    extra_arguments: list[str] | None = None,
+    *,
+    skip_migrate: bool = True,
+) -> Path:
     backend = root / "backend"
     frontend = root / "frontend"
     backend_commit = init_repo(backend, {"Containerfile": "FROM scratch\n"})
@@ -93,8 +108,10 @@ def render_fixture(root: Path, extra_arguments: list[str] | None = None) -> Path
         "-LocalFrontendWorktree", str(frontend),
         "-LocalUiDist", str(ui),
         "-RenderRemoteScriptPath", str(rendered),
-        "-SkipBuild", "-SkipFrontendBuild", "-SkipMigrate",
+        "-SkipBuild", "-SkipFrontendBuild",
     ]
+    if skip_migrate:
+        command.append("-SkipMigrate")
     command.extend(extra_arguments or [])
     completed = subprocess.run(
         command, cwd=ROOT, capture_output=True, text=True, errors="replace",
@@ -103,6 +120,156 @@ def render_fixture(root: Path, extra_arguments: list[str] | None = None) -> Path
     if completed.returncode != 0:
         raise AssertionError(completed.stderr)
     return rendered
+
+
+class FakeLifecycle:
+    OLD_IMAGE = "sha256:" + "1" * 64
+
+    def __init__(self, root: Path, *, lease_seconds: int = 30, skip_migrate: bool = False):
+        self.root = root
+        self.deployment = root / "remote-deployment"
+        self.remote_temp = root / "remote-temp"
+        self.keys = self.deployment / "runtime" / "keys"
+        self.avatars = self.deployment / "runtime" / "avatars"
+        self.keys.mkdir(parents=True)
+        self.avatars.mkdir(parents=True)
+        (self.deployment / ".env.yaml").write_text("server: {}\n", encoding="utf-8")
+        self.remote_temp.mkdir()
+        rendered = render_fixture(
+            root,
+            [
+                "-RenderRemoteTempDir", bash_path(self.remote_temp),
+                "-RemoteDeploymentRoot", bash_path(self.deployment),
+                "-RemoteConfigPath", bash_path(self.deployment / ".env.yaml"),
+                "-RemoteKeysPath", bash_path(self.keys),
+                "-RemoteAvatarsPath", bash_path(self.avatars),
+                "-RemoteUiPath", bash_path(self.deployment / "ui"),
+                "-VerificationLeaseSeconds", str(lease_seconds),
+            ],
+            skip_migrate=skip_migrate,
+        )
+        source = rendered.read_text(encoding="utf-8")
+        self.backend_commit = re.search(r"^BACKEND_COMMIT='([^']+)'", source, re.M).group(1)
+        def assigned(name: str) -> Path:
+            return windows_path(re.search(rf"^{name}='([^']+)'", source, re.M).group(1))
+        self.script = assigned("REMOTE_SCRIPT")
+        self.state = assigned("STATE_FILE")
+        self.ui_archive = assigned("REMOTE_UI_ARCHIVE")
+        self.image_archive = assigned("REMOTE_ARCHIVE")
+        shutil.copyfile(rendered, self.script)
+        ui_source = root / "candidate-ui"
+        ui_source.mkdir()
+        (ui_source / "index.html").write_text("candidate", encoding="utf-8")
+        subprocess.run(
+            [git_bash(), "-lc", 'tar -czf "$1" -C "$2" .', "_", bash_path(self.ui_archive), bash_path(ui_source)],
+            check=True, capture_output=True,
+        )
+        self.image_archive.touch()
+        self.fake_state = root / "fake-state"
+        self.fake_state.mkdir()
+        (self.fake_state / "container-image").write_text(self.OLD_IMAGE, encoding="utf-8")
+        (self.fake_state / "container-id").write_text("old-container", encoding="utf-8")
+        self.fake_bin = root / "fake-bin"
+        self.fake_bin.mkdir()
+        self._write_fake_commands()
+        self.env = os.environ.copy()
+        self.env.update(
+            {
+                "PATH": str(self.fake_bin) + os.pathsep + self.env["PATH"],
+                "FAKE_STATE": bash_path(self.fake_state),
+                "FAKE_BACKEND_COMMIT": self.backend_commit,
+                "FAKE_OLD_IMAGE": self.OLD_IMAGE,
+            }
+        )
+
+    def _write_fake_commands(self) -> None:
+        podman = self.fake_bin / "podman"
+        podman.write_text(
+            r'''#!/usr/bin/env bash
+set -euo pipefail
+state="$FAKE_STATE"
+printf '%q ' "$@" >>"$state/podman.log"; printf '\n' >>"$state/podman.log"
+case "${1:-} ${2:-}" in
+  "network exists") exit 0 ;;
+  "network inspect") printf '%s\n' '[{"name":"nazo_oauth_net","ipv6_enabled":false,"subnets":[{"subnet":"10.101.0.0/24","gateway":"10.101.0.1"}]}]'; exit 0 ;;
+  "container exists") test -f "$state/container-image"; exit ;;
+  "image exists")
+    if [ "${FAIL_OLD_IMAGE_EXISTS:-0}" = 1 ] && [ "${3:-}" = "$FAKE_OLD_IMAGE" ]; then exit 1; fi
+    exit 0 ;;
+  "image inspect")
+    args="$*"
+    if [[ "$args" == *org.opencontainers.image.revision* ]]; then printf '%s\n' "$FAKE_BACKEND_COMMIT"; else printf '%s\n' "sha256:$(printf '0%.0s' {1..64})"; fi
+    exit 0 ;;
+esac
+case "${1:-}" in
+  inspect)
+    args="$*"
+    if [[ "$args" == *NetworkSettings.Networks* ]]; then printf '%s\n' '10.101.0.20';
+    elif [[ "$args" == *ImageName* ]]; then printf '%s\n' 'localhost/old:stable';
+    elif [[ "$args" == *"{{.Image}}"* ]]; then cat "$state/container-image";
+    elif [[ "$args" == *"{{.Id}}"* ]]; then cat "$state/container-id";
+    else exit 1; fi
+    ;;
+  load) exit 0 ;;
+  exec) printf '%s\n' PONG ;;
+  rm) rm -f "$state/container-image" "$state/container-id" ;;
+  run)
+    args=("$@")
+    if [[ " $* " == *" nazo-oauth-migrate "* ]]; then
+      count=0; [ ! -f "$state/migrations" ] || count="$(cat "$state/migrations")"
+      printf '%s\n' "$((count + 1))" >"$state/migrations"; exit 0
+    fi
+    if [[ " $* " == *" pg_isready "* ]]; then exit 0; fi
+    selected="${args[$((${#args[@]} - 2))]}"
+    [ -n "$selected" ] || exit 0
+    printf 'selected=%q old=%q\n' "$selected" "$FAKE_OLD_IMAGE" >>"$state/podman.log"
+    if [ "$selected" = "$FAKE_OLD_IMAGE" ] && [ "${FAIL_OLD_IMAGE_RUN:-0}" = 1 ]; then exit 1; fi
+    if [ "$selected" = "$FAKE_OLD_IMAGE" ]; then image="$FAKE_OLD_IMAGE"; else image="sha256:$(printf '0%.0s' {1..64})"; fi
+    printf '%s\n' "$image" >"$state/container-image"
+    printf '%s\n' "container-$RANDOM" >"$state/container-id"
+    printf '%s\n' fake-container
+    ;;
+  *) exit 1 ;;
+esac
+''', encoding="utf-8", newline="\n")
+        curl = self.fake_bin / "curl"
+        curl.write_text(
+            r'''#!/usr/bin/env bash
+set -euo pipefail
+url="${*: -1}"
+if [[ "$url" == *openid-configuration ]]; then printf '%s\n' '{"issuer":"https://auth.nazo.run"}'; exit 0; fi
+if [ "${FAIL_ROLLBACK_HEALTH:-0}" = 1 ] && [ "$(cat "$FAKE_STATE/container-image" 2>/dev/null || true)" = "$FAKE_OLD_IMAGE" ]; then exit 22; fi
+printf '%s\n' ok
+''', encoding="utf-8", newline="\n")
+        flock = self.fake_bin / "flock"
+        flock.write_text(
+            "#!/usr/bin/env bash\n"
+            "if [ \"${1:-}\" = -x ]; then while ! mkdir \"$FAKE_STATE/flock-held\" 2>/dev/null; do sleep 0.01; done; exit 0; fi\n"
+            "if [ \"${1:-}\" = -u ]; then rmdir \"$FAKE_STATE/flock-held\" 2>/dev/null || true; exit 0; fi\n"
+            "exit 2\n",
+            encoding="utf-8", newline="\n",
+        )
+        podman.chmod(0o755)
+        curl.chmod(0o755)
+        flock.chmod(0o755)
+
+    def run(self, action: str, **flags: str) -> subprocess.CompletedProcess[str]:
+        env = self.env.copy()
+        env.update(flags)
+        return subprocess.run(
+            [git_bash(), "-lc", 'export PATH="$1:$PATH"; exec bash "$2" "$3"', "_", bash_path(self.fake_bin), bash_path(self.script), action],
+            capture_output=True, text=True, errors="replace", timeout=20, check=False, env=env,
+        )
+
+    def record_status(self) -> str:
+        records = list((self.deployment / "deployments").glob("*.json"))
+        self.assert_one(records)
+        return json.loads(records[0].read_text(encoding="utf-8"))["status"]
+
+    @staticmethod
+    def assert_one(items: list[Path]) -> None:
+        if len(items) != 1:
+            raise AssertionError(f"expected one item, got {items}")
 
 
 class DeployLiveContractTests(unittest.TestCase):
@@ -135,6 +302,16 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn('"archive", "--format=tar"', self.source)
         self.assertIn('Join-Path $backendBuildContext "Containerfile"', self.source)
         self.assertIn('$backendBuildContext', self.source)
+        self.assertIn('ExpectedBackendRemote = "https://github.com/nazozero/NazoAuth"', self.source)
+        self.assertIn('ExpectedBackendBranch = "codex/modular-workspace-architecture"', self.source)
+        self.assertIn('ExpectedFrontendRemote = "https://github.com/nazozero/NazoAuthWeb"', self.source)
+        self.assertIn("Assert-ExactGitOrigin", self.source)
+
+    def test_ssh_remote_action_is_one_argument_without_bash_lc_boundary_ambiguity(self) -> None:
+        self.assertIn('Invoke-Checked ssh $RemoteHost @($deployCommand)', self.source)
+        self.assertIn('Invoke-Checked ssh $RemoteHost @($commitCommand)', self.source)
+        self.assertIn('& ssh $RemoteHost $rollbackCommand', self.source)
+        self.assertNotIn('& ssh $RemoteHost bash -lc', self.source)
 
     def test_prebuilt_artifacts_are_not_accepted_for_a_real_deployment(self) -> None:
         self.assertIn("SkipBuild is only allowed when rendering", self.source)
@@ -170,7 +347,7 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertRegex(self.source, r'mv\s+"`\$LEASE_PENDING"\s+"`\$LEASE_COMMITTED"')
         self.assertIn("expire)", self.source)
         self.assertIn("nohup", self.source)
-        self.assertIn("rollbackIfPresent", self.source)
+        self.assertIn("rollbackCommand", self.source)
         deploy_body = self.source[self.source.index("deploy() {") :]
         self.assertLess(
             deploy_body.index("start_verification_lease"),
@@ -191,7 +368,7 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn("NETWORK_SUBNET", self.source)
         self.assertIn("NETWORK_GATEWAY", self.source)
         self.assertIn("unexpected subnet or gateway", self.source)
-        self.assertIn("pairs == {expected}", self.source)
+        self.assertIn('document[0].get("subnets")', self.source)
 
     def test_ui_switch_is_atomic_and_active_tree_is_never_deleted(self) -> None:
         self.assertNotRegex(
@@ -230,10 +407,6 @@ class DeployLiveContractTests(unittest.TestCase):
             frontend = root / "NazoAuthWeb"
             backend_commit = init_repo(backend, {"Containerfile": "FROM scratch\n"})
             frontend_commit = init_repo(frontend, {".gitignore": "dist/\n"})
-            subprocess.run(
-                ["git", "remote", "add", "origin", "https://github.com/nazozero/NazoAuthWeb"],
-                cwd=frontend, check=True, capture_output=True,
-            )
             ui = frontend / "dist"
             ui.mkdir()
             (ui / "index.html").write_text("ok", encoding="utf-8")
@@ -310,12 +483,117 @@ bash "$1" deploy
                     {"subnet": "fd00::/64", "gateway": "fd00::1"},
                 ]}
             )
+            missing_gateway = execute(
+                {"subnets": [
+                    {"subnet": "10.101.0.0/24"},
+                ]}
+            )
+            extra_ipv4 = execute(
+                {"subnets": [
+                    {"subnet": "10.101.0.0/24", "gateway": "10.101.0.1"},
+                    {"subnet": "10.102.0.0/24", "gateway": "10.102.0.1"},
+                ]}
+            )
 
         self.assertNotEqual(exact.returncode, 0)
         self.assertNotIn("unexpected subnet or gateway", exact.stdout + exact.stderr)
         self.assertNotEqual(completed.returncode, 0)
         self.assertIn("unexpected subnet or gateway", completed.stdout + completed.stderr)
+        self.assertNotEqual(missing_gateway.returncode, 0)
+        self.assertIn("unexpected subnet or gateway", missing_gateway.stdout + missing_gateway.stderr)
+        self.assertNotEqual(extra_ipv4.returncode, 0)
+        self.assertIn("unexpected subnet or gateway", extra_ipv4.stdout + extra_ipv4.stderr)
         self.assertFalse((deployment / "deployments" / "active-deployment").exists())
+
+    def test_fake_lifecycle_immediate_rollback_restores_first_directory_ui_and_migrates_once(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lifecycle = FakeLifecycle(Path(directory), skip_migrate=False)
+            ui = lifecycle.deployment / "ui"
+            ui.mkdir()
+            (ui / "index.html").write_text("old-ui", encoding="utf-8")
+            deployed = lifecycle.run("deploy")
+            self.assertEqual(deployed.returncode, 0, deployed.stderr)
+            mode = subprocess.run(
+                [git_bash(), "-lc", 'stat -c %a "$1"', "_", bash_path(lifecycle.state)],
+                capture_output=True, text=True, check=True,
+            ).stdout.strip()
+            if os.name != "nt":
+                self.assertEqual(mode, "600")
+            self.assertIn("umask 077", self.source)
+            self.assertIn('chmod 0600 "`$state_temp"', self.source)
+            rolled_back = lifecycle.run("rollback")
+            self.assertEqual(rolled_back.returncode, 0, rolled_back.stderr)
+            self.assertEqual((ui / "index.html").read_text(encoding="utf-8"), "old-ui")
+            self.assertEqual((lifecycle.fake_state / "container-image").read_text().strip(), lifecycle.OLD_IMAGE)
+            self.assertEqual((lifecycle.fake_state / "migrations").read_text().strip(), "1")
+            self.assertEqual(lifecycle.record_status(), "rolled-back")
+            self.assertFalse(lifecycle.state.exists())
+            self.assertFalse(lifecycle.script.exists())
+
+    def test_fake_lifecycle_old_image_run_failure_is_nonzero_and_preserves_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lifecycle = FakeLifecycle(Path(directory))
+            deployed = lifecycle.run("deploy")
+            self.assertEqual(deployed.returncode, 0, deployed.stderr)
+            failed = lifecycle.run("rollback", FAIL_OLD_IMAGE_RUN="1")
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertEqual(lifecycle.record_status(), "rollback-failed")
+            self.assertTrue(lifecycle.state.exists())
+            self.assertTrue(lifecycle.script.exists())
+            self.assertTrue((lifecycle.deployment / "deployments" / "active-deployment").exists())
+            self.assertTrue(Path(str(lifecycle.state) + ".lease-rollback").exists())
+
+    def test_fake_lifecycle_corrupt_or_partial_state_fails_closed_and_preserves_evidence(self) -> None:
+        for payload in ("{", '{"schema":1}'):
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as directory:
+                lifecycle = FakeLifecycle(Path(directory))
+                deployed = lifecycle.run("deploy")
+                self.assertEqual(deployed.returncode, 0, deployed.stderr)
+                lifecycle.state.write_text(payload, encoding="utf-8")
+                failed = lifecycle.run("rollback")
+                self.assertNotEqual(failed.returncode, 0)
+                self.assertEqual(lifecycle.record_status(), "rollback-failed")
+                self.assertTrue(lifecycle.state.exists())
+                self.assertTrue(lifecycle.script.exists())
+
+    def test_fake_lifecycle_failed_restored_health_is_rollback_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lifecycle = FakeLifecycle(Path(directory))
+            self.assertEqual(lifecycle.run("deploy").returncode, 0)
+            failed = lifecycle.run("rollback", FAIL_ROLLBACK_HEALTH="1")
+            self.assertNotEqual(failed.returncode, 0)
+            self.assertEqual(lifecycle.record_status(), "rollback-failed")
+            self.assertTrue(lifecycle.state.exists())
+
+    def test_fake_lifecycle_timeout_rolls_back(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lifecycle = FakeLifecycle(Path(directory), lease_seconds=3)
+            deployed = lifecycle.run("deploy")
+            self.assertEqual(deployed.returncode, 0, deployed.stderr)
+            for _ in range(30):
+                if not lifecycle.state.exists():
+                    break
+                subprocess.run([git_bash(), "-lc", "sleep 0.1"], check=True)
+            self.assertFalse(lifecycle.state.exists(), "watchdog did not finish rollback")
+            self.assertEqual(lifecycle.record_status(), "rolled-back")
+            self.assertEqual((lifecycle.fake_state / "container-image").read_text().strip(), lifecycle.OLD_IMAGE)
+
+    def test_fake_lifecycle_commit_and_expiry_race_has_one_terminal_result(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lifecycle = FakeLifecycle(Path(directory), lease_seconds=30)
+            self.assertEqual(lifecycle.run("deploy").returncode, 0)
+            commands = [
+                [git_bash(), "-lc", 'export PATH="$1:$PATH"; exec bash "$2" commit', "_", bash_path(lifecycle.fake_bin), bash_path(lifecycle.script)],
+                [git_bash(), "-lc", 'export PATH="$1:$PATH"; exec bash "$2" expire', "_", bash_path(lifecycle.fake_bin), bash_path(lifecycle.script)],
+            ]
+            processes = [
+                subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=lifecycle.env)
+                for command in commands
+            ]
+            results = [process.communicate(timeout=10) + (process.returncode,) for process in processes]
+            self.assertIn(lifecycle.record_status(), {"deployment-success", "rolled-back"}, results)
+            self.assertFalse(lifecycle.state.exists())
+            self.assertFalse((lifecycle.deployment / "deployments" / "active-deployment").exists())
 
 
 if __name__ == "__main__":

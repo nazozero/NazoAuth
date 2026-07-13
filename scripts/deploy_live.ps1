@@ -7,8 +7,6 @@ param(
     [string]$FrontendCommit,
     [string]$LocalFrontendWorktree = "",
     [string]$LocalBackendWorktree = ".",
-    [string]$ExpectedFrontendRemote = "nazozero/NazoAuthWeb",
-    [string]$ExpectedFrontendBranch = "",
     [string]$ImageRepository = "localhost/nazo-oauth-server",
     [string]$ImageTag = "",
     [string]$ContainerName = "nazo-oauth-server",
@@ -36,6 +34,10 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$ExpectedBackendRemote = "https://github.com/nazozero/NazoAuth"
+$ExpectedBackendBranch = "codex/modular-workspace-architecture"
+$ExpectedFrontendRemote = "https://github.com/nazozero/NazoAuthWeb"
+$ExpectedFrontendBranch = "codex/modular-workspace-architecture"
 
 function Invoke-Checked {
     param(
@@ -86,6 +88,20 @@ function Assert-CleanGitCommit {
         throw "$Label worktree must be clean (tracked and untracked build inputs): $root"
     }
     return [System.IO.Path]::GetFullPath($root)
+}
+
+function Assert-ExactGitOrigin {
+    param(
+        [Parameter(Mandatory = $true)][string]$Worktree,
+        [Parameter(Mandatory = $true)][string]$ExpectedRemote,
+        [Parameter(Mandatory = $true)][string]$Label
+    )
+    $actual = Get-CommandOutput git @("-C", $Worktree, "remote", "get-url", "origin")
+    $normalizedActual = $actual -replace '\.git$', ''
+    $normalizedExpected = $ExpectedRemote -replace '\.git$', ''
+    if ($normalizedActual -cne $normalizedExpected) {
+        throw "$Label origin $actual does not exactly match $ExpectedRemote"
+    }
 }
 
 function Export-GitCommit {
@@ -156,12 +172,10 @@ if ($FrontendCommit -notmatch '^[0-9a-f]{40}$') {
 }
 $LocalBackendWorktree = Assert-CleanGitCommit -Worktree $LocalBackendWorktree -ExpectedCommit $BackendCommit -Label "Backend"
 $backendBranch = Get-CommandOutput git @("-C", $LocalBackendWorktree, "branch", "--show-current")
-if (-not $backendBranch) {
-    throw "Backend worktree must be on a named branch"
+if ($backendBranch -cne $ExpectedBackendBranch) {
+    throw "Backend branch $backendBranch does not match expected branch $ExpectedBackendBranch"
 }
-if (-not $ExpectedFrontendBranch) {
-    $ExpectedFrontendBranch = $backendBranch
-}
+Assert-ExactGitOrigin -Worktree $LocalBackendWorktree -ExpectedRemote $ExpectedBackendRemote -Label "Backend"
 if (-not $LocalFrontendWorktree) {
     $commonGitDir = Get-CommandOutput git @("-C", $LocalBackendWorktree, "rev-parse", "--path-format=absolute", "--git-common-dir")
     $backendRepository = Split-Path -Parent $commonGitDir
@@ -175,11 +189,7 @@ $frontendBranch = Get-CommandOutput git @("-C", $LocalFrontendWorktree, "branch"
 if ($frontendBranch -cne $ExpectedFrontendBranch) {
     throw "Frontend branch $frontendBranch does not match expected branch $ExpectedFrontendBranch"
 }
-$frontendRemote = Get-CommandOutput git @("-C", $LocalFrontendWorktree, "remote", "get-url", "origin")
-$remotePattern = "(?:^|[/:])" + [regex]::Escape($ExpectedFrontendRemote) + "(?:\.git)?$"
-if ($frontendRemote -notmatch $remotePattern) {
-    throw "Frontend origin $frontendRemote does not match expected repository $ExpectedFrontendRemote"
-}
+Assert-ExactGitOrigin -Worktree $LocalFrontendWorktree -ExpectedRemote $ExpectedFrontendRemote -Label "Frontend"
 $LocalUiDist = [System.IO.Path]::GetFullPath($LocalUiDist)
 $frontendRootWithSeparator = $LocalFrontendWorktree.TrimEnd([System.IO.Path]::DirectorySeparatorChar) + [System.IO.Path]::DirectorySeparatorChar
 if (-not $LocalUiDist.StartsWith($frontendRootWithSeparator, [System.StringComparison]::OrdinalIgnoreCase)) {
@@ -257,7 +267,7 @@ else {
 $remoteArchive = "$remoteTempDir/nazo-oauth-server-$safeTag.tar"
 $remoteUiArchive = "$remoteTempDir/nazo-oauth-web-$safeTag.tar.gz"
 $remoteScript = "$remoteTempDir/deploy.sh"
-$remoteState = "$remoteTempDir/state.env"
+$remoteState = "$remoteTempDir/state.json"
 if (-not $RenderRemoteScriptPath) {
     Invoke-Checked scp $archive "${RemoteHost}:$remoteArchive"
     Invoke-Checked scp $uiArchive "${RemoteHost}:$remoteUiArchive"
@@ -268,6 +278,7 @@ $deploymentId = [guid]::NewGuid().ToString("N")
 $remoteBody = @"
 #!/usr/bin/env bash
 set -euo pipefail
+umask 077
 
 IMAGE=$(ConvertTo-ShellLiteral $image)
 BACKEND_COMMIT=$(ConvertTo-ShellLiteral $BackendCommit)
@@ -350,51 +361,136 @@ PY
 }
 
 save_state() {
-  cat >"`$STATE_FILE" <<EOF
-previous_image_id='`${previous_image_id//\'/\'\\\'\'}'
-previous_image_name='`${previous_image_name//\'/\'\\\'\'}'
-previous_container_id='`${previous_container_id//\'/\'\\\'\'}'
-previous_ui_kind='`${previous_ui_kind//\'/\'\\\'\'}'
-previous_ui_target='`${previous_ui_target//\'/\'\\\'\'}'
-legacy_ui_release='`${legacy_ui_release//\'/\'\\\'\'}'
-candidate_container_id='`${candidate_container_id//\'/\'\\\'\'}'
-previous_current_target='`${previous_current_target//\'/\'\\\'\'}'
-candidate_started='`${candidate_started//\'/\'\\\'\'}'
-ui_switched='`${ui_switched//\'/\'\\\'\'}'
-EOF
+  local state_dir state_temp
+  state_dir="`$(dirname "`$STATE_FILE")"
+  state_temp="`$(mktemp "`$state_dir/.state.XXXXXX")"
+  chmod 0600 "`$state_temp"
+  if ! python3 - "`$state_temp" "`$DEPLOYMENT_ID" \
+    "`$previous_image_id" "`$previous_image_name" "`$previous_container_id" \
+    "`$previous_ui_kind" "`$previous_ui_target" "`$legacy_ui_release" \
+    "`$candidate_container_id" "`$previous_current_target" \
+    "`$candidate_started" "`$ui_switched" <<'PY'
+import json, os, sys
+keys = (
+    "deployment_id", "previous_image_id", "previous_image_name",
+    "previous_container_id", "previous_ui_kind", "previous_ui_target",
+    "legacy_ui_release", "candidate_container_id", "previous_current_target",
+    "candidate_started", "ui_switched",
+)
+payload = dict(zip(keys, sys.argv[2:], strict=True))
+payload["schema"] = 1
+with open(sys.argv[1], "w", encoding="utf-8") as handle:
+    json.dump(payload, handle, sort_keys=True)
+    handle.write("\n")
+    handle.flush()
+    os.fsync(handle.fileno())
+PY
+  then
+    rm -f "`$state_temp"
+    return 1
+  fi
+  validate_state_file "`$state_temp" >/dev/null || { rm -f "`$state_temp"; return 1; }
+  mv -f "`$state_temp" "`$STATE_FILE"
+}
+
+validate_state_file() {
+  python3 - "`$1" "`$DEPLOYMENT_ID" <<'PY'
+import json, pathlib, shlex, sys
+path = pathlib.Path(sys.argv[1])
+try:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, UnicodeError, json.JSONDecodeError) as error:
+    raise SystemExit(f"invalid deployment state: {error}")
+keys = {
+    "schema", "deployment_id", "previous_image_id", "previous_image_name",
+    "previous_container_id", "previous_ui_kind", "previous_ui_target",
+    "legacy_ui_release", "candidate_container_id", "previous_current_target",
+    "candidate_started", "ui_switched",
+}
+if set(payload) != keys or payload.get("schema") != 1:
+    raise SystemExit("invalid deployment state schema")
+if payload.get("deployment_id") != sys.argv[2]:
+    raise SystemExit("deployment state owner mismatch")
+for key in keys - {"schema"}:
+    if not isinstance(payload[key], str) or "\0" in payload[key] or "\n" in payload[key]:
+        raise SystemExit(f"invalid deployment state field: {key}")
+if payload["previous_ui_kind"] not in {"missing", "symlink", "directory"}:
+    raise SystemExit("invalid previous_ui_kind")
+if payload["candidate_started"] not in {"0", "1"} or payload["ui_switched"] not in {"0", "1"}:
+    raise SystemExit("invalid deployment state flags")
+for key in sorted(keys - {"schema", "deployment_id"}):
+    print(f"{key}={shlex.quote(payload[key])}")
+PY
 }
 
 load_state() {
   test -f "`$STATE_FILE"
-  # Values are generated locally from inspected paths/image identifiers.
-  source "`$STATE_FILE"
+  local assignments
+  assignments="`$(validate_state_file "`$STATE_FILE")" || return 1
+  eval "`$assignments"
 }
 
 rollback() {
-  set +e
-  if [ -f "`$STATE_FILE" ]; then load_state; fi
-  if [ "`${candidate_started:-0}" = "1" ]; then
-    if podman container exists "`$CONTAINER_NAME"; then podman rm -f "`$CONTAINER_NAME" >/dev/null; fi
-    if [ -n "`${previous_image_id:-}" ]; then run_server "`$previous_image_id"; fi
+  load_state || { write_record "rollback-failed" || true; return 1; }
+  local failed=0 restored_image
+  if [ "`$candidate_started" = "1" ]; then
+    if podman container exists "`$CONTAINER_NAME" && ! podman rm -f "`$CONTAINER_NAME" >/dev/null; then failed=1; fi
+    if [ -n "`$previous_image_id" ]; then
+      podman image exists "`$previous_image_id" || failed=1
+      if [ "`$failed" = "0" ]; then run_server "`$previous_image_id" || failed=1; fi
+    fi
   fi
-  if [ "`${ui_switched:-0}" = "1" ]; then
-    if [ -L "`$UI_PATH" ]; then rm -f "`$UI_PATH"; fi
-    if [ "`${previous_ui_kind:-missing}" = "symlink" ] && [ -n "`${previous_ui_target:-}" ]; then
-      ln -s "`$previous_ui_target" "`$UI_PATH"
-    elif [ "`${previous_ui_kind:-missing}" = "directory" ] && [ -n "`${legacy_ui_release:-}" ] && [ -d "`$legacy_ui_release" ]; then
-      mv -T "`$legacy_ui_release" "`$UI_PATH"
+  if [ "`$ui_switched" = "1" ]; then
+    if [ "`$previous_ui_kind" = "symlink" ]; then
+      if [ -L "`$UI_PATH" ] && [ "`$(readlink "`$UI_PATH")" = "`$previous_ui_target" ]; then
+        :
+      elif { [ -L "`$UI_PATH" ] || [ -e "`$UI_PATH" ]; } && ! rm -rf "`$UI_PATH"; then
+        failed=1
+      elif [ -n "`$previous_ui_target" ]; then
+        ln -s "`$previous_ui_target" "`$UI_PATH" || failed=1
+      else
+        failed=1
+      fi
+    elif [ "`$previous_ui_kind" = "directory" ]; then
+      if [ -n "`$legacy_ui_release" ] && [ -d "`$legacy_ui_release" ]; then
+        if { [ -L "`$UI_PATH" ] || [ -e "`$UI_PATH" ]; } && ! rm -rf "`$UI_PATH"; then failed=1; fi
+        if [ "`$failed" = "0" ]; then mv -T "`$legacy_ui_release" "`$UI_PATH" || failed=1; fi
+      elif [ -d "`$UI_PATH" ] && [ ! -L "`$UI_PATH" ]; then
+        : # The old directory was never moved; leave it intact.
+      else
+        failed=1
+      fi
+    elif { [ -L "`$UI_PATH" ] || [ -e "`$UI_PATH" ]; } && ! rm -rf "`$UI_PATH"; then
+      failed=1
     fi
   fi
   if [ -L "`$DEPLOYMENTS/current.json" ] && [ "`$(readlink "`$DEPLOYMENTS/current.json")" = "`$RECORD" ]; then
-    rm -f "`$DEPLOYMENTS/current.json"
-    if [ -n "`${previous_current_target:-}" ]; then
-      ln -s "`$previous_current_target" "`$CURRENT_LINK_TEMP"
-      mv -T "`$CURRENT_LINK_TEMP" "`$DEPLOYMENTS/current.json"
+    rm -f "`$DEPLOYMENTS/current.json" || failed=1
+    if [ -n "`$previous_current_target" ]; then
+      ln -s "`$previous_current_target" "`$CURRENT_LINK_TEMP" &&
+        mv -T "`$CURRENT_LINK_TEMP" "`$DEPLOYMENTS/current.json" || failed=1
     fi
   fi
-  write_record "rolled-back" 2>/dev/null || true
-  curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/health" >/dev/null 2>&1 || true
-  set -e
+  if [ -n "`$previous_image_id" ]; then
+    podman container exists "`$CONTAINER_NAME" || failed=1
+    restored_image="`$(podman inspect "`$CONTAINER_NAME" --format '{{.Image}}' 2>/dev/null)" || failed=1
+    [ "`$restored_image" = "`$previous_image_id" ] || failed=1
+    curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/health" >/dev/null || failed=1
+  elif podman container exists "`$CONTAINER_NAME"; then
+    failed=1
+  fi
+  if [ "`$previous_ui_kind" = "symlink" ]; then
+    [ -L "`$UI_PATH" ] && [ "`$(readlink "`$UI_PATH")" = "`$previous_ui_target" ] || failed=1
+  elif [ "`$previous_ui_kind" = "directory" ]; then
+    [ -d "`$UI_PATH" ] && [ ! -L "`$UI_PATH" ] || failed=1
+  else
+    [ ! -e "`$UI_PATH" ] && [ ! -L "`$UI_PATH" ] || failed=1
+  fi
+  if [ "`$failed" != "0" ]; then
+    write_record "rollback-failed" || true
+    return 1
+  fi
+  write_record "rolled-back"
 }
 
 cleanup() {
@@ -417,25 +513,47 @@ stop_watchdog() {
 }
 
 start_verification_lease() {
+  local watchdog_pid
   : >"`$LEASE_PENDING"
   nohup bash -c 'sleep "`$1"; exec bash "`$2" expire' _ \
     "`$VERIFICATION_LEASE_SECONDS" "`$REMOTE_SCRIPT" </dev/null >/dev/null 2>&1 &
-  printf '%s\n' "`$!" >"`$WATCHDOG_PID_FILE"
+  watchdog_pid="`$!"
+  printf '%s\n' "`$watchdog_pid" >"`$WATCHDOG_PID_FILE"
+  kill -0 "`$watchdog_pid"
 }
 
 rollback_transaction() {
-  load_state
+  trap - ERR
+  if [ ! -f "`$STATE_FILE" ]; then return 0; fi
   exec 9>"`$LEASE_LOCK"
   flock -x 9
+  if [ ! -f "`$STATE_FILE" ]; then flock -u 9; return 0; fi
   if [ -f "`$LEASE_COMMITTED" ]; then
     echo "Deployment is already committed; refusing rollback" >&2
     return 1
   fi
   if [ -f "`$LEASE_PENDING" ]; then mv "`$LEASE_PENDING" "`$LEASE_ROLLBACK"; fi
-  rollback
-  stop_watchdog
+  if rollback; then
+    stop_watchdog
+    flock -u 9
+    cleanup
+    return 0
+  fi
   flock -u 9
-  cleanup
+  echo "Rollback failed; deployment evidence was preserved at `$STATE_FILE and `$RECORD" >&2
+  return 1
+}
+
+assert_pending_lease() {
+  test -f "`$LEASE_PENDING"
+  test -f "`$ACTIVE_DEPLOYMENT/owner"
+  test "`$(cat "`$ACTIVE_DEPLOYMENT/owner")" = "`$DEPLOYMENT_ID"
+}
+
+rollback_after_deploy_error() {
+  trap - ERR
+  flock -u 8 2>/dev/null || true
+  rollback_transaction
 }
 
 deploy() {
@@ -449,21 +567,18 @@ deploy() {
   if ! python3 - "`$NETWORK_SUBNET" "`$NETWORK_GATEWAY" "`$network_inspect" <<'PY'; then
 import json, sys
 document = json.loads(sys.argv[3])
-expected = (sys.argv[1], sys.argv[2])
-pairs = set()
-def walk(value):
-    if isinstance(value, dict):
-        subnet = value.get("subnet")
-        gateway = value.get("gateway")
-        if isinstance(subnet, str) and isinstance(gateway, str):
-            pairs.add((subnet, gateway))
-        for nested in value.values():
-            walk(nested)
-    elif isinstance(value, list):
-        for nested in value:
-            walk(nested)
-walk(document)
-raise SystemExit(0 if pairs == {expected} else 1)
+if not isinstance(document, list) or len(document) != 1 or not isinstance(document[0], dict):
+    raise SystemExit(1)
+subnets = document[0].get("subnets")
+if not isinstance(subnets, list) or len(subnets) != 1 or not isinstance(subnets[0], dict):
+    raise SystemExit(1)
+entry = subnets[0]
+if not isinstance(entry.get("subnet"), str) or not isinstance(entry.get("gateway"), str):
+    raise SystemExit(1)
+if entry["subnet"] != sys.argv[1] or entry["gateway"] != sys.argv[2]:
+    raise SystemExit(1)
+if document[0].get("ipv6_enabled", False) is not False:
+    raise SystemExit(1)
 PY
     echo "Existing Podman network `$NETWORK_NAME has unexpected subnet or gateway" >&2
     return 1
@@ -479,17 +594,6 @@ PY
   fi
   printf '%s\n' "`$DEPLOYMENT_ID" >"`$ACTIVE_DEPLOYMENT/owner"
   trap 'cleanup' ERR
-  rm -rf "`$UI_RELEASE.tmp"
-  mkdir -p "`$UI_RELEASE.tmp"
-  tar -xzf "`$REMOTE_UI_ARCHIVE" -C "`$UI_RELEASE.tmp"
-  test -s "`$UI_RELEASE.tmp/index.html"
-  if [ -e "`$UI_RELEASE" ]; then
-    diff -qr "`$UI_RELEASE" "`$UI_RELEASE.tmp" >/dev/null
-    rm -rf "`$UI_RELEASE.tmp"
-  else
-    mv "`$UI_RELEASE.tmp" "`$UI_RELEASE"
-  fi
-
   previous_image_id=""
   previous_image_name=""
   previous_container_id=""
@@ -518,8 +622,24 @@ PY
   fi
   save_state
   write_record "preflight"
-
   trap 'rollback_transaction' ERR
+  start_verification_lease
+  exec 8>"`$LEASE_LOCK"
+  flock -x 8
+  trap 'rollback_after_deploy_error' ERR
+  assert_pending_lease
+
+  rm -rf "`$UI_RELEASE.tmp"
+  mkdir -p "`$UI_RELEASE.tmp"
+  tar -xzf "`$REMOTE_UI_ARCHIVE" -C "`$UI_RELEASE.tmp"
+  test -s "`$UI_RELEASE.tmp/index.html"
+  if [ -e "`$UI_RELEASE" ]; then
+    diff -qr "`$UI_RELEASE" "`$UI_RELEASE.tmp" >/dev/null
+    rm -rf "`$UI_RELEASE.tmp"
+  else
+    mv "`$UI_RELEASE.tmp" "`$UI_RELEASE"
+  fi
+  assert_pending_lease
   podman load -i "`$REMOTE_ARCHIVE" >/dev/null
   podman image exists "`$IMAGE"
   actual_image_id="`$(podman image inspect "`$IMAGE" --format '{{.Id}}')"
@@ -536,10 +656,10 @@ PY
       -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
       "`$IMAGE" nazo-oauth-migrate
   fi
+  assert_pending_lease
 
   candidate_started="1"
   save_state
-  start_verification_lease
   if podman container exists "`$CONTAINER_NAME"; then podman rm -f "`$CONTAINER_NAME" >/dev/null; fi
   run_server "`$IMAGE"
   candidate_container_id="`$(podman inspect "`$CONTAINER_NAME" --format '{{.Id}}')"
@@ -549,6 +669,7 @@ PY
   curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/health" >/dev/null
   discovery="`$(curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/.well-known/openid-configuration")"
   python3 -c 'import json,sys; assert json.load(sys.stdin)["issuer"] == sys.argv[1]' "`$EXPECTED_ISSUER" <<<"`$discovery"
+  assert_pending_lease
 
   ui_switched="1"
   save_state
@@ -558,6 +679,7 @@ PY
   ln -s "`$UI_RELEASE" "`$temporary_link"
   mv -T "`$temporary_link" "`$UI_PATH"
   write_record "candidate-verified"
+  flock -u 8
   trap - ERR
 }
 
@@ -582,10 +704,14 @@ expire_lease() {
   flock -x 9
   if [ ! -f "`$LEASE_PENDING" ]; then return 0; fi
   mv "`$LEASE_PENDING" "`$LEASE_ROLLBACK"
-  load_state
-  rollback
+  if rollback; then
+    flock -u 9
+    cleanup
+    return 0
+  fi
   flock -u 9
-  cleanup
+  echo "Verification lease expired and rollback failed; evidence preserved" >&2
+  return 1
 }
 
 case "`${1:-deploy}" in
@@ -604,11 +730,13 @@ if ($RenderRemoteScriptPath) {
 Set-Content -LiteralPath $localRemoteScript -Value $remoteBody -Encoding UTF8
 $remoteStarted = $false
 $remoteScriptLiteral = ConvertTo-ShellLiteral $remoteScript
-$rollbackIfPresent = "if [ -f $remoteScriptLiteral ]; then bash $remoteScriptLiteral rollback; fi"
+$deployCommand = "bash $remoteScriptLiteral deploy"
+$commitCommand = "bash $remoteScriptLiteral commit"
+$rollbackCommand = "if [ -f $remoteScriptLiteral ]; then bash $remoteScriptLiteral rollback; fi"
 try {
     Invoke-Checked scp $localRemoteScript "${RemoteHost}:$remoteScript"
     $remoteStarted = $true
-    Invoke-Checked ssh $RemoteHost @("bash", $remoteScript, "deploy")
+    Invoke-Checked ssh $RemoteHost @($deployCommand)
 
     $health = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 20
     if ($health.StatusCode -ne 200) { throw "Health probe failed: HTTP $($health.StatusCode)" }
@@ -619,13 +747,13 @@ try {
         throw "Unexpected issuer in discovery document: $($metadata.issuer)"
     }
 
-    Invoke-Checked ssh $RemoteHost @("bash", $remoteScript, "commit")
+    Invoke-Checked ssh $RemoteHost @($commitCommand)
     $remoteStarted = $false
     Write-Host "Deployment verified: $image deployment-success"
 }
 catch {
     if ($remoteStarted) {
-        & ssh $RemoteHost bash -lc $rollbackIfPresent
+        & ssh $RemoteHost $rollbackCommand
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Automatic rollback command failed; inspect $RemoteHost immediately"
         }

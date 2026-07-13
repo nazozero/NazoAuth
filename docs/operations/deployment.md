@@ -125,7 +125,7 @@ the release evidence listed in [docs/operations/release-security.md](release-sec
 
 ## Live Deployment Script
 
-The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which builds from clean backend and frontend worktrees at the requested commits. It runs the frontend's locked `npm ci`/`npm run build`, hashes the resulting `dist`, builds the backend image from the verified backend worktree, and checks the immutable image ID again after the archive is loaded remotely. It records the current rollback targets, stages a SHA-named UI release, runs migrations once, replaces the Podman container, and verifies health and discovery. The public UI symlink changes only after the candidate is healthy. A detached verification watchdog restores the previous immutable image ID and UI target unless public verification commits the lease before its deadline.
+The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which builds from clean backend and frontend worktrees at the requested commits. The worktrees must use branch `codex/modular-workspace-architecture` and the exact HTTPS origins `https://github.com/nazozero/NazoAuth[.git]` and `https://github.com/nazozero/NazoAuthWeb[.git]`. It runs the frontend's locked `npm ci`/`npm run build`, hashes the resulting `dist`, builds the backend image from the verified backend worktree, and checks the immutable image ID again after the archive is loaded remotely. It records the current rollback targets, stages a SHA-named UI release, runs migrations once, replaces the Podman container, and verifies health and discovery. The public UI symlink changes only after the candidate is healthy. A detached verification watchdog starts as soon as the remote transaction state is durably recorded, so it covers artifact staging, image loading, migration, container replacement, and public verification.
 
 Default live assumptions:
 
@@ -175,7 +175,14 @@ and PR acceptance are complete. Each run writes a preflight record before the
 first destructive container action. A successful run atomically updates
 `deployments/current.json` through a temporary symlink plus `mv -T`; a failed
 run retains a `rolled-back` record without overwriting an earlier successful
-deployment record. Only one remote deployment transaction may be active.
+deployment record. Rollback is successful only after the old immutable image,
+UI target, deployment pointer, and application health are all verified. Any
+restore or verification failure exits nonzero, writes `rollback-failed`, and
+retains the state file, script, lease markers, active-transaction owner, and
+record for manual recovery. The state file is a schema-validated JSON document
+written through a mode-`0600` same-directory temporary file and atomic rename;
+missing, partial, corrupt, or foreign state fails closed. Only one remote
+deployment transaction may be active.
 
 The script uses the configured SSH target to deploy the `auth.nazo.run`
 environment. Recheck the live listener, reverse-proxy config, container
