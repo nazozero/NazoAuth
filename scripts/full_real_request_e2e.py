@@ -1281,10 +1281,44 @@ def exercise_saml_federation() -> None:
 
     replay = expect_json(
         expect_status(
-            "POST /auth/federation/saml/acs existing link",
+            "POST /auth/federation/saml/acs replay",
             federated.post(
                 f"{BASE_URL}/auth/federation/saml/acs",
                 json=payload,
+                timeout=10,
+            ),
+            401,
+        )
+    )
+    check(
+        "saml_federation_replay_is_rejected",
+        replay.get("error") == "access_denied",
+        replay,
+    )
+
+    fresh_issued_at = max(now(), issued_at + 1)
+    fresh_expires_at = fresh_issued_at + 120
+    fresh_payload = dict(payload)
+    fresh_payload.update(
+        {
+            "iat": fresh_issued_at,
+            "exp": fresh_expires_at,
+            "signature": saml_gateway_signature(
+                payload["issuer"],
+                payload["audience"],
+                payload["subject"],
+                email,
+                fresh_issued_at,
+                fresh_expires_at,
+            ),
+        }
+    )
+    existing_link = expect_json(
+        expect_status(
+            "POST /auth/federation/saml/acs existing link",
+            federated.post(
+                f"{BASE_URL}/auth/federation/saml/acs",
+                json=fresh_payload,
                 timeout=10,
             ),
             200,
@@ -1292,8 +1326,9 @@ def exercise_saml_federation() -> None:
     )
     check(
         "saml_federation_existing_link_reauthenticates",
-        replay.get("mfa_required") is False and bool(federated.cookies.get(SESSION_COOKIE_NAME)),
-        replay,
+        existing_link.get("mfa_required") is False
+        and bool(federated.cookies.get(SESSION_COOKIE_NAME)),
+        existing_link,
     )
 
 
