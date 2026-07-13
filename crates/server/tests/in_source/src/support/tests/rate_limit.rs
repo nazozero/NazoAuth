@@ -1,5 +1,6 @@
 use super::*;
-use crate::support::{OAuthJsonErrorFields, valkey_del, valkey_eval_string, valkey_set_ex};
+use crate::support::{valkey_del, valkey_eval_string, valkey_set_ex};
+use nazo_http_actix::OAuthJsonErrorFields;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;

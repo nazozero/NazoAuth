@@ -6,13 +6,13 @@ use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID,
-    OAuthJsonErrorFields, authorization_code_key, blake3_hex,
+    authorization_code_key, blake3_hex,
 };
 use crate::support::{
     ClientCredentials, DEFAULT_TENANT_ID, RateLimitPolicy, client_mtls_certificate_matches,
     client_secret_digest, dpop_proof_present, enforce_rate_limit, extract_client_credentials,
-    has_basic_authorization_scheme, json_array_to_strings, oauth_token_error,
-    request_mtls_client_certificate, verify_private_key_jwt_claims,
+    has_basic_authorization_scheme, json_array_to_strings, request_mtls_client_certificate,
+    verify_private_key_jwt_claims,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -23,6 +23,9 @@ use actix_web::{HttpRequest, HttpResponse};
 use base64::Engine;
 #[cfg(test)]
 use chrono::{Duration, Utc};
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::oauth_token_error;
 #[cfg(test)]
 use serde_json::{Value, json};
 #[cfg(test)]

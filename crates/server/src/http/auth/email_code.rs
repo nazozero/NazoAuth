@@ -1,4 +1,5 @@
 //! 邮箱验证码发送端点。
+use nazo_http_actix::{json_response, oauth_error};
 
 use crate::domain::AppState;
 #[cfg(test)]
@@ -9,8 +10,7 @@ use crate::settings::Settings;
 use crate::support::blake3_hex;
 use crate::support::{
     DEFAULT_TENANT_ID, RateLimitPolicy, email_delivery_configured, enforce_rate_limit,
-    hash_password, json_response, oauth_error, parse_email_recipient, random_numeric_code,
-    send_verification_email,
+    hash_password, parse_email_recipient, random_numeric_code, send_verification_email,
 };
 #[cfg(test)]
 use crate::support::{default_tenant_context, normalize_email_address, valkey_get, valkey_set_ex};

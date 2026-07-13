@@ -1,4 +1,5 @@
 //! Current-user WebAuthn/passkey registration and management.
+use nazo_http_actix::{empty_response, json_response, json_response_status, oauth_error};
 
 use crate::domain::AppState;
 #[cfg(test)]
@@ -11,12 +12,10 @@ use crate::support::{
     SessionPayload, valkey_set_ex,
 };
 use crate::support::{
-    StoredPasskeyRegistration, audit_event, audit_fields, csrf_error,
-    current_user_or_login_required, empty_response, has_valid_csrf_token, json_response,
-    json_response_status, normalize_ceremony_id, normalize_passkey_label, oauth_error,
-    passkey_credential_id, passkey_credential_ids, passkey_public_json, passkey_user_handle,
-    passkey_webauthn, random_urlsafe_token, registration_key, store_passkey_ceremony,
-    take_passkey_ceremony,
+    StoredPasskeyRegistration, audit_event, audit_fields, current_user_or_login_required,
+    has_valid_csrf_token, normalize_ceremony_id, normalize_passkey_label, passkey_credential_id,
+    passkey_credential_ids, passkey_public_json, passkey_user_handle, passkey_webauthn,
+    random_urlsafe_token, registration_key, store_passkey_ceremony, take_passkey_ceremony,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
@@ -25,6 +24,7 @@ use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
 #[cfg(test)]
 use diesel_async::RunQueryDsl;
+use nazo_http_actix::csrf_error;
 use nazo_identity::PublicAccount;
 use nazo_identity::ports::PasskeyCredential;
 #[cfg(test)]

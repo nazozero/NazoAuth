@@ -4,13 +4,11 @@ use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::settings::Settings;
 use crate::support::{
     AccessTokenJwtInput, DpopErrorContext, IdTokenInput, audit_event, audit_fields, blake3_hex,
-    dpop_error_response, issue_dpop_nonce, json_response_no_store, make_id_token, make_jwt,
-    oauth_token_error, oidc_id_token_user_claims, random_urlsafe_token,
+    dpop_error_response, issue_dpop_nonce, make_id_token, make_jwt, oidc_id_token_user_claims,
+    random_urlsafe_token,
 };
 #[cfg(test)]
-use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OAuthJsonErrorFields,
-};
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -19,6 +17,9 @@ use chrono::{Duration, Utc};
 #[cfg(test)]
 use nazo_auth::OidcClaimRequest;
 use nazo_auth::normalize_authorization_details;
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::{json_response_no_store, oauth_token_error};
 #[cfg(test)]
 use serde_json::Value;
 use serde_json::json;

@@ -1,6 +1,6 @@
-use crate::support::json_response_status;
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
+use nazo_http_actix::json_response_status;
 use nazo_identity::PublicAccount;
 use serde_json::{Value, json};
 

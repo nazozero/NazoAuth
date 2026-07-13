@@ -1,10 +1,9 @@
 use crate::domain::AppState;
-use crate::support::{
-    normalize_email_address, oauth_error, pkce_s256, random_urlsafe_token, redirect_found,
-};
+use crate::support::{normalize_email_address, pkce_s256, random_urlsafe_token};
 use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
 use chrono::Utc;
+use nazo_http_actix::{oauth_error, redirect_found};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use url::Url;

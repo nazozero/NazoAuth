@@ -3,17 +3,21 @@
 //! This crate owns HTTP-framework details. Domain policy and infrastructure
 //! access remain in their focused crates.
 
+mod cookies;
 mod cors;
+mod csrf;
 mod extract;
 mod middleware;
 mod presenter;
 mod request_context;
 mod token_forms;
 
+pub use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
 pub use cors::{
     cors_admin, cors_auth_api, cors_browser_token_management, cors_browser_userinfo, cors_scim,
     cors_well_known,
 };
+pub use csrf::{csrf_error, has_valid_csrf_token_for_cookies};
 pub use extract::{
     AccessTokenAuthScheme, ResourceAccessToken, authorization_access_token, mfa_json_config,
     mfa_method_not_allowed, mfa_options, request_uses_form_urlencoded, resource_access_token,

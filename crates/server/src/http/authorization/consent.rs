@@ -2,14 +2,16 @@
 use crate::domain::{AppState, ConsentPayload};
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::current_user;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, valkey_set_ex};
-use crate::support::{cookie_value, current_user, json_response, oauth_error};
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::{Duration, Utc};
+use nazo_http_actix::cookie_value;
+use nazo_http_actix::{json_response, oauth_error};
 #[cfg(test)]
 use serde_json::Value;
 use serde_json::json;

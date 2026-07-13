@@ -1,4 +1,5 @@
 use super::*;
+use nazo_http_actix::OAuthJsonErrorFields;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -12,8 +13,6 @@ use fred::prelude::{
 
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
-
-use crate::support::OAuthJsonErrorFields;
 
 #[test]
 fn profile_text_trims_blank_values_and_enforces_byte_limit() {

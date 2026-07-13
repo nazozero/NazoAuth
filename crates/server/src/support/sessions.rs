@@ -1,5 +1,4 @@
 //! 会话用户与权限解析。
-use super::cookie_value;
 #[cfg(test)]
 use super::valkey_get;
 use crate::domain::AppState;
@@ -10,6 +9,7 @@ use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
+use nazo_http_actix::oauth_error;
 use nazo_identity::PublicAccount;
 use serde::{Deserialize, Serialize};
 #[cfg(test)]
@@ -19,7 +19,10 @@ use uuid::Uuid;
 
 #[cfg(test)]
 use super::valkey_set_ex;
-use super::{DEFAULT_TENANT_ID, login_required_response, oauth_error, random_urlsafe_token};
+use super::{DEFAULT_TENANT_ID, random_urlsafe_token};
+use nazo_http_actix::{
+    clear_cookie, cookie_value, has_valid_csrf_token_for_cookies, with_cookie_headers,
+};
 use nazo_identity::session::add_amr;
 use nazo_postgres::UserRepository;
 use nazo_valkey::SessionStore;
@@ -137,6 +140,35 @@ impl AdminSessionHandles {
         )
         .await
     }
+}
+
+pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
+    let session = state.settings.session();
+    with_cookie_headers(
+        oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "login_required",
+            "会话不存在或已过期,请重新登录.",
+        ),
+        &[
+            clear_cookie(session.session_cookie_name, session.cookie_secure),
+            clear_cookie(session.csrf_cookie_name, session.cookie_secure),
+        ],
+    )
+}
+
+pub(crate) fn has_valid_csrf_token(
+    state: &AppState,
+    req: &HttpRequest,
+    fallback_token: Option<&str>,
+) -> bool {
+    let session = state.settings.session();
+    has_valid_csrf_token_for_cookies(
+        req,
+        fallback_token,
+        session.session_cookie_name,
+        session.csrf_cookie_name,
+    )
 }
 
 impl SessionProfileHandles {

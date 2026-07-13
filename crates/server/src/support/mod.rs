@@ -3,7 +3,6 @@
 mod audit;
 mod avatars;
 pub(crate) mod client_ip;
-mod cookies;
 pub(crate) mod dpop;
 mod email;
 mod email_templates;
@@ -15,7 +14,6 @@ mod oauth;
 mod oidc_claims;
 mod passkeys;
 mod rate_limit;
-pub(crate) mod responses;
 mod sector_identifier;
 pub(crate) mod security;
 pub(crate) mod sessions;
@@ -33,7 +31,6 @@ pub(crate) use avatars::{
 pub(crate) use client_ip::{
     ClientIpHeaderMode, IpCidr, client_ip, client_ip_with_context, parse_trusted_proxy_cidrs,
 };
-pub(crate) use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
 pub(crate) use dpop::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, dpop_error_response, dpop_proof_present,
     issue_dpop_nonce, validate_dpop_proof,
@@ -86,13 +83,6 @@ pub(crate) use rate_limit::{
     RateLimitPolicy, clear_login_failures, enforce_login_failure_throttle, enforce_rate_limit,
     enforce_rate_limit_with_store, record_login_failure,
 };
-pub(crate) use responses::{
-    OAuthJsonErrorFields, ResourceAccessToken, authorization_error_response, bytes_response,
-    csrf_error, empty_response, empty_response_no_store, has_valid_csrf_token,
-    has_valid_csrf_token_for_cookies, json_response, json_response_no_store, json_response_status,
-    json_response_status_no_store, login_required_response, oauth_bearer_error, oauth_error,
-    oauth_token_error, redirect_found, request_uses_form_urlencoded, resource_access_token,
-};
 pub(crate) use sector_identifier::{fetch_sector_identifier_uris, sector_identifier_hostname};
 pub(crate) use security::{
     AccessTokenJwtInput, AuthorizationResponseJwtInput, BackchannelLogoutTokenInput,
@@ -115,8 +105,8 @@ pub(crate) use security::{
 };
 pub(crate) use sessions::{
     CurrentSession, SessionPayload, SessionRotation, current_pending_mfa_session, current_session,
-    current_user, current_user_or_login_required, require_active_session_principal,
-    require_admin_or_forbidden, store_session,
+    current_user, current_user_or_login_required, has_valid_csrf_token, login_required_response,
+    require_active_session_principal, require_admin_or_forbidden, store_session,
 };
 #[cfg(test)]
 pub(crate) use tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};

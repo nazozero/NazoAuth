@@ -5,15 +5,13 @@ use crate::support::dpop::validate_dpop_proof_with_store;
 use crate::support::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use crate::support::security::tokens::decode_access_claims_with;
 use crate::support::{
-    AccessTokenAuthScheme, DpopError, DpopErrorContext, ResourceAccessToken,
-    access_token_tenant_id, constant_time_eq, dpop_error_response, json_response_no_store,
-    oauth_bearer_error, resource_access_token, token_audience_contains, verify_client_http_message,
+    AccessTokenAuthScheme, DpopError, DpopErrorContext, access_token_tenant_id, constant_time_eq,
+    dpop_error_response, token_audience_contains, verify_client_http_message,
 };
 #[cfg(test)]
 use crate::support::{
     AccessTokenJwtInput, ClientIpHeaderMode, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID,
-    DEFAULT_TENANT_ID, IssuedAccessToken, OAuthJsonErrorFields, blake3_hex, make_jwt,
-    parse_trusted_proxy_cidrs,
+    DEFAULT_TENANT_ID, IssuedAccessToken, blake3_hex, make_jwt, parse_trusted_proxy_cidrs,
 };
 #[cfg(test)]
 use crate::{domain::AppState, settings::Settings};
@@ -26,6 +24,11 @@ use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Duration;
 use chrono::Utc;
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::{
+    ResourceAccessToken, json_response_no_store, oauth_bearer_error, resource_access_token,
+};
 use serde_json::{Value, json};
 use std::{future::Future, pin::Pin};
 use uuid::Uuid;

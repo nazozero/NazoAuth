@@ -5,11 +5,10 @@ use crate::domain::{AuthorizationCodeState, DatabaseUserFixture, PushedAuthoriza
 #[cfg(test)]
 use crate::settings::Settings;
 use crate::support::{
-    AuthorizationResponseJwtInput, DEFAULT_TENANT_ID, JwePayloadKind, OAuthJsonErrorFields,
-    RedirectUriError, append_query, audiences_allowed, authorization_error_response, blake3_hex,
-    client_jwe_key, client_supports_grant, current_session, encrypt_compact_jwe, is_subset,
-    json_array_to_strings, make_authorization_response_jwt, oauth_error, parse_scope,
-    random_urlsafe_token, redirect_found, registered_redirect_uri,
+    AuthorizationResponseJwtInput, DEFAULT_TENANT_ID, JwePayloadKind, RedirectUriError,
+    append_query, audiences_allowed, blake3_hex, client_jwe_key, client_supports_grant,
+    current_session, encrypt_compact_jwe, is_subset, json_array_to_strings,
+    make_authorization_response_jwt, parse_scope, random_urlsafe_token, registered_redirect_uri,
     resource_indicators_from_parameter_value, signing_algorithm_from_name,
 };
 #[cfg(test)]
@@ -26,6 +25,9 @@ use chrono::{Duration, Utc};
 #[cfg(test)]
 use nazo_auth::OidcClaimRequest;
 use nazo_auth::{is_valid_dpop_jkt, parse_authorization_details};
+use nazo_http_actix::{
+    OAuthJsonErrorFields, authorization_error_response, oauth_error, redirect_found,
+};
 use serde_json::Value;
 #[cfg(test)]
 use serde_json::json;

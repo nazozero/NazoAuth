@@ -1,4 +1,5 @@
 //! OpenID Connect Native SSO for Mobile Apps support.
+use nazo_http_actix::oauth_token_error;
 
 use super::TokenForm;
 use crate::domain::{AppState, ClientRow, NativeSsoTokenBinding, RefreshTokenPolicy, TokenIssue};
@@ -9,9 +10,8 @@ use crate::settings::Settings;
 use crate::support::blake3_hex;
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, compute_subject_for_client,
-    dpop_error_response, is_subset, json_array_to_strings, jwt_decoding_key_from_jwk,
-    oauth_token_error, parse_scope, random_urlsafe_token, request_mtls_thumbprint,
-    validate_dpop_proof,
+    dpop_error_response, is_subset, json_array_to_strings, jwt_decoding_key_from_jwk, parse_scope,
+    random_urlsafe_token, request_mtls_thumbprint, validate_dpop_proof,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};

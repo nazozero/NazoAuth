@@ -6,7 +6,7 @@ use crate::domain::DatabaseUserFixture;
 use crate::settings::Settings;
 use crate::support::{
     DEFAULT_TENANT_ID, RateLimitPolicy, default_tenant_context, enforce_rate_limit, hash_password,
-    json_response_status, normalize_email_address, oauth_error, verify_password,
+    normalize_email_address, verify_password,
 };
 #[cfg(test)]
 use crate::support::{valkey_get, valkey_set_ex};
@@ -17,6 +17,7 @@ use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
 #[cfg(test)]
 use diesel_async::RunQueryDsl;
+use nazo_http_actix::{json_response_status, oauth_error};
 use nazo_identity::PublicAccount;
 #[cfg(test)]
 use nazo_postgres::get_conn;

@@ -1,9 +1,10 @@
 //! 一次性客户端凭据领取接口。
 use crate::domain::AppState;
-use crate::support::{current_user_or_login_required, json_response, oauth_error};
+use crate::support::current_user_or_login_required;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Query};
 use actix_web::{HttpRequest, HttpResponse};
+use nazo_http_actix::{json_response, oauth_error};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use uuid::Uuid;

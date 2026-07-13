@@ -8,8 +8,7 @@ use crate::support::{
 use crate::support::{
     DpopErrorContext, ValidatedClientAssertion, audiences_allowed, audit_event, audit_fields,
     blake3_hex, client_ip, constant_time_eq, dpop_error_response, dpop_proof_present, is_subset,
-    json_array_to_strings, oauth_token_error, parse_scope, request_mtls_thumbprint,
-    validate_dpop_proof,
+    json_array_to_strings, parse_scope, request_mtls_thumbprint, validate_dpop_proof,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -20,6 +19,7 @@ use chrono::Duration;
 use chrono::{DateTime, Utc};
 #[cfg(test)]
 use diesel::QueryableByName;
+use nazo_http_actix::oauth_token_error;
 #[cfg(test)]
 use serde_json::Value;
 use serde_json::json;

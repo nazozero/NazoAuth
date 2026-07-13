@@ -8,12 +8,11 @@ use crate::schema::{access_token_revocations, oauth_tokens};
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
-    AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, IssuedAccessToken,
-    OAuthJsonErrorFields, make_jwt,
+    AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, IssuedAccessToken, make_jwt,
 };
 use crate::support::{
     DEFAULT_TENANT_ID, RateLimitPolicy, audit_event, audit_fields, blake3_hex, client_ip,
-    decode_access_claims, empty_response_no_store, enforce_rate_limit, extract_client_credentials,
+    decode_access_claims, enforce_rate_limit, extract_client_credentials,
     has_basic_authorization_scheme,
 };
 use actix_web::http::StatusCode;
@@ -26,6 +25,9 @@ use actix_web::{HttpRequest, HttpResponse};
 use chrono::{DateTime, Utc};
 #[cfg(test)]
 use diesel::prelude::*;
+#[cfg(test)]
+use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::empty_response_no_store;
 #[cfg(test)]
 use serde_json::Value;
 use serde_json::json;

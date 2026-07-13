@@ -1,14 +1,13 @@
 //! CSRF token 刷新端点。
 use crate::domain::AppState;
 use crate::settings::Settings;
-use crate::support::{
-    current_user_or_login_required, json_response, make_cookie, random_urlsafe_token,
-    with_cookie_headers,
-};
+use crate::support::{current_user_or_login_required, random_urlsafe_token};
 #[cfg(test)]
 use actix_web::http::StatusCode;
 use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
+use nazo_http_actix::json_response;
+use nazo_http_actix::{make_cookie, with_cookie_headers};
 #[cfg(test)]
 use serde_json::Value;
 use serde_json::json;

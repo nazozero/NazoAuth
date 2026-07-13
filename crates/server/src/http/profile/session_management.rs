@@ -1,9 +1,8 @@
 //! OpenID Connect Session Management support.
+use nazo_http_actix::{empty_response, json_response_no_store};
 
 use crate::support::sessions::SessionProfileHandles;
-use crate::support::{
-    constant_time_eq, empty_response, json_response_no_store, random_urlsafe_token,
-};
+use crate::support::{constant_time_eq, random_urlsafe_token};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::web::{Data, Query};
