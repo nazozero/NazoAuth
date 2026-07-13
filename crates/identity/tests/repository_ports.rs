@@ -34,7 +34,7 @@ fn public_identity_api_has_no_catch_all_identity_user() {
     .expect("postgres user repository source is readable");
     let claims = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../server/src/support/oidc_claims.rs"
+        "/../server/src/domain/oidc_claims.rs"
     ))
     .expect("OIDC claims source is readable");
 

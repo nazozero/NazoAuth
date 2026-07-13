@@ -851,8 +851,8 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
         "http/token/refresh.rs",
         "http/token/token_exchange.rs",
         "http/token/userinfo.rs",
-        "support/oauth.rs",
-        "support/views.rs",
+        "domain/client_policy.rs",
+        "http/views.rs",
     ] {
         let source = std::fs::read_to_string(server.join(relative))
             .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));

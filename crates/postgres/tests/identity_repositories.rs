@@ -1570,9 +1570,9 @@ fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_fac
         direct_repository_calls >= 10,
         "focused repository calls must remain at their actual callers"
     );
-    let oauth_support =
-        std::fs::read_to_string(manifest.join("../server/src/support/oauth.rs")).unwrap();
-    assert!(!oauth_support.contains("oauth_clients::table"));
+    let client_policy =
+        std::fs::read_to_string(manifest.join("../server/src/domain/client_policy.rs")).unwrap();
+    assert!(!client_policy.contains("oauth_clients::table"));
 }
 
 fn contains_oauth_clients_table_name(source: &str) -> bool {
