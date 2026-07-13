@@ -238,8 +238,9 @@ impl ConsentLiveFixture {
         auth_role: &str,
         admin_level: i32,
     ) -> DatabaseUserFixture {
-        let email = format!("authorize-consent-{suffix}@example.com");
-        let username = format!("authorize-consent-{suffix}");
+        let unique = Uuid::now_v7().simple();
+        let email = format!("authorize-consent-{suffix}-{unique}@example.com");
+        let username = format!("authorize-consent-{suffix}-{unique}");
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");

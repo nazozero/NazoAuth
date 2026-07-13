@@ -894,9 +894,10 @@ async fn token_endpoint_reports_client_holder_policy_for_unbound_code_without_cl
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };
+    let client_id = format!("client-holder-policy-{}", Uuid::now_v7());
     insert_token_client(
         &state,
-        "client-1",
+        &client_id,
         "confidential",
         "client_secret_post",
         Some(fixture_secret_hash(
@@ -910,14 +911,10 @@ async fn token_endpoint_reports_client_holder_policy_for_unbound_code_without_cl
     )
     .await;
     let code = format!("code-{}", Uuid::now_v7());
-    store_authorization_code_state(
-        &state,
-        &code,
-        &AuthorizationCodeState::Pending {
-            payload: code_payload(None),
-        },
-    )
-    .await;
+    let mut payload = code_payload(None);
+    payload.client_id = client_id;
+    store_authorization_code_state(&state, &code, &AuthorizationCodeState::Pending { payload })
+        .await;
     let req = token_request("application/x-www-form-urlencoded");
     let body = Bytes::from(format!(
         "grant_type=authorization_code&code={}&code_verifier=verifier",

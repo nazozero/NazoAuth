@@ -1902,7 +1902,8 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
         "server must not reconstruct a duplicate full row from a postgres adapter result"
     );
     assert!(
-        repository.contains("AdminClientRepositoryPort, OAuthClient,")
+        repository.contains("AdminClientRepositoryPort")
+            && repository.contains("OAuthClient")
             && repository.contains(".map(OAuthClientRecord::into_domain)"),
         "repository lookups must return the auth-owned storage-independent client"
     );

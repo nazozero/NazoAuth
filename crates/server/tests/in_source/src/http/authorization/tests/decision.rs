@@ -287,8 +287,9 @@ impl DecisionLiveFixture {
         auth_role: &str,
         admin_level: i32,
     ) -> DatabaseUserFixture {
-        let email = format!("authorize-decision-{suffix}@example.com");
-        let username = format!("authorize-decision-{suffix}");
+        let unique = Uuid::now_v7().simple();
+        let email = format!("authorize-decision-{suffix}-{unique}@example.com");
+        let username = format!("authorize-decision-{suffix}-{unique}");
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection should open");
@@ -663,10 +664,9 @@ async fn authorization_decision_fails_closed_when_consent_state_read_fails() {
         csrf_token: None,
     };
 
-    let (status, body) = json_error(
-        authorize_decision(fixture.state_with_valkey(restricted), req, Form(form)).await,
-    )
-    .await;
+    let response = authorize_decision(fixture.state_with_valkey(restricted), req, Form(form)).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let (status, body) = json_error(response).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["error"], "server_error");
@@ -689,7 +689,9 @@ async fn authorization_decision_fails_closed_when_consent_state_consume_fails() 
     fixture
         .store_session(&user, &sid, Utc::now().timestamp())
         .await;
-    let payload = consent_payload_for_user("client-1", user.id);
+    let client_id = format!("client-consent-consume-failure-{}", Uuid::now_v7());
+    fixture.insert_client(&client_id, true).await;
+    let payload = consent_payload_for_user(&client_id, user.id);
     fixture.store_consent_payload(&payload).await;
 
     let username = format!("decision_consume_failure_{}", Uuid::now_v7().simple());
@@ -704,7 +706,7 @@ async fn authorization_decision_fails_closed_when_consent_state_consume_fails() 
                 format!(">{password}"),
                 "~oauth:*".to_owned(),
                 "+@all".to_owned(),
-                "-getdel".to_owned(),
+                "-eval".to_owned(),
             ],
         )
         .await;
@@ -715,10 +717,9 @@ async fn authorization_decision_fails_closed_when_consent_state_consume_fails() 
         csrf_token: None,
     };
 
-    let (status, body) = json_error(
-        authorize_decision(fixture.state_with_valkey(restricted), req, Form(form)).await,
-    )
-    .await;
+    let response = authorize_decision(fixture.state_with_valkey(restricted), req, Form(form)).await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let (status, body) = json_error(response).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["error"], "server_error");
@@ -874,12 +875,12 @@ async fn authorization_decision_issues_code_for_matching_user_and_client() {
         return;
     };
     let user = fixture.create_user("decision-approve", "user", 0).await;
-    let client_id = "client-decision-approve";
-    fixture.insert_client(client_id, true).await;
+    let client_id = format!("client-decision-approve-{}", Uuid::now_v7());
+    fixture.insert_client(&client_id, true).await;
     fixture
         .store_session(&user, "sid-decision-approve", Utc::now().timestamp())
         .await;
-    let mut payload = consent_payload_for_user(client_id, user.id);
+    let mut payload = consent_payload_for_user(&client_id, user.id);
     payload.resource_indicators = vec!["resource://default".to_owned()];
     fixture.store_consent_payload(&payload).await;
 

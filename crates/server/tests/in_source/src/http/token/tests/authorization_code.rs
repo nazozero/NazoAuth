@@ -334,7 +334,7 @@ impl LiveAuthorizationCodeFixture {
         )
         .bind::<SqlUuid, _>(Uuid::now_v7())
         .bind::<SqlUuid, _>(client.tenant_id)
-        .bind::<Text, _>(blake3_hex("refresh-token-1"))
+        .bind::<Text, _>(blake3_hex(&format!("refresh-token-{family_id}")))
         .bind::<SqlUuid, _>(family_id)
         .bind::<SqlUuid, _>(client.id)
         .bind::<Nullable<SqlUuid>, _>(None::<Uuid>)
@@ -1454,7 +1454,7 @@ async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reu
     let code = format!("code-{}", Uuid::now_v7());
     let marker = ConsumedAuthorizationCode {
         client_id: client.id,
-        access_token_jti: "access-jti-1".to_owned(),
+        access_token_jti: format!("access-jti-{}", Uuid::now_v7()),
         access_token_expires_at: Utc::now().timestamp() + 300,
         refresh_token_family_id: Some(family_id),
         consumed_at: Utc::now(),
