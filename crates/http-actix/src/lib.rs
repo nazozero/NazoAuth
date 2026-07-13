@@ -6,6 +6,7 @@
 mod cookies;
 mod cors;
 mod csrf;
+mod dpop;
 mod dynamic_client_registration;
 mod extract;
 mod fapi_resource;
@@ -29,6 +30,9 @@ pub use cors::{
     cors_well_known,
 };
 pub use csrf::{csrf_error, has_valid_csrf_token_for_cookies};
+pub use dpop::{
+    DpopErrorContext, dpop_error_response, dpop_proof_header, dpop_proof_present, dpop_target_uris,
+};
 pub use dynamic_client_registration::{
     ClientIpConfig, ClientIpHeaderMode, ClientIpParseError, DynamicRegistrationClientStore,
     DynamicRegistrationDependencyError, DynamicRegistrationEndpoint,

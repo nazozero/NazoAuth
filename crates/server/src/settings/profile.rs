@@ -1,4 +1,5 @@
 use anyhow::bail;
+pub(crate) use nazo_auth::DpopNoncePolicy;
 
 use crate::config::ConfigSource;
 
@@ -15,12 +16,6 @@ pub(crate) enum AuthorizationServerProfile {
 pub(crate) enum CibaSecurityProfile {
     FapiCibaId1PlainPrivateKeyJwtPoll,
     Fapi2Ciba,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DpopNoncePolicy {
-    Required,
-    Optional,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -103,18 +98,18 @@ impl CibaSecurityProfile {
     }
 }
 
-impl DpopNoncePolicy {
-    pub(super) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
-        match config
-            .string("DPOP_NONCE_POLICY", "required")
-            .trim()
-            .to_ascii_lowercase()
-            .as_str()
-        {
-            "required" | "require" | "strict" => Ok(Self::Required),
-            "optional" => Ok(Self::Optional),
-            value => bail!("DPOP_NONCE_POLICY must be required or optional, got {value}"),
-        }
+pub(super) fn dpop_nonce_policy_from_config(
+    config: &ConfigSource,
+) -> anyhow::Result<DpopNoncePolicy> {
+    match config
+        .string("DPOP_NONCE_POLICY", "required")
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "required" | "require" | "strict" => Ok(DpopNoncePolicy::Required),
+        "optional" => Ok(DpopNoncePolicy::Optional),
+        value => bail!("DPOP_NONCE_POLICY must be required or optional, got {value}"),
     }
 }
 

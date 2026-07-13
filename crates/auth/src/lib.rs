@@ -14,6 +14,7 @@ mod client;
 mod client_authentication;
 mod client_registration;
 mod device;
+mod dpop;
 mod dynamic_client_registration;
 mod error;
 mod extension_grants;
@@ -98,6 +99,12 @@ pub use device::{
     DeviceGrantWrite, DevicePollCommit, DevicePollFailure, DevicePollTransition, DeviceStateFuture,
     DeviceStatePortError, DeviceStateStorePort, StoredDeviceAuthorization,
     device_authorization_payload, device_authorization_request_payload, evaluate_device_poll,
+};
+pub use dpop::{
+    DPOP_CLOCK_SKEW_SECONDS, DPOP_REPLAY_TTL_SECONDS, DpopError, DpopNoncePolicy, DpopProofRequest,
+    DpopProofVerifier, DpopReplayAudit, DpopStateFuture, DpopStateStoreError, DpopStateStorePort,
+    VerifiedDpopProof, issue_authorization_server_dpop_nonce, new_dpop_nonce,
+    validate_authorization_server_dpop, validate_authorization_server_dpop_at,
 };
 pub use dynamic_client_registration::{
     ClientSecretDigesterPort, DynamicClientRegistrationRequest, DynamicRegistrationClientStore,
