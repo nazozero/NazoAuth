@@ -1,3 +1,9 @@
+#![cfg(test)]
+
+//! Legacy FAPI protected-resource contract harness.
+//!
+//! Production extraction and presentation live in `nazo-http-actix`. This
+//! module remains test-only until its compatibility fixtures are moved.
 //! FAPI-style protected resource endpoint.
 //! Enforces RFC 6750 access-token transport rules plus sender-constrained token binding.
 use crate::domain::{ClientRow, ResourceServerConfig, ResourceServerHandles};

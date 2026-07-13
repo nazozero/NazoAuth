@@ -81,6 +81,7 @@ pub trait DpopReplayConsumption: Send + Sync {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ProtectedResourceDependencyError {
+    InvalidTenantBoundary,
     RevocationLookupUnavailable,
     DpopReplayStoreUnavailable,
 }
@@ -204,15 +205,20 @@ where
             }
         };
 
-        if self
+        let revoked = self
             .revocations
             .is_revoked(RevocationLookupKey {
                 tenant_id,
                 jti: &token.jti,
             })
             .await
-            .map_err(ProtectedResourceAuthorizationError::DependencyUnavailable)?
-        {
+            .map_err(|error| match error {
+                ProtectedResourceDependencyError::InvalidTenantBoundary => {
+                    ProtectedResourceAuthorizationError::InvalidTenantBoundary
+                }
+                error => ProtectedResourceAuthorizationError::DependencyUnavailable(error),
+            })?;
+        if revoked {
             return Err(ProtectedResourceAuthorizationError::Revoked);
         }
 

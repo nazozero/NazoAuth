@@ -11,6 +11,7 @@ chrono.workspace = true
 fred = { workspace = true, features = ["i-scripts"] }
 nazo-auth.workspace = true
 nazo-identity.workspace = true
+nazo-resource-server.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 thiserror.workspace = true

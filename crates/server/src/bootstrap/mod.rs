@@ -29,10 +29,16 @@ use std::{net::SocketAddr, sync::Arc, time::Duration};
 use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
+#[cfg(test)]
+use crate::domain::ResourceServerHandles;
 use crate::domain::{
     DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig, MfaProfileConfig,
     MfaProfileHandles, OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig,
-    ResourceServerHandles, ServerMetadataSnapshotSource, UserinfoConfig, UserinfoHandles,
+    ServerMetadataSnapshotSource, UserinfoConfig, UserinfoHandles,
+};
+#[cfg(not(test))]
+use crate::domain::{
+    ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -128,17 +134,44 @@ pub async fn run() -> anyhow::Result<()> {
     #[cfg(test)]
     let resource_replay_connection =
         nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
-    let resource_server_handles = web::Data::new(ResourceServerHandles {
-        config: ResourceServerConfig::from(settings.as_ref()),
+    let resource_server_config = ResourceServerConfig::from(settings.as_ref());
+    #[cfg(test)]
+    let resource_server_http_data = web::Data::new(ResourceServerHandles {
+        config: resource_server_config,
         keyset: keyset.clone(),
         tokens: nazo_postgres::TokenRepository::new(diesel_db.clone()),
         clients: nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
         replay: nazo_valkey::ReplayStore::new(&resource_replay_connection),
-        #[cfg(not(test))]
-        runtime_modules: runtime_modules.registry.clone(),
-        #[cfg(test)]
         http_message_signatures_enabled: settings.modules.enable_fapi_http_signatures,
     });
+    #[cfg(not(test))]
+    let resource_server_http_data = {
+        let replay = nazo_valkey::ReplayStore::new(&resource_replay_connection);
+        let authorizer = Arc::new(ServerFapiResourceAuthorizer::new(
+            resource_server_config.clone(),
+            keyset.clone(),
+            nazo_postgres::TokenRepository::new(diesel_db.clone()),
+            replay.clone(),
+        ));
+        let mtls = Arc::new(ServerFapiMtlsResolver::new(
+            resource_server_config.trusted_proxy_cidrs.clone(),
+        ));
+        let signatures = Arc::new(ServerFapiHttpMessageSignatures::new(
+            nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
+            replay,
+            keyset.clone(),
+            runtime_modules.registry.clone(),
+            resource_server_config.fapi_http_signature_max_age_seconds,
+        ));
+        web::Data::new(nazo_http_actix::FapiResourceEndpoint::new(
+            resource_server_config.issuer.clone(),
+            resource_server_config.mtls_endpoint_base_url.clone(),
+            resource_server_config.fapi_http_signature_max_age_seconds,
+            authorizer,
+            mtls,
+            signatures,
+        ))
+    };
     #[cfg(not(test))]
     let dynamic_registration_rate_limit_connection = valkey.clone();
     #[cfg(test)]
@@ -512,7 +545,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(avatar_profiles.clone())
             .app_data(profile_access_requests.clone())
             .app_data(profile_federation.clone())
-            .app_data(resource_server_handles.clone())
+            .app_data(resource_server_http_data.clone())
             .app_data(admin_users.clone())
             .app_data(admin_grants.clone())
             .app_data(admin_access_requests.clone())
