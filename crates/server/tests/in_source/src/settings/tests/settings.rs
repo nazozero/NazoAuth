@@ -5,7 +5,10 @@ use serde_json::json;
 fn default_dpop_nonce_policy_is_required() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
 
-    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+    assert_eq!(
+        settings.protocol.dpop_nonce_policy,
+        DpopNoncePolicy::Required
+    );
 }
 
 #[test]
@@ -13,7 +16,10 @@ fn baseline_profile_can_use_optional_dpop_nonce_policy() {
     let config = ConfigSource::from_pairs_for_test([("DPOP_NONCE_POLICY", "optional")]);
     let settings = Settings::from_config(&config).unwrap();
 
-    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Optional);
+    assert_eq!(
+        settings.protocol.dpop_nonce_policy,
+        DpopNoncePolicy::Optional
+    );
 }
 
 #[test]
@@ -27,9 +33,12 @@ fn fapi_profiles_default_to_required_dpop_nonce_policy() {
         let config = ConfigSource::from_pairs_for_test([("AUTHORIZATION_SERVER_PROFILE", profile)]);
         let settings = Settings::from_config(&config).unwrap();
 
-        assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Required);
+        assert_eq!(
+            settings.protocol.dpop_nonce_policy,
+            DpopNoncePolicy::Required
+        );
         assert!(
-            settings.require_pushed_authorization_requests,
+            settings.protocol.require_pushed_authorization_requests,
             "{profile} must inherit FAPI2 PAR enforcement"
         );
         assert!(
@@ -49,7 +58,10 @@ fn fapi_profiles_can_use_optional_dpop_nonce_policy() {
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
-    assert_eq!(settings.dpop_nonce_policy, DpopNoncePolicy::Optional);
+    assert_eq!(
+        settings.protocol.dpop_nonce_policy,
+        DpopNoncePolicy::Optional
+    );
 }
 
 #[test]
@@ -201,7 +213,7 @@ fn default_request_object_jti_policy_is_oidf_compatible() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
 
     assert_eq!(
-        settings.request_object_jti_policy,
+        settings.protocol.request_object_jti_policy,
         RequestObjectJtiPolicy::Optional
     );
 }
@@ -212,7 +224,7 @@ fn request_object_jti_policy_can_require_signed_jar_jti() {
     let settings = Settings::from_config(&config).unwrap();
 
     assert_eq!(
-        settings.request_object_jti_policy,
+        settings.protocol.request_object_jti_policy,
         RequestObjectJtiPolicy::RequiredForSignedJar
     );
 }
@@ -229,7 +241,7 @@ fn default_ciba_security_profile_is_oidf_fapi_ciba_compatible() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
 
     assert_eq!(
-        settings.ciba_security_profile,
+        settings.protocol.ciba_security_profile,
         CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll
     );
 }
@@ -241,7 +253,7 @@ fn ciba_security_profile_accepts_internal_fapi2_ciba_aliases() {
         let settings = Settings::from_config(&config).unwrap();
 
         assert_eq!(
-            settings.ciba_security_profile,
+            settings.protocol.ciba_security_profile,
             CibaSecurityProfile::Fapi2Ciba
         );
     }
@@ -264,26 +276,30 @@ fn invalid_ciba_security_profile_is_rejected() {
 #[test]
 fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     let defaults = Settings::from_config(&ConfigSource::default()).unwrap();
-    assert!(!defaults.enable_request_object);
-    assert!(!defaults.enable_request_uri_parameter);
-    assert!(!defaults.enable_par_request_object);
-    assert!(!defaults.enable_authorization_details);
-    assert!(!defaults.enable_legacy_audience_param);
-    assert!(!defaults.enable_device_authorization_grant);
-    assert!(!defaults.enable_dynamic_client_registration);
-    assert!(!defaults.enable_frontchannel_logout);
-    assert!(!defaults.enable_session_management);
-    assert!(!defaults.enable_ciba);
-    assert!(!defaults.enable_native_sso);
+    assert!(!defaults.modules.enable_request_object);
+    assert!(!defaults.modules.enable_request_uri_parameter);
+    assert!(!defaults.modules.enable_par_request_object);
+    assert!(!defaults.modules.enable_authorization_details);
+    assert!(!defaults.modules.enable_legacy_audience_param);
+    assert!(!defaults.modules.enable_device_authorization_grant);
+    assert!(!defaults.modules.enable_dynamic_client_registration);
+    assert!(!defaults.modules.enable_frontchannel_logout);
+    assert!(!defaults.modules.enable_session_management);
+    assert!(!defaults.modules.enable_ciba);
+    assert!(!defaults.modules.enable_native_sso);
     assert!(
         defaults
+            .modules
             .dynamic_client_registration_initial_access_token
             .is_none()
     );
-    assert_eq!(defaults.device_authorization_ttl_seconds, 600);
-    assert_eq!(defaults.device_authorization_poll_interval_seconds, 5);
-    assert_eq!(defaults.ciba_auth_req_id_ttl_seconds, 600);
-    assert_eq!(defaults.ciba_poll_interval_seconds, 5);
+    assert_eq!(defaults.device.device_authorization_ttl_seconds, 600);
+    assert_eq!(
+        defaults.device.device_authorization_poll_interval_seconds,
+        5
+    );
+    assert_eq!(defaults.ciba.ciba_auth_req_id_ttl_seconds, 600);
+    assert_eq!(defaults.ciba.ciba_poll_interval_seconds, 5);
 
     let config = ConfigSource::from_pairs_for_test([
         ("ENABLE_REQUEST_OBJECT", "true"),
@@ -308,27 +324,31 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
-    assert!(settings.enable_request_object);
-    assert!(settings.enable_request_uri_parameter);
-    assert!(settings.enable_par_request_object);
-    assert!(settings.enable_authorization_details);
-    assert!(settings.enable_legacy_audience_param);
-    assert!(settings.enable_device_authorization_grant);
-    assert!(settings.enable_dynamic_client_registration);
-    assert!(settings.enable_frontchannel_logout);
-    assert!(settings.enable_session_management);
-    assert!(settings.enable_ciba);
-    assert!(settings.enable_native_sso);
+    assert!(settings.modules.enable_request_object);
+    assert!(settings.modules.enable_request_uri_parameter);
+    assert!(settings.modules.enable_par_request_object);
+    assert!(settings.modules.enable_authorization_details);
+    assert!(settings.modules.enable_legacy_audience_param);
+    assert!(settings.modules.enable_device_authorization_grant);
+    assert!(settings.modules.enable_dynamic_client_registration);
+    assert!(settings.modules.enable_frontchannel_logout);
+    assert!(settings.modules.enable_session_management);
+    assert!(settings.modules.enable_ciba);
+    assert!(settings.modules.enable_native_sso);
     assert_eq!(
         settings
+            .modules
             .dynamic_client_registration_initial_access_token
             .as_deref(),
         Some("register-token")
     );
-    assert_eq!(settings.device_authorization_ttl_seconds, 300);
-    assert_eq!(settings.device_authorization_poll_interval_seconds, 7);
-    assert_eq!(settings.ciba_auth_req_id_ttl_seconds, 240);
-    assert_eq!(settings.ciba_poll_interval_seconds, 6);
+    assert_eq!(settings.device.device_authorization_ttl_seconds, 300);
+    assert_eq!(
+        settings.device.device_authorization_poll_interval_seconds,
+        7
+    );
+    assert_eq!(settings.ciba.ciba_auth_req_id_ttl_seconds, 240);
+    assert_eq!(settings.ciba.ciba_poll_interval_seconds, 6);
 }
 
 #[test]
@@ -352,9 +372,10 @@ fn dynamic_client_registration_requires_initial_access_token() {
         ),
     ]);
     let settings = Settings::from_config(&protected).unwrap();
-    assert!(settings.enable_dynamic_client_registration);
+    assert!(settings.modules.enable_dynamic_client_registration);
     assert_eq!(
         settings
+            .modules
             .dynamic_client_registration_initial_access_token
             .as_deref(),
         Some("register-token")
@@ -386,18 +407,27 @@ fn public_base_url_drives_same_origin_defaults() {
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
-    assert_eq!(settings.issuer, "https://auth.example.test");
-    assert_eq!(settings.mtls_endpoint_base_url, "https://auth.example.test");
-    assert_eq!(settings.frontend_base_url, "https://auth.example.test/ui/");
+    assert_eq!(settings.endpoint.issuer, "https://auth.example.test");
     assert_eq!(
-        settings.cors_allowed_origins,
+        settings.endpoint.mtls_endpoint_base_url,
+        "https://auth.example.test"
+    );
+    assert_eq!(
+        settings.endpoint.frontend_base_url,
+        "https://auth.example.test/ui/"
+    );
+    assert_eq!(
+        settings.endpoint.cors_allowed_origins,
         vec!["https://auth.example.test"]
     );
-    assert!(settings.cookie_secure);
-    assert_eq!(settings.passkey.origin, "https://auth.example.test");
-    assert_eq!(settings.passkey.rp_id, "auth.example.test");
+    assert!(settings.session.cookie_secure);
     assert_eq!(
-        settings.protected_resource_identifier,
+        settings.identity.passkey.origin,
+        "https://auth.example.test"
+    );
+    assert_eq!(settings.identity.passkey.rp_id, "auth.example.test");
+    assert_eq!(
+        settings.protocol.protected_resource_identifier,
         "https://auth.example.test/fapi/resource"
     );
 }
@@ -418,16 +448,22 @@ fn explicit_legacy_url_settings_override_public_base_url_derivations() {
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
-    assert_eq!(settings.issuer, "https://issuer.example.test");
-    assert_eq!(settings.frontend_base_url, "https://app.example.test/ui/");
+    assert_eq!(settings.endpoint.issuer, "https://issuer.example.test");
     assert_eq!(
-        settings.cors_allowed_origins,
+        settings.endpoint.frontend_base_url,
+        "https://app.example.test/ui/"
+    );
+    assert_eq!(
+        settings.endpoint.cors_allowed_origins,
         vec!["https://app.example.test"]
     );
-    assert_eq!(settings.passkey.origin, "https://passkeys.example.test");
-    assert_eq!(settings.passkey.rp_id, "passkeys.example.test");
     assert_eq!(
-        settings.protected_resource_identifier,
+        settings.identity.passkey.origin,
+        "https://passkeys.example.test"
+    );
+    assert_eq!(settings.identity.passkey.rp_id, "passkeys.example.test");
+    assert_eq!(
+        settings.protocol.protected_resource_identifier,
         "https://issuer.example.test/fapi/resource"
     );
 }
@@ -448,7 +484,7 @@ fn explicit_protected_resource_identifier_overrides_issuer_default() {
     let settings = Settings::from_config(&config).unwrap();
 
     assert_eq!(
-        settings.protected_resource_identifier,
+        settings.protocol.protected_resource_identifier,
         "https://api.example.test/payments"
     );
 }
@@ -481,11 +517,11 @@ fn data_dir_drives_default_persistent_storage_paths() {
     let settings = Settings::from_config(&config).unwrap();
 
     assert_eq!(
-        settings.avatar_storage_dir,
+        settings.storage.avatar_storage_dir,
         std::path::PathBuf::from("/srv/nazo-oauth/avatars")
     );
     assert_eq!(
-        settings.jwk_keys_dir,
+        settings.keys.jwk_keys_dir,
         std::path::PathBuf::from("/srv/nazo-oauth/keys")
     );
 }
@@ -500,11 +536,11 @@ fn explicit_storage_paths_override_data_dir_derivations() {
     let settings = Settings::from_config(&config).unwrap();
 
     assert_eq!(
-        settings.avatar_storage_dir,
+        settings.storage.avatar_storage_dir,
         std::path::PathBuf::from("/data/avatars")
     );
     assert_eq!(
-        settings.jwk_keys_dir,
+        settings.keys.jwk_keys_dir,
         std::path::PathBuf::from("/secure/keys")
     );
 }
@@ -513,8 +549,11 @@ fn explicit_storage_paths_override_data_dir_derivations() {
 fn signing_key_rotation_settings_default_to_automatic_lifecycle() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
 
-    assert_eq!(settings.signing_key_rotation_interval_seconds, 7_776_000);
-    assert_eq!(settings.signing_key_prepublish_seconds, 86_400);
+    assert_eq!(
+        settings.keys.signing_key_rotation_interval_seconds,
+        7_776_000
+    );
+    assert_eq!(settings.keys.signing_key_prepublish_seconds, 86_400);
 }
 
 #[test]
@@ -651,7 +690,7 @@ fn smtp_delivery_accepts_explicit_tls_modes_without_secret_leakage() {
         ]);
 
         let settings = Settings::from_config(&config).unwrap();
-        let EmailDelivery::Smtp(smtp) = settings.email.delivery else {
+        let EmailDelivery::Smtp(smtp) = settings.identity.email.delivery else {
             panic!("smtp delivery should be enabled");
         };
         assert_eq!(smtp.host, "smtp.example.test");
@@ -891,8 +930,8 @@ fn saml_gateway_requires_strong_shared_secret_when_enabled() {
 fn fapi_http_signature_settings_default_closed() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
 
-    assert!(!settings.enable_fapi_http_signatures);
-    assert_eq!(settings.fapi_http_signature_max_age_seconds, 60);
+    assert!(!settings.modules.enable_fapi_http_signatures);
+    assert_eq!(settings.protocol.fapi_http_signature_max_age_seconds, 60);
 }
 
 #[test]
@@ -904,9 +943,12 @@ fn fapi_http_signature_max_age_accepts_inclusive_boundaries() {
         ]);
         let settings = Settings::from_config(&config).unwrap();
 
-        assert!(settings.enable_fapi_http_signatures);
+        assert!(settings.modules.enable_fapi_http_signatures);
         assert_eq!(
-            settings.fapi_http_signature_max_age_seconds.to_string(),
+            settings
+                .protocol
+                .fapi_http_signature_max_age_seconds
+                .to_string(),
             value
         );
     }

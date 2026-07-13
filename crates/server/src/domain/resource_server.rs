@@ -19,11 +19,11 @@ pub(crate) struct ResourceServerConfig {
 
 impl From<&Settings> for ResourceServerConfig {
     fn from(settings: &Settings) -> Self {
-        let endpoint = settings.endpoint();
-        let protocol = settings.protocol();
+        let endpoint = &settings.endpoint;
+        let protocol = &settings.protocol;
         Self {
-            issuer: settings.issuer.clone(),
-            mtls_endpoint_base_url: settings.mtls_endpoint_base_url.clone(),
+            issuer: endpoint.issuer.clone(),
+            mtls_endpoint_base_url: endpoint.mtls_endpoint_base_url.clone(),
             default_audience: protocol.default_audience.to_owned(),
             protected_resource_identifier: protocol.protected_resource_identifier.to_owned(),
             dpop_nonce_policy: protocol.dpop_nonce_policy,
@@ -56,7 +56,7 @@ impl ResourceServerHandles {
             tokens: nazo_postgres::TokenRepository::new(state.diesel_db.clone()),
             clients: nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
             replay: nazo_valkey::ReplayStore::new(&connection),
-            http_message_signatures_enabled: state.settings.modules().enable_fapi_http_signatures,
+            http_message_signatures_enabled: state.settings.modules.enable_fapi_http_signatures,
         }
     }
 

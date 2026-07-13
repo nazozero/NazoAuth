@@ -42,14 +42,14 @@ fn unavailable_valkey_client() -> fred::prelude::Client {
 fn endpoint_state(require_par: bool) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.require_pushed_authorization_requests = require_par;
-    settings.enable_request_uri_parameter = true;
-    settings.enable_request_object = true;
-    settings.enable_par_request_object = true;
-    settings.enable_authorization_details = true;
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.frontend_base_url = "https://app.example".to_owned();
-    settings.auth_code_ttl_seconds = 60;
+    settings.protocol.require_pushed_authorization_requests = require_par;
+    settings.modules.enable_request_uri_parameter = true;
+    settings.modules.enable_request_object = true;
+    settings.modules.enable_par_request_object = true;
+    settings.modules.enable_authorization_details = true;
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.endpoint.frontend_base_url = "https://app.example".to_owned();
+    settings.protocol.auth_code_ttl_seconds = 60;
 
     AppState {
         diesel_db: create_pool(
@@ -102,11 +102,11 @@ impl LiveAuthorizationFixture {
             ("AUTH_RATE_LIMIT_MAX_REQUESTS", "100000"),
         ]);
         let mut settings = Settings::from_config(&config).expect("test settings should load");
-        settings.require_pushed_authorization_requests = false;
-        settings.enable_request_object = true;
-        settings.enable_request_uri_parameter = true;
-        settings.enable_par_request_object = true;
-        settings.enable_authorization_details = true;
+        settings.protocol.require_pushed_authorization_requests = false;
+        settings.modules.enable_request_object = true;
+        settings.modules.enable_request_uri_parameter = true;
+        settings.modules.enable_par_request_object = true;
+        settings.modules.enable_authorization_details = true;
 
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
@@ -134,7 +134,7 @@ impl LiveAuthorizationFixture {
 
     fn state_with_request_uri_parameter(&self, enabled: bool) -> Data<AppState> {
         let mut settings = self.state.settings.as_ref().clone();
-        settings.enable_request_uri_parameter = enabled;
+        settings.modules.enable_request_uri_parameter = enabled;
         Data::new(AppState {
             diesel_db: self.state.diesel_db.clone(),
             valkey: self.state.valkey.clone(),
@@ -148,8 +148,8 @@ impl LiveAuthorizationFixture {
         profile: AuthorizationServerProfile,
     ) -> Data<AppState> {
         let mut settings = self.state.settings.as_ref().clone();
-        settings.authorization_server_profile = profile;
-        settings.require_pushed_authorization_requests = profile.requires_fapi2_security();
+        settings.protocol.authorization_server_profile = profile;
+        settings.protocol.require_pushed_authorization_requests = profile.requires_fapi2_security();
         Data::new(AppState {
             diesel_db: self.state.diesel_db.clone(),
             valkey: self.state.valkey.clone(),
@@ -288,7 +288,7 @@ impl LiveAuthorizationFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -298,7 +298,7 @@ impl LiveAuthorizationFixture {
         actix_web::test::TestRequest::get()
             .uri(uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .to_http_request()
@@ -422,7 +422,7 @@ fn decode_jarm_claims(state: &AppState, response_jwt: &str, audience: &str) -> V
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_exp = false;
     validation.set_audience(&[audience]);
-    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
     jsonwebtoken::decode::<Value>(response_jwt, &decoding_key, &validation)
         .expect("JARM response should verify with the active key")
         .claims
@@ -512,6 +512,7 @@ async fn authorization_request_rejects_disabled_request_object_parameters_before
     let mut state = endpoint_state(false);
     Arc::get_mut(&mut state.settings)
         .expect("test state owns its settings")
+        .modules
         .enable_request_object = false;
     let state = Data::new(state);
     let req = actix_web::test::TestRequest::get()
@@ -531,6 +532,7 @@ async fn authorization_request_rejects_disabled_request_uri_parameter_before_cli
     let mut state = endpoint_state(false);
     Arc::get_mut(&mut state.settings)
         .expect("test state owns its settings")
+        .modules
         .enable_request_uri_parameter = false;
     let state = Data::new(state);
     let req = actix_web::test::TestRequest::get()
@@ -652,6 +654,7 @@ async fn authorization_request_rejects_disabled_authorization_details_before_cli
     let mut state = endpoint_state(false);
     Arc::get_mut(&mut state.settings)
         .expect("test state owns its settings")
+        .modules
         .enable_authorization_details = false;
     let state = Data::new(state);
     let req = actix_web::test::TestRequest::get()
@@ -1587,7 +1590,7 @@ async fn authorization_request_reports_session_lookup_failure_after_client_valid
     let req = actix_web::test::TestRequest::get()
         .uri("/authorize")
         .cookie(Cookie::new(
-            broken_state.settings.session_cookie_name.clone(),
+            broken_state.settings.session.session_cookie_name.clone(),
             "broken-session",
         ))
         .to_http_request();
@@ -1947,10 +1950,10 @@ async fn authorization_response_redirect_emits_signed_jarm_response() {
 #[actix_web::test]
 async fn authorization_response_redirect_jarm_profile_signs_without_response_mode() {
     let mut state = endpoint_state(false);
-    state.settings = Arc::new(Settings {
-        authorization_server_profile: AuthorizationServerProfile::Fapi2MessageSigningJarm,
-        ..state.settings.as_ref().clone()
-    });
+    let mut settings = state.settings.as_ref().clone();
+    settings.protocol.authorization_server_profile =
+        AuthorizationServerProfile::Fapi2MessageSigningJarm;
+    state.settings = Arc::new(settings);
     state.keyset = rs256_test_key_manager();
     let state = Data::new(state);
 

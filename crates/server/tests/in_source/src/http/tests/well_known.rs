@@ -1,11 +1,6 @@
 use super::*;
-use std::path::PathBuf;
-
-use crate::settings::{
-    AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
-    RequestObjectJtiPolicy, SubjectType,
-};
-use crate::support::{ClientIpHeaderMode, IpCidr};
+use crate::settings::{AuthorizationServerProfile, DpopNoncePolicy, SubjectType};
+use crate::support::IpCidr;
 use nazo_auth::SUPPORTED_AUTHORIZATION_DETAILS_TYPES;
 use std::sync::Arc;
 
@@ -14,90 +9,21 @@ fn keyset(alg: jsonwebtoken::Algorithm) -> Arc<KeySnapshot> {
 }
 
 fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr>) -> Settings {
-    Settings {
-        issuer: "https://issuer.example".to_owned(),
-        mtls_endpoint_base_url: "https://mtls.issuer.example".to_owned(),
-        frontend_base_url: "https://app.example".to_owned(),
-        cors_allowed_origins: vec!["https://app.example".to_owned()],
-        default_audience: "resource://default".to_owned(),
-        protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
-        authorization_server_profile: profile,
-        ciba_security_profile:
-            crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll,
-        dpop_nonce_policy: DpopNoncePolicy::Required,
-        request_object_jti_policy: RequestObjectJtiPolicy::Optional,
-        session_cookie_name: "sid".to_owned(),
-        csrf_cookie_name: "csrf".to_owned(),
-        cookie_secure: true,
-        session_ttl_seconds: 3600,
-        auth_code_ttl_seconds: 60,
-        access_token_ttl_seconds: 300,
-        id_token_ttl_seconds: 600,
-        refresh_token_ttl_seconds: 2_592_000,
-        avatar_max_bytes: 2_097_152,
-        client_delivery_ttl_seconds: 86_400,
-        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
-        rate_limit: RateLimitSettings {
-            window_seconds: 60,
-            auth_max_requests: 30,
-            token_max_requests: 60,
-            token_management_max_requests: 120,
-            login_failure_window_seconds: 900,
-            login_failure_email_max_attempts: 50,
-            login_failure_ip_email_max_attempts: 5,
-        },
-        email: EmailSettings {
-            delivery: EmailDelivery::Disabled,
-            code_ttl_seconds: 900,
-            send_cooldown_seconds: 60,
-            send_peer_cooldown_seconds: 5,
-        },
-        email_code_dev_response_enabled: false,
-        avatar_storage_dir: PathBuf::from("runtime/avatars"),
-        jwk_keys_dir: PathBuf::from("runtime/keys"),
-        signing_external_command: Vec::new(),
-        signing_external_timeout_ms: 2_000,
-        signing_key_rotation_interval_seconds: 7_776_000,
-        signing_key_prepublish_seconds: 86_400,
-        trusted_proxy_cidrs,
-        client_ip_header_mode: ClientIpHeaderMode::None,
-        subject_type: SubjectType::Public,
-        pairwise_subject_secret: None,
-        par_ttl_seconds: 90,
-        require_pushed_authorization_requests: profile.requires_fapi2_security(),
-        scim_bearer_token: None,
-        passkey: crate::settings::PasskeySettings {
-            rp_id: "issuer.example".to_owned(),
-            rp_name: "Nazo OAuth".to_owned(),
-            origin: "https://issuer.example".to_owned(),
-            require_user_verification: true,
-            require_user_handle: true,
-            strict_base64: true,
-        },
-        federation: crate::settings::FederationSettings {
-            providers: crate::settings::FederationProviderRegistry::default(),
-            saml_gateway: None,
-        },
-        enable_request_object: false,
-        enable_request_uri_parameter: false,
-        enable_par_request_object: false,
-        enable_authorization_details: false,
-        enable_legacy_audience_param: false,
-        enable_device_authorization_grant: false,
-        enable_dynamic_client_registration: false,
-        enable_frontchannel_logout: false,
-        enable_session_management: false,
-        enable_ciba: false,
-        enable_native_sso: false,
-        enable_fapi_http_signatures: false,
-        fapi_http_signature_max_age_seconds: 60,
-        dynamic_client_registration_initial_access_token: None,
-        device_authorization_ttl_seconds: 600,
-        device_authorization_poll_interval_seconds: 5,
-        ciba_auth_req_id_ttl_seconds: 600,
-        ciba_poll_interval_seconds: 5,
-        ciba_automated_decision_token: None,
-    }
+    let mut settings =
+        Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.endpoint.mtls_endpoint_base_url = "https://issuer.example".to_owned();
+    settings.endpoint.frontend_base_url = "https://frontend.example".to_owned();
+    settings.endpoint.cors_allowed_origins = vec!["https://frontend.example".to_owned()];
+    settings.endpoint.trusted_proxy_cidrs = trusted_proxy_cidrs;
+    settings.protocol.authorization_server_profile = profile;
+    settings.protocol.protected_resource_identifier =
+        "https://issuer.example/fapi/resource".to_owned();
+    settings.protocol.dpop_nonce_policy = DpopNoncePolicy::Required;
+    settings.session.cookie_secure = true;
+    settings.storage.avatar_storage_dir = std::env::temp_dir().join("unused-avatars");
+    settings.keys.jwk_keys_dir = std::env::temp_dir().join("unused-keys");
+    settings
 }
 
 fn merge_metadata_fixture(parts: impl IntoIterator<Item = Value>) -> Value {
@@ -223,7 +149,7 @@ fn fapi_http_signatures_are_not_advertised_in_standard_metadata() {
     let keyset = keyset(jsonwebtoken::Algorithm::RS256);
     let baseline = authorization_server_metadata(&disabled, &keyset);
 
-    disabled.enable_fapi_http_signatures = true;
+    disabled.modules.enable_fapi_http_signatures = true;
     let enabled = authorization_server_metadata(&disabled, &keyset);
 
     assert_eq!(enabled, baseline);
@@ -280,7 +206,7 @@ fn discovery_dpop_algorithms_match_authorization_server_validator() {
 #[test]
 fn discovery_advertises_supported_rar_types() {
     let mut s = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    s.enable_authorization_details = true;
+    s.modules.enable_authorization_details = true;
     let metadata = authorization_server_metadata(&s, &keyset(jsonwebtoken::Algorithm::RS256));
 
     assert_eq!(
@@ -390,7 +316,7 @@ fn protected_resource_metadata_reflects_mtls_and_rar_configuration() {
         AuthorizationServerProfile::Oauth2Baseline,
         vec![IpCidr::parse("192.0.2.0/24").unwrap()],
     );
-    s.enable_authorization_details = true;
+    s.modules.enable_authorization_details = true;
     let metadata = protected_resource_metadata(&s);
 
     assert_eq!(
@@ -431,7 +357,8 @@ fn discovery_subject_types_follow_pairwise_configuration() {
     );
 
     let mut pairwise_default = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    pairwise_default.pairwise_subject_secret = Some("01234567890123456789012345678901".to_owned());
+    pairwise_default.protocol.pairwise_subject_secret =
+        Some("01234567890123456789012345678901".to_owned());
     let pairwise_default = authorization_server_metadata(&pairwise_default, &keyset);
     assert_eq!(
         pairwise_default
@@ -445,8 +372,9 @@ fn discovery_subject_types_follow_pairwise_configuration() {
     );
 
     let mut pairwise_only = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    pairwise_only.subject_type = SubjectType::Pairwise;
-    pairwise_only.pairwise_subject_secret = Some("01234567890123456789012345678901".to_owned());
+    pairwise_only.protocol.subject_type = SubjectType::Pairwise;
+    pairwise_only.protocol.pairwise_subject_secret =
+        Some("01234567890123456789012345678901".to_owned());
     let pairwise_only = authorization_server_metadata(&pairwise_only, &keyset);
     assert_eq!(
         pairwise_only
@@ -545,7 +473,7 @@ fn discovery_advertises_frontchannel_logout_only_when_enabled() {
     );
 
     let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    enabled.enable_frontchannel_logout = true;
+    enabled.modules.enable_frontchannel_logout = true;
     let metadata = authorization_server_metadata(&enabled, &keyset);
 
     assert_eq!(
@@ -572,7 +500,7 @@ fn discovery_advertises_session_management_only_when_enabled() {
     assert!(disabled.get("check_session_iframe").is_none());
 
     let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    enabled.enable_session_management = true;
+    enabled.modules.enable_session_management = true;
     let metadata = authorization_server_metadata(&enabled, &keyset);
 
     assert_eq!(
@@ -599,7 +527,7 @@ fn discovery_advertises_native_sso_only_when_enabled() {
     );
 
     let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    enabled.enable_native_sso = true;
+    enabled.modules.enable_native_sso = true;
     let metadata = authorization_server_metadata(&enabled, &keyset);
 
     assert_eq!(
@@ -628,7 +556,7 @@ fn discovery_advertises_dynamic_registration_only_when_enabled() {
     assert!(disabled.get("registration_endpoint").is_none());
 
     let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    enabled.enable_dynamic_client_registration = true;
+    enabled.modules.enable_dynamic_client_registration = true;
     let metadata = authorization_server_metadata(&enabled, &keyset);
 
     assert_eq!(
@@ -643,7 +571,7 @@ fn discovery_advertises_dynamic_registration_only_when_enabled() {
 fn discovery_advertises_device_authorization_only_when_enabled() {
     let keyset = keyset(jsonwebtoken::Algorithm::RS256);
     let mut enabled = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    enabled.enable_device_authorization_grant = true;
+    enabled.modules.enable_device_authorization_grant = true;
     let metadata = authorization_server_metadata(&enabled, &keyset);
 
     assert_eq!(
@@ -1063,7 +991,7 @@ fn discovery_baseline_advertises_unsigned_request_object_compatibility_only() {
 #[test]
 fn discovery_ciba_request_object_algs_are_fapi_ciba_scoped() {
     let mut settings = settings(AuthorizationServerProfile::Fapi2Security, Vec::new());
-    settings.enable_ciba = true;
+    settings.modules.enable_ciba = true;
     let metadata =
         authorization_server_metadata(&settings, &keyset(jsonwebtoken::Algorithm::PS256));
 
@@ -1082,7 +1010,7 @@ fn discovery_ciba_request_object_algs_are_fapi_ciba_scoped() {
 #[test]
 fn discovery_omits_entire_ciba_surface_when_disabled() {
     let settings = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    assert!(!settings.enable_ciba);
+    assert!(!settings.modules.enable_ciba);
     let metadata =
         authorization_server_metadata(&settings, &keyset(jsonwebtoken::Algorithm::PS256));
 
@@ -1111,8 +1039,8 @@ fn discovery_omits_entire_ciba_surface_when_disabled() {
 #[test]
 fn discovery_fapi2_ciba_internal_profile_advertises_only_standard_capabilities() {
     let mut settings = settings(AuthorizationServerProfile::Oauth2Baseline, Vec::new());
-    settings.enable_ciba = true;
-    settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
+    settings.modules.enable_ciba = true;
+    settings.protocol.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
     let metadata =
         authorization_server_metadata(&settings, &keyset(jsonwebtoken::Algorithm::PS256));
 

@@ -30,8 +30,8 @@ async fn authorize_decision(
 fn decision_state() -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.auth_code_ttl_seconds = 60;
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.auth_code_ttl_seconds = 60;
 
     AppState {
         diesel_db: create_pool(
@@ -147,9 +147,9 @@ impl DecisionLiveFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let mut settings =
             Settings::from_config(&ConfigSource::default()).expect("test settings should load");
-        settings.issuer = "https://issuer.example".to_owned();
-        settings.frontend_base_url = "https://app.example".to_owned();
-        settings.auth_code_ttl_seconds = 60;
+        settings.endpoint.issuer = "https://issuer.example".to_owned();
+        settings.endpoint.frontend_base_url = "https://app.example".to_owned();
+        settings.protocol.auth_code_ttl_seconds = 60;
 
         let mut valkey_builder = ValkeyBuilder::from_config(
             ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
@@ -372,7 +372,7 @@ impl DecisionLiveFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -383,7 +383,7 @@ impl DecisionLiveFixture {
             &self.state.valkey,
             format!("oauth:consent:{}", payload.request_id),
             serde_json::to_string(payload).expect("consent payload should serialize"),
-            self.state.settings.auth_code_ttl_seconds,
+            self.state.settings.protocol.auth_code_ttl_seconds,
         )
         .await
         .expect("consent payload should persist");
@@ -403,11 +403,11 @@ impl DecisionLiveFixture {
     fn auth_request(&self, sid: &str, csrf_token: Option<&str>) -> HttpRequest {
         let mut request = TestRequest::post().uri("/authorize/decision");
         request = request.cookie(Cookie::new(
-            self.state.settings.session_cookie_name.clone(),
+            self.state.settings.session.session_cookie_name.clone(),
             sid.to_owned(),
         ));
         request = request.cookie(Cookie::new(
-            self.state.settings.csrf_cookie_name.clone(),
+            self.state.settings.session.csrf_cookie_name.clone(),
             "csrf-session-token".to_owned(),
         ));
         if let Some(csrf_token) = csrf_token {
@@ -536,8 +536,8 @@ async fn authorization_decision_requires_authentication_without_session() {
 #[actix_web::test]
 async fn authorization_decision_rejects_invalid_csrf_token_with_session_cookie() {
     let state = decision_state();
-    let session_cookie = state.settings.session_cookie_name.clone();
-    let csrf_cookie = state.settings.csrf_cookie_name.clone();
+    let session_cookie = state.settings.session.session_cookie_name.clone();
+    let csrf_cookie = state.settings.session.csrf_cookie_name.clone();
     let req = TestRequest::post()
         .uri("/authorize/decision")
         .cookie(Cookie::new(session_cookie, "sid-csrf-1"))

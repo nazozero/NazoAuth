@@ -77,7 +77,7 @@ async fn live_session_state() -> Option<AppState> {
 fn session_request(state: &AppState, sid: &str) -> HttpRequest {
     TestRequest::default()
         .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             sid.to_owned(),
         ))
         .to_http_request()
@@ -88,7 +88,7 @@ async fn store_raw_session(state: &AppState, sid: &str, raw: &str) {
         &state.valkey,
         format!("oauth:session:{sid}"),
         raw.to_owned(),
-        state.settings.session_ttl_seconds,
+        state.settings.session.session_ttl_seconds,
     )
     .await
     .expect("raw session payload should store");

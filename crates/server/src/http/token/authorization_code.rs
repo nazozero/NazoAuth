@@ -213,7 +213,7 @@ fn authorization_code_audiences(
 ) -> Result<Vec<String>, ()> {
     if payload.resource_indicators.is_empty() {
         return Ok(if form.audiences.is_empty() {
-            vec![settings.default_audience.clone()]
+            vec![settings.protocol.default_audience.clone()]
         } else {
             form.audiences.clone()
         });

@@ -123,7 +123,7 @@ fn pkce_policy_client() -> ClientRow {
 fn reauth_nonce_state_with_valkey(valkey: fred::prelude::Client) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.frontend_base_url = "https://auth.example".to_owned();
+    settings.endpoint.frontend_base_url = "https://auth.example".to_owned();
 
     AppState {
         diesel_db: create_pool(

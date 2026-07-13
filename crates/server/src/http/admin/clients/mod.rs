@@ -17,14 +17,14 @@ pub(crate) struct AdminClientConfig {
 
 impl AdminClientConfig {
     pub(crate) fn from_settings(settings: &Settings) -> Self {
-        let protocol = settings.protocol();
-        let endpoint = settings.endpoint();
+        let protocol = &settings.protocol;
+        let endpoint = &settings.endpoint;
         Self {
-            issuer: settings.issuer.as_str().into(),
-            pairwise_subject_secret: protocol.pairwise_subject_secret.map(Into::into),
-            client_secret_pepper: protocol.client_secret_pepper.into(),
+            issuer: endpoint.issuer.as_str().into(),
+            pairwise_subject_secret: protocol.pairwise_subject_secret.as_deref().map(Into::into),
+            client_secret_pepper: protocol.client_secret_pepper.as_str().into(),
             client_ip: crate::support::client_ip::ClientIpConfig::new(
-                endpoint.trusted_proxy_cidrs,
+                &endpoint.trusted_proxy_cidrs,
                 endpoint.client_ip_header_mode,
             ),
         }
@@ -63,14 +63,14 @@ pub(crate) struct AdminClientTestDependencies {
 pub(crate) fn test_dependencies(
     state: &actix_web::web::Data<crate::domain::AppState>,
 ) -> AdminClientTestDependencies {
-    let session = state.settings.session();
+    let session = &state.settings.session;
     AdminClientTestDependencies {
         sessions: actix_web::web::Data::new(crate::support::sessions::AdminSessionHandles::new(
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             crate::support::sessions::SessionHttpConfig::new(
-                session.session_cookie_name,
-                session.csrf_cookie_name,
+                &session.session_cookie_name,
+                &session.csrf_cookie_name,
                 session.cookie_secure,
             ),
         )),

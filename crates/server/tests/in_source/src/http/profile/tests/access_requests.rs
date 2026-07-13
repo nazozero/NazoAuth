@@ -141,7 +141,7 @@ impl LiveProfileAccessRequestFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -150,11 +150,11 @@ impl LiveProfileAccessRequestFixture {
     fn request(&self, sid: &str, csrf: &str) -> HttpRequest {
         TestRequest::default()
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 csrf.to_owned(),
             ))
             .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -166,7 +166,7 @@ impl LiveProfileAccessRequestFixture {
 fn request_with_session_but_no_csrf(state: &AppState, sid: &str) -> HttpRequest {
     TestRequest::default()
         .cookie(Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             sid.to_owned(),
         ))
         .to_http_request()

@@ -51,8 +51,8 @@ fn prompt_none_payload() -> ConsentPayload {
 fn prompt_none_state_with_valkey(valkey: fred::prelude::Client) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.auth_code_ttl_seconds = 60;
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.auth_code_ttl_seconds = 60;
 
     AppState {
         diesel_db: create_pool(
@@ -117,8 +117,8 @@ fn prompt_none_state_with_database_url(database_url: String) -> AppState {
         .expect("valkey client construction should not connect");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.auth_code_ttl_seconds = 60;
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.auth_code_ttl_seconds = 60;
 
     AppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
@@ -464,7 +464,7 @@ async fn prompt_none_consumes_valid_pushed_request_uri_before_issuing_code() {
         &state.valkey,
         pushed_authorization_request_key(&request_uri),
         serde_json::to_string(&pushed).expect("PAR payload should serialize"),
-        state.settings.auth_code_ttl_seconds,
+        state.settings.protocol.auth_code_ttl_seconds,
     )
     .await
     .expect("valid request_uri should persist");
@@ -544,7 +544,7 @@ async fn prompt_none_redirects_server_error_when_request_uri_is_malformed() {
         &state.valkey,
         pushed_authorization_request_key(&request_uri),
         "{not-json".to_owned(),
-        state.settings.auth_code_ttl_seconds,
+        state.settings.protocol.auth_code_ttl_seconds,
     )
     .await
     .expect("malformed request_uri should persist");

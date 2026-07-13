@@ -118,17 +118,17 @@ struct TestAdminAccessRequestDependencies {
 }
 
 fn admin_access_request_dependencies(state: &Data<AppState>) -> TestAdminAccessRequestDependencies {
-    let session = state.settings.session();
-    let protocol = state.settings.protocol();
-    let storage = state.settings.storage();
-    let endpoint = state.settings.endpoint();
+    let session = &state.settings.session;
+    let protocol = &state.settings.protocol;
+    let storage = &state.settings.storage;
+    let endpoint = &state.settings.endpoint;
     TestAdminAccessRequestDependencies {
         admin_sessions: Data::new(AdminSessionHandles::new(
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             SessionHttpConfig::new(
-                session.session_cookie_name,
-                session.csrf_cookie_name,
+                &session.session_cookie_name,
+                &session.csrf_cookie_name,
                 session.cookie_secure,
             ),
         )),
@@ -136,13 +136,13 @@ fn admin_access_request_dependencies(state: &Data<AppState>) -> TestAdminAccessR
         delivery_store: Data::new(DeliveryStore::new(&state.valkey_connection())),
         keyset: Data::new(state.keyset.clone()),
         config: Data::new(AdminAccessRequestConfig::new(
-            protocol.pairwise_subject_secret,
-            protocol.client_secret_pepper,
-            &state.settings.issuer,
+            protocol.pairwise_subject_secret.as_deref(),
+            &protocol.client_secret_pepper,
+            &state.settings.endpoint.issuer,
             storage.client_delivery_ttl_seconds,
         )),
         client_ip_config: Data::new(ClientIpConfig::new(
-            endpoint.trusted_proxy_cidrs,
+            &endpoint.trusted_proxy_cidrs,
             endpoint.client_ip_header_mode,
         )),
     }
@@ -252,16 +252,24 @@ fn delivery_tokens_are_deterministic_and_request_scoped() {
     let state = test_state();
     let user_id = Uuid::now_v7();
     let request_id = Uuid::now_v7();
-    let first = access_delivery_token(&state.settings.client_secret_pepper, user_id, request_id);
+    let first = access_delivery_token(
+        &state.settings.protocol.client_secret_pepper,
+        user_id,
+        request_id,
+    );
 
     assert_eq!(
         first,
-        access_delivery_token(&state.settings.client_secret_pepper, user_id, request_id)
+        access_delivery_token(
+            &state.settings.protocol.client_secret_pepper,
+            user_id,
+            request_id
+        )
     );
     assert_ne!(
         first,
         access_delivery_token(
-            &state.settings.client_secret_pepper,
+            &state.settings.protocol.client_secret_pepper,
             user_id,
             Uuid::now_v7()
         )
@@ -539,7 +547,7 @@ impl LiveAdminAccessRequestFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -549,7 +557,7 @@ impl LiveAdminAccessRequestFixture {
         actix_web::test::TestRequest::get()
             .uri(uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .to_http_request()
@@ -559,11 +567,11 @@ impl LiveAdminAccessRequestFixture {
         actix_web::test::TestRequest::post()
             .uri(uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 csrf.to_owned(),
             ))
             .insert_header(("x-csrf-token", csrf))
@@ -868,7 +876,7 @@ async fn approve_access_request_rejects_missing_csrf_before_admin_or_database_lo
     let req = actix_web::test::TestRequest::post()
         .uri("/admin/access-requests/request-id/approve")
         .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             "session-id",
         ))
         .to_http_request();
@@ -1073,7 +1081,7 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         &fixture.state.valkey,
         &delivery_key,
         staged.to_string(),
-        fixture.state.settings.client_delivery_ttl_seconds,
+        fixture.state.settings.storage.client_delivery_ttl_seconds,
     )
     .await
     .unwrap();
@@ -1209,7 +1217,7 @@ async fn reject_access_request_rejects_missing_csrf_before_admin_or_database_loo
     let req = actix_web::test::TestRequest::post()
         .uri("/admin/access-requests/request-id/reject")
         .cookie(actix_web::cookie::Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             "session-id",
         ))
         .to_http_request();

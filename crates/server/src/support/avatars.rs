@@ -16,7 +16,7 @@ pub(crate) fn avatar_meta_path(state: &AppState, user_id: Uuid) -> PathBuf {
 pub(crate) fn avatar_user_dir(state: &AppState, user_id: Uuid) -> PathBuf {
     state
         .settings
-        .storage()
+        .storage
         .avatar_storage_dir
         .join(user_id.to_string())
 }

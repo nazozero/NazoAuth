@@ -102,11 +102,11 @@ fn decode_native_sso_id_token(state: &AppState, token: &str) -> Option<NativeSso
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
     validation.validate_exp = false;
-    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
     let claims = jsonwebtoken::decode::<NativeSsoIdTokenClaims>(token, &decoding_key, &validation)
         .ok()?
         .claims;
-    if claims.iss != state.settings.issuer {
+    if claims.iss != state.settings.endpoint.issuer {
         return None;
     }
     Some(claims)
@@ -246,7 +246,7 @@ pub(crate) async fn persist_native_sso_device_secret(
         return Ok(());
     };
     let expires_at =
-        Utc::now() + Duration::seconds(state.settings.protocol().refresh_token_ttl_seconds);
+        Utc::now() + Duration::seconds(state.settings.protocol.refresh_token_ttl_seconds);
     let payload = NativeSsoDeviceSecretState {
         tenant_id: client.tenant_id,
         user_id,
@@ -260,7 +260,7 @@ pub(crate) async fn persist_native_sso_device_secret(
         .store_native_sso(
             &binding.device_secret,
             &serde_json::to_value(payload)?,
-            state.settings.protocol().refresh_token_ttl_seconds.max(1) as u64,
+            state.settings.protocol.refresh_token_ttl_seconds.max(1) as u64,
         )
         .await?;
     Ok(())
@@ -292,7 +292,7 @@ pub(crate) async fn token_native_sso_exchange(
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
-    if form.audiences.as_slice() != [state.settings.issuer.as_str()] {
+    if form.audiences.as_slice() != [state.settings.endpoint.issuer.as_str()] {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_target",
@@ -400,7 +400,7 @@ pub(crate) async fn token_native_sso_exchange(
             subject,
             scopes,
             authorization_details: json!([]),
-            audiences: vec![state.settings.protocol().default_audience.to_owned()],
+            audiences: vec![state.settings.protocol.default_audience.to_owned()],
             nonce: None,
             auth_time: None,
             amr: vec!["native_sso".to_owned()],

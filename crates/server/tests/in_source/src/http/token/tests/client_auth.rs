@@ -36,7 +36,7 @@ fn token_management_state_with_settings(settings: Settings) -> AppState {
 fn token_management_state_with_trusted_proxy() -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.trusted_proxy_cidrs =
+    settings.endpoint.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
     token_management_state_with_settings(settings)
 }
@@ -65,7 +65,7 @@ fn fixture_secret(label: &str) -> String {
 fn fixture_secret_hash(secret: &str) -> String {
     let settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    hash_client_secret(secret, &settings.client_secret_pepper)
+    hash_client_secret(secret, &settings.protocol.client_secret_pepper)
 }
 
 fn fixture_mtls_thumbprint(label: &str) -> String {
@@ -310,7 +310,7 @@ async fn token_client_assertion_store_failure_fails_token_grant_as_server_error(
     let req = TestRequest::post().uri("/token").to_http_request();
     let assertion = signed_client_assertion(
         &client.client_id,
-        &state.settings.issuer,
+        &state.settings.endpoint.issuer,
         "client-kid",
         &key,
         "token-store-unavailable-jti",
@@ -350,11 +350,15 @@ fn confidential_client_secret_auth_accepts_correct_and_rejects_wrong_secret_by_d
         .nth(1)
         .expect("fixture verifier contains a salt");
     assert_eq!(
-        client_secret_digest(&correct_secret, &settings.client_secret_pepper, salt),
+        client_secret_digest(
+            &correct_secret,
+            &settings.protocol.client_secret_pepper,
+            salt
+        ),
         hash
     );
     assert_ne!(
-        client_secret_digest(&wrong_secret, &settings.client_secret_pepper, salt),
+        client_secret_digest(&wrong_secret, &settings.protocol.client_secret_pepper, salt),
         hash
     );
     assert!(matches!(
@@ -477,7 +481,7 @@ async fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
 async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://auth.nazo.run".to_owned();
+    settings.endpoint.issuer = "https://auth.nazo.run".to_owned();
     let state = token_management_state_with_settings(settings);
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let public_jwk = key.public_jwk("client-kid");

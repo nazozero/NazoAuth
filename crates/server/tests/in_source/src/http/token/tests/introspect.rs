@@ -42,8 +42,8 @@ fn signed_introspection_offline_state() -> Data<AppState> {
     let _public_jwk = key_material.public_jwk("introspect-offline-kid");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.authorization_server_profile =
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.authorization_server_profile =
         crate::settings::AuthorizationServerProfile::Fapi2MessageSigningIntrospection;
     Data::new(AppState {
         diesel_db: create_pool(
@@ -78,8 +78,8 @@ fn live_introspection_state_from_database_url(database_url: String) -> Option<Da
     let _public_jwk = key_material.public_jwk("introspect-test-kid");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.default_audience = "resource://default".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.default_audience = "resource://default".to_owned();
 
     Some(Data::new(AppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
@@ -93,7 +93,7 @@ fn live_introspection_state_from_database_url(database_url: String) -> Option<Da
 
 fn with_signed_introspection_profile(state: &Data<AppState>) -> Data<AppState> {
     let mut settings = (*state.settings).clone();
-    settings.authorization_server_profile =
+    settings.protocol.authorization_server_profile =
         crate::settings::AuthorizationServerProfile::Fapi2MessageSigningIntrospection;
     Data::new(AppState {
         diesel_db: state.diesel_db.clone(),
@@ -299,7 +299,7 @@ async fn live_rate_limited_introspection_state() -> Option<Data<AppState>> {
     .expect("valkey client should build");
     valkey.init().await.expect("valkey should connect");
     let mut settings = (*state.settings).clone();
-    settings.rate_limit.token_management_max_requests = 0;
+    settings.identity.rate_limit.token_management_max_requests = 0;
 
     Some(Data::new(AppState {
         diesel_db: state.diesel_db.clone(),
@@ -324,7 +324,7 @@ async fn insert_introspection_client(
         client_type: "confidential".to_owned(),
         client_secret_hash: Some(hash_client_secret(
             secret,
-            &state.settings.client_secret_pepper,
+            &state.settings.protocol.client_secret_pepper,
         )),
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid", "offline_access"]),
@@ -433,7 +433,7 @@ async fn insert_introspection_client(
     .bind::<Text, _>(row.client_type.as_str())
     .bind::<Nullable<Text>, _>(Some(hash_client_secret(
         secret,
-        &state.settings.client_secret_pepper,
+        &state.settings.protocol.client_secret_pepper,
     )))
     .bind::<Jsonb, _>(json!(&row.redirect_uris))
     .bind::<Jsonb, _>(json!(&row.scopes))
@@ -636,7 +636,7 @@ async fn signed_introspection_jwt_body(state: &Data<AppState>, response: HttpRes
     validation.validate_aud = false;
     validation.validate_exp = false;
     validation.required_spec_claims.clear();
-    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
     jsonwebtoken::decode::<Value>(token, &decoding_key, &validation)
         .expect("JWT introspection response should verify")
         .claims
@@ -842,7 +842,7 @@ async fn encrypted_introspection_response_is_nested_jwt_for_configured_resource_
     validation.validate_aud = false;
     validation.validate_exp = false;
     validation.required_spec_claims.clear();
-    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
     let claims = jsonwebtoken::decode::<Value>(&nested_jwt, &decoding_key, &validation)
         .expect("nested JWT introspection response should verify")
         .claims;

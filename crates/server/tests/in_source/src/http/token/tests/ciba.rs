@@ -40,7 +40,7 @@ impl Write for FailingAuditWriter {
 fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
     configure(&mut settings);
     AppState {
         diesel_db: create_pool(
@@ -335,8 +335,8 @@ fn ciba_poll_storage_failure_returns_503_and_never_protocol_progress() {
 #[actix_web::test]
 async fn ciba_automated_decision_route_accepts_empty_post_without_json_content_type() {
     let state = ciba_test_state_with(|settings| {
-        settings.enable_ciba = true;
-        settings.ciba_automated_decision_token =
+        settings.modules.enable_ciba = true;
+        settings.ciba.ciba_automated_decision_token =
             Some("test-ciba-automated-decision-token-32".to_owned());
     });
     let settings = Arc::clone(&state.settings);
@@ -432,11 +432,11 @@ fn fapi_ciba_compatibility_profile_preserves_client_request_object_policy() {
 #[test]
 fn ciba_profile_does_not_apply_authorization_code_only_controls() {
     let mut settings = ciba_test_state().settings.as_ref().clone();
-    settings.authorization_server_profile =
+    settings.protocol.authorization_server_profile =
         crate::settings::AuthorizationServerProfile::Fapi2Security;
-    settings.require_pushed_authorization_requests = true;
-    settings.enable_request_uri_parameter = false;
-    settings.ciba_security_profile =
+    settings.protocol.require_pushed_authorization_requests = true;
+    settings.modules.enable_request_uri_parameter = false;
+    settings.protocol.ciba_security_profile =
         crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll;
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
@@ -458,7 +458,7 @@ fn ciba_profile_does_not_apply_authorization_code_only_controls() {
 fn fapi2_ciba_profile_requires_signed_backchannel_authentication_request() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
+    settings.protocol.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let client = ciba_private_key_jwt_client("ciba-kid", &key);
 
@@ -483,7 +483,7 @@ fn fapi2_ciba_profile_requires_signed_backchannel_authentication_request() {
 fn fapi2_ciba_client_policy_rejects_public_weak_auth_and_bearer_tokens() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
+    settings.protocol.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
 
@@ -534,7 +534,7 @@ fn fapi2_ciba_client_policy_rejects_public_weak_auth_and_bearer_tokens() {
 fn fapi2_ciba_private_key_jwt_requires_issuer_audience_only() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
+    settings.protocol.ciba_security_profile = crate::settings::CibaSecurityProfile::Fapi2Ciba;
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
     client.require_mtls_bound_tokens = true;
@@ -550,7 +550,7 @@ fn fapi2_ciba_private_key_jwt_requires_issuer_audience_only() {
         Some("invalid_client")
     );
 
-    settings.ciba_security_profile =
+    settings.protocol.ciba_security_profile =
         crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll;
     validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
         .expect("OIDF FAPI-CIBA compatibility profile must preserve endpoint audience allowance");
@@ -635,7 +635,7 @@ fn ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant() {
 #[actix_web::test]
 async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
     let state = ciba_test_state_with(|settings| {
-        settings.enable_ciba = true;
+        settings.modules.enable_ciba = true;
     });
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);

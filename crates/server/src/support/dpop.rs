@@ -128,9 +128,9 @@ pub(crate) async fn validate_dpop_proof(
 ) -> Result<Option<String>, DpopError> {
     validate_dpop_proof_with_store(
         &nazo_valkey::ReplayStore::new(&state.valkey_connection()),
-        &state.settings.issuer,
-        &state.settings.mtls_endpoint_base_url,
-        state.settings.protocol().dpop_nonce_policy,
+        &state.settings.endpoint.issuer,
+        &state.settings.endpoint.mtls_endpoint_base_url,
+        state.settings.protocol.dpop_nonce_policy,
         req,
         token_for_ath,
         expected_jkt,
@@ -276,7 +276,7 @@ async fn validate_dpop_proof_with_replay(
 async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<(), DpopError> {
     validate_dpop_nonce_with_store(
         &nazo_valkey::ReplayStore::new(&state.valkey_connection()),
-        state.settings.protocol().dpop_nonce_policy,
+        state.settings.protocol.dpop_nonce_policy,
         nonce,
     )
     .await

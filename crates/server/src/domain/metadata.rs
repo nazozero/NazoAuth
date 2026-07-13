@@ -19,12 +19,12 @@ pub(crate) struct MetadataConfig {
 
 impl From<&Settings> for MetadataConfig {
     fn from(settings: &Settings) -> Self {
-        let endpoint = settings.endpoint();
-        let protocol = settings.protocol();
-        let modules = settings.modules();
+        let endpoint = &settings.endpoint;
+        let protocol = &settings.protocol;
+        let modules = &settings.modules;
         Self {
-            issuer: settings.issuer.clone(),
-            mtls_endpoint_base_url: settings.mtls_endpoint_base_url.clone(),
+            issuer: endpoint.issuer.clone(),
+            mtls_endpoint_base_url: endpoint.mtls_endpoint_base_url.clone(),
             mtls_enabled: !endpoint.trusted_proxy_cidrs.is_empty(),
             authorization_server_profile: protocol.authorization_server_profile,
             ciba_security_profile: protocol.ciba_security_profile,

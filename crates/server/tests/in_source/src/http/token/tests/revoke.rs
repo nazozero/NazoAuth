@@ -125,7 +125,7 @@ async fn live_rate_limited_revocation_state() -> Option<Data<AppState>> {
     .expect("valkey client should build");
     valkey.init().await.expect("valkey should connect");
     let mut settings = (*state.settings).clone();
-    settings.rate_limit.token_management_max_requests = 0;
+    settings.identity.rate_limit.token_management_max_requests = 0;
 
     Some(Data::new(AppState {
         diesel_db: state.diesel_db.clone(),
@@ -150,7 +150,7 @@ async fn insert_revocation_client(
         client_type: "confidential".to_owned(),
         client_secret_hash: Some(hash_client_secret(
             secret,
-            &state.settings.client_secret_pepper,
+            &state.settings.protocol.client_secret_pepper,
         )),
         redirect_uris: json!(["https://client.example/callback"]),
         scopes: json!(["openid", "offline_access"]),
@@ -259,7 +259,7 @@ async fn insert_revocation_client(
     .bind::<Text, _>(row.client_type.as_str())
     .bind::<Nullable<Text>, _>(Some(hash_client_secret(
         secret,
-        &state.settings.client_secret_pepper,
+        &state.settings.protocol.client_secret_pepper,
     )))
     .bind::<Jsonb, _>(json!(&row.redirect_uris))
     .bind::<Jsonb, _>(json!(&row.scopes))
@@ -337,7 +337,7 @@ async fn sign_access_token(state: &Data<AppState>, client: &ClientRow) -> Issued
             user_id: None,
             subject_type: "client",
             client_id: client.client_id.as_str(),
-            audiences: std::slice::from_ref(&state.settings.default_audience),
+            audiences: std::slice::from_ref(&state.settings.protocol.default_audience),
             scopes: &["openid".to_owned()],
             authorization_details: &json!([]),
             userinfo_claims: &[],

@@ -10,9 +10,9 @@ use std::sync::Arc;
 fn dpop_state(nonce_policy: DpopNoncePolicy) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.mtls_endpoint_base_url = "https://mtls.example".to_owned();
-    settings.dpop_nonce_policy = nonce_policy;
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.endpoint.mtls_endpoint_base_url = "https://mtls.example".to_owned();
+    settings.protocol.dpop_nonce_policy = nonce_policy;
 
     AppState {
         diesel_db: create_pool(

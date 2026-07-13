@@ -479,7 +479,10 @@ async fn client_credentials_issue_returns_minimal_bearer_token_response_without_
         .expect("response body should collect");
     let value: Value = serde_json::from_slice(&body).expect("token response should be JSON");
     assert_eq!(value["token_type"], "Bearer");
-    assert_eq!(value["expires_in"], state.settings.access_token_ttl_seconds);
+    assert_eq!(
+        value["expires_in"],
+        state.settings.protocol.access_token_ttl_seconds
+    );
     assert_eq!(value["scope"], "accounts read");
     assert!(
         value["access_token"]

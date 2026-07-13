@@ -99,7 +99,7 @@ async fn persist_access_token_subject_mapping(
             tenant_id,
             jti,
             user_id,
-            state.settings.protocol().access_token_ttl_seconds.max(1) as u64,
+            state.settings.protocol.access_token_ttl_seconds.max(1) as u64,
         )
         .await?;
     Ok(())
@@ -216,7 +216,7 @@ pub(crate) async fn issue_token_response(
             authorization_details: &issue.authorization_details,
             userinfo_claims: &issue.userinfo_claims,
             userinfo_claim_requests: &issue.userinfo_claim_requests,
-            ttl: state.settings.protocol().access_token_ttl_seconds,
+            ttl: state.settings.protocol.access_token_ttl_seconds,
             dpop_jkt: issue.dpop_jkt.as_deref(),
             mtls_x5t_s256: issue.mtls_x5t_s256.as_deref(),
             actor: issue.actor.as_ref(),
@@ -271,7 +271,7 @@ pub(crate) async fn issue_token_response(
     let mut body = json!({
         "access_token": issued_access_token.token,
         "token_type": token_type,
-        "expires_in": state.settings.protocol().access_token_ttl_seconds,
+        "expires_in": state.settings.protocol.access_token_ttl_seconds,
         "scope": issue.scopes.join(" ")
     });
     if let Some(issued_token_type) = issue.issued_token_type.as_deref() {
@@ -356,7 +356,7 @@ pub(crate) async fn issue_token_response(
                 ),
                 acr: issue.acr.as_deref(),
                 extra_claims: user_claims.as_ref(),
-                ttl: state.settings.protocol().id_token_ttl_seconds,
+                ttl: state.settings.protocol.id_token_ttl_seconds,
                 signing_alg: Some(id_token_signing_alg_for_client(client)),
             },
         )
@@ -408,7 +408,7 @@ pub(crate) async fn issue_token_response(
                 lost_response_retry,
                 issued_at: now,
                 expires_at: now
-                    + Duration::seconds(state.settings.protocol().refresh_token_ttl_seconds),
+                    + Duration::seconds(state.settings.protocol.refresh_token_ttl_seconds),
             };
             match persist_refresh_token(state, client, &issue, &refresh).await {
                 Ok(RefreshPersistResult::Inserted) => {

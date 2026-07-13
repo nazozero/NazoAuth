@@ -158,7 +158,7 @@ impl AdminSessionHandles {
 }
 
 pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
-    let session = state.settings.session();
+    let session = &state.settings.session;
     with_cookie_headers(
         oauth_error(
             StatusCode::UNAUTHORIZED,
@@ -166,8 +166,8 @@ pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
             "会话不存在或已过期,请重新登录.",
         ),
         &[
-            clear_cookie(session.session_cookie_name, session.cookie_secure),
-            clear_cookie(session.csrf_cookie_name, session.cookie_secure),
+            clear_cookie(&session.session_cookie_name, session.cookie_secure),
+            clear_cookie(&session.csrf_cookie_name, session.cookie_secure),
         ],
     )
 }
@@ -177,12 +177,12 @@ pub(crate) fn has_valid_csrf_token(
     req: &HttpRequest,
     fallback_token: Option<&str>,
 ) -> bool {
-    let session = state.settings.session();
+    let session = &state.settings.session;
     has_valid_csrf_token_for_cookies(
         req,
         fallback_token,
-        session.session_cookie_name,
-        session.csrf_cookie_name,
+        &session.session_cookie_name,
+        &session.csrf_cookie_name,
     )
 }
 
@@ -223,17 +223,17 @@ impl SessionProfileHandles {
 
     #[cfg(test)]
     pub(crate) fn from_test_state(state: &AppState) -> Self {
-        let session = state.settings.session();
+        let session = &state.settings.session;
         Self::new(
             SessionStore::new(&state.valkey_connection()),
             UserRepository::new(state.diesel_db.clone()),
             SessionHttpConfig::new(
-                session.session_cookie_name,
-                session.csrf_cookie_name,
+                &session.session_cookie_name,
+                &session.csrf_cookie_name,
                 session.cookie_secure,
             ),
-            &state.settings.issuer,
-            state.settings.modules().enable_session_management,
+            &state.settings.endpoint.issuer,
+            state.settings.modules.enable_session_management,
         )
     }
 
@@ -400,7 +400,7 @@ pub(crate) async fn store_session(
     session_id: &str,
     payload: &SessionPayload,
 ) -> anyhow::Result<()> {
-    let session = state.settings.session();
+    let session = &state.settings.session;
     nazo_valkey::SessionStore::new(&state.valkey_connection())
         .store(
             session_id,
@@ -440,7 +440,7 @@ pub(crate) async fn current_session(
     current_session_from_handles(
         &sessions,
         &users,
-        state.settings.session().session_cookie_name,
+        &state.settings.session.session_cookie_name,
         req,
     )
     .await
@@ -492,7 +492,7 @@ pub(crate) async fn current_pending_mfa_session(
     current_pending_mfa_session_from_handles(
         &store,
         &users,
-        state.settings.session().session_cookie_name,
+        &state.settings.session.session_cookie_name,
         req,
     )
     .await
@@ -562,8 +562,8 @@ async fn record_mfa_step_up(
     let store = SessionStore::new(&state.valkey_connection());
     record_mfa_step_up_with_store(
         &store,
-        state.settings.session().session_cookie_name,
-        state.settings.session().session_ttl_seconds,
+        &state.settings.session.session_cookie_name,
+        state.settings.session.session_ttl_seconds,
         req,
         method,
         require_pending_mfa,

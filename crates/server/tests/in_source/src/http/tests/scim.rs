@@ -21,11 +21,14 @@ fn uuid_fixture(value: u128) -> Uuid {
 }
 
 fn test_scim_config(settings: &Settings) -> ScimConfig {
-    let endpoint = settings.endpoint();
+    let endpoint = &settings.endpoint;
     ScimConfig::new(
-        settings.storage().scim_bearer_token,
-        settings.protocol().client_secret_pepper,
-        ClientIpConfig::new(endpoint.trusted_proxy_cidrs, endpoint.client_ip_header_mode),
+        settings.storage.scim_bearer_token.as_deref(),
+        &settings.protocol.client_secret_pepper,
+        ClientIpConfig::new(
+            &endpoint.trusted_proxy_cidrs,
+            endpoint.client_ip_header_mode,
+        ),
     )
     .expect("test SCIM settings should be valid")
 }
@@ -40,7 +43,7 @@ fn test_scim_service(pool: &nazo_postgres::DbPool) -> nazo_identity::scim::ScimS
 fn test_state_with_scim_bearer_token(scim_bearer_token: Option<&str>) -> ScimHandles {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
+    settings.storage.scim_bearer_token = scim_bearer_token.map(ToOwned::to_owned);
     let pool = create_pool(
         "postgres://nazo_scim_test_invalid:nazo_scim_test_invalid@127.0.0.1:1/nazo".to_owned(),
         1,
@@ -89,7 +92,7 @@ async fn live_state_for_database_url(
 ) -> Option<ScimTestFixture> {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.scim_bearer_token = Some(scim_bearer_token.to_owned());
+    settings.storage.scim_bearer_token = Some(scim_bearer_token.to_owned());
     let pool = create_pool(database_url, 4).expect("database pool should build");
     let state = Data::new(ScimHandles::for_test(
         test_scim_service(&pool),

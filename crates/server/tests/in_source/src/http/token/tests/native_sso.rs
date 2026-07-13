@@ -7,7 +7,7 @@ use std::sync::Arc;
 fn native_sso_state_with_signing_key() -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
 
     AppState {
         diesel_db: create_pool(
@@ -116,12 +116,12 @@ fn new_native_sso_token_binding_requires_session_id() {
 #[tokio::test]
 async fn native_sso_id_token_decoder_accepts_configured_issuer() {
     let state = native_sso_state_with_signing_key();
-    let token = signed_native_sso_id_token(&state, state.settings.issuer.as_str()).await;
+    let token = signed_native_sso_id_token(&state, state.settings.endpoint.issuer.as_str()).await;
 
     let claims =
         decode_native_sso_id_token(&state, &token).expect("configured issuer should decode");
 
-    assert_eq!(claims.iss, state.settings.issuer.as_str());
+    assert_eq!(claims.iss, state.settings.endpoint.issuer.as_str());
     assert_eq!(claims.sub, "subject-1");
     assert_eq!(claims.sid, "sid-1");
 }

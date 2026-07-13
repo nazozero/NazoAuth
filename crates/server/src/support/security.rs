@@ -297,7 +297,7 @@ pub(crate) fn extract_client_credentials(
 ) -> ClientCredentials {
     extract_client_credentials_with_trusted_proxies(
         req,
-        settings.endpoint().trusted_proxy_cidrs,
+        &settings.endpoint.trusted_proxy_cidrs,
         form_client_id,
         form_secret,
         form_assertion_type,
@@ -439,7 +439,7 @@ fn verify_private_key_jwt_claims_with_settings(
     client: &ClientRow,
     assertion: &str,
 ) -> Result<ValidatedClientAssertion, ClientAssertionError> {
-    verify_private_key_jwt_claims_with_issuer(&settings.issuer, req, client, assertion)
+    verify_private_key_jwt_claims_with_issuer(&settings.endpoint.issuer, req, client, assertion)
 }
 
 fn verify_private_key_jwt_claims_with_issuer(

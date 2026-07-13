@@ -14,11 +14,11 @@ pub(crate) struct MfaProfileConfig {
 
 impl From<&Settings> for MfaProfileConfig {
     fn from(settings: &Settings) -> Self {
-        let session = settings.session();
-        let identity = settings.identity();
-        let endpoint = settings.endpoint();
+        let session = &settings.session;
+        let identity = &settings.identity;
+        let endpoint = &settings.endpoint;
         Self {
-            issuer: settings.issuer.clone(),
+            issuer: endpoint.issuer.clone(),
             session_ttl_seconds: session.session_ttl_seconds,
             rate_limit_window_seconds: identity.rate_limit.window_seconds,
             rate_limit_max_requests: identity.rate_limit.auth_max_requests,
@@ -39,17 +39,17 @@ pub(crate) struct MfaProfileHandles {
 #[cfg(test)]
 impl MfaProfileHandles {
     pub(crate) fn from_app_state(state: &super::AppState) -> Self {
-        let session = state.settings.session();
+        let session = &state.settings.session;
         let sessions = SessionProfileHandles::new(
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             crate::support::sessions::SessionHttpConfig::new(
-                session.session_cookie_name,
-                session.csrf_cookie_name,
+                &session.session_cookie_name,
+                &session.csrf_cookie_name,
                 session.cookie_secure,
             ),
-            &state.settings.issuer,
-            state.settings.modules().enable_session_management,
+            &state.settings.endpoint.issuer,
+            state.settings.modules.enable_session_management,
         );
         Self {
             config: MfaProfileConfig::from(state.settings.as_ref()),

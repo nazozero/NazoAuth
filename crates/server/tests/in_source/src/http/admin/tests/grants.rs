@@ -99,14 +99,14 @@ fn admin_grant_dependencies(
     Data<GrantRepository>,
     Data<OAuthClientRepository>,
 ) {
-    let session = state.settings.session();
+    let session = &state.settings.session;
     (
         Data::new(AdminSessionHandles::new(
             nazo_valkey::SessionStore::new(&state.valkey_connection()),
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             SessionHttpConfig::new(
-                session.session_cookie_name,
-                session.csrf_cookie_name,
+                &session.session_cookie_name,
+                &session.csrf_cookie_name,
                 session.cookie_secure,
             ),
         )),
@@ -336,7 +336,7 @@ impl LiveAdminGrantFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -346,7 +346,7 @@ impl LiveAdminGrantFixture {
         actix_web::test::TestRequest::get()
             .uri(uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .to_http_request()
@@ -356,11 +356,11 @@ impl LiveAdminGrantFixture {
         actix_web::test::TestRequest::post()
             .uri(uri)
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 csrf.to_owned(),
             ))
             .insert_header(("x-csrf-token", csrf))
@@ -548,7 +548,7 @@ async fn admin_revoke_grant_rejects_missing_csrf_before_auth_or_lookup() {
     let req = actix_web::test::TestRequest::post()
         .uri("/admin/grants/revoke")
         .cookie(Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             "session-id",
         ))
         .to_http_request();

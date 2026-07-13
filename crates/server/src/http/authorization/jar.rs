@@ -353,7 +353,7 @@ fn request_object_audience_valid(
     state: &AppState,
     mode: RequestObjectMode,
 ) -> bool {
-    request_object_audience_valid_with_issuer(claims, &state.settings.issuer, mode)
+    request_object_audience_valid_with_issuer(claims, &state.settings.endpoint.issuer, mode)
 }
 
 fn outer_client_id_conflicts(outer: &HashMap<String, String>, client_id: &str) -> bool {
@@ -537,7 +537,7 @@ fn request_object_audience_matches_with_issuer(aud: &Value, issuer: &str) -> boo
 
 #[cfg(test)]
 fn request_object_audience_matches(aud: &Value, state: &AppState) -> bool {
-    request_object_audience_matches_with_issuer(aud, &state.settings.issuer)
+    request_object_audience_matches_with_issuer(aud, &state.settings.endpoint.issuer)
 }
 
 fn request_object_times_valid(

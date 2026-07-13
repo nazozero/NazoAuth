@@ -1,5 +1,4 @@
 use super::*;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -16,13 +15,9 @@ use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::http::token::{revoke::revoke, userinfo::userinfo};
-use crate::settings::{
-    AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, RateLimitSettings,
-    RequestObjectJtiPolicy, SubjectType,
-};
+use crate::settings::AuthorizationServerProfile;
 use crate::support::{
-    ClientIpHeaderMode, IpCidr, SessionPayload, current_session, hash_client_secret, valkey_del,
-    valkey_set_ex,
+    IpCidr, SessionPayload, current_session, hash_client_secret, valkey_del, valkey_set_ex,
 };
 
 fn code_payload(dpop_jkt: Option<&str>) -> CodePayload {
@@ -61,90 +56,10 @@ fn mtls_code_payload() -> CodePayload {
 }
 
 fn settings(profile: AuthorizationServerProfile) -> Settings {
-    Settings {
-        issuer: "https://issuer.example".to_owned(),
-        mtls_endpoint_base_url: "https://issuer.example".to_owned(),
-        frontend_base_url: "https://app.example".to_owned(),
-        cors_allowed_origins: vec!["https://app.example".to_owned()],
-        default_audience: "resource://default".to_owned(),
-        protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
-        authorization_server_profile: profile,
-        ciba_security_profile:
-            crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll,
-        dpop_nonce_policy: DpopNoncePolicy::Required,
-        request_object_jti_policy: RequestObjectJtiPolicy::Optional,
-        session_cookie_name: "sid".to_owned(),
-        csrf_cookie_name: "csrf".to_owned(),
-        cookie_secure: true,
-        session_ttl_seconds: 3600,
-        auth_code_ttl_seconds: 60,
-        access_token_ttl_seconds: 300,
-        id_token_ttl_seconds: 600,
-        refresh_token_ttl_seconds: 2_592_000,
-        avatar_max_bytes: 2_097_152,
-        client_delivery_ttl_seconds: 86_400,
-        client_secret_pepper: "client-secret-pepper-for-tests-000000000001".to_owned(),
-        rate_limit: RateLimitSettings {
-            window_seconds: 60,
-            auth_max_requests: 30,
-            token_max_requests: 60,
-            token_management_max_requests: 120,
-            login_failure_window_seconds: 900,
-            login_failure_email_max_attempts: 50,
-            login_failure_ip_email_max_attempts: 5,
-        },
-        email: EmailSettings {
-            delivery: EmailDelivery::Disabled,
-            code_ttl_seconds: 900,
-            send_cooldown_seconds: 60,
-            send_peer_cooldown_seconds: 5,
-        },
-        email_code_dev_response_enabled: false,
-        avatar_storage_dir: PathBuf::from("runtime/avatars"),
-        jwk_keys_dir: PathBuf::from("runtime/keys"),
-        signing_external_command: Vec::new(),
-        signing_external_timeout_ms: 2_000,
-        signing_key_rotation_interval_seconds: 7_776_000,
-        signing_key_prepublish_seconds: 86_400,
-        trusted_proxy_cidrs: Vec::<IpCidr>::new(),
-        client_ip_header_mode: ClientIpHeaderMode::None,
-        subject_type: SubjectType::Public,
-        pairwise_subject_secret: None,
-        par_ttl_seconds: 90,
-        require_pushed_authorization_requests: profile.requires_fapi2_security(),
-        scim_bearer_token: None,
-        passkey: crate::settings::PasskeySettings {
-            rp_id: "issuer.example".to_owned(),
-            rp_name: "Nazo OAuth".to_owned(),
-            origin: "https://issuer.example".to_owned(),
-            require_user_verification: true,
-            require_user_handle: true,
-            strict_base64: true,
-        },
-        federation: crate::settings::FederationSettings {
-            providers: crate::settings::FederationProviderRegistry::default(),
-            saml_gateway: None,
-        },
-        enable_request_object: false,
-        enable_request_uri_parameter: false,
-        enable_par_request_object: false,
-        enable_authorization_details: false,
-        enable_legacy_audience_param: false,
-        enable_device_authorization_grant: false,
-        enable_dynamic_client_registration: false,
-        enable_frontchannel_logout: false,
-        enable_session_management: false,
-        enable_ciba: false,
-        enable_native_sso: false,
-        enable_fapi_http_signatures: false,
-        fapi_http_signature_max_age_seconds: 60,
-        dynamic_client_registration_initial_access_token: None,
-        device_authorization_ttl_seconds: 600,
-        device_authorization_poll_interval_seconds: 5,
-        ciba_auth_req_id_ttl_seconds: 600,
-        ciba_poll_interval_seconds: 5,
-        ciba_automated_decision_token: None,
-    }
+    let mut settings =
+        Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
+    settings.protocol.authorization_server_profile = profile;
+    settings
 }
 
 fn unavailable_token_valkey() -> fred::prelude::Client {
@@ -169,7 +84,7 @@ fn fixture_secret(label: &str) -> String {
 }
 
 fn fixture_secret_hash(state: &Data<AppState>, secret: &str) -> String {
-    hash_client_secret(secret, &state.settings.client_secret_pepper)
+    hash_client_secret(secret, &state.settings.protocol.client_secret_pepper)
 }
 
 fn fixture_mtls_thumbprint(label: &str) -> String {
@@ -226,7 +141,7 @@ async fn live_token_state(profile: AuthorizationServerProfile) -> Option<Data<Ap
         ("TOKEN_RATE_LIMIT_MAX_REQUESTS", "100000"),
     ]);
     let mut settings = Settings::from_config(&config).expect("test settings should load");
-    settings.authorization_server_profile = profile;
+    settings.protocol.authorization_server_profile = profile;
     let mut valkey_builder = ValkeyBuilder::from_config(
         ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
     );
@@ -265,7 +180,7 @@ async fn live_valkey_invalid_db_token_state(
         ("TOKEN_RATE_LIMIT_MAX_REQUESTS", "100000"),
     ]);
     let mut settings = Settings::from_config(&config).expect("test settings should load");
-    settings.authorization_server_profile = profile;
+    settings.protocol.authorization_server_profile = profile;
     let mut valkey_builder = ValkeyBuilder::from_config(
         ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
     );
@@ -449,7 +364,7 @@ async fn store_authorization_code_state(
         &state.valkey,
         authorization_code_key(code),
         serde_json::to_string(code_state).expect("authorization code state should serialize"),
-        state.settings.auth_code_ttl_seconds,
+        state.settings.protocol.auth_code_ttl_seconds,
     )
     .await
     .expect("authorization code state should store");
@@ -460,7 +375,7 @@ async fn store_raw_authorization_code_state(state: &Data<AppState>, code: &str, 
         &state.valkey,
         authorization_code_key(code),
         raw.to_owned(),
-        state.settings.auth_code_ttl_seconds,
+        state.settings.protocol.auth_code_ttl_seconds,
     )
     .await
     .expect("raw authorization code state should store");
@@ -530,7 +445,7 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
             oidc_sid: Some(format!("oidc-{session_id}")),
         })
         .expect("session should serialize"),
-        state.settings.session_ttl_seconds,
+        state.settings.session.session_ttl_seconds,
     )
     .await
     .expect("valid browser session should store");
@@ -540,7 +455,7 @@ async fn valid_browser_session_cookie_cannot_authenticate_oauth_protocol_endpoin
             .uri(path)
             .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
             .cookie(actix_web::cookie::Cookie::new(
-                state.settings.session_cookie_name.clone(),
+                state.settings.session.session_cookie_name.clone(),
                 session_id.clone(),
             ))
             .to_http_request()
@@ -1600,7 +1515,7 @@ async fn token_endpoint_rejects_client_auth_if_token_rate_limit_is_exceeded() {
         return;
     };
     let mut settings = (*state.settings).clone();
-    settings.rate_limit.token_max_requests = 0;
+    settings.identity.rate_limit.token_max_requests = 0;
     let state = Data::new(AppState {
         diesel_db: state.diesel_db.clone(),
         valkey: state.valkey.clone(),

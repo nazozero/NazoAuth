@@ -27,8 +27,8 @@ fn login_request(content_type: &'static str) -> HttpRequest {
 fn form_origin_settings() -> Settings {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.frontend_base_url = "https://app.example/base/".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.endpoint.frontend_base_url = "https://app.example/base/".to_owned();
     settings
 }
 
@@ -256,7 +256,7 @@ fn safe_relative_next_allows_authorization_path_only_when_relative() {
 fn form_login_next_uses_safe_referer_next_or_profile_fallback() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.frontend_base_url = "https://app.example/base/".to_owned();
+    settings.endpoint.frontend_base_url = "https://app.example/base/".to_owned();
     let state = AppState {
         diesel_db: create_pool(
             "postgres://nazo_login_test_invalid:nazo_login_test_invalid@127.0.0.1:1/nazo"
@@ -429,7 +429,7 @@ async fn login_json_request_returns_session_payload_for_remembered_mfa_device() 
     assert!(response_body["csrf_token"].is_string());
     assert_eq!(
         response_body["expires_in"],
-        json!(fixture.state.settings.session_ttl_seconds)
+        json!(fixture.state.settings.session.session_ttl_seconds)
     );
 }
 
@@ -657,10 +657,16 @@ impl LiveLoginFixture {
             ("CSRF_COOKIE_NAME", "nazo_csrf_test"),
         ]);
         let mut settings = Settings::from_config(&config).expect("test settings should load");
-        settings.rate_limit.auth_max_requests = 100_000;
-        settings.rate_limit.login_failure_window_seconds = 60;
-        settings.rate_limit.login_failure_email_max_attempts = email_max_attempts;
-        settings.rate_limit.login_failure_ip_email_max_attempts = ip_email_max_attempts;
+        settings.identity.rate_limit.auth_max_requests = 100_000;
+        settings.identity.rate_limit.login_failure_window_seconds = 60;
+        settings
+            .identity
+            .rate_limit
+            .login_failure_email_max_attempts = email_max_attempts;
+        settings
+            .identity
+            .rate_limit
+            .login_failure_ip_email_max_attempts = ip_email_max_attempts;
 
         let valkey_config = ValkeyConfig::from_url(&valkey_url).ok()?;
         let mut valkey_builder = ValkeyBuilder::from_config(valkey_config);
@@ -806,7 +812,7 @@ impl LoginBadDatabaseState {
             ("CSRF_COOKIE_NAME", "nazo_csrf_test"),
         ]);
         let mut settings = Settings::from_config(&config).expect("test settings should load");
-        settings.rate_limit.auth_max_requests = 100_000;
+        settings.identity.rate_limit.auth_max_requests = 100_000;
 
         let valkey_config = ValkeyConfig::from_url(&valkey_url).ok()?;
         let mut valkey_builder = ValkeyBuilder::from_config(valkey_config);

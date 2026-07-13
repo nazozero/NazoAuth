@@ -67,7 +67,7 @@ fn email_code_state(configure_email: bool) -> Data<AppState> {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     if configure_email {
-        settings.email.delivery = EmailDelivery::Smtp(SmtpEmailSettings {
+        settings.identity.email.delivery = EmailDelivery::Smtp(SmtpEmailSettings {
             host: "127.0.0.1".to_owned(),
             port: 1025,
             tls: SmtpTlsMode::None,
@@ -103,7 +103,7 @@ impl LiveEmailCodeFixture {
         let valkey_url = std::env::var("VALKEY_URL").ok()?;
         let mut settings =
             Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-        settings.email.delivery = EmailDelivery::Smtp(SmtpEmailSettings {
+        settings.identity.email.delivery = EmailDelivery::Smtp(SmtpEmailSettings {
             host: "127.0.0.1".to_owned(),
             port: 1025,
             tls: SmtpTlsMode::None,
@@ -364,7 +364,12 @@ async fn send_code_peer_cooldown_short_circuits_without_writing_email_state() {
         &fixture.state.valkey,
         &peer_key,
         "1",
-        fixture.state.settings.email.send_peer_cooldown_seconds,
+        fixture
+            .state
+            .settings
+            .identity
+            .email
+            .send_peer_cooldown_seconds,
     )
     .await
     .expect("peer cooldown should seed");
@@ -413,7 +418,7 @@ async fn send_code_email_cooldown_short_circuits_without_rotating_verification_c
         &fixture.state.valkey,
         &cooldown_key,
         "1",
-        fixture.state.settings.email.send_cooldown_seconds,
+        fixture.state.settings.identity.email.send_cooldown_seconds,
     )
     .await
     .expect("email cooldown should seed");

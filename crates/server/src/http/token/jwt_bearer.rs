@@ -76,7 +76,7 @@ fn validate_jwt_bearer_assertion(
     let now = Utc::now().timestamp();
     if claims.iss != client.client_id
         || claims.sub != client.client_id
-        || !jwt_bearer_audience_matches(&claims.aud, &settings.issuer)
+        || !jwt_bearer_audience_matches(&claims.aud, &settings.endpoint.issuer)
         || !valid_jwt_bearer_times(&claims, now)
         || !valid_jwt_bearer_jti(&claims.jti)
     {

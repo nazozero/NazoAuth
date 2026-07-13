@@ -91,11 +91,11 @@ pub(crate) fn parse_trusted_proxy_cidrs(raw: Option<String>) -> anyhow::Result<V
 }
 
 pub(crate) fn client_ip(req: &HttpRequest, settings: &Settings) -> String {
-    let endpoint = settings.endpoint();
+    let endpoint = &settings.endpoint;
     client_ip_with_context(
         req,
         endpoint.client_ip_header_mode,
-        endpoint.trusted_proxy_cidrs,
+        &endpoint.trusted_proxy_cidrs,
     )
 }
 
@@ -127,7 +127,7 @@ pub(crate) fn client_ip_with_context(
 }
 
 pub(crate) fn request_from_trusted_proxy(req: &HttpRequest, settings: &Settings) -> bool {
-    request_from_trusted_proxy_cidrs(req, settings.endpoint().trusted_proxy_cidrs)
+    request_from_trusted_proxy_cidrs(req, &settings.endpoint.trusted_proxy_cidrs)
 }
 
 pub(crate) fn request_from_trusted_proxy_cidrs(

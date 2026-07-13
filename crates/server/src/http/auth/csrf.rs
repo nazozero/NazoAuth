@@ -27,11 +27,11 @@ fn csrf_response(settings: &Settings, csrf_token: String) -> HttpResponse {
     with_cookie_headers(
         json_response(json!({"csrf_token": csrf_token})),
         &[make_cookie(
-            &settings.csrf_cookie_name,
+            &settings.session.csrf_cookie_name,
             &csrf_token,
             false,
-            settings.session_ttl_seconds,
-            settings.cookie_secure,
+            settings.session.session_ttl_seconds,
+            settings.session.cookie_secure,
         )],
     )
 }

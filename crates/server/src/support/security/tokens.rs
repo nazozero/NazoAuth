@@ -55,7 +55,7 @@ pub(crate) async fn make_jwt(
     let jti = Uuid::now_v7().to_string();
     let exp = now + input.ttl;
     let claims = nazo_auth::access_token_claims(
-        &state.settings.issuer,
+        &state.settings.endpoint.issuer,
         AccessTokenClaimsInput {
             tenant_id: input.tenant_id,
             subject: input.subject,
@@ -110,7 +110,7 @@ pub(crate) async fn make_id_token(
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
     let claims = nazo_auth::id_token_claims(
-        &state.settings.issuer,
+        &state.settings.endpoint.issuer,
         &IdTokenClaimsInput {
             subject: input.subject,
             client_id: input.client_id,
@@ -161,7 +161,7 @@ pub(crate) async fn make_backchannel_logout_token(
 ) -> jsonwebtoken::errors::Result<String> {
     let now = Utc::now().timestamp();
     let claims = nazo_auth::backchannel_logout_token_claims(
-        &state.settings.issuer,
+        &state.settings.endpoint.issuer,
         &BackchannelLogoutClaimsInput {
             client_id: input.client_id,
             subject: input.subject,
@@ -185,7 +185,7 @@ pub(crate) async fn make_backchannel_logout_token(
 }
 
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
-    decode_access_claims_with(&state.keyset, &state.settings.issuer, token)
+    decode_access_claims_with(&state.keyset, &state.settings.endpoint.issuer, token)
 }
 
 pub(crate) fn decode_access_claims_with(

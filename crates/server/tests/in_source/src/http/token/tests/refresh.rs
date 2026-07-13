@@ -55,7 +55,7 @@ fn live_refresh_state_from_database_url(
     let _public_jwk = key_material.public_jwk(&active_kid);
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.authorization_server_profile = profile;
+    settings.protocol.authorization_server_profile = profile;
 
     Some(AppState {
         diesel_db: create_pool(database_url, 4).expect("database pool should build"),
@@ -125,7 +125,7 @@ async fn drop_schema(state: &AppState, schema: &str) {
 fn live_trusted_proxy_refresh_state(profile: AuthorizationServerProfile) -> Option<AppState> {
     let mut state = live_refresh_state(profile)?;
     let mut settings = (*state.settings).clone();
-    settings.trusted_proxy_cidrs = vec![
+    settings.endpoint.trusted_proxy_cidrs = vec![
         crate::support::IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse"),
     ];
     state.settings = Arc::new(settings);
@@ -548,7 +548,7 @@ fn baseline_profile_rotates_unbound_refresh_tokens() {
 #[test]
 fn refresh_token_policy_uses_configured_authorization_server_profile() {
     let mut settings = Settings::from_config(&ConfigSource::default()).unwrap();
-    settings.authorization_server_profile = AuthorizationServerProfile::Fapi2Security;
+    settings.protocol.authorization_server_profile = AuthorizationServerProfile::Fapi2Security;
     let token = token_row();
     let mut client = client_row();
     client.client_type = "public".to_owned();
@@ -583,7 +583,7 @@ fn refresh_token_policy_uses_configured_authorization_server_profile() {
         "mTLS-bound refresh-token families are also stable sender-constrained tokens"
     );
 
-    settings.authorization_server_profile = AuthorizationServerProfile::Oauth2Baseline;
+    settings.protocol.authorization_server_profile = AuthorizationServerProfile::Oauth2Baseline;
     assert_eq!(
         refresh_token_policy_for_profile(&settings, &client, &token),
         RefreshTokenPolicy::Rotate {
@@ -1473,7 +1473,7 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
         return;
     };
     let mut settings = (*state.settings).clone();
-    settings.trusted_proxy_cidrs = vec![
+    settings.endpoint.trusted_proxy_cidrs = vec![
         crate::support::IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse"),
     ];
     state.settings = Arc::new(settings);

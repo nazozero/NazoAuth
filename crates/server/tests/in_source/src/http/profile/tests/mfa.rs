@@ -44,7 +44,7 @@ fn test_state() -> AppState {
 fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             "active-session",
         ))
         .to_http_request()
@@ -158,7 +158,7 @@ impl LiveMfaFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -167,11 +167,11 @@ impl LiveMfaFixture {
     fn request(&self, sid: &str, csrf: &str) -> HttpRequest {
         actix_web::test::TestRequest::default()
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 csrf.to_owned(),
             ))
             .insert_header(("x-csrf-token", csrf))
@@ -439,7 +439,7 @@ async fn mfa_totp_begin_replaces_unconfirmed_enrollment_and_clears_replay_state(
         body["otpauth_uri"]
             .as_str()
             .expect("otpauth URI should be returned")
-            .contains(urlencoding::encode(&fixture.state.settings.issuer).as_ref())
+            .contains(urlencoding::encode(&fixture.state.settings.endpoint.issuer).as_ref())
     );
 }
 
@@ -566,10 +566,14 @@ async fn mfa_totp_confirm_rotates_session_and_csrf_after_valid_code() {
         Json(ConfirmTotpRequest { code }),
     )
     .await;
-    let rotated_sid = set_cookie_value(&response, &fixture.state.settings.session_cookie_name)
-        .expect("TOTP confirmation must rotate the session cookie");
-    let rotated_csrf = set_cookie_value(&response, &fixture.state.settings.csrf_cookie_name)
-        .expect("TOTP confirmation must rotate the CSRF cookie");
+    let rotated_sid = set_cookie_value(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    )
+    .expect("TOTP confirmation must rotate the session cookie");
+    let rotated_csrf =
+        set_cookie_value(&response, &fixture.state.settings.session.csrf_cookie_name)
+            .expect("TOTP confirmation must rotate the CSRF cookie");
     let (status, body, has_set_cookie) = response_json(response).await;
 
     assert_eq!(status, StatusCode::OK);
@@ -737,10 +741,14 @@ async fn mfa_verify_completes_pending_totp_challenge_and_updates_session_amr() {
         }),
     )
     .await;
-    let rotated_sid = set_cookie_value(&response, &fixture.state.settings.session_cookie_name)
-        .expect("MFA completion must rotate the session cookie");
-    let rotated_csrf = set_cookie_value(&response, &fixture.state.settings.csrf_cookie_name)
-        .expect("MFA completion must rotate the CSRF cookie");
+    let rotated_sid = set_cookie_value(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    )
+    .expect("MFA completion must rotate the session cookie");
+    let rotated_csrf =
+        set_cookie_value(&response, &fixture.state.settings.session.csrf_cookie_name)
+            .expect("MFA completion must rotate the CSRF cookie");
     let (status, body, has_set_cookie) = response_json(response).await;
 
     assert_eq!(status, StatusCode::OK);
@@ -786,14 +794,17 @@ async fn mfa_verify_reports_session_lookup_failure_after_rate_limit_for_pending_
         &state.valkey,
         format!("oauth:session:{sid}"),
         serde_json::to_string(&payload).expect("session should serialize"),
-        state.settings.session_ttl_seconds,
+        state.settings.session.session_ttl_seconds,
     )
     .await
     .expect("session should store");
     let req = actix_web::test::TestRequest::default()
-        .cookie(Cookie::new(state.settings.session_cookie_name.clone(), sid))
         .cookie(Cookie::new(
-            state.settings.csrf_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
+            sid,
+        ))
+        .cookie(Cookie::new(
+            state.settings.session.csrf_cookie_name.clone(),
             csrf.clone(),
         ))
         .insert_header(("x-csrf-token", csrf))
@@ -838,11 +849,11 @@ async fn mfa_verify_remember_device_sets_cookie_and_persists_remembered_device()
     .expect("TOTP code should generate");
     let req = actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
-            fixture.state.settings.session_cookie_name.clone(),
+            fixture.state.settings.session.session_cookie_name.clone(),
             sid.clone(),
         ))
         .cookie(Cookie::new(
-            fixture.state.settings.csrf_cookie_name.clone(),
+            fixture.state.settings.session.csrf_cookie_name.clone(),
             csrf.clone(),
         ))
         .insert_header(("x-csrf-token", csrf))
@@ -860,8 +871,11 @@ async fn mfa_verify_remember_device_sets_cookie_and_persists_remembered_device()
     .await;
     let remembered_token = set_cookie_value(&response, MFA_REMEMBERED_COOKIE_NAME)
         .expect("remember-device success must issue the remembered-device cookie");
-    let rotated_sid = set_cookie_value(&response, &fixture.state.settings.session_cookie_name)
-        .expect("MFA completion must rotate the session cookie");
+    let rotated_sid = set_cookie_value(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    )
+    .expect("MFA completion must rotate the session cookie");
     let (status, body, has_set_cookie) = response_json(response).await;
 
     assert_eq!(status, StatusCode::OK);
@@ -944,8 +958,11 @@ async fn mfa_backup_codes_regenerate_rotates_codes_after_valid_totp() {
         Json(MfaProtectedRequest { code }),
     )
     .await;
-    let rotated_sid = set_cookie_value(&response, &fixture.state.settings.session_cookie_name)
-        .expect("MFA step-up must rotate the session cookie");
+    let rotated_sid = set_cookie_value(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    )
+    .expect("MFA step-up must rotate the session cookie");
     let (status, body, has_set_cookie) = response_json(response).await;
 
     assert_eq!(status, StatusCode::OK);

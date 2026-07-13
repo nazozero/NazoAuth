@@ -45,8 +45,8 @@ pub(crate) mod test_support {
         actix_web::web::Data::new(crate::bootstrap::ClientAccessProfileService::new(
             nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
             nazo_valkey::DeliveryStore::new(&state.valkey_connection()),
-            state.settings.protocol().client_secret_pepper,
-            &state.settings.frontend_base_url,
+            &state.settings.protocol.client_secret_pepper,
+            &state.settings.endpoint.frontend_base_url,
         ))
     }
 
@@ -59,7 +59,7 @@ pub(crate) mod test_support {
     pub(crate) fn registration_service(
         state: &crate::domain::AppState,
     ) -> actix_web::web::Data<crate::bootstrap::LocalRegistrationService> {
-        let identity = state.settings.identity();
+        let identity = &state.settings.identity;
         actix_web::web::Data::new(crate::bootstrap::LocalRegistrationService::new(
             nazo_postgres::UserRepository::new(state.diesel_db.clone()),
             nazo_valkey::AuthenticationStore::new(&state.valkey_connection()),
@@ -81,7 +81,7 @@ pub(crate) mod test_support {
         state: &crate::domain::AppState,
     ) -> actix_web::web::Data<crate::http::auth::email_code::EmailCodeHttpConfig> {
         actix_web::web::Data::new(crate::http::auth::email_code::EmailCodeHttpConfig::new(
-            state.settings.identity().email_code_dev_response_enabled,
+            state.settings.identity.email_code_dev_response_enabled,
         ))
     }
 

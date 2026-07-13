@@ -40,7 +40,7 @@ fn test_state() -> AppState {
 fn request_with_session_but_no_csrf(state: &AppState) -> HttpRequest {
     actix_web::test::TestRequest::default()
         .cookie(Cookie::new(
-            state.settings.session_cookie_name.clone(),
+            state.settings.session.session_cookie_name.clone(),
             "active-session",
         ))
         .to_http_request()
@@ -231,7 +231,7 @@ impl LivePasskeyFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -240,11 +240,11 @@ impl LivePasskeyFixture {
     fn request(&self, sid: &str, csrf: &str) -> HttpRequest {
         actix_web::test::TestRequest::default()
             .cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ))
             .cookie(Cookie::new(
-                self.state.settings.csrf_cookie_name.clone(),
+                self.state.settings.session.csrf_cookie_name.clone(),
                 csrf.to_owned(),
             ))
             .insert_header(("x-csrf-token", csrf))
@@ -661,7 +661,7 @@ async fn registration_finish_persists_credential_and_consumes_ceremony_once() {
         Json(PasskeyFinishRequest {
             ceremony_id: ceremony_id.to_owned(),
             response: authenticator
-                .registration_response(challenge, &fixture.state.settings.passkey.origin),
+                .registration_response(challenge, &fixture.state.settings.identity.passkey.origin),
         }),
     )
     .await;
@@ -680,7 +680,7 @@ async fn registration_finish_persists_credential_and_consumes_ceremony_once() {
         Json(PasskeyFinishRequest {
             ceremony_id: ceremony_id.to_owned(),
             response: authenticator
-                .registration_response(challenge, &fixture.state.settings.passkey.origin),
+                .registration_response(challenge, &fixture.state.settings.identity.passkey.origin),
         }),
     )
     .await;
@@ -729,7 +729,7 @@ async fn registration_finish_rejects_ceremony_user_mismatch_without_inserting_cr
         Json(PasskeyFinishRequest {
             ceremony_id: ceremony_id.to_owned(),
             response: authenticator
-                .registration_response(challenge, &fixture.state.settings.passkey.origin),
+                .registration_response(challenge, &fixture.state.settings.identity.passkey.origin),
         }),
     )
     .await;
@@ -978,8 +978,10 @@ async fn registration_finish_returns_conflict_without_second_row_on_duplicate_cr
             fixture.request(&sid, &csrf),
             Json(PasskeyFinishRequest {
                 ceremony_id: ceremony_one.to_owned(),
-                response: authenticator
-                    .registration_response(challenge_one, &fixture.state.settings.passkey.origin),
+                response: authenticator.registration_response(
+                    challenge_one,
+                    &fixture.state.settings.identity.passkey.origin,
+                ),
             }),
         )
         .await,
@@ -1011,8 +1013,10 @@ async fn registration_finish_returns_conflict_without_second_row_on_duplicate_cr
             fixture.request(&sid, &csrf),
             Json(PasskeyFinishRequest {
                 ceremony_id: ceremony_two.to_owned(),
-                response: authenticator
-                    .registration_response(challenge_two, &fixture.state.settings.passkey.origin),
+                response: authenticator.registration_response(
+                    challenge_two,
+                    &fixture.state.settings.identity.passkey.origin,
+                ),
             }),
         )
         .await,

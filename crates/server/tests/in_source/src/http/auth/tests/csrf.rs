@@ -4,9 +4,9 @@ use crate::config::ConfigSource;
 fn settings() -> Settings {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.csrf_cookie_name = "nazo_csrf".to_owned();
-    settings.session_ttl_seconds = 900;
-    settings.cookie_secure = true;
+    settings.session.csrf_cookie_name = "nazo_csrf".to_owned();
+    settings.session.session_ttl_seconds = 900;
+    settings.session.cookie_secure = true;
     settings
 }
 

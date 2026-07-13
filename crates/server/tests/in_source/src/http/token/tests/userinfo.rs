@@ -41,8 +41,8 @@ fn disconnected_valkey_client() -> fred::prelude::Client {
 fn userinfo_test_state() -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.default_audience = "resource://default".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.default_audience = "resource://default".to_owned();
 
     AppState {
         diesel_db: create_pool(
@@ -81,8 +81,8 @@ async fn live_userinfo_state_from_database_url(database_url: String) -> Option<D
     let _public_jwk = key_material.public_jwk("userinfo-test-kid");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.default_audience = "resource://default".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.default_audience = "resource://default".to_owned();
 
     Some(Data::new(AppState {
         diesel_db: create_pool(database_url, 1).expect("database pool should build"),
@@ -152,8 +152,8 @@ fn userinfo_state_with_valid_signing_key_invalid_db() -> Data<AppState> {
     let _public_jwk = key_material.public_jwk("userinfo-test-kid");
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.default_audience = "resource://default".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.default_audience = "resource://default".to_owned();
 
     Data::new(AppState {
         diesel_db: create_pool(
@@ -195,7 +195,7 @@ fn userinfo_access_claims(user_id: Option<String>) -> Claims {
 async fn live_userinfo_state_with_trusted_proxy() -> Option<Data<AppState>> {
     let state = live_userinfo_state().await?;
     let mut settings = (*state.settings).clone();
-    settings.trusted_proxy_cidrs =
+    settings.endpoint.trusted_proxy_cidrs =
         vec![IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse")];
 
     Some(Data::new(AppState {
@@ -429,7 +429,7 @@ fn decode_signed_userinfo(state: &AppState, client_id: &str, token: &str) -> Val
     validation.validate_exp = false;
     validation.required_spec_claims.clear();
     validation.set_audience(&[client_id]);
-    validation.set_issuer(&[state.settings.issuer.as_str()]);
+    validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
     jsonwebtoken::decode::<Value>(token, &decoding_key, &validation)
         .expect("UserInfo JWS should verify")
         .claims
@@ -602,7 +602,7 @@ async fn userinfo_rejects_signed_access_token_without_valid_tenant_boundary() {
         return;
     };
     let claims = Claims {
-        iss: state.settings.issuer.clone(),
+        iss: state.settings.endpoint.issuer.clone(),
         sub: Uuid::now_v7().to_string(),
         tenant_id: "not-a-uuid".to_owned(),
         user_id: None,
@@ -895,7 +895,7 @@ async fn userinfo_returns_signed_jwt_for_registered_client_policy() {
         &client_id,
         std::str::from_utf8(&body).expect("signed UserInfo body should be UTF-8"),
     );
-    assert_eq!(claims["iss"], state.settings.issuer);
+    assert_eq!(claims["iss"], state.settings.endpoint.issuer);
     assert_eq!(claims["aud"], client_id);
     assert_eq!(claims["sub"], user.id.to_string());
     assert_eq!(claims["email"], user.email);
@@ -982,7 +982,7 @@ async fn userinfo_signs_then_encrypts_when_both_policies_are_registered() {
     assert_eq!(protected["cty"], "JWT");
     assert!(protected.get("typ").is_none());
     let claims = decode_signed_userinfo(&state, &client_id, &nested_jwt);
-    assert_eq!(claims["iss"], state.settings.issuer);
+    assert_eq!(claims["iss"], state.settings.endpoint.issuer);
     assert_eq!(claims["aud"], client_id);
     assert_eq!(claims["sub"], user.id.to_string());
     assert_eq!(claims["email"], user.email);
@@ -1241,8 +1241,8 @@ async fn userinfo_rejects_mtls_bound_token_with_mismatched_verified_certificate(
 fn userinfo_accepts_only_userinfo_or_default_audience() {
     let mut settings = Settings::from_config(&crate::config::ConfigSource::default())
         .expect("default settings should load");
-    settings.issuer = "https://issuer.example".to_owned();
-    settings.default_audience = "resource://default".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
+    settings.protocol.default_audience = "resource://default".to_owned();
 
     assert!(userinfo_audience_allowed(
         &settings,

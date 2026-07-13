@@ -86,7 +86,7 @@ fn signed_jar_client(client_id: &str, kid: &str, fixture: &ClientSigningFixture)
 fn jar_state(issuer: &str) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = issuer.to_owned();
+    settings.endpoint.issuer = issuer.to_owned();
 
     jar_state_with_valkey(
         issuer,
@@ -99,7 +99,7 @@ fn jar_state(issuer: &str) -> AppState {
 fn jar_state_with_valkey(issuer: &str, valkey: fred::prelude::Client) -> AppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.issuer = issuer.to_owned();
+    settings.endpoint.issuer = issuer.to_owned();
 
     AppState {
         diesel_db: create_pool(

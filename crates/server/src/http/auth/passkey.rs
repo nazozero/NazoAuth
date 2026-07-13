@@ -367,7 +367,7 @@ async fn create_passkey_session(
         &state.settings,
         &session_id,
         &csrf_token,
-        state.settings.session().session_ttl_seconds,
+        state.settings.session.session_ttl_seconds,
         session.pending_mfa,
     )
 }
@@ -387,18 +387,18 @@ fn passkey_session_response(
         })),
         &[
             make_cookie(
-                &settings.session_cookie_name,
+                &settings.session.session_cookie_name,
                 session_id,
                 true,
                 expires_in,
-                settings.cookie_secure,
+                settings.session.cookie_secure,
             ),
             make_cookie(
-                &settings.csrf_cookie_name,
+                &settings.session.csrf_cookie_name,
                 csrf_token,
                 false,
                 expires_in,
-                settings.cookie_secure,
+                settings.session.cookie_secure,
             ),
         ],
     )

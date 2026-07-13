@@ -132,7 +132,7 @@ impl LiveLogoutFixture {
             &self.state.valkey,
             format!("oauth:session:{sid}"),
             serde_json::to_string(&payload).expect("session should serialize"),
-            self.state.settings.session_ttl_seconds,
+            self.state.settings.session.session_ttl_seconds,
         )
         .await
         .expect("session should store");
@@ -264,7 +264,7 @@ impl LiveLogoutFixture {
         header.typ = Some("JWT".to_owned());
         header.kid = Some(keyset.active_kid.clone());
         let mut claims = json!({
-            "iss": self.state.settings.issuer,
+            "iss": self.state.settings.endpoint.issuer,
             "sub": user_id.to_string(),
             "aud": client_id,
             "exp": Utc::now().timestamp() + 300
@@ -287,7 +287,7 @@ impl LiveLogoutFixture {
         let mut request = actix_web::test::TestRequest::default().uri(uri);
         if let Some(sid) = sid {
             request = request.cookie(Cookie::new(
-                self.state.settings.session_cookie_name.clone(),
+                self.state.settings.session.session_cookie_name.clone(),
                 sid.to_owned(),
             ));
         }
@@ -720,7 +720,7 @@ fn id_token_hint_decoder_rejects_malformed_unsupported_and_unidentified_tokens()
     let _public_jwk = key.public_jwk("logout-kid");
     let state = test_state_with_keyset(crate::test_support::test_key_manager());
     let claims = json!({
-        "iss": state.settings.issuer,
+        "iss": state.settings.endpoint.issuer,
         "sub": "user-1",
         "aud": "client-1",
         "exp": Utc::now().timestamp() + 300
@@ -767,7 +767,8 @@ fn id_token_hint_subject_matches_pairwise_subject_for_registered_client_sector()
 
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
+    settings.protocol.pairwise_subject_secret =
+        Some("0123456789012345678901234567890123456789".to_owned());
     let user_id = Uuid::now_v7();
     let client = BackchannelLogoutClient {
         id: Uuid::now_v7(),
@@ -871,7 +872,8 @@ fn backchannel_logout_subject_is_omitted_when_pairwise_sector_is_ambiguous() {
 
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.pairwise_subject_secret = Some("0123456789012345678901234567890123456789".to_owned());
+    settings.protocol.pairwise_subject_secret =
+        Some("0123456789012345678901234567890123456789".to_owned());
     let client = BackchannelLogoutClient {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID,
@@ -1197,7 +1199,7 @@ async fn oidc_logout_reports_session_lookup_failure_before_clearing_cookies() {
         &state.valkey,
         format!("oauth:session:{sid}"),
         serde_json::to_string(&payload).expect("session should serialize"),
-        state.settings.session_ttl_seconds,
+        state.settings.session.session_ttl_seconds,
     )
     .await
     .expect("session should store");
@@ -1253,8 +1255,12 @@ async fn oidc_logout_clears_session_and_sends_backchannel_logout_token_with_regi
         .get(header::LOCATION)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    let session_cookies = set_cookie_values(&response, &fixture.state.settings.session_cookie_name);
-    let csrf_cookies = set_cookie_values(&response, &fixture.state.settings.csrf_cookie_name);
+    let session_cookies = set_cookie_values(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    );
+    let csrf_cookies =
+        set_cookie_values(&response, &fixture.state.settings.session.csrf_cookie_name);
     let body = actix_web::body::to_bytes(response.into_body())
         .await
         .expect("response body should read");
@@ -1295,7 +1301,7 @@ async fn oidc_logout_clears_session_and_sends_backchannel_logout_token_with_regi
         .expect("logout token decoding key should derive");
     let mut validation = jsonwebtoken::Validation::new(Algorithm::EdDSA);
     validation.validate_aud = false;
-    validation.set_issuer(&[fixture.state.settings.issuer.as_str()]);
+    validation.set_issuer(&[fixture.state.settings.endpoint.issuer.as_str()]);
     let claims = jsonwebtoken::decode::<Value>(&logout_token, &decoding_key, &validation)
         .expect("logout token should verify")
         .claims;
@@ -1394,11 +1400,11 @@ async fn oidc_logout_skips_backchannel_client_when_subject_policy_is_invalid() {
         .uri(&uri)
         .insert_header(("x-csrf-token", csrf_token))
         .cookie(Cookie::new(
-            fixture.state.settings.session_cookie_name.clone(),
+            fixture.state.settings.session.session_cookie_name.clone(),
             sid.clone(),
         ))
         .cookie(Cookie::new(
-            fixture.state.settings.csrf_cookie_name.clone(),
+            fixture.state.settings.session.csrf_cookie_name.clone(),
             csrf_token,
         ));
     let (req, payload) = logout_request_with_payload(request).await;
@@ -1410,8 +1416,12 @@ async fn oidc_logout_skips_backchannel_client_when_subject_policy_is_invalid() {
         .get(header::LOCATION)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
-    let session_cookies = set_cookie_values(&response, &fixture.state.settings.session_cookie_name);
-    let csrf_cookies = set_cookie_values(&response, &fixture.state.settings.csrf_cookie_name);
+    let session_cookies = set_cookie_values(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    );
+    let csrf_cookies =
+        set_cookie_values(&response, &fixture.state.settings.session.csrf_cookie_name);
     let body = actix_web::body::to_bytes(response.into_body())
         .await
         .expect("response body should read");
