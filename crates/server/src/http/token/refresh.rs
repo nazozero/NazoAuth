@@ -24,7 +24,8 @@ use serde_json::json;
 use uuid::Uuid;
 // 只处理 refresh token 校验、复用检测和轮换前置约束。
 use super::{
-    TokenForm, consume_token_client_assertion, issue_token_response, should_issue_refresh_token,
+    ServerTokenService, TokenForm, consume_token_client_assertion,
+    issue::issue_token_response_with_service, should_issue_refresh_token,
 };
 use crate::settings::AuthorizationServerProfile;
 
@@ -98,19 +99,20 @@ fn refresh_token_audiences(
 }
 
 async fn lost_response_successor_or_mark_reuse(
-    state: &AppState,
+    service: &ServerTokenService,
     token: &TokenRow,
     client_id: Uuid,
     retry_started_at: DateTime<Utc>,
 ) -> anyhow::Result<Option<TokenRow>> {
-    nazo_postgres::TokenRepository::new(state.diesel_db.clone())
+    service
         .lost_response_successor_or_compromise(token, client_id, retry_started_at)
         .await
-        .map_err(|error| anyhow::anyhow!("failed to inspect refresh family: {error}"))
+        .map_err(|error| anyhow::anyhow!("failed to inspect refresh family: {error:?}"))
 }
 
-pub(crate) async fn token_refresh(
+pub(crate) async fn token_refresh_with_service(
     state: &AppState,
+    token_service: &ServerTokenService,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -125,13 +127,13 @@ pub(crate) async fn token_refresh(
             false,
         );
     };
-    let token = match nazo_postgres::TokenRepository::new(state.diesel_db.clone())
-        .by_raw_refresh_token(client.tenant_id, refresh_token)
+    let token = match token_service
+        .refresh_token(client.tenant_id, refresh_token)
         .await
     {
         Ok(value) => value,
         Err(error) => {
-            tracing::warn!(%error, "failed to load refresh token");
+            tracing::warn!(?error, "failed to load refresh token");
             return oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -158,9 +160,13 @@ pub(crate) async fn token_refresh(
     }
     let mut lost_response_original_id = None;
     if token.revoked_at.is_some() {
-        let successor =
-            lost_response_successor_or_mark_reuse(state, &token, client.id, request_started_at)
-                .await;
+        let successor = lost_response_successor_or_mark_reuse(
+            token_service,
+            &token,
+            client.id,
+            request_started_at,
+        )
+        .await;
         match successor {
             Ok(Some(successor)) => {
                 lost_response_original_id = Some(token.id);
@@ -198,37 +204,21 @@ pub(crate) async fn token_refresh(
     }
     let original_scopes = json_array_to_strings(&token.scopes);
     if let Some(user_id) = token.user_id {
-        match (
-            nazo_identity::TenantId::new(token.tenant_id),
-            nazo_identity::UserId::new(user_id),
-        ) {
-            (Ok(tenant_id), Ok(user_id)) => {
-                match nazo_postgres::UserRepository::new(state.diesel_db.clone())
-                    .principal_by_tenant_id(tenant_id, user_id)
-                    .await
-                {
-                    Ok(Some(principal)) if principal.active => {}
-                    Ok(_) => {
-                        return oauth_token_error(
-                            StatusCode::BAD_REQUEST,
-                            "invalid_grant",
-                            "授权用户不存在或已停用.",
-                            false,
-                        );
-                    }
-                    Err(error) => {
-                        tracing::warn!(%error, "failed to load refresh token user");
-                        return oauth_token_error(
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            "server_error",
-                            "refresh_token 用户校验失败.",
-                            false,
-                        );
-                    }
-                }
+        match token_service
+            .active_subject_claims(token.tenant_id, user_id)
+            .await
+        {
+            Ok(Some(_)) => {}
+            Ok(None) => {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "授权用户不存在或已停用.",
+                    false,
+                );
             }
-            _ => {
-                tracing::warn!("persisted refresh token contains invalid identity IDs");
+            Err(error) => {
+                tracing::warn!(?error, "failed to load refresh token user");
                 return oauth_token_error(
                     StatusCode::SERVICE_UNAVAILABLE,
                     "server_error",
@@ -351,8 +341,9 @@ pub(crate) async fn token_refresh(
         },
         None => refresh_token_policy_for_profile(&state.settings, client, &token),
     };
-    issue_token_response(
+    issue_token_response_with_service(
         state,
+        token_service,
         client,
         TokenIssue {
             user_id: token.user_id,
@@ -382,6 +373,22 @@ pub(crate) async fn token_refresh(
         },
     )
     .await
+}
+
+#[cfg(test)]
+pub(crate) async fn token_refresh(
+    state: &AppState,
+    req: &HttpRequest,
+    client: &ClientRow,
+    form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
+) -> HttpResponse {
+    let service = ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
+        state.keyset.clone(),
+    );
+    token_refresh_with_service(state, &service, req, client, form, client_assertion).await
 }
 
 #[cfg(test)]

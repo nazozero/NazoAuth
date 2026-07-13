@@ -38,8 +38,9 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 // 只消费授权码并转入统一令牌签发逻辑。
 use super::{
-    TokenForm, consume_token_client_assertion, issue_token_response, native_sso_requested,
-    new_native_sso_token_binding, revoke_issued_authorization_code_tokens,
+    ServerTokenService, TokenForm, consume_token_client_assertion,
+    issue::issue_token_response_with_service, native_sso_requested, new_native_sso_token_binding,
+    revoke_issued_authorization_code_tokens,
 };
 
 enum AuthorizationCodeConsumption {
@@ -83,16 +84,16 @@ fn parse_authorization_code_consumption_response(response: &str) -> Authorizatio
 }
 
 async fn load_pending_authorization_code_payload(
-    state: &AppState,
+    service: &ServerTokenService,
     code_hash: &str,
 ) -> Result<Option<Box<CodePayload>>, HttpResponse> {
-    let stored = match nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
-        .load_authorization_code_hash(code_hash)
-        .await
-    {
+    let stored = match service.load_authorization_code(code_hash).await {
         Ok(value) => value,
         Err(error) => {
-            tracing::warn!(%error, "failed to read authorization code before dpop validation");
+            tracing::warn!(
+                ?error,
+                "failed to read authorization code before dpop validation"
+            );
             return Err(oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -239,30 +240,32 @@ fn refresh_token_dpop_binding(
 }
 
 async fn begin_authorization_code_consumption(
-    state: &AppState,
+    service: &ServerTokenService,
     code_hash: &str,
 ) -> Result<AuthorizationCodeConsumption, HttpResponse> {
-    match nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+    match service
         .begin_authorization_code(code_hash, Utc::now())
         .await
     {
-        Ok(nazo_valkey::AuthorizationCodeBegin::Consuming(payload)) => {
+        Ok(nazo_auth::AuthorizationCodeBeginResult::Consuming(payload)) => {
             Ok(AuthorizationCodeConsumption::Consuming(Box::new(payload)))
         }
-        Ok(nazo_valkey::AuthorizationCodeBegin::Busy) => Ok(AuthorizationCodeConsumption::Busy),
-        Ok(nazo_valkey::AuthorizationCodeBegin::Consumed(AuthorizationCodeState::Consumed {
-            marker,
-        })) => Ok(AuthorizationCodeConsumption::Consumed(marker)),
+        Ok(nazo_auth::AuthorizationCodeBeginResult::Busy) => Ok(AuthorizationCodeConsumption::Busy),
+        Ok(nazo_auth::AuthorizationCodeBeginResult::Consumed(
+            AuthorizationCodeState::Consumed { marker },
+        )) => Ok(AuthorizationCodeConsumption::Consumed(marker)),
         Ok(
-            nazo_valkey::AuthorizationCodeBegin::Consumed(_)
-            | nazo_valkey::AuthorizationCodeBegin::Malformed,
+            nazo_auth::AuthorizationCodeBeginResult::Consumed(_)
+            | nazo_auth::AuthorizationCodeBeginResult::Malformed,
         ) => Ok(AuthorizationCodeConsumption::Malformed),
-        Ok(nazo_valkey::AuthorizationCodeBegin::Failed) => Ok(AuthorizationCodeConsumption::Failed),
-        Ok(nazo_valkey::AuthorizationCodeBegin::Missing) => {
+        Ok(nazo_auth::AuthorizationCodeBeginResult::Failed) => {
+            Ok(AuthorizationCodeConsumption::Failed)
+        }
+        Ok(nazo_auth::AuthorizationCodeBeginResult::Missing) => {
             Ok(AuthorizationCodeConsumption::Missing)
         }
         Err(error) => {
-            tracing::warn!(%error, "failed to atomically consume authorization code");
+            tracing::warn!(?error, "failed to atomically consume authorization code");
             Err(oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -274,19 +277,16 @@ async fn begin_authorization_code_consumption(
 }
 
 async fn revoke_replayed_authorization_code(
-    state: &AppState,
+    service: &ServerTokenService,
     marker: ConsumedAuthorizationCode,
 ) -> Result<bool, HttpResponse> {
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_id(marker.client_id)
-        .await
-    {
+    let client = match service.client_by_id(marker.client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
             return Ok(false);
         }
         Err(error) => {
-            tracing::warn!(%error, "failed to load replayed authorization code client");
+            tracing::warn!(?error, "failed to load replayed authorization code client");
             return Err(oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -296,7 +296,7 @@ async fn revoke_replayed_authorization_code(
         }
     };
     if let Err(error) = revoke_issued_authorization_code_tokens(
-        state,
+        service,
         &client,
         &marker.access_token_jti,
         marker.access_token_expires_at,
@@ -315,8 +315,9 @@ async fn revoke_replayed_authorization_code(
     Ok(true)
 }
 
-pub(crate) async fn token_authorization_code(
+pub(crate) async fn token_authorization_code_with_service(
     state: &AppState,
+    token_service: &ServerTokenService,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -331,10 +332,11 @@ pub(crate) async fn token_authorization_code(
         );
     };
     let code_hash = blake3_hex(code);
-    let expected_payload = match load_pending_authorization_code_payload(state, &code_hash).await {
-        Ok(value) => value,
-        Err(response) => return response,
-    };
+    let expected_payload =
+        match load_pending_authorization_code_payload(token_service, &code_hash).await {
+            Ok(value) => value,
+            Err(response) => return response,
+        };
     if expected_payload
         .as_ref()
         .is_some_and(|payload| payload.client_id != client.client_id)
@@ -375,10 +377,10 @@ pub(crate) async fn token_authorization_code(
     if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
         return response;
     }
-    let payload = match begin_authorization_code_consumption(state, &code_hash).await {
+    let payload = match begin_authorization_code_consumption(token_service, &code_hash).await {
         Ok(AuthorizationCodeConsumption::Consuming(payload)) => payload,
         Ok(AuthorizationCodeConsumption::Consumed(marker)) => {
-            match revoke_replayed_authorization_code(state, marker).await {
+            match revoke_replayed_authorization_code(token_service, marker).await {
                 Ok(true) => {
                     return oauth_token_error(
                         StatusCode::BAD_REQUEST,
@@ -435,13 +437,25 @@ pub(crate) async fn token_authorization_code(
     if payload.client_id != client.client_id
         || !redirect_uri_matches_authorization_request(&payload, form.redirect_uri.as_deref())
     {
-        mark_failed_authorization_code(state, &code_hash, "client_or_redirect_uri_mismatch").await;
+        mark_failed_authorization_code(
+            token_service,
+            state.settings.protocol.auth_code_ttl_seconds.max(1),
+            &code_hash,
+            "client_or_redirect_uri_mismatch",
+        )
+        .await;
         return authorization_code_client_mismatch_response();
     }
     match (&payload.code_challenge, &payload.code_challenge_method) {
         (Some(code_challenge), Some(method)) if method == "S256" => {
             let Some(verifier) = &form.code_verifier else {
-                mark_failed_authorization_code(state, &code_hash, "missing_code_verifier").await;
+                mark_failed_authorization_code(
+                    token_service,
+                    state.settings.protocol.auth_code_ttl_seconds.max(1),
+                    &code_hash,
+                    "missing_code_verifier",
+                )
+                .await;
                 return oauth_token_error(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
@@ -450,7 +464,13 @@ pub(crate) async fn token_authorization_code(
                 );
             };
             if !is_valid_pkce_value(verifier) || pkce_s256(verifier) != *code_challenge {
-                mark_failed_authorization_code(state, &code_hash, "pkce_failed").await;
+                mark_failed_authorization_code(
+                    token_service,
+                    state.settings.protocol.auth_code_ttl_seconds.max(1),
+                    &code_hash,
+                    "pkce_failed",
+                )
+                .await;
                 return oauth_token_error(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
@@ -461,7 +481,13 @@ pub(crate) async fn token_authorization_code(
         }
         (None, None) if !authorization_code_requires_pkce(client, &payload) => {}
         _ => {
-            mark_failed_authorization_code(state, &code_hash, "pkce_state_invalid").await;
+            mark_failed_authorization_code(
+                token_service,
+                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                &code_hash,
+                "pkce_state_invalid",
+            )
+            .await;
             return oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -473,8 +499,13 @@ pub(crate) async fn token_authorization_code(
     let audiences = match authorization_code_audiences(&state.settings, &payload, form) {
         Ok(audiences) => audiences,
         Err(()) => {
-            mark_failed_authorization_code(state, &code_hash, "audience_exceeds_authorization")
-                .await;
+            mark_failed_authorization_code(
+                token_service,
+                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                &code_hash,
+                "audience_exceeds_authorization",
+            )
+            .await;
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_target",
@@ -484,7 +515,13 @@ pub(crate) async fn token_authorization_code(
         }
     };
     if !audiences_allowed(client, &audiences) {
-        mark_failed_authorization_code(state, &code_hash, "audience_not_allowed").await;
+        mark_failed_authorization_code(
+            token_service,
+            state.settings.protocol.auth_code_ttl_seconds.max(1),
+            &code_hash,
+            "audience_not_allowed",
+        )
+        .await;
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_target",
@@ -494,7 +531,13 @@ pub(crate) async fn token_authorization_code(
     }
     if native_sso_requested(&payload.scopes) {
         if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::NativeSso) {
-            mark_failed_authorization_code(state, &code_hash, "native_sso_disabled").await;
+            mark_failed_authorization_code(
+                token_service,
+                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                &code_hash,
+                "native_sso_disabled",
+            )
+            .await;
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_scope",
@@ -503,7 +546,13 @@ pub(crate) async fn token_authorization_code(
             );
         }
         if !payload.scopes.iter().any(|scope| scope == "openid") {
-            mark_failed_authorization_code(state, &code_hash, "native_sso_without_openid").await;
+            mark_failed_authorization_code(
+                token_service,
+                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                &code_hash,
+                "native_sso_without_openid",
+            )
+            .await;
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_scope",
@@ -517,15 +566,22 @@ pub(crate) async fn token_authorization_code(
     let subject = match authorization_code_subject(&state.settings, &payload, client) {
         Ok(subject) => subject,
         Err(_) => {
-            mark_failed_authorization_code(state, &code_hash, "subject_policy_invalid").await;
+            mark_failed_authorization_code(
+                token_service,
+                state.settings.protocol.auth_code_ttl_seconds.max(1),
+                &code_hash,
+                "subject_policy_invalid",
+            )
+            .await;
             let status = StatusCode::SERVICE_UNAVAILABLE;
             let error = "server_error";
             let description = "subject invalid";
             return oauth_token_error(status, error, description, false);
         }
     };
-    issue_token_response(
+    issue_token_response_with_service(
         state,
+        token_service,
         client,
         token_issue_from_authorization_code(AuthorizationCodeIssueInput {
             payload,
@@ -541,8 +597,32 @@ pub(crate) async fn token_authorization_code(
     .await
 }
 
-async fn mark_failed_authorization_code(state: &AppState, code_hash: &str, error_code: &str) {
-    if let Err(error) = super::mark_failed_authorization_code(state, code_hash, error_code).await {
+#[cfg(test)]
+pub(crate) async fn token_authorization_code(
+    state: &AppState,
+    req: &HttpRequest,
+    client: &ClientRow,
+    form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
+) -> HttpResponse {
+    let service = ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
+        state.keyset.clone(),
+    );
+    token_authorization_code_with_service(state, &service, req, client, form, client_assertion)
+        .await
+}
+
+async fn mark_failed_authorization_code(
+    service: &ServerTokenService,
+    ttl_seconds: u64,
+    code_hash: &str,
+    error_code: &str,
+) {
+    if let Err(error) =
+        super::mark_failed_authorization_code(service, code_hash, error_code, ttl_seconds).await
+    {
         tracing::warn!(%error, "failed to mark authorization code exchange as failed");
     }
 }

@@ -17,6 +17,7 @@ mod resource_indicator;
 mod sender_constraint;
 mod signing;
 mod token;
+mod token_service;
 mod transaction;
 mod uri_policy;
 
@@ -55,6 +56,12 @@ pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{
     BackchannelLogoutDelivery, LostResponseRetry, NewRefreshToken, RefreshToken,
     RefreshTokenPersistResult,
+};
+pub use token_service::{
+    AccessTokenSignInput, AuthorizationCodeBeginResult, AuthorizationCodeTransitionResult,
+    IdTokenSignInput, IssuedAccessToken, IssuedAuthorizationCodeTokens, TokenFuture,
+    TokenPortError, TokenRepositoryPort, TokenService, TokenSignerPort, TokenStateStorePort,
+    validate_sender_constraint,
 };
 pub use transaction::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,

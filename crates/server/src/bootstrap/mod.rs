@@ -162,6 +162,11 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::AuthorizationStateAdapter::new(&authorization_state_connection),
         keyset.clone(),
     ));
+    let token_service = web::Data::new(crate::http::token::ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&authorization_state_connection),
+        keyset.clone(),
+    ));
     let authorization_config = web::Data::new(AuthorizationHttpConfig::from(settings.as_ref()));
     let authorization_runtime: web::Data<ServerRuntimeModuleRegistry> =
         web::Data::from(runtime_modules.registry.clone());
@@ -341,6 +346,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(state.clone())
             .app_data(runtime_modules.clone())
             .app_data(authorization_service.clone())
+            .app_data(token_service.clone())
             .app_data(authorization_config.clone())
             .app_data(authorization_runtime.clone())
             .app_data(metadata_handles.clone())

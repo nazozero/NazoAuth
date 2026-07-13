@@ -1,8 +1,7 @@
 use super::*;
 use chrono::DateTime;
 
-use crate::domain::{AuthorizationCodeState, ConsumedAuthorizationCode};
-
+#[cfg(test)]
 pub(super) fn consumed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
     if result == "ok" {
         Ok(())
@@ -33,85 +32,84 @@ pub(super) fn consumed_authorization_code_ttl_seconds(
 }
 
 pub(super) async fn persist_consumed_authorization_code(
-    state: &AppState,
+    service: &ServerTokenService,
     code_hash: &str,
+    tenant_id: Uuid,
     client_id: Uuid,
     access_token_jti: String,
     access_token_expires_at: i64,
     refresh_token_family_id: Option<Uuid>,
+    access_token_ttl_seconds: i64,
+    refresh_token_ttl_seconds: i64,
 ) -> anyhow::Result<()> {
-    let payload = ConsumedAuthorizationCode {
-        client_id,
-        access_token_jti,
-        access_token_expires_at,
-        refresh_token_family_id,
-        consumed_at: Utc::now(),
-    };
     let ttl_seconds = consumed_authorization_code_ttl_seconds(
-        state.settings.protocol.access_token_ttl_seconds,
-        state.settings.protocol.refresh_token_ttl_seconds,
+        access_token_ttl_seconds,
+        refresh_token_ttl_seconds,
         refresh_token_family_id,
     );
-    let result = nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
-        .mark_authorization_code(
+    service
+        .finalize_authorization_code(nazo_auth::IssuedAuthorizationCodeTokens {
+            tenant_id,
+            client_id,
             code_hash,
-            &AuthorizationCodeState::Consumed { marker: payload },
-            ttl_seconds,
-        )
-        .await?;
-    consumed_authorization_code_transition_result(authorization_transition_name(result))
+            access_token_jti: &access_token_jti,
+            access_token_expires_at,
+            refresh_token_family_id,
+            consumed_state_ttl_seconds: ttl_seconds,
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to finalize authorization code: {error:?}"))
 }
 
 pub(crate) async fn mark_failed_authorization_code(
-    state: &AppState,
+    service: &ServerTokenService,
     code_hash: &str,
     error_code: &str,
+    ttl_seconds: u64,
 ) -> anyhow::Result<()> {
-    let result = nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
-        .mark_authorization_code(
-            code_hash,
-            &AuthorizationCodeState::Failed {
-                failed_at: Utc::now(),
-                error: error_code.to_owned(),
-            },
-            state.settings.protocol.auth_code_ttl_seconds.max(1),
-        )
-        .await?;
+    let result = service
+        .mark_authorization_code_failed(code_hash, error_code, ttl_seconds)
+        .await
+        .map_err(|error| anyhow::anyhow!("failed to mark authorization code: {error:?}"))?;
     failed_authorization_code_transition_result(authorization_transition_name(result))
 }
 
-fn authorization_transition_name(result: nazo_valkey::AuthorizationTransition) -> &'static str {
+fn authorization_transition_name(
+    result: nazo_auth::AuthorizationCodeTransitionResult,
+) -> &'static str {
     match result {
-        nazo_valkey::AuthorizationTransition::Applied => "ok",
-        nazo_valkey::AuthorizationTransition::Missing => "missing",
-        nazo_valkey::AuthorizationTransition::Malformed => "malformed",
-        nazo_valkey::AuthorizationTransition::Pending => "pending",
-        nazo_valkey::AuthorizationTransition::Consuming => "consuming",
-        nazo_valkey::AuthorizationTransition::Consumed => "consumed",
-        nazo_valkey::AuthorizationTransition::Failed => "failed",
+        nazo_auth::AuthorizationCodeTransitionResult::Applied => "ok",
+        nazo_auth::AuthorizationCodeTransitionResult::Missing => "missing",
+        nazo_auth::AuthorizationCodeTransitionResult::Malformed => "malformed",
+        nazo_auth::AuthorizationCodeTransitionResult::Pending => "pending",
+        nazo_auth::AuthorizationCodeTransitionResult::Consuming => "consuming",
+        nazo_auth::AuthorizationCodeTransitionResult::Consumed => "consumed",
+        nazo_auth::AuthorizationCodeTransitionResult::Failed => "failed",
     }
 }
 
 pub(super) async fn mark_failed_authorization_code_if_needed(
-    state: &AppState,
+    service: &ServerTokenService,
     code_hash: Option<&str>,
     error_code: &str,
+    ttl_seconds: u64,
 ) {
     if let Some(code_hash) = code_hash
-        && let Err(error) = mark_failed_authorization_code(state, code_hash, error_code).await
+        && let Err(error) =
+            mark_failed_authorization_code(service, code_hash, error_code, ttl_seconds).await
     {
         tracing::warn!(%error, "failed to mark authorization code exchange as failed");
     }
 }
 
 pub(crate) async fn revoke_issued_authorization_code_tokens(
-    state: &AppState,
+    service: &ServerTokenService,
     client: &ClientRow,
     access_token_jti: &str,
     access_token_expires_at: i64,
     refresh_token_family_id: Option<Uuid>,
 ) -> anyhow::Result<()> {
-    nazo_postgres::AuthorizationRepository::new(state.diesel_db.clone())
+    service
         .revoke_issued_tokens(
             client.tenant_id,
             client.id,
@@ -120,7 +118,7 @@ pub(crate) async fn revoke_issued_authorization_code_tokens(
             refresh_token_family_id,
         )
         .await
-        .map_err(|error| anyhow::anyhow!("failed to revoke authorization-code tokens: {error}"))
+        .map_err(|error| anyhow::anyhow!("failed to revoke authorization-code tokens: {error:?}"))
 }
 
 #[cfg(test)]

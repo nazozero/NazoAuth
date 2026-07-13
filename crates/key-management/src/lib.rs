@@ -5,6 +5,7 @@ mod lifecycle;
 mod local;
 mod model;
 mod store;
+mod token;
 
 #[cfg(feature = "test-support")]
 pub use model::TestSigningBehavior;

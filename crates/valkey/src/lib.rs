@@ -15,6 +15,7 @@ mod replay;
 mod session;
 #[doc(hidden)]
 pub mod test_support;
+mod token_issuance;
 mod token_state;
 
 pub use authentication::AuthenticationStore;
@@ -42,4 +43,5 @@ pub(crate) fn identity_repository_error(error: Error) -> nazo_identity::ports::R
 pub use rate_limit::{LoginFailureDimension, RateDimension, RateLimitStore};
 pub use replay::ReplayStore;
 pub use session::{SessionRotationResult, SessionStore, StoredSession};
+pub use token_issuance::TokenIssuanceStateAdapter;
 pub use token_state::TokenStateStore;
