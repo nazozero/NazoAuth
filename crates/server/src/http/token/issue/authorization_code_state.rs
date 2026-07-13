@@ -33,30 +33,10 @@ pub(super) fn consumed_authorization_code_ttl_seconds(
 
 pub(super) async fn persist_consumed_authorization_code(
     service: &ServerTokenService,
-    code_hash: &str,
-    tenant_id: Uuid,
-    client_id: Uuid,
-    access_token_jti: String,
-    access_token_expires_at: i64,
-    refresh_token_family_id: Option<Uuid>,
-    access_token_ttl_seconds: i64,
-    refresh_token_ttl_seconds: i64,
+    issued: nazo_auth::IssuedAuthorizationCodeTokens<'_>,
 ) -> anyhow::Result<()> {
-    let ttl_seconds = consumed_authorization_code_ttl_seconds(
-        access_token_ttl_seconds,
-        refresh_token_ttl_seconds,
-        refresh_token_family_id,
-    );
     service
-        .finalize_authorization_code(nazo_auth::IssuedAuthorizationCodeTokens {
-            tenant_id,
-            client_id,
-            code_hash,
-            access_token_jti: &access_token_jti,
-            access_token_expires_at,
-            refresh_token_family_id,
-            consumed_state_ttl_seconds: ttl_seconds,
-        })
+        .finalize_authorization_code(issued)
         .await
         .map_err(|error| anyhow::anyhow!("failed to finalize authorization code: {error:?}"))
 }

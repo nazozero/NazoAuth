@@ -126,7 +126,7 @@ pub(crate) async fn issue_token_response_with_service(
         Ok(value) => value,
         Err(_) => {
             mark_failed_authorization_code_if_needed(
-                &token_service,
+                token_service,
                 issue.authorization_code_hash.as_deref(),
                 "authorization_details_state_invalid",
                 auth_code_ttl_seconds,
@@ -143,7 +143,7 @@ pub(crate) async fn issue_token_response_with_service(
     let issue_includes_openid = issue.scopes.iter().any(|s| s == "openid");
     if issue_includes_openid && issue.user_id.is_none() {
         mark_failed_authorization_code_if_needed(
-            &token_service,
+            token_service,
             issue.authorization_code_hash.as_deref(),
             "id_token_subject_missing",
             auth_code_ttl_seconds,
@@ -160,7 +160,7 @@ pub(crate) async fn issue_token_response_with_service(
         && !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::NativeSso)
     {
         mark_failed_authorization_code_if_needed(
-            &token_service,
+            token_service,
             issue.authorization_code_hash.as_deref(),
             "native_sso_disabled",
             auth_code_ttl_seconds,
@@ -175,7 +175,7 @@ pub(crate) async fn issue_token_response_with_service(
     }
     if issue.native_sso.is_some() && !issue_includes_openid {
         mark_failed_authorization_code_if_needed(
-            &token_service,
+            token_service,
             issue.authorization_code_hash.as_deref(),
             "native_sso_without_openid",
             auth_code_ttl_seconds,
@@ -194,7 +194,7 @@ pub(crate) async fn issue_token_response_with_service(
             Ok(nonce) => Some(nonce),
             Err(error) => {
                 mark_failed_authorization_code_if_needed(
-                    &token_service,
+                    token_service,
                     issue.authorization_code_hash.as_deref(),
                     "dpop_next_nonce_failed",
                     auth_code_ttl_seconds,
@@ -233,7 +233,7 @@ pub(crate) async fn issue_token_response_with_service(
         Ok(v) => v,
         Err(_) => {
             mark_failed_authorization_code_if_needed(
-                &token_service,
+                token_service,
                 issue.authorization_code_hash.as_deref(),
                 "access_token_signing_failed",
                 auth_code_ttl_seconds,
@@ -248,7 +248,7 @@ pub(crate) async fn issue_token_response_with_service(
         }
     };
     if let Err(error) = persist_access_token_subject_mapping(
-        &token_service,
+        token_service,
         state.settings.protocol.access_token_ttl_seconds,
         &issued_access_token.jti,
         client.tenant_id,
@@ -259,7 +259,7 @@ pub(crate) async fn issue_token_response_with_service(
     {
         tracing::warn!(%error, "failed to persist access token subject mapping");
         mark_failed_authorization_code_if_needed(
-            &token_service,
+            token_service,
             issue.authorization_code_hash.as_deref(),
             "access_token_subject_mapping_failed",
             auth_code_ttl_seconds,
@@ -299,7 +299,7 @@ pub(crate) async fn issue_token_response_with_service(
             Ok(Some(claims)) => Some(claims),
             Ok(None) => {
                 mark_failed_authorization_code_if_needed(
-                    &token_service,
+                    token_service,
                     issue.authorization_code_hash.as_deref(),
                     "id_token_subject_invalid",
                     auth_code_ttl_seconds,
@@ -315,7 +315,7 @@ pub(crate) async fn issue_token_response_with_service(
             Err(error) => {
                 tracing::warn!(?error, "failed to load id_token subject claims");
                 mark_failed_authorization_code_if_needed(
-                    &token_service,
+                    token_service,
                     issue.authorization_code_hash.as_deref(),
                     "id_token_subject_load_failed",
                     auth_code_ttl_seconds,
@@ -370,7 +370,7 @@ pub(crate) async fn issue_token_response_with_service(
             Ok(token) => token,
             Err(_) => {
                 mark_failed_authorization_code_if_needed(
-                    &token_service,
+                    token_service,
                     issue.authorization_code_hash.as_deref(),
                     "id_token_signing_failed",
                     auth_code_ttl_seconds,
@@ -416,7 +416,7 @@ pub(crate) async fn issue_token_response_with_service(
                 expires_at: now
                     + Duration::seconds(state.settings.protocol.refresh_token_ttl_seconds),
             };
-            match persist_refresh_token(&token_service, client, &issue, &refresh).await {
+            match persist_refresh_token(token_service, client, &issue, &refresh).await {
                 Ok(RefreshPersistResult::Inserted) => {
                     body["refresh_token"] = json!(refresh.raw);
                     refresh_token_family_id = Some(refresh.family);
@@ -426,7 +426,7 @@ pub(crate) async fn issue_token_response_with_service(
                 }
                 Ok(RefreshPersistResult::RotationConflict) => {
                     mark_failed_authorization_code_if_needed(
-                        &token_service,
+                        token_service,
                         issue.authorization_code_hash.as_deref(),
                         "refresh_rotation_conflict",
                         auth_code_ttl_seconds,
@@ -442,7 +442,7 @@ pub(crate) async fn issue_token_response_with_service(
                 Err(error) => {
                     tracing::warn!(%error, "failed to persist refresh token");
                     mark_failed_authorization_code_if_needed(
-                        &token_service,
+                        token_service,
                         issue.authorization_code_hash.as_deref(),
                         "refresh_persist_failed",
                         auth_code_ttl_seconds,
@@ -466,7 +466,7 @@ pub(crate) async fn issue_token_response_with_service(
     if let Some(native_sso) = issue.native_sso.as_ref() {
         let Some(refresh_token_family_id) = refresh_token_family_id else {
             mark_failed_authorization_code_if_needed(
-                &token_service,
+                token_service,
                 issue.authorization_code_hash.as_deref(),
                 "native_sso_refresh_token_missing",
                 auth_code_ttl_seconds,
@@ -490,7 +490,7 @@ pub(crate) async fn issue_token_response_with_service(
         {
             tracing::warn!(%error, "failed to persist Native SSO device secret");
             mark_failed_authorization_code_if_needed(
-                &token_service,
+                token_service,
                 issue.authorization_code_hash.as_deref(),
                 "native_sso_device_secret_persist_failed",
                 auth_code_ttl_seconds,
@@ -505,27 +505,34 @@ pub(crate) async fn issue_token_response_with_service(
         }
         body["device_secret"] = json!(native_sso.device_secret);
     }
-    if let Some(code_hash) = issue.authorization_code_hash.as_deref()
-        && let Err(error) = persist_consumed_authorization_code(
-            &token_service,
-            code_hash,
-            client.tenant_id,
-            client.id,
-            issued_access_token.jti.clone(),
-            issued_access_token.expires_at,
-            refresh_token_family_id,
+    if let Some(code_hash) = issue.authorization_code_hash.as_deref() {
+        let consumed_state_ttl_seconds = consumed_authorization_code_ttl_seconds(
             state.settings.protocol.access_token_ttl_seconds,
             state.settings.protocol.refresh_token_ttl_seconds,
+            refresh_token_family_id,
+        );
+        if let Err(error) = persist_consumed_authorization_code(
+            token_service,
+            nazo_auth::IssuedAuthorizationCodeTokens {
+                tenant_id: client.tenant_id,
+                client_id: client.id,
+                code_hash,
+                access_token_jti: &issued_access_token.jti,
+                access_token_expires_at: issued_access_token.expires_at,
+                refresh_token_family_id,
+                consumed_state_ttl_seconds,
+            },
         )
         .await
-    {
-        tracing::warn!(%error, "failed to persist consumed authorization code marker");
-        return oauth_token_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "授权码兑换状态写入失败.",
-            false,
-        );
+        {
+            tracing::warn!(%error, "failed to persist consumed authorization code marker");
+            return oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码兑换状态写入失败.",
+                false,
+            );
+        }
     }
     audit_event(
         "token_issued",

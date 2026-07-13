@@ -92,9 +92,9 @@ pub(crate) async fn federation_provider_start(
         return unknown_provider_response();
     };
     match &provider.adapter {
-        ExternalLoginProviderAdapter::Oidc(oidc) => start_oidc_provider(&state, &oidc).await,
+        ExternalLoginProviderAdapter::Oidc(oidc) => start_oidc_provider(&state, oidc).await,
         ExternalLoginProviderAdapter::Social(social) => {
-            start_social_provider(&state, &provider.provider_id, &social).await
+            start_social_provider(&state, &provider.provider_id, social).await
         }
     }
 }

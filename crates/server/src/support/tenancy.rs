@@ -2,6 +2,7 @@
 use crate::domain::{ClientRow, DatabaseUserFixture};
 #[cfg(test)]
 use chrono::Utc;
+#[cfg(test)]
 use nazo_identity::PublicAccount;
 #[cfg(test)]
 use serde_json::json;
@@ -29,6 +30,7 @@ impl Default for TenantContext {
 }
 
 impl TenantContext {
+    #[cfg(test)]
     pub(crate) fn includes_user(&self, user: &PublicAccount) -> bool {
         self.as_identity_context().is_some_and(|context| {
             context.matches_raw(user.tenant_id(), user.realm_id(), user.organization_id())

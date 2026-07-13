@@ -1,13 +1,16 @@
 use super::jwt_decoding_key_from_jwk;
 
 use chrono::Utc;
-use nazo_auth::{AccessTokenClaimsInput, BackchannelLogoutClaimsInput, Claims, OidcClaimRequest};
+#[cfg(test)]
+use nazo_auth::{AccessTokenClaimsInput, OidcClaimRequest};
+use nazo_auth::{BackchannelLogoutClaimsInput, Claims};
 use serde_json::Value;
 use uuid::Uuid;
 
 use crate::domain::AppState;
 use crate::support::signing_algorithm_name;
 
+#[cfg(test)]
 pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) tenant_id: Uuid,
     pub(crate) subject: &'a str,
@@ -25,12 +28,13 @@ pub(crate) struct AccessTokenJwtInput<'a> {
     pub(crate) actor: Option<&'a Value>,
 }
 
+#[cfg(test)]
 pub(crate) struct IssuedAccessToken {
     pub(crate) token: String,
     pub(crate) jti: String,
-    pub(crate) exp: i64,
 }
 
+#[cfg(test)]
 pub(super) fn validate_access_token_sender_constraint(
     dpop_jkt: Option<&str>,
     mtls_x5t_s256: Option<&str>,
@@ -43,6 +47,7 @@ pub(super) fn validate_access_token_sender_constraint(
     Ok(())
 }
 
+#[cfg(test)]
 pub(crate) async fn make_jwt(
     state: &AppState,
     input: AccessTokenJwtInput<'_>,
@@ -50,7 +55,6 @@ pub(crate) async fn make_jwt(
     validate_access_token_sender_constraint(input.dpop_jkt, input.mtls_x5t_s256)?;
     let now = Utc::now().timestamp();
     let jti = Uuid::now_v7().to_string();
-    let exp = now + input.ttl;
     let claims = nazo_auth::access_token_claims(
         &state.settings.endpoint.issuer,
         AccessTokenClaimsInput {
@@ -78,9 +82,10 @@ pub(crate) async fn make_jwt(
         .keyset
         .encode_jwt(nazo_auth::SigningPurpose::AccessToken, &header, &claims)
         .await?;
-    Ok(IssuedAccessToken { token, jti, exp })
+    Ok(IssuedAccessToken { token, jti })
 }
 
+#[cfg(test)]
 pub(super) fn access_token_header(alg: jsonwebtoken::Algorithm, kid: &str) -> jsonwebtoken::Header {
     let mut header = jsonwebtoken::Header::new(alg);
     header.typ = Some("at+jwt".to_string());

@@ -282,6 +282,7 @@ async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<()
     .await
 }
 
+#[cfg(test)]
 async fn validate_dpop_nonce_with_store(
     replay_store: &nazo_valkey::ReplayStore,
     nonce_policy: DpopNoncePolicy,
