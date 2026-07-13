@@ -27,3 +27,33 @@ pub(crate) async fn set_ex_nx(
         ))),
     }
 }
+
+pub(crate) async fn set_ex(
+    connection: &ValkeyConnection,
+    key: String,
+    value: &'static str,
+    ttl_seconds: u64,
+) -> Result<(), Error> {
+    connection
+        .client
+        .set::<(), _, _>(
+            key,
+            value,
+            Some(Expiration::EX(ttl_seconds.min(i64::MAX as u64) as i64)),
+            None,
+            false,
+        )
+        .await
+        .map_err(Error::from_fred)
+}
+
+pub(crate) async fn take(
+    connection: &ValkeyConnection,
+    key: String,
+) -> Result<Option<String>, Error> {
+    connection
+        .client
+        .getdel(key)
+        .await
+        .map_err(Error::from_fred)
+}

@@ -34,4 +34,58 @@ impl ReplayStore {
         )
         .await
     }
+
+    pub async fn consume_dpop(
+        &self,
+        jkt: &str,
+        jti: &str,
+        ttl_seconds: u64,
+    ) -> Result<bool, Error> {
+        self.consume_key(keys::dpop_replay(jkt, jti), ttl_seconds)
+            .await
+    }
+
+    pub async fn issue_dpop_nonce(&self, nonce: &str, ttl_seconds: u64) -> Result<(), Error> {
+        command::set_ex(&self.connection, keys::dpop_nonce(nonce), "1", ttl_seconds).await
+    }
+
+    pub async fn consume_dpop_nonce(&self, nonce: &str) -> Result<bool, Error> {
+        Ok(command::take(&self.connection, keys::dpop_nonce(nonce))
+            .await?
+            .is_some())
+    }
+
+    pub async fn consume_private_key_jwt(
+        &self,
+        client_id: &str,
+        jti: &str,
+        ttl_seconds: u64,
+    ) -> Result<bool, Error> {
+        self.consume_key(keys::private_key_jwt_replay(client_id, jti), ttl_seconds)
+            .await
+    }
+
+    pub async fn consume_jar(
+        &self,
+        client_id: &str,
+        jti: &str,
+        ttl_seconds: u64,
+    ) -> Result<bool, Error> {
+        self.consume_key(keys::jar_replay(client_id, jti), ttl_seconds)
+            .await
+    }
+
+    pub async fn consume_jwt_bearer(
+        &self,
+        client_id: &str,
+        jti: &str,
+        ttl_seconds: u64,
+    ) -> Result<bool, Error> {
+        self.consume_key(keys::jwt_bearer_replay(client_id, jti), ttl_seconds)
+            .await
+    }
+
+    async fn consume_key(&self, key: String, ttl_seconds: u64) -> Result<bool, Error> {
+        command::set_ex_nx(&self.connection, key, "1", ttl_seconds).await
+    }
 }

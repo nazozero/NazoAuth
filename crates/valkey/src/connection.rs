@@ -3,6 +3,7 @@ use std::time::Duration;
 use fred::{
     interfaces::ClientLike,
     prelude::{Builder, Config, ConnectionConfig, PerformanceConfig},
+    types::config::ServerConfig,
 };
 
 use crate::Error;
@@ -15,7 +16,13 @@ pub struct ValkeyConnection {
 
 impl ValkeyConnection {
     pub async fn connect(url: &str, command_timeout: Duration) -> Result<Self, Error> {
-        let mut builder = Builder::from_config(Config::from_url(url).map_err(Error::from_fred)?);
+        let config = Config::from_url(url).map_err(Error::from_fred)?;
+        if !matches!(config.server, ServerConfig::Centralized { .. }) {
+            return Err(Error::unexpected(
+                "only standalone Valkey topology is supported by reviewed multi-key scripts",
+            ));
+        }
+        let mut builder = Builder::from_config(config);
         builder.with_performance_config(|performance: &mut PerformanceConfig| {
             performance.default_command_timeout = command_timeout;
         });
