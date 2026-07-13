@@ -2,22 +2,22 @@
 // 子模块按职责拆分；调用方显式导入所需能力。
 mod audit;
 mod avatars;
-mod client_ip;
+pub(crate) mod client_ip;
 mod cookies;
-mod dpop;
+pub(crate) mod dpop;
 mod email;
 mod email_templates;
 mod fapi_http_signatures;
 mod jwe;
 mod mfa;
-mod mtls;
+pub(crate) mod mtls;
 mod oauth;
 mod oidc_claims;
 mod passkeys;
 mod rate_limit;
 pub(crate) mod responses;
 mod sector_identifier;
-mod security;
+pub(crate) mod security;
 pub(crate) mod sessions;
 mod tenancy;
 #[cfg(test)]
@@ -30,9 +30,7 @@ pub(crate) use audit::{audit_event, audit_fields};
 pub(crate) use avatars::{
     avatar_meta_path, avatar_path, avatar_user_dir, detect_avatar_content_type, read_avatar_meta,
 };
-pub(crate) use client_ip::{
-    ClientIpHeaderMode, IpCidr, client_ip, parse_trusted_proxy_cidrs, request_from_trusted_proxy,
-};
+pub(crate) use client_ip::{ClientIpHeaderMode, IpCidr, client_ip, parse_trusted_proxy_cidrs};
 pub(crate) use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
 pub(crate) use dpop::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, dpop_error_response, dpop_proof_present,

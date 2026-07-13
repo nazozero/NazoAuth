@@ -30,7 +30,7 @@ use tokio::sync::Semaphore;
 use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
-mod tokens;
+pub(crate) mod tokens;
 #[cfg(test)]
 pub(crate) use tokens::IssuedAccessToken;
 pub(crate) use tokens::{
