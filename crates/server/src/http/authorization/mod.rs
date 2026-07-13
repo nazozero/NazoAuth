@@ -2,6 +2,7 @@
 // 三个端点分别负责发起授权、读取授权确认页数据、提交授权决策。
 mod config;
 pub(crate) mod consent;
+#[cfg(test)]
 pub(crate) mod decision;
 pub(crate) mod jar;
 pub(crate) mod par;
@@ -217,10 +218,9 @@ pub(crate) use jar::{
 pub(crate) use par::is_pushed_authorization_request_uri;
 #[cfg(test)]
 pub(crate) use request::authorization_response_redirect;
+#[cfg(test)]
 pub(crate) use request::{
-    AuthorizationResponseRedirect, PushedAuthorizationRequestConsumeError,
-    authorization_response_redirect_with_context,
-    consume_pushed_authorization_request_with_context,
+    AuthorizationResponseRedirect, authorization_response_redirect_with_context,
 };
 
 #[cfg(test)]

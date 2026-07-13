@@ -3,7 +3,7 @@ use std::{collections::HashMap, time::Duration};
 use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
-use nazo_auth::{AuthorizationCodeState, CodePayload, PushedAuthorizationRequest};
+use nazo_auth::{AuthorizationCodeState, CodePayload, ConsentPayload, PushedAuthorizationRequest};
 use nazo_valkey::{AuthorizationCodeBegin, AuthorizationStore, ValkeyConnection};
 use serde_json::json;
 
@@ -45,6 +45,39 @@ fn code_payload(code_id: &str) -> CodePayload {
         code_challenge_method: None,
         dpop_jkt: None,
         mtls_x5t_s256: None,
+        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
+        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+    }
+}
+
+fn consent_payload(request_id: &str, user_id: uuid::Uuid) -> ConsentPayload {
+    ConsentPayload {
+        request_id: request_id.to_owned(),
+        user_id,
+        client_id: "client-a".to_owned(),
+        client_name: "Client A".to_owned(),
+        redirect_uri: "https://client.example/cb".to_owned(),
+        redirect_uri_was_supplied: true,
+        scopes: vec!["openid".to_owned()],
+        resource_indicators: Vec::new(),
+        authorization_details: json!([]),
+        state: Some("state".to_owned()),
+        response_mode: None,
+        nonce: Some("nonce".to_owned()),
+        auth_time: 1_000,
+        amr: vec!["password".to_owned()],
+        oidc_sid: Some("sid".to_owned()),
+        acr: None,
+        userinfo_claims: Vec::new(),
+        userinfo_claim_requests: Vec::new(),
+        id_token_claims: Vec::new(),
+        id_token_claim_requests: Vec::new(),
+        code_challenge: None,
+        code_challenge_method: None,
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        pushed_request_uri: None,
+        pushed_request_digest: None,
         issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
         expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
     }
@@ -112,5 +145,126 @@ async fn concurrent_authorization_code_begin_has_one_consuming_winner() {
             .filter(|r| matches!(r, AuthorizationCodeBegin::Busy))
             .count(),
         1
+    );
+}
+
+#[tokio::test]
+async fn concurrent_reauthentication_nonce_consumption_has_exactly_one_winner() {
+    let Some((store, _)) = setup().await else {
+        return;
+    };
+    let nonce = uuid::Uuid::now_v7().to_string();
+    store.store_reauth_nonce(&nonce, 1_000, 30).await.unwrap();
+
+    let (first, second) = tokio::join!(
+        store.take_reauth_nonce(&nonce),
+        store.take_reauth_nonce(&nonce),
+    );
+    let results = [first.unwrap(), second.unwrap()];
+    assert_eq!(
+        results
+            .into_iter()
+            .filter(|started_at| *started_at == Some(1_000))
+            .count(),
+        1
+    );
+    assert_eq!(results.into_iter().filter(Option::is_none).count(), 1);
+}
+
+#[tokio::test]
+async fn consent_compare_delete_preserves_a_concurrent_replacement() {
+    let Some((store, _)) = setup().await else {
+        return;
+    };
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let observed = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+    let replacement = consent_payload(&request_id, uuid::Uuid::from_u128(2));
+    store
+        .store_consent(&request_id, &observed, 30)
+        .await
+        .unwrap();
+    store
+        .store_consent(&request_id, &replacement, 30)
+        .await
+        .unwrap();
+
+    assert!(
+        !store
+            .compare_and_delete_consent(&request_id, &observed)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        store
+            .load_consent(&request_id)
+            .await
+            .unwrap()
+            .unwrap()
+            .user_id,
+        replacement.user_id
+    );
+}
+
+#[tokio::test]
+async fn concurrent_consent_compare_delete_has_exactly_one_winner() {
+    let Some((store, _)) = setup().await else {
+        return;
+    };
+    let request_id = uuid::Uuid::now_v7().to_string();
+    let observed = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+    store
+        .store_consent(&request_id, &observed, 30)
+        .await
+        .unwrap();
+
+    let (first, second) = tokio::join!(
+        store.compare_and_delete_consent(&request_id, &observed),
+        store.compare_and_delete_consent(&request_id, &observed),
+    );
+    assert_eq!(
+        [first.unwrap(), second.unwrap()]
+            .into_iter()
+            .filter(|consumed| *consumed)
+            .count(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn par_compare_delete_preserves_a_concurrent_replacement() {
+    let Some((store, _)) = setup().await else {
+        return;
+    };
+    let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", uuid::Uuid::now_v7());
+    let observed = PushedAuthorizationRequest {
+        client_id: "client-a".to_owned(),
+        params: HashMap::from([("scope".to_owned(), "openid".to_owned())]),
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        issued_at: Utc.timestamp_opt(1_000, 0).unwrap(),
+        expires_at: Utc.timestamp_opt(1_030, 0).unwrap(),
+    };
+    let mut replacement = observed.clone();
+    replacement.client_id = "client-b".to_owned();
+    store.store_par(&request_uri, &observed, 30).await.unwrap();
+    store
+        .store_par(&request_uri, &replacement, 30)
+        .await
+        .unwrap();
+
+    assert!(
+        !store
+            .compare_and_delete_par(&request_uri, &observed)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        store
+            .load_par(&request_uri)
+            .await
+            .unwrap()
+            .unwrap()
+            .client_id,
+        replacement.client_id
     );
 }

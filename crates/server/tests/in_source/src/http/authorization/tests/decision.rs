@@ -76,6 +76,7 @@ fn consent_payload() -> ConsentPayload {
         dpop_jkt: None,
         mtls_x5t_s256: None,
         pushed_request_uri: None,
+        pushed_request_digest: None,
         issued_at: now,
         expires_at: now + Duration::seconds(60),
     }
@@ -109,6 +110,7 @@ fn consent_payload_for_user(client_id: &str, user_id: Uuid) -> ConsentPayload {
         dpop_jkt: None,
         mtls_x5t_s256: None,
         pushed_request_uri: None,
+        pushed_request_digest: None,
         issued_at: now,
         expires_at: now + Duration::seconds(60),
     }

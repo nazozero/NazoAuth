@@ -2,6 +2,8 @@
 // 本文件只声明 URL 到 handler 的映射，不承载业务逻辑。
 
 use actix_web::{HttpResponse, dev::Service, http::header, web};
+#[cfg(not(test))]
+use nazo_http_actix::authorize_decision;
 use nazo_http_actix::{
     admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules, discovery,
     jwks, login, mfa_json_config, mfa_method_not_allowed, mfa_options,
@@ -35,9 +37,10 @@ use crate::http::auth::{
     },
     passkey::{passkey_login_begin, passkey_login_finish},
 };
+#[cfg(test)]
+use crate::http::authorization::decision::authorize_decision;
 use crate::http::authorization::{
     consent::authorize_consent,
-    decision::authorize_decision,
     par::par,
     request::{authorize_get, authorize_post},
 };

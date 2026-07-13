@@ -51,6 +51,8 @@ pub struct ConsentPayload {
     pub mtls_x5t_s256: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pushed_request_uri: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pushed_request_digest: Option<String>,
     pub issued_at: DateTime<Utc>,
     pub expires_at: DateTime<Utc>,
 }

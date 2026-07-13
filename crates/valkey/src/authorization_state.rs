@@ -54,6 +54,19 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         })
     }
 
+    fn compare_and_delete_par<'a>(
+        &'a self,
+        request_uri: &'a str,
+        expected: &'a PushedAuthorizationRequest,
+    ) -> AuthorizationFuture<'a, bool> {
+        Box::pin(async move {
+            self.authorization
+                .compare_and_delete_par(request_uri, expected)
+                .await
+                .map_err(map_error)
+        })
+    }
+
     fn store_par<'a>(
         &'a self,
         request_uri: &'a str,
@@ -87,6 +100,19 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         Box::pin(async move {
             self.authorization
                 .take_consent(request_id)
+                .await
+                .map_err(map_error)
+        })
+    }
+
+    fn compare_and_delete_consent<'a>(
+        &'a self,
+        request_id: &'a str,
+        expected: &'a ConsentPayload,
+    ) -> AuthorizationFuture<'a, bool> {
+        Box::pin(async move {
+            self.authorization
+                .compare_and_delete_consent(request_id, expected)
                 .await
                 .map_err(map_error)
         })

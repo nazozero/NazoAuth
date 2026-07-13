@@ -3,6 +3,7 @@
 //! This crate owns HTTP-framework details. Domain policy and infrastructure
 //! access remain in their focused crates.
 
+mod authorization_decision;
 mod cookies;
 mod cors;
 mod csrf;
@@ -24,6 +25,11 @@ mod token_forms;
 mod token_management;
 mod userinfo;
 
+pub use authorization_decision::{
+    AuthorizationDecisionCommand, AuthorizationDecisionEndpoint, AuthorizationDecisionError,
+    AuthorizationDecisionForm, AuthorizationDecisionFuture, AuthorizationDecisionOperations,
+    AuthorizationDecisionRedirect, authorize_decision,
+};
 pub use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
 pub use cors::{
     cors_admin, cors_auth_api, cors_browser_token_management, cors_browser_userinfo, cors_scim,

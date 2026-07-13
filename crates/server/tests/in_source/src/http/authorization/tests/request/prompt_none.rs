@@ -43,6 +43,7 @@ fn prompt_none_payload() -> ConsentPayload {
         dpop_jkt: None,
         mtls_x5t_s256: None,
         pushed_request_uri: None,
+        pushed_request_digest: None,
         issued_at: now,
         expires_at: now + Duration::seconds(60),
     }

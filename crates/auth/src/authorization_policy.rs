@@ -570,6 +570,46 @@ pub struct SignedJarmAuthorizationResponse {
     pub response: String,
 }
 
+#[must_use]
+pub fn plain_authorization_response_uri(
+    response: &PlainAuthorizationResponse,
+    session_state: Option<&str>,
+) -> String {
+    let Ok(mut url) = url::Url::parse(&response.redirect_uri) else {
+        return response.redirect_uri.clone();
+    };
+    let issuer = response
+        .parameters
+        .iter()
+        .find(|(name, _)| name == "iss")
+        .map(|(_, value)| value.as_str());
+    {
+        let mut query = url.query_pairs_mut();
+        for (name, value) in response.parameters.iter().filter(|(name, _)| name != "iss") {
+            query.append_pair(name, value);
+        }
+        if let Some(session_state) = session_state {
+            query.append_pair("session_state", session_state);
+        }
+        if let Some(issuer) = issuer {
+            query.append_pair("iss", issuer);
+        }
+    }
+    url.to_string()
+}
+
+#[must_use]
+pub fn signed_jarm_authorization_response_uri(
+    response: &SignedJarmAuthorizationResponse,
+) -> String {
+    let Ok(mut url) = url::Url::parse(&response.redirect_uri) else {
+        return response.redirect_uri.clone();
+    };
+    url.query_pairs_mut()
+        .append_pair("response", &response.response);
+    url.to_string()
+}
+
 impl JarmAuthorizationResponse {
     #[must_use]
     pub fn signing_input<'a>(
@@ -753,6 +793,17 @@ mod tests {
                 .parameters
                 .contains(&("iss".to_owned(), "https://issuer.example".to_owned()))
         );
+        let plain_uri = plain_authorization_response_uri(&plain, Some("session-state"));
+        let plain_uri = url::Url::parse(&plain_uri).unwrap();
+        assert_eq!(
+            plain_uri.query_pairs().collect::<Vec<_>>(),
+            vec![
+                ("code".into(), "code".into()),
+                ("state".into(), "state".into()),
+                ("session_state".into(), "session-state".into()),
+                ("iss".into(), "https://issuer.example".into()),
+            ]
+        );
 
         let jarm = plan_authorization_response(AuthorizationResponsePolicyInput {
             response_mode: Some("jwt"),
@@ -778,6 +829,17 @@ mod tests {
         assert_eq!(
             jarm.signing_input(Some("PS256")).signing_algorithm,
             Some("PS256")
+        );
+        let signed_uri = signed_jarm_authorization_response_uri(&SignedJarmAuthorizationResponse {
+            redirect_uri: jarm.redirect_uri,
+            response: "signed.response".to_owned(),
+        });
+        assert_eq!(
+            url::Url::parse(&signed_uri)
+                .unwrap()
+                .query_pairs()
+                .collect::<Vec<_>>(),
+            vec![("response".into(), "signed.response".into())]
         );
     }
 

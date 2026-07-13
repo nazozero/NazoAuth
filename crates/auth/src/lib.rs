@@ -57,7 +57,8 @@ pub use authorization_policy::{
     NormalizedAuthorizationRequest, PlainAuthorizationResponse, PromptDirectives,
     PromptNoneDecision, RequestedClaims, SignedJarmAuthorizationResponse,
     UserAuthorizationDecision, authorization_session_decision, normalize_authorization_request,
-    parse_user_authorization_decision, plan_authorization_response, prompt_none_decision,
+    parse_user_authorization_decision, plain_authorization_response_uri,
+    plan_authorization_response, prompt_none_decision, signed_jarm_authorization_response_uri,
 };
 pub use authorization_request::{
     AuthorizationRequestError, ExpandedParAdmissionPolicy, NormalizedRequestObject, ParAdmission,
@@ -67,9 +68,11 @@ pub use authorization_request::{
     normalize_request_object, validate_expanded_par_admission, validate_raw_par_admission,
 };
 pub use authorization_service::{
-    AuthorizationFuture, AuthorizationPortError, AuthorizationRateDimension,
-    AuthorizationRepositoryPort, AuthorizationResponseSignInput, AuthorizationResponseSignerPort,
-    AuthorizationService, AuthorizationStateStorePort, GrantWrite, StoredAuthorizationGrant,
+    AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
+    AuthorizationDecisionAdmissionError, AuthorizationFuture, AuthorizationPortError,
+    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
+    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort, GrantWrite,
+    StoredAuthorizationGrant, pushed_authorization_request_digest,
     stored_grant_covers_requested_authorization,
 };
 pub use ciba::{
