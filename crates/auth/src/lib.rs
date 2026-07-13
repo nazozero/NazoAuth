@@ -3,6 +3,7 @@
 //! Runtime- and infrastructure-free authorization-server policy.
 
 mod authorization_details;
+mod authorization_service;
 mod ciba;
 mod claims;
 mod client;
@@ -24,6 +25,12 @@ pub use authorization_details::{
     canonical_authorization_details, deserialize_authorization_details,
     empty_authorization_details, high_risk_authorization_details, normalize_authorization_details,
     parse_authorization_details,
+};
+pub use authorization_service::{
+    AuthorizationFuture, AuthorizationPortError, AuthorizationRateDimension,
+    AuthorizationRepositoryPort, AuthorizationResponseSignInput, AuthorizationResponseSignerPort,
+    AuthorizationService, AuthorizationStateStorePort, GrantWrite, StoredAuthorizationGrant,
+    stored_grant_covers_requested_authorization,
 };
 pub use ciba::{CibaRequestState, CibaStatus};
 pub use claims::{

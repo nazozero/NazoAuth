@@ -1,20 +1,22 @@
 //! 授权请求入口端点。
-use crate::domain::{AppState, ClientRow, ConsentPayload};
+#[cfg(test)]
+use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::{AuthorizationCodeState, DatabaseUserFixture, PushedAuthorizationRequest};
+use crate::domain::{ClientRow, ConsentPayload};
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::{
-    AuthorizationResponseJwtInput, DEFAULT_TENANT_ID, JwePayloadKind, RedirectUriError,
-    append_query, audiences_allowed, blake3_hex, client_jwe_key, client_supports_grant,
-    current_session, encrypt_compact_jwe, is_subset, json_array_to_strings,
-    make_authorization_response_jwt, parse_scope, random_urlsafe_token, registered_redirect_uri,
-    resource_indicators_from_parameter_value, signing_algorithm_from_name,
-};
 #[cfg(test)]
 use crate::support::{
-    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, SessionPayload, authorization_code_key, pkce_s256,
-    valkey_get, valkey_set_ex,
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, SessionPayload,
+    authorization_code_key, pkce_s256, valkey_get, valkey_set_ex,
+};
+use crate::support::{
+    JwePayloadKind, OAuthJsonErrorFields, RedirectUriError, append_query, audiences_allowed,
+    authorization_error_response, blake3_hex, client_jwe_key, client_supports_grant,
+    encrypt_compact_jwe, is_subset, json_array_to_strings, oauth_error, parse_scope,
+    random_urlsafe_token, redirect_found, registered_redirect_uri,
+    resource_indicators_from_parameter_value,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -35,10 +37,13 @@ use std::collections::HashMap;
 use uuid::Uuid;
 // 该端点只创建 consent 临时状态，不签发授权码。
 use super::{
-    apply_request_object, is_pushed_authorization_request_uri,
+    AuthorizationHttpConfig, AuthorizationRequestContext, ServerAuthorizationService,
+    apply_request_object_with_context, is_pushed_authorization_request_uri,
     unverified_signed_request_object_client_id,
 };
 use crate::http::profile::session_management::issue_oidc_session_state;
+use crate::runtime_modules::ServerRuntimeModuleRegistry;
+use crate::support::sessions::AdminSessionHandles;
 
 mod form;
 mod parameters;
@@ -52,17 +57,27 @@ use prompt_none::*;
 const REAUTH_NONCE_TTL_SECONDS: u64 = 600;
 
 /// 校验 OAuth authorize 参数并创建待确认授权请求。
-pub(crate) async fn authorize_get(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+pub(crate) async fn authorize_get(
+    service: Data<ServerAuthorizationService>,
+    config: Data<AuthorizationHttpConfig>,
+    sessions: Data<AdminSessionHandles>,
+    runtime_modules: Data<ServerRuntimeModuleRegistry>,
+    req: HttpRequest,
+) -> HttpResponse {
     let query_parameters = authorization_duplicate_parameters();
     let mut q = match parse_authorization_query(req.query_string(), &query_parameters) {
         Ok(q) => q,
         Err(response) => return response,
     };
-    authorize_request(state, req, &mut q).await
+    let context = AuthorizationRequestContext::new(&service, &config, &sessions, &runtime_modules);
+    authorize_request_with_context(&context, req, &mut q).await
 }
 
 pub(crate) async fn authorize_post(
-    state: Data<AppState>,
+    service: Data<ServerAuthorizationService>,
+    config: Data<AuthorizationHttpConfig>,
+    sessions: Data<AdminSessionHandles>,
+    runtime_modules: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -71,20 +86,21 @@ pub(crate) async fn authorize_post(
         Ok(q) => q,
         Err(response) => return response,
     };
-    authorize_request(state, req, &mut q).await
+    let context = AuthorizationRequestContext::new(&service, &config, &sessions, &runtime_modules);
+    authorize_request_with_context(&context, req, &mut q).await
 }
 
-async fn authorize_request(
-    state: Data<AppState>,
+async fn authorize_request_with_context(
+    context: &AuthorizationRequestContext<'_>,
     req: HttpRequest,
     q: &mut HashMap<String, String>,
 ) -> HttpResponse {
-    if let Some(response) = runtime_authorization_capability_error(&state, q) {
+    if let Some(response) = runtime_authorization_capability_error(context, q) {
         return response;
     }
 
     let original_authorization_query = q.clone();
-    let reauth_started_at = consume_reauth_nonce(&state, q).await;
+    let reauth_started_at = consume_reauth_nonce_with_context(context, q).await;
     let mut pushed_dpop_jkt = None;
     let mut pushed_mtls_x5t_s256 = None;
     let mut consumed_request_uri_error: Option<&'static str> = None;
@@ -94,8 +110,7 @@ async fn authorize_request(
         if !is_pushed_authorization_request_uri(&request_uri) {
             consumed_request_uri_error = Some("request_uri_not_supported");
         } else {
-            let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
-            let pushed = match store.load_par(&request_uri).await {
+            let pushed = match context.service.load_par(&request_uri).await {
                 Ok(Some(pushed)) => Some(pushed),
                 Ok(None) => {
                     consumed_request_uri_error = Some("invalid_request_uri");
@@ -116,11 +131,9 @@ async fn authorize_request(
                 {
                     consumed_request_uri_error = Some("invalid_request_uri");
                 } else {
-                    let outer_parameters_are_fapi_invalid = state
-                        .settings
-                        .authorization_server_profile
-                        .requires_fapi2_security()
-                        && !outer_request_uri_parameters_are_fapi_compliant(q);
+                    let outer_parameters_are_fapi_invalid =
+                        context.config.profile.requires_fapi2_security()
+                            && !outer_request_uri_parameters_are_fapi_compliant(q);
                     let outer_parameters_mismatch =
                         !outer_request_uri_parameters_match_pushed(q, &pushed.params);
                     if outer_parameters_are_fapi_invalid || outer_parameters_mismatch {
@@ -136,11 +149,7 @@ async fn authorize_request(
                 }
             }
         }
-    } else if state
-        .settings
-        .protocol()
-        .require_pushed_authorization_requests
-    {
+    } else if context.config.require_pushed_authorization_requests {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -148,7 +157,7 @@ async fn authorize_request(
         );
     }
 
-    if let Some(response) = runtime_authorization_capability_error(&state, q) {
+    if let Some(response) = runtime_authorization_capability_error(context, q) {
         return response;
     }
 
@@ -167,10 +176,7 @@ async fn authorize_request(
         );
     };
 
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, client_id)
-        .await
-    {
+    let client = match context.service.client_by_id(client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
             return oauth_error(
@@ -202,8 +208,10 @@ async fn authorize_request(
             "该客户端未启用 authorization_code 授权类型.",
         );
     }
-    let request_object_error = apply_request_object(&state, q, &client).await.err();
-    if let Some(response) = runtime_authorization_capability_error(&state, q) {
+    let request_object_error = apply_request_object_with_context(context, q, &client)
+        .await
+        .err();
+    if let Some(response) = runtime_authorization_capability_error(context, q) {
         return response;
     }
     let request_dpop_jkt = match q.get("dpop_jkt") {
@@ -246,11 +254,11 @@ async fn authorize_request(
         };
 
     if let Some(error) = consumed_request_uri_error {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, error, q).await;
+        return authorization_oauth_error_redirect(context, &redirect_uri, error, q).await;
     }
     if let Some(error_response) = request_object_error {
         if let Some(error) = oauth_json_error(&error_response) {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, &error, q).await;
+            return authorization_oauth_error_redirect(context, &redirect_uri, &error, q).await;
         }
         return error_response;
     }
@@ -258,17 +266,17 @@ async fn authorize_request(
         && !used_pushed_authorization_request
         && !q.contains_key("request")
     {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_request", q)
             .await;
     }
     if authorization_nonce_too_long(q) {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_request", q)
             .await;
     }
 
     if q.get("response_type").map(String::as_str) != Some("code") {
         return authorization_oauth_error_redirect(
-            &state,
+            context,
             &redirect_uri,
             "unsupported_response_type",
             q,
@@ -278,27 +286,42 @@ async fn authorize_request(
     let response_mode = match authorization_response_mode(q) {
         Ok(value) => value,
         Err(()) => {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
-                .await;
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "invalid_request",
+                q,
+            )
+            .await;
         }
     };
     let (code_challenge, code_challenge_method) = match authorization_pkce(q) {
         Ok(value) => value,
         Err(()) => {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
-                .await;
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "invalid_request",
+                q,
+            )
+            .await;
         }
     };
     if code_challenge.is_none() && authorization_request_requires_pkce(&client) {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
+        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_request", q)
             .await;
     }
 
     let prompt = match requested_prompt(q) {
         Ok(prompt) => prompt,
         Err(()) => {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
-                .await;
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "invalid_request",
+                q,
+            )
+            .await;
         }
     };
     let max_age = match q.get("max_age") {
@@ -306,7 +329,7 @@ async fn authorize_request(
             Ok(value) if value >= 0 => Some(value),
             _ => {
                 return authorization_oauth_error_redirect(
-                    &state,
+                    context,
                     &redirect_uri,
                     "invalid_request",
                     q,
@@ -319,19 +342,29 @@ async fn authorize_request(
     let requested_claims = match requested_claims(q) {
         Ok(value) => value,
         Err(()) => {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
-                .await;
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "invalid_request",
+                q,
+            )
+            .await;
         }
     };
     let acr = match requested_acr(q, requested_claims.acr.as_ref()) {
         Ok(acr) => acr,
         Err(()) => {
-            return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_request", q)
-                .await;
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "invalid_request",
+                q,
+            )
+            .await;
         }
     };
 
-    let session = match current_session(&state, &req).await {
+    let session = match context.sessions.current_session(&req).await {
         Ok(session) => session,
         Err(error) => {
             tracing::warn!(%error, "failed to resolve authorization request user");
@@ -344,8 +377,8 @@ async fn authorize_request(
     };
     let Some(session) = session else {
         if prompt.none {
-            return authorization_response_redirect(
-                &state,
+            return authorization_response_redirect_with_context(
+                context,
                 AuthorizationResponseRedirect {
                     redirect_uri: &redirect_uri,
                     client_id: q.get("client_id").map(String::as_str).unwrap_or(""),
@@ -358,8 +391,8 @@ async fn authorize_request(
             )
             .await;
         }
-        return match authorization_login_url(
-            &state,
+        return match authorization_login_url_with_context(
+            context,
             &authorization_login_query(
                 q,
                 &original_authorization_query,
@@ -381,8 +414,8 @@ async fn authorize_request(
         Utc::now().timestamp(),
     ) {
         if prompt.none {
-            return authorization_response_redirect(
-                &state,
+            return authorization_response_redirect_with_context(
+                context,
                 AuthorizationResponseRedirect {
                     redirect_uri: &redirect_uri,
                     client_id: q.get("client_id").map(String::as_str).unwrap_or(""),
@@ -395,8 +428,8 @@ async fn authorize_request(
             )
             .await;
         }
-        return match authorization_login_url(
-            &state,
+        return match authorization_login_url_with_context(
+            context,
             &authorization_login_query(
                 q,
                 &original_authorization_query,
@@ -413,14 +446,15 @@ async fn authorize_request(
 
     let requested_scopes = parse_scope(q.get("scope").map(String::as_str).unwrap_or(""));
     if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_scope", q).await;
+        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_scope", q)
+            .await;
     }
     let resource_indicators =
         match resource_indicators_from_parameter_value(q.get("resource").map(String::as_str)) {
             Ok(resources) => resources,
             Err(_) => {
                 return authorization_oauth_error_redirect(
-                    &state,
+                    context,
                     &redirect_uri,
                     "invalid_target",
                     q,
@@ -429,7 +463,7 @@ async fn authorize_request(
             }
         };
     if !resource_indicators.is_empty() && !audiences_allowed(&client, &resource_indicators) {
-        return authorization_oauth_error_redirect(&state, &redirect_uri, "invalid_target", q)
+        return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_target", q)
             .await;
     }
     let authorization_details =
@@ -437,7 +471,7 @@ async fn authorize_request(
             Ok(value) => value,
             Err(_) => {
                 return authorization_oauth_error_redirect(
-                    &state,
+                    context,
                     &redirect_uri,
                     "invalid_request",
                     q,
@@ -474,11 +508,11 @@ async fn authorize_request(
         mtls_x5t_s256,
         pushed_request_uri: pending_pushed_request_uri,
         issued_at: now,
-        expires_at: now + Duration::seconds(state.settings.protocol().auth_code_ttl_seconds as i64),
+        expires_at: now + Duration::seconds(context.config.auth_code_ttl_seconds as i64),
     };
     if prompt.none {
-        match user_grant_covers_requested_scopes(
-            &state,
+        match user_grant_covers_requested_scopes_with_context(
+            context,
             payload.user_id,
             client.id,
             &payload.scopes,
@@ -488,11 +522,14 @@ async fn authorize_request(
         .await
         {
             Ok(true) => {
-                return issue_authorization_code_without_interaction(&state, &req, payload).await;
+                return issue_authorization_code_without_interaction_with_context(
+                    context, &req, payload,
+                )
+                .await;
             }
             Ok(false) => {
                 return authorization_oauth_error_redirect(
-                    &state,
+                    context,
                     &redirect_uri,
                     "consent_required",
                     q,
@@ -502,13 +539,9 @@ async fn authorize_request(
             Err(response) => return response,
         }
     }
-    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
-    if let Err(error) = store
-        .store_consent(
-            &request_id,
-            &payload,
-            state.settings.protocol().auth_code_ttl_seconds,
-        )
+    if let Err(error) = context
+        .service
+        .store_consent(&request_id, &payload, context.config.auth_code_ttl_seconds)
         .await
     {
         tracing::warn!(%error, "failed to persist consent request");
@@ -521,16 +554,18 @@ async fn authorize_request(
 
     redirect_found(format!(
         "{}/consent?request_id={request_id}",
-        state.settings.frontend_base_url.trim_end_matches('/')
+        context.config.frontend_base_url.trim_end_matches('/')
     ))
 }
 
 fn runtime_authorization_capability_error(
-    state: &AppState,
+    context: &AuthorizationRequestContext,
     parameters: &HashMap<String, String>,
 ) -> Option<HttpResponse> {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::RequestObjects)
-        && parameters.contains_key("request")
+    if !crate::http::authorization::accepts_module(
+        context,
+        nazo_runtime_modules::ModuleId::RequestObjects,
+    ) && parameters.contains_key("request")
     {
         return Some(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -538,8 +573,10 @@ fn runtime_authorization_capability_error(
             "request 参数未启用.",
         ));
     }
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::AuthorizationDetails)
-        && parameters.contains_key("authorization_details")
+    if !crate::http::authorization::accepts_module(
+        context,
+        nazo_runtime_modules::ModuleId::AuthorizationDetails,
+    ) && parameters.contains_key("authorization_details")
     {
         return Some(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -550,7 +587,10 @@ fn runtime_authorization_capability_error(
     if parameters
         .get("response_mode")
         .is_some_and(|mode| mode == "jwt")
-        && !state.accepts_module(nazo_runtime_modules::ModuleId::Jarm)
+        && !crate::http::authorization::accepts_module(
+            context,
+            nazo_runtime_modules::ModuleId::Jarm,
+        )
     {
         return Some(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -561,7 +601,10 @@ fn runtime_authorization_capability_error(
     if parameters
         .get("scope")
         .is_some_and(|scope| parse_scope(scope).iter().any(|value| value == "device_sso"))
-        && !state.accepts_module(nazo_runtime_modules::ModuleId::NativeSso)
+        && !crate::http::authorization::accepts_module(
+            context,
+            nazo_runtime_modules::ModuleId::NativeSso,
+        )
     {
         return Some(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -579,16 +622,15 @@ pub(crate) enum PushedAuthorizationRequestConsumeError {
     Malformed,
 }
 
-pub(crate) async fn consume_pushed_authorization_request(
-    state: &AppState,
+pub(crate) async fn consume_pushed_authorization_request_with_context(
+    context: &AuthorizationRequestContext,
     request_uri: &str,
 ) -> Result<(), PushedAuthorizationRequestConsumeError> {
-    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
-    match store.take_par(request_uri).await {
+    match context.service.take_par(request_uri).await {
         Ok(Some(_)) => Ok(()),
         Ok(None) => Err(PushedAuthorizationRequestConsumeError::Missing),
-        Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
-            tracing::warn!(%error, "PAR payload is malformed");
+        Err(nazo_auth::AuthorizationPortError::CorruptData) => {
+            tracing::warn!("PAR payload is malformed");
             Err(PushedAuthorizationRequestConsumeError::Malformed)
         }
         Err(error) => {
@@ -598,14 +640,23 @@ pub(crate) async fn consume_pushed_authorization_request(
     }
 }
 
-pub(crate) async fn authorization_oauth_error_redirect(
+#[cfg(test)]
+pub(crate) async fn consume_pushed_authorization_request(
     state: &AppState,
+    request_uri: &str,
+) -> Result<(), PushedAuthorizationRequestConsumeError> {
+    let dependencies = super::TestAuthorizationDependencies::new(state);
+    consume_pushed_authorization_request_with_context(&dependencies.context(), request_uri).await
+}
+
+pub(crate) async fn authorization_oauth_error_redirect(
+    context: &AuthorizationRequestContext,
     redirect_uri: &str,
     error: &str,
     q: &HashMap<String, String>,
 ) -> HttpResponse {
-    authorization_response_redirect(
-        state,
+    authorization_response_redirect_with_context(
+        context,
         AuthorizationResponseRedirect {
             redirect_uri,
             client_id: q.get("client_id").map(String::as_str).unwrap_or(""),
@@ -629,16 +680,19 @@ pub(crate) struct AuthorizationResponseRedirect<'a> {
     pub(crate) oidc_sid: Option<&'a str>,
 }
 
-pub(crate) async fn authorization_response_redirect(
-    state: &AppState,
+pub(crate) async fn authorization_response_redirect_with_context(
+    context: &AuthorizationRequestContext,
     input: AuthorizationResponseRedirect<'_>,
 ) -> HttpResponse {
-    let signed_response_required = state
-        .settings
-        .authorization_server_profile
+    let signed_response_required = context
+        .config
+        .profile
         .requires_signed_authorization_response();
     if (input.response_mode == Some("jwt") || signed_response_required)
-        && !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Jarm)
+        && !crate::http::authorization::permits_existing_module_transaction(
+            context,
+            nazo_runtime_modules::ModuleId::Jarm,
+        )
     {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -647,7 +701,10 @@ pub(crate) async fn authorization_response_redirect(
         );
     }
     if (input.response_mode == Some("jwt") || signed_response_required)
-        && state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Jarm)
+        && crate::http::authorization::permits_existing_module_transaction(
+            context,
+            nazo_runtime_modules::ModuleId::Jarm,
+        )
     {
         if input.client_id.trim().is_empty() {
             tracing::warn!("cannot build signed authorization response without client_id");
@@ -657,10 +714,7 @@ pub(crate) async fn authorization_response_redirect(
                 "authorization response signing failed.",
             );
         }
-        let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-            .by_client_id(DEFAULT_TENANT_ID, input.client_id)
-            .await
-        {
+        let client = match context.service.client_by_id(input.client_id).await {
             Ok(Some(client)) if client.is_active => client,
             Ok(_) => {
                 tracing::warn!(client_id_hash = %blake3_hex(input.client_id), "JARM client is missing or inactive");
@@ -680,10 +734,13 @@ pub(crate) async fn authorization_response_redirect(
             }
         };
         let protection = AuthorizationResponseProtection::from(&client);
-        return authorization_response_redirect_with_protection(state, input, protection).await;
+        return authorization_response_redirect_with_protection_context(context, input, protection)
+            .await;
     }
-    let session_state = if state.accepts_module(nazo_runtime_modules::ModuleId::SessionManagement)
-        && input.code.is_some()
+    let session_state = if crate::http::authorization::accepts_module(
+        context,
+        nazo_runtime_modules::ModuleId::SessionManagement,
+    ) && input.code.is_some()
         && input.error.is_none()
     {
         input
@@ -694,12 +751,21 @@ pub(crate) async fn authorization_response_redirect(
     };
     redirect_found(append_authorization_response_query(
         input.redirect_uri,
-        state.settings.issuer.as_str(),
+        context.config.issuer.as_ref(),
         input.code,
         input.error,
         input.state,
         session_state.as_deref(),
     ))
+}
+
+#[cfg(test)]
+pub(crate) async fn authorization_response_redirect(
+    state: &AppState,
+    input: AuthorizationResponseRedirect<'_>,
+) -> HttpResponse {
+    let dependencies = super::TestAuthorizationDependencies::new(state);
+    authorization_response_redirect_with_context(&dependencies.context(), input).await
 }
 
 #[derive(Clone, Copy, Default)]
@@ -721,39 +787,48 @@ impl<'a> From<&'a ClientRow> for AuthorizationResponseProtection<'a> {
     }
 }
 
+async fn authorization_response_redirect_with_protection_context(
+    context: &AuthorizationRequestContext,
+    input: AuthorizationResponseRedirect<'_>,
+    protection: AuthorizationResponseProtection<'_>,
+) -> HttpResponse {
+    let result = protected_authorization_response_jwt(context, &input, protection).await;
+    authorization_response_jwt_result(input.redirect_uri, result)
+}
+
+#[cfg(test)]
 async fn authorization_response_redirect_with_protection(
     state: &AppState,
     input: AuthorizationResponseRedirect<'_>,
     protection: AuthorizationResponseProtection<'_>,
 ) -> HttpResponse {
-    let result = protected_authorization_response_jwt(state, &input, protection).await;
-    authorization_response_jwt_result(input.redirect_uri, result)
+    let dependencies = super::TestAuthorizationDependencies::new(state);
+    authorization_response_redirect_with_protection_context(
+        &dependencies.context(),
+        input,
+        protection,
+    )
+    .await
 }
 
 async fn protected_authorization_response_jwt(
-    state: &AppState,
+    context: &AuthorizationRequestContext,
     input: &AuthorizationResponseRedirect<'_>,
     protection: AuthorizationResponseProtection<'_>,
 ) -> anyhow::Result<String> {
-    let signing_alg = protection
-        .signing_alg
-        .map(|value| {
-            signing_algorithm_from_name(value)
-                .ok_or_else(|| anyhow::anyhow!("unsupported JARM signing algorithm"))
-        })
-        .transpose()?;
-    let signed = make_authorization_response_jwt(
-        state,
-        AuthorizationResponseJwtInput {
+    let signed = context
+        .service
+        .sign_authorization_response(nazo_auth::AuthorizationResponseSignInput {
+            issuer: context.config.issuer.as_ref(),
             client_id: input.client_id,
             code: input.code,
             error: input.error,
             state: input.state,
-            ttl: state.settings.protocol().auth_code_ttl_seconds as i64,
-        },
-        signing_alg,
-    )
-    .await?;
+            ttl: context.config.auth_code_ttl_seconds as i64,
+            signing_algorithm: protection.signing_alg,
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!("authorization response signing failed: {error:?}"))?;
     match client_jwe_key(
         protection.jwks,
         protection.encryption_alg,
@@ -797,10 +872,12 @@ fn oauth_json_error(response: &HttpResponse) -> Option<String> {
         .map(|fields| fields.error.clone())
 }
 
-async fn consume_reauth_nonce(state: &AppState, q: &mut HashMap<String, String>) -> Option<i64> {
+async fn consume_reauth_nonce_with_context(
+    context: &AuthorizationRequestContext,
+    q: &mut HashMap<String, String>,
+) -> Option<i64> {
     let nonce = q.remove(reauth_nonce_parameter())?;
-    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
-    match store.take_reauth_nonce(&nonce).await {
+    match context.service.take_reauth_nonce(&nonce).await {
         Ok(Some(started_at)) => (started_at > 0).then_some(started_at),
         Ok(None) => None,
         Err(error) => {
@@ -810,27 +887,45 @@ async fn consume_reauth_nonce(state: &AppState, q: &mut HashMap<String, String>)
     }
 }
 
-async fn authorization_login_url(
-    state: &AppState,
+#[cfg(test)]
+async fn consume_reauth_nonce(state: &AppState, q: &mut HashMap<String, String>) -> Option<i64> {
+    let dependencies = super::TestAuthorizationDependencies::new(state);
+    consume_reauth_nonce_with_context(&dependencies.context(), q).await
+}
+
+async fn authorization_login_url_with_context(
+    context: &AuthorizationRequestContext,
     q: &HashMap<String, String>,
     reauthentication_required: bool,
 ) -> Result<String, HttpResponse> {
     let reauth_nonce = if reauthentication_required {
-        Some(issue_reauth_nonce(state).await?)
+        Some(issue_reauth_nonce(context).await?)
     } else {
         None
     };
     Ok(authorization_login_url_for_frontend(
-        &state.settings.frontend_base_url,
+        context.config.frontend_base_url.as_ref(),
         q,
         reauth_nonce.as_deref(),
     ))
 }
 
-async fn issue_reauth_nonce(state: &AppState) -> Result<String, HttpResponse> {
+#[cfg(test)]
+async fn authorization_login_url(
+    state: &AppState,
+    q: &HashMap<String, String>,
+    reauthentication_required: bool,
+) -> Result<String, HttpResponse> {
+    let dependencies = super::TestAuthorizationDependencies::new(state);
+    authorization_login_url_with_context(&dependencies.context(), q, reauthentication_required)
+        .await
+}
+
+async fn issue_reauth_nonce(context: &AuthorizationRequestContext) -> Result<String, HttpResponse> {
     let nonce = random_urlsafe_token();
     let started_at = Utc::now().timestamp();
-    nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+    context
+        .service
         .store_reauth_nonce(&nonce, started_at, REAUTH_NONCE_TTL_SECONDS)
         .await
         .map_err(|error| {

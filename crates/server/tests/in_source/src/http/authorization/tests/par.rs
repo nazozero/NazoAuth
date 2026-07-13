@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
+use crate::domain::AppState;
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::settings::{
@@ -11,7 +12,8 @@ use crate::settings::{
     RequestObjectJtiPolicy, SubjectType,
 };
 use crate::support::{
-    ClientIpHeaderMode, ClientSigningFixture, IpCidr, client_signing_fixture, hash_client_secret,
+    ClientIpHeaderMode, ClientSigningFixture, IpCidr, RateLimitPolicy, client_signing_fixture,
+    hash_client_secret,
 };
 use actix_web::test::TestRequest;
 use diesel::sql_query;
@@ -21,6 +23,24 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+
+async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    if let Err(response) =
+        crate::support::enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
+    {
+        return response;
+    }
+    par_after_rate_limit(state, req, body).await
+}
+
+async fn par_after_rate_limit(
+    state: Data<AppState>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
+    let dependencies = crate::http::authorization::TestAuthorizationDependencies::new(&state);
+    par_after_rate_limit_with_context(&dependencies.context(), req, body).await
+}
 
 fn client(require_dpop_bound_tokens: bool) -> ClientRow {
     crate::client_row! {

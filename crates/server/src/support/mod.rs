@@ -29,7 +29,8 @@ pub(crate) use avatars::{
     avatar_meta_path, avatar_path, avatar_user_dir, detect_avatar_content_type, read_avatar_meta,
 };
 pub(crate) use client_ip::{
-    ClientIpHeaderMode, IpCidr, client_ip, client_ip_with_context, parse_trusted_proxy_cidrs,
+    ClientIpConfig, ClientIpHeaderMode, IpCidr, client_ip, client_ip_with_config,
+    client_ip_with_context, parse_trusted_proxy_cidrs,
 };
 pub(crate) use dpop::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, dpop_error_response, dpop_proof_present,
@@ -53,7 +54,9 @@ pub(crate) use mfa::{
 #[cfg(test)]
 pub(crate) use mfa::{remember_mfa_device, replace_backup_codes, verify_user_mfa_code};
 pub(crate) use mtls::{
-    client_mtls_certificate_matches, request_mtls_client_certificate, request_mtls_thumbprint,
+    client_mtls_certificate_matches, request_mtls_client_certificate,
+    request_mtls_client_certificate_from_headers, request_mtls_thumbprint,
+    request_mtls_thumbprint_from_trusted_proxy,
 };
 pub(crate) use nazo_key_management::{signing_algorithm_from_name, signing_algorithm_name};
 #[cfg(test)]
@@ -81,32 +84,36 @@ pub(crate) use passkeys::{
 };
 pub(crate) use rate_limit::{
     RateLimitPolicy, clear_login_failures, enforce_login_failure_throttle, enforce_rate_limit,
-    enforce_rate_limit_with_store, record_login_failure,
+    enforce_rate_limit_with_store, rate_limited_response, record_login_failure,
 };
 pub(crate) use sector_identifier::{fetch_sector_identifier_uris, sector_identifier_hostname};
 pub(crate) use security::{
-    AccessTokenJwtInput, AuthorizationResponseJwtInput, BackchannelLogoutTokenInput,
-    ClientAssertionError, ClientCredentials, IdTokenInput, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER,
-    PasswordVerificationError, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
-    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, ValidatedClientAssertion, access_delivery_token,
-    access_token_tenant_id, blake3_hex, client_jwt_algorithm_from_name, client_jwt_decoding_key,
-    client_secret_digest, configure_password_hash_limits, constant_time_eq,
-    consume_private_key_jwt, decode_access_claims, default_password_hash_max_concurrency,
+    AccessTokenJwtInput, BackchannelLogoutTokenInput, ClientAssertionError, ClientCredentials,
+    IdTokenInput, LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER, PasswordVerificationError,
+    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+    ValidatedClientAssertion, access_delivery_token, access_token_tenant_id, blake3_hex,
+    client_jwt_algorithm_from_name, client_jwt_decoding_key, client_secret_digest,
+    configure_password_hash_limits, constant_time_eq, consume_private_key_jwt,
+    consume_private_key_jwt_with_authorization_service, consume_private_key_jwt_with_store,
+    decode_access_claims, default_password_hash_max_concurrency,
     default_password_hash_queue_timeout_ms, dummy_password_hash, extract_client_credentials,
-    has_basic_authorization_scheme, hash_client_secret, hash_password,
-    initialize_dummy_password_hash, jwt_decoding_key_from_jwk, make_authorization_response_jwt,
+    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
+    hash_client_secret, hash_password, initialize_dummy_password_hash, jwt_decoding_key_from_jwk,
     make_backchannel_logout_token, make_id_token, make_jwt, pkce_s256, random_numeric_code,
     random_urlsafe_token, sign_response_jwt, supported_client_jwt_algorithm_name, verify_password,
     verify_password_blocking_limited, verify_private_key_jwt_claims,
+    verify_private_key_jwt_claims_for_issuer,
 };
 #[cfg(test)]
 pub(crate) use security::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, IssuedAccessToken, SUPPORTED_CLIENT_JWT_SIGNING_ALGS,
 };
 pub(crate) use sessions::{
-    CurrentSession, SessionPayload, SessionRotation, current_session, current_user,
-    current_user_or_login_required, has_valid_csrf_token, require_active_session_principal,
-    require_admin_or_forbidden, store_session,
+    CurrentSession, SessionPayload, SessionRotation, complete_mfa_session,
+    current_pending_mfa_session, current_session, current_session_from_handles, current_user,
+    current_user_or_login_required, current_user_or_login_required_from_handles,
+    has_valid_csrf_token, require_active_session_principal, require_admin_or_forbidden,
+    step_up_current_session, store_session,
 };
 #[cfg(test)]
 pub(crate) use tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};

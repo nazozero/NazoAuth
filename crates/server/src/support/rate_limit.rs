@@ -236,7 +236,7 @@ fn login_failure_subjects(
     }
 }
 
-fn rate_limited_response(retry_after_seconds: u64) -> HttpResponse {
+pub(crate) fn rate_limited_response(retry_after_seconds: u64) -> HttpResponse {
     let mut response = authorization_error_response(
         StatusCode::TOO_MANY_REQUESTS,
         "temporarily_unavailable",

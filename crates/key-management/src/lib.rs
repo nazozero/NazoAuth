@@ -1,3 +1,4 @@
+mod authorization_response;
 mod external;
 mod jwks;
 mod lifecycle;

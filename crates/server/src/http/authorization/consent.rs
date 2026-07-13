@@ -1,8 +1,12 @@
 //! 授权确认页数据端点。
-use crate::domain::{AppState, ConsentPayload};
+use crate::domain::ConsentPayload;
+use crate::http::authorization::{
+    AuthorizationHttpConfig, AuthorizationRequestContext, ServerAuthorizationService,
+};
+use crate::runtime_modules::ServerRuntimeModuleRegistry;
 #[cfg(test)]
 use crate::settings::Settings;
-use crate::support::current_user;
+use crate::support::sessions::AdminSessionHandles;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, valkey_set_ex};
 use actix_web::http::StatusCode;
@@ -62,12 +66,24 @@ fn consent_page_response(payload: ConsentPayload, csrf_token: Option<String>) ->
 
 /// 返回授权确认页所需的客户端、scope 和 CSRF 信息。
 pub(crate) async fn authorize_consent(
-    state: Data<AppState>,
+    service: Data<ServerAuthorizationService>,
+    config: Data<AuthorizationHttpConfig>,
+    sessions: Data<AdminSessionHandles>,
+    runtime_modules: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    let user = match current_user(&state, &req).await {
-        Ok(Some(user)) => user,
+    let context = AuthorizationRequestContext::new(&service, &config, &sessions, &runtime_modules);
+    authorize_consent_with_context(&context, req, q).await
+}
+
+async fn authorize_consent_with_context(
+    context: &AuthorizationRequestContext<'_>,
+    req: HttpRequest,
+    q: HashMap<String, String>,
+) -> HttpResponse {
+    let user = match context.sessions.current_session(&req).await {
+        Ok(Some(session)) => session.user,
         Ok(None) => {
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -92,11 +108,10 @@ pub(crate) async fn authorize_consent(
         );
     };
 
-    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
-    let payload = match store.load_consent(request_id).await {
+    let payload = match context.service.load_consent(request_id).await {
         Ok(value) => value,
-        Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
-            tracing::warn!(%error, "authorization consent state is malformed");
+        Err(nazo_auth::AuthorizationPortError::CorruptData) => {
+            tracing::warn!("authorization consent state is malformed");
             return malformed_or_missing_consent_response();
         }
         Err(error) => {
@@ -118,7 +133,7 @@ pub(crate) async fn authorize_consent(
 
     consent_page_response(
         payload,
-        cookie_value(&req, state.settings.session().csrf_cookie_name),
+        cookie_value(&req, context.sessions.http_config().csrf_cookie_name()),
     )
 }
 

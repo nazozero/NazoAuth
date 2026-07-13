@@ -1,14 +1,20 @@
 //! 授权确认提交端点。
 #[cfg(test)]
+use crate::domain::AppState;
+#[cfg(test)]
 use crate::domain::DatabaseUserFixture;
-use crate::domain::{AppState, AuthorizationCodeState, CodePayload, ConsentPayload};
+use crate::domain::{AuthorizationCodeState, CodePayload, ConsentPayload};
+use crate::http::authorization::{
+    AuthorizationHttpConfig, AuthorizationRequestContext, ServerAuthorizationService,
+};
+use crate::runtime_modules::ServerRuntimeModuleRegistry;
 #[cfg(test)]
 use crate::settings::Settings;
+use crate::support::sessions::AdminSessionHandles;
 #[cfg(test)]
-use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, valkey_set_ex};
+use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, valkey_set_ex};
 use crate::support::{
-    DEFAULT_TENANT_ID, audit_event, audit_fields, blake3_hex, client_ip,
-    current_user_or_login_required, default_tenant_context, has_valid_csrf_token,
+    audit_event, audit_fields, blake3_hex, client_ip_with_config, default_tenant_context,
     random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
@@ -17,8 +23,6 @@ use actix_web::http::header;
 use actix_web::web::{Data, Form};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
-#[cfg(test)]
-use diesel::QueryableByName;
 use nazo_http_actix::csrf_error;
 use nazo_http_actix::oauth_error;
 use serde::Deserialize;
@@ -27,9 +31,12 @@ use serde_json::Value;
 use serde_json::json;
 use uuid::Uuid;
 // 同意时签发一次性授权码；拒绝时按 OAuth 规范把错误回传 redirect_uri。
+#[cfg(test)]
+use super::authorization_response_redirect;
 use super::{
     AuthorizationResponseRedirect, PushedAuthorizationRequestConsumeError,
-    authorization_response_redirect, consume_pushed_authorization_request,
+    authorization_response_redirect_with_context,
+    consume_pushed_authorization_request_with_context,
 };
 
 #[derive(Deserialize)]
@@ -58,32 +65,33 @@ fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
 }
 
 async fn consume_pushed_request_uri_if_present(
-    state: &AppState,
+    context: &AuthorizationRequestContext,
     payload: &ConsentPayload,
 ) -> Result<(), HttpResponse> {
     let Some(request_uri) = payload.pushed_request_uri.as_deref() else {
         return Ok(());
     };
 
-    match consume_pushed_authorization_request(state, request_uri).await {
+    match consume_pushed_authorization_request_with_context(context, request_uri).await {
         Ok(()) => Ok(()),
-        Err(PushedAuthorizationRequestConsumeError::Missing) => {
-            Err(authorization_error_redirect(state, payload, "invalid_request_uri").await)
-        }
+        Err(PushedAuthorizationRequestConsumeError::Missing) => Err(
+            authorization_error_redirect_with_context(context, payload, "invalid_request_uri")
+                .await,
+        ),
         Err(PushedAuthorizationRequestConsumeError::ReadFailed)
         | Err(PushedAuthorizationRequestConsumeError::Malformed) => {
-            Err(authorization_error_redirect(state, payload, "server_error").await)
+            Err(authorization_error_redirect_with_context(context, payload, "server_error").await)
         }
     }
 }
 
-async fn authorization_error_redirect(
-    state: &AppState,
+async fn authorization_error_redirect_with_context(
+    context: &AuthorizationRequestContext,
     payload: &ConsentPayload,
     error: &str,
 ) -> HttpResponse {
-    authorization_response_redirect(
-        state,
+    authorization_response_redirect_with_context(
+        context,
         AuthorizationResponseRedirect {
             redirect_uri: &payload.redirect_uri,
             client_id: &payload.client_id,
@@ -97,28 +105,54 @@ async fn authorization_error_redirect(
     .await
 }
 
+#[cfg(test)]
+async fn authorization_error_redirect(
+    state: &AppState,
+    payload: &ConsentPayload,
+    error: &str,
+) -> HttpResponse {
+    let dependencies = super::TestAuthorizationDependencies::new(state);
+    authorization_error_redirect_with_context(&dependencies.context(), payload, error).await
+}
+
 /// 处理用户对授权请求的同意或拒绝。
 pub(crate) async fn authorize_decision(
-    state: Data<AppState>,
+    service: Data<ServerAuthorizationService>,
+    config: Data<AuthorizationHttpConfig>,
+    sessions: Data<AdminSessionHandles>,
+    runtime_modules: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     Form(form): Form<DecisionForm>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, form.csrf_token.as_deref()) {
+    let context = AuthorizationRequestContext::new(&service, &config, &sessions, &runtime_modules);
+    authorize_decision_with_context(&context, req, form).await
+}
+
+async fn authorize_decision_with_context(
+    context: &AuthorizationRequestContext<'_>,
+    req: HttpRequest,
+    form: DecisionForm,
+) -> HttpResponse {
+    if !crate::support::responses::has_valid_csrf_token_for_cookies(
+        &req,
+        form.csrf_token.as_deref(),
+        context.sessions.http_config().session_cookie_name(),
+        context.sessions.http_config().csrf_cookie_name(),
+    ) {
         return csrf_error();
     }
     let Some(decision) = parse_authorization_decision(&form.decision) else {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "授权决策无效.");
     };
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match context.sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
 
-    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
-    let payload = match store.load_consent(&form.request_id).await {
+    let payload = match context.service.load_consent(&form.request_id).await {
         Ok(value) => value,
-        Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
-            tracing::warn!(%error, "authorization consent state is malformed");
+        Err(nazo_auth::AuthorizationPortError::CorruptData) => {
+            tracing::warn!("authorization consent state is malformed");
             return oauth_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_request",
@@ -148,7 +182,7 @@ pub(crate) async fn authorize_decision(
             "当前会话与授权请求不匹配.",
         );
     }
-    let payload = match store.take_consent(&form.request_id).await {
+    let payload = match context.service.take_consent(&form.request_id).await {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to consume authorization consent state");
@@ -173,7 +207,7 @@ pub(crate) async fn authorize_decision(
             "当前会话与授权请求不匹配.",
         );
     }
-    if let Err(response) = consume_pushed_request_uri_if_present(&state, &payload).await {
+    if let Err(response) = consume_pushed_request_uri_if_present(context, &payload).await {
         return response;
     }
 
@@ -187,11 +221,15 @@ pub(crate) async fn authorize_decision(
                     ("scope", json!(payload.scopes.join(" "))),
                     (
                         "source_ip_hash",
-                        json!(blake3_hex(&client_ip(&req, &state.settings))),
+                        json!(blake3_hex(&client_ip_with_config(
+                            &req,
+                            &context.config.client_ip,
+                        ))),
                     ),
                 ]),
             );
-            return authorization_error_redirect(&state, &payload, "access_denied").await;
+            return authorization_error_redirect_with_context(context, &payload, "access_denied")
+                .await;
         }
         AuthorizationDecision::Approve => {}
     }
@@ -222,53 +260,48 @@ pub(crate) async fn authorize_decision(
         dpop_jkt: payload.dpop_jkt,
         mtls_x5t_s256: payload.mtls_x5t_s256,
         issued_at: now,
-        expires_at: now + Duration::seconds(state.settings.protocol().auth_code_ttl_seconds as i64),
+        expires_at: now + Duration::seconds(context.config.auth_code_ttl_seconds as i64),
     };
     let code_hash = blake3_hex(&code);
-    if let Err(error) = store
-        .store_authorization_code_hash(
+    let client = match context.service.client_by_id(&payload.client_id).await {
+        Ok(Some(client)) if default_tenant_context().same_tenant(client.tenant_id) => client,
+        Ok(_) => {
+            tracing::warn!("OAuth client disappeared before grant commit");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权记录写入失败.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to load OAuth client before grant commit");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权记录写入失败.",
+            );
+        }
+    };
+    if let Err(error) = context
+        .service
+        .approve(
             &code_hash,
             &AuthorizationCodeState::Pending {
                 payload: code_payload,
             },
-            state.settings.protocol().auth_code_ttl_seconds,
+            context.config.auth_code_ttl_seconds,
+            nazo_auth::GrantWrite {
+                tenant_id: client.tenant_id,
+                user_id: payload.user_id,
+                client_id: client.id,
+                scopes: &payload.scopes,
+                resource_indicators: &payload.resource_indicators,
+                authorization_details: &payload.authorization_details,
+            },
         )
         .await
     {
-        tracing::warn!(%error, "failed to persist authorization code");
-        return oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "授权码创建失败.",
-        );
-    }
-    let grant_result = async {
-        let client = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-            .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
-            .await
-            .map_err(|error| anyhow::anyhow!("failed to load OAuth client: {error}"))?
-            .ok_or_else(|| anyhow::anyhow!("OAuth client disappeared before grant commit"))?;
-        if !default_tenant_context().same_tenant(client.tenant_id) {
-            anyhow::bail!("OAuth client resolved outside default tenant");
-        }
-        nazo_postgres::GrantRepository::new(state.diesel_db.clone())
-            .upsert(
-                client.tenant_id,
-                payload.user_id,
-                client.id,
-                &payload.scopes,
-                &payload.resource_indicators,
-                &payload.authorization_details,
-            )
-            .await
-            .map_err(|error| anyhow::anyhow!("failed to persist grant: {error}"))
-    }
-    .await;
-    if let Err(error) = grant_result {
         tracing::warn!(%error, "failed to persist user client grant");
-        if let Err(cleanup_error) = store.delete_authorization_code_hash(&code_hash).await {
-            tracing::warn!(%cleanup_error, "failed to remove authorization code after grant failure");
-        }
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
@@ -284,13 +317,16 @@ pub(crate) async fn authorize_decision(
             ("scope", json!(payload.scopes.join(" "))),
             (
                 "source_ip_hash",
-                json!(blake3_hex(&client_ip(&req, &state.settings))),
+                json!(blake3_hex(&client_ip_with_config(
+                    &req,
+                    &context.config.client_ip,
+                ))),
             ),
         ]),
     );
 
-    authorization_response_redirect(
-        &state,
+    authorization_response_redirect_with_context(
+        context,
         AuthorizationResponseRedirect {
             redirect_uri: &payload.redirect_uri,
             client_id: &payload.client_id,

@@ -1,32 +1,37 @@
-use crate::domain::{AppState, AuthorizationCodeState, CodePayload, ConsentPayload};
+use crate::domain::{AuthorizationCodeState, CodePayload, ConsentPayload};
+use crate::http::authorization::AuthorizationRequestContext;
 use crate::http::authorization::request::{
     AuthorizationResponseRedirect, PushedAuthorizationRequestConsumeError,
-    authorization_response_redirect, consume_pushed_authorization_request,
+    authorization_response_redirect_with_context,
+    consume_pushed_authorization_request_with_context,
 };
 use crate::support::{
-    audit_event, audit_fields, blake3_hex, client_ip, is_subset, json_array_to_strings,
-    random_urlsafe_token,
+    audit_event, audit_fields, blake3_hex, client_ip_with_config, random_urlsafe_token,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
-use nazo_auth::{
-    authorization_details_empty, canonical_authorization_details, high_risk_authorization_details,
-};
 use nazo_http_actix::oauth_error;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-pub(super) async fn user_grant_covers_requested_scopes(
-    state: &AppState,
+pub(super) async fn user_grant_covers_requested_scopes_with_context(
+    context: &AuthorizationRequestContext,
     user_id: Uuid,
     client_id: Uuid,
     requested_scopes: &[String],
     requested_resource_indicators: &[String],
     requested_authorization_details: &Value,
 ) -> Result<bool, HttpResponse> {
-    let stored = match nazo_postgres::GrantRepository::new(state.diesel_db.clone())
-        .authorization(user_id, client_id)
+    match context
+        .service
+        .grant_covers(
+            user_id,
+            client_id,
+            requested_scopes,
+            requested_resource_indicators,
+            requested_authorization_details,
+        )
         .await
     {
         Ok(value) => value,
@@ -38,17 +43,28 @@ pub(super) async fn user_grant_covers_requested_scopes(
                 "授权记录查询失败.",
             ));
         }
-    };
-    Ok(stored.as_ref().is_some_and(|stored| {
-        stored_grant_covers_requested_authorization(
-            &stored.scopes,
-            &stored.resource_indicators,
-            &stored.authorization_details,
-            requested_scopes,
-            requested_resource_indicators,
-            requested_authorization_details,
-        )
-    }))
+    }
+}
+
+#[cfg(test)]
+pub(super) async fn user_grant_covers_requested_scopes(
+    state: &crate::domain::AppState,
+    user_id: Uuid,
+    client_id: Uuid,
+    requested_scopes: &[String],
+    requested_resource_indicators: &[String],
+    requested_authorization_details: &Value,
+) -> Result<bool, HttpResponse> {
+    let dependencies = crate::http::authorization::TestAuthorizationDependencies::new(state);
+    user_grant_covers_requested_scopes_with_context(
+        &dependencies.context(),
+        user_id,
+        client_id,
+        requested_scopes,
+        requested_resource_indicators,
+        requested_authorization_details,
+    )
+    .await
 }
 
 pub(super) fn stored_grant_covers_requested_authorization(
@@ -59,36 +75,29 @@ pub(super) fn stored_grant_covers_requested_authorization(
     requested_resource_indicators: &[String],
     requested_authorization_details: &Value,
 ) -> bool {
-    if !is_subset(requested_scopes, &json_array_to_strings(stored_scopes)) {
-        return false;
-    }
-    if !is_subset(
+    nazo_auth::stored_grant_covers_requested_authorization(
+        &nazo_auth::StoredAuthorizationGrant {
+            scopes: stored_scopes.clone(),
+            resource_indicators: stored_resource_indicators.clone(),
+            authorization_details: stored_authorization_details.clone(),
+        },
+        requested_scopes,
         requested_resource_indicators,
-        &json_array_to_strings(stored_resource_indicators),
-    ) {
-        return false;
-    }
-    if authorization_details_empty(requested_authorization_details) {
-        return true;
-    }
-    if high_risk_authorization_details(requested_authorization_details) {
-        return false;
-    }
-    canonical_authorization_details(stored_authorization_details).ok()
-        == canonical_authorization_details(requested_authorization_details).ok()
+        requested_authorization_details,
+    )
 }
 
-pub(super) async fn issue_authorization_code_without_interaction(
-    state: &AppState,
+pub(super) async fn issue_authorization_code_without_interaction_with_context(
+    context: &AuthorizationRequestContext,
     req: &HttpRequest,
     payload: ConsentPayload,
 ) -> HttpResponse {
     if let Some(request_uri) = payload.pushed_request_uri.as_deref() {
-        match consume_pushed_authorization_request(state, request_uri).await {
+        match consume_pushed_authorization_request_with_context(context, request_uri).await {
             Ok(()) => {}
             Err(PushedAuthorizationRequestConsumeError::Missing) => {
-                return authorization_response_redirect(
-                    state,
+                return authorization_response_redirect_with_context(
+                    context,
                     AuthorizationResponseRedirect {
                         redirect_uri: &payload.redirect_uri,
                         client_id: &payload.client_id,
@@ -103,8 +112,8 @@ pub(super) async fn issue_authorization_code_without_interaction(
             }
             Err(PushedAuthorizationRequestConsumeError::ReadFailed)
             | Err(PushedAuthorizationRequestConsumeError::Malformed) => {
-                return authorization_response_redirect(
-                    state,
+                return authorization_response_redirect_with_context(
+                    context,
                     AuthorizationResponseRedirect {
                         redirect_uri: &payload.redirect_uri,
                         client_id: &payload.client_id,
@@ -146,15 +155,16 @@ pub(super) async fn issue_authorization_code_without_interaction(
         dpop_jkt: payload.dpop_jkt,
         mtls_x5t_s256: payload.mtls_x5t_s256,
         issued_at: now,
-        expires_at: now + Duration::seconds(state.settings.protocol().auth_code_ttl_seconds as i64),
+        expires_at: now + Duration::seconds(context.config.auth_code_ttl_seconds as i64),
     };
-    if let Err(error) = nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
-        .store_authorization_code_hash(
+    if let Err(error) = context
+        .service
+        .store_authorization_code(
             &blake3_hex(&code),
             &AuthorizationCodeState::Pending {
                 payload: code_payload,
             },
-            state.settings.protocol().auth_code_ttl_seconds,
+            context.config.auth_code_ttl_seconds,
         )
         .await
     {
@@ -173,12 +183,15 @@ pub(super) async fn issue_authorization_code_without_interaction(
             ("scope", json!(payload.scopes.join(" "))),
             (
                 "source_ip_hash",
-                json!(blake3_hex(&client_ip(req, &state.settings))),
+                json!(blake3_hex(&client_ip_with_config(
+                    req,
+                    &context.config.client_ip,
+                ))),
             ),
         ]),
     );
-    authorization_response_redirect(
-        state,
+    authorization_response_redirect_with_context(
+        context,
         AuthorizationResponseRedirect {
             redirect_uri: &payload.redirect_uri,
             client_id: &payload.client_id,
@@ -190,4 +203,15 @@ pub(super) async fn issue_authorization_code_without_interaction(
         },
     )
     .await
+}
+
+#[cfg(test)]
+pub(super) async fn issue_authorization_code_without_interaction(
+    state: &crate::domain::AppState,
+    req: &HttpRequest,
+    payload: ConsentPayload,
+) -> HttpResponse {
+    let dependencies = crate::http::authorization::TestAuthorizationDependencies::new(state);
+    issue_authorization_code_without_interaction_with_context(&dependencies.context(), req, payload)
+        .await
 }

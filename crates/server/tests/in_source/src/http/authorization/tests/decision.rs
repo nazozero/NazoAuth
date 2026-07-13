@@ -1,6 +1,7 @@
 use super::*;
 use actix_web::cookie::Cookie;
 use actix_web::test::TestRequest;
+use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Int4, Jsonb, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
@@ -16,6 +17,15 @@ use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::http::authorization::par::pushed_authorization_request_key;
+
+async fn authorize_decision(
+    state: Data<AppState>,
+    req: HttpRequest,
+    Form(form): Form<DecisionForm>,
+) -> HttpResponse {
+    let dependencies = crate::http::authorization::TestAuthorizationDependencies::new(&state);
+    authorize_decision_with_context(&dependencies.context(), req, form).await
+}
 
 fn decision_state() -> AppState {
     let mut settings =

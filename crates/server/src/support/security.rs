@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-use super::{audit_event, audit_fields, request_mtls_client_certificate};
+use super::{audit_event, audit_fields, request_mtls_client_certificate_from_headers};
 use crate::domain::{AppState, ClientRow};
 use crate::settings::Settings;
 use actix_web::HttpRequest;
@@ -34,9 +34,8 @@ pub(crate) mod tokens;
 #[cfg(test)]
 pub(crate) use tokens::IssuedAccessToken;
 pub(crate) use tokens::{
-    AccessTokenJwtInput, AuthorizationResponseJwtInput, BackchannelLogoutTokenInput, IdTokenInput,
-    decode_access_claims, make_authorization_response_jwt, make_backchannel_logout_token,
-    make_id_token, make_jwt, sign_response_jwt,
+    AccessTokenJwtInput, BackchannelLogoutTokenInput, IdTokenInput, decode_access_claims,
+    make_backchannel_logout_token, make_id_token, make_jwt, sign_response_jwt,
 };
 
 type HmacSha256 = Hmac<Sha256>;
@@ -273,6 +272,24 @@ pub(crate) fn extract_client_credentials(
     form_assertion_type: Option<&str>,
     form_assertion: Option<&str>,
 ) -> ClientCredentials {
+    extract_client_credentials_with_trusted_proxies(
+        req,
+        settings.endpoint().trusted_proxy_cidrs,
+        form_client_id,
+        form_secret,
+        form_assertion_type,
+        form_assertion,
+    )
+}
+
+pub(crate) fn extract_client_credentials_with_trusted_proxies(
+    req: &HttpRequest,
+    trusted_proxy_cidrs: &[crate::support::IpCidr],
+    form_client_id: Option<&str>,
+    form_secret: Option<&str>,
+    form_assertion_type: Option<&str>,
+    form_assertion: Option<&str>,
+) -> ClientCredentials {
     let headers = req.headers();
     if form_assertion_type.is_some() || form_assertion.is_some() {
         let client_id = form_assertion
@@ -307,12 +324,19 @@ pub(crate) fn extract_client_credentials(
             client_assertion: None,
             method: "client_secret_post".to_owned(),
         },
-        Some(id) if request_mtls_client_certificate(req, settings).is_some() => ClientCredentials {
-            client_id: Some(id.to_string()),
-            client_secret: None,
-            client_assertion: None,
-            method: "tls_client_auth".to_owned(),
-        },
+        Some(id)
+            if crate::support::client_ip::request_from_trusted_proxy_cidrs(
+                req,
+                trusted_proxy_cidrs,
+            ) && request_mtls_client_certificate_from_headers(req.headers()).is_some() =>
+        {
+            ClientCredentials {
+                client_id: Some(id.to_string()),
+                client_secret: None,
+                client_assertion: None,
+                method: "tls_client_auth".to_owned(),
+            }
+        }
         Some(id) => ClientCredentials {
             client_id: Some(id.to_string()),
             client_secret: None,
@@ -377,8 +401,26 @@ pub(crate) fn verify_private_key_jwt_claims(
     verify_private_key_jwt_claims_with_settings(&state.settings, req, client, assertion)
 }
 
+pub(crate) fn verify_private_key_jwt_claims_for_issuer(
+    issuer: &str,
+    req: &HttpRequest,
+    client: &ClientRow,
+    assertion: &str,
+) -> Result<ValidatedClientAssertion, ClientAssertionError> {
+    verify_private_key_jwt_claims_with_issuer(issuer, req, client, assertion)
+}
+
 fn verify_private_key_jwt_claims_with_settings(
     settings: &Settings,
+    req: &HttpRequest,
+    client: &ClientRow,
+    assertion: &str,
+) -> Result<ValidatedClientAssertion, ClientAssertionError> {
+    verify_private_key_jwt_claims_with_issuer(&settings.issuer, req, client, assertion)
+}
+
+fn verify_private_key_jwt_claims_with_issuer(
+    issuer: &str,
     req: &HttpRequest,
     client: &ClientRow,
     assertion: &str,
@@ -414,7 +456,7 @@ fn verify_private_key_jwt_claims_with_settings(
     }
     if !audience_matches(
         &claims.aud,
-        &client_assertion_audiences(settings, req, client),
+        &client_assertion_audiences(issuer, req, client),
         client.allow_client_assertion_audience_array,
     ) {
         log_client_assertion_rejection(req, client, "audience");
@@ -465,9 +507,52 @@ pub(crate) async fn consume_private_key_jwt(
     client: &ClientRow,
     assertion: &ValidatedClientAssertion,
 ) -> Result<(), ClientAssertionError> {
+    consume_private_key_jwt_with_store(
+        &nazo_valkey::ReplayStore::new(&state.valkey_connection()),
+        client,
+        assertion,
+    )
+    .await
+}
+
+pub(crate) async fn consume_private_key_jwt_with_store(
+    replay: &nazo_valkey::ReplayStore,
+    client: &ClientRow,
+    assertion: &ValidatedClientAssertion,
+) -> Result<(), ClientAssertionError> {
     let now = Utc::now().timestamp();
     let ttl_seconds = assertion.replay_ttl_seconds(now);
-    match nazo_valkey::ReplayStore::new(&state.valkey_connection())
+    match replay
+        .consume_private_key_jwt(&client.client_id, &assertion.jti, ttl_seconds)
+        .await
+    {
+        Ok(true) => Ok(()),
+        Ok(false) => {
+            audit_event(
+                "client_assertion_replay_detected",
+                audit_fields(&[
+                    ("client_id", json!(client.client_id)),
+                    ("jti_hash", json!(blake3_hex(&assertion.jti))),
+                    ("kid", json!(assertion.kid.as_deref())),
+                ]),
+            );
+            Err(ClientAssertionError::ReplayDetected)
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to store private_key_jwt jti");
+            Err(ClientAssertionError::StoreUnavailable)
+        }
+    }
+}
+
+pub(crate) async fn consume_private_key_jwt_with_authorization_service(
+    service: &crate::http::authorization::ServerAuthorizationService,
+    client: &ClientRow,
+    assertion: &ValidatedClientAssertion,
+) -> Result<(), ClientAssertionError> {
+    let now = Utc::now().timestamp();
+    let ttl_seconds = assertion.replay_ttl_seconds(now);
+    match service
         .consume_private_key_jwt(&client.client_id, &assertion.jti, ttl_seconds)
         .await
     {
@@ -655,13 +740,9 @@ fn supported_client_jwt_algorithm(
     }
 }
 
-fn client_assertion_audiences(
-    settings: &Settings,
-    req: &HttpRequest,
-    client: &ClientRow,
-) -> Vec<String> {
+fn client_assertion_audiences(issuer: &str, req: &HttpRequest, client: &ClientRow) -> Vec<String> {
     client_assertion_audience_candidates(
-        &settings.issuer,
+        issuer,
         req.uri().path(),
         client.allow_client_assertion_endpoint_audience,
     )

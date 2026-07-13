@@ -9,7 +9,7 @@ use crate::settings::Settings;
 use crate::support::{
     ClientAssertionError, ClientCredentials, ValidatedClientAssertion, blake3_hex,
     client_mtls_certificate_matches, client_secret_digest, consume_private_key_jwt,
-    request_mtls_client_certificate, verify_private_key_jwt_claims,
+    request_mtls_client_certificate_from_headers, verify_private_key_jwt_claims_for_issuer,
 };
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
@@ -21,7 +21,6 @@ use actix_web::http::header::HeaderValue;
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
-use nazo_identity::ports::RepositoryError;
 #[cfg(test)]
 use serde_json::json;
 #[cfg(test)]
@@ -48,6 +47,37 @@ pub(crate) async fn verify_confidential_client(
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
+    let endpoint = state.settings.endpoint();
+    let connection = state.valkey_connection();
+    let service = crate::http::authorization::ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(
+            state.diesel_db.clone(),
+            crate::support::DEFAULT_TENANT_ID,
+        ),
+        nazo_valkey::AuthorizationStateAdapter::new(&connection),
+        state.keyset.clone(),
+    );
+    verify_confidential_client_with_dependencies(
+        &service,
+        &state.settings.issuer,
+        state.settings.protocol().client_secret_pepper,
+        endpoint.trusted_proxy_cidrs,
+        req,
+        client,
+        credentials,
+    )
+    .await
+}
+
+pub(crate) async fn verify_confidential_client_with_dependencies(
+    service: &crate::http::authorization::ServerAuthorizationService,
+    issuer: &str,
+    client_secret_pepper: &str,
+    trusted_proxy_cidrs: &[crate::support::IpCidr],
+    req: &HttpRequest,
+    client: &ClientRow,
+    credentials: &ClientCredentials,
+) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
     if client.client_type != "confidential" {
         log_client_auth_rejection(req, client, credentials, "client_type");
         return Err(TokenManagementClientAuthError::InvalidClient);
@@ -63,7 +93,7 @@ pub(crate) async fn verify_confidential_client(
                 log_client_auth_rejection(req, client, credentials, "missing_client_assertion");
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
-            verify_private_key_jwt_claims(state, req, client, assertion)
+            verify_private_key_jwt_claims_for_issuer(issuer, req, client, assertion)
                 .map(Some)
                 .map_err(|error| {
                     log_client_auth_rejection(
@@ -80,15 +110,11 @@ pub(crate) async fn verify_confidential_client(
                 log_client_auth_rejection(req, client, credentials, "client_secret");
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
-            let repository = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone());
-            let secret_match = match repository.client_secret_salt(client.id).await {
+            let secret_match = match service.client_secret_salt(client.id).await {
                 Ok(Some(salt)) => {
-                    let candidate_digest = client_secret_digest(
-                        secret,
-                        state.settings.protocol().client_secret_pepper,
-                        &salt,
-                    );
-                    repository
+                    let candidate_digest =
+                        client_secret_digest(secret, client_secret_pepper, &salt);
+                    service
                         .client_secret_digest_matches(client.id, &candidate_digest)
                         .await
                 }
@@ -103,7 +129,14 @@ pub(crate) async fn verify_confidential_client(
             }
         }
         "tls_client_auth" | "self_signed_tls_client_auth" => {
-            let Some(certificate) = request_mtls_client_certificate(req, &state.settings) else {
+            let trusted = crate::support::client_ip::request_from_trusted_proxy_cidrs(
+                req,
+                trusted_proxy_cidrs,
+            );
+            let Some(certificate) = trusted
+                .then(|| request_mtls_client_certificate_from_headers(req.headers()))
+                .flatten()
+            else {
                 log_client_auth_rejection(req, client, credentials, "missing_mtls_certificate");
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
@@ -121,8 +154,8 @@ pub(crate) async fn verify_confidential_client(
     }
 }
 
-fn client_secret_auth_result(
-    result: Result<bool, RepositoryError>,
+fn client_secret_auth_result<E: std::fmt::Display>(
+    result: Result<bool, E>,
 ) -> Result<bool, TokenManagementClientAuthError> {
     result.map_err(|error| {
         tracing::warn!(%error, "failed to verify management client secret");
@@ -228,6 +261,19 @@ pub(crate) async fn consume_token_management_client_assertion(
         return Ok(());
     };
     consume_private_key_jwt(state, client, assertion)
+        .await
+        .map_err(token_management_client_assertion_error)
+}
+
+pub(crate) async fn consume_token_management_client_assertion_with_authorization_service(
+    service: &crate::http::authorization::ServerAuthorizationService,
+    client: &ClientRow,
+    assertion: Option<&ValidatedClientAssertion>,
+) -> Result<(), TokenManagementClientAuthError> {
+    let Some(assertion) = assertion else {
+        return Ok(());
+    };
+    crate::support::consume_private_key_jwt_with_authorization_service(service, client, assertion)
         .await
         .map_err(token_management_client_assertion_error)
 }

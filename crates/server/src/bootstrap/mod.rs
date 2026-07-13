@@ -21,9 +21,10 @@ use crate::domain::{
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::AdminClientConfig;
+use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
 use crate::http::profile::oidc_logout::spawn_backchannel_logout_delivery_worker;
 use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
-use crate::runtime_modules::RuntimeModules;
+use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
 use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
@@ -138,6 +139,22 @@ pub async fn run() -> anyhow::Result<()> {
         )?,
         ScimRuntimeAdmission::new(runtime_modules.registry.clone()),
     ));
+    #[cfg(not(test))]
+    let authorization_state_connection = valkey.clone();
+    #[cfg(test)]
+    let authorization_state_connection =
+        nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+    let authorization_service = web::Data::new(ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(
+            diesel_db.clone(),
+            crate::support::DEFAULT_TENANT_ID,
+        ),
+        nazo_valkey::AuthorizationStateAdapter::new(&authorization_state_connection),
+        keyset.clone(),
+    ));
+    let authorization_config = web::Data::new(AuthorizationHttpConfig::from(settings.as_ref()));
+    let authorization_runtime: web::Data<ServerRuntimeModuleRegistry> =
+        web::Data::from(runtime_modules.registry.clone());
 
     let state = web::Data::new(AppState {
         diesel_db,
@@ -227,7 +244,7 @@ pub async fn run() -> anyhow::Result<()> {
     tracing::info!("nazo-oauth-server(actix-web) listening on {addr}");
 
     HttpServer::new(move || {
-        App::new()
+        let app = App::new()
             .wrap_fn(|req, service| {
                 let method = req.method().clone();
                 let path = req.path().to_owned();
@@ -260,6 +277,9 @@ pub async fn run() -> anyhow::Result<()> {
             .wrap(from_fn(security_headers))
             .app_data(state.clone())
             .app_data(runtime_modules.clone())
+            .app_data(authorization_service.clone())
+            .app_data(authorization_config.clone())
+            .app_data(authorization_runtime.clone())
             .app_data(metadata_handles.clone())
             .app_data(admin_sessions.clone())
             .app_data(session_profiles.clone())
@@ -279,8 +299,8 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_client_keyset.clone())
             .app_data(client_ip_config.clone())
             .app_data(dynamic_registration_handles.clone())
-            .app_data(scim_endpoint.clone())
-            .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
+            .app_data(scim_endpoint.clone());
+        app.configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
     })
     .bind(addr)?
     .run()

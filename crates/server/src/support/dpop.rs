@@ -147,6 +147,80 @@ pub(crate) async fn validate_dpop_proof_with_store(
     token_for_ath: Option<&str>,
     expected_jkt: Option<&str>,
 ) -> Result<Option<String>, DpopError> {
+    validate_dpop_proof_with_replay(
+        DpopReplay::Store(replay_store),
+        issuer,
+        mtls_endpoint_base_url,
+        nonce_policy,
+        req,
+        token_for_ath,
+        expected_jkt,
+    )
+    .await
+}
+
+pub(crate) async fn validate_dpop_proof_with_authorization_service(
+    service: &crate::http::authorization::ServerAuthorizationService,
+    issuer: &str,
+    mtls_endpoint_base_url: &str,
+    nonce_policy: DpopNoncePolicy,
+    req: &HttpRequest,
+    token_for_ath: Option<&str>,
+    expected_jkt: Option<&str>,
+) -> Result<Option<String>, DpopError> {
+    validate_dpop_proof_with_replay(
+        DpopReplay::Authorization(service),
+        issuer,
+        mtls_endpoint_base_url,
+        nonce_policy,
+        req,
+        token_for_ath,
+        expected_jkt,
+    )
+    .await
+}
+
+enum DpopReplay<'a> {
+    Store(&'a nazo_valkey::ReplayStore),
+    Authorization(&'a crate::http::authorization::ServerAuthorizationService),
+}
+
+impl DpopReplay<'_> {
+    async fn consume_dpop(&self, jkt: &str, jti: &str, ttl: u64) -> Result<bool, ()> {
+        match self {
+            Self::Store(store) => store.consume_dpop(jkt, jti, ttl).await.map_err(|_| ()),
+            Self::Authorization(service) => {
+                service.consume_dpop(jkt, jti, ttl).await.map_err(|_| ())
+            }
+        }
+    }
+
+    async fn consume_nonce(&self, nonce: &str) -> Result<bool, ()> {
+        match self {
+            Self::Store(store) => store.consume_dpop_nonce(nonce).await.map_err(|_| ()),
+            Self::Authorization(service) => service.consume_dpop_nonce(nonce).await.map_err(|_| ()),
+        }
+    }
+
+    async fn issue_nonce(&self, nonce: &str, ttl: u64) -> Result<(), ()> {
+        match self {
+            Self::Store(store) => store.issue_dpop_nonce(nonce, ttl).await.map_err(|_| ()),
+            Self::Authorization(service) => {
+                service.issue_dpop_nonce(nonce, ttl).await.map_err(|_| ())
+            }
+        }
+    }
+}
+
+async fn validate_dpop_proof_with_replay(
+    replay: DpopReplay<'_>,
+    issuer: &str,
+    mtls_endpoint_base_url: &str,
+    nonce_policy: DpopNoncePolicy,
+    req: &HttpRequest,
+    token_for_ath: Option<&str>,
+    expected_jkt: Option<&str>,
+) -> Result<Option<String>, DpopError> {
     let Some(raw) = dpop_proof_header(req)? else {
         return if expected_jkt.is_some() {
             Err(DpopError::MissingProof)
@@ -179,9 +253,9 @@ pub(crate) async fn validate_dpop_proof_with_store(
         &claims,
         token_for_ath,
     )?;
-    validate_dpop_nonce_with_store(replay_store, nonce_policy, claims.nonce.as_deref()).await?;
+    validate_dpop_nonce_with_replay(&replay, nonce_policy, claims.nonce.as_deref()).await?;
 
-    if !replay_store
+    if !replay
         .consume_dpop(&jkt, &claims.jti, DPOP_TTL_SECONDS as u64)
         .await
         .map_err(|_| DpopError::InvalidProof)?
@@ -213,21 +287,29 @@ async fn validate_dpop_nonce_with_store(
     nonce_policy: DpopNoncePolicy,
     nonce: Option<&str>,
 ) -> Result<(), DpopError> {
+    validate_dpop_nonce_with_replay(&DpopReplay::Store(replay_store), nonce_policy, nonce).await
+}
+
+async fn validate_dpop_nonce_with_replay(
+    replay: &DpopReplay<'_>,
+    nonce_policy: DpopNoncePolicy,
+    nonce: Option<&str>,
+) -> Result<(), DpopError> {
     let Some(nonce) = nonce else {
         if !dpop_nonce_required(nonce_policy) {
             return Ok(());
         }
         return Err(DpopError::UseNonce(
-            issue_dpop_nonce_with_store(replay_store).await?,
+            issue_dpop_nonce_with_replay(replay).await?,
         ));
     };
-    match replay_store.consume_dpop_nonce(nonce).await {
+    match replay.consume_nonce(nonce).await {
         Ok(true) => Ok(()),
         Ok(false) => Err(DpopError::UseNonce(
-            issue_dpop_nonce_with_store(replay_store).await?,
+            issue_dpop_nonce_with_replay(replay).await?,
         )),
-        Err(error) => {
-            tracing::warn!(%error, "failed to consume dpop nonce");
+        Err(()) => {
+            tracing::warn!("failed to consume dpop nonce");
             Err(DpopError::NonceStoreUnavailable)
         }
     }
@@ -244,12 +326,16 @@ pub(crate) async fn issue_dpop_nonce(state: &AppState) -> Result<String, DpopErr
 async fn issue_dpop_nonce_with_store(
     replay_store: &nazo_valkey::ReplayStore,
 ) -> Result<String, DpopError> {
+    issue_dpop_nonce_with_replay(&DpopReplay::Store(replay_store)).await
+}
+
+async fn issue_dpop_nonce_with_replay(replay: &DpopReplay<'_>) -> Result<String, DpopError> {
     let nonce = random_urlsafe_token();
-    replay_store
-        .issue_dpop_nonce(&nonce, DPOP_TTL_SECONDS as u64)
+    replay
+        .issue_nonce(&nonce, DPOP_TTL_SECONDS as u64)
         .await
-        .map_err(|error| {
-            tracing::warn!(%error, "failed to issue dpop nonce");
+        .map_err(|()| {
+            tracing::warn!("failed to issue dpop nonce");
             DpopError::NonceStoreUnavailable
         })?;
     Ok(nonce)

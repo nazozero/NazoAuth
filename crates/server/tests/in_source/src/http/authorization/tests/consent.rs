@@ -12,9 +12,18 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::domain::DatabaseUserFixture;
+use crate::domain::{AppState, DatabaseUserFixture};
 use crate::support::SessionPayload;
 use nazo_postgres::{create_pool, get_conn};
+
+async fn authorize_consent(
+    state: Data<AppState>,
+    req: HttpRequest,
+    Query(q): Query<HashMap<String, String>>,
+) -> HttpResponse {
+    let dependencies = crate::http::authorization::TestAuthorizationDependencies::new(&state);
+    authorize_consent_with_context(&dependencies.context(), req, q).await
+}
 
 fn query(values: &[(&str, &str)]) -> std::collections::HashMap<String, String> {
     values

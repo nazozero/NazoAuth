@@ -2,6 +2,7 @@
 
 mod authentication;
 mod authorization;
+mod authorization_state;
 mod ciba;
 mod command;
 mod connection;
@@ -18,6 +19,7 @@ mod token_state;
 
 pub use authentication::AuthenticationStore;
 pub use authorization::{AuthorizationCodeBegin, AuthorizationStore, AuthorizationTransition};
+pub use authorization_state::AuthorizationStateAdapter;
 pub use ciba::{AtomicResult, CibaStore, StoredCibaRequest};
 pub use connection::ValkeyConnection;
 pub use delivery::{DeliveryConsume, DeliveryStore, StoredDelivery};

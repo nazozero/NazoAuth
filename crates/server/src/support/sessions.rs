@@ -140,6 +140,21 @@ impl AdminSessionHandles {
         )
         .await
     }
+
+    pub(crate) async fn current_user_or_login_required(
+        &self,
+        req: &HttpRequest,
+    ) -> Result<nazo_identity::PublicAccount, HttpResponse> {
+        current_user_or_login_required_from_handles(
+            &self.sessions,
+            &self.users,
+            self.http.session_cookie_name(),
+            self.http.csrf_cookie_name(),
+            self.http.cookie_secure(),
+            req,
+        )
+        .await
+    }
 }
 
 pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
@@ -431,7 +446,7 @@ pub(crate) async fn current_session(
     .await
 }
 
-async fn current_session_from_handles(
+pub(crate) async fn current_session_from_handles(
     sessions: &SessionStore,
     users: &UserRepository,
     session_cookie_name: &str,
@@ -661,6 +676,43 @@ pub(crate) async fn current_user_or_login_required(
         Ok(None) => Err(login_required_response(state)),
         Err(error) => Err(session_lookup_error_response(error)),
     }
+}
+
+pub(crate) async fn current_user_or_login_required_from_handles(
+    sessions: &SessionStore,
+    users: &UserRepository,
+    session_cookie_name: &str,
+    csrf_cookie_name: &str,
+    cookie_secure: bool,
+    req: &HttpRequest,
+) -> Result<PublicAccount, HttpResponse> {
+    match current_session_from_handles(sessions, users, session_cookie_name, req).await {
+        Ok(Some(session)) => Ok(session.user),
+        Ok(None) => Err(login_required_response_for_cookies(
+            session_cookie_name,
+            csrf_cookie_name,
+            cookie_secure,
+        )),
+        Err(error) => Err(session_lookup_error_response(error)),
+    }
+}
+
+fn login_required_response_for_cookies(
+    session_cookie_name: &str,
+    csrf_cookie_name: &str,
+    cookie_secure: bool,
+) -> HttpResponse {
+    crate::support::with_cookie_headers(
+        oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "login_required",
+            "会话不存在或已过期,请重新登录.",
+        ),
+        &[
+            crate::support::clear_cookie(session_cookie_name, cookie_secure),
+            crate::support::clear_cookie(csrf_cookie_name, cookie_secure),
+        ],
+    )
 }
 
 pub(crate) async fn require_admin_or_forbidden(

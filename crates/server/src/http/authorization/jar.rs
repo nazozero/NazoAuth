@@ -4,7 +4,10 @@ use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::oauth_error;
 
 use super::request::AUTHORIZED_REQUEST_PARAMETERS;
-use crate::domain::{AppState, ClientRow};
+#[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::ClientRow;
+use crate::http::authorization::AuthorizationRequestContext;
 use crate::settings::RequestObjectJtiPolicy;
 #[cfg(test)]
 use crate::settings::Settings;
@@ -52,8 +55,8 @@ enum RequestObjectMode {
     SignedJar,
 }
 
-pub(crate) async fn apply_request_object(
-    state: &AppState,
+pub(crate) async fn apply_request_object_with_context(
+    context: &AuthorizationRequestContext,
     outer: &mut HashMap<String, String>,
     client: &ClientRow,
 ) -> Result<(), HttpResponse> {
@@ -91,10 +94,7 @@ pub(crate) async fn apply_request_object(
     if !request_object_mode_allowed(
         client,
         mode,
-        state
-            .settings
-            .authorization_server_profile
-            .requires_fapi2_security(),
+        context.config.profile.requires_fapi2_security(),
     ) {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -102,7 +102,17 @@ pub(crate) async fn apply_request_object(
             "request object 签名要求无效.",
         ));
     }
-    validate_request_object_claims_and_apply(state, outer, client, claims, mode).await
+    validate_request_object_claims_and_apply(context, outer, client, claims, mode).await
+}
+
+#[cfg(test)]
+pub(crate) async fn apply_request_object(
+    state: &crate::domain::AppState,
+    outer: &mut HashMap<String, String>,
+    client: &ClientRow,
+) -> Result<(), HttpResponse> {
+    let dependencies = super::TestAuthorizationDependencies::new(state);
+    apply_request_object_with_context(&dependencies.context(), outer, client).await
 }
 
 fn signed_request_object_claims(
@@ -229,7 +239,7 @@ fn decode_request_object_claims(payload: &str) -> Result<RequestObjectClaims, Ht
 }
 
 async fn validate_request_object_claims_and_apply(
-    state: &AppState,
+    context: &AuthorizationRequestContext,
     outer: &mut HashMap<String, String>,
     client: &ClientRow,
     claims: RequestObjectClaims,
@@ -238,13 +248,9 @@ async fn validate_request_object_claims_and_apply(
     let now = Utc::now().timestamp();
     if claims.client_id != client.client_id
         || !request_object_party_claims_valid(&claims, client, mode)
-        || !request_object_audience_valid(&claims, state, mode)
+        || !request_object_audience_valid_with_issuer(&claims, &context.config.issuer, mode)
         || !request_object_times_valid(&claims, now, mode)
-        || !request_object_jti_valid(
-            &claims,
-            mode,
-            state.settings.protocol().request_object_jti_policy,
-        )
+        || !request_object_jti_valid(&claims, mode, context.config.request_object_jti_policy)
     {
         return Err(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -269,7 +275,7 @@ async fn validate_request_object_claims_and_apply(
         ));
     }
     let require_integrity_protected_parameters =
-        signed_request_object_requires_integrity_protected_parameters(state, client, mode);
+        signed_request_object_requires_integrity_protected_parameters(context, client, mode);
     if require_integrity_protected_parameters
         && outer_authorization_params_conflict(outer, &request_params)
     {
@@ -279,7 +285,7 @@ async fn validate_request_object_claims_and_apply(
             "request object 与外层授权参数冲突.",
         ));
     }
-    store_request_object_replay_state(state, client, &claims, now, mode).await?;
+    store_request_object_replay_state_with_context(context, client, &claims, now, mode).await?;
     if require_integrity_protected_parameters {
         outer.retain(|key, _| matches!(key.as_str(), "request" | "client_id"));
     } else {
@@ -290,16 +296,16 @@ async fn validate_request_object_claims_and_apply(
 }
 
 fn signed_request_object_requires_integrity_protected_parameters(
-    state: &AppState,
+    context: &AuthorizationRequestContext,
     client: &ClientRow,
     mode: RequestObjectMode,
 ) -> bool {
     mode == RequestObjectMode::SignedJar
         && (client.require_dpop_bound_tokens
             || client.require_par_request_object
-            || state
-                .settings
-                .authorization_server_profile
+            || context
+                .config
+                .profile
                 .requires_signed_authorization_request())
 }
 
@@ -329,16 +335,25 @@ fn request_object_party_claims_valid(
     }
 }
 
+fn request_object_audience_valid_with_issuer(
+    claims: &RequestObjectClaims,
+    issuer: &str,
+    mode: RequestObjectMode,
+) -> bool {
+    match (&claims.aud, mode) {
+        (Some(aud), _) => request_object_audience_matches_with_issuer(aud, issuer),
+        (None, RequestObjectMode::BasicOidc) => true,
+        (None, RequestObjectMode::SignedJar) => false,
+    }
+}
+
+#[cfg(test)]
 fn request_object_audience_valid(
     claims: &RequestObjectClaims,
     state: &AppState,
     mode: RequestObjectMode,
 ) -> bool {
-    match (&claims.aud, mode) {
-        (Some(aud), _) => request_object_audience_matches(aud, state),
-        (None, RequestObjectMode::BasicOidc) => true,
-        (None, RequestObjectMode::SignedJar) => false,
-    }
+    request_object_audience_valid_with_issuer(claims, &state.settings.issuer, mode)
 }
 
 fn outer_client_id_conflicts(outer: &HashMap<String, String>, client_id: &str) -> bool {
@@ -372,8 +387,8 @@ fn outer_authorization_params_conflict(
     false
 }
 
-async fn store_request_object_replay_state(
-    state: &AppState,
+async fn store_request_object_replay_state_with_context(
+    context: &AuthorizationRequestContext,
     client: &ClientRow,
     claims: &RequestObjectClaims,
     now: i64,
@@ -395,7 +410,8 @@ async fn store_request_object_replay_state(
             ));
         }
     };
-    match nazo_valkey::ReplayStore::new(&state.valkey_connection())
+    match context
+        .service
         .consume_jar(&client.client_id, jti, ttl_seconds)
         .await
     {
@@ -414,6 +430,25 @@ async fn store_request_object_replay_state(
             ))
         }
     }
+}
+
+#[cfg(test)]
+async fn store_request_object_replay_state(
+    state: &AppState,
+    client: &ClientRow,
+    claims: &RequestObjectClaims,
+    now: i64,
+    mode: RequestObjectMode,
+) -> Result<(), HttpResponse> {
+    let dependencies = super::TestAuthorizationDependencies::new(state);
+    store_request_object_replay_state_with_context(
+        &dependencies.context(),
+        client,
+        claims,
+        now,
+        mode,
+    )
+    .await
 }
 
 pub(crate) fn request_object_uses_unsigned_algorithm(request_object: &str) -> bool {
@@ -487,8 +522,7 @@ fn request_object_params(
     Ok(params)
 }
 
-fn request_object_audience_matches(aud: &Value, state: &AppState) -> bool {
-    let issuer = state.settings.issuer.as_str();
+fn request_object_audience_matches_with_issuer(aud: &Value, issuer: &str) -> bool {
     let authorize_endpoint = format!("{issuer}/authorize");
     match aud {
         Value::String(value) => value == issuer || value == &authorize_endpoint,
@@ -499,6 +533,11 @@ fn request_object_audience_matches(aud: &Value, state: &AppState) -> bool {
         }),
         _ => false,
     }
+}
+
+#[cfg(test)]
+fn request_object_audience_matches(aud: &Value, state: &AppState) -> bool {
+    request_object_audience_matches_with_issuer(aud, &state.settings.issuer)
 }
 
 fn request_object_times_valid(

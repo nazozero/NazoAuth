@@ -2,8 +2,8 @@ use super::jwt_decoding_key_from_jwk;
 
 use chrono::Utc;
 use nazo_auth::{
-    AccessTokenClaimsInput, AuthorizationResponseClaimsInput, BackchannelLogoutClaimsInput, Claims,
-    IdTokenClaimsInput, OidcClaimRequest,
+    AccessTokenClaimsInput, BackchannelLogoutClaimsInput, Claims, IdTokenClaimsInput,
+    OidcClaimRequest,
 };
 use serde_json::Value;
 use uuid::Uuid;
@@ -148,14 +148,6 @@ pub(crate) async fn sign_response_jwt(
     state.keyset.encode_jwt(purpose, &header, claims).await
 }
 
-pub(crate) struct AuthorizationResponseJwtInput<'a> {
-    pub(crate) client_id: &'a str,
-    pub(crate) code: Option<&'a str>,
-    pub(crate) error: Option<&'a str>,
-    pub(crate) state: Option<&'a str>,
-    pub(crate) ttl: i64,
-}
-
 pub(crate) struct BackchannelLogoutTokenInput<'a> {
     pub(crate) client_id: &'a str,
     pub(crate) subject: Option<&'a str>,
@@ -190,33 +182,6 @@ pub(crate) async fn make_backchannel_logout_token(
             &Value::Object(claims),
         )
         .await
-}
-
-pub(crate) async fn make_authorization_response_jwt(
-    state: &AppState,
-    input: AuthorizationResponseJwtInput<'_>,
-    signing_alg: Option<jsonwebtoken::Algorithm>,
-) -> jsonwebtoken::errors::Result<String> {
-    let now = Utc::now().timestamp();
-    let claims = nazo_auth::authorization_response_jwt_claims(
-        &state.settings.issuer,
-        &AuthorizationResponseClaimsInput {
-            client_id: input.client_id,
-            code: input.code,
-            error: input.error,
-            state: input.state,
-            ttl: input.ttl,
-        },
-        now,
-    );
-    sign_response_jwt(
-        state,
-        nazo_auth::SigningPurpose::Jarm,
-        &Value::Object(claims),
-        "oauth-authz-resp+jwt",
-        signing_alg,
-    )
-    .await
 }
 
 pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {

@@ -23,8 +23,9 @@ pub use pool::{
     db_pool_metrics, get_conn, run_pending_migrations,
 };
 pub use repositories::{
-    AccessRequestRepository, AuditRepository, AuthorizationRepository, FederationRepository,
-    GrantAuthorization, GrantPage, GrantProjection, GrantRepository, GrantRevocation,
-    MfaRepository, OAuthClientRepository, PasskeyRepository, RuntimeModuleEventPage,
-    RuntimeModuleRepository, ScimRepository, TokenRepository, UserRepository,
+    AccessRequestRepository, AuditRepository, AuthorizationFlowRepository, AuthorizationRepository,
+    FederationRepository, GrantAuthorization, GrantPage, GrantProjection, GrantRepository,
+    GrantRevocation, MfaRepository, OAuthClientApplication, OAuthClientRepository,
+    PasskeyRepository, RuntimeModuleEventPage, RuntimeModuleRepository, ScimRepository,
+    TokenRepository, UserRepository,
 };

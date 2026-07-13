@@ -2,6 +2,7 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
+use crate::domain::AppState;
 use crate::http::authorization::par::pushed_authorization_request_key;
 use nazo_postgres::create_pool;
 
@@ -9,6 +10,33 @@ use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
+
+async fn authorize_get(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
+    let query_parameters = authorization_duplicate_parameters();
+    let mut q = match parse_authorization_query(req.query_string(), &query_parameters) {
+        Ok(q) => q,
+        Err(response) => return response,
+    };
+    authorize_request(state, req, &mut q).await
+}
+
+async fn authorize_post(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    let query_parameters = authorization_duplicate_parameters();
+    let mut q = match parse_authorization_post_form(&req, &body, &query_parameters) {
+        Ok(q) => q,
+        Err(response) => return response,
+    };
+    authorize_request(state, req, &mut q).await
+}
+
+async fn authorize_request(
+    state: Data<AppState>,
+    req: HttpRequest,
+    q: &mut HashMap<String, String>,
+) -> HttpResponse {
+    let dependencies = crate::http::authorization::TestAuthorizationDependencies::new(&state);
+    authorize_request_with_context(&dependencies.context(), req, q).await
+}
 
 fn disconnected_valkey_client() -> fred::prelude::Client {
     let mut builder = ValkeyBuilder::default_centralized();
