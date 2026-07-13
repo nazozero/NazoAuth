@@ -56,11 +56,20 @@ pub(crate) async fn make_jwt(
     state: &AppState,
     input: AccessTokenJwtInput<'_>,
 ) -> jsonwebtoken::errors::Result<IssuedAccessToken> {
+    make_jwt_with(&state.keyset, &state.settings.endpoint.issuer, input).await
+}
+
+#[cfg(test)]
+pub(crate) async fn make_jwt_with(
+    keyset: &nazo_key_management::KeyManager,
+    issuer: &str,
+    input: AccessTokenJwtInput<'_>,
+) -> jsonwebtoken::errors::Result<IssuedAccessToken> {
     validate_access_token_sender_constraint(input.dpop_jkt, input.mtls_x5t_s256)?;
     let now = Utc::now().timestamp();
     let jti = Uuid::now_v7().to_string();
     let claims = nazo_auth::access_token_claims(
-        &state.settings.endpoint.issuer,
+        issuer,
         AccessTokenClaimsInput {
             tenant_id: input.tenant_id,
             subject: input.subject,
@@ -80,10 +89,9 @@ pub(crate) async fn make_jwt(
         now,
         &jti,
     );
-    let keyset = state.keyset.snapshot();
-    let header = access_token_header(keyset.active_alg, &keyset.active_kid);
-    let token = state
-        .keyset
+    let key_snapshot = keyset.snapshot();
+    let header = access_token_header(key_snapshot.active_alg, &key_snapshot.active_kid);
+    let token = keyset
         .encode_jwt(nazo_auth::SigningPurpose::AccessToken, &header, &claims)
         .await?;
     Ok(IssuedAccessToken { token, jti })

@@ -11,7 +11,7 @@ use std::{
 };
 
 use crate::config::ConfigSource;
-use nazo_postgres::{create_pool, get_conn};
+use nazo_postgres::{DbPool, create_pool, get_conn};
 
 use crate::settings::DpopNoncePolicy;
 use crate::support::{ClientSigningFixture, client_signing_fixture};
@@ -43,54 +43,114 @@ impl Write for FapiLogWriter {
     }
 }
 
-async fn call_fapi_resource(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
-    fapi_resource(
-        Data::new(ResourceServerHandles::from_app_state(state.get_ref())),
-        req,
-        body,
-    )
-    .await
+#[derive(Clone)]
+struct FapiTestFixture {
+    handles: Data<ResourceServerHandles>,
+    database: DbPool,
+    valkey: fred::prelude::Client,
+}
+
+impl FapiTestFixture {
+    fn new(
+        settings: Settings,
+        database: DbPool,
+        valkey: fred::prelude::Client,
+        keyset: nazo_key_management::KeyManager,
+    ) -> Self {
+        let connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+        let handles = ResourceServerHandles {
+            config: ResourceServerConfig::from(&settings),
+            keyset,
+            tokens: nazo_postgres::TokenRepository::new(database.clone()),
+            clients: nazo_postgres::OAuthClientRepository::new(database.clone()),
+            replay: nazo_valkey::ReplayStore::new(&connection),
+            http_message_signatures_enabled: settings.modules.enable_fapi_http_signatures,
+        };
+        Self {
+            handles: Data::new(handles),
+            database,
+            valkey,
+        }
+    }
+
+    fn with_keyset(&self, keyset: nazo_key_management::KeyManager) -> Self {
+        let mut handles = self.handles.get_ref().clone();
+        handles.keyset = keyset;
+        Self {
+            handles: Data::new(handles),
+            database: self.database.clone(),
+            valkey: self.valkey.clone(),
+        }
+    }
+
+    fn with_http_message_signatures(&self, enabled: bool) -> Self {
+        let mut handles = self.handles.get_ref().clone();
+        handles.http_message_signatures_enabled = enabled;
+        Self {
+            handles: Data::new(handles),
+            database: self.database.clone(),
+            valkey: self.valkey.clone(),
+        }
+    }
+
+    fn with_dpop_nonce_policy(
+        &self,
+        valkey: fred::prelude::Client,
+        policy: DpopNoncePolicy,
+    ) -> Self {
+        let mut handles = self.handles.get_ref().clone();
+        handles.config.dpop_nonce_policy = policy;
+        handles.replay = nazo_valkey::ReplayStore::new(
+            &nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone()),
+        );
+        Self {
+            handles: Data::new(handles),
+            database: self.database.clone(),
+            valkey,
+        }
+    }
+}
+
+async fn call_fapi_resource(
+    fixture: FapiTestFixture,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
+    fapi_resource(fixture.handles, req, body).await
 }
 
 async fn validate_test_access_token_binding(
-    state: &AppState,
+    fixture: &FapiTestFixture,
     req: &HttpRequest,
     token: &str,
     scheme: AccessTokenAuthScheme,
     claims: &Claims,
 ) -> Result<(), HttpResponse> {
-    validate_access_token_binding(
-        &ResourceServerHandles::from_app_state(state),
-        req,
-        token,
-        scheme,
-        claims,
-    )
-    .await
+    validate_access_token_binding(fixture.handles.get_ref(), req, token, scheme, claims).await
 }
 
-fn fapi_test_state() -> AppState {
+fn fapi_test_state() -> FapiTestFixture {
     fapi_test_state_with_settings(
         Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
     )
 }
 
-fn fapi_test_state_with_settings(settings: Settings) -> AppState {
-    AppState {
-        diesel_db: create_pool(
+fn fapi_test_state_with_settings(settings: Settings) -> FapiTestFixture {
+    FapiTestFixture::new(
+        settings,
+        create_pool(
             "postgres://nazo_fapi_test_invalid:nazo_fapi_test_invalid@127.0.0.1:1/nazo".to_owned(),
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
+        fred::prelude::Builder::default_centralized()
             .build()
             .expect("valkey client construction should not connect"),
-        settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
-    }
+        crate::test_support::test_key_manager(),
+    )
 }
 
-fn fapi_signing_state_with_invalid_db() -> Data<AppState> {
+fn fapi_signing_state_with_invalid_db() -> FapiTestFixture {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
@@ -98,60 +158,47 @@ fn fapi_signing_state_with_invalid_db() -> Data<AppState> {
     settings.protocol.protected_resource_identifier =
         "https://issuer.example/fapi/resource".to_owned();
 
-    Data::new(AppState {
-        diesel_db: create_pool(
+    FapiTestFixture::new(
+        settings,
+        create_pool(
             "postgres://nazo_fapi_test_invalid:nazo_fapi_test_invalid@127.0.0.1:1/nazo".to_owned(),
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
+        fred::prelude::Builder::default_centralized()
             .build()
             .expect("valkey client construction should not connect"),
-        settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
-    })
+        crate::test_support::test_key_manager(),
+    )
 }
 
-fn fapi_external_signer_failure_state(stderr_secret: &str) -> Data<AppState> {
-    let mut state = fapi_test_state();
-    state.keyset = crate::test_support::external_failure_key_manager(stderr_secret);
-    Data::new(state)
+fn fapi_external_signer_failure_state(stderr_secret: &str) -> FapiTestFixture {
+    fapi_test_state().with_keyset(crate::test_support::external_failure_key_manager(
+        stderr_secret,
+    ))
 }
 
-fn fapi_enabled_signing_state_with_invalid_db() -> Data<AppState> {
-    let state = fapi_signing_state_with_invalid_db();
-    let mut settings = (*state.settings).clone();
-    settings.modules.enable_fapi_http_signatures = true;
-    Data::new(AppState {
-        diesel_db: state.diesel_db.clone(),
-        valkey: state.valkey.clone(),
-        settings: Arc::new(settings),
-        keyset: state.keyset.clone(),
-    })
+fn fapi_enabled_signing_state_with_invalid_db() -> FapiTestFixture {
+    fapi_signing_state_with_invalid_db().with_http_message_signatures(true)
 }
 
-async fn fapi_enabled_signing_state_with_live_valkey_nonce() -> Option<Data<AppState>> {
+async fn fapi_enabled_signing_state_with_live_valkey_nonce() -> Option<FapiTestFixture> {
     let valkey_url = std::env::var("VALKEY_URL").ok()?;
     let valkey = ValkeyBuilder::from_config(ValkeyConfig::from_url(&valkey_url).ok()?)
         .build()
         .ok()?;
     valkey.init().await.ok()?;
-    let state = fapi_enabled_signing_state_with_invalid_db();
-    let mut settings = (*state.settings).clone();
-    settings.protocol.dpop_nonce_policy = DpopNoncePolicy::Required;
-    Some(Data::new(AppState {
-        diesel_db: state.diesel_db.clone(),
-        valkey,
-        settings: Arc::new(settings),
-        keyset: state.keyset.clone(),
-    }))
+    Some(
+        fapi_enabled_signing_state_with_invalid_db()
+            .with_dpop_nonce_policy(valkey, DpopNoncePolicy::Required),
+    )
 }
 
-fn live_fapi_signing_state() -> Option<Data<AppState>> {
+fn live_fapi_signing_state() -> Option<FapiTestFixture> {
     live_fapi_signing_state_from_database_url(std::env::var("DATABASE_URL").ok()?)
 }
 
-fn live_fapi_signing_state_from_database_url(database_url: String) -> Option<Data<AppState>> {
+fn live_fapi_signing_state_from_database_url(database_url: String) -> Option<FapiTestFixture> {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
@@ -159,14 +206,14 @@ fn live_fapi_signing_state_from_database_url(database_url: String) -> Option<Dat
     settings.protocol.protected_resource_identifier =
         "https://issuer.example/fapi/resource".to_owned();
 
-    Some(Data::new(AppState {
-        diesel_db: create_pool(database_url, 1).expect("database pool should build"),
-        valkey: fred::prelude::Builder::default_centralized()
+    Some(FapiTestFixture::new(
+        settings,
+        create_pool(database_url, 1).expect("database pool should build"),
+        fred::prelude::Builder::default_centralized()
             .build()
             .expect("valkey client construction should not connect"),
-        settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
-    }))
+        crate::test_support::test_key_manager(),
+    ))
 }
 
 fn database_url_with_search_path(schema: &str) -> Option<String> {
@@ -177,8 +224,8 @@ fn database_url_with_search_path(schema: &str) -> Option<String> {
     ))
 }
 
-async fn exec_sql(state: &Data<AppState>, sql: &str) {
-    let mut conn = get_conn(&state.diesel_db)
+async fn exec_sql(state: &FapiTestFixture, sql: &str) {
+    let mut conn = get_conn(&state.database)
         .await
         .expect("database connection should be available");
     sql_query(sql)
@@ -187,7 +234,7 @@ async fn exec_sql(state: &Data<AppState>, sql: &str) {
         .expect("schema mutation should succeed");
 }
 
-async fn create_isolated_schema(state: &Data<AppState>, schema: &str, tables: &[&str]) {
+async fn create_isolated_schema(state: &FapiTestFixture, schema: &str, tables: &[&str]) {
     exec_sql(
         state,
         &format!(r#"CREATE SCHEMA IF NOT EXISTS "{}""#, schema),
@@ -205,7 +252,7 @@ async fn create_isolated_schema(state: &Data<AppState>, schema: &str, tables: &[
     }
 }
 
-async fn rename_column(state: &Data<AppState>, schema: &str, table: &str, from: &str, to: &str) {
+async fn rename_column(state: &FapiTestFixture, schema: &str, table: &str, from: &str, to: &str) {
     exec_sql(
         state,
         &format!(
@@ -216,7 +263,7 @@ async fn rename_column(state: &Data<AppState>, schema: &str, table: &str, from: 
     .await;
 }
 
-async fn drop_schema(state: &Data<AppState>, schema: &str) {
+async fn drop_schema(state: &FapiTestFixture, schema: &str) {
     exec_sql(
         state,
         &format!(r#"DROP SCHEMA IF EXISTS "{}" CASCADE"#, schema),
@@ -224,7 +271,7 @@ async fn drop_schema(state: &Data<AppState>, schema: &str) {
     .await;
 }
 
-fn fapi_trusted_proxy_state() -> AppState {
+fn fapi_trusted_proxy_state() -> FapiTestFixture {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.endpoint.client_ip_header_mode = ClientIpHeaderMode::None;
@@ -234,13 +281,14 @@ fn fapi_trusted_proxy_state() -> AppState {
 }
 
 async fn signed_fapi_access_token(
-    state: &Data<AppState>,
+    state: &FapiTestFixture,
     tenant_id: Uuid,
     audiences: &[String],
     ttl: i64,
 ) -> IssuedAccessToken {
-    make_jwt(
-        state,
+    make_jwt_with(
+        &state.handles.keyset,
+        &state.handles.config.issuer,
         AccessTokenJwtInput {
             tenant_id,
             subject: "fapi-subject",
@@ -262,12 +310,13 @@ async fn signed_fapi_access_token(
     .expect("FAPI resource access token should sign")
 }
 
-async fn signed_fapi_claims(state: &Data<AppState>, claims: Claims) -> String {
-    let keyset = state.keyset.snapshot();
+async fn signed_fapi_claims(state: &FapiTestFixture, claims: Claims) -> String {
+    let keyset = state.handles.keyset.snapshot();
     let mut header = jsonwebtoken::Header::new(keyset.active_alg);
     header.typ = Some("at+jwt".to_owned());
     header.kid = Some(keyset.active_kid.clone());
     state
+        .handles
         .keyset
         .encode_jwt(nazo_auth::SigningPurpose::AccessToken, &header, &claims)
         .await
@@ -275,7 +324,7 @@ async fn signed_fapi_claims(state: &Data<AppState>, claims: Claims) -> String {
 }
 
 async fn insert_fapi_client_and_revocation(
-    state: &Data<AppState>,
+    state: &FapiTestFixture,
     client_id: &str,
     access_token_jti: &str,
 ) {
@@ -285,7 +334,7 @@ async fn insert_fapi_client_and_revocation(
         id: Uuid,
     }
 
-    let mut conn = get_conn(&state.diesel_db)
+    let mut conn = get_conn(&state.database)
         .await
         .expect("database connection should be available");
     sql_query(
@@ -549,11 +598,11 @@ enum ExtraHeaderMode {
 }
 
 async fn enabled_request_with_signed_extras(
-    state: &Data<AppState>,
+    state: &FapiTestFixture,
     mode: ExtraHeaderMode,
 ) -> (HttpRequest, ClientRow, SignatureFields, String) {
     let mut claims = access_claims(None);
-    claims.iss = state.settings.endpoint.issuer.clone();
+    claims.iss = state.handles.config.issuer.clone();
     claims.client_id = "client-1".to_owned();
     let token = signed_fapi_claims(state, claims).await;
     let authorization = format!("Bearer {token}");
@@ -626,7 +675,7 @@ fn replace_created(signature_input: &str, created: i64) -> String {
 }
 
 async fn assert_signed_error_covers_received_signature_fields(
-    state: &Data<AppState>,
+    state: &FapiTestFixture,
     response: HttpResponse,
     method: &str,
     fields: &SignatureFields,
@@ -710,7 +759,7 @@ async fn assert_signed_error_covers_received_signature_fields(
         },
     )
     .expect("client should reconstruct the signed error from the received request fields");
-    let server = state.keyset.snapshot();
+    let server = state.handles.keyset.snapshot();
     let verifier = fapi_http_signature_client(server.verification_keys[0].public_jwk.clone());
     verify_client_http_message(
         &verifier,
@@ -829,13 +878,13 @@ fn with_fapi_store(req: HttpRequest, store: Arc<dyn FapiResourceStore>) -> HttpR
 }
 
 async fn enabled_endpoint_request(
-    state: &Data<AppState>,
+    state: &FapiTestFixture,
     store_client_id: &str,
     ttl: i64,
     body: &[u8],
 ) -> (HttpRequest, Bytes, ClientRow) {
     let mut claims = access_claims(None);
-    claims.iss = state.settings.endpoint.issuer.clone();
+    claims.iss = state.handles.config.issuer.clone();
     claims.client_id = store_client_id.to_owned();
     claims.exp = Utc::now().timestamp() + ttl;
     let token = signed_fapi_claims(state, claims).await;
@@ -890,7 +939,7 @@ fn oauth_error_code(response: &HttpResponse) -> Option<String> {
 
 #[actix_web::test]
 async fn fapi_resource_rejects_missing_or_conflicting_access_token_transport() {
-    let state = Data::new(fapi_test_state());
+    let state = fapi_test_state();
     let missing_req = actix_web::test::TestRequest::get()
         .uri("/fapi/resource")
         .to_http_request();
@@ -1013,7 +1062,7 @@ async fn fapi_resource_http_signature_response_is_request_linked_and_verifiable(
     );
     let original = captured_fapi_request(&req, &Bytes::new());
 
-    let signed = sign_fapi_resource_response(&state.keyset, &original, response).await;
+    let signed = sign_fapi_resource_response(&state.handles.keyset, &original, response).await;
 
     assert_eq!(signed.status(), StatusCode::OK);
     let response_digest = signed
@@ -1091,7 +1140,7 @@ async fn fapi_resource_http_signature_response_is_request_linked_and_verifiable(
         },
     )
     .expect("response signature should be linked to the original request");
-    let server = state.keyset.snapshot();
+    let server = state.handles.keyset.snapshot();
     let verifier = fapi_http_signature_client(server.verification_keys[0].public_jwk.clone());
     verify_client_http_message(
         &verifier,
@@ -1156,9 +1205,7 @@ async fn fapi_resource_http_signature_response_is_request_linked_and_verifiable(
 
 #[actix_web::test]
 async fn fapi_resource_http_signature_signer_failure_returns_empty_503() {
-    let mut state = fapi_test_state();
-    state.keyset = crate::test_support::failing_key_manager();
-    let state = Data::new(state);
+    let state = fapi_test_state().with_keyset(crate::test_support::failing_key_manager());
     let req = actix_web::test::TestRequest::get()
         .uri("/fapi/resource")
         .insert_header((header::AUTHORIZATION, "Bearer opaque-access-token"))
@@ -1166,7 +1213,7 @@ async fn fapi_resource_http_signature_signer_failure_returns_empty_503() {
     let protected = json_response_no_store(json!({"secret": "must-not-leak"}));
     let original = captured_fapi_request(&req, &Bytes::new());
 
-    let response = sign_fapi_resource_response(&state.keyset, &original, protected).await;
+    let response = sign_fapi_resource_response(&state.handles.keyset, &original, protected).await;
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert!(
@@ -1187,9 +1234,7 @@ async fn fapi_resource_http_signature_logs_do_not_expose_request_or_response_sec
         .with_writer(move || writer.clone())
         .finish();
     let _guard = tracing::subscriber::set_default(subscriber);
-    let mut state = fapi_test_state();
-    state.keyset = crate::test_support::failing_key_manager();
-    let state = Data::new(state);
+    let state = fapi_test_state().with_keyset(crate::test_support::failing_key_manager());
     let request_body = Bytes::from_static(b"request-body-secret");
     let digest = nazo_http_signatures::content_digest(&request_body);
     let request_signature_input = "sig1=(\"@method\");created=1";
@@ -1204,7 +1249,7 @@ async fn fapi_resource_http_signature_logs_do_not_expose_request_or_response_sec
     let protected = json_response_no_store(json!({"value": "protected-body-secret"}));
     let original = captured_fapi_request(&req, &request_body);
 
-    let response = sign_fapi_resource_response(&state.keyset, &original, protected).await;
+    let response = sign_fapi_resource_response(&state.handles.keyset, &original, protected).await;
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     drop(_guard);
     let logs = String::from_utf8(captured.lock().unwrap().clone()).unwrap();
@@ -1237,7 +1282,7 @@ async fn fapi_response_signing_log_redacts_external_signer_stderr() {
     let original = captured_fapi_request(&req, &Bytes::new());
 
     let response = sign_fapi_resource_response(
-        &state.keyset,
+        &state.handles.keyset,
         &original,
         json_response_no_store(json!({"value": "protected"})),
     )
@@ -1273,7 +1318,7 @@ async fn fapi_resource_http_signature_signs_success_errors_and_nonce_challenges(
 
     for response in responses {
         let status = response.status();
-        let signed = sign_fapi_resource_response(&state.keyset, &original, response).await;
+        let signed = sign_fapi_resource_response(&state.handles.keyset, &original, response).await;
         assert_eq!(signed.status(), status);
         assert!(signed.headers().contains_key("content-digest"));
         assert!(signed.headers().contains_key("signature-input"));
@@ -1308,7 +1353,7 @@ async fn fapi_resource_http_signature_preserves_multi_value_response_headers() {
         .append_header((header::VARY, "Accept-Encoding"))
         .json(json!({"error": "use_dpop_nonce"}));
 
-    let signed = sign_fapi_resource_response(&state.keyset, &original, response).await;
+    let signed = sign_fapi_resource_response(&state.handles.keyset, &original, response).await;
 
     assert_eq!(
         signed.headers().get_all(header::WWW_AUTHENTICATE).count(),
@@ -1501,7 +1546,7 @@ async fn fapi_resource_enabled_endpoint_interoperates_with_safe_signed_extra_hea
         },
     )
     .unwrap();
-    let server = state.keyset.snapshot();
+    let server = state.handles.keyset.snapshot();
     let verifier = fapi_http_signature_client(server.verification_keys[0].public_jwk.clone());
     verify_client_http_message(
         &verifier,
@@ -1630,7 +1675,7 @@ async fn fapi_resource_http_signature_endpoint_signs_dpop_nonce_challenge() {
         jkt: Some(jkt),
         x5t_s256: None,
     }));
-    claims.iss = state.settings.endpoint.issuer.clone();
+    claims.iss = state.handles.config.issuer.clone();
     claims.client_id = "client-1".to_owned();
     let token = signed_fapi_claims(&state, claims).await;
     let (proof, _jkt, _jwk) = signed_endpoint_dpop_proof(&signing_key, &token);
@@ -1655,7 +1700,7 @@ async fn fapi_resource_http_signature_endpoint_signs_dpop_nonce_challenge() {
 async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_binding() {
     let state = fapi_enabled_signing_state_with_invalid_db();
     let mut claims = access_claims(None);
-    claims.iss = state.settings.endpoint.issuer.clone();
+    claims.iss = state.handles.config.issuer.clone();
     claims.client_id = "client-1".to_owned();
     let token = signed_fapi_claims(&state, claims).await;
     let authorization = format!("Bearer {token}");
@@ -1749,7 +1794,7 @@ async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_bi
         },
     )
     .expect("client should verify the response using the received digest serialization");
-    let server = state.keyset.snapshot();
+    let server = state.handles.keyset.snapshot();
     let verifier = fapi_http_signature_client(server.verification_keys[0].public_jwk.clone());
     verify_client_http_message(
         &verifier,
@@ -1767,7 +1812,7 @@ async fn fapi_resource_http_signature_post_preserves_semantic_received_digest_bi
 async fn fapi_resource_http_signature_errors_preserve_unique_received_signature_bindings() {
     let state = fapi_enabled_signing_state_with_invalid_db();
     let mut claims = access_claims(None);
-    claims.iss = state.settings.endpoint.issuer.clone();
+    claims.iss = state.handles.config.issuer.clone();
     claims.client_id = "client-1".to_owned();
     let token = signed_fapi_claims(&state, claims).await;
     let authorization = format!("Bearer {token}");
@@ -1897,7 +1942,7 @@ async fn fapi_resource_http_signature_replay_dependency_failure_is_fail_closed()
 
 #[actix_web::test]
 async fn fapi_resource_rejects_unverifiable_access_token_before_revocation_lookup() {
-    let state = Data::new(fapi_test_state());
+    let state = fapi_test_state();
     let req = actix_web::test::TestRequest::get()
         .uri("/fapi/resource")
         .insert_header((header::AUTHORIZATION, "Bearer not-a-jwt"))
@@ -1940,7 +1985,7 @@ async fn fapi_resource_rejects_signed_token_with_wrong_resource_audience_before_
 async fn fapi_resource_rejects_signed_token_with_invalid_tenant_boundary_before_db_lookup() {
     let state = fapi_signing_state_with_invalid_db();
     let mut claims = access_claims(None);
-    claims.iss = state.settings.endpoint.issuer.clone();
+    claims.iss = state.handles.config.issuer.clone();
     claims.tenant_id = "not-a-uuid".to_owned();
     claims.aud = json!("resource://default");
     let token = signed_fapi_claims(&state, claims).await;
