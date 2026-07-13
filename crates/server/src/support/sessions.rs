@@ -21,6 +21,8 @@ use uuid::Uuid;
 use super::valkey_set_ex;
 use super::{DEFAULT_TENANT_ID, login_required_response, oauth_error, random_urlsafe_token};
 use nazo_identity::session::add_amr;
+use nazo_postgres::UserRepository;
+use nazo_valkey::SessionStore;
 
 #[derive(Clone, Deserialize, Serialize)]
 pub(crate) struct SessionPayload {
@@ -38,6 +40,69 @@ pub(crate) struct CurrentSession {
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
     pub(crate) oidc_sid: String,
+}
+
+/// Runtime-admin authentication dependencies, assembled once at the composition root.
+///
+/// This deliberately owns concrete repository/store handles instead of exposing the
+/// application database pool, Valkey connection, or complete server settings to HTTP handlers.
+pub(crate) struct AdminSessionHandles {
+    sessions: SessionStore,
+    users: UserRepository,
+    http: SessionHttpConfig,
+}
+
+pub(crate) struct SessionHttpConfig {
+    session_cookie_name: Box<str>,
+    csrf_cookie_name: Box<str>,
+}
+
+impl SessionHttpConfig {
+    pub(crate) fn new(session_cookie_name: &str, csrf_cookie_name: &str) -> Self {
+        Self {
+            session_cookie_name: session_cookie_name.into(),
+            csrf_cookie_name: csrf_cookie_name.into(),
+        }
+    }
+
+    pub(crate) fn session_cookie_name(&self) -> &str {
+        &self.session_cookie_name
+    }
+
+    pub(crate) fn csrf_cookie_name(&self) -> &str {
+        &self.csrf_cookie_name
+    }
+}
+
+impl AdminSessionHandles {
+    pub(crate) fn new(
+        sessions: SessionStore,
+        users: UserRepository,
+        http: SessionHttpConfig,
+    ) -> Self {
+        Self {
+            sessions,
+            users,
+            http,
+        }
+    }
+
+    pub(crate) fn http_config(&self) -> &SessionHttpConfig {
+        &self.http
+    }
+
+    pub(crate) async fn current_session(
+        &self,
+        req: &HttpRequest,
+    ) -> anyhow::Result<Option<CurrentSession>> {
+        current_session_from_handles(
+            &self.sessions,
+            &self.users,
+            self.http.session_cookie_name(),
+            req,
+        )
+        .await
+    }
 }
 
 pub(crate) struct SessionRotation {
@@ -107,15 +172,31 @@ pub(crate) async fn current_session(
     state: &AppState,
     req: &HttpRequest,
 ) -> anyhow::Result<Option<CurrentSession>> {
-    let Some(sid) = cookie_value(req, state.settings.session().session_cookie_name) else {
+    let sessions = SessionStore::new(&state.valkey_connection());
+    let users = UserRepository::new(state.diesel_db.clone());
+    current_session_from_handles(
+        &sessions,
+        &users,
+        state.settings.session().session_cookie_name,
+        req,
+    )
+    .await
+}
+
+async fn current_session_from_handles(
+    sessions: &SessionStore,
+    users: &UserRepository,
+    session_cookie_name: &str,
+    req: &HttpRequest,
+) -> anyhow::Result<Option<CurrentSession>> {
+    let Some(sid) = cookie_value(req, session_cookie_name) else {
         return Ok(None);
     };
-    let store = nazo_valkey::SessionStore::new(&state.valkey_connection());
-    let stored = match store.load(&sid).await {
+    let stored = match sessions.load(&sid).await {
         Ok(stored) => stored,
         Err(error) if error.kind() == nazo_valkey::ErrorKind::Protocol => {
             tracing::warn!(%error, "session payload is malformed");
-            let _ = store.delete(&sid).await;
+            let _ = sessions.delete(&sid).await;
             return Ok(None);
         }
         Err(error) => return Err(error.into()),
@@ -129,13 +210,13 @@ pub(crate) async fn current_session(
         payload
     } else {
         tracing::warn!("session payload contains invalid authentication metadata");
-        let _ = store.delete(&sid).await;
+        let _ = sessions.delete(&sid).await;
         return Ok(None);
     };
     if payload.pending_mfa {
         return Ok(None);
     }
-    session_from_payload(state, &sid, payload).await
+    session_from_payload(sessions, users, &sid, payload).await
 }
 
 pub(crate) async fn current_pending_mfa_session(
@@ -170,7 +251,8 @@ pub(crate) async fn current_pending_mfa_session(
     if !payload.pending_mfa {
         return Ok(None);
     }
-    session_from_payload(state, &sid, payload).await
+    let users = UserRepository::new(state.diesel_db.clone());
+    session_from_payload(&store, &users, &sid, payload).await
 }
 
 pub(crate) async fn complete_mfa_session(
@@ -243,20 +325,19 @@ async fn record_mfa_step_up(
 }
 
 async fn session_from_payload(
-    state: &AppState,
+    sessions: &SessionStore,
+    users: &UserRepository,
     session_id: &str,
     payload: SessionPayload,
 ) -> anyhow::Result<Option<CurrentSession>> {
     let tenant_id = nazo_identity::TenantId::new(DEFAULT_TENANT_ID)?;
     let user_id = nazo_identity::UserId::new(payload.user_id)?;
-    let Some(user) = nazo_postgres::UserRepository::new(state.diesel_db.clone())
+    let Some(user) = users
         .public_account_by_id(tenant_id, user_id)
         .await?
         .filter(|u| u.principal.active)
     else {
-        let _ = nazo_valkey::SessionStore::new(&state.valkey_connection())
-            .delete(session_id)
-            .await;
+        let _ = sessions.delete(session_id).await;
         return Ok(None);
     };
     Ok(Some(CurrentSession {

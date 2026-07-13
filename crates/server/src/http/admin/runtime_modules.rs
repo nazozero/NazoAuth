@@ -12,10 +12,10 @@ use nazo_runtime_modules::{
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use crate::domain::AppState;
 use crate::runtime_modules::RuntimeModules;
 use crate::support::{
-    csrf_error, current_session, has_valid_csrf_token, json_response_no_store, oauth_error,
+    AdminSessionHandles, csrf_error, has_valid_csrf_token_for_cookies, json_response_no_store,
+    oauth_error,
 };
 
 const MFA_STEP_UP_MAX_AGE: Duration = Duration::from_secs(5 * 60);
@@ -38,11 +38,11 @@ pub(crate) struct EventPageQuery {
 }
 
 pub(crate) async fn admin_runtime_modules(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
     modules: Data<RuntimeModules>,
     req: HttpRequest,
 ) -> HttpResponse {
-    if let Err(response) = require_runtime_admin(&state, &req, false).await {
+    if let Err(response) = require_runtime_admin(&admin_sessions, &req, false).await {
         return response;
     }
     match runtime_module_items(&modules).await {
@@ -52,12 +52,12 @@ pub(crate) async fn admin_runtime_modules(
 }
 
 pub(crate) async fn admin_runtime_module_events(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
     modules: Data<RuntimeModules>,
     req: HttpRequest,
     Query(query): Query<EventPageQuery>,
 ) -> HttpResponse {
-    if let Err(response) = require_runtime_admin(&state, &req, false).await {
+    if let Err(response) = require_runtime_admin(&admin_sessions, &req, false).await {
         return response;
     }
     let page = query.page.unwrap_or(1);
@@ -89,16 +89,22 @@ pub(crate) async fn admin_runtime_module_events(
 }
 
 pub(crate) async fn admin_patch_runtime_module(
-    state: Data<AppState>,
+    admin_sessions: Data<AdminSessionHandles>,
     modules: Data<RuntimeModules>,
     req: HttpRequest,
     path: Path<String>,
     Json(payload): Json<RuntimeModulePatch>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    let session_http = admin_sessions.http_config();
+    if !has_valid_csrf_token_for_cookies(
+        &req,
+        None,
+        session_http.session_cookie_name(),
+        session_http.csrf_cookie_name(),
+    ) {
         return no_store(csrf_error());
     }
-    let admin = match require_runtime_admin(&state, &req, true).await {
+    let admin = match require_runtime_admin(&admin_sessions, &req, true).await {
         Ok(admin) => admin,
         Err(response) => return response,
     };
@@ -167,11 +173,11 @@ pub(crate) async fn admin_patch_runtime_module(
 }
 
 async fn require_runtime_admin(
-    state: &AppState,
+    admin_sessions: &AdminSessionHandles,
     req: &HttpRequest,
     require_recent_mfa: bool,
 ) -> Result<crate::support::CurrentSession, HttpResponse> {
-    let session = match current_session(state, req).await {
+    let session = match admin_sessions.current_session(req).await {
         Ok(Some(session)) => session,
         Ok(None) => {
             return Err(no_store(oauth_error(

@@ -5,6 +5,7 @@ use actix_web::middleware::from_fn;
 use actix_web::{App, test as actix_test};
 
 use crate::config::ConfigSource;
+use crate::domain::AppState;
 use crate::settings::Settings;
 
 fn disabled_route_state() -> Data<AppState> {

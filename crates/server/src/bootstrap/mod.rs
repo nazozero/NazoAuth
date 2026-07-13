@@ -15,8 +15,9 @@ use crate::http::spawn_backchannel_logout_delivery_worker;
 use crate::runtime_modules::RuntimeModules;
 use crate::settings::Settings;
 use crate::support::{
-    configure_password_hash_limits, default_password_hash_max_concurrency,
-    default_password_hash_queue_timeout_ms, initialize_dummy_password_hash,
+    AdminSessionHandles, SessionHttpConfig, configure_password_hash_limits,
+    default_password_hash_max_concurrency, default_password_hash_queue_timeout_ms,
+    initialize_dummy_password_hash,
 };
 #[cfg(test)]
 use actix_web::http::header;
@@ -82,6 +83,12 @@ pub async fn run() -> anyhow::Result<()> {
         #[cfg(not(test))]
         runtime_modules: runtime_modules.registry.clone(),
     });
+    let session = state.settings.session();
+    let admin_sessions = web::Data::new(AdminSessionHandles::new(
+        nazo_valkey::SessionStore::new(&state.valkey_connection()),
+        nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+        SessionHttpConfig::new(session.session_cookie_name, session.csrf_cookie_name),
+    ));
     spawn_backchannel_logout_delivery_worker(state.clone());
 
     let bind = config.string("BIND", "0.0.0.0:8000");
@@ -123,6 +130,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(state.clone())
             .app_data(runtime_modules.clone())
             .app_data(metadata_handles.clone())
+            .app_data(admin_sessions.clone())
             .configure(|cfg| routes::configure(cfg, &state.settings, perf_metrics_enabled))
     })
     .bind(addr)?

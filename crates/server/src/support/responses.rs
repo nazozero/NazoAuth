@@ -54,7 +54,7 @@ pub(crate) fn has_valid_csrf_token(
     )
 }
 
-fn has_valid_csrf_token_for_cookies(
+pub(crate) fn has_valid_csrf_token_for_cookies(
     req: &HttpRequest,
     fallback_token: Option<&str>,
     session_cookie_name: &str,
