@@ -202,6 +202,8 @@ pub(crate) async fn token_with_service(
     state: Data<AppState>,
     token_service: Data<ServerTokenService>,
     authorization_service: Data<ServerAuthorizationService>,
+    ciba_service: Data<super::ciba::ServerCibaService>,
+    ciba_users: Data<nazo_postgres::UserRepository>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -454,6 +456,8 @@ pub(crate) async fn token_with_service(
         CIBA_GRANT_TYPE => {
             token_ciba(
                 &state,
+                &ciba_service,
+                &ciba_users,
                 &req,
                 &client,
                 &form,
@@ -490,7 +494,20 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         nazo_valkey::AuthorizationStateAdapter::new(&connection),
         state.keyset.clone(),
     ));
-    token_with_service(state, service, authorization_service, req, body).await
+    let ciba_service = Data::new(super::ciba::ServerCibaService::new(
+        nazo_valkey::CibaStore::new(&connection),
+    ));
+    let ciba_users = Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
+    token_with_service(
+        state,
+        service,
+        authorization_service,
+        ciba_service,
+        ciba_users,
+        req,
+        body,
+    )
+    .await
 }
 
 fn validate_token_client_enabled(client: &ClientRow, grant_type: &str) -> Result<(), HttpResponse> {

@@ -12,9 +12,10 @@ use crate::settings::Settings;
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use crate::support::{
     DEFAULT_TENANT_ID, DpopError, DpopErrorContext, ValidatedClientAssertion, audit_event,
-    audit_fields, blake3_hex, client_ip, client_jwt_decoding_key, client_supports_grant,
-    compute_subject_for_client, constant_time_eq, current_user_or_login_required,
-    dpop_error_response, extract_client_credentials, has_basic_authorization_scheme,
+    audit_fields, blake3_hex, client_ip, client_ip_with_context, client_jwt_decoding_key,
+    client_supports_grant, compute_subject_for_client, constant_time_eq,
+    current_user_or_login_required, dpop_error_response,
+    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
     has_valid_csrf_token, is_subset, json_array_to_strings, parse_scope, random_urlsafe_token,
     request_mtls_thumbprint, validate_dpop_proof,
 };
@@ -27,8 +28,9 @@ use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use nazo_auth::{
     CibaCommittedDecision, CibaCreateFailure, CibaDecision, CibaDecisionFailure, CibaPollCommit,
-    CibaPollFailure, CibaRequestState, CibaService, CibaStatePortError, CibaStatus,
-    ciba_retention_deadline,
+    CibaPollFailure, CibaRequestState, CibaService, CibaStatePortError, CibaStatus, ClientProfile,
+    ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy, ciba_retention_deadline,
+    validate_token_request_profile as validate_auth_token_request_profile,
 };
 use nazo_http_actix::{cookie_value, csrf_error};
 use nazo_valkey::CibaStore;
@@ -40,11 +42,16 @@ use super::client_auth::{
     authenticate_client_with_dependencies,
     consume_token_management_client_assertion_with_authorization_service,
 };
+#[cfg(test)]
+use super::validate_token_request_profile;
 use super::{
     TokenForm, TokenManagementClientAuthError, consume_token_client_assertion,
-    issue_token_response, token_management_auth_error, validate_token_request_profile,
+    issue_token_response, token_management_auth_error,
 };
 use crate::http::authorization::ServerAuthorizationService;
+use crate::runtime_modules::ServerRuntimeModuleRegistry;
+use crate::support::sessions::AdminSessionHandles;
+use crate::support::{ClientIpHeaderMode, IpCidr};
 use actix_web::web::Payload;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::ClientAuthenticationContext;
@@ -54,6 +61,56 @@ pub(crate) const CIBA_GRANT_TYPE: &str = "urn:openid:params:grant-type:ciba";
 const CIBA_REQUEST_OBJECT_MAX_TTL_SECONDS: i64 = 300;
 const CIBA_REQUEST_OBJECT_CLOCK_SKEW_SECONDS: i64 = 30;
 const CIBA_BINDING_MESSAGE_MAX_CHARS: usize = 64;
+
+pub(crate) type ServerCibaService = CibaService<CibaStore>;
+
+#[derive(Clone)]
+pub(crate) struct CibaHttpConfig {
+    issuer: Box<str>,
+    client_secret_pepper: Box<str>,
+    trusted_proxy_cidrs: Vec<IpCidr>,
+    client_ip_header_mode: ClientIpHeaderMode,
+    default_audience: Box<str>,
+    auth_req_id_ttl_seconds: u64,
+    poll_interval_seconds: u64,
+    csrf_cookie_name: Box<str>,
+    ciba_fapi2_hardening: bool,
+    authorization_fapi2_hardening: bool,
+}
+
+impl From<&Settings> for CibaHttpConfig {
+    fn from(settings: &Settings) -> Self {
+        Self {
+            issuer: settings.endpoint.issuer.as_str().into(),
+            client_secret_pepper: settings.protocol.client_secret_pepper.as_str().into(),
+            trusted_proxy_cidrs: settings.endpoint.trusted_proxy_cidrs.clone(),
+            client_ip_header_mode: settings.endpoint.client_ip_header_mode,
+            default_audience: settings.protocol.default_audience.as_str().into(),
+            auth_req_id_ttl_seconds: settings.ciba.ciba_auth_req_id_ttl_seconds,
+            poll_interval_seconds: settings.ciba.ciba_poll_interval_seconds,
+            csrf_cookie_name: settings.session.csrf_cookie_name.as_str().into(),
+            ciba_fapi2_hardening: settings
+                .protocol
+                .ciba_security_profile
+                .requires_fapi2_hardening(),
+            authorization_fapi2_hardening: settings
+                .protocol
+                .authorization_server_profile
+                .requires_fapi2_security(),
+        }
+    }
+}
+
+fn ciba_module_admissible(
+    runtime: &ServerRuntimeModuleRegistry,
+    admission: nazo_auth::CapabilityAdmission,
+) -> bool {
+    nazo_auth::module_admissible(
+        runtime.snapshot().as_ref(),
+        nazo_runtime_modules::ModuleId::Ciba,
+        admission,
+    )
+}
 
 #[derive(Default)]
 struct BackchannelAuthenticationForm {
@@ -138,12 +195,15 @@ impl CibaDecisionSource {
 }
 
 pub(crate) async fn backchannel_authentication(
-    state: Data<AppState>,
     authorization_service: Data<ServerAuthorizationService>,
+    ciba_service: Data<ServerCibaService>,
+    users: Data<nazo_postgres::UserRepository>,
+    config: Data<CibaHttpConfig>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     mut payload: Payload,
 ) -> HttpResponse {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::Ciba) {
+    if !ciba_module_admissible(&runtime, nazo_auth::CapabilityAdmission::NewRequest) {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let mut form = match parse_backchannel_authentication_form(&req, &mut payload).await {
@@ -161,9 +221,9 @@ pub(crate) async fn backchannel_authentication(
             "CIBA request cannot mix client authentication methods.",
         );
     }
-    let credentials = extract_client_credentials(
+    let credentials = extract_client_credentials_with_trusted_proxies(
         &req,
-        &state.settings,
+        &config.trusted_proxy_cidrs,
         form.client_id.as_deref(),
         form.client_secret.as_deref(),
         form.client_assertion_type.as_deref(),
@@ -181,7 +241,7 @@ pub(crate) async fn backchannel_authentication(
         Ok(_) => {
             super::client_auth::perform_dummy_client_secret_verification(
                 &credentials,
-                &state.settings.protocol.client_secret_pepper,
+                &config.client_secret_pepper,
             );
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
@@ -207,9 +267,9 @@ pub(crate) async fn backchannel_authentication(
     }
     let assertion = match authenticate_client_with_dependencies(
         &authorization_service,
-        &state.settings.endpoint.issuer,
-        &state.settings.protocol.client_secret_pepper,
-        &state.settings.endpoint.trusted_proxy_cidrs,
+        &config.issuer,
+        &config.client_secret_pepper,
+        &config.trusted_proxy_cidrs,
         &req,
         &client,
         &credentials,
@@ -232,24 +292,27 @@ pub(crate) async fn backchannel_authentication(
     {
         return token_management_auth_error(error);
     }
-    if let Err(response) = validate_token_request_profile(
-        &state.settings,
+    if let Err(response) = validate_ciba_token_request_profile(
+        &config,
         &client,
         client.token_endpoint_auth_method.as_str(),
     ) {
         return response;
     }
-    if let Err(response) = validate_ciba_security_profile_client(
-        &state.settings,
+    if let Err(response) = validate_ciba_security_profile_client_with_config(
+        &config,
         &client,
         client.token_endpoint_auth_method.as_str(),
     ) {
         return response;
     }
-    if let Err(response) = validate_ciba_request_object_presence(&state.settings, &client, &form) {
+    if let Err(response) =
+        validate_ciba_request_object_presence_with_config(&config, &client, &form)
+    {
         return response;
     }
-    if let Err(response) = validate_and_apply_ciba_request_object_claims(&state, &client, &mut form)
+    if let Err(response) =
+        validate_and_apply_ciba_request_object_claims_with_config(&config, &client, &mut form)
     {
         return response;
     }
@@ -282,7 +345,7 @@ pub(crate) async fn backchannel_authentication(
             "CIBA requires login_hint.",
         );
     };
-    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+    let user = match users
         .public_account_by_email(
             nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
             login_hint,
@@ -308,8 +371,8 @@ pub(crate) async fn backchannel_authentication(
     };
     let expires_in = form
         .requested_expiry_seconds
-        .unwrap_or(state.settings.ciba.ciba_auth_req_id_ttl_seconds)
-        .min(state.settings.ciba.ciba_auth_req_id_ttl_seconds);
+        .unwrap_or(config.auth_req_id_ttl_seconds)
+        .min(config.auth_req_id_ttl_seconds);
     let acr = match ciba_selected_acr(form.acr_values.as_deref()) {
         Some(acr) => Some(acr),
         None if form.acr_values.is_some() => {
@@ -327,18 +390,16 @@ pub(crate) async fn backchannel_authentication(
         client_id: client.client_id.clone(),
         user_id: user.id(),
         scopes,
-        audiences: vec![state.settings.protocol.default_audience.to_owned()],
+        audiences: vec![config.default_audience.to_string()],
         acr,
         binding_message: form.binding_message,
         issued_at: now,
         status: CibaStatus::Pending,
-        interval_seconds: state.settings.ciba.ciba_poll_interval_seconds,
+        interval_seconds: config.poll_interval_seconds,
         expires_at,
         retention_expires_at: ciba_retention_deadline(expires_at),
         last_poll_at: None,
     };
-    let valkey = state.valkey_connection();
-    let ciba_service = CibaService::new(CibaStore::new(&valkey));
     let auth_req_id = match ciba_service
         .create_unique(&state_payload, random_urlsafe_token)
         .await
@@ -366,13 +427,17 @@ pub(crate) async fn backchannel_authentication(
         ciba_start_audit_fields(
             &state_payload,
             &auth_req_id,
-            Some(blake3_hex(&client_ip(&req, &state.settings))),
+            Some(blake3_hex(&client_ip_with_context(
+                &req,
+                config.client_ip_header_mode,
+                &config.trusted_proxy_cidrs,
+            ))),
         ),
     );
     json_response_no_store(json!({
         "auth_req_id": auth_req_id,
         "expires_in": expires_in,
-        "interval": state.settings.ciba.ciba_poll_interval_seconds
+        "interval": config.poll_interval_seconds
     }))
 }
 
@@ -459,8 +524,8 @@ async fn parse_backchannel_authentication_form(
     Ok(form)
 }
 
-fn validate_and_apply_ciba_request_object_claims(
-    state: &AppState,
+fn validate_and_apply_ciba_request_object_claims_with_config(
+    config: &CibaHttpConfig,
     client: &ClientRow,
     form: &mut BackchannelAuthenticationForm,
 ) -> Result<(), HttpResponse> {
@@ -470,7 +535,7 @@ fn validate_and_apply_ciba_request_object_claims(
     let claims = signed_ciba_request_object_claims(request_object, client)?;
     let now = Utc::now().timestamp();
     if claims.iss.as_deref() != Some(client.client_id.as_str())
-        || !ciba_request_object_audience_valid(&claims, state)
+        || !ciba_request_object_audience_valid(&claims, &config.issuer)
         || !ciba_request_object_times_valid(&claims, now)
         || !ciba_request_object_jti_valid(claims.jti.as_deref())
         || ciba_request_object_hint_count(&claims) != 1
@@ -535,6 +600,19 @@ fn validate_and_apply_ciba_request_object_claims(
         form.requested_expiry_seconds = Some(seconds);
     }
     Ok(())
+}
+
+#[cfg(test)]
+fn validate_and_apply_ciba_request_object_claims(
+    state: &AppState,
+    client: &ClientRow,
+    form: &mut BackchannelAuthenticationForm,
+) -> Result<(), HttpResponse> {
+    validate_and_apply_ciba_request_object_claims_with_config(
+        &CibaHttpConfig::from(state.settings.as_ref()),
+        client,
+        form,
+    )
 }
 
 fn signed_ciba_request_object_claims(
@@ -603,12 +681,11 @@ fn decode_jwt_header_value(header: &str) -> Result<Value, HttpResponse> {
 
 fn ciba_request_object_audience_valid(
     claims: &CibaAuthenticationRequestClaims,
-    state: &AppState,
+    issuer: &str,
 ) -> bool {
     let Some(aud) = claims.aud.as_ref() else {
         return false;
     };
-    let issuer = state.settings.endpoint.issuer.as_str();
     let endpoint = format!("{issuer}/bc-authorize");
     match aud {
         Value::String(value) => value == issuer || value == &endpoint,
@@ -754,16 +831,12 @@ fn ciba_jwt_signing_algorithm_supported(alg: jsonwebtoken::Algorithm) -> bool {
     )
 }
 
-fn validate_ciba_security_profile_client(
-    settings: &Settings,
+fn validate_ciba_security_profile_client_with_config(
+    config: &CibaHttpConfig,
     client: &ClientRow,
     auth_method: &str,
 ) -> Result<(), HttpResponse> {
-    if !settings
-        .protocol
-        .ciba_security_profile
-        .requires_fapi2_hardening()
-    {
+    if !config.ciba_fapi2_hardening {
         return Ok(());
     }
     if client.client_type != "confidential" {
@@ -807,21 +880,73 @@ fn validate_ciba_security_profile_client(
     Ok(())
 }
 
+fn validate_ciba_security_profile_client(
+    settings: &Settings,
+    client: &ClientRow,
+    auth_method: &str,
+) -> Result<(), HttpResponse> {
+    validate_ciba_security_profile_client_with_config(
+        &CibaHttpConfig::from(settings),
+        client,
+        auth_method,
+    )
+}
+
+fn validate_ciba_token_request_profile(
+    config: &CibaHttpConfig,
+    client: &ClientRow,
+    auth_method: &str,
+) -> Result<(), HttpResponse> {
+    let profile = if config.authorization_fapi2_hardening {
+        SecurityProfile::Fapi2Security
+    } else {
+        SecurityProfile::Baseline
+    };
+    let sender_constraint = match (
+        client.require_dpop_bound_tokens,
+        client.require_mtls_bound_tokens,
+    ) {
+        (false, false) => SenderConstraintPolicy::BearerAllowed,
+        (true, false) => SenderConstraintPolicy::DpopRequired,
+        (false, true) => SenderConstraintPolicy::MtlsRequired,
+        (true, true) => SenderConstraintPolicy::DpopOrMtls,
+    };
+    validate_auth_token_request_profile(
+        profile,
+        ClientProfile {
+            client_type: &client.client_type,
+            authentication_method: auth_method,
+            sender_constraint,
+        },
+    )
+    .map_err(|error| {
+        let status = if error.code == ProtocolErrorCode::InvalidClient {
+            StatusCode::UNAUTHORIZED
+        } else {
+            StatusCode::BAD_REQUEST
+        };
+        oauth_token_error(status, error.code.as_str(), error.description, false)
+    })
+}
+
+fn validate_ciba_request_object_presence_with_config(
+    config: &CibaHttpConfig,
+    client: &ClientRow,
+    form: &BackchannelAuthenticationForm,
+) -> Result<(), HttpResponse> {
+    if (client.require_par_request_object || config.ciba_fapi2_hardening) && form.request.is_none()
+    {
+        return Err(ciba_invalid_request("CIBA request object is required."));
+    }
+    Ok(())
+}
+
 fn validate_ciba_request_object_presence(
     settings: &Settings,
     client: &ClientRow,
     form: &BackchannelAuthenticationForm,
 ) -> Result<(), HttpResponse> {
-    if (client.require_par_request_object
-        || settings
-            .protocol
-            .ciba_security_profile
-            .requires_fapi2_hardening())
-        && form.request.is_none()
-    {
-        return Err(ciba_invalid_request("CIBA request object is required."));
-    }
-    Ok(())
+    validate_ciba_request_object_presence_with_config(&CibaHttpConfig::from(settings), client, form)
 }
 
 fn non_empty(value: String) -> Option<String> {
@@ -852,20 +977,26 @@ pub(crate) async fn ciba_verification_page(
 }
 
 pub(crate) async fn ciba_verification(
-    state: Data<AppState>,
     authorization_service: Data<ServerAuthorizationService>,
+    ciba_service: Data<ServerCibaService>,
+    sessions: Data<AdminSessionHandles>,
+    config: Data<CibaHttpConfig>,
+    runtime: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
-    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
+    if !ciba_module_admissible(
+        &runtime,
+        nazo_auth::CapabilityAdmission::ExistingTransaction,
+    ) {
         return empty_response(StatusCode::NOT_FOUND);
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match sessions.current_user_or_login_required(&req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
     let auth_req_id = path.into_inner();
-    let state_payload = match load_ciba_request_payload(&state, &auth_req_id).await {
+    let state_payload = match load_ciba_request_payload(&ciba_service, &auth_req_id).await {
         Ok(Some(value)) => value,
         Ok(None) => {
             return oauth_error(
@@ -895,13 +1026,14 @@ pub(crate) async fn ciba_verification(
     };
     json_response_no_store(CibaVerificationView {
         auth_req_id,
-        csrf_token: cookie_value(&req, &state.settings.session.csrf_cookie_name),
+        csrf_token: cookie_value(&req, &config.csrf_cookie_name),
         request,
     })
 }
 
 pub(crate) async fn ciba_automated_decision(
     state: Data<AppState>,
+    ciba_service: Data<ServerCibaService>,
     req: HttpRequest,
     Query(query): Query<CibaAutomatedDecisionQuery>,
 ) -> HttpResponse {
@@ -947,7 +1079,7 @@ pub(crate) async fn ciba_automated_decision(
         }
     };
     set_ciba_request_decision(
-        &state,
+        &ciba_service,
         auth_req_id,
         decision,
         None,
@@ -959,6 +1091,7 @@ pub(crate) async fn ciba_automated_decision(
 
 pub(crate) async fn ciba_decision(
     state: Data<AppState>,
+    ciba_service: Data<ServerCibaService>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
     Json(payload): Json<CibaDecisionRequest>,
@@ -987,7 +1120,7 @@ pub(crate) async fn ciba_decision(
         CibaDecision::Deny
     };
     set_ciba_request_decision(
-        &state,
+        &ciba_service,
         &auth_req_id,
         decision,
         Some(user.id()),
@@ -998,15 +1131,13 @@ pub(crate) async fn ciba_decision(
 }
 
 async fn set_ciba_request_decision(
-    state: &AppState,
+    ciba_service: &ServerCibaService,
     auth_req_id: &str,
     decision: CibaDecision,
     expected_user_id: Option<Uuid>,
     source: CibaDecisionSource,
     source_ip_hash: Option<String>,
 ) -> HttpResponse {
-    let valkey = state.valkey_connection();
-    let ciba_service = CibaService::new(CibaStore::new(&valkey));
     complete_ciba_decision(
         ciba_service
             .decide(auth_req_id, decision, expected_user_id, || {
@@ -1129,6 +1260,8 @@ fn ciba_poll_failure_response(failure: CibaPollFailure) -> HttpResponse {
 
 pub(crate) async fn token_ciba(
     state: &AppState,
+    ciba_service: &ServerCibaService,
+    users: &nazo_postgres::UserRepository,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -1168,8 +1301,6 @@ pub(crate) async fn token_ciba(
         Ok(binding) => binding,
         Err(response) => return response,
     };
-    let valkey = state.valkey_connection();
-    let ciba_service = CibaService::new(CibaStore::new(&valkey));
     let initial = match ciba_service.load(auth_req_id).await {
         Ok(Some(value)) => value,
         Ok(None) => {
@@ -1229,7 +1360,7 @@ pub(crate) async fn token_ciba(
         Ok(CibaPollCommit::Approved(ciba)) => ciba,
         Err(failure) => return ciba_poll_failure_response(failure),
     };
-    let user = match nazo_postgres::UserRepository::new(state.diesel_db.clone())
+    let user = match users
         .public_account_by_id(
             nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is non-nil"),
             nazo_identity::UserId::new(ciba.user_id).expect("persisted CIBA user ID is non-nil"),
@@ -1370,11 +1501,10 @@ fn ciba_subject_for_client(
 }
 
 async fn load_ciba_request_payload(
-    state: &AppState,
+    ciba_service: &ServerCibaService,
     auth_req_id: &str,
 ) -> Result<Option<CibaRequestState>, HttpResponse> {
-    let valkey = state.valkey_connection();
-    CibaService::new(CibaStore::new(&valkey))
+    ciba_service
         .load(auth_req_id)
         .await
         .map(|stored| stored.map(|stored| stored.into_state()))

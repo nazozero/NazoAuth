@@ -146,4 +146,27 @@ mod lifecycle_boundary_tests {
             );
         }
     }
+
+    #[test]
+    fn ciba_transport_uses_composition_root_handles() {
+        let source = include_str!("token/ciba.rs");
+        for forbidden in [
+            "CibaStore::new",
+            "OAuthClientRepository::new",
+            "UserRepository::new",
+            "state.diesel_db",
+            "state.valkey_connection()",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "CIBA transport reintroduced composition dependency {forbidden}"
+            );
+        }
+        assert!(!source.contains(
+            "pub(crate) async fn backchannel_authentication(\n    state: Data<AppState>"
+        ));
+        assert!(
+            !source.contains("pub(crate) async fn ciba_verification(\n    state: Data<AppState>")
+        );
+    }
 }
