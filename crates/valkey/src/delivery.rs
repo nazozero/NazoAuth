@@ -86,15 +86,17 @@ impl DeliveryStore {
         token: &str,
         expected: &StoredDelivery,
     ) -> Result<DeliveryConsume, Error> {
-        let Some(raw) =
-            command::take(&self.connection, keys::client_delivery(user_id, token)).await?
-        else {
-            return Ok(DeliveryConsume::MissingOrChanged);
-        };
-        if raw != expected.raw {
+        if command::compare_delete(
+            &self.connection,
+            keys::client_delivery(user_id, token),
+            &expected.raw,
+        )
+        .await?
+            == command::CompareDelete::MissingOrChanged
+        {
             return Ok(DeliveryConsume::MissingOrChanged);
         }
-        let value = serde_json::from_str(&raw).map_err(|error| {
+        let value = serde_json::from_str(&expected.raw).map_err(|error| {
             Error::protocol(format!("malformed consumed client delivery: {error}"))
         })?;
         Ok(DeliveryConsume::Consumed(value))
@@ -118,20 +120,6 @@ fn identity_record(stored: StoredDelivery) -> nazo_identity::ports::DeliveryReco
     }
 }
 
-fn repository_error(error: Error) -> nazo_identity::ports::RepositoryError {
-    match error.kind() {
-        crate::ErrorKind::Timeout | crate::ErrorKind::Unavailable => {
-            nazo_identity::ports::RepositoryError::Unavailable
-        }
-        crate::ErrorKind::CorruptData => {
-            nazo_identity::ports::RepositoryError::Consistency(error.to_string())
-        }
-        crate::ErrorKind::Protocol | crate::ErrorKind::UnexpectedResult => {
-            nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
-        }
-    }
-}
-
 impl nazo_identity::ports::DeliveryStorePort for DeliveryStore {
     fn load<'a>(
         &'a self,
@@ -143,7 +131,7 @@ impl nazo_identity::ports::DeliveryStorePort for DeliveryStore {
             DeliveryStore::load(self, user_id, token)
                 .await
                 .map(|stored| stored.map(identity_record))
-                .map_err(repository_error)
+                .map_err(crate::identity_repository_error)
         })
     }
 
@@ -161,7 +149,7 @@ impl nazo_identity::ports::DeliveryStorePort for DeliveryStore {
                         .map(|stored| stored.map(identity_record))
                         .collect()
                 })
-                .map_err(repository_error)
+                .map_err(crate::identity_repository_error)
         })
     }
 
@@ -174,7 +162,7 @@ impl nazo_identity::ports::DeliveryStorePort for DeliveryStore {
             DeliveryStore::delete(self, user_id, token)
                 .await
                 .map(|_| ())
-                .map_err(repository_error)
+                .map_err(crate::identity_repository_error)
         })
     }
 
@@ -199,7 +187,7 @@ impl nazo_identity::ports::DeliveryStorePort for DeliveryStore {
                         nazo_identity::ports::DeliveryConsume::MissingOrChanged
                     }
                 })
-                .map_err(repository_error)
+                .map_err(crate::identity_repository_error)
         })
     }
 }

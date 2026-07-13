@@ -10,6 +10,7 @@ mod model;
 pub mod passkey;
 pub mod ports;
 pub mod profile;
+pub mod registration;
 pub mod scim;
 pub mod session;
 pub mod tenancy;
@@ -32,5 +33,9 @@ pub use profile::{
     AvailableDelivery, ClientAccessService, DeliveryReadError, FederationLinksService,
     NewAccessRequestInput, ProfilePatch, ProfileValidationError, UpdateProfileError,
     access_delivery_token,
+};
+pub use registration::{
+    RegisterLocalAccountError, RegisterLocalAccountInput, RegistrationService,
+    RegistrationServiceConfig, SendVerificationCodeError, SendVerificationCodeOutcome,
 };
 pub use tenancy::{OrganizationId, RealmId, TenantContext, TenantId, UserId};

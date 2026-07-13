@@ -2,6 +2,9 @@ use std::time::Duration;
 
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
+use nazo_identity::ports::{
+    EmailVerificationConsume, EmailVerificationStorePort, PasswordHashInput,
+};
 use nazo_valkey::{
     AuthenticationStore, LoginFailureDimension, RateDimension, RateLimitStore, TokenStateStore,
     ValkeyConnection,
@@ -62,6 +65,55 @@ async fn authentication_short_state_preserves_exact_keys_and_one_time_semantics(
             .unwrap()
             .is_none()
     );
+}
+
+#[tokio::test]
+async fn email_code_compare_delete_never_removes_a_newer_value() {
+    let Some((connection, _inspector)) = setup().await else {
+        return;
+    };
+    let store = AuthenticationStore::new(&connection);
+    let email = format!("cas-{}@example.com", uuid::Uuid::now_v7());
+    EmailVerificationStorePort::store_code(
+        &store,
+        &email,
+        PasswordHashInput::new("first-code-hash").unwrap(),
+        30,
+    )
+    .await
+    .unwrap();
+    let stale = EmailVerificationStorePort::load_code(&store, &email)
+        .await
+        .unwrap()
+        .unwrap();
+    store
+        .store_email_code(&email, "newer-code-hash", 30)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        EmailVerificationStorePort::consume_code(&store, &email, &stale)
+            .await
+            .unwrap(),
+        EmailVerificationConsume::MissingOrChanged
+    );
+    assert_eq!(
+        store.load_email_code(&email).await.unwrap().as_deref(),
+        Some("newer-code-hash"),
+        "a stale consumer must not delete a newer verification code"
+    );
+
+    let current = EmailVerificationStorePort::load_code(&store, &email)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        EmailVerificationStorePort::consume_code(&store, &email, &current)
+            .await
+            .unwrap(),
+        EmailVerificationConsume::Consumed
+    );
+    assert!(store.load_email_code(&email).await.unwrap().is_none());
 }
 
 #[tokio::test]

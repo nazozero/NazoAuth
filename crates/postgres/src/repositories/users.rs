@@ -547,3 +547,22 @@ impl nazo_identity::ports::ProfileRepositoryPort for UserRepository {
         )
     }
 }
+
+impl nazo_identity::ports::RegistrationAccountRepositoryPort for UserRepository {
+    fn account_by_email<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        email: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::PublicAccount>> {
+        Box::pin(
+            async move { UserRepository::public_account_by_email(self, tenant_id, email).await },
+        )
+    }
+
+    fn create_user(
+        &self,
+        user: nazo_identity::ports::NewUser,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::PublicAccount> {
+        Box::pin(async move { UserRepository::create(self, user).await })
+    }
+}

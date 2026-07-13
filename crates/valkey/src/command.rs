@@ -2,6 +2,24 @@ use fred::prelude::{Expiration, KeysInterface, SetOptions};
 
 use crate::{Error, ValkeyConnection};
 
+const COMPARE_DELETE_SCRIPT: &str = r#"
+local current = redis.call('GET', KEYS[1])
+if not current then
+  return 'missing'
+end
+if current ~= ARGV[1] then
+  return 'changed'
+end
+redis.call('DEL', KEYS[1])
+return 'deleted'
+"#;
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum CompareDelete {
+    Deleted,
+    MissingOrChanged,
+}
+
 pub(crate) async fn set_ex_nx(
     connection: &ValkeyConnection,
     key: String,
@@ -95,6 +113,28 @@ pub(crate) async fn delete(connection: &ValkeyConnection, key: String) -> Result
     connection.client.del(key).await.map_err(Error::from_fred)
 }
 
+pub(crate) async fn compare_delete(
+    connection: &ValkeyConnection,
+    key: String,
+    expected: &str,
+) -> Result<CompareDelete, Error> {
+    match eval_string(
+        connection,
+        COMPARE_DELETE_SCRIPT,
+        vec![key],
+        vec![expected.to_owned()],
+    )
+    .await?
+    .as_str()
+    {
+        "deleted" => Ok(CompareDelete::Deleted),
+        "missing" | "changed" => Ok(CompareDelete::MissingOrChanged),
+        reply => Err(Error::unexpected(format!(
+            "unexpected compare-delete reply {reply:?}"
+        ))),
+    }
+}
+
 pub(crate) async fn eval_string(
     connection: &ValkeyConnection,
     script: &'static str,
@@ -108,4 +148,20 @@ pub(crate) async fn eval_string(
         .eval(script, keys, args)
         .await
         .map_err(Error::from_fred)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::COMPARE_DELETE_SCRIPT;
+
+    #[test]
+    fn compare_delete_checks_the_opaque_value_before_deleting() {
+        let get = COMPARE_DELETE_SCRIPT.find("redis.call('GET'").unwrap();
+        let compare = COMPARE_DELETE_SCRIPT.find("current ~= ARGV[1]").unwrap();
+        let delete = COMPARE_DELETE_SCRIPT.find("redis.call('DEL'").unwrap();
+
+        assert!(get < compare && compare < delete);
+        assert!(COMPARE_DELETE_SCRIPT.contains("return 'changed'"));
+        assert!(COMPARE_DELETE_SCRIPT.contains("return 'deleted'"));
+    }
 }

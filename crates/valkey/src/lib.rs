@@ -25,6 +25,20 @@ pub use connection::ValkeyConnection;
 pub use delivery::{DeliveryConsume, DeliveryStore, StoredDelivery};
 pub use device::{DeviceCreateResult, DeviceStore};
 pub use error::{Error, ErrorKind};
+
+pub(crate) fn identity_repository_error(error: Error) -> nazo_identity::ports::RepositoryError {
+    match error.kind() {
+        ErrorKind::Timeout | ErrorKind::Unavailable => {
+            nazo_identity::ports::RepositoryError::Unavailable
+        }
+        ErrorKind::CorruptData => {
+            nazo_identity::ports::RepositoryError::Consistency(error.to_string())
+        }
+        ErrorKind::Protocol | ErrorKind::UnexpectedResult => {
+            nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
+        }
+    }
+}
 pub use rate_limit::{LoginFailureDimension, RateDimension, RateLimitStore};
 pub use replay::ReplayStore;
 pub use session::{SessionRotationResult, SessionStore, StoredSession};
