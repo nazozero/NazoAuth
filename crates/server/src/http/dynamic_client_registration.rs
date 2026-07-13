@@ -122,7 +122,7 @@ pub(crate) async fn dynamic_client_registration(
     req: HttpRequest,
     Json(payload): Json<DynamicClientRegistrationRequest>,
 ) -> HttpResponse {
-    if !state.settings.enable_dynamic_client_registration {
+    if !state.settings.modules().enable_dynamic_client_registration {
         return empty_response(StatusCode::NOT_FOUND);
     }
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
@@ -135,8 +135,8 @@ pub(crate) async fn dynamic_client_registration(
             .and_then(|value| value.to_str().ok()),
         state
             .settings
-            .dynamic_client_registration_initial_access_token
-            .as_deref(),
+            .modules()
+            .dynamic_client_registration_initial_access_token,
     ) {
         return oauth_bearer_error(
             StatusCode::UNAUTHORIZED,
@@ -216,7 +216,7 @@ pub(crate) async fn client_configuration_get(
     req: HttpRequest,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
-    if !state.settings.enable_dynamic_client_registration {
+    if !state.settings.modules().enable_dynamic_client_registration {
         return empty_response(StatusCode::NOT_FOUND);
     }
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
@@ -263,7 +263,7 @@ pub(crate) async fn client_configuration_put(
     path: actix_web::web::Path<String>,
     Json(payload): Json<Value>,
 ) -> HttpResponse {
-    if !state.settings.enable_dynamic_client_registration {
+    if !state.settings.modules().enable_dynamic_client_registration {
         return empty_response(StatusCode::NOT_FOUND);
     }
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
@@ -376,7 +376,7 @@ pub(crate) async fn client_configuration_delete(
     req: HttpRequest,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
-    if !state.settings.enable_dynamic_client_registration {
+    if !state.settings.modules().enable_dynamic_client_registration {
         return empty_response(StatusCode::NOT_FOUND);
     }
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await

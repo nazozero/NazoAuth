@@ -56,6 +56,23 @@ pub(crate) struct IdentityRuntimeSettings<'a> {
     pub(crate) federation: &'a FederationSettings,
 }
 
+#[derive(Clone, Copy)]
+pub(crate) struct ModuleRuntimeSettings<'a> {
+    pub(crate) enable_request_object: bool,
+    pub(crate) enable_request_uri_parameter: bool,
+    pub(crate) enable_par_request_object: bool,
+    pub(crate) enable_authorization_details: bool,
+    pub(crate) enable_legacy_audience_param: bool,
+    pub(crate) enable_device_authorization_grant: bool,
+    pub(crate) enable_dynamic_client_registration: bool,
+    pub(crate) enable_frontchannel_logout: bool,
+    pub(crate) enable_session_management: bool,
+    pub(crate) enable_ciba: bool,
+    pub(crate) enable_native_sso: bool,
+    pub(crate) enable_fapi_http_signatures: bool,
+    pub(crate) dynamic_client_registration_initial_access_token: Option<&'a str>,
+}
+
 impl Settings {
     pub(crate) fn endpoint(&self) -> EndpointRuntimeSettings<'_> {
         EndpointRuntimeSettings {
@@ -108,6 +125,26 @@ impl Settings {
             email_code_dev_response_enabled: self.email_code_dev_response_enabled,
             passkey: &self.passkey,
             federation: &self.federation,
+        }
+    }
+
+    pub(crate) fn modules(&self) -> ModuleRuntimeSettings<'_> {
+        ModuleRuntimeSettings {
+            enable_request_object: self.enable_request_object,
+            enable_request_uri_parameter: self.enable_request_uri_parameter,
+            enable_par_request_object: self.enable_par_request_object,
+            enable_authorization_details: self.enable_authorization_details,
+            enable_legacy_audience_param: self.enable_legacy_audience_param,
+            enable_device_authorization_grant: self.enable_device_authorization_grant,
+            enable_dynamic_client_registration: self.enable_dynamic_client_registration,
+            enable_frontchannel_logout: self.enable_frontchannel_logout,
+            enable_session_management: self.enable_session_management,
+            enable_ciba: self.enable_ciba,
+            enable_native_sso: self.enable_native_sso,
+            enable_fapi_http_signatures: self.enable_fapi_http_signatures,
+            dynamic_client_registration_initial_access_token: self
+                .dynamic_client_registration_initial_access_token
+                .as_deref(),
         }
     }
 }

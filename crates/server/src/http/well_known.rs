@@ -108,14 +108,14 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
         JWT_BEARER_GRANT_TYPE,
         TOKEN_EXCHANGE_GRANT_TYPE,
     ];
-    if settings.enable_device_authorization_grant {
+    if settings.modules().enable_device_authorization_grant {
         grant_types.push(DEVICE_CODE_GRANT_TYPE);
     }
-    if settings.enable_ciba {
+    if settings.modules().enable_ciba {
         grant_types.push(CIBA_GRANT_TYPE);
     }
     let mut scopes_supported = SCOPES_SUPPORTED.to_vec();
-    if settings.enable_native_sso {
+    if settings.modules().enable_native_sso {
         scopes_supported.push("device_sso");
     }
     let mut metadata = json!({
@@ -163,31 +163,31 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
         "dpop_signing_alg_values_supported": DPOP_SIGNING_ALGS,
         "request_object_signing_alg_values_supported": request_object_signing_algs
     });
-    if settings.enable_authorization_details {
+    if settings.modules().enable_authorization_details {
         metadata["authorization_details_types_supported"] =
             json!(["account_information", "payment_initiation"]);
     }
-    if settings.enable_device_authorization_grant {
+    if settings.modules().enable_device_authorization_grant {
         metadata["device_authorization_endpoint"] = json!(format!("{issuer}/device_authorization"));
     }
-    if settings.enable_dynamic_client_registration {
+    if settings.modules().enable_dynamic_client_registration {
         metadata["registration_endpoint"] = json!(format!("{issuer}/register"));
     }
-    if settings.enable_frontchannel_logout {
+    if settings.modules().enable_frontchannel_logout {
         metadata["frontchannel_logout_supported"] = json!(true);
         metadata["frontchannel_logout_session_supported"] = json!(true);
     }
-    if settings.enable_session_management {
+    if settings.modules().enable_session_management {
         metadata["check_session_iframe"] = json!(format!("{issuer}/check_session"));
     }
-    if settings.enable_ciba {
+    if settings.modules().enable_ciba {
         metadata["backchannel_authentication_endpoint"] = json!(format!("{issuer}/bc-authorize"));
         metadata["backchannel_token_delivery_modes_supported"] = json!(["poll"]);
         metadata["backchannel_user_code_parameter_supported"] = json!(false);
         metadata["backchannel_authentication_request_signing_alg_values_supported"] =
             json!(FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS);
     }
-    if settings.enable_native_sso {
+    if settings.modules().enable_native_sso {
         metadata["native_sso_supported"] = json!(true);
     }
     if settings
@@ -201,10 +201,10 @@ fn authorization_server_metadata(settings: &Settings, keyset: &KeySnapshot) -> V
         metadata["introspection_encryption_enc_values_supported"] =
             json!(SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS);
     }
-    if settings.enable_request_object {
+    if settings.modules().enable_request_object {
         metadata["request_parameter_supported"] = json!(true);
     }
-    if settings.enable_request_uri_parameter {
+    if settings.modules().enable_request_uri_parameter {
         metadata["request_uri_parameter_supported"] = json!(true);
         metadata["require_request_uri_registration"] = json!(true);
     } else {
@@ -236,7 +236,7 @@ fn protected_resource_metadata(settings: &Settings, _keyset: &KeySnapshot) -> Va
     if mtls_enabled {
         metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
     }
-    if settings.enable_authorization_details {
+    if settings.modules().enable_authorization_details {
         metadata["authorization_details_types_supported"] =
             json!(["account_information", "payment_initiation"]);
     }

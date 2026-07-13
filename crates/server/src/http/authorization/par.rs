@@ -119,7 +119,7 @@ async fn par_after_rate_limit_inner(
     if let Some(encoded) = encoded_resource_indicators(&resource_values) {
         params.insert("resource".to_owned(), encoded);
     }
-    if !state.settings.enable_par_request_object
+    if !state.settings.modules().enable_par_request_object
         && !state
             .settings
             .authorization_server_profile
@@ -132,7 +132,8 @@ async fn par_after_rate_limit_inner(
             "PAR request object 未启用.",
         );
     }
-    if !state.settings.enable_authorization_details && params.contains_key("authorization_details")
+    if !state.settings.modules().enable_authorization_details
+        && params.contains_key("authorization_details")
     {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -221,7 +222,8 @@ async fn par_after_rate_limit_inner(
     if let Err(response) = apply_request_object(&state, &mut params, &client).await {
         return response;
     }
-    if !state.settings.enable_authorization_details && params.contains_key("authorization_details")
+    if !state.settings.modules().enable_authorization_details
+        && params.contains_key("authorization_details")
     {
         return oauth_error(
             StatusCode::BAD_REQUEST,
