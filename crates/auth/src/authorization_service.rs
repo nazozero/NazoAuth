@@ -5,10 +5,11 @@ use uuid::Uuid;
 
 use crate::{
     AuthorizationCodeState, AuthorizationRequestError, AuthorizationResponsePolicyError,
-    ConsentPayload, JarmAuthorizationResponse, NormalizedRequestObject, OAuthClient,
-    PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError, RequestObjectClaims,
-    RequestObjectPolicy, SignedJarmAuthorizationResponse, authorization_details_empty,
-    canonical_authorization_details, high_risk_authorization_details, normalize_request_object,
+    ConsentPayload, JarmAuthorizationResponse, JwtBearerGrantError, NormalizedRequestObject,
+    OAuthClient, PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError,
+    RequestObjectClaims, RequestObjectPolicy, SignedJarmAuthorizationResponse,
+    ValidatedJwtBearerAssertion, authorization_details_empty, canonical_authorization_details,
+    high_risk_authorization_details, normalize_request_object,
 };
 
 pub type AuthorizationFuture<'a, T> =
@@ -387,6 +388,18 @@ where
         ttl: u64,
     ) -> Result<bool, AuthorizationPortError> {
         self.state.consume_jwt_bearer(client_id, jti, ttl).await
+    }
+
+    pub async fn consume_jwt_bearer_assertion(
+        &self,
+        client_id: &str,
+        assertion: &ValidatedJwtBearerAssertion,
+    ) -> Result<(), JwtBearerGrantError> {
+        super::extension_grants::classify_jwt_bearer_replay(
+            self.state
+                .consume_jwt_bearer(client_id, &assertion.jti, assertion.replay_ttl_seconds)
+                .await,
+        )
     }
     pub async fn consume_dpop(
         &self,
