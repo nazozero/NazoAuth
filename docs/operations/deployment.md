@@ -125,7 +125,7 @@ the release evidence listed in [docs/operations/release-security.md](release-sec
 
 ## Live Deployment Script
 
-The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which builds from clean backend and frontend worktrees at the requested commits. The worktrees must use branch `codex/modular-workspace-architecture` and the exact HTTPS origins `https://github.com/nazozero/NazoAuth[.git]` and `https://github.com/nazozero/NazoAuthWeb[.git]`. It reads the frontend's committed `packageManager`, requires the matching `package-lock.json` and exact npm version, runs `npm ci` and the aggregate verification script that actually exists in `package.json`, and accepts only the `dist` produced by that gate. It then hashes `dist`, builds the backend image from the verified backend worktree, and checks the immutable image ID again after the archive is loaded remotely. It records the current rollback targets, stages a SHA-named UI release, runs migrations once, replaces the Podman container, and verifies health and discovery. The public UI symlink changes only after the candidate is healthy. A detached verification watchdog starts as soon as the remote transaction state is durably recorded, so it covers artifact staging, image loading, migration, container replacement, and public verification.
+The repository includes [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1), which builds from clean backend and frontend worktrees at the requested commits. The worktrees must use branch `codex/modular-workspace-architecture` and the exact HTTPS origins `https://github.com/nazozero/NazoAuth[.git]` and `https://github.com/nazozero/NazoAuthWeb[.git]`. It reads the frontend's committed `packageManager`, requires the matching `package-lock.json` and exact npm version, runs `npm ci` and the aggregate verification script that actually exists in `package.json`, and accepts only the `dist` produced by that gate. It then hashes `dist`, builds the backend image from the verified backend worktree, and checks the immutable image ID again after the archive is loaded remotely. It records the current rollback targets, stages a SHA-named UI release in Angie's traversable static root, normalizes static-file permissions, verifies readability as the Angie worker, runs migrations once, replaces the Podman container, and verifies health and discovery. The public UI symlink changes only after the candidate is healthy. Before committing the transaction, the script also requires the public `/ui/auth` document and at least one referenced `/ui/assets/...` resource to return non-empty HTTP 200 responses. A detached verification watchdog starts as soon as the remote transaction state is durably recorded, so it covers artifact staging, image loading, migration, container replacement, and public verification.
 
 Default live assumptions:
 
@@ -148,7 +148,10 @@ Default live assumptions:
 | Health URL | `https://auth.nazo.run/health` |
 | Discovery URL | `https://auth.nazo.run/.well-known/openid-configuration` |
 | Expected issuer | `https://auth.nazo.run` |
-| UI releases | `/opt/nazo-oauth/ui-releases/<frontend-sha>` |
+| UI path | `/usr/local/angie/html/auth` |
+| UI releases | `/usr/local/angie/html/auth-releases/<frontend-sha>` |
+| Angie worker | `www` |
+| Public UI probe | `https://auth.nazo.run/ui/auth` plus one referenced `/ui/assets/...` resource |
 | Verification lease | 120 seconds by default (`-VerificationLeaseSeconds`) |
 | Deployment records | `/opt/nazo-oauth/deployments/<backend-sha>-<frontend-sha>-<deployment-id>.json` |
 

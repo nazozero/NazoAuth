@@ -17,12 +17,15 @@ param(
     [string]$RemoteConfigPath = "/opt/nazo-oauth/.env.yaml",
     [string]$RemoteKeysPath = "/opt/nazo-oauth/runtime/keys",
     [string]$RemoteAvatarsPath = "/opt/nazo-oauth/runtime/avatars",
-    [string]$RemoteUiPath = "/opt/nazo-oauth/ui",
+    [string]$RemoteUiPath = "/usr/local/angie/html/auth",
+    [string]$RemoteUiReleasesRoot = "/usr/local/angie/html/auth-releases",
+    [string]$AngieWorkerUser = "www",
     [string]$RemoteDeploymentRoot = "/opt/nazo-oauth",
     [string]$LocalUiDist = "",
     [string]$PublishPort = "",
     [string]$HealthUrl = "https://auth.nazo.run/health",
     [string]$DiscoveryUrl = "https://auth.nazo.run/.well-known/openid-configuration",
+    [string]$UiUrl = "https://auth.nazo.run/ui/auth",
     [string]$ExpectedIssuer = "https://auth.nazo.run",
     [ValidateRange(1, 3600)]
     [int]$VerificationLeaseSeconds = 120,
@@ -42,6 +45,16 @@ $ExpectedFrontendBranch = "codex/modular-workspace-architecture"
 if ($RemoteHost.StartsWith('-') -or
     $RemoteHost -notmatch '^(?:[A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$') {
     throw "RemoteHost must be a safe SSH host alias, hostname, or user@host"
+}
+if ($RemoteUiPath -notmatch '^/' -or $RemoteUiReleasesRoot -notmatch '^/') {
+    throw "RemoteUiPath and RemoteUiReleasesRoot must be absolute Linux paths"
+}
+if ($RemoteUiPath -eq '/' -or $RemoteUiReleasesRoot -eq '/' -or
+    $RemoteUiPath.TrimEnd('/') -eq $RemoteUiReleasesRoot.TrimEnd('/')) {
+    throw "RemoteUiPath and RemoteUiReleasesRoot must be distinct non-root paths"
+}
+if ($AngieWorkerUser -notmatch '^[a-z_][a-z0-9_-]*[$]?$') {
+    throw "AngieWorkerUser must be a safe Linux account name"
 }
 
 function Invoke-Checked {
@@ -461,6 +474,8 @@ CONFIG_PATH=$(ConvertTo-ShellLiteral $RemoteConfigPath)
 KEYS_PATH=$(ConvertTo-ShellLiteral $RemoteKeysPath)
 AVATARS_PATH=$(ConvertTo-ShellLiteral $RemoteAvatarsPath)
 UI_PATH=$(ConvertTo-ShellLiteral $RemoteUiPath)
+UI_RELEASES=$(ConvertTo-ShellLiteral $RemoteUiReleasesRoot)
+ANGIE_WORKER_USER=$(ConvertTo-ShellLiteral $AngieWorkerUser)
 DEPLOYMENT_ROOT=$(ConvertTo-ShellLiteral $RemoteDeploymentRoot)
 PUBLISH_PORT=$(ConvertTo-ShellLiteral $PublishPort)
 EXPECTED_ISSUER=$(ConvertTo-ShellLiteral $ExpectedIssuer)
@@ -468,7 +483,6 @@ EXPECTED_IMAGE_ID=$(ConvertTo-ShellLiteral $expectedImageId)
 SKIP_MIGRATE=$(ConvertTo-ShellLiteral $skipMigrateValue)
 VERIFICATION_LEASE_SECONDS=$(ConvertTo-ShellLiteral $VerificationLeaseSeconds)
 
-UI_RELEASES="`$DEPLOYMENT_ROOT/ui-releases"
 DEPLOYMENTS="`$DEPLOYMENT_ROOT/deployments"
 UI_RELEASE="`$UI_RELEASES/`$FRONTEND_COMMIT"
 RECORD="`$DEPLOYMENTS/`$BACKEND_COMMIT-`$FRONTEND_COMMIT-`$DEPLOYMENT_ID.json"
@@ -512,7 +526,8 @@ write_record() {
   python3 - "`$RECORD" "`$status" "`$BACKEND_COMMIT" "`$FRONTEND_COMMIT" \
     "`$DEPLOYMENT_ID" "`$IMAGE" "`$EXPECTED_IMAGE_ID" "`$FRONTEND_ARTIFACT_SHA256" \
     "`${previous_image_id:-}" "`${previous_image_name:-}" \
-    "`${previous_container_id:-}" "`${previous_ui_target:-}" "`${candidate_container_id:-}" <<'PY'
+    "`${previous_container_id:-}" "`${previous_ui_target:-}" "`${candidate_container_id:-}" \
+    "`$UI_RELEASE" <<'PY'
 import json, os, pathlib, sys, time
 path = pathlib.Path(sys.argv[1])
 payload = {
@@ -528,6 +543,7 @@ payload = {
     "previous_container_id": sys.argv[11],
     "previous_ui_target": sys.argv[12],
     "candidate_container_id": sys.argv[13],
+    "candidate_ui_release": sys.argv[14],
     "recorded_at_unix": int(time.time()),
 }
 path.parent.mkdir(parents=True, exist_ok=True)
@@ -703,6 +719,7 @@ cleanup() {
   rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_SCRIPT" "`$STATE_FILE" \
     "`$WATCHDOG_PID_FILE" "`$LEASE_PENDING" "`$LEASE_COMMITTED" "`$LEASE_ROLLBACK" \
     "`$CURRENT_LINK_TEMP"
+  rm -rf "`$UI_RELEASE.tmp"
   if [ -f "`$ACTIVE_DEPLOYMENT/owner" ] && [ "`$(cat "`$ACTIVE_DEPLOYMENT/owner")" = "`$DEPLOYMENT_ID" ]; then
     rm -rf "`$ACTIVE_DEPLOYMENT"
   fi
@@ -793,7 +810,8 @@ PY
     pg_isready -h 10.101.0.10 -p 5432 >/dev/null
   podman exec nazo-oauth-valkey valkey-cli ping | grep -Fx PONG >/dev/null
 
-  mkdir -p "`$UI_RELEASES" "`$DEPLOYMENTS"
+  install -d -m 0755 "`$UI_RELEASES"
+  mkdir -p "`$DEPLOYMENTS"
   if ! mkdir "`$ACTIVE_DEPLOYMENT" 2>/dev/null; then
     echo "Another deployment transaction is active" >&2
     return 1
@@ -836,15 +854,22 @@ PY
   assert_pending_lease
 
   rm -rf "`$UI_RELEASE.tmp"
-  mkdir -p "`$UI_RELEASE.tmp"
+  install -d -m 0755 "`$UI_RELEASE.tmp"
   tar -xzf "`$REMOTE_UI_ARCHIVE" -C "`$UI_RELEASE.tmp"
   test -s "`$UI_RELEASE.tmp/index.html"
+  test -z "`$(find "`$UI_RELEASE.tmp" -type l -print -quit)"
+  find "`$UI_RELEASE.tmp" -type d -exec chmod 0755 {} +
+  find "`$UI_RELEASE.tmp" -type f -exec chmod 0644 {} +
   if [ -e "`$UI_RELEASE" ]; then
     diff -qr "`$UI_RELEASE" "`$UI_RELEASE.tmp" >/dev/null
     rm -rf "`$UI_RELEASE.tmp"
   else
     mv "`$UI_RELEASE.tmp" "`$UI_RELEASE"
   fi
+  test -z "`$(find "`$UI_RELEASE" -type l -print -quit)"
+  find "`$UI_RELEASE" -type d -exec chmod 0755 {} +
+  find "`$UI_RELEASE" -type f -exec chmod 0644 {} +
+  runuser -u "`$ANGIE_WORKER_USER" -- test -r "`$UI_RELEASE/index.html"
   assert_pending_lease
   podman load -i "`$REMOTE_ARCHIVE" >/dev/null
   podman image exists "`$IMAGE"
@@ -884,6 +909,7 @@ PY
   rm -f "`$temporary_link"
   ln -s "`$UI_RELEASE" "`$temporary_link"
   mv -T "`$temporary_link" "`$UI_PATH"
+  runuser -u "`$ANGIE_WORKER_USER" -- test -r "`$UI_PATH/index.html"
   write_record "candidate-verified"
   flock -u 8
   trap - ERR
@@ -952,6 +978,23 @@ try {
     $metadata = $discovery.Content | ConvertFrom-Json
     if ($metadata.issuer -ne $ExpectedIssuer) {
         throw "Unexpected issuer in discovery document: $($metadata.issuer)"
+    }
+    $ui = Invoke-WebRequest -Uri $UiUrl -UseBasicParsing -TimeoutSec 20
+    if ($ui.StatusCode -ne 200 -or [string]::IsNullOrWhiteSpace($ui.Content)) {
+        throw "Public UI probe failed: HTTP $($ui.StatusCode)"
+    }
+    $assetMatch = [regex]::Match(
+        $ui.Content,
+        '(?:src|href)=["''](?<path>/ui/assets/[^"''?#]+(?:[?#][^"'']*)?)["'']',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase
+    )
+    if (-not $assetMatch.Success) {
+        throw "Public UI probe did not find a same-origin /ui/assets reference"
+    }
+    $assetUrl = [Uri]::new([Uri]$UiUrl, $assetMatch.Groups['path'].Value)
+    $asset = Invoke-WebRequest -Uri $assetUrl -UseBasicParsing -TimeoutSec 20
+    if ($asset.StatusCode -ne 200 -or [string]::IsNullOrWhiteSpace($asset.Content)) {
+        throw "Public UI asset probe failed: HTTP $($asset.StatusCode)"
     }
 
     Invoke-Checked ssh $RemoteHost @($commitCommand)

@@ -1,11 +1,15 @@
 import hashlib
+import http.server
 import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import tempfile
+import threading
 import unittest
+import urllib.request
 from pathlib import Path
 
 
@@ -181,10 +185,14 @@ class FakeLifecycle:
         self.root = root
         self.deployment = root / "remote-deployment"
         self.remote_temp = root / "remote-temp"
+        self.public_root = root / "public"
+        self.ui_path = self.public_root / "ui" / "auth"
+        self.ui_releases = self.public_root / "auth-releases"
         self.keys = self.deployment / "runtime" / "keys"
         self.avatars = self.deployment / "runtime" / "avatars"
         self.keys.mkdir(parents=True)
         self.avatars.mkdir(parents=True)
+        self.ui_path.parent.mkdir(parents=True, mode=0o755)
         (self.deployment / ".env.yaml").write_text("server: {}\n", encoding="utf-8")
         self.remote_temp.mkdir()
         rendered = render_fixture(
@@ -195,7 +203,8 @@ class FakeLifecycle:
                 "-RemoteConfigPath", bash_path(self.deployment / ".env.yaml"),
                 "-RemoteKeysPath", bash_path(self.keys),
                 "-RemoteAvatarsPath", bash_path(self.avatars),
-                "-RemoteUiPath", bash_path(self.deployment / "ui"),
+                "-RemoteUiPath", bash_path(self.ui_path),
+                "-RemoteUiReleasesRoot", bash_path(self.ui_releases),
                 "-VerificationLeaseSeconds", str(lease_seconds),
             ],
             skip_migrate=skip_migrate,
@@ -302,9 +311,20 @@ printf '%s\n' ok
             "exit 2\n",
             encoding="utf-8", newline="\n",
         )
+        runuser = self.fake_bin / "runuser"
+        runuser.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf '%q ' \"$@\" >>\"$FAKE_STATE/runuser.log\"; printf '\\n' >>\"$FAKE_STATE/runuser.log\"\n"
+            "[ \"${1:-}\" = -u ] && [ \"${2:-}\" = www ] && [ \"${3:-}\" = -- ]\n"
+            "shift 3\n"
+            "exec \"$@\"\n",
+            encoding="utf-8", newline="\n",
+        )
         podman.chmod(0o755)
         curl.chmod(0o755)
         flock.chmod(0o755)
+        runuser.chmod(0o755)
 
     def run(self, action: str, **flags: str) -> subprocess.CompletedProcess[str]:
         env = self.env.copy()
@@ -352,8 +372,21 @@ class DeployLiveContractTests(unittest.TestCase):
             self.source,
             r"\[Parameter\(Mandatory\s*=\s*\$true\)\]\s*\[string\]\$FrontendCommit",
         )
-        self.assertIn("ui-releases", self.source)
+        self.assertIn('/usr/local/angie/html/auth-releases', self.source)
         self.assertIn("FrontendCommit", self.source)
+
+    def test_public_ui_defaults_are_worker_traversable_and_probed_before_commit(self) -> None:
+        self.assertIn('[string]$RemoteUiPath = "/usr/local/angie/html/auth"', self.source)
+        self.assertIn('[string]$AngieWorkerUser = "www"', self.source)
+        self.assertIn('[string]$UiUrl = "https://auth.nazo.run/ui/auth"', self.source)
+        worker_probe = self.source.index('runuser -u "`$ANGIE_WORKER_USER" -- test -r "`$UI_PATH/index.html"')
+        public_probe = self.source.index("Invoke-WebRequest -Uri $UiUrl")
+        asset_probe = self.source.index("Invoke-WebRequest -Uri $assetUrl")
+        commit = self.source.index('Invoke-Checked ssh $RemoteHost @($commitCommand)')
+        self.assertLess(worker_probe, public_probe)
+        self.assertLess(public_probe, asset_probe)
+        self.assertLess(asset_probe, commit)
+        self.assertIn("/ui/assets/", self.source)
 
     def test_remote_host_rejects_ssh_options_and_shell_metacharacters(self) -> None:
         valid_commit = "0" * 40
@@ -702,7 +735,7 @@ bash "$1" deploy
     def test_fake_lifecycle_immediate_rollback_restores_first_directory_ui_and_migrates_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             lifecycle = FakeLifecycle(Path(directory), skip_migrate=False)
-            ui = lifecycle.deployment / "ui"
+            ui = lifecycle.ui_path
             ui.mkdir()
             (ui / "index.html").write_text("old-ui", encoding="utf-8")
             deployed = lifecycle.run("deploy")
@@ -727,7 +760,7 @@ bash "$1" deploy
     def test_fake_lifecycle_old_image_run_failure_is_nonzero_and_preserves_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             lifecycle = FakeLifecycle(Path(directory))
-            ui = lifecycle.deployment / "ui"
+            ui = lifecycle.ui_path
             ui.mkdir()
             (ui / "index.html").write_text("old-ui", encoding="utf-8")
             deployments = lifecycle.deployment / "deployments"
@@ -765,6 +798,58 @@ bash "$1" deploy
             self.assertTrue(lifecycle.script.exists())
             self.assertTrue((lifecycle.deployment / "deployments" / "active-deployment").exists())
             self.assertTrue(Path(str(lifecycle.state) + ".lease-rollback").exists())
+
+    def test_fake_lifecycle_ui_release_is_worker_readable_and_served_at_ui_auth(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            lifecycle = FakeLifecycle(Path(directory))
+            deployed = lifecycle.run("deploy")
+            self.assertEqual(deployed.returncode, 0, deployed.stderr)
+            release = lifecycle.ui_releases / re.search(
+                r"^FRONTEND_COMMIT='([^']+)'",
+                lifecycle.script.read_text(encoding="utf-8"),
+                re.M,
+            ).group(1)
+            self.assertEqual((release / "index.html").read_text(encoding="utf-8"), "candidate")
+            linked_release = subprocess.run(
+                [git_bash(), "-lc", 'readlink "$1"', "_", bash_path(lifecycle.ui_path)],
+                check=True, capture_output=True, text=True, env=lifecycle.env,
+            ).stdout.strip()
+            self.assertEqual(linked_release, bash_path(release))
+
+            runuser_log = (lifecycle.fake_state / "runuser.log").read_text(encoding="utf-8")
+            self.assertIn("-u www -- test -r", runuser_log)
+            self.assertIn("auth-releases", runuser_log)
+            self.assertIn("/ui/auth/index.html", runuser_log)
+            if os.name != "nt":
+                for directory_path in (lifecycle.public_root, lifecycle.ui_releases, release):
+                    self.assertEqual(
+                        stat.S_IMODE(directory_path.stat().st_mode) & 0o005,
+                        0o005,
+                        f"Angie worker cannot traverse {directory_path}",
+                    )
+                self.assertNotEqual(
+                    stat.S_IMODE((release / "index.html").stat().st_mode) & 0o004,
+                    0,
+                )
+
+            if os.name != "nt":
+                handler = lambda *args, **kwargs: http.server.SimpleHTTPRequestHandler(
+                    *args, directory=str(lifecycle.public_root), **kwargs
+                )
+                server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
+                thread = threading.Thread(target=server.serve_forever, daemon=True)
+                thread.start()
+                try:
+                    with urllib.request.urlopen(
+                        f"http://127.0.0.1:{server.server_port}/ui/auth",
+                        timeout=5,
+                    ) as response:
+                        self.assertEqual(response.status, 200)
+                        self.assertEqual(response.read(), b"candidate")
+                finally:
+                    server.shutdown()
+                    server.server_close()
+                    thread.join(timeout=5)
 
     def test_fake_lifecycle_corrupt_or_partial_state_fails_closed_and_preserves_evidence(self) -> None:
         for payload in ("{", '{"schema":1}'):
