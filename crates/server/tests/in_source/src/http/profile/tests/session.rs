@@ -31,8 +31,9 @@ async fn logout_response_clears_session_and_csrf_cookies_without_cacheable_state
     assert!(
         set_cookie
             .iter()
-            .any(|cookie| cookie.contains("sid=") && cookie.contains("Max-Age=0"))
+            .any(|cookie| cookie.contains("session=") && cookie.contains("Max-Age=0"))
     );
+    assert!(set_cookie.iter().all(|cookie| !cookie.contains("sid=")));
     assert!(
         set_cookie
             .iter()

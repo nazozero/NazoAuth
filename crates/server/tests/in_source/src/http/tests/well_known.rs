@@ -12,7 +12,7 @@ fn settings(profile: AuthorizationServerProfile, trusted_proxy_cidrs: Vec<IpCidr
     let mut settings =
         Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
-    settings.endpoint.mtls_endpoint_base_url = "https://issuer.example".to_owned();
+    settings.endpoint.mtls_endpoint_base_url = "https://mtls.issuer.example".to_owned();
     settings.endpoint.frontend_base_url = "https://frontend.example".to_owned();
     settings.endpoint.cors_allowed_origins = vec!["https://frontend.example".to_owned()];
     settings.endpoint.trusted_proxy_cidrs = trusted_proxy_cidrs;

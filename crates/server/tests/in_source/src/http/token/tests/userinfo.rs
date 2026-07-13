@@ -57,13 +57,17 @@ fn userinfo_test_state() -> AppState {
     }
 }
 
-async fn call_userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+fn userinfo_token_service(state: &AppState) -> ServerTokenService {
     let connection = state.valkey_connection();
-    let token_service = Data::new(ServerTokenService::new(
+    ServerTokenService::new(
         nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
         nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
         state.keyset.clone(),
-    ));
+    )
+}
+
+async fn call_userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
+    let token_service = Data::new(userinfo_token_service(&state));
     userinfo(state, token_service, req, body).await
 }
 
@@ -221,8 +225,9 @@ async fn access_token_user_id_prefers_valid_user_id_claim_without_valkey_lookup(
     let state = userinfo_test_state();
     let expected_user_id = Uuid::now_v7();
     let claims = userinfo_access_claims(Some(expected_user_id.to_string()));
+    let token_service = userinfo_token_service(&state);
 
-    let actual = access_token_user_id(&state, DEFAULT_TENANT_ID, &claims)
+    let actual = access_token_user_id(&token_service, DEFAULT_TENANT_ID, &claims)
         .await
         .expect("valid user_id claim should not require valkey");
 
@@ -247,8 +252,9 @@ async fn access_token_user_id_uses_valkey_when_user_id_claim_is_absent() {
         )
         .await
         .expect("subject mapping should be stored");
+    let token_service = userinfo_token_service(&state);
 
-    let actual = access_token_user_id(&state, DEFAULT_TENANT_ID, &claims)
+    let actual = access_token_user_id(&token_service, DEFAULT_TENANT_ID, &claims)
         .await
         .expect("stored subject mapping should load");
 
@@ -259,9 +265,10 @@ async fn access_token_user_id_uses_valkey_when_user_id_claim_is_absent() {
 async fn access_token_user_id_rejects_unavailable_subject_mapping_store() {
     let state = userinfo_test_state();
     let claims = userinfo_access_claims(None);
+    let token_service = userinfo_token_service(&state);
 
     assert!(
-        access_token_user_id(&state, DEFAULT_TENANT_ID, &claims)
+        access_token_user_id(&token_service, DEFAULT_TENANT_ID, &claims)
             .await
             .is_err()
     );

@@ -31,7 +31,10 @@ impl From<&Settings> for MetadataConfig {
             subject_type: protocol.subject_type,
             pairwise_subject_enabled: protocol.pairwise_subject_secret.is_some(),
             protected_resource_identifier: protocol.protected_resource_identifier.to_owned(),
-            require_pushed_authorization_requests: protocol.require_pushed_authorization_requests,
+            require_pushed_authorization_requests: protocol.require_pushed_authorization_requests
+                || protocol
+                    .authorization_server_profile
+                    .requires_fapi2_security(),
             request_uri_parameter_enabled: modules.enable_request_uri_parameter,
         }
     }

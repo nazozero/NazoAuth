@@ -6,6 +6,10 @@ fn signing_adapters_do_not_define_or_call_claim_forwarders() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/support/security/tokens.rs");
     let source = std::fs::read_to_string(&server_tokens)
         .expect("server token adapter source must exist relative to its manifest");
+    let key_management_tokens =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../key-management/src/token.rs");
+    let key_management_source = std::fs::read_to_string(&key_management_tokens)
+        .expect("key-management token adapter source must exist relative to the server manifest");
 
     for forbidden in [
         "pub(super) fn access_token_claims(",
@@ -25,7 +29,6 @@ fn signing_adapters_do_not_define_or_call_claim_forwarders() {
 
     for required in [
         "nazo_auth::access_token_claims(",
-        "nazo_auth::id_token_claims(",
         "nazo_auth::backchannel_logout_token_claims(",
         "nazo_auth::authorization_response_jwt_claims(",
     ] {
@@ -34,6 +37,10 @@ fn signing_adapters_do_not_define_or_call_claim_forwarders() {
             "signing adapter must call public auth builder directly: {required}"
         );
     }
+    assert!(
+        key_management_source.contains("id_token_claims("),
+        "key-management token adapter must call the imported public auth ID-token builder directly"
+    );
 }
 
 #[test]
