@@ -9,8 +9,7 @@ use serde::Deserialize;
 use serde_json::json;
 
 use crate::bootstrap::LocalRegistrationService;
-use crate::support::client_ip::ClientIpConfig;
-use crate::support::{AuthRateLimitConfig, enforce_auth_rate_limit, normalize_email_address};
+use crate::support::{AuthRequestLimiter, normalize_email_address};
 
 #[derive(Clone, Copy)]
 pub(crate) struct EmailCodeHttpConfig {
@@ -32,22 +31,13 @@ pub(crate) struct SendCodeRequest {
 
 /// 生成并保存注册邮箱验证码。
 pub(crate) async fn send_code(
-    rate_limits: Data<nazo_valkey::RateLimitStore>,
-    rate_limit_config: Data<AuthRateLimitConfig>,
-    client_ip_config: Data<ClientIpConfig>,
+    rate_limiter: Data<AuthRequestLimiter>,
     registration: Data<LocalRegistrationService>,
     http_config: Data<EmailCodeHttpConfig>,
     req: HttpRequest,
     Json(payload): Json<SendCodeRequest>,
 ) -> HttpResponse {
-    if let Err(response) = enforce_auth_rate_limit(
-        rate_limits.get_ref(),
-        &req,
-        *rate_limit_config.get_ref(),
-        client_ip_config.get_ref(),
-    )
-    .await
-    {
+    if let Err(response) = rate_limiter.enforce(&req).await {
         return response;
     }
 

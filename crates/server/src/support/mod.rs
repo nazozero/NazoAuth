@@ -82,8 +82,8 @@ pub(crate) use passkeys::{
     store_passkey_ceremony, take_passkey_ceremony,
 };
 pub(crate) use rate_limit::{
-    AuthRateLimitConfig, RateLimitPolicy, enforce_auth_rate_limit, enforce_rate_limit,
-    enforce_rate_limit_with_store, rate_limited_response,
+    AuthRequestLimiter, RateLimitPolicy, enforce_rate_limit, enforce_rate_limit_with_store,
+    rate_limited_response,
 };
 pub(crate) use sector_identifier::{fetch_sector_identifier_uris, sector_identifier_hostname};
 pub(crate) use security::{

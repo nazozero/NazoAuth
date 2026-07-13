@@ -23,6 +23,36 @@ pub(crate) struct AuthRateLimitConfig {
     max_requests: u64,
 }
 
+/// Focused HTTP security dependency for authentication endpoint rate limits.
+///
+/// It owns the storage adapter, threshold policy, and trusted-proxy client IP
+/// derivation so handlers cannot issue Valkey commands or reconstruct policy.
+#[derive(Clone)]
+pub(crate) struct AuthRequestLimiter {
+    store: nazo_valkey::RateLimitStore,
+    config: AuthRateLimitConfig,
+    client_ip: ClientIpConfig,
+}
+
+impl AuthRequestLimiter {
+    pub(crate) fn new(
+        store: nazo_valkey::RateLimitStore,
+        window_seconds: u64,
+        max_requests: u64,
+        client_ip: ClientIpConfig,
+    ) -> Self {
+        Self {
+            store,
+            config: AuthRateLimitConfig::new(window_seconds, max_requests),
+            client_ip,
+        }
+    }
+
+    pub(crate) async fn enforce(&self, req: &HttpRequest) -> Result<(), HttpResponse> {
+        enforce_auth_rate_limit(&self.store, req, self.config, &self.client_ip).await
+    }
+}
+
 impl AuthRateLimitConfig {
     pub(crate) fn new(window_seconds: u64, max_requests: u64) -> Self {
         Self {

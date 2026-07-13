@@ -127,19 +127,15 @@ pub(crate) mod test_support {
         ))
     }
 
-    pub(crate) fn auth_rate_limits(
+    pub(crate) fn auth_request_limiter(
         state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<nazo_valkey::RateLimitStore> {
-        actix_web::web::Data::new(nazo_valkey::RateLimitStore::new(&state.valkey_connection()))
-    }
-
-    pub(crate) fn auth_rate_limit_config(
-        state: &crate::domain::AppState,
-    ) -> actix_web::web::Data<crate::support::AuthRateLimitConfig> {
+    ) -> actix_web::web::Data<crate::support::AuthRequestLimiter> {
         let rate_limit = &state.settings.identity.rate_limit;
-        actix_web::web::Data::new(crate::support::AuthRateLimitConfig::new(
+        actix_web::web::Data::new(crate::support::AuthRequestLimiter::new(
+            nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
             rate_limit.window_seconds,
             rate_limit.auth_max_requests,
+            client_ip_config(state).get_ref().clone(),
         ))
     }
 

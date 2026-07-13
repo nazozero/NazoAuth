@@ -37,7 +37,7 @@ use crate::settings::Settings;
 use crate::support::client_ip::ClientIpConfig;
 use crate::support::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
 use crate::support::{
-    AuthRateLimitConfig, SmtpVerificationEmailDelivery, configure_password_hash_limits,
+    AuthRequestLimiter, SmtpVerificationEmailDelivery, configure_password_hash_limits,
     default_password_hash_max_concurrency, default_password_hash_queue_timeout_ms,
     default_tenant_context, dummy_password_hash, email_delivery_configured,
     initialize_dummy_password_hash,
@@ -256,11 +256,11 @@ pub async fn run() -> anyhow::Result<()> {
         endpoint.client_ip_header_mode,
     ));
     let identity = &state.settings.identity;
-    let registration_rate_limits =
-        web::Data::new(nazo_valkey::RateLimitStore::new(&state.valkey_connection()));
-    let auth_rate_limit_config = web::Data::new(AuthRateLimitConfig::new(
+    let auth_request_limiter = web::Data::new(AuthRequestLimiter::new(
+        nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
         identity.rate_limit.window_seconds,
         identity.rate_limit.auth_max_requests,
+        client_ip_config.get_ref().clone(),
     ));
     let email_code_http_config = web::Data::new(EmailCodeHttpConfig::new(
         identity.email_code_dev_response_enabled,
@@ -367,8 +367,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_client_config.clone())
             .app_data(admin_client_keyset.clone())
             .app_data(client_ip_config.clone())
-            .app_data(registration_rate_limits.clone())
-            .app_data(auth_rate_limit_config.clone())
+            .app_data(auth_request_limiter.clone())
             .app_data(email_code_http_config.clone())
             .app_data(registration.clone())
             .app_data(authentication.clone())

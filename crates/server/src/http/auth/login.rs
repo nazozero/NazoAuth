@@ -14,9 +14,7 @@ use serde_json::json;
 
 use crate::bootstrap::LocalAuthenticationService;
 use crate::support::client_ip::{ClientIpConfig, client_ip_with_config};
-use crate::support::{
-    AuthRateLimitConfig, MFA_REMEMBERED_COOKIE_NAME, blake3_hex, enforce_auth_rate_limit,
-};
+use crate::support::{AuthRequestLimiter, MFA_REMEMBERED_COOKIE_NAME, blake3_hex};
 
 #[derive(Clone)]
 pub(crate) struct LoginHttpConfig {
@@ -62,8 +60,7 @@ enum LoginResponseMode {
 }
 
 pub(crate) async fn login(
-    rate_limits: Data<nazo_valkey::RateLimitStore>,
-    rate_limit_config: Data<AuthRateLimitConfig>,
+    rate_limiter: Data<AuthRequestLimiter>,
     client_ip_config: Data<ClientIpConfig>,
     authentication: Data<LocalAuthenticationService>,
     http_config: Data<LoginHttpConfig>,
@@ -79,14 +76,7 @@ pub(crate) async fn login(
     {
         return oauth_error(StatusCode::FORBIDDEN, "access_denied", "登录来源无效.");
     }
-    if let Err(response) = enforce_auth_rate_limit(
-        rate_limits.get_ref(),
-        &req,
-        *rate_limit_config.get_ref(),
-        client_ip_config.get_ref(),
-    )
-    .await
-    {
+    if let Err(response) = rate_limiter.enforce(&req).await {
         return response;
     }
 

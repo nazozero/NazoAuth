@@ -60,8 +60,7 @@ fn password_login_handler_has_no_identity_or_storage_orchestration() {
 
 async fn login(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     super::login(
-        auth_rate_limits(state.get_ref()),
-        auth_rate_limit_config(state.get_ref()),
+        auth_request_limiter(state.get_ref()),
         client_ip_config(state.get_ref()),
         authentication_service(state.get_ref()),
         login_http_config(state.get_ref()),
