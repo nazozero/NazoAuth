@@ -4,8 +4,10 @@ use std::sync::Arc;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
+use crate::schema::{access_token_revocations, oauth_tokens};
 use crate::support::{client_signing_fixture, hash_client_secret};
 use actix_web::test::TestRequest;
+use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;

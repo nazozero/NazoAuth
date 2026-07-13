@@ -17,8 +17,6 @@ use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Duration;
 use chrono::{DateTime, Utc};
-#[cfg(test)]
-use diesel::QueryableByName;
 use nazo_http_actix::oauth_token_error;
 #[cfg(test)]
 use serde_json::Value;

@@ -3,8 +3,6 @@ use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::ClientRow;
 #[cfg(test)]
-use crate::schema::{access_token_revocations, oauth_tokens};
-#[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
@@ -23,8 +21,6 @@ use actix_web::http::header::HeaderValue;
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{DateTime, Utc};
-#[cfg(test)]
-use diesel::prelude::*;
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::empty_response_no_store;

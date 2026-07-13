@@ -2,8 +2,6 @@
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
 use crate::domain::{AppState, ClientRow};
-#[cfg(test)]
-use crate::schema::oauth_clients;
 use crate::settings::Settings;
 use crate::support::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, JwePayloadKind, access_token_tenant_id,
@@ -23,8 +21,6 @@ use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::{Duration, Utc};
-#[cfg(test)]
-use diesel::prelude::*;
 use nazo_auth::Claims;
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
