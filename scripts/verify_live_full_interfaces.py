@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import secrets
+import subprocess
 import time
 import urllib.parse
 import uuid
@@ -16,6 +17,7 @@ BASE_URL = "https://auth.nazo.run"
 REMOTE_BASE = Path("/opt/nazo-oauth")
 SECRETS_PATH = REMOTE_BASE / "secrets.json"
 EXPECTED_BACKEND_SHA = ""
+DEPLOYMENT_RECORD = REMOTE_BASE / "deployments" / "current.json"
 RUN_ID = f"live-full-{int(time.time())}-{secrets.token_hex(3)}"
 PASSWORD = f"{RUN_ID}-Passw0rd!"
 CSRF_COOKIE = "nazo_oauth_csrf"
@@ -69,6 +71,38 @@ def main(argv: list[str] | None = None) -> None:
     EXPECTED_BACKEND_SHA = args.expected_backend_sha
     load_runtime_dependencies()
     run()
+
+
+def verify_deployed_backend(
+    expected_sha: str,
+    deployment_record: Path = DEPLOYMENT_RECORD,
+    command_runner=subprocess.run,
+) -> None:
+    if len(expected_sha) != 40 or any(character not in "0123456789abcdef" for character in expected_sha):
+        raise AssertionError("expected backend SHA must be a full lowercase Git SHA")
+    record = json.loads(deployment_record.read_text(encoding="utf-8"))
+    if record.get("status") != "deployment-success":
+        raise AssertionError(f"deployment record is not successful: {record.get('status')!r}")
+    if record.get("backend_commit") != expected_sha:
+        raise AssertionError("deployment record backend SHA does not match the expected candidate")
+
+    inspected = command_runner(
+        [
+            "podman",
+            "inspect",
+            "nazo-oauth-server",
+            "--format",
+            '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    if inspected.returncode != 0:
+        raise AssertionError(f"cannot inspect deployed server revision: {inspected.stderr.strip()}")
+    if inspected.stdout.strip() != expected_sha:
+        raise AssertionError("running container revision does not match the expected candidate")
 
 
 def b64u(raw: bytes) -> str:
@@ -534,6 +568,7 @@ def request_object(client_id: str, jwk: dict, alg: str):
 
 
 def run():
+    verify_deployed_backend(EXPECTED_BACKEND_SHA)
     secrets_doc = json.loads(SECRETS_PATH.read_text(encoding="utf-8"))
     redis_client = redis.Redis(host="10.101.0.11", port=6379, db=0, decode_responses=True)
     with psycopg.connect(db_url(secrets_doc), autocommit=True) as conn:

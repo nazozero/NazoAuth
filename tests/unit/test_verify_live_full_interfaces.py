@@ -1,3 +1,5 @@
+import importlib.util
+import json
 import subprocess
 import sys
 import tempfile
@@ -39,6 +41,38 @@ class VerifyLiveCliTests(unittest.TestCase):
 
         self.assertIn('default="https://auth.nazo.run"', source)
         self.assertIn('default="/opt/nazo-oauth/secrets.json"', source)
+
+    def test_backend_sha_is_bound_to_record_and_running_container(self) -> None:
+        spec = importlib.util.spec_from_file_location("live_verifier", SCRIPT)
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        expected = "a" * 40
+
+        with tempfile.TemporaryDirectory() as directory:
+            record = Path(directory) / "current.json"
+            record.write_text(
+                json.dumps(
+                    {
+                        "status": "deployment-success",
+                        "backend_commit": expected,
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            def runner(*_args, **_kwargs):
+                return subprocess.CompletedProcess([], 0, stdout=expected + "\n", stderr="")
+
+            module.verify_deployed_backend(expected, record, runner)
+
+            record.write_text(
+                json.dumps({"status": "deployment-success", "backend_commit": "b" * 40}),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(AssertionError, "record backend SHA"):
+                module.verify_deployed_backend(expected, record, runner)
 
 
 if __name__ == "__main__":
