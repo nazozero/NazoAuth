@@ -96,8 +96,9 @@ impl AuthenticationStore {
         command::take(&self.connection, key)
             .await?
             .map(|raw| {
-                serde_json::from_str(&raw)
-                    .map_err(|e| Error::protocol(format!("malformed authentication state: {e}")))
+                serde_json::from_str(&raw).map_err(|e| {
+                    Error::corrupt_data(format!("malformed authentication state: {e}"))
+                })
             })
             .transpose()
     }

@@ -91,6 +91,14 @@ pub(crate) async fn authorize_decision(
     let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
     let payload = match store.load_consent(&form.request_id).await {
         Ok(value) => value,
+        Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
+            tracing::warn!(%error, "authorization consent state is malformed");
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "授权请求不存在或已过期,请重新发起授权.",
+            );
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to read authorization consent state");
             return oauth_error(

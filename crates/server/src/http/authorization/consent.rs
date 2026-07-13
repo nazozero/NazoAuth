@@ -78,6 +78,10 @@ pub(crate) async fn authorize_consent(
     let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
     let payload = match store.load_consent(request_id).await {
         Ok(value) => value,
+        Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
+            tracing::warn!(%error, "authorization consent state is malformed");
+            return malformed_or_missing_consent_response();
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to read authorization consent state");
             return oauth_error(

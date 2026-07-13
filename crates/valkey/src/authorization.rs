@@ -173,14 +173,14 @@ impl AuthorizationStore {
             return serde_json::from_str(raw)
                 .map(AuthorizationCodeBegin::Consuming)
                 .map_err(|error| {
-                    Error::protocol(format!("malformed consuming authorization code: {error}"))
+                    Error::corrupt_data(format!("malformed consuming authorization code: {error}"))
                 });
         }
         if let Some(raw) = reply.strip_prefix("consumed|") {
             return serde_json::from_str(raw)
                 .map(AuthorizationCodeBegin::Consumed)
                 .map_err(|error| {
-                    Error::protocol(format!("malformed consumed authorization code: {error}"))
+                    Error::corrupt_data(format!("malformed consumed authorization code: {error}"))
                 });
         }
         match reply.as_str() {
@@ -244,7 +244,7 @@ impl AuthorizationStore {
             .await?
             .map(|raw| {
                 raw.parse().map_err(|error| {
-                    Error::protocol(format!("malformed reauth timestamp: {error}"))
+                    Error::corrupt_data(format!("malformed reauth timestamp: {error}"))
                 })
             })
             .transpose()
@@ -270,7 +270,7 @@ impl AuthorizationStore {
             .await?
             .map(|raw| {
                 serde_json::from_str(&raw).map_err(|error| {
-                    Error::protocol(format!("malformed authorization state: {error}"))
+                    Error::corrupt_data(format!("malformed authorization state: {error}"))
                 })
             })
             .transpose()
@@ -284,7 +284,7 @@ impl AuthorizationStore {
             .await?
             .map(|raw| {
                 serde_json::from_str(&raw).map_err(|error| {
-                    Error::protocol(format!("malformed consumed authorization state: {error}"))
+                    Error::corrupt_data(format!("malformed consumed authorization state: {error}"))
                 })
             })
             .transpose()

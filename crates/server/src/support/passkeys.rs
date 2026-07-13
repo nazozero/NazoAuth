@@ -138,11 +138,19 @@ where
     }
     .map_err(|error| {
         tracing::warn!(%error, "failed to take passkey ceremony");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "passkey state unavailable.",
-        )
+        if error.kind() == nazo_valkey::ErrorKind::CorruptData {
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "passkey ceremony expired.",
+            )
+        } else {
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "passkey state unavailable.",
+            )
+        }
     })?;
     value
         .map(|value| {

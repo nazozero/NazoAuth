@@ -88,11 +88,19 @@ pub(super) async fn take_social_state(
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to load social federation state");
-            oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "federation state failed.",
-            )
+            if error.kind() == nazo_valkey::ErrorKind::CorruptData {
+                oauth_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "federation state expired.",
+                )
+            } else {
+                oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "federation state failed.",
+                )
+            }
         })?;
     value
         .map(|value| {
