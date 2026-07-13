@@ -1,8 +1,10 @@
 use super::*;
 use actix_web::{App, HttpResponse, http::StatusCode, test, web};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use crate::bootstrap::routes;
+use crate::domain::AppState;
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, EmailDelivery, EmailSettings, FederationSettings,
     PasskeySettings, RateLimitSettings, RequestObjectJtiPolicy, SubjectType,
@@ -148,11 +150,26 @@ async fn authorization_endpoint_is_not_cors_enabled() {
 }
 
 #[actix_web::test]
-async fn dynamic_client_registration_route_is_absent_when_disabled() {
-    let settings = test_settings(vec!["https://app.example".to_owned()]);
-    let app =
-        test::init_service(App::new().configure(|cfg| routes::configure(cfg, &settings, false)))
-            .await;
+async fn disabled_dynamic_client_registration_rejects_before_body_parsing() {
+    let settings = Arc::new(test_settings(vec!["https://app.example".to_owned()]));
+    let state = web::Data::new(AppState {
+        diesel_db: nazo_postgres::create_pool(
+            "postgres://disabled_dcr:disabled_dcr@127.0.0.1:1/nazo".to_owned(),
+            1,
+        )
+        .expect("test pool construction should not connect"),
+        valkey: fred::prelude::Builder::default_centralized()
+            .build()
+            .expect("test Valkey client construction should not connect"),
+        settings: settings.clone(),
+        keyset: crate::test_support::test_key_manager(),
+    });
+    let app = test::init_service(
+        App::new()
+            .app_data(state)
+            .configure(|cfg| routes::configure(cfg, &settings, false)),
+    )
+    .await;
 
     let request = test::TestRequest::post()
         .uri("/register")
@@ -164,7 +181,7 @@ async fn dynamic_client_registration_route_is_absent_when_disabled() {
     assert_eq!(
         response.status(),
         StatusCode::NOT_FOUND,
-        "disabled dynamic registration must not expose a JSON parsing route"
+        "disabled dynamic registration must reject before parsing an invalid body"
     );
 }
 

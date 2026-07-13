@@ -14,8 +14,8 @@ use actix_web::http::StatusCode;
 use actix_web::http::header;
 #[cfg(test)]
 use actix_web::http::header::HeaderValue;
-use actix_web::web::{Data, Json};
-use actix_web::{HttpRequest, HttpResponse};
+use actix_web::web::{Data, Json, Payload};
+use actix_web::{FromRequest, HttpRequest, HttpResponse};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -134,11 +134,17 @@ pub(crate) struct DynamicRegistrationError {
 pub(crate) async fn dynamic_client_registration(
     state: Data<AppState>,
     req: HttpRequest,
-    Json(payload): Json<DynamicClientRegistrationRequest>,
+    body: Payload,
 ) -> HttpResponse {
     if !state.accepts_module(nazo_runtime_modules::ModuleId::DynamicClientRegistration) {
         return empty_response(StatusCode::NOT_FOUND);
     }
+    let mut body = body.into_inner();
+    let Json(payload) =
+        match Json::<DynamicClientRegistrationRequest>::from_request(&req, &mut body).await {
+            Ok(payload) => payload,
+            Err(error) => return error.error_response(),
+        };
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
     {
         return response;
@@ -275,11 +281,16 @@ pub(crate) async fn client_configuration_put(
     state: Data<AppState>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
-    Json(payload): Json<Value>,
+    body: Payload,
 ) -> HttpResponse {
     if !state.accepts_module(nazo_runtime_modules::ModuleId::DynamicClientRegistration) {
         return empty_response(StatusCode::NOT_FOUND);
     }
+    let mut body = body.into_inner();
+    let Json(payload) = match Json::<Value>::from_request(&req, &mut body).await {
+        Ok(payload) => payload,
+        Err(error) => return error.error_response(),
+    };
     if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
     {
         return response;

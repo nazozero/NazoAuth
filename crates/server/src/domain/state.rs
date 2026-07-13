@@ -41,8 +41,7 @@ impl AppState {
         }
         #[cfg(test)]
         {
-            let _ = admission;
-            static_module_enabled(&self.settings, module_id)
+            nazo_auth::module_admissible(&self.test_module_snapshot(), module_id, admission)
         }
     }
 
@@ -59,23 +58,12 @@ impl AppState {
             nazo_auth::CapabilityAdmission::ExistingTransaction,
         )
     }
-}
-
-#[cfg(test)]
-fn static_module_enabled(settings: &Settings, module_id: nazo_runtime_modules::ModuleId) -> bool {
-    use nazo_runtime_modules::ModuleId;
-    match module_id {
-        ModuleId::DeviceAuthorization => settings.enable_device_authorization_grant,
-        ModuleId::TokenExchange | ModuleId::JwtBearerGrant | ModuleId::Jarm | ModuleId::Scim => {
-            true
+    #[cfg(test)]
+    fn test_module_snapshot(&self) -> nazo_runtime_modules::ActiveModuleSnapshot {
+        nazo_runtime_modules::ActiveModuleSnapshot {
+            revision: nazo_runtime_modules::ModuleRevision::new(0),
+            accepting: crate::runtime_modules::inherited_enabled(&self.settings),
+            draining: std::collections::BTreeSet::new(),
         }
-        ModuleId::Ciba => settings.enable_ciba,
-        ModuleId::DynamicClientRegistration => settings.enable_dynamic_client_registration,
-        ModuleId::RequestObjects => settings.enable_request_object,
-        ModuleId::AuthorizationDetails => settings.enable_authorization_details,
-        ModuleId::HttpMessageSignatures => settings.enable_fapi_http_signatures,
-        ModuleId::NativeSso => settings.enable_native_sso,
-        ModuleId::FrontchannelLogout => settings.enable_frontchannel_logout,
-        ModuleId::SessionManagement => settings.enable_session_management,
     }
 }
