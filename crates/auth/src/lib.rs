@@ -24,6 +24,7 @@ mod resource_indicator;
 mod sender_constraint;
 mod signing;
 mod token;
+mod token_endpoint;
 mod token_service;
 mod transaction;
 mod uri_policy;
@@ -96,7 +97,7 @@ pub use device::{
     device_authorization_payload, device_authorization_request_payload, evaluate_device_poll,
 };
 pub use error::{ProtocolError, ProtocolErrorCode};
-pub use grant::GrantType;
+pub use grant::{GrantType, UnsupportedGrantType};
 pub use metadata::{
     AuthorizationServerMetadataInput, CapabilityAdmission, CibaMetadataProfile,
     MetadataAuthorizationServerProfile, MetadataCapabilities, MetadataSigningAlgorithms,
@@ -125,6 +126,14 @@ pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{
     BackchannelLogoutDelivery, LostResponseRetry, NewRefreshToken,
     PendingBackchannelLogoutDelivery, RefreshToken, RefreshTokenPersistResult,
+};
+pub use token_endpoint::{
+    AdmittedTokenClient, AppliedSenderConstraint, AuthorizationCodeTokenRequest,
+    ClientCredentialsTokenRequest, PresentedSenderConstraint, RefreshTokenRequest,
+    TokenClientAuthPresentation, TokenClientAuthenticationContext, TokenClientPolicy,
+    TokenEndpointDispatch, TokenEndpointError, TokenEndpointPolicy, TokenEndpointRequestInput,
+    admit_token_client, apply_sender_constraint, sender_constraint_policy,
+    token_client_authentication_context, token_endpoint_dispatch,
 };
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,
