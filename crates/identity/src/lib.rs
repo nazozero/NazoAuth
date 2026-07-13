@@ -57,4 +57,8 @@ pub use registration::{
     RegisterLocalAccountError, RegisterLocalAccountInput, RegistrationService,
     RegistrationServiceConfig, SendVerificationCodeError, SendVerificationCodeOutcome,
 };
+pub use session::{
+    CurrentSession, SessionId, SessionResolution, SessionRotation, SessionRotationOutcome,
+    SessionService, SessionSnapshot, SessionVersion,
+};
 pub use tenancy::{OrganizationId, RealmId, TenantContext, TenantId, UserId};
