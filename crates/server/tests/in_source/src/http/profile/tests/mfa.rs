@@ -552,12 +552,12 @@ async fn mfa_step_up_atomically_rotates_session_and_rejects_totp_replay() {
     let (status, body, has_set_cookie) = response_json(response).await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["success"], true);
-    assert_eq!(body["method"], "totp");
+    assert_eq!(body["method"], MfaVerificationMethod::Totp.amr());
     assert!(has_set_cookie);
     assert!(fixture.optional_session_payload(&sid).await.is_none());
     let session = fixture.session_payload(&rotated_sid).await;
     assert!(session.amr.iter().any(|method| method == "mfa"));
-    assert!(session.amr.iter().any(|method| method == "totp"));
+    assert!(session.amr.iter().any(|method| method == "otp"));
 
     let replay = mfa_step_up(
         mfa_handles(&fixture.state),

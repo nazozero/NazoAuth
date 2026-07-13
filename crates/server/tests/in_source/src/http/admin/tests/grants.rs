@@ -498,6 +498,7 @@ fn grant_json_projects_authorization_record_without_internal_ids() {
 fn admin_grants_handler_uses_auth_port_instead_of_postgres_types() {
     let source = include_str!("../../../../../../src/http/admin/grants.rs");
     let adapter = include_str!("../../../../../../../postgres/src/repositories/grants.rs");
+    let tokens = include_str!("../../../../../../../postgres/src/repositories/tokens.rs");
 
     assert!(source.contains("Data<dyn AdminGrantRepositoryPort>"));
     assert!(!source.contains("nazo_postgres"));
@@ -505,7 +506,10 @@ fn admin_grants_handler_uses_auth_port_instead_of_postgres_types() {
     assert!(!source.contains("OAuthClientRepository"));
     assert!(adapter.contains(".transaction::<AdminGrantRevocation"));
     assert!(adapter.contains(".filter(oauth_clients::client_id.eq(client_id))"));
-    assert!(adapter.contains(".for_update()"));
+    assert!(!adapter.contains(".for_update()"));
+    assert!(adapter.contains("lock_refresh_grant_scope(connection"));
+    assert!(tokens.contains("lock_refresh_grant_scope("));
+    assert!(tokens.contains("lock_refresh_family(connection, token.family_id)"));
     assert!(adapter.contains(".filter(user_client_grants::tenant_id.eq(tenant_id))"));
 }
 
