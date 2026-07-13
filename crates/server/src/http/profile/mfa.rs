@@ -404,6 +404,89 @@ pub(crate) async fn mfa_backup_codes_regenerate(
     no_store(mfa_backup_codes_regenerate_inner(handles, req, Json(payload)).await)
 }
 
+pub(crate) async fn mfa_step_up(
+    handles: Data<MfaProfileHandles>,
+    req: HttpRequest,
+    Json(payload): Json<MfaProtectedRequest>,
+) -> HttpResponse {
+    no_store(mfa_step_up_inner(handles, req, Json(payload)).await)
+}
+
+async fn mfa_step_up_inner(
+    handles: Data<MfaProfileHandles>,
+    req: HttpRequest,
+    Json(payload): Json<MfaProtectedRequest>,
+) -> HttpResponse {
+    if !has_valid_mfa_csrf_token(&handles, &req) {
+        return csrf_error();
+    }
+    let user = match current_mfa_user_or_login_required(&handles, &req).await {
+        Ok(user) => user,
+        Err(response) => return response,
+    };
+    if let Err(response) = enforce_mfa_rate_limit(&handles, &req).await {
+        return response;
+    }
+    if !user.account.mfa_enabled {
+        return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "MFA 未启用.");
+    }
+    let method =
+        match verify_user_mfa_code_with_repository(&handles.mfa, &user, &payload.code).await {
+            Ok(Some(method)) => method,
+            Ok(None) => {
+                return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效.");
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to verify MFA for session step-up");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "MFA 验证失败.",
+                );
+            }
+        };
+
+    // Factor consumption deliberately precedes privilege elevation. PostgreSQL and Valkey do not
+    // share a transaction; a rotation failure may consume a one-time factor, but can never produce
+    // an elevated session without a successful, replay-safe verification.
+    let rotation = match handles
+        .sessions
+        .step_up_current_session(&req, method.amr(), handles.config.session_ttl_seconds)
+        .await
+    {
+        Ok(Some(rotation)) => rotation,
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "login_required",
+                "当前会话已过期或已被替换.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to rotate session after MFA step-up");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "会话写入失败.",
+            );
+        }
+    };
+    audit_event(
+        "mfa_step_up_success",
+        audit_fields(&[
+            ("user_id", json!(user.id())),
+            ("method", json!(method.amr())),
+        ]),
+    );
+    with_cookie_headers(
+        json_response(json!({
+            "success": true,
+            "method": method.amr()
+        })),
+        &rotated_session_cookies(&handles, &rotation),
+    )
+}
+
 async fn mfa_backup_codes_regenerate_inner(
     handles: Data<MfaProfileHandles>,
     req: HttpRequest,

@@ -50,7 +50,10 @@ use crate::http::profile::{
     avatar::{delete_avatar, get_avatar, upload_avatar},
     delivery::access_delivery,
     federation_links::{my_federation_links, unlink_my_federation_link},
-    mfa::{mfa_backup_codes_regenerate, mfa_disable, mfa_totp_begin, mfa_totp_confirm, mfa_verify},
+    mfa::{
+        mfa_backup_codes_regenerate, mfa_disable, mfa_step_up, mfa_totp_begin, mfa_totp_confirm,
+        mfa_verify,
+    },
     oidc_logout::oidc_logout,
     passkeys::{
         passkey_delete, passkey_list, passkey_registration_begin, passkey_registration_finish,
@@ -253,6 +256,15 @@ pub(crate) fn configure(
                                 .service(
                                     web::resource("/totp/confirm")
                                         .route(web::post().to(mfa_totp_confirm))
+                                        .route(
+                                            web::method(actix_web::http::Method::OPTIONS)
+                                                .to(mfa_options),
+                                        )
+                                        .default_service(web::to(mfa_method_not_allowed)),
+                                )
+                                .service(
+                                    web::resource("/step-up")
+                                        .route(web::post().to(mfa_step_up))
                                         .route(
                                             web::method(actix_web::http::Method::OPTIONS)
                                                 .to(mfa_options),

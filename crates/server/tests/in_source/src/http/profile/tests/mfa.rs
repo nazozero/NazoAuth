@@ -480,6 +480,161 @@ async fn mfa_totp_confirm_requires_login_before_verifying_code() {
 }
 
 #[actix_web::test]
+async fn mfa_step_up_rejects_session_request_without_csrf_before_factor_consumption() {
+    let state = Data::new(test_state());
+    let req = request_with_session_but_no_csrf(&state);
+
+    assert_mfa_endpoint_rejects_missing_csrf(
+        mfa_step_up(
+            mfa_handles(&state),
+            req,
+            Json(MfaProtectedRequest {
+                code: "123456".to_owned(),
+            }),
+        )
+        .await,
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn mfa_step_up_requires_login_before_factor_consumption() {
+    let state = Data::new(test_state());
+    let req = actix_web::test::TestRequest::default().to_http_request();
+
+    assert_mfa_endpoint_requires_login(
+        mfa_step_up(
+            mfa_handles(&state),
+            req,
+            Json(MfaProtectedRequest {
+                code: "123456".to_owned(),
+            }),
+        )
+        .await,
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn mfa_step_up_atomically_rotates_session_and_rejects_totp_replay() {
+    let Some(fixture) = LiveMfaFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture
+        .create_user(&format!("step-up-{suffix}"), true)
+        .await;
+    let sid = format!("step-up-{suffix}");
+    let csrf = format!("csrf-{suffix}");
+    let secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+    fixture.insert_confirmed_totp(&user, secret).await;
+    fixture.store_session(&user, &sid, false).await;
+    let code = nazo_identity::mfa::totp_for_step(
+        b"12345678901234567890",
+        Utc::now().timestamp() / MFA_TOTP_PERIOD_SECONDS,
+    )
+    .expect("TOTP code should generate");
+
+    let response = mfa_step_up(
+        mfa_handles(&fixture.state),
+        fixture.request(&sid, &csrf),
+        Json(MfaProtectedRequest { code: code.clone() }),
+    )
+    .await;
+    let rotated_sid = set_cookie_value(
+        &response,
+        &fixture.state.settings.session.session_cookie_name,
+    )
+    .expect("successful step-up must rotate the session cookie");
+    let rotated_csrf =
+        set_cookie_value(&response, &fixture.state.settings.session.csrf_cookie_name)
+            .expect("successful step-up must rotate the CSRF cookie");
+    let (status, body, has_set_cookie) = response_json(response).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["success"], true);
+    assert_eq!(body["method"], "totp");
+    assert!(has_set_cookie);
+    assert!(fixture.optional_session_payload(&sid).await.is_none());
+    let session = fixture.session_payload(&rotated_sid).await;
+    assert!(session.amr.iter().any(|method| method == "mfa"));
+    assert!(session.amr.iter().any(|method| method == "totp"));
+
+    let replay = mfa_step_up(
+        mfa_handles(&fixture.state),
+        fixture.request(&rotated_sid, &rotated_csrf),
+        Json(MfaProtectedRequest { code }),
+    )
+    .await;
+    let (status, body, has_set_cookie) = response_json(replay).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+    assert!(!has_set_cookie);
+}
+
+#[actix_web::test]
+async fn concurrent_mfa_step_up_consumes_backup_code_exactly_once() {
+    let Some(fixture) = LiveMfaFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let user = fixture
+        .create_user(&format!("step-up-backup-{suffix}"), true)
+        .await;
+    let backup_codes = replace_backup_codes(&fixture.state.diesel_db, &user.identity())
+        .await
+        .expect("backup codes should generate");
+    let code = backup_codes
+        .first()
+        .expect("at least one backup code should be generated")
+        .clone();
+    let sid_a = format!("step-up-a-{suffix}");
+    let sid_b = format!("step-up-b-{suffix}");
+    let csrf_a = format!("csrf-a-{suffix}");
+    let csrf_b = format!("csrf-b-{suffix}");
+    fixture.store_session(&user, &sid_a, false).await;
+    fixture.store_session(&user, &sid_b, false).await;
+
+    let (response_a, response_b) = tokio::join!(
+        mfa_step_up(
+            mfa_handles(&fixture.state),
+            fixture.request(&sid_a, &csrf_a),
+            Json(MfaProtectedRequest { code: code.clone() }),
+        ),
+        mfa_step_up(
+            mfa_handles(&fixture.state),
+            fixture.request(&sid_b, &csrf_b),
+            Json(MfaProtectedRequest { code: code.clone() }),
+        ),
+    );
+    let (status_a, body_a, _) = response_json(response_a).await;
+    let (status_b, body_b, _) = response_json(response_b).await;
+    let mut statuses = [status_a.as_u16(), status_b.as_u16()];
+    statuses.sort_unstable();
+    assert_eq!(
+        statuses,
+        [StatusCode::OK.as_u16(), StatusCode::BAD_REQUEST.as_u16()]
+    );
+    let bodies = [body_a, body_b];
+    assert_eq!(
+        bodies.iter().filter(|body| body["success"] == true).count(),
+        1
+    );
+    assert_eq!(
+        bodies
+            .iter()
+            .filter(|body| body["error"] == "invalid_grant")
+            .count(),
+        1
+    );
+    assert!(
+        !verify_user_mfa_code(&fixture.state.diesel_db, &user.identity(), &code)
+            .await
+            .expect("consumed backup code lookup should succeed"),
+        "a backup code accepted by one concurrent step-up must be unusable afterwards"
+    );
+}
+
+#[actix_web::test]
 async fn mfa_totp_confirm_rejects_wrong_code_without_enabling_mfa_or_backup_codes() {
     let Some(fixture) = LiveMfaFixture::new().await else {
         return;
