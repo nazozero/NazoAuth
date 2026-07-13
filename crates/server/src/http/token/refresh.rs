@@ -14,8 +14,8 @@ use crate::support::{
 };
 #[cfg(test)]
 use crate::support::{
-    security::decode_access_claims, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
-    tenancy::DEFAULT_TENANT_ID,
+    security::decode_access_claims_with, tenancy::DEFAULT_ORGANIZATION_ID,
+    tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]

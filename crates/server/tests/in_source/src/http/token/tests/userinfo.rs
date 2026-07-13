@@ -524,7 +524,8 @@ async fn signed_userinfo_access_token(
     mtls_x5t_s256: Option<&str>,
 ) -> IssuedAccessToken {
     make_jwt(
-        state,
+        &state.keyset,
+        &state.settings.endpoint.issuer,
         AccessTokenJwtInput {
             tenant_id,
             subject,
@@ -564,7 +565,8 @@ async fn userinfo_response_for_active_user(
     client_id: &str,
 ) -> HttpResponse {
     let token = make_jwt(
-        &state,
+        &state.keyset,
+        &state.settings.endpoint.issuer,
         AccessTokenJwtInput {
             tenant_id: DEFAULT_TENANT_ID,
             subject: &user.id.to_string(),
