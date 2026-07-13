@@ -2218,6 +2218,7 @@ dependencies = [
  "chrono",
  "nazo-auth",
  "nazo-http-signatures",
+ "nazo-identity",
  "nazo-resource-server",
  "nazo-runtime-modules",
  "proptest",
