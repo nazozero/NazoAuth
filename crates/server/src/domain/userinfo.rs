@@ -303,9 +303,8 @@ fn map_dpop_error(error: DpopError) -> UserinfoError {
         DpopError::MissingProof => UserinfoDpopError::MissingProof,
         DpopError::MalformedProof => UserinfoDpopError::MalformedProof,
         DpopError::InvalidProof => UserinfoDpopError::InvalidProof,
-        DpopError::ReplayDetected => UserinfoDpopError::ReplayDetected,
+        DpopError::ReplayDetected(_) => UserinfoDpopError::ReplayDetected,
         DpopError::BindingMismatch => UserinfoDpopError::BindingMismatch,
-        #[cfg(test)]
         DpopError::TokenNotBound => UserinfoDpopError::TokenNotBound,
         DpopError::UseNonce(nonce) => UserinfoDpopError::UseNonce(nonce),
         DpopError::NonceStoreUnavailable => UserinfoDpopError::NonceStoreUnavailable,

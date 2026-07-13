@@ -222,7 +222,7 @@ impl Settings {
             .optional_string("PROTECTED_RESOURCE_IDENTIFIER")
             .unwrap_or_else(|| default_protected_resource_identifier(&issuer));
         validate_protected_resource_identifier(&protected_resource_identifier)?;
-        let dpop_nonce_policy = DpopNoncePolicy::from_config(config)?;
+        let dpop_nonce_policy = profile::dpop_nonce_policy_from_config(config)?;
         let request_object_jti_policy = RequestObjectJtiPolicy::from_config(config)?;
         let auth_code_ttl_seconds =
             positive_u64(config, "AUTH_CODE_TTL_SECONDS", 60, "AUTH_CODE_TTL_SECONDS")?;

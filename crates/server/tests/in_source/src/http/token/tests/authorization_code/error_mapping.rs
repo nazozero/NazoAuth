@@ -14,7 +14,10 @@ fn authorization_code_dpop_holder_key_failures_use_invalid_grant() {
     for error in [
         DpopError::MalformedProof,
         DpopError::InvalidProof,
-        DpopError::ReplayDetected,
+        DpopError::ReplayDetected(nazo_auth::DpopReplayAudit {
+            jti_hash: "hash".to_owned(),
+            key_id: None,
+        }),
         DpopError::BindingMismatch,
         DpopError::TokenNotBound,
     ] {

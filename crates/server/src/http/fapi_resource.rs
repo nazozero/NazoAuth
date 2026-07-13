@@ -20,9 +20,9 @@ use crate::support::{
     tenancy::DEFAULT_TENANT_ID,
 };
 use crate::support::{
-    dpop::AccessTokenAuthScheme, dpop::DpopError, dpop::DpopErrorContext,
-    dpop::dpop_error_response, fapi_http_signatures::verify_client_http_message,
-    security::access_token_tenant_id, security::constant_time_eq,
+    dpop::DpopError, dpop::DpopErrorContext, dpop::dpop_error_response,
+    fapi_http_signatures::verify_client_http_message, security::access_token_tenant_id,
+    security::constant_time_eq,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -37,7 +37,8 @@ use nazo_auth::token_audience_contains;
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{
-    ResourceAccessToken, json_response_no_store, oauth_bearer_error, resource_access_token,
+    AccessTokenAuthScheme, ResourceAccessToken, json_response_no_store, oauth_bearer_error,
+    resource_access_token,
 };
 use serde_json::{Value, json};
 use std::{future::Future, pin::Pin};

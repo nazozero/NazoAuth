@@ -24,8 +24,9 @@ uuid = { workspace = true, features = ["v7", "serde"] }
 
 [dev-dependencies]
 ed25519-dalek.workspace = true
+futures-executor.workspace = true
+futures-util.workspace = true
 proptest.workspace = true
-tokio = { workspace = true, features = ["macros", "rt-multi-thread", "sync", "time"] }
 
 [lints]
 workspace = true

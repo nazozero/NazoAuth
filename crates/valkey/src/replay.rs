@@ -1,9 +1,41 @@
 use crate::{Error, ValkeyConnection, command, keys};
 use chrono::Utc;
+use nazo_auth::{DpopStateFuture, DpopStateStoreError, DpopStateStorePort};
 use nazo_resource_server::{
     DpopReplayConsumption, DpopReplayConsumptionResult, DpopReplayKey,
     ProtectedResourceDependencyError, ResourceServerPortFuture,
 };
+
+impl DpopStateStorePort for ReplayStore {
+    fn consume_replay<'a>(
+        &'a self,
+        jkt: &'a str,
+        jti: &'a str,
+        ttl_seconds: u64,
+    ) -> DpopStateFuture<'a, bool> {
+        Box::pin(async move {
+            self.consume_dpop(jkt, jti, ttl_seconds)
+                .await
+                .map_err(|_| DpopStateStoreError)
+        })
+    }
+
+    fn issue_nonce<'a>(&'a self, nonce: &'a str, ttl_seconds: u64) -> DpopStateFuture<'a, ()> {
+        Box::pin(async move {
+            self.issue_dpop_nonce(nonce, ttl_seconds)
+                .await
+                .map_err(|_| DpopStateStoreError)
+        })
+    }
+
+    fn consume_nonce<'a>(&'a self, nonce: &'a str) -> DpopStateFuture<'a, bool> {
+        Box::pin(async move {
+            self.consume_dpop_nonce(nonce)
+                .await
+                .map_err(|_| DpopStateStoreError)
+        })
+    }
+}
 
 const FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS: i64 = 5;
 

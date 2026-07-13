@@ -172,6 +172,37 @@ async fn concurrent_private_key_jwt_consumers_have_exactly_one_winner() {
 }
 
 #[tokio::test]
+async fn concurrent_dpop_replay_consumers_have_exactly_one_winner() {
+    let Some(url) = explicit_valkey_url() else {
+        return;
+    };
+    let connection = ValkeyConnection::connect(&url, Duration::from_secs(1))
+        .await
+        .expect("an explicitly configured Valkey must be available");
+    let store = ReplayStore::new(&connection);
+    let jkt = format!("concurrent-jkt-{}", uuid::Uuid::now_v7());
+    let jti = format!("concurrent-jti-{}", uuid::Uuid::now_v7());
+    let attempts = (0..32).map(|_| {
+        let store = store.clone();
+        let jkt = jkt.clone();
+        let jti = jti.clone();
+        async move {
+            store
+                .consume_dpop(&jkt, &jti, 300)
+                .await
+                .expect("Valkey DPoP replay consumption should succeed")
+        }
+    });
+
+    let winners = join_all(attempts)
+        .await
+        .into_iter()
+        .filter(|accepted| *accepted)
+        .count();
+    assert_eq!(winners, 1, "SET NX must admit exactly one DPoP proof");
+}
+
+#[tokio::test]
 async fn dpop_nonce_preserves_exact_key_and_is_consumed_once() {
     let Some(url) = explicit_valkey_url() else {
         return;
