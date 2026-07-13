@@ -324,7 +324,7 @@ pub(crate) async fn issue_dpop_nonce(state: &AppState) -> Result<String, DpopErr
     issue_dpop_nonce_with_store(&nazo_valkey::ReplayStore::new(&state.valkey_connection())).await
 }
 
-async fn issue_dpop_nonce_with_store(
+pub(crate) async fn issue_dpop_nonce_with_store(
     replay_store: &nazo_valkey::ReplayStore,
 ) -> Result<String, DpopError> {
     issue_dpop_nonce_with_replay(&DpopReplay::Store(replay_store)).await

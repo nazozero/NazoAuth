@@ -11,6 +11,7 @@ mod oidc_logout;
 mod resource_server;
 mod rows;
 mod state;
+mod userinfo;
 
 #[cfg(test)]
 pub(crate) use database_user_fixture::{
@@ -28,3 +29,4 @@ pub(crate) use oidc_logout::{OidcLogoutConfig, OidcLogoutHandles};
 pub(crate) use resource_server::{ResourceServerConfig, ResourceServerHandles};
 pub(crate) use rows::{ClientRow, TokenRow};
 pub(crate) use state::AppState;
+pub(crate) use userinfo::{UserinfoConfig, UserinfoHandles};

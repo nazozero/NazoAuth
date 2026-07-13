@@ -99,7 +99,11 @@ mod lifecycle_boundary_tests {
     #[test]
     fn userinfo_transport_does_not_construct_storage_adapters() {
         let source = include_str!("token/userinfo.rs");
+        assert!(source.contains("handles: Data<UserinfoHandles>"));
         for forbidden in [
+            "Data<AppState>",
+            "Settings",
+            "KeyManager",
             "nazo_postgres",
             "nazo_valkey",
             "diesel_db",

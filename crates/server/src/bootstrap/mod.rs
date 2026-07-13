@@ -31,7 +31,7 @@ use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
     AppState, DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig,
     MetadataHandles, MfaProfileConfig, MfaProfileHandles, OidcLogoutConfig, OidcLogoutHandles,
-    ResourceServerConfig, ResourceServerHandles,
+    ResourceServerConfig, ResourceServerHandles, UserinfoConfig, UserinfoHandles,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -189,6 +189,11 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_postgres::TokenIssuanceRepository::new(diesel_db.clone()),
         nazo_valkey::TokenIssuanceStateAdapter::new(&authorization_state_connection),
         keyset.clone(),
+    ));
+    let userinfo_handles = web::Data::new(UserinfoHandles::new(
+        nazo_valkey::ReplayStore::new(&authorization_state_connection),
+        keyset.clone(),
+        UserinfoConfig::from(settings.as_ref()),
     ));
     let authorization_config = web::Data::new(AuthorizationHttpConfig::from(settings.as_ref()));
     let authorization_runtime: web::Data<ServerRuntimeModuleRegistry> =
@@ -442,6 +447,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(runtime_modules.clone())
             .app_data(authorization_service.clone())
             .app_data(token_service.clone())
+            .app_data(userinfo_handles.clone())
             .app_data(authorization_config.clone())
             .app_data(authorization_runtime.clone())
             .app_data(metadata_handles.clone())

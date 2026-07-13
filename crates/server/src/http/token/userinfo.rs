@@ -1,14 +1,12 @@
 //! OIDC userinfo 端点。
 use super::ServerTokenService;
-use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
-use crate::settings::Settings;
+use crate::domain::UserinfoHandles;
 use crate::support::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, JwePayloadKind, access_token_tenant_id,
     blake3_hex, client_jwe_key, constant_time_eq, dpop_error_response, encrypt_compact_jwe,
-    issue_dpop_nonce, oidc_user_claims, parse_scope, request_mtls_thumbprint, sign_response_jwt,
-    signing_algorithm_from_name, token_audience_contains, validate_dpop_proof,
+    oidc_user_claims, parse_scope, signing_algorithm_from_name,
 };
 #[cfg(test)]
 use crate::support::{
@@ -34,7 +32,7 @@ use uuid::Uuid;
 use super::access_token_subject_key;
 
 pub(crate) async fn userinfo(
-    state: Data<AppState>,
+    handles: Data<UserinfoHandles>,
     token_service: Data<ServerTokenService>,
     req: HttpRequest,
     body: Bytes,
@@ -53,7 +51,7 @@ pub(crate) async fn userinfo(
         }
     };
     let claims = match token_service
-        .decode_access_token(&state.settings.endpoint.issuer, &token)
+        .decode_access_token(handles.issuer(), &token)
         .await
     {
         Ok(Some(claims)) => claims,
@@ -73,7 +71,7 @@ pub(crate) async fn userinfo(
             );
         }
     };
-    if !userinfo_audience_allowed(&state.settings, &claims.aud) {
+    if !handles.audience_allowed(&claims.aud) {
         return oauth_bearer_error(
             StatusCode::UNAUTHORIZED,
             "invalid_token",
@@ -107,12 +105,13 @@ pub(crate) async fn userinfo(
     let mut next_dpop_nonce = None;
     match (scheme, claims.cnf.as_ref()) {
         (AccessTokenAuthScheme::DPoP, Some(cnf)) if cnf.jkt.is_some() => {
-            if let Err(error) =
-                validate_dpop_proof(&state, &req, Some(&token), cnf.jkt.as_deref()).await
+            if let Err(error) = handles
+                .validate_dpop_proof(&req, &token, cnf.jkt.as_deref())
+                .await
             {
                 return dpop_error_response(error, DpopErrorContext::ProtectedResource);
             }
-            next_dpop_nonce = match issue_dpop_nonce(&state).await {
+            next_dpop_nonce = match handles.issue_dpop_nonce().await {
                 Ok(nonce) => Some(nonce),
                 Err(error) => {
                     return dpop_error_response(error, DpopErrorContext::ProtectedResource);
@@ -127,7 +126,7 @@ pub(crate) async fn userinfo(
         }
         (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.x5t_s256.is_some() => {
             let expected = cnf.x5t_s256.as_deref().unwrap_or_default();
-            let Some(actual) = request_mtls_thumbprint(&req, &state.settings) else {
+            let Some(actual) = handles.request_mtls_thumbprint(&req) else {
                 return oauth_bearer_error(
                     StatusCode::UNAUTHORIZED,
                     "invalid_token",
@@ -240,7 +239,7 @@ pub(crate) async fn userinfo(
         &claims.userinfo_claim_requests,
         None,
     );
-    let mut response = match userinfo_success_response(&state, &client, response_claims).await {
+    let mut response = match userinfo_success_response(&handles, &client, response_claims).await {
         Ok(response) => response,
         Err(error) => {
             tracing::warn!(%error, client_id_hash = %blake3_hex(&client.client_id), "failed to protect userinfo response");
@@ -262,7 +261,7 @@ pub(crate) async fn userinfo(
 }
 
 async fn userinfo_success_response(
-    state: &AppState,
+    handles: &UserinfoHandles,
     client: &OAuthClient,
     mut claims: Value,
 ) -> anyhow::Result<HttpResponse> {
@@ -287,16 +286,16 @@ async fn userinfo_success_response(
         let object = claims
             .as_object_mut()
             .ok_or_else(|| anyhow::anyhow!("UserInfo claims must be a JSON object"))?;
-        object.insert("iss".to_owned(), json!(state.settings.endpoint.issuer));
+        object.insert("iss".to_owned(), json!(handles.issuer()));
         object.insert("aud".to_owned(), json!(client.client_id));
-        let signed = sign_response_jwt(
-            state,
-            nazo_auth::SigningPurpose::IdToken,
-            &claims,
-            "JWT",
-            Some(signing_alg),
-        )
-        .await?;
+        let signed = handles
+            .sign_response_jwt(
+                nazo_auth::SigningPurpose::IdToken,
+                &claims,
+                "JWT",
+                signing_alg,
+            )
+            .await?;
         match encryption_key {
             Some(key) => encrypt_compact_jwe(&key, signed.as_bytes(), JwePayloadKind::NestedJwt)?,
             None => signed,
@@ -332,15 +331,6 @@ async fn access_token_user_id(
         .load_access_token_subject(tenant_id, &claims.jti)
         .await
         .map_err(anyhow::Error::from)
-}
-
-fn userinfo_audience_allowed(settings: &Settings, audience: &Value) -> bool {
-    let userinfo_url = format!(
-        "{}/userinfo",
-        settings.endpoint.issuer.trim_end_matches('/')
-    );
-    token_audience_contains(audience, &settings.protocol.default_audience)
-        || token_audience_contains(audience, &userinfo_url)
 }
 
 #[cfg(test)]

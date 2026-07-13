@@ -33,7 +33,8 @@ pub(crate) use client_ip::{
 };
 pub(crate) use dpop::{
     AccessTokenAuthScheme, DpopError, DpopErrorContext, dpop_error_response, dpop_proof_present,
-    issue_dpop_nonce, validate_dpop_proof,
+    issue_dpop_nonce, issue_dpop_nonce_with_store, validate_dpop_proof,
+    validate_dpop_proof_with_store,
 };
 pub(crate) use email::{
     SmtpVerificationEmailDelivery, email_delivery_configured, normalize_email_address,

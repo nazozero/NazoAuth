@@ -3,6 +3,8 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::domain::{AppState, UserinfoConfig};
+use crate::settings::Settings;
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::schema::oauth_clients;
@@ -68,7 +70,17 @@ fn userinfo_token_service(state: &AppState) -> ServerTokenService {
 
 async fn call_userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
     let token_service = Data::new(userinfo_token_service(&state));
-    userinfo(state, token_service, req, body).await
+    super::userinfo(
+        Data::new(UserinfoHandles::from_test_state(state.get_ref())),
+        token_service,
+        req,
+        body,
+    )
+    .await
+}
+
+fn userinfo_audience_allowed(settings: &Settings, audience: &Value) -> bool {
+    UserinfoConfig::from(settings).audience_allowed(audience)
 }
 
 async fn live_userinfo_state() -> Option<Data<AppState>> {
