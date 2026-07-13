@@ -53,7 +53,13 @@ pub use claims::{
 pub use client::{ClientProfile, validate_token_request_profile};
 pub use client_registration::{ApprovedClient, OAuthClient, ValidatedClientRegistration};
 pub use device::{
-    DeviceAuthorizationApproval, DeviceAuthorizationPayload, DeviceAuthorizationState,
+    DeviceAtomicResult, DeviceAuthorizationApproval, DeviceAuthorizationPayload,
+    DeviceAuthorizationRequestError, DeviceAuthorizationRequestPolicy, DeviceAuthorizationState,
+    DeviceCreateFailure, DeviceCreateResult, DeviceDecisionFailure, DeviceGrantFuture,
+    DeviceGrantPortError, DeviceGrantRepositoryPort, DeviceGrantService, DeviceGrantWrite,
+    DevicePollCommit, DevicePollFailure, DevicePollTransition, DeviceStateFuture,
+    DeviceStatePortError, DeviceStateStorePort, StoredDeviceAuthorization,
+    device_authorization_payload, device_authorization_request_payload, evaluate_device_poll,
 };
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use grant::GrantType;

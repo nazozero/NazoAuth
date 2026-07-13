@@ -3,10 +3,10 @@ use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::settings::Settings;
 use crate::support::{
     ClientCredentials, DEFAULT_TENANT_ID, DpopError, DpopErrorContext, RateLimitPolicy,
-    ValidatedClientAssertion, audiences_allowed, audit_event, audit_fields, blake3_hex, client_ip,
+    ValidatedClientAssertion, audit_event, audit_fields, blake3_hex, client_ip,
     client_supports_grant, compute_subject_for_client, current_user_or_login_required,
     dpop_error_response, enforce_rate_limit, extract_client_credentials, has_valid_csrf_token,
-    is_subset, json_array_to_strings, parse_resource_indicators, parse_scope, random_urlsafe_token,
+    json_array_to_strings, parse_resource_indicators, parse_scope, random_urlsafe_token,
     request_mtls_thumbprint, validate_dpop_proof,
 };
 #[cfg(test)]
@@ -16,7 +16,9 @@ use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
 use actix_web::web::{Bytes, Data, Form, Query};
 use actix_web::{HttpRequest, HttpResponse};
-use chrono::{DateTime, Duration, Utc};
+#[cfg(test)]
+use chrono::Duration;
+use chrono::Utc;
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{cookie_value, csrf_error};
@@ -32,8 +34,11 @@ use super::{
     issue_token_response, token_management_auth_error, verify_confidential_client,
 };
 use nazo_auth::{
-    DeviceAuthorizationApproval, DeviceAuthorizationPayload, DeviceAuthorizationState,
+    DeviceAuthorizationApproval, DeviceAuthorizationPayload, DeviceAuthorizationRequestError,
+    DeviceAuthorizationRequestPolicy, DeviceDecisionFailure, DeviceGrantRepositoryPort,
+    DeviceGrantService, DevicePollCommit, DevicePollFailure,
 };
+use nazo_valkey::DeviceStore;
 
 pub(crate) const DEVICE_CODE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
@@ -66,31 +71,6 @@ pub(crate) struct DeviceVerificationView {
     user_code: String,
     csrf_token: Option<String>,
     request: Option<DeviceAuthorizationPayload>,
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) enum DeviceAuthorizationRequestError {
-    Disabled,
-    UnauthorizedClient,
-    InvalidScope,
-    InvalidTarget,
-}
-
-#[derive(Debug, PartialEq)]
-pub(crate) enum DeviceCodePollResult {
-    AuthorizationPending {
-        next_state: DeviceAuthorizationState,
-    },
-    SlowDown {
-        next_state: DeviceAuthorizationState,
-    },
-    Approved {
-        payload: DeviceAuthorizationPayload,
-        approval: DeviceAuthorizationApproval,
-    },
-    AccessDenied,
-    Expired,
-    Consumed,
 }
 
 pub(crate) fn parse_device_authorization_form(
@@ -227,7 +207,17 @@ pub(crate) async fn device_authorization(
         Ok(payload) => payload,
         Err(error) => return device_authorization_request_error(error),
     };
-    let (device_code, user_code) = match persist_new_device_authorization(&state, &payload).await {
+    let valkey = state.valkey_connection();
+    let device_service = DeviceGrantService::new(DeviceStore::new(&valkey));
+    let (device_code, user_code) = match device_service
+        .create_unique(
+            &payload,
+            state.settings.device.device_authorization_ttl_seconds,
+            random_urlsafe_token,
+            random_device_user_code,
+        )
+        .await
+    {
         Ok(codes) => codes,
         Err(error) => {
             tracing::warn!(%error, "failed to persist device authorization state");
@@ -267,35 +257,23 @@ pub(crate) fn device_authorization_request_payload(
     form: &DeviceAuthorizationForm,
     enabled: bool,
 ) -> Result<DeviceAuthorizationPayload, DeviceAuthorizationRequestError> {
-    if !enabled {
-        return Err(DeviceAuthorizationRequestError::Disabled);
-    }
-    if !client.is_active || !client_supports_grant(client, DEVICE_CODE_GRANT_TYPE) {
-        return Err(DeviceAuthorizationRequestError::UnauthorizedClient);
-    }
     let requested_scopes = parse_scope(form.scope.as_deref().unwrap_or(""));
-    if !is_subset(&requested_scopes, &json_array_to_strings(&client.scopes)) {
-        return Err(DeviceAuthorizationRequestError::InvalidScope);
-    }
-    let resource_indicators = if form.resources.is_empty() {
-        vec![settings.protocol.default_audience.clone()]
-    } else {
-        form.resources.clone()
-    };
-    if !audiences_allowed(client, &resource_indicators) {
-        return Err(DeviceAuthorizationRequestError::InvalidTarget);
-    }
-    let now = Utc::now();
-    Ok(DeviceAuthorizationPayload {
-        client_id: client.client_id.clone(),
-        client_name: client.client_name.clone(),
-        scopes: requested_scopes,
-        resource_indicators,
-        authorization_details: json!([]),
+    let allowed_scopes = json_array_to_strings(&client.scopes);
+    let allowed_resources = json_array_to_strings(&client.allowed_audiences);
+    nazo_auth::device_authorization_request_payload(DeviceAuthorizationRequestPolicy {
+        enabled,
+        client_active: client.is_active,
+        client_supports_grant: client_supports_grant(client, DEVICE_CODE_GRANT_TYPE),
+        client_id: &client.client_id,
+        client_name: &client.client_name,
+        requested_scopes,
+        allowed_scopes: &allowed_scopes,
+        requested_resources: form.resources.clone(),
+        allowed_resources: &allowed_resources,
+        default_resource: &settings.protocol.default_audience,
         interval_seconds: settings.device.device_authorization_poll_interval_seconds,
-        issued_at: now,
-        expires_at: now
-            + Duration::seconds(settings.device.device_authorization_ttl_seconds as i64),
+        ttl_seconds: settings.device.device_authorization_ttl_seconds,
+        now: Utc::now(),
     })
 }
 
@@ -350,91 +328,40 @@ pub(crate) async fn token_device_code(
         return response;
     }
 
-    let store = nazo_valkey::DeviceStore::new(&state.valkey_connection());
-    let state_value = match store.load_by_device_code(device_code).await {
-        Ok(Some(value)) => value,
-        Ok(None) => {
-            return oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_grant",
-                "device_code 无效或已过期.",
-                false,
-            );
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to read device authorization state");
-            return oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "设备授权状态读取失败.",
-                false,
-            );
-        }
-    };
-    match evaluate_device_code_poll(&state_value, Utc::now()) {
-        DeviceCodePollResult::AuthorizationPending { next_state } => {
-            persist_device_poll_state(state, &blake3_hex(device_code), &next_state).await;
-            oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "authorization_pending",
-                "授权仍在等待用户确认.",
-                false,
-            )
-        }
-        DeviceCodePollResult::SlowDown { next_state } => {
-            persist_device_poll_state(state, &blake3_hex(device_code), &next_state).await;
+    let valkey = state.valkey_connection();
+    let device_service = DeviceGrantService::new(DeviceStore::new(&valkey));
+    match device_service
+        .poll(device_code, &client.client_id, Utc::now)
+        .await
+    {
+        Ok(DevicePollCommit::AuthorizationPending) => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "authorization_pending",
+            "授权仍在等待用户确认.",
+            false,
+        ),
+        Ok(DevicePollCommit::SlowDown) => {
             oauth_token_error(StatusCode::BAD_REQUEST, "slow_down", "设备轮询过快.", false)
         }
-        DeviceCodePollResult::AccessDenied => oauth_token_error(
+        Ok(DevicePollCommit::AccessDenied) => oauth_token_error(
             StatusCode::BAD_REQUEST,
             "access_denied",
             "用户拒绝设备授权.",
             false,
         ),
-        DeviceCodePollResult::Expired => oauth_token_error(
+        Ok(DevicePollCommit::Expired) => oauth_token_error(
             StatusCode::BAD_REQUEST,
             "expired_token",
             "device_code 已过期.",
             false,
         ),
-        DeviceCodePollResult::Consumed => oauth_token_error(
+        Ok(DevicePollCommit::Consumed) => oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "device_code 已使用.",
             false,
         ),
-        DeviceCodePollResult::Approved { .. } => {
-            let consumed = match store.take_by_device_code(device_code).await {
-                Ok(Some(value)) => value,
-                Ok(None) => {
-                    return oauth_token_error(
-                        StatusCode::BAD_REQUEST,
-                        "invalid_grant",
-                        "device_code 已使用.",
-                        false,
-                    );
-                }
-                Err(error) => {
-                    tracing::warn!(%error, "failed to consume approved device authorization state");
-                    return oauth_token_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "设备授权状态读取失败.",
-                        false,
-                    );
-                }
-            };
-            let DeviceAuthorizationState::Approved {
-                payload, approval, ..
-            } = consumed
-            else {
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "device_code 状态无效.",
-                    false,
-                );
-            };
+        Ok(DevicePollCommit::Approved { payload, approval }) => {
             issue_token_response(
                 state,
                 client,
@@ -467,62 +394,33 @@ pub(crate) async fn token_device_code(
             )
             .await
         }
-    }
-}
-
-pub(crate) fn evaluate_device_code_poll(
-    state: &DeviceAuthorizationState,
-    now: DateTime<Utc>,
-) -> DeviceCodePollResult {
-    if let Some(payload) = device_authorization_payload(state)
-        && now >= payload.expires_at
-    {
-        return DeviceCodePollResult::Expired;
-    }
-    match state {
-        DeviceAuthorizationState::Pending {
-            payload,
-            last_poll_at,
-            slow_down_count,
-        } => {
-            let required_wait =
-                Duration::seconds(payload.interval_seconds as i64 + (*slow_down_count as i64 * 5));
-            if last_poll_at.is_some_and(|last| now - last < required_wait) {
-                return DeviceCodePollResult::SlowDown {
-                    next_state: DeviceAuthorizationState::Pending {
-                        payload: payload.clone(),
-                        last_poll_at: Some(now),
-                        slow_down_count: slow_down_count.saturating_add(1),
-                    },
-                };
-            }
-            DeviceCodePollResult::AuthorizationPending {
-                next_state: DeviceAuthorizationState::Pending {
-                    payload: payload.clone(),
-                    last_poll_at: Some(now),
-                    slow_down_count: *slow_down_count,
-                },
-            }
+        Err(DevicePollFailure::Missing) => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "device_code 无效或已过期.",
+            false,
+        ),
+        Err(DevicePollFailure::ClientMismatch) => oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "device_code 未签发给该客户端.",
+            false,
+        ),
+        Err(DevicePollFailure::Storage(error)) => {
+            tracing::warn!(%error, "failed to update device authorization state");
+            oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "设备授权状态读取失败.",
+                false,
+            )
         }
-        DeviceAuthorizationState::Approved {
-            payload, approval, ..
-        } => DeviceCodePollResult::Approved {
-            payload: payload.clone(),
-            approval: approval.clone(),
-        },
-        DeviceAuthorizationState::Denied { .. } => DeviceCodePollResult::AccessDenied,
-        DeviceAuthorizationState::Consumed { .. } => DeviceCodePollResult::Consumed,
-    }
-}
-
-fn device_authorization_payload(
-    state: &DeviceAuthorizationState,
-) -> Option<&DeviceAuthorizationPayload> {
-    match state {
-        DeviceAuthorizationState::Pending { payload, .. }
-        | DeviceAuthorizationState::Approved { payload, .. }
-        | DeviceAuthorizationState::Denied { payload, .. } => Some(payload),
-        DeviceAuthorizationState::Consumed { .. } => None,
+        Err(DevicePollFailure::Contended) => oauth_token_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "设备授权状态正忙.",
+            false,
+        ),
     }
 }
 
@@ -558,7 +456,22 @@ pub(crate) async fn device_verification(
         );
     }
     let user_code = query.get("user_code").cloned().unwrap_or_default();
-    let payload = read_device_authorization_payload_for_user_code(&state, &user_code).await;
+    let normalized_user_code = normalize_user_code(&user_code);
+    let payload = if normalized_user_code.is_empty() {
+        None
+    } else {
+        let valkey = state.valkey_connection();
+        match DeviceGrantService::new(DeviceStore::new(&valkey))
+            .pending_request_for_user_code(&normalized_user_code, Utc::now)
+            .await
+        {
+            Ok(payload) => payload,
+            Err(error) => {
+                tracing::warn!(%error, "failed to read device authorization request");
+                None
+            }
+        }
+    };
     let csrf_token = cookie_value(&req, &state.settings.session.csrf_cookie_name);
     json_response_no_store(DeviceVerificationView {
         user_code,
@@ -585,34 +498,6 @@ fn device_verification_uri(settings: &Settings) -> String {
         "{}/device",
         settings.endpoint.frontend_base_url.trim_end_matches('/')
     )
-}
-
-async fn read_device_authorization_payload_for_user_code(
-    state: &AppState,
-    user_code: &str,
-) -> Option<DeviceAuthorizationPayload> {
-    let normalized_user_code = normalize_user_code(user_code);
-    if normalized_user_code.is_empty() {
-        return None;
-    }
-    let device_code_hash = read_user_code_mapping(state, &normalized_user_code).await?;
-    let store = nazo_valkey::DeviceStore::new(&state.valkey_connection());
-    let state_value = match store.load_by_device_hash(&device_code_hash).await {
-        Ok(Some(value)) => value,
-        Ok(None) => return None,
-        Err(error) => {
-            tracing::warn!(%error, "failed to read device authorization state for verification page");
-            return None;
-        }
-    };
-    let DeviceAuthorizationState::Pending { payload, .. } = state_value else {
-        return None;
-    };
-    if Utc::now() >= payload.expires_at {
-        let _ = store.delete_user_code(&normalized_user_code).await;
-        return None;
-    }
-    Some(payload)
 }
 
 pub(crate) async fn device_decision(
@@ -644,16 +529,13 @@ pub(crate) async fn device_decision(
             "用户码无效或已过期.",
         );
     }
-    let Some(device_code_hash) = read_user_code_mapping(&state, &normalized_user_code).await else {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "用户码无效或已过期.",
-        );
-    };
-    let store = nazo_valkey::DeviceStore::new(&state.valkey_connection());
-    let device_state = match store.load_by_device_hash(&device_code_hash).await {
-        Ok(Some(value)) => value,
+    let valkey = state.valkey_connection();
+    let device_service = DeviceGrantService::new(DeviceStore::new(&valkey));
+    let payload = match device_service
+        .pending_request_for_user_code(&normalized_user_code, Utc::now)
+        .await
+    {
+        Ok(Some(payload)) => payload,
         Ok(None) => {
             return oauth_error(
                 StatusCode::BAD_REQUEST,
@@ -670,32 +552,14 @@ pub(crate) async fn device_decision(
             );
         }
     };
-    let DeviceAuthorizationState::Pending { payload, .. } = device_state else {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "用户码无效或已过期.",
-        );
-    };
-    let now = Utc::now();
-    if now >= payload.expires_at {
-        let _ = store.delete_user_code(&normalized_user_code).await;
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "用户码无效或已过期.",
-        );
-    }
-    let next_state = match form.decision.as_str() {
-        "deny" => DeviceAuthorizationState::Denied {
-            payload: payload.clone(),
-            denied_at: now,
-        },
+    let result = match form.decision.as_str() {
+        "deny" => device_service.deny(&normalized_user_code, Utc::now).await,
         "approve" => {
-            let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-                .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
-                .await
-            {
+            let repository = nazo_postgres::AuthorizationFlowRepository::new(
+                state.diesel_db.clone(),
+                DEFAULT_TENANT_ID,
+            );
+            let client = match repository.client_by_id(&payload.client_id).await {
                 Ok(Some(client)) if client.is_active => client,
                 Ok(_) => {
                     return oauth_error(
@@ -724,48 +588,57 @@ pub(crate) async fn device_decision(
                     );
                 }
             };
-            if let Err(error) = nazo_postgres::GrantRepository::new(state.diesel_db.clone())
-                .upsert(
-                    client.tenant_id,
-                    user.id(),
-                    client.id,
-                    &payload.scopes,
-                    &payload.resource_indicators,
-                    &payload.authorization_details,
+            device_service
+                .approve(
+                    &normalized_user_code,
+                    DeviceAuthorizationApproval {
+                        user_id: user.id(),
+                        subject,
+                        auth_time: Utc::now().timestamp(),
+                        amr: vec!["pwd".to_owned()],
+                        oidc_sid: None,
+                    },
+                    &client,
+                    &repository,
+                    Utc::now,
                 )
                 .await
-            {
-                tracing::warn!(%error, "failed to persist device authorization grant");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "授权记录写入失败.",
-                );
-            }
-            DeviceAuthorizationState::Approved {
-                payload: payload.clone(),
-                approval: DeviceAuthorizationApproval {
-                    user_id: user.id(),
-                    subject,
-                    auth_time: now.timestamp(),
-                    amr: vec!["pwd".to_owned()],
-                    oidc_sid: None,
-                },
-                approved_at: now,
-            }
         }
         _ => return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "授权决策无效."),
     };
-    if let Err(error) = persist_device_state(&state, &device_code_hash, &next_state).await {
-        tracing::warn!(%error, "failed to persist device authorization decision");
-        return oauth_error(
+    match result {
+        Ok(()) => HttpResponse::Ok().finish(),
+        Err(
+            DeviceDecisionFailure::Missing
+            | DeviceDecisionFailure::AlreadyHandled
+            | DeviceDecisionFailure::Expired,
+        ) => oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "用户码无效或已过期.",
+        ),
+        Err(DeviceDecisionFailure::Storage(error)) => {
+            tracing::warn!(%error, "failed to persist device authorization decision");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "设备授权状态写入失败.",
+            )
+        }
+        Err(DeviceDecisionFailure::Repository(error)) => {
+            tracing::warn!(%error, "failed to persist device authorization grant");
+            oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权记录写入失败.",
+            )
+        }
+        Err(DeviceDecisionFailure::Contended) => oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
-            "设备授权状态写入失败.",
-        );
+            "设备授权状态正忙.",
+        ),
     }
-    let _ = store.delete_user_code(&normalized_user_code).await;
-    HttpResponse::Ok().finish()
 }
 
 async fn authenticate_device_authorization_client(
@@ -845,83 +718,16 @@ fn device_authorization_request_error(error: DeviceAuthorizationRequestError) ->
     }
 }
 
-async fn persist_new_device_authorization(
-    state: &AppState,
-    payload: &DeviceAuthorizationPayload,
-) -> anyhow::Result<(String, String)> {
-    for _ in 0..5 {
-        let device_code = random_urlsafe_token();
-        let user_code = random_device_user_code();
-        let pending = DeviceAuthorizationState::Pending {
-            payload: payload.clone(),
-            last_poll_at: None,
-            slow_down_count: 0,
-        };
-        match nazo_valkey::DeviceStore::new(&state.valkey_connection())
-            .create(
-                &device_code,
-                &user_code,
-                &pending,
-                state.settings.device.device_authorization_ttl_seconds,
-            )
-            .await?
-        {
-            nazo_valkey::DeviceCreateResult::Applied => return Ok((device_code, user_code)),
-            nazo_valkey::DeviceCreateResult::DeviceCodeCollision
-            | nazo_valkey::DeviceCreateResult::UserCodeCollision => continue,
-        }
-    }
-    anyhow::bail!("failed to allocate unique device user code")
-}
-
-async fn persist_device_poll_state(
-    state: &AppState,
-    key: &str,
-    next_state: &DeviceAuthorizationState,
-) {
-    if let Err(error) = persist_device_state(state, key, next_state).await {
-        tracing::warn!(%error, "failed to update device authorization poll state");
-    }
-}
-
-async fn persist_device_state(
-    state: &AppState,
-    key: &str,
-    next_state: &DeviceAuthorizationState,
-) -> anyhow::Result<()> {
-    let ttl = device_state_ttl_seconds(next_state, Utc::now()).unwrap_or(1);
-    nazo_valkey::DeviceStore::new(&state.valkey_connection())
-        .store_device_hash(key, next_state, ttl)
-        .await?;
-    Ok(())
-}
-
-fn device_state_ttl_seconds(state: &DeviceAuthorizationState, now: DateTime<Utc>) -> Option<u64> {
-    let payload = device_authorization_payload(state)?;
-    Some((payload.expires_at - now).num_seconds().max(1) as u64)
-}
-
-async fn read_user_code_mapping(state: &AppState, user_code: &str) -> Option<String> {
-    match nazo_valkey::DeviceStore::new(&state.valkey_connection())
-        .resolve_user_code(user_code)
-        .await
-    {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(%error, "failed to read device authorization user code mapping");
-            None
-        }
-    }
-}
-
 fn device_authorization_subject(
     settings: &Settings,
     user_id: Uuid,
-    client: &ClientRow,
+    client: &nazo_auth::OAuthClient,
 ) -> anyhow::Result<String> {
-    let redirect_uri = json_array_to_strings(&client.redirect_uris)
-        .into_iter()
+    let redirect_uri = client
+        .redirect_uris
+        .iter()
         .next()
+        .cloned()
         .unwrap_or_else(|| settings.endpoint.issuer.clone());
     compute_subject_for_client(
         settings,

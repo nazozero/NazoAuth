@@ -4,7 +4,9 @@ use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use nazo_auth::{
-    CibaRequestState, CibaStatus, DeviceAuthorizationPayload, DeviceAuthorizationState,
+    CibaRequestState, CibaStatus, DeviceAuthorizationApproval, DeviceAuthorizationPayload,
+    DeviceAuthorizationState, DeviceDecisionFailure, DeviceGrantService, DevicePollCommit,
+    DevicePollFailure,
 };
 use nazo_valkey::{AtomicResult, CibaStore, DeviceCreateResult, DeviceStore, ValkeyConnection};
 use serde_json::json;
@@ -167,5 +169,135 @@ async fn device_creation_is_atomic_and_collision_leaves_no_orphan() {
             .unwrap()
             .as_deref(),
         Some(device_hash.as_str())
+    );
+}
+
+#[tokio::test]
+async fn concurrent_device_polls_atomically_accumulate_slow_down() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let now = Utc.timestamp_opt(server_time(&inspector).await, 0).unwrap();
+    let device_code = format!("device-poll-{}", uuid::Uuid::now_v7());
+    let user_code = format!("POLL-{}", uuid::Uuid::now_v7());
+    let mut state = pending_device(now);
+    let DeviceAuthorizationState::Pending { last_poll_at, .. } = &mut state else {
+        unreachable!()
+    };
+    *last_poll_at = Some(now);
+    let store = DeviceStore::new(&connection);
+    store
+        .create(&device_code, &user_code, &state, 60)
+        .await
+        .unwrap();
+    let service = DeviceGrantService::new(store);
+    let poll_time = now + chrono::Duration::seconds(1);
+
+    assert!(matches!(
+        service
+            .poll(&device_code, "other-client", || poll_time)
+            .await,
+        Err(DevicePollFailure::ClientMismatch)
+    ));
+
+    let (first, second) = tokio::join!(
+        service.poll(&device_code, "client-a", || poll_time),
+        service.poll(&device_code, "client-a", || poll_time)
+    );
+
+    assert!(matches!(first, Ok(DevicePollCommit::SlowDown)));
+    assert!(matches!(second, Ok(DevicePollCommit::SlowDown)));
+    let stored = DeviceStore::new(&connection)
+        .load_by_device_code(&device_code)
+        .await
+        .unwrap()
+        .unwrap();
+    let DeviceAuthorizationState::Pending {
+        slow_down_count, ..
+    } = stored
+    else {
+        panic!("poll state must remain pending")
+    };
+    assert_eq!(slow_down_count, 2);
+}
+
+#[tokio::test]
+async fn approved_device_code_has_exactly_one_consumer() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let now = Utc.timestamp_opt(server_time(&inspector).await, 0).unwrap();
+    let device_code = format!("device-consume-{}", uuid::Uuid::now_v7());
+    let user_code = format!("CONSUME-{}", uuid::Uuid::now_v7());
+    let payload = match pending_device(now) {
+        DeviceAuthorizationState::Pending { payload, .. } => payload,
+        _ => unreachable!(),
+    };
+    let state = DeviceAuthorizationState::Approved {
+        payload,
+        approval: DeviceAuthorizationApproval {
+            user_id: uuid::Uuid::from_u128(42),
+            subject: "subject".to_owned(),
+            auth_time: now.timestamp(),
+            amr: vec!["pwd".to_owned()],
+            oidc_sid: None,
+        },
+        approved_at: now,
+    };
+    let store = DeviceStore::new(&connection);
+    store
+        .create(&device_code, &user_code, &state, 60)
+        .await
+        .unwrap();
+    let service = DeviceGrantService::new(store);
+
+    let (first, second) = tokio::join!(
+        service.poll(&device_code, "client-a", || now),
+        service.poll(&device_code, "client-a", || now)
+    );
+
+    let approved = [&first, &second]
+        .into_iter()
+        .filter(|result| matches!(result, Ok(DevicePollCommit::Approved { .. })))
+        .count();
+    let missing = [&first, &second]
+        .into_iter()
+        .filter(|result| matches!(result, Err(DevicePollFailure::Missing)))
+        .count();
+    assert_eq!(approved, 1);
+    assert_eq!(missing, 1);
+}
+
+#[tokio::test]
+async fn concurrent_device_denials_commit_one_terminal_result() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let now = Utc.timestamp_opt(server_time(&inspector).await, 0).unwrap();
+    let device_code = format!("device-decision-{}", uuid::Uuid::now_v7());
+    let user_code = format!("DECISION-{}", uuid::Uuid::now_v7());
+    let state = pending_device(now);
+    let store = DeviceStore::new(&connection);
+    store
+        .create(&device_code, &user_code, &state, 60)
+        .await
+        .unwrap();
+    let service = DeviceGrantService::new(store);
+    let (first, second) = tokio::join!(
+        service.deny(&user_code, || now),
+        service.deny(&user_code, || now)
+    );
+
+    assert_eq!(usize::from(first.is_ok()) + usize::from(second.is_ok()), 1);
+    assert!(matches!(
+        first.as_ref().err().or_else(|| second.as_ref().err()),
+        Some(DeviceDecisionFailure::Missing | DeviceDecisionFailure::AlreadyHandled)
+    ));
+    assert!(
+        DeviceStore::new(&connection)
+            .resolve_user_code(&user_code)
+            .await
+            .unwrap()
+            .is_none()
     );
 }

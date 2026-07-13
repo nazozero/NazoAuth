@@ -1,6 +1,7 @@
 use nazo_auth::{
-    AuthorizationFuture, AuthorizationPortError, AuthorizationRepositoryPort, GrantWrite,
-    OAuthClient, StoredAuthorizationGrant,
+    AuthorizationFuture, AuthorizationPortError, AuthorizationRepositoryPort, DeviceGrantFuture,
+    DeviceGrantPortError, DeviceGrantRepositoryPort, DeviceGrantWrite, GrantWrite, OAuthClient,
+    StoredAuthorizationGrant,
 };
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
@@ -106,6 +107,36 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
     }
 }
 
+impl DeviceGrantRepositoryPort for AuthorizationFlowRepository {
+    fn client_by_id<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> DeviceGrantFuture<'a, Option<OAuthClient>> {
+        Box::pin(async move {
+            self.clients
+                .by_client_id(self.tenant_id, client_id)
+                .await
+                .map_err(map_device_repository_error)
+        })
+    }
+
+    fn upsert_grant<'a>(&'a self, write: DeviceGrantWrite<'a>) -> DeviceGrantFuture<'a, ()> {
+        Box::pin(async move {
+            self.grants
+                .upsert(
+                    write.tenant_id,
+                    write.user_id,
+                    write.client_id,
+                    write.scopes,
+                    write.resource_indicators,
+                    write.authorization_details,
+                )
+                .await
+                .map_err(map_device_repository_error)
+        })
+    }
+}
+
 fn map_repository_error(error: RepositoryError) -> AuthorizationPortError {
     match error {
         RepositoryError::Unavailable => AuthorizationPortError::Unavailable,
@@ -115,6 +146,19 @@ fn map_repository_error(error: RepositoryError) -> AuthorizationPortError {
         RepositoryError::Consistency(_) => AuthorizationPortError::CorruptData,
         RepositoryError::NotFound | RepositoryError::Unexpected(_) => {
             AuthorizationPortError::Unexpected
+        }
+    }
+}
+
+fn map_device_repository_error(error: RepositoryError) -> DeviceGrantPortError {
+    match error {
+        RepositoryError::Unavailable => DeviceGrantPortError::Unavailable,
+        RepositoryError::Conflict | RepositoryError::AlreadyProcessed => {
+            DeviceGrantPortError::Conflict
+        }
+        RepositoryError::Consistency(_) => DeviceGrantPortError::CorruptData,
+        RepositoryError::NotFound | RepositoryError::Unexpected(_) => {
+            DeviceGrantPortError::Unexpected
         }
     }
 }

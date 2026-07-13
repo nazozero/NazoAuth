@@ -2,6 +2,7 @@ use super::*;
 use crate::config::ConfigSource;
 use crate::http::token::TokenForm;
 use actix_web::test::TestRequest;
+use nazo_auth::{DeviceAuthorizationState, DevicePollTransition, evaluate_device_poll};
 use nazo_postgres::create_pool;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -219,8 +220,8 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         slow_down_count: 0,
     };
     assert!(matches!(
-        evaluate_device_code_poll(&pending, now),
-        DeviceCodePollResult::AuthorizationPending { .. }
+        evaluate_device_poll(&pending, now),
+        DevicePollTransition::AuthorizationPending(_)
     ));
 
     let too_soon = DeviceAuthorizationState::Pending {
@@ -229,8 +230,8 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         slow_down_count: 0,
     };
     assert!(matches!(
-        evaluate_device_code_poll(&too_soon, now),
-        DeviceCodePollResult::SlowDown { .. }
+        evaluate_device_poll(&too_soon, now),
+        DevicePollTransition::SlowDown(_)
     ));
 
     let denied = DeviceAuthorizationState::Denied {
@@ -238,8 +239,8 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         denied_at: now,
     };
     assert!(matches!(
-        evaluate_device_code_poll(&denied, now),
-        DeviceCodePollResult::AccessDenied
+        evaluate_device_poll(&denied, now),
+        DevicePollTransition::AccessDenied
     ));
 
     let expired = DeviceAuthorizationState::Pending {
@@ -251,8 +252,8 @@ fn device_code_polling_enforces_pending_slow_down_denied_and_expired_results() {
         slow_down_count: 0,
     };
     assert!(matches!(
-        evaluate_device_code_poll(&expired, now),
-        DeviceCodePollResult::Expired
+        evaluate_device_poll(&expired, now),
+        DevicePollTransition::Expired
     ));
 }
 
