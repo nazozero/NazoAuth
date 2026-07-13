@@ -147,8 +147,20 @@ def check_toolchain_pins() -> None:
         raise SystemExit("rust-toolchain.toml must pin an exact stable Rust version")
 
     containerfile = (ROOT / "Containerfile").read_text(encoding="utf-8")
-    if f"FROM docker.io/library/rust:{version}-slim AS builder" not in containerfile:
+    rust_builder = re.search(
+        r"FROM docker\.io/library/rust:(\d+\.\d+\.\d+)-slim"
+        r"@sha256:[0-9a-f]{64} AS builder",
+        containerfile,
+    )
+    if rust_builder is None or rust_builder.group(1) != version:
         raise SystemExit("Containerfile Rust builder pin differs from rust-toolchain.toml")
+    if not re.search(
+        r"FROM docker\.io/library/debian:[^\s@]+@sha256:[0-9a-f]{64} AS runtime-base",
+        containerfile,
+    ):
+        raise SystemExit("Containerfile runtime base image must be pinned by digest")
+    if "RUN cargo build --release --locked" not in containerfile:
+        raise SystemExit("Containerfile release build must use Cargo.lock")
 
     workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
     rust_actions = []
