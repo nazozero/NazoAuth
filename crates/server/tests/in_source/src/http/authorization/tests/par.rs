@@ -1,15 +1,14 @@
 use super::*;
-use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use std::sync::Arc;
-
 use crate::config::ConfigSource;
-use crate::domain::AppState;
-use nazo_postgres::{create_pool, get_conn};
+use crate::http::authorization::{
+    AuthorizationHttpConfig, AuthorizationTestFixture, ServerAuthorizationService,
+};
+use crate::support::sessions::AdminSessionHandles;
+use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use nazo_postgres::{DbPool, create_pool, get_conn};
 
 use crate::settings::{AuthorizationServerProfile, DpopNoncePolicy};
-use crate::support::{
-    ClientSigningFixture, IpCidr, RateLimitPolicy, client_signing_fixture, hash_client_secret,
-};
+use crate::support::{ClientSigningFixture, IpCidr, client_signing_fixture, hash_client_secret};
 use actix_web::test::TestRequest;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Nullable, Text, Uuid as SqlUuid};
@@ -19,22 +18,20 @@ use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
 
-async fn par(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
-    if let Err(response) =
-        crate::support::enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
-    {
+async fn par(fixture: &ParTestFixture, req: HttpRequest, body: Bytes) -> HttpResponse {
+    let context = fixture.authorization.context();
+    if let Err(response) = enforce_par_rate_limit(&context, &req).await {
         return response;
     }
-    par_after_rate_limit(state, req, body).await
+    par_after_rate_limit(fixture, req, body).await
 }
 
 async fn par_after_rate_limit(
-    state: Data<AppState>,
+    fixture: &ParTestFixture,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    let dependencies = crate::http::authorization::TestAuthorizationDependencies::new(&state);
-    par_after_rate_limit_with_context(&dependencies.context(), req, body).await
+    par_after_rate_limit_with_context(&fixture.authorization.context(), req, body).await
 }
 
 fn client(require_dpop_bound_tokens: bool) -> ClientRow {
@@ -230,8 +227,68 @@ fn unavailable_valkey_client(timeout_ms: u64) -> fred::prelude::Client {
         .expect("unavailable valkey client construction should not connect")
 }
 
+struct ParTestFixture {
+    authorization: AuthorizationTestFixture,
+    database: DbPool,
+    valkey: fred::prelude::Client,
+    keyset: nazo_key_management::KeyManager,
+}
+
+impl ParTestFixture {
+    fn new(
+        settings: Settings,
+        database: DbPool,
+        valkey: fred::prelude::Client,
+        keyset: nazo_key_management::KeyManager,
+    ) -> Self {
+        let connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+        let session = &settings.session;
+        let authorization = AuthorizationTestFixture::new(
+            ServerAuthorizationService::new(
+                nazo_postgres::AuthorizationFlowRepository::new(
+                    database.clone(),
+                    DEFAULT_TENANT_ID,
+                ),
+                nazo_valkey::AuthorizationStateAdapter::new(&connection),
+                keyset.clone(),
+            ),
+            AuthorizationHttpConfig::from(&settings),
+            AdminSessionHandles::new(
+                nazo_valkey::SessionStore::new(&connection),
+                nazo_postgres::UserRepository::new(database.clone()),
+                crate::support::sessions::SessionHttpConfig::new(
+                    &session.session_cookie_name,
+                    &session.csrf_cookie_name,
+                    session.cookie_secure,
+                ),
+            ),
+            crate::runtime_modules::inherited_enabled(&settings),
+        );
+        Self {
+            authorization,
+            database,
+            valkey,
+            keyset,
+        }
+    }
+
+    fn with_valkey(&self, valkey: fred::prelude::Client) -> Self {
+        let connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+        Self {
+            authorization: self.authorization.rebind_storage(
+                self.database.clone(),
+                &connection,
+                self.keyset.clone(),
+            ),
+            database: self.database.clone(),
+            valkey,
+            keyset: self.keyset.clone(),
+        }
+    }
+}
+
 struct LiveParFixture {
-    state: Data<AppState>,
+    par: ParTestFixture,
 }
 
 impl LiveParFixture {
@@ -274,22 +331,17 @@ impl LiveParFixture {
         valkey.init().await.expect("valkey should connect");
 
         Some(Self {
-            state: Data::new(AppState {
-                diesel_db: create_pool(database_url, 4).expect("database pool should build"),
+            par: ParTestFixture::new(
+                settings,
+                create_pool(database_url, 4).expect("database pool should build"),
                 valkey,
-                settings: Arc::new(settings),
-                keyset: crate::test_support::test_key_manager(),
-            }),
+                crate::test_support::test_key_manager(),
+            ),
         })
     }
 
-    fn state_with_unavailable_valkey(&self) -> Data<AppState> {
-        Data::new(AppState {
-            diesel_db: self.state.diesel_db.clone(),
-            valkey: unavailable_valkey_client(50),
-            settings: self.state.settings.clone(),
-            keyset: self.state.keyset.clone(),
-        })
+    fn par_with_unavailable_valkey(&self) -> ParTestFixture {
+        self.par.with_valkey(unavailable_valkey_client(50))
     }
 
     async fn insert_client_secret_post_client(&self, client_id: &str, secret: &str) {
@@ -298,7 +350,7 @@ impl LiveParFixture {
     }
 
     async fn set_client_jwks(&self, client_id: &str, jwks: Value) {
-        let mut conn = get_conn(&self.state.diesel_db)
+        let mut conn = get_conn(&self.par.database)
             .await
             .expect("database connection should open");
         sql_query("UPDATE oauth_clients SET jwks = $1 WHERE tenant_id = $2 AND client_id = $3")
@@ -318,7 +370,7 @@ impl LiveParFixture {
         require_mtls_bound_tokens: bool,
         is_active: bool,
     ) {
-        let mut conn = get_conn(&self.state.diesel_db)
+        let mut conn = get_conn(&self.par.database)
             .await
             .expect("database connection should open");
         sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND client_id = $2")
@@ -327,8 +379,10 @@ impl LiveParFixture {
             .execute(&mut conn)
             .await
             .expect("PAR test client cleanup should succeed");
-        let secret_hash =
-            hash_client_secret(secret, &self.state.settings.protocol.client_secret_pepper);
+        let secret_hash = hash_client_secret(
+            secret,
+            &self.par.authorization.context().config.client_secret_pepper,
+        );
         sql_query(
             r#"
             INSERT INTO oauth_clients (
@@ -369,21 +423,21 @@ impl LiveParFixture {
     }
 }
 
-fn par_state_without_live_services() -> Data<AppState> {
+fn par_state_without_live_services() -> ParTestFixture {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.identity.rate_limit.token_management_max_requests = 100_000;
 
-    Data::new(AppState {
-        diesel_db: create_pool(
+    ParTestFixture::new(
+        settings,
+        create_pool(
             "postgres://nazo_par_test_invalid:nazo_par_test_invalid@127.0.0.1:1/nazo".to_owned(),
             1,
         )
         .expect("pool construction should not connect"),
-        valkey: unavailable_valkey_client(50),
-        settings: Arc::new(settings),
-        keyset: crate::test_support::test_key_manager(),
-    })
+        unavailable_valkey_client(50),
+        crate::test_support::test_key_manager(),
+    )
 }
 
 fn par_form_request() -> HttpRequest {
@@ -645,7 +699,7 @@ fn par_validation_binds_request_uri_to_registered_redirect_uri() {
 #[actix_web::test]
 async fn par_rejects_non_form_content_type_before_client_lookup() {
     let response = par_after_rate_limit(
-        par_state_without_live_services(),
+        &par_state_without_live_services(),
         TestRequest::post()
             .uri("/oauth/par")
             .insert_header((header::CONTENT_TYPE, "application/json"))
@@ -671,7 +725,7 @@ async fn par_rejects_malformed_or_ambiguous_authorization_parameters_before_clie
 
     for body in cases {
         let response = par_after_rate_limit(
-            par_state_without_live_services(),
+            &par_state_without_live_services(),
             par_form_request(),
             Bytes::copy_from_slice(body),
         )
@@ -685,7 +739,7 @@ async fn par_rejects_malformed_or_ambiguous_authorization_parameters_before_clie
 #[actix_web::test]
 async fn par_rejects_disabled_request_object_before_client_lookup() {
     let response = par_after_rate_limit(
-        par_state_without_live_services(),
+        &par_state_without_live_services(),
         par_form_request(),
         Bytes::from_static(b"client_id=client-a&response_type=code&request=jwt"),
     )
@@ -699,7 +753,7 @@ async fn par_rejects_disabled_request_object_before_client_lookup() {
 #[actix_web::test]
 async fn par_rejects_disabled_authorization_details_before_client_lookup() {
     let response = par_after_rate_limit(
-        par_state_without_live_services(),
+        &par_state_without_live_services(),
         par_form_request(),
         Bytes::from_static(b"client_id=client-a&response_type=code&authorization_details=%5B%5D"),
     )
@@ -713,7 +767,7 @@ async fn par_rejects_disabled_authorization_details_before_client_lookup() {
 #[actix_web::test]
 async fn par_rate_limit_failure_short_circuits_before_client_lookup() {
     let response = par(
-        par_state_without_live_services(),
+        &par_state_without_live_services(),
         par_form_request(),
         Bytes::from_static(b"client_id=client-a&client_secret=secret&response_type=code"),
     )
@@ -735,7 +789,7 @@ async fn par_returns_invalid_client_for_unknown_or_inactive_client() {
         urlencoding::encode(&unknown_client_id)
     ));
 
-    let response = par_after_rate_limit(fixture.state.clone(), par_form_request(), unknown).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), unknown).await;
     let (status, value) = par_json_body(response).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(value.get("error"), Some(&json!("invalid_client")));
@@ -758,7 +812,7 @@ async fn par_returns_invalid_client_for_unknown_or_inactive_client() {
         urlencoding::encode(&secret)
     ));
 
-    let response = par_after_rate_limit(fixture.state, par_form_request(), inactive).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), inactive).await;
     let (status, value) = par_json_body(response).await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(value.get("error"), Some(&json!("invalid_client")));
@@ -768,7 +822,7 @@ async fn par_returns_invalid_client_for_unknown_or_inactive_client() {
 #[actix_web::test]
 async fn par_client_lookup_failure_is_server_error_not_invalid_client() {
     let response = par_after_rate_limit(
-        par_state_without_live_services(),
+        &par_state_without_live_services(),
         par_form_request(),
         Bytes::from_static(
             b"client_id=client-a&client_secret=secret&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback",
@@ -798,7 +852,7 @@ async fn par_enforces_client_request_object_policy_after_authentication() {
         urlencoding::encode(&secret)
     ));
 
-    let response = par_after_rate_limit(fixture.state, par_form_request(), body).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -822,7 +876,7 @@ async fn par_fapi2_rejects_shared_secret_client_auth_after_authentication() {
         urlencoding::encode(&secret)
     ));
 
-    let response = par_after_rate_limit(fixture.state, par_form_request(), body).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::UNAUTHORIZED);
@@ -846,7 +900,7 @@ async fn par_rejects_invalid_dpop_jkt_after_client_authentication() {
         urlencoding::encode(&secret)
     ));
 
-    let response = par_after_rate_limit(fixture.state, par_form_request(), body).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -887,7 +941,7 @@ async fn par_rejects_request_uri_from_request_object_after_client_authentication
         urlencoding::encode(&request_object)
     ));
 
-    let response = par_after_rate_limit(fixture.state, par_form_request(), body).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -916,7 +970,7 @@ async fn par_rejects_unsigned_request_object_without_outer_client_id_as_request_
         urlencoding::encode(&request_object)
     ));
 
-    let response = par_after_rate_limit(fixture.state, par_form_request(), body).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -961,7 +1015,7 @@ async fn par_rejects_authorization_details_from_request_object_when_disabled() {
         urlencoding::encode(&request_object)
     ));
 
-    let response = par_after_rate_limit(fixture.state, par_form_request(), body).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -985,7 +1039,7 @@ async fn par_rejects_unsupported_response_type_after_client_authentication() {
         urlencoding::encode(&secret)
     ));
 
-    let response = par_after_rate_limit(fixture.state, par_form_request(), body).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
@@ -1012,12 +1066,8 @@ async fn par_persists_mtls_thumbprint_for_sender_constrained_request_uri() {
         urlencoding::encode(&secret)
     ));
 
-    let response = par_after_rate_limit(
-        fixture.state.clone(),
-        par_form_request_from_trusted_proxy(),
-        body,
-    )
-    .await;
+    let response =
+        par_after_rate_limit(&fixture.par, par_form_request_from_trusted_proxy(), body).await;
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::CREATED);
@@ -1025,7 +1075,7 @@ async fn par_persists_mtls_thumbprint_for_sender_constrained_request_uri() {
         .as_str()
         .expect("PAR success should return request_uri");
     let raw = valkey_get(
-        &fixture.state.valkey,
+        &fixture.par.valkey,
         pushed_authorization_request_key(request_uri),
     )
     .await
@@ -1057,7 +1107,7 @@ async fn par_fails_closed_when_request_uri_persistence_fails() {
     ));
 
     let response = par_after_rate_limit(
-        fixture.state_with_unavailable_valkey(),
+        &fixture.par_with_unavailable_valkey(),
         par_form_request(),
         body,
     )
@@ -1085,7 +1135,7 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
         urlencoding::encode(&secret)
     ));
 
-    let response = par_after_rate_limit(fixture.state.clone(), par_form_request(), body).await;
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::CREATED);
@@ -1095,11 +1145,11 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
     assert!(request_uri.starts_with("urn:ietf:params:oauth:request_uri:"));
     assert_eq!(
         value["expires_in"],
-        json!(fixture.state.settings.protocol.par_ttl_seconds)
+        json!(fixture.par.authorization.context().config.par_ttl_seconds)
     );
 
     let raw = valkey_get(
-        &fixture.state.valkey,
+        &fixture.par.valkey,
         pushed_authorization_request_key(request_uri),
     )
     .await

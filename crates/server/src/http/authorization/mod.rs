@@ -85,7 +85,7 @@ pub(crate) fn permits_existing_module_transaction(
 }
 
 #[cfg(test)]
-pub(crate) struct TestAuthorizationDependencies {
+pub(crate) struct AuthorizationTestFixture {
     service: ServerAuthorizationService,
     config: AuthorizationHttpConfig,
     sessions: AdminSessionHandles,
@@ -93,30 +93,18 @@ pub(crate) struct TestAuthorizationDependencies {
 }
 
 #[cfg(test)]
-impl TestAuthorizationDependencies {
-    pub(crate) fn new(state: &crate::domain::AppState) -> Self {
-        let connection = state.valkey_connection();
-        let session = &state.settings.session;
+impl AuthorizationTestFixture {
+    pub(crate) fn new(
+        service: ServerAuthorizationService,
+        config: AuthorizationHttpConfig,
+        sessions: AdminSessionHandles,
+        enabled_modules: std::collections::BTreeSet<ModuleId>,
+    ) -> Self {
         Self {
-            service: ServerAuthorizationService::new(
-                nazo_postgres::AuthorizationFlowRepository::new(
-                    state.diesel_db.clone(),
-                    crate::support::tenancy::DEFAULT_TENANT_ID,
-                ),
-                nazo_valkey::AuthorizationStateAdapter::new(&connection),
-                state.keyset.clone(),
-            ),
-            config: AuthorizationHttpConfig::from(state.settings.as_ref()),
-            sessions: AdminSessionHandles::new(
-                nazo_valkey::SessionStore::new(&connection),
-                nazo_postgres::UserRepository::new(state.diesel_db.clone()),
-                crate::support::sessions::SessionHttpConfig::new(
-                    &session.session_cookie_name,
-                    &session.csrf_cookie_name,
-                    session.cookie_secure,
-                ),
-            ),
-            enabled_modules: crate::runtime_modules::inherited_enabled(&state.settings),
+            service,
+            config,
+            sessions,
+            enabled_modules,
         }
     }
 
@@ -127,6 +115,71 @@ impl TestAuthorizationDependencies {
             &self.sessions,
             self.enabled_modules.clone(),
         )
+    }
+
+    pub(crate) fn rebind_storage(
+        &self,
+        database: nazo_postgres::DbPool,
+        connection: &nazo_valkey::ValkeyConnection,
+        keyset: nazo_key_management::KeyManager,
+    ) -> Self {
+        Self::new(
+            ServerAuthorizationService::new(
+                nazo_postgres::AuthorizationFlowRepository::new(
+                    database.clone(),
+                    crate::support::tenancy::DEFAULT_TENANT_ID,
+                ),
+                nazo_valkey::AuthorizationStateAdapter::new(connection),
+                keyset,
+            ),
+            self.config.clone(),
+            AdminSessionHandles::new(
+                nazo_valkey::SessionStore::new(connection),
+                nazo_postgres::UserRepository::new(database),
+                self.sessions.http_config().clone(),
+            ),
+            self.enabled_modules.clone(),
+        )
+    }
+}
+
+#[cfg(test)]
+pub(crate) struct TestAuthorizationDependencies {
+    fixture: AuthorizationTestFixture,
+}
+
+#[cfg(test)]
+impl TestAuthorizationDependencies {
+    pub(crate) fn new(state: &crate::domain::AppState) -> Self {
+        let connection = state.valkey_connection();
+        let session = &state.settings.session;
+        Self {
+            fixture: AuthorizationTestFixture::new(
+                ServerAuthorizationService::new(
+                    nazo_postgres::AuthorizationFlowRepository::new(
+                        state.diesel_db.clone(),
+                        crate::support::tenancy::DEFAULT_TENANT_ID,
+                    ),
+                    nazo_valkey::AuthorizationStateAdapter::new(&connection),
+                    state.keyset.clone(),
+                ),
+                AuthorizationHttpConfig::from(state.settings.as_ref()),
+                AdminSessionHandles::new(
+                    nazo_valkey::SessionStore::new(&connection),
+                    nazo_postgres::UserRepository::new(state.diesel_db.clone()),
+                    crate::support::sessions::SessionHttpConfig::new(
+                        &session.session_cookie_name,
+                        &session.csrf_cookie_name,
+                        session.cookie_secure,
+                    ),
+                ),
+                crate::runtime_modules::inherited_enabled(&state.settings),
+            ),
+        }
+    }
+
+    pub(crate) fn context(&self) -> AuthorizationRequestContext<'_> {
+        self.fixture.context()
     }
 }
 
@@ -151,6 +204,7 @@ mod boundary_tests {
         for (name, source) in [
             ("request", include_str!("request.rs")),
             ("par", include_str!("par.rs")),
+            ("jar", include_str!("jar.rs")),
             ("consent", include_str!("consent.rs")),
             ("decision", include_str!("decision.rs")),
             ("prompt_none", include_str!("request/prompt_none.rs")),
@@ -162,6 +216,15 @@ mod boundary_tests {
             assert!(
                 !source.contains("AuthorizationHandles"),
                 "{name} reintroduced the authorization forwarding facade"
+            );
+        }
+        for (name, source) in [
+            ("par", include_str!("par.rs")),
+            ("jar", include_str!("jar.rs")),
+        ] {
+            assert!(
+                !source.contains("AppState") && !source.contains("TestAuthorizationDependencies"),
+                "{name} reintroduced the legacy authorization test state"
             );
         }
     }
