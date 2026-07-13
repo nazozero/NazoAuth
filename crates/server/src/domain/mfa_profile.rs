@@ -106,6 +106,22 @@ impl ServerMfaProfileOperations {
         })?;
         match resolution {
             SessionResolution::Present(session) => Ok(session.into_user()),
+            SessionResolution::Missing if pending_mfa => {
+                match self.sessions.current(&session_id, context.now).await {
+                    Ok(SessionResolution::Present(_)) => {
+                        Err(MfaProfileError::new(MfaProfileErrorKind::ChallengeMissing))
+                    }
+                    Ok(SessionResolution::Missing | SessionResolution::Invalidated) => {
+                        Err(MfaProfileError::new(MfaProfileErrorKind::SessionMissing))
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "failed to distinguish missing MFA challenge");
+                        Err(MfaProfileError::new(
+                            MfaProfileErrorKind::SessionUnavailable,
+                        ))
+                    }
+                }
+            }
             SessionResolution::Missing | SessionResolution::Invalidated => {
                 Err(MfaProfileError::new(MfaProfileErrorKind::SessionMissing))
             }

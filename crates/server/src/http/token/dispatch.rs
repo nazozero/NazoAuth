@@ -385,7 +385,6 @@ pub(crate) async fn token_with_service(
         auth_facts.presented_credentials(assertion_client_id, form_mtls_client_id);
     if credentials.client_id.is_none()
         && !has_basic
-        && credentials.method == "none"
         && form.client_secret.is_none()
         && !client_auth_context.has_assertion
     {

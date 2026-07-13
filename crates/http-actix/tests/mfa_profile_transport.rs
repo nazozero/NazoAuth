@@ -10,13 +10,14 @@ use actix_web::{
 use nazo_http_actix::{
     AuthenticationRateLimitError, ClientIpConfig, ClientIpHeaderMode, MfaBackupCodesRegenerated,
     MfaChallengeCommand, MfaChallengeSuccess, MfaCodeCommand, MfaProfileConfig, MfaProfileEndpoint,
-    MfaProfileError, MfaProfileFuture, MfaProfileOperations, MfaRequestContext, MfaSessionRotation,
-    MfaStepUpSuccess, MfaTotpConfirmation, MfaTotpEnrollment, configure_mfa_challenge_route,
-    configure_mfa_profile_routes,
+    MfaProfileError, MfaProfileErrorKind, MfaProfileFuture, MfaProfileOperations,
+    MfaRequestContext, MfaSessionRotation, MfaStepUpSuccess, MfaTotpConfirmation,
+    MfaTotpEnrollment, configure_mfa_challenge_route, configure_mfa_profile_routes,
 };
 
 #[derive(Clone, Default)]
 struct Operations {
+    verify_error: Option<MfaProfileError>,
     step_up_error: Option<MfaProfileError>,
     disable_changed: bool,
 }
@@ -44,12 +45,16 @@ impl MfaProfileOperations for Operations {
         &self,
         _command: MfaChallengeCommand,
     ) -> MfaProfileFuture<'_, MfaChallengeSuccess> {
-        Box::pin(async {
-            Ok(MfaChallengeSuccess {
-                rotation: rotation(),
-                method: "otp".to_owned(),
-                remembered_device_token: None,
-            })
+        let error = self.verify_error.clone();
+        Box::pin(async move {
+            match error {
+                Some(error) => Err(error),
+                None => Ok(MfaChallengeSuccess {
+                    rotation: rotation(),
+                    method: "otp".to_owned(),
+                    remembered_device_token: None,
+                }),
+            }
         })
     }
 
@@ -82,6 +87,33 @@ impl MfaProfileOperations for Operations {
         let changed = self.disable_changed;
         Box::pin(async move { Ok(changed) })
     }
+}
+
+#[actix_web::test]
+async fn missing_mfa_challenge_does_not_clear_an_authenticated_session() {
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(endpoint_with(Operations {
+                verify_error: Some(MfaProfileError::new(MfaProfileErrorKind::ChallengeMissing)),
+                ..Operations::default()
+            })))
+            .wrap(from_fn(nazo_http_actix::security_headers))
+            .service(web::scope("/auth/mfa").configure(configure_mfa_challenge_route)),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        authenticated_request(Method::POST, "/auth/mfa/verify")
+            .insert_header((header::CONTENT_TYPE, "application/json"))
+            .set_payload(r#"{"code":"000000","remember_device":false}"#)
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(response.response().cookies().count(), 0);
+    assert_contract_headers(response.headers());
 }
 
 fn rotation() -> MfaSessionRotation {

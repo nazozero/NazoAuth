@@ -80,6 +80,7 @@ pub struct MfaBackupCodesRegenerated {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum MfaProfileErrorKind {
     SessionMissing,
+    ChallengeMissing,
     SessionUnavailable,
     RateLimitUnavailable,
     RateLimited,
@@ -490,6 +491,11 @@ fn error_response(
                 "login_required",
                 session_missing_description(action),
             ),
+        ),
+        MfaProfileErrorKind::ChallengeMissing => authorization_error_response(
+            StatusCode::UNAUTHORIZED,
+            "login_required",
+            session_missing_description(action),
         ),
         MfaProfileErrorKind::SessionUnavailable => authorization_error_response(
             StatusCode::SERVICE_UNAVAILABLE,
