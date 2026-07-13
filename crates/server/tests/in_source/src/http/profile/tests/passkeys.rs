@@ -272,7 +272,7 @@ impl LivePasskeyFixture {
         )
         .bind::<SqlUuid, _>(user.tenant_id)
         .bind::<SqlUuid, _>(user.id)
-        .bind::<Text, _>(credential_id.to_owned())
+        .bind::<Text, _>(format!("{credential_id}-{}", Uuid::now_v7().simple()))
         .bind::<Jsonb, _>(credential)
         .bind::<Text, _>(label.to_owned())
         .get_result::<DatabasePasskeyFixture>(&mut conn)
