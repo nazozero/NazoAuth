@@ -32,8 +32,9 @@ use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
     DynamicRegistrationConfig, MetadataConfig, MfaProfileConfig, MfaProfileHandles,
     OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig, ServerAuthenticationRateLimit,
-    ServerLocalRegistrationOperations, ServerMetadataSnapshotSource, ServerPasswordLoginOperations,
-    ServerProfileAccountOperations, UserinfoConfig, UserinfoHandles,
+    ServerAuthorizationDecisionOperations, ServerLocalRegistrationOperations,
+    ServerMetadataSnapshotSource, ServerPasswordLoginOperations, ServerProfileAccountOperations,
+    UserinfoConfig, UserinfoHandles,
 };
 #[cfg(test)]
 use crate::domain::{DynamicRegistrationHandles, ResourceServerHandles};
@@ -82,8 +83,9 @@ use crate::support::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(test)]
 use actix_web::http::header;
 use nazo_http_actix::{
-    LocalRegistrationEndpoint, PasswordLoginConfig, PasswordLoginEndpoint, ProfileAccountEndpoint,
-    RuntimeModuleAdminEndpoint, SessionCookieConfig, SessionLogoutEndpoint, security_headers,
+    AuthorizationDecisionEndpoint, LocalRegistrationEndpoint, PasswordLoginConfig,
+    PasswordLoginEndpoint, ProfileAccountEndpoint, RuntimeModuleAdminEndpoint, SessionCookieConfig,
+    SessionLogoutEndpoint, security_headers,
 };
 use nazo_postgres::create_pool;
 use tracing::Instrument;
@@ -411,10 +413,10 @@ pub async fn run() -> anyhow::Result<()> {
     );
     let profile_account_endpoint = web::Data::new(ProfileAccountEndpoint::new(
         Arc::new(ServerProfileAccountOperations::new(
-            identity_session_service,
+            identity_session_service.clone(),
             account_profile_service.clone(),
         )),
-        session_cookie_config,
+        session_cookie_config.clone(),
     ));
     let account_profiles = web::Data::new(account_profile_service);
     let avatar_profiles = web::Data::new(AvatarProfileService::new(
@@ -457,6 +459,16 @@ pub async fn run() -> anyhow::Result<()> {
     let client_ip_config = web::Data::new(ClientIpConfig::new(
         &endpoint.trusted_proxy_cidrs,
         endpoint.client_ip_header_mode,
+    ));
+    let authorization_decision_endpoint = web::Data::new(AuthorizationDecisionEndpoint::new(
+        Arc::new(ServerAuthorizationDecisionOperations::new(
+            authorization_service.clone().into_inner(),
+            identity_session_service,
+            authorization_config.clone().into_inner(),
+            runtime_modules.registry.clone(),
+        )),
+        session_cookie_config,
+        client_ip_config.get_ref().clone(),
     ));
     let identity = &settings.identity;
     let auth_request_limiter = web::Data::new(AuthRequestLimiter::new(
@@ -619,6 +631,7 @@ pub async fn run() -> anyhow::Result<()> {
             })
             .wrap(from_fn(security_headers))
             .app_data(runtime_module_admin_endpoint.clone())
+            .app_data(authorization_decision_endpoint.clone())
             .app_data(authorization_endpoint.clone())
             .app_data(authorization_service.clone())
             .app_data(token_service.clone());

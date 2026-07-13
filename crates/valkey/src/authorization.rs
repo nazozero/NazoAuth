@@ -100,6 +100,15 @@ impl AuthorizationStore {
         self.take_json(keys::consent(request_id)).await
     }
 
+    pub async fn compare_and_delete_consent(
+        &self,
+        request_id: &str,
+        expected: &ConsentPayload,
+    ) -> Result<bool, Error> {
+        self.compare_delete_json(keys::consent(request_id), expected)
+            .await
+    }
+
     pub async fn delete_consent(&self, request_id: &str) -> Result<i64, Error> {
         command::delete(&self.connection, keys::consent(request_id)).await
     }
@@ -126,6 +135,15 @@ impl AuthorizationStore {
         request_uri: &str,
     ) -> Result<Option<PushedAuthorizationRequest>, Error> {
         self.take_json(keys::par(request_uri)).await
+    }
+
+    pub async fn compare_and_delete_par(
+        &self,
+        request_uri: &str,
+        expected: &PushedAuthorizationRequest,
+    ) -> Result<bool, Error> {
+        self.compare_delete_json(keys::par(request_uri), expected)
+            .await
     }
 
     pub async fn store_authorization_code_hash(
@@ -288,5 +306,20 @@ impl AuthorizationStore {
                 })
             })
             .transpose()
+    }
+
+    async fn compare_delete_json<T: serde::Serialize + ?Sized>(
+        &self,
+        key: String,
+        expected: &T,
+    ) -> Result<bool, Error> {
+        let expected = serde_json::to_string(expected).map_err(|error| {
+            Error::protocol(format!(
+                "failed to serialize expected authorization state: {error}"
+            ))
+        })?;
+        command::compare_delete(&self.connection, key, &expected)
+            .await
+            .map(|outcome| matches!(outcome, command::CompareDelete::Deleted))
     }
 }

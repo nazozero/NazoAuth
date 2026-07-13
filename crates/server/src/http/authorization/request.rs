@@ -102,6 +102,7 @@ async fn authorize_request_with_context(
     let mut consumed_request_uri_error: Option<&'static str> = None;
     let mut used_pushed_authorization_request = false;
     let mut pending_pushed_request_uri = None;
+    let mut pending_pushed_request_digest = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         if !is_pushed_authorization_request_uri(&request_uri) {
             consumed_request_uri_error = Some("request_uri_not_supported");
@@ -136,10 +137,22 @@ async fn authorize_request_with_context(
                         consumed_request_uri_error = Some("invalid_request");
                         *q = pushed.params;
                     } else {
+                        let digest = match nazo_auth::pushed_authorization_request_digest(&pushed) {
+                            Ok(digest) => digest,
+                            Err(error) => {
+                                tracing::warn!(%error, "failed to bind PAR transaction state");
+                                return oauth_error(
+                                    StatusCode::SERVICE_UNAVAILABLE,
+                                    "server_error",
+                                    "request_uri 读取失败.",
+                                );
+                            }
+                        };
                         pushed_dpop_jkt = pushed.dpop_jkt;
                         pushed_mtls_x5t_s256 = pushed.mtls_x5t_s256;
                         used_pushed_authorization_request = true;
                         pending_pushed_request_uri = Some(request_uri);
+                        pending_pushed_request_digest = Some(digest);
                         *q = pushed.params;
                     }
                 }
@@ -386,6 +399,7 @@ async fn authorize_request_with_context(
         dpop_jkt,
         mtls_x5t_s256,
         pushed_request_uri: pending_pushed_request_uri,
+        pushed_request_digest: pending_pushed_request_digest,
         issued_at: now,
         expires_at: now + Duration::seconds(context.config.auth_code_ttl_seconds as i64),
     };
