@@ -5,6 +5,7 @@
 mod database_user_fixture;
 mod dynamic_registration;
 mod metadata;
+mod mfa;
 mod oauth;
 mod resource_server;
 mod rows;
@@ -16,6 +17,7 @@ pub(crate) use database_user_fixture::{
 };
 pub(crate) use dynamic_registration::{DynamicRegistrationConfig, DynamicRegistrationHandles};
 pub(crate) use metadata::{MetadataConfig, MetadataHandles};
+pub(crate) use mfa::{MfaProfileConfig, MfaProfileHandles};
 pub(crate) use nazo_key_management::KeySnapshot;
 pub(crate) use oauth::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,

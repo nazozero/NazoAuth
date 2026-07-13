@@ -12,7 +12,8 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
     AppState, DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig,
-    MetadataHandles, ResourceServerConfig, ResourceServerHandles,
+    MetadataHandles, MfaProfileConfig, MfaProfileHandles, ResourceServerConfig,
+    ResourceServerHandles,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::AdminClientConfig;
@@ -149,6 +150,13 @@ pub async fn run() -> anyhow::Result<()> {
         &state.settings.issuer,
         state.settings.modules().enable_session_management,
     ));
+    let mfa_rate_limit_connection = state.valkey_connection();
+    let mfa_profiles = web::Data::new(MfaProfileHandles {
+        config: MfaProfileConfig::from(state.settings.as_ref()),
+        sessions: session_profiles.get_ref().clone(),
+        mfa: nazo_postgres::MfaRepository::new(state.diesel_db.clone()),
+        rate_limits: nazo_valkey::RateLimitStore::new(&mfa_rate_limit_connection),
+    });
     let admin_users = web::Data::new(nazo_postgres::UserRepository::new(state.diesel_db.clone()));
     let admin_grants = web::Data::new(nazo_postgres::GrantRepository::new(state.diesel_db.clone()));
     let oauth_clients = web::Data::new(nazo_postgres::OAuthClientRepository::new(
@@ -216,6 +224,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(metadata_handles.clone())
             .app_data(admin_sessions.clone())
             .app_data(session_profiles.clone())
+            .app_data(mfa_profiles.clone())
             .app_data(resource_server_handles.clone())
             .app_data(admin_users.clone())
             .app_data(admin_grants.clone())

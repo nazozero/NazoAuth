@@ -8,7 +8,9 @@ use actix_web::http::header;
 use chrono::Duration;
 use chrono::Utc;
 use nazo_identity::PublicAccount;
+#[cfg(test)]
 use nazo_postgres::DbPool;
+use nazo_postgres::MfaRepository;
 
 use super::{blake3_hex, hash_password, random_urlsafe_token};
 
@@ -23,12 +25,25 @@ pub(crate) async fn remembered_mfa_device_valid(
     req: &HttpRequest,
     user: &PublicAccount,
 ) -> anyhow::Result<bool> {
+    remembered_mfa_device_valid_with_repository(
+        &MfaRepository::new(state.diesel_db.clone()),
+        req,
+        user,
+    )
+    .await
+}
+
+pub(crate) async fn remembered_mfa_device_valid_with_repository(
+    repository: &MfaRepository,
+    req: &HttpRequest,
+    user: &PublicAccount,
+) -> anyhow::Result<bool> {
     let Some(token) = cookie_value(req, MFA_REMEMBERED_COOKIE_NAME) else {
         return Ok(false);
     };
     let token_hash = blake3_hex(token.trim());
     let user_agent_hash = request_user_agent_hash(req);
-    nazo_postgres::MfaRepository::new(state.diesel_db.clone())
+    repository
         .remembered_device_valid(
             user.tenant().tenant_id,
             user.user_id(),
@@ -40,15 +55,25 @@ pub(crate) async fn remembered_mfa_device_valid(
         .map_err(|error| anyhow::anyhow!("failed to validate remembered MFA device: {error:?}"))
 }
 
+#[cfg(test)]
 pub(crate) async fn remember_mfa_device(
     state: &AppState,
+    req: &HttpRequest,
+    user: &PublicAccount,
+) -> anyhow::Result<String> {
+    remember_mfa_device_with_repository(&MfaRepository::new(state.diesel_db.clone()), req, user)
+        .await
+}
+
+pub(crate) async fn remember_mfa_device_with_repository(
+    repository: &MfaRepository,
     req: &HttpRequest,
     user: &PublicAccount,
 ) -> anyhow::Result<String> {
     let token = random_urlsafe_token();
     let token_hash = blake3_hex(&token);
     let expires_at = Utc::now() + Duration::seconds(MFA_REMEMBERED_TTL_SECONDS as i64);
-    nazo_postgres::MfaRepository::new(state.diesel_db.clone())
+    repository
         .remember_device(
             user.tenant().tenant_id,
             user.user_id(),
@@ -61,14 +86,22 @@ pub(crate) async fn remember_mfa_device(
     Ok(token)
 }
 
+#[cfg(test)]
 pub(crate) async fn verify_user_mfa_code(
     db: &DbPool,
     user: &PublicAccount,
     code: &str,
 ) -> anyhow::Result<Option<MfaVerificationMethod>> {
+    verify_user_mfa_code_with_repository(&MfaRepository::new(db.clone()), user, code).await
+}
+
+pub(crate) async fn verify_user_mfa_code_with_repository(
+    repository: &MfaRepository,
+    user: &PublicAccount,
+    code: &str,
+) -> anyhow::Result<Option<MfaVerificationMethod>> {
     let tenant_id = nazo_identity::TenantId::new(user.tenant_id())?;
     let user_id = nazo_identity::UserId::new(user.id())?;
-    let repository = nazo_postgres::MfaRepository::new(db.clone());
     if let Some(normalized) = nazo_identity::mfa::normalize_backup_code(code) {
         return repository
             .consume_backup_code(tenant_id, user_id, &normalized)
@@ -86,14 +119,22 @@ pub(crate) async fn verify_user_mfa_code(
         .map_err(|error| anyhow::anyhow!("failed to verify and consume TOTP: {error:?}"))
 }
 
+#[cfg(test)]
 pub(crate) async fn replace_backup_codes(
     db: &DbPool,
+    user: &PublicAccount,
+) -> anyhow::Result<Vec<String>> {
+    replace_backup_codes_with_repository(&MfaRepository::new(db.clone()), user).await
+}
+
+pub(crate) async fn replace_backup_codes_with_repository(
+    repository: &MfaRepository,
     user: &PublicAccount,
 ) -> anyhow::Result<Vec<String>> {
     let (codes, hashes) = generate_backup_codes_and_hashes()?;
     let tenant_id = user.tenant().tenant_id;
     let user_id = user.user_id();
-    nazo_postgres::MfaRepository::new(db.clone())
+    repository
         .replace_backup_code_hashes(tenant_id, user_id, hashes)
         .await
         .map_err(|error| anyhow::anyhow!("failed to replace backup codes: {error:?}"))?;
@@ -115,10 +156,13 @@ pub(crate) fn generate_backup_codes_and_hashes() -> anyhow::Result<(Vec<String>,
     Ok((codes, hashes))
 }
 
-pub(crate) async fn clear_user_mfa_state(db: &DbPool, user: &PublicAccount) -> anyhow::Result<()> {
+pub(crate) async fn clear_user_mfa_state_with_repository(
+    repository: &MfaRepository,
+    user: &PublicAccount,
+) -> anyhow::Result<()> {
     let tenant_id = user.tenant().tenant_id;
     let user_id = user.user_id();
-    nazo_postgres::MfaRepository::new(db.clone())
+    repository
         .clear_mfa_state(tenant_id, user_id)
         .await
         .map_err(|error| anyhow::anyhow!("failed to clear MFA state: {error:?}"))

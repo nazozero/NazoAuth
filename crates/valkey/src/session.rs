@@ -44,8 +44,9 @@ impl TryFrom<SessionWireRecord> for SessionRecord {
     type Error = Error;
 
     fn try_from(value: SessionWireRecord) -> Result<Self, Self::Error> {
-        let user_id = UserId::new(value.user_id)
-            .map_err(|error| Error::protocol(format!("invalid stored session user: {error}")))?;
+        let user_id = UserId::new(value.user_id).map_err(|error| {
+            Error::corrupt_data(format!("invalid stored session user: {error}"))
+        })?;
         Ok(Self::new(
             user_id,
             value.auth_time,
@@ -114,7 +115,7 @@ impl SessionStore {
             .await?
             .map(|raw| {
                 let wire: SessionWireRecord = serde_json::from_str(&raw).map_err(|error| {
-                    Error::protocol(format!("malformed stored session payload: {error}"))
+                    Error::corrupt_data(format!("malformed stored session payload: {error}"))
                 })?;
                 Ok(StoredSession {
                     value: wire.try_into()?,

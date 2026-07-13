@@ -1,8 +1,8 @@
 //! MFA enrollment, challenge, and step-up endpoints.
 
-use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
+use crate::domain::MfaProfileHandles;
 #[cfg(test)]
 use crate::schema::{user_totp_credentials, users};
 #[cfg(test)]
@@ -17,11 +17,11 @@ use crate::support::{
 use crate::support::{
     MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, MFA_TOTP_DIGITS,
     MFA_TOTP_PERIOD_SECONDS, MfaVerificationMethod, RateLimitPolicy, SessionRotation, audit_event,
-    audit_fields, clear_cookie, clear_user_mfa_state, complete_mfa_session, csrf_error,
-    current_pending_mfa_session, current_user_or_login_required, enforce_rate_limit,
-    generate_backup_codes_and_hashes, has_valid_csrf_token, json_response, make_cookie,
-    oauth_error, remember_mfa_device, replace_backup_codes, step_up_current_session,
-    verify_user_mfa_code, with_cookie_headers,
+    audit_fields, clear_cookie, clear_user_mfa_state_with_repository, csrf_error,
+    enforce_rate_limit_with_store, generate_backup_codes_and_hashes,
+    has_valid_csrf_token_for_cookies, json_response, make_cookie, oauth_error,
+    remember_mfa_device_with_repository, replace_backup_codes_with_repository,
+    verify_user_mfa_code_with_repository, with_cookie_headers,
 };
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
@@ -33,6 +33,7 @@ use chrono::Utc;
 use diesel::prelude::*;
 #[cfg(test)]
 use diesel_async::RunQueryDsl;
+use nazo_identity::PublicAccount;
 #[cfg(test)]
 use nazo_postgres::get_conn;
 use serde::Deserialize;
@@ -57,20 +58,23 @@ pub(crate) struct MfaProtectedRequest {
     code: String,
 }
 
-pub(crate) async fn mfa_totp_begin(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    no_store(mfa_totp_begin_inner(state, req).await)
+pub(crate) async fn mfa_totp_begin(
+    handles: Data<MfaProfileHandles>,
+    req: HttpRequest,
+) -> HttpResponse {
+    no_store(mfa_totp_begin_inner(handles, req).await)
 }
 
-async fn mfa_totp_begin_inner(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+async fn mfa_totp_begin_inner(handles: Data<MfaProfileHandles>, req: HttpRequest) -> HttpResponse {
+    if !has_valid_mfa_csrf_token(&handles, &req) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match current_mfa_user_or_login_required(&handles, &req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
-    let repository = nazo_postgres::MfaRepository::new(state.diesel_db.clone());
-    let existing = match repository
+    let existing = match handles
+        .mfa
         .totp_enrollment(user.tenant().tenant_id, user.user_id())
         .await
     {
@@ -92,8 +96,9 @@ async fn mfa_totp_begin_inner(state: Data<AppState>, req: HttpRequest) -> HttpRe
     }
 
     let secret = nazo_identity::mfa::generate_totp_secret_base32();
-    let label = format!("{} ({})", user.account.email, state.settings.issuer);
-    let result = repository
+    let label = format!("{} ({})", user.account.email, handles.config.issuer);
+    let result = handles
+        .mfa
         .begin_totp_enrollment(
             user.tenant().tenant_id,
             user.user_id(),
@@ -113,7 +118,7 @@ async fn mfa_totp_begin_inner(state: Data<AppState>, req: HttpRequest) -> HttpRe
     json_response(json!({
         "secret_base32": secret,
         "otpauth_uri": nazo_identity::mfa::otpauth_uri(
-            &state.settings.issuer,
+            &handles.config.issuer,
             &user.account.email,
             &secret,
         ),
@@ -123,30 +128,30 @@ async fn mfa_totp_begin_inner(state: Data<AppState>, req: HttpRequest) -> HttpRe
 }
 
 pub(crate) async fn mfa_totp_confirm(
-    state: Data<AppState>,
+    handles: Data<MfaProfileHandles>,
     req: HttpRequest,
     Json(payload): Json<ConfirmTotpRequest>,
 ) -> HttpResponse {
-    no_store(mfa_totp_confirm_inner(state, req, Json(payload)).await)
+    no_store(mfa_totp_confirm_inner(handles, req, Json(payload)).await)
 }
 
 async fn mfa_totp_confirm_inner(
-    state: Data<AppState>,
+    handles: Data<MfaProfileHandles>,
     req: HttpRequest,
     Json(payload): Json<ConfirmTotpRequest>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    if !has_valid_mfa_csrf_token(&handles, &req) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match current_mfa_user_or_login_required(&handles, &req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+    if let Err(response) = enforce_mfa_rate_limit(&handles, &req).await {
         return response;
     }
-    let repository = nazo_postgres::MfaRepository::new(state.diesel_db.clone());
-    let credential = match repository
+    let credential = match handles
+        .mfa
         .totp_enrollment(user.tenant().tenant_id, user.user_id())
         .await
     {
@@ -178,7 +183,8 @@ async fn mfa_totp_confirm_inner(
     )
     .is_none()
     {
-        if let Err(error) = repository
+        if let Err(error) = handles
+            .mfa
             .record_invalid_totp_attempt(user.tenant().tenant_id, user.user_id())
             .await
         {
@@ -202,26 +208,34 @@ async fn mfa_totp_confirm_inner(
             );
         }
     };
-    let rotation =
-        match step_up_current_session(&state, &req, MfaVerificationMethod::Totp.amr()).await {
-            Ok(Some(rotation)) => rotation,
-            Ok(None) => {
-                return oauth_error(
-                    StatusCode::UNAUTHORIZED,
-                    "login_required",
-                    "当前会话已过期.",
-                );
-            }
-            Err(error) => {
-                tracing::warn!(%error, "failed to step up current session before TOTP enrollment");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "会话写入失败.",
-                );
-            }
-        };
-    match repository
+    let rotation = match handles
+        .sessions
+        .step_up_current_session(
+            &req,
+            MfaVerificationMethod::Totp.amr(),
+            handles.config.session_ttl_seconds,
+        )
+        .await
+    {
+        Ok(Some(rotation)) => rotation,
+        Ok(None) => {
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "login_required",
+                "当前会话已过期.",
+            );
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to step up current session before TOTP enrollment");
+            return oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "会话写入失败.",
+            );
+        }
+    };
+    match handles
+        .mfa
         .verify_and_confirm_totp(
             user.tenant().tenant_id,
             user.user_id(),
@@ -237,7 +251,7 @@ async fn mfa_totp_confirm_inner(
             | nazo_identity::ports::TotpVerificationOutcome::Replay,
         ) => {
             return with_rotated_session_cookies(
-                &state,
+                &handles,
                 &rotation,
                 oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效."),
             );
@@ -245,7 +259,7 @@ async fn mfa_totp_confirm_inner(
         Err(error) => {
             tracing::warn!(%error, "failed to confirm TOTP credential");
             return with_rotated_session_cookies(
-                &state,
+                &handles,
                 &rotation,
                 oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -264,27 +278,27 @@ async fn mfa_totp_confirm_inner(
             "mfa_enabled": true,
             "backup_codes": backup_codes
         })),
-        &rotated_session_cookies(&state, &rotation),
+        &rotated_session_cookies(&handles, &rotation),
     )
 }
 
 pub(crate) async fn mfa_verify(
-    state: Data<AppState>,
+    handles: Data<MfaProfileHandles>,
     req: HttpRequest,
     Json(payload): Json<MfaChallengeRequest>,
 ) -> HttpResponse {
-    no_store(mfa_verify_inner(state, req, Json(payload)).await)
+    no_store(mfa_verify_inner(handles, req, Json(payload)).await)
 }
 
 async fn mfa_verify_inner(
-    state: Data<AppState>,
+    handles: Data<MfaProfileHandles>,
     req: HttpRequest,
     Json(payload): Json<MfaChallengeRequest>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    if !has_valid_mfa_csrf_token(&handles, &req) {
         return csrf_error();
     }
-    let session = match current_pending_mfa_session(&state, &req).await {
+    let session = match handles.sessions.current_pending_mfa_session(&req).await {
         Ok(Some(session)) => session,
         Ok(None) => {
             return oauth_error(
@@ -302,10 +316,16 @@ async fn mfa_verify_inner(
             );
         }
     };
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+    if let Err(response) = enforce_mfa_rate_limit(&handles, &req).await {
         return response;
     }
-    let method = match verify_user_mfa_code(&state.diesel_db, &session.user, &payload.code).await {
+    let method = match verify_user_mfa_code_with_repository(
+        &handles.mfa,
+        &session.user,
+        &payload.code,
+    )
+    .await
+    {
         Ok(Some(method)) => method,
         Ok(None) => {
             audit_event(
@@ -325,13 +345,13 @@ async fn mfa_verify_inner(
     };
     let mut cookies = Vec::new();
     if payload.remember_device.unwrap_or(false) {
-        match remember_mfa_device(&state, &req, &session.user).await {
+        match remember_mfa_device_with_repository(&handles.mfa, &req, &session.user).await {
             Ok(token) => cookies.push(make_cookie(
                 MFA_REMEMBERED_COOKIE_NAME,
                 &token,
                 true,
                 MFA_REMEMBERED_TTL_SECONDS,
-                state.settings.session().cookie_secure,
+                handles.sessions.http_config().cookie_secure(),
             )),
             Err(error) => {
                 tracing::warn!(%error, "failed to remember MFA device");
@@ -343,7 +363,11 @@ async fn mfa_verify_inner(
             }
         }
     }
-    let rotation = match complete_mfa_session(&state, &req, method.amr()).await {
+    let rotation = match handles
+        .sessions
+        .complete_mfa_session(&req, method.amr(), handles.config.session_ttl_seconds)
+        .await
+    {
         Ok(Some(rotation)) => rotation,
         Ok(None) => {
             return oauth_error(
@@ -361,7 +385,7 @@ async fn mfa_verify_inner(
             );
         }
     };
-    cookies.extend(rotated_session_cookies(&state, &rotation));
+    cookies.extend(rotated_session_cookies(&handles, &rotation));
     audit_event(
         "mfa_challenge_success",
         audit_fields(&[
@@ -379,46 +403,51 @@ async fn mfa_verify_inner(
 }
 
 pub(crate) async fn mfa_backup_codes_regenerate(
-    state: Data<AppState>,
+    handles: Data<MfaProfileHandles>,
     req: HttpRequest,
     Json(payload): Json<MfaProtectedRequest>,
 ) -> HttpResponse {
-    no_store(mfa_backup_codes_regenerate_inner(state, req, Json(payload)).await)
+    no_store(mfa_backup_codes_regenerate_inner(handles, req, Json(payload)).await)
 }
 
 async fn mfa_backup_codes_regenerate_inner(
-    state: Data<AppState>,
+    handles: Data<MfaProfileHandles>,
     req: HttpRequest,
     Json(payload): Json<MfaProtectedRequest>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    if !has_valid_mfa_csrf_token(&handles, &req) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match current_mfa_user_or_login_required(&handles, &req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+    if let Err(response) = enforce_mfa_rate_limit(&handles, &req).await {
         return response;
     }
     if !user.account.mfa_enabled {
         return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "MFA 未启用.");
     }
-    let method = match verify_user_mfa_code(&state.diesel_db, &user, &payload.code).await {
-        Ok(Some(method)) => method,
-        Ok(None) => {
-            return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效.");
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to verify MFA for backup code regeneration");
-            return oauth_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "MFA 验证失败.",
-            );
-        }
-    };
-    let rotation = match step_up_current_session(&state, &req, method.amr()).await {
+    let method =
+        match verify_user_mfa_code_with_repository(&handles.mfa, &user, &payload.code).await {
+            Ok(Some(method)) => method,
+            Ok(None) => {
+                return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效.");
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to verify MFA for backup code regeneration");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "MFA 验证失败.",
+                );
+            }
+        };
+    let rotation = match handles
+        .sessions
+        .step_up_current_session(&req, method.amr(), handles.config.session_ttl_seconds)
+        .await
+    {
         Ok(Some(rotation)) => rotation,
         Ok(None) => {
             return oauth_error(
@@ -436,12 +465,12 @@ async fn mfa_backup_codes_regenerate_inner(
             );
         }
     };
-    let backup_codes = match replace_backup_codes(&state.diesel_db, &user).await {
+    let backup_codes = match replace_backup_codes_with_repository(&handles.mfa, &user).await {
         Ok(codes) => codes,
         Err(error) => {
             tracing::warn!(%error, "failed to regenerate backup codes");
             return with_rotated_session_cookies(
-                &state,
+                &handles,
                 &rotation,
                 oauth_error(
                     StatusCode::SERVICE_UNAVAILABLE,
@@ -460,67 +489,67 @@ async fn mfa_backup_codes_regenerate_inner(
     );
     with_cookie_headers(
         json_response(json!({ "backup_codes": backup_codes })),
-        &rotated_session_cookies(&state, &rotation),
+        &rotated_session_cookies(&handles, &rotation),
     )
 }
 
 fn rotated_session_cookies(
-    state: &AppState,
+    handles: &MfaProfileHandles,
     rotation: &SessionRotation,
 ) -> [actix_web::cookie::Cookie<'static>; 2] {
     [
         make_cookie(
-            state.settings.session().session_cookie_name,
+            handles.sessions.http_config().session_cookie_name(),
             &rotation.session_id,
             true,
-            state.settings.session().session_ttl_seconds,
-            state.settings.session().cookie_secure,
+            handles.config.session_ttl_seconds,
+            handles.sessions.http_config().cookie_secure(),
         ),
         make_cookie(
-            state.settings.session().csrf_cookie_name,
+            handles.sessions.http_config().csrf_cookie_name(),
             &rotation.csrf_token,
             false,
-            state.settings.session().session_ttl_seconds,
-            state.settings.session().cookie_secure,
+            handles.config.session_ttl_seconds,
+            handles.sessions.http_config().cookie_secure(),
         ),
     ]
 }
 
 fn with_rotated_session_cookies(
-    state: &AppState,
+    handles: &MfaProfileHandles,
     rotation: &SessionRotation,
     response: HttpResponse,
 ) -> HttpResponse {
-    with_cookie_headers(response, &rotated_session_cookies(state, rotation))
+    with_cookie_headers(response, &rotated_session_cookies(handles, rotation))
 }
 
 pub(crate) async fn mfa_disable(
-    state: Data<AppState>,
+    handles: Data<MfaProfileHandles>,
     req: HttpRequest,
     Json(payload): Json<MfaProtectedRequest>,
 ) -> HttpResponse {
-    no_store(mfa_disable_inner(state, req, Json(payload)).await)
+    no_store(mfa_disable_inner(handles, req, Json(payload)).await)
 }
 
 async fn mfa_disable_inner(
-    state: Data<AppState>,
+    handles: Data<MfaProfileHandles>,
     req: HttpRequest,
     Json(payload): Json<MfaProtectedRequest>,
 ) -> HttpResponse {
-    if !has_valid_csrf_token(&state, &req, None) {
+    if !has_valid_mfa_csrf_token(&handles, &req) {
         return csrf_error();
     }
-    let user = match current_user_or_login_required(&state, &req).await {
+    let user = match current_mfa_user_or_login_required(&handles, &req).await {
         Ok(user) => user,
         Err(response) => return response,
     };
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::Auth).await {
+    if let Err(response) = enforce_mfa_rate_limit(&handles, &req).await {
         return response;
     }
     if !user.account.mfa_enabled {
         return json_response(json!({ "mfa_enabled": false }));
     }
-    match verify_user_mfa_code(&state.diesel_db, &user, &payload.code).await {
+    match verify_user_mfa_code_with_repository(&handles.mfa, &user, &payload.code).await {
         Ok(Some(_)) => {}
         Ok(None) => {
             return oauth_error(StatusCode::BAD_REQUEST, "invalid_grant", "MFA 验证码无效.");
@@ -534,7 +563,7 @@ async fn mfa_disable_inner(
             );
         }
     }
-    if let Err(error) = clear_user_mfa_state(&state.diesel_db, &user).await {
+    if let Err(error) = clear_user_mfa_state_with_repository(&handles.mfa, &user).await {
         tracing::warn!(%error, "failed to disable MFA");
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -550,9 +579,66 @@ async fn mfa_disable_inner(
         json_response(json!({ "mfa_enabled": false })),
         &[clear_cookie(
             MFA_REMEMBERED_COOKIE_NAME,
-            state.settings.session().cookie_secure,
+            handles.sessions.http_config().cookie_secure(),
         )],
     )
+}
+
+fn has_valid_mfa_csrf_token(handles: &MfaProfileHandles, req: &HttpRequest) -> bool {
+    let http = handles.sessions.http_config();
+    has_valid_csrf_token_for_cookies(
+        req,
+        None,
+        http.session_cookie_name(),
+        http.csrf_cookie_name(),
+    )
+}
+
+async fn current_mfa_user_or_login_required(
+    handles: &MfaProfileHandles,
+    req: &HttpRequest,
+) -> Result<PublicAccount, HttpResponse> {
+    match handles.sessions.current_session(req).await {
+        Ok(Some(session)) => Ok(session.user),
+        Ok(None) => {
+            let http = handles.sessions.http_config();
+            Err(with_cookie_headers(
+                oauth_error(
+                    StatusCode::UNAUTHORIZED,
+                    "login_required",
+                    "会话不存在或已过期,请重新登录.",
+                ),
+                &[
+                    clear_cookie(http.session_cookie_name(), http.cookie_secure()),
+                    clear_cookie(http.csrf_cookie_name(), http.cookie_secure()),
+                ],
+            ))
+        }
+        Err(error) => {
+            tracing::warn!(%error, "failed to resolve current MFA session user");
+            Err(oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "会话查询失败.",
+            ))
+        }
+    }
+}
+
+async fn enforce_mfa_rate_limit(
+    handles: &MfaProfileHandles,
+    req: &HttpRequest,
+) -> Result<(), HttpResponse> {
+    enforce_rate_limit_with_store(
+        &handles.rate_limits,
+        req,
+        RateLimitPolicy::Auth,
+        handles.config.rate_limit_window_seconds,
+        handles.config.rate_limit_max_requests,
+        handles.config.client_ip_header_mode,
+        &handles.config.trusted_proxy_cidrs,
+    )
+    .await
 }
 
 fn no_store(mut response: HttpResponse) -> HttpResponse {
