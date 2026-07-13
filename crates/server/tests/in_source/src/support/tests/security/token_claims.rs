@@ -73,25 +73,15 @@ fn access_token_rejects_conflicting_sender_constraints() {
 
 #[tokio::test]
 async fn make_jwt_rejects_conflicting_sender_constraints_before_signing() {
-    let state = AppState {
-        diesel_db: nazo_postgres::create_pool(
-            "postgres://nazo_token_test_invalid:nazo_token_test_invalid@127.0.0.1:1/nazo"
-                .to_owned(),
-            1,
-        )
-        .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
-        settings: std::sync::Arc::new(test_settings()),
-        keyset: crate::test_support::test_key_manager(),
-    };
+    let settings = test_settings();
+    let keyset = crate::test_support::test_key_manager();
     let audiences = vec!["resource://default".to_owned()];
     let scopes = vec!["read".to_owned()];
     let authorization_details = json!([]);
 
     let result = make_jwt(
-        &state,
+        &keyset,
+        &settings.endpoint.issuer,
         AccessTokenJwtInput {
             tenant_id: DEFAULT_TENANT_ID,
             subject: "subject-1",
@@ -125,24 +115,11 @@ async fn make_jwt_rejects_conflicting_sender_constraints_before_signing() {
 async fn response_signing_uses_auxiliary_key_from_current_keyset_snapshot() {
     let auxiliary = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let _public_jwk = auxiliary.public_jwk("auxiliary-rs256");
-    let state = AppState {
-        diesel_db: nazo_postgres::create_pool(
-            "postgres://nazo_token_test_invalid:nazo_token_test_invalid@127.0.0.1:1/nazo"
-                .to_owned(),
-            1,
-        )
-        .expect("pool construction should not connect"),
-        valkey: fred::prelude::Builder::default_centralized()
-            .build()
-            .expect("valkey client construction should not connect"),
-        settings: std::sync::Arc::new(test_settings()),
-        keyset: crate::test_support::test_key_manager_with_auxiliary(
-            jsonwebtoken::Algorithm::RS256,
-        ),
-    };
+    let keyset =
+        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::RS256);
 
     let token = sign_response_jwt(
-        &state,
+        &keyset,
         nazo_auth::SigningPurpose::IdToken,
         &json!({"sub": "subject-1"}),
         "JWT",

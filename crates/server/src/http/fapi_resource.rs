@@ -10,7 +10,7 @@ use crate::support::security::tokens::decode_access_claims_with;
 use crate::support::{
     client_ip::ClientIpHeaderMode, client_ip::parse_trusted_proxy_cidrs,
     security::AccessTokenJwtInput, security::IssuedAccessToken, security::blake3_hex,
-    security::make_jwt_with, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
+    security::make_jwt, tenancy::DEFAULT_ORGANIZATION_ID, tenancy::DEFAULT_REALM_ID,
     tenancy::DEFAULT_TENANT_ID,
 };
 use crate::support::{

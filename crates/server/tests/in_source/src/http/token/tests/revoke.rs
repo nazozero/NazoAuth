@@ -379,7 +379,8 @@ async fn refresh_token_revoked_at(
 
 async fn sign_access_token(state: &Data<AppState>, client: &ClientRow) -> IssuedAccessToken {
     make_jwt(
-        state,
+        &state.keyset,
+        &state.settings.endpoint.issuer,
         AccessTokenJwtInput {
             tenant_id: client.tenant_id,
             subject: client.client_id.as_str(),

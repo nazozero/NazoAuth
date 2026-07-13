@@ -42,9 +42,9 @@ use uuid::Uuid;
 
 pub(crate) mod tokens;
 #[cfg(test)]
-pub(crate) use tokens::decode_access_claims;
+pub(crate) use tokens::decode_access_claims_with;
 #[cfg(test)]
-pub(crate) use tokens::{AccessTokenJwtInput, IssuedAccessToken, make_jwt, make_jwt_with};
+pub(crate) use tokens::{AccessTokenJwtInput, IssuedAccessToken, make_jwt};
 
 type HmacSha256 = Hmac<Sha256>;
 

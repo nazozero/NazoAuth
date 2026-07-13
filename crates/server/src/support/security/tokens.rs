@@ -10,8 +10,6 @@ use serde_json::Value;
 #[cfg(test)]
 use uuid::Uuid;
 
-#[cfg(test)]
-use crate::domain::AppState;
 use nazo_key_management::signing_algorithm_name;
 
 #[cfg(test)]
@@ -53,14 +51,6 @@ pub(super) fn validate_access_token_sender_constraint(
 
 #[cfg(test)]
 pub(crate) async fn make_jwt(
-    state: &AppState,
-    input: AccessTokenJwtInput<'_>,
-) -> jsonwebtoken::errors::Result<IssuedAccessToken> {
-    make_jwt_with(&state.keyset, &state.settings.endpoint.issuer, input).await
-}
-
-#[cfg(test)]
-pub(crate) async fn make_jwt_with(
     keyset: &nazo_key_management::KeyManager,
     issuer: &str,
     input: AccessTokenJwtInput<'_>,
@@ -107,22 +97,17 @@ pub(super) fn access_token_header(alg: jsonwebtoken::Algorithm, kid: &str) -> js
 
 #[cfg(test)]
 pub(crate) async fn sign_response_jwt(
-    state: &AppState,
+    keyset: &nazo_key_management::KeyManager,
     purpose: nazo_auth::SigningPurpose,
     claims: &Value,
     typ: &str,
     signing_alg: Option<jsonwebtoken::Algorithm>,
 ) -> jsonwebtoken::errors::Result<String> {
-    let keyset = state.keyset.snapshot();
-    let alg = signing_alg.unwrap_or(keyset.active_alg);
+    let key_snapshot = keyset.snapshot();
+    let alg = signing_alg.unwrap_or(key_snapshot.active_alg);
     let mut header = jsonwebtoken::Header::new(alg);
     header.typ = Some(typ.to_owned());
-    state.keyset.encode_jwt(purpose, &header, claims).await
-}
-
-#[cfg(test)]
-pub(crate) fn decode_access_claims(state: &AppState, token: &str) -> Option<Claims> {
-    decode_access_claims_with(&state.keyset, &state.settings.endpoint.issuer, token)
+    keyset.encode_jwt(purpose, &header, claims).await
 }
 
 pub(crate) fn decode_access_claims_with(

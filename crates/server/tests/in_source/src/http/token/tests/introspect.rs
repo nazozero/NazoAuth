@@ -519,7 +519,8 @@ async fn sign_access_token(
     audience: Value,
 ) -> IssuedAccessToken {
     make_jwt(
-        state,
+        &state.keyset,
+        &state.settings.endpoint.issuer,
         AccessTokenJwtInput {
             tenant_id,
             subject: client_id,

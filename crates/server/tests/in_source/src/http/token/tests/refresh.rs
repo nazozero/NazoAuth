@@ -2134,8 +2134,9 @@ async fn refresh_grant_accepts_existing_mtls_bound_token_with_matching_certifica
     let access_token = body["access_token"]
         .as_str()
         .expect("successful refresh response should return an access token");
-    let claims = decode_access_claims(&state, access_token)
-        .expect("newly issued access token should be verifiable");
+    let claims =
+        decode_access_claims_with(&state.keyset, &state.settings.endpoint.issuer, access_token)
+            .expect("newly issued access token should be verifiable");
     assert_eq!(
         claims.cnf.as_ref().and_then(|cnf| cnf.x5t_s256.as_deref()),
         Some(thumbprint)
@@ -2198,8 +2199,9 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
     let access_token = body["access_token"]
         .as_str()
         .expect("successful refresh response should return an access token");
-    let claims = decode_access_claims(&state, access_token)
-        .expect("newly issued access token should be verifiable");
+    let claims =
+        decode_access_claims_with(&state.keyset, &state.settings.endpoint.issuer, access_token)
+            .expect("newly issued access token should be verifiable");
     let cnf = claims
         .cnf
         .expect("mTLS-bound refresh grants must issue sender-constrained access tokens");

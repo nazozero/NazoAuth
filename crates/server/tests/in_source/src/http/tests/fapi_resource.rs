@@ -286,7 +286,7 @@ async fn signed_fapi_access_token(
     audiences: &[String],
     ttl: i64,
 ) -> IssuedAccessToken {
-    make_jwt_with(
+    make_jwt(
         &state.handles.keyset,
         &state.handles.config.issuer,
         AccessTokenJwtInput {
