@@ -6,12 +6,12 @@ use crate::http::prelude::*;
 use crate::support::prelude::Claims;
 
 pub(crate) async fn userinfo(state: Data<AppState>, req: HttpRequest, body: Bytes) -> HttpResponse {
-    let (scheme, token) = match userinfo_access_token(&req, &body) {
-        UserInfoAccessToken::Present(scheme, token) => (scheme, token),
-        UserInfoAccessToken::Missing => {
+    let (scheme, token) = match resource_access_token(&req, &body, false) {
+        ResourceAccessToken::Present(scheme, token) => (scheme, token),
+        ResourceAccessToken::Missing => {
             return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "缺少访问令牌.");
         }
-        UserInfoAccessToken::InvalidRequest => {
+        ResourceAccessToken::InvalidRequest => {
             return oauth_bearer_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_request",
@@ -302,62 +302,10 @@ async fn access_token_user_id(
     )
 }
 
-enum UserInfoAccessToken {
-    Present(AccessTokenAuthScheme, String),
-    Missing,
-    InvalidRequest,
-}
-
-fn userinfo_access_token(req: &HttpRequest, body: &Bytes) -> UserInfoAccessToken {
-    let header_token = authorization_access_token(req.headers());
-    let body_token = userinfo_form_body_access_token(req, body);
-
-    match (header_token, body_token) {
-        (Some(_), FormBodyAccessToken::Present(_)) => UserInfoAccessToken::InvalidRequest,
-        (Some((scheme, token)), _) => UserInfoAccessToken::Present(scheme, token),
-        (None, FormBodyAccessToken::Present(token)) => {
-            UserInfoAccessToken::Present(AccessTokenAuthScheme::Bearer, token)
-        }
-        (None, FormBodyAccessToken::Missing) => UserInfoAccessToken::Missing,
-        (None, FormBodyAccessToken::InvalidRequest) => UserInfoAccessToken::InvalidRequest,
-    }
-}
-
 fn userinfo_audience_allowed(settings: &Settings, audience: &Value) -> bool {
     let userinfo_url = format!("{}/userinfo", settings.issuer.trim_end_matches('/'));
     token_audience_contains(audience, &settings.default_audience)
         || token_audience_contains(audience, &userinfo_url)
-}
-
-enum FormBodyAccessToken {
-    Present(String),
-    Missing,
-    InvalidRequest,
-}
-
-fn userinfo_form_body_access_token(req: &HttpRequest, body: &Bytes) -> FormBodyAccessToken {
-    if req.method() != actix_web::http::Method::POST
-        || body.is_empty()
-        || !request_uses_form_urlencoded(req)
-    {
-        return FormBodyAccessToken::Missing;
-    }
-    let mut access_token = None;
-    for (key, value) in url::form_urlencoded::parse(body) {
-        if key == "access_token" {
-            if access_token.is_some() {
-                return FormBodyAccessToken::InvalidRequest;
-            }
-            let token = value.into_owned();
-            if token.trim().is_empty() {
-                return FormBodyAccessToken::Missing;
-            }
-            access_token = Some(token);
-        }
-    }
-    access_token
-        .map(FormBodyAccessToken::Present)
-        .unwrap_or(FormBodyAccessToken::Missing)
 }
 
 #[cfg(test)]

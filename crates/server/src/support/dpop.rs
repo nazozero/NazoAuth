@@ -1,4 +1,4 @@
-pub(crate) use nazo_http_actix::{AccessTokenAuthScheme, authorization_access_token};
+pub(crate) use nazo_http_actix::AccessTokenAuthScheme;
 use serde::Deserialize;
 
 #[cfg(test)]

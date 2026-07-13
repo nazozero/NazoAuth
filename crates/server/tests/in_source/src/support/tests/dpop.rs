@@ -1,5 +1,6 @@
 use super::*;
 use crate::config::ConfigSource;
+use nazo_http_actix::authorization_access_token;
 use nazo_postgres::create_pool;
 
 use ed25519_dalek::{Signer, SigningKey};
