@@ -2311,6 +2311,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nazo-valkey"
+version = "0.1.0"
+dependencies = [
+ "blake3",
+ "fred",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "nom"
 version = "7.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

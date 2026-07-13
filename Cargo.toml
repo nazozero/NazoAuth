@@ -8,6 +8,7 @@ members = [
     "crates/identity",
     "crates/runtime-modules",
     "crates/resource-server",
+    "crates/valkey",
 ]
 default-members = ["crates/server"]
 resolver = "3"
