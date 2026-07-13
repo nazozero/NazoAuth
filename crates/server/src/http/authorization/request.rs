@@ -585,7 +585,7 @@ pub(crate) async fn consume_pushed_authorization_request(
     match store.take_par(request_uri).await {
         Ok(Some(_)) => Ok(()),
         Ok(None) => Err(PushedAuthorizationRequestConsumeError::Missing),
-        Err(error) if error.kind() == nazo_valkey::ErrorKind::Protocol => {
+        Err(error) if error.kind() == nazo_valkey::ErrorKind::CorruptData => {
             tracing::warn!(%error, "PAR payload is malformed");
             Err(PushedAuthorizationRequestConsumeError::Malformed)
         }

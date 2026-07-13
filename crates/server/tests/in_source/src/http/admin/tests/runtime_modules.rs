@@ -156,8 +156,9 @@ async fn disabled_dynamic_registration_static_route_contract_is_stable() {
     for request in [
         actix_test::TestRequest::post()
             .uri("/register")
-            .insert_header((header::CONTENT_TYPE, "application/json"))
-            .set_payload("{}")
+            .insert_header((header::CONTENT_TYPE, "text/plain"))
+            .insert_header((header::ORIGIN, "https://attacker.example"))
+            .set_payload("not json")
             .to_request(),
         actix_test::TestRequest::get().uri("/register").to_request(),
         actix_test::TestRequest::default()
@@ -175,6 +176,12 @@ async fn disabled_dynamic_registration_static_route_contract_is_stable() {
             "nosniff"
         );
         assert!(response.headers().get(header::CONTENT_TYPE).is_none());
+        assert!(
+            response
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
         assert!(actix_test::read_body(response).await.is_empty());
     }
 }

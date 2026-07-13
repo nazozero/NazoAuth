@@ -228,7 +228,7 @@ async fn seed_desired_states(
     Ok((accepting, draining))
 }
 
-fn inherited_enabled(settings: &Settings) -> BTreeSet<ModuleId> {
+pub(crate) fn inherited_enabled(settings: &Settings) -> BTreeSet<ModuleId> {
     let settings = settings.modules();
     let mut enabled = BTreeSet::from([
         ModuleId::TokenExchange,
@@ -246,7 +246,10 @@ fn inherited_enabled(settings: &Settings) -> BTreeSet<ModuleId> {
             ModuleId::DynamicClientRegistration,
             settings.enable_dynamic_client_registration,
         ),
-        (ModuleId::RequestObjects, settings.enable_request_object),
+        (
+            ModuleId::RequestObjects,
+            settings.enable_request_object || settings.enable_par_request_object,
+        ),
         (
             ModuleId::AuthorizationDetails,
             settings.enable_authorization_details,
@@ -292,11 +295,22 @@ fn runtime_instance_id() -> anyhow::Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ConfigSource;
 
     #[test]
     fn instance_id_is_nonempty_and_storage_bounded() {
         let instance_id = runtime_instance_id().expect("default runtime instance id is valid");
         assert!(!instance_id.trim().is_empty());
         assert!(instance_id.len() <= 255);
+    }
+
+    #[test]
+    fn par_request_objects_enable_the_shared_request_object_capability() {
+        let mut settings =
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+        settings.enable_request_object = false;
+        settings.enable_par_request_object = true;
+
+        assert!(inherited_enabled(&settings).contains(&ModuleId::RequestObjects));
     }
 }
