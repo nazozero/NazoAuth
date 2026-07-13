@@ -87,6 +87,27 @@ function Write-Utf8LfFile {
     )
 }
 
+function Get-ArchiveImageConfigId {
+    param(
+        [Parameter(Mandatory = $true)][string]$Archive,
+        [Parameter(Mandatory = $true)][string]$ExpectedTag
+    )
+    $manifestJson = & tar -xOf $Archive "manifest.json"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Unable to read manifest.json from image archive: $Archive"
+    }
+    $entries = @($manifestJson | ConvertFrom-Json)
+    $matching = @($entries | Where-Object { $_.RepoTags -contains $ExpectedTag })
+    if ($matching.Count -ne 1) {
+        throw "Image archive must contain exactly one manifest for $ExpectedTag"
+    }
+    $configPath = [string]$matching[0].Config
+    if ($configPath -notmatch '^blobs/sha256/(?<digest>[0-9a-f]{64})$') {
+        throw "Image archive contains an invalid immutable config path: $configPath"
+    }
+    return $Matches.digest
+}
+
 function Assert-CleanGitCommit {
     param(
         [Parameter(Mandatory = $true)][string]$Worktree,
@@ -379,7 +400,7 @@ $localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-dep
 
 Write-Host "Staging $image ($BackendCommit / $FrontendCommit) on $RemoteHost"
 
-$expectedImageId = "sha256:" + ("0" * 64)
+$expectedImageId = "0" * 64
 if ($RenderRemoteScriptPath) {
     $remoteTempDir = $RenderRemoteTempDir
 }
@@ -396,12 +417,13 @@ else {
         Remove-Item -LiteralPath $backendBuildContext -Recurse -Force -ErrorAction SilentlyContinue
     }
     $LocalBackendWorktree = Assert-CleanGitCommit -Worktree $LocalBackendWorktree -ExpectedCommit $BackendCommit -Label "Backend after build"
-    $expectedImageId = Get-CommandOutput docker @("image", "inspect", $image, "--format", "{{.Id}}")
-    if ($expectedImageId -notmatch '^sha256:[0-9a-f]{64}$') {
-        throw "Docker returned an invalid immutable image ID: $expectedImageId"
+    $localDescriptorId = Get-CommandOutput docker @("image", "inspect", $image, "--format", "{{.Id}}")
+    if ($localDescriptorId -notmatch '^sha256:[0-9a-f]{64}$') {
+        throw "Docker returned an invalid immutable image descriptor: $localDescriptorId"
     }
     Remove-Item -LiteralPath $archive, $uiArchive -Force -ErrorAction SilentlyContinue
     Invoke-Checked docker @("save", $image, "-o", $archive)
+    $expectedImageId = Get-ArchiveImageConfigId -Archive $archive -ExpectedTag $image
     Invoke-Checked tar @("-C", $LocalUiDist, "-czf", $uiArchive, ".")
     $remoteTempDir = Get-CommandOutput ssh $RemoteHost @("mktemp", "-d", "/tmp/nazo-oauth-deploy.XXXXXX")
 }

@@ -251,7 +251,7 @@ case "${1:-} ${2:-}" in
     exit 0 ;;
   "image inspect")
     args="$*"
-    if [[ "$args" == *org.opencontainers.image.revision* ]]; then printf '%s\n' "$FAKE_BACKEND_COMMIT"; else printf '%s\n' "sha256:$(printf '0%.0s' {1..64})"; fi
+    if [[ "$args" == *org.opencontainers.image.revision* ]]; then printf '%s\n' "$FAKE_BACKEND_COMMIT"; else printf '%s\n' "$(printf '0%.0s' {1..64})"; fi
     exit 0 ;;
 esac
 case "${1:-}" in
@@ -416,6 +416,8 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn("SkipFrontendBuild is only allowed when rendering", self.source)
         self.assertIn("EXPECTED_IMAGE_ID", self.source)
         self.assertIn('test "`$actual_image_id" = "`$EXPECTED_IMAGE_ID"', self.source)
+        self.assertIn('tar -xOf $Archive "manifest.json"', self.source)
+        self.assertIn("Get-ArchiveImageConfigId", self.source)
 
     def test_remote_transaction_records_and_restores_both_targets(self) -> None:
         for marker in (
