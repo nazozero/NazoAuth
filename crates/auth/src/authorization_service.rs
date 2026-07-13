@@ -61,6 +61,7 @@ pub struct AuthorizationResponseSignInput<'a> {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum AuthorizationRateDimension {
+    Token,
     TokenManagement,
 }
 
@@ -374,6 +375,16 @@ where
     ) -> Result<u64, AuthorizationPortError> {
         self.state
             .increment_rate(AuthorizationRateDimension::TokenManagement, subject, window)
+            .await
+    }
+
+    pub async fn increment_token_rate(
+        &self,
+        subject: &str,
+        window: u64,
+    ) -> Result<u64, AuthorizationPortError> {
+        self.state
+            .increment_rate(AuthorizationRateDimension::Token, subject, window)
             .await
     }
     pub async fn sign_authorization_response(

@@ -3,7 +3,10 @@
 #[cfg(test)]
 use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use super::{audit_event, audit_fields, request_mtls_client_certificate_from_headers};
-use crate::domain::{AppState, ClientRow};
+#[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::ClientRow;
+#[cfg(test)]
 use crate::settings::Settings;
 use actix_web::HttpRequest;
 use actix_web::http::header;
@@ -34,6 +37,7 @@ use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 pub(crate) mod tokens;
+#[cfg(test)]
 pub(crate) use tokens::decode_access_claims;
 #[cfg(test)]
 pub(crate) use tokens::{AccessTokenJwtInput, IssuedAccessToken, make_jwt};
@@ -282,6 +286,7 @@ pub(crate) fn has_basic_authorization_scheme(headers: &HeaderMap) -> bool {
     raw[start..end].eq_ignore_ascii_case(b"Basic")
 }
 
+#[cfg(test)]
 pub(crate) fn extract_client_credentials(
     req: &HttpRequest,
     settings: &Settings,
@@ -419,6 +424,7 @@ pub(crate) fn verify_private_key_jwt_claims_for_issuer(
     verify_private_key_jwt_claims_with_issuer(issuer, req, client, assertion)
 }
 
+#[cfg(test)]
 fn verify_private_key_jwt_claims_with_settings(
     settings: &Settings,
     req: &HttpRequest,
@@ -511,6 +517,7 @@ fn client_assertion_decode_reason(error: &jsonwebtoken::errors::Error) -> &'stat
     }
 }
 
+#[cfg(test)]
 pub(crate) async fn consume_private_key_jwt(
     state: &AppState,
     client: &ClientRow,
@@ -524,6 +531,7 @@ pub(crate) async fn consume_private_key_jwt(
     .await
 }
 
+#[cfg(test)]
 pub(crate) async fn consume_private_key_jwt_with_store(
     replay: &nazo_valkey::ReplayStore,
     client: &ClientRow,

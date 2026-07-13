@@ -11,6 +11,18 @@ use fred::prelude::{
 };
 use std::time::Duration as StdDuration;
 
+#[test]
+fn dummy_client_secret_salt_is_deterministic_but_not_global() {
+    assert_eq!(
+        dummy_client_secret_salt(Some("unknown-client")),
+        dummy_client_secret_salt(Some("unknown-client"))
+    );
+    assert_ne!(
+        dummy_client_secret_salt(Some("unknown-client-a")),
+        dummy_client_secret_salt(Some("unknown-client-b"))
+    );
+}
+
 fn token_management_state() -> AppState {
     token_management_state_with_settings(
         Settings::from_config(&ConfigSource::default()).expect("default settings should load"),

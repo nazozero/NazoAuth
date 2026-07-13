@@ -5,11 +5,14 @@
 //! `X-SSL-Client-Verify: SUCCESS`.
 
 use super::IpCidr;
-use super::client_ip::{request_from_trusted_proxy, request_from_trusted_proxy_cidrs};
+#[cfg(test)]
+use super::client_ip::request_from_trusted_proxy;
+use super::client_ip::request_from_trusted_proxy_cidrs;
 use super::constant_time_eq;
 #[cfg(test)]
 use super::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::domain::ClientRow;
+#[cfg(test)]
 use crate::settings::Settings;
 use actix_web::HttpRequest;
 #[cfg(test)]
@@ -71,8 +74,20 @@ pub(crate) struct MtlsClientCertificate {
     pub(crate) verified_certificate_expiry: bool,
 }
 
+#[cfg(test)]
 pub(crate) fn request_mtls_thumbprint(req: &HttpRequest, settings: &Settings) -> Option<String> {
     request_mtls_client_certificate(req, settings)?.thumbprint
+}
+
+#[cfg(test)]
+pub(crate) fn request_mtls_client_certificate(
+    req: &HttpRequest,
+    settings: &Settings,
+) -> Option<MtlsClientCertificate> {
+    if !request_from_trusted_proxy(req, settings) {
+        return None;
+    }
+    request_mtls_client_certificate_from_headers(req.headers())
 }
 
 pub(crate) fn request_mtls_thumbprint_from_trusted_proxy(
@@ -85,11 +100,11 @@ pub(crate) fn request_mtls_thumbprint_from_trusted_proxy(
     request_mtls_client_certificate_from_headers(req.headers())?.thumbprint
 }
 
-pub(crate) fn request_mtls_client_certificate(
+pub(crate) fn request_mtls_client_certificate_from_trusted_proxy(
     req: &HttpRequest,
-    settings: &Settings,
+    trusted_proxy_cidrs: &[IpCidr],
 ) -> Option<MtlsClientCertificate> {
-    if !request_from_trusted_proxy(req, settings) {
+    if !request_from_trusted_proxy_cidrs(req, trusted_proxy_cidrs) {
         return None;
     }
     request_mtls_client_certificate_from_headers(req.headers())

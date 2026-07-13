@@ -2,8 +2,8 @@
 #[cfg(test)]
 use crate::domain::AppState;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
-use crate::settings::{DpopNoncePolicy, Settings};
-use crate::support::IpCidr;
+use crate::settings::{AuthorizationServerProfile, DpopNoncePolicy, Settings};
+use crate::support::{ClientIpHeaderMode, IpCidr};
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
@@ -40,6 +40,13 @@ pub(crate) struct TokenIssuanceConfig {
     dpop_nonce_policy: DpopNoncePolicy,
     trusted_proxy_cidrs: Box<[IpCidr]>,
     default_audience: Box<str>,
+    pairwise_subject_secret: Option<Box<str>>,
+    authorization_server_profile: AuthorizationServerProfile,
+    client_ip_header_mode: ClientIpHeaderMode,
+    client_secret_pepper: Box<str>,
+    enable_legacy_audience_param: bool,
+    rate_limit_window_seconds: u64,
+    token_rate_limit_max_requests: u64,
     auth_code_ttl_seconds: u64,
     access_token_ttl_seconds: i64,
     id_token_ttl_seconds: i64,
@@ -54,6 +61,17 @@ impl From<&Settings> for TokenIssuanceConfig {
             dpop_nonce_policy: settings.protocol.dpop_nonce_policy,
             trusted_proxy_cidrs: settings.endpoint.trusted_proxy_cidrs.clone().into(),
             default_audience: settings.protocol.default_audience.as_str().into(),
+            pairwise_subject_secret: settings
+                .protocol
+                .pairwise_subject_secret
+                .as_deref()
+                .map(Into::into),
+            authorization_server_profile: settings.protocol.authorization_server_profile,
+            client_ip_header_mode: settings.endpoint.client_ip_header_mode,
+            client_secret_pepper: settings.protocol.client_secret_pepper.as_str().into(),
+            enable_legacy_audience_param: settings.modules.enable_legacy_audience_param,
+            rate_limit_window_seconds: settings.identity.rate_limit.window_seconds,
+            token_rate_limit_max_requests: settings.identity.rate_limit.token_max_requests,
             auth_code_ttl_seconds: settings.protocol.auth_code_ttl_seconds,
             access_token_ttl_seconds: settings.protocol.access_token_ttl_seconds,
             id_token_ttl_seconds: settings.protocol.id_token_ttl_seconds,
@@ -81,6 +99,38 @@ impl TokenIssuanceConfig {
 
     pub(crate) fn default_audience(&self) -> &str {
         &self.default_audience
+    }
+
+    pub(crate) fn pairwise_subject_secret(&self) -> Option<&str> {
+        self.pairwise_subject_secret.as_deref()
+    }
+
+    pub(crate) fn auth_code_ttl_seconds(&self) -> u64 {
+        self.auth_code_ttl_seconds.max(1)
+    }
+
+    pub(crate) fn authorization_server_profile(&self) -> AuthorizationServerProfile {
+        self.authorization_server_profile
+    }
+
+    pub(crate) fn client_ip_header_mode(&self) -> ClientIpHeaderMode {
+        self.client_ip_header_mode
+    }
+
+    pub(crate) fn client_secret_pepper(&self) -> &str {
+        &self.client_secret_pepper
+    }
+
+    pub(crate) fn legacy_audience_param_enabled(&self) -> bool {
+        self.enable_legacy_audience_param
+    }
+
+    pub(crate) fn rate_limit_window_seconds(&self) -> u64 {
+        self.rate_limit_window_seconds
+    }
+
+    pub(crate) fn token_rate_limit_max_requests(&self) -> u64 {
+        self.token_rate_limit_max_requests
     }
 }
 

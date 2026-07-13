@@ -13,11 +13,10 @@ use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use crate::support::{
     DEFAULT_TENANT_ID, DpopError, DpopErrorContext, ValidatedClientAssertion, audit_event,
     audit_fields, blake3_hex, client_ip, client_ip_with_context, client_jwt_decoding_key,
-    client_supports_grant, compute_subject_for_client, constant_time_eq,
-    current_user_or_login_required, dpop_error_response,
+    client_supports_grant, constant_time_eq, current_user_or_login_required, dpop_error_response,
     extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
     has_valid_csrf_token, is_subset, json_array_to_strings, parse_scope, random_urlsafe_token,
-    request_mtls_thumbprint, validate_dpop_proof,
+    request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -40,16 +39,15 @@ use uuid::Uuid;
 
 use super::client_auth::{
     authenticate_client_with_dependencies,
+    consume_token_client_assertion_with_authorization_service,
     consume_token_management_client_assertion_with_authorization_service,
 };
-#[cfg(test)]
 use super::issue::TokenIssuanceConfig;
 use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
 #[cfg(test)]
 use super::validate_token_request_profile;
 use super::{
-    ServerTokenService, TokenForm, TokenManagementClientAuthError, consume_token_client_assertion,
-    token_management_auth_error,
+    ServerTokenService, TokenForm, TokenManagementClientAuthError, token_management_auth_error,
 };
 use crate::http::authorization::ServerAuthorizationService;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
@@ -1262,9 +1260,9 @@ fn ciba_poll_failure_response(failure: CibaPollFailure) -> HttpResponse {
 }
 
 pub(crate) async fn token_ciba(
-    state: &AppState,
     token_service: &ServerTokenService,
     issuance: &TokenIssuanceContext<'_>,
+    config: &CibaHttpConfig,
     ciba_service: &ServerCibaService,
     users: &nazo_postgres::UserRepository,
     req: &HttpRequest,
@@ -1273,7 +1271,7 @@ pub(crate) async fn token_ciba(
     client_assertion: Option<&ValidatedClientAssertion>,
     auth_method: &str,
 ) -> HttpResponse {
-    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::Ciba) {
+    if !issuance.permits(nazo_runtime_modules::ModuleId::Ciba) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",
@@ -1298,11 +1296,11 @@ pub(crate) async fn token_ciba(
         );
     }
     if let Err(response) =
-        validate_ciba_security_profile_client(&state.settings, client, auth_method)
+        validate_ciba_security_profile_client_with_config(config, client, auth_method)
     {
         return response;
     }
-    let (dpop_jkt, mtls_x5t_s256) = match ciba_issue_binding(state, req, client).await {
+    let (dpop_jkt, mtls_x5t_s256) = match ciba_issue_binding(issuance, req, client).await {
         Ok(binding) => binding,
         Err(response) => return response,
     };
@@ -1321,7 +1319,13 @@ pub(crate) async fn token_ciba(
     if let Some(response) = ciba_auth_req_id_client_error(initial.state(), client) {
         return response;
     }
-    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+        issuance.authorization,
+        client,
+        client_assertion,
+    )
+    .await
+    {
         return response;
     }
     let ciba = match ciba_service
@@ -1391,7 +1395,7 @@ pub(crate) async fn token_ciba(
             );
         }
     };
-    let subject = match ciba_subject_for_client(&state.settings, ciba.user_id, client) {
+    let subject = match ciba_subject_for_client(issuance.config, ciba.user_id, client) {
         Ok(subject) => subject,
         Err(error) => {
             tracing::warn!(%error, "failed to compute CIBA subject");
@@ -1457,14 +1461,22 @@ fn ciba_token_issue(
 }
 
 async fn ciba_issue_binding(
-    state: &AppState,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
 ) -> Result<(Option<String>, Option<String>), HttpResponse> {
     if client.require_dpop_bound_tokens {
-        let dpop_jkt = validate_dpop_proof(state, req, None, None)
-            .await
-            .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
+        let dpop_jkt = validate_dpop_proof_with_authorization_service(
+            issuance.authorization,
+            issuance.config.issuer(),
+            issuance.config.mtls_endpoint_base_url(),
+            issuance.config.dpop_nonce_policy(),
+            req,
+            None,
+            None,
+        )
+        .await
+        .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
         if dpop_jkt.is_none() {
             return Err(dpop_error_response(
                 DpopError::MissingProof,
@@ -1474,7 +1486,9 @@ async fn ciba_issue_binding(
         return Ok((dpop_jkt, None));
     }
     if client.require_mtls_bound_tokens {
-        let Some(x5t_s256) = request_mtls_thumbprint(req, &state.settings) else {
+        let Some(x5t_s256) =
+            request_mtls_thumbprint_from_trusted_proxy(req, issuance.config.trusted_proxy_cidrs())
+        else {
             return Err(oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_grant",
@@ -1488,7 +1502,7 @@ async fn ciba_issue_binding(
 }
 
 fn ciba_subject_for_client(
-    settings: &Settings,
+    config: &TokenIssuanceConfig,
     user_id: Uuid,
     client: &ClientRow,
 ) -> anyhow::Result<String> {
@@ -1496,8 +1510,9 @@ fn ciba_subject_for_client(
         .into_iter()
         .next()
         .unwrap_or_default();
-    compute_subject_for_client(
-        settings,
+    nazo_auth::oidc_subject_for_client(
+        config.issuer(),
+        config.pairwise_subject_secret(),
         user_id,
         &client.subject_type,
         client.sector_identifier_host.as_deref(),

@@ -8,7 +8,9 @@ use super::{
     ServerTokenService, TokenForm, client_credentials_issue_request_with_default_audience,
     consume_token_client_assertion_with_authorization_service,
 };
-use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+#[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 #[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]

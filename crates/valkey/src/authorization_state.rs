@@ -239,6 +239,7 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
     ) -> AuthorizationFuture<'a, u64> {
         Box::pin(async move {
             let dimension = match dimension {
+                AuthorizationRateDimension::Token => RateDimension::Token,
                 AuthorizationRateDimension::TokenManagement => RateDimension::TokenManagement,
             };
             self.rate_limits

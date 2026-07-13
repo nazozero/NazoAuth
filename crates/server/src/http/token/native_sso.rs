@@ -2,16 +2,19 @@
 use nazo_http_actix::oauth_token_error;
 
 use super::{ServerTokenService, TokenForm};
-use crate::domain::{AppState, ClientRow, NativeSsoTokenBinding, RefreshTokenPolicy, TokenIssue};
-use crate::http::token::client_auth::consume_token_client_assertion;
+#[cfg(test)]
+use crate::domain::AppState;
+use crate::domain::{ClientRow, NativeSsoTokenBinding, RefreshTokenPolicy, TokenIssue};
+use crate::http::token::client_auth::consume_token_client_assertion_with_authorization_service;
 use crate::http::token::issue::{TokenIssuanceContext, issue_token_response_with_service};
-use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::blake3_hex;
+#[cfg(test)]
+use crate::support::jwt_decoding_key_from_jwk;
 use crate::support::{
-    DpopError, DpopErrorContext, ValidatedClientAssertion, compute_subject_for_client,
-    dpop_error_response, is_subset, json_array_to_strings, jwt_decoding_key_from_jwk, parse_scope,
-    random_urlsafe_token, request_mtls_thumbprint, validate_dpop_proof,
+    DpopError, DpopErrorContext, ValidatedClientAssertion, dpop_error_response, is_subset,
+    json_array_to_strings, parse_scope, random_urlsafe_token,
+    request_mtls_thumbprint_from_trusted_proxy, validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
@@ -94,6 +97,7 @@ fn native_sso_id_token_audience_contains(claims: &NativeSsoIdTokenClaims, client
     }
 }
 
+#[cfg(test)]
 fn decode_native_sso_id_token(state: &AppState, token: &str) -> Option<NativeSsoIdTokenClaims> {
     let header = jsonwebtoken::decode_header(token).ok()?;
     let keyset = state.keyset.snapshot();
@@ -112,11 +116,25 @@ fn decode_native_sso_id_token(state: &AppState, token: &str) -> Option<NativeSso
     Some(claims)
 }
 
+async fn decode_native_sso_id_token_with_service(
+    token_service: &ServerTokenService,
+    issuer: &str,
+    token: &str,
+) -> Result<Option<NativeSsoIdTokenClaims>, nazo_auth::TokenPortError> {
+    let claims = token_service
+        .decode_id_token(issuer, token)
+        .await?
+        .map(serde_json::from_value)
+        .transpose()
+        .map_err(|_| nazo_auth::TokenPortError::CorruptData)?;
+    Ok(claims.filter(|claims: &NativeSsoIdTokenClaims| claims.iss == issuer))
+}
+
 async fn load_native_sso_device_secret_state(
-    state: &AppState,
+    token_service: &ServerTokenService,
     device_secret: &str,
 ) -> Result<Option<NativeSsoDeviceSecretState>, HttpResponse> {
-    let value = nazo_valkey::TokenStateStore::new(&state.valkey_connection())
+    let value = token_service
         .load_native_sso(device_secret)
         .await
         .map_err(|error| {
@@ -143,11 +161,11 @@ async fn load_native_sso_device_secret_state(
 }
 
 async fn native_sso_refresh_family_active(
-    state: &AppState,
+    token_service: &ServerTokenService,
     secret: &NativeSsoDeviceSecretState,
 ) -> Result<bool, HttpResponse> {
-    nazo_postgres::TokenRepository::new(state.diesel_db.clone())
-        .family_active(
+    token_service
+        .refresh_family_active(
             secret.tenant_id,
             secret.refresh_token_family_id,
             secret.user_id,
@@ -185,7 +203,7 @@ fn native_sso_requested_scopes(
 }
 
 fn native_sso_subject_for_client(
-    settings: &Settings,
+    config: &crate::http::token::issue::TokenIssuanceConfig,
     user_id: Uuid,
     client: &ClientRow,
 ) -> anyhow::Result<String> {
@@ -195,8 +213,9 @@ fn native_sso_subject_for_client(
         .first()
         .map(String::as_str)
         .unwrap_or("");
-    compute_subject_for_client(
-        settings,
+    nazo_auth::oidc_subject_for_client(
+        config.issuer(),
+        config.pairwise_subject_secret(),
         user_id,
         client.subject_type.as_str(),
         client.sector_identifier_host.as_deref(),
@@ -205,14 +224,22 @@ fn native_sso_subject_for_client(
 }
 
 async fn native_sso_issue_binding(
-    state: &AppState,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
 ) -> Result<(Option<String>, Option<String>), HttpResponse> {
     if client.require_dpop_bound_tokens {
-        let dpop_jkt = validate_dpop_proof(state, req, None, None)
-            .await
-            .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
+        let dpop_jkt = validate_dpop_proof_with_authorization_service(
+            issuance.authorization,
+            issuance.config.issuer(),
+            issuance.config.mtls_endpoint_base_url(),
+            issuance.config.dpop_nonce_policy(),
+            req,
+            None,
+            None,
+        )
+        .await
+        .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
         if dpop_jkt.is_none() {
             return Err(dpop_error_response(
                 DpopError::MissingProof,
@@ -222,7 +249,9 @@ async fn native_sso_issue_binding(
         return Ok((dpop_jkt, None));
     }
     if client.require_mtls_bound_tokens {
-        let Some(x5t_s256) = request_mtls_thumbprint(req, &state.settings) else {
+        let Some(x5t_s256) =
+            request_mtls_thumbprint_from_trusted_proxy(req, issuance.config.trusted_proxy_cidrs())
+        else {
             return Err(oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_grant",
@@ -267,7 +296,6 @@ pub(crate) async fn persist_native_sso_device_secret(
 }
 
 pub(crate) async fn token_native_sso_exchange(
-    state: &AppState,
     token_service: &ServerTokenService,
     issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
@@ -275,7 +303,7 @@ pub(crate) async fn token_native_sso_exchange(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    if !state.permits_existing_module_transaction(nazo_runtime_modules::ModuleId::NativeSso) {
+    if !issuance.permits(nazo_runtime_modules::ModuleId::NativeSso) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",
@@ -291,10 +319,16 @@ pub(crate) async fn token_native_sso_exchange(
             false,
         );
     }
-    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+        issuance.authorization,
+        client,
+        client_assertion,
+    )
+    .await
+    {
         return response;
     }
-    if form.audiences.as_slice() != [state.settings.endpoint.issuer.as_str()] {
+    if form.audiences.as_slice() != [issuance.config.issuer()] {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_target",
@@ -318,9 +352,15 @@ pub(crate) async fn token_native_sso_exchange(
             false,
         );
     };
-    let claims = match decode_native_sso_id_token(state, subject_token) {
-        Some(claims) => claims,
-        None => {
+    let claims = match decode_native_sso_id_token_with_service(
+        token_service,
+        issuance.config.issuer(),
+        subject_token,
+    )
+    .await
+    {
+        Ok(Some(claims)) => claims,
+        Ok(None) | Err(_) => {
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_grant",
@@ -337,7 +377,7 @@ pub(crate) async fn token_native_sso_exchange(
             false,
         );
     }
-    let secret = match load_native_sso_device_secret_state(state, device_secret).await {
+    let secret = match load_native_sso_device_secret_state(token_service, device_secret).await {
         Ok(Some(secret)) => secret,
         Ok(None) => {
             return oauth_token_error(
@@ -362,7 +402,7 @@ pub(crate) async fn token_native_sso_exchange(
             false,
         );
     }
-    match native_sso_refresh_family_active(state, &secret).await {
+    match native_sso_refresh_family_active(token_service, &secret).await {
         Ok(true) => {}
         Ok(false) => {
             return oauth_token_error(
@@ -378,7 +418,7 @@ pub(crate) async fn token_native_sso_exchange(
         Ok(scopes) => scopes,
         Err(response) => return response,
     };
-    let subject = match native_sso_subject_for_client(&state.settings, secret.user_id, client) {
+    let subject = match native_sso_subject_for_client(issuance.config, secret.user_id, client) {
         Ok(subject) => subject,
         Err(error) => {
             tracing::warn!(%error, "failed to compute Native SSO destination subject");
@@ -390,7 +430,7 @@ pub(crate) async fn token_native_sso_exchange(
             );
         }
     };
-    let (dpop_jkt, mtls_x5t_s256) = match native_sso_issue_binding(state, req, client).await {
+    let (dpop_jkt, mtls_x5t_s256) = match native_sso_issue_binding(issuance, req, client).await {
         Ok(binding) => binding,
         Err(response) => return response,
     };
@@ -403,7 +443,7 @@ pub(crate) async fn token_native_sso_exchange(
             subject,
             scopes,
             authorization_details: json!([]),
-            audiences: vec![state.settings.protocol.default_audience.to_owned()],
+            audiences: vec![issuance.config.default_audience().to_owned()],
             nonce: None,
             auth_time: None,
             amr: vec!["native_sso".to_owned()],

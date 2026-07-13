@@ -123,6 +123,38 @@ impl TokenSignerPort for KeyManager {
         })
     }
 
+    fn decode_id_token<'a>(
+        &'a self,
+        issuer: &'a str,
+        token: &'a str,
+    ) -> TokenFuture<'a, Option<Value>> {
+        Box::pin(async move {
+            let Some(header) = jsonwebtoken::decode_header(token).ok() else {
+                return Ok(None);
+            };
+            let snapshot = self.snapshot();
+            let Some(key) = header
+                .kid
+                .as_deref()
+                .and_then(|kid| snapshot.verification_key(kid))
+            else {
+                return Ok(None);
+            };
+            let Some(decoding_key) = decoding_key(&key.public_jwk, header.alg) else {
+                return Ok(None);
+            };
+            let mut validation = jsonwebtoken::Validation::new(header.alg);
+            validation.validate_aud = false;
+            validation.validate_exp = false;
+            validation.set_issuer(&[issuer]);
+            Ok(
+                jsonwebtoken::decode::<Value>(token, &decoding_key, &validation)
+                    .ok()
+                    .map(|data| data.claims),
+            )
+        })
+    }
+
     fn sign_introspection_response<'a>(
         &'a self,
         input: IntrospectionSignInput<'a>,

@@ -1,3 +1,4 @@
+#[cfg(test)]
 use crate::domain::AppState;
 #[cfg(test)]
 use crate::settings::Settings;
@@ -120,6 +121,7 @@ pub(crate) fn dpop_proof_present(req: &HttpRequest) -> bool {
         .contains_key(header::HeaderName::from_static("dpop"))
 }
 
+#[cfg(test)]
 pub(crate) async fn validate_dpop_proof(
     state: &AppState,
     req: &HttpRequest,
@@ -272,25 +274,6 @@ async fn validate_dpop_proof_with_replay(
     Ok(Some(jkt))
 }
 
-#[cfg(test)]
-async fn validate_dpop_nonce(state: &AppState, nonce: Option<&str>) -> Result<(), DpopError> {
-    validate_dpop_nonce_with_store(
-        &nazo_valkey::ReplayStore::new(&state.valkey_connection()),
-        state.settings.protocol.dpop_nonce_policy,
-        nonce,
-    )
-    .await
-}
-
-#[cfg(test)]
-async fn validate_dpop_nonce_with_store(
-    replay_store: &nazo_valkey::ReplayStore,
-    nonce_policy: DpopNoncePolicy,
-    nonce: Option<&str>,
-) -> Result<(), DpopError> {
-    validate_dpop_nonce_with_replay(&DpopReplay::Store(replay_store), nonce_policy, nonce).await
-}
-
 async fn validate_dpop_nonce_with_replay(
     replay: &DpopReplay<'_>,
     nonce_policy: DpopNoncePolicy,
@@ -318,10 +301,6 @@ async fn validate_dpop_nonce_with_replay(
 
 fn dpop_nonce_required(policy: DpopNoncePolicy) -> bool {
     policy == DpopNoncePolicy::Required
-}
-
-pub(crate) async fn issue_dpop_nonce(state: &AppState) -> Result<String, DpopError> {
-    issue_dpop_nonce_with_store(&nazo_valkey::ReplayStore::new(&state.valkey_connection())).await
 }
 
 pub(crate) async fn issue_dpop_nonce_with_store(
