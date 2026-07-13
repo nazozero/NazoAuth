@@ -15,7 +15,10 @@ pub(crate) struct EndpointRuntimeSettings<'a> {
 }
 
 #[derive(Clone, Copy)]
-pub(crate) struct SessionRuntimeSettings {
+pub(crate) struct SessionRuntimeSettings<'a> {
+    pub(crate) session_cookie_name: &'a str,
+    pub(crate) csrf_cookie_name: &'a str,
+    pub(crate) cookie_secure: bool,
     pub(crate) session_ttl_seconds: u64,
 }
 
@@ -84,8 +87,11 @@ impl Settings {
         }
     }
 
-    pub(crate) fn session(&self) -> SessionRuntimeSettings {
+    pub(crate) fn session(&self) -> SessionRuntimeSettings<'_> {
         SessionRuntimeSettings {
+            session_cookie_name: &self.session_cookie_name,
+            csrf_cookie_name: &self.csrf_cookie_name,
+            cookie_secure: self.cookie_secure,
             session_ttl_seconds: self.session_ttl_seconds,
         }
     }

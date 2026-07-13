@@ -101,7 +101,7 @@ pub(crate) async fn authorize_consent(
 
     consent_page_response(
         payload,
-        cookie_value(&req, &state.settings.csrf_cookie_name),
+        cookie_value(&req, state.settings.session().csrf_cookie_name),
     )
 }
 

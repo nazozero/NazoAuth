@@ -51,7 +51,7 @@ pub(crate) async fn oidc_logout(
         Ok(form) => form,
         Err(response) => return response,
     };
-    let session_cookie = cookie_value(&req, &state.settings.session_cookie_name);
+    let session_cookie = cookie_value(&req, state.settings.session().session_cookie_name);
     let current_session = match current_session(&state, &req).await {
         Ok(session) => session,
         Err(error) => {
@@ -197,12 +197,12 @@ pub(crate) async fn oidc_logout(
         response,
         &[
             clear_cookie(
-                &state.settings.session_cookie_name,
-                state.settings.cookie_secure,
+                state.settings.session().session_cookie_name,
+                state.settings.session().cookie_secure,
             ),
             clear_cookie(
-                &state.settings.csrf_cookie_name,
-                state.settings.cookie_secure,
+                state.settings.session().csrf_cookie_name,
+                state.settings.session().cookie_secure,
             ),
         ],
     )

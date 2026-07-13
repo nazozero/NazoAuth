@@ -11,7 +11,7 @@ pub(crate) async fn me(state: Data<AppState>, req: HttpRequest) -> HttpResponse 
                     "mfa_required": true,
                     "id": session.user.id(),
                     "email": session.user.account.email,
-                    "csrf_token": cookie_value(&req, &state.settings.csrf_cookie_name)
+                    "csrf_token": cookie_value(&req, state.settings.session().csrf_cookie_name)
                 }));
             }
             Ok(None) => return login_required_response(&state),

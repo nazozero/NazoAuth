@@ -533,7 +533,7 @@ pub(crate) async fn device_verification(
     }
     let user_code = query.get("user_code").cloned().unwrap_or_default();
     let payload = read_device_authorization_payload_for_user_code(&state, &user_code).await;
-    let csrf_token = cookie_value(&req, &state.settings.csrf_cookie_name);
+    let csrf_token = cookie_value(&req, state.settings.session().csrf_cookie_name);
     json_response_no_store(DeviceVerificationView {
         user_code,
         csrf_token,

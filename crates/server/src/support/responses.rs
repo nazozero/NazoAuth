@@ -13,12 +13,12 @@ pub(crate) fn login_required_response(state: &AppState) -> HttpResponse {
         ),
         &[
             clear_cookie(
-                &state.settings.session_cookie_name,
-                state.settings.cookie_secure,
+                state.settings.session().session_cookie_name,
+                state.settings.session().cookie_secure,
             ),
             clear_cookie(
-                &state.settings.csrf_cookie_name,
-                state.settings.cookie_secure,
+                state.settings.session().csrf_cookie_name,
+                state.settings.session().cookie_secure,
             ),
         ],
     )
@@ -40,8 +40,8 @@ pub(crate) fn has_valid_csrf_token(
     has_valid_csrf_token_for_cookies(
         req,
         fallback_token,
-        &state.settings.session_cookie_name,
-        &state.settings.csrf_cookie_name,
+        state.settings.session().session_cookie_name,
+        state.settings.session().csrf_cookie_name,
     )
 }
 

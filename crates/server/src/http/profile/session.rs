@@ -3,7 +3,7 @@
 use crate::http::prelude::*;
 
 pub(crate) async fn logout(state: Data<AppState>, req: HttpRequest) -> HttpResponse {
-    if let Some(session_id) = cookie_value(&req, &state.settings.session_cookie_name) {
+    if let Some(session_id) = cookie_value(&req, state.settings.session().session_cookie_name) {
         let _ = nazo_valkey::SessionStore::new(&state.valkey_connection())
             .delete(&session_id)
             .await;

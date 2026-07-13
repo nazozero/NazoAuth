@@ -338,7 +338,7 @@ async fn create_passkey_session(
         &state.settings,
         &session_id,
         &csrf_token,
-        state.settings.session_ttl_seconds,
+        state.settings.session().session_ttl_seconds,
         session.pending_mfa,
     )
 }

@@ -93,7 +93,7 @@ pub(crate) async fn current_session(
     state: &AppState,
     req: &HttpRequest,
 ) -> anyhow::Result<Option<CurrentSession>> {
-    let Some(sid) = cookie_value(req, &state.settings.session_cookie_name) else {
+    let Some(sid) = cookie_value(req, state.settings.session().session_cookie_name) else {
         return Ok(None);
     };
     let store = nazo_valkey::SessionStore::new(&state.valkey_connection());
@@ -128,7 +128,7 @@ pub(crate) async fn current_pending_mfa_session(
     state: &AppState,
     req: &HttpRequest,
 ) -> anyhow::Result<Option<CurrentSession>> {
-    let Some(sid) = cookie_value(req, &state.settings.session_cookie_name) else {
+    let Some(sid) = cookie_value(req, state.settings.session().session_cookie_name) else {
         return Ok(None);
     };
     let store = nazo_valkey::SessionStore::new(&state.valkey_connection());
@@ -181,7 +181,7 @@ async fn record_mfa_step_up(
     method: &str,
     require_pending_mfa: bool,
 ) -> anyhow::Result<Option<SessionRotation>> {
-    let Some(sid) = cookie_value(req, &state.settings.session_cookie_name) else {
+    let Some(sid) = cookie_value(req, state.settings.session().session_cookie_name) else {
         return Ok(None);
     };
     let store = nazo_valkey::SessionStore::new(&state.valkey_connection());
@@ -213,7 +213,7 @@ async fn record_mfa_step_up(
             &stored,
             &new_session_id,
             &payload.to_record()?,
-            state.settings.session_ttl_seconds,
+            state.settings.session().session_ttl_seconds,
         )
         .await?;
     match result {

@@ -291,7 +291,7 @@ async fn mfa_verify_inner(
                 &token,
                 true,
                 MFA_REMEMBERED_TTL_SECONDS,
-                state.settings.cookie_secure,
+                state.settings.session().cookie_secure,
             )),
             Err(error) => {
                 tracing::warn!(%error, "failed to remember MFA device");
@@ -430,18 +430,18 @@ fn rotated_session_cookies(
 ) -> [actix_web::cookie::Cookie<'static>; 2] {
     [
         make_cookie(
-            &state.settings.session_cookie_name,
+            state.settings.session().session_cookie_name,
             &rotation.session_id,
             true,
-            state.settings.session_ttl_seconds,
-            state.settings.cookie_secure,
+            state.settings.session().session_ttl_seconds,
+            state.settings.session().cookie_secure,
         ),
         make_cookie(
-            &state.settings.csrf_cookie_name,
+            state.settings.session().csrf_cookie_name,
             &rotation.csrf_token,
             false,
-            state.settings.session_ttl_seconds,
-            state.settings.cookie_secure,
+            state.settings.session().session_ttl_seconds,
+            state.settings.session().cookie_secure,
         ),
     ]
 }
@@ -510,7 +510,7 @@ async fn mfa_disable_inner(
         json_response(json!({ "mfa_enabled": false })),
         &[clear_cookie(
             MFA_REMEMBERED_COOKIE_NAME,
-            state.settings.cookie_secure,
+            state.settings.session().cookie_secure,
         )],
     )
 }

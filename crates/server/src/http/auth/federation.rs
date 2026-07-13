@@ -701,24 +701,24 @@ async fn create_federated_session(
     );
     with_cookie_headers(
         json_response(json!({
-            "expires_in": state.settings.session_ttl_seconds,
+            "expires_in": state.settings.session().session_ttl_seconds,
             "csrf_token": csrf_token,
             "mfa_required": false
         })),
         &[
             make_cookie(
-                &state.settings.session_cookie_name,
+                state.settings.session().session_cookie_name,
                 &session_id,
                 true,
-                state.settings.session_ttl_seconds,
-                state.settings.cookie_secure,
+                state.settings.session().session_ttl_seconds,
+                state.settings.session().cookie_secure,
             ),
             make_cookie(
-                &state.settings.csrf_cookie_name,
+                state.settings.session().csrf_cookie_name,
                 &csrf_token,
                 false,
-                state.settings.session_ttl_seconds,
-                state.settings.cookie_secure,
+                state.settings.session().session_ttl_seconds,
+                state.settings.session().cookie_secure,
             ),
         ],
     )

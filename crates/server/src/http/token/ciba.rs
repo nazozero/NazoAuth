@@ -867,7 +867,7 @@ pub(crate) async fn ciba_verification(
     };
     json_response_no_store(CibaVerificationView {
         auth_req_id,
-        csrf_token: cookie_value(&req, &state.settings.csrf_cookie_name),
+        csrf_token: cookie_value(&req, state.settings.session().csrf_cookie_name),
         request,
     })
 }
