@@ -31,7 +31,13 @@ use tokio::time::{Duration, timeout};
 use uuid::Uuid;
 
 mod tokens;
-pub(crate) use tokens::*;
+#[cfg(test)]
+pub(crate) use tokens::IssuedAccessToken;
+pub(crate) use tokens::{
+    AccessTokenJwtInput, AuthorizationResponseJwtInput, BackchannelLogoutTokenInput, IdTokenInput,
+    decode_access_claims, make_authorization_response_jwt, make_backchannel_logout_token,
+    make_id_token, make_jwt, sign_response_jwt,
+};
 
 type HmacSha256 = Hmac<Sha256>;
 

@@ -3,7 +3,10 @@ use anyhow::bail;
 use crate::config::ConfigSource;
 
 mod providers;
-pub(crate) use providers::*;
+pub(crate) use providers::{
+    ExternalLoginProvider, ExternalLoginProviderAdapter, FederationProviderRegistry,
+    SocialProviderKind, SocialProviderSettings,
+};
 
 #[derive(Clone)]
 pub(crate) struct FederationSettings {
