@@ -3,10 +3,14 @@ use nazo_identity::{TenantId, UserId, ports::TotpEnrollment};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
+use crate::schema::{user_totp_credentials, users};
+
 use actix_web::{cookie::Cookie, http::header};
 use chrono::Duration;
+use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
@@ -16,6 +20,7 @@ use crate::config::ConfigSource;
 use crate::domain::AppState;
 use crate::support::{remember_mfa_device, replace_backup_codes, verify_user_mfa_code};
 use nazo_postgres::create_pool;
+use nazo_postgres::get_conn;
 
 use crate::schema::{user_mfa_backup_codes, user_mfa_remembered_devices};
 

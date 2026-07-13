@@ -2,13 +2,17 @@ use super::*;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
+use crate::schema::users;
+
 use actix_web::error::PayloadError;
 use actix_web::{
     cookie::Cookie,
     http::{header, header::HeaderMap},
 };
+use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Nullable, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
@@ -17,6 +21,7 @@ use futures_util::stream;
 
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
+use nazo_postgres::get_conn;
 
 fn build_test_state(settings: Settings) -> AppState {
     AppState {

@@ -3,8 +3,6 @@ use crate::domain::AppState;
 #[cfg(test)]
 use crate::domain::DatabaseUserFixture;
 #[cfg(test)]
-use crate::schema::users;
-#[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
@@ -24,15 +22,9 @@ use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
-#[cfg(test)]
-use diesel::prelude::*;
-#[cfg(test)]
-use diesel_async::RunQueryDsl;
 use futures_util::StreamExt;
 use nazo_http_actix::csrf_error;
 use nazo_http_actix::{bytes_response, json_response, oauth_error};
-#[cfg(test)]
-use nazo_postgres::get_conn;
 use serde_json::{Value, json};
 use uuid::Uuid;
 // 只处理头像上传、读取和删除的 HTTP 细节。

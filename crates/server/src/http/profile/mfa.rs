@@ -8,8 +8,6 @@ use nazo_http_actix::{
 use crate::domain::DatabaseUserFixture;
 use crate::domain::MfaProfileHandles;
 #[cfg(test)]
-use crate::schema::{user_totp_credentials, users};
-#[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::MFA_BACKUP_CODE_COUNT;
@@ -31,13 +29,7 @@ use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::DateTime;
 use chrono::Utc;
-#[cfg(test)]
-use diesel::prelude::*;
-#[cfg(test)]
-use diesel_async::RunQueryDsl;
 use nazo_identity::PublicAccount;
-#[cfg(test)]
-use nazo_postgres::get_conn;
 use serde::Deserialize;
 #[cfg(test)]
 use serde_json::Value;

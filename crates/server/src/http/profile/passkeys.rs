@@ -22,13 +22,9 @@ use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
-#[cfg(test)]
-use diesel_async::RunQueryDsl;
 use nazo_http_actix::csrf_error;
 use nazo_identity::PublicAccount;
 use nazo_identity::ports::PasskeyCredential;
-#[cfg(test)]
-use nazo_postgres::get_conn;
 use passkey_auth::RegistrationResponse;
 use serde::Deserialize;
 #[cfg(test)]

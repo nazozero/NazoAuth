@@ -7,6 +7,7 @@ use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
 use ed25519_dalek::SigningKey;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
@@ -17,6 +18,7 @@ use sha2::{Digest, Sha256};
 
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
+use nazo_postgres::get_conn;
 
 fn test_state() -> AppState {
     AppState {
