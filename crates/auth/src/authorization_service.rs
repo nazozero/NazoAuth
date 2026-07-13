@@ -4,8 +4,10 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    AuthorizationCodeState, ConsentPayload, OAuthClient, PushedAuthorizationRequest,
-    authorization_details_empty, canonical_authorization_details, high_risk_authorization_details,
+    AuthorizationCodeState, AuthorizationRequestError, ConsentPayload, NormalizedRequestObject,
+    OAuthClient, PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError,
+    RequestObjectClaims, RequestObjectPolicy, authorization_details_empty,
+    canonical_authorization_details, high_risk_authorization_details, normalize_request_object,
 };
 
 pub type AuthorizationFuture<'a, T> =
@@ -330,6 +332,41 @@ where
         ttl: u64,
     ) -> Result<bool, AuthorizationPortError> {
         self.state.consume_jar(client_id, jti, ttl).await
+    }
+
+    /// Validates a verified request object and commits its replay marker only
+    /// after all pure claim and outer-parameter policy has succeeded.
+    pub async fn admit_request_object(
+        &self,
+        outer: &std::collections::HashMap<String, String>,
+        claims: &RequestObjectClaims,
+        policy: RequestObjectPolicy<'_>,
+    ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
+        let normalized = normalize_request_object(outer, claims, policy)?;
+        if let Some(replay) = normalized.replay.as_ref() {
+            super::authorization_request::classify_request_object_replay(
+                self.state
+                    .consume_jar(&replay.client_id, &replay.jti, replay.ttl_seconds)
+                    .await,
+            )?;
+        }
+        Ok(normalized)
+    }
+
+    /// Atomically consumes a PAR transaction and preserves malformed-state and
+    /// dependency-failure categories for the transport presenter.
+    pub async fn consume_pushed_authorization_request(
+        &self,
+        request_uri: &str,
+    ) -> Result<PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError> {
+        match self.state.take_par(request_uri).await {
+            Ok(Some(request)) => Ok(request),
+            Ok(None) => Err(PushedAuthorizationRequestConsumeError::Missing),
+            Err(AuthorizationPortError::CorruptData) => {
+                Err(PushedAuthorizationRequestConsumeError::Malformed)
+            }
+            Err(error) => Err(PushedAuthorizationRequestConsumeError::Dependency(error)),
+        }
     }
     pub async fn consume_private_key_jwt(
         &self,
