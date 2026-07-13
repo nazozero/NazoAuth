@@ -166,7 +166,13 @@ pwsh scripts/deploy_live.ps1 `
 
 Omit `-LocalFrontendWorktree` to discover the sibling `NazoAuthWeb` repository.
 Whether discovered or explicit, the script verifies its origin, branch, HEAD,
-and clean status. Production deployment
+and clean status, including untracked files. Discovery starts from the resolved
+backend Git root; it never relies on a workstation-specific absolute path or
+accepts a same-named non-repository directory. The frontend package manager is
+selected from its committed lockfile, and validation uses the scripts that are
+actually declared in `package.json`. Do not assume an `npm test` script exists;
+if a required lint, unit, browser-security, delivery, or build gate is absent,
+add a real gate to the frontend repository before deployment. Production deployment
 does not accept `-SkipBuild` or `-SkipFrontendBuild`; those switches exist only
 for rendering the remote script in tests.
 

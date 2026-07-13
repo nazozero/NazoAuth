@@ -3,12 +3,20 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "migrations"
 CHECKSUMS = ROOT / "tests" / "contracts" / "migrations.sha256"
 ROUTES = ROOT / "tests" / "contracts" / "routes.json"
+WORKSTATION_PATH = re.compile(r"(?i)\b[A-Z]:[\\/](?:self|projects)[\\/]")
+REMOVED_ADAPTER_CLAIMS = (
+    "Actix Web, Axum/Tower, and tonic adapters",
+    "Actix Web、Axum/Tower、tonic adapter",
+    "TowerResourceServerLayer",
+    "authorize_tonic_request",
+)
 
 
 def migration_line(path: Path) -> str:
@@ -64,6 +72,32 @@ def check_route_fixture() -> None:
             raise SystemExit("route condition is invalid")
 
 
+def public_document_paths() -> list[Path]:
+    paths = [ROOT / "README.md", ROOT / "README.zh-CN.md"]
+    paths.extend(
+        path
+        for path in (ROOT / "docs").rglob("*.md")
+        if "superpowers" not in path.relative_to(ROOT / "docs").parts
+    )
+    return paths
+
+
+def check_documentation_boundaries() -> None:
+    for path in public_document_paths():
+        text = path.read_text(encoding="utf-8")
+        if WORKSTATION_PATH.search(text):
+            raise SystemExit(
+                f"public documentation contains a workstation-specific path: "
+                f"{path.relative_to(ROOT)}"
+            )
+        for obsolete in REMOVED_ADAPTER_CLAIMS:
+            if obsolete in text:
+                raise SystemExit(
+                    f"public documentation advertises a removed adapter in "
+                    f"{path.relative_to(ROOT)}: {obsolete}"
+                )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -77,6 +111,7 @@ def main() -> None:
     if args.check:
         check_migration_checksums()
         check_route_fixture()
+        check_documentation_boundaries()
 
 
 if __name__ == "__main__":

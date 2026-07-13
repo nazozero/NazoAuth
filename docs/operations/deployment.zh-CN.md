@@ -148,8 +148,13 @@ pwsh scripts/deploy_live.ps1 `
   -LocalUiDist (Join-Path $frontendWorktree dist)
 ```
 
-省略 `-LocalFrontendWorktree` 时脚本会发现 sibling `NazoAuthWeb` 仓库；无论自动发现
-还是显式指定，脚本都会核对 origin、branch、HEAD 和工作区状态。生产部署禁止使用 `-SkipBuild` 或
+省略 `-LocalFrontendWorktree` 时脚本会从解析后的后端 Git 根目录发现 sibling
+`NazoAuthWeb` 仓库；无论自动发现还是显式指定，脚本都会核对 origin、branch、HEAD 和
+工作区状态（包括未跟踪文件）。脚本不会依赖本机绝对路径，也不会接受只是同名但 remote
+不匹配的目录。前端包管理器必须以仓库实际提交的 lockfile 为准，验证命令必须来自
+`package.json` 中真实存在的 scripts；不得假设存在 `npm test`。若缺少必要的 lint、单元测试、
+浏览器安全、delivery 或 build gate，应先在前端仓库补充真实检查，不能静默跳过。
+生产部署禁止使用 `-SkipBuild` 或
 `-SkipFrontendBuild`，这两个参数只用于测试中渲染远端脚本。每次部署使用
 backend SHA、frontend SHA 和 deployment ID 组成唯一记录文件名，不会覆盖既有成功记录；
 `current.json` 通过临时 symlink 和 `mv -T` 原子切换。

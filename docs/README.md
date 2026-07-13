@@ -14,6 +14,7 @@ set can be scanned from one place.
 | Security policy | [../SECURITY.md](../SECURITY.md) |
 | Change history | [../CHANGELOG.md](../CHANGELOG.md) |
 | Current scope and roadmap | [project/roadmap.md](project/roadmap.md) |
+| Workspace and runtime-module architecture | [project/architecture.md](project/architecture.md) |
 | Deployment | [operations/deployment.md](operations/deployment.md) |
 | Chinese deployment | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) |
 | Configuration | [operations/configuration.md](operations/configuration.md) |
@@ -136,6 +137,7 @@ set can be scanned from one place.
 | Document | Role |
 | --- | --- |
 | [project/roadmap.md](project/roadmap.md) | Current scope, roadmap, and deferred capability record. |
+| [project/architecture.md](project/architecture.md) | Workspace boundaries, dependency direction, composition, and runtime-module lifecycle contract. |
 
 ### Examples
 

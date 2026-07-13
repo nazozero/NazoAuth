@@ -154,7 +154,8 @@ all 16 plans and 578 modules, and reported `0 failures` and `0 warnings`.
   backup codes, remembered MFA, WebAuthn/passkeys, and SCIM provisioning.
 - Local signing key lifecycle with prepublish, active, grace, and retired
   states. External-command signing is available for KMS/HSM integrations.
-- Rust resource-server verifier with Actix Web, Axum/Tower, and tonic adapters.
+- Framework-independent Rust resource-server verifier plus the project's Actix
+  HTTP integration. Historical Axum/Tower and tonic adapters are not shipped.
 - Release security workflows for CodeQL, dependency review, cargo audit,
   cargo deny, SBOM generation, Trivy image scanning, keyless signing, and
   provenance attestations.
@@ -247,6 +248,7 @@ See [docs/project/roadmap.md](docs/project/roadmap.md) for the current scope rec
 | Topic | Link |
 | --- | --- |
 | Documentation index | [docs/README.md](docs/README.md) |
+| Workspace architecture | [docs/project/architecture.md](docs/project/architecture.md) |
 | Configuration | [docs/operations/configuration.md](docs/operations/configuration.md) |
 | Deployment | [docs/operations/deployment.md](docs/operations/deployment.md) |
 | Chinese deployment guide | [docs/operations/deployment.zh-CN.md](docs/operations/deployment.zh-CN.md) |

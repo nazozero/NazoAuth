@@ -132,7 +132,8 @@ warning，因此不能作为 zero-SKIPPED 证据。
 - Runtime profile：`oauth2-baseline`、`fapi2-security`、`fapi2-message-signing-authz-request`、`fapi2-message-signing-jarm`、`fapi2-message-signing-introspection`。
 - 本地用户、资料、OAuth client、grant、access request、TOTP MFA、backup code、remembered MFA、WebAuthn/passkeys、SCIM provisioning。
 - 本地签名密钥生命周期，包含 prepublish、active、grace、retired 状态。也可以用 external-command signer 接 KMS/HSM。
-- Rust resource-server verifier，提供 Actix Web、Axum/Tower、tonic adapter。
+- 与 Web 框架无关的 Rust resource-server verifier，以及项目使用的 Actix
+  HTTP 集成；不再提供历史 Axum/Tower 和 tonic adapter。
 - 发布安全 workflow：CodeQL、dependency review、cargo audit、cargo deny、SBOM、Trivy image scanning、keyless signing、provenance attestation。
 
 ## 快速启动
@@ -215,6 +216,7 @@ RUST_LOG: "info"
 | 主题 | 链接 |
 | --- | --- |
 | 文档索引 | [docs/README.md](docs/README.md) |
+| Workspace 架构 | [docs/project/architecture.md](docs/project/architecture.md) |
 | 配置 | [docs/operations/configuration.md](docs/operations/configuration.md) |
 | 部署 | [docs/operations/deployment.zh-CN.md](docs/operations/deployment.zh-CN.md) |
 | 英文部署文档 | [docs/operations/deployment.md](docs/operations/deployment.md) |
