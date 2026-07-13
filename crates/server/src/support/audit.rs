@@ -39,6 +39,7 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str)] = &[
     ("mfa_challenge_failure", "authentication"),
     ("mfa_challenge_success", "authentication"),
     ("mfa_disabled", "authentication"),
+    ("mfa_step_up_success", "authentication"),
     ("mfa_totp_enabled", "authentication"),
     ("oidc_logout", "session_lifecycle"),
     ("passkey_login_failure", "authentication"),

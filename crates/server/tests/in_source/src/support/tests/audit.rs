@@ -68,6 +68,14 @@ fn audit_event_definitions_include_ciba_authorization_lifecycle() {
 }
 
 #[test]
+fn audit_event_definitions_include_mfa_step_up() {
+    assert_eq!(
+        audit_event_category("mfa_step_up_success"),
+        Some("authentication")
+    );
+}
+
+#[test]
 fn audit_schema_version_is_stable_for_collectors() {
     assert_eq!(AUDIT_SCHEMA_VERSION, "nazo.audit.v1");
 }

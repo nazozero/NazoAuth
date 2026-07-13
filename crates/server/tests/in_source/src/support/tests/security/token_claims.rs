@@ -6,6 +6,10 @@ fn signing_adapters_do_not_define_or_call_claim_forwarders() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/support/security/tokens.rs");
     let source = std::fs::read_to_string(&server_tokens)
         .expect("server token adapter source must exist relative to its manifest");
+    let oidc_logout =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/domain/oidc_logout.rs");
+    let oidc_logout_source = std::fs::read_to_string(&oidc_logout)
+        .expect("OIDC logout domain service must exist relative to the server manifest");
     let key_management_tokens =
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../key-management/src/token.rs");
     let key_management_source = std::fs::read_to_string(&key_management_tokens)
@@ -35,15 +39,16 @@ fn signing_adapters_do_not_define_or_call_claim_forwarders() {
         );
     }
 
-    for required in [
-        "nazo_auth::access_token_claims(",
-        "nazo_auth::backchannel_logout_token_claims(",
-    ] {
+    for required in ["nazo_auth::access_token_claims("] {
         assert!(
             source.contains(required),
             "signing adapter must call public auth builder directly: {required}"
         );
     }
+    assert!(
+        oidc_logout_source.contains("nazo_auth::backchannel_logout_token_claims("),
+        "OIDC logout domain service must call the public auth claim builder directly"
+    );
     assert!(
         key_management_source.contains("id_token_claims("),
         "key-management token adapter must call the imported public auth ID-token builder directly"
