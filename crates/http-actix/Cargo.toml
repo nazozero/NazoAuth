@@ -12,6 +12,7 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 url.workspace = true
 nazo-auth.workspace = true
+nazo-runtime-modules.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

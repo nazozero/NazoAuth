@@ -7,6 +7,7 @@ mod cookies;
 mod cors;
 mod csrf;
 mod extract;
+mod metadata;
 mod middleware;
 mod presenter;
 mod request_context;
@@ -21,6 +22,10 @@ pub use csrf::{csrf_error, has_valid_csrf_token_for_cookies};
 pub use extract::{
     AccessTokenAuthScheme, ResourceAccessToken, authorization_access_token, mfa_json_config,
     mfa_method_not_allowed, mfa_options, request_uses_form_urlencoded, resource_access_token,
+};
+pub use metadata::{
+    MetadataEndpointConfig, MetadataHandles, MetadataSnapshot, MetadataSnapshotSource, discovery,
+    jwks, oauth_authorization_server_metadata, oauth_protected_resource_metadata,
 };
 pub use middleware::{apply_security_headers, security_headers};
 pub use presenter::{

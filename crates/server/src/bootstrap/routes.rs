@@ -2,7 +2,10 @@
 // 本文件只声明 URL 到 handler 的映射，不承载业务逻辑。
 
 use actix_web::{HttpResponse, dev::Service, http::header, web};
-use nazo_http_actix::{mfa_json_config, mfa_method_not_allowed, mfa_options};
+use nazo_http_actix::{
+    discovery, jwks, mfa_json_config, mfa_method_not_allowed, mfa_options,
+    oauth_authorization_server_metadata, oauth_protected_resource_metadata,
+};
 use serde_json::json;
 
 use crate::http::admin::{
@@ -78,10 +81,7 @@ use crate::http::token::{
     revoke::revoke,
     userinfo::userinfo,
 };
-use crate::http::well_known::{
-    captcha_config, discovery, health, jwks, oauth_authorization_server_metadata,
-    oauth_protected_resource_metadata,
-};
+use crate::http::well_known::{captcha_config, health};
 use crate::settings::Settings;
 
 use super::cors;

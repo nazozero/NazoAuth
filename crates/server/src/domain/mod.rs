@@ -19,8 +19,9 @@ pub(crate) use database_user_fixture::{
     DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
 };
 pub(crate) use dynamic_registration::{DynamicRegistrationConfig, DynamicRegistrationHandles};
-pub(crate) use metadata::{MetadataConfig, MetadataHandles};
+pub(crate) use metadata::{MetadataConfig, ServerMetadataSnapshotSource};
 pub(crate) use mfa::{MfaProfileConfig, MfaProfileHandles};
+#[cfg(test)]
 pub(crate) use nazo_key_management::KeySnapshot;
 pub(crate) use oauth::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,

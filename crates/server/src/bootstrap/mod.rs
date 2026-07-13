@@ -30,9 +30,9 @@ use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
 
 use crate::config::{ConfigSource, database_max_connections, database_url};
 use crate::domain::{
-    DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig, MetadataHandles,
-    MfaProfileConfig, MfaProfileHandles, OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig,
-    ResourceServerHandles, UserinfoConfig, UserinfoHandles,
+    DynamicRegistrationConfig, DynamicRegistrationHandles, MetadataConfig, MfaProfileConfig,
+    MfaProfileHandles, OidcLogoutConfig, OidcLogoutHandles, ResourceServerConfig,
+    ResourceServerHandles, ServerMetadataSnapshotSource, UserinfoConfig, UserinfoHandles,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -115,11 +115,14 @@ pub async fn run() -> anyhow::Result<()> {
     tokio::fs::create_dir_all(&settings.storage.avatar_storage_dir).await?;
     let keyset = nazo_key_management::KeyManager::load_or_create(settings.key_settings()).await?;
     tokio::spawn(keyset.clone().run_lifecycle());
-    let metadata_handles = web::Data::new(MetadataHandles {
-        config: MetadataConfig::from(settings.as_ref()),
-        keyset: keyset.clone(),
-        runtime_modules: runtime_modules.registry.clone(),
-    });
+    let metadata_config = MetadataConfig::from(settings.as_ref());
+    let metadata_handles = web::Data::new(nazo_http_actix::MetadataHandles::new(
+        metadata_config.endpoint_config(),
+        Arc::new(ServerMetadataSnapshotSource::new(
+            keyset.clone(),
+            runtime_modules.registry.clone(),
+        )),
+    ));
     #[cfg(not(test))]
     let resource_replay_connection = valkey.clone();
     #[cfg(test)]
