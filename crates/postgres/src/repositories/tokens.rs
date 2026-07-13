@@ -174,25 +174,6 @@ impl TokenRepository {
             .map_err(map_error)
     }
 
-    pub async fn revoke_refresh_token(
-        &self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-        raw_token: &str,
-    ) -> Result<usize, RepositoryError> {
-        let mut connection = self.connection().await?;
-        diesel::update(
-            oauth_tokens::table
-                .filter(oauth_tokens::tenant_id.eq(tenant_id))
-                .filter(oauth_tokens::client_id.eq(client_id))
-                .filter(oauth_tokens::refresh_token_blake3.eq(blake3_hex(raw_token))),
-        )
-        .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
-        .execute(&mut connection)
-        .await
-        .map_err(map_error)
-    }
-
     pub async fn access_token_revoked(
         &self,
         tenant_id: Uuid,
@@ -209,31 +190,61 @@ impl TokenRepository {
             .map_err(map_error)
     }
 
-    pub async fn revoke_access_token(
+    /// Revokes a refresh-token family or records an access-token JTI in one transaction.
+    /// The family lock is shared with rotation so a successor cannot escape revocation.
+    pub(crate) async fn revoke_for_client(
         &self,
         tenant_id: Uuid,
         client_id: Uuid,
-        jti: &str,
-        expires_at: DateTime<Utc>,
-    ) -> Result<(), RepositoryError> {
+        raw_token: &str,
+        access_token: Option<&nazo_auth::AccessTokenRevocation>,
+    ) -> Result<usize, RepositoryError> {
         let mut connection = self.connection().await?;
-        diesel::insert_into(access_token_revocations::table)
-            .values((
-                access_token_revocations::access_token_jti_blake3.eq(blake3_hex(jti)),
-                access_token_revocations::tenant_id.eq(tenant_id),
-                access_token_revocations::client_id.eq(client_id),
-                access_token_revocations::revoked_at.eq(Utc::now()),
-                access_token_revocations::expires_at.eq(expires_at),
-            ))
-            .on_conflict((
-                access_token_revocations::tenant_id,
-                access_token_revocations::access_token_jti_blake3,
-            ))
-            .do_nothing()
-            .execute(&mut connection)
+        connection
+            .transaction::<usize, diesel::result::Error, _>(async |connection| {
+                let family_id = oauth_tokens::table
+                    .filter(oauth_tokens::tenant_id.eq(tenant_id))
+                    .filter(oauth_tokens::client_id.eq(client_id))
+                    .filter(oauth_tokens::refresh_token_blake3.eq(blake3_hex(raw_token)))
+                    .select(oauth_tokens::token_family_id)
+                    .first::<Uuid>(connection)
+                    .await
+                    .optional()?;
+                if let Some(family_id) = family_id {
+                    lock_refresh_family(connection, family_id).await?;
+                    return diesel::update(
+                        oauth_tokens::table
+                            .filter(oauth_tokens::tenant_id.eq(tenant_id))
+                            .filter(oauth_tokens::client_id.eq(client_id))
+                            .filter(oauth_tokens::token_family_id.eq(family_id))
+                            .filter(oauth_tokens::revoked_at.is_null()),
+                    )
+                    .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
+                    .execute(connection)
+                    .await;
+                }
+                if let Some(access_token) = access_token {
+                    diesel::insert_into(access_token_revocations::table)
+                        .values((
+                            access_token_revocations::access_token_jti_blake3
+                                .eq(blake3_hex(&access_token.jti)),
+                            access_token_revocations::tenant_id.eq(tenant_id),
+                            access_token_revocations::client_id.eq(client_id),
+                            access_token_revocations::revoked_at.eq(Utc::now()),
+                            access_token_revocations::expires_at.eq(access_token.expires_at),
+                        ))
+                        .on_conflict((
+                            access_token_revocations::tenant_id,
+                            access_token_revocations::access_token_jti_blake3,
+                        ))
+                        .do_nothing()
+                        .execute(connection)
+                        .await?;
+                }
+                Ok(0)
+            })
             .await
-            .map_err(map_error)?;
-        Ok(())
+            .map_err(map_error)
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {

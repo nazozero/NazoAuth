@@ -6,8 +6,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    AuthorizationCodeState, CodePayload, ConsumedAuthorizationCode, NewRefreshToken, OAuthClient,
-    OidcClaimRequest, RefreshToken, RefreshTokenPersistResult,
+    AuthorizationCodeState, Claims, CodePayload, ConsumedAuthorizationCode, NewRefreshToken,
+    OAuthClient, OidcClaimRequest, RefreshToken, RefreshTokenPersistResult,
 };
 
 pub type TokenFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, TokenPortError>> + Send + 'a>>;
@@ -95,6 +95,49 @@ pub struct IdTokenSignInput<'a> {
     pub signing_algorithm: Option<&'a str>,
 }
 
+pub struct IntrospectionSignInput<'a> {
+    pub issuer: &'a str,
+    pub audience: &'a str,
+    pub body: &'a Value,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum TokenInspection {
+    Inactive,
+    ActiveAccess {
+        scope: String,
+        client_id: String,
+        token_type: &'static str,
+        expires_at: i64,
+        issued_at: i64,
+        not_before: i64,
+        subject: String,
+        audience: Value,
+        issuer: String,
+        jti: String,
+    },
+    ActiveRefresh {
+        scope: String,
+        client_id: String,
+        expires_at: i64,
+        issued_at: i64,
+        subject: String,
+    },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct AccessTokenRevocation {
+    pub jti: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+pub struct TokenRevocation<'a> {
+    pub tenant_id: Uuid,
+    pub client_id: Uuid,
+    pub raw_token: &'a str,
+    pub access_token: Option<AccessTokenRevocation>,
+}
+
 pub struct IssuedAuthorizationCodeTokens<'a> {
     pub tenant_id: Uuid,
     pub client_id: Uuid,
@@ -140,6 +183,10 @@ pub trait TokenRepositoryPort: Send + Sync {
         access_token_expires_at: Option<DateTime<Utc>>,
         refresh_token_family_id: Option<Uuid>,
     ) -> TokenFuture<'a, ()>;
+
+    fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool>;
+
+    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize>;
 }
 
 pub trait TokenStateStorePort: Send + Sync {
@@ -168,6 +215,12 @@ pub trait TokenStateStorePort: Send + Sync {
         user_id: Uuid,
         ttl_seconds: u64,
     ) -> TokenFuture<'a, ()>;
+
+    fn increment_token_management_rate<'a>(
+        &'a self,
+        subject: &'a str,
+        window_seconds: u64,
+    ) -> TokenFuture<'a, u64>;
 }
 
 pub trait TokenSignerPort: Send + Sync {
@@ -177,6 +230,17 @@ pub trait TokenSignerPort: Send + Sync {
     ) -> TokenFuture<'a, IssuedAccessToken>;
 
     fn sign_id_token<'a>(&'a self, input: IdTokenSignInput<'a>) -> TokenFuture<'a, String>;
+
+    fn decode_access_token<'a>(
+        &'a self,
+        issuer: &'a str,
+        token: &'a str,
+    ) -> TokenFuture<'a, Option<Claims>>;
+
+    fn sign_introspection_response<'a>(
+        &'a self,
+        input: IntrospectionSignInput<'a>,
+    ) -> TokenFuture<'a, String>;
 }
 
 pub struct TokenService<R, S, K> {
@@ -356,6 +420,143 @@ where
     ) -> Result<String, TokenPortError> {
         self.signer.sign_id_token(input).await
     }
+
+    pub async fn increment_token_management_rate(
+        &self,
+        subject: &str,
+        window_seconds: u64,
+    ) -> Result<u64, TokenPortError> {
+        self.state
+            .increment_token_management_rate(subject, window_seconds)
+            .await
+    }
+
+    pub async fn inspect_token(
+        &self,
+        issuer: &str,
+        raw_token: &str,
+        resource_server: &OAuthClient,
+        now: DateTime<Utc>,
+    ) -> Result<TokenInspection, TokenPortError> {
+        if let Some(claims) = self.signer.decode_access_token(issuer, raw_token).await? {
+            let audience_allowed = token_audiences(&claims.aud)
+                .iter()
+                .any(|audience| resource_server.allowed_audiences.contains(audience));
+            if (claims.client_id != resource_server.client_id && !audience_allowed)
+                || claims.tenant_id.parse::<Uuid>().ok() != Some(resource_server.tenant_id)
+            {
+                return Ok(TokenInspection::Inactive);
+            }
+            let revoked = self
+                .repository
+                .access_token_revoked(resource_server.tenant_id, &claims.jti)
+                .await?;
+            if revoked || claims.exp <= now.timestamp() {
+                return Ok(TokenInspection::Inactive);
+            }
+            let token_type = access_token_type(&claims);
+            return Ok(TokenInspection::ActiveAccess {
+                scope: claims.scope,
+                client_id: claims.client_id,
+                token_type,
+                expires_at: claims.exp,
+                issued_at: claims.iat,
+                not_before: claims.nbf,
+                subject: claims.sub,
+                audience: claims.aud,
+                issuer: claims.iss,
+                jti: claims.jti,
+            });
+        }
+
+        let Some(token) = self
+            .repository
+            .refresh_token(resource_server.tenant_id, raw_token)
+            .await?
+        else {
+            return Ok(TokenInspection::Inactive);
+        };
+        if token.client_id != resource_server.id
+            || token.revoked_at.is_some()
+            || token.expires_at <= now
+        {
+            return Ok(TokenInspection::Inactive);
+        }
+        Ok(TokenInspection::ActiveRefresh {
+            scope: json_strings(&token.scopes).join(" "),
+            client_id: resource_server.client_id.clone(),
+            expires_at: token.expires_at.timestamp(),
+            issued_at: token.issued_at.timestamp(),
+            subject: token.subject,
+        })
+    }
+
+    pub async fn revoke_token(
+        &self,
+        issuer: &str,
+        raw_token: &str,
+        client: &OAuthClient,
+    ) -> Result<usize, TokenPortError> {
+        let access_token = self
+            .signer
+            .decode_access_token(issuer, raw_token)
+            .await?
+            .filter(|claims| claims.client_id == client.client_id)
+            .and_then(|claims| {
+                Some(AccessTokenRevocation {
+                    jti: claims.jti,
+                    expires_at: DateTime::<Utc>::from_timestamp(claims.exp, 0)?,
+                })
+            });
+        self.repository
+            .revoke_token(TokenRevocation {
+                tenant_id: client.tenant_id,
+                client_id: client.id,
+                raw_token,
+                access_token,
+            })
+            .await
+    }
+
+    pub async fn sign_introspection_response(
+        &self,
+        input: IntrospectionSignInput<'_>,
+    ) -> Result<String, TokenPortError> {
+        self.signer.sign_introspection_response(input).await
+    }
+}
+
+fn token_audiences(value: &Value) -> Vec<String> {
+    match value {
+        Value::String(value) => vec![value.clone()],
+        Value::Array(values) => values
+            .iter()
+            .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn json_strings(value: &Value) -> Vec<String> {
+    value
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|value| value.as_str().map(ToOwned::to_owned))
+        .collect()
+}
+
+fn access_token_type(claims: &Claims) -> &'static str {
+    if claims
+        .cnf
+        .as_ref()
+        .and_then(|confirmation| confirmation.jkt.as_ref())
+        .is_some()
+    {
+        "DPoP"
+    } else {
+        "Bearer"
+    }
 }
 
 pub fn validate_sender_constraint(
@@ -370,7 +571,34 @@ pub fn validate_sender_constraint(
 
 #[cfg(test)]
 mod tests {
-    use super::{TokenPortError, validate_sender_constraint};
+    use serde_json::json;
+
+    use crate::{Claims, ConfirmationClaims};
+
+    use super::{TokenPortError, access_token_type, validate_sender_constraint};
+
+    fn access_claims(confirmation: Option<ConfirmationClaims>) -> Claims {
+        Claims {
+            iss: "https://issuer.example".to_owned(),
+            sub: "subject".to_owned(),
+            tenant_id: uuid::Uuid::nil().to_string(),
+            user_id: None,
+            subject_type: "client".to_owned(),
+            aud: json!("resource://default"),
+            client_id: "client".to_owned(),
+            scope: "openid".to_owned(),
+            authorization_details: json!([]),
+            token_use: "access".to_owned(),
+            jti: "jti".to_owned(),
+            iat: 1,
+            nbf: 1,
+            exp: 2,
+            cnf: confirmation,
+            act: None,
+            userinfo_claims: Vec::new(),
+            userinfo_claim_requests: Vec::new(),
+        }
+    }
 
     #[test]
     fn access_token_cannot_bind_two_sender_constraints() {
@@ -380,5 +608,24 @@ mod tests {
         );
         assert!(validate_sender_constraint(Some("dpop"), None).is_ok());
         assert!(validate_sender_constraint(None, Some("mtls")).is_ok());
+    }
+
+    #[test]
+    fn introspection_reports_dpop_only_for_dpop_bound_tokens() {
+        assert_eq!(access_token_type(&access_claims(None)), "Bearer");
+        assert_eq!(
+            access_token_type(&access_claims(Some(ConfirmationClaims {
+                jkt: Some("thumbprint".to_owned()),
+                x5t_s256: None,
+            }))),
+            "DPoP"
+        );
+        assert_eq!(
+            access_token_type(&access_claims(Some(ConfirmationClaims {
+                jkt: None,
+                x5t_s256: Some("certificate-thumbprint".to_owned()),
+            }))),
+            "Bearer"
+        );
     }
 }

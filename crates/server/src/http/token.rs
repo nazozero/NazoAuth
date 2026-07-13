@@ -18,8 +18,8 @@ pub(crate) mod userinfo;
 use authorization_code::token_authorization_code_with_service;
 use ciba::{CIBA_GRANT_TYPE, token_ciba};
 use client_auth::{
-    TokenManagementClientAuthError, authenticate_introspection_client,
-    authenticate_revocation_client, consume_token_client_assertion,
+    TokenManagementClientAuthError, authenticate_introspection_client_with_dependencies,
+    authenticate_revocation_client_with_dependencies, consume_token_client_assertion,
     consume_token_management_client_assertion, token_management_auth_error,
     token_management_client_auth_error, verify_confidential_client,
 };
@@ -70,3 +70,29 @@ use serde_json::Value;
 #[cfg(test)]
 #[path = "../../tests/in_source/src/http/token/tests/forms.rs"]
 mod forms_tests;
+
+#[cfg(test)]
+mod lifecycle_boundary_tests {
+    #[test]
+    fn token_lifecycle_handlers_use_focused_dependencies() {
+        for (name, source) in [
+            ("introspection", include_str!("token/introspect.rs")),
+            ("revocation", include_str!("token/revoke.rs")),
+        ] {
+            for forbidden in [
+                "AppState",
+                "nazo_postgres",
+                "nazo_valkey",
+                "diesel_db",
+                "decode_access_claims",
+                "TokenRepository::new",
+                "OAuthClientRepository::new",
+            ] {
+                assert!(
+                    !source.contains(forbidden),
+                    "{name} handler reintroduced forbidden dependency {forbidden}"
+                );
+            }
+        }
+    }
+}

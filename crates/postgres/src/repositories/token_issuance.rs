@@ -1,7 +1,7 @@
 use chrono::{DateTime, Utc};
 use nazo_auth::{
     NewRefreshToken, OAuthClient, RefreshToken, RefreshTokenPersistResult, TokenFuture,
-    TokenPortError, TokenRepositoryPort,
+    TokenPortError, TokenRepositoryPort, TokenRevocation,
 };
 use nazo_identity::{SubjectClaims, TenantId, UserId, ports::RepositoryError};
 use uuid::Uuid;
@@ -111,6 +111,29 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     access_token_jti,
                     access_token_expires_at,
                     refresh_token_family_id,
+                )
+                .await
+                .map_err(map_repository_error)
+        })
+    }
+
+    fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
+        Box::pin(async move {
+            self.tokens
+                .access_token_revoked(tenant_id, jti)
+                .await
+                .map_err(map_repository_error)
+        })
+    }
+
+    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
+        Box::pin(async move {
+            self.tokens
+                .revoke_for_client(
+                    input.tenant_id,
+                    input.client_id,
+                    input.raw_token,
+                    input.access_token.as_ref(),
                 )
                 .await
                 .map_err(map_repository_error)

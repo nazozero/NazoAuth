@@ -1,26 +1,23 @@
 //! token introspection 端点。
-use crate::domain::{AppState, ClientRow, TokenRow};
-#[cfg(test)]
-use crate::settings::Settings;
+use crate::domain::ClientRow;
 #[cfg(test)]
 use crate::support::{
     AccessTokenJwtInput, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, IssuedAccessToken, blake3_hex,
     jwt_decoding_key_from_jwk, make_jwt,
 };
 use crate::support::{
-    ClientJweKey, DEFAULT_TENANT_ID, JwePayloadKind, RateLimitPolicy, access_token_tenant_id,
-    client_jwe_key, decode_access_claims, encrypt_compact_jwe, enforce_rate_limit,
-    extract_client_credentials, has_basic_authorization_scheme, json_array_to_strings,
-    token_audience_allowed,
+    ClientJweKey, JwePayloadKind, client_ip_with_config, client_jwe_key, encrypt_compact_jwe,
+    extract_client_credentials_with_trusted_proxies, has_basic_authorization_scheme,
+    rate_limited_response,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
-use chrono::Utc;
 #[cfg(test)]
-use chrono::{DateTime, Duration};
+use chrono::Duration;
+use chrono::Utc;
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::json_response_no_store;
@@ -29,28 +26,56 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 // 只处理 access/refresh token 活跃性查询。
 use super::{
-    TokenManagementClientAuthError, authenticate_introspection_client, parse_token_management_form,
+    ServerTokenService, TokenManagementClientAuthError,
+    authenticate_introspection_client_with_dependencies, parse_token_management_form,
     token_management_client_auth_error, token_management_form_error,
     token_management_has_conflicting_client_auth, token_management_oauth_error,
 };
-use nazo_auth::Claims;
+use nazo_auth::{IntrospectionSignInput, TokenInspection};
+
+use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
 
 const TOKEN_INTROSPECTION_JWT_MEDIA_TYPE: &str = "application/token-introspection+jwt";
 
 pub(crate) async fn introspect(
-    state: Data<AppState>,
+    token_service: Data<ServerTokenService>,
+    authorization_service: Data<ServerAuthorizationService>,
+    config: Data<AuthorizationHttpConfig>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    if let Err(response) = enforce_rate_limit(&state, &req, RateLimitPolicy::TokenManagement).await
+    let subject = client_ip_with_config(&req, &config.client_ip);
+    match token_service
+        .increment_token_management_rate(&subject, config.rate_limit_window_seconds)
+        .await
     {
-        return response;
+        Ok(count) if count > config.token_management_max_requests => {
+            return rate_limited_response(config.rate_limit_window_seconds);
+        }
+        Ok(_) => {}
+        Err(error) => {
+            tracing::warn!(%error, "token introspection rate limit increment failed");
+            return nazo_http_actix::oauth_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "请求频率校验失败.",
+            );
+        }
     }
-    introspect_after_rate_limit(state, req, body).await
+    introspect_after_rate_limit_with_dependencies(
+        &token_service,
+        &authorization_service,
+        &config,
+        req,
+        body,
+    )
+    .await
 }
 
-pub(crate) async fn introspect_after_rate_limit(
-    state: Data<AppState>,
+async fn introspect_after_rate_limit_with_dependencies(
+    token_service: &ServerTokenService,
+    authorization_service: &ServerAuthorizationService,
+    config: &AuthorizationHttpConfig,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -67,9 +92,9 @@ pub(crate) async fn introspect_after_rate_limit(
             "同一请求不能同时使用多种客户端认证方式.",
         );
     }
-    let credentials = extract_client_credentials(
+    let credentials = extract_client_credentials_with_trusted_proxies(
         &req,
-        &state.settings,
+        &config.trusted_proxy_cidrs,
         form.client_id.as_deref(),
         form.client_secret.as_deref(),
         form.client_assertion_type.as_deref(),
@@ -81,10 +106,7 @@ pub(crate) async fn introspect_after_rate_limit(
             has_basic,
         );
     };
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, client_id)
-        .await
-    {
+    let client = match authorization_service.client_by_id(client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
             return token_management_client_auth_error(
@@ -101,87 +123,28 @@ pub(crate) async fn introspect_after_rate_limit(
             );
         }
     };
-    if let Err(error) = authenticate_introspection_client(&state, &req, &client, &credentials).await
+    if let Err(error) = authenticate_introspection_client_with_dependencies(
+        authorization_service,
+        &config.issuer,
+        &config.client_secret_pepper,
+        &config.trusted_proxy_cidrs,
+        &req,
+        &client,
+        &credentials,
+    )
+    .await
     {
         return token_management_client_auth_error(error, has_basic);
     }
-    let use_signed_response = signed_introspection_requested(&req)
-        && state
-            .settings
-            .protocol
-            .authorization_server_profile
-            .requires_signed_introspection();
-    let token_repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());
-    if let Some(claims) = decode_access_claims(&state, &form.token) {
-        if claims.client_id != client.client_id && !token_audience_allowed(&client, &claims.aud) {
-            return introspection_response(
-                &state,
-                &client,
-                json!({"active": false}),
-                use_signed_response,
-            )
-            .await;
-        }
-        if access_token_tenant_id(&claims) != Some(client.tenant_id) {
-            return introspection_response(
-                &state,
-                &client,
-                json!({"active": false}),
-                use_signed_response,
-            )
-            .await;
-        }
-        let revoked = match token_repository
-            .access_token_revoked(client.tenant_id, &claims.jti)
-            .await
-        {
-            Ok(revoked) => revoked,
-            Err(error) => {
-                tracing::warn!(%error, "failed to query access token revocation state");
-                return token_management_oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "token 状态查询失败.",
-                );
-            }
-        };
-        let active = !revoked && claims.exp > Utc::now().timestamp();
-        if !active {
-            return introspection_response(
-                &state,
-                &client,
-                json!({"active": false}),
-                use_signed_response,
-            )
-            .await;
-        }
-        return introspection_response(
-            &state,
-            &client,
-            json!({
-            "active": active,
-            "scope": claims.scope,
-            "client_id": claims.client_id,
-            "token_type": introspection_access_token_type(&claims),
-            "exp": claims.exp,
-            "iat": claims.iat,
-            "nbf": claims.nbf,
-            "sub": claims.sub,
-            "aud": claims.aud,
-            "iss": claims.iss,
-            "jti": claims.jti
-            }),
-            use_signed_response,
-        )
-        .await;
-    }
-    let token = match token_repository
-        .by_raw_refresh_token(client.tenant_id, &form.token)
+    let use_signed_response =
+        signed_introspection_requested(&req) && config.profile.requires_signed_introspection();
+    let inspection = match token_service
+        .inspect_token(&config.issuer, &form.token, &client, Utc::now())
         .await
     {
-        Ok(value) => value,
+        Ok(inspection) => inspection,
         Err(error) => {
-            tracing::warn!(%error, "failed to query refresh token introspection state");
+            tracing::warn!(%error, "failed to inspect token state");
             return token_management_oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -189,41 +152,59 @@ pub(crate) async fn introspect_after_rate_limit(
             );
         }
     };
-    if let Some(token) = token {
-        if token.client_id != client.id {
-            return introspection_response(
-                &state,
-                &client,
-                json!({"active": false}),
-                use_signed_response,
-            )
-            .await;
-        }
-        let active = token.revoked_at.is_none() && token.expires_at > Utc::now();
-        if !active {
-            return introspection_response(
-                &state,
-                &client,
-                json!({"active": false}),
-                use_signed_response,
-            )
-            .await;
-        }
-        return introspection_response(
-            &state,
-            &client,
-            active_refresh_token_introspection_body(&token, &client.client_id),
-            use_signed_response,
-        )
-        .await;
-    }
+    let response_body = inspection_body(inspection);
     introspection_response(
-        &state,
+        token_service,
+        &config.issuer,
         &client,
-        json!({"active": false}),
+        response_body,
         use_signed_response,
     )
     .await
+}
+
+fn inspection_body(inspection: TokenInspection) -> Value {
+    match inspection {
+        TokenInspection::Inactive => json!({"active": false}),
+        TokenInspection::ActiveAccess {
+            scope,
+            client_id,
+            token_type,
+            expires_at,
+            issued_at,
+            not_before,
+            subject,
+            audience,
+            issuer,
+            jti,
+        } => json!({
+            "active": true,
+            "scope": scope,
+            "client_id": client_id,
+            "token_type": token_type,
+            "exp": expires_at,
+            "iat": issued_at,
+            "nbf": not_before,
+            "sub": subject,
+            "aud": audience,
+            "iss": issuer,
+            "jti": jti,
+        }),
+        TokenInspection::ActiveRefresh {
+            scope,
+            client_id,
+            expires_at,
+            issued_at,
+            subject,
+        } => json!({
+            "active": true,
+            "scope": scope,
+            "client_id": client_id,
+            "exp": expires_at,
+            "iat": issued_at,
+            "sub": subject,
+        }),
+    }
 }
 
 fn signed_introspection_requested(req: &HttpRequest) -> bool {
@@ -240,7 +221,8 @@ fn signed_introspection_requested(req: &HttpRequest) -> bool {
 }
 
 async fn introspection_response(
-    state: &AppState,
+    token_service: &ServerTokenService,
+    issuer: &str,
     resource_server: &ClientRow,
     body: Value,
     signed: bool,
@@ -248,7 +230,9 @@ async fn introspection_response(
     if !signed {
         return json_response_no_store(body);
     }
-    match signed_introspection_response(state, resource_server, body).await {
+    match signed_introspection_response_with_service(token_service, issuer, resource_server, body)
+        .await
+    {
         Ok(response) => response,
         Err(error) => {
             tracing::warn!(%error, "failed to build token introspection JWT response");
@@ -261,24 +245,18 @@ async fn introspection_response(
     }
 }
 
-async fn signed_introspection_response(
-    state: &AppState,
+async fn signed_introspection_response_with_service(
+    token_service: &ServerTokenService,
+    issuer: &str,
     resource_server: &ClientRow,
     body: Value,
 ) -> anyhow::Result<HttpResponse> {
-    let keyset = state.keyset.snapshot();
-    let mut header = jsonwebtoken::Header::new(keyset.active_alg);
-    header.typ = Some("token-introspection+jwt".to_owned());
-    header.kid = Some(keyset.active_kid.clone());
-    let claims = json!({
-        "iss": state.settings.endpoint.issuer,
-        "aud": resource_server.client_id,
-        "iat": Utc::now().timestamp(),
-        "token_introspection": body
-    });
-    let token = state
-        .keyset
-        .encode_jwt(nazo_auth::SigningPurpose::AccessToken, &header, &claims)
+    let token = token_service
+        .sign_introspection_response(IntrospectionSignInput {
+            issuer,
+            audience: &resource_server.client_id,
+            body: &body,
+        })
         .await?;
     let token = match introspection_encryption_key(resource_server)? {
         Some(key) => encrypt_compact_jwe(&key, token.as_bytes(), JwePayloadKind::NestedJwt)?,
@@ -307,30 +285,6 @@ fn introspection_encryption_key(
             .as_deref(),
         "introspection",
     )
-}
-
-fn introspection_access_token_type(claims: &Claims) -> &'static str {
-    if claims
-        .cnf
-        .as_ref()
-        .and_then(|cnf| cnf.jkt.as_ref())
-        .is_some()
-    {
-        "DPoP"
-    } else {
-        "Bearer"
-    }
-}
-
-fn active_refresh_token_introspection_body(token: &TokenRow, client_id: &str) -> Value {
-    json!({
-        "active": true,
-        "scope": json_array_to_strings(&token.scopes).join(" "),
-        "client_id": client_id,
-        "exp": token.expires_at.timestamp(),
-        "iat": token.issued_at.timestamp(),
-        "sub": token.subject
-    })
 }
 
 #[cfg(test)]

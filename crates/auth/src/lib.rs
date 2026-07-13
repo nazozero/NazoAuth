@@ -63,9 +63,10 @@ pub use token::{
     RefreshTokenPersistResult,
 };
 pub use token_service::{
-    AccessTokenSignInput, AuthorizationCodeBeginResult, AuthorizationCodeTransitionResult,
-    IdTokenSignInput, IssuedAccessToken, IssuedAuthorizationCodeTokens, TokenFuture,
-    TokenPortError, TokenRepositoryPort, TokenService, TokenSignerPort, TokenStateStorePort,
+    AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,
+    AuthorizationCodeTransitionResult, IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken,
+    IssuedAuthorizationCodeTokens, TokenFuture, TokenInspection, TokenPortError,
+    TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort,
     validate_sender_constraint,
 };
 pub use transaction::{

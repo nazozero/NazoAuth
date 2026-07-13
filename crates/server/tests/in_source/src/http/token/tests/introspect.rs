@@ -2,6 +2,10 @@ use super::*;
 use std::sync::Arc;
 
 use crate::config::ConfigSource;
+use crate::domain::{AppState, TokenRow};
+use crate::settings::Settings;
+use crate::support::DEFAULT_TENANT_ID;
+use chrono::{DateTime, Utc};
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::support::{client_signing_fixture, hash_client_secret};
@@ -12,12 +16,72 @@ use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUui
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{Builder as ValkeyBuilder, Config as ValkeyConfig};
-use nazo_auth::{Claims, ConfirmationClaims};
 use openssl::encrypt::Decrypter;
 use openssl::hash::MessageDigest;
 use openssl::pkey::{PKey, Private};
 use openssl::rsa::{Padding, Rsa};
 use openssl::symm::{Cipher, decrypt_aead};
+
+fn token_service(state: &AppState) -> ServerTokenService {
+    let connection = state.valkey_connection();
+    ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
+        state.keyset.clone(),
+    )
+}
+
+fn authorization_service(state: &AppState) -> ServerAuthorizationService {
+    let connection = state.valkey_connection();
+    ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
+        nazo_valkey::AuthorizationStateAdapter::new(&connection),
+        state.keyset.clone(),
+    )
+}
+
+async fn introspect_after_rate_limit(
+    state: Data<AppState>,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
+    let token_service = token_service(&state);
+    let authorization_service = authorization_service(&state);
+    let config = AuthorizationHttpConfig::from(state.settings.as_ref());
+    introspect_after_rate_limit_with_dependencies(
+        &token_service,
+        &authorization_service,
+        &config,
+        req,
+        body,
+    )
+    .await
+}
+
+async fn signed_introspection_response(
+    state: &Data<AppState>,
+    resource_server: &ClientRow,
+    body: Value,
+) -> anyhow::Result<HttpResponse> {
+    let token_service = token_service(state);
+    signed_introspection_response_with_service(
+        &token_service,
+        &state.settings.endpoint.issuer,
+        resource_server,
+        body,
+    )
+    .await
+}
+
+fn active_refresh_token_introspection_body(token: &TokenRow, client_id: &str) -> Value {
+    inspection_body(TokenInspection::ActiveRefresh {
+        scope: crate::support::json_array_to_strings(&token.scopes).join(" "),
+        client_id: client_id.to_owned(),
+        expires_at: token.expires_at.timestamp(),
+        issued_at: token.issued_at.timestamp(),
+        subject: token.subject.clone(),
+    })
+}
 
 fn introspection_state() -> Data<AppState> {
     Data::new(AppState {
@@ -642,57 +706,6 @@ async fn signed_introspection_jwt_body(state: &Data<AppState>, response: HttpRes
         .claims
 }
 
-fn access_claims(cnf: Option<ConfirmationClaims>) -> Claims {
-    Claims {
-        iss: "https://as.example".to_owned(),
-        sub: "subject".to_owned(),
-        tenant_id: DEFAULT_TENANT_ID.to_string(),
-        user_id: None,
-        subject_type: "client".to_owned(),
-        aud: json!("resource://default"),
-        client_id: "client-1".to_owned(),
-        scope: "openid".to_owned(),
-        authorization_details: json!([]),
-        token_use: "access".to_owned(),
-        jti: "jti-1".to_owned(),
-        iat: 1,
-        nbf: 1,
-        exp: 2,
-        cnf,
-        act: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-    }
-}
-
-#[test]
-fn access_token_introspection_type_matches_issued_bearer_token_type() {
-    assert_eq!(
-        introspection_access_token_type(&access_claims(None)),
-        "Bearer"
-    );
-}
-
-#[test]
-fn access_token_introspection_type_matches_issued_dpop_token_type() {
-    let claims = access_claims(Some(ConfirmationClaims {
-        jkt: Some("thumbprint".to_owned()),
-        x5t_s256: None,
-    }));
-
-    assert_eq!(introspection_access_token_type(&claims), "DPoP");
-}
-
-#[test]
-fn mtls_bound_access_token_introspection_type_remains_bearer() {
-    let claims = access_claims(Some(ConfirmationClaims {
-        jkt: None,
-        x5t_s256: Some("certificate-thumbprint".to_owned()),
-    }));
-
-    assert_eq!(introspection_access_token_type(&claims), "Bearer");
-}
-
 #[test]
 fn refresh_token_introspection_metadata_omits_access_token_type() {
     let issued_at = DateTime::<Utc>::from_timestamp(1_700_000_000, 0).unwrap();
@@ -990,8 +1003,10 @@ async fn introspection_rate_limit_short_circuits_before_client_or_token_lookup()
     let Some(state) = live_rate_limited_introspection_state().await else {
         return;
     };
-    let response = introspect(
-        state,
+    let response = super::introspect(
+        Data::new(token_service(&state)),
+        Data::new(authorization_service(&state)),
+        Data::new(AuthorizationHttpConfig::from(state.settings.as_ref())),
         form_request(),
         Bytes::from_static(
             b"token=refresh-token&client_id=rate-limited-client&client_secret=secret",
