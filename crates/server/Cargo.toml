@@ -48,6 +48,7 @@ nazo-http-signatures = { version = "0.1.0", path = "../http-signatures" }
 nazo-identity = { version = "0.1.0", path = "../identity" }
 nazo-key-management = { version = "0.1.0", path = "../key-management" }
 nazo-postgres = { version = "0.1.0", path = "../postgres" }
+nazo-valkey = { version = "0.1.0", path = "../valkey" }
 nazo-resource-server = { version = "0.1.0", path = "../resource-server" }
 openssl = "0.10.81"
 opentelemetry = "0.32.0"

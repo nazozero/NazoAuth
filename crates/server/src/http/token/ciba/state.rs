@@ -1,12 +1,8 @@
 //! CIBA request persistence model and deterministic state transitions.
 
-use crate::support::{
-    ValkeyAtomicError, ValkeyAtomicResult, valkey_atomic_snapshot,
-    valkey_compare_delete_at_deadline, valkey_compare_set_at_deadline, valkey_set_nx_at_deadline,
-};
-use fred::prelude::Client as ValkeyClient;
 pub(super) use nazo_auth::{CibaRequestState, CibaStatus};
-use serde_json::{Number, Value};
+pub(super) use nazo_valkey::AtomicResult as CibaAtomicResult;
+use nazo_valkey::{CibaStore, ValkeyConnection};
 use std::fmt;
 use uuid::Uuid;
 
@@ -14,9 +10,9 @@ pub(super) const CIBA_TRANSITION_MAX_ATTEMPTS: usize = 4;
 const CIBA_EXPIRED_STATE_RETENTION_SECONDS: i64 = 120;
 const CIBA_SLOW_DOWN_INCREMENT_SECONDS: u64 = 5;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub(super) struct StoredCibaRequest {
-    pub(super) raw: String,
+    inner: nazo_valkey::StoredCibaRequest,
     pub(super) state: CibaRequestState,
 }
 
@@ -45,7 +41,7 @@ pub(super) enum CibaDecisionEvaluation {
 
 #[derive(Debug)]
 pub(super) enum CibaStateError {
-    Atomic(ValkeyAtomicError),
+    Atomic(nazo_valkey::Error),
     Malformed(String),
     Serialization(serde_json::Error),
 }
@@ -98,8 +94,8 @@ impl std::error::Error for CibaStateError {
     }
 }
 
-impl From<ValkeyAtomicError> for CibaStateError {
-    fn from(error: ValkeyAtomicError) -> Self {
+impl From<nazo_valkey::Error> for CibaStateError {
+    fn from(error: nazo_valkey::Error) -> Self {
         Self::Atomic(error)
     }
 }
@@ -168,47 +164,23 @@ pub(super) fn evaluate_ciba_decision(
 }
 
 pub(super) async fn load_ciba_request_state(
-    valkey: &ValkeyClient,
+    valkey: &ValkeyConnection,
     auth_req_id: &str,
 ) -> Result<Option<StoredCibaRequest>, CibaStateError> {
-    let Some(snapshot) = valkey_atomic_snapshot(valkey, &ciba_request_key(auth_req_id)).await?
-    else {
+    let stored = CibaStore::new(valkey)
+        .load(auth_req_id)
+        .await
+        .map_err(|error| {
+            if error.kind() == nazo_valkey::ErrorKind::Protocol {
+                CibaStateError::Malformed(error.to_string())
+            } else {
+                CibaStateError::Atomic(error)
+            }
+        })?;
+    let Some(stored) = stored else {
         return Ok(None);
     };
-    if snapshot.expire_at <= 0 {
-        return Err(CibaStateError::Malformed(
-            "state key has no finite absolute expiry".to_owned(),
-        ));
-    }
-
-    let mut value: Value = serde_json::from_str(&snapshot.raw).map_err(|error| {
-        CibaStateError::Malformed(format!("state JSON cannot be decoded: {error}"))
-    })?;
-    let object = value
-        .as_object_mut()
-        .ok_or_else(|| CibaStateError::Malformed("state JSON must be an object".to_owned()))?;
-    match object.get("retention_expires_at") {
-        Some(deadline) => {
-            let stored_deadline = deadline.as_i64().ok_or_else(|| {
-                CibaStateError::Malformed("retention_expires_at must be an integer".to_owned())
-            })?;
-            if stored_deadline != snapshot.expire_at {
-                return Err(CibaStateError::Malformed(
-                    "retention_expires_at disagrees with Valkey EXPIRETIME".to_owned(),
-                ));
-            }
-        }
-        None => {
-            object.insert(
-                "retention_expires_at".to_owned(),
-                Value::Number(Number::from(snapshot.expire_at)),
-            );
-        }
-    }
-
-    let state: CibaRequestState = serde_json::from_value(value).map_err(|error| {
-        CibaStateError::Malformed(format!("state fields cannot be decoded: {error}"))
-    })?;
+    let state = stored.value().clone();
     if state.expires_at <= 0 {
         return Err(CibaStateError::Malformed(
             "expires_at must be a positive Unix timestamp".to_owned(),
@@ -221,28 +193,21 @@ pub(super) async fn load_ciba_request_state(
     }
 
     Ok(Some(StoredCibaRequest {
-        raw: snapshot.raw,
+        inner: stored,
         state,
     }))
 }
 
 pub(super) async fn create_ciba_request_state(
-    valkey: &ValkeyClient,
+    valkey: &ValkeyConnection,
     auth_req_id: &str,
     state: &CibaRequestState,
-) -> Result<ValkeyAtomicResult, CibaStateError> {
-    let body = serde_json::to_string(state)?;
-    Ok(valkey_set_nx_at_deadline(
-        valkey,
-        &ciba_request_key(auth_req_id),
-        &body,
-        state.retention_expires_at,
-    )
-    .await?)
+) -> Result<CibaAtomicResult, CibaStateError> {
+    Ok(CibaStore::new(valkey).create(auth_req_id, state).await?)
 }
 
 pub(super) async fn create_unique_ciba_request<F>(
-    valkey: &ValkeyClient,
+    valkey: &ValkeyConnection,
     state: &CibaRequestState,
     mut generate_id: F,
 ) -> Result<String, CibaCreateFailure>
@@ -252,9 +217,9 @@ where
     for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
         let auth_req_id = generate_id();
         match create_ciba_request_state(valkey, &auth_req_id, state).await {
-            Ok(ValkeyAtomicResult::Applied) => return Ok(auth_req_id),
-            Ok(ValkeyAtomicResult::Conflict) => continue,
-            Ok(ValkeyAtomicResult::DeadlineElapsed) => {
+            Ok(CibaAtomicResult::Applied) => return Ok(auth_req_id),
+            Ok(CibaAtomicResult::Conflict) => continue,
+            Ok(CibaAtomicResult::DeadlineElapsed) => {
                 return Err(CibaCreateFailure::DeadlineElapsed);
             }
             Err(error) => return Err(CibaCreateFailure::Storage(error)),
@@ -264,33 +229,22 @@ where
 }
 
 pub(super) async fn replace_ciba_request_state(
-    valkey: &ValkeyClient,
+    valkey: &ValkeyConnection,
     auth_req_id: &str,
-    expected_raw: &str,
+    expected: &StoredCibaRequest,
     state: &CibaRequestState,
-) -> Result<ValkeyAtomicResult, CibaStateError> {
-    let body = serde_json::to_string(state)?;
-    Ok(valkey_compare_set_at_deadline(
-        valkey,
-        &ciba_request_key(auth_req_id),
-        expected_raw,
-        &body,
-        state.retention_expires_at,
-    )
-    .await?)
+) -> Result<CibaAtomicResult, CibaStateError> {
+    Ok(CibaStore::new(valkey)
+        .replace(auth_req_id, &expected.inner, state)
+        .await?)
 }
 
 pub(super) async fn delete_ciba_request_state(
-    valkey: &ValkeyClient,
+    valkey: &ValkeyConnection,
     auth_req_id: &str,
-    expected_raw: &str,
-    retention_expires_at: i64,
-) -> Result<ValkeyAtomicResult, CibaStateError> {
-    Ok(valkey_compare_delete_at_deadline(
-        valkey,
-        &ciba_request_key(auth_req_id),
-        expected_raw,
-        retention_expires_at,
-    )
-    .await?)
+    expected: &StoredCibaRequest,
+) -> Result<CibaAtomicResult, CibaStateError> {
+    Ok(CibaStore::new(valkey)
+        .delete(auth_req_id, &expected.inner)
+        .await?)
 }

@@ -87,8 +87,8 @@ pub(crate) async fn authorize_decision(
         Err(response) => return response,
     };
 
-    let key = format!("oauth:consent:{}", form.request_id);
-    let raw = match valkey_get(&state.valkey, &key).await {
+    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
+    let payload = match store.load_consent(&form.request_id).await {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to read authorization consent state");
@@ -99,7 +99,7 @@ pub(crate) async fn authorize_decision(
             );
         }
     };
-    let Some(payload) = parse_consent_payload(raw) else {
+    let Some(payload) = payload else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -113,7 +113,7 @@ pub(crate) async fn authorize_decision(
             "当前会话与授权请求不匹配.",
         );
     }
-    let raw = match valkey_getdel(&state.valkey, &key).await {
+    let payload = match store.take_consent(&form.request_id).await {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to consume authorization consent state");
@@ -124,7 +124,7 @@ pub(crate) async fn authorize_decision(
             );
         }
     };
-    let Some(payload) = parse_consent_payload(raw) else {
+    let Some(payload) = payload else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -189,18 +189,16 @@ pub(crate) async fn authorize_decision(
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
-    let body = serde_json::to_string(&AuthorizationCodeState::Pending {
-        payload: code_payload,
-    })
-    .expect("authorization code state serialization must be infallible");
-    let code_key = authorization_code_key(&code);
-    if let Err(error) = valkey_set_ex(
-        &state.valkey,
-        code_key.clone(),
-        body,
-        state.settings.auth_code_ttl_seconds,
-    )
-    .await
+    let code_hash = blake3_hex(&code);
+    if let Err(error) = store
+        .store_authorization_code_hash(
+            &code_hash,
+            &AuthorizationCodeState::Pending {
+                payload: code_payload,
+            },
+            state.settings.auth_code_ttl_seconds,
+        )
+        .await
     {
         tracing::warn!(%error, "failed to persist authorization code");
         return oauth_error(
@@ -233,7 +231,7 @@ pub(crate) async fn authorize_decision(
     .await;
     if let Err(error) = grant_result {
         tracing::warn!(%error, "failed to persist user client grant");
-        if let Err(cleanup_error) = valkey_del(&state.valkey, &code_key).await {
+        if let Err(cleanup_error) = store.delete_authorization_code_hash(&code_hash).await {
             tracing::warn!(%cleanup_error, "failed to remove authorization code after grant failure");
         }
         return oauth_error(

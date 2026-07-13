@@ -316,9 +316,9 @@ pub(crate) async fn token_device_code(
         return response;
     }
 
-    let key = device_code_key(device_code);
-    let raw = match valkey_get(&state.valkey, &key).await {
-        Ok(Some(raw)) => raw,
+    let store = nazo_valkey::DeviceStore::new(&state.valkey_connection());
+    let state_value = match store.load_by_device_code(device_code).await {
+        Ok(Some(value)) => value,
         Ok(None) => {
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
@@ -337,21 +337,9 @@ pub(crate) async fn token_device_code(
             );
         }
     };
-    let state_value = match serde_json::from_str::<DeviceAuthorizationState>(&raw) {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(%error, "device authorization state is malformed");
-            return oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "设备授权状态无效.",
-                false,
-            );
-        }
-    };
     match evaluate_device_code_poll(&state_value, Utc::now()) {
         DeviceCodePollResult::AuthorizationPending { next_state } => {
-            persist_device_poll_state(state, &key, &next_state).await;
+            persist_device_poll_state(state, &blake3_hex(device_code), &next_state).await;
             oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "authorization_pending",
@@ -360,7 +348,7 @@ pub(crate) async fn token_device_code(
             )
         }
         DeviceCodePollResult::SlowDown { next_state } => {
-            persist_device_poll_state(state, &key, &next_state).await;
+            persist_device_poll_state(state, &blake3_hex(device_code), &next_state).await;
             oauth_token_error(StatusCode::BAD_REQUEST, "slow_down", "设备轮询过快.", false)
         }
         DeviceCodePollResult::AccessDenied => oauth_token_error(
@@ -382,8 +370,8 @@ pub(crate) async fn token_device_code(
             false,
         ),
         DeviceCodePollResult::Approved { .. } => {
-            let raw = match valkey_getdel(&state.valkey, &key).await {
-                Ok(Some(raw)) => raw,
+            let consumed = match store.take_by_device_code(device_code).await {
+                Ok(Some(value)) => value,
                 Ok(None) => {
                     return oauth_token_error(
                         StatusCode::BAD_REQUEST,
@@ -404,18 +392,7 @@ pub(crate) async fn token_device_code(
             };
             let DeviceAuthorizationState::Approved {
                 payload, approval, ..
-            } = (match serde_json::from_str::<DeviceAuthorizationState>(&raw) {
-                Ok(value) => value,
-                Err(error) => {
-                    tracing::warn!(%error, "approved device authorization state is malformed");
-                    return oauth_token_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "设备授权状态无效.",
-                        false,
-                    );
-                }
-            })
+            } = consumed
             else {
                 return oauth_token_error(
                     StatusCode::BAD_REQUEST,
@@ -580,21 +557,13 @@ async fn read_device_authorization_payload_for_user_code(
     if normalized_user_code.is_empty() {
         return None;
     }
-    let user_key = user_code_key(&normalized_user_code);
-    let device_code_hash = read_user_code_mapping(state, &user_key).await?;
-    let device_key = device_code_hash_key(&device_code_hash);
-    let raw = match valkey_get(&state.valkey, &device_key).await {
-        Ok(Some(raw)) => raw,
+    let device_code_hash = read_user_code_mapping(state, &normalized_user_code).await?;
+    let store = nazo_valkey::DeviceStore::new(&state.valkey_connection());
+    let state_value = match store.load_by_device_hash(&device_code_hash).await {
+        Ok(Some(value)) => value,
         Ok(None) => return None,
         Err(error) => {
             tracing::warn!(%error, "failed to read device authorization state for verification page");
-            return None;
-        }
-    };
-    let state_value = match serde_json::from_str::<DeviceAuthorizationState>(&raw) {
-        Ok(value) => value,
-        Err(error) => {
-            tracing::warn!(%error, "device authorization state is malformed for verification page");
             return None;
         }
     };
@@ -602,7 +571,7 @@ async fn read_device_authorization_payload_for_user_code(
         return None;
     };
     if Utc::now() >= payload.expires_at {
-        let _ = valkey_del(&state.valkey, &user_key).await;
+        let _ = store.delete_user_code(&normalized_user_code).await;
         return None;
     }
     Some(payload)
@@ -635,17 +604,16 @@ pub(crate) async fn device_decision(
             "用户码无效或已过期.",
         );
     }
-    let user_key = user_code_key(&normalized_user_code);
-    let Some(device_code_hash) = read_user_code_mapping(&state, &user_key).await else {
+    let Some(device_code_hash) = read_user_code_mapping(&state, &normalized_user_code).await else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "用户码无效或已过期.",
         );
     };
-    let device_key = device_code_hash_key(&device_code_hash);
-    let raw = match valkey_get(&state.valkey, &device_key).await {
-        Ok(Some(raw)) => raw,
+    let store = nazo_valkey::DeviceStore::new(&state.valkey_connection());
+    let device_state = match store.load_by_device_hash(&device_code_hash).await {
+        Ok(Some(value)) => value,
         Ok(None) => {
             return oauth_error(
                 StatusCode::BAD_REQUEST,
@@ -662,19 +630,7 @@ pub(crate) async fn device_decision(
             );
         }
     };
-    let DeviceAuthorizationState::Pending { payload, .. } =
-        (match serde_json::from_str::<DeviceAuthorizationState>(&raw) {
-            Ok(value) => value,
-            Err(error) => {
-                tracing::warn!(%error, "device authorization state is malformed for user decision");
-                return oauth_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "设备授权状态无效.",
-                );
-            }
-        })
-    else {
+    let DeviceAuthorizationState::Pending { payload, .. } = device_state else {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -683,7 +639,7 @@ pub(crate) async fn device_decision(
     };
     let now = Utc::now();
     if now >= payload.expires_at {
-        let _ = valkey_del(&state.valkey, &user_key).await;
+        let _ = store.delete_user_code(&normalized_user_code).await;
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -760,7 +716,7 @@ pub(crate) async fn device_decision(
         }
         _ => return oauth_error(StatusCode::BAD_REQUEST, "invalid_request", "授权决策无效."),
     };
-    if let Err(error) = persist_device_state(&state, &device_key, &next_state).await {
+    if let Err(error) = persist_device_state(&state, &device_code_hash, &next_state).await {
         tracing::warn!(%error, "failed to persist device authorization decision");
         return oauth_error(
             StatusCode::SERVICE_UNAVAILABLE,
@@ -768,7 +724,7 @@ pub(crate) async fn device_decision(
             "设备授权状态写入失败.",
         );
     }
-    let _ = valkey_del(&state.valkey, &user_key).await;
+    let _ = store.delete_user_code(&normalized_user_code).await;
     HttpResponse::Ok().finish()
 }
 
@@ -856,31 +812,24 @@ async fn persist_new_device_authorization(
     for _ in 0..5 {
         let device_code = random_urlsafe_token();
         let user_code = random_device_user_code();
-        let device_hash = blake3_hex(&device_code);
         let pending = DeviceAuthorizationState::Pending {
             payload: payload.clone(),
             last_poll_at: None,
             slow_down_count: 0,
         };
-        let body = serde_json::to_string(&pending)?;
-        valkey_set_ex(
-            &state.valkey,
-            device_code_hash_key(&device_hash),
-            body,
-            state.settings.device_authorization_ttl_seconds,
-        )
-        .await?;
-        if valkey_set_ex_nx(
-            &state.valkey,
-            user_code_key(&normalize_user_code(&user_code)),
-            device_hash,
-            state.settings.device_authorization_ttl_seconds,
-        )
-        .await?
+        match nazo_valkey::DeviceStore::new(&state.valkey_connection())
+            .create(
+                &device_code,
+                &user_code,
+                &pending,
+                state.settings.device_authorization_ttl_seconds,
+            )
+            .await?
         {
-            return Ok((device_code, user_code));
+            nazo_valkey::DeviceCreateResult::Applied => return Ok((device_code, user_code)),
+            nazo_valkey::DeviceCreateResult::DeviceCodeCollision
+            | nazo_valkey::DeviceCreateResult::UserCodeCollision => continue,
         }
-        let _ = valkey_del(&state.valkey, device_code_key(&device_code)).await;
     }
     anyhow::bail!("failed to allocate unique device user code")
 }
@@ -901,7 +850,9 @@ async fn persist_device_state(
     next_state: &DeviceAuthorizationState,
 ) -> anyhow::Result<()> {
     let ttl = device_state_ttl_seconds(next_state, Utc::now()).unwrap_or(1);
-    valkey_set_ex(&state.valkey, key, serde_json::to_string(next_state)?, ttl).await?;
+    nazo_valkey::DeviceStore::new(&state.valkey_connection())
+        .store_device_hash(key, next_state, ttl)
+        .await?;
     Ok(())
 }
 
@@ -910,8 +861,11 @@ fn device_state_ttl_seconds(state: &DeviceAuthorizationState, now: DateTime<Utc>
     Some((payload.expires_at - now).num_seconds().max(1) as u64)
 }
 
-async fn read_user_code_mapping(state: &AppState, user_key: &str) -> Option<String> {
-    match valkey_get(&state.valkey, user_key).await {
+async fn read_user_code_mapping(state: &AppState, user_code: &str) -> Option<String> {
+    match nazo_valkey::DeviceStore::new(&state.valkey_connection())
+        .resolve_user_code(user_code)
+        .await
+    {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to read device authorization user code mapping");

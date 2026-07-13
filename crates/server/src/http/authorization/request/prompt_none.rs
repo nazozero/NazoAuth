@@ -135,17 +135,15 @@ pub(super) async fn issue_authorization_code_without_interaction(
         issued_at: now,
         expires_at: now + Duration::seconds(state.settings.auth_code_ttl_seconds as i64),
     };
-    let body = serde_json::to_string(&AuthorizationCodeState::Pending {
-        payload: code_payload,
-    })
-    .expect("prompt=none authorization code state serialization must be infallible");
-    if let Err(error) = valkey_set_ex(
-        &state.valkey,
-        authorization_code_key(&code),
-        body,
-        state.settings.auth_code_ttl_seconds,
-    )
-    .await
+    if let Err(error) = nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+        .store_authorization_code_hash(
+            &blake3_hex(&code),
+            &AuthorizationCodeState::Pending {
+                payload: code_payload,
+            },
+            state.settings.auth_code_ttl_seconds,
+        )
+        .await
     {
         tracing::warn!(%error, "failed to persist prompt=none authorization code");
         return oauth_error(

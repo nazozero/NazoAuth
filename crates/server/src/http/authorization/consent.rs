@@ -74,7 +74,8 @@ pub(crate) async fn authorize_consent(
         );
     };
 
-    let raw = match valkey_get(&state.valkey, format!("oauth:consent:{request_id}")).await {
+    let store = nazo_valkey::AuthorizationStore::new(&state.valkey_connection());
+    let payload = match store.load_consent(request_id).await {
         Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to read authorization consent state");
@@ -85,7 +86,7 @@ pub(crate) async fn authorize_consent(
             );
         }
     };
-    let Some(payload) = parse_consent_payload(raw) else {
+    let Some(payload) = payload else {
         return malformed_or_missing_consent_response();
     };
     let payload = match validate_consent_payload_user(payload, user.id()) {

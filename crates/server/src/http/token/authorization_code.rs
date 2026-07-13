@@ -79,8 +79,11 @@ async fn load_pending_authorization_code_payload(
     state: &AppState,
     code_hash: &str,
 ) -> Result<Option<Box<CodePayload>>, HttpResponse> {
-    let raw = match valkey_get(&state.valkey, authorization_code_key_from_hash(code_hash)).await {
-        Ok(raw) => raw,
+    let stored = match nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+        .load_authorization_code_hash(code_hash)
+        .await
+    {
+        Ok(value) => value,
         Err(error) => {
             tracing::warn!(%error, "failed to read authorization code before dpop validation");
             return Err(oauth_token_error(
@@ -91,21 +94,12 @@ async fn load_pending_authorization_code_payload(
             ));
         }
     };
-    let Some(raw) = raw else {
+    let Some(stored) = stored else {
         return Ok(None);
     };
-    match serde_json::from_str::<AuthorizationCodeState>(&raw) {
-        Ok(AuthorizationCodeState::Pending { payload }) => Ok(Some(Box::new(payload))),
-        Ok(_) => Ok(None),
-        Err(error) => {
-            tracing::warn!(%error, "authorization code state is malformed before dpop validation");
-            Err(oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权码状态无效.",
-                false,
-            ))
-        }
+    match stored {
+        AuthorizationCodeState::Pending { payload } => Ok(Some(Box::new(payload))),
+        _ => Ok(None),
     }
 }
 
@@ -241,15 +235,25 @@ async fn begin_authorization_code_consumption(
     state: &AppState,
     code_hash: &str,
 ) -> Result<AuthorizationCodeConsumption, HttpResponse> {
-    let response = match valkey_eval_string(
-        &state.valkey,
-        BEGIN_AUTHORIZATION_CODE_CONSUMPTION_SCRIPT,
-        vec![authorization_code_key_from_hash(code_hash)],
-        vec![Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)],
-    )
-    .await
+    match nazo_valkey::AuthorizationStore::new(&state.valkey_connection())
+        .begin_authorization_code(code_hash, Utc::now())
+        .await
     {
-        Ok(response) => response,
+        Ok(nazo_valkey::AuthorizationCodeBegin::Consuming(payload)) => {
+            Ok(AuthorizationCodeConsumption::Consuming(Box::new(payload)))
+        }
+        Ok(nazo_valkey::AuthorizationCodeBegin::Busy) => Ok(AuthorizationCodeConsumption::Busy),
+        Ok(nazo_valkey::AuthorizationCodeBegin::Consumed(AuthorizationCodeState::Consumed {
+            marker,
+        })) => Ok(AuthorizationCodeConsumption::Consumed(marker)),
+        Ok(
+            nazo_valkey::AuthorizationCodeBegin::Consumed(_)
+            | nazo_valkey::AuthorizationCodeBegin::Malformed,
+        ) => Ok(AuthorizationCodeConsumption::Malformed),
+        Ok(nazo_valkey::AuthorizationCodeBegin::Failed) => Ok(AuthorizationCodeConsumption::Failed),
+        Ok(nazo_valkey::AuthorizationCodeBegin::Missing) => {
+            Ok(AuthorizationCodeConsumption::Missing)
+        }
         Err(error) => {
             tracing::warn!(%error, "failed to atomically consume authorization code");
             return Err(oauth_token_error(
@@ -259,8 +263,7 @@ async fn begin_authorization_code_consumption(
                 false,
             ));
         }
-    };
-    Ok(parse_authorization_code_consumption_response(&response))
+    }
 }
 
 async fn revoke_replayed_authorization_code(

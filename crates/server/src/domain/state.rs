@@ -15,3 +15,9 @@ pub(crate) struct AppState {
     pub(crate) settings: Arc<Settings>,
     pub(crate) keyset: nazo_key_management::KeyManager,
 }
+
+impl AppState {
+    pub(crate) fn valkey_connection(&self) -> nazo_valkey::ValkeyConnection {
+        nazo_valkey::ValkeyConnection::from_existing_client(self.valkey.clone())
+    }
+}

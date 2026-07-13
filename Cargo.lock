@@ -2240,6 +2240,7 @@ dependencies = [
  "nazo-key-management",
  "nazo-postgres",
  "nazo-resource-server",
+ "nazo-valkey",
  "openssl",
  "opentelemetry",
  "opentelemetry-appender-tracing",
