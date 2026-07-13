@@ -1918,8 +1918,8 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
         .expect("user repository source is readable");
     let issue = std::fs::read_to_string(manifest.join("../server/src/http/token/issue.rs"))
         .expect("token issue source is readable");
-    let userinfo = std::fs::read_to_string(manifest.join("../server/src/http/token/userinfo.rs"))
-        .expect("userinfo source is readable");
+    let userinfo = std::fs::read_to_string(manifest.join("../server/src/domain/userinfo.rs"))
+        .expect("userinfo domain adapter source is readable");
     let token_issuance =
         std::fs::read_to_string(manifest.join("src/repositories/token_issuance.rs"))
             .expect("token issuance repository source is readable");
