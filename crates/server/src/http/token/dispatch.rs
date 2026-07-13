@@ -5,14 +5,13 @@ use crate::domain::{AppState, AuthorizationCodeState, ClientRow};
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{
-    CLIENT_ASSERTION_TYPE_JWT_BEARER, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID,
+    CLIENT_ASSERTION_TYPE_JWT_BEARER, DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID,
     authorization_code_key, blake3_hex,
 };
 use crate::support::{
-    ClientCredentials, DEFAULT_TENANT_ID, RateLimitPolicy, client_mtls_certificate_matches,
-    client_secret_digest, dpop_proof_present, enforce_rate_limit, extract_client_credentials,
-    has_basic_authorization_scheme, json_array_to_strings, request_mtls_client_certificate,
-    verify_private_key_jwt_claims,
+    ClientCredentials, RateLimitPolicy, client_mtls_certificate_matches, dpop_proof_present,
+    enforce_rate_limit, extract_client_credentials, has_basic_authorization_scheme,
+    json_array_to_strings, request_mtls_client_certificate,
 };
 use actix_web::http::StatusCode;
 #[cfg(test)]
@@ -31,15 +30,20 @@ use serde_json::{Value, json};
 #[cfg(test)]
 use uuid::Uuid;
 // 只负责客户端认证与 grant_type 分派，不直接签发令牌。
+use super::client_auth::{
+    TokenManagementClientAuthError, authenticate_client_with_dependencies,
+    perform_dummy_client_secret_verification,
+};
 use super::{
     CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, ServerTokenService,
     TOKEN_EXCHANGE_GRANT_TYPE, TokenForm, TokenFormError, parse_token_form,
     token_authorization_code_with_service, token_ciba, token_client_credentials, token_device_code,
     token_exchange, token_jwt_bearer, token_refresh_with_service,
 };
+use crate::http::authorization::ServerAuthorizationService;
 use nazo_auth::{
-    ClientProfile, ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy,
-    validate_token_request_profile as validate_auth_token_request_profile,
+    ClientAuthenticationContext, ClientProfile, ProtocolErrorCode, SecurityProfile,
+    SenderConstraintPolicy, validate_token_request_profile as validate_auth_token_request_profile,
 };
 
 #[cfg(test)]
@@ -68,16 +72,14 @@ fn mtls_client_credentials(client_id: String) -> ClientCredentials {
 }
 
 async fn mtls_client_credentials_without_client_id(
-    state: &AppState,
+    service: &ServerAuthorizationService,
+    settings: &Settings,
     req: &HttpRequest,
 ) -> Result<Option<ClientCredentials>, HttpResponse> {
-    let Some(certificate) = request_mtls_client_certificate(req, &state.settings) else {
+    let Some(certificate) = request_mtls_client_certificate(req, settings) else {
         return Ok(None);
     };
-    match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .active_mtls_candidates(DEFAULT_TENANT_ID, 1000)
-        .await
-    {
+    match service.active_mtls_candidates(1000).await {
         Ok(candidates) => {
             let clients = candidates
                 .into_iter()
@@ -141,6 +143,7 @@ fn client_credentials_holder_missing_client_error(
 
 async fn missing_client_authorization_code_holder_error(
     state: &AppState,
+    authorization_service: &ServerAuthorizationService,
     form: &TokenForm,
 ) -> Option<HttpResponse> {
     if form.grant_type != "authorization_code" {
@@ -173,10 +176,7 @@ async fn missing_client_authorization_code_holder_error(
     ) {
         return Some(response);
     }
-    match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
-        .await
-    {
+    match authorization_service.client_by_id(&payload.client_id).await {
         Ok(Some(client))
             if client.require_dpop_bound_tokens || client.require_mtls_bound_tokens =>
         {
@@ -201,6 +201,7 @@ async fn missing_client_authorization_code_holder_error(
 pub(crate) async fn token_with_service(
     state: Data<AppState>,
     token_service: Data<ServerTokenService>,
+    authorization_service: Data<ServerAuthorizationService>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -305,11 +306,18 @@ pub(crate) async fn token_with_service(
         form.client_assertion.as_deref(),
     );
     if credentials.client_id.is_none()
+        && !has_basic
         && credentials.method == "none"
         && form.client_secret.is_none()
         && !has_assertion
     {
-        match mtls_client_credentials_without_client_id(&state, &req).await {
+        match mtls_client_credentials_without_client_id(
+            &authorization_service,
+            &state.settings,
+            &req,
+        )
+        .await
+        {
             Ok(Some(mtls_credentials)) => credentials = mtls_credentials,
             Ok(None) => {}
             Err(response) => return response,
@@ -322,8 +330,12 @@ pub(crate) async fn token_with_service(
             {
                 return response;
             }
-            if let Some(response) =
-                missing_client_authorization_code_holder_error(&state, &form).await
+            if let Some(response) = missing_client_authorization_code_holder_error(
+                &state,
+                &authorization_service,
+                &form,
+            )
+            .await
             {
                 return response;
             }
@@ -335,12 +347,13 @@ pub(crate) async fn token_with_service(
             has_basic,
         );
     };
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, client_id)
-        .await
-    {
+    let client = match authorization_service.client_by_id(client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
+            perform_dummy_client_secret_verification(
+                &credentials,
+                &state.settings.protocol.client_secret_pepper,
+            );
             return oauth_token_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_client",
@@ -361,110 +374,49 @@ pub(crate) async fn token_with_service(
     if let Err(response) = validate_token_client_enabled(&client, &form.grant_type) {
         return response;
     }
-    let mut client_assertion = None;
-    if client.client_type == "confidential" {
-        if credentials.method != client.token_endpoint_auth_method {
+    let client_assertion = match authenticate_client_with_dependencies(
+        &authorization_service,
+        &state.settings.endpoint.issuer,
+        &state.settings.protocol.client_secret_pepper,
+        &state.settings.endpoint.trusted_proxy_cidrs,
+        &req,
+        &client,
+        &credentials,
+        ClientAuthenticationContext::AllowPublicNone,
+    )
+    .await
+    {
+        Ok(assertion) => assertion,
+        Err(TokenManagementClientAuthError::PublicClientCredentialsForbidden) => {
+            return oauth_token_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client",
+                "public 客户端不能使用 client_secret.",
+                has_basic,
+            );
+        }
+        Err(TokenManagementClientAuthError::InvalidClient) => {
             return oauth_token_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_client",
                 "客户端认证失败.",
-                has_basic,
+                has_basic && credentials.method != "private_key_jwt",
             );
         }
-        match client.token_endpoint_auth_method.as_str() {
-            "private_key_jwt" => {
-                let assertion = credentials
-                    .client_assertion
-                    .as_deref()
-                    .expect("private_key_jwt credentials must include an assertion");
-                match verify_private_key_jwt_claims(&state, &req, &client, assertion) {
-                    Ok(assertion) => client_assertion = Some(assertion),
-                    Err(_) => {
-                        return oauth_token_error(
-                            StatusCode::UNAUTHORIZED,
-                            "invalid_client",
-                            "客户端认证失败.",
-                            false,
-                        );
-                    }
-                }
-            }
-            "client_secret_basic" | "client_secret_post" => {
-                let secret = credentials
-                    .client_secret
-                    .as_deref()
-                    .expect("secret-based client credentials must include client_secret");
-                let repository = nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone());
-                let secret_matches = match repository.client_secret_salt(client.id).await {
-                    Ok(Some(salt)) => {
-                        let candidate_digest = client_secret_digest(
-                            secret,
-                            &state.settings.protocol.client_secret_pepper,
-                            &salt,
-                        );
-                        repository
-                            .client_secret_digest_matches(client.id, &candidate_digest)
-                            .await
-                    }
-                    Ok(None) => Ok(false),
-                    Err(error) => Err(error),
-                };
-                let secret_matches = match secret_matches {
-                    Ok(matches) => matches,
-                    Err(error) => {
-                        tracing::warn!(%error, "failed to verify token client secret");
-                        return oauth_token_error(
-                            StatusCode::SERVICE_UNAVAILABLE,
-                            "server_error",
-                            "客户端认证状态不可用.",
-                            false,
-                        );
-                    }
-                };
-                if !secret_matches {
-                    return oauth_token_error(
-                        StatusCode::UNAUTHORIZED,
-                        "invalid_client",
-                        "客户端认证失败.",
-                        has_basic,
-                    );
-                }
-            }
-            "tls_client_auth" | "self_signed_tls_client_auth" => {
-                let certificate = request_mtls_client_certificate(&req, &state.settings)
-                    .expect("mTLS client credentials must include a verified certificate");
-                if !client_mtls_certificate_matches(&client, &certificate) {
-                    return oauth_token_error(
-                        StatusCode::UNAUTHORIZED,
-                        "invalid_client",
-                        "客户端认证失败.",
-                        false,
-                    );
-                }
-            }
-            _ => {
-                return oauth_token_error(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
-                    "客户端认证失败.",
-                    has_basic,
-                );
-            }
+        Err(TokenManagementClientAuthError::StoreUnavailable) => {
+            return oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "客户端认证状态不可用.",
+                false,
+            );
         }
-    } else if credentials.method != "none"
-        || credentials.client_secret.is_some()
-        || credentials.client_assertion.is_some()
-    {
-        return oauth_token_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "public 客户端不能使用 client_secret.",
-            has_basic,
-        );
-    }
-    if let Err(response) =
-        validate_token_request_profile(&state.settings, &client, credentials.method.as_str())
-    {
+    };
+    if let Err(response) = validate_token_request_profile(
+        &state.settings,
+        &client,
+        client.token_endpoint_auth_method.as_str(),
+    ) {
         return response;
     }
     match form.grant_type.as_str() {
@@ -506,7 +458,7 @@ pub(crate) async fn token_with_service(
                 &client,
                 &form,
                 client_assertion.as_ref(),
-                credentials.method.as_str(),
+                client.token_endpoint_auth_method.as_str(),
             )
             .await
         }
@@ -532,7 +484,13 @@ pub(crate) async fn token(state: Data<AppState>, req: HttpRequest, body: Bytes) 
         nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
         state.keyset.clone(),
     ));
-    token_with_service(state, service, req, body).await
+    let connection = state.valkey_connection();
+    let authorization_service = Data::new(ServerAuthorizationService::new(
+        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
+        nazo_valkey::AuthorizationStateAdapter::new(&connection),
+        state.keyset.clone(),
+    ));
+    token_with_service(state, service, authorization_service, req, body).await
 }
 
 fn validate_token_client_enabled(client: &ClientRow, grant_type: &str) -> Result<(), HttpResponse> {

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
+use futures_util::future::join_all;
 use nazo_valkey::{ErrorKind, ReplayStore, ValkeyConnection};
 
 fn explicit_valkey_url() -> Option<String> {
@@ -137,6 +138,37 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
     );
     assert!(!store.consume_jar(client_id, jti, 30).await.unwrap());
     assert!(!store.consume_jwt_bearer(client_id, jti, 30).await.unwrap());
+}
+
+#[tokio::test]
+async fn concurrent_private_key_jwt_consumers_have_exactly_one_winner() {
+    let Some(url) = explicit_valkey_url() else {
+        return;
+    };
+    let connection = ValkeyConnection::connect(&url, Duration::from_secs(1))
+        .await
+        .expect("an explicitly configured Valkey must be available");
+    let store = ReplayStore::new(&connection);
+    let client_id = format!("concurrent-client-{}", uuid::Uuid::now_v7());
+    let jti = format!("concurrent-jti-{}", uuid::Uuid::now_v7());
+    let attempts = (0..32).map(|_| {
+        let store = store.clone();
+        let client_id = client_id.clone();
+        let jti = jti.clone();
+        async move {
+            store
+                .consume_private_key_jwt(&client_id, &jti, 30)
+                .await
+                .expect("Valkey replay consumption should succeed")
+        }
+    });
+
+    let winners = join_all(attempts)
+        .await
+        .into_iter()
+        .filter(|accepted| *accepted)
+        .count();
+    assert_eq!(winners, 1, "SET NX must admit exactly one assertion");
 }
 
 #[tokio::test]

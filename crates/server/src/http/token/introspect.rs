@@ -109,6 +109,10 @@ async fn introspect_after_rate_limit_with_dependencies(
     let client = match authorization_service.client_by_id(client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
+            super::client_auth::perform_dummy_client_secret_verification(
+                &credentials,
+                &config.client_secret_pepper,
+            );
             return token_management_client_auth_error(
                 TokenManagementClientAuthError::InvalidClient,
                 has_basic,

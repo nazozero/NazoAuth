@@ -5,9 +5,10 @@ use crate::support::{
     ClientCredentials, DEFAULT_TENANT_ID, DpopError, DpopErrorContext, RateLimitPolicy,
     ValidatedClientAssertion, audit_event, audit_fields, blake3_hex, client_ip,
     client_supports_grant, compute_subject_for_client, current_user_or_login_required,
-    dpop_error_response, enforce_rate_limit, extract_client_credentials, has_valid_csrf_token,
-    json_array_to_strings, parse_resource_indicators, parse_scope, random_urlsafe_token,
-    request_mtls_thumbprint, validate_dpop_proof,
+    dpop_error_response, enforce_rate_limit, extract_client_credentials,
+    has_basic_authorization_scheme, has_valid_csrf_token, json_array_to_strings,
+    parse_resource_indicators, parse_scope, random_urlsafe_token, request_mtls_thumbprint,
+    validate_dpop_proof,
 };
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
@@ -29,14 +30,18 @@ use serde_json::json;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use super::{
-    TokenForm, consume_token_client_assertion, consume_token_management_client_assertion,
-    issue_token_response, token_management_auth_error, verify_confidential_client,
+use super::client_auth::{
+    authenticate_client_with_dependencies,
+    consume_token_management_client_assertion_with_authorization_service,
 };
+use super::{
+    TokenForm, consume_token_client_assertion, issue_token_response, token_management_auth_error,
+};
+use crate::http::authorization::ServerAuthorizationService;
 use nazo_auth::{
-    DeviceAuthorizationApproval, DeviceAuthorizationPayload, DeviceAuthorizationRequestError,
-    DeviceAuthorizationRequestPolicy, DeviceDecisionFailure, DeviceGrantRepositoryPort,
-    DeviceGrantService, DevicePollCommit, DevicePollFailure,
+    ClientAuthenticationContext, DeviceAuthorizationApproval, DeviceAuthorizationPayload,
+    DeviceAuthorizationRequestError, DeviceAuthorizationRequestPolicy, DeviceDecisionFailure,
+    DeviceGrantRepositoryPort, DeviceGrantService, DevicePollCommit, DevicePollFailure,
 };
 use nazo_valkey::DeviceStore;
 
@@ -139,6 +144,7 @@ pub(crate) fn parse_device_authorization_form(
 
 pub(crate) async fn device_authorization(
     state: Data<AppState>,
+    authorization_service: Data<ServerAuthorizationService>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -164,12 +170,39 @@ pub(crate) async fn device_authorization(
             "缺少 client_id.",
         );
     };
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, client_id)
-        .await
+    let has_basic = has_basic_authorization_scheme(req.headers());
+    let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
+    if has_basic && (form.client_secret.is_some() || has_assertion)
+        || has_assertion && form.client_secret.is_some()
     {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Device Authorization request cannot mix client authentication methods.",
+        );
+    }
+    let credentials = extract_client_credentials(
+        &req,
+        &state.settings,
+        Some(client_id),
+        form.client_secret.as_deref(),
+        form.client_assertion_type.as_deref(),
+        form.client_assertion.as_deref(),
+    );
+    if has_basic && credentials.method != "client_secret_basic" {
+        return oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "客户端认证失败.",
+        );
+    }
+    let client = match authorization_service.client_by_id(client_id).await {
         Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
+            super::client_auth::perform_dummy_client_secret_verification(
+                &credentials,
+                &state.settings.protocol.client_secret_pepper,
+            );
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_client",
@@ -185,16 +218,14 @@ pub(crate) async fn device_authorization(
             );
         }
     };
-    let credentials = extract_client_credentials(
-        &req,
+    if let Err(response) = authenticate_device_authorization_client(
+        &authorization_service,
         &state.settings,
-        Some(client_id),
-        form.client_secret.as_deref(),
-        form.client_assertion_type.as_deref(),
-        form.client_assertion.as_deref(),
-    );
-    if let Err(response) =
-        authenticate_device_authorization_client(&state, &req, &client, &credentials).await
+        &req,
+        &client,
+        &credentials,
+    )
+    .await
     {
         return response;
     }
@@ -643,30 +674,31 @@ pub(crate) async fn device_decision(
 }
 
 async fn authenticate_device_authorization_client(
-    state: &AppState,
+    authorization_service: &ServerAuthorizationService,
+    settings: &Settings,
     req: &HttpRequest,
     client: &ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), HttpResponse> {
-    if client.client_type == "public" {
-        if credentials.method == "none"
-            && credentials.client_secret.is_none()
-            && credentials.client_assertion.is_none()
-        {
-            return Ok(());
-        }
-        return Err(oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "客户端认证失败.",
-        ));
-    }
-    let assertion = verify_confidential_client(state, req, client, credentials)
-        .await
-        .map_err(token_management_auth_error)?;
-    consume_token_management_client_assertion(state, client, assertion.as_ref())
-        .await
-        .map_err(token_management_auth_error)
+    let assertion = authenticate_client_with_dependencies(
+        authorization_service,
+        &settings.endpoint.issuer,
+        &settings.protocol.client_secret_pepper,
+        &settings.endpoint.trusted_proxy_cidrs,
+        req,
+        client,
+        credentials,
+        ClientAuthenticationContext::AllowPublicNone,
+    )
+    .await
+    .map_err(token_management_auth_error)?;
+    consume_token_management_client_assertion_with_authorization_service(
+        authorization_service,
+        client,
+        assertion.as_ref(),
+    )
+    .await
+    .map_err(token_management_auth_error)
 }
 
 fn device_authorization_form_error(error: DeviceAuthorizationFormError) -> HttpResponse {

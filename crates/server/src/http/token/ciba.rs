@@ -11,10 +11,10 @@ use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use crate::support::{
-    DEFAULT_TENANT_ID, DpopError, DpopErrorContext, ValidatedClientAssertion, audit_event,
-    audit_fields, blake3_hex, client_ip, client_jwt_decoding_key, client_supports_grant,
-    compute_subject_for_client, constant_time_eq, current_user_or_login_required,
-    dpop_error_response, extract_client_credentials, has_valid_csrf_token, is_subset,
+    DpopError, DpopErrorContext, ValidatedClientAssertion, audit_event, audit_fields, blake3_hex,
+    client_ip, client_jwt_decoding_key, client_supports_grant, compute_subject_for_client,
+    constant_time_eq, current_user_or_login_required, dpop_error_response,
+    extract_client_credentials, has_basic_authorization_scheme, has_valid_csrf_token, is_subset,
     json_array_to_strings, parse_scope, random_urlsafe_token, request_mtls_thumbprint,
     validate_dpop_proof,
 };
@@ -36,13 +36,18 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use super::client_auth::{
+    authenticate_client_with_dependencies,
+    consume_token_management_client_assertion_with_authorization_service,
+};
 use super::{
     TokenForm, TokenManagementClientAuthError, consume_token_client_assertion,
-    consume_token_management_client_assertion, issue_token_response, token_management_auth_error,
-    validate_token_request_profile, verify_confidential_client,
+    issue_token_response, token_management_auth_error, validate_token_request_profile,
 };
+use crate::http::authorization::ServerAuthorizationService;
 use actix_web::web::Payload;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use nazo_auth::ClientAuthenticationContext;
 use std::collections::HashSet;
 
 pub(crate) const CIBA_GRANT_TYPE: &str = "urn:openid:params:grant-type:ciba";
@@ -134,6 +139,7 @@ impl CibaDecisionSource {
 
 pub(crate) async fn backchannel_authentication(
     state: Data<AppState>,
+    authorization_service: Data<ServerAuthorizationService>,
     req: HttpRequest,
     mut payload: Payload,
 ) -> HttpResponse {
@@ -144,11 +150,7 @@ pub(crate) async fn backchannel_authentication(
         Ok(form) => form,
         Err(response) => return response,
     };
-    let has_basic = req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.trim_start().starts_with("Basic "));
+    let has_basic = has_basic_authorization_scheme(req.headers());
     let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
     if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
         || has_assertion && form.client_secret.is_some()
@@ -174,12 +176,13 @@ pub(crate) async fn backchannel_authentication(
             "客户端认证失败.",
         );
     };
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, client_id)
-        .await
-    {
+    let client = match authorization_service.client_by_id(client_id).await {
         Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
+            super::client_auth::perform_dummy_client_secret_verification(
+                &credentials,
+                &state.settings.protocol.client_secret_pepper,
+            );
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_client",
@@ -202,26 +205,45 @@ pub(crate) async fn backchannel_authentication(
             "该客户端未启用 CIBA 授权类型.",
         );
     }
-    let assertion = match verify_confidential_client(&state, &req, &client, &credentials).await {
+    let assertion = match authenticate_client_with_dependencies(
+        &authorization_service,
+        &state.settings.endpoint.issuer,
+        &state.settings.protocol.client_secret_pepper,
+        &state.settings.endpoint.trusted_proxy_cidrs,
+        &req,
+        &client,
+        &credentials,
+        ClientAuthenticationContext::ConfidentialOnly,
+    )
+    .await
+    {
         Ok(assertion) => assertion,
         Err(error) => return token_management_auth_error(error),
     };
     if !ciba_client_assertion_algorithm_supported(assertion.as_ref()) {
         return token_management_auth_error(TokenManagementClientAuthError::InvalidClient);
     }
-    if let Err(error) =
-        consume_token_management_client_assertion(&state, &client, assertion.as_ref()).await
+    if let Err(error) = consume_token_management_client_assertion_with_authorization_service(
+        &authorization_service,
+        &client,
+        assertion.as_ref(),
+    )
+    .await
     {
         return token_management_auth_error(error);
     }
-    if let Err(response) =
-        validate_token_request_profile(&state.settings, &client, credentials.method.as_str())
-    {
+    if let Err(response) = validate_token_request_profile(
+        &state.settings,
+        &client,
+        client.token_endpoint_auth_method.as_str(),
+    ) {
         return response;
     }
-    if let Err(response) =
-        validate_ciba_security_profile_client(&state.settings, &client, credentials.method.as_str())
-    {
+    if let Err(response) = validate_ciba_security_profile_client(
+        &state.settings,
+        &client,
+        client.token_endpoint_auth_method.as_str(),
+    ) {
         return response;
     }
     if let Err(response) = validate_ciba_request_object_presence(&state.settings, &client, &form) {
@@ -831,6 +853,7 @@ pub(crate) async fn ciba_verification_page(
 
 pub(crate) async fn ciba_verification(
     state: Data<AppState>,
+    authorization_service: Data<ServerAuthorizationService>,
     req: HttpRequest,
     path: actix_web::web::Path<String>,
 ) -> HttpResponse {
@@ -863,7 +886,7 @@ pub(crate) async fn ciba_verification(
     let request = if state_payload.status == CibaStatus::Pending
         && state_payload.expires_at > Utc::now().timestamp()
     {
-        match ciba_authorization_request_view(&state, &state_payload).await {
+        match ciba_authorization_request_view(&authorization_service, &state_payload).await {
             Ok(value) => value,
             Err(response) => return response,
         }
@@ -1045,13 +1068,10 @@ fn complete_ciba_decision(
 }
 
 async fn ciba_authorization_request_view(
-    state: &AppState,
+    authorization_service: &ServerAuthorizationService,
     payload: &CibaRequestState,
 ) -> Result<Option<CibaAuthorizationRequestView>, HttpResponse> {
-    let client = match nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
-        .by_client_id(DEFAULT_TENANT_ID, &payload.client_id)
-        .await
-    {
+    let client = match authorization_service.client_by_id(&payload.client_id).await {
         Ok(Some(client)) if client.is_active => client,
         Ok(_) => return Ok(None),
         Err(error) => {

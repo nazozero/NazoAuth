@@ -45,6 +45,16 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
         })
     }
 
+    fn active_mtls_candidates(&self, limit: usize) -> AuthorizationFuture<'_, Vec<OAuthClient>> {
+        Box::pin(async move {
+            let limit = i64::try_from(limit).map_err(|_| AuthorizationPortError::Unexpected)?;
+            self.clients
+                .active_mtls_candidates(self.tenant_id, limit)
+                .await
+                .map_err(map_repository_error)
+        })
+    }
+
     fn grant<'a>(
         &'a self,
         user_id: Uuid,

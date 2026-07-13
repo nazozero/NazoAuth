@@ -20,8 +20,9 @@ use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_I
 use crate::support::{
     DpopError, DpopErrorContext, RedirectUriError, audiences_allowed, dpop_error_response,
     encoded_resource_indicators, extract_client_credentials_with_trusted_proxies,
-    random_urlsafe_token, rate_limited_response, registered_redirect_uri,
-    request_mtls_thumbprint_from_trusted_proxy, resource_indicators_from_parameter_value,
+    has_basic_authorization_scheme, random_urlsafe_token, rate_limited_response,
+    registered_redirect_uri, request_mtls_thumbprint_from_trusted_proxy,
+    resource_indicators_from_parameter_value,
 };
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -39,8 +40,9 @@ use uuid::Uuid;
 pub(crate) const PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX: &str =
     "urn:ietf:params:oauth:request_uri:";
 use crate::http::token::client_auth::{
+    authenticate_client_with_dependencies,
     consume_token_management_client_assertion_with_authorization_service,
-    token_management_auth_error, verify_confidential_client_with_dependencies,
+    token_management_auth_error,
 };
 
 const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
@@ -185,6 +187,18 @@ async fn par_after_rate_limit_inner(
     if let Some(encoded) = encoded_resource_indicators(&resource_values) {
         params.insert("resource".to_owned(), encoded);
     }
+    let has_basic = has_basic_authorization_scheme(req.headers());
+    let has_assertion =
+        params.contains_key("client_assertion_type") || params.contains_key("client_assertion");
+    if has_basic && (params.contains_key("client_secret") || has_assertion)
+        || has_assertion && params.contains_key("client_secret")
+    {
+        return oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "PAR 请求不能同时使用多种客户端认证方式.",
+        );
+    }
     if (!crate::http::authorization::accepts_module(
         context,
         nazo_runtime_modules::ModuleId::RequestObjects,
@@ -236,9 +250,28 @@ async fn par_after_rate_limit_inner(
             "缺少 client_id.",
         );
     };
+    let credentials = extract_client_credentials_with_trusted_proxies(
+        &req,
+        &context.config.trusted_proxy_cidrs,
+        Some(&client_id),
+        params.get("client_secret").map(String::as_str),
+        params.get("client_assertion_type").map(String::as_str),
+        params.get("client_assertion").map(String::as_str),
+    );
+    if has_basic && credentials.method != "client_secret_basic" {
+        return oauth_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "客户端认证失败.",
+        );
+    }
     let client = match context.service.client_by_id(&client_id).await {
         Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
+            crate::http::token::client_auth::perform_dummy_client_secret_verification(
+                &credentials,
+                &context.config.client_secret_pepper,
+            );
             return oauth_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_client",
@@ -254,31 +287,20 @@ async fn par_after_rate_limit_inner(
             );
         }
     };
-    let credentials = extract_client_credentials_with_trusted_proxies(
-        &req,
+    let client_assertion = match authenticate_client_with_dependencies(
+        context.service,
+        &context.config.issuer,
+        &context.config.client_secret_pepper,
         &context.config.trusted_proxy_cidrs,
-        Some(&client_id),
-        params.get("client_secret").map(String::as_str),
-        params.get("client_assertion_type").map(String::as_str),
-        params.get("client_assertion").map(String::as_str),
-    );
-    let client_assertion = if client.client_type == "public" {
-        None
-    } else {
-        match verify_confidential_client_with_dependencies(
-            context.service,
-            &context.config.issuer,
-            &context.config.client_secret_pepper,
-            &context.config.trusted_proxy_cidrs,
-            &req,
-            &client,
-            &credentials,
-        )
-        .await
-        {
-            Ok(assertion) => assertion,
-            Err(error) => return token_management_auth_error(error),
-        }
+        &req,
+        &client,
+        &credentials,
+        nazo_auth::ClientAuthenticationContext::AllowPublicNone,
+    )
+    .await
+    {
+        Ok(assertion) => assertion,
+        Err(error) => return token_management_auth_error(error),
     };
     params.remove("client_secret");
     params.remove("client_assertion_type");
@@ -286,7 +308,7 @@ async fn par_after_rate_limit_inner(
     if let Err(response) = validate_pushed_authorization_request_profile_with_config(
         context.config,
         &client,
-        &credentials.method,
+        &client.token_endpoint_auth_method,
     ) {
         return response;
     }

@@ -261,12 +261,7 @@ pub(crate) const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256"
 pub(crate) const SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS: &[&str] = &["RSA-OAEP-256"];
 pub(crate) const SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS: &[&str] = &["A256GCM"];
 
-pub(crate) struct ClientCredentials {
-    pub(crate) client_id: Option<String>,
-    pub(crate) client_secret: Option<String>,
-    pub(crate) client_assertion: Option<String>,
-    pub(crate) method: String,
-}
+pub(crate) use nazo_auth::PresentedClientCredentials as ClientCredentials;
 
 pub(crate) fn has_basic_authorization_scheme(headers: &HeaderMap) -> bool {
     let Some(raw) = headers

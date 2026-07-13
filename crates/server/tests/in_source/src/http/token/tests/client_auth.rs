@@ -232,6 +232,31 @@ fn token_management_non_basic_client_auth_failure_has_no_basic_challenge() {
 }
 
 #[test]
+fn public_client_credential_rejection_preserves_invalid_client_contract() {
+    let response = token_management_client_auth_error(
+        TokenManagementClientAuthError::PublicClientCredentialsForbidden,
+        true,
+    );
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("invalid_client")
+    );
+    assert_eq!(
+        response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+        HeaderValue::from_static(r#"Basic realm="nazo-oauth""#)
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        HeaderValue::from_static("no-store")
+    );
+}
+
+#[test]
 fn token_management_store_failure_has_no_basic_challenge() {
     let response =
         token_management_client_auth_error(TokenManagementClientAuthError::StoreUnavailable, true);
