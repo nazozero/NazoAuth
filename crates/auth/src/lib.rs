@@ -38,7 +38,13 @@ pub use authorization_service::{
     AuthorizationService, AuthorizationStateStorePort, GrantWrite, StoredAuthorizationGrant,
     stored_grant_covers_requested_authorization,
 };
-pub use ciba::{CibaRequestState, CibaStatus};
+pub use ciba::{
+    CibaAtomicResult, CibaCommittedDecision, CibaCreateFailure, CibaDecision,
+    CibaDecisionEvaluation, CibaDecisionFailure, CibaPollCommit, CibaPollFailure,
+    CibaPollTransition, CibaRequestState, CibaService, CibaStateFuture, CibaStatePortError,
+    CibaStateStorePort, CibaStatus, CibaStoredRequest, ciba_retention_deadline,
+    evaluate_ciba_decision, evaluate_ciba_poll,
+};
 pub use claims::{
     AccessTokenClaimsInput, AuthorizationResponseClaimsInput, BackchannelLogoutClaimsInput, Claims,
     ConfirmationClaims, IdTokenClaimsInput, OidcClaimRequest, access_token_claims,

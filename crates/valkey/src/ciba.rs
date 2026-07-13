@@ -1,4 +1,6 @@
-use nazo_auth::CibaRequestState;
+use nazo_auth::{
+    CibaAtomicResult, CibaRequestState, CibaStatePortError, CibaStateStorePort, CibaStoredRequest,
+};
 use serde_json::{Number, Value};
 
 use crate::{Error, ValkeyConnection, command, keys};
@@ -171,8 +173,88 @@ impl CibaStore {
     }
 }
 
+impl CibaStateStorePort for CibaStore {
+    type Version = StoredCibaRequest;
+
+    fn load<'a>(
+        &'a self,
+        auth_req_id: &'a str,
+    ) -> nazo_auth::CibaStateFuture<'a, Option<CibaStoredRequest<Self::Version>>> {
+        Box::pin(async move {
+            CibaStore::load(self, auth_req_id)
+                .await
+                .map_err(port_error)
+                .map(|stored| {
+                    stored.map(|version| CibaStoredRequest::new(version.value().clone(), version))
+                })
+        })
+    }
+
+    fn create<'a>(
+        &'a self,
+        auth_req_id: &'a str,
+        state: &'a CibaRequestState,
+    ) -> nazo_auth::CibaStateFuture<'a, CibaAtomicResult> {
+        Box::pin(async move {
+            CibaStore::create(self, auth_req_id, state)
+                .await
+                .map(Into::into)
+                .map_err(port_error)
+        })
+    }
+
+    fn replace<'a>(
+        &'a self,
+        auth_req_id: &'a str,
+        version: &'a Self::Version,
+        state: &'a CibaRequestState,
+    ) -> nazo_auth::CibaStateFuture<'a, CibaAtomicResult> {
+        Box::pin(async move {
+            CibaStore::replace(self, auth_req_id, version, state)
+                .await
+                .map(Into::into)
+                .map_err(port_error)
+        })
+    }
+
+    fn delete<'a>(
+        &'a self,
+        auth_req_id: &'a str,
+        version: &'a Self::Version,
+    ) -> nazo_auth::CibaStateFuture<'a, CibaAtomicResult> {
+        Box::pin(async move {
+            CibaStore::delete(self, auth_req_id, version)
+                .await
+                .map(Into::into)
+                .map_err(port_error)
+        })
+    }
+}
+
+impl From<AtomicResult> for CibaAtomicResult {
+    fn from(result: AtomicResult) -> Self {
+        match result {
+            AtomicResult::Applied => Self::Applied,
+            AtomicResult::Conflict => Self::Conflict,
+            AtomicResult::DeadlineElapsed => Self::DeadlineElapsed,
+        }
+    }
+}
+
 fn serialization_error(error: serde_json::Error) -> Error {
     Error::protocol(format!("invalid CIBA state: {error}"))
+}
+
+fn port_error(error: Error) -> CibaStatePortError {
+    match error.kind() {
+        crate::ErrorKind::Timeout | crate::ErrorKind::Unavailable => {
+            CibaStatePortError::Unavailable
+        }
+        crate::ErrorKind::Protocol | crate::ErrorKind::CorruptData => {
+            CibaStatePortError::CorruptData
+        }
+        crate::ErrorKind::UnexpectedResult => CibaStatePortError::Unexpected,
+    }
 }
 fn parse_atomic(reply: &str) -> Result<AtomicResult, Error> {
     match reply {
