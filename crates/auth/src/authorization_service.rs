@@ -140,6 +140,12 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         jti: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool>;
+    fn consume_jwt_bearer<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        ttl_seconds: u64,
+    ) -> AuthorizationFuture<'a, bool>;
     fn consume_dpop<'a>(
         &'a self,
         thumbprint: &'a str,
@@ -333,6 +339,15 @@ where
         self.state
             .consume_private_key_jwt(client_id, jti, ttl)
             .await
+    }
+
+    pub async fn consume_jwt_bearer(
+        &self,
+        client_id: &str,
+        jti: &str,
+        ttl: u64,
+    ) -> Result<bool, AuthorizationPortError> {
+        self.state.consume_jwt_bearer(client_id, jti, ttl).await
     }
     pub async fn consume_dpop(
         &self,

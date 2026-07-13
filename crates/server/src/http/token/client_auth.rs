@@ -336,6 +336,36 @@ fn token_management_client_assertion_error(
     }
 }
 
+pub(crate) async fn consume_token_client_assertion_with_authorization_service(
+    service: &crate::http::authorization::ServerAuthorizationService,
+    client: &ClientRow,
+    assertion: Option<&ValidatedClientAssertion>,
+) -> Result<(), HttpResponse> {
+    let Some(assertion) = assertion else {
+        return Ok(());
+    };
+    crate::support::consume_private_key_jwt_with_authorization_service(service, client, assertion)
+        .await
+        .map_err(token_client_assertion_error)
+}
+
+fn token_client_assertion_error(error: ClientAssertionError) -> HttpResponse {
+    match error {
+        ClientAssertionError::StoreUnavailable => oauth_token_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "客户端认证状态存储不可用.",
+            false,
+        ),
+        ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => oauth_token_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client",
+            "客户端认证失败.",
+            false,
+        ),
+    }
+}
+
 pub(crate) async fn consume_token_client_assertion(
     state: &AppState,
     client: &ClientRow,
@@ -346,22 +376,7 @@ pub(crate) async fn consume_token_client_assertion(
     };
     consume_private_key_jwt(state, client, assertion)
         .await
-        .map_err(|error| match error {
-            ClientAssertionError::StoreUnavailable => oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "客户端认证状态存储不可用.",
-                false,
-            ),
-            ClientAssertionError::Invalid | ClientAssertionError::ReplayDetected => {
-                oauth_token_error(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_client",
-                    "客户端认证失败.",
-                    false,
-                )
-            }
-        })
+        .map_err(token_client_assertion_error)
 }
 
 #[cfg(test)]

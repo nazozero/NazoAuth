@@ -42,6 +42,8 @@ use super::client_auth::{
     authenticate_client_with_dependencies,
     consume_token_management_client_assertion_with_authorization_service,
 };
+#[cfg(test)]
+use super::issue::TokenIssuanceConfig;
 use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
 #[cfg(test)]
 use super::validate_token_request_profile;

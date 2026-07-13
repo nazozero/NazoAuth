@@ -6,7 +6,9 @@
 use nazo_http_actix::oauth_token_error;
 
 use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
-use super::{ServerTokenService, TokenForm, consume_token_client_assertion};
+use super::{
+    ServerTokenService, TokenForm, consume_token_client_assertion_with_authorization_service,
+};
 use super::{native_sso_profile_requested, token_native_sso_exchange};
 use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
 #[cfg(test)]
@@ -14,7 +16,8 @@ use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_I
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, access_token_tenant_id,
     audiences_allowed, constant_time_eq, dpop_error_response, is_subset, json_array_to_strings,
-    parse_scope, request_mtls_thumbprint, validate_dpop_proof,
+    parse_scope, request_mtls_thumbprint_from_trusted_proxy,
+    validate_dpop_proof_with_authorization_service,
 };
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
@@ -228,7 +231,8 @@ fn exchange_token_error_response(error: TokenExchangeTokenError) -> HttpResponse
 }
 
 async fn validate_subject_sender_binding(
-    state: &AppState,
+    authorization_service: &crate::http::authorization::ServerAuthorizationService,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     subject_token: &str,
     subject: &Claims,
@@ -237,13 +241,23 @@ async fn validate_subject_sender_binding(
         return Ok(None);
     };
     if let Some(jkt) = cnf.jkt.as_deref() {
-        let proof_jkt = validate_dpop_proof(state, req, Some(subject_token), Some(jkt))
-            .await
-            .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
+        let proof_jkt = validate_dpop_proof_with_authorization_service(
+            authorization_service,
+            issuance.config.issuer(),
+            issuance.config.mtls_endpoint_base_url(),
+            issuance.config.dpop_nonce_policy(),
+            req,
+            Some(subject_token),
+            Some(jkt),
+        )
+        .await
+        .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
         return Ok(proof_jkt.map(SenderBinding::Dpop));
     }
     if let Some(expected) = cnf.x5t_s256.as_deref() {
-        let Some(actual) = request_mtls_thumbprint(req, &state.settings) else {
+        let Some(actual) =
+            request_mtls_thumbprint_from_trusted_proxy(req, issuance.config.trusted_proxy_cidrs())
+        else {
             return Err(oauth_token_error(
                 StatusCode::BAD_REQUEST,
                 "invalid_grant",
@@ -265,7 +279,8 @@ async fn validate_subject_sender_binding(
 }
 
 async fn token_exchange_issue_binding(
-    state: &AppState,
+    authorization_service: &crate::http::authorization::ServerAuthorizationService,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     subject_binding: Option<SenderBinding>,
@@ -294,9 +309,17 @@ async fn token_exchange_issue_binding(
             Ok((None, Some(x5t_s256)))
         }
         None if client.require_dpop_bound_tokens => {
-            let dpop_jkt = validate_dpop_proof(state, req, None, None)
-                .await
-                .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
+            let dpop_jkt = validate_dpop_proof_with_authorization_service(
+                authorization_service,
+                issuance.config.issuer(),
+                issuance.config.mtls_endpoint_base_url(),
+                issuance.config.dpop_nonce_policy(),
+                req,
+                None,
+                None,
+            )
+            .await
+            .map_err(|error| dpop_error_response(error, DpopErrorContext::TokenEndpoint))?;
             if dpop_jkt.is_none() {
                 return Err(dpop_error_response(
                     DpopError::MissingProof,
@@ -306,7 +329,10 @@ async fn token_exchange_issue_binding(
             Ok((dpop_jkt, None))
         }
         None if client.require_mtls_bound_tokens => {
-            let Some(x5t_s256) = request_mtls_thumbprint(req, &state.settings) else {
+            let Some(x5t_s256) = request_mtls_thumbprint_from_trusted_proxy(
+                req,
+                issuance.config.trusted_proxy_cidrs(),
+            ) else {
                 return Err(oauth_token_error(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
@@ -365,6 +391,7 @@ async fn validate_actor_token(
 pub(crate) async fn token_exchange(
     state: &AppState,
     token_service: &ServerTokenService,
+    authorization_service: &crate::http::authorization::ServerAuthorizationService,
     issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
@@ -383,7 +410,7 @@ pub(crate) async fn token_exchange(
         )
         .await;
     }
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::TokenExchange) {
+    if !issuance.accepts(nazo_runtime_modules::ModuleId::TokenExchange) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",
@@ -402,7 +429,13 @@ pub(crate) async fn token_exchange(
     if let Err(error) = validate_token_exchange_type_policy(form) {
         return token_exchange_type_error_response(error);
     }
-    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+        authorization_service,
+        client,
+        client_assertion,
+    )
+    .await
+    {
         return response;
     }
     let subject_token = form
@@ -428,16 +461,30 @@ pub(crate) async fn token_exchange(
             false,
         );
     }
-    let subject_binding =
-        match validate_subject_sender_binding(state, req, subject_token, &subject).await {
-            Ok(binding) => binding,
-            Err(response) => return response,
-        };
-    let (dpop_jkt, mtls_x5t_s256) =
-        match token_exchange_issue_binding(state, req, client, subject_binding).await {
-            Ok(binding) => binding,
-            Err(response) => return response,
-        };
+    let subject_binding = match validate_subject_sender_binding(
+        authorization_service,
+        issuance,
+        req,
+        subject_token,
+        &subject,
+    )
+    .await
+    {
+        Ok(binding) => binding,
+        Err(response) => return response,
+    };
+    let (dpop_jkt, mtls_x5t_s256) = match token_exchange_issue_binding(
+        authorization_service,
+        issuance,
+        req,
+        client,
+        subject_binding,
+    )
+    .await
+    {
+        Ok(binding) => binding,
+        Err(response) => return response,
+    };
     let actor = match validate_actor_token(
         token_service,
         issuance.config.issuer(),

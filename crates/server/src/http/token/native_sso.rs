@@ -236,7 +236,8 @@ async fn native_sso_issue_binding(
 }
 
 pub(crate) async fn persist_native_sso_device_secret(
-    state: &AppState,
+    token_service: &ServerTokenService,
+    refresh_token_ttl_seconds: i64,
     client: &ClientRow,
     issue: &TokenIssue,
     binding: &NativeSsoTokenBinding,
@@ -245,8 +246,7 @@ pub(crate) async fn persist_native_sso_device_secret(
     let Some(user_id) = issue.user_id else {
         return Ok(());
     };
-    let expires_at =
-        Utc::now() + Duration::seconds(state.settings.protocol.refresh_token_ttl_seconds);
+    let expires_at = Utc::now() + Duration::seconds(refresh_token_ttl_seconds);
     let payload = NativeSsoDeviceSecretState {
         tenant_id: client.tenant_id,
         user_id,
@@ -256,11 +256,11 @@ pub(crate) async fn persist_native_sso_device_secret(
         refresh_token_family_id,
         expires_at,
     };
-    nazo_valkey::TokenStateStore::new(&state.valkey_connection())
+    token_service
         .store_native_sso(
             &binding.device_secret,
             &serde_json::to_value(payload)?,
-            state.settings.protocol.refresh_token_ttl_seconds.max(1) as u64,
+            refresh_token_ttl_seconds.max(1) as u64,
         )
         .await?;
     Ok(())

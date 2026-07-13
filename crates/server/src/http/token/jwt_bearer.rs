@@ -5,15 +5,18 @@ use nazo_http_actix::oauth_token_error;
 
 use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
 use super::{
-    ServerTokenService, TokenForm, client_credentials_issue_request, consume_token_client_assertion,
+    ServerTokenService, TokenForm, client_credentials_issue_request_with_default_audience,
+    consume_token_client_assertion_with_authorization_service,
 };
 use crate::domain::{AppState, ClientRow, RefreshTokenPolicy, TokenIssue};
+#[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
 use crate::support::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::support::{
     DpopError, DpopErrorContext, ValidatedClientAssertion, client_jwt_decoding_key,
-    dpop_error_response, request_mtls_thumbprint, validate_dpop_proof,
+    dpop_error_response, request_mtls_thumbprint_from_trusted_proxy,
+    validate_dpop_proof_with_authorization_service,
 };
 #[cfg(test)]
 use crate::test_support::{ClientSigningFixture, client_signing_fixture};
@@ -56,8 +59,8 @@ pub(crate) enum JwtBearerAssertionError {
     StoreUnavailable,
 }
 
-fn validate_jwt_bearer_assertion(
-    settings: &Settings,
+fn validate_jwt_bearer_assertion_with_issuer(
+    issuer: &str,
     client: &ClientRow,
     assertion: &str,
 ) -> Result<ValidatedJwtBearerAssertion, JwtBearerAssertionError> {
@@ -76,7 +79,7 @@ fn validate_jwt_bearer_assertion(
     let now = Utc::now().timestamp();
     if claims.iss != client.client_id
         || claims.sub != client.client_id
-        || !jwt_bearer_audience_matches(&claims.aud, &settings.endpoint.issuer)
+        || !jwt_bearer_audience_matches(&claims.aud, issuer)
         || !valid_jwt_bearer_times(&claims, now)
         || !valid_jwt_bearer_jti(&claims.jti)
     {
@@ -87,6 +90,15 @@ fn validate_jwt_bearer_assertion(
         jti: claims.jti,
         exp: claims.exp,
     })
+}
+
+#[cfg(test)]
+fn validate_jwt_bearer_assertion(
+    settings: &Settings,
+    client: &ClientRow,
+    assertion: &str,
+) -> Result<ValidatedJwtBearerAssertion, JwtBearerAssertionError> {
+    validate_jwt_bearer_assertion_with_issuer(&settings.endpoint.issuer, client, assertion)
 }
 
 fn jwt_bearer_audience_matches(aud: &Value, issuer: &str) -> bool {
@@ -125,15 +137,13 @@ impl ValidatedJwtBearerAssertion {
     }
 }
 
-async fn consume_jwt_bearer_assertion(
-    state: &AppState,
-    token_service: &ServerTokenService,
-    issuance: &TokenIssuanceContext<'_>,
+async fn consume_jwt_bearer_assertion_with_authorization_service(
+    authorization_service: &crate::http::authorization::ServerAuthorizationService,
     client: &ClientRow,
     assertion: &ValidatedJwtBearerAssertion,
 ) -> Result<(), JwtBearerAssertionError> {
     let now = Utc::now().timestamp();
-    match nazo_valkey::ReplayStore::new(&state.valkey_connection())
+    match authorization_service
         .consume_jwt_bearer(
             &client.client_id,
             &assertion.jti,
@@ -150,14 +160,25 @@ async fn consume_jwt_bearer_assertion(
     }
 }
 
-pub(crate) async fn token_jwt_bearer_with_service(
+#[cfg(test)]
+async fn consume_jwt_bearer_assertion(
     state: &AppState,
+    client: &ClientRow,
+    assertion: &ValidatedJwtBearerAssertion,
+) -> Result<(), JwtBearerAssertionError> {
+    let authorization = super::issue::test_authorization_service(state);
+    consume_jwt_bearer_assertion_with_authorization_service(&authorization, client, assertion).await
+}
+
+pub(crate) async fn token_jwt_bearer_with_service(
+    token_service: &ServerTokenService,
+    issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    if !state.accepts_module(nazo_runtime_modules::ModuleId::JwtBearerGrant) {
+    if !issuance.accepts(nazo_runtime_modules::ModuleId::JwtBearerGrant) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",
@@ -181,7 +202,17 @@ pub(crate) async fn token_jwt_bearer_with_service(
             false,
         );
     };
-    let dpop_jkt = match validate_dpop_proof(state, req, None, None).await {
+    let dpop_jkt = match validate_dpop_proof_with_authorization_service(
+        issuance.authorization,
+        issuance.config.issuer(),
+        issuance.config.mtls_endpoint_base_url(),
+        issuance.config.dpop_nonce_policy(),
+        req,
+        None,
+        None,
+    )
+    .await
+    {
         Ok(value) => value,
         Err(error) => return dpop_error_response(error, DpopErrorContext::TokenEndpoint),
     };
@@ -189,7 +220,8 @@ pub(crate) async fn token_jwt_bearer_with_service(
         return dpop_error_response(DpopError::MissingProof, DpopErrorContext::TokenEndpoint);
     }
     let mtls_x5t_s256 = if client.require_mtls_bound_tokens {
-        match request_mtls_thumbprint(req, &state.settings) {
+        match request_mtls_thumbprint_from_trusted_proxy(req, issuance.config.trusted_proxy_cidrs())
+        {
             Some(value) => Some(value),
             None => {
                 return oauth_token_error(
@@ -203,10 +235,20 @@ pub(crate) async fn token_jwt_bearer_with_service(
     } else {
         None
     };
-    if let Err(response) = consume_token_client_assertion(state, client, client_assertion).await {
+    if let Err(response) = consume_token_client_assertion_with_authorization_service(
+        issuance.authorization,
+        client,
+        client_assertion,
+    )
+    .await
+    {
         return response;
     }
-    let assertion = match validate_jwt_bearer_assertion(&state.settings, client, assertion) {
+    let assertion = match validate_jwt_bearer_assertion_with_issuer(
+        issuance.config.issuer(),
+        client,
+        assertion,
+    ) {
         Ok(assertion) => assertion,
         Err(_) => {
             return oauth_token_error(
@@ -217,7 +259,13 @@ pub(crate) async fn token_jwt_bearer_with_service(
             );
         }
     };
-    if let Err(error) = consume_jwt_bearer_assertion(state, client, &assertion).await {
+    if let Err(error) = consume_jwt_bearer_assertion_with_authorization_service(
+        issuance.authorization,
+        client,
+        &assertion,
+    )
+    .await
+    {
         return match error {
             JwtBearerAssertionError::StoreUnavailable => oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,
@@ -235,7 +283,11 @@ pub(crate) async fn token_jwt_bearer_with_service(
             }
         };
     }
-    let issue_request = match client_credentials_issue_request(&state.settings, client, form) {
+    let issue_request = match client_credentials_issue_request_with_default_audience(
+        issuance.config.default_audience(),
+        client,
+        form,
+    ) {
         Ok(issue_request) => issue_request,
         Err(response) => return response,
     };
@@ -289,12 +341,13 @@ pub(crate) async fn token_jwt_bearer(
     );
     let config = super::issue::TokenIssuanceConfig::from(state.settings.as_ref());
     let modules = state.active_module_snapshot();
+    let authorization = super::issue::test_authorization_service(state);
     token_jwt_bearer_with_service(
-        state,
         &service,
         &TokenIssuanceContext {
             config: &config,
             modules: &modules,
+            authorization: &authorization,
         },
         req,
         client,

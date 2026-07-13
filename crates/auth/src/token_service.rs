@@ -233,6 +233,15 @@ pub trait TokenStateStorePort: Send + Sync {
         subject: &'a str,
         window_seconds: u64,
     ) -> TokenFuture<'a, u64>;
+
+    fn store_native_sso<'a>(
+        &'a self,
+        secret: &'a str,
+        value: &'a Value,
+        ttl_seconds: u64,
+    ) -> TokenFuture<'a, ()>;
+
+    fn load_native_sso<'a>(&'a self, secret: &'a str) -> TokenFuture<'a, Option<Value>>;
 }
 
 pub trait TokenSignerPort: Send + Sync {
@@ -306,6 +315,21 @@ where
         jti: &str,
     ) -> Result<Option<Uuid>, TokenPortError> {
         self.state.load_access_token_subject(tenant_id, jti).await
+    }
+
+    pub async fn store_native_sso(
+        &self,
+        secret: &str,
+        value: &Value,
+        ttl_seconds: u64,
+    ) -> Result<(), TokenPortError> {
+        self.state
+            .store_native_sso(secret, value, ttl_seconds)
+            .await
+    }
+
+    pub async fn load_native_sso(&self, secret: &str) -> Result<Option<Value>, TokenPortError> {
+        self.state.load_native_sso(secret).await
     }
 
     pub async fn recover_lost_refresh_response(

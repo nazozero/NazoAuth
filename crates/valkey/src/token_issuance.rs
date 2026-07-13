@@ -111,6 +111,27 @@ impl TokenStateStorePort for TokenIssuanceStateAdapter {
                 .map_err(map_error)
         })
     }
+
+    fn store_native_sso<'a>(
+        &'a self,
+        secret: &'a str,
+        value: &'a serde_json::Value,
+        ttl_seconds: u64,
+    ) -> TokenFuture<'a, ()> {
+        Box::pin(async move {
+            self.tokens
+                .store_native_sso(secret, value, ttl_seconds)
+                .await
+                .map_err(map_error)
+        })
+    }
+
+    fn load_native_sso<'a>(
+        &'a self,
+        secret: &'a str,
+    ) -> TokenFuture<'a, Option<serde_json::Value>> {
+        Box::pin(async move { self.tokens.load_native_sso(secret).await.map_err(map_error) })
+    }
 }
 
 fn map_begin(result: AuthorizationCodeBegin) -> AuthorizationCodeBeginResult {

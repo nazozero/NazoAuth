@@ -38,8 +38,9 @@ use super::issue::{TokenIssuanceConfig, TokenIssuanceContext};
 use super::{
     CIBA_GRANT_TYPE, DEVICE_CODE_GRANT_TYPE, JWT_BEARER_GRANT_TYPE, ServerTokenService,
     TOKEN_EXCHANGE_GRANT_TYPE, TokenForm, TokenFormError, parse_token_form,
-    token_authorization_code_with_service, token_ciba, token_client_credentials, token_device_code,
-    token_exchange, token_jwt_bearer, token_refresh_with_service,
+    token_authorization_code_with_service, token_ciba, token_client_credentials_with_service,
+    token_device_code_with_service, token_exchange, token_jwt_bearer_with_service,
+    token_refresh_with_service,
 };
 use crate::http::authorization::ServerAuthorizationService;
 use nazo_auth::{
@@ -427,6 +428,7 @@ pub(crate) async fn token_with_service(
     let issuance = TokenIssuanceContext {
         config: &issuance_config,
         modules: &modules,
+        authorization: &authorization_service,
     };
     match form.grant_type.as_str() {
         "authorization_code" => {
@@ -455,8 +457,8 @@ pub(crate) async fn token_with_service(
         }
         "client_credentials" => {
             token_client_credentials_with_service(
-                &state,
                 &token_service,
+                &authorization_service,
                 &issuance,
                 &req,
                 &client,
@@ -467,7 +469,6 @@ pub(crate) async fn token_with_service(
         }
         JWT_BEARER_GRANT_TYPE => {
             token_jwt_bearer_with_service(
-                &state,
                 &token_service,
                 &issuance,
                 &req,
@@ -508,6 +509,7 @@ pub(crate) async fn token_with_service(
             token_exchange(
                 &state,
                 &token_service,
+                &authorization_service,
                 &issuance,
                 &req,
                 &client,

@@ -22,7 +22,11 @@ use client_auth::{
     authenticate_revocation_client_with_dependencies, consume_token_client_assertion,
     token_management_auth_error, token_management_client_auth_error,
 };
-use client_credentials::{client_credentials_issue_request, token_client_credentials_with_service};
+#[cfg(test)]
+use client_credentials::client_credentials_issue_request;
+use client_credentials::{
+    client_credentials_issue_request_with_default_audience, token_client_credentials_with_service,
+};
 use device::{DEVICE_CODE_GRANT_TYPE, token_device_code_with_service};
 use dispatch::validate_token_request_profile;
 #[cfg(test)]
