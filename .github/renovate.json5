@@ -24,6 +24,12 @@
       "depNameTemplate": "rust-lang/rust",
       "datasourceTemplate": "github-releases",
       "versioningTemplate": "semver"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": ["/^perf\\/runner\\/Containerfile$/"],
+      "matchStrings": ["\"(?<depName>[A-Za-z0-9_-]+)(?:\\[[^\\]]+\\])?==(?<currentValue>[^\"]+)\""],
+      "datasourceTemplate": "pypi"
     }
   ],
   "packageRules": [
