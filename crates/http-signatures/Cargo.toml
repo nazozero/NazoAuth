@@ -8,13 +8,13 @@ repository.workspace = true
 [dependencies]
 httpsig = "0.0.24"
 sfv = "0.15.0"
-sha2 = "0.11.0"
+sha2.workspace = true
 subtle = "2.6.1"
-thiserror = "2.0.17"
-url = "2.5.8"
+thiserror.workspace = true
+url.workspace = true
 
 [dev-dependencies]
-proptest = "1"
+proptest.workspace = true
 
 [lints]
 workspace = true
