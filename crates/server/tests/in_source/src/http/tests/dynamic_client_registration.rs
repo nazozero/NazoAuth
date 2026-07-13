@@ -114,7 +114,7 @@ fn oidc_dynamic_confidential_secret_clients_allow_code_without_pkce() {
     )
     .expect("OIDC dynamic client metadata should be accepted");
 
-    let create_request = prepared.to_create_client_request();
+    let create_request = prepared.into_create_client_request();
     assert!(create_request.allow_authorization_code_without_pkce);
 }
 
@@ -131,7 +131,7 @@ fn dynamic_registration_requires_pkce_for_public_or_sender_constrained_clients()
         },
     )
     .expect("public dynamic client metadata should be accepted")
-    .to_create_client_request();
+    .into_create_client_request();
     assert!(!public.allow_authorization_code_without_pkce);
 
     let dpop = prepare_dynamic_client_registration(
@@ -146,7 +146,7 @@ fn dynamic_registration_requires_pkce_for_public_or_sender_constrained_clients()
         },
     )
     .expect("DPoP-bound dynamic client metadata should be accepted")
-    .to_create_client_request();
+    .into_create_client_request();
     assert!(!dpop.allow_authorization_code_without_pkce);
 }
 
@@ -301,7 +301,7 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
     )
     .expect("OIDF Basic dynamic registration metadata should parse");
 
-    let create_request = prepared.to_create_client_request();
+    let create_request = prepared.into_create_client_request();
     assert_eq!(
         create_request.scopes,
         vec![
@@ -349,7 +349,7 @@ async fn dynamic_registration_preserves_valid_userinfo_and_jarm_crypto_metadata(
         },
     )
     .expect("OIDC response crypto metadata should parse");
-    let create_request = prepared.to_create_client_request();
+    let create_request = prepared.into_create_client_request();
     assert_eq!(
         create_request.userinfo_signed_response_alg.as_deref(),
         Some("RS256")
@@ -641,7 +641,7 @@ async fn dynamic_registration_accepts_single_oidf_private_key_jwt_jwk_without_ki
     .expect("private_key_jwt registration metadata should parse before key policy validation");
 
     let result = prepare_admin_client_insert_for_test(
-        prepared.to_create_client_request(),
+        prepared.into_create_client_request(),
         None,
         "https://issuer.example",
     )
@@ -677,7 +677,7 @@ async fn dynamic_registration_rejects_ambiguous_private_key_jwt_jwks_without_kid
     .expect("private_key_jwt registration metadata should parse before key policy validation");
 
     let result = prepare_admin_client_insert_for_test(
-        prepared.to_create_client_request(),
+        prepared.into_create_client_request(),
         None,
         "https://issuer.example",
     )
