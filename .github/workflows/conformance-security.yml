@@ -262,7 +262,6 @@ jobs:
           ENABLE_AUTHORIZATION_DETAILS: true
           ENABLE_LEGACY_AUDIENCE_PARAM: true
           ENABLE_FAPI_HTTP_SIGNATURES: false
-          NAZO_RUNTIME_INSTANCE_ID: "e2e-primary"
           FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS: 60
           SCIM_BEARER_TOKEN: "codecov-scim-secret"
           FEDERATION_PROVIDER_CONFIGS: >-
@@ -288,7 +287,6 @@ jobs:
           YAML
           cp runtime/e2e/.env.yaml runtime/e2e/.env-signed.yaml
           sed -i 's/ENABLE_FAPI_HTTP_SIGNATURES: false/ENABLE_FAPI_HTTP_SIGNATURES: true/' runtime/e2e/.env-signed.yaml
-          sed -i 's/NAZO_RUNTIME_INSTANCE_ID: "e2e-primary"/NAZO_RUNTIME_INSTANCE_ID: "e2e-signed"/' runtime/e2e/.env-signed.yaml
       - name: Start PostgreSQL and Valkey
         run: |
           docker network create nazo-oauth-e2e-net
@@ -313,11 +311,13 @@ jobs:
             -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/avatars" \
             nazo-oauth-e2e:latest nazo-oauth-migrate
           docker run -d --name nazo-oauth-e2e-server --network nazo-oauth-e2e-net \
+            -e NAZO_RUNTIME_INSTANCE_ID=e2e-primary \
             -v "$PWD/runtime/e2e/.env.yaml:/app/.env.yaml:ro" \
             -v "$PWD/runtime/e2e/keys:/var/lib/nazo_oauth/keys" \
             -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/avatars" \
             nazo-oauth-e2e:latest nazo-oauth-server
           docker run -d --name nazo-oauth-e2e-server-signed --network nazo-oauth-e2e-net \
+            -e NAZO_RUNTIME_INSTANCE_ID=e2e-signed \
             -v "$PWD/runtime/e2e/.env-signed.yaml:/app/.env.yaml:ro" \
             -v "$PWD/runtime/e2e/keys:/var/lib/nazo_oauth/keys" \
             -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/avatars" \
