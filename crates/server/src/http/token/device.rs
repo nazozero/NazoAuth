@@ -137,7 +137,7 @@ pub(crate) async fn device_authorization(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    if !state.settings.enable_device_authorization_grant {
+    if !state.settings.modules().enable_device_authorization_grant {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -236,7 +236,7 @@ pub(crate) fn device_authorization_request_payload(
     client: &ClientRow,
     form: &DeviceAuthorizationForm,
 ) -> Result<DeviceAuthorizationPayload, DeviceAuthorizationRequestError> {
-    if !settings.enable_device_authorization_grant {
+    if !settings.modules().enable_device_authorization_grant {
         return Err(DeviceAuthorizationRequestError::Disabled);
     }
     if !client.is_active || !client_supports_grant(client, DEVICE_CODE_GRANT_TYPE) {
@@ -274,7 +274,7 @@ pub(crate) async fn token_device_code(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    if !state.settings.enable_device_authorization_grant {
+    if !state.settings.modules().enable_device_authorization_grant {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",
@@ -496,7 +496,7 @@ pub(crate) async fn device_verification_page(
     state: Data<AppState>,
     Query(query): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if !state.settings.enable_device_authorization_grant {
+    if !state.settings.modules().enable_device_authorization_grant {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -512,7 +512,7 @@ pub(crate) async fn device_verification(
     req: HttpRequest,
     Query(query): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    if !state.settings.enable_device_authorization_grant {
+    if !state.settings.modules().enable_device_authorization_grant {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -582,7 +582,7 @@ pub(crate) async fn device_decision(
     req: HttpRequest,
     Form(form): Form<DeviceDecisionForm>,
 ) -> HttpResponse {
-    if !state.settings.enable_device_authorization_grant {
+    if !state.settings.modules().enable_device_authorization_grant {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",

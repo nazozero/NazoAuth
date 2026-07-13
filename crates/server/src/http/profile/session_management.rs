@@ -61,7 +61,7 @@ fn escape_js_string(value: &str) -> String {
 }
 
 pub(crate) async fn check_session_iframe(state: Data<AppState>) -> HttpResponse {
-    if !state.settings.enable_session_management {
+    if !state.settings.modules().enable_session_management {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let status_endpoint = format!("{}/check_session/status", state.settings.issuer);
@@ -84,7 +84,7 @@ pub(crate) async fn check_session_status(
     req: HttpRequest,
     Query(query): Query<CheckSessionStatusQuery>,
 ) -> HttpResponse {
-    if !state.settings.enable_session_management {
+    if !state.settings.modules().enable_session_management {
         return empty_response(StatusCode::NOT_FOUND);
     }
     let Some((_, salt)) = query.session_state.rsplit_once('.') else {

@@ -104,7 +104,7 @@ pub(crate) async fn oidc_logout(
         );
     }
 
-    let frontchannel_urls = if state.settings.enable_frontchannel_logout {
+    let frontchannel_urls = if state.settings.modules().enable_frontchannel_logout {
         if let Some(session) = current_session.as_ref() {
             let clients = if let Some(client) = client.as_ref() {
                 frontchannel_logout_client_for_logout_client(client)

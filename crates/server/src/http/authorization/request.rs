@@ -46,14 +46,16 @@ async fn authorize_request(
     req: HttpRequest,
     q: &mut HashMap<String, String>,
 ) -> HttpResponse {
-    if !state.settings.enable_request_object && q.contains_key("request") {
+    if !state.settings.modules().enable_request_object && q.contains_key("request") {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
             "request 参数未启用.",
         );
     }
-    if !state.settings.enable_authorization_details && q.contains_key("authorization_details") {
+    if !state.settings.modules().enable_authorization_details
+        && q.contains_key("authorization_details")
+    {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -126,7 +128,9 @@ async fn authorize_request(
         );
     }
 
-    if !state.settings.enable_authorization_details && q.contains_key("authorization_details") {
+    if !state.settings.modules().enable_authorization_details
+        && q.contains_key("authorization_details")
+    {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -185,7 +189,9 @@ async fn authorize_request(
         );
     }
     let request_object_error = apply_request_object(&state, q, &client).await.err();
-    if !state.settings.enable_authorization_details && q.contains_key("authorization_details") {
+    if !state.settings.modules().enable_authorization_details
+        && q.contains_key("authorization_details")
+    {
         return oauth_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -610,7 +616,7 @@ pub(crate) async fn authorization_response_redirect(
         let protection = AuthorizationResponseProtection::from(&client);
         return authorization_response_redirect_with_protection(state, input, protection).await;
     }
-    let session_state = if state.settings.enable_session_management
+    let session_state = if state.settings.modules().enable_session_management
         && input.code.is_some()
         && input.error.is_none()
     {

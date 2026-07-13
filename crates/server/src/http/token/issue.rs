@@ -17,7 +17,7 @@ pub(crate) use refresh_persistence::should_issue_refresh_token;
 use refresh_persistence::{PendingRefreshToken, RefreshPersistResult, persist_refresh_token};
 
 fn client_session_sid_enabled(settings: &Settings, client: &ClientRow) -> bool {
-    (settings.enable_frontchannel_logout
+    (settings.modules().enable_frontchannel_logout
         && client.frontchannel_logout_uri.is_some()
         && client.frontchannel_logout_session_required)
         || (client.backchannel_logout_uri.is_some() && client.backchannel_logout_session_required)
@@ -128,7 +128,7 @@ pub(crate) async fn issue_token_response(
             false,
         );
     }
-    if issue.native_sso.is_some() && !state.settings.enable_native_sso {
+    if issue.native_sso.is_some() && !state.settings.modules().enable_native_sso {
         mark_failed_authorization_code_if_needed(
             state,
             issue.authorization_code_hash.as_deref(),

@@ -257,7 +257,7 @@ pub(crate) async fn token_native_sso_exchange(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    if !state.settings.enable_native_sso {
+    if !state.settings.modules().enable_native_sso {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",
