@@ -2,6 +2,14 @@ use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
 
 use crate::GrantType;
 
+mod document;
+
+pub use document::{
+    AuthorizationServerMetadataInput, CibaMetadataProfile, MetadataAuthorizationServerProfile,
+    MetadataSigningAlgorithms, MetadataSubjectType, ProtectedResourceMetadataInput,
+    authorization_server_metadata, protected_resource_metadata,
+};
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CapabilityAdmission {
     NewRequest,

@@ -78,7 +78,12 @@ pub use device::{
 };
 pub use error::{ProtocolError, ProtocolErrorCode};
 pub use grant::GrantType;
-pub use metadata::{CapabilityAdmission, MetadataCapabilities, module_admissible};
+pub use metadata::{
+    AuthorizationServerMetadataInput, CapabilityAdmission, CibaMetadataProfile,
+    MetadataAuthorizationServerProfile, MetadataCapabilities, MetadataSigningAlgorithms,
+    MetadataSubjectType, ProtectedResourceMetadataInput, authorization_server_metadata,
+    module_admissible, protected_resource_metadata,
+};
 pub use oauth_parameters::{
     has_duplicate_oauth_parameter, is_subset, parse_scope, string_array_values,
     token_audience_contains, token_audience_values,
