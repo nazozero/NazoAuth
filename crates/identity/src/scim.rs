@@ -12,6 +12,26 @@ use crate::ports::{
 };
 use crate::{PublicAccount, TenantContext, UserId};
 
+mod cursor;
+mod documents;
+mod query;
+
+pub use cursor::{
+    SCIM_CURSOR_AAD, SCIM_CURSOR_KEY_LABEL, SCIM_CURSOR_NONCE_LEN, SCIM_CURSOR_TAG_LEN,
+    SCIM_CURSOR_TIMEOUT_SECONDS, ScimCursorContext, ScimCursorError, ScimCursorPosition,
+    ScimCursorSubject, build_scim_cursor_plaintext, decode_scim_cursor_envelope,
+    decode_scim_cursor_plaintext, encode_scim_cursor_envelope,
+};
+pub use documents::{
+    scim_cursor_list_document, scim_error_document, scim_index_list_document,
+    scim_resource_types_document, scim_schemas_document, scim_service_provider_config_document,
+    scim_user_document, scim_user_schema_document,
+};
+pub use query::{
+    SCIM_DEFAULT_PAGE_SIZE, SCIM_MAX_PAGE_SIZE, ScimListRequest, ScimPagination,
+    parse_scim_list_query, select_scim_pagination,
+};
+
 #[derive(Clone)]
 pub struct ScimService {
     repository: Arc<dyn ScimRepositoryPort>,
@@ -112,6 +132,31 @@ impl ScimService {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScimRequiredScope {
+    Read,
+    Write,
+}
+
+impl ScimRequiredScope {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Read => "scim:read",
+            Self::Write => "scim:write",
+        }
+    }
+}
+
+pub const SCIM_SCOPE_ALL: &str = "scim:*";
+
+#[must_use]
+pub fn scim_credential_allows(scopes: &[String], required: ScimRequiredScope) -> bool {
+    scopes
+        .iter()
+        .any(|scope| scope == SCIM_SCOPE_ALL || scope == required.as_str())
+}
+
 pub const SCIM_USER_SCHEMA: &str = "urn:ietf:params:scim:schemas:core:2.0:User";
 pub const SCIM_ERROR_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:Error";
 pub const SCIM_LIST_SCHEMA: &str = "urn:ietf:params:scim:api:messages:2.0:ListResponse";
@@ -194,7 +239,8 @@ pub struct ScimError {
 }
 
 impl ScimError {
-    fn new(scim_type: &'static str, detail: impl Into<String>) -> Self {
+    #[must_use]
+    pub fn new(scim_type: &'static str, detail: impl Into<String>) -> Self {
         Self {
             scim_type,
             detail: detail.into(),
@@ -209,6 +255,50 @@ impl fmt::Display for ScimError {
 }
 
 impl Error for ScimError {}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScimRepositoryFailure {
+    NotFound,
+    Uniqueness,
+    BackendUnavailable,
+}
+
+impl From<&RepositoryError> for ScimRepositoryFailure {
+    fn from(error: &RepositoryError) -> Self {
+        match error {
+            RepositoryError::NotFound => Self::NotFound,
+            RepositoryError::Conflict => Self::Uniqueness,
+            RepositoryError::Unavailable
+            | RepositoryError::AlreadyProcessed
+            | RepositoryError::Consistency(_)
+            | RepositoryError::Unexpected(_) => Self::BackendUnavailable,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ScimDeleteOutcome {
+    Deleted,
+    NotFound,
+}
+
+impl From<bool> for ScimDeleteOutcome {
+    fn from(deactivated: bool) -> Self {
+        if deactivated {
+            Self::Deleted
+        } else {
+            Self::NotFound
+        }
+    }
+}
+
+pub fn validate_patch_schema(schemas: &[String]) -> Result<(), ScimError> {
+    if schemas.is_empty() || schemas.iter().any(|schema| schema == SCIM_PATCH_SCHEMA) {
+        Ok(())
+    } else {
+        Err(ScimError::new("invalidSyntax", "unsupported PATCH schema"))
+    }
+}
 
 pub fn normalize_scim_user_payload(
     payload: ScimUserRequest,
