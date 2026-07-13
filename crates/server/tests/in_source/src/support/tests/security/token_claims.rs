@@ -10,6 +10,14 @@ fn signing_adapters_do_not_define_or_call_claim_forwarders() {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../key-management/src/token.rs");
     let key_management_source = std::fs::read_to_string(&key_management_tokens)
         .expect("key-management token adapter source must exist relative to the server manifest");
+    let key_management_authorization_response = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../key-management/src/authorization_response.rs");
+    let key_management_authorization_response_source = std::fs::read_to_string(
+        &key_management_authorization_response,
+    )
+    .expect(
+        "key-management authorization-response adapter must exist relative to the server manifest",
+    );
 
     for forbidden in [
         "pub(super) fn access_token_claims(",
@@ -30,7 +38,6 @@ fn signing_adapters_do_not_define_or_call_claim_forwarders() {
     for required in [
         "nazo_auth::access_token_claims(",
         "nazo_auth::backchannel_logout_token_claims(",
-        "nazo_auth::authorization_response_jwt_claims(",
     ] {
         assert!(
             source.contains(required),
@@ -40,6 +47,10 @@ fn signing_adapters_do_not_define_or_call_claim_forwarders() {
     assert!(
         key_management_source.contains("id_token_claims("),
         "key-management token adapter must call the imported public auth ID-token builder directly"
+    );
+    assert!(
+        key_management_authorization_response_source.contains("authorization_response_jwt_claims("),
+        "key-management authorization-response adapter must call the imported public auth builder directly"
     );
 }
 
