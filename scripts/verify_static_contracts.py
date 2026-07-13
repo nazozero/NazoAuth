@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import re
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,6 +20,7 @@ REMOVED_ADAPTER_CLAIMS = (
 )
 GLOB_REEXPORT = re.compile(r"(?m)^\s*pub(?:\([^)]*\))?\s+use\s+[^;]*::\*\s*;")
 PRELUDE_MODULE = re.compile(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+prelude\s*;")
+EXACT_RUST_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 
 
 def migration_line(path: Path) -> str:
@@ -110,6 +112,37 @@ def check_server_import_boundaries() -> None:
             raise SystemExit(f"server source declares a prelude module: {relative}")
 
 
+def check_toolchain_pins() -> None:
+    toolchain = tomllib.loads((ROOT / "rust-toolchain.toml").read_text(encoding="utf-8"))
+    version = toolchain.get("toolchain", {}).get("channel")
+    if not isinstance(version, str) or not EXACT_RUST_VERSION.fullmatch(version):
+        raise SystemExit("rust-toolchain.toml must pin an exact stable Rust version")
+
+    containerfile = (ROOT / "Containerfile").read_text(encoding="utf-8")
+    if f"FROM docker.io/library/rust:{version}-slim AS builder" not in containerfile:
+        raise SystemExit("Containerfile Rust builder pin differs from rust-toolchain.toml")
+
+    workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
+    rust_actions = []
+    for path in workflows:
+        rust_actions.extend(
+            (path, match.group(1))
+            for match in re.finditer(r"dtolnay/rust-toolchain@(\d+\.\d+\.\d+)", path.read_text())
+        )
+    if not rust_actions:
+        raise SystemExit("CI has no exact dtolnay/rust-toolchain pin")
+    mismatches = [path.relative_to(ROOT) for path, pin in rust_actions if pin != version]
+    if mismatches:
+        raise SystemExit(f"CI Rust toolchain pins differ from {version}: {mismatches}")
+
+    renovate = json.loads((ROOT / "renovate.json").read_text(encoding="utf-8"))
+    managers = renovate.get("customManagers")
+    if not isinstance(managers, list) or not any(
+        manager.get("datasourceTemplate") == "rust-version" for manager in managers
+    ):
+        raise SystemExit("Renovate must update the coordinated Rust stable pins")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -125,6 +158,7 @@ def main() -> None:
         check_route_fixture()
         check_documentation_boundaries()
         check_server_import_boundaries()
+        check_toolchain_pins()
 
 
 if __name__ == "__main__":
