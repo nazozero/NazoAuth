@@ -17,6 +17,7 @@ mod scim;
 mod session;
 mod token_forms;
 mod token_management;
+mod userinfo;
 
 pub use cookies::{clear_cookie, cookie_value, make_cookie, with_cookie_headers};
 pub use cors::{
@@ -71,4 +72,8 @@ pub use token_management::{
     TOKEN_INTROSPECTION_JWT_MEDIA_TYPE, TokenIntrospectionRepresentation, TokenManagementEndpoint,
     TokenManagementError, TokenManagementFuture, TokenManagementOperations,
     TokenManagementRateLimitError, TokenManagementRequestGuard, introspect, revoke,
+};
+pub use userinfo::{
+    UserinfoDpopError, UserinfoEndpoint, UserinfoError, UserinfoFuture, UserinfoOperations,
+    UserinfoRepresentation, UserinfoSuccess, userinfo,
 };

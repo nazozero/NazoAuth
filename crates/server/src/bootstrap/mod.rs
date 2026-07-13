@@ -40,7 +40,7 @@ use crate::domain::{DynamicRegistrationHandles, ResourceServerHandles};
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
     ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
-    ServerTokenManagementOperations, ServerTokenManagementRequestGuard,
+    ServerTokenManagementOperations, ServerTokenManagementRequestGuard, ServerUserinfoOperations,
     dynamic_registration_endpoint,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
@@ -270,11 +270,17 @@ pub async fn run() -> anyhow::Result<()> {
         DEFAULT_TENANT_ID,
     ));
     let device_config = web::Data::new(DeviceHttpConfig::from(settings.as_ref()));
-    let userinfo_handles = web::Data::new(UserinfoHandles::new(
+    let userinfo_handles = UserinfoHandles::new(
         nazo_valkey::ReplayStore::new(&valkey_connection),
         keyset.clone(),
         UserinfoConfig::from(settings.as_ref()),
-    ));
+    );
+    #[cfg(test)]
+    let userinfo_handles = web::Data::new(userinfo_handles);
+    #[cfg(not(test))]
+    let userinfo_endpoint = web::Data::new(nazo_http_actix::UserinfoEndpoint::new(Arc::new(
+        ServerUserinfoOperations::new(token_service.clone().into_inner(), userinfo_handles),
+    )));
     let authorization_config = web::Data::new(AuthorizationHttpConfig::from(settings.as_ref()));
     #[cfg(not(test))]
     let token_management_endpoint = web::Data::new(nazo_http_actix::TokenManagementEndpoint::new(
@@ -584,7 +590,9 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(authorization_service.clone())
             .app_data(token_service.clone());
         #[cfg(not(test))]
-        let app = app.app_data(token_management_endpoint.clone());
+        let app = app
+            .app_data(token_management_endpoint.clone())
+            .app_data(userinfo_endpoint.clone());
         let app = app
             .app_data(token_endpoint_handles.clone())
             .app_data(ciba_service.clone())
@@ -594,8 +602,10 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(device_service.clone())
             .app_data(device_grants.clone())
             .app_data(device_decision_handles.clone())
-            .app_data(device_config.clone())
-            .app_data(userinfo_handles.clone())
+            .app_data(device_config.clone());
+        #[cfg(test)]
+        let app = app.app_data(userinfo_handles.clone());
+        let app = app
             .app_data(authorization_config.clone())
             .app_data(authorization_runtime.clone())
             .app_data(metadata_handles.clone())

@@ -54,4 +54,4 @@ pub(crate) use state::AppState;
 pub(crate) use token_management::{
     ServerTokenManagementOperations, ServerTokenManagementRequestGuard,
 };
-pub(crate) use userinfo::{UserinfoConfig, UserinfoHandles};
+pub(crate) use userinfo::{ServerUserinfoOperations, UserinfoConfig, UserinfoHandles};

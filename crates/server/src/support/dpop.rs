@@ -11,6 +11,7 @@ use actix_web::{HttpRequest, HttpResponse};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
+#[cfg(test)]
 pub(crate) use nazo_http_actix::AccessTokenAuthScheme;
 use nazo_http_actix::oauth_error;
 use serde::Deserialize;
@@ -39,6 +40,7 @@ pub(crate) enum DpopError {
     InvalidProof,
     ReplayDetected,
     BindingMismatch,
+    #[cfg(test)]
     TokenNotBound,
     UseNonce(String),
     NonceStoreUnavailable,
@@ -46,6 +48,7 @@ pub(crate) enum DpopError {
 
 pub(crate) enum DpopErrorContext {
     TokenEndpoint,
+    #[cfg(test)]
     ProtectedResource,
 }
 
@@ -73,6 +76,7 @@ pub(crate) fn dpop_error_response(error: DpopError, context: DpopErrorContext) -
         DpopError::InvalidProof => "DPoP proof validation failed.",
         DpopError::ReplayDetected => "DPoP proof jti has already been used.",
         DpopError::BindingMismatch => "DPoP binding mismatch.",
+        #[cfg(test)]
         DpopError::TokenNotBound => "Token is not DPoP-bound.",
         DpopError::UseNonce(_) => "Authorization server requires nonce in DPoP proof.",
         DpopError::NonceStoreUnavailable => "DPoP nonce validation is unavailable.",
@@ -82,6 +86,7 @@ pub(crate) fn dpop_error_response(error: DpopError, context: DpopErrorContext) -
             StatusCode::BAD_REQUEST
         }
         DpopError::MissingProof => StatusCode::UNAUTHORIZED,
+        #[cfg(test)]
         DpopError::UseNonce(_) if matches!(context, DpopErrorContext::ProtectedResource) => {
             StatusCode::UNAUTHORIZED
         }

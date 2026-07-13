@@ -1,321 +1,39 @@
-//! OIDC userinfo 端点。
-use super::ServerTokenService;
-#[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-use crate::domain::UserinfoHandles;
-use crate::support::{
-    dpop::AccessTokenAuthScheme, dpop::DpopError, dpop::DpopErrorContext,
-    dpop::dpop_error_response, jwe::JwePayloadKind, jwe::client_jwe_key, jwe::encrypt_compact_jwe,
-    oauth::parse_scope, oidc_claims::oidc_user_claims, security::access_token_tenant_id,
-    security::blake3_hex, security::constant_time_eq,
+use std::sync::Arc;
+
+use actix_web::{
+    HttpRequest, HttpResponse,
+    http::{StatusCode, header},
+    web::{Bytes, Data},
 };
-#[cfg(test)]
-use crate::support::{
-    security::AccessTokenJwtInput, security::IssuedAccessToken,
-    security::jwt_decoding_key_from_jwk, security::make_jwt, tenancy::DEFAULT_ORGANIZATION_ID,
-    tenancy::DEFAULT_REALM_ID, tenancy::DEFAULT_TENANT_ID,
-};
-use actix_web::http::StatusCode;
-use actix_web::http::header;
-use actix_web::http::header::HeaderValue;
-use actix_web::web::{Bytes, Data};
-use actix_web::{HttpRequest, HttpResponse};
-#[cfg(test)]
 use chrono::{Duration, Utc};
-use nazo_auth::{Claims, OAuthClient};
-#[cfg(test)]
-use nazo_http_actix::OAuthJsonErrorFields;
-use nazo_http_actix::{ResourceAccessToken, resource_access_token};
-use nazo_http_actix::{json_response_no_store, oauth_bearer_error};
-use nazo_key_management::signing_algorithm_from_name;
+use nazo_auth::Claims;
+use nazo_http_actix::{OAuthJsonErrorFields, UserinfoEndpoint};
 use serde_json::{Value, json};
 use uuid::Uuid;
-// 根据 Bearer/DPoP access token 返回用户声明；DPoP-bound token 必须携带有效 proof。
-#[cfg(test)]
-use super::access_token_subject_key;
+
+use super::{ServerTokenService, access_token_subject_key};
+use crate::domain::{DatabaseUserFixture, ServerUserinfoOperations, UserinfoHandles};
+use crate::support::{
+    security::{
+        AccessTokenJwtInput, IssuedAccessToken, blake3_hex, jwt_decoding_key_from_jwk, make_jwt,
+    },
+    tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID},
+};
 
 pub(crate) async fn userinfo(
     handles: Data<UserinfoHandles>,
     token_service: Data<ServerTokenService>,
-    req: HttpRequest,
+    request: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    let (scheme, token) = match resource_access_token(&req, &body, false) {
-        ResourceAccessToken::Present(scheme, token) => (scheme, token),
-        ResourceAccessToken::Missing => {
-            return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "缺少访问令牌.");
-        }
-        ResourceAccessToken::InvalidRequest => {
-            return oauth_bearer_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "Only one access token transport method may be used.",
-            );
-        }
-    };
-    let claims = match token_service
-        .decode_access_token(handles.issuer(), &token)
-        .await
-    {
-        Ok(Some(claims)) => claims,
-        Ok(None) => {
-            return oauth_bearer_error(
-                StatusCode::UNAUTHORIZED,
-                "invalid_token",
-                "访问令牌无效或已过期.",
-            );
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to decode userinfo access token");
-            return oauth_bearer_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "userinfo 查询失败.",
-            );
-        }
-    };
-    if !handles.audience_allowed(&claims.aud) {
-        return oauth_bearer_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_token",
-            "访问令牌 audience 不适用于 userinfo.",
-        );
-    }
-    let Some(tenant_id) = access_token_tenant_id(&claims) else {
-        return oauth_bearer_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_token",
-            "访问令牌租户边界无效.",
-        );
-    };
-    let revoked = match token_service
-        .access_token_revoked(tenant_id, &claims.jti)
-        .await
-    {
-        Ok(revoked) => revoked,
-        Err(error) => {
-            tracing::warn!(%error, "failed to check userinfo token revocation");
-            return oauth_bearer_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "userinfo 查询失败.",
-            );
-        }
-    };
-    if revoked {
-        return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "访问令牌已撤销.");
-    }
-    let mut next_dpop_nonce = None;
-    match (scheme, claims.cnf.as_ref()) {
-        (AccessTokenAuthScheme::DPoP, Some(cnf)) if cnf.jkt.is_some() => {
-            if let Err(error) = handles
-                .validate_dpop_proof(&req, &token, cnf.jkt.as_deref())
-                .await
-            {
-                return dpop_error_response(error, DpopErrorContext::ProtectedResource);
-            }
-            next_dpop_nonce = match handles.issue_dpop_nonce().await {
-                Ok(nonce) => Some(nonce),
-                Err(error) => {
-                    return dpop_error_response(error, DpopErrorContext::ProtectedResource);
-                }
-            };
-        }
-        (AccessTokenAuthScheme::DPoP, _) => {
-            return dpop_error_response(
-                DpopError::TokenNotBound,
-                DpopErrorContext::ProtectedResource,
-            );
-        }
-        (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.x5t_s256.is_some() => {
-            let expected = cnf.x5t_s256.as_deref().unwrap_or_default();
-            let Some(actual) = handles.request_mtls_thumbprint(&req) else {
-                return oauth_bearer_error(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_token",
-                    "mTLS-bound access token requires a verified client certificate.",
-                );
-            };
-            if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
-                return oauth_bearer_error(
-                    StatusCode::UNAUTHORIZED,
-                    "invalid_token",
-                    "mTLS-bound access token certificate mismatch.",
-                );
-            }
-        }
-        (AccessTokenAuthScheme::Bearer, Some(_)) => {
-            return dpop_error_response(
-                DpopError::MissingProof,
-                DpopErrorContext::ProtectedResource,
-            );
-        }
-        (AccessTokenAuthScheme::Bearer, None) => {}
-    }
-    if !claims
-        .scope
-        .split_whitespace()
-        .any(|scope| scope == "openid")
-        || claims.subject_type != "user"
-    {
-        return oauth_bearer_error(
-            StatusCode::FORBIDDEN,
-            "insufficient_scope",
-            "userinfo 需要 openid scope.",
-        );
-    }
-    let scopes = parse_scope(&claims.scope);
-    let user_id = match access_token_user_id(&token_service, tenant_id, &claims).await {
-        Ok(Some(user_id)) => user_id,
-        Ok(None) => {
-            return oauth_bearer_error(
-                StatusCode::UNAUTHORIZED,
-                "invalid_token",
-                "访问令牌主体无效.",
-            );
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to load access token subject mapping");
-            return oauth_bearer_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "userinfo 查询失败.",
-            );
-        }
-    };
-    if nazo_identity::TenantId::new(tenant_id).is_err()
-        || nazo_identity::UserId::new(user_id).is_err()
-    {
-        return oauth_bearer_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_token",
-            "访问令牌主体不存在或已停用.",
-        );
-    }
-    let subject_claims = match token_service
-        .active_subject_claims(tenant_id, user_id)
-        .await
-    {
-        Ok(Some(claims)) => claims,
-        Ok(None) => {
-            return oauth_bearer_error(
-                StatusCode::UNAUTHORIZED,
-                "invalid_token",
-                "访问令牌主体不存在或已停用.",
-            );
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to load userinfo subject claims");
-            return oauth_bearer_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "userinfo 查询失败.",
-            );
-        }
-    };
-    let client = match token_service
-        .client_by_protocol_id(tenant_id, &claims.client_id)
-        .await
-    {
-        Ok(Some(client)) if client.is_active => client,
-        Ok(_) => {
-            return oauth_bearer_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "userinfo 客户端状态不可用.",
-            );
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to load userinfo client response policy");
-            return oauth_bearer_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "userinfo 查询失败.",
-            );
-        }
-    };
-    let response_claims = oidc_user_claims(
-        &subject_claims,
-        &scopes,
-        &claims.sub,
-        &claims.userinfo_claims,
-        &claims.userinfo_claim_requests,
-        None,
-    );
-    let mut response = match userinfo_success_response(&handles, &client, response_claims).await {
-        Ok(response) => response,
-        Err(error) => {
-            tracing::warn!(%error, client_id_hash = %blake3_hex(&client.client_id), "failed to protect userinfo response");
-            return oauth_bearer_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "userinfo 响应生成失败.",
-            );
-        }
-    };
-    if let Some(nonce) = next_dpop_nonce
-        && let Ok(value) = HeaderValue::from_str(&nonce)
-    {
-        response
-            .headers_mut()
-            .insert(header::HeaderName::from_static("dpop-nonce"), value);
-    }
-    response
-}
-
-async fn userinfo_success_response(
-    handles: &UserinfoHandles,
-    client: &OAuthClient,
-    mut claims: Value,
-) -> anyhow::Result<HttpResponse> {
-    let signing_alg = match client.userinfo_signed_response_alg.as_deref() {
-        Some(value) => Some(
-            signing_algorithm_from_name(value)
-                .ok_or_else(|| anyhow::anyhow!("unsupported UserInfo signing algorithm"))?,
-        ),
-        None => None,
-    };
-    let encryption_key = client_jwe_key(
-        client.jwks.as_ref(),
-        client.userinfo_encrypted_response_alg.as_deref(),
-        client.userinfo_encrypted_response_enc.as_deref(),
-        "userinfo",
-    )?;
-    if signing_alg.is_none() && encryption_key.is_none() {
-        return Ok(json_response_no_store(claims));
-    }
-
-    let body = if let Some(signing_alg) = signing_alg {
-        let object = claims
-            .as_object_mut()
-            .ok_or_else(|| anyhow::anyhow!("UserInfo claims must be a JSON object"))?;
-        object.insert("iss".to_owned(), json!(handles.issuer()));
-        object.insert("aud".to_owned(), json!(client.client_id));
-        let signed = handles
-            .sign_response_jwt(
-                nazo_auth::SigningPurpose::IdToken,
-                &claims,
-                "JWT",
-                signing_alg,
-            )
-            .await?;
-        match encryption_key {
-            Some(key) => encrypt_compact_jwe(&key, signed.as_bytes(), JwePayloadKind::NestedJwt)?,
-            None => signed,
-        }
-    } else {
-        let key = encryption_key.expect("checked UserInfo encryption key is present");
-        encrypt_compact_jwe(&key, &serde_json::to_vec(&claims)?, JwePayloadKind::Claims)?
-    };
-
-    Ok(HttpResponse::Ok()
-        .insert_header((
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/jwt"),
-        ))
-        .insert_header((header::CACHE_CONTROL, HeaderValue::from_static("no-store")))
-        .insert_header((header::PRAGMA, HeaderValue::from_static("no-cache")))
-        .body(body))
+    nazo_http_actix::userinfo(
+        Data::new(UserinfoEndpoint::new(Arc::new(
+            ServerUserinfoOperations::new(token_service.into_inner(), handles.get_ref().clone()),
+        ))),
+        request,
+        body,
+    )
+    .await
 }
 
 async fn access_token_user_id(
@@ -336,6 +54,5 @@ async fn access_token_user_id(
         .map_err(anyhow::Error::from)
 }
 
-#[cfg(test)]
 #[path = "../../../tests/in_source/src/http/token/tests/userinfo.rs"]
 mod tests;

@@ -5,7 +5,7 @@ use actix_web::{HttpResponse, dev::Service, http::header, web};
 #[cfg(not(test))]
 use nazo_http_actix::{
     client_configuration_delete, client_configuration_get, client_configuration_put,
-    dynamic_client_registration, introspect, revoke,
+    dynamic_client_registration, introspect, revoke, userinfo,
 };
 use nazo_http_actix::{
     discovery, jwks, mfa_json_config, mfa_method_not_allowed, mfa_options,
@@ -75,6 +75,8 @@ use crate::http::scim::{
     scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
     scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
 };
+#[cfg(test)]
+use crate::http::token::userinfo::userinfo;
 use crate::http::token::{
     ciba::{
         backchannel_authentication, ciba_automated_decision, ciba_decision, ciba_verification,
@@ -84,7 +86,6 @@ use crate::http::token::{
         device_authorization, device_decision, device_verification, device_verification_page,
     },
     dispatch::token,
-    userinfo::userinfo,
 };
 #[cfg(test)]
 use crate::http::token::{introspect::introspect, revoke::revoke};

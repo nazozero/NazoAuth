@@ -17,6 +17,7 @@ pub(crate) mod refresh;
 #[cfg(test)]
 pub(crate) mod revoke;
 pub(crate) mod token_exchange;
+#[cfg(test)]
 pub(crate) mod userinfo;
 
 use authorization_code::token_authorization_code_with_service;
