@@ -158,3 +158,35 @@ impl SessionStore {
         }
     }
 }
+
+impl nazo_identity::ports::LoginSessionPort for SessionStore {
+    fn create<'a>(
+        &'a self,
+        session_id: &'a str,
+        record: &'a SessionRecord,
+        ttl_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::ports::LoginSessionCreate> {
+        Box::pin(async move {
+            let raw = serde_json::to_string(&SessionWireRecord::from(record)).map_err(|error| {
+                nazo_identity::ports::RepositoryError::Unexpected(format!(
+                    "failed to serialize session record: {error}"
+                ))
+            })?;
+            command::set_ex_nx_string(
+                &self.connection,
+                keys::session(session_id),
+                raw,
+                ttl_seconds,
+            )
+            .await
+            .map(|created| {
+                if created {
+                    nazo_identity::ports::LoginSessionCreate::Created
+                } else {
+                    nazo_identity::ports::LoginSessionCreate::Collision
+                }
+            })
+            .map_err(crate::identity_repository_error)
+        })
+    }
+}

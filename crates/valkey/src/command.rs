@@ -46,6 +46,32 @@ pub(crate) async fn set_ex_nx(
     }
 }
 
+pub(crate) async fn set_ex_nx_string(
+    connection: &ValkeyConnection,
+    key: String,
+    value: String,
+    ttl_seconds: u64,
+) -> Result<bool, Error> {
+    let reply = connection
+        .client
+        .set::<Option<String>, _, _>(
+            key,
+            value,
+            Some(Expiration::EX(ttl_seconds.min(i64::MAX as u64) as i64)),
+            Some(SetOptions::NX),
+            false,
+        )
+        .await
+        .map_err(Error::from_fred)?;
+    match reply.as_deref() {
+        Some("OK") => Ok(true),
+        None => Ok(false),
+        Some(other) => Err(Error::unexpected(format!(
+            "unexpected SET NX reply {other:?}"
+        ))),
+    }
+}
+
 pub(crate) async fn set_ex(
     connection: &ValkeyConnection,
     key: String,

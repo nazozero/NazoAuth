@@ -102,3 +102,69 @@ impl RateLimitStore {
         .map_err(|e| Error::protocol(format!("invalid rate counter: {e}")))
     }
 }
+
+impl nazo_identity::ports::LoginThrottlePort for RateLimitStore {
+    fn failure_counts<'a>(
+        &'a self,
+        email: &'a str,
+        source_ip: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::ports::LoginFailureCounts> {
+        Box::pin(async move {
+            let email_count = self
+                .login_failure_count(LoginFailureDimension::Email, email)
+                .await
+                .map_err(crate::identity_repository_error)?;
+            let ip_email = format!("{source_ip}:{email}");
+            let ip_email_count = self
+                .login_failure_count(LoginFailureDimension::IpEmail, &ip_email)
+                .await
+                .map_err(crate::identity_repository_error)?;
+            Ok(nazo_identity::ports::LoginFailureCounts {
+                email: email_count,
+                ip_email: ip_email_count,
+            })
+        })
+    }
+
+    fn record_failure<'a>(
+        &'a self,
+        email: &'a str,
+        source_ip: &'a str,
+        window_seconds: u64,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            self.increment_login_failure(LoginFailureDimension::Email, email, window_seconds)
+                .await
+                .map_err(crate::identity_repository_error)?;
+            self.increment_login_failure(
+                LoginFailureDimension::IpEmail,
+                &format!("{source_ip}:{email}"),
+                window_seconds,
+            )
+            .await
+            .map(|_| ())
+            .map_err(crate::identity_repository_error)
+        })
+    }
+
+    fn clear_failures<'a>(
+        &'a self,
+        email: &'a str,
+        source_ip: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            let email_result = self
+                .clear_login_failure(LoginFailureDimension::Email, email)
+                .await
+                .map_err(crate::identity_repository_error);
+            let ip_email_result = self
+                .clear_login_failure(
+                    LoginFailureDimension::IpEmail,
+                    &format!("{source_ip}:{email}"),
+                )
+                .await
+                .map_err(crate::identity_repository_error);
+            email_result.and(ip_email_result).map(|_| ())
+        })
+    }
+}

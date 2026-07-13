@@ -590,3 +590,26 @@ impl nazo_identity::ports::RegistrationAccountRepositoryPort for UserRepository 
         Box::pin(async move { UserRepository::create(self, user).await })
     }
 }
+
+impl nazo_identity::ports::LoginAccountRepositoryPort for UserRepository {
+    fn authentication_by_email<'a>(
+        &'a self,
+        tenant_id: nazo_identity::TenantId,
+        email: &'a str,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, Option<nazo_identity::AuthenticationIdentity>>
+    {
+        Box::pin(
+            async move { UserRepository::authentication_by_email(self, tenant_id, email).await },
+        )
+    }
+
+    fn public_account_by_id(
+        &self,
+        tenant_id: nazo_identity::TenantId,
+        user_id: nazo_identity::UserId,
+    ) -> nazo_identity::ports::RepositoryFuture<'_, Option<nazo_identity::PublicAccount>> {
+        Box::pin(
+            async move { UserRepository::public_account_by_id(self, tenant_id, user_id).await },
+        )
+    }
+}

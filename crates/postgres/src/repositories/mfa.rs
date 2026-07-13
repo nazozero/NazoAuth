@@ -656,6 +656,27 @@ impl MfaRepository {
     }
 }
 
+impl nazo_identity::ports::RememberedMfaDevicePort for MfaRepository {
+    fn is_valid<'a>(
+        &'a self,
+        account: &'a nazo_identity::PublicAccount,
+        token_hash: &'a str,
+        user_agent_hash: Option<&'a str>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, bool> {
+        Box::pin(async move {
+            self.remembered_device_valid(
+                account.tenant().tenant_id,
+                account.user_id(),
+                token_hash,
+                user_agent_hash,
+                now,
+            )
+            .await
+        })
+    }
+}
+
 fn mfa_event(
     tenant_id: TenantId,
     user_id: UserId,

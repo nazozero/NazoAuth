@@ -3,8 +3,10 @@ use std::time::Duration;
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use nazo_identity::ports::{
-    EmailVerificationConsume, EmailVerificationStorePort, PasswordHashInput,
+    EmailVerificationConsume, EmailVerificationStorePort, LoginSessionCreate, LoginSessionPort,
+    PasswordHashInput,
 };
+use nazo_identity::session::SessionRecord;
 use nazo_valkey::{
     AuthenticationStore, LoginFailureDimension, RateDimension, RateLimitStore, TokenStateStore,
     ValkeyConnection,
@@ -114,6 +116,46 @@ async fn email_code_compare_delete_never_removes_a_newer_value() {
         EmailVerificationConsume::Consumed
     );
     assert!(store.load_email_code(&email).await.unwrap().is_none());
+}
+
+#[tokio::test]
+async fn login_session_create_is_atomic_and_never_overwrites_a_collision() {
+    let Some((connection, _inspector)) = setup().await else {
+        return;
+    };
+    let sessions = nazo_valkey::SessionStore::new(&connection);
+    let session_id = format!("login-collision-{}", uuid::Uuid::now_v7());
+    let first = SessionRecord::new(
+        nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        1,
+        vec!["password".to_owned()],
+        false,
+        Some("first-oidc-sid".to_owned()),
+    );
+    let second = SessionRecord::new(
+        nazo_identity::UserId::new(uuid::Uuid::now_v7()).unwrap(),
+        2,
+        vec!["password".to_owned()],
+        true,
+        Some("second-oidc-sid".to_owned()),
+    );
+
+    assert_eq!(
+        LoginSessionPort::create(&sessions, &session_id, &first, 30)
+            .await
+            .unwrap(),
+        LoginSessionCreate::Created
+    );
+    assert_eq!(
+        LoginSessionPort::create(&sessions, &session_id, &second, 30)
+            .await
+            .unwrap(),
+        LoginSessionCreate::Collision
+    );
+    assert_eq!(
+        sessions.load(&session_id).await.unwrap().unwrap().value(),
+        &first
+    );
 }
 
 #[tokio::test]

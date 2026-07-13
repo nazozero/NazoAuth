@@ -3,6 +3,7 @@
 mod access_request;
 mod admin;
 mod audit;
+pub mod authentication;
 pub mod email;
 pub mod federation;
 pub mod mfa;
@@ -22,6 +23,10 @@ pub use admin::{
 pub use audit::{
     IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,
     IdentitySecurityReason,
+};
+pub use authentication::{
+    AuthenticatePasswordError, AuthenticatePasswordInput, AuthenticationService,
+    AuthenticationServiceConfig, LoginSuccess, RememberedMfaProof,
 };
 pub use model::{
     AccountIdentity, AuthMethod, AuthenticationContext, AuthenticationIdentity, IdentityModelError,
