@@ -27,12 +27,8 @@ use actix_web::web::Payload;
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{DateTime, Duration, Utc};
-#[cfg(test)]
-use diesel_async::RunQueryDsl;
 use futures_util::StreamExt;
 use nazo_http_actix::{clear_cookie, cookie_value, with_cookie_headers};
-#[cfg(test)]
-use nazo_postgres::get_conn;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::time::Duration as StdDuration;

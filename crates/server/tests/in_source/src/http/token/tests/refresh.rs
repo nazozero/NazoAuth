@@ -5,6 +5,7 @@ use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
 use crate::support::client_signing_fixture;
+use diesel::QueryableByName;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;

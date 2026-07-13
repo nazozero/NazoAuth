@@ -5,8 +5,10 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use nazo_postgres::{create_pool, get_conn};
 
+use crate::schema::oauth_clients;
 use crate::support::{IpCidr, client_signing_fixture};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
+use diesel::prelude::*;
 use diesel::sql_query;
 use diesel::sql_types::{Bool, Text, Timestamptz, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
