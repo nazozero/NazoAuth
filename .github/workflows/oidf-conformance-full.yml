@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       runner_mode:
-        description: "serial keeps the default deterministic runner mode; parallel-isolated runs concurrency-safe plans in parallel and browser-sensitive plans separately."
+        description: "parallel-isolated runs concurrency-safe plans in parallel and browser-sensitive plans separately; serial is the deterministic fallback."
         required: false
-        default: serial
+        default: parallel-isolated
         type: choice
         options:
           - serial
@@ -26,7 +26,7 @@ jobs:
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
       NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}
-      RUNNER_MODE: ${{ inputs.runner_mode || vars.OIDF_RUNNER_MODE || 'serial' }}
+      RUNNER_MODE: ${{ inputs.runner_mode || vars.OIDF_RUNNER_MODE || 'parallel-isolated' }}
       OIDF_TARGET_ISSUER: ${{ vars.OIDF_TARGET_ISSUER || 'https://auth.nazo.run' }}
       RUN_TIMEOUT_SECONDS: ${{ vars.OIDF_RUN_TIMEOUT_SECONDS || '14400' }}
       MONITOR_INTERVAL_SECONDS: ${{ vars.OIDF_MONITOR_INTERVAL_SECONDS || '60' }}
