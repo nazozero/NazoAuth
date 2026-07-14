@@ -2577,6 +2577,7 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["client_credentials"],
                 "token_endpoint_auth_method": "private_key_jwt",
+                "allow_client_assertion_endpoint_audience": True,
                 "jwks": {"keys": [ed25519_public_jwk(private_key, "private-key-jwt-e2e")]},
             },
             "POST /admin/clients private_key_jwt",
@@ -2593,6 +2594,7 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["client_credentials"],
                 "token_endpoint_auth_method": "private_key_jwt",
+                "allow_client_assertion_endpoint_audience": True,
                 "jwks": {
                     "keys": [
                         rsa_public_jwk(rsa_key, "private-key-jwt-rs256-e2e", "RS256"),
@@ -2615,6 +2617,7 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["authorization_code"],
                 "token_endpoint_auth_method": "private_key_jwt",
+                "allow_client_assertion_endpoint_audience": True,
                 "jwks": {
                     "keys": [
                         ed25519_public_jwk(private_key, "private-key-jwt-e2e"),
@@ -2636,6 +2639,7 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["authorization_code", "refresh_token"],
                 "token_endpoint_auth_method": "private_key_jwt",
+                "allow_client_assertion_endpoint_audience": True,
                 "require_dpop_bound_tokens": True,
                 "jwks": {"keys": [ed25519_public_jwk(private_key, "private-key-jwt-e2e")]},
             },
