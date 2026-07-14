@@ -3,6 +3,42 @@ ALTER TABLE scim_tokens
     ADD CONSTRAINT ck_scim_tokens_event_audience_non_empty
         CHECK (event_audience IS NULL OR length(btrim(event_audience)) > 0);
 
+ALTER TABLE runtime_module_desired_states
+    DROP CONSTRAINT ck_runtime_module_desired_module_id,
+    ADD CONSTRAINT ck_runtime_module_desired_module_id CHECK (
+        module_id IN (
+            'device_authorization', 'token_exchange', 'jwt_bearer_grant', 'ciba',
+            'dynamic_client_registration', 'request_objects', 'jarm',
+            'authorization_details', 'http_message_signatures', 'scim',
+            'scim_security_events', 'native_sso', 'frontchannel_logout',
+            'session_management'
+        )
+    );
+
+ALTER TABLE runtime_module_instance_states
+    DROP CONSTRAINT ck_runtime_module_instance_module_id,
+    ADD CONSTRAINT ck_runtime_module_instance_module_id CHECK (
+        module_id IN (
+            'device_authorization', 'token_exchange', 'jwt_bearer_grant', 'ciba',
+            'dynamic_client_registration', 'request_objects', 'jarm',
+            'authorization_details', 'http_message_signatures', 'scim',
+            'scim_security_events', 'native_sso', 'frontchannel_logout',
+            'session_management'
+        )
+    );
+
+ALTER TABLE runtime_module_state_events
+    DROP CONSTRAINT ck_runtime_module_event_module_id,
+    ADD CONSTRAINT ck_runtime_module_event_module_id CHECK (
+        module_id IN (
+            'device_authorization', 'token_exchange', 'jwt_bearer_grant', 'ciba',
+            'dynamic_client_registration', 'request_objects', 'jarm',
+            'authorization_details', 'http_message_signatures', 'scim',
+            'scim_security_events', 'native_sso', 'frontchannel_logout',
+            'session_management'
+        )
+    );
+
 CREATE TABLE scim_security_events (
     id UUID PRIMARY KEY NOT NULL,
     tenant_id UUID NOT NULL REFERENCES tenants(id),
