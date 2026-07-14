@@ -13,11 +13,13 @@
 //! ```
 
 mod convert;
+mod oidf_seed;
 mod pool;
 mod repositories;
 pub(crate) mod rows;
 pub(crate) mod schema;
 
+pub use oidf_seed::{OidfSeedClient, OidfSeedUser, seed_oidf_atomically};
 pub use pool::{
     DbConnection, DbPool, DbPoolMetrics, cleanup_expired_security_state, create_pool,
     db_pool_metrics, get_conn, run_pending_migrations,

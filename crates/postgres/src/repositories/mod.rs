@@ -2,7 +2,7 @@ mod access_requests;
 mod audit;
 mod authorization;
 mod authorization_flow;
-mod clients;
+pub(crate) mod clients;
 mod federation;
 mod grants;
 mod mfa;
