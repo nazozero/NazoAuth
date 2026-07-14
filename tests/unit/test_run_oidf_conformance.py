@@ -1,5 +1,8 @@
 import http.client
 import importlib.util
+import os
+import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -15,6 +18,154 @@ def load_runner_module():
 
 
 class RunOidfConformanceTests(unittest.TestCase):
+    def test_config_file_name_requires_json_extension(self):
+        module = load_runner_module()
+
+        module.validate_config_file_name("plan-config.json")
+        with self.assertRaisesRegex(SystemExit, "must use the .json extension"):
+            module.validate_config_file_name("plan-config.txt")
+        for path_name in ("dir/plan-config.json", "dir\\plan-config.json"):
+            with self.subTest(path_name=path_name):
+                with self.assertRaisesRegex(SystemExit, "must be a file name"):
+                    module.validate_config_file_name(path_name)
+
+    def test_atomic_json_write_does_not_modify_hardlink_source(self):
+        module = load_runner_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            outside = root / "outside.json"
+            target = root / "target.json"
+            outside.write_text("external inode\n", encoding="utf-8")
+            os.link(outside, target)
+
+            module.atomic_write_json_file(target, {"safe": True})
+
+            self.assertEqual(outside.read_text(encoding="utf-8"), "external inode\n")
+            self.assertEqual(target.read_text(encoding="utf-8"), '{\n  "safe": true\n}')
+            self.assertNotEqual(os.stat(outside).st_ino, os.stat(target).st_ino)
+
+    def test_atomic_json_write_replaces_symlink_without_following_it(self):
+        module = load_runner_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            outside = root / "outside.json"
+            target = root / "target.json"
+            outside.write_text("external target\n", encoding="utf-8")
+            target.write_text("safe at validation time\n", encoding="utf-8")
+            self.assertTrue(target.is_file())
+            self.assertFalse(target.is_symlink())
+            target.unlink()
+            try:
+                target.symlink_to(outside)
+            except OSError:
+                target.write_text("simulated link directory entry\n", encoding="utf-8")
+                real_replace = module.os.replace
+                with mock.patch.object(
+                    module.os,
+                    "replace",
+                    side_effect=lambda source, destination: real_replace(source, destination),
+                ) as replace:
+                    module.atomic_write_json_file(target, {"safe": True})
+                replace.assert_called_once()
+            else:
+                self.assertTrue(target.is_symlink())
+                module.atomic_write_json_file(target, {"safe": True})
+
+            self.assertFalse(target.is_symlink())
+            self.assertEqual(outside.read_text(encoding="utf-8"), "external target\n")
+            self.assertEqual(target.read_text(encoding="utf-8"), '{\n  "safe": true\n}')
+
+    def test_atomic_json_write_cleans_temporary_file_after_failure(self):
+        module = load_runner_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            target = root / "target.json"
+
+            with (
+                mock.patch.object(module.os, "replace", side_effect=OSError("replace failed")),
+                self.assertRaisesRegex(OSError, "replace failed"),
+            ):
+                module.atomic_write_json_file(target, {"safe": True})
+
+            self.assertEqual(list(root.iterdir()), [])
+
+    def test_host_local_runner_applies_pinned_patch_before_execution(self):
+        module = load_runner_module()
+        suite_dir = Path("/tmp/oidf-suite")
+
+        with mock.patch.object(module.subprocess, "run") as run:
+            module.ensure_pinned_oidf_runner(suite_dir)
+
+        command = run.call_args.args[0]
+        self.assertEqual(command[0], module.sys.executable)
+        self.assertTrue(command[1].endswith("apply_oidf_runner_patch.py"))
+        self.assertEqual(command[2:], ["--suite-dir", str(suite_dir)])
+        self.assertTrue(run.call_args.kwargs["check"])
+
+    def test_official_runner_uses_isolated_bootstrap_and_sanitized_environment(self):
+        module = load_runner_module()
+        suite_scripts = Path("/trusted/suite/scripts")
+        runner = suite_scripts / "run-test-plan.py"
+
+        with mock.patch.dict(
+            module.os.environ,
+            {
+                "PYTHONPATH": "/attacker",
+                "PYTHONSTARTUP": "/attacker/sitecustomize.py",
+                "SAFE_SETTING": "preserved",
+            },
+            clear=True,
+        ):
+            env = module.sanitized_runner_environment()
+        command = module.official_runner_command(suite_scripts, runner)
+
+        self.assertEqual(
+            command[0:6],
+            [module.sys.executable, "-I", "-S", "-B", "-u", "-c"],
+        )
+        self.assertIn("runpy.run_path", command[6])
+        self.assertIn("sysconfig.get_paths", command[6])
+        self.assertEqual(command[7:9], [str(suite_scripts), str(runner)])
+        self.assertNotIn("PYTHONPATH", env)
+        self.assertNotIn("PYTHONSTARTUP", env)
+        self.assertNotIn("PYTHONUNBUFFERED", env)
+        self.assertEqual(env["SAFE_SETTING"], "preserved")
+
+    def test_isolated_bootstrap_does_not_run_attacker_sitecustomize_or_write_bytecode(self):
+        module = load_runner_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite_scripts = root / "suite" / "scripts"
+            attacker = root / "attacker"
+            suite_scripts.mkdir(parents=True)
+            attacker.mkdir()
+            runner = suite_scripts / "run-test-plan.py"
+            marker = root / "sitecustomize-ran"
+            runner.write_text(
+                "import sys\n"
+                "assert 'sitecustomize' not in sys.modules\n"
+                "assert sys.dont_write_bytecode\n",
+                encoding="utf-8",
+            )
+            (attacker / "sitecustomize.py").write_text(
+                f"from pathlib import Path\nPath({str(marker)!r}).write_text('ran')\n",
+                encoding="utf-8",
+            )
+            env = os.environ.copy()
+            env["PYTHONPATH"] = str(attacker)
+
+            result = subprocess.run(
+                module.official_runner_command(suite_scripts, runner),
+                check=False,
+                capture_output=True,
+                text=True,
+                env=env,
+            )
+
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertFalse(marker.exists())
+            self.assertFalse((suite_scripts / "__pycache__").exists())
+
     def test_oidf_api_request_retries_remote_disconnect(self):
         module = load_runner_module()
 

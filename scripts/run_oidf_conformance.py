@@ -14,6 +14,7 @@ import signal
 import ssl
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error
@@ -181,8 +182,36 @@ def non_empty_file(path: str, label: str) -> str:
 
 
 def validate_config_file_name(file_name: str) -> None:
-    if Path(file_name).name != file_name:
+    if "/" in file_name or "\\" in file_name or Path(file_name).name != file_name:
         fail("--config-file-name must be a file name, not a path")
+    if Path(file_name).suffix.lower() != ".json":
+        fail("--config-file-name must use the .json extension")
+
+
+def atomic_write_json_file(path: Path, value: object) -> None:
+    payload = json.dumps(value, indent=2, sort_keys=True)
+    descriptor = -1
+    temporary_path: Path | None = None
+    try:
+        descriptor, temporary_name = tempfile.mkstemp(
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            text=True,
+        )
+        temporary_path = Path(temporary_name)
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as output:
+            descriptor = -1
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary_path, path)
+        temporary_path = None
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
 
 
 def issuer_from_discovery_url(discovery_url: str) -> str | None:
@@ -920,7 +949,7 @@ def write_plan_configs(
             assert_only_auth_nazo_run_urls(parsed, file_name)
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
-        target.write_text(json.dumps(parsed, indent=2, sort_keys=True), encoding="utf-8")
+        atomic_write_json_file(target, parsed)
         aliases_by_config = {file_name: alias} if (alias := config_alias(parsed)) else {}
         return {file_name}, aliases_by_config
 
@@ -945,7 +974,7 @@ def write_plan_configs(
         if alias:
             aliases_by_config[config_name] = alias
         target = suite_scripts / config_name
-        target.write_text(json.dumps(config_value, indent=2, sort_keys=True), encoding="utf-8")
+        atomic_write_json_file(target, config_value)
         written.add(config_name)
     return written, aliases_by_config
 
@@ -1894,6 +1923,44 @@ def terminate_runner(process: subprocess.Popen[bytes]) -> None:
         process.wait()
 
 
+def ensure_pinned_oidf_runner(suite_dir: Path) -> None:
+    patcher = Path(__file__).resolve().with_name("apply_oidf_runner_patch.py")
+    subprocess.run(
+        [sys.executable, str(patcher), "--suite-dir", str(suite_dir)],
+        check=True,
+    )
+
+
+def official_runner_command(suite_scripts: Path, runner: Path) -> list[str]:
+    bootstrap = (
+        "import runpy,sys,sysconfig;"
+        "paths=sysconfig.get_paths();"
+        "sys.path.extend(dict.fromkeys([paths['purelib'],paths['platlib']]));"
+        "suite_scripts=sys.argv.pop(1);runner=sys.argv.pop(1);"
+        "sys.path.insert(0,suite_scripts);sys.argv[0]=runner;"
+        "runpy.run_path(runner,run_name='__main__')"
+    )
+    return [
+        sys.executable,
+        "-I",
+        "-S",
+        "-B",
+        "-u",
+        "-c",
+        bootstrap,
+        str(suite_scripts),
+        str(runner),
+    ]
+
+
+def sanitized_runner_environment() -> dict[str, str]:
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if not name.upper().startswith("PYTHON")
+    }
+
+
 def main() -> int:
     global OIDF_API_SSL_CONTEXT
     args = parse_args()
@@ -1904,6 +1971,7 @@ def main() -> int:
     target_issuer = normalized_origin(args.target_issuer) if args.target_issuer.strip() else ""
 
     suite_dir = Path(args.suite_dir).resolve()
+    ensure_pinned_oidf_runner(suite_dir)
     suite_scripts = suite_dir / "scripts"
     runner = suite_scripts / "run-test-plan.py"
     if not runner.is_file():
@@ -1930,7 +1998,7 @@ def main() -> int:
         if config_name in selected_config_names
     }
 
-    env = os.environ.copy()
+    env = sanitized_runner_environment()
     env["CONFORMANCE_SERVER"] = args.conformance_server
     token = None if args.no_api_token else non_empty_env(args.token_env)
     if token is not None:
@@ -1944,7 +2012,7 @@ def main() -> int:
     if not args.list and not args.rerun:
         cleanup_existing_alias_plans(args.conformance_server, token, aliases)
 
-    command = [sys.executable, str(runner)]
+    command = official_runner_command(suite_scripts, runner)
     if args.list:
         command.append("--list")
     if args.no_parallel:
