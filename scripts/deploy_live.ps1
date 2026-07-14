@@ -499,6 +499,7 @@ run_server() {
   local publish_args=()
   if [ -n "`$PUBLISH_PORT" ]; then publish_args=(-p "`$PUBLISH_PORT"); fi
   podman run -d --name "`$CONTAINER_NAME" \
+    --restart=unless-stopped \
     --network "`$NETWORK_NAME" --ip "`$CONTAINER_IP" \
     "`${publish_args[@]}" \
     -v "`$CONFIG_PATH:/app/.env.yaml:ro" \
@@ -852,6 +853,10 @@ PY
   flock -x 8
   trap 'rollback_after_deploy_error' ERR
   assert_pending_lease
+  systemctl enable podman-restart.service >/dev/null
+  podman update --restart=unless-stopped nazo-oauth-postgres nazo-oauth-valkey >/dev/null
+  test "`$(podman inspect nazo-oauth-postgres --format '{{.HostConfig.RestartPolicy.Name}}')" = "unless-stopped"
+  test "`$(podman inspect nazo-oauth-valkey --format '{{.HostConfig.RestartPolicy.Name}}')" = "unless-stopped"
 
   rm -rf "`$UI_RELEASE.tmp"
   install -d -m 0755 "`$UI_RELEASE.tmp"
@@ -895,6 +900,7 @@ PY
   run_server "`$IMAGE"
   candidate_container_id="`$(podman inspect "`$CONTAINER_NAME" --format '{{.Id}}')"
   save_state
+  test "`$(podman inspect "`$CONTAINER_NAME" --format '{{.HostConfig.RestartPolicy.Name}}')" = "unless-stopped"
   actual_ip="`$(podman inspect "`$CONTAINER_NAME" --format '{{range `$name, `$conf := .NetworkSettings.Networks}}{{println `$conf.IPAddress}}{{end}}' | awk 'NF {print; exit}')"
   test "`$actual_ip" = "`$CONTAINER_IP"
   curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/health" >/dev/null

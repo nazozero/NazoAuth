@@ -268,12 +268,13 @@ case "${1:-}" in
   inspect)
     args="$*"
     if [[ "$args" == *NetworkSettings.Networks* ]]; then printf '%s\n' '10.101.0.20';
+    elif [[ "$args" == *HostConfig.RestartPolicy.Name* ]]; then printf '%s\n' 'unless-stopped';
     elif [[ "$args" == *ImageName* ]]; then printf '%s\n' 'localhost/old:stable';
     elif [[ "$args" == *"{{.Image}}"* ]]; then cat "$state/container-image";
     elif [[ "$args" == *"{{.Id}}"* ]]; then cat "$state/container-id";
     else exit 1; fi
     ;;
-  load) exit 0 ;;
+  load|update) exit 0 ;;
   exec) printf '%s\n' PONG ;;
   rm) rm -f "$state/container-image" "$state/container-id" ;;
   run)
@@ -322,10 +323,19 @@ printf '%s\n' ok
             "exec \"$@\"\n",
             encoding="utf-8", newline="\n",
         )
+        systemctl = self.fake_bin / "systemctl"
+        systemctl.write_text(
+            "#!/usr/bin/env bash\n"
+            "set -euo pipefail\n"
+            "printf '%q ' \"$@\" >>\"$FAKE_STATE/systemctl.log\"; printf '\\n' >>\"$FAKE_STATE/systemctl.log\"\n"
+            "[ \"${1:-}\" = enable ] && [ \"${2:-}\" = podman-restart.service ]\n",
+            encoding="utf-8", newline="\n",
+        )
         podman.chmod(0o755)
         curl.chmod(0o755)
         flock.chmod(0o755)
         runuser.chmod(0o755)
+        systemctl.chmod(0o755)
 
     def run(self, action: str, **flags: str) -> subprocess.CompletedProcess[str]:
         env = self.env.copy()
@@ -472,6 +482,17 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn('run_server "`$previous_image_id"', self.source)
         self.assertIn('podman image exists "`$previous_image_id"', self.source)
         self.assertNotIn('run_server "`$previous_image"', self.source)
+
+    def test_server_survives_process_exit_and_host_restart(self) -> None:
+        self.assertIn("--restart=unless-stopped", self.source)
+        self.assertIn("{{.HostConfig.RestartPolicy.Name}}", self.source)
+        self.assertIn("systemctl enable podman-restart.service", self.source)
+        self.assertIn("podman update --restart=unless-stopped nazo-oauth-postgres nazo-oauth-valkey", self.source)
+        deploy_body = self.source[self.source.index("deploy() {") :]
+        self.assertLess(
+            deploy_body.index("systemctl enable podman-restart.service"),
+            deploy_body.index('podman rm -f "`$CONTAINER_NAME"'),
+        )
 
     def test_verification_lease_is_atomically_claimed_by_commit_or_rollback(self) -> None:
         self.assertIn("VerificationLeaseSeconds", self.source)
