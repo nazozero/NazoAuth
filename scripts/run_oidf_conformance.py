@@ -1194,26 +1194,6 @@ def oidf_log_failure(module_id: str, logs: object) -> str | None:
     return None
 
 
-def oidf_log_has_successful_completion(logs: object) -> bool:
-    if not isinstance(logs, list):
-        return False
-
-    has_success = False
-    for entry in logs:
-        if not isinstance(entry, dict):
-            continue
-
-        result = value_as_upper(entry.get("result"))
-        if result == "SUCCESS":
-            has_success = True
-
-        msg = entry.get("msg")
-        if result == "FINISHED" and isinstance(msg, str) and "completion" in msg:
-            return has_success
-
-    return False
-
-
 def oidf_log_context(logs: object, *, max_entries: int = 6) -> str:
     if not isinstance(logs, list):
         return ""
@@ -1348,7 +1328,7 @@ def inspect_oidf_state(
     if not module_ids:
         return "OIDF monitor found no module instances for current plan" if final else None
 
-    review_counts: dict[tuple[str, str], int] = {}
+    review_counts: dict[tuple[str, str, str], int] = {}
     for module_id in sorted(module_ids):
         status_code, info = oidf_api_request(
             "GET",
@@ -1373,7 +1353,8 @@ def inspect_oidf_state(
                     review_counts[review_key] = review_counts.get(review_key, 0) + 1
                     if review_counts[review_key] > 1:
                         return (
-                            f"{test_name} review baseline exceeded for alias {alias}: "
+                            f"{test_name} review baseline exceeded for {plan_name} "
+                            f"alias {alias}: "
                             f"{review_counts[review_key]} instances"
                         )
 
@@ -1392,8 +1373,6 @@ def inspect_oidf_state(
                 )
                 if oidf_log_failure(module_id, logs):
                     return oidf_failure_with_log_context(module_id, failure, logs)
-                if result != "REVIEW" and oidf_log_has_successful_completion(logs):
-                    continue
                 if not final and oidf_info_failure_can_wait_for_final_result(info):
                     continue
                 return oidf_failure_with_log_context(module_id, failure, logs)

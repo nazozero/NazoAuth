@@ -62,7 +62,6 @@ class RunOidfConformanceTests(unittest.TestCase):
         ]
 
         self.assertIsNone(module.oidf_log_failure("module-id", logs))
-        self.assertTrue(module.oidf_log_has_successful_completion(logs))
 
     def test_successful_completion_log_does_not_hide_warning_or_failure(self):
         module = load_runner_module()
@@ -74,7 +73,6 @@ class RunOidfConformanceTests(unittest.TestCase):
         ]
 
         self.assertIn("FAILURE", module.oidf_log_failure("module-id", logs))
-        self.assertTrue(module.oidf_log_has_successful_completion(logs))
 
     def test_early_monitor_can_defer_result_failure_without_log_failure(self):
         module = load_runner_module()
@@ -185,6 +183,47 @@ class RunOidfConformanceTests(unittest.TestCase):
             )
 
         self.assertIn("unexpected-review", failure)
+
+    def test_failed_result_is_not_hidden_by_successful_completion_log(self):
+        module = load_runner_module()
+        info = {
+            "_id": "module-id",
+            "testName": "failed-module",
+            "status": "FINISHED",
+            "result": "FAILED",
+            "alias": "basic-alias",
+        }
+        logs = [
+            {"result": "SUCCESS", "src": "Condition"},
+            {"result": "FINISHED", "msg": "Test has run to completion"},
+        ]
+
+        with (
+            mock.patch.object(
+                module,
+                "fetch_alias_plans",
+                return_value=[
+                    {
+                        "_id": "plan-id",
+                        "planName": "oidcc-basic-certification-test-plan",
+                        "modules": [{"instances": ["module-id"]}],
+                    }
+                ],
+            ),
+            mock.patch.object(
+                module,
+                "oidf_api_request",
+                side_effect=[(200, info), (200, logs)],
+            ),
+        ):
+            failure = module.inspect_oidf_state(
+                "https://suite.example",
+                "token",
+                {"basic-alias"},
+                final=True,
+            )
+
+        self.assertIn("result FAILED", failure)
 
     def test_duplicate_allowed_review_exceeds_baseline(self):
         module = load_runner_module()
