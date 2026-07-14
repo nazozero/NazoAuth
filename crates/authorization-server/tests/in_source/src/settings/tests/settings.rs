@@ -288,6 +288,8 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(!defaults.modules.enable_session_management);
     assert!(!defaults.modules.enable_ciba);
     assert!(!defaults.modules.enable_native_sso);
+    assert!(!defaults.modules.enable_scim_security_events);
+    assert_eq!(defaults.storage.scim_event_retention_seconds, 604_800);
     assert!(
         defaults
             .modules
@@ -314,6 +316,8 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
         ("ENABLE_SESSION_MANAGEMENT", "true"),
         ("ENABLE_CIBA", "true"),
         ("ENABLE_NATIVE_SSO", "true"),
+        ("ENABLE_SCIM_SECURITY_EVENTS", "true"),
+        ("SCIM_EVENT_RETENTION_SECONDS", "86400"),
         (
             "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN",
             "register-token",
@@ -336,6 +340,8 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(settings.modules.enable_session_management);
     assert!(settings.modules.enable_ciba);
     assert!(settings.modules.enable_native_sso);
+    assert!(settings.modules.enable_scim_security_events);
+    assert_eq!(settings.storage.scim_event_retention_seconds, 86_400);
     assert_eq!(
         settings
             .modules
@@ -350,6 +356,18 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     );
     assert_eq!(settings.ciba.ciba_auth_req_id_ttl_seconds, 240);
     assert_eq!(settings.ciba.ciba_poll_interval_seconds, 6);
+}
+
+#[test]
+fn scim_event_retention_is_bounded_for_delivery_and_data_minimization() {
+    for value in ["3599", "2592001"] {
+        let config = ConfigSource::from_pairs_for_test([("SCIM_EVENT_RETENTION_SECONDS", value)]);
+        let error = settings_error(&config, "unbounded SCIM retention must fail startup");
+        assert_eq!(
+            error.to_string(),
+            "SCIM_EVENT_RETENTION_SECONDS must be between 3600 and 2592000"
+        );
+    }
 }
 
 #[test]

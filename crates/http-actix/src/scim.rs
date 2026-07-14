@@ -2,7 +2,7 @@ use std::{future::Future, pin::Pin, sync::Arc};
 
 use actix_web::{
     HttpRequest, HttpResponse,
-    http::StatusCode,
+    http::{StatusCode, header},
     web::{Data, Json, Path},
 };
 use chrono::Utc;
@@ -16,10 +16,14 @@ use nazo_identity::{
         encode_scim_cursor_envelope, normalize_patch, normalize_scim_user_filter,
         normalize_scim_user_payload, parse_scim_list_query, scim_cursor_list_document,
         scim_error_document, scim_index_list_document, scim_resource_types_document,
-        scim_schemas_document, scim_service_provider_config_document, scim_user_document,
-        select_scim_pagination, validate_patch_schema,
+        scim_schemas_document, scim_service_provider_config_document_with_events,
+        scim_user_document, select_scim_pagination, validate_patch_schema,
     },
 };
+use nazo_scim_events::{
+    EventPollerPort, EventReceiver, MutationContext, PollRequest, ValidatedPollRequest,
+};
+use serde_json::json;
 
 use crate::{empty_response, json_response, json_response_status};
 
@@ -29,6 +33,7 @@ pub type ScimFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 pub struct ScimAuthorizedRequest {
     pub tenant: TenantContext,
     pub cursor_subject: ScimCursorSubject,
+    pub event_receiver: Option<EventReceiver>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -38,6 +43,7 @@ pub enum ScimAuthorizationError {
     InvalidBearer,
     InsufficientScope,
     TenantMismatch,
+    EventReceiverNotConfigured,
     BackendUnavailable,
 }
 
@@ -47,6 +53,14 @@ pub trait ScimRequestAuthorizer: Send + Sync {
         request: &'a HttpRequest,
         required_scope: ScimRequiredScope,
     ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>>;
+
+    fn security_events_enabled(&self) -> bool {
+        false
+    }
+
+    fn security_event_delivery_enabled(&self) -> bool {
+        self.security_events_enabled()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -69,6 +83,7 @@ pub struct ScimEndpoint {
     authorizer: Arc<dyn ScimRequestAuthorizer>,
     cursors: Arc<dyn ScimCursorProtector>,
     passwords: Arc<dyn ScimBootstrapPasswordProvider>,
+    events: Option<Arc<dyn EventPollerPort>>,
 }
 
 impl ScimEndpoint {
@@ -83,7 +98,22 @@ impl ScimEndpoint {
             authorizer,
             cursors,
             passwords,
+            events: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_security_events(mut self, events: Arc<dyn EventPollerPort>) -> Self {
+        self.events = Some(events);
+        self
+    }
+
+    fn security_events_enabled(&self) -> bool {
+        self.events.is_some() && self.authorizer.security_events_enabled()
+    }
+
+    fn security_event_delivery_enabled(&self) -> bool {
+        self.events.is_some() && self.authorizer.security_event_delivery_enabled()
     }
 }
 
@@ -94,7 +124,66 @@ pub async fn scim_service_provider_config(
     if let Err(error) = authorize(&endpoint, &request, ScimRequiredScope::Read).await {
         return authorization_error(error);
     }
-    json_response(scim_service_provider_config_document())
+    json_response(scim_service_provider_config_document_with_events(
+        endpoint.security_events_enabled(),
+    ))
+}
+
+pub async fn scim_poll_security_events(
+    endpoint: Data<ScimEndpoint>,
+    request: HttpRequest,
+    Json(payload): Json<PollRequest>,
+) -> HttpResponse {
+    if !endpoint.security_event_delivery_enabled() {
+        return authorization_error(ScimAuthorizationError::Disabled);
+    }
+    let authorized = match authorize(&endpoint, &request, ScimRequiredScope::Events).await {
+        Ok(authorized) => authorized,
+        Err(error) => return authorization_error(error),
+    };
+    let Some(receiver) = authorized.event_receiver else {
+        return authorization_error(ScimAuthorizationError::EventReceiverNotConfigured);
+    };
+    let has_content_language = request
+        .headers()
+        .get(header::CONTENT_LANGUAGE)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| !value.trim().is_empty() && value.len() <= 128);
+    if !payload.set_errors.is_empty() && !has_content_language {
+        return empty_response(StatusCode::BAD_REQUEST);
+    }
+    let validated = match payload.validate() {
+        Ok(validated) => validated,
+        Err(_) => return empty_response(StatusCode::BAD_REQUEST),
+    };
+    let Some(events) = endpoint.events.as_ref() else {
+        return backend_unavailable();
+    };
+    let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(30);
+    let mut current = validated.clone();
+    loop {
+        let response = match events.poll(&receiver, &current).await {
+            Ok(response) => response,
+            Err(_) => return backend_unavailable(),
+        };
+        if current.return_immediately
+            || !response.sets.is_empty()
+            || response.more_available
+            || tokio::time::Instant::now() >= deadline
+        {
+            return json_response(json!({
+                "sets": response.sets,
+                "moreAvailable": response.more_available,
+            }));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+        current = ValidatedPollRequest {
+            max_events: current.max_events,
+            return_immediately: current.return_immediately,
+            ack: Vec::new(),
+            set_errors: Default::default(),
+        };
+    }
 }
 
 pub async fn scim_schemas(endpoint: Data<ScimEndpoint>, request: HttpRequest) -> HttpResponse {
@@ -229,7 +318,12 @@ pub async fn scim_create_user(
     };
     match endpoint
         .service
-        .create_user(credential.tenant, input, password_hash)
+        .create_user_with_mutation(
+            credential.tenant,
+            input,
+            password_hash,
+            mutation_context(&endpoint),
+        )
         .await
     {
         Ok(user) => json_response_status(StatusCode::CREATED, scim_user_document(&user)),
@@ -276,7 +370,12 @@ pub async fn scim_replace_user(
     };
     match endpoint
         .service
-        .replace_user(credential.tenant, user_id, input)
+        .replace_user_with_mutation(
+            credential.tenant,
+            user_id,
+            input,
+            mutation_context(&endpoint),
+        )
         .await
     {
         Ok(user) => json_response(scim_user_document(&user)),
@@ -308,7 +407,12 @@ pub async fn scim_patch_user(
     };
     match endpoint
         .service
-        .patch_user(credential.tenant, user_id, patch)
+        .patch_user_with_mutation(
+            credential.tenant,
+            user_id,
+            patch,
+            mutation_context(&endpoint),
+        )
         .await
     {
         Ok(user) => json_response(scim_user_document(&user)),
@@ -332,12 +436,20 @@ pub async fn scim_delete_user(
     };
     match endpoint
         .service
-        .deactivate_user(credential.tenant, user_id)
+        .deactivate_user_with_mutation(credential.tenant, user_id, mutation_context(&endpoint))
         .await
     {
         Ok(true) => empty_response(StatusCode::NO_CONTENT),
         Ok(false) => user_not_found(),
         Err(error) => repository_error("delete SCIM user", error),
+    }
+}
+
+fn mutation_context(endpoint: &ScimEndpoint) -> MutationContext {
+    if endpoint.security_events_enabled() {
+        MutationContext::enabled()
+    } else {
+        MutationContext::disabled()
     }
 }
 
@@ -374,9 +486,21 @@ fn authorization_error(error: ScimAuthorizationError) -> HttpResponse {
             "forbidden",
             "SCIM token is not valid for this tenant",
         ),
+        ScimAuthorizationError::EventReceiverNotConfigured => (
+            StatusCode::FORBIDDEN,
+            "forbidden",
+            "SCIM event receiver audience is not configured",
+        ),
         ScimAuthorizationError::BackendUnavailable => return backend_unavailable(),
     };
-    scim_error(status, scim_type, detail)
+    let mut response = scim_error(status, scim_type, detail);
+    if status == StatusCode::UNAUTHORIZED {
+        response.headers_mut().insert(
+            header::WWW_AUTHENTICATE,
+            header::HeaderValue::from_static("Bearer"),
+        );
+    }
+    response
 }
 
 fn encode_cursor(
@@ -464,6 +588,8 @@ fn scim_error(status: StatusCode, scim_type: &str, detail: &str) -> HttpResponse
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use actix_web::{App, test as actix_test, web};
     use nazo_identity::{
         PublicAccount,
@@ -473,7 +599,7 @@ mod tests {
         },
         scim::{NormalizedScimUser, ScimPatch},
     };
-    use serde_json::{Value, json};
+    use serde_json::Value;
 
     use super::*;
 
@@ -501,6 +627,7 @@ mod tests {
             _tenant: TenantContext,
             _user_id: UserId,
             _replacement: NormalizedScimUser,
+            _mutation: MutationContext,
         ) -> RepositoryFuture<'a, PublicAccount> {
             Box::pin(async { Err(RepositoryError::Unavailable) })
         }
@@ -510,6 +637,7 @@ mod tests {
             _tenant: TenantContext,
             _user_id: UserId,
             _patch: ScimPatch,
+            _mutation: MutationContext,
         ) -> RepositoryFuture<'a, PublicAccount> {
             Box::pin(async { Err(RepositoryError::Unavailable) })
         }
@@ -518,6 +646,7 @@ mod tests {
             &'a self,
             _tenant: TenantContext,
             _user_id: UserId,
+            _mutation: MutationContext,
         ) -> RepositoryFuture<'a, bool> {
             Box::pin(async { Err(RepositoryError::Unavailable) })
         }
@@ -554,6 +683,56 @@ mod tests {
                         tenant_id: tenant.tenant_id.as_uuid(),
                         actor: "test".to_owned(),
                     },
+                    event_receiver: None,
+                })
+            })
+        }
+    }
+
+    struct EventRequests {
+        receiver: EventReceiver,
+    }
+
+    impl ScimRequestAuthorizer for EventRequests {
+        fn authorize<'a>(
+            &'a self,
+            _request: &'a HttpRequest,
+            _required_scope: ScimRequiredScope,
+        ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>> {
+            let receiver = self.receiver.clone();
+            Box::pin(async move {
+                let tenant = TenantContext::default_system();
+                Ok(ScimAuthorizedRequest {
+                    tenant,
+                    cursor_subject: ScimCursorSubject {
+                        tenant_id: tenant.tenant_id.as_uuid(),
+                        actor: "event-test".to_owned(),
+                    },
+                    event_receiver: Some(receiver),
+                })
+            })
+        }
+
+        fn security_events_enabled(&self) -> bool {
+            true
+        }
+    }
+
+    struct FixedPoller;
+
+    impl EventPollerPort for FixedPoller {
+        fn poll<'a>(
+            &'a self,
+            _receiver: &'a EventReceiver,
+            _request: &'a ValidatedPollRequest,
+        ) -> nazo_scim_events::EventFuture<
+            'a,
+            Result<nazo_scim_events::PollResponse, nazo_scim_events::PollError>,
+        > {
+            Box::pin(async {
+                Ok(nazo_scim_events::PollResponse {
+                    sets: BTreeMap::from([("event-id".to_owned(), "signed-set".to_owned())]),
+                    more_available: false,
                 })
             })
         }
@@ -588,6 +767,25 @@ mod tests {
         ))
     }
 
+    fn event_endpoint() -> Data<ScimEndpoint> {
+        let tenant = TenantContext::default_system();
+        Data::new(
+            ScimEndpoint::new(
+                ScimService::new(Arc::new(UnusedRepository), Arc::new(UnusedAudit)),
+                Arc::new(EventRequests {
+                    receiver: EventReceiver {
+                        token_id: uuid::Uuid::now_v7(),
+                        tenant_id: tenant.tenant_id.as_uuid(),
+                        audience: "https://receiver.example/events".to_owned(),
+                    },
+                }),
+                Arc::new(UnusedCursor),
+                Arc::new(UnusedPassword),
+            )
+            .with_security_events(Arc::new(FixedPoller)),
+        )
+    }
+
     #[test]
     fn authorization_errors_preserve_scim_documents() {
         let response = authorization_error(ScimAuthorizationError::Disabled);
@@ -600,10 +798,20 @@ mod tests {
 
     #[test]
     fn provider_config_is_built_by_identity_core() {
-        let document = scim_service_provider_config_document();
+        let document = scim_service_provider_config_document_with_events(false);
         assert_eq!(
             document["pagination"]["cursorTimeout"],
             nazo_identity::scim::SCIM_CURSOR_TIMEOUT_SECONDS
+        );
+    }
+
+    #[test]
+    fn unauthorized_responses_include_bearer_challenge() {
+        let response = authorization_error(ScimAuthorizationError::MissingBearer);
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response.headers().get(header::WWW_AUTHENTICATE).unwrap(),
+            "Bearer"
         );
     }
 
@@ -631,5 +839,77 @@ mod tests {
         let document = actix_test::read_body_json::<Value, _>(response).await;
         assert_eq!(document["id"], "nazo-oauth-scim");
         assert_eq!(document["patch"], json!({"supported": true}));
+    }
+
+    #[actix_web::test]
+    async fn event_poll_returns_rfc8936_shape_and_advertises_only_when_deliverable() {
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(event_endpoint())
+                .route(
+                    "/scim/v2/ServiceProviderConfig",
+                    web::get().to(scim_service_provider_config),
+                )
+                .route(
+                    "/scim/v2/SecurityEvents",
+                    web::post().to(scim_poll_security_events),
+                ),
+        )
+        .await;
+        let config_response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri("/scim/v2/ServiceProviderConfig")
+                .insert_header(("authorization", "Bearer test"))
+                .to_request(),
+        )
+        .await;
+        let config = actix_test::read_body_json::<Value, _>(config_response).await;
+        assert_eq!(
+            config["securityEvents"]["eventUris"],
+            serde_json::to_value(nazo_scim_events::SUPPORTED_EVENT_URIS).unwrap()
+        );
+
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/scim/v2/SecurityEvents")
+                .insert_header(("authorization", "Bearer test"))
+                .set_json(json!({"maxEvents": 1, "returnImmediately": true}))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = actix_test::read_body_json::<Value, _>(response).await;
+        assert_eq!(body["sets"]["event-id"], "signed-set");
+        assert_eq!(body["moreAvailable"], false);
+    }
+
+    #[actix_web::test]
+    async fn event_poll_requires_content_language_for_set_error_descriptions() {
+        let app = actix_test::init_service(App::new().app_data(event_endpoint()).route(
+            "/scim/v2/SecurityEvents",
+            web::post().to(scim_poll_security_events),
+        ))
+        .await;
+        let event_id = uuid::Uuid::now_v7().to_string();
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::post()
+                .uri("/scim/v2/SecurityEvents")
+                .insert_header(("authorization", "Bearer test"))
+                .set_json(json!({
+                    "returnImmediately": true,
+                    "setErrs": {
+                        (event_id): {
+                            "err": "jwtClaims",
+                            "description": "invalid claims"
+                        }
+                    }
+                }))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 }

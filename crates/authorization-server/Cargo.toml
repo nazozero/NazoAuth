@@ -48,6 +48,7 @@ nazo-postgres.workspace = true
 nazo-valkey.workspace = true
 nazo-resource-server.workspace = true
 nazo-runtime-modules.workspace = true
+nazo-scim-events.workspace = true
 openssl.workspace = true
 opentelemetry = "0.32.0"
 opentelemetry-appender-tracing = "0.32.0"

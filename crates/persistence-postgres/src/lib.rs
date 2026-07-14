@@ -28,5 +28,5 @@ pub use repositories::{
     AccessRequestRepository, AuditRepository, AuthorizationFlowRepository, AuthorizationRepository,
     FederationRepository, GrantAuthorization, GrantRepository, MfaRepository,
     OAuthClientRepository, PasskeyRepository, RuntimeModuleEventPage, RuntimeModuleRepository,
-    ScimRepository, TokenIssuanceRepository, TokenRepository, UserRepository,
+    ScimEventRepository, ScimRepository, TokenIssuanceRepository, TokenRepository, UserRepository,
 };

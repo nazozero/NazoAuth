@@ -235,6 +235,9 @@ fn module_catalog(
                     .map_err(|_| anyhow::anyhow!("REFRESH_TOKEN_TTL_SECONDS cannot be negative"))?,
             ),
             session: Duration::from_secs(session.session_ttl_seconds),
+            scim_security_events: Duration::from_secs(
+                settings.storage.scim_event_retention_seconds,
+            ),
         },
         inherited_enabled,
     )?;
@@ -251,7 +254,9 @@ fn module_catalog(
     {
         runtime_disable_blocked.insert(ModuleId::Jarm);
     }
-    catalog = catalog.with_runtime_disable_blocked(runtime_disable_blocked);
+    catalog = catalog
+        .with_dependencies(ModuleId::ScimSecurityEvents, [ModuleId::Scim])?
+        .with_runtime_disable_blocked(runtime_disable_blocked);
     Ok(catalog)
 }
 
@@ -363,6 +368,10 @@ pub(crate) fn inherited_enabled(settings: &Settings) -> BTreeSet<ModuleId> {
             ModuleId::HttpMessageSignatures,
             settings.enable_fapi_http_signatures,
         ),
+        (
+            ModuleId::ScimSecurityEvents,
+            settings.enable_scim_security_events,
+        ),
         (ModuleId::NativeSso, settings.enable_native_sso),
         (
             ModuleId::FrontchannelLogout,
@@ -417,5 +426,33 @@ mod tests {
         settings.modules.enable_par_request_object = true;
 
         assert!(inherited_enabled(&settings).contains(&ModuleId::RequestObjects));
+    }
+
+    #[test]
+    fn scim_security_events_are_default_closed_and_depend_on_scim() {
+        let mut settings =
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+        assert!(!inherited_enabled(&settings).contains(&ModuleId::ScimSecurityEvents));
+
+        settings.modules.enable_scim_security_events = true;
+        let inherited = inherited_enabled(&settings);
+        assert!(inherited.contains(&ModuleId::ScimSecurityEvents));
+        let catalog = module_catalog(&settings, inherited).unwrap();
+        assert_eq!(
+            catalog
+                .spec(ModuleId::ScimSecurityEvents)
+                .unwrap()
+                .dependencies,
+            BTreeSet::from([ModuleId::Scim])
+        );
+        assert_eq!(
+            catalog
+                .spec(ModuleId::ScimSecurityEvents)
+                .unwrap()
+                .disable_policy,
+            nazo_runtime_modules::DisablePolicy::DrainStoredTransactions {
+                max_duration: Duration::from_secs(604_800)
+            }
+        );
     }
 }

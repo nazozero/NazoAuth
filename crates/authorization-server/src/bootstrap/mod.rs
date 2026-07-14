@@ -40,7 +40,7 @@ use crate::domain::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(not(test))]
 use crate::domain::{
     BackchannelLogoutWorker, ServerScimBootstrapPasswordProvider, ServerScimCursorProtector,
-    ServerScimRequestAuthorizer, ServerTokenManagementOperations,
+    ServerScimEventSigner, ServerScimRequestAuthorizer, ServerTokenManagementOperations,
     ServerTokenManagementRequestGuard, ServerUserinfoOperations, dynamic_registration_endpoint,
     spawn_backchannel_logout_delivery_worker,
 };
@@ -210,7 +210,10 @@ pub async fn run() -> anyhow::Result<()> {
     let scim_protocol = &settings.protocol;
     let scim_storage = &settings.storage;
     let scim_service = nazo_identity::scim::ScimService::new(
-        Arc::new(nazo_postgres::ScimRepository::new(diesel_db.clone())),
+        Arc::new(nazo_postgres::ScimRepository::with_event_retention_seconds(
+            diesel_db.clone(),
+            scim_storage.scim_event_retention_seconds,
+        )),
         Arc::new(nazo_postgres::AuditRepository::new(diesel_db.clone())),
     );
     let scim_client_ip = ClientIpConfig::new(
@@ -228,19 +231,26 @@ pub async fn run() -> anyhow::Result<()> {
         ScimRuntimeAdmission::new(runtime_modules.registry.clone()),
     ));
     #[cfg(not(test))]
-    let scim_endpoint = web::Data::new(nazo_http_actix::ScimEndpoint::new(
-        scim_service.clone(),
-        Arc::new(ServerScimRequestAuthorizer::new(
-            scim_service,
-            scim_storage.scim_bearer_token.as_deref(),
-            scim_client_ip,
-            runtime_modules.registry.clone(),
-        )),
-        Arc::new(ServerScimCursorProtector::new(
-            &scim_protocol.client_secret_pepper,
-        )?),
-        Arc::new(ServerScimBootstrapPasswordProvider),
-    ));
+    let scim_endpoint = web::Data::new(
+        nazo_http_actix::ScimEndpoint::new(
+            scim_service.clone(),
+            Arc::new(ServerScimRequestAuthorizer::new(
+                scim_service,
+                scim_storage.scim_bearer_token.as_deref(),
+                scim_client_ip,
+                runtime_modules.registry.clone(),
+            )),
+            Arc::new(ServerScimCursorProtector::new(
+                &scim_protocol.client_secret_pepper,
+            )?),
+            Arc::new(ServerScimBootstrapPasswordProvider),
+        )
+        .with_security_events(Arc::new(nazo_scim_events::EventPublisher::new(
+            nazo_postgres::ScimEventRepository::new(diesel_db.clone()),
+            ServerScimEventSigner::new(keyset.clone()),
+            settings.endpoint.issuer.clone(),
+        ))),
+    );
     #[cfg(not(test))]
     let valkey_connection = valkey.clone();
     #[cfg(test)]

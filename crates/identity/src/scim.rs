@@ -25,7 +25,8 @@ pub use cursor::{
 pub use documents::{
     scim_cursor_list_document, scim_error_document, scim_index_list_document,
     scim_resource_types_document, scim_schemas_document, scim_service_provider_config_document,
-    scim_user_document, scim_user_schema_document,
+    scim_service_provider_config_document_with_events, scim_user_document,
+    scim_user_schema_document,
 };
 pub use query::{
     SCIM_DEFAULT_PAGE_SIZE, SCIM_MAX_PAGE_SIZE, ScimListRequest, ScimPagination,
@@ -74,11 +75,28 @@ impl ScimService {
         input: NormalizedScimUser,
         password_hash: PasswordHashInput,
     ) -> Result<PublicAccount, RepositoryError> {
+        self.create_user_with_mutation(
+            tenant,
+            input,
+            password_hash,
+            nazo_scim_events::MutationContext::disabled(),
+        )
+        .await
+    }
+
+    pub async fn create_user_with_mutation(
+        &self,
+        tenant: TenantContext,
+        input: NormalizedScimUser,
+        password_hash: PasswordHashInput,
+        mutation: nazo_scim_events::MutationContext,
+    ) -> Result<PublicAccount, RepositoryError> {
         self.repository
             .create(NewScimUser {
                 tenant,
                 input,
                 password_hash,
+                mutation,
             })
             .await
     }
@@ -97,7 +115,25 @@ impl ScimService {
         user_id: UserId,
         replacement: NormalizedScimUser,
     ) -> Result<PublicAccount, RepositoryError> {
-        self.repository.replace(tenant, user_id, replacement).await
+        self.replace_user_with_mutation(
+            tenant,
+            user_id,
+            replacement,
+            nazo_scim_events::MutationContext::disabled(),
+        )
+        .await
+    }
+
+    pub async fn replace_user_with_mutation(
+        &self,
+        tenant: TenantContext,
+        user_id: UserId,
+        replacement: NormalizedScimUser,
+        mutation: nazo_scim_events::MutationContext,
+    ) -> Result<PublicAccount, RepositoryError> {
+        self.repository
+            .replace(tenant, user_id, replacement, mutation)
+            .await
     }
 
     pub async fn patch_user(
@@ -106,7 +142,25 @@ impl ScimService {
         user_id: UserId,
         patch: ScimPatch,
     ) -> Result<PublicAccount, RepositoryError> {
-        self.repository.patch(tenant, user_id, patch).await
+        self.patch_user_with_mutation(
+            tenant,
+            user_id,
+            patch,
+            nazo_scim_events::MutationContext::disabled(),
+        )
+        .await
+    }
+
+    pub async fn patch_user_with_mutation(
+        &self,
+        tenant: TenantContext,
+        user_id: UserId,
+        patch: ScimPatch,
+        mutation: nazo_scim_events::MutationContext,
+    ) -> Result<PublicAccount, RepositoryError> {
+        self.repository
+            .patch(tenant, user_id, patch, mutation)
+            .await
     }
 
     pub async fn deactivate_user(
@@ -114,7 +168,21 @@ impl ScimService {
         tenant: TenantContext,
         user_id: UserId,
     ) -> Result<bool, RepositoryError> {
-        self.repository.deactivate(tenant, user_id).await
+        self.deactivate_user_with_mutation(
+            tenant,
+            user_id,
+            nazo_scim_events::MutationContext::disabled(),
+        )
+        .await
+    }
+
+    pub async fn deactivate_user_with_mutation(
+        &self,
+        tenant: TenantContext,
+        user_id: UserId,
+        mutation: nazo_scim_events::MutationContext,
+    ) -> Result<bool, RepositoryError> {
+        self.repository.deactivate(tenant, user_id, mutation).await
     }
 
     pub async fn active_credential(
@@ -136,6 +204,7 @@ impl ScimService {
 pub enum ScimRequiredScope {
     Read,
     Write,
+    Events,
 }
 
 impl ScimRequiredScope {
@@ -144,6 +213,7 @@ impl ScimRequiredScope {
         match self {
             Self::Read => "scim:read",
             Self::Write => "scim:write",
+            Self::Events => nazo_scim_events::SCIM_EVENTS_SCOPE,
         }
     }
 }
@@ -171,6 +241,7 @@ pub struct ScimTokenCredential {
     pub id: Uuid,
     pub tenant_id: Uuid,
     pub scopes: Vec<String>,
+    pub event_audience: Option<String>,
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -230,6 +301,32 @@ pub struct ScimPatch {
     pub display_name: Option<String>,
     pub given_name: Option<String>,
     pub family_name: Option<String>,
+}
+
+impl ScimPatch {
+    #[must_use]
+    pub fn event_attributes(&self) -> Vec<String> {
+        let mut attributes = Vec::new();
+        if self.user_name.is_some() {
+            attributes.push("userName".to_owned());
+        }
+        if self.email.is_some() {
+            attributes.push("emails".to_owned());
+        }
+        if self.active.is_some() {
+            attributes.push("active".to_owned());
+        }
+        if self.display_name.is_some() {
+            attributes.push("name.formatted".to_owned());
+        }
+        if self.given_name.is_some() {
+            attributes.push("name.givenName".to_owned());
+        }
+        if self.family_name.is_some() {
+            attributes.push("name.familyName".to_owned());
+        }
+        attributes
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

@@ -121,7 +121,8 @@ pub use scim::{
     ScimAuthorizationError, ScimAuthorizedRequest, ScimBootstrapPasswordProvider,
     ScimCursorProtector, ScimDependencyError, ScimEndpoint, ScimFuture, ScimRequestAuthorizer,
     scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
-    scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
+    scim_poll_security_events, scim_replace_user, scim_resource_types, scim_schemas,
+    scim_service_provider_config,
 };
 pub use session::{
     SessionCookieConfig, SessionLogoutEndpoint, login_required_response, logout_response,

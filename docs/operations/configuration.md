@@ -61,6 +61,8 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 | `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1-plain-private-key-jwt-poll` | CIBA-specific policy: `fapi-ciba-id1-plain-private-key-jwt-poll` for OIDF FAPI-CIBA compatibility, or internal `fapi2-ciba` hardening |
 | `ENABLE_FAPI_HTTP_SIGNATURES` | `false` | Experimental resource-only profile for the 2026-06-26 FAPI 2.0 HTTP Signatures working draft; when enabled, `/fapi/resource` requires a registered client JWK and RFC 9421 signature and signs every response |
 | `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | `60` | Request signature age and replay-marker lifetime; accepted range is 1–300 seconds, with at most five seconds of future clock skew |
+| `ENABLE_SCIM_SECURITY_EVENTS` | `false` | Enables default-closed RFC 9967 SET outbox creation, discovery, and RFC 8936 polling; depends on the SCIM runtime module |
+| `SCIM_EVENT_RETENTION_SECONDS` | `604800` | Per-receiver delivery window and outbox retention; accepted range is 3600–2592000 seconds |
 | `RUST_LOG` | `info` | Tracing filter |
 
 ## Derived settings
@@ -165,7 +167,8 @@ deployment path. They are candidates for the administrator UI:
 - passkeys: `PASSKEY_RP_NAME`, `PASSKEY_REQUIRE_USER_VERIFICATION`,
   `PASSKEY_REQUIRE_USER_HANDLE`, `PASSKEY_STRICT_BASE64`
 - federation: `FEDERATION_PROVIDER_CONFIGS`, `FEDERATION_SAML_GATEWAY_*`
-- SCIM: `SCIM_BEARER_TOKEN`
+- SCIM: `SCIM_BEARER_TOKEN`, `ENABLE_SCIM_SECURITY_EVENTS`,
+  `SCIM_EVENT_RETENTION_SECONDS`
 - external signing: `SIGNING_EXTERNAL_COMMAND`,
   `SIGNING_EXTERNAL_TIMEOUT_MS`,
   `SIGNING_KEY_ROTATION_INTERVAL_SECONDS`,

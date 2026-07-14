@@ -12,6 +12,7 @@ fn durations() -> CatalogDurations {
         authorization_code: Duration::from_secs(603),
         refresh_token: Duration::from_secs(604),
         session: Duration::from_secs(605),
+        scim_security_events: Duration::from_secs(606),
     }
 }
 
@@ -65,6 +66,12 @@ fn fixed_catalog_assigns_every_reviewed_disable_policy() {
             DisablePolicy::FinishExecutingRequests,
         ),
         (ModuleId::Scim, DisablePolicy::FinishExecutingRequests),
+        (
+            ModuleId::ScimSecurityEvents,
+            DisablePolicy::DrainStoredTransactions {
+                max_duration: Duration::from_secs(606),
+            },
+        ),
         (
             ModuleId::NativeSso,
             DisablePolicy::DrainStoredTransactions {

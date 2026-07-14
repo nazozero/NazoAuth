@@ -448,6 +448,7 @@ fn all_signing_purposes() -> BTreeSet<SigningPurpose> {
         SigningPurpose::Jarm,
         SigningPurpose::LogoutToken,
         SigningPurpose::HttpMessage,
+        SigningPurpose::SecurityEvent,
     ]
     .into_iter()
     .collect()

@@ -28,6 +28,7 @@
     {"path":"/scim/v2/ServiceProviderConfig","methods":["GET"],"condition":"always"},
     {"path":"/scim/v2/Schemas","methods":["GET"],"condition":"always"},
     {"path":"/scim/v2/ResourceTypes","methods":["GET"],"condition":"always"},
+    {"path":"/scim/v2/SecurityEvents","methods":["POST"],"condition":"always"},
     {"path":"/scim/v2/Users","methods":["GET","POST"],"condition":"always"},
     {"path":"/scim/v2/Users/{user_id}","methods":["DELETE","GET","PATCH","PUT"],"condition":"always"},
     {"path":"/auth/captcha-config","methods":["GET"],"condition":"always"},

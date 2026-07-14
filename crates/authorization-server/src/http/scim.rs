@@ -301,6 +301,10 @@ fn scim_service_provider_config_response() -> HttpResponse {
     })))
 }
 
+pub(crate) async fn scim_poll_security_events() -> HttpResponse {
+    empty_response(StatusCode::NOT_FOUND)
+}
+
 pub(crate) async fn scim_schemas(endpoint: Data<ScimEndpoint>, req: HttpRequest) -> HttpResponse {
     if let Err(response) = require_scim_bearer(&endpoint, &req, ScimRequiredScope::Read).await {
         return response;

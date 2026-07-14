@@ -535,6 +535,7 @@ mod tests {
                 authorization_code: Duration::from_secs(30),
                 refresh_token: Duration::from_secs(300),
                 session: Duration::from_secs(600),
+                scim_security_events: Duration::from_secs(600),
             },
             inherited.clone(),
         )
@@ -665,6 +666,7 @@ mod tests {
                 authorization_code: Duration::from_secs(30),
                 refresh_token: Duration::from_secs(300),
                 session: Duration::from_secs(600),
+                scim_security_events: Duration::from_secs(600),
             },
             inherited.clone(),
         )
@@ -757,6 +759,7 @@ mod tests {
                 authorization_code: Duration::from_secs(30),
                 refresh_token: Duration::from_secs(300),
                 session: Duration::from_secs(600),
+                scim_security_events: Duration::from_secs(600),
             },
             BTreeSet::from([ModuleId::RequestObjects]),
         )
@@ -877,6 +880,7 @@ mod tests {
                 authorization_code: Duration::from_secs(30),
                 refresh_token: Duration::from_secs(300),
                 session: Duration::from_secs(600),
+                scim_security_events: Duration::from_secs(600),
             },
             BTreeSet::from([ModuleId::Ciba]),
         )
@@ -930,6 +934,7 @@ mod tests {
                 authorization_code: Duration::from_secs(30),
                 refresh_token: Duration::from_secs(300),
                 session: Duration::from_secs(600),
+                scim_security_events: Duration::from_secs(600),
             },
             BTreeSet::from([ModuleId::RequestObjects, ModuleId::Jarm]),
         )

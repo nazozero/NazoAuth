@@ -100,6 +100,30 @@ diesel::table! {
         id -> Uuid, tenant_id -> Uuid, token_hash -> Varchar, label -> Varchar,
         scopes -> Jsonb, expires_at -> Nullable<Timestamptz>, revoked_at -> Nullable<Timestamptz>,
         last_used_at -> Nullable<Timestamptz>, created_at -> Timestamptz, updated_at -> Timestamptz,
+        event_audience -> Nullable<Varchar>,
+    }
+}
+
+diesel::table! {
+    scim_security_events (id) {
+        id -> Uuid,
+        tenant_id -> Uuid,
+        transaction_id -> Uuid,
+        subject_uri -> Text,
+        events -> Jsonb,
+        occurred_at -> Timestamptz,
+        expires_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    scim_security_event_receipts (event_id, scim_token_id) {
+        event_id -> Uuid,
+        scim_token_id -> Uuid,
+        disposition -> Varchar,
+        error_code -> Nullable<Varchar>,
+        error_description -> Nullable<Text>,
+        updated_at -> Timestamptz,
     }
 }
 
@@ -247,6 +271,8 @@ diesel::table! {
 
 diesel::joinable!(client_access_requests -> users (user_id));
 diesel::joinable!(scim_audit_events -> scim_tokens (scim_token_id));
+diesel::joinable!(scim_security_event_receipts -> scim_security_events (event_id));
+diesel::joinable!(scim_security_event_receipts -> scim_tokens (scim_token_id));
 diesel::joinable!(user_client_grants -> oauth_clients (client_id));
 diesel::joinable!(user_client_grants -> users (user_id));
 
@@ -265,6 +291,8 @@ diesel::allow_tables_to_appear_in_same_query!(
     access_token_revocations,
     scim_tokens,
     scim_audit_events,
+    scim_security_events,
+    scim_security_event_receipts,
     backchannel_logout_deliveries,
     runtime_module_desired_states,
     runtime_module_instance_states,
