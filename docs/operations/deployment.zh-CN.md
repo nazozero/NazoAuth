@@ -277,26 +277,41 @@ JWK 轮换、时钟监控、Valkey 重放存储、服务端签名密钥托管和
 启动 OpenID Foundation conformance run 前，固定按以下顺序执行，不从失败的 run
 里倒推 seed 输入：
 
-1. 确定要测的精确 commit，并确认工作区没有混入无关部署补丁。
-2. 确认 Angie 已反代到固定容器 IP `10.101.0.20:8000`，且 `.env.yaml`
+1. 确定要测的精确 commit，要求工作区干净且没有混入无关部署补丁。修改生产前，先保留
+   当前不可变镜像、UI release、部署记录、数据库备份及其他可验证回滚所需材料。
+2. 对该精确 head 运行 `oidf-public-seed-configs` workflow，并下载
+   `oidf-public-plan-configs` artifact。该 artifact 同时包含公开 plan JSON、
+   `oidf-mtls-ca-bundle.pem` 以及绑定 source commit、文件树与 CA DER 指纹的确定性 manifest，
+   绝不包含 mTLS 私钥。关联保存 workflow run ID、workflow head SHA、平台 artifact digest、
+   下载后 artifact digest、manifest digest 和 CA bundle digest；artifact
+   head 与待部署 commit 不一致时必须拒绝。
+3. 确认 Angie 已反代到固定容器 IP `10.101.0.20:8000`，且 `.env.yaml`
    的可信代理范围只包含实际受控代理地址。
-3. 使用 `scripts/deploy_live.ps1` 部署同一 commit 到公网入口；该步骤会执行
-   migration，并确认 Podman 容器 IP 为 `10.101.0.20`。
-4. 运行 `oidf-public-seed-configs` workflow，下载 `oidf-public-plan-configs`
-   artifact；这是服务端 seed 的唯一官方同源输入。
-5. 将该 artifact 放到 live 环境的 OIDF runtime 目录，并使用同一 commit 的
+4. 使用 `scripts/deploy_live.ps1 -OidfPublicSeedArtifactArchive <下载后的-artifact.zip>
+   -OidfPublicSeedWorkflowRunId <run-id>
+   -OidfPublicSeedArtifactId <artifact-id> -OidfPublicSeedArtifactDigest sha256:<digest>` 将同一 commit
+   部署到公网入口。真实部署强制提供全部 artifact 身份参数；脚本先核验 GitHub run 结果、分支、
+   head、artifact 身份和下载归档 digest，解压到私有快照，并要求 manifest head 等于 backend
+   commit。随后现有部署事务共同验证公开 JSON 与 CA bundle，将暂存和安装后的 bundle 绑定到同一
+   SHA-256 digest，备份当前 Angie CA 文件及 hash，在同目录原子替换，校验并 reload Angie；部署或
+   验证回滚时恢复原字节和文件元数据。`-OidfPublicSeedArtifactDirectory` 仅供 render-only 测试夹具
+   使用。整个过程沿用现有部署锁和 verification lease，不得建立独立的手工 CA 安装通道。
+5. 将同一个精确 artifact 放到 live 环境的 OIDF runtime 目录，并使用同一 commit 的
    `oidf-seed` image / `nazo_oauth_seed_oidf` binary，对公网入口
    `auth.nazo.run` 实际使用的数据库执行 seed。不要 seed
    `compose.oidf.local.yml` 的 9443 专用栈后去跑官方公网测试。
-6. 从公网校验 health、discovery、JWKS、mTLS alias 和证书转发；discovery
-   `issuer` 必须是 `https://auth.nazo.run`。
+6. 先核对实际运行 head、artifact digest 和 CA bundle digest，再从公网校验 health、
+   discovery、JWKS、mTLS alias、证书转发和 Angie 配置；discovery `issuer` 必须是
+   `https://auth.nazo.run`。信任来源必须是精确 head artifact 中经过验证的 CA chain，
+   不得改用叶证书 fingerprint allowlist。
 7. 先运行 `.github/workflows/oidf-conformance.yml` 的单 plan。单 plan workflow
    默认关闭 early-stop monitor，以便失败时上传完整 artifact。
 8. 单 plan 通过后，才运行 `.github/workflows/oidf-conformance-full.yml` 全矩阵。默认全矩阵保持
    `OIDF_NO_PARALLEL=true`。如需验证 runner 并发，使用 `runner_mode=parallel-isolated`
    触发同一 workflow；该模式会让并发安全的 plan set 不带 `--no-parallel` 执行，同时把
    logout 和 session-management 放到独立 matrix job 中运行，使它们拥有独立 runner/浏览器环境。
-9. 在 artifact 过期前保存最终结果到 `docs/conformance`。
+9. 在 artifact 过期前保存最终结果到 `docs/conformance`，并关联保存 deployed head、
+   workflow run 与 plan ID、artifact digest、CA bundle digest 和最终 PR Checks head。
 
 ## 运维检查清单
 
