@@ -9,24 +9,28 @@ in-process Rust calls. The design does not use a dynamic-library plugin ABI,
 RPC, an event bus, a command bus, or layers whose only job is forwarding.
 
 The root manifest is a virtual workspace with resolver 3. The default deployed
-binary remains `nazo-oauth-server`; operational binaries remain in the server
-package unless their dependencies create a demonstrated build or security
-boundary.
+binary remains `nazo-oauth-server`; operational binaries remain in the
+`authorization-server` package unless their dependencies create a demonstrated
+build or security boundary.
+
+Every direct child of `crates/` is named for its bounded responsibility.
+Technology names appear only where the crate is a concrete adapter. Cargo
+package names retain the `nazo-` namespace and do not determine directory names.
 
 ## Crate Responsibilities
 
-| Crate | Responsibility |
-| --- | --- |
-| `nazo-auth` | Framework-independent OAuth, OIDC, FAPI and CIBA policy, protocol types, grants, claims, metadata capability projection, sender constraints, and security profiles. It must not depend on Actix, Diesel, Fred, database rows, or configuration loading. |
-| `nazo-identity` | Framework-independent users, tenants, organizations, login, sessions, MFA, passkeys, verification, federation, external identities, subject claims, and authentication context. It must not depend on `nazo-auth`, Actix, Diesel, Fred, or database rows. |
-| `nazo-resource-server` | Standalone JWT access-token and sender-constraint verification. It is independent of the authorization server, identity, and every Web framework. |
-| `nazo-http-signatures` | Reusable HTTP Message Signatures, structured-field, content-digest, signing, and verification primitives. Authorization-server FAPI policy remains in `nazo-auth`. |
-| `nazo-key-management` | Key generation, purpose-specific lifecycle, rotation, JWKS material, signing implementations, external-command signing, and future KMS/HSM integration. |
-| `nazo-postgres` | Diesel schema and rows, pool, queries, repository implementations, explicit row/domain conversion, migrations, and PostgreSQL transaction boundaries. Rows never leave this crate. |
-| `nazo-valkey` | Fred connection handling, stable keys and payloads, TTL, Lua and atomic operations, replay/session/short-lived protocol stores, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
-| `nazo-http-actix` | Actix extraction, request context, CORS, middleware, security headers, protocol response presentation, and Actix-specific integration. It does not query Diesel or Fred and does not construct token claims. |
-| `nazo-runtime-modules` | Cross-domain module identifiers, tri-state desired state, actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, and audit event types. It is not owned by `nazo-auth`. |
-| `nazo-server` | Composition root: validates configuration, creates focused services and adapters, starts background tasks, registers static routes, and starts Actix. Ordinary handlers must receive only the focused handles they use. |
+| Directory | Cargo package | Responsibility |
+| --- | --- | --- |
+| `authorization-server-core` | `nazo-auth` | Framework-independent OAuth, OIDC, FAPI and CIBA authorization-server policy, protocol types, grants, claims, metadata capability projection, sender constraints, and security profiles. It must not depend on Actix, Diesel, Fred, database rows, or configuration loading. |
+| `identity` | `nazo-identity` | Framework-independent users, tenants, organizations, login, sessions, MFA, passkeys, verification, federation, external identities, subject claims, and authentication context. It must not depend on `nazo-auth`, Actix, Diesel, Fred, or database rows. |
+| `resource-server` | `nazo-resource-server` | Standalone JWT access-token and sender-constraint verification. It is independent of the authorization server, identity, and every Web framework. |
+| `http-signatures` | `nazo-http-signatures` | Reusable HTTP Message Signatures, structured-field, content-digest, signing, and verification primitives. Authorization-server FAPI policy remains in `nazo-auth`. |
+| `key-management` | `nazo-key-management` | Key generation, purpose-specific lifecycle, rotation, JWKS material, signing implementations, external-command signing, and future KMS/HSM integration. |
+| `persistence-postgres` | `nazo-postgres` | Durable persistence adapter: Diesel schema and rows, pool, queries, repository implementations, explicit row/domain conversion, migrations, and PostgreSQL transaction boundaries. Rows never leave this crate. |
+| `state-store-valkey` | `nazo-valkey` | Atomic state-store adapter: Fred connection handling, stable keys and payloads, TTL, Lua operations, replay/session/short-lived protocol state, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
+| `http-actix` | `nazo-http-actix` | Actix extraction, request context, CORS, middleware, security headers, protocol response presentation, and Actix-specific integration. It does not query Diesel or Fred and does not construct token claims. |
+| `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. It is not a generic plugin or miscellaneous-module crate. |
+| `authorization-server` | `nazo-oauth-server` | Deployable authorization-server application and composition root: validates configuration, creates focused services and adapters, starts background tasks, registers static routes, and starts Actix. Ordinary handlers must receive only the focused handles they use. |
 
 The historical Axum/Tower and tonic adapters are removed. Only Actix transport
 integration is maintained. The generic resource-server core may use the
@@ -39,24 +43,26 @@ infrastructure adapters to the ports they implement. The composition root is
 the only package expected to see all concrete implementations.
 
 ```text
-auth           -> identity, runtime-modules
-key-management -> auth
-postgres       -> auth, identity, resource-server, runtime-modules
-valkey         -> auth, identity, resource-server
-http-actix     -> auth, http-signatures, identity, resource-server,
-                  runtime-modules
-server         -> all concrete crates required for composition
+authorization-server-core -> identity, runtime-capabilities
+key-management            -> authorization-server-core
+persistence-postgres       -> authorization-server-core, identity,
+                              resource-server, runtime-capabilities
+state-store-valkey         -> authorization-server-core, identity, resource-server
+http-actix                 -> authorization-server-core, http-signatures, identity,
+                              resource-server, runtime-capabilities
+authorization-server       -> all concrete crates required for composition
 
-identity, resource-server, runtime-modules and http-signatures
-               -> no other NazoAuth crate
+identity, resource-server, runtime-capabilities and http-signatures
+                            -> no other NazoAuth crate
 ```
 
 This list records permitted compile-time direction, not a requirement to add a
 dependency where none is needed. The enforced prohibitions are more important:
 
-- `identity` does not depend on `auth`.
-- `resource-server` does not depend on `auth`, `identity`, or Actix.
-- `auth` does not depend on Actix, PostgreSQL, Diesel, Valkey, Fred, or rows.
+- `identity` does not depend on `authorization-server-core`.
+- `resource-server` does not depend on `authorization-server-core`, `identity`, or Actix.
+- `authorization-server-core` does not depend on Actix, PostgreSQL, Diesel,
+  Valkey, Fred, or rows.
 - `http-actix` does not depend on Diesel or Fred.
 - no crate cycle, workspace-wide prelude, or cross-crate glob re-export is
   allowed.
@@ -64,8 +70,8 @@ dependency where none is needed. The enforced prohibitions are more important:
 The normal request path is deliberately short:
 
 ```text
-Actix handler -> auth or identity service -> repository/store/signer
-              -> typed result -> Actix presenter
+Actix handler -> authorization-server-core or identity service
+              -> repository/store/signer -> typed result -> Actix presenter
 ```
 
 There is no controller/facade/manager/orchestrator layer between these calls.

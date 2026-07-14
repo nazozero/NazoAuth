@@ -1339,7 +1339,7 @@ fn admin_user_page_is_tenant_scoped_at_the_query_boundary() {
 #[test]
 fn server_mfa_verification_does_not_query_migrated_tables_directly() {
     for path in [
-        "/../server/src/domain/mfa_profile.rs",
+        "/../authorization-server/src/domain/mfa_profile.rs",
         "/../identity/src/mfa_service.rs",
     ] {
         let source = std::fs::read_to_string(format!("{}{}", env!("CARGO_MANIFEST_DIR"), path))
@@ -1353,7 +1353,7 @@ fn server_mfa_verification_does_not_query_migrated_tables_directly() {
 fn totp_enrollment_orders_cross_store_changes_for_safe_recovery() {
     let provider_source = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../server/src/domain/mfa_profile.rs"
+        "/../authorization-server/src/domain/mfa_profile.rs"
     ))
     .expect("server MFA provider source is readable");
     let confirmation = provider_source
@@ -1445,7 +1445,7 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
 
     let mut violations = Vec::new();
     visit(
-        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../server/src"),
+        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../authorization-server/src"),
         &mut violations,
     );
     assert!(
@@ -1458,12 +1458,13 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
 #[test]
 fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let admin_path = manifest.join("../server/src/http/admin/access_requests.rs");
-    let profile_path = manifest.join("../server/src/http/profile/access_requests.rs");
-    let delivery_path = manifest.join("../server/src/http/profile/delivery.rs");
+    let admin_path = manifest.join("../authorization-server/src/http/admin/access_requests.rs");
+    let profile_path = manifest.join("../authorization-server/src/http/profile/access_requests.rs");
+    let delivery_path = manifest.join("../authorization-server/src/http/profile/delivery.rs");
     let identity_profile_path = manifest.join("../identity/src/profile.rs");
-    let support_path = manifest.join("../server/src/support/access_requests.rs");
-    let forwarding_repositories_path = manifest.join("../server/src/support/repositories.rs");
+    let support_path = manifest.join("../authorization-server/src/support/access_requests.rs");
+    let forwarding_repositories_path =
+        manifest.join("../authorization-server/src/support/repositories.rs");
     let admin = std::fs::read_to_string(admin_path).expect("admin access handler is readable");
     let profile =
         std::fs::read_to_string(profile_path).expect("profile access handler is readable");
@@ -1593,7 +1594,7 @@ fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_fac
     }
 
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let server_root = manifest.join("../server/src");
+    let server_root = manifest.join("../authorization-server/src");
     let support_root = server_root.join("support");
     let mut violations = Vec::new();
     let mut direct_repository_calls = 0;
@@ -1612,8 +1613,10 @@ fn oauth_client_queries_use_the_focused_postgres_repository_without_a_server_fac
         direct_repository_calls >= 10,
         "focused repository calls must remain at their actual callers"
     );
-    let client_policy =
-        std::fs::read_to_string(manifest.join("../server/src/domain/client_policy.rs")).unwrap();
+    let client_policy = std::fs::read_to_string(
+        manifest.join("../authorization-server/src/domain/client_policy.rs"),
+    )
+    .unwrap();
     assert!(!client_policy.contains("oauth_clients::table"));
 }
 
@@ -1920,8 +1923,9 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
         .expect("OAuth client repository source is readable");
     let postgres_root = std::fs::read_to_string(manifest.join("src/lib.rs"))
         .expect("postgres crate root is readable");
-    let server_rows = std::fs::read_to_string(manifest.join("../server/src/domain/rows.rs"))
-        .expect("server rows source is readable");
+    let server_rows =
+        std::fs::read_to_string(manifest.join("../authorization-server/src/domain/rows.rs"))
+            .expect("server rows source is readable");
 
     assert!(
         repository.contains("struct OAuthClientRecord"),
@@ -1958,14 +1962,16 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
             && repository.contains("diesel::dsl::exists"),
         "candidate digests must be compared by PostgreSQL equality/EXISTS"
     );
-    let auth_root = std::fs::read_to_string(manifest.join("../auth/src/lib.rs"))
-        .expect("auth crate root is readable");
+    let auth_root =
+        std::fs::read_to_string(manifest.join("../authorization-server-core/src/lib.rs"))
+            .expect("auth crate root is readable");
     assert!(
         !auth_root.contains("verify_client_secret_hash"),
         "auth must not expose a public stored-hash verifier"
     );
-    let server_schema = std::fs::read_to_string(manifest.join("../server/src/schema.rs"))
-        .expect("server schema is readable");
+    let server_schema =
+        std::fs::read_to_string(manifest.join("../authorization-server/src/schema.rs"))
+            .expect("server schema is readable");
     assert!(
         !server_schema.contains("oauth_clients"),
         "server production schema must not declare, join, or allow oauth_clients"
@@ -2027,7 +2033,10 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
     }
 
     let mut violations = Vec::new();
-    visit(&manifest.join("../server/src"), &mut violations);
+    visit(
+        &manifest.join("../authorization-server/src"),
+        &mut violations,
+    );
     assert!(
         violations.is_empty(),
         "server production code must not own OAuth-client persistence:\n{}",
@@ -2040,10 +2049,12 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let users = std::fs::read_to_string(manifest.join("src/repositories/users.rs"))
         .expect("user repository source is readable");
-    let issue = std::fs::read_to_string(manifest.join("../server/src/http/token/issue.rs"))
-        .expect("token issue source is readable");
-    let userinfo = std::fs::read_to_string(manifest.join("../server/src/domain/userinfo.rs"))
-        .expect("userinfo domain adapter source is readable");
+    let issue =
+        std::fs::read_to_string(manifest.join("../authorization-server/src/http/token/issue.rs"))
+            .expect("token issue source is readable");
+    let userinfo =
+        std::fs::read_to_string(manifest.join("../authorization-server/src/domain/userinfo.rs"))
+            .expect("userinfo domain adapter source is readable");
     let token_issuance =
         std::fs::read_to_string(manifest.join("src/repositories/token_issuance.rs"))
             .expect("token issuance repository source is readable");
@@ -2062,9 +2073,10 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
 #[test]
 fn client_registration_keeps_plaintext_and_persistence_shape_out_of_core_and_postgres() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let auth_registration =
-        std::fs::read_to_string(manifest.join("../auth/src/client_registration.rs"))
-            .expect("auth client registration source is readable");
+    let auth_registration = std::fs::read_to_string(
+        manifest.join("../authorization-server-core/src/client_registration.rs"),
+    )
+    .expect("auth client registration source is readable");
     let postgres_approval =
         std::fs::read_to_string(manifest.join("src/repositories/access_requests.rs"))
             .expect("postgres approval source is readable");

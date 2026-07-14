@@ -34,9 +34,9 @@ jobs:
         run: cargo build --release --locked
       - name: Generate Rust SBOM
         run: |
-          cargo cyclonedx --manifest-path crates/server/Cargo.toml --format json --override-filename nazo-oauth-server.cdx
+          cargo cyclonedx --manifest-path crates/authorization-server/Cargo.toml --format json --override-filename nazo-oauth-server.cdx
           mkdir -p target
-          mv crates/server/nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
+          mv crates/authorization-server/nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
       - name: Build release image
         run: docker build -f Containerfile -t nazo-oauth-server:${{ github.sha }} .
       - name: Export release image
