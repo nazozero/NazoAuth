@@ -7,6 +7,7 @@ pub enum SigningPurpose {
     Jarm,
     LogoutToken,
     HttpMessage,
+    SecurityEvent,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -93,6 +93,7 @@ pub(crate) struct StorageSettings {
     pub(crate) client_delivery_ttl_seconds: u64,
     pub(crate) avatar_storage_dir: PathBuf,
     pub(crate) scim_bearer_token: Option<String>,
+    pub(crate) scim_event_retention_seconds: u64,
 }
 
 #[derive(Clone)]
@@ -127,6 +128,7 @@ pub(crate) struct ModuleSettings {
     pub(crate) enable_ciba: bool,
     pub(crate) enable_native_sso: bool,
     pub(crate) enable_fapi_http_signatures: bool,
+    pub(crate) enable_scim_security_events: bool,
     pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
 }
 
@@ -311,6 +313,15 @@ impl Settings {
             .optional_string("JWK_KEYS_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|| data_dir.join("keys"));
+        let scim_event_retention_seconds = positive_u64(
+            config,
+            "SCIM_EVENT_RETENTION_SECONDS",
+            604_800,
+            "SCIM_EVENT_RETENTION_SECONDS",
+        )?;
+        if !(3_600..=2_592_000).contains(&scim_event_retention_seconds) {
+            bail!("SCIM_EVENT_RETENTION_SECONDS must be between 3600 and 2592000");
+        }
 
         Ok(Self {
             endpoint: EndpointSettings {
@@ -377,6 +388,7 @@ impl Settings {
                 )?,
                 avatar_storage_dir,
                 scim_bearer_token: config.optional_string("SCIM_BEARER_TOKEN"),
+                scim_event_retention_seconds,
             },
             identity: IdentityRuntimeSettings {
                 rate_limit: RateLimitSettings::from_config(config)?,
@@ -408,6 +420,7 @@ impl Settings {
                 enable_ciba: config.bool("ENABLE_CIBA", false)?,
                 enable_native_sso: config.bool("ENABLE_NATIVE_SSO", false)?,
                 enable_fapi_http_signatures: config.bool("ENABLE_FAPI_HTTP_SIGNATURES", false)?,
+                enable_scim_security_events: config.bool("ENABLE_SCIM_SECURITY_EVENTS", false)?,
                 enable_dynamic_client_registration,
                 dynamic_client_registration_initial_access_token,
             },

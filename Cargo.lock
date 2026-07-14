@@ -2231,10 +2231,12 @@ dependencies = [
  "nazo-identity",
  "nazo-resource-server",
  "nazo-runtime-modules",
+ "nazo-scim-events",
  "passkey-auth",
  "proptest",
  "serde",
  "serde_json",
+ "tokio",
  "url",
  "uuid",
 ]
@@ -2268,6 +2270,7 @@ dependencies = [
  "chrono",
  "hmac 0.13.0",
  "lettre",
+ "nazo-scim-events",
  "passkey-auth",
  "rand 0.10.2",
  "serde",
@@ -2331,6 +2334,7 @@ dependencies = [
  "nazo-postgres",
  "nazo-resource-server",
  "nazo-runtime-modules",
+ "nazo-scim-events",
  "nazo-valkey",
  "openssl",
  "opentelemetry",
@@ -2370,6 +2374,7 @@ dependencies = [
  "nazo-identity",
  "nazo-resource-server",
  "nazo-runtime-modules",
+ "nazo-scim-events",
  "serde",
  "serde_json",
  "syn",
@@ -2403,6 +2408,18 @@ dependencies = [
  "futures-util",
  "serde",
  "thiserror",
+ "uuid",
+]
+
+[[package]]
+name = "nazo-scim-events"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
  "uuid",
 ]
 

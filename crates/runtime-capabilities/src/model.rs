@@ -66,13 +66,14 @@ pub enum ModuleId {
     AuthorizationDetails,
     HttpMessageSignatures,
     Scim,
+    ScimSecurityEvents,
     NativeSso,
     FrontchannelLogout,
     SessionManagement,
 }
 
 impl ModuleId {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::DeviceAuthorization,
         Self::TokenExchange,
         Self::JwtBearerGrant,
@@ -83,6 +84,7 @@ impl ModuleId {
         Self::AuthorizationDetails,
         Self::HttpMessageSignatures,
         Self::Scim,
+        Self::ScimSecurityEvents,
         Self::NativeSso,
         Self::FrontchannelLogout,
         Self::SessionManagement,

@@ -371,6 +371,7 @@ async fn registry_generated_transition_events_are_postgresql_compatible() {
             authorization_code: short,
             refresh_token: short,
             session: short,
+            scim_security_events: short,
         },
         BTreeSet::new(),
     )

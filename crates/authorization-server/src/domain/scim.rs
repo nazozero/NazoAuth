@@ -14,6 +14,9 @@ use nazo_identity::{
         ScimCursorSubject, ScimRequiredScope, ScimService, scim_credential_allows,
     },
 };
+use nazo_scim_events::{
+    EventFuture, EventReceiver, EventSignerPort, EventSigningError, SecurityEventClaims,
+};
 use openssl::symm::{Cipher, decrypt_aead, encrypt_aead};
 use sha2::Sha256;
 
@@ -67,6 +70,7 @@ impl ServerScimRequestAuthorizer {
             token_id: None,
             tenant: TenantContext::default_system(),
             scopes: vec!["scim:read".to_owned(), "scim:write".to_owned()],
+            event_audience: None,
             source: "legacy-env",
             cursor_actor: "legacy-env".to_owned(),
         })
@@ -89,6 +93,7 @@ impl ServerScimRequestAuthorizer {
                         organization_id: defaults.organization_id,
                     },
                     scopes: credential.scopes,
+                    event_audience: credential.event_audience,
                     source: "database",
                     cursor_actor: format!("database:{}", credential.id),
                 })
@@ -215,8 +220,32 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                     tenant_id: credential.tenant.tenant_id.as_uuid(),
                     actor: credential.cursor_actor,
                 },
+                event_receiver: match (credential.token_id, credential.event_audience) {
+                    (Some(token_id), Some(audience)) => Some(EventReceiver {
+                        token_id,
+                        tenant_id: credential.tenant.tenant_id.as_uuid(),
+                        audience,
+                    }),
+                    _ => None,
+                },
             })
         })
+    }
+
+    fn security_events_enabled(&self) -> bool {
+        nazo_auth::module_admissible(
+            &self.runtime_modules.snapshot(),
+            nazo_runtime_modules::ModuleId::ScimSecurityEvents,
+            nazo_auth::CapabilityAdmission::NewRequest,
+        )
+    }
+
+    fn security_event_delivery_enabled(&self) -> bool {
+        nazo_auth::module_admissible(
+            &self.runtime_modules.snapshot(),
+            nazo_runtime_modules::ModuleId::ScimSecurityEvents,
+            nazo_auth::CapabilityAdmission::ExistingTransaction,
+        )
     }
 }
 
@@ -224,8 +253,38 @@ struct AuthorizedCredential {
     token_id: Option<uuid::Uuid>,
     tenant: TenantContext,
     scopes: Vec<String>,
+    event_audience: Option<String>,
     source: &'static str,
     cursor_actor: String,
+}
+
+#[derive(Clone)]
+pub(crate) struct ServerScimEventSigner {
+    keyset: nazo_key_management::KeyManager,
+}
+
+impl ServerScimEventSigner {
+    #[must_use]
+    pub(crate) fn new(keyset: nazo_key_management::KeyManager) -> Self {
+        Self { keyset }
+    }
+}
+
+impl EventSignerPort for ServerScimEventSigner {
+    fn sign<'a>(
+        &'a self,
+        claims: &'a SecurityEventClaims,
+    ) -> EventFuture<'a, Result<String, EventSigningError>> {
+        Box::pin(async move {
+            let snapshot = self.keyset.snapshot();
+            let mut header = jsonwebtoken::Header::new(snapshot.active_alg);
+            header.typ = Some(nazo_scim_events::SECURITY_EVENT_MEDIA_TYPE.to_owned());
+            self.keyset
+                .encode_jwt(nazo_auth::SigningPurpose::SecurityEvent, &header, claims)
+                .await
+                .map_err(|_| EventSigningError::Unavailable)
+        })
+    }
 }
 
 fn bearer_token(request: &HttpRequest) -> Option<&str> {

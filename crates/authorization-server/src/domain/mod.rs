@@ -67,7 +67,8 @@ pub(crate) use resource_server::{
 pub(crate) use rows::{ClientRow, TokenRow};
 #[cfg(not(test))]
 pub(crate) use scim::{
-    ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
+    ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimEventSigner,
+    ServerScimRequestAuthorizer,
 };
 pub(crate) use session_management::ServerSessionManagementOperations;
 #[cfg(not(test))]

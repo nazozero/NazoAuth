@@ -59,7 +59,8 @@ use crate::http::profile::{
 #[cfg(test)]
 use crate::http::scim::{
     scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
-    scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
+    scim_poll_security_events, scim_replace_user, scim_resource_types, scim_schemas,
+    scim_service_provider_config,
 };
 #[cfg(test)]
 use crate::http::token::userinfo::userinfo;
@@ -78,7 +79,8 @@ use crate::settings::Settings;
 #[cfg(not(test))]
 use nazo_http_actix::{
     scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
-    scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
+    scim_poll_security_events, scim_replace_user, scim_resource_types, scim_schemas,
+    scim_service_provider_config,
 };
 
 use super::cors;
@@ -179,6 +181,7 @@ pub(crate) fn configure(
                 )
                 .route("/Schemas", web::get().to(scim_schemas))
                 .route("/ResourceTypes", web::get().to(scim_resource_types))
+                .route("/SecurityEvents", web::post().to(scim_poll_security_events))
                 .service(
                     web::resource("/Users")
                         .route(web::get().to(scim_list_users))

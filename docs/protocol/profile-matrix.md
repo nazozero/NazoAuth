@@ -328,3 +328,9 @@ in the [dated audit](fapi-http-signatures-draft-audit.md). No dedicated OIDF
 plan exists, so local Rust vectors and real-HTTP positive/negative coverage are
 evidence, not certification. A newer draft or Final Specification triggers a
 fresh delta audit before any version claim changes.
+
+RFC 9967 is the third admitted M8 candidate. It is a separate default-closed
+SCIM runtime module, not an OAuth profile. It emits notice-only provisioning
+SETs through a transactional outbox and RFC 8936 polling; it cannot alter OAuth,
+OIDC, FAPI, CIBA, or browser metadata. Asynchronous SCIM requests remain out of
+scope and are advertised as `none`.

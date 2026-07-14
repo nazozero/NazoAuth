@@ -13,11 +13,18 @@ Preferred configuration uses rows in `scim_tokens`:
 - Store only `blake3` hex in `token_hash`.
 - Bind the credential to a `tenant_id`.
 - Set `scopes` to an array containing `scim:read`, `scim:write`, or `scim:*`.
+- Event receivers require the dedicated `scim:events` scope and a non-empty
+  `event_audience` identifying the SET recipient. Do not grant this scope to
+  ordinary provisioning credentials.
 - Use `expires_at` for planned rotation windows.
 - Set `revoked_at` to retire a credential.
 - Use `label` for operator-facing rotation notes; do not store the raw token.
 
 `SCIM_BEARER_TOKEN` remains a compatibility fallback for self-hosted deployments. It is compared in constant time against the `Authorization: Bearer` header and is treated as a legacy full-access credential with `scim:read` and `scim:write`. Prefer database tokens for new deployments.
+
+RFC 9967 delivery is default-closed. Set `ENABLE_SCIM_SECURITY_EVENTS=true` to
+admit new events and advertise supported event URIs. `SCIM_EVENT_RETENTION_SECONDS`
+defaults to 604800 (7 days) and accepts 3600 through 2592000 (30 days).
 
 Credential behavior:
 
@@ -49,6 +56,7 @@ Outside default SCIM:
 - `PUT /scim/v2/Users/{user_id}`
 - `PATCH /scim/v2/Users/{user_id}`
 - `DELETE /scim/v2/Users/{user_id}`
+- `POST /scim/v2/SecurityEvents` (RFC 8936 poll delivery, when enabled)
 
 `DELETE` is a soft delete: it sets `active=false` and keeps the user record for audit and token-revocation continuity.
 
@@ -93,9 +101,38 @@ boundary explicitly:
   `defaultPaginationMethod`, `cursorTimeout` is 600, and the maximum page size
   is 200.
 - The default page size is 100 and the maximum page size is 200.
-- RFC 9967 SCIM Security Event Tokens, event feeds, and asynchronous completion
-  events are not supported; `securityEvents.asyncRequest` is `none` and
-  `eventUris` is empty.
+- RFC 9967 provisioning SETs are advertised only while the security-event
+  module can accept new mutations. Asynchronous SCIM requests remain unsupported,
+  so `securityEvents.asyncRequest` stays `none`.
+
+## RFC 9967 Security Event Tokens
+
+When enabled, successful create, replace, patch, activate, and deactivate
+mutations write a minimal notice event to a PostgreSQL outbox in the same
+transaction as the user change. Soft `DELETE` emits `prov:deactivate`, not the
+hard-delete event. NazoAuth does not advertise `prov:delete` because it has no
+hard-delete operation.
+
+Receivers poll `POST /scim/v2/SecurityEvents` using RFC 8936 request fields
+`maxEvents`, `returnImmediately`, `ack`, and `setErrs`. `maxEvents` defaults to
+20 and is capped at 100. A request containing `setErrs` must send
+`Content-Language`. Empty long polls wait for at most 30 seconds. Delivery is
+at least once: an event remains visible to a receiver until that receiver
+acknowledges it or reports a terminal error. Receipts are isolated by SCIM
+token, so one receiver cannot consume another receiver's copy. A newly created
+receiver begins at its credential creation time and cannot read older events.
+
+Each SET is signed only when delivered, uses `typ=secevent+jwt`, and contains
+`iss`, `iat`, `jti`, `txn`, receiver-bound `aud`, SCIM `sub_id`, and the RFC 9967
+`events` object. No `sub`, `exp`, password, email value, display name, or full
+SCIM resource is included. Event rows expire under the configured retention
+window and are removed by `nazo_oauth_cleanup_expired_security_state()`.
+
+Production deployments must expose the endpoint through HTTPS. Operators own
+receiver credential rotation, audience coordination, monitoring of terminal
+SET errors, and polling capacity. Disabling the event module stops creation and
+advertisement immediately; the runtime drain window continues serving already
+stored events for up to the configured retention period.
 
 PATCH supports `replace` for:
 

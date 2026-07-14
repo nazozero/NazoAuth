@@ -10,6 +10,7 @@ pub struct CatalogDurations {
     pub authorization_code: Duration,
     pub refresh_token: Duration,
     pub session: Duration,
+    pub scim_security_events: Duration,
 }
 
 #[derive(Clone, Debug)]
@@ -43,6 +44,10 @@ impl ModuleCatalog {
             ),
             (ModuleId::HttpMessageSignatures, finish),
             (ModuleId::Scim, finish),
+            (
+                ModuleId::ScimSecurityEvents,
+                drain(durations.scim_security_events),
+            ),
             (ModuleId::NativeSso, drain(durations.refresh_token)),
             (ModuleId::FrontchannelLogout, finish),
             // Stop advertising and issuing new session_state values immediately,
@@ -143,6 +148,7 @@ mod tests {
             authorization_code: Duration::from_secs(3),
             refresh_token: Duration::from_secs(4),
             session: Duration::from_secs(5),
+            scim_security_events: Duration::from_secs(6),
         };
         let base = ModuleCatalog::fixed(durations, BTreeSet::new()).unwrap();
         assert_eq!(

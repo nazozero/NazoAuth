@@ -1,5 +1,10 @@
 # M8 Emerging Protocol Watchlist Governance Review
 
+> Subsequent status (2026-07-15): RFC 9967 has now entered the implemented,
+> default-closed surface as a notice-only transmitter with RFC 8936 polling.
+> The decision and evidence below remain the historical entry-gate review;
+> current behavior is documented in `docs/features/scim.md` and the RFC matrix.
+
 Date: 2026-07-11
 
 ## Current status update (2026-07-15)

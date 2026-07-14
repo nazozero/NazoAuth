@@ -690,6 +690,7 @@ fn parse_module_id(value: &str) -> Result<ModuleId, RepositoryError> {
         "authorization_details" => Ok(ModuleId::AuthorizationDetails),
         "http_message_signatures" => Ok(ModuleId::HttpMessageSignatures),
         "scim" => Ok(ModuleId::Scim),
+        "scim_security_events" => Ok(ModuleId::ScimSecurityEvents),
         "native_sso" => Ok(ModuleId::NativeSso),
         "frontchannel_logout" => Ok(ModuleId::FrontchannelLogout),
         "session_management" => Ok(ModuleId::SessionManagement),
