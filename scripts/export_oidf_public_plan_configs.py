@@ -15,6 +15,7 @@ PRIVATE_JWK_FIELDS = {"d", "p", "q", "dp", "dq", "qi", "oth", "k"}
 SEED_NAZO_FIELDS = {
     "fapi_profile",
     "fapi_request_method",
+    "fapi_response_mode",
     "client_auth_type",
     "sender_constrain",
 }
