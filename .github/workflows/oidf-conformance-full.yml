@@ -46,6 +46,7 @@ jobs:
           git -C oidf-conformance-suite fetch --depth 1 origin "$OIDF_REF"
           git -C oidf-conformance-suite checkout --detach FETCH_HEAD
           diff -u requirements/oidf-conformance.in oidf-conformance-suite/scripts/requirements.txt
+          python scripts/apply_oidf_runner_patch.py --suite-dir oidf-conformance-suite
 
       - name: Install official runner dependencies
         run: python -m pip install --require-hashes -r requirements/oidf-conformance.txt
@@ -166,7 +167,11 @@ jobs:
             --output oidf-plan-configs.json
           python scripts/export_oidf_public_plan_configs.py \
             --config-json-file oidf-plan-configs.json \
-            --output-dir oidf-public-plan-configs
+            --output-dir oidf-public-plan-configs \
+            --source-commit "$GITHUB_SHA"
+          python scripts/oidf_mtls_ca_bundle.py verify \
+            --artifact-directory oidf-public-plan-configs \
+            --expected-source-commit "$GITHUB_SHA"
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
@@ -285,6 +290,7 @@ jobs:
           git -C oidf-conformance-suite fetch --depth 1 origin "$OIDF_REF"
           git -C oidf-conformance-suite checkout --detach FETCH_HEAD
           diff -u requirements/oidf-conformance.in oidf-conformance-suite/scripts/requirements.txt
+          python scripts/apply_oidf_runner_patch.py --suite-dir oidf-conformance-suite
 
       - name: Install official runner dependencies
         run: python -m pip install --require-hashes -r requirements/oidf-conformance.txt

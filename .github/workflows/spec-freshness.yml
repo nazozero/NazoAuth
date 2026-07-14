@@ -5,6 +5,7 @@ on:
     paths:
       - ".github/workflows/spec-freshness.yml"
       - ".github/workflows/oidf-conformance*.yml"
+      - ".github/workflows/oidf-public-seed-configs.yml"
       - "requirements/spec-freshness.json"
       - "scripts/check_spec_freshness.py"
       - "tests/unit/test_spec_freshness.py"
@@ -32,6 +33,7 @@ jobs:
           .github/workflows/spec-freshness.yml
           .github/workflows/oidf-conformance.yml
           .github/workflows/oidf-conformance-full.yml
+          .github/workflows/oidf-public-seed-configs.yml
       - uses: actions/setup-python@v6.3.0
         with:
           python-version: "3.13"

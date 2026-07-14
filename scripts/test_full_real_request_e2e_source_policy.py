@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import ast
 import subprocess
 import sys
 import unittest
@@ -132,6 +133,40 @@ class SourcePolicyTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_private_key_jwt_fixtures_explicitly_opt_into_endpoint_audience(self) -> None:
+        expected_clients = {
+            "Private JWT Full E2E",
+            "Private JWT Multi Alg Full E2E",
+            "Private JWT Auth Code Full E2E",
+            "Private JWT DPoP Required Full E2E",
+        }
+        configured_clients: dict[str, object] = {}
+
+        for node in ast.walk(ast.parse(SCRIPT.read_text(encoding="utf-8"))):
+            if (
+                not isinstance(node, ast.Call)
+                or not isinstance(node.func, ast.Name)
+                or node.func.id != "create_client"
+                or len(node.args) < 2
+                or not isinstance(node.args[1], ast.Dict)
+            ):
+                continue
+
+            fields: dict[str, object] = {}
+            for key, value in zip(node.args[1].keys, node.args[1].values, strict=True):
+                if isinstance(key, ast.Constant) and isinstance(key.value, str):
+                    if isinstance(value, ast.Constant):
+                        fields[key.value] = value.value
+            if fields.get("token_endpoint_auth_method") == "private_key_jwt":
+                client_name = fields.get("client_name")
+                self.assertIsInstance(client_name, str)
+                configured_clients[str(client_name)] = fields.get(
+                    "allow_client_assertion_endpoint_audience"
+                )
+
+        self.assertEqual(set(configured_clients), expected_clients)
+        self.assertTrue(all(value is True for value in configured_clients.values()))
 
 
 if __name__ == "__main__":
