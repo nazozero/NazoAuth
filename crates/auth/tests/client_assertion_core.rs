@@ -88,7 +88,7 @@ fn assertion_with_algorithm(claim_overrides: Value, kid: Option<&str>, algorithm
     let mut claims = json!({
         "iss": "client-1",
         "sub": "client-1",
-        "aud": "https://issuer.example/token",
+        "aud": "https://issuer.example",
         "iat": NOW,
         "nbf": NOW,
         "exp": NOW + 120,
@@ -152,14 +152,39 @@ fn valid_assertion_returns_only_replay_and_algorithm_material() {
 #[test]
 fn endpoint_audiences_and_arrays_follow_exact_client_policy() {
     let mut client = client(json!({"keys": [public_jwk(Some("kid"))]}));
-    for audience in [
-        "https://issuer.example",
-        "https://issuer.example/par",
-        "https://issuer.example/token",
+    let issuer_assertion = assertion(json!({"aud": "https://issuer.example"}), Some("kid"));
+    assert!(verify_at(&client, &issuer_assertion, "/par").is_ok());
+
+    for (endpoint_path, audience) in [
+        ("/par", "https://issuer.example/par"),
+        ("/par", "https://issuer.example/token"),
+        ("/token", "https://issuer.example/token"),
+        ("/bc-authorize", "https://issuer.example/bc-authorize"),
+        ("/bc-authorize", "https://issuer.example/token"),
     ] {
-        let par_assertion = assertion(json!({"aud": audience}), Some("kid"));
-        assert!(verify_at(&client, &par_assertion, "/par").is_ok());
+        let endpoint_assertion = assertion(json!({"aud": audience}), Some("kid"));
+        assert_eq!(
+            verify_at(&client, &endpoint_assertion, endpoint_path).unwrap_err(),
+            ClientAssertionValidationError::Audience,
+            "endpoint audiences must be rejected unless the client explicitly opts in"
+        );
     }
+
+    client.allow_client_assertion_endpoint_audience = true;
+    for (endpoint_path, audience) in [
+        ("/par", "https://issuer.example/par"),
+        ("/par", "https://issuer.example/token"),
+        ("/token", "https://issuer.example/token"),
+        ("/bc-authorize", "https://issuer.example/bc-authorize"),
+        ("/bc-authorize", "https://issuer.example/token"),
+    ] {
+        let endpoint_assertion = assertion(json!({"aud": audience}), Some("kid"));
+        assert!(
+            verify_at(&client, &endpoint_assertion, endpoint_path).is_ok(),
+            "the compatibility policy must admit the endpoint audience it names"
+        );
+    }
+
     let array_assertion = assertion(
         json!({"aud": ["https://issuer.example/token", "https://other.example"]}),
         Some("kid"),

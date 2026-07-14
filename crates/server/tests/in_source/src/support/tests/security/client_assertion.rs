@@ -2,16 +2,27 @@ use super::*;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 
 #[test]
-fn par_private_key_jwt_accepts_each_rfc9126_audience_without_client_opt_in() {
+fn par_private_key_jwt_endpoint_audiences_require_explicit_client_opt_in() {
     let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let public_jwk = private_key.public_jwk("client-kid");
-    let client = private_key_jwt_client(json!({"keys": [public_jwk]}));
+    let mut client = private_key_jwt_client(json!({"keys": [public_jwk]}));
     assert!(!client.allow_client_assertion_endpoint_audience);
     let settings = test_settings();
     let req = TestRequest::post().uri("/par").to_http_request();
 
-    for (audience, jti) in [
-        (settings.endpoint.issuer.clone(), "par-issuer-audience"),
+    let issuer_assertion = signed_client_assertion(
+        &client.client_id,
+        &settings.endpoint.issuer,
+        "client-kid",
+        &private_key,
+        "par-issuer-audience",
+    );
+    assert!(
+        verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &issuer_assertion)
+            .is_ok()
+    );
+
+    let endpoint_audiences = [
         (
             format!("{}/token", settings.endpoint.issuer),
             "par-token-audience",
@@ -20,18 +31,30 @@ fn par_private_key_jwt_accepts_each_rfc9126_audience_without_client_opt_in() {
             format!("{}/par", settings.endpoint.issuer),
             "par-endpoint-audience",
         ),
-    ] {
+    ];
+    for (audience, jti) in &endpoint_audiences {
+        let assertion =
+            signed_client_assertion(&client.client_id, audience, "client-kid", &private_key, jti);
+        assert!(
+            verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &assertion)
+                .is_err(),
+            "PAR client assertion audience {audience} must require explicit opt-in"
+        );
+    }
+
+    client.allow_client_assertion_endpoint_audience = true;
+    for (index, (audience, _)) in endpoint_audiences.iter().enumerate() {
         let assertion = signed_client_assertion(
             &client.client_id,
-            &audience,
+            audience,
             "client-kid",
             &private_key,
-            jti,
+            &format!("par-opt-in-audience-{index}"),
         );
         assert!(
             verify_private_key_jwt_claims_with_settings(&settings, &req, &client, &assertion)
                 .is_ok(),
-            "PAR client assertion audience {audience} must be accepted"
+            "the explicit compatibility policy must admit {audience}"
         );
     }
 }

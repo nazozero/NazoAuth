@@ -190,6 +190,25 @@ fn signed_request_object(client_id: &str, fixture: &ClientSigningFixture, extra:
     fixture.encode_jwt(&header, &claims)
 }
 
+fn private_key_client_assertion(
+    client_id: &str,
+    audience: &str,
+    fixture: &ClientSigningFixture,
+) -> String {
+    let now = Utc::now().timestamp();
+    let claims = json!({
+        "iss": client_id,
+        "sub": client_id,
+        "aud": audience,
+        "iat": now,
+        "exp": now + 120,
+        "jti": format!("par-client-assertion-{}", Uuid::now_v7()),
+    });
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::PS256);
+    header.kid = Some("par-client-assertion-kid".to_owned());
+    fixture.encode_jwt(&header, &claims)
+}
+
 fn unsigned_request_object(client_id: &str) -> String {
     let now = Utc::now().timestamp();
     let header = json!({"alg": "none"});
@@ -350,6 +369,37 @@ impl LiveParFixture {
     async fn insert_client_secret_post_client(&self, client_id: &str, secret: &str) {
         self.insert_client_secret_post_client_with_options(client_id, secret, false, false, true)
             .await;
+    }
+
+    async fn insert_private_key_jwt_client(
+        &self,
+        client_id: &str,
+        jwks: Value,
+        allow_endpoint_audience: bool,
+    ) {
+        self.insert_client_secret_post_client(client_id, &par_test_secret())
+            .await;
+        let mut conn = get_conn(&self.par.database)
+            .await
+            .expect("database connection should open");
+        sql_query(
+            r#"
+            UPDATE oauth_clients
+            SET client_secret_hash = NULL,
+                token_endpoint_auth_method = 'private_key_jwt',
+                require_dpop_bound_tokens = true,
+                jwks = $1,
+                allow_client_assertion_endpoint_audience = $2
+            WHERE tenant_id = $3 AND client_id = $4
+            "#,
+        )
+        .bind::<diesel::sql_types::Jsonb, _>(jwks)
+        .bind::<Bool, _>(allow_endpoint_audience)
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<Text, _>(client_id)
+        .execute(&mut conn)
+        .await
+        .expect("PAR private_key_jwt client update should succeed");
     }
 
     async fn set_client_jwks(&self, client_id: &str, jwks: Value) {
@@ -885,6 +935,60 @@ async fn par_fapi2_rejects_shared_secret_client_auth_after_authentication() {
     assert_eq!(status, StatusCode::UNAUTHORIZED);
     assert_eq!(value.get("error"), Some(&json!("invalid_client")));
     assert!(value.get("request_uri").is_none());
+}
+
+#[actix_web::test]
+async fn par_rejects_endpoint_url_client_assertion_audiences_as_oauth_errors() {
+    let Some(fixture) = LiveParFixture::new_with_settings(|settings| {
+        settings.protocol.authorization_server_profile =
+            AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest;
+    })
+    .await
+    else {
+        return;
+    };
+    let client_id = format!("par-private-key-audience-{}", Uuid::now_v7().simple());
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    fixture
+        .insert_private_key_jwt_client(
+            &client_id,
+            json!({"keys": [key.public_jwk("par-client-assertion-kid")]}),
+            false,
+        )
+        .await;
+
+    for audience in ["https://issuer.example/par", "https://issuer.example/token"] {
+        let assertion = private_key_client_assertion(&client_id, audience, &key);
+        let body = Bytes::from(format!(
+            "client_id={}&client_assertion_type={}&client_assertion={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback",
+            urlencoding::encode(&client_id),
+            urlencoding::encode(nazo_auth::CLIENT_ASSERTION_TYPE_JWT_BEARER),
+            urlencoding::encode(&assertion),
+        ));
+        let response = par_after_rate_limit(
+            &fixture.par,
+            TestRequest::post()
+                .uri("/par")
+                .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+                .to_http_request(),
+            body,
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok()),
+            Some("application/json")
+        );
+        assert!(response.headers().get(header::WWW_AUTHENTICATE).is_none());
+        let (_, value) = par_json_body(response).await;
+        assert_eq!(value.get("error"), Some(&json!("invalid_client")));
+        assert!(value.get("error_description").is_some_and(Value::is_string));
+        assert!(value.get("request_uri").is_none());
+    }
 }
 
 #[actix_web::test]

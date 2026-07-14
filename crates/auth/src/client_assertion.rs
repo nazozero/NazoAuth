@@ -175,21 +175,16 @@ fn client_assertion_audience_candidates(
     endpoint_path: &str,
     allow_endpoint_audience: bool,
 ) -> Vec<String> {
-    if endpoint_path == "/par" {
-        return vec![
-            issuer.to_owned(),
-            format!("{issuer}/par"),
-            format!("{issuer}/token"),
-        ];
+    let mut candidates = vec![issuer.to_owned()];
+    if !allow_endpoint_audience {
+        return candidates;
     }
-    if endpoint_path == "/bc-authorize" && allow_endpoint_audience {
-        return vec![
-            issuer.to_owned(),
-            format!("{issuer}/bc-authorize"),
-            format!("{issuer}/token"),
-        ];
+
+    candidates.push(format!("{issuer}{endpoint_path}"));
+    if matches!(endpoint_path, "/par" | "/bc-authorize") {
+        candidates.push(format!("{issuer}/token"));
     }
-    vec![issuer.to_owned(), format!("{issuer}{endpoint_path}")]
+    candidates
 }
 
 fn client_assertion_decode_error(
