@@ -22,7 +22,7 @@ GLOB_REEXPORT = re.compile(r"(?m)^\s*pub(?:\([^)]*\))?\s+use\s+[^;]*::\*\s*;")
 PRELUDE_MODULE = re.compile(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+prelude\s*;")
 EXACT_RUST_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
 FORBIDDEN_CRATE_DEPENDENCIES = {
-    "auth": {
+    "authorization-server-core": {
         "actix-web",
         "diesel",
         "diesel-async",
@@ -130,14 +130,18 @@ def check_documentation_boundaries() -> None:
                 )
 
 
-def check_server_import_boundaries() -> None:
-    for path in sorted((ROOT / "crates" / "server" / "src").rglob("*.rs")):
+def check_authorization_server_import_boundaries() -> None:
+    for path in sorted((ROOT / "crates" / "authorization-server" / "src").rglob("*.rs")):
         text = path.read_text(encoding="utf-8")
         relative = path.relative_to(ROOT)
         if GLOB_REEXPORT.search(text):
-            raise SystemExit(f"server source contains a glob re-export: {relative}")
+            raise SystemExit(
+                f"authorization-server source contains a glob re-export: {relative}"
+            )
         if PRELUDE_MODULE.search(text):
-            raise SystemExit(f"server source declares a prelude module: {relative}")
+            raise SystemExit(
+                f"authorization-server source declares a prelude module: {relative}"
+            )
 
 
 def check_toolchain_pins() -> None:
@@ -256,7 +260,7 @@ def main() -> None:
         check_migration_checksums()
         check_route_fixture()
         check_documentation_boundaries()
-        check_server_import_boundaries()
+        check_authorization_server_import_boundaries()
         check_toolchain_pins()
         check_crate_dependency_boundaries()
         check_workspace_package_metadata()

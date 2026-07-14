@@ -850,7 +850,8 @@ async fn backchannel_logout_fanout_rolls_back_when_any_delivery_is_invalid() {
 
 #[test]
 fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
-    let server = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../server/src");
+    let server =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../authorization-server/src");
     for relative in [
         "domain/rows.rs",
         "http/admin/grants.rs",

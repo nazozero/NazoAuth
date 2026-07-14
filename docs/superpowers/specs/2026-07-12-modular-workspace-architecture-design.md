@@ -106,16 +106,16 @@ Cargo.toml
 Cargo.lock
 rust-toolchain.toml
 crates/
-  runtime-modules/
-  auth/
+  runtime-capabilities/
+  authorization-server-core/
   identity/
   resource-server/
   http-signatures/
   key-management/
-  postgres/
-  valkey/
+  persistence-postgres/
+  state-store-valkey/
   http-actix/
-  server/
+  authorization-server/
 migrations/
 tests/
 docs/
@@ -123,7 +123,7 @@ docs/
 
 The root manifest becomes a virtual workspace using resolver 3. Workspace
 package metadata, dependencies, lints, and release profiles are centralized.
-`nazo-server` is the default member. The primary deployed binary remains
+`nazo-oauth-server` is the default member. The primary deployed binary remains
 `nazo-oauth-server`.
 
 Migration, keyctl, and OIDF seed binaries remain in the server package unless
@@ -256,7 +256,7 @@ parse request
 
 It does not depend directly on Diesel or Fred.
 
-### 6.10 `nazo-server`
+### 6.10 `nazo-oauth-server`
 
 Is only the composition root: configuration loading/validation, focused
 settings construction, concrete adapter initialization, identity/auth/resource
@@ -288,7 +288,7 @@ nazo-valkey          -> nazo-auth, nazo-identity
 nazo-key-management  -> nazo-auth
 nazo-http-actix      -> nazo-auth, nazo-identity, nazo-resource-server,
                         nazo-runtime-modules
-nazo-server          -> all concrete crates required for composition
+nazo-oauth-server    -> all concrete crates required for composition
 ```
 
 `nazo-http-signatures` is used only by crates that need its primitive. The

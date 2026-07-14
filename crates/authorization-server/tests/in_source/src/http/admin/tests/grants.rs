@@ -499,8 +499,10 @@ fn grant_json_projects_authorization_record_without_internal_ids() {
 #[test]
 fn admin_grants_handler_uses_auth_port_instead_of_postgres_types() {
     let source = include_str!("../../../../../../src/http/admin/grants.rs");
-    let adapter = include_str!("../../../../../../../postgres/src/repositories/grants.rs");
-    let tokens = include_str!("../../../../../../../postgres/src/repositories/tokens.rs");
+    let adapter =
+        include_str!("../../../../../../../persistence-postgres/src/repositories/grants.rs");
+    let tokens =
+        include_str!("../../../../../../../persistence-postgres/src/repositories/tokens.rs");
 
     assert!(source.contains("Data<dyn AdminGrantRepositoryPort>"));
     assert!(!source.contains("nazo_postgres"));

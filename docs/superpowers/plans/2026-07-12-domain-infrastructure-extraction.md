@@ -30,10 +30,10 @@
 - Create: `crates/identity/src/ports.rs`
 - Create: `crates/identity/src/service.rs`
 - Create: `crates/identity/src/{tenancy,mfa,session,passkey,email,federation,scim}.rs`
-- Move/adapt tests from: `crates/server/tests/in_source/src/support/tests/{tenancy,mfa,sessions,passkeys,email}.rs`
-- Move/adapt tests from: `crates/server/tests/in_source/src/http/scim/tests/{normalization,schema}.rs`
+- Move/adapt tests from: `crates/authorization-server/tests/in_source/src/support/tests/{tenancy,mfa,sessions,passkeys,email}.rs`
+- Move/adapt tests from: `crates/authorization-server/tests/in_source/src/http/scim/tests/{normalization,schema}.rs`
 - Modify: `Cargo.toml`
-- Modify: `crates/server/Cargo.toml`
+- Modify: `crates/authorization-server/Cargo.toml`
 
 **Interfaces:**
 - Consumes: existing pure identity behavior and test fixtures.
@@ -154,22 +154,22 @@ Each service accepts only the ports it uses. A method that merely forwards one c
 Run identity tests, server library tests, workspace check, Clippy, and the dependency-boundary checker. Commit:
 
 ```text
-rtk git add Cargo.toml Cargo.lock crates/identity crates/server
+rtk git add Cargo.toml Cargo.lock crates/identity crates/authorization-server
 rtk git commit -m "refactor: extract identity domain"
 ```
 
 ### Task 2: Extract authorization-server domain policy
 
 **Files:**
-- Create: `crates/auth/Cargo.toml`
-- Create: `crates/auth/src/lib.rs`
-- Create: `crates/auth/src/{error,client,claims,authorization_details,profile,grant,authorization,token,metadata,sender_constraint,ports}.rs`
-- Move/adapt: `crates/server/src/domain/{oauth,authorization_details}.rs`
-- Move/adapt pure parts of: `crates/server/src/support/{oauth,oidc_claims,uri_policy,dpop,mtls,jwe}.rs`
-- Move/adapt pure token-claim parts of: `crates/server/src/support/security/tokens.rs`
-- Move/adapt corresponding tests into `crates/auth/tests/`
+- Create: `crates/authorization-server-core/Cargo.toml`
+- Create: `crates/authorization-server-core/src/lib.rs`
+- Create: `crates/authorization-server-core/src/{error,client,claims,authorization_details,profile,grant,authorization,token,metadata,sender_constraint,ports}.rs`
+- Move/adapt: `crates/authorization-server/src/domain/{oauth,authorization_details}.rs`
+- Move/adapt pure parts of: `crates/authorization-server/src/support/{oauth,oidc_claims,uri_policy,dpop,mtls,jwe}.rs`
+- Move/adapt pure token-claim parts of: `crates/authorization-server/src/support/security/tokens.rs`
+- Move/adapt corresponding tests into `crates/authorization-server-core/tests/`
 - Modify: `Cargo.toml`
-- Modify: `crates/server/Cargo.toml`
+- Modify: `crates/authorization-server/Cargo.toml`
 
 **Interfaces:**
 - Consumes: minimal `nazo-identity` types, `nazo-runtime-modules::ActiveModuleSnapshot`, and `nazo-http-signatures` primitives.
@@ -238,12 +238,12 @@ Expected: no Actix/Diesel/Fred/row dependency. Commit `refactor: extract authori
 - Create: `crates/key-management/Cargo.toml`
 - Create: `crates/key-management/src/lib.rs`
 - Create: `crates/key-management/src/{model,store,lifecycle,local,external,jwks}.rs`
-- Move/adapt: `crates/server/src/domain/keyset.rs`
-- Move/adapt: `crates/server/src/support/keyset.rs`
-- Move/adapt: `crates/server/src/support/keyset/external.rs`
+- Move/adapt: `crates/authorization-server/src/domain/keyset.rs`
+- Move/adapt: `crates/authorization-server/src/support/keyset.rs`
+- Move/adapt: `crates/authorization-server/src/support/keyset/external.rs`
 - Move/adapt key tests into `crates/key-management/tests/`
-- Modify: `crates/server/src/bootstrap/mod.rs`
-- Modify: `crates/server/Cargo.toml`
+- Modify: `crates/authorization-server/src/bootstrap/mod.rs`
+- Modify: `crates/authorization-server/Cargo.toml`
 
 **Interfaces:**
 - Consumes: `nazo_auth::Signer`, `SigningPurpose`, and focused key settings.
@@ -284,15 +284,15 @@ Run key-management tests, external signer fault tests, server tests, and depende
 ### Task 4: Extract PostgreSQL rows and identity repositories
 
 **Files:**
-- Create: `crates/postgres/Cargo.toml`
-- Create: `crates/postgres/src/lib.rs`
-- Move: `crates/server/src/db.rs` -> `crates/postgres/src/pool.rs`
-- Move: `crates/server/src/schema.rs` -> `crates/postgres/src/schema.rs`
-- Move/adapt identity rows from `crates/server/src/domain/rows.rs` -> `crates/postgres/src/rows/identity.rs`
-- Create: `crates/postgres/src/repositories/{users,mfa,passkeys,federation,scim}.rs`
-- Create: `crates/postgres/src/convert/identity.rs`
-- Modify all identity callers under `crates/server/src/`
-- Test: `crates/postgres/tests/identity_repositories.rs`
+- Create: `crates/persistence-postgres/Cargo.toml`
+- Create: `crates/persistence-postgres/src/lib.rs`
+- Move: `crates/authorization-server/src/db.rs` -> `crates/persistence-postgres/src/pool.rs`
+- Move: `crates/authorization-server/src/schema.rs` -> `crates/persistence-postgres/src/schema.rs`
+- Move/adapt identity rows from `crates/authorization-server/src/domain/rows.rs` -> `crates/persistence-postgres/src/rows/identity.rs`
+- Create: `crates/persistence-postgres/src/repositories/{users,mfa,passkeys,federation,scim}.rs`
+- Create: `crates/persistence-postgres/src/convert/identity.rs`
+- Modify all identity callers under `crates/authorization-server/src/`
+- Test: `crates/persistence-postgres/tests/identity_repositories.rs`
 
 **Interfaces:**
 - Consumes: identity repository traits/domain types.
@@ -321,14 +321,14 @@ Run the PostgreSQL service integration tests against the configured test databas
 ### Task 5: Extract PostgreSQL auth/runtime repositories and migrations
 
 **Files:**
-- Create: `crates/postgres/src/rows/{auth,runtime}.rs`
-- Create: `crates/postgres/src/repositories/{clients,grants,tokens,authorization,runtime_modules,audit}.rs`
-- Create: `crates/postgres/src/convert/auth.rs`
+- Create: `crates/persistence-postgres/src/rows/{auth,runtime}.rs`
+- Create: `crates/persistence-postgres/src/repositories/{clients,grants,tokens,authorization,runtime_modules,audit}.rs`
+- Create: `crates/persistence-postgres/src/convert/auth.rs`
 - Create: `migrations/20260712000100_runtime_module_state/up.sql`
 - Create: `migrations/20260712000100_runtime_module_state/down.sql` (the directory timestamp follows baseline `20260711000100_oidc_response_crypto_metadata`)
-- Modify: `crates/server/src/bin/nazo_oauth_migrate.rs`
-- Modify auth callers under `crates/server/src/`
-- Test: `crates/postgres/tests/{auth_repositories,runtime_modules,migrations}.rs`
+- Modify: `crates/authorization-server/src/bin/nazo_oauth_migrate.rs`
+- Modify auth callers under `crates/authorization-server/src/`
+- Test: `crates/persistence-postgres/tests/{auth_repositories,runtime_modules,migrations}.rs`
 
 **Interfaces:**
 - Consumes: auth repository ports and runtime-module repository port.
@@ -357,15 +357,15 @@ Run `rtk python scripts/verify_static_contracts.py --append-migration 2026071200
 ### Task 6: Extract Valkey mechanisms behind focused stores
 
 **Files:**
-- Create: `crates/valkey/Cargo.toml`
-- Create: `crates/valkey/src/lib.rs`
-- Move/adapt: `crates/server/src/support/valkey.rs`
-- Move/adapt: `crates/server/src/support/redis_keys.rs`
-- Create: `crates/valkey/src/{connection,command,error,keys}.rs`
-- Create: `crates/valkey/src/stores/{session,authorization,replay,rate_limit,ciba,device,delivery}.rs`
+- Create: `crates/state-store-valkey/Cargo.toml`
+- Create: `crates/state-store-valkey/src/lib.rs`
+- Move/adapt: `crates/authorization-server/src/support/valkey.rs`
+- Move/adapt: `crates/authorization-server/src/support/redis_keys.rs`
+- Create: `crates/state-store-valkey/src/{connection,command,error,keys}.rs`
+- Create: `crates/state-store-valkey/src/stores/{session,authorization,replay,rate_limit,ciba,device,delivery}.rs`
 - Move Lua scripts from callers into their owning store modules
-- Move/adapt Valkey tests into `crates/valkey/tests/`
-- Modify: callers under `crates/server/src/`
+- Move/adapt Valkey tests into `crates/state-store-valkey/tests/`
+- Modify: callers under `crates/authorization-server/src/`
 
 **Interfaces:**
 - Consumes: auth/identity store ports and exact existing key/payload/TTL contracts.
@@ -389,7 +389,7 @@ Run Valkey tests with the service available, then the repository failure-injecti
 
 - [ ] **Step 5: Verify no Fred leakage and commit**
 
-Use `rtk rg -n 'fred::|ValkeyClient' crates --glob '*.rs'`; expected matches only under `crates/valkey`. Run workspace check/tests/Clippy and commit `refactor: isolate valkey stores`.
+Use `rtk rg -n 'fred::|ValkeyClient' crates --glob '*.rs'`; expected matches only under `crates/state-store-valkey`. Run workspace check/tests/Clippy and commit `refactor: isolate valkey stores`.
 
 ### Task 7: Complete the domain/infrastructure phase gate
 
@@ -403,7 +403,7 @@ Use `rtk rg -n 'fred::|ValkeyClient' crates --glob '*.rs'`; expected matches onl
 - [ ] **Step 1: Run boundary searches**
 
 ```text
-rtk rg -n 'actix|diesel|fred' crates/auth crates/identity crates/runtime-modules crates/resource-server -g '*.rs' -g 'Cargo.toml'
+rtk rg -n 'actix|diesel|fred' crates/authorization-server-core crates/identity crates/runtime-capabilities crates/resource-server -g '*.rs' -g 'Cargo.toml'
 rtk rg -n 'pub .*Row|pub mod rows|pub use .*\*' crates -g '*.rs'
 ```
 

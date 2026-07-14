@@ -21,11 +21,11 @@
 ### Task 1: Architecture and secret-behavior contracts
 
 **Files:**
-- Modify: `crates/postgres/tests/identity_repositories.rs`
-- Modify: `crates/server/tests/in_source/src/http/token/tests/client_auth.rs`
+- Modify: `crates/persistence-postgres/tests/identity_repositories.rs`
+- Modify: `crates/authorization-server/tests/in_source/src/http/token/tests/client_auth.rs`
 
 **Interfaces:**
-- Consumes: recursive source scan rooted at `crates/server/src`.
+- Consumes: recursive source scan rooted at `crates/authorization-server/src`.
 - Produces: contracts rejecting persistence-shaped client structs/conversions and semantic Diesel/raw-SQL OAuth-client access; default correct/wrong secret and store-failure tests.
 
 - [ ] **Step 1: Write failing contracts** that recursively inspect Rust production files, excluding `schema.rs`, and reject `oauth_clients::`, Diesel operations whose source contains the OAuth-client table, raw SQL CRUD for that table, a client struct containing the sentinel fields `client_id`, `client_secret_hash`, `redirect_uris`, and `grant_types`, and record-to-domain field-copy conversions.
@@ -35,10 +35,10 @@
 ### Task 2: Focused PostgreSQL repository operations
 
 **Files:**
-- Modify: `crates/postgres/src/repositories/clients.rs`
-- Modify: `crates/postgres/src/repositories/mod.rs`
-- Modify: `crates/postgres/src/lib.rs`
-- Test: `crates/postgres/tests/identity_repositories.rs`
+- Modify: `crates/persistence-postgres/src/repositories/clients.rs`
+- Modify: `crates/persistence-postgres/src/repositories/mod.rs`
+- Modify: `crates/persistence-postgres/src/lib.rs`
+- Test: `crates/persistence-postgres/tests/identity_repositories.rs`
 
 **Interfaces:**
 - Consumes: `nazo_auth::{OAuthClient, ValidatedClientRegistration}` and tenant/client identifiers.
@@ -52,14 +52,14 @@
 ### Task 3: Server caller migration and row deletion
 
 **Files:**
-- Modify: `crates/server/src/domain/rows.rs`
-- Modify: `crates/server/src/http/mod.rs`
-- Modify: `crates/server/src/http/admin/clients/{create,list,update,detail}.rs`
-- Modify: `crates/server/src/http/dynamic_client_registration.rs`
-- Modify: `crates/server/src/http/token/{client_auth,dispatch,introspect,revoke}.rs`
-- Modify: `crates/server/src/http/profile/{applications,oidc_logout}.rs`
-- Modify: `crates/server/src/bin/nazo_oauth_seed_oidf.rs`
-- Modify: affected in-source tests and fixtures under `crates/server/tests/in_source/src`
+- Modify: `crates/authorization-server/src/domain/rows.rs`
+- Modify: `crates/authorization-server/src/http/mod.rs`
+- Modify: `crates/authorization-server/src/http/admin/clients/{create,list,update,detail}.rs`
+- Modify: `crates/authorization-server/src/http/dynamic_client_registration.rs`
+- Modify: `crates/authorization-server/src/http/token/{client_auth,dispatch,introspect,revoke}.rs`
+- Modify: `crates/authorization-server/src/http/profile/{applications,oidc_logout}.rs`
+- Modify: `crates/authorization-server/src/bin/nazo_oauth_seed_oidf.rs`
+- Modify: affected in-source tests and fixtures under `crates/authorization-server/tests/in_source/src`
 
 **Interfaces:**
 - Consumes: Task 2 repository methods.

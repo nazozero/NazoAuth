@@ -4,7 +4,7 @@
 
 **Goal:** Establish compatibility contracts and the first compiler-enforced Workspace boundaries without changing deployed behavior.
 
-**Architecture:** Convert the root package into a virtual resolver-3 workspace while keeping the existing server monolith compiling inside `crates/server`. Add the real cross-domain runtime state-machine crate, extract the independent resource-server core, and retain/rename the reusable HTTP Signatures primitive.
+**Architecture:** Convert the root package into a virtual resolver-3 workspace while keeping the existing server monolith compiling inside `crates/authorization-server`. Add the real cross-domain runtime state-machine crate, extract the independent resource-server core, and retain/rename the reusable HTTP Signatures primitive.
 
 **Tech Stack:** Rust 1.97.0, Cargo resolver 3, Actix Web, serde, arc-swap, jsonwebtoken, proptest, GitHub Actions.
 
@@ -256,9 +256,9 @@ rtk git commit -m "test: lock compatibility contracts"
 
 **Files:**
 - Create: `rust-toolchain.toml`
-- Create: `crates/server/Cargo.toml`
-- Move: `src/` -> `crates/server/src/`
-- Move: `tests/in_source/` -> `crates/server/tests/in_source/`
+- Create: `crates/authorization-server/Cargo.toml`
+- Move: `src/` -> `crates/authorization-server/src/`
+- Move: `tests/in_source/` -> `crates/authorization-server/tests/in_source/`
 - Modify: `Cargo.toml`
 - Modify: `.github/workflows/code-quality.yml`
 - Modify: `.github/workflows/codecov.yml`
@@ -276,7 +276,7 @@ rtk git commit -m "test: lock compatibility contracts"
 
 **Interfaces:**
 - Consumes: the complete existing `nazo-oauth-server` package unchanged.
-- Produces: virtual root workspace, default member `crates/server`, and the same binary names and operator commands.
+- Produces: virtual root workspace, default member `crates/authorization-server`, and the same binary names and operator commands.
 
 - [ ] **Step 1: Add the exact toolchain file**
 
@@ -296,11 +296,11 @@ Replace every `dtolnay/rust-toolchain@1.96.0` input and builder image `rust:1.96
 Run:
 
 ```text
-rtk git mv src crates/server/src
-rtk git mv tests/in_source crates/server/tests/in_source
+rtk git mv src crates/authorization-server/src
+rtk git mv tests/in_source crates/authorization-server/tests/in_source
 ```
 
-Copy the current `[package]`, binaries, dependencies, and dev-dependencies into `crates/server/Cargo.toml`. Change only relative paths required by the move. Keep package name `nazo-oauth-server` and all binary names.
+Copy the current `[package]`, binaries, dependencies, and dev-dependencies into `crates/authorization-server/Cargo.toml`. Change only relative paths required by the move. Keep package name `nazo-oauth-server` and all binary names.
 
 - [ ] **Step 3: Replace the root manifest**
 
@@ -309,10 +309,10 @@ The root `Cargo.toml` must have this shape:
 ```toml
 [workspace]
 members = [
-    "crates/server",
+    "crates/authorization-server",
     "crates/fapi-http-signatures",
 ]
-default-members = ["crates/server"]
+default-members = ["crates/authorization-server"]
 resolver = "3"
 
 [workspace.package]
@@ -353,21 +353,21 @@ Expected: all 1,977 baseline tests and static contracts pass.
 - [ ] **Step 5: Commit the pure workspace move**
 
 ```text
-rtk git add Cargo.toml Cargo.lock rust-toolchain.toml crates/server Containerfile .github codecov.yml scripts
+rtk git add Cargo.toml Cargo.lock rust-toolchain.toml crates/authorization-server Containerfile .github codecov.yml scripts
 rtk git commit -m "refactor: establish virtual cargo workspace"
 ```
 
 ### Task 3: Implement the independent runtime-module state machine
 
 **Files:**
-- Create: `crates/runtime-modules/Cargo.toml`
-- Create: `crates/runtime-modules/src/lib.rs`
-- Create: `crates/runtime-modules/src/model.rs`
-- Create: `crates/runtime-modules/src/policy.rs`
-- Create: `crates/runtime-modules/src/snapshot.rs`
-- Create: `crates/runtime-modules/src/transition.rs`
-- Create: `crates/runtime-modules/src/repository.rs`
-- Create: `crates/runtime-modules/tests/state_machine.rs`
+- Create: `crates/runtime-capabilities/Cargo.toml`
+- Create: `crates/runtime-capabilities/src/lib.rs`
+- Create: `crates/runtime-capabilities/src/model.rs`
+- Create: `crates/runtime-capabilities/src/policy.rs`
+- Create: `crates/runtime-capabilities/src/snapshot.rs`
+- Create: `crates/runtime-capabilities/src/transition.rs`
+- Create: `crates/runtime-capabilities/src/repository.rs`
+- Create: `crates/runtime-capabilities/tests/state_machine.rs`
 - Modify: `Cargo.toml`
 
 **Interfaces:**
@@ -499,7 +499,7 @@ Expected: tests pass; direct dependencies contain only `arc-swap`, `serde`, `thi
 Commit:
 
 ```text
-rtk git add Cargo.toml Cargo.lock crates/runtime-modules
+rtk git add Cargo.toml Cargo.lock crates/runtime-capabilities
 rtk git commit -m "feat: add revision-bound runtime module state machine"
 ```
 
@@ -507,13 +507,13 @@ rtk git commit -m "feat: add revision-bound runtime module state machine"
 
 **Files:**
 - Create: `crates/resource-server/Cargo.toml`
-- Move: `crates/server/src/resource_server.rs` -> `crates/resource-server/src/lib.rs`
-- Move: `crates/server/src/resource_server/{dpop,jwk,presentation}.rs` -> `crates/resource-server/src/`
-- Move: relevant tests from `crates/server/tests/in_source/src/resource_server/tests/` -> `crates/resource-server/tests/`
-- Delete: `crates/server/src/resource_server/adapters.rs`
+- Move: `crates/authorization-server/src/resource_server.rs` -> `crates/resource-server/src/lib.rs`
+- Move: `crates/authorization-server/src/resource_server/{dpop,jwk,presentation}.rs` -> `crates/resource-server/src/`
+- Move: relevant tests from `crates/authorization-server/tests/in_source/src/resource_server/tests/` -> `crates/resource-server/tests/`
+- Delete: `crates/authorization-server/src/resource_server/adapters.rs`
 - Delete: Tower/Tonic adapter tests
-- Modify: `crates/server/src/lib.rs`
-- Modify: `crates/server/Cargo.toml`
+- Modify: `crates/authorization-server/src/lib.rs`
+- Modify: `crates/authorization-server/Cargo.toml`
 - Modify: `Cargo.toml`
 
 **Interfaces:**
@@ -543,7 +543,7 @@ Expected: all resource-server behavior tests pass; forbidden dependencies are ab
 - [ ] **Step 4: Commit**
 
 ```text
-rtk git add Cargo.toml Cargo.lock crates/resource-server crates/server
+rtk git add Cargo.toml Cargo.lock crates/resource-server crates/authorization-server
 rtk git commit -m "refactor: isolate resource server core"
 ```
 
@@ -552,8 +552,8 @@ rtk git commit -m "refactor: isolate resource server core"
 **Files:**
 - Move: `crates/fapi-http-signatures/` -> `crates/http-signatures/`
 - Modify: `crates/http-signatures/Cargo.toml`
-- Modify: `crates/server/Cargo.toml`
-- Modify: imports under `crates/server/src/`
+- Modify: `crates/authorization-server/Cargo.toml`
+- Modify: imports under `crates/authorization-server/src/`
 - Modify: docs referring to the package name
 
 **Interfaces:**
@@ -583,7 +583,7 @@ Expected: 89 tests pass and only framework-neutral direct dependencies remain.
 Commit:
 
 ```text
-rtk git add Cargo.toml Cargo.lock crates/http-signatures crates/server docs
+rtk git add Cargo.toml Cargo.lock crates/http-signatures crates/authorization-server docs
 rtk git commit -m "refactor: generalize http signatures crate"
 ```
 

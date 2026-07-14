@@ -452,7 +452,7 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
         seeder = (
             Path(__file__).resolve().parents[2]
             / "crates"
-            / "server"
+            / "authorization-server"
             / "src"
             / "bin"
             / "nazo_oauth_seed_oidf.rs"

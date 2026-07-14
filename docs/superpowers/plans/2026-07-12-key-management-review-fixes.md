@@ -20,7 +20,7 @@
 
 ### Task 1: Atomic generation and HTTP lease
 
-**Files:** Modify `crates/key-management/src/model.rs`, `crates/key-management/src/lib.rs`, `crates/server/src/http/fapi_resource.rs`; test `crates/key-management/src/model.rs` and server FAPI tests.
+**Files:** Modify `crates/key-management/src/model.rs`, `crates/key-management/src/lib.rs`, `crates/authorization-server/src/http/fapi_resource.rs`; test `crates/key-management/src/model.rs` and server FAPI tests.
 
 **Interfaces:** Produce `KeyManager::prepare_http_signing() -> Result<HttpSigningLease, _>`; lease exposes only `kid()`, `algorithm()`, and `sign(&[u8])`.
 
@@ -42,7 +42,7 @@
 
 ### Task 3: Concrete keyctl storage operations
 
-**Files:** Modify `crates/key-management/src/store.rs`, `model.rs`, `lib.rs`; simplify `crates/server/src/keyctl.rs`, support exports, and keyctl tests.
+**Files:** Modify `crates/key-management/src/store.rs`, `model.rs`, `lib.rs`; simplify `crates/authorization-server/src/keyctl.rs`, support exports, and keyctl tests.
 
 **Interfaces:** `KeyManager` directly produces public `KeyRecord` values and implements focused list/register-external/validate operations.
 
@@ -53,7 +53,7 @@
 
 ### Task 4: Opaque server test signing fixtures
 
-**Files:** Modify `crates/server/src/lib.rs`, `support/mod.rs`, affected `crates/server/tests/in_source/**`; remove `Keyset` alias in `domain/mod.rs`.
+**Files:** Modify `crates/authorization-server/src/lib.rs`, `support/mod.rs`, affected `crates/authorization-server/tests/in_source/**`; remove `Keyset` alias in `domain/mod.rs`.
 
 **Interfaces:** `ClientSigningFixture` exposes public JWK and behavioral construction/signing methods, never raw DER/PEM/private JWK.
 

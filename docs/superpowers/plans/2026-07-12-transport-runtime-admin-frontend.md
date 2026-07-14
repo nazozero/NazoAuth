@@ -26,13 +26,13 @@
 **Files:**
 - Create: `crates/http-actix/Cargo.toml`
 - Create: `crates/http-actix/src/lib.rs`
-- Move/adapt: `crates/server/src/http/` -> `crates/http-actix/src/endpoints/`
-- Move/adapt: `crates/server/src/bootstrap/{routes,cors}.rs` -> `crates/http-actix/src/`
+- Move/adapt: `crates/authorization-server/src/http/` -> `crates/http-actix/src/endpoints/`
+- Move/adapt: `crates/authorization-server/src/bootstrap/{routes,cors}.rs` -> `crates/http-actix/src/`
 - Create: `crates/http-actix/src/{extract,present,middleware,request_context}.rs`
 - Create: `crates/http-actix/src/resource_server.rs`
 - Move/adapt HTTP tests into `crates/http-actix/tests/`
 - Modify: `Cargo.toml`
-- Modify: `crates/server/Cargo.toml`
+- Modify: `crates/authorization-server/Cargo.toml`
 
 **Interfaces:**
 - Consumes: concrete auth/identity focused services, resource-server verifier, runtime snapshot handle.
@@ -77,15 +77,15 @@ Run HTTP unit/integration tests, forbidden-import checks, workspace check, Clipp
 ### Task 2: Replace giant settings/state with focused composition
 
 **Files:**
-- Move/adapt: `crates/server/src/config.rs` -> `crates/server/src/config/`
-- Replace: `crates/server/src/settings.rs` and `crates/server/src/settings/`
-- Create: `crates/server/src/config/{source,http,auth,identity,postgres,valkey,keys,observability}.rs`
-- Replace: `crates/server/src/domain/state.rs`
-- Modify: `crates/server/src/bootstrap/mod.rs`
-- Modify: `crates/server/src/lib.rs`
-- Modify: `crates/server/src/main.rs`
-- Test: `crates/server/tests/configuration.rs`
-- Test: `crates/server/tests/composition.rs`
+- Move/adapt: `crates/authorization-server/src/config.rs` -> `crates/authorization-server/src/config/`
+- Replace: `crates/authorization-server/src/settings.rs` and `crates/authorization-server/src/settings/`
+- Create: `crates/authorization-server/src/config/{source,http,auth,identity,postgres,valkey,keys,observability}.rs`
+- Replace: `crates/authorization-server/src/domain/state.rs`
+- Modify: `crates/authorization-server/src/bootstrap/mod.rs`
+- Modify: `crates/authorization-server/src/lib.rs`
+- Modify: `crates/authorization-server/src/main.rs`
+- Test: `crates/authorization-server/tests/configuration.rs`
+- Test: `crates/authorization-server/tests/composition.rs`
 
 **Interfaces:**
 - Consumes: unchanged configuration namespace and concrete adapters/services.
@@ -109,7 +109,7 @@ pub struct AppModules {
 }
 ```
 
-Keep this type private to `nazo-server::bootstrap`. Construct adapters, then identity, auth, runtime catalog, HTTP services, and background tasks. Do not pass `AppModules`, pool, Fred client, or full settings into handlers.
+Keep this type private to `nazo_oauth_server::bootstrap`. Construct adapters, then identity, auth, runtime catalog, HTTP services, and background tasks. Do not pass `AppModules`, pool, Fred client, or full settings into handlers.
 
 - [ ] **Step 4: Delete the old giant state/settings**
 
@@ -122,12 +122,12 @@ Run config/composition tests and full workspace gate. Commit `refactor: focus se
 ### Task 3: Implement the revision-bound runtime registry and reconciliation
 
 **Files:**
-- Create: `crates/runtime-modules/src/{registry,catalog,reconcile,lease}.rs`
-- Extend: `crates/runtime-modules/src/{model,snapshot,transition,repository}.rs`
-- Create: `crates/runtime-modules/tests/{revision_races,disable_policies,audit}.rs`
-- Create: `crates/server/src/runtime_modules.rs`
-- Modify: `crates/server/src/bootstrap/mod.rs`
-- Modify: `crates/auth/src/metadata.rs`
+- Create: `crates/runtime-capabilities/src/{registry,catalog,reconcile,lease}.rs`
+- Extend: `crates/runtime-capabilities/src/{model,snapshot,transition,repository}.rs`
+- Create: `crates/runtime-capabilities/tests/{revision_races,disable_policies,audit}.rs`
+- Create: `crates/authorization-server/src/runtime_modules.rs`
+- Modify: `crates/authorization-server/src/bootstrap/mod.rs`
+- Modify: `crates/authorization-server-core/src/metadata.rs`
 - Modify module admission in auth/identity services
 
 **Interfaces:**
@@ -162,13 +162,13 @@ Run runtime unit/race tests repeatedly, auth metadata tests, and Clippy. Commit 
 
 **Files:**
 - Modify: `crates/identity/src/{mfa,session,service,ports}.rs`
-- Modify: `crates/postgres/src/repositories/{mfa,users,audit}.rs`
-- Modify: `crates/valkey/src/stores/{session,rate_limit}.rs`
+- Modify: `crates/persistence-postgres/src/repositories/{mfa,users,audit}.rs`
+- Modify: `crates/state-store-valkey/src/stores/{session,rate_limit}.rs`
 - Create: `crates/http-actix/src/endpoints/profile/mfa_step_up.rs`
 - Modify: `crates/http-actix/src/routes.rs`
 - Test: `crates/http-actix/tests/mfa_step_up.rs`
-- Test: `crates/postgres/tests/admin_hierarchy.rs`
-- Test: `crates/valkey/tests/session_rotation.rs`
+- Test: `crates/persistence-postgres/tests/admin_hierarchy.rs`
+- Test: `crates/state-store-valkey/tests/session_rotation.rs`
 
 **Interfaces:**
 - Consumes: current session, trusted client context, identity MFA service, session/rate-limit stores.

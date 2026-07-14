@@ -20,7 +20,7 @@
 ### Task 1: Lock the production-source boundary
 
 **Files:**
-- Modify: `crates/postgres/tests/identity_repositories.rs`
+- Modify: `crates/persistence-postgres/tests/identity_repositories.rs`
 
 **Interfaces:**
 - Consumes: recursive server source scan.
@@ -33,11 +33,11 @@
 
 **Files:**
 - Modify: `crates/identity/src/ports.rs`
-- Modify: `crates/postgres/src/repositories/users.rs`
-- Create or modify focused repository modules under `crates/postgres/src/repositories/`
-- Modify: `crates/server/src/support/access_requests.rs`
-- Modify: `crates/server/src/http/admin/grants.rs`
-- Modify: `crates/server/src/http/token/refresh.rs`
+- Modify: `crates/persistence-postgres/src/repositories/users.rs`
+- Create or modify focused repository modules under `crates/persistence-postgres/src/repositories/`
+- Modify: `crates/authorization-server/src/support/access_requests.rs`
+- Modify: `crates/authorization-server/src/http/admin/grants.rs`
+- Modify: `crates/authorization-server/src/http/token/refresh.rs`
 
 **Interfaces:**
 - Consumes: tenant/user IDs and existing auth-table query parameters.
@@ -52,10 +52,10 @@
 ### Task 3: Remove production identity schema and rows
 
 **Files:**
-- Modify: `crates/server/src/schema.rs`
-- Modify: `crates/server/src/domain/rows.rs`
-- Modify: `crates/server/src/domain/mod.rs`
-- Modify: affected server test support files under `crates/server/tests/in_source/`
+- Modify: `crates/authorization-server/src/schema.rs`
+- Modify: `crates/authorization-server/src/domain/rows.rs`
+- Modify: `crates/authorization-server/src/domain/mod.rs`
+- Modify: affected server test support files under `crates/authorization-server/tests/in_source/`
 
 **Interfaces:**
 - Consumes: completed repository migration from Task 2.

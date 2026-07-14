@@ -1,17 +1,17 @@
 [workspace]
 members = [
-    "crates/auth",
+    "crates/authorization-server-core",
     "crates/key-management",
-    "crates/postgres",
-    "crates/server",
+    "crates/persistence-postgres",
+    "crates/authorization-server",
     "crates/http-signatures",
     "crates/http-actix",
     "crates/identity",
-    "crates/runtime-modules",
+    "crates/runtime-capabilities",
     "crates/resource-server",
-    "crates/valkey",
+    "crates/state-store-valkey",
 ]
-default-members = ["crates/server"]
+default-members = ["crates/authorization-server"]
 resolver = "3"
 
 [workspace.package]
@@ -38,15 +38,15 @@ futures-executor = "0.3.32"
 hmac = "0.13.0"
 jsonwebtoken = { version = "10.4.0", default-features = false }
 lettre = { version = "0.11.22", default-features = false }
-nazo-auth = { version = "0.1.0", path = "crates/auth" }
+nazo-auth = { version = "0.1.0", path = "crates/authorization-server-core" }
 nazo-http-actix = { version = "0.1.0", path = "crates/http-actix" }
 nazo-http-signatures = { version = "0.1.0", path = "crates/http-signatures" }
 nazo-identity = { version = "0.1.0", path = "crates/identity" }
 nazo-key-management = { version = "0.1.0", path = "crates/key-management" }
-nazo-postgres = { version = "0.1.0", path = "crates/postgres" }
+nazo-postgres = { version = "0.1.0", path = "crates/persistence-postgres" }
 nazo-resource-server = { version = "0.1.0", path = "crates/resource-server" }
-nazo-runtime-modules = { version = "0.1.0", path = "crates/runtime-modules" }
-nazo-valkey = { version = "0.1.0", path = "crates/valkey" }
+nazo-runtime-modules = { version = "0.1.0", path = "crates/runtime-capabilities" }
+nazo-valkey = { version = "0.1.0", path = "crates/state-store-valkey" }
 openssl = "0.10.81"
 p256 = "0.14.0"
 passkey-auth = "0.1.3"

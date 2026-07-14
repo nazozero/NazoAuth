@@ -165,9 +165,9 @@ jobs:
         run: cargo deny check advisories bans licenses sources
       - name: Generate Rust SBOM
         run: |
-          cargo cyclonedx --manifest-path crates/server/Cargo.toml --format json --override-filename nazo-oauth-server.cdx
+          cargo cyclonedx --manifest-path crates/authorization-server/Cargo.toml --format json --override-filename nazo-oauth-server.cdx
           mkdir -p target
-          mv crates/server/nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
+          mv crates/authorization-server/nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
       - uses: docker/setup-buildx-action@v4.2.0
       - name: Build service image
         uses: docker/build-push-action@v7.3.0
