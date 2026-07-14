@@ -487,7 +487,12 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn("--restart=unless-stopped", self.source)
         self.assertIn("{{.HostConfig.RestartPolicy.Name}}", self.source)
         self.assertIn("systemctl enable podman-restart.service", self.source)
-        self.assertIn("podman update --restart=unless-stopped nazo-oauth-postgres nazo-oauth-valkey", self.source)
+        self.assertIn("podman update --restart=unless-stopped nazo-oauth-postgres", self.source)
+        self.assertIn("podman update --restart=unless-stopped nazo-oauth-valkey", self.source)
+        self.assertNotIn(
+            "podman update --restart=unless-stopped nazo-oauth-postgres nazo-oauth-valkey",
+            self.source,
+        )
         deploy_body = self.source[self.source.index("deploy() {") :]
         self.assertLess(
             deploy_body.index("systemctl enable podman-restart.service"),

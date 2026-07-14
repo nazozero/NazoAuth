@@ -854,7 +854,8 @@ PY
   trap 'rollback_after_deploy_error' ERR
   assert_pending_lease
   systemctl enable podman-restart.service >/dev/null
-  podman update --restart=unless-stopped nazo-oauth-postgres nazo-oauth-valkey >/dev/null
+  podman update --restart=unless-stopped nazo-oauth-postgres >/dev/null
+  podman update --restart=unless-stopped nazo-oauth-valkey >/dev/null
   test "`$(podman inspect nazo-oauth-postgres --format '{{.HostConfig.RestartPolicy.Name}}')" = "unless-stopped"
   test "`$(podman inspect nazo-oauth-valkey --format '{{.HostConfig.RestartPolicy.Name}}')" = "unless-stopped"
 
