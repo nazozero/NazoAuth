@@ -102,6 +102,137 @@ class RunOidfConformanceTests(unittest.TestCase):
             )
         )
 
+    def test_review_allowlist_is_bound_to_config_alias(self):
+        module = load_runner_module()
+        aliases = {
+            module.OIDCC_BASIC_CONFIG_FILE: "basic-alias",
+            module.OIDCC_DYNAMIC_CONFIG_FILE: "dynamic-alias",
+            module.FAPI_CONFIG_FILE: "fapi-alias",
+        }
+        allowlist = module.allowed_review_contexts_by_alias(aliases)
+        review = {
+            "_id": "module-id",
+            "testName": "oidcc-prompt-login[variant=value]",
+            "status": "FINISHED",
+            "result": "REVIEW",
+            "alias": "basic-alias",
+        }
+
+        self.assertIsNone(
+            module.oidf_module_failure(
+                review,
+                allowlist,
+                "oidcc-basic-certification-test-plan",
+            )
+        )
+        self.assertIn(
+            "result REVIEW",
+            module.oidf_module_failure(review, allowlist, "different-test-plan"),
+        )
+        review["alias"] = "fapi-alias"
+        self.assertIn(
+            "result REVIEW",
+            module.oidf_module_failure(
+                review,
+                allowlist,
+                "oidcc-basic-certification-test-plan",
+            ),
+        )
+
+    def test_unexpected_review_is_not_hidden_by_successful_completion_log(self):
+        module = load_runner_module()
+        info = {
+            "_id": "module-id",
+            "testName": "unexpected-review",
+            "status": "FINISHED",
+            "result": "REVIEW",
+            "alias": "basic-alias",
+        }
+        logs = [
+            {"result": "SUCCESS", "src": "Condition"},
+            {"result": "FINISHED", "msg": "Test has run to completion"},
+        ]
+
+        with (
+            mock.patch.object(
+                module,
+                "fetch_alias_plans",
+                return_value=[
+                    {
+                        "_id": "plan-id",
+                        "planName": "oidcc-basic-certification-test-plan",
+                        "modules": [{"instances": ["module-id"]}],
+                    }
+                ],
+            ),
+            mock.patch.object(
+                module,
+                "oidf_api_request",
+                side_effect=[(200, info), (200, logs)],
+            ),
+        ):
+            failure = module.inspect_oidf_state(
+                "https://suite.example",
+                "token",
+                {"basic-alias"},
+                final=True,
+                allowed_reviews_by_alias={
+                    "basic-alias": (
+                        "oidcc-basic-certification-test-plan",
+                        frozenset({"oidcc-prompt-login"}),
+                    )
+                },
+            )
+
+        self.assertIn("unexpected-review", failure)
+
+    def test_duplicate_allowed_review_exceeds_baseline(self):
+        module = load_runner_module()
+        plans = [
+            {
+                "_id": "plan-id",
+                "planName": "oidcc-basic-certification-test-plan",
+                "modules": [{"instances": ["module-a", "module-b"]}],
+            }
+        ]
+        reviews = [
+            {
+                "_id": module_id,
+                "testName": "oidcc-prompt-login",
+                "status": "FINISHED",
+                "result": "REVIEW",
+                "alias": "basic-alias",
+            }
+            for module_id in ("module-a", "module-b")
+        ]
+
+        with (
+            mock.patch.object(module, "fetch_alias_plans", return_value=plans),
+            mock.patch.object(
+                module,
+                "oidf_api_request",
+                side_effect=[
+                    (200, reviews[0]),
+                    (200, []),
+                    (200, reviews[1]),
+                ],
+            ),
+        ):
+            failure = module.inspect_oidf_state(
+                "https://suite.example",
+                "token",
+                {"basic-alias"},
+                final=True,
+                allowed_reviews_by_alias={
+                    "basic-alias": (
+                        "oidcc-basic-certification-test-plan",
+                        frozenset({"oidcc-prompt-login"}),
+                    )
+                },
+            )
+
+        self.assertIn("baseline exceeded", failure)
+
     def test_ciba_backchannel_log_context_includes_sanitized_response_body(self):
         module = load_runner_module()
 
