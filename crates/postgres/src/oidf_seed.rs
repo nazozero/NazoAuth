@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use crate::{DbPool, repositories::clients::upsert_client_on_connection};
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct OidfSeedUser {
     pub tenant_id: Uuid,
     pub realm_id: Uuid,
@@ -16,7 +16,7 @@ pub struct OidfSeedUser {
     pub password_hash: String,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct OidfSeedClient {
     pub client: OAuthClient,
     pub client_secret_hash: Option<String>,
