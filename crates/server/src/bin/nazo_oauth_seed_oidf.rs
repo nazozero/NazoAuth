@@ -5,7 +5,6 @@ use argon2::{
     password_hash::{SaltString, rand_core::OsRng},
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use diesel::{Connection, PgConnection, RunQueryDsl, sql_query};
 use hmac::{Hmac, KeyInit, Mac};
 use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_oauth_server::config::{ConfigSource, database_url};
@@ -14,6 +13,7 @@ use nazo_oauth_server::oidf_seed::{
     config::public_jwks, config::read_plan_config, config::string_value, seed_client_secret_pepper,
     suite_base_urls, test_endpoint_uri, test_endpoint_uris,
 };
+use nazo_postgres::{OidfSeedClient, OidfSeedUser};
 use serde_json::{Value, json};
 use sha2::Sha256;
 use std::{collections::BTreeSet, env, path::Path};
@@ -24,7 +24,7 @@ const DEFAULT_REALM_ID: &str = "00000000-0000-0000-0000-000000000002";
 const DEFAULT_ORGANIZATION_ID: &str = "00000000-0000-0000-0000-000000000003";
 type HmacSha256 = Hmac<Sha256>;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 struct FapiClientPolicy {
     auth_method: &'static str,
     require_dpop_bound_tokens: bool,
@@ -98,113 +98,6 @@ fn hash_client_secret(secret: &str, pepper: &str) -> String {
     )
 }
 
-fn upsert_user(
-    connection: &mut PgConnection,
-    email: &str,
-    password_hash: &str,
-) -> anyhow::Result<()> {
-    sql_query(
-        r#"
-        INSERT INTO users (
-            tenant_id,
-            realm_id,
-            organization_id,
-            username,
-            email,
-            password_hash,
-            is_active,
-            email_verified,
-            role,
-            admin_level,
-            display_name,
-            given_name,
-            family_name,
-            middle_name,
-            nickname,
-            profile_url,
-            avatar_url,
-            website_url,
-            gender,
-            birthdate,
-            zoneinfo,
-            locale,
-            address_formatted,
-            address_street_address,
-            address_locality,
-            address_region,
-            address_postal_code,
-            address_country,
-            phone_number,
-            phone_number_verified
-        )
-        VALUES (
-            $3::uuid,
-            $4::uuid,
-            $5::uuid,
-            'oidf_local_user',
-            $1,
-            $2,
-            TRUE,
-            TRUE,
-            'user',
-            0,
-            'OIDF Local User',
-            'OIDF',
-            'Local',
-            'Conformance',
-            'oidf',
-            'https://auth.nazo.run/profile/oidf-local',
-            'https://auth.nazo.run/avatar/oidf-local.png',
-            'https://auth.nazo.run/',
-            'unspecified',
-            '2000-01-01',
-            'Asia/Shanghai',
-            'en-US',
-            'OIDF Local Test Address',
-            '1 Conformance Way',
-            'Test City',
-            'CA',
-            '94000',
-            'US',
-            '+15555550100',
-            TRUE
-        )
-        ON CONFLICT (tenant_id, email) DO UPDATE
-        SET password_hash = EXCLUDED.password_hash,
-            is_active = TRUE,
-            email_verified = TRUE,
-            display_name = 'OIDF Local User',
-            given_name = 'OIDF',
-            family_name = 'Local',
-            middle_name = 'Conformance',
-            nickname = 'oidf',
-            profile_url = 'https://auth.nazo.run/profile/oidf-local',
-            avatar_url = 'https://auth.nazo.run/avatar/oidf-local.png',
-            website_url = 'https://auth.nazo.run/',
-            gender = 'unspecified',
-            birthdate = '2000-01-01',
-            zoneinfo = 'Asia/Shanghai',
-            locale = 'en-US',
-            address_formatted = 'OIDF Local Test Address',
-            address_street_address = '1 Conformance Way',
-            address_locality = 'Test City',
-            address_region = 'CA',
-            address_postal_code = '94000',
-            address_country = 'US',
-            phone_number = '+15555550100',
-            phone_number_verified = TRUE,
-            updated_at = CURRENT_TIMESTAMP
-        "#,
-    )
-    .bind::<diesel::sql_types::VarChar, _>(email)
-    .bind::<diesel::sql_types::VarChar, _>(password_hash)
-    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_TENANT_ID)
-    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_REALM_ID)
-    .bind::<diesel::sql_types::VarChar, _>(DEFAULT_ORGANIZATION_ID)
-    .execute(connection)?;
-    Ok(())
-}
-
 fn seeded_oauth_client(client: ClientUpsert<'_>) -> anyhow::Result<OAuthClient> {
     let string_array = |value: &Value| -> anyhow::Result<Vec<String>> {
         serde_json::from_value(value.clone()).map_err(Into::into)
@@ -260,17 +153,19 @@ fn seeded_oauth_client(client: ClientUpsert<'_>) -> anyhow::Result<OAuthClient> 
     })
 }
 
-async fn upsert_client(
-    repository: &nazo_postgres::OAuthClientRepository,
+fn push_client(
+    clients: &mut Vec<OidfSeedClient>,
     client: ClientUpsert<'_>,
     client_secret_hash: Option<&str>,
 ) -> anyhow::Result<()> {
-    let client = seeded_oauth_client(client)?;
-    repository.upsert(&client, client_secret_hash).await?;
+    clients.push(OidfSeedClient {
+        client: seeded_oauth_client(client)?,
+        client_secret_hash: client_secret_hash.map(ToOwned::to_owned),
+    });
     Ok(())
 }
 
-fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
+fn fapi_client_policy(file_name: &str, plan: &Value) -> anyhow::Result<FapiClientPolicy> {
     let nazo = plan.get("nazo").and_then(Value::as_object);
     let ciba = file_name.starts_with("oidf-fapi-ciba-");
     let client_auth_type = nazo
@@ -285,15 +180,25 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
         .and_then(|value| value.get("fapi_profile"))
         .and_then(Value::as_str)
         .unwrap_or("plain_fapi");
-    let fapi_response_mode = nazo
+    let configured_response_mode = nazo
         .and_then(|value| value.get("fapi_response_mode"))
-        .and_then(Value::as_str)
-        .unwrap_or("plain_response");
+        .and_then(Value::as_str);
+    let fapi_response_mode = configured_response_mode.unwrap_or("plain_response");
+    if !matches!(fapi_response_mode, "plain_response" | "jarm") {
+        anyhow::bail!(
+            "{file_name}.nazo.fapi_response_mode must be plain_response or jarm, got {fapi_response_mode}"
+        );
+    }
+    if file_name.contains("-jarm-") && configured_response_mode != Some("jarm") {
+        anyhow::bail!(
+            "{file_name} declares JARM but nazo.fapi_response_mode is not explicitly jarm"
+        );
+    }
     let auth_method = match client_auth_type {
         "mtls" => "tls_client_auth",
         _ => "private_key_jwt",
     };
-    FapiClientPolicy {
+    Ok(FapiClientPolicy {
         auth_method,
         require_dpop_bound_tokens: sender_constrain == "dpop",
         require_mtls_bound_tokens: sender_constrain == "mtls",
@@ -308,7 +213,7 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
         client_credentials_only: fapi_profile == "fapi_client_credentials_grant",
         ciba,
         authorization_signed_response_alg: (fapi_response_mode == "jarm").then_some("PS256"),
-    }
+    })
 }
 
 #[tokio::main]
@@ -346,9 +251,16 @@ async fn main() -> anyhow::Result<()> {
 
     let user_password_hash = hash_password(&user_password)?;
     let client_secret_hash = hash_client_secret(&client_secret, &client_secret_pepper);
-    let mut connection = PgConnection::establish(&database_url)?;
-    let client_repository =
-        nazo_postgres::OAuthClientRepository::new(nazo_postgres::create_pool(&database_url, 2)?);
+    let pool = nazo_postgres::create_pool(&database_url, 2)?;
+    let seed_user = OidfSeedUser {
+        tenant_id: DEFAULT_TENANT_ID.parse()?,
+        realm_id: DEFAULT_REALM_ID.parse()?,
+        organization_id: DEFAULT_ORGANIZATION_ID.parse()?,
+        username: "oidf_local_user".to_owned(),
+        email: user_email.clone(),
+        password_hash: user_password_hash,
+    };
+    let mut seeded_clients = Vec::new();
     let default_scopes = json!([
         "openid",
         "profile",
@@ -360,9 +272,8 @@ async fn main() -> anyhow::Result<()> {
     let allowed_audiences = json!(["resource://default", format!("{issuer}/userinfo")]);
     let grant_types = json!(["authorization_code", "refresh_token"]);
 
-    upsert_user(&mut connection, &user_email, &user_password_hash)?;
-    upsert_client(
-        &client_repository,
+    push_client(
+        &mut seeded_clients,
         ClientUpsert {
             client_id: "local-oidf-basic-client",
             client_name: "Local OIDF Basic Client",
@@ -386,10 +297,9 @@ async fn main() -> anyhow::Result<()> {
             authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
-    )
-    .await?;
-    upsert_client(
-        &client_repository,
+    )?;
+    push_client(
+        &mut seeded_clients,
         ClientUpsert {
             client_id: "local-oidf-basic-client-2",
             client_name: "Local OIDF Basic Client 2",
@@ -413,10 +323,9 @@ async fn main() -> anyhow::Result<()> {
             authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
-    )
-    .await?;
-    upsert_client(
-        &client_repository,
+    )?;
+    push_client(
+        &mut seeded_clients,
         ClientUpsert {
             client_id: "local-oidf-post-client",
             client_name: "Local OIDF Post Client",
@@ -440,10 +349,9 @@ async fn main() -> anyhow::Result<()> {
             authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
-    )
-    .await?;
-    upsert_client(
-        &client_repository,
+    )?;
+    push_client(
+        &mut seeded_clients,
         ClientUpsert {
             client_id: "local-oidf-frontchannel-client",
             client_name: "Local OIDF Front-Channel Logout Client",
@@ -467,10 +375,9 @@ async fn main() -> anyhow::Result<()> {
             authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
-    )
-    .await?;
-    upsert_client(
-        &client_repository,
+    )?;
+    push_client(
+        &mut seeded_clients,
         ClientUpsert {
             client_id: "local-oidf-session-client",
             client_name: "Local OIDF Session Management Client",
@@ -494,8 +401,7 @@ async fn main() -> anyhow::Result<()> {
             authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
-    )
-    .await?;
+    )?;
 
     let mut fapi_redirect_uris = BTreeSet::new();
     let mut fapi_clients = Vec::<FapiClientSeed>::new();
@@ -516,7 +422,7 @@ async fn main() -> anyhow::Result<()> {
             let Some(jwks) = client.get("jwks") else {
                 continue;
             };
-            let policy = fapi_client_policy(file_name, &plan);
+            let policy = fapi_client_policy(file_name, &plan)?;
             let client_id = client
                 .get("client_id")
                 .and_then(Value::as_str)
@@ -543,8 +449,8 @@ async fn main() -> anyhow::Result<()> {
             grant_types.clone()
         };
         let client_name = format!("Local OIDF FAPI Client {}", seed.client_id);
-        upsert_client(
-            &client_repository,
+        push_client(
+            &mut seeded_clients,
             ClientUpsert {
                 client_id: &seed.client_id,
                 client_name: &client_name,
@@ -572,9 +478,10 @@ async fn main() -> anyhow::Result<()> {
                 authorization_signed_response_alg: seed.policy.authorization_signed_response_alg,
             },
             None,
-        )
-        .await?;
+        )?;
     }
+
+    nazo_postgres::seed_oidf_atomically(&pool, &seed_user, &seeded_clients).await?;
 
     println!("Seeded local OIDF user, OIDC basic clients, and FAPI clients.");
     println!("OIDF_LOCAL_USER_EMAIL={user_email}");
@@ -596,7 +503,8 @@ mod tests {
         let policy = fapi_client_policy(
             "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
             &json!({"nazo": {"client_auth_type": "private_key_jwt"}}),
-        );
+        )
+        .unwrap();
 
         assert!(!policy.require_dpop_bound_tokens);
         assert!(policy.require_mtls_bound_tokens);
@@ -609,7 +517,8 @@ mod tests {
         let policy = fapi_client_policy(
             "oidf-fapi-matrix-security-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
             &json!({"nazo": {"client_auth_type": "private_key_jwt"}}),
-        );
+        )
+        .unwrap();
 
         assert!(policy.require_dpop_bound_tokens);
         assert!(!policy.require_mtls_bound_tokens);
@@ -622,7 +531,8 @@ mod tests {
         let policy = fapi_client_policy(
             "oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
             &json!({"nazo": {"client_auth_type": "private_key_jwt", "sender_constrain": "mtls"}}),
-        );
+        )
+        .unwrap();
 
         assert!(!policy.require_dpop_bound_tokens);
         assert!(policy.require_mtls_bound_tokens);
@@ -635,14 +545,70 @@ mod tests {
         let jarm = fapi_client_policy(
             "renamed-fapi-plan.json",
             &json!({"nazo": {"fapi_response_mode": "jarm"}}),
-        );
+        )
+        .unwrap();
         let plain = fapi_client_policy(
             "oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
             &json!({"nazo": {"fapi_response_mode": "plain_response"}}),
-        );
+        )
+        .unwrap();
 
         assert_eq!(jarm.authorization_signed_response_alg, Some("PS256"));
         assert_eq!(plain.authorization_signed_response_alg, None);
+    }
+
+    #[test]
+    fn exported_nazo_fields_preserve_every_fapi_seed_policy_decision() {
+        let policy = fapi_client_policy(
+            "renamed-fapi-plan.json",
+            &json!({
+                "nazo": {
+                    "client_auth_type": "mtls",
+                    "sender_constrain": "mtls",
+                    "fapi_profile": "fapi_client_credentials_grant",
+                    "fapi_request_method": "signed_non_repudiation",
+                    "fapi_response_mode": "jarm"
+                }
+            }),
+        )
+        .unwrap();
+
+        assert_eq!(policy.auth_method, "tls_client_auth");
+        assert!(!policy.require_dpop_bound_tokens);
+        assert!(policy.require_mtls_bound_tokens);
+        assert!(policy.require_par_request_object);
+        assert!(policy.client_credentials_only);
+        assert_eq!(policy.authorization_signed_response_alg, Some("PS256"));
+        assert!(!policy.allow_client_assertion_endpoint_audience);
+        assert!(!policy.ciba);
+    }
+
+    #[test]
+    fn jarm_file_without_explicit_jarm_response_mode_is_rejected() {
+        let missing = fapi_client_policy(
+            "oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
+            &json!({"nazo": {}}),
+        )
+        .unwrap_err();
+        let conflicting = fapi_client_policy(
+            "oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
+            &json!({"nazo": {"fapi_response_mode": "plain_response"}}),
+        )
+        .unwrap_err();
+
+        assert!(missing.to_string().contains("declares JARM"));
+        assert!(conflicting.to_string().contains("declares JARM"));
+    }
+
+    #[test]
+    fn invalid_fapi_response_mode_is_rejected() {
+        let error = fapi_client_policy(
+            "oidf-fapi-plan-config.json",
+            &json!({"nazo": {"fapi_response_mode": "unsigned"}}),
+        )
+        .unwrap_err();
+
+        assert!(error.to_string().contains("must be plain_response or jarm"));
     }
 
     #[test]
