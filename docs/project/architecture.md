@@ -39,11 +39,12 @@ infrastructure adapters to the ports they implement. The composition root is
 the only package expected to see all concrete implementations.
 
 ```text
-auth           -> runtime-modules
+auth           -> identity, runtime-modules
 key-management -> auth
-postgres       -> auth, identity, runtime-modules
-valkey         -> auth, identity
-http-actix     -> auth
+postgres       -> auth, identity, resource-server, runtime-modules
+valkey         -> auth, identity, resource-server
+http-actix     -> auth, http-signatures, identity, resource-server,
+                  runtime-modules
 server         -> all concrete crates required for composition
 
 identity, resource-server, runtime-modules and http-signatures
