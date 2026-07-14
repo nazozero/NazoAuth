@@ -145,12 +145,7 @@ impl DpopProofVerifier {
         if !self.config.allowed_algs.contains(&header.alg) {
             return Err(DpopProofVerifierError::UnsupportedAlgorithm);
         }
-        let jwk = header
-            .jwk
-            .as_ref()
-            .ok_or(DpopProofVerifierError::MissingPublicJwk)?;
-        let public_jwk =
-            serde_json::to_value(jwk).map_err(|_| DpopProofVerifierError::InvalidPublicJwk)?;
+        let public_jwk = dpop_header_jwk(proof_jwt)?;
         let decoding_key = dpop_jwk_decoding_key(&public_jwk, header.alg)
             .ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
         let claims = decode_and_verify_dpop_proof(proof_jwt, &decoding_key, header.alg)?;
@@ -239,6 +234,23 @@ impl DpopProofVerifier {
     }
 }
 
+fn dpop_header_jwk(proof_jwt: &str) -> Result<Value, DpopProofVerifierError> {
+    let encoded_header = proof_jwt
+        .split('.')
+        .next()
+        .filter(|part| !part.is_empty())
+        .ok_or(DpopProofVerifierError::MalformedProof)?;
+    let header = URL_SAFE_NO_PAD
+        .decode(encoded_header)
+        .map_err(|_| DpopProofVerifierError::MalformedProof)?;
+    let header = serde_json::from_slice::<Value>(&header)
+        .map_err(|_| DpopProofVerifierError::MalformedProof)?;
+    header
+        .get("jwk")
+        .cloned()
+        .ok_or(DpopProofVerifierError::MissingPublicJwk)
+}
+
 fn normalize_dpop_htu(value: &str) -> Option<String> {
     let mut url = url::Url::parse(value).ok()?;
     if !matches!(url.scheme(), "http" | "https")
@@ -302,13 +314,20 @@ pub(super) fn decode_and_verify_dpop_proof(
 }
 
 pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
+    const PRIVATE_JWK_MEMBERS: [&str; 8] = ["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
+
+    let key = key.as_object()?;
+    if PRIVATE_JWK_MEMBERS
+        .iter()
+        .any(|member| key.contains_key(*member))
+    {
+        return None;
+    }
+    let key = Value::Object(key.clone());
     let (expected_alg, supported_alg) = supported_dpop_algorithm(alg)?;
     if let Some(key_alg) = key.get("alg").and_then(Value::as_str)
         && key_alg != expected_alg
     {
-        return None;
-    }
-    if key.get("d").is_some() {
         return None;
     }
     if key

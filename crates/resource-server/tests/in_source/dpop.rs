@@ -472,9 +472,6 @@ fn dpop_proof_verifier_rejects_missing_or_private_header_jwk() {
             header
         }),
     );
-    let mut private_jwk = serde_json::to_value(&dpop.public_jwk).unwrap();
-    private_jwk["d"] = json!("private-material");
-
     assert_eq!(
         DpopProofVerifier::new(DpopProofVerifierConfig::default())
             .verify(
@@ -486,7 +483,20 @@ fn dpop_proof_verifier_rejects_missing_or_private_header_jwk() {
             .unwrap_err(),
         DpopProofVerifierError::MissingPublicJwk
     );
-    assert!(dpop_jwk_decoding_key(&private_jwk, Algorithm::RS256).is_none());
+    for private_member in ["d", "p", "q", "dp", "dq", "qi", "oth", "k"] {
+        let mut private_jwk = serde_json::to_value(&dpop.public_jwk).unwrap();
+        private_jwk[private_member] = json!("private-material");
+        let proof = signed_dpop_proof_with_raw_jwk(&dpop, access_token, &private_jwk);
+
+        assert_eq!(
+            DpopProofVerifier::new(DpopProofVerifierConfig::default())
+                .verify(&proof, "GET", "https://api.example/orders", access_token)
+                .unwrap_err(),
+            DpopProofVerifierError::InvalidPublicJwk,
+            "private JWK member {private_member} must be rejected before typed decoding"
+        );
+        assert!(dpop_jwk_decoding_key(&private_jwk, Algorithm::RS256).is_none());
+    }
 }
 
 #[test]
@@ -761,4 +771,33 @@ fn signed_dpop_proof_with_overrides(
         header
     });
     jsonwebtoken::encode(&header, &claims, &fixture.encoding_key).unwrap()
+}
+
+fn signed_dpop_proof_with_raw_jwk(
+    fixture: &DpopFixture,
+    access_token: &str,
+    jwk: &serde_json::Value,
+) -> String {
+    let header = json!({
+        "alg": "RS256",
+        "typ": "dpop+jwt",
+        "jwk": jwk,
+    });
+    let claims = json!({
+        "htu": "https://api.example/orders",
+        "htm": "GET",
+        "iat": Utc::now().timestamp(),
+        "jti": "private-header-jwk",
+        "ath": access_token_hash(access_token),
+    });
+    let encoded_header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap());
+    let encoded_claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap());
+    let signing_input = format!("{encoded_header}.{encoded_claims}");
+    let signature = jsonwebtoken::crypto::sign(
+        signing_input.as_bytes(),
+        &fixture.encoding_key,
+        Algorithm::RS256,
+    )
+    .unwrap();
+    format!("{signing_input}.{signature}")
 }

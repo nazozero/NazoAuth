@@ -49,15 +49,26 @@ impl AccessTokenRevocationLookup for TestRevocations {
 struct AtomicReplayStore {
     keys: Arc<Mutex<HashSet<String>>>,
     nonces: Arc<Mutex<HashSet<String>>>,
-    failure: Option<ProtectedResourceDependencyError>,
+    replay_failure: bool,
+    nonce_failure: bool,
 }
 
 impl AtomicReplayStore {
-    fn unavailable() -> Self {
+    fn replay_unavailable() -> Self {
         Self {
             keys: Arc::default(),
             nonces: Arc::default(),
-            failure: Some(ProtectedResourceDependencyError::DpopReplayStoreUnavailable),
+            replay_failure: true,
+            nonce_failure: false,
+        }
+    }
+
+    fn nonce_unavailable() -> Self {
+        Self {
+            keys: Arc::default(),
+            nonces: Arc::default(),
+            replay_failure: false,
+            nonce_failure: true,
         }
     }
 }
@@ -71,8 +82,8 @@ impl DpopReplayConsumption for AtomicReplayStore {
         Result<DpopReplayConsumptionResult, ProtectedResourceDependencyError>,
     > {
         Box::pin(async move {
-            if let Some(error) = self.failure {
-                return Err(error);
+            if self.replay_failure {
+                return Err(ProtectedResourceDependencyError::DpopReplayStoreUnavailable);
             }
             let key = format!("{}:{}", key.jkt, key.jti);
             let mut keys = self.keys.lock().expect("replay store lock");
@@ -92,7 +103,7 @@ impl DpopNonceStorage for AtomicReplayStore {
         _expires_at: i64,
     ) -> ResourceServerPortFuture<'a, Result<(), ProtectedResourceDependencyError>> {
         Box::pin(async move {
-            if self.failure.is_some() {
+            if self.nonce_failure {
                 return Err(ProtectedResourceDependencyError::DpopNonceStoreUnavailable);
             }
             self.nonces
@@ -111,7 +122,7 @@ impl DpopNonceStorage for AtomicReplayStore {
         Result<DpopNonceConsumptionResult, ProtectedResourceDependencyError>,
     > {
         Box::pin(async move {
-            if self.failure.is_some() {
+            if self.nonce_failure {
                 return Err(ProtectedResourceDependencyError::DpopNonceStoreUnavailable);
             }
             Ok(
@@ -405,11 +416,11 @@ async fn dpop_accepts_any_explicit_transport_target_without_retrying_authorizati
 }
 
 #[test]
-fn required_nonce_is_consumed_before_the_replay_marker() {
-    block_on(required_nonce_is_consumed_before_the_replay_marker_async());
+fn replay_marker_is_consumed_before_required_nonce_validation() {
+    block_on(replay_marker_is_consumed_before_required_nonce_validation_async());
 }
 
-async fn required_nonce_is_consumed_before_the_replay_marker_async() {
+async fn replay_marker_is_consumed_before_required_nonce_validation_async() {
     let fixture = fixture();
     let dpop = dpop_fixture();
     let access_token = token(&fixture, json!({"cnf": {"jkt": dpop.jkt}}), None);
@@ -442,9 +453,9 @@ async fn required_nonce_is_consumed_before_the_replay_marker_async() {
         ProtectedResourceAuthorizationError::UseDpopNonce(nonce) => nonce,
         error => panic!("unexpected nonce challenge error: {error:?}"),
     };
-    assert!(replay.keys.lock().unwrap().is_empty());
+    assert_eq!(replay.keys.lock().unwrap().len(), 1);
 
-    let with_nonce = dpop_proof(
+    let replayed_with_nonce = dpop_proof(
         &dpop,
         &access_token,
         "GET",
@@ -453,14 +464,43 @@ async fn required_nonce_is_consumed_before_the_replay_marker_async() {
         Some(&nonce),
         None,
     );
-    service
+    let replay_error = service
         .authorize(
-            request(&access_token, AccessTokenScheme::Dpop, Some(&with_nonce)),
+            request(
+                &access_token,
+                AccessTokenScheme::Dpop,
+                Some(&replayed_with_nonce),
+            ),
             context(None),
         )
         .await
-        .expect("the same jti remains usable after the nonce challenge");
-    assert_eq!(replay.keys.lock().unwrap().len(), 1);
+        .expect_err("the same jti must be rejected even after a nonce challenge");
+    assert_eq!(
+        replay_error,
+        ProtectedResourceAuthorizationError::ReplayDetected
+    );
+
+    let fresh_with_nonce = dpop_proof(
+        &dpop,
+        &access_token,
+        "GET",
+        "https://api.example/orders",
+        "fresh-jti-after-nonce",
+        Some(&nonce),
+        None,
+    );
+    service
+        .authorize(
+            request(
+                &access_token,
+                AccessTokenScheme::Dpop,
+                Some(&fresh_with_nonce),
+            ),
+            context(None),
+        )
+        .await
+        .expect("a fresh jti with the issued nonce must authorize");
+    assert_eq!(replay.keys.lock().unwrap().len(), 2);
 }
 
 #[test]
@@ -566,7 +606,7 @@ async fn nonce_store_failure_is_fail_closed_async() {
         fixture.verifier,
         DpopProofVerifier::new(DpopProofVerifierConfig::default()),
         TestRevocations::returning(Ok(false)),
-        AtomicReplayStore::unavailable(),
+        AtomicReplayStore::nonce_unavailable(),
     )
     .with_dpop_nonce_policy(DpopNoncePolicy::Required);
 
@@ -656,7 +696,7 @@ async fn dpop_replay_dependency_failure_is_fail_closed_async() {
         fixture.verifier,
         DpopProofVerifier::new(DpopProofVerifierConfig::default()),
         TestRevocations::returning(Ok(false)),
-        AtomicReplayStore::unavailable(),
+        AtomicReplayStore::replay_unavailable(),
     );
 
     let error = service
