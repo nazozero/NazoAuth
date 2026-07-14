@@ -115,6 +115,8 @@ pub enum MetadataSubjectType {
 pub struct MetadataSigningAlgorithms<'a> {
     /// Algorithms backed by the active signing key.
     pub active: &'a [&'a str],
+    /// Algorithms backed by keys eligible to sign ID Tokens.
+    pub id_token: &'a [&'a str],
     /// Algorithms backed by all keys eligible for protocol responses.
     pub response: &'a [&'a str],
 }
@@ -153,7 +155,8 @@ pub fn authorization_server_metadata(
     let issuer = input.issuer;
     let response_signing_algs = input.signing_algorithms.response;
     let active_signing_algs = input.signing_algorithms.active;
-    let id_token_signing_algs = id_token_signing_alg_values_supported(active_signing_algs);
+    let id_token_signing_algs =
+        id_token_signing_alg_values_supported(input.signing_algorithms.id_token);
     let token_auth_methods = token_endpoint_auth_methods_supported(
         input.profile,
         input.ciba_profile,
