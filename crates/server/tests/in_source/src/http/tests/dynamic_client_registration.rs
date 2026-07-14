@@ -641,15 +641,16 @@ async fn dynamic_registration_accepts_single_oidf_private_key_jwt_jwk_without_ki
     )
     .expect("private_key_jwt registration metadata should parse before key policy validation");
 
-    let result = prepare_admin_client_insert_for_test(
+    let prepared_insert = prepare_admin_client_insert_for_test(
         prepared.into_create_client_request(),
         None,
         "https://issuer.example",
     )
-    .await;
+    .await
+    .expect("OIDF dynamic registration must accept one unambiguous signing JWK without kid");
     assert!(
-        result.is_ok(),
-        "OIDF dynamic registration must accept one unambiguous signing JWK without kid"
+        prepared_insert.allow_client_assertion_endpoint_audience,
+        "ordinary OIDC private_key_jwt DCR must persist token-endpoint audience compatibility"
     );
 }
 

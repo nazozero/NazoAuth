@@ -378,6 +378,11 @@ impl PreparedDynamicClientRegistration {
     pub fn into_create_client_request(self) -> CreateClientRequest {
         let allow_authorization_code_without_pkce =
             self.client_type == "confidential" && !self.require_dpop_bound_tokens;
+        // OIDC Core section 9 defines the token endpoint URL as the audience for
+        // private_key_jwt client assertions. FAPI clients are provisioned through the
+        // profile-aware admin/seed paths, which keep this compatibility policy disabled.
+        let allow_client_assertion_endpoint_audience =
+            self.token_endpoint_auth_method == "private_key_jwt";
         CreateClientRequest {
             client_name: self.client_name,
             client_type: self.client_type,
@@ -391,7 +396,7 @@ impl PreparedDynamicClientRegistration {
             sector_identifier_uri: self.sector_identifier_uri,
             require_dpop_bound_tokens: self.require_dpop_bound_tokens,
             allow_client_assertion_audience_array: false,
-            allow_client_assertion_endpoint_audience: false,
+            allow_client_assertion_endpoint_audience,
             require_par_request_object: false,
             allow_authorization_code_without_pkce,
             backchannel_logout_uri: self.backchannel_logout_uri,
@@ -640,6 +645,33 @@ mod tests {
         .expect("confidential registration")
         .into_create_client_request();
         assert!(confidential.allow_authorization_code_without_pkce);
+    }
+
+    #[test]
+    fn private_key_jwt_registration_enables_standard_oidc_token_endpoint_audience() {
+        let private_key_jwt = prepare_dynamic_client_registration(
+            DynamicClientRegistrationRequest {
+                token_endpoint_auth_method: Some("private_key_jwt".to_owned()),
+                redirect_uris: Some(vec!["https://client.example/cb".to_owned()]),
+                ..Default::default()
+            },
+            POLICY,
+        )
+        .expect("private_key_jwt registration")
+        .into_create_client_request();
+        assert!(private_key_jwt.allow_client_assertion_endpoint_audience);
+
+        let client_secret_basic = prepare_dynamic_client_registration(
+            DynamicClientRegistrationRequest {
+                token_endpoint_auth_method: Some("client_secret_basic".to_owned()),
+                redirect_uris: Some(vec!["https://client.example/cb".to_owned()]),
+                ..Default::default()
+            },
+            POLICY,
+        )
+        .expect("client_secret_basic registration")
+        .into_create_client_request();
+        assert!(!client_secret_basic.allow_client_assertion_endpoint_audience);
     }
 
     fn client() -> OAuthClient {

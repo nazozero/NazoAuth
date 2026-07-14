@@ -430,6 +430,59 @@ async fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
 }
 
 #[actix_web::test]
+async fn token_endpoint_audience_is_allowed_only_by_registered_client_policy() {
+    let mut settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    settings.endpoint.issuer = "https://auth.nazo.run".to_owned();
+    let state = token_management_state_with_settings(settings);
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let public_jwk = key.public_jwk("client-kid");
+    let mut client = confidential_client_with_secret(&fixture_secret("unused"));
+    client.token_endpoint_auth_method = "private_key_jwt".to_owned();
+    client.jwks = Some(json!({"keys": [public_jwk]}));
+    let req = TestRequest::post().uri("/token").to_http_request();
+    let client_id = client.client_id.clone();
+
+    let credentials = |jti: &str| {
+        let mut credentials = client_credentials("private_key_jwt");
+        credentials.client_assertion = Some(signed_client_assertion_with_alg(
+            &client_id,
+            "https://auth.nazo.run/token",
+            "client-kid",
+            &key,
+            jti,
+            jsonwebtoken::Algorithm::RS256,
+        ));
+        credentials
+    };
+
+    assert!(
+        verify_confidential_client(
+            &state,
+            &request_facts(&state, &req),
+            &client,
+            &credentials("fapi-token-endpoint-audience"),
+        )
+        .await
+        .is_err(),
+        "FAPI/admin clients with endpoint audience disabled must remain issuer-only"
+    );
+
+    client.allow_client_assertion_endpoint_audience = true;
+    assert!(
+        verify_confidential_client(
+            &state,
+            &request_facts(&state, &req),
+            &client,
+            &credentials("oidc-token-endpoint-audience"),
+        )
+        .await
+        .is_ok(),
+        "ordinary OIDC DCR clients must accept the registered token endpoint audience"
+    );
+}
+
+#[actix_web::test]
 async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");

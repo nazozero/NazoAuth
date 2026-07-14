@@ -159,6 +159,7 @@ fn endpoint_audiences_and_arrays_follow_exact_client_policy() {
         ("/par", "https://issuer.example/par"),
         ("/par", "https://issuer.example/token"),
         ("/token", "https://issuer.example/token"),
+        ("/oauth/token", "https://issuer.example/oauth/token"),
         ("/bc-authorize", "https://issuer.example/bc-authorize"),
         ("/bc-authorize", "https://issuer.example/token"),
     ] {
