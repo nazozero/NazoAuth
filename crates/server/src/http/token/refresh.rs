@@ -51,10 +51,14 @@ use crate::settings::AuthorizationServerProfile;
 
 fn refresh_token_policy_for_authorization_server_profile(
     profile: AuthorizationServerProfile,
-    _client: &ClientRow,
+    client: &ClientRow,
     token: &TokenRow,
 ) -> RefreshTokenPolicy {
-    if profile.requires_fapi2_security() && refresh_token_has_stable_sender_constraint(token) {
+    let sender_constrained_confidential_client = client.client_type == "confidential"
+        && (client.require_dpop_bound_tokens || client.require_mtls_bound_tokens);
+    if sender_constrained_confidential_client
+        || (profile.requires_fapi2_security() && refresh_token_has_stable_sender_constraint(token))
+    {
         RefreshTokenPolicy::PreserveExisting
     } else {
         RefreshTokenPolicy::Rotate {

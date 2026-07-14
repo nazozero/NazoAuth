@@ -450,8 +450,10 @@ fn token_row() -> TokenRow {
 }
 
 #[test]
-fn fapi_profiles_preserve_sender_constrained_refresh_tokens() {
-    let token = token_row();
+fn fapi_profiles_preserve_refresh_tokens_for_sender_constrained_confidential_clients() {
+    let mut token = token_row();
+    token.dpop_jkt = None;
+    token.mtls_x5t_s256 = None;
     let client = client_row();
 
     for profile in [
@@ -460,13 +462,14 @@ fn fapi_profiles_preserve_sender_constrained_refresh_tokens() {
     ] {
         assert_eq!(
             refresh_token_policy_for_authorization_server_profile(profile, &client, &token),
-            RefreshTokenPolicy::PreserveExisting
+            RefreshTokenPolicy::PreserveExisting,
+            "FAPI prohibits routine refresh-token rotation even when the confidential client's sender constraint is enforced by client policy rather than stored on the refresh-token row"
         );
     }
 }
 
 #[test]
-fn baseline_profile_rotates_confidential_sender_constrained_refresh_tokens() {
+fn baseline_profile_preserves_confidential_sender_constrained_refresh_tokens() {
     let token = token_row();
     let client = client_row();
 
@@ -476,11 +479,8 @@ fn baseline_profile_rotates_confidential_sender_constrained_refresh_tokens() {
             &client,
             &token,
         ),
-        RefreshTokenPolicy::Rotate {
-            family_id: token.token_family_id,
-            rotated_from_id: token.id,
-        },
-        "baseline refresh-token grants keep replay detection by rotating"
+        RefreshTokenPolicy::PreserveExisting,
+        "client policy identifies sender-constrained confidential clients even when the server hosts multiple profiles"
     );
 }
 
@@ -506,7 +506,8 @@ fn baseline_profile_rotates_public_sender_constrained_refresh_tokens() {
 }
 
 #[test]
-fn baseline_profile_rotates_confidential_secret_authenticated_sender_constrained_refresh_tokens() {
+fn baseline_profile_preserves_confidential_secret_authenticated_sender_constrained_refresh_tokens()
+{
     let token = token_row();
     let mut client = client_row();
     client.token_endpoint_auth_method = "client_secret_basic".to_owned();
@@ -517,11 +518,8 @@ fn baseline_profile_rotates_confidential_secret_authenticated_sender_constrained
             &client,
             &token,
         ),
-        RefreshTokenPolicy::Rotate {
-            family_id: token.token_family_id,
-            rotated_from_id: token.id,
-        },
-        "only confidential clients using holder-of-key client auth may preserve sender-constrained refresh tokens"
+        RefreshTokenPolicy::PreserveExisting,
+        "confidential client authentication plus the enforced access-token sender constraint makes routine refresh-token rotation unnecessary"
     );
 }
 
@@ -551,16 +549,12 @@ fn refresh_token_policy_uses_configured_authorization_server_profile() {
     let mut settings = Settings::from_config(&ConfigSource::default()).unwrap();
     settings.protocol.authorization_server_profile = AuthorizationServerProfile::Fapi2Security;
     let token = token_row();
-    let mut client = client_row();
-    client.client_type = "public".to_owned();
-    client.token_endpoint_auth_method = "none".to_owned();
-    client.require_dpop_bound_tokens = false;
-    client.require_mtls_bound_tokens = false;
+    let client = client_row();
 
     assert_eq!(
         refresh_token_policy_for_profile(&settings, &client, &token),
         RefreshTokenPolicy::PreserveExisting,
-        "FAPI profiles may preserve refresh-token families when the token stores a sender constraint"
+        "FAPI profiles preserve refresh tokens for valid sender-constrained confidential clients"
     );
 
     let mut unbound_token = token_row();
@@ -568,11 +562,8 @@ fn refresh_token_policy_uses_configured_authorization_server_profile() {
     unbound_token.mtls_x5t_s256 = None;
     assert_eq!(
         refresh_token_policy_for_profile(&settings, &client, &unbound_token),
-        RefreshTokenPolicy::Rotate {
-            family_id: unbound_token.token_family_id,
-            rotated_from_id: unbound_token.id,
-        },
-        "FAPI refresh-token grants rotate when the stored token has no stable sender constraint"
+        RefreshTokenPolicy::PreserveExisting,
+        "the client policy, not nullable refresh-token row bindings, determines whether a FAPI client is sender constrained"
     );
 
     let mut mtls_bound_token = token_row();
@@ -581,17 +572,62 @@ fn refresh_token_policy_uses_configured_authorization_server_profile() {
     assert_eq!(
         refresh_token_policy_for_profile(&settings, &client, &mtls_bound_token),
         RefreshTokenPolicy::PreserveExisting,
-        "mTLS-bound refresh-token families are also stable sender-constrained tokens"
+        "stored mTLS binding remains compatible with the non-rotating FAPI policy"
     );
 
     settings.protocol.authorization_server_profile = AuthorizationServerProfile::Oauth2Baseline;
     assert_eq!(
         refresh_token_policy_for_profile(&settings, &client, &token),
-        RefreshTokenPolicy::Rotate {
-            family_id: token.token_family_id,
-            rotated_from_id: token.id,
-        }
+        RefreshTokenPolicy::PreserveExisting,
+        "client-level sender constraints remain authoritative in a multi-profile baseline server"
     );
+}
+
+#[actix_web::test]
+async fn concurrent_baseline_refreshes_preserve_an_unbound_row_for_an_mtls_constrained_client() {
+    let Some(state) = live_trusted_proxy_refresh_state(AuthorizationServerProfile::Oauth2Baseline)
+    else {
+        return;
+    };
+    let thumbprint = "REREREREREREREREREREREREREREREREREREREREREQ";
+    let req = mtls_refresh_request(thumbprint);
+    let mut client = client_row();
+    client.require_dpop_bound_tokens = false;
+    client.require_mtls_bound_tokens = true;
+    insert_refresh_client(&state, &client).await;
+
+    let family_id = Uuid::now_v7();
+    let raw = format!("refresh-fapi-unbound-{}", Uuid::now_v7());
+    let mut token = token_row();
+    token.client_id = client.id;
+    token.token_family_id = family_id;
+    token.scopes = json!(["accounts", "offline_access"]);
+    token.subject = client.client_id.clone();
+    token.user_id = None;
+    token.dpop_jkt = None;
+    token.mtls_x5t_s256 = None;
+    insert_refresh_token_row(&state, &raw, &token, None, None).await;
+
+    let mut form = refresh_form_without_token();
+    form.refresh_token = Some(raw);
+    let (first, second) = tokio::join!(
+        token_refresh(&state, &req, &client, &form, None),
+        token_refresh(&state, &req, &client, &form, None)
+    );
+    let (first, second) = tokio::join!(response_json(first), response_json(second));
+
+    for (status, body) in [first, second] {
+        assert_eq!(status, StatusCode::OK, "unexpected response: {body}");
+        assert!(body["access_token"].is_string());
+        assert!(
+            body.get("refresh_token").is_none(),
+            "FAPI must not rotate the refresh token during routine refresh: {body}"
+        );
+    }
+    let family = load_family_rows(&state, family_id).await;
+    assert_eq!(family.len(), 1, "no rotated family member may be inserted");
+    assert!(family[0].revoked_at.is_none());
+    assert!(family[0].reuse_detected_at.is_none());
 }
 
 #[test]
@@ -2210,9 +2246,7 @@ async fn refresh_grant_binds_access_tokens_to_verified_mtls_certificate_when_req
     assert_eq!(cnf.x5t_s256.as_deref(), Some(thumbprint));
     assert_eq!(body["token_type"], "Bearer");
     assert!(
-        body["refresh_token"]
-            .as_str()
-            .is_some_and(|value| !value.is_empty()),
-        "baseline refresh-token grants rotate even when the new token is mTLS-bound"
+        body.get("refresh_token").is_none(),
+        "sender-constrained confidential clients preserve their existing refresh token"
     );
 }
