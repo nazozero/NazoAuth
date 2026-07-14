@@ -9,6 +9,21 @@ def workflow_heredoc_json(workflow: str, name: str):
     return json.loads(payload)
 
 class OidfWorkflowTests(unittest.TestCase):
+    def test_public_seed_artifacts_include_a_validated_mtls_ca_bundle(self):
+        root = Path(__file__).resolve().parents[2]
+        validation = (
+            "python scripts/oidf_mtls_ca_bundle.py verify \\\n"
+            "            --artifact-directory oidf-public-plan-configs"
+        )
+        for name in ("oidf-public-seed-configs.yml", "oidf-conformance-full.yml"):
+            workflow = (root / ".github" / "workflows" / name).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn(validation, workflow)
+            self.assertIn('--source-commit "$GITHUB_SHA"', workflow)
+            self.assertIn('--expected-source-commit "$GITHUB_SHA"', workflow)
+            self.assertIn("path: oidf-public-plan-configs", workflow)
+
     def test_oidf_workflows_default_to_latest_verified_release(self):
         root = Path(__file__).resolve().parents[2]
         expected = "dee9a25160e789f0f80517674693ef7989ab9fa1"
