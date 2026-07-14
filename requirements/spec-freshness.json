@@ -54,6 +54,7 @@
     {"id":"rfc8705","title":"OAuth 2.0 Mutual-TLS Client Authentication","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8705","number":8705,"markers":["RFC 8705","OAuth 2.0 Mutual-TLS Client Authentication"]},
     {"id":"rfc8707","title":"Resource Indicators for OAuth 2.0","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8707","number":8707,"markers":["RFC 8707","Resource Indicators for OAuth 2.0"]},
     {"id":"rfc8725","title":"JSON Web Token Best Current Practices","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8725","number":8725,"markers":["RFC 8725","JSON Web Token Best Current Practices"]},
+    {"id":"rfc8936","title":"Poll-Based Security Event Token Delivery Using HTTP","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8936","number":8936,"markers":["RFC 8936","Poll-Based Security Event Token (SET) Delivery Using HTTP"]},
     {"id":"rfc8996","title":"Deprecating TLS 1.0 and TLS 1.1","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8996","number":8996,"markers":["RFC 8996","Deprecating TLS 1.0 and TLS 1.1"]},
     {"id":"rfc9068","title":"JWT Profile for OAuth 2.0 Access Tokens","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9068","number":9068,"markers":["RFC 9068","JSON Web Token (JWT) Profile for OAuth 2.0 Access Tokens"]},
     {"id":"rfc9207","title":"OAuth 2.0 Authorization Server Issuer Identification","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9207","number":9207,"markers":["RFC 9207","OAuth 2.0 Authorization Server Issuer Identification"]},
