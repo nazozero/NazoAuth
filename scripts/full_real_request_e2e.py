@@ -1281,10 +1281,44 @@ def exercise_saml_federation() -> None:
 
     replay = expect_json(
         expect_status(
-            "POST /auth/federation/saml/acs existing link",
+            "POST /auth/federation/saml/acs replay",
             federated.post(
                 f"{BASE_URL}/auth/federation/saml/acs",
                 json=payload,
+                timeout=10,
+            ),
+            401,
+        )
+    )
+    check(
+        "saml_federation_replay_is_rejected",
+        replay.get("error") == "access_denied",
+        replay,
+    )
+
+    fresh_issued_at = max(now(), issued_at + 1)
+    fresh_expires_at = fresh_issued_at + 120
+    fresh_payload = dict(payload)
+    fresh_payload.update(
+        {
+            "iat": fresh_issued_at,
+            "exp": fresh_expires_at,
+            "signature": saml_gateway_signature(
+                payload["issuer"],
+                payload["audience"],
+                payload["subject"],
+                email,
+                fresh_issued_at,
+                fresh_expires_at,
+            ),
+        }
+    )
+    existing_link = expect_json(
+        expect_status(
+            "POST /auth/federation/saml/acs existing link",
+            federated.post(
+                f"{BASE_URL}/auth/federation/saml/acs",
+                json=fresh_payload,
                 timeout=10,
             ),
             200,
@@ -1292,8 +1326,9 @@ def exercise_saml_federation() -> None:
     )
     check(
         "saml_federation_existing_link_reauthenticates",
-        replay.get("mfa_required") is False and bool(federated.cookies.get(SESSION_COOKIE_NAME)),
-        replay,
+        existing_link.get("mfa_required") is False
+        and bool(federated.cookies.get(SESSION_COOKIE_NAME)),
+        existing_link,
     )
 
 
@@ -1456,17 +1491,40 @@ def seed_prerequisites() -> None:
         with conn.cursor() as cur:
             cur.execute(
                 """
+                SELECT module_id, desired_mode, revision
+                FROM runtime_module_desired_states
+                ORDER BY module_id
+                """
+            )
+            desired_states_before_reset = cur.fetchall()
+            if not desired_states_before_reset:
+                fail("runtime module desired states were not seeded before E2E reset")
+            cur.execute(
+                """
                 TRUNCATE TABLE
                     access_token_revocations,
                     oauth_tokens,
                     user_client_grants,
                     client_access_requests,
                     external_identity_links,
-                    oauth_clients,
-                    users
+                    oauth_clients
                 RESTART IDENTITY CASCADE
                 """
             )
+            # DELETE preserves control-plane rows whose audit actor references use
+            # ON DELETE SET NULL. TRUNCATE ... CASCADE would silently erase the
+            # durable runtime-module desired state while the servers are running.
+            cur.execute("DELETE FROM users")
+            cur.execute(
+                """
+                SELECT module_id, desired_mode, revision
+                FROM runtime_module_desired_states
+                ORDER BY module_id
+                """
+            )
+            desired_states_after_reset = cur.fetchall()
+            if desired_states_after_reset != desired_states_before_reset:
+                fail("E2E reset changed durable runtime module desired states")
             cur.execute(
                 """
                 INSERT INTO users (
@@ -1596,7 +1654,11 @@ def approve_authorization(
     expect_status(f"authorize_decision_approve_{state}", response, 302)
     query = location_query(response)
     code = query.get("code", [None])[0]
-    check(f"authorize_code_issued_{state}", bool(code))
+    check(
+        f"authorize_code_issued_{state}",
+        bool(code),
+        response.headers.get("Location", ""),
+    )
     check(f"authorize_state_roundtrip_{state}", query.get("state", [None])[0] == state)
     return code, verifier
 
@@ -2515,6 +2577,7 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["client_credentials"],
                 "token_endpoint_auth_method": "private_key_jwt",
+                "allow_client_assertion_endpoint_audience": True,
                 "jwks": {"keys": [ed25519_public_jwk(private_key, "private-key-jwt-e2e")]},
             },
             "POST /admin/clients private_key_jwt",
@@ -2531,6 +2594,7 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["client_credentials"],
                 "token_endpoint_auth_method": "private_key_jwt",
+                "allow_client_assertion_endpoint_audience": True,
                 "jwks": {
                     "keys": [
                         rsa_public_jwk(rsa_key, "private-key-jwt-rs256-e2e", "RS256"),
@@ -2553,6 +2617,7 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["authorization_code"],
                 "token_endpoint_auth_method": "private_key_jwt",
+                "allow_client_assertion_endpoint_audience": True,
                 "jwks": {
                     "keys": [
                         ed25519_public_jwk(private_key, "private-key-jwt-e2e"),
@@ -2574,6 +2639,7 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["authorization_code", "refresh_token"],
                 "token_endpoint_auth_method": "private_key_jwt",
+                "allow_client_assertion_endpoint_audience": True,
                 "require_dpop_bound_tokens": True,
                 "jwks": {"keys": [ed25519_public_jwk(private_key, "private-key-jwt-e2e")]},
             },

@@ -4,7 +4,7 @@
 
 **Status:** Approved for implementation
 
-**Repository:** `D:\self\NazoAuth`
+**Repository:** verified NazoAuth checkout
 
 **Branch:** `codex/m8-watchlist`
 

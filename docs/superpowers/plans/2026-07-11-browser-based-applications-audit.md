@@ -46,7 +46,7 @@
 
 **Files:**
 - Read: `Cargo.toml`
-- Read: `D:/self/NazoAuthWeb/package.json`
+- Read: sibling `NazoAuthWeb/package.json` after repository discovery and validation
 
 **Interfaces:**
 - Consumes: NazoAuth branch `codex/browser-apps-audit` at the approved design commit.
@@ -77,7 +77,9 @@ Expected: all selected tests pass with zero failures.
 
 - [ ] **Step 3: Fetch NazoAuthWeb and create an isolated worktree from main**
 
-Run in `D:/self/NazoAuthWeb`:
+Discover the sibling repository from the backend repository parent, then verify
+that its `origin`, branch, and worktree status match the coordinated change.
+Run in that verified repository:
 
 ```powershell
 git fetch origin main
@@ -89,7 +91,7 @@ Expected: `.worktrees` is ignored and the new worktree is based only on `origin/
 
 - [ ] **Step 4: Install and verify the NazoAuthWeb baseline**
 
-Run in `D:/self/NazoAuthWeb/.worktrees/browser-apps-audit`:
+Run in the verified `browser-apps-audit` frontend worktree:
 
 ```powershell
 npm ci
@@ -423,8 +425,8 @@ git commit -m "docs: record browser applications draft audit"
 ### Task 5: Add the NazoAuthWeb browser persistence and artifact gate
 
 **Files:**
-- Create: `D:/self/NazoAuthWeb/.worktrees/browser-apps-audit/scripts/check-browser-security.mjs`
-- Modify: `D:/self/NazoAuthWeb/.worktrees/browser-apps-audit/package.json`
+- Create: `scripts/check-browser-security.mjs` in the verified frontend worktree
+- Modify: `package.json` in the verified frontend worktree
 
 **Interfaces:**
 - Consumes: source tree `src/` and optional built tree `dist/`.
@@ -546,7 +548,7 @@ git commit -m "test: prevent browser credential persistence"
 ### Task 6: Document the NazoAuthWeb first-party security boundary
 
 **Files:**
-- Modify: `D:/self/NazoAuthWeb/.worktrees/browser-apps-audit/README.md`
+- Modify: `README.md` in the verified frontend worktree
 
 **Interfaces:**
 - Consumes: the Task 5 gate names and NazoAuth draft audit record.

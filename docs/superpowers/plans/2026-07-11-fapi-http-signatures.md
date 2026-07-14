@@ -4,7 +4,7 @@
 
 **Goal:** Add a default-closed FAPI HTTP Signatures resource profile that verifies signed `/fapi/resource` requests, signs all resource responses, and exposes reusable client request/response helpers.
 
-**Architecture:** A repository-local `nazo-fapi-http-signatures` crate owns RFC 9421/RFC 9530 canonicalization and FAPI draft policy without network or key custody. The server adapter binds parsed signatures to the authenticated tenant/client JWKS, the active server keyset, and Valkey replay state, then wraps the existing resource handler fail closed.
+**Architecture:** A repository-local `nazo-http-signatures` crate owns RFC 9421/RFC 9530 canonicalization without network or key custody. The server adapter owns FAPI draft policy, binds parsed signatures to the authenticated tenant/client JWKS, the active server keyset, and Valkey replay state, then wraps the existing resource handler fail closed.
 
 **Tech Stack:** Rust 2024, Actix Web, `httpsig` 0.0.24, `sfv` 0.15, SHA-256, existing JSON Web Key/keyset primitives, Diesel/PostgreSQL, Fred/Valkey.
 
@@ -24,11 +24,11 @@
 ### Task 1: RFC 9530 digest and RFC 9421 request helper core
 
 **Files:**
-- Create: `crates/fapi-http-signatures/Cargo.toml`
-- Create: `crates/fapi-http-signatures/src/lib.rs`
-- Create: `crates/fapi-http-signatures/src/digest.rs`
-- Create: `crates/fapi-http-signatures/src/request.rs`
-- Create: `crates/fapi-http-signatures/tests/request.rs`
+- Create: `crates/http-signatures/Cargo.toml`
+- Create: `crates/http-signatures/src/lib.rs`
+- Create: `crates/http-signatures/src/digest.rs`
+- Create: `crates/http-signatures/src/request.rs`
+- Create: `crates/http-signatures/tests/request.rs`
 - Modify: `Cargo.toml`
 - Modify: `Cargo.lock`
 
@@ -43,7 +43,7 @@
 Add the path dependency to the root package and create tests equivalent to:
 
 ```rust
-use nazo_fapi_http_signatures::{
+use nazo_http_signatures::{
     content_digest, prepare_request, RequestInput, RequestPolicy,
 };
 
@@ -76,7 +76,7 @@ fn request_helper_covers_the_fapi_request_components_in_order() {
 
 - [ ] **Step 2: Run the crate test and verify RED**
 
-Run: `cargo test --manifest-path crates/fapi-http-signatures/Cargo.toml --test request`
+Run: `cargo test --manifest-path crates/http-signatures/Cargo.toml --test request`
 
 Expected: dependencies resolve and compilation fails because the crate API is
 not implemented. This first unlocked invocation intentionally refreshes
@@ -109,7 +109,7 @@ impl PreparedSignature {
 
 - [ ] **Step 4: Run the focused tests and verify GREEN**
 
-Run: `cargo test --locked --manifest-path crates/fapi-http-signatures/Cargo.toml --test request`
+Run: `cargo test --locked --manifest-path crates/http-signatures/Cargo.toml --test request`
 
 Expected: all digest and request preparation tests pass.
 
@@ -120,7 +120,7 @@ algorithm, empty key ID, duplicate headers, body/digest conflicts, and
 signature field encoding. Add a property test proving arbitrary bodies round
 trip through `content_digest` without panics.
 
-Run: `cargo test --locked --manifest-path crates/fapi-http-signatures/Cargo.toml`
+Run: `cargo test --locked --manifest-path crates/http-signatures/Cargo.toml`
 
 Expected: all crate tests pass.
 
@@ -133,10 +133,10 @@ feat: add FAPI HTTP request signature helper
 ### Task 2: Strict request parsing and verification policy
 
 **Files:**
-- Create: `crates/fapi-http-signatures/src/verify.rs`
-- Create: `crates/fapi-http-signatures/src/error.rs`
-- Create: `crates/fapi-http-signatures/tests/verify_request.rs`
-- Modify: `crates/fapi-http-signatures/src/lib.rs`
+- Create: `crates/http-signatures/src/verify.rs`
+- Create: `crates/http-signatures/src/error.rs`
+- Create: `crates/http-signatures/tests/verify_request.rs`
+- Modify: `crates/http-signatures/src/lib.rs`
 
 **Interfaces:**
 - Consumes: `content_digest`, request component construction, RFC structured fields.
@@ -166,7 +166,7 @@ unknown algorithm, and malformed structured fields.
 
 - [ ] **Step 2: Run and verify RED**
 
-Run: `cargo test --locked --manifest-path crates/fapi-http-signatures/Cargo.toml --test verify_request`
+Run: `cargo test --locked --manifest-path crates/http-signatures/Cargo.toml --test verify_request`
 
 Expected: compilation fails because `parse_request_for_verification` is absent.
 
@@ -198,8 +198,8 @@ Authorization field without exposing those values.
 Run:
 
 ```text
-cargo test --locked --manifest-path crates/fapi-http-signatures/Cargo.toml --test verify_request
-cargo test --locked --manifest-path crates/fapi-http-signatures/Cargo.toml
+cargo test --locked --manifest-path crates/http-signatures/Cargo.toml --test verify_request
+cargo test --locked --manifest-path crates/http-signatures/Cargo.toml
 ```
 
 Expected: all tests pass with no warnings.
@@ -213,9 +213,9 @@ feat: enforce FAPI HTTP request signature policy
 ### Task 3: Response signing and client response-verification helper
 
 **Files:**
-- Create: `crates/fapi-http-signatures/src/response.rs`
-- Create: `crates/fapi-http-signatures/tests/response.rs`
-- Modify: `crates/fapi-http-signatures/src/lib.rs`
+- Create: `crates/http-signatures/src/response.rs`
+- Create: `crates/http-signatures/tests/response.rs`
+- Modify: `crates/http-signatures/src/lib.rs`
 
 **Interfaces:**
 - Consumes: original `RequestInput`, request signature fields, digest helper.
@@ -235,7 +235,7 @@ request digest, or request signature field.
 
 - [ ] **Step 2: Run and verify RED**
 
-Run: `cargo test --locked --manifest-path crates/fapi-http-signatures/Cargo.toml --test response`
+Run: `cargo test --locked --manifest-path crates/http-signatures/Cargo.toml --test response`
 
 Expected: compilation fails because response APIs are absent.
 
@@ -248,7 +248,7 @@ response headers.
 
 - [ ] **Step 4: Run all crate tests and RFC example tests**
 
-Run: `cargo test --locked --manifest-path crates/fapi-http-signatures/Cargo.toml`
+Run: `cargo test --locked --manifest-path crates/http-signatures/Cargo.toml`
 
 Expected: request, response, digest, negative, and RFC vector tests all pass.
 
@@ -477,7 +477,7 @@ cargo fmt --check
 cargo check --locked
 cargo clippy --locked -- -D warnings
 cargo test --locked --lib
-cargo test --locked --manifest-path crates/fapi-http-signatures/Cargo.toml
+cargo test --locked --manifest-path crates/http-signatures/Cargo.toml
 python -m py_compile scripts/full_real_request_e2e.py
 git diff --check origin/main...HEAD
 ```
