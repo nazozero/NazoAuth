@@ -258,10 +258,11 @@ impl OAuthClientRepository {
                 allow_client_assertion_audience_array,
                 allow_client_assertion_endpoint_audience, require_par_request_object,
                 allow_authorization_code_without_pkce, frontchannel_logout_uri,
-                frontchannel_logout_session_required, jwks, is_active
+                frontchannel_logout_session_required, jwks,
+                authorization_signed_response_alg, is_active
             ) VALUES (
                 $1, $2, $3, $4, $5, 'confidential', $6, $7, $8, $9, $10, $11, $12,
-                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, TRUE
+                $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, TRUE
             )
             ON CONFLICT (tenant_id, client_id) DO UPDATE SET
                 client_name = EXCLUDED.client_name,
@@ -284,6 +285,7 @@ impl OAuthClientRepository {
                 frontchannel_logout_uri = EXCLUDED.frontchannel_logout_uri,
                 frontchannel_logout_session_required = EXCLUDED.frontchannel_logout_session_required,
                 jwks = EXCLUDED.jwks,
+                authorization_signed_response_alg = EXCLUDED.authorization_signed_response_alg,
                 is_active = TRUE,
                 updated_at = CURRENT_TIMESTAMP
             "#,
@@ -311,6 +313,9 @@ impl OAuthClientRepository {
             .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(&client.frontchannel_logout_uri)
             .bind::<diesel::sql_types::Bool, _>(client.frontchannel_logout_session_required)
             .bind::<diesel::sql_types::Nullable<diesel::sql_types::Jsonb>, _>(&client.jwks)
+            .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
+                &client.authorization_signed_response_alg,
+            )
             .execute(&mut connection)
             .await
             .map_err(map_error)?;

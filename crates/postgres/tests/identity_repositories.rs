@@ -332,6 +332,48 @@ async fn seed_upsert_is_atomic_and_preserves_unmanaged_client_state() {
 }
 
 #[tokio::test]
+async fn seed_upsert_persists_jarm_algorithm_on_insert_and_conflict_update() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let mut client = oauth_client(tenant, format!("seed-jarm-{}", Uuid::now_v7()));
+    client.authorization_signed_response_alg = Some("PS256".to_owned());
+
+    repository
+        .upsert(&client, None)
+        .await
+        .expect("fresh seed upsert should persist JARM metadata");
+    let inserted = repository
+        .by_client_id(client.tenant_id, &client.client_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        inserted.authorization_signed_response_alg.as_deref(),
+        Some("PS256")
+    );
+
+    client.authorization_signed_response_alg = Some("ES256".to_owned());
+    repository
+        .upsert(&client, None)
+        .await
+        .expect("conflict update should replace managed JARM metadata");
+    let updated = repository
+        .by_client_id(client.tenant_id, &client.client_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        updated.authorization_signed_response_alg.as_deref(),
+        Some("ES256")
+    );
+
+    cleanup_oauth_client(&pool, inserted.id).await;
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
 async fn application_projection_filters_mixed_scope_elements() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
