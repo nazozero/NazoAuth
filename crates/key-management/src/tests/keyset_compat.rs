@@ -585,6 +585,10 @@ async fn load_or_create_keyset_backfills_oidc_default_rs256_signing_key() {
         snapshot_from_loaded(&keyset).response_signing_alg_values_supported(),
         vec!["RS256", "PS256"]
     );
+    assert_eq!(
+        snapshot_from_loaded(&keyset).id_token_signing_alg_values_supported(),
+        vec!["RS256", "PS256"]
+    );
     assert!(
         keyset
             .selected_key(SigningPurpose::IdToken, jsonwebtoken::Algorithm::RS256)

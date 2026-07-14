@@ -111,6 +111,7 @@ impl MetadataSnapshotSource for ServerMetadataSnapshotSource {
             active_signing_algorithms: signing_algorithm_name(keys.active_alg)
                 .into_iter()
                 .collect(),
+            id_token_signing_algorithms: keys.id_token_signing_alg_values_supported(),
             response_signing_algorithms: keys.response_signing_alg_values_supported(),
             jwks: keys.jwks(),
         }

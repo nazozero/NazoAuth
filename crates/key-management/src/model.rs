@@ -59,6 +59,7 @@ pub struct KeySnapshot {
     pub active_kid: String,
     pub active_alg: jsonwebtoken::Algorithm,
     pub verification_keys: Vec<VerificationKey>,
+    pub(crate) id_token_signing_algorithms: Vec<jsonwebtoken::Algorithm>,
     pub(crate) response_signing_algorithms: Vec<jsonwebtoken::Algorithm>,
 }
 
@@ -71,6 +72,14 @@ impl KeySnapshot {
     #[must_use]
     pub fn response_signing_alg_values_supported(&self) -> Vec<&'static str> {
         self.response_signing_algorithms
+            .iter()
+            .filter_map(|algorithm| crate::store::signing_algorithm_name(*algorithm))
+            .collect()
+    }
+
+    #[must_use]
+    pub fn id_token_signing_alg_values_supported(&self) -> Vec<&'static str> {
+        self.id_token_signing_algorithms
             .iter()
             .filter_map(|algorithm| crate::store::signing_algorithm_name(*algorithm))
             .collect()
@@ -540,6 +549,14 @@ pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
         jsonwebtoken::Algorithm::ES256,
         jsonwebtoken::Algorithm::PS256,
     ];
+    let id_token_signing_algorithms = ORDERED
+        .into_iter()
+        .filter(|algorithm| {
+            loaded
+                .selected_key(SigningPurpose::IdToken, *algorithm)
+                .is_some()
+        })
+        .collect();
     let response_signing_algorithms = ORDERED
         .into_iter()
         .filter(|algorithm| {
@@ -562,6 +579,7 @@ pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
                 public_jwk: key.public_jwk.clone(),
             })
             .collect(),
+        id_token_signing_algorithms,
         response_signing_algorithms,
     }
 }
@@ -639,6 +657,18 @@ mod tests {
         let key = managed_key(KeyState::Active, &[SigningPurpose::IdToken]);
         assert!(key.can_sign(SigningPurpose::IdToken));
         assert!(!key.can_sign(SigningPurpose::HttpMessage));
+    }
+
+    #[test]
+    fn metadata_snapshot_does_not_advertise_jarm_only_keys_for_id_tokens() {
+        let manager = manager_with_policy(KeyState::Active, &[SigningPurpose::Jarm]);
+        let snapshot = manager.snapshot();
+
+        assert_eq!(
+            snapshot.response_signing_alg_values_supported(),
+            vec!["EdDSA"]
+        );
+        assert!(snapshot.id_token_signing_alg_values_supported().is_empty());
     }
 
     #[test]

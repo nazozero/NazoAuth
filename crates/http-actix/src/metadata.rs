@@ -29,6 +29,7 @@ pub struct MetadataEndpointConfig {
 pub struct MetadataSnapshot {
     pub active_modules: Arc<ActiveModuleSnapshot>,
     pub active_signing_algorithms: Vec<&'static str>,
+    pub id_token_signing_algorithms: Vec<&'static str>,
     pub response_signing_algorithms: Vec<&'static str>,
     pub jwks: Value,
 }
@@ -68,6 +69,7 @@ impl MetadataHandles {
                 request_uri_parameter_enabled: self.config.request_uri_parameter_enabled,
                 signing_algorithms: MetadataSigningAlgorithms {
                     active: &snapshot.active_signing_algorithms,
+                    id_token: &snapshot.id_token_signing_algorithms,
                     response: &snapshot.response_signing_algorithms,
                 },
             },
@@ -138,7 +140,8 @@ mod tests {
                     accepting: [ModuleId::Ciba].into_iter().collect(),
                     draining: BTreeSet::new(),
                 }),
-                active_signing_algorithms: vec!["PS256"],
+                active_signing_algorithms: vec!["RS256"],
+                id_token_signing_algorithms: vec!["RS256", "PS256"],
                 response_signing_algorithms: vec!["PS256"],
                 jwks: json!({"keys": [{"kid": "current", "alg": "PS256"}]}),
             }
@@ -211,6 +214,14 @@ mod tests {
             assert_eq!(
                 body["grant_types_supported"][3],
                 "urn:openid:params:grant-type:ciba"
+            );
+            assert_eq!(
+                body["id_token_signing_alg_values_supported"],
+                json!(["PS256", "RS256"])
+            );
+            assert_eq!(
+                body["authorization_signing_alg_values_supported"],
+                json!(["PS256"])
             );
         }
 

@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 use super::*;
 
 const ACTIVE_RS256: &[&str] = &["RS256"];
+const ID_TOKEN_RS256: &[&str] = &["RS256"];
 const RESPONSE_RS256: &[&str] = &["RS256"];
 
 fn input() -> AuthorizationServerMetadataInput<'static> {
@@ -22,6 +23,7 @@ fn input() -> AuthorizationServerMetadataInput<'static> {
         request_uri_parameter_enabled: false,
         signing_algorithms: MetadataSigningAlgorithms {
             active: ACTIVE_RS256,
+            id_token: ID_TOKEN_RS256,
             response: RESPONSE_RS256,
         },
     }
@@ -363,6 +365,7 @@ fn fapi_profiles_publish_only_the_selected_security_contract() {
                 require_pushed_authorization_requests: true,
                 signing_algorithms: MetadataSigningAlgorithms {
                     active: ACTIVE_PS256,
+                    id_token: ACTIVE_PS256,
                     response: RESPONSE_PS256,
                 },
                 ..input()
@@ -398,6 +401,7 @@ fn request_uri_subject_and_mtls_configuration_are_preserved_exactly() {
             request_uri_parameter_enabled: true,
             signing_algorithms: MetadataSigningAlgorithms {
                 active: ACTIVE_PS256,
+                id_token: ACTIVE_PS256,
                 response: RESPONSE,
             },
             ..input()
@@ -430,6 +434,28 @@ fn request_uri_subject_and_mtls_configuration_are_preserved_exactly() {
     assert_eq!(
         metadata.pointer("/mtls_endpoint_aliases/token_endpoint"),
         Some(&json!("https://mtls.issuer.example/token"))
+    );
+}
+
+#[test]
+fn id_token_metadata_includes_non_primary_eligible_signing_keys() {
+    const ID_TOKEN_ALGORITHMS: &[&str] = &["RS256", "PS256"];
+    const RESPONSE_ALGORITHMS: &[&str] = &["RS256", "PS256"];
+    let metadata = authorization_server_metadata(
+        AuthorizationServerMetadataInput {
+            signing_algorithms: MetadataSigningAlgorithms {
+                active: ACTIVE_RS256,
+                id_token: ID_TOKEN_ALGORITHMS,
+                response: RESPONSE_ALGORITHMS,
+            },
+            ..input()
+        },
+        &snapshot([]),
+    );
+
+    assert_eq!(
+        metadata["id_token_signing_alg_values_supported"],
+        json!(["PS256", "RS256"])
     );
 }
 
