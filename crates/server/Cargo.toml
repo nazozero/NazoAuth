@@ -23,7 +23,6 @@ test = false
 [[bin]]
 name = "nazo_oauth_seed_oidf"
 path = "src/bin/nazo_oauth_seed_oidf.rs"
-test = false
 
 [dependencies]
 actix-cors.workspace = true
