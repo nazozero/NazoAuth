@@ -34,6 +34,7 @@ struct FapiClientPolicy {
     require_par_request_object: bool,
     client_credentials_only: bool,
     ciba: bool,
+    authorization_signed_response_alg: Option<&'static str>,
 }
 
 struct FapiClientSeed {
@@ -64,6 +65,7 @@ struct ClientUpsert<'a> {
     frontchannel_logout_uri: Option<&'a str>,
     frontchannel_logout_session_required: bool,
     jwks: Option<&'a Value>,
+    authorization_signed_response_alg: Option<&'a str>,
 }
 
 fn env_or(name: &str, default: &str) -> String {
@@ -203,15 +205,11 @@ fn upsert_user(
     Ok(())
 }
 
-async fn upsert_client(
-    repository: &nazo_postgres::OAuthClientRepository,
-    client: ClientUpsert<'_>,
-    client_secret_hash: Option<&str>,
-) -> anyhow::Result<()> {
+fn seeded_oauth_client(client: ClientUpsert<'_>) -> anyhow::Result<OAuthClient> {
     let string_array = |value: &Value| -> anyhow::Result<Vec<String>> {
         serde_json::from_value(value.clone()).map_err(Into::into)
     };
-    let client = OAuthClient {
+    Ok(OAuthClient {
         id: Uuid::now_v7(),
         tenant_id: DEFAULT_TENANT_ID.parse()?,
         realm_id: DEFAULT_REALM_ID.parse()?,
@@ -251,13 +249,23 @@ async fn upsert_client(
             userinfo_signed_response_alg: None,
             userinfo_encrypted_response_alg: None,
             userinfo_encrypted_response_enc: None,
-            authorization_signed_response_alg: None,
+            authorization_signed_response_alg: client
+                .authorization_signed_response_alg
+                .map(ToOwned::to_owned),
             authorization_encrypted_response_alg: None,
             authorization_encrypted_response_enc: None,
         },
         require_mtls_bound_tokens: client.require_mtls_bound_tokens,
         is_active: true,
-    };
+    })
+}
+
+async fn upsert_client(
+    repository: &nazo_postgres::OAuthClientRepository,
+    client: ClientUpsert<'_>,
+    client_secret_hash: Option<&str>,
+) -> anyhow::Result<()> {
+    let client = seeded_oauth_client(client)?;
     repository.upsert(&client, client_secret_hash).await?;
     Ok(())
 }
@@ -277,6 +285,10 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
         .and_then(|value| value.get("fapi_profile"))
         .and_then(Value::as_str)
         .unwrap_or("plain_fapi");
+    let fapi_response_mode = nazo
+        .and_then(|value| value.get("fapi_response_mode"))
+        .and_then(Value::as_str)
+        .unwrap_or("plain_response");
     let auth_method = match client_auth_type {
         "mtls" => "tls_client_auth",
         _ => "private_key_jwt",
@@ -295,6 +307,7 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> FapiClientPolicy {
                 .is_some(),
         client_credentials_only: fapi_profile == "fapi_client_credentials_grant",
         ciba,
+        authorization_signed_response_alg: (fapi_response_mode == "jarm").then_some("PS256"),
     }
 }
 
@@ -370,6 +383,7 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             jwks: None,
+            authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
     )
@@ -396,6 +410,7 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             jwks: None,
+            authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
     )
@@ -422,6 +437,7 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             jwks: None,
+            authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
     )
@@ -448,6 +464,7 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_uri: Some(&frontchannel_logout_uri),
             frontchannel_logout_session_required: true,
             jwks: None,
+            authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
     )
@@ -474,6 +491,7 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             jwks: None,
+            authorization_signed_response_alg: None,
         },
         Some(&client_secret_hash),
     )
@@ -551,6 +569,7 @@ async fn main() -> anyhow::Result<()> {
                 frontchannel_logout_uri: None,
                 frontchannel_logout_session_required: true,
                 jwks: Some(&seed.jwks),
+                authorization_signed_response_alg: seed.policy.authorization_signed_response_alg,
             },
             None,
         )
@@ -609,5 +628,57 @@ mod tests {
         assert!(policy.require_mtls_bound_tokens);
         assert!(!policy.allow_client_assertion_endpoint_audience);
         assert!(!policy.ciba);
+    }
+
+    #[test]
+    fn fapi_message_final_jarm_clients_use_a_permitted_response_algorithm() {
+        let jarm = fapi_client_policy(
+            "renamed-fapi-plan.json",
+            &json!({"nazo": {"fapi_response_mode": "jarm"}}),
+        );
+        let plain = fapi_client_policy(
+            "oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
+            &json!({"nazo": {"fapi_response_mode": "plain_response"}}),
+        );
+
+        assert_eq!(jarm.authorization_signed_response_alg, Some("PS256"));
+        assert_eq!(plain.authorization_signed_response_alg, None);
+    }
+
+    #[test]
+    fn seeded_client_preserves_the_selected_jarm_algorithm() {
+        let empty = json!([]);
+        let scopes = json!(["openid"]);
+        let client = seeded_oauth_client(ClientUpsert {
+            client_id: "jarm-client",
+            client_name: "JARM client",
+            auth_method: "private_key_jwt",
+            redirect_uris: &empty,
+            post_logout_redirect_uris: &empty,
+            scopes: &scopes,
+            allowed_audiences: &empty,
+            grant_types: &empty,
+            require_dpop_bound_tokens: true,
+            allow_client_assertion_audience_array: false,
+            allow_client_assertion_endpoint_audience: false,
+            require_par_request_object: true,
+            allow_authorization_code_without_pkce: false,
+            require_mtls_bound_tokens: false,
+            tls_client_auth_subject_dn: None,
+            tls_client_auth_cert_sha256: None,
+            frontchannel_logout_uri: None,
+            frontchannel_logout_session_required: false,
+            jwks: None,
+            authorization_signed_response_alg: Some("PS256"),
+        })
+        .expect("seed client conversion");
+
+        assert_eq!(
+            client
+                .registration
+                .authorization_signed_response_alg
+                .as_deref(),
+            Some("PS256")
+        );
     }
 }
