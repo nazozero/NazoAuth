@@ -158,10 +158,13 @@ class OidfWorkflowTests(unittest.TestCase):
         )
 
         expected_skips = workflow_heredoc_json(workflow, "oidf-expected-skips.json")
-        self.assertEqual(len(expected_skips), 2)
+        self.assertEqual(len(expected_skips), 6)
         self.assertEqual(
             {item["configuration-filename"] for item in expected_skips},
-            {"oidf-oidcc-dynamic-plan-config.json"},
+            {
+                "oidf-oidcc-basic-plan-config.json",
+                "oidf-oidcc-dynamic-plan-config.json",
+            },
         )
 
         self.assertIn('"$GITHUB_WORKSPACE/oidf-results/$export_subdir"', workflow)

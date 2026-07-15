@@ -120,12 +120,32 @@ jobs:
           cat > oidf-expected-skips.json <<'JSON'
           [
             {
+              "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+              "variant": "*",
+              "configuration-filename": "oidf-oidcc-basic-plan-config.json"
+            },
+            {
+              "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+              "variant": "*",
+              "configuration-filename": "oidf-oidcc-basic-plan-config.json"
+            },
+            {
               "test-name": "oidcc-idtoken-unsigned",
               "variant": "*",
               "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
             },
             {
               "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+              "variant": "*",
+              "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
+            },
+            {
+              "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+              "variant": "*",
+              "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
+            },
+            {
+              "test-name": "oidcc-ensure-request-object-with-redirect-uri",
               "variant": "*",
               "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
             }

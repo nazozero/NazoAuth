@@ -1483,8 +1483,18 @@ def write_all_plan_configs() -> None:
     write_expected_skips()
 
 
-def write_expected_skips() -> None:
-    expected_skips = [
+def expected_skips() -> list[dict[str, str]]:
+    return [
+        {
+            "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-basic-plan-config.json",
+        },
+        {
+            "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-basic-plan-config.json",
+        },
         {
             "test-name": "oidcc-idtoken-unsigned",
             "variant": "*",
@@ -1495,10 +1505,23 @@ def write_expected_skips() -> None:
             "variant": "*",
             "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
         },
+        {
+            "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
+        },
+        {
+            "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
+        },
     ]
+
+
+def write_expected_skips() -> None:
     write_text(
         RUNTIME / "oidf-expected-skips.json",
-        json.dumps(expected_skips, indent=2) + "\n",
+        json.dumps(expected_skips(), indent=2) + "\n",
         0o600,
     )
 

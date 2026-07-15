@@ -94,6 +94,21 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
             any("client_registration=dynamic_client" in item for item in expressions)
         )
 
+    def test_unsigned_compatibility_skips_are_explicit_and_bounded(self):
+        module = load_setup_module()
+
+        skips = module.expected_skips()
+
+        self.assertEqual(len(skips), 6)
+        self.assertEqual(
+            {item["configuration-filename"] for item in skips},
+            {
+                "oidf-oidcc-basic-plan-config.json",
+                "oidf-oidcc-dynamic-plan-config.json",
+            },
+        )
+        self.assertEqual({item["variant"] for item in skips}, {"*"})
+
     def test_dynamic_plan_uses_terminal_browser_flow_for_local_redirect_errors(self):
         module = load_setup_module()
 

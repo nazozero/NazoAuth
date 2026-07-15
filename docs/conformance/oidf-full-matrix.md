@@ -73,13 +73,18 @@ Basic OP Dynamic Registration`; "dynamic registration" and the legacy OIDF
 
 ## Expected Skip Policy
 
-The current official workflow allows two expected skips in the basic dynamic
-registration configuration:
+The current official workflow allows six explicit expected-skip records across
+the static and dynamic Basic OP configurations:
 
 - `oidcc-idtoken-unsigned`
 - `oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported`
+- `oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported`
+- `oidcc-ensure-request-object-with-redirect-uri`
 
 The skips reflect intentionally unsupported unsigned compatibility features:
-unsigned ID Tokens and unsigned Request Objects are not advertised. A workflow
-run with those expected skips can be evidence for `0 failures` and `0 warnings`,
-but it is not zero-SKIPPED evidence.
+unsigned ID Tokens and unsigned Request Objects are not advertised. The last
+module name is broader than its actual precondition: OIDF suite v5.2.0 skips it
+when `none` is absent from `request_object_signing_alg_values_supported`.
+Signed Request Objects with `redirect_uri` remain implemented and tested in the
+FAPI/JAR plans. A workflow run with those expected skips can be evidence for `0
+failures` and `0 warnings`, but it is not zero-SKIPPED evidence.
