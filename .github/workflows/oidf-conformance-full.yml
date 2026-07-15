@@ -236,6 +236,7 @@ jobs:
               --conformance-server "$CONFORMANCE_SERVER"
               --config-json-file oidf-plan-configs.json
               --plan-set-json-file "$plan_set_file"
+              --expected-failures-file tests/contracts/oidf-official-expected-warnings.json
               --expected-skips-file oidf-expected-skips.json
               --target-issuer "$OIDF_TARGET_ISSUER"
               --timeout-seconds "$RUN_TIMEOUT_SECONDS"

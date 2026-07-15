@@ -1142,6 +1142,85 @@ def allowed_review_contexts_by_alias(
     }
 
 
+def expected_warning_contexts_by_alias(
+    expected_problems_file: Path | None,
+    aliases_by_config: dict[str, str],
+) -> dict[str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]]:
+    if expected_problems_file is None:
+        return {}
+
+    try:
+        payload = json.loads(expected_problems_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"could not read OIDF expected problems file: {exc}")
+    if not isinstance(payload, list):
+        fail("OIDF expected problems file must contain a JSON array")
+
+    contexts: dict[str, set[tuple[str, tuple[tuple[str, str], ...], str, str]]] = {}
+    for item in payload:
+        if not isinstance(item, dict) or item.get("expected-result") != "warning":
+            continue
+        config_name = item.get("configuration-filename")
+        test_name = item.get("test-name")
+        variant = item.get("variant")
+        current_block = item.get("current-block")
+        condition = item.get("condition")
+        if (
+            not isinstance(config_name, str)
+            or not isinstance(test_name, str)
+            or not isinstance(variant, dict)
+            or not isinstance(current_block, str)
+            or not isinstance(condition, str)
+            or any("*" in value for value in (config_name, test_name, current_block, condition))
+            or not all(isinstance(key, str) and isinstance(value, str) for key, value in variant.items())
+        ):
+            fail(
+                "OIDF expected warnings used by the early-stop monitor must use exact "
+                "configuration, test, variant, block, and condition values"
+            )
+        alias = aliases_by_config.get(config_name)
+        if alias is None:
+            continue
+        context = (test_name, tuple(sorted(variant.items())), current_block, condition)
+        alias_contexts = contexts.setdefault(alias, set())
+        if context in alias_contexts:
+            fail(f"duplicate OIDF expected warning for {config_name}: {test_name} / {current_block}")
+        alias_contexts.add(context)
+
+    return {alias: frozenset(values) for alias, values in contexts.items()}
+
+
+def is_allowed_expected_warning(
+    info: object,
+    log_entry: object,
+    current_block: str | None,
+    allowed_expected_warnings_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    ],
+) -> bool:
+    if not isinstance(info, dict) or not isinstance(log_entry, dict) or current_block is None:
+        return False
+    alias = info.get("alias")
+    test_name = info.get("testName") or info.get("name")
+    variant = info.get("variant")
+    condition = log_entry.get("src")
+    if (
+        not isinstance(alias, str)
+        or not isinstance(test_name, str)
+        or not isinstance(variant, dict)
+        or not isinstance(condition, str)
+        or not all(isinstance(key, str) and isinstance(value, str) for key, value in variant.items())
+    ):
+        return False
+    context = (
+        module_name_without_variant(test_name),
+        tuple(sorted(variant.items())),
+        current_block,
+        condition,
+    )
+    return context in allowed_expected_warnings_by_alias.get(alias, frozenset())
+
+
 def is_allowed_review_module(
     test_name: str,
     alias: object,
@@ -1215,22 +1294,68 @@ def oidf_info_failure_can_wait_for_final_result(info: object) -> bool:
     return result == "REVIEW"
 
 
-def oidf_log_failure(module_id: str, logs: object) -> str | None:
+def oidf_log_failure(
+    module_id: str,
+    logs: object,
+    *,
+    info: object = None,
+    allowed_expected_warnings_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    ] | None = None,
+) -> str | None:
     if not isinstance(logs, list):
         return None
 
+    block_names: dict[str, str] = {}
     for entry in logs:
         if not isinstance(entry, dict):
             continue
+        block_id = entry.get("blockId")
+        msg = entry.get("msg")
+        if entry.get("startBlock") is True and isinstance(block_id, str) and isinstance(msg, str):
+            block_names[block_id] = msg
         result = value_as_upper(entry.get("result"))
         if result not in OIDF_BAD_LOG_RESULTS:
             continue
+        if result == "WARNING" and is_allowed_expected_warning(
+            info,
+            entry,
+            block_names.get(block_id) if isinstance(block_id, str) else None,
+            allowed_expected_warnings_by_alias or {},
+        ):
+            continue
         src = entry.get("src")
-        msg = entry.get("msg")
         src_text = src if isinstance(src, str) and src else "<unknown>"
         msg_text = msg if isinstance(msg, str) and msg else "<no message>"
         return f"{module_id} log {result} at {src_text}: {msg_text[:300]}"
     return None
+
+
+def oidf_log_has_allowed_expected_warning(
+    info: object,
+    logs: object,
+    allowed_expected_warnings_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    ],
+) -> bool:
+    if not isinstance(logs, list):
+        return False
+    block_names: dict[str, str] = {}
+    for entry in logs:
+        if not isinstance(entry, dict):
+            continue
+        block_id = entry.get("blockId")
+        msg = entry.get("msg")
+        if entry.get("startBlock") is True and isinstance(block_id, str) and isinstance(msg, str):
+            block_names[block_id] = msg
+        if value_as_upper(entry.get("result")) == "WARNING" and is_allowed_expected_warning(
+            info,
+            entry,
+            block_names.get(block_id) if isinstance(block_id, str) else None,
+            allowed_expected_warnings_by_alias,
+        ):
+            return True
+    return False
 
 
 def oidf_log_context(logs: object, *, max_entries: int = 6) -> str:
@@ -1341,6 +1466,9 @@ def inspect_oidf_state(
     final: bool,
     ignored_plan_ids: set[str] | None = None,
     allowed_reviews_by_alias: dict[str, tuple[str, frozenset[str]]] | None = None,
+    allowed_expected_warnings_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    ] | None = None,
 ) -> str | None:
     ignored = ignored_plan_ids or set()
     plans = [
@@ -1410,8 +1538,20 @@ def inspect_oidf_state(
                     token,
                     expected_statuses={200, 404},
                 )
-                if oidf_log_failure(module_id, logs):
+                log_failure = oidf_log_failure(
+                    module_id,
+                    logs,
+                    info=info,
+                    allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+                )
+                if log_failure:
                     return oidf_failure_with_log_context(module_id, failure, logs)
+                if result == "WARNING" and oidf_log_has_allowed_expected_warning(
+                    info,
+                    logs,
+                    allowed_expected_warnings_by_alias or {},
+                ):
+                    continue
                 if not final and oidf_info_failure_can_wait_for_final_result(info):
                     continue
                 return oidf_failure_with_log_context(module_id, failure, logs)
@@ -1482,6 +1622,9 @@ class OidfEarlyStopMonitor:
         interval_seconds: int,
         ignored_plan_ids: set[str],
         allowed_reviews_by_alias: dict[str, tuple[str, frozenset[str]]],
+        allowed_expected_warnings_by_alias: dict[
+            str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+        ],
     ) -> None:
         self.base_url = base_url
         self.token = token
@@ -1489,6 +1632,7 @@ class OidfEarlyStopMonitor:
         self.interval_seconds = interval_seconds
         self.ignored_plan_ids = ignored_plan_ids
         self.allowed_reviews_by_alias = allowed_reviews_by_alias
+        self.allowed_expected_warnings_by_alias = allowed_expected_warnings_by_alias
         self.stop_requested = threading.Event()
         self.failure_message: str | None = None
         self.consecutive_errors = 0
@@ -1506,6 +1650,7 @@ class OidfEarlyStopMonitor:
                     final=False,
                     ignored_plan_ids=self.ignored_plan_ids,
                     allowed_reviews_by_alias=self.allowed_reviews_by_alias,
+                    allowed_expected_warnings_by_alias=self.allowed_expected_warnings_by_alias,
                 )
                 self.consecutive_errors = 0
             except SystemExit as exc:
@@ -1834,6 +1979,9 @@ def run_official_runner(
     token: str | None,
     monitor_interval_seconds: int,
     allowed_reviews_by_alias: dict[str, tuple[str, frozenset[str]]],
+    allowed_expected_warnings_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    ],
 ) -> int:
     if timeout_seconds <= 0:
         fail("--timeout-seconds must be greater than zero")
@@ -1865,6 +2013,7 @@ def run_official_runner(
             monitor_interval_seconds,
             ignored_plan_ids,
             allowed_reviews_by_alias,
+            allowed_expected_warnings_by_alias,
         )
         monitor_thread = threading.Thread(
             target=monitor.run,
@@ -1906,6 +2055,7 @@ def run_official_runner(
             final=exit_code == 0,
             ignored_plan_ids=ignored_plan_ids,
             allowed_reviews_by_alias=allowed_reviews_by_alias,
+            allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
         )
         if final_failure:
             print(f"OIDF final state check failed: {final_failure}", flush=True)
@@ -2029,8 +2179,10 @@ def main() -> int:
         command.append("--no-parallel")
     if args.rerun:
         command.extend(["--rerun", args.rerun])
-    if args.expected_failures_file:
-        expected_failures_file = Path(args.expected_failures_file).resolve()
+    expected_failures_file = (
+        Path(args.expected_failures_file).resolve() if args.expected_failures_file else None
+    )
+    if expected_failures_file is not None:
         command.extend(["--expected-failures-file", str(expected_failures_file)])
     if args.expected_skips_file:
         expected_skips_file = Path(args.expected_skips_file).resolve()
@@ -2063,6 +2215,7 @@ def main() -> int:
         token,
         args.monitor_interval_seconds,
         allowed_review_contexts_by_alias(aliases_by_config),
+        expected_warning_contexts_by_alias(expected_failures_file, aliases_by_config),
     )
 
 

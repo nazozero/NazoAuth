@@ -1,5 +1,6 @@
 import http.client
 import importlib.util
+import json
 import os
 import subprocess
 import tempfile
@@ -224,6 +225,73 @@ class RunOidfConformanceTests(unittest.TestCase):
         ]
 
         self.assertIn("FAILURE", module.oidf_log_failure("module-id", logs))
+
+    def test_expected_tls_warning_requires_exact_alias_variant_module_block_and_condition(self):
+        module = load_runner_module()
+        info = {
+            "alias": "ping-alias",
+            "testName": "fapi-ciba-id1",
+            "variant": {
+                "client_auth_type": "mtls",
+                "ciba_mode": "ping",
+                "fapi_ciba_profile": "plain_fapi",
+                "client_registration": "static_client",
+            },
+        }
+        logs = [
+            {"blockId": "tls", "startBlock": True, "msg": "Verify notification callback"},
+            {
+                "blockId": "tls",
+                "result": "WARNING",
+                "src": "EnsureIncomingTls13",
+                "msg": "Client doesn't support TLS 1.3",
+            },
+        ]
+        context = (
+            "fapi-ciba-id1",
+            tuple(sorted(info["variant"].items())),
+            "Verify notification callback",
+            "EnsureIncomingTls13",
+        )
+        allowed = {"ping-alias": frozenset({context})}
+
+        self.assertIsNone(
+            module.oidf_log_failure(
+                "module-id",
+                logs,
+                info=info,
+                allowed_expected_warnings_by_alias=allowed,
+            )
+        )
+        self.assertTrue(module.oidf_log_has_allowed_expected_warning(info, logs, allowed))
+        logs[1]["src"] = "DifferentCondition"
+        self.assertIn(
+            "WARNING",
+            module.oidf_log_failure(
+                "module-id",
+                logs,
+                info=info,
+                allowed_expected_warnings_by_alias=allowed,
+            ),
+        )
+
+    def test_expected_tls_warning_file_rejects_wildcards(self):
+        module = load_runner_module()
+        payload = [
+            {
+                "test-name": "fapi-ciba-id1*",
+                "variant": {"client_auth_type": "mtls"},
+                "configuration-filename": "ping.json",
+                "current-block": "Verify notification callback",
+                "condition": "EnsureIncomingTls13",
+                "expected-result": "warning",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "warnings.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(SystemExit):
+                module.expected_warning_contexts_by_alias(path, {"ping.json": "ping-alias"})
 
     def test_early_monitor_can_defer_result_failure_without_log_failure(self):
         module = load_runner_module()
