@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{OAuthClient, ValidatedClientRegistration};
+use crate::{ClientPresentationMetadata, OAuthClient, ValidatedClientRegistration};
 
 mod validation;
 
@@ -141,8 +141,6 @@ pub struct CreateClientRequest {
     #[serde(default)]
     pub require_par_request_object: bool,
     #[serde(default)]
-    pub allow_authorization_code_without_pkce: bool,
-    #[serde(default)]
     pub backchannel_logout_uri: Option<String>,
     #[serde(default = "default_true")]
     pub backchannel_logout_session_required: bool,
@@ -162,7 +160,15 @@ pub struct CreateClientRequest {
     pub tls_client_auth_san_ip: Vec<String>,
     #[serde(default)]
     pub tls_client_auth_san_email: Vec<String>,
+    #[serde(default, skip_deserializing)]
+    pub jwks_uri: Option<String>,
     pub jwks: Option<Value>,
+    #[serde(default, skip_deserializing)]
+    pub request_uris: Vec<String>,
+    #[serde(default, skip_deserializing)]
+    pub initiate_login_uri: Option<String>,
+    #[serde(default, skip_deserializing)]
+    pub presentation: ClientPresentationMetadata,
     #[serde(default)]
     pub introspection_encrypted_response_alg: Option<String>,
     #[serde(default)]
@@ -195,7 +201,6 @@ pub struct PatchClientRequest {
     pub allow_client_assertion_audience_array: Option<bool>,
     pub allow_client_assertion_endpoint_audience: Option<bool>,
     pub require_par_request_object: Option<bool>,
-    pub allow_authorization_code_without_pkce: Option<bool>,
     pub subject_type: Option<String>,
     pub sector_identifier_uri: Option<String>,
     pub backchannel_logout_uri: Option<String>,
@@ -426,11 +431,6 @@ where
     S: SectorIdentifierResolverPort + ?Sized,
     C: AdminClientCryptoPort + ?Sized,
 {
-    validate_pkce_compatibility_policy(
-        request.allow_authorization_code_without_pkce,
-        &request.client_type,
-        request.require_dpop_bound_tokens,
-    )?;
     validate_client_metadata(
         ClientMetadata::from_create(&request),
         &crypto.response_signing_algorithms(),
@@ -476,7 +476,6 @@ where
             allow_client_assertion_endpoint_audience: request
                 .allow_client_assertion_endpoint_audience,
             require_par_request_object: request.require_par_request_object,
-            allow_authorization_code_without_pkce: request.allow_authorization_code_without_pkce,
             backchannel_logout_uri: trim_optional_string(request.backchannel_logout_uri),
             backchannel_logout_session_required: request.backchannel_logout_session_required,
             frontchannel_logout_uri: trim_optional_string(request.frontchannel_logout_uri),
@@ -487,7 +486,11 @@ where
             tls_client_auth_san_uri: trim_string_vec(request.tls_client_auth_san_uri),
             tls_client_auth_san_ip: trim_string_vec(request.tls_client_auth_san_ip),
             tls_client_auth_san_email: trim_string_vec(request.tls_client_auth_san_email),
+            jwks_uri: trim_optional_string(request.jwks_uri),
             jwks: request.jwks,
+            request_uris: trim_string_vec(request.request_uris),
+            initiate_login_uri: trim_optional_string(request.initiate_login_uri),
+            presentation: request.presentation,
             introspection_encrypted_response_alg: trim_optional_string(
                 request.introspection_encrypted_response_alg,
             ),
@@ -560,9 +563,6 @@ where
     }
     if let Some(value) = request.require_par_request_object {
         client.require_par_request_object = value;
-    }
-    if let Some(value) = request.allow_authorization_code_without_pkce {
-        client.allow_authorization_code_without_pkce = value;
     }
     if let Some(value) = request.backchannel_logout_uri {
         client.backchannel_logout_uri = trim_optional_string(Some(value));
@@ -682,11 +682,6 @@ where
     }
     client.subject_type = new_subject_type;
 
-    validate_pkce_compatibility_policy(
-        client.allow_authorization_code_without_pkce,
-        &client.client_type,
-        client.require_dpop_bound_tokens,
-    )?;
     validate_client_metadata(
         ClientMetadata::from_client(&client),
         &crypto.response_signing_algorithms(),
@@ -769,25 +764,4 @@ fn sector_identifier_host_for_redirects(
                 "sector_identifier_uri host 解析失败: InvalidUri".to_owned(),
             )
         })
-}
-
-fn validate_pkce_compatibility_policy(
-    allow_without_pkce: bool,
-    client_type: &str,
-    require_dpop: bool,
-) -> Result<(), AdminClientError> {
-    if !allow_without_pkce {
-        return Ok(());
-    }
-    if client_type != "confidential" {
-        return Err(AdminClientError::InvalidRequest(
-            "PKCE compatibility exceptions are limited to confidential clients".to_owned(),
-        ));
-    }
-    if require_dpop {
-        return Err(AdminClientError::InvalidRequest(
-            "DPoP-bound clients must use PKCE".to_owned(),
-        ));
-    }
-    Ok(())
 }

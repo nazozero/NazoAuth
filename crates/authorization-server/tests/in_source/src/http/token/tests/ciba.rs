@@ -88,7 +88,6 @@ fn ciba_private_key_jwt_client_with_alg(kid: &str, fixture: &ClientSigningFixtur
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: Some(json!({"keys": [public_jwk]})),
         introspection_encrypted_response_alg: None,
@@ -500,7 +499,6 @@ fn ciba_profile_does_not_apply_authorization_code_only_controls() {
     settings.protocol.authorization_server_profile =
         crate::settings::AuthorizationServerProfile::Fapi2Security;
     settings.protocol.require_pushed_authorization_requests = true;
-    settings.modules.enable_request_uri_parameter = false;
     settings.protocol.ciba_security_profile =
         crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll;
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);

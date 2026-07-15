@@ -341,7 +341,7 @@ async fn insert_token_client(
             tls_client_auth_san_ip, tls_client_auth_san_email,
             allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience, require_par_request_object,
-            allow_authorization_code_without_pkce, is_active,
+            is_active,
             post_logout_redirect_uris, backchannel_logout_session_required
         )
         VALUES (
@@ -352,7 +352,7 @@ async fn insert_token_client(
             '[]'::jsonb, '[]'::jsonb,
             false,
             false, false,
-            false, $11,
+            $11,
             '[]'::jsonb, true
         )
         "#,
@@ -566,7 +566,6 @@ fn client() -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,
@@ -635,7 +634,7 @@ async fn token_endpoint_rejects_malformed_form_requests_before_client_lookup() {
 }
 
 #[actix_web::test]
-async fn token_endpoint_rejects_legacy_audience_parameter_when_disabled() {
+async fn token_endpoint_rejects_legacy_audience_parameter_outside_token_exchange() {
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
     };

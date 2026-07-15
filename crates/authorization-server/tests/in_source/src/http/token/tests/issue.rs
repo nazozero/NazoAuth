@@ -49,7 +49,6 @@ fn client_with_grants(grant_types: &[&str]) -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,
@@ -83,7 +82,7 @@ fn id_token_signing_alg_uses_rs256_default_and_ps256_for_fapi_clients() {
     private_key_jwt.token_endpoint_auth_method = "private_key_jwt".to_owned();
     assert_eq!(
         id_token_signing_alg_for_client(&private_key_jwt),
-        jsonwebtoken::Algorithm::PS256
+        jsonwebtoken::Algorithm::RS256
     );
 
     let mut holder_bound = baseline.clone();

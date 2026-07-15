@@ -244,6 +244,7 @@ pub struct NewScimUser {
     pub tenant: TenantContext,
     pub input: crate::scim::NormalizedScimUser,
     pub password_hash: PasswordHashInput,
+    pub mutation: nazo_scim_events::MutationContext,
 }
 
 pub trait ScimRepositoryPort: Send + Sync {
@@ -262,6 +263,7 @@ pub trait ScimRepositoryPort: Send + Sync {
         tenant: TenantContext,
         user_id: UserId,
         replacement: crate::scim::NormalizedScimUser,
+        mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, crate::PublicAccount>;
 
     fn patch<'a>(
@@ -269,12 +271,14 @@ pub trait ScimRepositoryPort: Send + Sync {
         tenant: TenantContext,
         user_id: UserId,
         patch: crate::scim::ScimPatch,
+        mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, crate::PublicAccount>;
 
     fn deactivate<'a>(
         &'a self,
         tenant: TenantContext,
         user_id: UserId,
+        mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, bool>;
 }
 

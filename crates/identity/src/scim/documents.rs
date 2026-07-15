@@ -51,7 +51,12 @@ pub fn scim_user_schema_document() -> Value {
 
 #[must_use]
 pub fn scim_service_provider_config_document() -> Value {
-    json!({
+    scim_service_provider_config_document_with_events(false)
+}
+
+#[must_use]
+pub fn scim_service_provider_config_document_with_events(events_enabled: bool) -> Value {
+    let mut document = json!({
         "id": "nazo-oauth-scim",
         "schemas": [SCIM_SERVICE_PROVIDER_CONFIG_SCHEMA],
         "patch": {"supported": true},
@@ -76,7 +81,11 @@ pub fn scim_service_provider_config_document() -> Value {
             "specUri": "https://www.rfc-editor.org/rfc/rfc6750",
             "primary": true
         }]
-    })
+    });
+    if events_enabled {
+        document["securityEvents"]["eventUris"] = json!(nazo_scim_events::SUPPORTED_EVENT_URIS);
+    }
+    document
 }
 
 #[must_use]

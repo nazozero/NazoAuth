@@ -5,3 +5,4 @@ argon2-cffi
 pyjwt
 cryptography
 aiosmtpd
+blake3

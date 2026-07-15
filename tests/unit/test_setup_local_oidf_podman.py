@@ -14,6 +14,31 @@ def load_setup_module():
 
 
 class SetupLocalOidfPodmanTests(unittest.TestCase):
+    def test_every_callback_completion_wait_has_a_thirty_second_floor(self):
+        module = load_setup_module()
+
+        configs = [
+            module.write_basic_plan_config(),
+            module.write_dynamic_plan_config(),
+            module.write_formpost_plan_config(),
+            module.write_third_party_init_plan_config(),
+        ]
+        commands = [
+            command
+            for config in configs
+            for entry in config.get("browser", [])
+            for task in entry.get("tasks", [])
+            for command in task.get("commands", [])
+        ]
+        callback_waits = [
+            command
+            for command in commands
+            if command[:3] == ["wait", "id", "submission_complete"]
+        ]
+
+        self.assertTrue(callback_waits)
+        self.assertTrue(all(command[3] >= 30 for command in callback_waits))
+
     def test_session_management_browser_automation_waits_for_result_pages(self):
         module = load_setup_module()
 
@@ -54,27 +79,36 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         self.assertIn("mtls", config)
         self.assertIn("mtls2", config)
 
-    def test_dynamic_crypto_plan_has_distinct_alias_and_matrix_expression(self):
+    def test_dynamic_op_certification_is_not_in_supported_matrix(self):
+        module = load_setup_module()
+        configs = {
+            "oidf-oidcc-basic-plan-config.json": module.write_basic_plan_config(),
+            "oidf-oidcc-dynamic-plan-config.json": module.write_dynamic_plan_config(),
+        }
+        expressions = module.plan_expressions_for_configs(configs)
+
+        self.assertFalse(
+            any("oidcc-dynamic-certification-test-plan" in item for item in expressions)
+        )
+        self.assertTrue(
+            any("client_registration=dynamic_client" in item for item in expressions)
+        )
+
+    def test_unsigned_compatibility_skips_are_explicit_and_bounded(self):
         module = load_setup_module()
 
-        config = module.write_dynamic_crypto_plan_config()
-        filename = "oidf-oidcc-dynamic-crypto-plan-config.json"
-        expressions = module.plan_expressions_for_configs({filename: config})
+        skips = module.expected_skips()
 
-        self.assertTrue(config["alias"].endswith("-dynamic-crypto"))
-        self.assertIn(
-            "oidcc-dynamic-certification-test-plan[response_type=code]:"
-            "oidcc-userinfo-rs256 "
-            + filename,
-            expressions,
+        self.assertEqual(len(skips), 8)
+        self.assertEqual(
+            {item["configuration-filename"] for item in skips},
+            {
+                "oidf-oidcc-basic-plan-config.json",
+                "oidf-oidcc-dynamic-plan-config.json",
+                "oidf-oidcc-formpost-plan-config.json",
+            },
         )
-        dynamic_expression = next(
-            expression for expression in expressions if expression.endswith(filename)
-        )
-        manifest = module.plan_manifest_for_expressions(
-            [dynamic_expression], {filename: config}
-        )
-        self.assertIn("Twenty-one-plan", manifest["description"])
+        self.assertEqual({item["variant"] for item in skips}, {"*"})
 
     def test_dynamic_plan_uses_terminal_browser_flow_for_local_redirect_errors(self):
         module = load_setup_module()
@@ -118,7 +152,6 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         configs = [
             module.write_basic_plan_config(),
             module.write_dynamic_plan_config(),
-            module.write_dynamic_crypto_plan_config(),
             module.write_oidcc_config_plan_config(),
             module.write_frontchannel_logout_plan_config(),
             module.write_session_management_plan_config(),

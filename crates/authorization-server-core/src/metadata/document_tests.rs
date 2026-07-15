@@ -20,7 +20,6 @@ fn input() -> AuthorizationServerMetadataInput<'static> {
         pairwise_subject_enabled: false,
         protected_resource_identifier: "https://issuer.example/fapi/resource",
         require_pushed_authorization_requests: false,
-        request_uri_parameter_enabled: false,
         signing_algorithms: MetadataSigningAlgorithms {
             active: ACTIVE_RS256,
             id_token: ID_TOKEN_RS256,
@@ -82,7 +81,7 @@ fn baseline_document_shape_is_locked() {
                 "userinfo_endpoint": "https://issuer.example/userinfo",
                 "jwks_uri": "https://issuer.example/jwks.json",
                 "response_types_supported": ["code"],
-                "response_modes_supported": ["query", "jwt"],
+                "response_modes_supported": ["query", "form_post", "jwt"],
                 "subject_types_supported": ["public"],
                 "id_token_signing_alg_values_supported": ["RS256"],
                 "userinfo_signing_alg_values_supported": ["RS256"],
@@ -138,9 +137,6 @@ fn baseline_document_shape_is_locked() {
                 "require_pushed_authorization_requests": false,
                 "code_challenge_methods_supported": ["S256"],
                 "dpop_signing_alg_values_supported": ["EdDSA", "ES256"],
-                "request_object_signing_alg_values_supported": [
-                    "none", "EdDSA", "RS256", "ES256", "PS256"
-                ],
                 "request_uri_parameter_supported": false
             }),
         ])
@@ -249,8 +245,44 @@ fn jarm_capability_controls_jwt_response_mode() {
     let disabled = authorization_server_metadata(input(), &snapshot([]));
     let enabled = authorization_server_metadata(input(), &snapshot([ModuleId::Jarm]));
 
-    assert_eq!(disabled["response_modes_supported"], json!(["query"]));
-    assert_eq!(enabled["response_modes_supported"], json!(["query", "jwt"]));
+    assert_eq!(
+        disabled["response_modes_supported"],
+        json!(["query", "form_post"])
+    );
+    assert_eq!(
+        enabled["response_modes_supported"],
+        json!(["query", "form_post", "jwt"])
+    );
+}
+
+#[test]
+fn external_request_uri_is_advertised_only_with_both_required_modules_on_baseline() {
+    let baseline = authorization_server_metadata(
+        input(),
+        &snapshot([
+            ModuleId::DynamicClientRegistration,
+            ModuleId::RequestObjects,
+        ]),
+    );
+    assert_eq!(baseline["request_uri_parameter_supported"], true);
+
+    let request_objects_only =
+        authorization_server_metadata(input(), &snapshot([ModuleId::RequestObjects]));
+    assert_eq!(
+        request_objects_only["request_uri_parameter_supported"],
+        false
+    );
+
+    let mut fapi = input();
+    fapi.profile = MetadataAuthorizationServerProfile::Fapi2Security;
+    let fapi = authorization_server_metadata(
+        fapi,
+        &snapshot([
+            ModuleId::DynamicClientRegistration,
+            ModuleId::RequestObjects,
+        ]),
+    );
+    assert_eq!(fapi["request_uri_parameter_supported"], false);
 }
 
 #[test]
@@ -330,7 +362,7 @@ fn ciba_metadata_is_complete_and_profile_scoped() {
 fn fapi_profiles_publish_only_the_selected_security_contract() {
     const ACTIVE_PS256: &[&str] = &["PS256"];
     const RESPONSE_PS256: &[&str] = &["PS256"];
-    let snapshot = snapshot([ModuleId::Jarm]);
+    let snapshot = snapshot([ModuleId::Jarm, ModuleId::RequestObjects]);
     let cases = [
         (
             MetadataAuthorizationServerProfile::Fapi2Security,
@@ -390,7 +422,7 @@ fn fapi_profiles_publish_only_the_selected_security_contract() {
 }
 
 #[test]
-fn request_uri_subject_and_mtls_configuration_are_preserved_exactly() {
+fn fapi_external_request_uri_is_not_advertised_and_other_configuration_is_preserved() {
     const ACTIVE_PS256: &[&str] = &["PS256"];
     const RESPONSE: &[&str] = &["PS256", "EdDSA"];
     let metadata = authorization_server_metadata(
@@ -398,7 +430,6 @@ fn request_uri_subject_and_mtls_configuration_are_preserved_exactly() {
             mtls_enabled: true,
             subject_type: MetadataSubjectType::Pairwise,
             pairwise_subject_enabled: true,
-            request_uri_parameter_enabled: true,
             signing_algorithms: MetadataSigningAlgorithms {
                 active: ACTIVE_PS256,
                 id_token: ACTIVE_PS256,
@@ -418,8 +449,8 @@ fn request_uri_subject_and_mtls_configuration_are_preserved_exactly() {
         metadata["userinfo_signing_alg_values_supported"],
         json!(["PS256", "EdDSA"])
     );
-    assert_eq!(metadata["request_uri_parameter_supported"], true);
-    assert_eq!(metadata["require_request_uri_registration"], true);
+    assert_eq!(metadata["request_uri_parameter_supported"], false);
+    assert!(metadata.get("require_request_uri_registration").is_none());
     assert_eq!(
         metadata["token_endpoint_auth_methods_supported"],
         json!([

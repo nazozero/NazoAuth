@@ -6,12 +6,14 @@ pub(crate) mod consent;
 pub(crate) mod decision;
 pub(crate) mod jar;
 pub(crate) mod par;
+pub(crate) mod presentation;
 pub(crate) mod request;
 
 use std::sync::Arc;
 
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
 
+use crate::domain::remote_client_documents::RemoteClientDocumentResolver;
 use crate::http::sessions::AdminSessionHandles;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 
@@ -33,6 +35,7 @@ pub(crate) struct AuthorizationEndpoint {
     config: Arc<AuthorizationHttpConfig>,
     sessions: Arc<AdminSessionHandles>,
     runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+    remote_client_documents: Arc<RemoteClientDocumentResolver>,
 }
 
 impl AuthorizationEndpoint {
@@ -41,12 +44,14 @@ impl AuthorizationEndpoint {
         config: Arc<AuthorizationHttpConfig>,
         sessions: Arc<AdminSessionHandles>,
         runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+        remote_client_documents: Arc<RemoteClientDocumentResolver>,
     ) -> Self {
         Self {
             service,
             config,
             sessions,
             runtime_modules,
+            remote_client_documents,
         }
     }
 
@@ -56,6 +61,7 @@ impl AuthorizationEndpoint {
             config: &self.config,
             sessions: &self.sessions,
             modules: self.runtime_modules.snapshot().as_ref().clone(),
+            remote_client_documents: Some(&self.remote_client_documents),
         }
     }
 }
@@ -65,6 +71,7 @@ pub(crate) struct AuthorizationRequestContext<'a> {
     pub(crate) config: &'a AuthorizationHttpConfig,
     pub(crate) sessions: &'a AdminSessionHandles,
     pub(crate) modules: ActiveModuleSnapshot,
+    pub(crate) remote_client_documents: Option<&'a RemoteClientDocumentResolver>,
 }
 
 impl<'a> AuthorizationRequestContext<'a> {
@@ -84,6 +91,7 @@ impl<'a> AuthorizationRequestContext<'a> {
                 accepting: enabled_modules,
                 draining: std::collections::BTreeSet::new(),
             },
+            remote_client_documents: None,
         }
     }
 }

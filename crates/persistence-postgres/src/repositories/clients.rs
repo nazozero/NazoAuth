@@ -44,9 +44,14 @@ struct OAuthClientRecord {
     allow_client_assertion_audience_array: bool,
     allow_client_assertion_endpoint_audience: bool,
     require_par_request_object: bool,
-    allow_authorization_code_without_pkce: bool,
     is_active: bool,
+    jwks_uri: Option<String>,
     jwks: Option<Value>,
+    request_uris: Value,
+    initiate_login_uri: Option<String>,
+    logo_uri: Option<String>,
+    policy_uri: Option<String>,
+    tos_uri: Option<String>,
     introspection_encrypted_response_alg: Option<String>,
     introspection_encrypted_response_enc: Option<String>,
     userinfo_signed_response_alg: Option<String>,
@@ -192,8 +197,6 @@ impl OAuthClientRepository {
                 oauth_clients::allow_client_assertion_endpoint_audience
                     .eq(client.allow_client_assertion_endpoint_audience),
                 oauth_clients::require_par_request_object.eq(client.require_par_request_object),
-                oauth_clients::allow_authorization_code_without_pkce
-                    .eq(client.allow_authorization_code_without_pkce),
                 oauth_clients::backchannel_logout_uri.eq(&client.backchannel_logout_uri),
                 oauth_clients::backchannel_logout_session_required
                     .eq(client.backchannel_logout_session_required),
@@ -210,7 +213,13 @@ impl OAuthClientRepository {
                     .eq(serde_json::json!(&client.tls_client_auth_san_ip)),
                 oauth_clients::tls_client_auth_san_email
                     .eq(serde_json::json!(&client.tls_client_auth_san_email)),
+                oauth_clients::jwks_uri.eq(&client.jwks_uri),
                 oauth_clients::jwks.eq(&client.jwks),
+                oauth_clients::request_uris.eq(serde_json::json!(&client.request_uris)),
+                oauth_clients::initiate_login_uri.eq(&client.initiate_login_uri),
+                oauth_clients::logo_uri.eq(&client.presentation.logo_uri),
+                oauth_clients::policy_uri.eq(&client.presentation.policy_uri),
+                oauth_clients::tos_uri.eq(&client.presentation.tos_uri),
                 oauth_clients::introspection_encrypted_response_alg
                     .eq(&client.introspection_encrypted_response_alg),
                 oauth_clients::introspection_encrypted_response_enc
@@ -283,8 +292,6 @@ impl OAuthClientRepository {
             oauth_clients::allow_client_assertion_endpoint_audience
                 .eq(client.allow_client_assertion_endpoint_audience),
             oauth_clients::require_par_request_object.eq(client.require_par_request_object),
-            oauth_clients::allow_authorization_code_without_pkce
-                .eq(client.allow_authorization_code_without_pkce),
             oauth_clients::backchannel_logout_uri.eq(&client.backchannel_logout_uri),
             oauth_clients::backchannel_logout_session_required
                 .eq(client.backchannel_logout_session_required),
@@ -301,7 +308,13 @@ impl OAuthClientRepository {
                 .eq(serde_json::json!(&client.tls_client_auth_san_ip)),
             oauth_clients::tls_client_auth_san_email
                 .eq(serde_json::json!(&client.tls_client_auth_san_email)),
+            oauth_clients::jwks_uri.eq(&client.jwks_uri),
             oauth_clients::jwks.eq(&client.jwks),
+            oauth_clients::request_uris.eq(serde_json::json!(&client.request_uris)),
+            oauth_clients::initiate_login_uri.eq(&client.initiate_login_uri),
+            oauth_clients::logo_uri.eq(&client.presentation.logo_uri),
+            oauth_clients::policy_uri.eq(&client.presentation.policy_uri),
+            oauth_clients::tos_uri.eq(&client.presentation.tos_uri),
             oauth_clients::introspection_encrypted_response_alg
                 .eq(&client.introspection_encrypted_response_alg),
             oauth_clients::introspection_encrypted_response_enc
@@ -365,7 +378,6 @@ impl OAuthClientRepository {
             "allow_client_assertion_audience_array": client.allow_client_assertion_audience_array,
             "allow_client_assertion_endpoint_audience": client.allow_client_assertion_endpoint_audience,
             "require_par_request_object": client.require_par_request_object,
-            "allow_authorization_code_without_pkce": client.allow_authorization_code_without_pkce,
             "backchannel_logout_uri": client.backchannel_logout_uri,
             "backchannel_logout_session_required": client.backchannel_logout_session_required,
             "frontchannel_logout_uri": client.frontchannel_logout_uri,
@@ -376,7 +388,13 @@ impl OAuthClientRepository {
             "tls_client_auth_san_uri": client.tls_client_auth_san_uri,
             "tls_client_auth_san_ip": client.tls_client_auth_san_ip,
             "tls_client_auth_san_email": client.tls_client_auth_san_email,
+            "jwks_uri": client.jwks_uri,
             "jwks": client.jwks,
+            "request_uris": client.request_uris,
+            "initiate_login_uri": client.initiate_login_uri,
+            "logo_uri": client.presentation.logo_uri,
+            "policy_uri": client.presentation.policy_uri,
+            "tos_uri": client.presentation.tos_uri,
             "introspection_encrypted_response_alg": client.introspection_encrypted_response_alg,
             "introspection_encrypted_response_enc": client.introspection_encrypted_response_enc,
             "userinfo_signed_response_alg": client.userinfo_signed_response_alg,
@@ -406,7 +424,6 @@ impl OAuthClientRepository {
                 allow_client_assertion_audience_array = ($3->>'allow_client_assertion_audience_array')::boolean,
                 allow_client_assertion_endpoint_audience = ($3->>'allow_client_assertion_endpoint_audience')::boolean,
                 require_par_request_object = ($3->>'require_par_request_object')::boolean,
-                allow_authorization_code_without_pkce = ($3->>'allow_authorization_code_without_pkce')::boolean,
                 backchannel_logout_uri = $3->>'backchannel_logout_uri',
                 backchannel_logout_session_required = ($3->>'backchannel_logout_session_required')::boolean,
                 frontchannel_logout_uri = $3->>'frontchannel_logout_uri',
@@ -417,7 +434,13 @@ impl OAuthClientRepository {
                 tls_client_auth_san_uri = $3->'tls_client_auth_san_uri',
                 tls_client_auth_san_ip = $3->'tls_client_auth_san_ip',
                 tls_client_auth_san_email = $3->'tls_client_auth_san_email',
+                jwks_uri = $3->>'jwks_uri',
                 jwks = NULLIF($3->'jwks', 'null'::jsonb),
+                request_uris = $3->'request_uris',
+                initiate_login_uri = $3->>'initiate_login_uri',
+                logo_uri = $3->>'logo_uri',
+                policy_uri = $3->>'policy_uri',
+                tos_uri = $3->>'tos_uri',
                 introspection_encrypted_response_alg = $3->>'introspection_encrypted_response_alg',
                 introspection_encrypted_response_enc = $3->>'introspection_encrypted_response_enc',
                 userinfo_signed_response_alg = $3->>'userinfo_signed_response_alg',
@@ -683,12 +706,12 @@ pub(crate) async fn upsert_client_on_connection(
             tls_client_auth_subject_dn, tls_client_auth_cert_sha256,
             allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience, require_par_request_object,
-            allow_authorization_code_without_pkce, frontchannel_logout_uri,
+            frontchannel_logout_uri,
             frontchannel_logout_session_required, jwks,
             authorization_signed_response_alg, is_active
         ) VALUES (
             $1, $2, $3, $4, $5, 'confidential', $6, $7, $8, $9, $10, $11, $12,
-            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, TRUE
+            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, TRUE
         )
         ON CONFLICT (tenant_id, client_id) DO UPDATE SET
             client_name = EXCLUDED.client_name,
@@ -707,7 +730,6 @@ pub(crate) async fn upsert_client_on_connection(
             allow_client_assertion_audience_array = EXCLUDED.allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience = EXCLUDED.allow_client_assertion_endpoint_audience,
             require_par_request_object = EXCLUDED.require_par_request_object,
-            allow_authorization_code_without_pkce = EXCLUDED.allow_authorization_code_without_pkce,
             frontchannel_logout_uri = EXCLUDED.frontchannel_logout_uri,
             frontchannel_logout_session_required = EXCLUDED.frontchannel_logout_session_required,
             jwks = EXCLUDED.jwks,
@@ -739,7 +761,6 @@ pub(crate) async fn upsert_client_on_connection(
     .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_audience_array)
     .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_endpoint_audience)
     .bind::<diesel::sql_types::Bool, _>(client.require_par_request_object)
-    .bind::<diesel::sql_types::Bool, _>(client.allow_authorization_code_without_pkce)
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
         &client.frontchannel_logout_uri,
     )
@@ -1018,7 +1039,6 @@ impl OAuthClientRecord {
                 allow_client_assertion_endpoint_audience: self
                     .allow_client_assertion_endpoint_audience,
                 require_par_request_object: self.require_par_request_object,
-                allow_authorization_code_without_pkce: self.allow_authorization_code_without_pkce,
                 backchannel_logout_uri: self.backchannel_logout_uri,
                 backchannel_logout_session_required: self.backchannel_logout_session_required,
                 frontchannel_logout_uri: self.frontchannel_logout_uri,
@@ -1041,7 +1061,15 @@ impl OAuthClientRecord {
                     self.tls_client_auth_san_email,
                     "tls_client_auth_san_email",
                 )?,
+                jwks_uri: self.jwks_uri,
                 jwks: self.jwks,
+                request_uris: string_array(self.request_uris, "request_uris")?,
+                initiate_login_uri: self.initiate_login_uri,
+                presentation: nazo_auth::ClientPresentationMetadata {
+                    logo_uri: self.logo_uri,
+                    policy_uri: self.policy_uri,
+                    tos_uri: self.tos_uri,
+                },
                 introspection_encrypted_response_alg: self.introspection_encrypted_response_alg,
                 introspection_encrypted_response_enc: self.introspection_encrypted_response_enc,
                 userinfo_signed_response_alg: self.userinfo_signed_response_alg,

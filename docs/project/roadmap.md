@@ -79,7 +79,7 @@ The project separates three surfaces:
 - WebAuthn/passkeys.
 - External OIDC/SAML federation.
 - SCIM 2.0 provisioning for the default tenant with hashed, rotatable, scoped,
-  audited database tokens and a legacy deployment-token fallback.
+  audited database tokens. No global deployment-token fallback exists.
 
 ## Rust Resource Server Support
 

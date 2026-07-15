@@ -2,6 +2,13 @@ use serde_json::Value;
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ClientPresentationMetadata {
+    pub logo_uri: Option<String>,
+    pub policy_uri: Option<String>,
+    pub tos_uri: Option<String>,
+}
+
 /// Validated protocol metadata for an OAuth client registration.
 ///
 /// Tenant placement, credential digests, issued plaintext credentials, and
@@ -24,7 +31,6 @@ pub struct ValidatedClientRegistration {
     pub allow_client_assertion_audience_array: bool,
     pub allow_client_assertion_endpoint_audience: bool,
     pub require_par_request_object: bool,
-    pub allow_authorization_code_without_pkce: bool,
     pub backchannel_logout_uri: Option<String>,
     pub backchannel_logout_session_required: bool,
     pub frontchannel_logout_uri: Option<String>,
@@ -35,7 +41,17 @@ pub struct ValidatedClientRegistration {
     pub tls_client_auth_san_uri: Vec<String>,
     pub tls_client_auth_san_ip: Vec<String>,
     pub tls_client_auth_san_email: Vec<String>,
+    /// HTTPS URI registered by a dynamic client for retrieving its public JWK Set.
+    /// `jwks` contains the last validated snapshot used by protocol verification.
+    pub jwks_uri: Option<String>,
     pub jwks: Option<Value>,
+    /// Exact, pre-registered HTTPS locations from which OIDC Request Objects may be loaded.
+    pub request_uris: Vec<String>,
+    /// RP endpoint used by OpenID Connect Third-Party Initiated Login.
+    pub initiate_login_uri: Option<String>,
+    /// Dynamically registered, display-only RP metadata. These URIs are never
+    /// dereferenced by the authorization server.
+    pub presentation: ClientPresentationMetadata,
     pub introspection_encrypted_response_alg: Option<String>,
     pub introspection_encrypted_response_enc: Option<String>,
     pub userinfo_signed_response_alg: Option<String>,

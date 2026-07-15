@@ -172,6 +172,41 @@ async fn pending_migrations_create_all_runtime_module_state_tables() {
             "runtime_module_state_events",
         ]
     );
+
+    let catalog_probe = connection
+        .transaction::<(), diesel::result::Error, _>(async |connection| {
+            connection
+                .batch_execute(
+                    r#"
+                    INSERT INTO runtime_module_desired_states
+                        (module_id, desired_mode, revision)
+                    VALUES ('scim_security_events', 'disabled', 1)
+                    ON CONFLICT (module_id) DO NOTHING;
+                    INSERT INTO runtime_module_instance_states
+                        (instance_id, module_id, actual_state, transition_revision)
+                    VALUES (
+                        'migration-catalog-test-' || gen_random_uuid()::text,
+                        'scim_security_events', 'disabled', 1
+                    );
+                    INSERT INTO runtime_module_state_events
+                        (event_id, module_id, event_type, revision)
+                    VALUES (
+                        gen_random_uuid(), 'scim_security_events',
+                        'transition_completed', 1
+                    );
+                    "#,
+                )
+                .await?;
+            Err(diesel::result::Error::RollbackTransaction)
+        })
+        .await;
+    assert!(
+        matches!(
+            catalog_probe,
+            Err(diesel::result::Error::RollbackTransaction)
+        ),
+        "SCIM security-events runtime module should be in every closed catalog: {catalog_probe:?}"
+    );
 }
 
 #[tokio::test]

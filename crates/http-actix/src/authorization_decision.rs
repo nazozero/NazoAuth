@@ -11,12 +11,12 @@ use serde::Deserialize;
 
 use crate::{
     ClientIpConfig, SessionCookieConfig, client_ip_with_config, csrf_error,
-    login_required_response, oauth_error, redirect_found,
+    form_post_authorization_response, login_required_response, oauth_error, redirect_found,
 };
 
 pub type AuthorizationDecisionFuture<'a> = Pin<
     Box<
-        dyn Future<Output = Result<AuthorizationDecisionRedirect, AuthorizationDecisionError>>
+        dyn Future<Output = Result<AuthorizationDecisionResponse, AuthorizationDecisionError>>
             + Send
             + 'a,
     >,
@@ -31,8 +31,16 @@ pub struct AuthorizationDecisionCommand {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AuthorizationDecisionRedirect {
-    pub location: String,
+pub enum AuthorizationDecisionResponse {
+    Redirect {
+        location: String,
+    },
+    FormPost {
+        action: String,
+        parameters: Vec<(String, String)>,
+        session_state: Option<String>,
+        csp_nonce: String,
+    },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -105,7 +113,18 @@ pub async fn authorize_decision(
         source_ip: client_ip_with_config(&request, &endpoint.client_ip),
     };
     match endpoint.operations.decide(command).await {
-        Ok(redirect) => redirect_found(redirect.location),
+        Ok(AuthorizationDecisionResponse::Redirect { location }) => redirect_found(location),
+        Ok(AuthorizationDecisionResponse::FormPost {
+            action,
+            parameters,
+            session_state,
+            csp_nonce,
+        }) => form_post_authorization_response(
+            &action,
+            &parameters,
+            session_state.as_deref(),
+            &csp_nonce,
+        ),
         Err(error) => authorization_decision_error_response(error, &endpoint.cookies),
     }
 }

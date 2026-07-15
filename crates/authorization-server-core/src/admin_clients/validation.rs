@@ -1,6 +1,6 @@
-use super::{AdminClientCryptoPort, AdminClientError, CreateClientRequest};
 #[cfg(test)]
-use super::{sector_identifier_host_for_redirects, validate_pkce_compatibility_policy};
+use super::sector_identifier_host_for_redirects;
+use super::{AdminClientCryptoPort, AdminClientError, CreateClientRequest};
 use crate::{OAuthClient, normalize_sha256_thumbprint, validate_oauth_redirect_uri};
 use serde_json::Value;
 
@@ -27,25 +27,7 @@ const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256", "ES256", 
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        AdminClientError, sector_identifier_host_for_redirects, validate_pkce_compatibility_policy,
-    };
-
-    #[test]
-    fn pkce_legacy_exception_is_limited_to_confidential_non_dpop_clients() {
-        assert!(validate_pkce_compatibility_policy(false, "public", true).is_ok());
-        assert!(validate_pkce_compatibility_policy(true, "confidential", false).is_ok());
-
-        let public_error = validate_pkce_compatibility_policy(true, "public", false).unwrap_err();
-        assert_eq!(
-            public_error.to_string(),
-            "PKCE compatibility exceptions are limited to confidential clients"
-        );
-
-        let dpop_error =
-            validate_pkce_compatibility_policy(true, "confidential", true).unwrap_err();
-        assert_eq!(dpop_error.to_string(), "DPoP-bound clients must use PKCE");
-    }
+    use super::{AdminClientError, sector_identifier_host_for_redirects};
 
     #[test]
     fn policy_debug_output_redacts_server_secrets() {

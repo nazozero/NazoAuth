@@ -1,10 +1,7 @@
 //! Pushed Authorization Request endpoint.
 use nazo_http_actix::{OAuthJsonErrorFields, json_response_status, oauth_error};
 
-use super::jar::{
-    apply_request_object_with_context, request_object_uses_unsigned_algorithm,
-    unverified_signed_request_object_client_id,
-};
+use super::jar::{apply_request_object_with_context, unverified_signed_request_object_client_id};
 #[cfg(test)]
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::extract_client_credentials_with_trusted_proxies;
@@ -42,8 +39,8 @@ use chrono::{Duration, Utc};
 use nazo_auth::parse_resource_indicator_parameter;
 use nazo_auth::{
     ExpandedParAdmissionPolicy, ParAdmissionError, RawParAdmissionPolicy,
-    encode_resource_indicators, is_valid_dpop_jkt, validate_expanded_par_admission,
-    validate_raw_par_admission,
+    encode_resource_indicators, is_valid_dpop_jkt, unverified_client_assertion_client_id,
+    validate_expanded_par_admission, validate_raw_par_admission,
 };
 #[cfg(test)]
 use serde_json::Value;
@@ -239,20 +236,19 @@ async fn par_after_rate_limit_inner(
         );
     }
 
-    if params
-        .get("request")
-        .is_some_and(|request| request_object_uses_unsigned_algorithm(request))
-    {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_object",
-            "PAR request object 必须签名.",
-        );
-    }
     if !params.contains_key("client_id")
         && let Some(request_object) = params.get("request")
         && let Some(client_id) = unverified_signed_request_object_client_id(request_object)
     {
+        params.insert("client_id".to_owned(), client_id);
+    }
+    if !params.contains_key("client_id")
+        && let Some(client_id) = params
+            .get("client_assertion")
+            .and_then(|assertion| unverified_client_assertion_client_id(assertion))
+    {
+        // This value is only a lookup hint. Client authentication below verifies
+        // the assertion signature and binds its issuer/subject to the client.
         params.insert("client_id".to_owned(), client_id);
     }
     let Some(client_id) = params.get("client_id").cloned() else {
@@ -358,6 +354,9 @@ async fn par_after_rate_limit_inner(
             redirect_uris: &client.redirect_uris,
             allowed_audiences: &client.allowed_audiences,
             fapi2_requires_explicit_redirect_uri: context.config.profile.requires_fapi2_security(),
+            pkce_required: context.config.profile.requires_fapi2_security()
+                || client.require_dpop_bound_tokens
+                || client.require_mtls_bound_tokens,
         },
     ) {
         return par_admission_error(error);
@@ -465,6 +464,13 @@ fn par_admission_error(error: ParAdmissionError) -> HttpResponse {
         ParAdmissionError::SenderConstraintRequired => (
             StatusCode::BAD_REQUEST,
             "FAPI2 profiles require sender-constrained access tokens.",
+        ),
+        ParAdmissionError::PkceRequired => {
+            (StatusCode::BAD_REQUEST, "FAPI2 PAR requests require PKCE.")
+        }
+        ParAdmissionError::InvalidPkce => (
+            StatusCode::BAD_REQUEST,
+            "PAR code_challenge must use a valid S256 value.",
         ),
         ParAdmissionError::ExplicitRedirectUriRequired => (
             StatusCode::BAD_REQUEST,

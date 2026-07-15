@@ -39,9 +39,8 @@ use crate::domain::DynamicRegistrationHandles;
 use crate::domain::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(not(test))]
 use crate::domain::{
-    BackchannelLogoutWorker, ServerScimBootstrapPasswordProvider, ServerScimCursorProtector,
-    ServerScimRequestAuthorizer, ServerTokenManagementOperations,
-    ServerTokenManagementRequestGuard, ServerUserinfoOperations, dynamic_registration_endpoint,
+    BackchannelLogoutWorker, ServerTokenManagementOperations, ServerTokenManagementRequestGuard,
+    ServerUserinfoOperations, dynamic_registration_endpoint,
     spawn_backchannel_logout_delivery_worker,
 };
 use crate::domain::{
@@ -54,6 +53,10 @@ use crate::domain::{
 };
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
+};
+use crate::domain::{
+    ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimEventSigner,
+    ServerScimRequestAuthorizer,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -70,8 +73,6 @@ use crate::http::authorization::{
 };
 use crate::http::client_ip::ClientIpConfig;
 use crate::http::rate_limit::{AuthRequestLimiter, TokenManagementRequestLimiter};
-#[cfg(test)]
-use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
 use crate::http::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
 #[cfg(not(test))]
 use crate::http::token::ServerTokenManagementRequestFactsExtractor;
@@ -130,6 +131,12 @@ pub async fn run() -> anyhow::Result<()> {
     let valkey = nazo_valkey::test_support::connect(&valkey_url, valkey_command_timeout).await?;
 
     let settings = Arc::new(Settings::from_config(&config)?);
+    let remote_client_documents = Arc::new(
+        crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(
+            &settings.modules.remote_client_document_private_origins,
+        )
+        .map_err(anyhow::Error::msg)?,
+    );
     let runtime_modules =
         web::Data::new(RuntimeModules::initialize(diesel_db.clone(), &settings).await?);
     RuntimeModules::spawn_reconciler(runtime_modules.clone());
@@ -190,6 +197,7 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::RateLimitStore::new(&dynamic_registration_rate_limit_connection),
         keyset.clone(),
         runtime_modules.registry.clone(),
+        remote_client_documents.clone(),
     ));
     #[cfg(test)]
     let dynamic_registration_handles = web::Data::new(DynamicRegistrationHandles {
@@ -210,37 +218,35 @@ pub async fn run() -> anyhow::Result<()> {
     let scim_protocol = &settings.protocol;
     let scim_storage = &settings.storage;
     let scim_service = nazo_identity::scim::ScimService::new(
-        Arc::new(nazo_postgres::ScimRepository::new(diesel_db.clone())),
+        Arc::new(nazo_postgres::ScimRepository::with_event_retention_seconds(
+            diesel_db.clone(),
+            scim_storage.scim_event_retention_seconds,
+        )),
         Arc::new(nazo_postgres::AuditRepository::new(diesel_db.clone())),
     );
     let scim_client_ip = ClientIpConfig::new(
         &scim_endpoint.trusted_proxy_cidrs,
         scim_endpoint.client_ip_header_mode,
     );
-    #[cfg(test)]
-    let scim_endpoint = web::Data::new(ScimEndpoint::new(
-        scim_service,
-        ScimConfig::new(
-            scim_storage.scim_bearer_token.as_deref(),
-            &scim_protocol.client_secret_pepper,
-            scim_client_ip,
-        )?,
-        ScimRuntimeAdmission::new(runtime_modules.registry.clone()),
-    ));
-    #[cfg(not(test))]
-    let scim_endpoint = web::Data::new(nazo_http_actix::ScimEndpoint::new(
-        scim_service.clone(),
-        Arc::new(ServerScimRequestAuthorizer::new(
-            scim_service,
-            scim_storage.scim_bearer_token.as_deref(),
-            scim_client_ip,
-            runtime_modules.registry.clone(),
-        )),
-        Arc::new(ServerScimCursorProtector::new(
-            &scim_protocol.client_secret_pepper,
-        )?),
-        Arc::new(ServerScimBootstrapPasswordProvider),
-    ));
+    let scim_endpoint = web::Data::new(
+        nazo_http_actix::ScimEndpoint::new(
+            scim_service.clone(),
+            Arc::new(ServerScimRequestAuthorizer::new(
+                scim_service,
+                scim_client_ip,
+                runtime_modules.registry.clone(),
+            )),
+            Arc::new(ServerScimCursorProtector::new(
+                &scim_protocol.client_secret_pepper,
+            )?),
+            Arc::new(ServerScimBootstrapPasswordProvider),
+        )
+        .with_security_events(Arc::new(nazo_scim_events::EventPublisher::new(
+            nazo_postgres::ScimEventRepository::new(diesel_db.clone()),
+            ServerScimEventSigner::new(keyset.clone()),
+            settings.endpoint.issuer.clone(),
+        ))),
+    );
     #[cfg(not(test))]
     let valkey_connection = valkey.clone();
     #[cfg(test)]
@@ -309,6 +315,7 @@ pub async fn run() -> anyhow::Result<()> {
         token_issuance_config.clone(),
         device_service.clone(),
         authorization_runtime.clone(),
+        remote_client_documents.clone(),
     ));
 
     let session = &settings.session;
@@ -347,6 +354,7 @@ pub async fn run() -> anyhow::Result<()> {
         authorization_config.clone().into_inner(),
         admin_sessions.clone().into_inner(),
         runtime_modules.registry.clone(),
+        remote_client_documents.clone(),
     ));
     let admin_federation = web::Data::new(AdminFederationConfig::from_settings(&settings));
     #[cfg(not(test))]

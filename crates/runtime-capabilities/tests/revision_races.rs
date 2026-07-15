@@ -258,6 +258,7 @@ fn catalog() -> ModuleCatalog {
             authorization_code: Duration::from_secs(30),
             refresh_token: Duration::from_secs(30),
             session: Duration::from_secs(30),
+            scim_security_events: Duration::from_secs(30),
         },
         BTreeSet::new(),
     )

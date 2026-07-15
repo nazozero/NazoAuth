@@ -14,15 +14,16 @@ use nazo_identity::{
         ScimCursorSubject, ScimRequiredScope, ScimService, scim_credential_allows,
     },
 };
+use nazo_scim_events::{
+    EventFuture, EventReceiver, EventSignerPort, EventSigningError, SecurityEventClaims,
+};
 use openssl::symm::{Cipher, decrypt_aead, encrypt_aead};
 use sha2::Sha256;
 
 use crate::{
     adapters::{
         audit::{audit_event, audit_fields},
-        security::{
-            blake3_hex, constant_time_eq, hash_password_blocking_limited, random_urlsafe_token,
-        },
+        security::{blake3_hex, hash_password_blocking_limited, random_urlsafe_token},
     },
     http::client_ip::{ClientIpConfig, client_ip_with_config},
     runtime_modules::ServerRuntimeModuleRegistry,
@@ -33,7 +34,6 @@ type HmacSha256 = Hmac<Sha256>;
 #[derive(Clone)]
 pub(crate) struct ServerScimRequestAuthorizer {
     service: ScimService,
-    legacy_bearer_token: Option<Arc<str>>,
     client_ip: ClientIpConfig,
     runtime_modules: Arc<ServerRuntimeModuleRegistry>,
 }
@@ -41,13 +41,11 @@ pub(crate) struct ServerScimRequestAuthorizer {
 impl ServerScimRequestAuthorizer {
     pub(crate) fn new(
         service: ScimService,
-        legacy_bearer_token: Option<&str>,
         client_ip: ClientIpConfig,
         runtime_modules: Arc<ServerRuntimeModuleRegistry>,
     ) -> Self {
         Self {
             service,
-            legacy_bearer_token: legacy_bearer_token.map(Arc::from),
             client_ip,
             runtime_modules,
         }
@@ -59,17 +57,6 @@ impl ServerScimRequestAuthorizer {
             nazo_runtime_modules::ModuleId::Scim,
             nazo_auth::CapabilityAdmission::NewRequest,
         )
-    }
-
-    fn legacy_credential(&self, token: &str) -> Option<AuthorizedCredential> {
-        let expected = self.legacy_bearer_token.as_deref()?;
-        constant_time_eq(expected.as_bytes(), token.as_bytes()).then(|| AuthorizedCredential {
-            token_id: None,
-            tenant: TenantContext::default_system(),
-            scopes: vec!["scim:read".to_owned(), "scim:write".to_owned()],
-            source: "legacy-env",
-            cursor_actor: "legacy-env".to_owned(),
-        })
     }
 
     async fn credential(
@@ -89,17 +76,15 @@ impl ServerScimRequestAuthorizer {
                         organization_id: defaults.organization_id,
                     },
                     scopes: credential.scopes,
+                    event_audience: credential.event_audience,
                     source: "database",
                     cursor_actor: format!("database:{}", credential.id),
                 })
             }
-            Ok(None) => self
-                .legacy_credential(token)
-                .ok_or(ScimAuthorizationError::InvalidBearer),
+            Ok(None) => Err(ScimAuthorizationError::InvalidBearer),
             Err(error) => {
                 tracing::warn!(%error, "failed to query SCIM token");
-                self.legacy_credential(token)
-                    .ok_or(ScimAuthorizationError::BackendUnavailable)
+                Err(ScimAuthorizationError::BackendUnavailable)
             }
         }
     }
@@ -215,8 +200,32 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                     tenant_id: credential.tenant.tenant_id.as_uuid(),
                     actor: credential.cursor_actor,
                 },
+                event_receiver: match (credential.token_id, credential.event_audience) {
+                    (Some(token_id), Some(audience)) => Some(EventReceiver {
+                        token_id,
+                        tenant_id: credential.tenant.tenant_id.as_uuid(),
+                        audience,
+                    }),
+                    _ => None,
+                },
             })
         })
+    }
+
+    fn security_events_enabled(&self) -> bool {
+        nazo_auth::module_admissible(
+            &self.runtime_modules.snapshot(),
+            nazo_runtime_modules::ModuleId::ScimSecurityEvents,
+            nazo_auth::CapabilityAdmission::NewRequest,
+        )
+    }
+
+    fn security_event_delivery_enabled(&self) -> bool {
+        nazo_auth::module_admissible(
+            &self.runtime_modules.snapshot(),
+            nazo_runtime_modules::ModuleId::ScimSecurityEvents,
+            nazo_auth::CapabilityAdmission::ExistingTransaction,
+        )
     }
 }
 
@@ -224,8 +233,38 @@ struct AuthorizedCredential {
     token_id: Option<uuid::Uuid>,
     tenant: TenantContext,
     scopes: Vec<String>,
+    event_audience: Option<String>,
     source: &'static str,
     cursor_actor: String,
+}
+
+#[derive(Clone)]
+pub(crate) struct ServerScimEventSigner {
+    keyset: nazo_key_management::KeyManager,
+}
+
+impl ServerScimEventSigner {
+    #[must_use]
+    pub(crate) fn new(keyset: nazo_key_management::KeyManager) -> Self {
+        Self { keyset }
+    }
+}
+
+impl EventSignerPort for ServerScimEventSigner {
+    fn sign<'a>(
+        &'a self,
+        claims: &'a SecurityEventClaims,
+    ) -> EventFuture<'a, Result<String, EventSigningError>> {
+        Box::pin(async move {
+            let snapshot = self.keyset.snapshot();
+            let mut header = jsonwebtoken::Header::new(snapshot.active_alg);
+            header.typ = Some(nazo_scim_events::SECURITY_EVENT_MEDIA_TYPE.to_owned());
+            self.keyset
+                .encode_jwt(nazo_auth::SigningPurpose::SecurityEvent, &header, claims)
+                .await
+                .map_err(|_| EventSigningError::Unavailable)
+        })
+    }
 }
 
 fn bearer_token(request: &HttpRequest) -> Option<&str> {

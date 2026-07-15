@@ -9,6 +9,7 @@ members = [
     "crates/identity",
     "crates/runtime-capabilities",
     "crates/resource-server",
+    "crates/scim-events",
     "crates/state-store-valkey",
 ]
 default-members = ["crates/authorization-server"]
@@ -46,6 +47,7 @@ nazo-key-management = { version = "0.1.0", path = "crates/key-management" }
 nazo-postgres = { version = "0.1.0", path = "crates/persistence-postgres" }
 nazo-resource-server = { version = "0.1.0", path = "crates/resource-server" }
 nazo-runtime-modules = { version = "0.1.0", path = "crates/runtime-capabilities" }
+nazo-scim-events = { version = "0.1.0", path = "crates/scim-events" }
 nazo-valkey = { version = "0.1.0", path = "crates/state-store-valkey" }
 openssl = "0.10.81"
 p256 = "0.14.0"

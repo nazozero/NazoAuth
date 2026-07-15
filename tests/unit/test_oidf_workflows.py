@@ -92,12 +92,10 @@ class OidfWorkflowTests(unittest.TestCase):
         )
 
     def test_full_matrix_workflow_has_parallel_isolated_mode(self):
-        workflow = (
-            Path(__file__).resolve().parents[2]
-            / ".github"
-            / "workflows"
-            / "oidf-conformance-full.yml"
-        ).read_text(encoding="utf-8")
+        root = Path(__file__).resolve().parents[2]
+        workflow = (root / ".github" / "workflows" / "oidf-conformance-full.yml").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("runner_mode:", workflow)
         self.assertIn("parallel-isolated", workflow)
@@ -118,19 +116,35 @@ class OidfWorkflowTests(unittest.TestCase):
             "oidf-session-management-plan-set.json",
         )
 
-        self.assertEqual(len(full_plan_set), 21)
-        self.assertEqual(len(concurrent_plan_set), 19)
+        self.assertEqual(len(full_plan_set), 22)
+        self.assertEqual(len(concurrent_plan_set), 20)
         self.assertEqual(len(serial_plan_set), 2)
-        self.assertEqual(len(set(full_plan_set)), 21)
+        self.assertEqual(len(set(full_plan_set)), 22)
         self.assertFalse(set(concurrent_plan_set) & set(serial_plan_set))
         self.assertTrue(any("oidcc-basic-certification-test-plan" in plan for plan in concurrent_plan_set))
-        self.assertTrue(
-            any("oidcc-dynamic-certification-test-plan" in plan for plan in concurrent_plan_set)
+        self.assertFalse(
+            any("oidcc-dynamic-certification-test-plan" in plan for plan in full_plan_set)
+        )
+        third_party_init = (
+            "oidcc-3rdparty-init-login-certification-test-plan[response_type=code] "
+            "oidf-oidcc-third-party-init-plan-config.json"
+        )
+        self.assertIn(third_party_init, concurrent_plan_set)
+        setup_source = (root / "scripts" / "setup_local_oidf_podman.py").read_text(
+            encoding="utf-8"
+        )
+        runner_source = (root / "scripts" / "run_oidf_conformance.py").read_text(
+            encoding="utf-8"
         )
         self.assertIn(
-            "oidcc-dynamic-certification-test-plan[response_type=code]:"
-            "oidcc-userinfo-rs256 oidf-oidcc-dynamic-crypto-plan-config.json",
-            concurrent_plan_set,
+            '"oidcc-3rdparty-init-login-certification-test-plan[response_type=code] "',
+            setup_source,
+        )
+        self.assertIn('"oidf-oidcc-third-party-init-plan-config.json"', setup_source)
+        self.assertIn(
+            'f"oidcc-3rdparty-init-login-certification-test-plan[response_type=code] '
+            '{OIDCC_THIRD_PARTY_INIT_CONFIG_FILE}"',
+            runner_source,
         )
         self.assertFalse(
             any("frontchannel-rp-initiated-logout" in plan for plan in concurrent_plan_set)
@@ -144,10 +158,14 @@ class OidfWorkflowTests(unittest.TestCase):
         )
 
         expected_skips = workflow_heredoc_json(workflow, "oidf-expected-skips.json")
-        self.assertEqual(len(expected_skips), 2)
-        self.assertNotIn(
-            "oidf-oidcc-dynamic-crypto-plan-config.json",
+        self.assertEqual(len(expected_skips), 8)
+        self.assertEqual(
             {item["configuration-filename"] for item in expected_skips},
+            {
+                "oidf-oidcc-basic-plan-config.json",
+                "oidf-oidcc-dynamic-plan-config.json",
+                "oidf-oidcc-formpost-plan-config.json",
+            },
         )
 
         self.assertIn('"$GITHUB_WORKSPACE/oidf-results/$export_subdir"', workflow)

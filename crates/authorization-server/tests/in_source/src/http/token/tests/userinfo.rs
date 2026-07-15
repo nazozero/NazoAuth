@@ -333,7 +333,7 @@ async fn insert_userinfo_client(state: &Data<TestAppState>, client_id: &str) -> 
             tls_client_auth_san_ip, tls_client_auth_san_email,
             allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience, require_par_request_object,
-            allow_authorization_code_without_pkce, is_active,
+            is_active,
             post_logout_redirect_uris, backchannel_logout_session_required
         )
         VALUES (
@@ -341,7 +341,7 @@ async fn insert_userinfo_client(state: &Data<TestAppState>, client_id: &str) -> 
             NULL, '["https://client.example/callback"]'::jsonb, '["openid","profile"]'::jsonb,
             '["resource://default"]'::jsonb, '["authorization_code"]'::jsonb,
             'client_secret_post', false, false, '[]'::jsonb, '[]'::jsonb,
-            '[]'::jsonb, '[]'::jsonb, false, false, false, false, true,
+            '[]'::jsonb, '[]'::jsonb, false, false, false, true,
             '[]'::jsonb, true
         )
         RETURNING id
