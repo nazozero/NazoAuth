@@ -58,7 +58,7 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 | `LOGIN_FAILURE_EMAIL_MAX_ATTEMPTS` | `50` | Maximum failed login attempts per normalized email in the failed-login window |
 | `LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS` | `5` | Maximum failed login attempts per source IP and normalized email in the failed-login window |
 | `AUTHORIZATION_SERVER_PROFILE` | `oauth2-baseline` | `oauth2-baseline`, `fapi2-security`, `fapi2-message-signing-authz-request`, `fapi2-message-signing-jarm`, or `fapi2-message-signing-introspection` |
-| `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1-plain-private-key-jwt-poll` | CIBA-specific policy: `fapi-ciba-id1-plain-private-key-jwt-poll` for OIDF FAPI-CIBA compatibility, or internal `fapi2-ciba` hardening |
+| `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1` | CIBA-specific policy: FAPI-CIBA ID1 with orthogonal poll/ping delivery and private-key/mTLS client authentication, or internal `fapi2-ciba` hardening. The former `fapi-ciba-id1-plain-private-key-jwt-poll` value remains a configuration alias during migration. |
 | `ENABLE_FAPI_HTTP_SIGNATURES` | `false` | Experimental resource-only profile for the 2026-06-26 FAPI 2.0 HTTP Signatures working draft; when enabled, `/fapi/resource` requires a registered client JWK and RFC 9421 signature and signs every response |
 | `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | `60` | Request signature age and replay-marker lifetime; accepted range is 1–300 seconds, with at most five seconds of future clock skew |
 | `ENABLE_SCIM_SECURITY_EVENTS` | `false` | Enables default-closed RFC 9967 SET outbox creation, discovery, and RFC 8936 polling; depends on the SCIM runtime module |

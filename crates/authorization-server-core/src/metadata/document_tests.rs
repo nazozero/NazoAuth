@@ -330,7 +330,18 @@ fn ciba_metadata_is_complete_and_profile_scoped() {
     let baseline = authorization_server_metadata(input(), &snapshot);
     assert_eq!(
         baseline["backchannel_token_delivery_modes_supported"],
-        json!(["poll"])
+        json!(["poll", "ping"])
+    );
+    let mtls = authorization_server_metadata(
+        AuthorizationServerMetadataInput {
+            mtls_enabled: true,
+            ..input()
+        },
+        &snapshot,
+    );
+    assert_eq!(
+        mtls["mtls_endpoint_aliases"]["backchannel_authentication_endpoint"],
+        json!("https://mtls.issuer.example/bc-authorize")
     );
     assert_eq!(
         baseline["backchannel_user_code_parameter_supported"],

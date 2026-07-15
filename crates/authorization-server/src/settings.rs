@@ -141,6 +141,7 @@ pub(crate) struct CibaSettings {
     pub(crate) ciba_auth_req_id_ttl_seconds: u64,
     pub(crate) ciba_poll_interval_seconds: u64,
     pub(crate) ciba_automated_decision_token: Option<String>,
+    pub(crate) ciba_notification_private_origins: Vec<String>,
 }
 
 impl Settings {
@@ -268,6 +269,17 @@ impl Settings {
         {
             bail!("CIBA_AUTOMATED_DECISION_TOKEN must be at least 32 bytes when set");
         }
+        let ciba_notification_private_origins = config
+            .optional_string("CIBA_NOTIFICATION_PRIVATE_ORIGINS")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect()
+            })
+            .unwrap_or_default();
         let enable_dynamic_client_registration =
             config.bool("ENABLE_DYNAMIC_CLIENT_REGISTRATION", false)?;
         let dynamic_client_registration_initial_access_token =
@@ -447,6 +459,7 @@ impl Settings {
                 ciba_auth_req_id_ttl_seconds,
                 ciba_poll_interval_seconds,
                 ciba_automated_decision_token,
+                ciba_notification_private_origins,
             },
         })
     }

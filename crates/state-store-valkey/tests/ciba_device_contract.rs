@@ -4,11 +4,15 @@ use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use nazo_auth::{
-    CibaPollCommit, CibaRequestState, CibaService, CibaStatus, DeviceAuthorizationApproval,
+    CibaDecision, CibaPingNotification, CibaPingNotificationStatus, CibaPollCommit,
+    CibaRequestState, CibaService, CibaStatus, DeviceAuthorizationApproval,
     DeviceAuthorizationPayload, DeviceAuthorizationState, DeviceDecisionFailure,
     DeviceGrantService, DevicePollCommit, DevicePollFailure,
 };
-use nazo_valkey::{AtomicResult, CibaStore, DeviceCreateResult, DeviceStore, ValkeyConnection};
+use nazo_valkey::{
+    AtomicResult, CibaPingFinishOutcome, CibaPingFinishResult, CibaStore, DeviceCreateResult,
+    DeviceStore, ValkeyConnection,
+};
 use serde_json::json;
 
 async fn setup() -> Option<(ValkeyConnection, fred::prelude::Client)> {
@@ -65,6 +69,7 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
         expires_at: now + 60,
         retention_expires_at: now + 180,
         last_poll_at: None,
+        ping_notification: None,
     };
     assert_eq!(
         store.create(&auth_req_id, &state).await.unwrap(),
@@ -112,6 +117,7 @@ async fn concurrent_approved_ciba_polls_have_exactly_one_token_issuance_winner()
         expires_at: now + 60,
         retention_expires_at: now + 180,
         last_poll_at: None,
+        ping_notification: None,
     };
     let store = CibaStore::new(&connection);
     assert_eq!(
@@ -134,6 +140,130 @@ async fn concurrent_approved_ciba_polls_have_exactly_one_token_issuance_winner()
         1,
         "approved auth_req_id must be consumed once even under concurrent polling"
     );
+}
+
+#[tokio::test]
+async fn ciba_decision_atomically_schedules_and_terminally_acks_ping_delivery() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let auth_req_id = format!("ciba-ping-{}", uuid::Uuid::now_v7());
+    let user_id = uuid::Uuid::from_u128(7);
+    let now = server_time(&inspector).await;
+    let state = CibaRequestState {
+        client_id: "ping-client".to_owned(),
+        user_id,
+        scopes: vec!["openid".to_owned()],
+        audiences: vec!["resource".to_owned()],
+        acr: None,
+        binding_message: None,
+        issued_at: now,
+        status: CibaStatus::Pending,
+        interval_seconds: 5,
+        expires_at: now + 60,
+        retention_expires_at: now + 180,
+        last_poll_at: None,
+        ping_notification: Some(CibaPingNotification {
+            auth_req_id: None,
+            endpoint: "https://client.example/ciba-notification".to_owned(),
+            client_notification_token: Some("notification-token-0123456789".to_owned()),
+            status: CibaPingNotificationStatus::AwaitingDecision,
+            attempts: 0,
+            next_attempt_at: None,
+        }),
+    };
+    let store = CibaStore::new(&connection);
+    let generated_auth_req_id = auth_req_id.clone();
+    assert_eq!(
+        CibaService::new(store.clone())
+            .create_unique(&state, || generated_auth_req_id.clone())
+            .await
+            .unwrap(),
+        auth_req_id,
+        "the core must allow a pre-persistence ping state while the adapter atomically binds auth_req_id"
+    );
+    CibaService::new(store.clone())
+        .decide(&auth_req_id, CibaDecision::Approve, Some(user_id), || now)
+        .await
+        .unwrap();
+
+    let deliveries = store.claim_due_ping(now, now + 15, 10).await.unwrap();
+    assert_eq!(deliveries.len(), 1);
+    assert_eq!(deliveries[0].auth_req_id, auth_req_id);
+    assert_eq!(deliveries[0].attempts, 1);
+    assert_eq!(
+        store
+            .finish_ping(&deliveries[0], CibaPingFinishOutcome::Delivered)
+            .await
+            .unwrap(),
+        CibaPingFinishResult::Applied
+    );
+
+    let stored = store.load(&auth_req_id).await.unwrap().unwrap();
+    let notification = stored.value().ping_notification.as_ref().unwrap();
+    assert_eq!(notification.status, CibaPingNotificationStatus::Delivered);
+    assert!(notification.client_notification_token.is_none());
+    assert!(
+        store
+            .claim_due_ping(now + 30, now + 45, 10)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+}
+
+#[tokio::test]
+async fn expired_ciba_ping_is_failed_without_exposing_its_notification_token() {
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let auth_req_id = format!("ciba-expired-ping-{}", uuid::Uuid::now_v7());
+    let user_id = uuid::Uuid::from_u128(8);
+    let now = server_time(&inspector).await;
+    let state = CibaRequestState {
+        client_id: "ping-client".to_owned(),
+        user_id,
+        scopes: vec!["openid".to_owned()],
+        audiences: vec!["resource".to_owned()],
+        acr: None,
+        binding_message: None,
+        issued_at: now,
+        status: CibaStatus::Pending,
+        interval_seconds: 5,
+        expires_at: now + 1,
+        retention_expires_at: now + 180,
+        last_poll_at: None,
+        ping_notification: Some(CibaPingNotification {
+            auth_req_id: None,
+            endpoint: "https://client.example/ciba-notification".to_owned(),
+            client_notification_token: Some("notification-token-0123456789".to_owned()),
+            status: CibaPingNotificationStatus::AwaitingDecision,
+            attempts: 0,
+            next_attempt_at: None,
+        }),
+    };
+    let store = CibaStore::new(&connection);
+    assert_eq!(
+        store.create(&auth_req_id, &state).await.unwrap(),
+        AtomicResult::Applied
+    );
+    CibaService::new(store.clone())
+        .decide(&auth_req_id, CibaDecision::Approve, Some(user_id), || now)
+        .await
+        .unwrap();
+
+    assert!(
+        store
+            .claim_due_ping(now + 2, now + 17, 10)
+            .await
+            .unwrap()
+            .is_empty(),
+        "an expired authorization request must never trigger outbound notification"
+    );
+    let stored = store.load(&auth_req_id).await.unwrap().unwrap();
+    let notification = stored.value().ping_notification.as_ref().unwrap();
+    assert_eq!(notification.status, CibaPingNotificationStatus::Failed);
+    assert!(notification.client_notification_token.is_none());
 }
 
 fn pending_device(now: chrono::DateTime<Utc>) -> DeviceAuthorizationState {

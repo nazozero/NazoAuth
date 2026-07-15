@@ -62,9 +62,7 @@ impl From<&Settings> for MetadataConfig {
                 }
             },
             ciba_security_profile: match protocol.ciba_security_profile {
-                CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll => {
-                    CibaMetadataProfile::FapiCiba
-                }
+                CibaSecurityProfile::FapiCibaId1 => CibaMetadataProfile::FapiCiba,
                 CibaSecurityProfile::Fapi2Ciba => CibaMetadataProfile::Fapi2Ciba,
             },
             subject_type: match protocol.subject_type {
@@ -198,7 +196,7 @@ mod tests {
     fn metadata_config_maps_both_ciba_profiles() {
         for (profile, expected) in [
             (
-                CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll,
+                CibaSecurityProfile::FapiCibaId1,
                 CibaMetadataProfile::FapiCiba,
             ),
             (

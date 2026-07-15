@@ -849,10 +849,18 @@ fn dynamic_registration_response(
         "subject_type": client.subject_type,
         "post_logout_redirect_uris": client.post_logout_redirect_uris,
         "backchannel_logout_session_required": client.backchannel_logout_session_required,
+        "backchannel_token_delivery_mode": client.backchannel_token_delivery_mode,
+        "backchannel_user_code_parameter": client.backchannel_user_code_parameter,
         "frontchannel_logout_session_required": client.frontchannel_logout_session_required,
     });
     if let Some(uri) = &client.backchannel_logout_uri {
         body["backchannel_logout_uri"] = json!(uri);
+    }
+    if let Some(uri) = &client.backchannel_client_notification_endpoint {
+        body["backchannel_client_notification_endpoint"] = json!(uri);
+    }
+    if let Some(alg) = &client.backchannel_authentication_request_signing_alg {
+        body["backchannel_authentication_request_signing_alg"] = json!(alg);
     }
     if let Some(uri) = &client.frontchannel_logout_uri {
         body["frontchannel_logout_uri"] = json!(uri);
@@ -1408,6 +1416,10 @@ mod tests {
                 require_par_request_object: false,
                 backchannel_logout_uri: None,
                 backchannel_logout_session_required: false,
+                backchannel_token_delivery_mode: "poll".to_owned(),
+                backchannel_client_notification_endpoint: None,
+                backchannel_authentication_request_signing_alg: None,
+                backchannel_user_code_parameter: false,
                 frontchannel_logout_uri: None,
                 frontchannel_logout_session_required: false,
                 tls_client_auth_subject_dn: None,

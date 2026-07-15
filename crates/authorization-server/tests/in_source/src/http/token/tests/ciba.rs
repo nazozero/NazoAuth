@@ -189,6 +189,7 @@ fn ciba_start_audit_fields_are_redacted() {
         expires_at: now + 60,
         retention_expires_at: now + 180,
         last_poll_at: None,
+        ping_notification: None,
     };
 
     let fields = ciba_start_audit_fields(
@@ -226,6 +227,7 @@ fn committed_decision_fixture(decision: CibaDecision) -> CibaCommittedDecision {
             expires_at: now + 60,
             retention_expires_at: now + 180,
             last_poll_at: None,
+            ping_notification: None,
         },
         decision,
     }
@@ -479,18 +481,77 @@ fn ciba_request_object_presence_enforces_client_policy() {
 }
 
 #[test]
-fn fapi_ciba_compatibility_profile_preserves_client_request_object_policy() {
+fn fapi_ciba_id1_requires_a_signed_backchannel_authentication_request() {
     let settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let client = ciba_private_key_jwt_client("ciba-kid", &key);
 
-    validate_ciba_request_object_presence(
+    let response = validate_ciba_request_object_presence(
         &settings,
         &client,
         &BackchannelAuthenticationForm::default(),
     )
-    .expect("OIDF FAPI-CIBA compatibility profile must preserve per-client request-object policy");
+    .expect_err("FAPI-CIBA ID1 requires a signed request object");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[test]
+fn fapi_ciba_id1_accepts_both_private_key_jwt_and_mtls_client_authentication() {
+    let settings =
+        Settings::from_config(&ConfigSource::default()).expect("default settings should load");
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+    client.require_mtls_bound_tokens = true;
+
+    validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
+        .expect("FAPI-CIBA ID1 supports private_key_jwt");
+    client.token_endpoint_auth_method = "tls_client_auth".to_owned();
+    validate_ciba_security_profile_client(&settings, &client, "tls_client_auth")
+        .expect("FAPI-CIBA ID1 supports mTLS client authentication");
+
+    let response = validate_ciba_security_profile_client(&settings, &client, "client_secret_post")
+        .expect_err("FAPI-CIBA ID1 must reject shared-secret client authentication");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[test]
+fn ciba_ping_requires_a_registered_endpoint_and_high_entropy_notification_token() {
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+    client.backchannel_token_delivery_mode = "ping".to_owned();
+    client.backchannel_client_notification_endpoint =
+        Some("https://client.example/ciba-notification".to_owned());
+
+    let missing =
+        validate_ciba_delivery_request(&client, &BackchannelAuthenticationForm::default())
+            .expect_err("ping requests require client_notification_token");
+    assert_eq!(missing.status(), StatusCode::BAD_REQUEST);
+
+    let weak = BackchannelAuthenticationForm {
+        client_notification_token: Some("too-short".to_owned()),
+        ..BackchannelAuthenticationForm::default()
+    };
+    assert!(validate_ciba_delivery_request(&client, &weak).is_err());
+
+    let valid = BackchannelAuthenticationForm {
+        client_notification_token: Some("notification-token-0123456789".to_owned()),
+        ..BackchannelAuthenticationForm::default()
+    };
+    validate_ciba_delivery_request(&client, &valid)
+        .expect("registered ping clients may supply a bearer notification token");
+}
+
+#[test]
+fn ciba_poll_rejects_ping_only_notification_credentials() {
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let client = ciba_private_key_jwt_client("ciba-kid", &key);
+    let form = BackchannelAuthenticationForm {
+        client_notification_token: Some("notification-token-0123456789".to_owned()),
+        ..BackchannelAuthenticationForm::default()
+    };
+
+    assert!(validate_ciba_delivery_request(&client, &form).is_err());
 }
 
 #[test]
@@ -499,11 +560,10 @@ fn ciba_profile_does_not_apply_authorization_code_only_controls() {
     settings.protocol.authorization_server_profile =
         crate::settings::AuthorizationServerProfile::Fapi2Security;
     settings.protocol.require_pushed_authorization_requests = true;
-    settings.protocol.ciba_security_profile =
-        crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll;
+    settings.protocol.ciba_security_profile = crate::settings::CibaSecurityProfile::FapiCibaId1;
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
-    client.require_dpop_bound_tokens = true;
+    client.require_mtls_bound_tokens = true;
     let form = BackchannelAuthenticationForm {
         request: Some("signed-request-object".to_owned()),
         ..BackchannelAuthenticationForm::default()
@@ -613,8 +673,7 @@ fn fapi2_ciba_private_key_jwt_requires_issuer_audience_only() {
         Some("invalid_client")
     );
 
-    settings.protocol.ciba_security_profile =
-        crate::settings::CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll;
+    settings.protocol.ciba_security_profile = crate::settings::CibaSecurityProfile::FapiCibaId1;
     validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
         .expect("OIDF FAPI-CIBA compatibility profile must preserve endpoint audience allowance");
 }
@@ -642,6 +701,7 @@ fn ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint() {
         expires_at: Utc::now().timestamp() + 600,
         retention_expires_at: Utc::now().timestamp() + 720,
         last_poll_at: None,
+        ping_notification: None,
     };
 
     let issue = ciba_token_issue(
@@ -675,6 +735,7 @@ fn ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant() {
         expires_at: Utc::now().timestamp() + 600,
         retention_expires_at: Utc::now().timestamp() + 720,
         last_poll_at: None,
+        ping_notification: None,
     };
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
     client.client_id = "client-2".to_owned();

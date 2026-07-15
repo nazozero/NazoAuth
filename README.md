@@ -48,7 +48,7 @@ composite score:
 | Static security analysis | CodeQL Rust analysis with `security-extended` and `security-and-quality` queries. |
 | Dependency policy | GitHub dependency review, `cargo audit`, and `cargo deny` over advisories, bans, licenses, and sources. |
 | Runtime security behavior | Real HTTP E2E, load/race gate, and Valkey outage injection in `conformance-security`. |
-| Protocol conformance | Current 22-plan OIDF/FAPI workflow plus archived official 21-plan matrix evidence. |
+| Protocol conformance | Current 25-plan OIDF/FAPI workflow with local and official-suite evidence. |
 | Coverage trend | Codecov LCOV upload from the dedicated coverage workflow. |
 | Release provenance | CycloneDX SBOM, Trivy image scan, Sigstore signing, and GitHub artifact attestations. |
 
@@ -130,16 +130,21 @@ OpenID Foundation Conformance Suite result URLs:
 | --- | --- |
 | OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
 | OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
-| Latest 21-plan official matrix | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
-| Current 22-plan repository matrix | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
+| Latest 25-plan official matrix | [docs/conformance/2026-07-15-fapi-ciba-mtls-ping-oidf-results.md](docs/conformance/2026-07-15-fapi-ciba-mtls-ping-oidf-results.md#fapi-ciba-plan-ids) |
+| Archived 21-plan official matrix | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
+| Current 25-plan repository matrix | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | Latest private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
 The latest official full matrix tested `https://auth.nazo.run` from workflow
-head SHA `371b4f6e61674c4d1bd9ace7ba5b518314c8ff0f`. It ran the 21-plan matrix in
-the 19+2 parallel-isolated layout and exported 640 modules: 632 passed, 6
-expected review states, 2 expected skips, and no failed module, condition
-failure, or warning. It is therefore not zero-SKIPPED evidence.
+head SHA `8d2ec0ec3269b298918f4735a538ba76dd90e0b5`. It ran the 25-plan matrix in
+the 23+2 parallel-isolated layout and exported 787 modules: 748 passed, 22
+modules with bounded official-ingress TLS warnings, 9 expected review states,
+8 expected unsigned-compatibility skips, and no failed module or condition.
+The matching Hostinger local run produced 770 passed modules and zero warnings
+or failures. It is therefore not zero-SKIPPED or zero-WARNING official
+evidence; the exact warning contexts and upstream ingress boundary are recorded
+in the linked evidence document.
 
 The latest private full-matrix regression tested runtime commit `31e8f9f`, ran
 all 16 plans and 578 modules, and reported `0 failures` and `0 warnings`.

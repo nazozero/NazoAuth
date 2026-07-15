@@ -57,7 +57,7 @@ opentelemetry_sdk = { version = "0.32.1", features = ["logs", "metrics", "rt-tok
 passkey-auth.workspace = true
 p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
 rand.workspace = true
-reqwest = { version = "0.13.4", default-features = false, features = ["native-tls", "json", "stream"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["native-tls", "rustls", "json", "stream"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
@@ -76,6 +76,7 @@ diesel_migrations.workspace = true
 fred = { workspace = true, features = ["i-scripts"] }
 proptest.workspace = true
 nazo-key-management = { workspace = true, features = ["test-support"] }
+rustls = { version = "0.23.41", default-features = false, features = ["aws_lc_rs", "std"] }
 
 [lints]
 workspace = true

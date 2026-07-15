@@ -75,6 +75,9 @@ PLAN_CONFIG_FILES = (
     "oidf-oidcc-frontchannel-logout-plan-config.json",
     "oidf-oidcc-session-management-plan-config.json",
     "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
+    "oidf-fapi-ciba-plain-mtls-poll-plan-config.json",
+    "oidf-fapi-ciba-plain-private-key-jwt-ping-plan-config.json",
+    "oidf-fapi-ciba-plain-mtls-ping-plan-config.json",
     "oidf-fapi-security-final-plan-config.json",
     "oidf-fapi-message-final-plan-config.json",
     "oidf-fapi-security-id2-plan-config.json",
@@ -440,6 +443,7 @@ ENABLE_FRONTCHANNEL_LOGOUT: true
 ENABLE_SESSION_MANAGEMENT: true
 ENABLE_NATIVE_SSO: true
 CIBA_AUTOMATED_DECISION_TOKEN: "{OIDF_CIBA_AUTOMATED_DECISION_TOKEN}"
+CIBA_NOTIFICATION_PRIVATE_ORIGINS: "{SUITE_ORIGIN}"
 DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN: "{DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN}"
 REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS: "{SUITE_ORIGIN}"
 MTLS_ENDPOINT_BASE_URL: "{MTLS_ISSUER}"
@@ -1323,64 +1327,92 @@ def write_fapi_plan_configs() -> dict[str, dict[str, object]]:
 
 
 def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
-    slug = "fapi-ciba-plain-private-key-jwt-poll"
-    client1_id, client2_id = fapi_client_ids(slug)
-    client1_jwks = client_private_jwks(client1_id)
-    client2_jwks = client_private_jwks(client2_id)
-    config = {
-        "alias": f"local-nazo-oauth-oidf-{slug}",
-        "description": "FAPI-CIBA ID1 AS: plain FAPI profile with private_key_jwt client authentication and poll delivery mode.",
-        "server": oidf_server_config(),
-        "resource": {
-            "resourceUrl": f"{ISSUER}/fapi/resource",
-            "resourceMethod": "GET",
-            "resourceMediaType": "application/json",
-            "resourceRequestBody": "",
-        },
-        "automated_ciba_approval_url": (
-            f"{ISSUER}/auth/ciba-automated-decision"
-            f"?token={{auth_req_id}}&type={{action}}"
-            f"&decision_token={OIDF_CIBA_AUTOMATED_DECISION_TOKEN}"
-        ),
-        "client": {
-            **fapi_client_config(client1_id, client1_jwks, "openid profile email offline_access"),
-            "hint_type": "login_hint",
-            "hint_value": USER_EMAIL,
-            "acr_value": "1",
-        },
-        "client2": {
-            **fapi_client_config(
-                client2_id,
-                client2_jwks,
-                "openid profile email offline_access",
+    configs: dict[str, dict[str, object]] = {}
+    for client_auth_type, ciba_mode in (
+        ("private_key_jwt", "poll"),
+        ("mtls", "poll"),
+        ("private_key_jwt", "ping"),
+        ("mtls", "ping"),
+    ):
+        auth_slug = "private-key-jwt" if client_auth_type == "private_key_jwt" else "mtls"
+        slug = f"fapi-ciba-plain-{auth_slug}-{ciba_mode}"
+        client1_id, client2_id = fapi_client_ids(slug)
+        client1_jwks = client_private_jwks(client1_id)
+        client2_jwks = client_private_jwks(client2_id)
+        alias = f"local-nazo-oauth-oidf-{slug}"
+        notification_endpoint = test_endpoint_for(alias, "ciba-notification-endpoint")
+
+        def ciba_client(client_id: str, jwks: dict[str, object]) -> dict[str, object]:
+            client = {
+                **fapi_client_config(
+                    client_id,
+                    jwks,
+                    "openid profile email offline_access",
+                ),
+                "acr_value": "1",
+                "backchannel_token_delivery_mode": ciba_mode,
+                "backchannel_authentication_request_signing_alg": "PS256",
+                "backchannel_user_code_parameter": False,
+            }
+            if ciba_mode == "ping":
+                client["backchannel_client_notification_endpoint"] = notification_endpoint
+            return client
+
+        config = {
+            "alias": alias,
+            "description": (
+                "FAPI-CIBA ID1 AS: plain FAPI profile with "
+                f"{client_auth_type} client authentication and {ciba_mode} delivery mode."
             ),
-            "acr_value": "1",
-        },
-        "mtls": mtls_named_config(mtls_client_cert_name(client1_id)),
-        "mtls2": mtls_named_config(mtls_client_cert_name(client2_id)),
-        "nazo": {
-            **nazo_login_metadata(),
-            "client_auth_type": "private_key_jwt",
-            "sender_constrain": "mtls",
-            "openid": "openid_connect",
-            "fapi_profile": "plain_fapi",
-            "fapi_ciba_profile": "plain_fapi",
-            "ciba_mode": "poll",
-            "matrix_title": "FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI",
-            "matrix_description": "Covers FAPI-CIBA OP discovery, backchannel authentication, polling token exchange, negative CIBA request handling, refresh token behavior, and resource access.",
-            "matrix_focus": [
-                "CIBA discovery metadata",
-                "backchannel authentication endpoint",
-                "private_key_jwt client authentication",
-                "poll mode token issuance",
-                "FAPI-CIBA request-object and error handling",
-            ],
-        },
-        "browser": browser_automation(),
-    }
-    name = "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json"
-    write_plan_config(name, config)
-    return {name: config}
+            "server": oidf_server_config(),
+            "resource": {
+                "resourceUrl": f"{ISSUER}/fapi/resource",
+                "resourceMethod": "GET",
+                "resourceMediaType": "application/json",
+                "resourceRequestBody": "",
+            },
+            "automated_ciba_approval_url": (
+                f"{ISSUER}/auth/ciba-automated-decision"
+                f"?token={{auth_req_id}}&type={{action}}"
+                f"&decision_token={OIDF_CIBA_AUTOMATED_DECISION_TOKEN}"
+            ),
+            "client": {
+                **ciba_client(client1_id, client1_jwks),
+                "hint_type": "login_hint",
+                "hint_value": USER_EMAIL,
+            },
+            "client2": ciba_client(client2_id, client2_jwks),
+            "mtls": mtls_named_config(mtls_client_cert_name(client1_id)),
+            "mtls2": mtls_named_config(mtls_client_cert_name(client2_id)),
+            "nazo": {
+                **nazo_login_metadata(),
+                "client_auth_type": client_auth_type,
+                "sender_constrain": "mtls",
+                "openid": "openid_connect",
+                "fapi_profile": "plain_fapi",
+                "fapi_ciba_profile": "plain_fapi",
+                "ciba_mode": ciba_mode,
+                "matrix_title": (
+                    f"FAPI-CIBA ID1 / {client_auth_type} / {ciba_mode} / plain FAPI"
+                ),
+                "matrix_description": (
+                    "Covers FAPI-CIBA discovery, backchannel authentication, "
+                    f"{ciba_mode} delivery, token exchange, negative handling, and resource access."
+                ),
+                "matrix_focus": [
+                    "CIBA discovery metadata",
+                    "backchannel authentication endpoint",
+                    f"{client_auth_type} client authentication",
+                    f"{ciba_mode} mode token issuance",
+                    "FAPI-CIBA request-object and error handling",
+                ],
+            },
+            "browser": browser_automation(),
+        }
+        name = f"oidf-{slug}-plan-config.json"
+        write_plan_config(name, config)
+        configs[name] = config
+    return configs
 
 
 def write_fapi_matrix_plan_configs() -> dict[str, dict[str, object]]:
@@ -1554,11 +1586,14 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
     ]
     for name, config in sorted(configs.items()):
         if name.startswith("oidf-fapi-ciba-"):
+            nazo = config.get("nazo")
+            if not isinstance(nazo, dict):
+                continue
             expressions.append(
                 "fapi-ciba-id1-test-plan"
-                "[client_auth_type=private_key_jwt]"
+                f"[client_auth_type={nazo['client_auth_type']}]"
                 "[fapi_ciba_profile=plain_fapi]"
-                "[ciba_mode=poll]"
+                f"[ciba_mode={nazo['ciba_mode']}]"
                 "[client_registration=static_client] "
                 f"{name}"
             )
@@ -1679,7 +1714,7 @@ def plan_manifest_for_expressions(
     return {
         "name": "NazoAuth OIDF full conformance matrix",
         "description": (
-            "Twenty-two-plan OpenID Foundation regression matrix for the public issuer. "
+            f"{len(plans)}-plan OpenID Foundation regression matrix for the public issuer. "
             "Targeted TP/PS checks are mapped onto these plans instead of being run as a separate matrix."
         ),
         "plans": plans,

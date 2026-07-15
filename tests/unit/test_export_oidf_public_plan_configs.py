@@ -106,6 +106,13 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                             "client_id": "client-1",
                             "client_secret": "secret",
                             "scope": "openid accounts",
+                            "backchannel_token_delivery_mode": "ping",
+                            "backchannel_client_notification_endpoint": (
+                                "https://www.certification.openid.net/test/a/"
+                                "seed-alias/ciba-notification-endpoint"
+                            ),
+                            "backchannel_authentication_request_signing_alg": "PS256",
+                            "backchannel_user_code_parameter": False,
                             "jwks": {
                                 "keys": [
                                     {
@@ -157,6 +164,19 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
         self.assertEqual(exported["alias"], "seed-alias")
         self.assertEqual(exported["client"]["client_id"], "client-1")
         self.assertEqual(exported["client"]["scope"], "openid accounts")
+        self.assertEqual(
+            exported["client"]["backchannel_token_delivery_mode"], "ping"
+        )
+        self.assertEqual(
+            exported["client"]["backchannel_client_notification_endpoint"],
+            "https://www.certification.openid.net/test/a/seed-alias/"
+            "ciba-notification-endpoint",
+        )
+        self.assertEqual(
+            exported["client"]["backchannel_authentication_request_signing_alg"],
+            "PS256",
+        )
+        self.assertFalse(exported["client"]["backchannel_user_code_parameter"])
 
         self.assertEqual(exported["mtls"]["cert"], mtls["cert"])
         self.assertEqual(exported["nazo"]["fapi_profile"], "plain_fapi")

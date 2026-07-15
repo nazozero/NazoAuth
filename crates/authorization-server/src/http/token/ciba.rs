@@ -1,4 +1,4 @@
-//! OpenID Connect CIBA poll-mode grant.
+//! OpenID Connect CIBA poll/ping grant.
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{
@@ -39,8 +39,9 @@ use actix_web::{HttpRequest, HttpResponse};
 use chrono::{DateTime, Utc};
 use futures_util::StreamExt;
 use nazo_auth::{
-    CibaCommittedDecision, CibaCreateFailure, CibaDecision, CibaDecisionFailure, CibaPollCommit,
-    CibaPollFailure, CibaRequestState, CibaService, CibaStatePortError, CibaStatus, ClientProfile,
+    CibaCommittedDecision, CibaCreateFailure, CibaDecision, CibaDecisionFailure,
+    CibaPingNotification, CibaPingNotificationStatus, CibaPollCommit, CibaPollFailure,
+    CibaRequestState, CibaService, CibaStatePortError, CibaStatus, ClientProfile,
     ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy, ciba_retention_deadline,
     validate_token_request_profile as validate_auth_token_request_profile,
 };
@@ -91,6 +92,7 @@ pub(crate) struct CibaHttpConfig {
     poll_interval_seconds: u64,
     csrf_cookie_name: Box<str>,
     automated_decision_token: Option<Box<str>>,
+    ciba_fapi_profile: bool,
     ciba_fapi2_hardening: bool,
     authorization_fapi2_hardening: bool,
 }
@@ -112,6 +114,7 @@ impl From<&Settings> for CibaHttpConfig {
                 .ciba_automated_decision_token
                 .as_deref()
                 .map(Into::into),
+            ciba_fapi_profile: settings.protocol.ciba_security_profile.requires_fapi_ciba(),
             ciba_fapi2_hardening: settings
                 .protocol
                 .ciba_security_profile
@@ -172,6 +175,7 @@ struct BackchannelAuthenticationForm {
     binding_message: Option<String>,
     acr_values: Option<String>,
     requested_expiry_seconds: Option<u64>,
+    client_notification_token: Option<String>,
     client_id: Option<String>,
     client_secret: Option<String>,
     client_assertion_type: Option<String>,
@@ -193,6 +197,7 @@ struct CibaAuthenticationRequestClaims {
     binding_message: Option<String>,
     acr_values: Option<String>,
     requested_expiry: Option<Value>,
+    client_notification_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -365,6 +370,9 @@ pub(crate) async fn backchannel_authentication(
     {
         return response;
     }
+    if let Err(response) = validate_ciba_delivery_request(&client, &form) {
+        return response;
+    }
     let scopes = parse_scope(form.scope.as_deref().unwrap_or(""));
     if !scopes.iter().any(|scope| scope == "openid") || !is_subset(&scopes, &client.scopes) {
         return oauth_error(
@@ -446,6 +454,21 @@ pub(crate) async fn backchannel_authentication(
         expires_at,
         retention_expires_at: ciba_retention_deadline(expires_at),
         last_poll_at: None,
+        ping_notification: if client.backchannel_token_delivery_mode == "ping" {
+            Some(CibaPingNotification {
+                auth_req_id: None,
+                endpoint: client
+                    .backchannel_client_notification_endpoint
+                    .clone()
+                    .expect("validated ping clients have a notification endpoint"),
+                client_notification_token: form.client_notification_token,
+                status: CibaPingNotificationStatus::AwaitingDecision,
+                attempts: 0,
+                next_attempt_at: None,
+            })
+        } else {
+            None
+        },
     };
     let auth_req_id = match ciba_service
         .create_unique(&state_payload, random_urlsafe_token)
@@ -631,6 +654,11 @@ fn validate_and_apply_ciba_request_object_claims_with_config(
         claims.acr_values,
         "CIBA request object acr_values conflicts with outer parameter.",
     )?;
+    merge_request_object_string(
+        &mut form.client_notification_token,
+        claims.client_notification_token,
+        "CIBA request object client_notification_token conflicts with outer parameter.",
+    )?;
     if let Some(requested_expiry) = claims.requested_expiry {
         let Some(seconds) = ciba_requested_expiry_seconds(&requested_expiry) else {
             return Err(ciba_invalid_request(
@@ -684,6 +712,15 @@ fn signed_ciba_request_object_claims(
     if !ciba_jwt_signing_algorithm_supported(header.alg) {
         return Err(ciba_invalid_request(
             "CIBA request object signing algorithm is unsupported.",
+        ));
+    }
+    if let Some(expected) = client
+        .backchannel_authentication_request_signing_alg
+        .as_deref()
+        && ciba_algorithm_name(header.alg) != Some(expected)
+    {
+        return Err(ciba_invalid_request(
+            "CIBA request object signing algorithm does not match client registration.",
         ));
     }
     let Some(kid) = header.kid.as_deref() else {
@@ -878,19 +915,71 @@ fn ciba_jwt_signing_algorithm_supported(alg: jsonwebtoken::Algorithm) -> bool {
     )
 }
 
+fn ciba_algorithm_name(alg: jsonwebtoken::Algorithm) -> Option<&'static str> {
+    match alg {
+        jsonwebtoken::Algorithm::EdDSA => Some("EdDSA"),
+        jsonwebtoken::Algorithm::ES256 => Some("ES256"),
+        jsonwebtoken::Algorithm::PS256 => Some("PS256"),
+        _ => None,
+    }
+}
+
+fn validate_ciba_delivery_request(
+    client: &ClientRow,
+    form: &BackchannelAuthenticationForm,
+) -> Result<(), HttpResponse> {
+    match client.backchannel_token_delivery_mode.as_str() {
+        "poll" if form.client_notification_token.is_some() => Err(ciba_invalid_request(
+            "poll-mode CIBA clients must not send client_notification_token.",
+        )),
+        "poll" => Ok(()),
+        "ping" => {
+            let Some(token) = form.client_notification_token.as_deref() else {
+                return Err(ciba_invalid_request(
+                    "ping-mode CIBA clients must send client_notification_token.",
+                ));
+            };
+            if !valid_client_notification_token(token) {
+                return Err(ciba_invalid_request(
+                    "client_notification_token is invalid or does not provide 128 bits of entropy.",
+                ));
+            }
+            if client.backchannel_client_notification_endpoint.is_none() {
+                return Err(ciba_invalid_request(
+                    "ping-mode CIBA client has no notification endpoint.",
+                ));
+            }
+            Ok(())
+        }
+        _ => Err(ciba_invalid_request(
+            "CIBA client delivery mode is unsupported.",
+        )),
+    }
+}
+
+fn valid_client_notification_token(token: &str) -> bool {
+    let unpadded = token.trim_end_matches('=');
+    (22..=1024).contains(&token.len())
+        && !unpadded.is_empty()
+        && unpadded.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~' | b'+' | b'/')
+        })
+        && token[unpadded.len()..].bytes().all(|byte| byte == b'=')
+}
+
 fn validate_ciba_security_profile_client_with_config(
     config: &CibaHttpConfig,
     client: &ClientRow,
     auth_method: &str,
 ) -> Result<(), HttpResponse> {
-    if !config.ciba_fapi2_hardening {
+    if !config.ciba_fapi_profile {
         return Ok(());
     }
     if client.client_type != "confidential" {
         return Err(oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unauthorized_client",
-            "Fapi2Ciba requires confidential clients.",
+            "FAPI-CIBA requires confidential clients.",
             false,
         ));
     }
@@ -901,19 +990,25 @@ fn validate_ciba_security_profile_client_with_config(
         return Err(oauth_token_error(
             StatusCode::UNAUTHORIZED,
             "invalid_client",
-            "Fapi2Ciba requires private_key_jwt or mTLS client authentication.",
+            "FAPI-CIBA requires private_key_jwt or mTLS client authentication.",
             false,
         ));
     }
-    if !(client.require_dpop_bound_tokens || client.require_mtls_bound_tokens) {
+    let sender_constraint_valid = if config.ciba_fapi2_hardening {
+        client.require_dpop_bound_tokens || client.require_mtls_bound_tokens
+    } else {
+        client.require_mtls_bound_tokens
+    };
+    if !sender_constraint_valid {
         return Err(oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
-            "Fapi2Ciba requires sender-constrained access tokens.",
+            "FAPI-CIBA requires an mTLS holder-of-key access token.",
             false,
         ));
     }
-    if auth_method == "private_key_jwt"
+    if config.ciba_fapi2_hardening
+        && auth_method == "private_key_jwt"
         && (client.allow_client_assertion_audience_array
             || client.allow_client_assertion_endpoint_audience)
     {
@@ -982,8 +1077,7 @@ fn validate_ciba_request_object_presence_with_config(
     client: &ClientRow,
     form: &BackchannelAuthenticationForm,
 ) -> Result<(), HttpResponse> {
-    if (client.require_par_request_object || config.ciba_fapi2_hardening) && form.request.is_none()
-    {
+    if (client.require_par_request_object || config.ciba_fapi_profile) && form.request.is_none() {
         return Err(ciba_invalid_request("CIBA request object is required."));
     }
     Ok(())
@@ -1482,7 +1576,7 @@ pub(crate) async fn token_ciba(
             );
         }
     };
-    let issue = ciba_token_issue(user.id(), subject, ciba, dpop_jkt, mtls_x5t_s256);
+    let issue = ciba_token_issue(user.id(), subject, *ciba, dpop_jkt, mtls_x5t_s256);
     issue_token_response_with_service(issuance, token_service, client, issue).await
 }
 

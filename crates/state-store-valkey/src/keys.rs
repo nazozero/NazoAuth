@@ -72,7 +72,19 @@ pub(crate) fn reauth_nonce(nonce: &str) -> String {
 }
 
 pub(crate) fn ciba(auth_req_id: &str) -> String {
-    format!("oauth:ciba:{}", blake3_hex(auth_req_id))
+    ciba_from_hash(&blake3_hex(auth_req_id))
+}
+
+pub(crate) fn ciba_hash(auth_req_id: &str) -> String {
+    blake3_hex(auth_req_id)
+}
+
+pub(crate) fn ciba_from_hash(auth_req_id_hash: &str) -> String {
+    format!("oauth:ciba:{auth_req_id_hash}")
+}
+
+pub(crate) fn ciba_ping_queue() -> String {
+    "oauth:ciba:ping:due".to_owned()
 }
 
 pub(crate) fn device_code(device_code: &str) -> String {

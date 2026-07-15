@@ -140,6 +140,14 @@ pub struct CreateClientRequest {
     pub allow_client_assertion_endpoint_audience: bool,
     #[serde(default)]
     pub require_par_request_object: bool,
+    #[serde(default = "default_ciba_delivery_mode")]
+    pub backchannel_token_delivery_mode: String,
+    #[serde(default)]
+    pub backchannel_client_notification_endpoint: Option<String>,
+    #[serde(default)]
+    pub backchannel_authentication_request_signing_alg: Option<String>,
+    #[serde(default)]
+    pub backchannel_user_code_parameter: bool,
     #[serde(default)]
     pub backchannel_logout_uri: Option<String>,
     #[serde(default = "default_true")]
@@ -201,6 +209,10 @@ pub struct PatchClientRequest {
     pub allow_client_assertion_audience_array: Option<bool>,
     pub allow_client_assertion_endpoint_audience: Option<bool>,
     pub require_par_request_object: Option<bool>,
+    pub backchannel_token_delivery_mode: Option<String>,
+    pub backchannel_client_notification_endpoint: Option<String>,
+    pub backchannel_authentication_request_signing_alg: Option<String>,
+    pub backchannel_user_code_parameter: Option<bool>,
     pub subject_type: Option<String>,
     pub sector_identifier_uri: Option<String>,
     pub backchannel_logout_uri: Option<String>,
@@ -223,6 +235,10 @@ pub struct PatchClientRequest {
     pub authorization_encrypted_response_alg: Option<String>,
     pub authorization_encrypted_response_enc: Option<String>,
     pub is_active: Option<bool>,
+}
+
+fn default_ciba_delivery_mode() -> String {
+    "poll".to_owned()
 }
 
 #[derive(Clone)]
@@ -476,6 +492,14 @@ where
             allow_client_assertion_endpoint_audience: request
                 .allow_client_assertion_endpoint_audience,
             require_par_request_object: request.require_par_request_object,
+            backchannel_token_delivery_mode: request.backchannel_token_delivery_mode,
+            backchannel_client_notification_endpoint: trim_optional_string(
+                request.backchannel_client_notification_endpoint,
+            ),
+            backchannel_authentication_request_signing_alg: trim_optional_string(
+                request.backchannel_authentication_request_signing_alg,
+            ),
+            backchannel_user_code_parameter: request.backchannel_user_code_parameter,
             backchannel_logout_uri: trim_optional_string(request.backchannel_logout_uri),
             backchannel_logout_session_required: request.backchannel_logout_session_required,
             frontchannel_logout_uri: trim_optional_string(request.frontchannel_logout_uri),
@@ -563,6 +587,18 @@ where
     }
     if let Some(value) = request.require_par_request_object {
         client.require_par_request_object = value;
+    }
+    if let Some(value) = request.backchannel_token_delivery_mode {
+        client.backchannel_token_delivery_mode = value;
+    }
+    if let Some(value) = request.backchannel_client_notification_endpoint {
+        client.backchannel_client_notification_endpoint = trim_optional_string(Some(value));
+    }
+    if let Some(value) = request.backchannel_authentication_request_signing_alg {
+        client.backchannel_authentication_request_signing_alg = trim_optional_string(Some(value));
+    }
+    if let Some(value) = request.backchannel_user_code_parameter {
+        client.backchannel_user_code_parameter = value;
     }
     if let Some(value) = request.backchannel_logout_uri {
         client.backchannel_logout_uri = trim_optional_string(Some(value));

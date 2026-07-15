@@ -39,9 +39,9 @@ use crate::domain::DynamicRegistrationHandles;
 use crate::domain::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(not(test))]
 use crate::domain::{
-    BackchannelLogoutWorker, ServerTokenManagementOperations, ServerTokenManagementRequestGuard,
-    ServerUserinfoOperations, dynamic_registration_endpoint,
-    spawn_backchannel_logout_delivery_worker,
+    BackchannelLogoutWorker, CibaPingDeliveryWorker, ServerTokenManagementOperations,
+    ServerTokenManagementRequestGuard, ServerUserinfoOperations, dynamic_registration_endpoint,
+    spawn_backchannel_logout_delivery_worker, spawn_ciba_ping_delivery_worker,
 };
 use crate::domain::{
     DynamicRegistrationConfig, MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS,
@@ -264,6 +264,13 @@ pub async fn run() -> anyhow::Result<()> {
     let ciba_service = web::Data::new(ServerCibaService::new(nazo_valkey::CibaStore::new(
         &valkey_connection,
     )));
+    #[cfg(not(test))]
+    if settings.modules.enable_ciba {
+        spawn_ciba_ping_delivery_worker(CibaPingDeliveryWorker::new(
+            nazo_valkey::CibaStore::new(&valkey_connection),
+            &settings.ciba.ciba_notification_private_origins,
+        )?);
+    }
     let ciba_users = web::Data::new(nazo_postgres::UserRepository::new(diesel_db.clone()));
     let ciba_config = web::Data::new(CibaHttpConfig::from(settings.as_ref()));
     let token_issuance_config = web::Data::new(TokenIssuanceConfig::from(settings.as_ref()));

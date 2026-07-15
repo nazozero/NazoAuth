@@ -63,6 +63,10 @@ struct OAuthClientRecord {
     post_logout_redirect_uris: Value,
     backchannel_logout_uri: Option<String>,
     backchannel_logout_session_required: bool,
+    backchannel_token_delivery_mode: String,
+    backchannel_client_notification_endpoint: Option<String>,
+    backchannel_authentication_request_signing_alg: Option<String>,
+    backchannel_user_code_parameter: bool,
     frontchannel_logout_uri: Option<String>,
     frontchannel_logout_session_required: bool,
     subject_type: String,
@@ -200,6 +204,14 @@ impl OAuthClientRepository {
                 oauth_clients::backchannel_logout_uri.eq(&client.backchannel_logout_uri),
                 oauth_clients::backchannel_logout_session_required
                     .eq(client.backchannel_logout_session_required),
+                oauth_clients::backchannel_token_delivery_mode
+                    .eq(&client.backchannel_token_delivery_mode),
+                oauth_clients::backchannel_client_notification_endpoint
+                    .eq(&client.backchannel_client_notification_endpoint),
+                oauth_clients::backchannel_authentication_request_signing_alg
+                    .eq(&client.backchannel_authentication_request_signing_alg),
+                oauth_clients::backchannel_user_code_parameter
+                    .eq(client.backchannel_user_code_parameter),
                 oauth_clients::frontchannel_logout_uri.eq(&client.frontchannel_logout_uri),
                 oauth_clients::frontchannel_logout_session_required
                     .eq(client.frontchannel_logout_session_required),
@@ -295,6 +307,14 @@ impl OAuthClientRepository {
             oauth_clients::backchannel_logout_uri.eq(&client.backchannel_logout_uri),
             oauth_clients::backchannel_logout_session_required
                 .eq(client.backchannel_logout_session_required),
+            oauth_clients::backchannel_token_delivery_mode
+                .eq(&client.backchannel_token_delivery_mode),
+            oauth_clients::backchannel_client_notification_endpoint
+                .eq(&client.backchannel_client_notification_endpoint),
+            oauth_clients::backchannel_authentication_request_signing_alg
+                .eq(&client.backchannel_authentication_request_signing_alg),
+            oauth_clients::backchannel_user_code_parameter
+                .eq(client.backchannel_user_code_parameter),
             oauth_clients::frontchannel_logout_uri.eq(&client.frontchannel_logout_uri),
             oauth_clients::frontchannel_logout_session_required
                 .eq(client.frontchannel_logout_session_required),
@@ -361,7 +381,7 @@ impl OAuthClientRepository {
         registration_access_token_blake3: Option<&str>,
     ) -> Result<OAuthClient, RepositoryError> {
         let mut connection = self.connection().await?;
-        let metadata = serde_json::json!({
+        let mut metadata = serde_json::json!({
             "client_name": client.client_name,
             "client_type": client.client_type,
             "redirect_uris": client.redirect_uris,
@@ -404,6 +424,25 @@ impl OAuthClientRepository {
             "authorization_encrypted_response_alg": client.authorization_encrypted_response_alg,
             "authorization_encrypted_response_enc": client.authorization_encrypted_response_enc,
         });
+        let metadata_object = metadata
+            .as_object_mut()
+            .expect("client replacement metadata is always a JSON object");
+        metadata_object.insert(
+            "backchannel_token_delivery_mode".to_owned(),
+            serde_json::json!(client.backchannel_token_delivery_mode),
+        );
+        metadata_object.insert(
+            "backchannel_client_notification_endpoint".to_owned(),
+            serde_json::json!(client.backchannel_client_notification_endpoint),
+        );
+        metadata_object.insert(
+            "backchannel_authentication_request_signing_alg".to_owned(),
+            serde_json::json!(client.backchannel_authentication_request_signing_alg),
+        );
+        metadata_object.insert(
+            "backchannel_user_code_parameter".to_owned(),
+            serde_json::json!(client.backchannel_user_code_parameter),
+        );
         let changed = diesel::sql_query(
             r#"
             UPDATE oauth_clients SET
@@ -426,6 +465,10 @@ impl OAuthClientRepository {
                 require_par_request_object = ($3->>'require_par_request_object')::boolean,
                 backchannel_logout_uri = $3->>'backchannel_logout_uri',
                 backchannel_logout_session_required = ($3->>'backchannel_logout_session_required')::boolean,
+                backchannel_token_delivery_mode = $3->>'backchannel_token_delivery_mode',
+                backchannel_client_notification_endpoint = $3->>'backchannel_client_notification_endpoint',
+                backchannel_authentication_request_signing_alg = $3->>'backchannel_authentication_request_signing_alg',
+                backchannel_user_code_parameter = ($3->>'backchannel_user_code_parameter')::boolean,
                 frontchannel_logout_uri = $3->>'frontchannel_logout_uri',
                 frontchannel_logout_session_required = ($3->>'frontchannel_logout_session_required')::boolean,
                 tls_client_auth_subject_dn = $3->>'tls_client_auth_subject_dn',
@@ -706,12 +749,14 @@ pub(crate) async fn upsert_client_on_connection(
             tls_client_auth_subject_dn, tls_client_auth_cert_sha256,
             allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience, require_par_request_object,
+            backchannel_token_delivery_mode, backchannel_client_notification_endpoint,
+            backchannel_authentication_request_signing_alg, backchannel_user_code_parameter,
             frontchannel_logout_uri,
             frontchannel_logout_session_required, jwks,
             authorization_signed_response_alg, is_active
         ) VALUES (
             $1, $2, $3, $4, $5, 'confidential', $6, $7, $8, $9, $10, $11, $12,
-            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, TRUE
+            $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, TRUE
         )
         ON CONFLICT (tenant_id, client_id) DO UPDATE SET
             client_name = EXCLUDED.client_name,
@@ -730,6 +775,10 @@ pub(crate) async fn upsert_client_on_connection(
             allow_client_assertion_audience_array = EXCLUDED.allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience = EXCLUDED.allow_client_assertion_endpoint_audience,
             require_par_request_object = EXCLUDED.require_par_request_object,
+            backchannel_token_delivery_mode = EXCLUDED.backchannel_token_delivery_mode,
+            backchannel_client_notification_endpoint = EXCLUDED.backchannel_client_notification_endpoint,
+            backchannel_authentication_request_signing_alg = EXCLUDED.backchannel_authentication_request_signing_alg,
+            backchannel_user_code_parameter = EXCLUDED.backchannel_user_code_parameter,
             frontchannel_logout_uri = EXCLUDED.frontchannel_logout_uri,
             frontchannel_logout_session_required = EXCLUDED.frontchannel_logout_session_required,
             jwks = EXCLUDED.jwks,
@@ -761,6 +810,14 @@ pub(crate) async fn upsert_client_on_connection(
     .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_audience_array)
     .bind::<diesel::sql_types::Bool, _>(client.allow_client_assertion_endpoint_audience)
     .bind::<diesel::sql_types::Bool, _>(client.require_par_request_object)
+    .bind::<diesel::sql_types::VarChar, _>(&client.backchannel_token_delivery_mode)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Text>, _>(
+        &client.backchannel_client_notification_endpoint,
+    )
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
+        &client.backchannel_authentication_request_signing_alg,
+    )
+    .bind::<diesel::sql_types::Bool, _>(client.backchannel_user_code_parameter)
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
         &client.frontchannel_logout_uri,
     )
@@ -1041,6 +1098,12 @@ impl OAuthClientRecord {
                 require_par_request_object: self.require_par_request_object,
                 backchannel_logout_uri: self.backchannel_logout_uri,
                 backchannel_logout_session_required: self.backchannel_logout_session_required,
+                backchannel_token_delivery_mode: self.backchannel_token_delivery_mode,
+                backchannel_client_notification_endpoint: self
+                    .backchannel_client_notification_endpoint,
+                backchannel_authentication_request_signing_alg: self
+                    .backchannel_authentication_request_signing_alg,
+                backchannel_user_code_parameter: self.backchannel_user_code_parameter,
                 frontchannel_logout_uri: self.frontchannel_logout_uri,
                 frontchannel_logout_session_required: self.frontchannel_logout_session_required,
                 tls_client_auth_subject_dn: self.tls_client_auth_subject_dn,

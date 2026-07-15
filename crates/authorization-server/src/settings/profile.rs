@@ -14,7 +14,7 @@ pub(crate) enum AuthorizationServerProfile {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum CibaSecurityProfile {
-    FapiCibaId1PlainPrivateKeyJwtPoll,
+    FapiCibaId1,
     Fapi2Ciba,
 }
 
@@ -78,17 +78,15 @@ impl AuthorizationServerProfile {
 impl CibaSecurityProfile {
     pub(super) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
         match config
-            .string(
-                "CIBA_SECURITY_PROFILE",
-                "fapi-ciba-id1-plain-private-key-jwt-poll",
-            )
+            .string("CIBA_SECURITY_PROFILE", "fapi-ciba-id1")
             .trim()
             .to_ascii_lowercase()
             .as_str()
         {
-            "fapi-ciba-id1-plain-private-key-jwt-poll" | "fapi-ciba" | "oidf-fapi-ciba" => {
-                Ok(Self::FapiCibaId1PlainPrivateKeyJwtPoll)
-            }
+            "fapi-ciba-id1"
+            | "fapi-ciba-id1-plain-private-key-jwt-poll"
+            | "fapi-ciba"
+            | "oidf-fapi-ciba" => Ok(Self::FapiCibaId1),
             "fapi2-ciba" | "experimental-fapi2-ciba" => Ok(Self::Fapi2Ciba),
             value => bail!("CIBA_SECURITY_PROFILE is not supported: {value}"),
         }
@@ -96,6 +94,10 @@ impl CibaSecurityProfile {
 
     pub(crate) fn requires_fapi2_hardening(self) -> bool {
         self == Self::Fapi2Ciba
+    }
+
+    pub(crate) const fn requires_fapi_ciba(self) -> bool {
+        matches!(self, Self::FapiCibaId1 | Self::Fapi2Ciba)
     }
 }
 

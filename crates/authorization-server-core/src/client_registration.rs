@@ -31,6 +31,15 @@ pub struct ValidatedClientRegistration {
     pub allow_client_assertion_audience_array: bool,
     pub allow_client_assertion_endpoint_audience: bool,
     pub require_par_request_object: bool,
+    /// CIBA token delivery mode registered for this client. Only `poll` and
+    /// `ping` are supported; FAPI-CIBA deliberately excludes `push`.
+    pub backchannel_token_delivery_mode: String,
+    /// HTTPS callback used only by CIBA ping-mode clients.
+    pub backchannel_client_notification_endpoint: Option<String>,
+    /// Signing algorithm registered for CIBA Authentication Request objects.
+    pub backchannel_authentication_request_signing_alg: Option<String>,
+    /// NazoAuth does not support the optional CIBA user-code parameter.
+    pub backchannel_user_code_parameter: bool,
     pub backchannel_logout_uri: Option<String>,
     pub backchannel_logout_session_required: bool,
     pub frontchannel_logout_uri: Option<String>,

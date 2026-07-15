@@ -9,6 +9,18 @@ def workflow_heredoc_json(workflow: str, name: str):
     return json.loads(payload)
 
 class OidfWorkflowTests(unittest.TestCase):
+    def test_public_seed_workflow_derives_the_complete_ciba_matrix(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (
+            root / ".github" / "workflows" / "oidf-public-seed-configs.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("--derive-fapi-ciba-matrix-configs", workflow)
+        self.assertIn(
+            "--ciba-notification-base-url https://www.certification.openid.net",
+            workflow,
+        )
+
     def test_public_seed_artifacts_include_a_validated_mtls_ca_bundle(self):
         root = Path(__file__).resolve().parents[2]
         validation = (
@@ -116,10 +128,14 @@ class OidfWorkflowTests(unittest.TestCase):
             "oidf-session-management-plan-set.json",
         )
 
-        self.assertEqual(len(full_plan_set), 22)
-        self.assertEqual(len(concurrent_plan_set), 20)
+        self.assertEqual(len(full_plan_set), 25)
+        self.assertEqual(len(concurrent_plan_set), 23)
         self.assertEqual(len(serial_plan_set), 2)
-        self.assertEqual(len(set(full_plan_set)), 22)
+        self.assertEqual(len(set(full_plan_set)), 25)
+        self.assertEqual(
+            sum("fapi-ciba-id1-test-plan" in plan for plan in concurrent_plan_set),
+            4,
+        )
         self.assertFalse(set(concurrent_plan_set) & set(serial_plan_set))
         self.assertTrue(any("oidcc-basic-certification-test-plan" in plan for plan in concurrent_plan_set))
         self.assertFalse(
@@ -167,6 +183,26 @@ class OidfWorkflowTests(unittest.TestCase):
                 "oidf-oidcc-formpost-plan-config.json",
             },
         )
+        self.assertIn(
+            "--expected-failures-file tests/contracts/oidf-official-expected-warnings.json",
+            workflow,
+        )
+
+        expected_warnings = json.loads(
+            (root / "tests" / "contracts" / "oidf-official-expected-warnings.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(len(expected_warnings), 26)
+        self.assertEqual(
+            {item["configuration-filename"] for item in expected_warnings},
+            {
+                "oidf-fapi-ciba-plain-private-key-jwt-ping-plan-config.json",
+                "oidf-fapi-ciba-plain-mtls-ping-plan-config.json",
+            },
+        )
+        self.assertEqual({item["condition"] for item in expected_warnings}, {"EnsureIncomingTls13"})
+        self.assertEqual({item["expected-result"] for item in expected_warnings}, {"warning"})
 
         self.assertIn('"$GITHUB_WORKSPACE/oidf-results/$export_subdir"', workflow)
 

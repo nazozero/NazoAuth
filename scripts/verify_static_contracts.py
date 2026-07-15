@@ -364,6 +364,128 @@ def check_removed_security_capabilities() -> None:
         raise SystemExit(f"security non-implementation policy lacks evidence: {missing}")
 
 
+def check_fapi_ciba_boundaries() -> None:
+    delivery = (
+        ROOT / "crates" / "authorization-server" / "src" / "domain" / "ciba_ping_delivery.rs"
+    ).read_text(encoding="utf-8")
+    forbidden_test_markers = ("#[cfg(test)]", "mod tests", "#[test]")
+    if any(marker in delivery for marker in forbidden_test_markers):
+        raise SystemExit("CIBA ping delivery tests must remain outside production source")
+    required_delivery_guards = (
+        "apply_ciba_ping_tls_policy(reqwest::Client::builder())",
+        "reqwest::redirect::Policy::none()",
+        ".resolve_to_addrs(host, &addresses)",
+        ".bearer_auth(&delivery.client_notification_token)",
+        "is_blocked_ip(address.ip())",
+        "classify_ciba_ping_status(response.status().as_u16())",
+    )
+    missing = [guard for guard in required_delivery_guards if guard not in delivery]
+    if missing:
+        raise SystemExit(f"CIBA ping delivery security guards are missing: {missing}")
+
+    tls_policy = (
+        ROOT / "crates" / "authorization-server" / "src" / "domain" / "ciba_ping_tls.rs"
+    ).read_text(encoding="utf-8")
+    if any(marker in tls_policy for marker in forbidden_test_markers):
+        raise SystemExit("CIBA ping TLS policy tests must remain outside production source")
+    if "tls_version_min(reqwest::tls::Version::TLS_1_2)" not in tls_policy:
+        raise SystemExit("CIBA ping delivery must reject TLS versions below 1.2")
+    if "tls_version_max(reqwest::tls::Version::TLS_1_3)" not in tls_policy:
+        raise SystemExit("CIBA ping delivery must offer TLS 1.3")
+    if ".use_rustls_tls()" not in tls_policy:
+        raise SystemExit("CIBA ping delivery must use the Rustls TLS backend")
+    if 'std::env::var_os("SSL_CERT_FILE")' not in tls_policy:
+        raise SystemExit("CIBA ping delivery must explicitly load its configured trust bundle")
+    tls_policy_test = (
+        ROOT
+        / "crates"
+        / "authorization-server"
+        / "tests"
+        / "in_source"
+        / "src"
+        / "domain"
+        / "tests"
+        / "ciba_ping_delivery.rs"
+    )
+    if not tls_policy_test.is_file():
+        raise SystemExit("CIBA ping TLS policy tests must remain outside production source")
+    tls_policy_test_source = tls_policy_test.read_text(encoding="utf-8")
+
+    delivery_policy = (
+        ROOT / "crates" / "authorization-server-core" / "src" / "ciba_ping.rs"
+    ).read_text(encoding="utf-8")
+    for required_test in (
+        "ciba_ping_transport_rejects_tls11",
+        "ciba_ping_transport_supports_the_tls12_fapi_baseline",
+        "ciba_ping_transport_supports_tls13",
+    ):
+        if required_test not in tls_policy_test_source:
+            raise SystemExit(f"missing CIBA ping TLS policy test: {required_test}")
+    if any(marker in delivery_policy for marker in forbidden_test_markers):
+        raise SystemExit("CIBA ping policy tests must remain outside production source")
+    for guard in (
+        'parsed.scheme() != "https"',
+        "200..=299 => CibaPingResponseAction::Delivered",
+        "300..=499 => CibaPingResponseAction::TerminalFailure",
+        "_ => CibaPingResponseAction::Retry",
+        "3 => 9",
+        "next < expires_at",
+    ):
+        if guard not in delivery_policy:
+            raise SystemExit(f"CIBA ping delivery policy guard is missing: {guard}")
+    delivery_policy_test = (
+        ROOT
+        / "crates"
+        / "authorization-server-core"
+        / "tests"
+        / "ciba_ping_delivery_policy.rs"
+    )
+    if not delivery_policy_test.is_file():
+        raise SystemExit("CIBA ping delivery policy tests must remain outside production source")
+
+    workflow = (ROOT / ".github" / "workflows" / "oidf-conformance-full.yml").read_text(
+        encoding="utf-8"
+    )
+    expected_variants = (
+        "[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll]",
+        "[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=poll]",
+        "[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=ping]",
+        "[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=ping]",
+    )
+    missing = [variant for variant in expected_variants if variant not in workflow]
+    if missing:
+        raise SystemExit(f"OIDF workflow lacks FAPI-CIBA combinations: {missing}")
+    if "[ciba_mode=push]" in workflow:
+        raise SystemExit("FAPI-CIBA push must not enter the supported matrix")
+    materializer = (ROOT / "scripts" / "materialize_oidf_plan_config.py").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "derive_fapi_ciba_matrix_configs",
+        "--derive-fapi-ciba-matrix-configs",
+        "backchannel_client_notification_endpoint",
+    ):
+        if marker not in materializer:
+            raise SystemExit(f"official FAPI-CIBA config materialization lacks {marker}")
+    for marker in (
+        "--derive-fapi-ciba-matrix-configs",
+        "--ciba-notification-base-url https://www.certification.openid.net",
+    ):
+        if marker not in workflow:
+            raise SystemExit(f"official FAPI-CIBA workflow lacks {marker}")
+
+    migration = (
+        ROOT / "migrations" / "20260715000400_ciba_delivery_modes" / "up.sql"
+    ).read_text(encoding="utf-8")
+    for constraint in (
+        "ck_oauth_clients_ciba_delivery_mode",
+        "ck_oauth_clients_ciba_notification_endpoint",
+        "ck_oauth_clients_ciba_user_code_disabled",
+    ):
+        if constraint not in migration:
+            raise SystemExit(f"CIBA persistence constraint is missing: {constraint}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -384,6 +506,7 @@ def main() -> None:
         check_workspace_package_metadata()
         check_rfc9967_test_boundaries()
         check_removed_security_capabilities()
+        check_fapi_ciba_boundaries()
 
 
 if __name__ == "__main__":

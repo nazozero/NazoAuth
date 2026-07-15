@@ -28,6 +28,7 @@ fn pending_state(now: i64) -> CibaRequestState {
         expires_at: now + 60,
         retention_expires_at: now + 180,
         last_poll_at: None,
+        ping_notification: None,
     }
 }
 

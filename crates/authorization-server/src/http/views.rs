@@ -87,7 +87,14 @@ pub(crate) fn admin_user_json(user: PublicAccount) -> Value {
 }
 
 pub(crate) fn client_json(client: ClientRow) -> Value {
-    json!({
+    let backchannel_token_delivery_mode = client.backchannel_token_delivery_mode.clone();
+    let backchannel_client_notification_endpoint =
+        client.backchannel_client_notification_endpoint.clone();
+    let backchannel_authentication_request_signing_alg = client
+        .backchannel_authentication_request_signing_alg
+        .clone();
+    let backchannel_user_code_parameter = client.backchannel_user_code_parameter;
+    let mut value = json!({
         "client_id": client.client_id,
         "client_name": client.client_name,
         "client_type": client.client_type,
@@ -128,7 +135,27 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "authorization_signed_response_alg": client.authorization_signed_response_alg,
         "authorization_encrypted_response_alg": client.authorization_encrypted_response_alg,
         "authorization_encrypted_response_enc": client.authorization_encrypted_response_enc
-    })
+    });
+    let object = value
+        .as_object_mut()
+        .expect("client JSON construction always produces an object");
+    object.insert(
+        "backchannel_token_delivery_mode".to_owned(),
+        json!(backchannel_token_delivery_mode),
+    );
+    object.insert(
+        "backchannel_client_notification_endpoint".to_owned(),
+        json!(backchannel_client_notification_endpoint),
+    );
+    object.insert(
+        "backchannel_authentication_request_signing_alg".to_owned(),
+        json!(backchannel_authentication_request_signing_alg),
+    );
+    object.insert(
+        "backchannel_user_code_parameter".to_owned(),
+        json!(backchannel_user_code_parameter),
+    );
+    value
 }
 
 pub(crate) fn pagination(q: &HashMap<String, String>) -> (i32, i32, i32) {
