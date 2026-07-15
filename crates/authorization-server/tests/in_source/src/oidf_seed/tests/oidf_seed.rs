@@ -28,6 +28,25 @@ fn callback_uri_never_preserves_trailing_slash_before_oidf_path() {
 }
 
 #[test]
+fn callback_uris_for_aliases_cover_each_profile_without_duplicates() {
+    let suite_urls = vec![
+        "https://suite.example".to_owned(),
+        "https://www.certification.openid.net".to_owned(),
+    ];
+
+    assert_eq!(
+        callback_uris_for_aliases(&suite_urls, &["basic", "basic-formpost", "basic"]),
+        vec![
+            "https://suite.example/test/a/basic-formpost/callback".to_owned(),
+            "https://suite.example/test/a/basic/callback".to_owned(),
+            "https://www.certification.openid.net/test/a/basic-formpost/callback".to_owned(),
+            "https://www.certification.openid.net/test/a/basic/callback".to_owned(),
+        ],
+        "static OIDF clients must register callbacks for every distinct plan alias"
+    );
+}
+
+#[test]
 fn test_endpoint_uri_uses_same_alias_scope_as_callback() {
     assert_eq!(
         test_endpoint_uri("https://suite.example/", "alias-1", "frontchannel_logout"),

@@ -12,6 +12,7 @@ blake3.workspace = true
 chrono = { workspace = true, features = ["serde"] }
 hmac.workspace = true
 lettre.workspace = true
+nazo-scim-events.workspace = true
 passkey-auth.workspace = true
 rand.workspace = true
 serde = { workspace = true, features = ["derive"] }

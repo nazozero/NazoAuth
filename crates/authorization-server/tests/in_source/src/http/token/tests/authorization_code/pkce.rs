@@ -1,13 +1,18 @@
 use super::*;
 
 #[test]
-fn authorization_code_pkce_policy_allows_only_explicit_confidential_compatibility() {
+fn baseline_confidential_oidc_compatibility_does_not_weaken_hardened_clients() {
     let mut client = pkce_policy_client();
-    let payload = code_payload(false);
-    assert!(authorization_code_requires_pkce(&client, &payload));
+    let mut payload = code_payload(false);
+    payload.code_challenge = None;
+    payload.code_challenge_method = None;
+    payload.nonce = Some("per-transaction-nonce".to_owned());
 
-    client.allow_authorization_code_without_pkce = true;
     assert!(!authorization_code_requires_pkce(&client, &payload));
+
+    payload.nonce = None;
+    assert!(!authorization_code_requires_pkce(&client, &payload));
+    payload.nonce = Some("per-transaction-nonce".to_owned());
 
     client.client_type = "public".to_owned();
     assert!(authorization_code_requires_pkce(&client, &payload));
@@ -30,6 +35,13 @@ fn authorization_code_pkce_policy_allows_only_explicit_confidential_compatibilit
 
     holder_bound_payload.dpop_jkt = None;
     holder_bound_payload.mtls_x5t_s256 = Some("thumbprint".to_owned());
+    assert!(authorization_code_requires_pkce(
+        &client,
+        &holder_bound_payload
+    ));
+
+    holder_bound_payload.mtls_x5t_s256 = None;
+    holder_bound_payload.scopes = vec!["accounts".to_owned()];
     assert!(authorization_code_requires_pkce(
         &client,
         &holder_bound_payload

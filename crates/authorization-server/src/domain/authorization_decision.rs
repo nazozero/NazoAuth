@@ -10,7 +10,7 @@ use nazo_auth::{
 };
 use nazo_http_actix::{
     AuthorizationDecisionCommand, AuthorizationDecisionError, AuthorizationDecisionFuture,
-    AuthorizationDecisionOperations, AuthorizationDecisionRedirect,
+    AuthorizationDecisionOperations, AuthorizationDecisionResponse,
 };
 use nazo_identity::{SessionResolution, SessionService};
 use nazo_runtime_modules::ModuleId;
@@ -56,7 +56,7 @@ impl ServerAuthorizationDecisionOperations {
     async fn decide_inner(
         &self,
         command: AuthorizationDecisionCommand,
-    ) -> Result<AuthorizationDecisionRedirect, AuthorizationDecisionError> {
+    ) -> Result<AuthorizationDecisionResponse, AuthorizationDecisionError> {
         let session = match self
             .sessions
             .current(&command.session_id, Utc::now().timestamp())
@@ -148,7 +148,7 @@ impl ServerAuthorizationDecisionOperations {
         code: Option<&str>,
         error: Option<&str>,
         oidc_sid: Option<&str>,
-    ) -> Result<AuthorizationDecisionRedirect, AuthorizationDecisionError> {
+    ) -> Result<AuthorizationDecisionResponse, AuthorizationDecisionError> {
         let modules = self.runtime_modules.snapshot();
         let plan = plan_authorization_response(AuthorizationResponsePolicyInput {
             issuer: &self.config.issuer,
@@ -173,7 +173,7 @@ impl ServerAuthorizationDecisionOperations {
         })
         .map_err(map_response_policy_error)?;
 
-        let location = match plan {
+        let response = match plan {
             AuthorizationResponsePlan::Plain(plain) => {
                 let session_state = if plain.issue_session_state {
                     oidc_sid.and_then(|sid| {
@@ -186,7 +186,28 @@ impl ServerAuthorizationDecisionOperations {
                 } else {
                     None
                 };
-                plain_authorization_response_uri(&plain, session_state.as_deref())
+                AuthorizationDecisionResponse::Redirect {
+                    location: plain_authorization_response_uri(&plain, session_state.as_deref()),
+                }
+            }
+            AuthorizationResponsePlan::FormPost(plain) => {
+                let session_state = if plain.issue_session_state {
+                    oidc_sid.and_then(|sid| {
+                        nazo_auth::issue_oidc_session_state(
+                            &payload.client_id,
+                            &payload.redirect_uri,
+                            sid,
+                        )
+                    })
+                } else {
+                    None
+                };
+                AuthorizationDecisionResponse::FormPost {
+                    action: plain.redirect_uri,
+                    parameters: plain.parameters,
+                    session_state,
+                    csp_nonce: random_urlsafe_token(),
+                }
             }
             AuthorizationResponsePlan::Jarm(jarm) => {
                 let client = self
@@ -233,13 +254,17 @@ impl ServerAuthorizationDecisionOperations {
                     })?,
                     None => signed,
                 };
-                signed_jarm_authorization_response_uri(&SignedJarmAuthorizationResponse {
-                    redirect_uri: jarm.redirect_uri,
-                    response,
-                })
+                AuthorizationDecisionResponse::Redirect {
+                    location: signed_jarm_authorization_response_uri(
+                        &SignedJarmAuthorizationResponse {
+                            redirect_uri: jarm.redirect_uri,
+                            response,
+                        },
+                    ),
+                }
             }
         };
-        Ok(AuthorizationDecisionRedirect { location })
+        Ok(response)
     }
 }
 

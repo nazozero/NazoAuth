@@ -5,16 +5,14 @@ use std::collections::HashMap;
 use actix_web::HttpResponse;
 use chrono::Utc;
 use nazo_auth::{
-    AuthorizationRequestError, RequestObjectJtiPolicy, RequestObjectMode, RequestObjectPolicy,
+    AuthorizationRequestError, RequestObjectJtiPolicy, RequestObjectPolicy,
     RequestObjectVerificationInput, verify_request_object,
 };
 
 use super::AuthorizationRequestContext;
 use crate::{domain::ClientRow, settings::RequestObjectJtiPolicy as ServerRequestObjectJtiPolicy};
 
-pub(crate) use nazo_auth::{
-    request_object_uses_unsigned_algorithm, unverified_signed_request_object_client_id,
-};
+pub(crate) use nazo_auth::unverified_signed_request_object_client_id;
 use nazo_http_actix::{request_object_policy_error, request_object_verification_error};
 
 pub(crate) async fn apply_request_object_with_context(
@@ -28,10 +26,8 @@ pub(crate) async fn apply_request_object_with_context(
     let verified = verify_request_object(RequestObjectVerificationInput {
         request_object,
         client,
-        profile_disallows_unsigned_request_object: context.config.profile.requires_fapi2_security(),
     })
     .map_err(request_object_verification_error)?;
-    let mode = verified.mode;
     let normalized = context
         .service
         .admit_request_object(
@@ -40,18 +36,14 @@ pub(crate) async fn apply_request_object_with_context(
             RequestObjectPolicy {
                 issuer: &context.config.issuer,
                 client_id: &client.client_id,
-                mode,
                 jti_policy: match context.config.request_object_jti_policy {
                     ServerRequestObjectJtiPolicy::Optional => RequestObjectJtiPolicy::Optional,
                     ServerRequestObjectJtiPolicy::RequiredForSignedJar => {
                         RequestObjectJtiPolicy::RequiredForSignedJar
                     }
                 },
-                unsigned_request_object_allowed: unsigned_request_object_allowed(context, client),
                 require_integrity_protected_parameters:
-                    signed_request_object_requires_integrity_protected_parameters(
-                        context, client, mode,
-                    ),
+                    signed_request_object_requires_integrity_protected_parameters(context, client),
                 now: Utc::now().timestamp(),
             },
         )
@@ -66,28 +58,14 @@ pub(crate) async fn apply_request_object_with_context(
     Ok(())
 }
 
-fn unsigned_request_object_allowed(
+fn signed_request_object_requires_integrity_protected_parameters(
     context: &AuthorizationRequestContext<'_>,
     client: &ClientRow,
 ) -> bool {
-    !(client.require_dpop_bound_tokens
+    client.require_dpop_bound_tokens
         || client.require_par_request_object
         || context
             .config
             .profile
-            .requires_signed_authorization_request())
-}
-
-fn signed_request_object_requires_integrity_protected_parameters(
-    context: &AuthorizationRequestContext<'_>,
-    client: &ClientRow,
-    mode: RequestObjectMode,
-) -> bool {
-    mode == RequestObjectMode::SignedJar
-        && (client.require_dpop_bound_tokens
-            || client.require_par_request_object
-            || context
-                .config
-                .profile
-                .requires_signed_authorization_request())
+            .requires_signed_authorization_request()
 }

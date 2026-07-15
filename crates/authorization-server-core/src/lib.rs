@@ -67,11 +67,10 @@ pub use authorization_request::{
     AuthorizationRequestError, ExpandedParAdmissionPolicy, NormalizedRequestObject, ParAdmission,
     ParAdmissionError, PushedAuthorizationRequestConsumeError, REQUEST_OBJECT_CLOCK_SKEW_SECONDS,
     REQUEST_OBJECT_MAX_TTL_SECONDS, RawParAdmissionPolicy, RequestObjectClaims,
-    RequestObjectJtiPolicy, RequestObjectMode, RequestObjectPolicy, RequestObjectReplay,
+    RequestObjectJtiPolicy, RequestObjectPolicy, RequestObjectReplay,
     RequestObjectVerificationError, RequestObjectVerificationInput, VerifiedRequestObject,
-    normalize_request_object, request_object_uses_unsigned_algorithm,
-    unverified_signed_request_object_client_id, validate_expanded_par_admission,
-    validate_raw_par_admission, verify_request_object,
+    normalize_request_object, unverified_signed_request_object_client_id,
+    validate_expanded_par_admission, validate_raw_par_admission, verify_request_object,
 };
 pub use authorization_service::{
     AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
@@ -104,7 +103,9 @@ pub use client_authentication::{
     ClientAuthenticationContext, ClientAuthenticationMethod, ClientAuthenticationPolicyError,
     ClientAuthenticationRequirement, PresentedClientCredentials, client_authentication_requirement,
 };
-pub use client_registration::{ApprovedClient, OAuthClient, ValidatedClientRegistration};
+pub use client_registration::{
+    ApprovedClient, ClientPresentationMetadata, OAuthClient, ValidatedClientRegistration,
+};
 pub use device::{
     ApprovedDeviceAuthorization, DeviceAtomicResult, DeviceAuthorizationApproval,
     DeviceAuthorizationPayload, DeviceAuthorizationRequestError, DeviceAuthorizationRequestPolicy,
@@ -182,9 +183,9 @@ pub use token_endpoint::{
     AdmittedTokenClient, AppliedSenderConstraint, AuthorizationCodeTokenRequest,
     ClientCredentialsTokenRequest, PresentedSenderConstraint, RefreshTokenRequest,
     TokenClientAuthPresentation, TokenClientAuthenticationContext, TokenClientPolicy,
-    TokenEndpointDispatch, TokenEndpointError, TokenEndpointPolicy, TokenEndpointRequestInput,
-    admit_token_client, apply_sender_constraint, sender_constraint_policy,
-    token_client_authentication_context, token_endpoint_dispatch,
+    TokenEndpointDispatch, TokenEndpointError, TokenEndpointRequestInput, admit_token_client,
+    apply_sender_constraint, sender_constraint_policy, token_client_authentication_context,
+    token_endpoint_dispatch,
 };
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,

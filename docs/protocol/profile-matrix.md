@@ -29,9 +29,9 @@ deployment can satisfy.
 | Response types | `code` |
 | Client auth | `none`, `client_secret_basic`, `client_secret_post`, `private_key_jwt`, `tls_client_auth`, `self_signed_tls_client_auth` |
 | Token binding | Bearer, DPoP-bound, mTLS-bound |
-| PKCE | S256 required by default for authorization code requests; explicit no-PKCE legacy compatibility is limited to registered confidential clients and is forbidden for sender-constrained clients |
+| PKCE | S256 required for every authorization code request; no client type or registration field can bypass it |
 | PAR | Supported, not globally required by default |
-| JAR | Supported; unsigned request objects are baseline compatibility only |
+| JAR | Supported only as an asymmetric signed Request Object; `alg=none` is rejected |
 | JARM | Supported as `response_mode=jwt` when negotiated; per-client metadata may select signing and nested JWE protection |
 | RAR | RFC 9396-style `authorization_details` accepted on authorization, PAR, and signed request object inputs only when `ENABLE_AUTHORIZATION_DETAILS=true` |
 | Refresh policy | Rotation by default for refresh-token grants |
@@ -45,7 +45,7 @@ Required negative tests:
 - duplicate OAuth parameters
 - unsafe redirect URI
 - non-S256 PKCE
-- omitted PKCE for clients without an explicit compatibility exception
+- omitted PKCE for every authorization-code client type
 - mixed client authentication methods
 - invalid client assertion audience
 - access token transport ambiguity
@@ -297,6 +297,11 @@ M8 is not an authorization-server runtime profile. Completing its governance
 tasks does not add a profile name, endpoint, grant, authentication method,
 token type, SCIM capability, credential role, or discovery field.
 
+Separately admitted implementations may add their own default-closed module or
+baseline capability after their entry gate is complete; this paragraph does
+not override the implemented RFC 9865, RFC 9967, or bounded HTTP Signatures
+surfaces described below.
+
 The dated [M8 governance review](../conformance/2026-07-11-m8-watchlist-governance.md)
 defines the admission and isolation requirements for FAPI HTTP Signatures,
 RFC 9865/9967, browser-based application guidance, client attestation,
@@ -328,3 +333,9 @@ in the [dated audit](fapi-http-signatures-draft-audit.md). No dedicated OIDF
 plan exists, so local Rust vectors and real-HTTP positive/negative coverage are
 evidence, not certification. A newer draft or Final Specification triggers a
 fresh delta audit before any version claim changes.
+
+RFC 9967 is the third admitted M8 candidate. It is a separate default-closed
+SCIM runtime module, not an OAuth profile. It emits notice-only provisioning
+SETs through a transactional outbox and RFC 8936 polling; it cannot alter OAuth,
+OIDC, FAPI, CIBA, or browser metadata. Asynchronous SCIM requests remain out of
+scope and are advertised as `none`.

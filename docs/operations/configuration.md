@@ -61,6 +61,8 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 | `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1-plain-private-key-jwt-poll` | CIBA-specific policy: `fapi-ciba-id1-plain-private-key-jwt-poll` for OIDF FAPI-CIBA compatibility, or internal `fapi2-ciba` hardening |
 | `ENABLE_FAPI_HTTP_SIGNATURES` | `false` | Experimental resource-only profile for the 2026-06-26 FAPI 2.0 HTTP Signatures working draft; when enabled, `/fapi/resource` requires a registered client JWK and RFC 9421 signature and signs every response |
 | `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | `60` | Request signature age and replay-marker lifetime; accepted range is 1–300 seconds, with at most five seconds of future clock skew |
+| `ENABLE_SCIM_SECURITY_EVENTS` | `false` | Enables default-closed RFC 9967 SET outbox creation, discovery, and RFC 8936 polling; depends on the SCIM runtime module |
+| `SCIM_EVENT_RETENTION_SECONDS` | `604800` | Per-receiver delivery window and outbox retention; accepted range is 3600–2592000 seconds |
 | `RUST_LOG` | `info` | Tracing filter |
 
 ## Derived settings
@@ -140,18 +142,25 @@ The following settings are still supported but should not be part of a quick
 deployment path. They are candidates for the administrator UI:
 
 - OAuth/OIDC feature gates: `ENABLE_REQUEST_OBJECT`,
-  `ENABLE_REQUEST_URI_PARAMETER`, `ENABLE_PAR_REQUEST_OBJECT`,
-  `ENABLE_AUTHORIZATION_DETAILS`, `ENABLE_LEGACY_AUDIENCE_PARAM`,
+  `ENABLE_PAR_REQUEST_OBJECT`, `ENABLE_AUTHORIZATION_DETAILS`,
   `ENABLE_DEVICE_AUTHORIZATION_GRANT`, `ENABLE_DYNAMIC_CLIENT_REGISTRATION`
 - protocol tuning: `DPOP_NONCE_POLICY`, `REQUEST_OBJECT_JTI_POLICY`,
   `CIBA_SECURITY_PROFILE`, `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`,
   `PAR_TTL_SECONDS`,
   `PROTECTED_RESOURCE_IDENTIFIER`, `DEVICE_AUTHORIZATION_TTL_SECONDS`,
   `DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS`,
-  `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`
+  `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`,
+  `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS`
 - token and session lifetimes: `SESSION_TTL_SECONDS`, `AUTH_CODE_TTL_SECONDS`,
   `ACCESS_TOKEN_TTL_SECONDS`, `ID_TOKEN_TTL_SECONDS`,
   `REFRESH_TOKEN_TTL_SECONDS`
+
+`REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS` is a comma-separated list of exact
+HTTPS origins allowed to resolve to private/loopback addresses for remote
+dynamic-client JWKS and Request Objects. Leave it empty in production unless a
+specific private client-document service is required. Public destinations are
+always DNS-resolved and blocked when any result is loopback, link-local,
+private, unspecified, or multicast; redirects are disabled.
 - rate limits: `RATE_LIMIT_WINDOW_SECONDS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`,
@@ -165,7 +174,8 @@ deployment path. They are candidates for the administrator UI:
 - passkeys: `PASSKEY_RP_NAME`, `PASSKEY_REQUIRE_USER_VERIFICATION`,
   `PASSKEY_REQUIRE_USER_HANDLE`, `PASSKEY_STRICT_BASE64`
 - federation: `FEDERATION_PROVIDER_CONFIGS`, `FEDERATION_SAML_GATEWAY_*`
-- SCIM: `SCIM_BEARER_TOKEN`
+- SCIM: `ENABLE_SCIM_SECURITY_EVENTS`,
+  `SCIM_EVENT_RETENTION_SECONDS`
 - external signing: `SIGNING_EXTERNAL_COMMAND`,
   `SIGNING_EXTERNAL_TIMEOUT_MS`,
   `SIGNING_KEY_ROTATION_INTERVAL_SECONDS`,
@@ -174,6 +184,13 @@ deployment path. They are candidates for the administrator UI:
   `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_TIMEOUT`
 - proxy and client IP handling: `TRUSTED_PROXY_CIDRS`,
   `CLIENT_IP_HEADER_MODE`
+
+`EMAIL_SMTP_TLS` accepts only `starttls`, `implicit`, or `none`. The `none`
+mode is rejected unless the issuer is loopback HTTP and no SMTP credentials
+are configured; production deployments must use encrypted mail submission.
+`EMAIL_CODE_DEV_RESPONSE_ENABLED=true` is accepted only by a debug build with
+a loopback HTTP issuer, so a deployable server cannot return verification
+codes in API responses.
 
 Security-sensitive values such as `DATABASE_URL`, `VALKEY_URL`, SMTP
 credentials, federation client secrets, and SAML shared secrets must not be

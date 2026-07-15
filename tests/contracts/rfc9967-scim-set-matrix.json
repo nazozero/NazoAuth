@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "standard": "RFC 9967",
+  "transport": "RFC 8936",
+  "cases": [
+    {"name": "discovery_exact_event_uris", "handler": "discovery", "parameters": {}},
+    {"name": "poll_authorization_boundaries", "handler": "authorization", "parameters": {}},
+    {"name": "create_notice_set_claims", "handler": "create_notice", "parameters": {}},
+    {"name": "receiver_audience_and_ack_isolation", "handler": "receiver_isolation", "parameters": {}},
+    {"name": "ack_is_terminal_for_receiver", "handler": "ack_terminal", "parameters": {}},
+    {"name": "set_error_requires_content_language", "handler": "set_error_language", "parameters": {}},
+    {"name": "patch_notice_and_deactivate_events", "handler": "patch_deactivate", "parameters": {}},
+    {"name": "put_notice_and_activate_events", "handler": "put_activate", "parameters": {}},
+    {"name": "poll_pagination_preserves_order", "handler": "pagination", "parameters": {}},
+    {"name": "long_poll_wakes_on_new_event", "handler": "long_poll", "parameters": {}},
+    {"name": "invalid_poll_shapes_fail_closed", "handler": "invalid_poll", "parameters": {}}
+  ]
+}

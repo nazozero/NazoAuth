@@ -135,7 +135,9 @@ async fn fapi_resource_inner(
     body: &Bytes,
     original: Option<&CapturedRequest>,
 ) -> HttpResponse {
-    let (scheme, access_token) = match resource_access_token(request, body, original.is_some()) {
+    // High-assurance resources require the Authorization header. RFC 6750 form
+    // body transport remains available only to the baseline UserInfo endpoint.
+    let (scheme, access_token) = match resource_access_token(request, body, true) {
         ResourceAccessToken::Present(scheme, token) => (scheme, token),
         ResourceAccessToken::Missing => {
             return oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "缺少访问令牌.");
@@ -984,6 +986,36 @@ mod tests {
                 "client_id": "client-1",
                 "scope": "openid profile",
                 "aud": "resource-1"
+            })
+        );
+    }
+
+    #[actix_web::test]
+    async fn fapi_resource_rejects_form_body_access_tokens_without_signature_module() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let app = test::init_service(
+            App::new()
+                .app_data(endpoint(calls.clone()))
+                .route("/fapi/resource", web::post().to(fapi_resource)),
+        )
+        .await;
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/fapi/resource")
+                .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+                .set_payload("access_token=form-token")
+                .to_request(),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(calls.load(Ordering::Relaxed), 0);
+        assert_eq!(
+            test::read_body_json::<Value, _>(response).await,
+            json!({
+                "error": "invalid_request",
+                "error_description": "Only one access token transport method may be used."
             })
         );
     }

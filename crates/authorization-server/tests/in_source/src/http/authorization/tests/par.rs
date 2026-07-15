@@ -63,7 +63,6 @@ fn client(require_dpop_bound_tokens: bool) -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,
@@ -145,7 +144,11 @@ fn pushed_authorization_request_resources_allow_registered_targets() {
     let mut params = HashMap::new();
     params.insert(
         "resource".to_owned(),
-        json!(["https://api.example/one", "https://api.example/two"]).to_string(),
+        encode_resource_indicators(&[
+            "https://api.example/one".to_owned(),
+            "https://api.example/two".to_owned(),
+        ])
+        .expect("resource set"),
     );
 
     assert!(validate_pushed_authorization_request_resources(&client, &params).is_ok());
@@ -446,7 +449,7 @@ impl LiveParFixture {
                 tls_client_auth_san_ip, tls_client_auth_san_email,
                 allow_client_assertion_audience_array,
                 allow_client_assertion_endpoint_audience, require_par_request_object,
-                allow_authorization_code_without_pkce, is_active,
+                is_active,
                 post_logout_redirect_uris, backchannel_logout_session_required
             )
             VALUES (
@@ -457,7 +460,7 @@ impl LiveParFixture {
                 $6, '[]'::jsonb, '[]'::jsonb,
                 '[]'::jsonb, '[]'::jsonb,
                 false, false, $7,
-                false, $8,
+                $8,
                 '[]'::jsonb, true
             )
             "#,
@@ -1057,7 +1060,44 @@ async fn par_rejects_request_uri_from_request_object_after_client_authentication
 }
 
 #[actix_web::test]
-async fn par_rejects_unsigned_request_object_without_outer_client_id_as_request_object_error() {
+async fn par_rejects_sender_constrained_request_without_pkce_before_persistence() {
+    let Some(fixture) = LiveParFixture::new_with_settings(|settings| {
+        settings.modules.enable_par_request_object = true;
+    })
+    .await
+    else {
+        return;
+    };
+    let client_id = format!("par-pkce-required-{}", Uuid::now_v7().simple());
+    let secret = par_test_secret();
+    fixture
+        .insert_client_secret_post_client_with_options(&client_id, &secret, false, true, true)
+        .await;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    fixture
+        .set_client_jwks(
+            &client_id,
+            json!({"keys": [key.public_jwk("par-request-object-kid")]}),
+        )
+        .await;
+    let request_object = signed_request_object(&client_id, &key, json!({}));
+    let body = Bytes::from(format!(
+        "client_id={}&client_secret={}&request={}",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&secret),
+        urlencoding::encode(&request_object),
+    ));
+
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
+    let (status, value) = par_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+    assert!(value.get("request_uri").is_none());
+}
+
+#[actix_web::test]
+async fn par_does_not_trust_unsigned_request_object_for_missing_outer_client_id() {
     let Some(fixture) = LiveParFixture::new_with_settings(|s| {
         s.modules.enable_par_request_object = true;
     })
@@ -1075,6 +1115,43 @@ async fn par_rejects_unsigned_request_object_without_outer_client_id_as_request_
         "client_secret={}&request={}",
         urlencoding::encode(&secret),
         urlencoding::encode(&request_object)
+    ));
+
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
+    let (status, value) = par_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+    assert!(value.get("request_uri").is_none());
+}
+
+#[actix_web::test]
+async fn par_uses_authenticated_assertion_identity_to_classify_unsigned_request_object() {
+    let Some(fixture) = LiveParFixture::new_with_settings(|settings| {
+        settings.modules.enable_par_request_object = true;
+        settings.protocol.authorization_server_profile =
+            AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest;
+    })
+    .await
+    else {
+        return;
+    };
+    let client_id = format!("par-unsigned-assertion-{}", Uuid::now_v7().simple());
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    fixture
+        .insert_private_key_jwt_client(
+            &client_id,
+            json!({"keys": [key.public_jwk("par-client-assertion-kid")]}),
+            false,
+        )
+        .await;
+    let assertion = private_key_client_assertion(&client_id, "https://issuer.example", &key);
+    let request_object = unsigned_request_object(&client_id);
+    let body = Bytes::from(format!(
+        "client_assertion_type={}&client_assertion={}&request={}",
+        urlencoding::encode(nazo_auth::CLIENT_ASSERTION_TYPE_JWT_BEARER),
+        urlencoding::encode(&assertion),
+        urlencoding::encode(&request_object),
     ));
 
     let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
@@ -1168,9 +1245,10 @@ async fn par_persists_mtls_thumbprint_for_sender_constrained_request_uri() {
         .insert_client_secret_post_client_with_options(&client_id, &secret, false, true, true)
         .await;
     let body = Bytes::from(format!(
-        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid",
+        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid&code_challenge={}&code_challenge_method=S256",
         urlencoding::encode(&client_id),
-        urlencoding::encode(&secret)
+        urlencoding::encode(&secret),
+        "A".repeat(43),
     ));
 
     let response =

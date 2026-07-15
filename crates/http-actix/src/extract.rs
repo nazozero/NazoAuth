@@ -69,11 +69,11 @@ pub fn authorization_access_token(headers: &HeaderMap) -> Option<(AccessTokenAut
 pub fn resource_access_token(
     request: &HttpRequest,
     body: &[u8],
-    http_signatures_enabled: bool,
+    forbid_form_body: bool,
 ) -> ResourceAccessToken {
     let header_token = authorization_access_token(request.headers());
     let body_token = resource_form_body_access_token(request, body);
-    if http_signatures_enabled && !matches!(&body_token, FormBodyAccessToken::Missing) {
+    if forbid_form_body && !matches!(&body_token, FormBodyAccessToken::Missing) {
         return ResourceAccessToken::InvalidRequest;
     }
     match (header_token, body_token) {

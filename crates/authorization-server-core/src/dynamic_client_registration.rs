@@ -2,10 +2,12 @@ use std::{future::Future, pin::Pin};
 
 use serde::Deserialize;
 use serde_json::Value;
-use url::Url;
 use uuid::Uuid;
 
-use crate::{CreateClientRequest, OAuthClient, PreparedClientRegistration, parse_scope};
+use crate::{
+    ClientPresentationMetadata, CreateClientRequest, OAuthClient, PreparedClientRegistration,
+    parse_scope,
+};
 
 pub type DynamicRegistrationFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, DynamicRegistrationDependencyError>> + Send + 'a>>;
@@ -129,7 +131,15 @@ pub struct DynamicClientRegistrationRequest {
     #[serde(default)]
     pub authorization_encrypted_response_enc: Option<String>,
     #[serde(default)]
-    pub request_uris: Vec<String>,
+    pub request_uris: Option<Vec<String>>,
+    #[serde(default)]
+    pub initiate_login_uri: Option<String>,
+    #[serde(default)]
+    pub logo_uri: Option<String>,
+    #[serde(default)]
+    pub policy_uri: Option<String>,
+    #[serde(default)]
+    pub tos_uri: Option<String>,
     #[serde(default)]
     pub software_statement: Option<String>,
 }
@@ -163,7 +173,11 @@ pub struct PreparedDynamicClientRegistration {
     pub tls_client_auth_san_uri: Vec<String>,
     pub tls_client_auth_san_ip: Vec<String>,
     pub tls_client_auth_san_email: Vec<String>,
+    pub jwks_uri: Option<String>,
     pub jwks: Option<Value>,
+    pub request_uris: Vec<String>,
+    pub initiate_login_uri: Option<String>,
+    pub presentation: ClientPresentationMetadata,
     pub userinfo_signed_response_alg: Option<String>,
     pub userinfo_encrypted_response_alg: Option<String>,
     pub userinfo_encrypted_response_enc: Option<String>,
@@ -208,12 +222,29 @@ pub fn prepare_dynamic_client_registration(
             "jwks_uri and jwks must not both be present.",
         ));
     }
-    if request.jwks_uri.is_some() {
-        return Err(DynamicRegistrationError::invalid_client_metadata(
-            "jwks_uri is not supported; register jwks by value.",
-        ));
-    }
-    validate_request_uris(&request.request_uris)?;
+    let jwks_uri = request
+        .jwks_uri
+        .map(|uri| validate_https_metadata_uri("jwks_uri", uri, false))
+        .transpose()?;
+    let request_uris = validate_request_uris(request.request_uris.unwrap_or_default())?;
+    let initiate_login_uri = request
+        .initiate_login_uri
+        .map(|uri| validate_https_metadata_uri("initiate_login_uri", uri, false))
+        .transpose()?;
+    let presentation = ClientPresentationMetadata {
+        logo_uri: request
+            .logo_uri
+            .map(|uri| validate_https_metadata_uri("logo_uri", uri, false))
+            .transpose()?,
+        policy_uri: request
+            .policy_uri
+            .map(|uri| validate_https_metadata_uri("policy_uri", uri, false))
+            .transpose()?,
+        tos_uri: request
+            .tos_uri
+            .map(|uri| validate_https_metadata_uri("tos_uri", uri, false))
+            .transpose()?,
+    };
     if request
         .application_type
         .as_deref()
@@ -290,7 +321,11 @@ pub fn prepare_dynamic_client_registration(
         tls_client_auth_san_uri: request.tls_client_auth_san_uri,
         tls_client_auth_san_ip: request.tls_client_auth_san_ip,
         tls_client_auth_san_email: request.tls_client_auth_san_email,
+        jwks_uri,
         jwks: request.jwks,
+        request_uris,
+        initiate_login_uri,
+        presentation,
         userinfo_signed_response_alg: request.userinfo_signed_response_alg,
         userinfo_encrypted_response_alg: request.userinfo_encrypted_response_alg,
         userinfo_encrypted_response_enc: request.userinfo_encrypted_response_enc,
@@ -376,8 +411,6 @@ pub fn response_types_from_client(client: &OAuthClient) -> Vec<String> {
 impl PreparedDynamicClientRegistration {
     #[must_use]
     pub fn into_create_client_request(self) -> CreateClientRequest {
-        let allow_authorization_code_without_pkce =
-            self.client_type == "confidential" && !self.require_dpop_bound_tokens;
         // OIDC Core section 9 defines the token endpoint URL as the audience for
         // private_key_jwt client assertions. FAPI clients are provisioned through the
         // profile-aware admin/seed paths, which keep this compatibility policy disabled.
@@ -398,7 +431,6 @@ impl PreparedDynamicClientRegistration {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce,
             backchannel_logout_uri: self.backchannel_logout_uri,
             backchannel_logout_session_required: self.backchannel_logout_session_required,
             frontchannel_logout_uri: self.frontchannel_logout_uri,
@@ -409,7 +441,11 @@ impl PreparedDynamicClientRegistration {
             tls_client_auth_san_uri: self.tls_client_auth_san_uri,
             tls_client_auth_san_ip: self.tls_client_auth_san_ip,
             tls_client_auth_san_email: self.tls_client_auth_san_email,
+            jwks_uri: self.jwks_uri,
             jwks: self.jwks,
+            request_uris: self.request_uris,
+            initiate_login_uri: self.initiate_login_uri,
+            presentation: self.presentation,
             introspection_encrypted_response_alg: None,
             introspection_encrypted_response_enc: None,
             userinfo_signed_response_alg: self.userinfo_signed_response_alg,
@@ -421,6 +457,61 @@ impl PreparedDynamicClientRegistration {
             allow_jwks_without_kid: true,
         }
     }
+}
+
+fn validate_https_metadata_uri(
+    field: &str,
+    value: String,
+    allow_fragment: bool,
+) -> Result<String, DynamicRegistrationError> {
+    const MAX_URI_LENGTH: usize = 2048;
+    if value.len() > MAX_URI_LENGTH {
+        return Err(DynamicRegistrationError::invalid_client_metadata(format!(
+            "{field} exceeds {MAX_URI_LENGTH} bytes."
+        )));
+    }
+    let parsed = url::Url::parse(&value).map_err(|_| {
+        DynamicRegistrationError::invalid_client_metadata(format!(
+            "{field} must be an absolute HTTPS URI."
+        ))
+    })?;
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || (!allow_fragment && parsed.fragment().is_some())
+    {
+        return Err(DynamicRegistrationError::invalid_client_metadata(format!(
+            "{field} must be an absolute HTTPS URI without userinfo{}.",
+            if allow_fragment { "" } else { " or fragment" }
+        )));
+    }
+    Ok(value)
+}
+
+fn validate_request_uris(values: Vec<String>) -> Result<Vec<String>, DynamicRegistrationError> {
+    const MAX_REQUEST_URIS: usize = 10;
+    const MAX_REQUEST_URI_LENGTH: usize = 512;
+    if values.len() > MAX_REQUEST_URIS {
+        return Err(DynamicRegistrationError::invalid_client_metadata(format!(
+            "request_uris must contain at most {MAX_REQUEST_URIS} entries."
+        )));
+    }
+    let mut unique = std::collections::BTreeSet::new();
+    for value in &values {
+        if value.len() > MAX_REQUEST_URI_LENGTH {
+            return Err(DynamicRegistrationError::invalid_client_metadata(format!(
+                "request_uris entries must not exceed {MAX_REQUEST_URI_LENGTH} bytes."
+            )));
+        }
+        validate_https_metadata_uri("request_uris entry", value.clone(), true)?;
+        if !unique.insert(value) {
+            return Err(DynamicRegistrationError::invalid_client_metadata(
+                "request_uris must not contain duplicates.",
+            ));
+        }
+    }
+    Ok(values)
 }
 
 fn validate_response_type_relationship(
@@ -471,22 +562,6 @@ fn default_dynamic_client_grant_types() -> Vec<String> {
         .collect()
 }
 
-fn validate_request_uris(request_uris: &[String]) -> Result<(), DynamicRegistrationError> {
-    for request_uri in request_uris {
-        let parsed = Url::parse(request_uri).map_err(|_| {
-            DynamicRegistrationError::invalid_client_metadata(
-                "request_uris values must be absolute HTTPS URLs.",
-            )
-        })?;
-        if parsed.scheme() != "https" || parsed.host_str().is_none() {
-            return Err(DynamicRegistrationError::invalid_client_metadata(
-                "request_uris values must be absolute HTTPS URLs.",
-            ));
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -527,7 +602,7 @@ mod tests {
     }
 
     #[test]
-    fn software_statement_jwks_uri_and_response_type_errors_keep_rfc_codes() {
+    fn software_statement_and_response_type_errors_keep_rfc_codes() {
         for (request, expected) in [
             (
                 DynamicClientRegistrationRequest {
@@ -535,13 +610,6 @@ mod tests {
                     ..Default::default()
                 },
                 "invalid_software_statement",
-            ),
-            (
-                DynamicClientRegistrationRequest {
-                    jwks_uri: Some("https://client.example/jwks".to_owned()),
-                    ..Default::default()
-                },
-                "invalid_client_metadata",
             ),
             (
                 DynamicClientRegistrationRequest {
@@ -561,25 +629,45 @@ mod tests {
     }
 
     #[test]
-    fn request_uri_and_client_name_normalization_are_transport_independent() {
+    fn external_request_uri_registration_is_validated_and_preserved() {
         let prepared = prepare_dynamic_client_registration(
             DynamicClientRegistrationRequest {
-                request_uris: vec!["https://client.example/request.jwt".to_owned()],
+                request_uris: Some(vec!["https://client.example/request.jwt".to_owned()]),
                 client_name: Some("  Example Client  ".to_owned()),
                 ..Default::default()
             },
             POLICY,
         )
-        .expect("valid request URI");
-        assert_eq!(prepared.client_name, "Example Client");
-        let error = prepare_dynamic_client_registration(
+        .expect("registered HTTPS request_uri should be accepted");
+        assert_eq!(
+            prepared.request_uris,
+            vec!["https://client.example/request.jwt"]
+        );
+    }
+
+    #[test]
+    fn third_party_initiated_login_uri_requires_https_and_is_preserved() {
+        let prepared = prepare_dynamic_client_registration(
             DynamicClientRegistrationRequest {
-                request_uris: vec!["http://client.example/request.jwt".to_owned()],
+                initiate_login_uri: Some("https://client.example/login/initiate".to_owned()),
                 ..Default::default()
             },
             POLICY,
         )
-        .expect_err("HTTPS is required");
+        .expect("HTTPS initiate_login_uri should be accepted");
+        assert_eq!(
+            prepared.initiate_login_uri.as_deref(),
+            Some("https://client.example/login/initiate")
+        );
+
+        let error = prepare_dynamic_client_registration(
+            DynamicClientRegistrationRequest {
+                initiate_login_uri: Some("http://client.example/login/initiate".to_owned()),
+                ..Default::default()
+            },
+            POLICY,
+        )
+        .expect_err("non-HTTPS initiate_login_uri must be rejected");
         assert_eq!(error.error, "invalid_client_metadata");
     }
 
@@ -622,29 +710,22 @@ mod tests {
     }
 
     #[test]
-    fn prepared_registration_conversion_keeps_pkce_security_policy() {
-        let public = prepare_dynamic_client_registration(
-            DynamicClientRegistrationRequest {
-                token_endpoint_auth_method: Some("none".to_owned()),
-                redirect_uris: Some(vec!["https://client.example/cb".to_owned()]),
-                ..Default::default()
-            },
-            POLICY,
-        )
-        .expect("public registration")
-        .into_create_client_request();
-        assert!(!public.allow_authorization_code_without_pkce);
-
-        let confidential = prepare_dynamic_client_registration(
-            DynamicClientRegistrationRequest {
-                redirect_uris: Some(vec!["https://client.example/cb".to_owned()]),
-                ..Default::default()
-            },
-            POLICY,
-        )
-        .expect("confidential registration")
-        .into_create_client_request();
-        assert!(confidential.allow_authorization_code_without_pkce);
+    fn public_and_confidential_code_clients_share_one_registration_path() {
+        for (token_endpoint_auth_method, expected_type) in
+            [("none", "public"), ("client_secret_basic", "confidential")]
+        {
+            let prepared = prepare_dynamic_client_registration(
+                DynamicClientRegistrationRequest {
+                    token_endpoint_auth_method: Some(token_endpoint_auth_method.to_owned()),
+                    redirect_uris: Some(vec!["https://client.example/cb".to_owned()]),
+                    ..Default::default()
+                },
+                POLICY,
+            )
+            .expect("registration")
+            .into_create_client_request();
+            assert_eq!(prepared.client_type, expected_type);
+        }
     }
 
     #[test]
@@ -697,7 +778,6 @@ mod tests {
                 allow_client_assertion_audience_array: false,
                 allow_client_assertion_endpoint_audience: false,
                 require_par_request_object: false,
-                allow_authorization_code_without_pkce: true,
                 backchannel_logout_uri: None,
                 backchannel_logout_session_required: false,
                 frontchannel_logout_uri: None,
@@ -708,7 +788,11 @@ mod tests {
                 tls_client_auth_san_uri: Vec::new(),
                 tls_client_auth_san_ip: Vec::new(),
                 tls_client_auth_san_email: Vec::new(),
+                jwks_uri: None,
                 jwks: None,
+                request_uris: Vec::new(),
+                initiate_login_uri: None,
+                presentation: ClientPresentationMetadata::default(),
                 introspection_encrypted_response_alg: None,
                 introspection_encrypted_response_enc: None,
                 userinfo_signed_response_alg: None,

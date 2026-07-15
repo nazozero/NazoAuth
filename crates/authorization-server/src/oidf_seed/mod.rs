@@ -62,6 +62,15 @@ pub fn callback_uris(suite_base_urls: &[String], alias: &str) -> Vec<String> {
     test_endpoint_uris(suite_base_urls, alias, "callback")
 }
 
+pub fn callback_uris_for_aliases(suite_base_urls: &[String], aliases: &[&str]) -> Vec<String> {
+    aliases
+        .iter()
+        .flat_map(|alias| callback_uris(suite_base_urls, alias))
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
 pub fn test_endpoint_uris(suite_base_urls: &[String], alias: &str, endpoint: &str) -> Vec<String> {
     suite_base_urls
         .iter()

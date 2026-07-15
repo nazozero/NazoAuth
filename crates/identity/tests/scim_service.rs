@@ -44,6 +44,7 @@ impl ScimRepositoryPort for RecordingScimRepository {
         _tenant: TenantContext,
         _user_id: UserId,
         _replacement: NormalizedScimUser,
+        _mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, PublicAccount> {
         unsupported()
     }
@@ -53,6 +54,7 @@ impl ScimRepositoryPort for RecordingScimRepository {
         _tenant: TenantContext,
         _user_id: UserId,
         _patch: ScimPatch,
+        _mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, PublicAccount> {
         unsupported()
     }
@@ -61,6 +63,7 @@ impl ScimRepositoryPort for RecordingScimRepository {
         &'a self,
         _tenant: TenantContext,
         _user_id: UserId,
+        _mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, bool> {
         unsupported()
     }
@@ -130,6 +133,7 @@ async fn credential_lookup_and_usage_are_delegated_to_the_audit_port() {
         id: Uuid::from_u128(11),
         tenant_id: Uuid::from_u128(12),
         scopes: vec!["scim:read".to_owned()],
+        event_audience: None,
     };
     let audit = Arc::new(RecordingCredentialAudit {
         credential: Some(credential.clone()),
@@ -201,6 +205,7 @@ impl ScimRepositoryPort for CrudScimRepository {
         _tenant: TenantContext,
         _user_id: UserId,
         _replacement: NormalizedScimUser,
+        _mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, PublicAccount> {
         Box::pin(async move {
             self.operations
@@ -216,6 +221,7 @@ impl ScimRepositoryPort for CrudScimRepository {
         _tenant: TenantContext,
         _user_id: UserId,
         _patch: ScimPatch,
+        _mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, PublicAccount> {
         Box::pin(async move {
             self.operations
@@ -230,6 +236,7 @@ impl ScimRepositoryPort for CrudScimRepository {
         &'a self,
         _tenant: TenantContext,
         _user_id: UserId,
+        _mutation: nazo_scim_events::MutationContext,
     ) -> RepositoryFuture<'a, bool> {
         Box::pin(async move {
             self.operations

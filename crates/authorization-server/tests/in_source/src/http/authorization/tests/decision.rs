@@ -336,7 +336,7 @@ impl DecisionLiveFixture {
                 tls_client_auth_san_dns, tls_client_auth_san_uri, tls_client_auth_san_ip,
                 tls_client_auth_san_email, allow_client_assertion_audience_array,
                 allow_client_assertion_endpoint_audience, require_par_request_object,
-                allow_authorization_code_without_pkce, is_active,
+                is_active,
                 post_logout_redirect_uris, backchannel_logout_session_required
             )
             VALUES (
@@ -348,7 +348,7 @@ impl DecisionLiveFixture {
                 '[]'::jsonb, '[]'::jsonb,
                 false,
                 false, false,
-                true, $5,
+                $5,
                 '[]'::jsonb, true
             )
             "#,

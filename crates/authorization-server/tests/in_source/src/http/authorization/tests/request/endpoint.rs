@@ -22,6 +22,8 @@ use crate::domain::{ConsentPayload, PushedAuthorizationRequest};
 use crate::settings::AuthorizationServerProfile;
 use nazo_postgres::{create_pool, get_conn};
 
+const VALID_CODE_CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+
 fn unavailable_valkey_client() -> fred::prelude::Client {
     let mut builder = ValkeyBuilder::from_config(
         ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
@@ -43,7 +45,6 @@ fn endpoint_state(require_par: bool) -> TestAppState {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
     settings.protocol.require_pushed_authorization_requests = require_par;
-    settings.modules.enable_request_uri_parameter = true;
     settings.modules.enable_request_object = true;
     settings.modules.enable_par_request_object = true;
     settings.modules.enable_authorization_details = true;
@@ -104,7 +105,6 @@ impl LiveAuthorizationFixture {
         let mut settings = Settings::from_config(&config).expect("test settings should load");
         settings.protocol.require_pushed_authorization_requests = false;
         settings.modules.enable_request_object = true;
-        settings.modules.enable_request_uri_parameter = true;
         settings.modules.enable_par_request_object = true;
         settings.modules.enable_authorization_details = true;
 
@@ -129,17 +129,6 @@ impl LiveAuthorizationFixture {
                 settings: Arc::new(settings),
                 keyset: crate::test_support::test_key_manager(),
             }),
-        })
-    }
-
-    fn state_with_request_uri_parameter(&self, enabled: bool) -> Data<TestAppState> {
-        let mut settings = self.state.settings.as_ref().clone();
-        settings.modules.enable_request_uri_parameter = enabled;
-        Data::new(TestAppState {
-            diesel_db: self.state.diesel_db.clone(),
-            valkey: self.state.valkey.clone(),
-            settings: Arc::new(settings),
-            keyset: self.state.keyset.clone(),
         })
     }
 
@@ -196,7 +185,6 @@ impl LiveAuthorizationFixture {
         client_id: &str,
         redirect_uris: Vec<&str>,
         grant_types: Vec<&str>,
-        allow_authorization_code_without_pkce: bool,
         is_active: bool,
     ) {
         let mut conn = get_conn(&self.state.diesel_db)
@@ -221,7 +209,7 @@ impl LiveAuthorizationFixture {
                 tls_client_auth_san_ip, tls_client_auth_san_email,
                 allow_client_assertion_audience_array,
                 allow_client_assertion_endpoint_audience, require_par_request_object,
-                allow_authorization_code_without_pkce, is_active,
+                is_active,
                 post_logout_redirect_uris, backchannel_logout_session_required
             )
             VALUES (
@@ -232,7 +220,7 @@ impl LiveAuthorizationFixture {
                 '[]'::jsonb, '[]'::jsonb,
                 false,
                 false, false,
-                $7, $8,
+                $7,
                 '[]'::jsonb, true
             )
             "#,
@@ -243,7 +231,6 @@ impl LiveAuthorizationFixture {
         .bind::<Text, _>(client_id)
         .bind::<Jsonb, _>(redirect_uris)
         .bind::<Jsonb, _>(grant_types)
-        .bind::<Bool, _>(allow_authorization_code_without_pkce)
         .bind::<Bool, _>(is_active)
         .execute(&mut conn)
         .await
@@ -528,13 +515,8 @@ async fn authorization_request_rejects_disabled_request_object_parameters_before
 }
 
 #[actix_web::test]
-async fn authorization_request_rejects_disabled_request_uri_parameter_before_client_lookup() {
-    let mut state = endpoint_state(false);
-    Arc::get_mut(&mut state.settings)
-        .expect("test state owns its settings")
-        .modules
-        .enable_request_uri_parameter = false;
-    let state = Data::new(state);
+async fn authorization_request_rejects_external_request_uri_before_client_lookup() {
+    let state = Data::new(endpoint_state(false));
     let req = actix_web::test::TestRequest::get()
         .uri("/authorize?request_uri=https%3A%2F%2Fclient.example%2Frequest.jwt")
         .to_http_request();
@@ -548,7 +530,7 @@ async fn authorization_request_rejects_disabled_request_uri_parameter_before_cli
 }
 
 #[actix_web::test]
-async fn authorization_request_allows_par_request_uri_when_request_uri_parameter_is_disabled() {
+async fn authorization_request_allows_server_issued_par_request_uri() {
     let Some(fixture) = LiveAuthorizationFixture::new().await else {
         return;
     };
@@ -558,7 +540,6 @@ async fn authorization_request_allows_par_request_uri_when_request_uri_parameter
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             true,
         )
         .await;
@@ -571,6 +552,8 @@ async fn authorization_request_allows_par_request_uri_when_request_uri_parameter
                 ("client_id", client_id.as_str()),
                 ("redirect_uri", "https://client.example/callback"),
                 ("response_type", "code"),
+                ("code_challenge", VALID_CODE_CHALLENGE),
+                ("code_challenge_method", "S256"),
                 ("scope", "openid"),
                 ("state", "par-disabled-request-uri"),
             ]),
@@ -592,15 +575,25 @@ async fn authorization_request_allows_par_request_uri_when_request_uri_parameter
         ("scope", "openid"),
     ]);
 
-    let response =
-        authorize_request(fixture.state_with_request_uri_parameter(false), req, &mut q).await;
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
     let location = authorization_location(&response);
-
     assert_eq!(
         location.origin().ascii_serialization(),
         "https://app.example"
     );
     assert_eq!(location.path(), "/auth");
+    let login_parameters = location.query_pairs().collect::<HashMap<_, _>>();
+    for attacker_controlled_field in [
+        "client_name",
+        "client_logo_uri",
+        "client_policy_uri",
+        "client_tos_uri",
+    ] {
+        assert!(
+            !login_parameters.contains_key(attacker_controlled_field),
+            "presentation metadata must be loaded authoritatively, not copied into the login URL"
+        );
+    }
     let next = location
         .query_pairs()
         .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))
@@ -621,7 +614,6 @@ async fn authorization_request_redirects_non_par_request_uri_as_unsupported() {
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             true,
         )
         .await;
@@ -821,7 +813,6 @@ async fn authorization_request_redirects_missing_par_uri_after_registered_redire
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
     let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
@@ -857,7 +848,6 @@ async fn authorization_request_redirects_when_outer_request_uri_parameters_do_no
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             true,
         )
         .await;
@@ -906,7 +896,6 @@ async fn fapi_authorization_request_rejects_outer_parameters_beyond_client_id_an
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             true,
         )
         .await;
@@ -961,7 +950,6 @@ async fn authorization_request_redirects_when_par_client_id_does_not_match() {
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
     let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
@@ -1010,7 +998,6 @@ async fn authorization_request_rejects_client_without_authorization_code_grant_b
             vec!["https://client.example/callback"],
             vec!["client_credentials"],
             true,
-            true,
         )
         .await;
     let uri = format!(
@@ -1046,7 +1033,6 @@ async fn authorization_request_rejects_inactive_client_before_session_lookup() {
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             false,
         )
         .await;
@@ -1082,7 +1068,6 @@ async fn authorization_request_rejects_unregistered_redirect_uri_before_session_
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             true,
         )
         .await;
@@ -1124,7 +1109,6 @@ async fn authorization_request_rejects_missing_redirect_uri_when_client_has_mult
             ],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
     let uri = format!(
@@ -1151,7 +1135,6 @@ async fn authorization_request_rejects_invalid_dpop_jkt_before_redirect_response
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             true,
         )
         .await;
@@ -1184,7 +1167,6 @@ async fn authorization_request_rejects_sender_constrained_client_without_par_or_
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             true,
         )
         .await;
@@ -1223,7 +1205,6 @@ async fn authorization_request_rejects_par_dpop_binding_mismatch_without_redirec
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             true,
         )
         .await;
@@ -1274,7 +1255,6 @@ async fn authorization_request_redirects_prompt_max_age_and_claims_parse_errors(
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
 
@@ -1319,7 +1299,6 @@ async fn authorization_request_redirects_core_protocol_validation_errors_after_r
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            false,
             true,
         )
         .await;
@@ -1399,7 +1378,6 @@ async fn authorization_request_redirects_request_object_claim_errors_after_redir
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
     let request_object = unsigned_request_object(json!({
@@ -1443,7 +1421,6 @@ async fn authorization_request_redirects_prompt_none_without_session() {
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
     let uri = format!(
@@ -1457,6 +1434,8 @@ async fn authorization_request_redirects_prompt_none_without_session() {
         ("client_id", client_id.as_str()),
         ("redirect_uri", "https://client.example/callback"),
         ("response_type", "code"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
         ("prompt", "none"),
         ("state", "login-required"),
     ]);
@@ -1478,7 +1457,6 @@ async fn authorization_request_redirects_to_login_with_original_request_uri_afte
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
     let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
@@ -1490,6 +1468,8 @@ async fn authorization_request_redirects_to_login_with_original_request_uri_afte
                 ("client_id", client_id.as_str()),
                 ("redirect_uri", "https://client.example/callback"),
                 ("response_type", "code"),
+                ("code_challenge", VALID_CODE_CHALLENGE),
+                ("code_challenge_method", "S256"),
                 ("scope", "openid"),
                 ("state", "par-login"),
             ]),
@@ -1537,7 +1517,6 @@ async fn authorization_request_fails_closed_when_reauth_nonce_storage_is_unavail
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
 
@@ -1555,6 +1534,8 @@ async fn authorization_request_fails_closed_when_reauth_nonce_storage_is_unavail
         ("client_id", client_id.as_str()),
         ("redirect_uri", "https://client.example/callback"),
         ("response_type", "code"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
         ("prompt", "login"),
         ("state", "reauth-nonce-fail"),
     ]);
@@ -1580,7 +1561,6 @@ async fn authorization_request_reports_session_lookup_failure_after_client_valid
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
 
@@ -1598,6 +1578,8 @@ async fn authorization_request_reports_session_lookup_failure_after_client_valid
         ("client_id", client_id.as_str()),
         ("redirect_uri", "https://client.example/callback"),
         ("response_type", "code"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
     ]);
 
     let response = authorize_request(broken_state, req, &mut q).await;
@@ -1621,7 +1603,6 @@ async fn authorization_request_requires_reauthentication_for_prompt_none_session
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
     let user = fixture.create_user(&suffix, "user", 0).await;
@@ -1638,6 +1619,8 @@ async fn authorization_request_requires_reauthentication_for_prompt_none_session
         ("client_id", client_id.as_str()),
         ("redirect_uri", "https://client.example/callback"),
         ("response_type", "code"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
         ("prompt", "none"),
         ("max_age", "0"),
         ("state", "reauth"),
@@ -1661,7 +1644,6 @@ async fn authorization_request_redirects_invalid_scope_for_authenticated_session
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
     let user = fixture.create_user(&suffix, "user", 0).await;
@@ -1678,6 +1660,8 @@ async fn authorization_request_redirects_invalid_scope_for_authenticated_session
         ("client_id", client_id.as_str()),
         ("redirect_uri", "https://client.example/callback"),
         ("response_type", "code"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
         ("scope", "openid email"),
         ("state", "invalid-scope"),
     ]);
@@ -1699,7 +1683,6 @@ async fn authorization_request_redirects_invalid_authorization_details_for_authe
             &client_id,
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
-            true,
             true,
         )
         .await;
@@ -1739,7 +1722,6 @@ async fn authorization_request_prompt_none_without_prior_grant_returns_consent_r
             vec!["https://client.example/callback"],
             vec!["authorization_code", "refresh_token"],
             true,
-            true,
         )
         .await;
     let user = fixture.create_user(&suffix, "user", 0).await;
@@ -1756,6 +1738,8 @@ async fn authorization_request_prompt_none_without_prior_grant_returns_consent_r
         ("client_id", client_id.as_str()),
         ("redirect_uri", "https://client.example/callback"),
         ("response_type", "code"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
         ("prompt", "none"),
         ("scope", "openid"),
         ("state", "consent-required"),
@@ -1779,7 +1763,6 @@ async fn authorization_request_persists_consent_payload_for_authenticated_intera
             vec!["https://client.example/callback"],
             vec!["authorization_code"],
             true,
-            true,
         )
         .await;
     let user = fixture.create_user(&suffix, "user", 0).await;
@@ -1796,6 +1779,8 @@ async fn authorization_request_persists_consent_payload_for_authenticated_intera
         ("client_id", client_id.as_str()),
         ("redirect_uri", "https://client.example/callback"),
         ("response_type", "code"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
         ("scope", "openid"),
         ("state", "interactive"),
     ]);

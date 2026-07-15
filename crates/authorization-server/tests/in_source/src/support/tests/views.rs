@@ -120,7 +120,7 @@ fn client_json_exposes_protocol_metadata_without_client_secret_hash() {
     assert_eq!(value["allow_client_assertion_audience_array"], true);
     assert_eq!(value["allow_client_assertion_endpoint_audience"], true);
     assert_eq!(value["require_par_request_object"], true);
-    assert_eq!(value["allow_authorization_code_without_pkce"], false);
+    assert!(value.get("allow_authorization_code_without_pkce").is_none());
     assert_eq!(
         value["backchannel_logout_uri"],
         "https://client.example/backchannel"
@@ -212,7 +212,6 @@ fn client_row() -> ClientRow {
         allow_client_assertion_audience_array: true,
         allow_client_assertion_endpoint_audience: true,
         require_par_request_object: true,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: Some(json!({"keys": []})),
         introspection_encrypted_response_alg: None,

@@ -49,16 +49,24 @@ impl AuditRepository {
                     .is_null()
                     .or(scim_tokens::expires_at.gt(diesel::dsl::now)),
             )
-            .select((scim_tokens::id, scim_tokens::tenant_id, scim_tokens::scopes))
-            .first::<(Uuid, Uuid, serde_json::Value)>(&mut connection)
+            .select((
+                scim_tokens::id,
+                scim_tokens::tenant_id,
+                scim_tokens::scopes,
+                scim_tokens::event_audience,
+            ))
+            .first::<(Uuid, Uuid, serde_json::Value, Option<String>)>(&mut connection)
             .await
             .optional()
             .map(|value| {
-                value.map(|(id, tenant_id, scopes)| ScimTokenCredential {
-                    id,
-                    tenant_id,
-                    scopes: json_string_array(&scopes),
-                })
+                value.map(
+                    |(id, tenant_id, scopes, event_audience)| ScimTokenCredential {
+                        id,
+                        tenant_id,
+                        scopes: json_string_array(&scopes),
+                        event_audience,
+                    },
+                )
             })
             .map_err(map_error)
     }
@@ -482,6 +490,7 @@ pub(super) const fn module_id(value: nazo_runtime_modules::ModuleId) -> &'static
         ModuleId::AuthorizationDetails => "authorization_details",
         ModuleId::HttpMessageSignatures => "http_message_signatures",
         ModuleId::Scim => "scim",
+        ModuleId::ScimSecurityEvents => "scim_security_events",
         ModuleId::NativeSso => "native_sso",
         ModuleId::FrontchannelLogout => "frontchannel_logout",
         ModuleId::SessionManagement => "session_management",

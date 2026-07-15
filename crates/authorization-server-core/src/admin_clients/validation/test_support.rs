@@ -57,7 +57,6 @@ pub(super) fn validate_metadata_fixture(metadata: ClientMetadataFixture<'_>) -> 
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         backchannel_logout_uri: metadata.backchannel_logout_uri.map(ToOwned::to_owned),
         backchannel_logout_session_required: true,
         frontchannel_logout_uri: metadata.frontchannel_logout_uri.map(ToOwned::to_owned),
@@ -77,7 +76,11 @@ pub(super) fn validate_metadata_fixture(metadata: ClientMetadataFixture<'_>) -> 
         tls_client_auth_san_email: mtls
             .map(|value| value.tls_client_auth_san_email.clone())
             .unwrap_or_default(),
+        jwks_uri: None,
         jwks: metadata.jwks.cloned(),
+        request_uris: Vec::new(),
+        initiate_login_uri: None,
+        presentation: crate::ClientPresentationMetadata::default(),
         introspection_encrypted_response_alg: metadata
             .introspection_encrypted_response_alg
             .map(ToOwned::to_owned),

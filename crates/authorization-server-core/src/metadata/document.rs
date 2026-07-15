@@ -8,8 +8,6 @@ const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
 const DPOP_SIGNING_ALGS: [&str; 2] = ["EdDSA", "ES256"];
 const FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS: [&str; 3] = ["EdDSA", "ES256", "PS256"];
 const REQUEST_OBJECT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
-const BASELINE_REQUEST_OBJECT_SIGNING_ALGS: [&str; 5] =
-    ["none", "EdDSA", "RS256", "ES256", "PS256"];
 const PROMPT_VALUES_SUPPORTED: [&str; 4] = ["login", "consent", "select_account", "none"];
 const CLAIMS_SUPPORTED: [&str; 24] = [
     "sub",
@@ -133,7 +131,6 @@ pub struct AuthorizationServerMetadataInput<'a> {
     pub pairwise_subject_enabled: bool,
     pub protected_resource_identifier: &'a str,
     pub require_pushed_authorization_requests: bool,
-    pub request_uri_parameter_enabled: bool,
     pub signing_algorithms: MetadataSigningAlgorithms<'a>,
 }
 
@@ -212,8 +209,7 @@ pub fn authorization_server_metadata(
         "backchannel_logout_session_supported": true,
         "require_pushed_authorization_requests": input.require_pushed_authorization_requests,
         "code_challenge_methods_supported": ["S256"],
-        "dpop_signing_alg_values_supported": DPOP_SIGNING_ALGS,
-        "request_object_signing_alg_values_supported": request_object_signing_algs
+        "dpop_signing_alg_values_supported": DPOP_SIGNING_ALGS
     });
 
     if capabilities.authorization_details {
@@ -252,13 +248,16 @@ pub fn authorization_server_metadata(
     }
     if capabilities.request_objects {
         metadata["request_parameter_supported"] = json!(true);
+        metadata["request_object_signing_alg_values_supported"] =
+            json!(request_object_signing_algs);
     }
-    if input.request_uri_parameter_enabled {
-        metadata["request_uri_parameter_supported"] = json!(true);
-        metadata["require_request_uri_registration"] = json!(true);
-    } else {
-        metadata["request_uri_parameter_supported"] = json!(false);
-    }
+    // External request_uri is available only with the dynamically registered,
+    // signed-Request-Object baseline. FAPI continues to require AS-issued PAR handles.
+    metadata["request_uri_parameter_supported"] = json!(
+        capabilities.dynamic_client_registration
+            && capabilities.request_objects
+            && !input.profile.requires_fapi2_security()
+    );
     if input.mtls_enabled {
         let mtls_base = input.mtls_endpoint_base_url;
         metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
@@ -345,14 +344,17 @@ fn request_object_signing_alg_values_supported<'a>(
     if profile.requires_fapi2_security() {
         return REQUEST_OBJECT_SIGNING_ALGS.to_vec();
     }
-    BASELINE_REQUEST_OBJECT_SIGNING_ALGS.to_vec()
+    REQUEST_OBJECT_SIGNING_ALGS.to_vec()
 }
 
 fn response_modes_supported(profile: MetadataAuthorizationServerProfile) -> Vec<&'static str> {
     if profile.requires_signed_authorization_response() {
         return vec!["jwt"];
     }
-    vec!["query", "jwt"]
+    if profile.requires_fapi2_security() {
+        return vec!["query", "jwt"];
+    }
+    vec!["query", "form_post", "jwt"]
 }
 
 fn id_token_signing_alg_values_supported<'a>(active: &'a [&'a str]) -> Vec<&'a str> {

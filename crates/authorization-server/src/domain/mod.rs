@@ -17,9 +17,9 @@ mod oidc_logout;
 mod passkey;
 mod password_login;
 mod profile_account;
+pub(crate) mod remote_client_documents;
 mod resource_server;
 mod rows;
-#[cfg(not(test))]
 mod scim;
 pub(crate) mod sector_identifier;
 mod session_management;
@@ -65,9 +65,9 @@ pub(crate) use resource_server::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
 };
 pub(crate) use rows::{ClientRow, TokenRow};
-#[cfg(not(test))]
 pub(crate) use scim::{
-    ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimRequestAuthorizer,
+    ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimEventSigner,
+    ServerScimRequestAuthorizer,
 };
 pub(crate) use session_management::ServerSessionManagementOperations;
 #[cfg(not(test))]

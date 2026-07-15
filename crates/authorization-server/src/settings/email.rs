@@ -36,7 +36,7 @@ pub(crate) enum SmtpTlsMode {
 }
 
 impl EmailSettings {
-    pub(super) fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+    pub(super) fn from_config(config: &ConfigSource, issuer: &str) -> anyhow::Result<Self> {
         let delivery = match config
             .string("EMAIL_DELIVERY", "disabled")
             .trim()
@@ -44,7 +44,7 @@ impl EmailSettings {
             .as_str()
         {
             "disabled" => EmailDelivery::Disabled,
-            "smtp" => EmailDelivery::Smtp(SmtpEmailSettings::from_config(config)?),
+            "smtp" => EmailDelivery::Smtp(SmtpEmailSettings::from_config(config, issuer)?),
             value => bail!("EMAIL_DELIVERY must be disabled or smtp, got {value}"),
         };
 
@@ -73,7 +73,7 @@ impl EmailSettings {
 }
 
 impl SmtpEmailSettings {
-    fn from_config(config: &ConfigSource) -> anyhow::Result<Self> {
+    fn from_config(config: &ConfigSource, issuer: &str) -> anyhow::Result<Self> {
         let username = config.optional_string("EMAIL_SMTP_USERNAME");
         let password = config.optional_string("EMAIL_SMTP_PASSWORD");
         if username.is_some() != password.is_some() {
@@ -85,10 +85,18 @@ impl SmtpEmailSettings {
             .parse::<Mailbox>()
             .context("EMAIL_FROM must be a valid mailbox")?;
 
+        let host = config.required_string("EMAIL_SMTP_HOST")?;
+        let tls = SmtpTlsMode::from_config(config)?;
+        if matches!(tls, SmtpTlsMode::None)
+            && (!super::is_loopback_http_url(issuer) || username.is_some())
+        {
+            bail!("EMAIL_SMTP_TLS=none is restricted to credential-free loopback development");
+        }
+
         Ok(Self {
-            host: config.required_string("EMAIL_SMTP_HOST")?,
+            host,
             port: config.parse("EMAIL_SMTP_PORT", 587)?,
-            tls: SmtpTlsMode::from_config(config)?,
+            tls,
             username,
             password,
             from,
@@ -105,8 +113,8 @@ impl SmtpTlsMode {
             .as_str()
         {
             "starttls" => Ok(Self::StartTls),
-            "implicit" | "tls" => Ok(Self::ImplicitTls),
-            "none" | "plain" => Ok(Self::None),
+            "implicit" => Ok(Self::ImplicitTls),
+            "none" => Ok(Self::None),
             value => bail!("EMAIL_SMTP_TLS must be starttls, implicit, or none, got {value}"),
         }
     }

@@ -222,12 +222,12 @@ def upsert_client(
             require_dpop_bound_tokens, require_mtls_bound_tokens,
             tls_client_auth_cert_sha256, allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience, require_par_request_object,
-            allow_authorization_code_without_pkce, jwks, is_active
+            jwks, is_active
         )
         VALUES (
             %s::uuid, %s::uuid, %s::uuid, %s, %s, 'confidential',
             %s, %s, '[]'::jsonb, %s, %s, %s, %s,
-            %s, %s, %s, FALSE, FALSE, %s, FALSE, %s, TRUE
+            %s, %s, %s, FALSE, FALSE, %s, %s, TRUE
         )
         ON CONFLICT (tenant_id, client_id) DO UPDATE SET
             client_name = EXCLUDED.client_name,

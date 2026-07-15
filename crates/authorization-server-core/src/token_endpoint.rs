@@ -12,7 +12,6 @@ pub struct TokenEndpointRequestInput {
     pub refresh_token: Option<String>,
     pub scope: Option<String>,
     pub resources: Vec<String>,
-    pub has_legacy_audience_parameter: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -86,24 +85,12 @@ impl TokenEndpointError {
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct TokenEndpointPolicy {
-    pub legacy_audience_parameter_enabled: bool,
-}
-
 /// Parses the transport-neutral token form into one typed dispatch target.
 pub fn token_endpoint_dispatch(
     request: &TokenEndpointRequestInput,
-    policy: TokenEndpointPolicy,
 ) -> Result<TokenEndpointDispatch, TokenEndpointError> {
     let grant_type = GrantType::try_from(request.grant_type.as_str())
         .map_err(|_| TokenEndpointError::UnsupportedGrantType)?;
-    if request.has_legacy_audience_parameter
-        && grant_type != GrantType::TokenExchange
-        && !policy.legacy_audience_parameter_enabled
-    {
-        return Err(TokenEndpointError::InvalidRequest);
-    }
     match grant_type {
         GrantType::AuthorizationCode => {
             let code = required_nonempty(request.code.as_deref())
@@ -311,33 +298,18 @@ mod tests {
         let mut authorization_code = request("authorization_code");
         authorization_code.code = Some("code".to_owned());
         assert!(matches!(
-            token_endpoint_dispatch(
-                &authorization_code,
-                TokenEndpointPolicy {
-                    legacy_audience_parameter_enabled: false
-                }
-            ),
+            token_endpoint_dispatch(&authorization_code),
             Ok(TokenEndpointDispatch::AuthorizationCode(_))
         ));
 
         let mut refresh = request("refresh_token");
         refresh.refresh_token = Some("refresh".to_owned());
         assert!(matches!(
-            token_endpoint_dispatch(
-                &refresh,
-                TokenEndpointPolicy {
-                    legacy_audience_parameter_enabled: false
-                }
-            ),
+            token_endpoint_dispatch(&refresh),
             Ok(TokenEndpointDispatch::RefreshToken(_))
         ));
         assert!(matches!(
-            token_endpoint_dispatch(
-                &request("client_credentials"),
-                TokenEndpointPolicy {
-                    legacy_audience_parameter_enabled: false
-                }
-            ),
+            token_endpoint_dispatch(&request("client_credentials")),
             Ok(TokenEndpointDispatch::ClientCredentials(_))
         ));
     }
@@ -351,47 +323,21 @@ mod tests {
             GrantType::Ciba,
         ] {
             assert_eq!(
-                token_endpoint_dispatch(
-                    &request(grant_type.as_str()),
-                    TokenEndpointPolicy {
-                        legacy_audience_parameter_enabled: false
-                    }
-                ),
+                token_endpoint_dispatch(&request(grant_type.as_str())),
                 Ok(TokenEndpointDispatch::Extension(grant_type))
             );
         }
         assert_eq!(
-            token_endpoint_dispatch(
-                &request("password"),
-                TokenEndpointPolicy {
-                    legacy_audience_parameter_enabled: false
-                }
-            ),
+            token_endpoint_dispatch(&request("password")),
             Err(TokenEndpointError::UnsupportedGrantType)
         );
     }
 
     #[test]
-    fn required_grant_material_and_legacy_audience_policy_fail_closed() {
+    fn required_grant_material_fails_closed() {
         assert_eq!(
-            token_endpoint_dispatch(
-                &request("authorization_code"),
-                TokenEndpointPolicy {
-                    legacy_audience_parameter_enabled: false
-                }
-            ),
+            token_endpoint_dispatch(&request("authorization_code")),
             Err(TokenEndpointError::InvalidGrant)
-        );
-        let mut client_credentials = request("client_credentials");
-        client_credentials.has_legacy_audience_parameter = true;
-        assert_eq!(
-            token_endpoint_dispatch(
-                &client_credentials,
-                TokenEndpointPolicy {
-                    legacy_audience_parameter_enabled: false
-                }
-            ),
-            Err(TokenEndpointError::InvalidRequest)
         );
     }
 

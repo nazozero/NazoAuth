@@ -856,7 +856,7 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
         "domain/rows.rs",
         "http/admin/grants.rs",
         "http/authorization/request/prompt_none.rs",
-        "http/scim/auth.rs",
+        "domain/scim.rs",
         "http/token/issue/authorization_code_state.rs",
         "http/token/issue/refresh_persistence.rs",
         "http/token/native_sso.rs",

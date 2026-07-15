@@ -22,6 +22,7 @@ in the repository.
 - Latest encrypted-response coverage check: [2026-07-11 M7 encrypted response OIDF coverage](2026-07-11-m7-oidf-coverage.md)
 - Latest emerging-protocol governance review: [2026-07-11 M8 watchlist governance](2026-07-11-m8-watchlist-governance.md)
 - Latest M8 official-suite source coverage scan: [2026-07-11 OIDF v5.2.0 coverage](2026-07-11-m8-oidf-v5.2.0-coverage.md)
+- Project-owned RFC 9967 regression scope: [RFC 9967 SCIM SET black-box matrix](rfc9967-scim-set-matrix.md)
 
 The latest recorded official full-matrix suite run is the 2026-07-11 M7
 parallel-isolated run against `https://auth.nazo.run`. It ran from workflow head
@@ -92,19 +93,17 @@ security-boundary tests remain mandatory either way.
 Official suite output is indexed here. The files are not OpenID Foundation
 certification statements.
 
-## Request Object Compatibility
+## Request Object Policy
 
-Baseline OIDC metadata advertises `none` in
-`request_object_signing_alg_values_supported` so the server can exercise OIDC
-conformance tests for unsigned Request Objects. This is a compatibility feature,
-not a high-security profile feature.
+All Request Objects require an asymmetric signature. Baseline and FAPI metadata
+never advertise `none`; the runtime rejects unsigned Request Objects for every
+client profile. This follows RFC 9101 rather than preserving an OIDC test-only
+compatibility path.
 
-Unsigned Request Objects remain disallowed for FAPI2 profiles, clients that
-require PAR request objects, and holder-bound clients. Those paths require
-signed Request Objects or reject the request object fail closed.
-
-OIDC dynamic-registration compatibility currently has two expected official
-suite skips: unsigned ID Tokens are not supported or advertised, and the
-`request_uri` parameter is not enabled (`request_uri_parameter_supported=false`).
-These skips are documented as reasonable for the current security posture, but
+OIDC dynamic-registration compatibility has two logical expected official suite
+skips in each dynamic configuration: unsigned ID Tokens and unsigned Request
+Objects are not supported or advertised. Signed external Request Objects are
+supported only through exact dynamically registered HTTPS `request_uri` values,
+with hardened remote fetching; FAPI profiles remain PAR-only. These skips are
+documented as reasonable for the current security posture, but
 they must not be treated as zero-SKIPPED evidence.

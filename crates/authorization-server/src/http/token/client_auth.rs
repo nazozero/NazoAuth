@@ -63,6 +63,7 @@ impl ClientAuthRequestFacts {
 pub(crate) struct ClientAuthConfig<'a> {
     issuer: &'a str,
     client_secret_pepper: &'a str,
+    remote_jwks: Option<&'a crate::domain::remote_client_documents::RemoteClientDocumentResolver>,
 }
 
 impl<'a> ClientAuthConfig<'a> {
@@ -70,7 +71,16 @@ impl<'a> ClientAuthConfig<'a> {
         Self {
             issuer,
             client_secret_pepper,
+            remote_jwks: None,
         }
+    }
+
+    pub(crate) fn with_remote_jwks(
+        mut self,
+        resolver: &'a crate::domain::remote_client_documents::RemoteClientDocumentResolver,
+    ) -> Self {
+        self.remote_jwks = Some(resolver);
+        self
     }
 }
 
@@ -221,10 +231,27 @@ pub(crate) async fn authenticate_client_with_dependencies(
     match requirement {
         ClientAuthenticationRequirement::PublicClient => Ok(None),
         ClientAuthenticationRequirement::PrivateKeyJwt { assertion } => {
+            let resolved_client;
+            let verification_client = if let (Some(uri), Some(resolver)) =
+                (client.jwks_uri.as_deref(), config.remote_jwks)
+            {
+                let jwks = resolver.jwks(uri).await.map_err(|error| {
+                    tracing::warn!(%error, "dynamic client jwks_uri could not be refreshed");
+                    TokenManagementClientAuthError::InvalidClient
+                })?;
+                resolved_client = {
+                    let mut client = client.clone();
+                    client.jwks = Some(jwks);
+                    client
+                };
+                &resolved_client
+            } else {
+                client
+            };
             verify_private_key_jwt_claims_for_issuer(
                 config.issuer,
                 request.endpoint_path(),
-                client,
+                verification_client,
                 assertion,
             )
             .map(Some)

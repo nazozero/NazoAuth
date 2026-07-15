@@ -234,6 +234,7 @@ if sys.argv[1:] == ["--source-policy-self-test"]:
     raise SystemExit(0)
 
 import jwt
+import blake3
 import psycopg
 import redis
 import requests
@@ -288,7 +289,7 @@ USER_EMAIL = "user-full-e2e@example.com"
 USER_PASSWORD = "UserPassword-2026"
 CLIENT_REDIRECT_URI = "https://client.example/callback"
 DEFAULT_AUDIENCE = "resource://default"
-SCIM_BEARER_TOKEN = os.environ.get("E2E_SCIM_BEARER_TOKEN", "codecov-scim-secret")
+SCIM_DATABASE_TOKEN = os.environ.get("E2E_SCIM_DATABASE_TOKEN", "codecov-scim-database-token")
 SAML_GATEWAY_ISSUER = os.environ.get("E2E_SAML_GATEWAY_ISSUER", "codecov-saml-gateway")
 SAML_GATEWAY_AUDIENCE = os.environ.get("E2E_SAML_GATEWAY_AUDIENCE", "nazo-oauth-codecov")
 SAML_GATEWAY_SECRET = os.environ.get(
@@ -730,7 +731,7 @@ def location_query(response: requests.Response) -> dict[str, list[str]]:
 
 def scim_headers() -> dict[str, str]:
     return {
-        "Authorization": f"Bearer {SCIM_BEARER_TOKEN}",
+        "Authorization": f"Bearer {SCIM_DATABASE_TOKEN}",
         "User-Agent": "nazo-oauth-codecov-e2e",
     }
 
@@ -1544,6 +1545,23 @@ def seed_prerequisites() -> None:
                     "Admin E2E",
                 ),
             )
+            cur.execute(
+                """
+                INSERT INTO scim_tokens (tenant_id, token_hash, label, scopes)
+                VALUES (%s, %s, 'Full HTTP E2E database token', '["scim:read","scim:write"]'::jsonb)
+                ON CONFLICT (token_hash) DO UPDATE SET
+                    tenant_id = EXCLUDED.tenant_id,
+                    label = EXCLUDED.label,
+                    scopes = EXCLUDED.scopes,
+                    expires_at = NULL,
+                    revoked_at = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                """,
+                (
+                    DEFAULT_TENANT_ID,
+                    blake3.blake3(SCIM_DATABASE_TOKEN.encode()).hexdigest(),
+                ),
+            )
         conn.commit()
 
     redis.Redis.from_url(VALKEY_URL, decode_responses=True).flushdb()
@@ -2091,7 +2109,7 @@ def run() -> None:
             and set(discovery["revocation_endpoint_auth_signing_alg_values_supported"])
             == {"EdDSA", "RS256", "ES256", "PS256"}
             and set(discovery["request_object_signing_alg_values_supported"])
-            == {"none", "EdDSA", "RS256", "ES256", "PS256"}
+            == {"EdDSA", "RS256", "ES256", "PS256"}
             and set(discovery["dpop_signing_alg_values_supported"])
             == {"EdDSA", "ES256"}
             and {"address", "phone"}.issubset(set(discovery["scopes_supported"]))
@@ -2657,7 +2675,6 @@ def run() -> None:
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["authorization_code"],
                 "token_endpoint_auth_method": "client_secret_basic",
-                "allow_authorization_code_without_pkce": True,
                 "jwks": None,
             },
             "POST /admin/clients client_secret_basic authorization_code",
@@ -2823,29 +2840,46 @@ def run() -> None:
             allow_redirects=False,
             timeout=10,
         )
-        expect_status("GET /authorize confidential without PKCE", confidential_without_pkce, 302)
-        confidential_no_pkce_request_id = consent_request_from_redirect(
+        confidential_without_pkce_request_id = consent_request_from_redirect(
             confidential_without_pkce,
-            "confidential_without_pkce",
+            "GET /authorize baseline confidential OIDC without PKCE",
         )
-        confidential_no_pkce_code, _ = approve_authorization(
+        expect_status(
+            "GET /authorize/consent baseline confidential OIDC without PKCE",
+            user.get(
+                f"{BASE_URL}/authorize/consent",
+                params={"request_id": confidential_without_pkce_request_id},
+                timeout=10,
+            ),
+            200,
+        )
+        confidential_without_pkce_code, _ = approve_authorization(
             user,
-            confidential_no_pkce_request_id,
+            confidential_without_pkce_request_id,
             "",
             state="confidential-no-pkce",
         )
-        confidential_no_pkce_tokens = token_basic(
-            secret_auth_client_id,
-            secret_auth_client_secret,
-            {
-                "grant_type": "authorization_code",
-                "code": confidential_no_pkce_code,
-                "redirect_uri": CLIENT_REDIRECT_URI,
-            },
-            "POST /token confidential authorization_code without PKCE",
+        confidential_without_pkce_tokens = expect_json(
+            expect_status(
+                "POST /token baseline confidential OIDC without PKCE",
+                requests.post(
+                    f"{BASE_URL}/token",
+                    data={
+                        "grant_type": "authorization_code",
+                        "code": confidential_without_pkce_code,
+                        "redirect_uri": CLIENT_REDIRECT_URI,
+                    },
+                    auth=(secret_auth_client_id, secret_auth_client_secret),
+                    timeout=10,
+                ),
+                200,
+            )
         )
-        check("confidential_without_pkce_access_token", bool(confidential_no_pkce_tokens.get("access_token")))
-        check("confidential_without_pkce_id_token", bool(confidential_no_pkce_tokens.get("id_token")))
+        check(
+            "baseline_confidential_oidc_without_pkce_tokens_issued",
+            bool(confidential_without_pkce_tokens.get("access_token"))
+            and bool(confidential_without_pkce_tokens.get("id_token")),
+        )
 
         post_authorize_request_id, post_authorize_verifier = authorize_request(
             user,

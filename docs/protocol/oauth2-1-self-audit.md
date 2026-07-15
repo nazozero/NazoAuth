@@ -25,13 +25,13 @@ References:
 | Area | Status | Evidence |
 | --- | --- | --- |
 | Authorization code grant | Implemented | `/authorize`, `/token`, PAR, signed request object handling, authorization code one-time consumption, and redirect matching tests. |
-| PKCE | Implemented as default requirement | S256 is required by default; the only no-PKCE path is an explicit confidential-client legacy compatibility flag, and sender-constrained clients must use PKCE. |
+| PKCE | Implemented as an invariant | S256 is required for every authorization-code request; there is no client field, database column, or runtime flag that bypasses it. |
 | Refresh token grant | Implemented | Rotation, reuse detection, sender-constraint preservation, and documented lost-response retry state machine. |
 | Client credentials grant | Implemented | Confidential client authentication, resource/audience binding, and no `openid` user-subject overclaim. |
 | Implicit grant | Not supported | Discovery advertises `code`; no implicit response type is part of the profile matrix. |
 | Resource owner password credentials | Not supported as core | Client metadata validation rejects unsupported grants; FAPI2 profiles explicitly reject `password`. |
 | Redirect URI policy | Implemented | HTTPS, loopback/native exceptions, no fragments, no credentials, no wildcards, exact matching except public loopback runtime port. |
-| Client authentication | Implemented | `client_secret_basic`, compatibility `client_secret_post`, `private_key_jwt`, `tls_client_auth`, and `self_signed_tls_client_auth`. |
+| Client authentication | Implemented/profile-scoped | `client_secret_basic` and lower-assurance `client_secret_post` are baseline interoperability methods; `private_key_jwt`, `tls_client_auth`, and `self_signed_tls_client_auth` serve higher-assurance profiles. FAPI excludes shared-secret POST authentication. |
 | Metadata truth | Implemented | Discovery and OAuth metadata are profile/config scoped and covered by metadata truth tests. |
 | Revocation and introspection | Implemented | Token revocation, JWT local validation, introspection fallback guidance, and revocation checks for resource endpoints. |
 

@@ -14,6 +14,8 @@ use crate::adapters::audit::{audit_event, audit_fields};
 #[cfg(not(test))]
 use crate::adapters::security::{blake3_hex, constant_time_eq, random_urlsafe_token};
 #[cfg(not(test))]
+use crate::domain::remote_client_documents::RemoteClientDocumentResolver;
+#[cfg(not(test))]
 use crate::http::admin::clients::ServerSectorIdentifierResolver;
 use crate::http::client_ip::{ClientIpHeaderMode, IpCidr};
 #[cfg(not(test))]
@@ -191,6 +193,7 @@ pub(crate) fn dynamic_registration_endpoint(
     rate_limits: nazo_valkey::RateLimitStore,
     keyset: nazo_key_management::KeyManager,
     runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+    remote_client_documents: Arc<RemoteClientDocumentResolver>,
 ) -> DynamicRegistrationEndpoint {
     let crypto = Arc::new(nazo_key_management::ClientRegistrationCrypto::new(keyset));
     let request_guard = Arc::new(ServerDynamicRegistrationRequestGuard::new(
@@ -210,9 +213,12 @@ pub(crate) fn dynamic_registration_endpoint(
         },
         Arc::new(clients),
         Arc::new(ServerSectorIdentifierResolver),
-        crypto.clone(),
-        crypto,
-        Arc::new(ServerDynamicRegistrationTokens),
+        nazo_http_actix::DynamicRegistrationSecurityServices::new(
+            remote_client_documents,
+            crypto.clone(),
+            crypto,
+            Arc::new(ServerDynamicRegistrationTokens),
+        ),
         request_guard,
     )
 }

@@ -256,6 +256,7 @@ class RunOidfConformanceTests(unittest.TestCase):
         aliases = {
             module.OIDCC_BASIC_CONFIG_FILE: "basic-alias",
             module.OIDCC_DYNAMIC_CONFIG_FILE: "dynamic-alias",
+            module.OIDCC_FORMPOST_CONFIG_FILE: "formpost-alias",
             module.FAPI_CONFIG_FILE: "fapi-alias",
         }
         allowlist = module.allowed_review_contexts_by_alias(aliases)
@@ -279,6 +280,22 @@ class RunOidfConformanceTests(unittest.TestCase):
             module.oidf_module_failure(review, allowlist, "different-test-plan"),
         )
         review["alias"] = "fapi-alias"
+        self.assertIn(
+            "result REVIEW",
+            module.oidf_module_failure(
+                review,
+                allowlist,
+                "oidcc-basic-certification-test-plan",
+            ),
+        )
+        review["alias"] = "formpost-alias"
+        self.assertIsNone(
+            module.oidf_module_failure(
+                review,
+                allowlist,
+                "oidcc-formpost-basic-certification-test-plan",
+            )
+        )
         self.assertIn(
             "result REVIEW",
             module.oidf_module_failure(

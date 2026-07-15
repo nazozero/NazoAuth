@@ -42,6 +42,7 @@ use crate::http::authorization::decision::authorize_decision;
 use crate::http::authorization::{
     consent::authorize_consent,
     par::par,
+    presentation::authorize_client_presentation,
     request::{authorize_get, authorize_post},
 };
 #[cfg(test)]
@@ -57,11 +58,6 @@ use crate::http::profile::{
     federation_links::{my_federation_links, unlink_my_federation_link},
 };
 #[cfg(test)]
-use crate::http::scim::{
-    scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
-    scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
-};
-#[cfg(test)]
 use crate::http::token::userinfo::userinfo;
 use crate::http::token::{
     ciba::{
@@ -75,10 +71,10 @@ use crate::http::token::{
 };
 use crate::http::well_known::{captcha_config, health};
 use crate::settings::Settings;
-#[cfg(not(test))]
 use nazo_http_actix::{
     scim_create_user, scim_delete_user, scim_get_user, scim_list_users, scim_patch_user,
-    scim_replace_user, scim_resource_types, scim_schemas, scim_service_provider_config,
+    scim_poll_security_events, scim_replace_user, scim_resource_types, scim_schemas,
+    scim_service_provider_config,
 };
 
 use super::cors;
@@ -96,6 +92,10 @@ pub(crate) fn configure(
     // NO CORS: /authorize
     cfg.route("/authorize", web::get().to(authorize_get))
         .route("/authorize", web::post().to(authorize_post))
+        .route(
+            "/authorize/client-presentation",
+            web::get().to(authorize_client_presentation),
+        )
         .route("/authorize/consent", web::get().to(authorize_consent))
         .route("/authorize/decision", web::post().to(authorize_decision))
         // NO CORS: /par
@@ -179,6 +179,7 @@ pub(crate) fn configure(
                 )
                 .route("/Schemas", web::get().to(scim_schemas))
                 .route("/ResourceTypes", web::get().to(scim_resource_types))
+                .route("/SecurityEvents", web::post().to(scim_poll_security_events))
                 .service(
                     web::resource("/Users")
                         .route(web::get().to(scim_list_users))

@@ -98,7 +98,6 @@ fn pkce_policy_client() -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,
@@ -684,12 +683,9 @@ fn authorization_pkce_allows_absent_value_for_parse_layer_but_rejects_invalid_pk
 }
 
 #[test]
-fn authorization_request_pkce_policy_allows_only_explicit_confidential_compatibility() {
+fn authorization_request_pkce_policy_has_no_client_profile_bypass() {
     let mut client = pkce_policy_client();
     assert!(authorization_request_requires_pkce(&client));
-
-    client.allow_authorization_code_without_pkce = true;
-    assert!(!authorization_request_requires_pkce(&client));
 
     client.client_type = "public".to_owned();
     assert!(authorization_request_requires_pkce(&client));

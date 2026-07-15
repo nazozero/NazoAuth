@@ -9,9 +9,9 @@ use hmac::{Hmac, KeyInit, Mac};
 use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_oauth_server::config::{ConfigSource, database_url};
 use nazo_oauth_server::oidf_seed::{
-    callback_uris, config::client_scopes, config::mtls_thumbprint, config::plan_config_files,
-    config::public_jwks, config::read_plan_config, config::string_value, seed_client_secret_pepper,
-    suite_base_urls, test_endpoint_uri, test_endpoint_uris,
+    callback_uris, callback_uris_for_aliases, config::client_scopes, config::mtls_thumbprint,
+    config::plan_config_files, config::public_jwks, config::read_plan_config, config::string_value,
+    seed_client_secret_pepper, suite_base_urls, test_endpoint_uri, test_endpoint_uris,
 };
 use nazo_postgres::{OidfSeedClient, OidfSeedUser};
 use serde_json::{Value, json};
@@ -58,7 +58,6 @@ struct ClientUpsert<'a> {
     allow_client_assertion_audience_array: bool,
     allow_client_assertion_endpoint_audience: bool,
     require_par_request_object: bool,
-    allow_authorization_code_without_pkce: bool,
     require_mtls_bound_tokens: bool,
     tls_client_auth_subject_dn: Option<&'a str>,
     tls_client_auth_cert_sha256: Option<&'a str>,
@@ -125,7 +124,6 @@ fn seeded_oauth_client(client: ClientUpsert<'_>) -> anyhow::Result<OAuthClient> 
             allow_client_assertion_endpoint_audience: client
                 .allow_client_assertion_endpoint_audience,
             require_par_request_object: client.require_par_request_object,
-            allow_authorization_code_without_pkce: client.allow_authorization_code_without_pkce,
             backchannel_logout_uri: None,
             backchannel_logout_session_required: true,
             frontchannel_logout_uri: client.frontchannel_logout_uri.map(ToOwned::to_owned),
@@ -136,7 +134,11 @@ fn seeded_oauth_client(client: ClientUpsert<'_>) -> anyhow::Result<OAuthClient> 
             tls_client_auth_san_uri: Vec::new(),
             tls_client_auth_san_ip: Vec::new(),
             tls_client_auth_san_email: Vec::new(),
+            jwks_uri: None,
             jwks: client.jwks.cloned(),
+            request_uris: Vec::new(),
+            initiate_login_uri: None,
+            presentation: nazo_auth::ClientPresentationMetadata::default(),
             introspection_encrypted_response_alg: None,
             introspection_encrypted_response_enc: None,
             userinfo_signed_response_alg: None,
@@ -226,13 +228,17 @@ async fn main() -> anyhow::Result<()> {
     let runtime_dir = env_or("OIDF_LOCAL_RUNTIME_DIR", "runtime/oidf");
     let runtime_dir = Path::new(&runtime_dir);
     let alias = env_or("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf");
+    let formpost_alias = format!("{alias}-formpost");
     let frontchannel_alias = format!("{alias}-frontchannel-logout");
     let session_alias = format!("{alias}-session-management");
     let user_email = env_or("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test");
     let user_password = env_or("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password");
     let client_secret = env_or("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret");
     let client_secret_pepper = seed_client_secret_pepper(&config);
-    let basic_redirect_uris = json!(callback_uris(&suite_base_urls, &alias));
+    let basic_redirect_uris = json!(callback_uris_for_aliases(
+        &suite_base_urls,
+        &[&alias, &formpost_alias]
+    ));
     let empty_post_logout_redirect_uris = json!([]);
     let frontchannel_redirect_uris = json!(callback_uris(&suite_base_urls, &frontchannel_alias));
     let frontchannel_post_logout_redirect_uris = json!(test_endpoint_uris(
@@ -287,7 +293,6 @@ async fn main() -> anyhow::Result<()> {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce: true,
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
@@ -313,7 +318,6 @@ async fn main() -> anyhow::Result<()> {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce: true,
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
@@ -339,7 +343,6 @@ async fn main() -> anyhow::Result<()> {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce: true,
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
@@ -365,7 +368,6 @@ async fn main() -> anyhow::Result<()> {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce: true,
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
@@ -391,7 +393,6 @@ async fn main() -> anyhow::Result<()> {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce: true,
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,
@@ -468,7 +469,6 @@ async fn main() -> anyhow::Result<()> {
                     .policy
                     .allow_client_assertion_endpoint_audience,
                 require_par_request_object: seed.policy.require_par_request_object,
-                allow_authorization_code_without_pkce: false,
                 require_mtls_bound_tokens: seed.policy.require_mtls_bound_tokens,
                 tls_client_auth_subject_dn: None,
                 tls_client_auth_cert_sha256: seed.tls_client_auth_cert_sha256.as_deref(),
@@ -628,7 +628,6 @@ mod tests {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: true,
-            allow_authorization_code_without_pkce: false,
             require_mtls_bound_tokens: false,
             tls_client_auth_subject_dn: None,
             tls_client_auth_cert_sha256: None,

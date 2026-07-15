@@ -12,6 +12,7 @@ import base64
 import hashlib
 import re
 import shutil
+import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -22,6 +23,7 @@ RUNTIME = ROOT / "runtime" / "oidf"
 ISSUER = "https://auth.nazo.run"
 MTLS_ISSUER = "https://auth.nazo.run"
 SUITE_BASE_URL = os.environ.get("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443").rstrip("/")
+SUITE_ORIGIN = urllib.parse.urlsplit(SUITE_BASE_URL)._replace(path="", query="", fragment="").geturl()
 BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
 USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
 USER_PASSWORD = os.environ.get("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password")
@@ -67,7 +69,8 @@ FAPI_SECURITY_ID2_USER_REJECTS_AUTHENTICATION = (
 PLAN_CONFIG_FILES = (
     "oidf-oidcc-basic-plan-config.json",
     "oidf-oidcc-dynamic-plan-config.json",
-    "oidf-oidcc-dynamic-crypto-plan-config.json",
+    "oidf-oidcc-formpost-plan-config.json",
+    "oidf-oidcc-third-party-init-plan-config.json",
     "oidf-oidcc-config-plan-config.json",
     "oidf-oidcc-frontchannel-logout-plan-config.json",
     "oidf-oidcc-session-management-plan-config.json",
@@ -86,6 +89,10 @@ NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
 NAZO_LOGIN_SUBMIT_READY_SELECTOR = f"#{NAZO_LOGIN_SUBMIT_ID}:not([disabled])"
 NAZO_CONSENT_APPROVE_ID = "nazo-consent-approve"
 NAZO_CONSENT_DENY_ID = "nazo-consent-deny"
+OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS = max(
+    30,
+    int(os.environ.get("OIDF_LOCAL_BROWSER_CALLBACK_TIMEOUT_SECONDS", "30")),
+)
 NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
     r'("error"\s*:\s*"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"'
     r"|invalid_request|invalid_request_object|access_denied|login_required|server_error)"
@@ -116,7 +123,7 @@ def consent_approve_commands() -> list[list[object]]:
         ["wait-element-visible", "id", NAZO_CONSENT_APPROVE_ID, 30],
         ["click", "id", NAZO_CONSENT_APPROVE_ID],
         ["wait", "contains", "/test/", 30],
-        ["wait", "id", "submission_complete", 10],
+        ["wait", "id", "submission_complete", OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS],
     ]
 
 
@@ -125,7 +132,7 @@ def consent_deny_commands() -> list[list[object]]:
         ["wait-element-visible", "id", NAZO_CONSENT_DENY_ID, 30],
         ["click", "id", NAZO_CONSENT_DENY_ID],
         ["wait", "contains", "/test/", 30],
-        ["wait", "id", "submission_complete", 10],
+        ["wait", "id", "submission_complete", OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS],
     ]
 
 
@@ -434,6 +441,7 @@ ENABLE_SESSION_MANAGEMENT: true
 ENABLE_NATIVE_SSO: true
 CIBA_AUTOMATED_DECISION_TOKEN: "{OIDF_CIBA_AUTOMATED_DECISION_TOKEN}"
 DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN: "{DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN}"
+REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS: "{SUITE_ORIGIN}"
 MTLS_ENDPOINT_BASE_URL: "{MTLS_ISSUER}"
 FRONTEND_BASE_URL: "{ISSUER}/ui"
 CORS_ALLOWED_ORIGINS:
@@ -769,7 +777,14 @@ def user_reject_browser_automation() -> list[dict[str, object]]:
                 {
                     "task": "Verify callback completion",
                     "match": "*/test/*/callback*",
-                    "commands": [["wait", "id", "submission_complete", 10]],
+                    "commands": [
+                        [
+                            "wait",
+                            "id",
+                            "submission_complete",
+                            OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS,
+                        ]
+                    ],
                 },
             ],
         }
@@ -812,7 +827,14 @@ def browser_automation() -> list[dict[str, object]]:
                 {
                     "task": "Verify callback completion",
                     "match": "*/test/*/callback*",
-                    "commands": [["wait", "id", "submission_complete", 10]],
+                    "commands": [
+                        [
+                            "wait",
+                            "id",
+                            "submission_complete",
+                            OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS,
+                        ]
+                    ],
                 },
             ],
         },
@@ -996,13 +1018,19 @@ def write_dynamic_plan_config() -> dict[str, object]:
     return config
 
 
-def write_dynamic_crypto_plan_config() -> dict[str, object]:
+def write_formpost_plan_config() -> dict[str, object]:
+    config = copy.deepcopy(write_basic_plan_config())
+    config["alias"] = f"{BASIC_ALIAS}-formpost"
+    config["description"] = "OIDC Form Post OP certification coverage."
+    write_plan_config("oidf-oidcc-formpost-plan-config.json", config)
+    return config
+
+
+def write_third_party_init_plan_config() -> dict[str, object]:
     config = copy.deepcopy(dynamic_plan_config())
-    config["alias"] = f"{BASIC_ALIAS}-dynamic-crypto"
-    config["description"] = (
-        "OIDC dynamic-registration signed UserInfo interoperability coverage."
-    )
-    write_plan_config("oidf-oidcc-dynamic-crypto-plan-config.json", config)
+    config["alias"] = f"{BASIC_ALIAS}-third-party-init"
+    config["description"] = "OIDC third-party initiated login registration coverage."
+    write_plan_config("oidf-oidcc-third-party-init-plan-config.json", config)
     return config
 
 
@@ -1399,7 +1427,8 @@ def write_all_plan_configs() -> None:
     configs: dict[str, dict[str, object]] = {
         "oidf-oidcc-basic-plan-config.json": write_basic_plan_config(),
         "oidf-oidcc-dynamic-plan-config.json": write_dynamic_plan_config(),
-        "oidf-oidcc-dynamic-crypto-plan-config.json": write_dynamic_crypto_plan_config(),
+        "oidf-oidcc-formpost-plan-config.json": write_formpost_plan_config(),
+        "oidf-oidcc-third-party-init-plan-config.json": write_third_party_init_plan_config(),
         "oidf-oidcc-config-plan-config.json": write_oidcc_config_plan_config(),
         "oidf-oidcc-frontchannel-logout-plan-config.json": write_frontchannel_logout_plan_config(),
         "oidf-oidcc-session-management-plan-config.json": write_session_management_plan_config(),
@@ -1454,8 +1483,18 @@ def write_all_plan_configs() -> None:
     write_expected_skips()
 
 
-def write_expected_skips() -> None:
-    expected_skips = [
+def expected_skips() -> list[dict[str, str]]:
+    return [
+        {
+            "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-basic-plan-config.json",
+        },
+        {
+            "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-basic-plan-config.json",
+        },
         {
             "test-name": "oidcc-idtoken-unsigned",
             "variant": "*",
@@ -1466,10 +1505,33 @@ def write_expected_skips() -> None:
             "variant": "*",
             "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
         },
+        {
+            "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
+        },
+        {
+            "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
+        },
+        {
+            "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-formpost-plan-config.json",
+        },
+        {
+            "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-formpost-plan-config.json",
+        },
     ]
+
+
+def write_expected_skips() -> None:
     write_text(
         RUNTIME / "oidf-expected-skips.json",
-        json.dumps(expected_skips, indent=2) + "\n",
+        json.dumps(expected_skips(), indent=2) + "\n",
         0o600,
     )
 
@@ -1480,9 +1542,10 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
         "oidf-oidcc-basic-plan-config.json",
         "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] "
         "oidf-oidcc-dynamic-plan-config.json",
-        "oidcc-dynamic-certification-test-plan[response_type=code]:"
-        "oidcc-userinfo-rs256 "
-        "oidf-oidcc-dynamic-crypto-plan-config.json",
+        "oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] "
+        "oidf-oidcc-formpost-plan-config.json",
+        "oidcc-3rdparty-init-login-certification-test-plan[response_type=code] "
+        "oidf-oidcc-third-party-init-plan-config.json",
         "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
         "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] "
         "oidf-oidcc-frontchannel-logout-plan-config.json",
@@ -1545,7 +1608,8 @@ def plan_manifest_for_expressions(
     oidc_titles = {
         "oidf-oidcc-basic-plan-config.json": "OIDC Basic OP",
         "oidf-oidcc-dynamic-plan-config.json": "OIDC Basic OP Dynamic Registration",
-        "oidf-oidcc-dynamic-crypto-plan-config.json": "OIDC Dynamic Registration: Signed UserInfo",
+        "oidf-oidcc-formpost-plan-config.json": "OIDC Form Post OP",
+        "oidf-oidcc-third-party-init-plan-config.json": "OIDC Third-Party Initiated Login OP",
         "oidf-oidcc-config-plan-config.json": "OIDC Config OP",
         "oidf-oidcc-frontchannel-logout-plan-config.json": "OIDC Front-Channel Logout OP",
         "oidf-oidcc-session-management-plan-config.json": "OIDC Session Management OP",
@@ -1563,11 +1627,15 @@ def plan_manifest_for_expressions(
             "authorization code flow",
             "userinfo and ID token interoperability",
         ],
-        "oidf-oidcc-dynamic-crypto-plan-config.json": [
-            "RFC 7591 dynamic client registration",
-            "userinfo_signed_response_alg=RS256",
-            "signed UserInfo content type and claims",
-            "client response cryptography metadata",
+        "oidf-oidcc-formpost-plan-config.json": [
+            "response_mode=form_post",
+            "successful and error authorization responses",
+            "browser auto-submission interoperability",
+        ],
+        "oidf-oidcc-third-party-init-plan-config.json": [
+            "initiate_login_uri registration round-trip",
+            "HTTPS metadata enforcement",
+            "invalid_client_metadata rejection",
         ],
         "oidf-oidcc-config-plan-config.json": [
             "provider metadata accuracy",
@@ -1611,7 +1679,7 @@ def plan_manifest_for_expressions(
     return {
         "name": "NazoAuth OIDF full conformance matrix",
         "description": (
-            "Twenty-one-plan OpenID Foundation regression matrix for the public issuer. "
+            "Twenty-two-plan OpenID Foundation regression matrix for the public issuer. "
             "Targeted TP/PS checks are mapped onto these plans instead of being run as a separate matrix."
         ),
         "plans": plans,

@@ -34,7 +34,6 @@ pub struct AuthorizationClientPolicy<'a> {
     pub allowed_audiences: &'a [String],
     pub require_dpop_bound_tokens: bool,
     pub require_mtls_bound_tokens: bool,
-    pub allow_authorization_code_without_pkce: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -42,11 +41,13 @@ pub struct AuthorizationCapabilityPolicy {
     pub authorization_details: bool,
     pub jarm: bool,
     pub native_sso: bool,
+    pub form_post: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub struct AuthorizationProfilePolicy {
     pub signed_authorization_response_required: bool,
+    pub pkce_required: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -116,6 +117,7 @@ pub fn normalize_authorization_request(
 
     let response_mode = match parameters.get("response_mode").map(String::as_str) {
         None | Some("query") => None,
+        Some("form_post") if capabilities.form_post => Some("form_post".to_owned()),
         Some("jwt") if capabilities.jarm => Some("jwt".to_owned()),
         Some("jwt") => return Err(AuthorizationPolicyError::UnsupportedResponseMode),
         _ => return Err(AuthorizationPolicyError::InvalidRequest),
@@ -124,6 +126,9 @@ pub fn normalize_authorization_request(
         return Err(AuthorizationPolicyError::UnsupportedResponseMode);
     }
 
+    let scopes = parse_scope(parameters.get("scope").map(String::as_str).unwrap_or(""));
+    let confidential_oidc =
+        client.client_type == "confidential" && scopes.iter().any(|scope| scope == "openid");
     let (code_challenge, code_challenge_method) = match (
         parameters.get("code_challenge").map(String::as_str),
         parameters.get("code_challenge_method").map(String::as_str),
@@ -134,11 +139,7 @@ pub fn normalize_authorization_request(
         }
         _ => return Err(AuthorizationPolicyError::InvalidRequest),
     };
-    let pkce_required = client.client_type == "public"
-        || client.require_dpop_bound_tokens
-        || client.require_mtls_bound_tokens
-        || !client.allow_authorization_code_without_pkce;
-    if pkce_required && code_challenge.is_none() {
+    if code_challenge.is_none() && (profile.pkce_required || !confidential_oidc) {
         return Err(AuthorizationPolicyError::InvalidRequest);
     }
 
@@ -155,7 +156,6 @@ pub fn normalize_authorization_request(
     };
     let requested_claims = requested_claims(parameters)?;
     let acr = requested_acr(parameters, requested_claims.acr.as_ref())?;
-    let scopes = parse_scope(parameters.get("scope").map(String::as_str).unwrap_or(""));
     if !is_subset(&scopes, client.allowed_scopes) {
         return Err(AuthorizationPolicyError::InvalidScope);
     }
@@ -501,6 +501,7 @@ pub struct JarmAuthorizationResponse {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthorizationResponsePlan {
     Plain(PlainAuthorizationResponse),
+    FormPost(PlainAuthorizationResponse),
     Jarm(JarmAuthorizationResponse),
 }
 
@@ -553,15 +554,18 @@ pub fn plan_authorization_response(
         }
     }
     parameters.push(("iss".to_owned(), input.issuer.to_owned()));
-    Ok(AuthorizationResponsePlan::Plain(
-        PlainAuthorizationResponse {
-            redirect_uri: input.redirect_uri.to_owned(),
-            parameters,
-            issue_session_state: input.session_management_available
-                && input.code.is_some()
-                && input.error.is_none(),
-        },
-    ))
+    let response = PlainAuthorizationResponse {
+        redirect_uri: input.redirect_uri.to_owned(),
+        parameters,
+        issue_session_state: input.session_management_available
+            && input.code.is_some()
+            && input.error.is_none(),
+    };
+    Ok(if input.response_mode == Some("form_post") {
+        AuthorizationResponsePlan::FormPost(response)
+    } else {
+        AuthorizationResponsePlan::Plain(response)
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -644,7 +648,6 @@ mod tests {
             allowed_audiences: audiences,
             require_dpop_bound_tokens: false,
             require_mtls_bound_tokens: false,
-            allow_authorization_code_without_pkce: true,
         }
     }
 
@@ -653,6 +656,7 @@ mod tests {
             authorization_details: true,
             jarm: true,
             native_sso: true,
+            form_post: true,
         }
     }
 
@@ -662,6 +666,8 @@ mod tests {
         let audiences = vec!["https://api.example".to_owned()];
         let parameters = HashMap::from([
             ("response_type".to_owned(), "code".to_owned()),
+            ("code_challenge".to_owned(), "A".repeat(43)),
+            ("code_challenge_method".to_owned(), "S256".to_owned()),
             ("response_mode".to_owned(), "jwt".to_owned()),
             ("scope".to_owned(), "openid profile".to_owned()),
             ("resource".to_owned(), "https://api.example".to_owned()),
@@ -686,6 +692,7 @@ mod tests {
             capabilities(),
             AuthorizationProfilePolicy {
                 signed_authorization_response_required: false,
+                pkce_required: false,
             },
             false,
         )
@@ -707,6 +714,8 @@ mod tests {
         let audiences = Vec::new();
         let base = HashMap::from([
             ("response_type".to_owned(), "code".to_owned()),
+            ("code_challenge".to_owned(), "A".repeat(43)),
+            ("code_challenge_method".to_owned(), "S256".to_owned()),
             ("response_mode".to_owned(), "jwt".to_owned()),
             ("scope".to_owned(), "openid device_sso".to_owned()),
         ]);
@@ -720,6 +729,7 @@ mod tests {
                 },
                 AuthorizationProfilePolicy {
                     signed_authorization_response_required: false,
+                    pkce_required: false,
                 },
                 false,
             ),
@@ -737,6 +747,7 @@ mod tests {
                 },
                 AuthorizationProfilePolicy {
                     signed_authorization_response_required: false,
+                    pkce_required: false,
                 },
                 false,
             ),

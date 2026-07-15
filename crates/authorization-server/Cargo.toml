@@ -48,6 +48,7 @@ nazo-postgres.workspace = true
 nazo-valkey.workspace = true
 nazo-resource-server.workspace = true
 nazo-runtime-modules.workspace = true
+nazo-scim-events.workspace = true
 openssl.workspace = true
 opentelemetry = "0.32.0"
 opentelemetry-appender-tracing = "0.32.0"
@@ -56,7 +57,7 @@ opentelemetry_sdk = { version = "0.32.1", features = ["logs", "metrics", "rt-tok
 passkey-auth.workspace = true
 p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
 rand.workspace = true
-reqwest = { version = "0.13.4", default-features = false, features = ["native-tls", "json"] }
+reqwest = { version = "0.13.4", default-features = false, features = ["native-tls", "json", "stream"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true

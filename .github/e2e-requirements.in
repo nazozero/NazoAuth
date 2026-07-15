@@ -1,5 +1,6 @@
 aiosmtpd
 argon2-cffi
+blake3
 cryptography
 psycopg[binary]
 pyjwt
