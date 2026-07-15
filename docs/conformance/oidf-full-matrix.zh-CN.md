@@ -4,6 +4,9 @@
 
 执行入口仍然是 `runtime/oidf/oidf-plan-set.json`。`scripts/setup_local_oidf_podman.py` 会同时生成 `runtime/oidf/oidf-plan-set-manifest.json`，用于记录每个 plan 的标题、描述和覆盖重点。
 
+最新的远端本地与官方套件持久证据见
+[`2026-07-15-fapi-ciba-mtls-ping-oidf-results.md`](2026-07-15-fapi-ciba-mtls-ping-oidf-results.md)。
+
 ## Plan 目录
 
 | # | 标题 | 描述 |
@@ -75,3 +78,14 @@ v5.2.0 在 `request_object_signing_alg_values_supported` 不含 `none` 时会跳
 带 `redirect_uri` 的签名 Request Object 仍由 FAPI/JAR plans 验证。包含这些
 expected skips 的 workflow run 可以作为 `0 failures`、`0 warnings` 的证据，
 但不能作为 zero-SKIPPED 证据。
+
+## Expected Warning 策略
+
+官方套件入口当前在 CIBA ping 回调中协商 TLS 1.2，即使客户端已提供 TLS 1.3。
+因此 workflow 只允许
+[`oidf-official-expected-warnings.json`](../../tests/contracts/oidf-official-expected-warnings.json)
+中 26 条精确的 `EnsureIncomingTls13` warning 上下文。每条记录同时绑定配置、
+完整 variant、模块、block、condition 和 result；出现额外 warning 或缺少预期记录
+都会让 workflow 失败。配套的“安全 TLS 1.2 或 TLS 1.3”条件通过；同一 NazoAuth
+运行时与 Hostinger 本地套件可协商 TLS 1.3，并产生 0 warning。具体测量边界和
+制品摘要见上述证据记录。

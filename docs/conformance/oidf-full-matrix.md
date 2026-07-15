@@ -4,6 +4,9 @@ This document describes the repository-owned OpenID Foundation Conformance Suite
 
 The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/setup_local_oidf_podman.py` also writes `runtime/oidf/oidf-plan-set-manifest.json` with a title, description, and coverage focus for every plan.
 
+The latest durable local and official-suite evidence is
+[`2026-07-15-fapi-ciba-mtls-ping-oidf-results.md`](2026-07-15-fapi-ciba-mtls-ping-oidf-results.md).
+
 ## Plan Index
 
 | # | Title | Description |
@@ -91,3 +94,16 @@ when `none` is absent from `request_object_signing_alg_values_supported`.
 Signed Request Objects with `redirect_uri` remain implemented and tested in the
 FAPI/JAR plans. A workflow run with those expected skips can be evidence for `0
 failures` and `0 warnings`, but it is not zero-SKIPPED evidence.
+
+## Expected Warning Policy
+
+The official-suite ingress currently negotiates TLS 1.2 for CIBA ping
+callbacks even when the client offers TLS 1.3. The workflow therefore permits
+only the 26 exact `EnsureIncomingTls13` warning contexts in
+[`oidf-official-expected-warnings.json`](../../tests/contracts/oidf-official-expected-warnings.json).
+Every record is bound to a configuration, full variant, module, block,
+condition, and result. Unexpected warnings and missing expected records both
+fail the workflow. The companion secure-TLS-1.2-or-TLS-1.3 condition passes,
+and the Hostinger local suite negotiates TLS 1.3 with the same NazoAuth runtime
+and produces zero warnings. See the linked evidence record for the measured
+boundary and artifact digests.
