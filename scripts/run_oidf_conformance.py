@@ -153,7 +153,7 @@ PER_PLAN_CONFIG_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] {OIDCC_DYNAMIC_CONFIG_FILE}",
     f"oidcc-dynamic-certification-test-plan[response_type=code] {OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE}",
     f"oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_FORMPOST_CONFIG_FILE}",
-    f"oidcc-3rdparty-init-login-certification-test-plan {OIDCC_THIRD_PARTY_INIT_CONFIG_FILE}",
+    f"oidcc-3rdparty-init-login-certification-test-plan[response_type=code] {OIDCC_THIRD_PARTY_INIT_CONFIG_FILE}",
     f"oidcc-config-certification-test-plan {OIDCC_CONFIG_CONFIG_FILE}",
     f"fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] {FAPI_SECURITY_FINAL_CONFIG_FILE}",
     f"fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] {FAPI_MESSAGE_FINAL_CONFIG_FILE}",
