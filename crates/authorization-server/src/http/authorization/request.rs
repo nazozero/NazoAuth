@@ -409,9 +409,7 @@ async fn authorize_request_with_context(
             )
             .await
             {
-                Ok(location) => {
-                    redirect_found(authorization_login_url_with_presentation(location, &client))
-                }
+                Ok(location) => redirect_found(location),
                 Err(response) => response,
             };
         }
@@ -496,30 +494,6 @@ async fn authorize_request_with_context(
         "{}/consent?request_id={request_id}",
         context.config.frontend_base_url.trim_end_matches('/')
     ))
-}
-
-fn authorization_login_url_with_presentation(mut location: String, client: &ClientRow) -> String {
-    let Ok(mut url) = url::Url::parse(&location) else {
-        return location;
-    };
-    {
-        let mut query = url.query_pairs_mut();
-        query.append_pair("client_name", &client.client_name);
-        for (name, value) in [
-            ("client_logo_uri", client.presentation.logo_uri.as_deref()),
-            (
-                "client_policy_uri",
-                client.presentation.policy_uri.as_deref(),
-            ),
-            ("client_tos_uri", client.presentation.tos_uri.as_deref()),
-        ] {
-            if let Some(value) = value {
-                query.append_pair(name, value);
-            }
-        }
-    }
-    location = url.into();
-    location
 }
 
 fn runtime_authorization_capability_error(

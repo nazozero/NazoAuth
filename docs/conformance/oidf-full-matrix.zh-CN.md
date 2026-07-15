@@ -37,7 +37,7 @@
 本矩阵中与当前 TP/PS 工作直接相关的覆盖点包括：
 
 - `OIDC Basic OP Dynamic Registration` 覆盖 RFC 7591 动态客户端注册和 `registration_endpoint` metadata。
-- `OIDC Dynamic OP` 运行完整 code-flow dynamic plan。远程文档只允许精确动态注册的 HTTPS URI；公网目标执行 SSRF 过滤，私有测试网络必须显式配置 origin allowlist。仅用于展示的 `logo_uri`、`policy_uri`、`tos_uri` 不由服务端抓取，并分别以 `client_logo_uri`、`client_policy_uri`、`client_tos_uri` 交给托管登录 UI；FAPI profile 仍只接受 PAR。
+- `OIDC Dynamic OP` 运行完整 code-flow dynamic plan。远程文档只允许精确动态注册的 HTTPS URI；公网目标执行 SSRF 过滤，私有测试网络必须显式配置 origin allowlist。仅用于展示的 `logo_uri`、`policy_uri`、`tos_uri` 不由服务端抓取。托管登录 UI 从安全的 `/authorize` continuation 中提取已接受的 `client_id`，再通过 `/authorize/client-presentation` 读取启用中客户端的注册展示元数据；登录 URL 中的展示字段一律不受信任。FAPI profile 仍只接受 PAR。
 - `OIDC Form Post OP` 覆盖安全 HTML form-post 响应及浏览器提交。
 - `OIDC Third-Party Initiated Login OP` 覆盖 `initiate_login_uri` 注册元数据；该 OP profile 不新增 OP 侧发起端点。
 - `OIDC Config OP` 覆盖 metadata truth，防止 discovery 暴露未实现能力。

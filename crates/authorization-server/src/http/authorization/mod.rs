@@ -6,6 +6,7 @@ pub(crate) mod consent;
 pub(crate) mod decision;
 pub(crate) mod jar;
 pub(crate) mod par;
+pub(crate) mod presentation;
 pub(crate) mod request;
 
 use std::sync::Arc;
