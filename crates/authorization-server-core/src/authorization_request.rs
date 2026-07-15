@@ -39,12 +39,6 @@ const AUTHORIZATION_REQUEST_PARAMETERS: &[&str] = &[
 ];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum RequestObjectMode {
-    BasicOidc,
-    SignedJar,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RequestObjectJtiPolicy {
     Optional,
     RequiredForSignedJar,
@@ -70,9 +64,7 @@ pub struct RequestObjectClaims {
 pub struct RequestObjectPolicy<'a> {
     pub issuer: &'a str,
     pub client_id: &'a str,
-    pub mode: RequestObjectMode,
     pub jti_policy: RequestObjectJtiPolicy,
-    pub unsigned_request_object_allowed: bool,
     pub require_integrity_protected_parameters: bool,
     pub now: i64,
 }
@@ -81,13 +73,11 @@ pub struct RequestObjectPolicy<'a> {
 pub struct RequestObjectVerificationInput<'a> {
     pub request_object: &'a str,
     pub client: &'a OAuthClient,
-    pub profile_disallows_unsigned_request_object: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct VerifiedRequestObject {
     pub claims: RequestObjectClaims,
-    pub mode: RequestObjectMode,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -99,7 +89,6 @@ pub enum RequestObjectVerificationError {
     MissingKeyId,
     InvalidKey,
     InvalidSignature,
-    SigningPolicy,
 }
 
 #[derive(Deserialize)]
@@ -118,62 +107,32 @@ pub fn verify_request_object(
     let (header_part, payload_part, signature_part) = split_compact_jwt(input.request_object)
         .ok_or(RequestObjectVerificationError::InvalidCompact)?;
     let decoded_header = decode_request_object_header(header_part)?;
-    let (claims, mode) = if decoded_header.alg == "none" {
-        if payload_part.is_empty() || !signature_part.is_empty() {
-            return Err(RequestObjectVerificationError::InvalidAlgorithm);
-        }
-        (
-            decode_request_object_claims(payload_part)?,
-            RequestObjectMode::BasicOidc,
-        )
-    } else {
-        if signature_part.is_empty() {
-            return Err(RequestObjectVerificationError::InvalidAlgorithm);
-        }
-        let header = decode_header(input.request_object)
-            .map_err(|_| RequestObjectVerificationError::InvalidAlgorithm)?;
-        if supported_client_jwt_algorithm_name(header.alg).is_none() {
-            return Err(RequestObjectVerificationError::InvalidAlgorithm);
-        }
-        let kid = header
-            .kid
-            .as_deref()
-            .ok_or(RequestObjectVerificationError::MissingKeyId)?;
-        if kid.trim().is_empty() || kid.trim() != kid {
-            return Err(RequestObjectVerificationError::InvalidKey);
-        }
-        let decoding_key = client_jwt_decoding_key(input.client, kid, header.alg)
-            .ok_or(RequestObjectVerificationError::InvalidKey)?;
-        let mut validation = Validation::new(header.alg);
-        validation.validate_aud = false;
-        validation.validate_exp = false;
-        validation.validate_nbf = false;
-        validation.set_required_spec_claims::<&str>(&[]);
-        let claims =
-            decode::<RequestObjectClaims>(input.request_object, &decoding_key, &validation)
-                .map_err(|_| RequestObjectVerificationError::InvalidSignature)?
-                .claims;
-        (claims, RequestObjectMode::SignedJar)
-    };
-    if !request_object_mode_allowed(
-        input.client,
-        mode,
-        input.profile_disallows_unsigned_request_object,
-    ) {
-        return Err(RequestObjectVerificationError::SigningPolicy);
+    if decoded_header.alg == "none" || payload_part.is_empty() || signature_part.is_empty() {
+        return Err(RequestObjectVerificationError::InvalidAlgorithm);
     }
-    Ok(VerifiedRequestObject { claims, mode })
-}
-
-#[must_use]
-pub fn request_object_uses_unsigned_algorithm(request_object: &str) -> bool {
-    let Some((header, _payload, signature)) = split_compact_jwt(request_object) else {
-        return false;
-    };
-    let Ok(header) = decode_request_object_header(header) else {
-        return false;
-    };
-    header.alg == "none" && signature.is_empty()
+    let header = decode_header(input.request_object)
+        .map_err(|_| RequestObjectVerificationError::InvalidAlgorithm)?;
+    if supported_client_jwt_algorithm_name(header.alg).is_none() {
+        return Err(RequestObjectVerificationError::InvalidAlgorithm);
+    }
+    let kid = header
+        .kid
+        .as_deref()
+        .ok_or(RequestObjectVerificationError::MissingKeyId)?;
+    if kid.trim().is_empty() || kid.trim() != kid {
+        return Err(RequestObjectVerificationError::InvalidKey);
+    }
+    let decoding_key = client_jwt_decoding_key(input.client, kid, header.alg)
+        .ok_or(RequestObjectVerificationError::InvalidKey)?;
+    let mut validation = Validation::new(header.alg);
+    validation.validate_aud = false;
+    validation.validate_exp = false;
+    validation.validate_nbf = false;
+    validation.set_required_spec_claims::<&str>(&[]);
+    let claims = decode::<RequestObjectClaims>(input.request_object, &decoding_key, &validation)
+        .map_err(|_| RequestObjectVerificationError::InvalidSignature)?
+        .claims;
+    Ok(VerifiedRequestObject { claims })
 }
 
 #[must_use]
@@ -225,17 +184,6 @@ fn decode_request_object_claims(
     serde_json::from_slice(&bytes).map_err(|_| RequestObjectVerificationError::InvalidClaims)
 }
 
-fn request_object_mode_allowed(
-    client: &OAuthClient,
-    mode: RequestObjectMode,
-    profile_disallows_unsigned_request_object: bool,
-) -> bool {
-    !((client.require_dpop_bound_tokens
-        || client.require_par_request_object
-        || profile_disallows_unsigned_request_object)
-        && mode == RequestObjectMode::BasicOidc)
-}
-
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RequestObjectReplay {
     pub client_id: String,
@@ -253,7 +201,6 @@ pub struct NormalizedRequestObject {
 pub enum AuthorizationRequestError {
     InvalidRequest,
     InvalidRequestObject,
-    RequestObjectSigningPolicy,
     RequestObjectClaims,
     RequestObjectContainsRequestUri,
     RequestObjectParameterType,
@@ -274,7 +221,6 @@ impl AuthorizationRequestError {
         match self {
             Self::InvalidRequest | Self::OuterClientIdConflict => "invalid_request",
             Self::InvalidRequestObject
-            | Self::RequestObjectSigningPolicy
             | Self::RequestObjectClaims
             | Self::RequestObjectContainsRequestUri
             | Self::RequestObjectParameterType
@@ -297,9 +243,6 @@ pub fn normalize_request_object(
     claims: &RequestObjectClaims,
     policy: RequestObjectPolicy<'_>,
 ) -> Result<NormalizedRequestObject, AuthorizationRequestError> {
-    if policy.mode == RequestObjectMode::BasicOidc && !policy.unsigned_request_object_allowed {
-        return Err(AuthorizationRequestError::RequestObjectSigningPolicy);
-    }
     if claims.client_id != policy.client_id
         || !request_object_party_claims_valid(claims, policy)
         || !request_object_audience_valid(claims, policy)
@@ -317,9 +260,7 @@ pub fn normalize_request_object(
     {
         return Err(AuthorizationRequestError::OuterClientIdConflict);
     }
-    if policy.mode == RequestObjectMode::SignedJar
-        && !request_parameters.contains_key("redirect_uri")
-    {
+    if !request_parameters.contains_key("redirect_uri") {
         return Err(AuthorizationRequestError::SignedRequestObjectMissingRedirectUri);
     }
     if policy.require_integrity_protected_parameters
@@ -343,41 +284,26 @@ fn request_object_party_claims_valid(
     claims: &RequestObjectClaims,
     policy: RequestObjectPolicy<'_>,
 ) -> bool {
-    match policy.mode {
-        RequestObjectMode::BasicOidc => {
-            claims
-                .iss
-                .as_deref()
-                .is_none_or(|issuer| issuer == policy.client_id)
-                && claims
-                    .sub
-                    .as_deref()
-                    .is_none_or(|subject| subject == policy.client_id)
-        }
-        RequestObjectMode::SignedJar => {
-            claims.iss.as_deref() == Some(policy.client_id)
-                && claims
-                    .sub
-                    .as_deref()
-                    .is_none_or(|subject| subject == policy.client_id)
-        }
-    }
+    claims.iss.as_deref() == Some(policy.client_id)
+        && claims
+            .sub
+            .as_deref()
+            .is_none_or(|subject| subject == policy.client_id)
 }
 
 fn request_object_audience_valid(
     claims: &RequestObjectClaims,
     policy: RequestObjectPolicy<'_>,
 ) -> bool {
-    match (&claims.aud, policy.mode) {
-        (Some(Value::String(audience)), _) => {
+    match &claims.aud {
+        Some(Value::String(audience)) => {
             audience == policy.issuer || audience == &format!("{}/authorize", policy.issuer)
         }
-        (Some(Value::Array(audiences)), _) => audiences.iter().any(|audience| {
+        Some(Value::Array(audiences)) => audiences.iter().any(|audience| {
             audience.as_str().is_some_and(|audience| {
                 audience == policy.issuer || audience == format!("{}/authorize", policy.issuer)
             })
         }),
-        (None, RequestObjectMode::BasicOidc) => true,
         _ => false,
     }
 }
@@ -390,26 +316,20 @@ fn request_object_times_valid(
     let expiry = match claims.exp {
         Some(expiry) if expiry <= now => return false,
         Some(expiry) => expiry,
-        None if policy.mode == RequestObjectMode::SignedJar => return false,
-        None => now.saturating_add(REQUEST_OBJECT_MAX_TTL_SECONDS),
+        None => return false,
     };
     let not_before = match claims.nbf {
         Some(not_before) => not_before,
-        None if policy.mode == RequestObjectMode::SignedJar => return false,
-        None => now,
+        None => return false,
     };
     if not_before > now.saturating_add(REQUEST_OBJECT_CLOCK_SKEW_SECONDS) {
         return false;
     }
-    if policy.mode == RequestObjectMode::SignedJar {
-        if now.saturating_sub(not_before) > REQUEST_OBJECT_MAX_TTL_SECONDS
-            || expiry <= not_before
-            || expiry.saturating_sub(not_before)
-                > REQUEST_OBJECT_MAX_TTL_SECONDS.saturating_add(REQUEST_OBJECT_CLOCK_SKEW_SECONDS)
-        {
-            return false;
-        }
-    } else if expiry > now.saturating_add(REQUEST_OBJECT_MAX_TTL_SECONDS) {
+    if now.saturating_sub(not_before) > REQUEST_OBJECT_MAX_TTL_SECONDS
+        || expiry <= not_before
+        || expiry.saturating_sub(not_before)
+            > REQUEST_OBJECT_MAX_TTL_SECONDS.saturating_add(REQUEST_OBJECT_CLOCK_SKEW_SECONDS)
+    {
         return false;
     }
     !claims.iat.is_some_and(|issued_at| {
@@ -419,17 +339,13 @@ fn request_object_times_valid(
 }
 
 fn request_object_jti_valid(claims: &RequestObjectClaims, policy: RequestObjectPolicy<'_>) -> bool {
-    match (&claims.jti, policy.mode) {
-        (Some(jti), _) => {
+    match &claims.jti {
+        Some(jti) => {
             let jti = jti.trim();
             !jti.is_empty() && jti.len() <= 128
         }
-        (None, RequestObjectMode::SignedJar)
-            if policy.jti_policy == RequestObjectJtiPolicy::RequiredForSignedJar =>
-        {
-            false
-        }
-        (None, _) => true,
+        None if policy.jti_policy == RequestObjectJtiPolicy::RequiredForSignedJar => false,
+        None => true,
     }
 }
 
@@ -444,9 +360,6 @@ fn request_object_replay(
         Some(expiry) => expiry
             .saturating_sub(policy.now)
             .clamp(1, REQUEST_OBJECT_MAX_TTL_SECONDS) as u64,
-        None if policy.mode == RequestObjectMode::BasicOidc => {
-            REQUEST_OBJECT_MAX_TTL_SECONDS as u64
-        }
         None => return Err(AuthorizationRequestError::RequestObjectClaims),
     };
     Ok(Some(RequestObjectReplay {
@@ -470,14 +383,26 @@ fn request_object_parameters(
         let Some(value) = claims.parameters.get(*key) else {
             continue;
         };
-        let value = match value {
-            Value::String(value) => value.clone(),
-            Value::Number(value) => value.to_string(),
-            Value::Object(_) if *key == "claims" => value.to_string(),
-            Value::Array(_) if matches!(*key, "authorization_details" | "resource") => {
-                value.to_string()
+        let value = if *key == "resource" {
+            let values = match value {
+                Value::String(value) => vec![value.clone()],
+                Value::Array(values) => values
+                    .iter()
+                    .map(|value| value.as_str().map(ToOwned::to_owned))
+                    .collect::<Option<Vec<_>>>()
+                    .ok_or(AuthorizationRequestError::RequestObjectParameterType)?,
+                _ => return Err(AuthorizationRequestError::RequestObjectParameterType),
+            };
+            crate::encode_resource_indicators(&values)
+                .ok_or(AuthorizationRequestError::RequestObjectParameterType)?
+        } else {
+            match value {
+                Value::String(value) => value.clone(),
+                Value::Number(value) => value.to_string(),
+                Value::Object(_) if *key == "claims" => value.to_string(),
+                Value::Array(_) if *key == "authorization_details" => value.to_string(),
+                _ => return Err(AuthorizationRequestError::RequestObjectParameterType),
             }
-            _ => return Err(AuthorizationRequestError::RequestObjectParameterType),
         };
         parameters.insert((*key).to_owned(), value);
     }
@@ -679,7 +604,6 @@ mod tests {
                 allow_client_assertion_audience_array: false,
                 allow_client_assertion_endpoint_audience: false,
                 require_par_request_object: false,
-                allow_authorization_code_without_pkce: false,
                 backchannel_logout_uri: None,
                 backchannel_logout_session_required: true,
                 frontchannel_logout_uri: None,
@@ -749,9 +673,7 @@ mod tests {
         RequestObjectPolicy {
             issuer: "https://issuer.example",
             client_id: "client",
-            mode: RequestObjectMode::SignedJar,
             jti_policy: RequestObjectJtiPolicy::RequiredForSignedJar,
-            unsigned_request_object_allowed: false,
             require_integrity_protected_parameters: true,
             now,
         }
@@ -810,10 +732,8 @@ mod tests {
         let verified = verify_request_object(RequestObjectVerificationInput {
             request_object: &token,
             client: &client,
-            profile_disallows_unsigned_request_object: true,
         })
         .expect("valid signed Request Object");
-        assert_eq!(verified.mode, RequestObjectMode::SignedJar);
         assert_eq!(verified.claims.client_id, "client");
 
         let duplicate = request_object_client(json!({
@@ -823,7 +743,6 @@ mod tests {
             verify_request_object(RequestObjectVerificationInput {
                 request_object: &token,
                 client: &duplicate,
-                profile_disallows_unsigned_request_object: true,
             }),
             Err(RequestObjectVerificationError::InvalidKey)
         );
@@ -841,7 +760,6 @@ mod tests {
                 verify_request_object(RequestObjectVerificationInput {
                     request_object: &token,
                     client: &client,
-                    profile_disallows_unsigned_request_object: true,
                 }),
                 Err(RequestObjectVerificationError::InvalidKey),
                 "accepted invalid JWK member {member}"
@@ -860,7 +778,6 @@ mod tests {
         let verified = verify_request_object(RequestObjectVerificationInput {
             request_object: &token,
             client: &client,
-            profile_disallows_unsigned_request_object: true,
         })
         .expect("signature verification must not use the process wall clock");
         assert!(
@@ -897,7 +814,6 @@ mod tests {
                 verify_request_object(RequestObjectVerificationInput {
                     request_object,
                     client: &client,
-                    profile_disallows_unsigned_request_object: false,
                 }),
                 Err(expected)
             );
@@ -909,14 +825,13 @@ mod tests {
             verify_request_object(RequestObjectVerificationInput {
                 request_object: &invalid_signature,
                 client: &client,
-                profile_disallows_unsigned_request_object: false,
             }),
             Err(RequestObjectVerificationError::InvalidSignature)
         );
     }
 
     #[test]
-    fn unsigned_request_objects_preserve_mode_policy_and_client_id_discovery() {
+    fn unsigned_request_objects_are_rejected_for_every_client_profile() {
         let claims = signed_request_object_json(1_700_000_000);
         let unsigned = format!(
             "{}.{}.",
@@ -924,35 +839,19 @@ mod tests {
             URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap())
         );
         let client = request_object_client(json!({"keys": [request_object_public_jwk()]}));
-        assert!(request_object_uses_unsigned_algorithm(&unsigned));
-        assert_eq!(
-            verify_request_object(RequestObjectVerificationInput {
-                request_object: &unsigned,
-                client: &client,
-                profile_disallows_unsigned_request_object: true,
-            }),
-            Err(RequestObjectVerificationError::SigningPolicy)
-        );
         let mut sender_constrained = client.clone();
         sender_constrained.require_dpop_bound_tokens = true;
-        assert_eq!(
-            verify_request_object(RequestObjectVerificationInput {
-                request_object: &unsigned,
-                client: &sender_constrained,
-                profile_disallows_unsigned_request_object: false,
-            }),
-            Err(RequestObjectVerificationError::SigningPolicy)
-        );
         let mut par_required = client.clone();
         par_required.require_par_request_object = true;
-        assert_eq!(
-            verify_request_object(RequestObjectVerificationInput {
-                request_object: &unsigned,
-                client: &par_required,
-                profile_disallows_unsigned_request_object: false,
-            }),
-            Err(RequestObjectVerificationError::SigningPolicy)
-        );
+        for client in [&client, &sender_constrained, &par_required] {
+            assert_eq!(
+                verify_request_object(RequestObjectVerificationInput {
+                    request_object: &unsigned,
+                    client,
+                }),
+                Err(RequestObjectVerificationError::InvalidAlgorithm)
+            );
+        }
         let signed = signed_request_object(&claims, json!({"alg": "EdDSA", "kid": "jar-key"}));
         assert_eq!(
             unverified_signed_request_object_client_id(&signed).as_deref(),
@@ -1013,7 +912,8 @@ mod tests {
             ("request".to_owned(), "signed.jwt".to_owned()),
             (
                 "resource".to_owned(),
-                "[\"https://api.example\"]".to_owned(),
+                crate::encode_resource_indicators(&["https://api.example".to_owned()])
+                    .expect("resource set"),
             ),
         ]);
         let raw = RawParAdmissionPolicy {

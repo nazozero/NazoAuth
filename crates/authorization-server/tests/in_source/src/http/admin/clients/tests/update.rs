@@ -102,7 +102,6 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
         backchannel_logout_session_required: true,
         frontchannel_logout_uri: None,
@@ -343,7 +342,6 @@ fn current_client() -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: true,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,
@@ -385,7 +383,6 @@ fn empty_patch() -> PatchClientRequest {
         allow_client_assertion_audience_array: None,
         allow_client_assertion_endpoint_audience: None,
         require_par_request_object: None,
-        allow_authorization_code_without_pkce: None,
         backchannel_logout_uri: None,
         backchannel_logout_session_required: None,
         frontchannel_logout_uri: None,
@@ -444,7 +441,6 @@ async fn patch_preserves_unsubmitted_security_metadata() {
     );
     assert!(prepared.require_dpop_bound_tokens);
     assert!(prepared.require_par_request_object);
-    assert!(!prepared.allow_authorization_code_without_pkce);
     assert!(!prepared.is_active);
 }
 

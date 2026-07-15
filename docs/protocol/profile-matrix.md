@@ -29,9 +29,9 @@ deployment can satisfy.
 | Response types | `code` |
 | Client auth | `none`, `client_secret_basic`, `client_secret_post`, `private_key_jwt`, `tls_client_auth`, `self_signed_tls_client_auth` |
 | Token binding | Bearer, DPoP-bound, mTLS-bound |
-| PKCE | S256 required by default for authorization code requests; explicit no-PKCE legacy compatibility is limited to registered confidential clients and is forbidden for sender-constrained clients |
+| PKCE | S256 required for every authorization code request; no client type or registration field can bypass it |
 | PAR | Supported, not globally required by default |
-| JAR | Supported; unsigned request objects are baseline compatibility only |
+| JAR | Supported only as an asymmetric signed Request Object; `alg=none` is rejected |
 | JARM | Supported as `response_mode=jwt` when negotiated; per-client metadata may select signing and nested JWE protection |
 | RAR | RFC 9396-style `authorization_details` accepted on authorization, PAR, and signed request object inputs only when `ENABLE_AUTHORIZATION_DETAILS=true` |
 | Refresh policy | Rotation by default for refresh-token grants |
@@ -45,7 +45,7 @@ Required negative tests:
 - duplicate OAuth parameters
 - unsafe redirect URI
 - non-S256 PKCE
-- omitted PKCE for clients without an explicit compatibility exception
+- omitted PKCE for every authorization-code client type
 - mixed client authentication methods
 - invalid client assertion audience
 - access token transport ambiguity

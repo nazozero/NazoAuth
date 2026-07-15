@@ -21,7 +21,6 @@ pub struct MetadataEndpointConfig {
     pub pairwise_subject_enabled: bool,
     pub protected_resource_identifier: String,
     pub require_pushed_authorization_requests: bool,
-    pub request_uri_parameter_enabled: bool,
 }
 
 /// One request's immutable view of module admission and public signing data.
@@ -66,7 +65,6 @@ impl MetadataHandles {
                 require_pushed_authorization_requests: self
                     .config
                     .require_pushed_authorization_requests,
-                request_uri_parameter_enabled: self.config.request_uri_parameter_enabled,
                 signing_algorithms: MetadataSigningAlgorithms {
                     active: &snapshot.active_signing_algorithms,
                     id_token: &snapshot.id_token_signing_algorithms,
@@ -160,7 +158,6 @@ mod tests {
                 pairwise_subject_enabled: false,
                 protected_resource_identifier: "https://issuer.example/fapi/resource".to_owned(),
                 require_pushed_authorization_requests: false,
-                request_uri_parameter_enabled: false,
             },
             source,
         )

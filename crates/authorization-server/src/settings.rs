@@ -92,7 +92,6 @@ pub(crate) struct StorageSettings {
     pub(crate) avatar_max_bytes: usize,
     pub(crate) client_delivery_ttl_seconds: u64,
     pub(crate) avatar_storage_dir: PathBuf,
-    pub(crate) scim_bearer_token: Option<String>,
     pub(crate) scim_event_retention_seconds: u64,
 }
 
@@ -117,10 +116,8 @@ pub(crate) struct KeyManagementSettings {
 #[derive(Clone)]
 pub(crate) struct ModuleSettings {
     pub(crate) enable_request_object: bool,
-    pub(crate) enable_request_uri_parameter: bool,
     pub(crate) enable_par_request_object: bool,
     pub(crate) enable_authorization_details: bool,
-    pub(crate) enable_legacy_audience_param: bool,
     pub(crate) enable_device_authorization_grant: bool,
     pub(crate) enable_dynamic_client_registration: bool,
     pub(crate) enable_frontchannel_logout: bool,
@@ -281,7 +278,17 @@ impl Settings {
                 "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN is required when ENABLE_DYNAMIC_CLIENT_REGISTRATION=true"
             );
         }
+        let email_code_dev_response_enabled =
+            config.bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?;
+        if email_code_dev_response_enabled
+            && (!cfg!(debug_assertions) || !is_loopback_http_url(&issuer))
+        {
+            bail!(
+                "EMAIL_CODE_DEV_RESPONSE_ENABLED=true requires a debug build and loopback HTTP issuer"
+            );
+        }
         let passkey = PasskeySettings::from_config(config, &issuer)?;
+        let email = EmailSettings::from_config(config, &issuer)?;
         let federation = FederationSettings::from_config(config)?;
         let signing_key_rotation_interval_seconds =
             config.parse("SIGNING_KEY_ROTATION_INTERVAL_SECONDS", 7_776_000)?;
@@ -387,14 +394,12 @@ impl Settings {
                     "CLIENT_DELIVERY_TTL_SECONDS",
                 )?,
                 avatar_storage_dir,
-                scim_bearer_token: config.optional_string("SCIM_BEARER_TOKEN"),
                 scim_event_retention_seconds,
             },
             identity: IdentityRuntimeSettings {
                 rate_limit: RateLimitSettings::from_config(config)?,
-                email: EmailSettings::from_config(config)?,
-                email_code_dev_response_enabled: config
-                    .bool("EMAIL_CODE_DEV_RESPONSE_ENABLED", false)?,
+                email,
+                email_code_dev_response_enabled,
                 passkey,
                 federation,
             },
@@ -409,10 +414,8 @@ impl Settings {
             },
             modules: ModuleSettings {
                 enable_request_object: config.bool("ENABLE_REQUEST_OBJECT", false)?,
-                enable_request_uri_parameter: config.bool("ENABLE_REQUEST_URI_PARAMETER", false)?,
                 enable_par_request_object: config.bool("ENABLE_PAR_REQUEST_OBJECT", false)?,
                 enable_authorization_details: config.bool("ENABLE_AUTHORIZATION_DETAILS", false)?,
-                enable_legacy_audience_param: config.bool("ENABLE_LEGACY_AUDIENCE_PARAM", false)?,
                 enable_device_authorization_grant: config
                     .bool("ENABLE_DEVICE_AUTHORIZATION_GRANT", false)?,
                 enable_frontchannel_logout: config.bool("ENABLE_FRONTCHANNEL_LOGOUT", false)?,

@@ -24,7 +24,6 @@ pub struct ValidatedClientRegistration {
     pub allow_client_assertion_audience_array: bool,
     pub allow_client_assertion_endpoint_audience: bool,
     pub require_par_request_object: bool,
-    pub allow_authorization_code_without_pkce: bool,
     pub backchannel_logout_uri: Option<String>,
     pub backchannel_logout_session_required: bool,
     pub frontchannel_logout_uri: Option<String>,

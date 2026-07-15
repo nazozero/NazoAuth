@@ -1,5 +1,7 @@
 use std::collections::HashSet;
 
+const INTERNAL_RESOURCE_SET_PREFIX: &str = "nazo-internal-resource-set:";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ResourceIndicatorError {
     Invalid,
@@ -22,27 +24,31 @@ pub fn parse_resource_indicators(values: &[String]) -> Result<Vec<String>, Resou
     Ok(resources)
 }
 
-/// Parses the server's compatibility representation for a `resource` parameter.
-///
-/// A single URI and the legacy JSON-array representation are both accepted. The
-/// resulting values always pass the same URI, fragment, and duplicate checks.
+/// Parses a resource value after the transport boundary has normalized repeated
+/// RFC 8707 parameters into the server's private representation.
 pub fn parse_resource_indicator_parameter(
     value: Option<&str>,
 ) -> Result<Vec<String>, ResourceIndicatorError> {
     let Some(value) = value else {
         return Ok(Vec::new());
     };
-    if let Ok(values) = serde_json::from_str::<Vec<String>>(value) {
+    if let Some(encoded) = value.strip_prefix(INTERNAL_RESOURCE_SET_PREFIX) {
+        let values = serde_json::from_str::<Vec<String>>(encoded)
+            .map_err(|_| ResourceIndicatorError::Invalid)?;
         return parse_resource_indicators(&values);
     }
     parse_resource_indicators(&[value.to_owned()])
 }
 
-/// Encodes resource indicators for storage in the existing single-value parameter map.
+/// Encodes transport-validated repeated values into a private in-process form.
 #[must_use]
 pub fn encode_resource_indicators(values: &[String]) -> Option<String> {
     (!values.is_empty()).then(|| {
-        serde_json::to_string(values).expect("resource indicator serialization must be infallible")
+        format!(
+            "{INTERNAL_RESOURCE_SET_PREFIX}{}",
+            serde_json::to_string(values)
+                .expect("resource indicator serialization must be infallible")
+        )
     })
 }
 
@@ -67,7 +73,7 @@ mod tests {
     }
 
     #[test]
-    fn parameter_compatibility_representation_uses_the_same_validation() {
+    fn private_parameter_representation_uses_the_same_validation() {
         assert_eq!(
             parse_resource_indicator_parameter(Some("https://api.example")).unwrap(),
             ["https://api.example"]
@@ -86,7 +92,7 @@ mod tests {
             parse_resource_indicator_parameter(Some(
                 r#"["https://api.example","https://api.example"]"#
             )),
-            Err(ResourceIndicatorError::Duplicate)
+            Err(ResourceIndicatorError::Invalid)
         );
     }
 }

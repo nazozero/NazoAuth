@@ -39,9 +39,8 @@ use crate::domain::DynamicRegistrationHandles;
 use crate::domain::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(not(test))]
 use crate::domain::{
-    BackchannelLogoutWorker, ServerScimBootstrapPasswordProvider, ServerScimCursorProtector,
-    ServerScimEventSigner, ServerScimRequestAuthorizer, ServerTokenManagementOperations,
-    ServerTokenManagementRequestGuard, ServerUserinfoOperations, dynamic_registration_endpoint,
+    BackchannelLogoutWorker, ServerTokenManagementOperations, ServerTokenManagementRequestGuard,
+    ServerUserinfoOperations, dynamic_registration_endpoint,
     spawn_backchannel_logout_delivery_worker,
 };
 use crate::domain::{
@@ -54,6 +53,10 @@ use crate::domain::{
 };
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
+};
+use crate::domain::{
+    ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimEventSigner,
+    ServerScimRequestAuthorizer,
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
@@ -70,8 +73,6 @@ use crate::http::authorization::{
 };
 use crate::http::client_ip::ClientIpConfig;
 use crate::http::rate_limit::{AuthRequestLimiter, TokenManagementRequestLimiter};
-#[cfg(test)]
-use crate::http::scim::{ScimConfig, ScimEndpoint, ScimRuntimeAdmission};
 use crate::http::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
 #[cfg(not(test))]
 use crate::http::token::ServerTokenManagementRequestFactsExtractor;
@@ -220,23 +221,11 @@ pub async fn run() -> anyhow::Result<()> {
         &scim_endpoint.trusted_proxy_cidrs,
         scim_endpoint.client_ip_header_mode,
     );
-    #[cfg(test)]
-    let scim_endpoint = web::Data::new(ScimEndpoint::new(
-        scim_service,
-        ScimConfig::new(
-            scim_storage.scim_bearer_token.as_deref(),
-            &scim_protocol.client_secret_pepper,
-            scim_client_ip,
-        )?,
-        ScimRuntimeAdmission::new(runtime_modules.registry.clone()),
-    ));
-    #[cfg(not(test))]
     let scim_endpoint = web::Data::new(
         nazo_http_actix::ScimEndpoint::new(
             scim_service.clone(),
             Arc::new(ServerScimRequestAuthorizer::new(
                 scim_service,
-                scim_storage.scim_bearer_token.as_deref(),
                 scim_client_ip,
                 runtime_modules.registry.clone(),
             )),

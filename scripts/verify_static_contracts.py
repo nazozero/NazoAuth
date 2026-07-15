@@ -13,6 +13,9 @@ CHECKSUMS = ROOT / "tests" / "contracts" / "migrations.sha256"
 ROUTES = ROOT / "tests" / "contracts" / "routes.json"
 RFC9967_MATRIX = ROOT / "tests" / "contracts" / "rfc9967-scim-set-matrix.json"
 RFC9967_RUNNER = ROOT / "scripts" / "rfc9967_scim_set_e2e.py"
+SECURITY_NON_IMPLEMENTATION_POLICY = (
+    ROOT / "docs" / "protocol" / "not-implemented-security-policy.md"
+)
 WORKSTATION_PATH = re.compile(r"(?i)\b[A-Z]:[\\/](?:self|projects)[\\/]")
 REMOVED_ADAPTER_CLAIMS = (
     "Actix Web, Axum/Tower, and tonic adapters",
@@ -310,6 +313,57 @@ def check_rfc9967_test_boundaries() -> None:
         raise SystemExit("conformance-security workflow does not enforce the RFC 9967 matrix")
 
 
+def check_removed_security_capabilities() -> None:
+    active_files = [
+        *(ROOT / "crates").glob("*/src/**/*.rs"),
+        *(ROOT / "scripts").glob("*.py"),
+        *(ROOT / "scripts").glob("*.sh"),
+        *(ROOT / "perf").glob("*.py"),
+        *(ROOT / "perf").glob("*.yaml"),
+        *(ROOT / ".github" / "workflows").glob("*.yml"),
+    ]
+    forbidden = (
+        "ENABLE_REQUEST_URI_" + "PARAMETER",
+        "ENABLE_LEGACY_AUDIENCE_" + "PARAM",
+        "SCIM_BEARER_" + "TOKEN",
+        "allow_authorization_code_" + "without_pkce",
+        "enable_request_uri_" + "parameter",
+        "enable_legacy_audience_" + "param",
+        "RequestObject" + "Mode",
+        "unsigned_request_object_" + "allowed",
+    )
+    violations = []
+    for path in active_files:
+        source = path.read_text(encoding="utf-8")
+        markers = [marker for marker in forbidden if marker in source]
+        if markers:
+            violations.append((path.relative_to(ROOT).as_posix(), markers))
+    if violations:
+        raise SystemExit(f"removed security capabilities reappeared: {violations}")
+
+    removed_test_harness = [
+        ROOT / "crates" / "authorization-server" / "src" / "http" / "scim.rs",
+        ROOT / "crates" / "authorization-server" / "src" / "http" / "scim",
+    ]
+    present = [path.relative_to(ROOT) for path in removed_test_harness if path.exists()]
+    if present:
+        raise SystemExit(f"SCIM test-only transport implementation reappeared: {present}")
+
+    policy = SECURITY_NON_IMPLEMENTATION_POLICY.read_text(encoding="utf-8")
+    required_policy_evidence = (
+        "RFC 9700",
+        "RFC 9101",
+        "RFC 9126",
+        "RFC 8707",
+        "RFC 6750",
+        "RFC 8314",
+        "Not implemented by security policy",
+    )
+    missing = [item for item in required_policy_evidence if item not in policy]
+    if missing:
+        raise SystemExit(f"security non-implementation policy lacks evidence: {missing}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -329,6 +383,7 @@ def main() -> None:
         check_crate_dependency_boundaries()
         check_workspace_package_metadata()
         check_rfc9967_test_boundaries()
+        check_removed_security_capabilities()
 
 
 if __name__ == "__main__":

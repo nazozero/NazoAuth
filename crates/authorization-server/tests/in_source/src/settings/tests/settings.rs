@@ -278,10 +278,8 @@ fn invalid_ciba_security_profile_is_rejected() {
 fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     let defaults = Settings::from_config(&ConfigSource::default()).unwrap();
     assert!(!defaults.modules.enable_request_object);
-    assert!(!defaults.modules.enable_request_uri_parameter);
     assert!(!defaults.modules.enable_par_request_object);
     assert!(!defaults.modules.enable_authorization_details);
-    assert!(!defaults.modules.enable_legacy_audience_param);
     assert!(!defaults.modules.enable_device_authorization_grant);
     assert!(!defaults.modules.enable_dynamic_client_registration);
     assert!(!defaults.modules.enable_frontchannel_logout);
@@ -306,10 +304,8 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
 
     let config = ConfigSource::from_pairs_for_test([
         ("ENABLE_REQUEST_OBJECT", "true"),
-        ("ENABLE_REQUEST_URI_PARAMETER", "true"),
         ("ENABLE_PAR_REQUEST_OBJECT", "true"),
         ("ENABLE_AUTHORIZATION_DETAILS", "true"),
-        ("ENABLE_LEGACY_AUDIENCE_PARAM", "true"),
         ("ENABLE_DEVICE_AUTHORIZATION_GRANT", "true"),
         ("ENABLE_DYNAMIC_CLIENT_REGISTRATION", "true"),
         ("ENABLE_FRONTCHANNEL_LOGOUT", "true"),
@@ -330,10 +326,8 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     let settings = Settings::from_config(&config).unwrap();
 
     assert!(settings.modules.enable_request_object);
-    assert!(settings.modules.enable_request_uri_parameter);
     assert!(settings.modules.enable_par_request_object);
     assert!(settings.modules.enable_authorization_details);
-    assert!(settings.modules.enable_legacy_audience_param);
     assert!(settings.modules.enable_device_authorization_grant);
     assert!(settings.modules.enable_dynamic_client_registration);
     assert!(settings.modules.enable_frontchannel_logout);
@@ -691,13 +685,10 @@ fn smtp_delivery_rejects_invalid_sender_and_tls_mode() {
 }
 
 #[test]
-fn smtp_delivery_accepts_explicit_tls_modes_without_secret_leakage() {
+fn smtp_delivery_accepts_encrypted_tls_modes_without_secret_leakage() {
     for (raw, expected) in [
         ("starttls", SmtpTlsMode::StartTls),
         ("implicit", SmtpTlsMode::ImplicitTls),
-        ("tls", SmtpTlsMode::ImplicitTls),
-        ("none", SmtpTlsMode::None),
-        ("plain", SmtpTlsMode::None),
     ] {
         let config = ConfigSource::from_pairs_for_test([
             ("EMAIL_DELIVERY", "smtp"),
@@ -722,6 +713,88 @@ fn smtp_delivery_accepts_explicit_tls_modes_without_secret_leakage() {
                 | (SmtpTlsMode::None, SmtpTlsMode::None)
         ));
     }
+}
+
+#[test]
+fn smtp_delivery_allows_cleartext_only_for_credential_free_loopback_development() {
+    let allowed = ConfigSource::from_pairs_for_test([
+        ("ISSUER", "http://127.0.0.1:8000"),
+        ("EMAIL_DELIVERY", "smtp"),
+        ("EMAIL_SMTP_HOST", "localhost"),
+        ("EMAIL_FROM", "Nazo Auth <no-reply@example.test>"),
+        ("EMAIL_SMTP_TLS", "none"),
+    ]);
+    let settings = Settings::from_config(&allowed).expect("loopback development SMTP");
+    let EmailDelivery::Smtp(smtp) = settings.identity.email.delivery else {
+        panic!("smtp delivery should be enabled");
+    };
+    assert!(matches!(smtp.tls, SmtpTlsMode::None));
+
+    for config in [
+        ConfigSource::from_pairs_for_test([
+            ("ISSUER", "https://auth.example.test"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "test-client-secret-pepper-that-is-long-enough-0001",
+            ),
+            ("EMAIL_DELIVERY", "smtp"),
+            ("EMAIL_SMTP_HOST", "localhost"),
+            ("EMAIL_FROM", "Nazo Auth <no-reply@example.test>"),
+            ("EMAIL_SMTP_TLS", "none"),
+        ]),
+        ConfigSource::from_pairs_for_test([
+            ("ISSUER", "http://127.0.0.1:8000"),
+            ("EMAIL_DELIVERY", "smtp"),
+            ("EMAIL_SMTP_HOST", "localhost"),
+            ("EMAIL_FROM", "Nazo Auth <no-reply@example.test>"),
+            ("EMAIL_SMTP_USERNAME", "user"),
+            ("EMAIL_SMTP_PASSWORD", "password"),
+            ("EMAIL_SMTP_TLS", "none"),
+        ]),
+    ] {
+        assert_eq!(
+            settings_error(&config, "cleartext SMTP must fail closed").to_string(),
+            "EMAIL_SMTP_TLS=none is restricted to credential-free loopback development"
+        );
+    }
+}
+
+#[test]
+fn email_code_dev_response_requires_debug_loopback_issuer() {
+    let allowed = ConfigSource::from_pairs_for_test([
+        ("ISSUER", "http://localhost:8000"),
+        ("EMAIL_CODE_DEV_RESPONSE_ENABLED", "true"),
+    ]);
+    let allowed_result = Settings::from_config(&allowed);
+    if cfg!(debug_assertions) {
+        assert!(
+            allowed_result
+                .expect("debug loopback issuer")
+                .identity
+                .email_code_dev_response_enabled
+        );
+    } else {
+        let Err(error) = allowed_result else {
+            panic!("release build must reject verification-code response")
+        };
+        assert_eq!(
+            error.to_string(),
+            "EMAIL_CODE_DEV_RESPONSE_ENABLED=true requires a debug build and loopback HTTP issuer"
+        );
+    }
+
+    let public = ConfigSource::from_pairs_for_test([
+        ("ISSUER", "https://auth.example.test"),
+        (
+            "CLIENT_SECRET_PEPPER",
+            "test-client-secret-pepper-that-is-long-enough-0001",
+        ),
+        ("EMAIL_CODE_DEV_RESPONSE_ENABLED", "true"),
+    ]);
+    assert_eq!(
+        settings_error(&public, "public issuer must not return verification codes").to_string(),
+        "EMAIL_CODE_DEV_RESPONSE_ENABLED=true requires a debug build and loopback HTTP issuer"
+    );
 }
 
 fn oidc_provider_registry_config_with(

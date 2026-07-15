@@ -39,7 +39,6 @@ fn create_request() -> CreateClientRequest {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: true,
-        allow_authorization_code_without_pkce: false,
         backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
         backchannel_logout_session_required: true,
         frontchannel_logout_uri: Some("https://client.example/frontchannel".to_owned()),

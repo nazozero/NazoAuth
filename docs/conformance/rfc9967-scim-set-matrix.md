@@ -23,7 +23,7 @@ CI executes it through
 | Case | External behavior proved |
 | --- | --- |
 | `discovery_exact_event_uris` | Discovery advertises only the five deliverable notice/lifecycle event URIs and `asyncRequest=none`; the matrix separately exercises the poll endpoint. |
-| `poll_authorization_boundaries` | Missing bearer, legacy bearer, missing scope, and missing receiver audience fail closed. |
+| `poll_authorization_boundaries` | Missing bearer, an unregistered bearer, missing scope, and missing receiver audience fail closed. |
 | `create_notice_set_claims` | A SCIM create emits one signed `secevent+jwt` with issuer, audience, `jti`, `txn`, SCIM `sub_id`, and exact create-notice attributes. |
 | `receiver_audience_and_ack_isolation` | Each receiver gets a separately audience-bound SET; one receiver's acknowledgement cannot consume another receiver's delivery. |
 | `ack_is_terminal_for_receiver` | Acknowledged delivery is not returned again to that receiver. |
@@ -66,5 +66,6 @@ python scripts/test_rfc9967_scim_set_e2e_source_policy.py
 python scripts/rfc9967_scim_set_e2e.py
 ```
 
-`E2E_BASE_URL`, `E2E_ISSUER_URL`, `E2E_DATABASE_URL`, and
-`E2E_LEGACY_SCIM_BEARER_TOKEN` select the isolated test deployment.
+`E2E_BASE_URL`, `E2E_ISSUER_URL`, and `E2E_DATABASE_URL` select the isolated
+test deployment. The runner creates scoped database credentials and removes
+them after the matrix.

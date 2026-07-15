@@ -57,7 +57,6 @@ pub(super) fn validate_metadata_fixture(metadata: ClientMetadataFixture<'_>) -> 
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         backchannel_logout_uri: metadata.backchannel_logout_uri.map(ToOwned::to_owned),
         backchannel_logout_session_required: true,
         frontchannel_logout_uri: metadata.frontchannel_logout_uri.map(ToOwned::to_owned),

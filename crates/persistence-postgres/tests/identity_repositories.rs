@@ -194,7 +194,6 @@ fn oauth_client(tenant: TenantContext, client_id: String) -> OAuthClient {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience: false,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce: false,
             backchannel_logout_uri: Some("https://client.example/backchannel".to_owned()),
             backchannel_logout_session_required: false,
             frontchannel_logout_uri: None,

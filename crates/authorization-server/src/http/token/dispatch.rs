@@ -320,14 +320,11 @@ pub(crate) async fn token_with_service(
             );
         }
     };
-    if form.has_audience_param
-        && form.grant_type != TOKEN_EXCHANGE_GRANT_TYPE
-        && !issuance_config.legacy_audience_param_enabled()
-    {
+    if form.has_audience_param && form.grant_type != TOKEN_EXCHANGE_GRANT_TYPE {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
-            "audience 参数未启用.",
+            "audience is only valid for OAuth token exchange; use RFC 8707 resource elsewhere.",
             false,
         );
     }

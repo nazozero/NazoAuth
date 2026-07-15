@@ -52,7 +52,6 @@ pub(crate) struct TokenIssuanceConfig {
     authorization_server_profile: AuthorizationServerProfile,
     client_ip_header_mode: ClientIpHeaderMode,
     client_secret_pepper: Box<str>,
-    enable_legacy_audience_param: bool,
     rate_limit_window_seconds: u64,
     token_rate_limit_max_requests: u64,
     auth_code_ttl_seconds: u64,
@@ -77,7 +76,6 @@ impl From<&Settings> for TokenIssuanceConfig {
             authorization_server_profile: settings.protocol.authorization_server_profile,
             client_ip_header_mode: settings.endpoint.client_ip_header_mode,
             client_secret_pepper: settings.protocol.client_secret_pepper.as_str().into(),
-            enable_legacy_audience_param: settings.modules.enable_legacy_audience_param,
             rate_limit_window_seconds: settings.identity.rate_limit.window_seconds,
             token_rate_limit_max_requests: settings.identity.rate_limit.token_max_requests,
             auth_code_ttl_seconds: settings.protocol.auth_code_ttl_seconds,
@@ -127,10 +125,6 @@ impl TokenIssuanceConfig {
 
     pub(crate) fn client_secret_pepper(&self) -> &str {
         &self.client_secret_pepper
-    }
-
-    pub(crate) fn legacy_audience_param_enabled(&self) -> bool {
-        self.enable_legacy_audience_param
     }
 
     pub(crate) fn rate_limit_window_seconds(&self) -> u64 {

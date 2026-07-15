@@ -76,7 +76,6 @@ fn pkce_policy_client() -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,
@@ -212,7 +211,7 @@ impl LiveAuthorizationCodeFixture {
                 tls_client_auth_san_dns, tls_client_auth_san_uri, tls_client_auth_san_ip,
                 tls_client_auth_san_email, allow_client_assertion_audience_array,
                 allow_client_assertion_endpoint_audience, require_par_request_object,
-                allow_authorization_code_without_pkce, is_active, jwks,
+                is_active, jwks,
                 post_logout_redirect_uris, backchannel_logout_uri,
                 backchannel_logout_session_required, subject_type, sector_identifier_uri,
                 sector_identifier_host
@@ -225,9 +224,9 @@ impl LiveAuthorizationCodeFixture {
                 '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
                 '[]'::jsonb, false,
                 false, false,
-                $16, $17, NULL,
+                $16, NULL,
                 '[]'::jsonb, NULL,
-                true, $18, $19, $20
+                true, $17, $18, $19
             )
             "#,
         )
@@ -246,7 +245,6 @@ impl LiveAuthorizationCodeFixture {
         .bind::<Text, _>(client.token_endpoint_auth_method.as_str())
         .bind::<Bool, _>(client.require_dpop_bound_tokens)
         .bind::<Bool, _>(client.require_mtls_bound_tokens)
-        .bind::<Bool, _>(client.allow_authorization_code_without_pkce)
         .bind::<Bool, _>(client.is_active)
         .bind::<Text, _>(client.subject_type.as_str())
         .bind::<Nullable<Text>, _>(client.sector_identifier_uri.as_deref())
@@ -395,7 +393,6 @@ fn live_client(client_id: &str) -> ClientRow {
     client.grant_types = vec!["authorization_code".to_owned(), "refresh_token".to_owned()];
     client.allowed_audiences = vec!["resource://default".to_owned()];
     client.redirect_uris = vec!["https://client.example/callback".to_owned()];
-    client.allow_authorization_code_without_pkce = true;
     client
 }
 
@@ -814,14 +811,11 @@ fn authorization_code_redirect_uri_matching_preserves_oauth_binding_rules() {
 }
 
 #[test]
-fn authorization_code_pkce_policy_requires_pkce_for_public_or_sender_constrained_codes() {
+fn authorization_code_pkce_policy_has_no_client_profile_bypass() {
     let mut client = pkce_policy_client();
     let mut payload = code_payload(true);
 
     assert!(authorization_code_requires_pkce(&client, &payload));
-
-    client.allow_authorization_code_without_pkce = true;
-    assert!(!authorization_code_requires_pkce(&client, &payload));
 
     client.client_type = "public".to_owned();
     assert!(authorization_code_requires_pkce(&client, &payload));

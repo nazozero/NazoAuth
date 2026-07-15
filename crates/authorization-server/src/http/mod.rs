@@ -9,7 +9,6 @@ pub(crate) mod mtls;
 pub(crate) mod perf_metrics;
 pub(crate) mod profile;
 pub(crate) mod rate_limit;
-pub(crate) mod scim;
 pub(crate) mod sessions;
 pub(crate) mod token;
 pub(crate) mod views;

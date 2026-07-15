@@ -26,7 +26,7 @@ ISSUER_URL = os.environ.get("E2E_ISSUER_URL", "http://127.0.0.1:8000").rstrip("/
 DATABASE_URL = os.environ.get(
     "E2E_DATABASE_URL", "postgresql://postgres:postgres@127.0.0.1:5432/oauth"
 )
-LEGACY_TOKEN = os.environ.get("E2E_LEGACY_SCIM_BEARER_TOKEN", "codecov-scim-secret")
+UNREGISTERED_TOKEN = "rfc9967-unregistered-token"
 TENANT_ID = "00000000-0000-0000-0000-000000000001"
 POLL_PATH = "/scim/v2/SecurityEvents"
 CONFIG_PATH = "/scim/v2/ServiceProviderConfig"
@@ -248,9 +248,12 @@ def handlers(context: MatrixContext) -> dict[str, Any]:
 
     def authorization(case: str, _: dict[str, object]) -> None:
         missing = expect_status(requests.post(f"{BASE_URL}{POLL_PATH}", json={}, timeout=10), 401)
-        legacy = expect_status(
+        unregistered = expect_status(
             requests.post(
-                f"{BASE_URL}{POLL_PATH}", json={}, headers=context.headers(LEGACY_TOKEN), timeout=10
+                f"{BASE_URL}{POLL_PATH}",
+                json={},
+                headers=context.headers(UNREGISTERED_TOKEN),
+                timeout=10,
             ),
             403,
         )
@@ -259,7 +262,7 @@ def handlers(context: MatrixContext) -> dict[str, Any]:
         context.observe(
             case,
             missing.headers.get("WWW-Authenticate") == "Bearer"
-            and legacy.status_code == write.status_code == no_audience.status_code == 403,
+            and unregistered.status_code == write.status_code == no_audience.status_code == 403,
         )
 
     def create_notice(case: str, _: dict[str, object]) -> None:

@@ -18,7 +18,6 @@ pub(crate) struct MetadataConfig {
     pub(crate) pairwise_subject_enabled: bool,
     pub(crate) protected_resource_identifier: String,
     pub(crate) require_pushed_authorization_requests: bool,
-    pub(crate) request_uri_parameter_enabled: bool,
 }
 
 impl MetadataConfig {
@@ -33,7 +32,6 @@ impl MetadataConfig {
             pairwise_subject_enabled: self.pairwise_subject_enabled,
             protected_resource_identifier: self.protected_resource_identifier.clone(),
             require_pushed_authorization_requests: self.require_pushed_authorization_requests,
-            request_uri_parameter_enabled: self.request_uri_parameter_enabled,
         }
     }
 }
@@ -42,7 +40,6 @@ impl From<&Settings> for MetadataConfig {
     fn from(settings: &Settings) -> Self {
         let endpoint = &settings.endpoint;
         let protocol = &settings.protocol;
-        let modules = &settings.modules;
         Self {
             issuer: endpoint.issuer.clone(),
             mtls_endpoint_base_url: endpoint.mtls_endpoint_base_url.clone(),
@@ -80,7 +77,6 @@ impl From<&Settings> for MetadataConfig {
                 || protocol
                     .authorization_server_profile
                     .requires_fapi2_security(),
-            request_uri_parameter_enabled: modules.enable_request_uri_parameter,
         }
     }
 }
@@ -141,7 +137,6 @@ mod tests {
         settings.protocol.pairwise_subject_secret = Some("a".repeat(32));
         settings.protocol.protected_resource_identifier = "https://resource.example".to_owned();
         settings.protocol.require_pushed_authorization_requests = true;
-        settings.modules.enable_request_uri_parameter = true;
 
         assert_eq!(
             MetadataConfig::from(&settings).endpoint_config(),
@@ -155,7 +150,6 @@ mod tests {
                 pairwise_subject_enabled: true,
                 protected_resource_identifier: "https://resource.example".to_owned(),
                 require_pushed_authorization_requests: true,
-                request_uri_parameter_enabled: true,
             }
         );
     }

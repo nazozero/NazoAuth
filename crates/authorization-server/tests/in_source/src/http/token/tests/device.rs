@@ -79,7 +79,6 @@ fn device_client() -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,

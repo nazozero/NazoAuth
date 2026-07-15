@@ -142,12 +142,8 @@ fn redirect_uri_matches_authorization_request(
 }
 
 fn authorization_code_requires_pkce(client: &ClientRow, payload: &CodePayload) -> bool {
-    client.client_type == "public"
-        || client.require_dpop_bound_tokens
-        || client.require_mtls_bound_tokens
-        || payload.dpop_jkt.is_some()
-        || payload.mtls_x5t_s256.is_some()
-        || !client.allow_authorization_code_without_pkce
+    let _ = (client, payload);
+    true
 }
 
 fn authorization_code_dpop_error_response(error: DpopError) -> HttpResponse {

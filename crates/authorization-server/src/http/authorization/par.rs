@@ -1,10 +1,7 @@
 //! Pushed Authorization Request endpoint.
 use nazo_http_actix::{OAuthJsonErrorFields, json_response_status, oauth_error};
 
-use super::jar::{
-    apply_request_object_with_context, request_object_uses_unsigned_algorithm,
-    unverified_signed_request_object_client_id,
-};
+use super::jar::{apply_request_object_with_context, unverified_signed_request_object_client_id};
 #[cfg(test)]
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::extract_client_credentials_with_trusted_proxies;
@@ -239,16 +236,6 @@ async fn par_after_rate_limit_inner(
         );
     }
 
-    if params
-        .get("request")
-        .is_some_and(|request| request_object_uses_unsigned_algorithm(request))
-    {
-        return oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request_object",
-            "PAR request object 必须签名.",
-        );
-    }
     if !params.contains_key("client_id")
         && let Some(request_object) = params.get("request")
         && let Some(client_id) = unverified_signed_request_object_client_id(request_object)

@@ -93,19 +93,16 @@ security-boundary tests remain mandatory either way.
 Official suite output is indexed here. The files are not OpenID Foundation
 certification statements.
 
-## Request Object Compatibility
+## Request Object Policy
 
-Baseline OIDC metadata advertises `none` in
-`request_object_signing_alg_values_supported` so the server can exercise OIDC
-conformance tests for unsigned Request Objects. This is a compatibility feature,
-not a high-security profile feature.
-
-Unsigned Request Objects remain disallowed for FAPI2 profiles, clients that
-require PAR request objects, and holder-bound clients. Those paths require
-signed Request Objects or reject the request object fail closed.
+All Request Objects require an asymmetric signature. Baseline and FAPI metadata
+never advertise `none`; the runtime rejects unsigned Request Objects for every
+client profile. This follows RFC 9101 rather than preserving an OIDC test-only
+compatibility path.
 
 OIDC dynamic-registration compatibility currently has two expected official
-suite skips: unsigned ID Tokens are not supported or advertised, and the
-`request_uri` parameter is not enabled (`request_uri_parameter_supported=false`).
+suite skips: unsigned ID Tokens are not supported or advertised, and external
+client-supplied `request_uri` is not implemented
+(`request_uri_parameter_supported=false`).
 These skips are documented as reasonable for the current security posture, but
 they must not be treated as zero-SKIPPED evidence.

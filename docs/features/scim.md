@@ -20,7 +20,10 @@ Preferred configuration uses rows in `scim_tokens`:
 - Set `revoked_at` to retire a credential.
 - Use `label` for operator-facing rotation notes; do not store the raw token.
 
-`SCIM_BEARER_TOKEN` remains a compatibility fallback for self-hosted deployments. It is compared in constant time against the `Authorization: Bearer` header and is treated as a legacy full-access credential with `scim:read` and `scim:write`. Prefer database tokens for new deployments.
+SCIM authorization accepts only hashed database credentials. Each credential has
+an explicit tenant, scope set, expiry/revocation lifecycle, last-use timestamp,
+and audit identity. A global environment-backed full-access bearer token is not
+implemented by security policy.
 
 RFC 9967 delivery is default-closed. Set `ENABLE_SCIM_SECURITY_EVENTS=true` to
 admit new events and advertise supported event URIs. `SCIM_EVENT_RETENTION_SECONDS`

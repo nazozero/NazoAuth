@@ -13,7 +13,6 @@ pub fn request_object_verification_error(error: RequestObjectVerificationError) 
         RequestObjectVerificationError::MissingKeyId => "request object 缺少 kid.",
         RequestObjectVerificationError::InvalidKey => "request object 签名密钥无效.",
         RequestObjectVerificationError::InvalidSignature => "request object 验签失败.",
-        RequestObjectVerificationError::SigningPolicy => "request object 签名要求无效.",
     };
     oauth_error(
         StatusCode::BAD_REQUEST,
@@ -25,9 +24,6 @@ pub fn request_object_verification_error(error: RequestObjectVerificationError) 
 #[must_use]
 pub fn request_object_policy_error(error: AuthorizationRequestError) -> HttpResponse {
     let (status, description) = match error {
-        AuthorizationRequestError::RequestObjectSigningPolicy => {
-            (StatusCode::BAD_REQUEST, "request object 签名要求无效.")
-        }
         AuthorizationRequestError::InvalidRequestObject
         | AuthorizationRequestError::RequestObjectClaims => {
             (StatusCode::BAD_REQUEST, "request object claims 无效.")
@@ -137,10 +133,6 @@ mod tests {
             (
                 RequestObjectVerificationError::InvalidSignature,
                 "request object 验签失败.",
-            ),
-            (
-                RequestObjectVerificationError::SigningPolicy,
-                "request object 签名要求无效.",
             ),
         ] {
             assert_error(

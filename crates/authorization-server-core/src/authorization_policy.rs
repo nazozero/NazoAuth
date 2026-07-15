@@ -34,7 +34,6 @@ pub struct AuthorizationClientPolicy<'a> {
     pub allowed_audiences: &'a [String],
     pub require_dpop_bound_tokens: bool,
     pub require_mtls_bound_tokens: bool,
-    pub allow_authorization_code_without_pkce: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -134,11 +133,7 @@ pub fn normalize_authorization_request(
         }
         _ => return Err(AuthorizationPolicyError::InvalidRequest),
     };
-    let pkce_required = client.client_type == "public"
-        || client.require_dpop_bound_tokens
-        || client.require_mtls_bound_tokens
-        || !client.allow_authorization_code_without_pkce;
-    if pkce_required && code_challenge.is_none() {
+    if code_challenge.is_none() {
         return Err(AuthorizationPolicyError::InvalidRequest);
     }
 
@@ -644,7 +639,6 @@ mod tests {
             allowed_audiences: audiences,
             require_dpop_bound_tokens: false,
             require_mtls_bound_tokens: false,
-            allow_authorization_code_without_pkce: true,
         }
     }
 
@@ -662,6 +656,8 @@ mod tests {
         let audiences = vec!["https://api.example".to_owned()];
         let parameters = HashMap::from([
             ("response_type".to_owned(), "code".to_owned()),
+            ("code_challenge".to_owned(), "A".repeat(43)),
+            ("code_challenge_method".to_owned(), "S256".to_owned()),
             ("response_mode".to_owned(), "jwt".to_owned()),
             ("scope".to_owned(), "openid profile".to_owned()),
             ("resource".to_owned(), "https://api.example".to_owned()),
@@ -707,6 +703,8 @@ mod tests {
         let audiences = Vec::new();
         let base = HashMap::from([
             ("response_type".to_owned(), "code".to_owned()),
+            ("code_challenge".to_owned(), "A".repeat(43)),
+            ("code_challenge_method".to_owned(), "S256".to_owned()),
             ("response_mode".to_owned(), "jwt".to_owned()),
             ("scope".to_owned(), "openid device_sso".to_owned()),
         ]);

@@ -55,10 +55,8 @@ pub(super) fn reauth_nonce_parameter() -> &'static str {
 
 #[cfg(test)]
 pub(super) fn authorization_request_requires_pkce(client: &ClientRow) -> bool {
-    client.client_type == "public"
-        || client.require_dpop_bound_tokens
-        || client.require_mtls_bound_tokens
-        || !client.allow_authorization_code_without_pkce
+    let _ = client;
+    true
 }
 
 #[cfg(test)]

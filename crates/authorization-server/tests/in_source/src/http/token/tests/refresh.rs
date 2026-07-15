@@ -218,7 +218,7 @@ async fn insert_refresh_client(state: &TestAppState, client: &ClientRow) {
             tls_client_auth_san_ip, tls_client_auth_san_email,
             allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience, require_par_request_object,
-            allow_authorization_code_without_pkce, is_active,
+            is_active,
             post_logout_redirect_uris, backchannel_logout_session_required
         )
         VALUES (
@@ -228,8 +228,8 @@ async fn insert_refresh_client(state: &TestAppState, client: &ClientRow) {
             $15, $16, $17,
             $18, $19,
             $20, $21, $22,
-            $23, $24,
-            $25, $26
+            $23,
+            $24, $25
         )
         "#,
     )
@@ -255,7 +255,6 @@ async fn insert_refresh_client(state: &TestAppState, client: &ClientRow) {
     .bind::<Bool, _>(client.allow_client_assertion_audience_array)
     .bind::<Bool, _>(client.allow_client_assertion_endpoint_audience)
     .bind::<Bool, _>(client.require_par_request_object)
-    .bind::<Bool, _>(client.allow_authorization_code_without_pkce)
     .bind::<Bool, _>(client.is_active)
     .bind::<Jsonb, _>(json!(&client.post_logout_redirect_uris))
     .bind::<Bool, _>(client.backchannel_logout_session_required)
@@ -408,7 +407,6 @@ fn client_row() -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,

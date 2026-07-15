@@ -55,7 +55,7 @@ module-level `SKIPPED` 结果。
 并将 front-channel logout 与 session-management 分拆到独立 browser-sensitive
 matrix job 中隔离执行。
 
-baseline OIDC metadata 会在 `request_object_signing_alg_values_supported` 中声明 `none`，用于 unsigned Request Object 的 OIDC 兼容路径。该能力不是高安全 profile 能力；FAPI2 Security Profile Final、FAPI2 Message Signing Final、要求 PAR request object 的客户端以及 holder-bound token 客户端仍然 fail closed，必须使用签名 Request Object 或被拒绝。
+所有 profile 的 Request Object 都必须使用非对称签名。baseline 与 FAPI metadata 均不声明 `none`，运行时对任何客户端都拒绝 unsigned Request Object；项目遵循 RFC 9101，不保留仅为一致性套件服务的兼容旁路。
 
 ## 覆盖更新规则
 

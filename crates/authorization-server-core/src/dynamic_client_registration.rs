@@ -2,7 +2,6 @@ use std::{future::Future, pin::Pin};
 
 use serde::Deserialize;
 use serde_json::Value;
-use url::Url;
 use uuid::Uuid;
 
 use crate::{CreateClientRequest, OAuthClient, PreparedClientRegistration, parse_scope};
@@ -129,7 +128,7 @@ pub struct DynamicClientRegistrationRequest {
     #[serde(default)]
     pub authorization_encrypted_response_enc: Option<String>,
     #[serde(default)]
-    pub request_uris: Vec<String>,
+    pub request_uris: Option<Value>,
     #[serde(default)]
     pub software_statement: Option<String>,
 }
@@ -213,7 +212,11 @@ pub fn prepare_dynamic_client_registration(
             "jwks_uri is not supported; register jwks by value.",
         ));
     }
-    validate_request_uris(&request.request_uris)?;
+    if request.request_uris.is_some() {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "request_uris is not supported; use pushed authorization requests.",
+        ));
+    }
     if request
         .application_type
         .as_deref()
@@ -376,8 +379,6 @@ pub fn response_types_from_client(client: &OAuthClient) -> Vec<String> {
 impl PreparedDynamicClientRegistration {
     #[must_use]
     pub fn into_create_client_request(self) -> CreateClientRequest {
-        let allow_authorization_code_without_pkce =
-            self.client_type == "confidential" && !self.require_dpop_bound_tokens;
         // OIDC Core section 9 defines the token endpoint URL as the audience for
         // private_key_jwt client assertions. FAPI clients are provisioned through the
         // profile-aware admin/seed paths, which keep this compatibility policy disabled.
@@ -398,7 +399,6 @@ impl PreparedDynamicClientRegistration {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience,
             require_par_request_object: false,
-            allow_authorization_code_without_pkce,
             backchannel_logout_uri: self.backchannel_logout_uri,
             backchannel_logout_session_required: self.backchannel_logout_session_required,
             frontchannel_logout_uri: self.frontchannel_logout_uri,
@@ -469,22 +469,6 @@ fn default_dynamic_client_grant_types() -> Vec<String> {
         .into_iter()
         .map(str::to_owned)
         .collect()
-}
-
-fn validate_request_uris(request_uris: &[String]) -> Result<(), DynamicRegistrationError> {
-    for request_uri in request_uris {
-        let parsed = Url::parse(request_uri).map_err(|_| {
-            DynamicRegistrationError::invalid_client_metadata(
-                "request_uris values must be absolute HTTPS URLs.",
-            )
-        })?;
-        if parsed.scheme() != "https" || parsed.host_str().is_none() {
-            return Err(DynamicRegistrationError::invalid_client_metadata(
-                "request_uris values must be absolute HTTPS URLs.",
-            ));
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -561,25 +545,16 @@ mod tests {
     }
 
     #[test]
-    fn request_uri_and_client_name_normalization_are_transport_independent() {
-        let prepared = prepare_dynamic_client_registration(
+    fn external_request_uri_registration_is_not_implemented() {
+        let error = prepare_dynamic_client_registration(
             DynamicClientRegistrationRequest {
-                request_uris: vec!["https://client.example/request.jwt".to_owned()],
+                request_uris: Some(json!(["https://client.example/request.jwt"])),
                 client_name: Some("  Example Client  ".to_owned()),
                 ..Default::default()
             },
             POLICY,
         )
-        .expect("valid request URI");
-        assert_eq!(prepared.client_name, "Example Client");
-        let error = prepare_dynamic_client_registration(
-            DynamicClientRegistrationRequest {
-                request_uris: vec!["http://client.example/request.jwt".to_owned()],
-                ..Default::default()
-            },
-            POLICY,
-        )
-        .expect_err("HTTPS is required");
+        .expect_err("external request_uri registration is intentionally unsupported");
         assert_eq!(error.error, "invalid_client_metadata");
     }
 
@@ -622,29 +597,22 @@ mod tests {
     }
 
     #[test]
-    fn prepared_registration_conversion_keeps_pkce_security_policy() {
-        let public = prepare_dynamic_client_registration(
-            DynamicClientRegistrationRequest {
-                token_endpoint_auth_method: Some("none".to_owned()),
-                redirect_uris: Some(vec!["https://client.example/cb".to_owned()]),
-                ..Default::default()
-            },
-            POLICY,
-        )
-        .expect("public registration")
-        .into_create_client_request();
-        assert!(!public.allow_authorization_code_without_pkce);
-
-        let confidential = prepare_dynamic_client_registration(
-            DynamicClientRegistrationRequest {
-                redirect_uris: Some(vec!["https://client.example/cb".to_owned()]),
-                ..Default::default()
-            },
-            POLICY,
-        )
-        .expect("confidential registration")
-        .into_create_client_request();
-        assert!(confidential.allow_authorization_code_without_pkce);
+    fn public_and_confidential_code_clients_share_one_registration_path() {
+        for (token_endpoint_auth_method, expected_type) in
+            [("none", "public"), ("client_secret_basic", "confidential")]
+        {
+            let prepared = prepare_dynamic_client_registration(
+                DynamicClientRegistrationRequest {
+                    token_endpoint_auth_method: Some(token_endpoint_auth_method.to_owned()),
+                    redirect_uris: Some(vec!["https://client.example/cb".to_owned()]),
+                    ..Default::default()
+                },
+                POLICY,
+            )
+            .expect("registration")
+            .into_create_client_request();
+            assert_eq!(prepared.client_type, expected_type);
+        }
     }
 
     #[test]
@@ -697,7 +665,6 @@ mod tests {
                 allow_client_assertion_audience_array: false,
                 allow_client_assertion_endpoint_audience: false,
                 require_par_request_object: false,
-                allow_authorization_code_without_pkce: true,
                 backchannel_logout_uri: None,
                 backchannel_logout_session_required: false,
                 frontchannel_logout_uri: None,

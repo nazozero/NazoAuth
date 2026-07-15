@@ -111,7 +111,6 @@ pub(crate) fn client_json(client: ClientRow) -> Value {
         "allow_client_assertion_audience_array": client.allow_client_assertion_audience_array,
         "allow_client_assertion_endpoint_audience": client.allow_client_assertion_endpoint_audience,
         "require_par_request_object": client.require_par_request_object,
-        "allow_authorization_code_without_pkce": client.allow_authorization_code_without_pkce,
         "backchannel_logout_uri": client.backchannel_logout_uri,
         "backchannel_logout_session_required": client.backchannel_logout_session_required,
         "frontchannel_logout_uri": client.frontchannel_logout_uri,

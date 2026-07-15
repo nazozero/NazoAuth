@@ -502,8 +502,6 @@ async fn insert_client(
             oauth_clients::allow_client_assertion_endpoint_audience
                 .eq(prepared.allow_client_assertion_endpoint_audience),
             oauth_clients::require_par_request_object.eq(prepared.require_par_request_object),
-            oauth_clients::allow_authorization_code_without_pkce
-                .eq(prepared.allow_authorization_code_without_pkce),
             oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
             oauth_clients::backchannel_logout_session_required
                 .eq(prepared.backchannel_logout_session_required),

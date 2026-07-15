@@ -204,7 +204,6 @@ diesel::table! {
         allow_client_assertion_audience_array -> Bool,
         allow_client_assertion_endpoint_audience -> Bool,
         require_par_request_object -> Bool,
-        allow_authorization_code_without_pkce -> Bool,
         is_active -> Bool,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,

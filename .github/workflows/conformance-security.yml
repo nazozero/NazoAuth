@@ -109,7 +109,6 @@ jobs:
       TOKEN_RATE_LIMIT_MAX_REQUESTS: "100000"
       TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS: "100000"
       REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: "false"
-      SCIM_BEARER_TOKEN: ci-scim-secret
       FEDERATION_PROVIDER_CONFIGS: >-
         [{"provider_id":"ci-oidc","enabled":true,"display_name":"CI OIDC","adapter_type":"oidc","issuer":"https://issuer.example","authorization_endpoint":"https://issuer.example/authorize","token_endpoint":"https://issuer.example/token","jwks_url":"https://issuer.example/jwks","client_id":"ci-oidc-client","client_secret":"ci-oidc-secret","redirect_uri":"http://127.0.0.1:18000/auth/federation/ci-oidc/callback","scopes":"openid email profile"}]
       FEDERATION_SAML_GATEWAY_ENABLED: "true"
@@ -259,13 +258,10 @@ jobs:
           PAR_TTL_SECONDS: 90
           REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: false
           ENABLE_REQUEST_OBJECT: true
-          ENABLE_REQUEST_URI_PARAMETER: true
           ENABLE_PAR_REQUEST_OBJECT: true
           ENABLE_AUTHORIZATION_DETAILS: true
-          ENABLE_LEGACY_AUDIENCE_PARAM: true
           ENABLE_FAPI_HTTP_SIGNATURES: false
           FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS: 60
-          SCIM_BEARER_TOKEN: "codecov-scim-secret"
           ENABLE_SCIM_SECURITY_EVENTS: true
           FEDERATION_PROVIDER_CONFIGS: >-
             [{"provider_id":"codecov-oidc","enabled":true,"display_name":"Codecov OIDC","adapter_type":"oidc","issuer":"https://issuer.example","authorization_endpoint":"https://issuer.example/authorize","token_endpoint":"https://issuer.example/token","jwks_url":"https://issuer.example/jwks","client_id":"codecov-oidc-client","client_secret":"codecov-oidc-secret","redirect_uri":"http://127.0.0.1:8000/auth/federation/codecov-oidc/callback","scopes":"openid email profile"}]
@@ -332,7 +328,6 @@ jobs:
             -e E2E_BASE_URL=http://nazo-oauth-e2e-server:8000 \
             -e E2E_ISSUER_URL=http://127.0.0.1:8000 \
             -e E2E_DATABASE_URL=postgresql://postgres:postgres@nazo-oauth-e2e-postgres:5432/oauth \
-            -e E2E_LEGACY_SCIM_BEARER_TOKEN=codecov-scim-secret \
             nazo-oauth-e2e-runner:latest python scripts/rfc9967_scim_set_e2e.py
       - name: Run full real HTTP E2E
         run: |

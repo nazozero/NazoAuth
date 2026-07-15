@@ -291,7 +291,6 @@ async fn authorize_request_with_context(
             allowed_audiences: &client.allowed_audiences,
             require_dpop_bound_tokens: client.require_dpop_bound_tokens,
             require_mtls_bound_tokens: client.require_mtls_bound_tokens,
-            allow_authorization_code_without_pkce: client.allow_authorization_code_without_pkce,
         },
         AuthorizationCapabilityPolicy {
             authorization_details: crate::http::authorization::accepts_module(

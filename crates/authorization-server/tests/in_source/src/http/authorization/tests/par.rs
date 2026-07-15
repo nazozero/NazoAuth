@@ -63,7 +63,6 @@ fn client(require_dpop_bound_tokens: bool) -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: false,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,
@@ -145,7 +144,11 @@ fn pushed_authorization_request_resources_allow_registered_targets() {
     let mut params = HashMap::new();
     params.insert(
         "resource".to_owned(),
-        json!(["https://api.example/one", "https://api.example/two"]).to_string(),
+        encode_resource_indicators(&[
+            "https://api.example/one".to_owned(),
+            "https://api.example/two".to_owned(),
+        ])
+        .expect("resource set"),
     );
 
     assert!(validate_pushed_authorization_request_resources(&client, &params).is_ok());
@@ -446,7 +449,7 @@ impl LiveParFixture {
                 tls_client_auth_san_ip, tls_client_auth_san_email,
                 allow_client_assertion_audience_array,
                 allow_client_assertion_endpoint_audience, require_par_request_object,
-                allow_authorization_code_without_pkce, is_active,
+                is_active,
                 post_logout_redirect_uris, backchannel_logout_session_required
             )
             VALUES (
@@ -457,7 +460,7 @@ impl LiveParFixture {
                 $6, '[]'::jsonb, '[]'::jsonb,
                 '[]'::jsonb, '[]'::jsonb,
                 false, false, $7,
-                false, $8,
+                $8,
                 '[]'::jsonb, true
             )
             "#,

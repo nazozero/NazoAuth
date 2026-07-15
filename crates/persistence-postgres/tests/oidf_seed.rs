@@ -57,7 +57,6 @@ fn client(suffix: &str, name: String) -> OidfSeedClient {
                 allow_client_assertion_audience_array: false,
                 allow_client_assertion_endpoint_audience: false,
                 require_par_request_object: false,
-                allow_authorization_code_without_pkce: true,
                 backchannel_logout_uri: None,
                 backchannel_logout_session_required: true,
                 frontchannel_logout_uri: None,

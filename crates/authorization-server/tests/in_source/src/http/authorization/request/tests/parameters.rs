@@ -48,15 +48,8 @@ fn authorization_request_requires_pkce_for_mtls_bound_client() {
 
 #[test]
 fn authorization_request_requires_pkce_when_pkce_not_optional() {
-    let mut client = default_client_row();
-    client.allow_authorization_code_without_pkce = false;
-    assert!(authorization_request_requires_pkce(&client));
-}
-
-#[test]
-fn authorization_request_does_not_require_pkce_for_confidential_with_pkce_optional() {
     let client = default_client_row();
-    assert!(!authorization_request_requires_pkce(&client));
+    assert!(authorization_request_requires_pkce(&client));
 }
 
 #[test]
@@ -1001,7 +994,6 @@ fn default_client_row() -> ClientRow {
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
-        allow_authorization_code_without_pkce: true,
         is_active: true,
         jwks: None,
         introspection_encrypted_response_alg: None,

@@ -23,9 +23,7 @@ use sha2::Sha256;
 use crate::{
     adapters::{
         audit::{audit_event, audit_fields},
-        security::{
-            blake3_hex, constant_time_eq, hash_password_blocking_limited, random_urlsafe_token,
-        },
+        security::{blake3_hex, hash_password_blocking_limited, random_urlsafe_token},
     },
     http::client_ip::{ClientIpConfig, client_ip_with_config},
     runtime_modules::ServerRuntimeModuleRegistry,
@@ -36,7 +34,6 @@ type HmacSha256 = Hmac<Sha256>;
 #[derive(Clone)]
 pub(crate) struct ServerScimRequestAuthorizer {
     service: ScimService,
-    legacy_bearer_token: Option<Arc<str>>,
     client_ip: ClientIpConfig,
     runtime_modules: Arc<ServerRuntimeModuleRegistry>,
 }
@@ -44,13 +41,11 @@ pub(crate) struct ServerScimRequestAuthorizer {
 impl ServerScimRequestAuthorizer {
     pub(crate) fn new(
         service: ScimService,
-        legacy_bearer_token: Option<&str>,
         client_ip: ClientIpConfig,
         runtime_modules: Arc<ServerRuntimeModuleRegistry>,
     ) -> Self {
         Self {
             service,
-            legacy_bearer_token: legacy_bearer_token.map(Arc::from),
             client_ip,
             runtime_modules,
         }
@@ -62,18 +57,6 @@ impl ServerScimRequestAuthorizer {
             nazo_runtime_modules::ModuleId::Scim,
             nazo_auth::CapabilityAdmission::NewRequest,
         )
-    }
-
-    fn legacy_credential(&self, token: &str) -> Option<AuthorizedCredential> {
-        let expected = self.legacy_bearer_token.as_deref()?;
-        constant_time_eq(expected.as_bytes(), token.as_bytes()).then(|| AuthorizedCredential {
-            token_id: None,
-            tenant: TenantContext::default_system(),
-            scopes: vec!["scim:read".to_owned(), "scim:write".to_owned()],
-            event_audience: None,
-            source: "legacy-env",
-            cursor_actor: "legacy-env".to_owned(),
-        })
     }
 
     async fn credential(
@@ -98,13 +81,10 @@ impl ServerScimRequestAuthorizer {
                     cursor_actor: format!("database:{}", credential.id),
                 })
             }
-            Ok(None) => self
-                .legacy_credential(token)
-                .ok_or(ScimAuthorizationError::InvalidBearer),
+            Ok(None) => Err(ScimAuthorizationError::InvalidBearer),
             Err(error) => {
                 tracing::warn!(%error, "failed to query SCIM token");
-                self.legacy_credential(token)
-                    .ok_or(ScimAuthorizationError::BackendUnavailable)
+                Err(ScimAuthorizationError::BackendUnavailable)
             }
         }
     }

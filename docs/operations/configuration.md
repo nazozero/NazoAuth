@@ -142,8 +142,7 @@ The following settings are still supported but should not be part of a quick
 deployment path. They are candidates for the administrator UI:
 
 - OAuth/OIDC feature gates: `ENABLE_REQUEST_OBJECT`,
-  `ENABLE_REQUEST_URI_PARAMETER`, `ENABLE_PAR_REQUEST_OBJECT`,
-  `ENABLE_AUTHORIZATION_DETAILS`, `ENABLE_LEGACY_AUDIENCE_PARAM`,
+  `ENABLE_PAR_REQUEST_OBJECT`, `ENABLE_AUTHORIZATION_DETAILS`,
   `ENABLE_DEVICE_AUTHORIZATION_GRANT`, `ENABLE_DYNAMIC_CLIENT_REGISTRATION`
 - protocol tuning: `DPOP_NONCE_POLICY`, `REQUEST_OBJECT_JTI_POLICY`,
   `CIBA_SECURITY_PROFILE`, `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`,
@@ -167,7 +166,7 @@ deployment path. They are candidates for the administrator UI:
 - passkeys: `PASSKEY_RP_NAME`, `PASSKEY_REQUIRE_USER_VERIFICATION`,
   `PASSKEY_REQUIRE_USER_HANDLE`, `PASSKEY_STRICT_BASE64`
 - federation: `FEDERATION_PROVIDER_CONFIGS`, `FEDERATION_SAML_GATEWAY_*`
-- SCIM: `SCIM_BEARER_TOKEN`, `ENABLE_SCIM_SECURITY_EVENTS`,
+- SCIM: `ENABLE_SCIM_SECURITY_EVENTS`,
   `SCIM_EVENT_RETENTION_SECONDS`
 - external signing: `SIGNING_EXTERNAL_COMMAND`,
   `SIGNING_EXTERNAL_TIMEOUT_MS`,
@@ -177,6 +176,13 @@ deployment path. They are candidates for the administrator UI:
   `OTEL_EXPORTER_OTLP_PROTOCOL`, `OTEL_EXPORTER_OTLP_TIMEOUT`
 - proxy and client IP handling: `TRUSTED_PROXY_CIDRS`,
   `CLIENT_IP_HEADER_MODE`
+
+`EMAIL_SMTP_TLS` accepts only `starttls`, `implicit`, or `none`. The `none`
+mode is rejected unless the issuer is loopback HTTP and no SMTP credentials
+are configured; production deployments must use encrypted mail submission.
+`EMAIL_CODE_DEV_RESPONSE_ENABLED=true` is accepted only by a debug build with
+a loopback HTTP issuer, so a deployable server cannot return verification
+codes in API responses.
 
 Security-sensitive values such as `DATABASE_URL`, `VALKEY_URL`, SMTP
 credentials, federation client secrets, and SAML shared secrets must not be

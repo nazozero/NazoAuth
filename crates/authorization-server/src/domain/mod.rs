@@ -19,7 +19,6 @@ mod password_login;
 mod profile_account;
 mod resource_server;
 mod rows;
-#[cfg(not(test))]
 mod scim;
 pub(crate) mod sector_identifier;
 mod session_management;
@@ -65,7 +64,6 @@ pub(crate) use resource_server::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
 };
 pub(crate) use rows::{ClientRow, TokenRow};
-#[cfg(not(test))]
 pub(crate) use scim::{
     ServerScimBootstrapPasswordProvider, ServerScimCursorProtector, ServerScimEventSigner,
     ServerScimRequestAuthorizer,
