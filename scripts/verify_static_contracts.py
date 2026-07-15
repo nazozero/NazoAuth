@@ -372,6 +372,7 @@ def check_fapi_ciba_boundaries() -> None:
     if any(marker in delivery for marker in forbidden_test_markers):
         raise SystemExit("CIBA ping delivery tests must remain outside production source")
     required_delivery_guards = (
+        "apply_ciba_ping_tls_policy(reqwest::Client::builder())",
         "reqwest::redirect::Policy::none()",
         ".resolve_to_addrs(host, &addresses)",
         ".bearer_auth(&delivery.client_notification_token)",
@@ -381,6 +382,27 @@ def check_fapi_ciba_boundaries() -> None:
     missing = [guard for guard in required_delivery_guards if guard not in delivery]
     if missing:
         raise SystemExit(f"CIBA ping delivery security guards are missing: {missing}")
+
+    tls_policy = (
+        ROOT / "crates" / "authorization-server" / "src" / "domain" / "ciba_ping_tls.rs"
+    ).read_text(encoding="utf-8")
+    if any(marker in tls_policy for marker in forbidden_test_markers):
+        raise SystemExit("CIBA ping TLS policy tests must remain outside production source")
+    if "tls_version_min(reqwest::tls::Version::TLS_1_3)" not in tls_policy:
+        raise SystemExit("CIBA ping delivery must require TLS 1.3")
+    tls_policy_test = (
+        ROOT
+        / "crates"
+        / "authorization-server"
+        / "tests"
+        / "in_source"
+        / "src"
+        / "domain"
+        / "tests"
+        / "ciba_ping_delivery.rs"
+    )
+    if not tls_policy_test.is_file():
+        raise SystemExit("CIBA ping TLS policy tests must remain outside production source")
 
     delivery_policy = (
         ROOT / "crates" / "authorization-server-core" / "src" / "ciba_ping.rs"

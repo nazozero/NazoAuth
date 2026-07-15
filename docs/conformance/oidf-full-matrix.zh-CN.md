@@ -29,8 +29,8 @@
 | 19 | OIDC Session Management OP | 验证 `check_session_iframe` metadata、授权响应 `session_state`、RP-initiated logout 后的会话状态变化。 |
 | 20 | FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI | 验证 FAPI-CIBA AS discovery、backchannel authentication endpoint、`private_key_jwt` 客户端认证、poll token exchange、错误处理、refresh token 和资源访问。 |
 | 21 | FAPI-CIBA ID1 / mTLS / poll / plain FAPI | 验证 mTLS 客户端认证和证书绑定的 poll token 签发。 |
-| 22 | FAPI-CIBA ID1 / private_key_jwt / ping / plain FAPI | 验证带 Bearer 鉴权的 ping 通知、token endpoint 取令牌、拒绝重定向和 401 终态处理。 |
-| 23 | FAPI-CIBA ID1 / mTLS / ping / plain FAPI | 验证相同 ping 生命周期与 mTLS 客户端认证、持有者绑定令牌的组合。 |
+| 22 | FAPI-CIBA ID1 / private_key_jwt / ping / plain FAPI | 验证带 Bearer 鉴权的 TLS 1.3 ping 通知、token endpoint 取令牌、拒绝重定向和 401 终态处理。 |
+| 23 | FAPI-CIBA ID1 / mTLS / ping / plain FAPI | 验证相同 TLS 1.3 ping 生命周期与 mTLS 客户端认证、持有者绑定令牌的组合。 |
 | 24 | OIDC Form Post OP | 通过浏览器流程验证成功与错误授权响应的 `response_mode=form_post`。 |
 | 25 | OIDC Third-Party Initiated Login OP | 验证 `initiate_login_uri` 动态注册回读，以及非 HTTPS 元数据拒绝。 |
 

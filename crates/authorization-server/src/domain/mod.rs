@@ -4,6 +4,10 @@ mod authorization_decision;
 mod backchannel_logout_worker;
 #[cfg(not(test))]
 mod ciba_ping_delivery;
+#[cfg(test)]
+#[path = "../../tests/in_source/src/domain/tests/ciba_ping_delivery.rs"]
+mod ciba_ping_delivery_tests;
+mod ciba_ping_tls;
 pub(crate) mod client_jwe;
 pub(crate) mod client_policy;
 #[cfg(test)]

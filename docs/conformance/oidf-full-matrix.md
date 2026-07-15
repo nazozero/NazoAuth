@@ -29,8 +29,8 @@ The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/s
 | 19 | OIDC Session Management OP | Validates `check_session_iframe` metadata, authorization response `session_state`, and the session-state transition after RP-initiated logout. |
 | 20 | FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI | Validates FAPI-CIBA AS discovery, the backchannel authentication endpoint, `private_key_jwt` client authentication, poll-mode token exchange, error handling, refresh tokens, and resource access. |
 | 21 | FAPI-CIBA ID1 / mTLS / poll / plain FAPI | Validates mTLS client authentication and certificate-bound poll-mode token issuance. |
-| 22 | FAPI-CIBA ID1 / private_key_jwt / ping / plain FAPI | Validates authenticated ping notification, token-endpoint retrieval, redirect rejection, and terminal 401 handling. |
-| 23 | FAPI-CIBA ID1 / mTLS / ping / plain FAPI | Validates the same ping lifecycle with mTLS client authentication and holder-of-key tokens. |
+| 22 | FAPI-CIBA ID1 / private_key_jwt / ping / plain FAPI | Validates authenticated TLS 1.3 ping notification, token-endpoint retrieval, redirect rejection, and terminal 401 handling. |
+| 23 | FAPI-CIBA ID1 / mTLS / ping / plain FAPI | Validates the same TLS 1.3 ping lifecycle with mTLS client authentication and holder-of-key tokens. |
 | 24 | OIDC Form Post OP | Validates `response_mode=form_post` for successful and error authorization responses through the browser flow. |
 | 25 | OIDC Third-Party Initiated Login OP | Validates dynamic registration round-trip of `initiate_login_uri` and rejection of non-HTTPS metadata. |
 

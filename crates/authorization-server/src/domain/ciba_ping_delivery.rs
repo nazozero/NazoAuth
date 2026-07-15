@@ -11,7 +11,7 @@ use nazo_valkey::{CibaPingDelivery, CibaPingFinishOutcome, CibaStore};
 use reqwest::{StatusCode, header};
 use serde_json::json;
 
-use super::sector_identifier::is_blocked_ip;
+use super::{ciba_ping_tls::apply_ciba_ping_tls_policy, sector_identifier::is_blocked_ip};
 
 const DELIVERY_BATCH_SIZE: usize = 20;
 const DELIVERY_CONCURRENCY: usize = 8;
@@ -128,7 +128,7 @@ impl CibaPingDeliveryWorker {
         if !allow_private && addresses.iter().any(|address| is_blocked_ip(address.ip())) {
             anyhow::bail!("CIBA ping endpoint resolved to a blocked network");
         }
-        let client = reqwest::Client::builder()
+        let client = apply_ciba_ping_tls_policy(reqwest::Client::builder())
             .connect_timeout(Duration::from_secs(3))
             .timeout(Duration::from_secs(5))
             .redirect(reqwest::redirect::Policy::none())
