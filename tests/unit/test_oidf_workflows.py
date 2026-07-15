@@ -65,7 +65,7 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("    needs: offline", workflow)
         self.assertIn("rhysd/actionlint:1.7.12", workflow)
 
-    def test_full_matrix_workflow_defaults_to_no_parallel_runner(self):
+    def test_full_matrix_workflow_keeps_serial_fallback(self):
         workflow = (
             Path(__file__).resolve().parents[2]
             / ".github"
@@ -76,6 +76,20 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}", workflow)
         self.assertIn('if [ "$NO_PARALLEL" = "true" ]; then', workflow)
         self.assertIn("args+=(--no-parallel)", workflow)
+
+    def test_full_matrix_workflow_defaults_to_parallel_isolated_runner(self):
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github"
+            / "workflows"
+            / "oidf-conformance-full.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("default: parallel-isolated", workflow)
+        self.assertIn(
+            "RUNNER_MODE: ${{ inputs.runner_mode || vars.OIDF_RUNNER_MODE || 'parallel-isolated' }}",
+            workflow,
+        )
 
     def test_full_matrix_workflow_has_parallel_isolated_mode(self):
         workflow = (

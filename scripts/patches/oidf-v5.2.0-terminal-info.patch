@@ -11,8 +11,8 @@ index 61a71fe..137f97a 100755
 +    get_module_info,
 +    module_id,
 +    *,
-+    timeout_seconds=30.0,
-+    poll_interval_seconds=0.2,
++    timeout_seconds=120.0,
++    poll_interval_seconds=1.0,
 +):
 +    if timeout_seconds <= 0:
 +        raise ValueError("timeout_seconds must be greater than zero")
