@@ -1515,6 +1515,16 @@ def expected_skips() -> list[dict[str, str]]:
             "variant": "*",
             "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
         },
+        {
+            "test-name": "oidcc-unsigned-request-object-supported-correctly-or-rejected-as-unsupported",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-formpost-plan-config.json",
+        },
+        {
+            "test-name": "oidcc-ensure-request-object-with-redirect-uri",
+            "variant": "*",
+            "configuration-filename": "oidf-oidcc-formpost-plan-config.json",
+        },
     ]
 
 

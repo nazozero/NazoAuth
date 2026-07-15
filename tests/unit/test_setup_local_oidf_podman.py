@@ -99,12 +99,13 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
 
         skips = module.expected_skips()
 
-        self.assertEqual(len(skips), 6)
+        self.assertEqual(len(skips), 8)
         self.assertEqual(
             {item["configuration-filename"] for item in skips},
             {
                 "oidf-oidcc-basic-plan-config.json",
                 "oidf-oidcc-dynamic-plan-config.json",
+                "oidf-oidcc-formpost-plan-config.json",
             },
         )
         self.assertEqual({item["variant"] for item in skips}, {"*"})

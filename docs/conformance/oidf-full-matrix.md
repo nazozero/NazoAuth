@@ -73,8 +73,8 @@ Basic OP Dynamic Registration`; "dynamic registration" and the legacy OIDF
 
 ## Expected Skip Policy
 
-The current official workflow allows six explicit expected-skip records across
-the static and dynamic Basic OP configurations:
+The current official workflow allows eight explicit expected-skip records
+across the static, dynamic-registration, and Form Post Basic OP configurations:
 
 - `oidcc-idtoken-unsigned`
 - `oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported`

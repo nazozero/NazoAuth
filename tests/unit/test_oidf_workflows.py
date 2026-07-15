@@ -158,12 +158,13 @@ class OidfWorkflowTests(unittest.TestCase):
         )
 
         expected_skips = workflow_heredoc_json(workflow, "oidf-expected-skips.json")
-        self.assertEqual(len(expected_skips), 6)
+        self.assertEqual(len(expected_skips), 8)
         self.assertEqual(
             {item["configuration-filename"] for item in expected_skips},
             {
                 "oidf-oidcc-basic-plan-config.json",
                 "oidf-oidcc-dynamic-plan-config.json",
+                "oidf-oidcc-formpost-plan-config.json",
             },
         )
 
