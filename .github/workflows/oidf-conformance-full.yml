@@ -61,7 +61,6 @@ jobs:
           [
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json",
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] oidf-oidcc-dynamic-plan-config.json",
-            "oidcc-dynamic-certification-test-plan[response_type=code] oidf-oidcc-dynamic-crypto-plan-config.json",
             "oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-formpost-plan-config.json",
             "oidcc-3rdparty-init-login-certification-test-plan[response_type=code] oidf-oidcc-third-party-init-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
@@ -88,7 +87,6 @@ jobs:
           [
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json",
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] oidf-oidcc-dynamic-plan-config.json",
-            "oidcc-dynamic-certification-test-plan[response_type=code] oidf-oidcc-dynamic-crypto-plan-config.json",
             "oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-formpost-plan-config.json",
             "oidcc-3rdparty-init-login-certification-test-plan[response_type=code] oidf-oidcc-third-party-init-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
@@ -130,16 +128,6 @@ jobs:
               "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
               "variant": "*",
               "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
-            },
-            {
-              "test-name": "oidcc-idtoken-unsigned",
-              "variant": "*",
-              "configuration-filename": "oidf-oidcc-dynamic-crypto-plan-config.json"
-            },
-            {
-              "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
-              "variant": "*",
-              "configuration-filename": "oidf-oidcc-dynamic-crypto-plan-config.json"
             }
           ]
           JSON

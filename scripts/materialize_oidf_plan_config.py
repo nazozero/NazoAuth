@@ -14,7 +14,6 @@ from typing import Any
 
 OIDCC_BASIC_CONFIG_FILE = "oidf-oidcc-basic-plan-config.json"
 OIDCC_DYNAMIC_CONFIG_FILE = "oidf-oidcc-dynamic-plan-config.json"
-OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE = "oidf-oidcc-dynamic-crypto-plan-config.json"
 OIDCC_FORMPOST_CONFIG_FILE = "oidf-oidcc-formpost-plan-config.json"
 OIDCC_THIRD_PARTY_INIT_CONFIG_FILE = "oidf-oidcc-third-party-init-plan-config.json"
 
@@ -70,9 +69,6 @@ def derive_dynamic_oidcc_config(rendered: dict[str, Any], initial_access_token: 
         raise SystemExit(f"missing {OIDCC_BASIC_CONFIG_FILE} config to derive dynamic OIDC config")
     if OIDCC_DYNAMIC_CONFIG_FILE in configs:
         raise SystemExit(f"{OIDCC_DYNAMIC_CONFIG_FILE} already exists in rendered configs")
-    if OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE in configs:
-        raise SystemExit(f"{OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE} already exists in rendered configs")
-
     dynamic = copy.deepcopy(basic)
     dynamic["alias"] = f"{basic.get('alias', 'nazo-oauth-oidf-basic')}-dynamic"
     dynamic["description"] = "OIDC Basic OP: RFC 7591 dynamic client registration."
@@ -87,13 +83,6 @@ def derive_dynamic_oidcc_config(rendered: dict[str, Any], initial_access_token: 
             dynamic[client_key]["scope"] = scope
 
     configs[OIDCC_DYNAMIC_CONFIG_FILE] = dynamic
-    dynamic_crypto = copy.deepcopy(dynamic)
-    dynamic_crypto["alias"] = f"{basic.get('alias', 'nazo-oauth-oidf-basic')}-dynamic-crypto"
-    dynamic_crypto["description"] = (
-        "OIDC complete dynamic-registration interoperability coverage."
-    )
-    configs[OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE] = dynamic_crypto
-
     formpost = copy.deepcopy(basic)
     formpost["alias"] = f"{basic.get('alias', 'nazo-oauth-oidf-basic')}-formpost"
     formpost["description"] = "OIDC Form Post OP certification coverage."

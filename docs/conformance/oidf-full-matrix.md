@@ -1,6 +1,6 @@
 # OIDF Full Matrix
 
-This document describes the repository-owned OpenID Foundation Conformance Suite matrix. The matrix is a 23-plan suite. New TP/PS and NI checks are mapped onto these plans instead of being added as a separate temporary matrix.
+This document describes the repository-owned OpenID Foundation Conformance Suite matrix. The matrix is a 22-plan suite. New TP/PS and NI checks are mapped onto these plans instead of being added as a separate temporary matrix.
 
 The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/setup_local_oidf_podman.py` also writes `runtime/oidf/oidf-plan-set-manifest.json` with a title, description, and coverage focus for every plan.
 
@@ -28,21 +28,20 @@ The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/s
 | 18 | OIDC Front-Channel Logout OP | Validates front-channel logout metadata, RP-initiated logout, iframe logout notification, `iss`/`sid` parameters, and `post_logout_redirect_uri`. |
 | 19 | OIDC Session Management OP | Validates `check_session_iframe` metadata, authorization response `session_state`, and the session-state transition after RP-initiated logout. |
 | 20 | FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI | Validates FAPI-CIBA AS discovery, the backchannel authentication endpoint, `private_key_jwt` client authentication, poll-mode token exchange, error handling, refresh tokens, and resource access. |
-| 21 | OIDC Dynamic OP | Runs the complete code-flow dynamic certification plan, including remote `jwks_uri`, client-key rotation, exact registered external `request_uri`, signed Request Objects, signed UserInfo, presentation metadata (`logo_uri`, `policy_uri`, `tos_uri`), and dynamic response cryptography metadata. |
-| 22 | OIDC Form Post OP | Validates `response_mode=form_post` for successful and error authorization responses through the browser flow. |
-| 23 | OIDC Third-Party Initiated Login OP | Validates dynamic registration round-trip of `initiate_login_uri` and rejection of non-HTTPS metadata. |
+| 21 | OIDC Form Post OP | Validates `response_mode=form_post` for successful and error authorization responses through the browser flow. |
+| 22 | OIDC Third-Party Initiated Login OP | Validates dynamic registration round-trip of `initiate_login_uri` and rejection of non-HTTPS metadata. |
 
 ## TP/PS Coverage Boundary
 
 The matrix covers the current TP/PS work through these paths:
 
 - `OIDC Basic OP Dynamic Registration` covers RFC 7591 dynamic client registration and `registration_endpoint` metadata.
-- `OIDC Dynamic OP` runs the complete code-flow dynamic plan. Remote documents are accepted only for exact dynamically registered HTTPS URIs; public destinations are SSRF-filtered and explicitly allowlisted origins are required for private test networks. Display-only `logo_uri`, `policy_uri`, and `tos_uri` values are never fetched by the server. The hosted login UI derives the accepted `client_id` from its safe `/authorize` continuation and loads the active client's registered presentation metadata from `/authorize/client-presentation`; presentation fields are never trusted from login URL parameters. FAPI profiles remain PAR-only.
+- Dynamic-registration extensions such as remote `jwks_uri`, exact registered external `request_uri`, signed Request Objects, signed UserInfo, and presentation metadata remain implemented behind their existing validation boundaries. They do not constitute a claim of the OIDF Dynamic OP certification profile.
 - `OIDC Form Post OP` covers the HTML form-post response transport, including no-store and browser submission behavior.
 - `OIDC Third-Party Initiated Login OP` covers `initiate_login_uri` metadata. This OP-side profile is registration metadata; it does not add an OP initiation endpoint.
 - `OIDC Config OP` covers metadata truth and prevents discovery from advertising unsupported capabilities.
 - FAPI2 Security and Message Signing plans cover PAR enforcement, `request_uri` expiry, `request_uri` replay, cross-client `request_uri` use, outer authorization request parameters, PKCE, redirect URI, audience, and client assertions.
-- `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 23-plan matrix.
+- `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 22-plan matrix.
 - `OIDC Front-Channel Logout OP` covers NI-008.
 - `OIDC Session Management OP` covers NI-009.
 - `FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI` covers the FAPI-CIBA AS side of NI-007.
@@ -50,18 +49,37 @@ The matrix covers the current TP/PS work through these paths:
 - NI-010 tracks OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1. The project does not implement this trust-chain ecosystem surface and no longer exposes `/.well-known/openid-federation`, so Federation plans are not must-pass matrix entries.
 - No official OP plan was found for NI-011 Native SSO / `device_secret`; local tests cover device-secret lifecycle, `ds_hash` binding, token exchange, and refresh-family activity.
 
-Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 23-plan matrix.
+Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 22-plan matrix.
+
+## Explicit NOT IMPLEMENT Boundary
+
+The OIDF `oidcc-dynamic-certification-test-plan` is **NOT IMPLEMENTED** and must
+not appear in generated, local, or official plan sets. The official suite's
+dynamic-profile discovery checks require all of `code`, `id_token`, and
+`token id_token` response types and both `authorization_code` and `implicit`
+grant types. Those requirements are visible in the suite's
+[`OIDCCCheckDiscEndpointResponseTypesSupportedDynamic`](https://gitlab.com/openid/conformance-suite/-/blob/v5.2.0/src/main/java/net/openid/conformance/condition/client/OIDCCCheckDiscEndpointResponseTypesSupportedDynamic.java)
+and
+[`OIDCCCheckDiscEndpointGrantTypesSupportedDynamic`](https://gitlab.com/openid/conformance-suite/-/blob/v5.2.0/src/main/java/net/openid/conformance/condition/client/OIDCCCheckDiscEndpointGrantTypesSupportedDynamic.java)
+conditions.
+
+Implementing that certification profile would require advertising and enabling
+implicit response modes. RFC 9700, section 2.1.2, says authorization servers
+SHOULD NOT support the implicit grant. NazoAuth therefore keeps authorization
+code as its interactive flow and preserves truthful discovery metadata. RFC
+7591 dynamic client registration remains implemented and is covered by `OIDC
+Basic OP Dynamic Registration`; "dynamic registration" and the legacy OIDF
+"Dynamic OP" certification profile are not the same support claim.
 
 ## Expected Skip Policy
 
-The current official workflow allows the same two logical expected skips in
-each of the basic-dynamic and full-dynamic configurations (four records total):
+The current official workflow allows two expected skips in the basic dynamic
+registration configuration:
 
 - `oidcc-idtoken-unsigned`
 - `oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported`
 
 The skips reflect intentionally unsupported unsigned compatibility features:
-unsigned ID Tokens and unsigned Request Objects are not advertised. Signed,
-exactly registered external `request_uri` is exercised by the full Dynamic OP
-plan. A workflow run with those expected skips can be evidence for `0
-failures` and `0 warnings`, but it is not zero-SKIPPED evidence.
+unsigned ID Tokens and unsigned Request Objects are not advertised. A workflow
+run with those expected skips can be evidence for `0 failures` and `0 warnings`,
+but it is not zero-SKIPPED evidence.

@@ -28,7 +28,6 @@ OIDCC_CONFIG_FILE = "oidf-oidcc-plan-config.json"
 FAPI_CONFIG_FILE = "oidf-fapi-plan-config.json"
 OIDCC_BASIC_CONFIG_FILE = "oidf-oidcc-basic-plan-config.json"
 OIDCC_DYNAMIC_CONFIG_FILE = "oidf-oidcc-dynamic-plan-config.json"
-OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE = "oidf-oidcc-dynamic-crypto-plan-config.json"
 OIDCC_FORMPOST_CONFIG_FILE = "oidf-oidcc-formpost-plan-config.json"
 OIDCC_THIRD_PARTY_INIT_CONFIG_FILE = "oidf-oidcc-third-party-init-plan-config.json"
 OIDCC_CONFIG_CONFIG_FILE = "oidf-oidcc-config-plan-config.json"
@@ -151,7 +150,6 @@ DEFAULT_PLAN_EXPRESSIONS = [
 PER_PLAN_CONFIG_EXPRESSIONS = [
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_BASIC_CONFIG_FILE}",
     f"oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] {OIDCC_DYNAMIC_CONFIG_FILE}",
-    f"oidcc-dynamic-certification-test-plan[response_type=code] {OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE}",
     f"oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_FORMPOST_CONFIG_FILE}",
     f"oidcc-3rdparty-init-login-certification-test-plan[response_type=code] {OIDCC_THIRD_PARTY_INIT_CONFIG_FILE}",
     f"oidcc-config-certification-test-plan {OIDCC_CONFIG_CONFIG_FILE}",

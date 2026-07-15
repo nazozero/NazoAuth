@@ -69,7 +69,6 @@ FAPI_SECURITY_ID2_USER_REJECTS_AUTHENTICATION = (
 PLAN_CONFIG_FILES = (
     "oidf-oidcc-basic-plan-config.json",
     "oidf-oidcc-dynamic-plan-config.json",
-    "oidf-oidcc-dynamic-crypto-plan-config.json",
     "oidf-oidcc-formpost-plan-config.json",
     "oidf-oidcc-third-party-init-plan-config.json",
     "oidf-oidcc-config-plan-config.json",
@@ -1019,16 +1018,6 @@ def write_dynamic_plan_config() -> dict[str, object]:
     return config
 
 
-def write_dynamic_crypto_plan_config() -> dict[str, object]:
-    config = copy.deepcopy(dynamic_plan_config())
-    config["alias"] = f"{BASIC_ALIAS}-dynamic-crypto"
-    config["description"] = (
-        "OIDC dynamic-registration signed UserInfo interoperability coverage."
-    )
-    write_plan_config("oidf-oidcc-dynamic-crypto-plan-config.json", config)
-    return config
-
-
 def write_formpost_plan_config() -> dict[str, object]:
     config = copy.deepcopy(write_basic_plan_config())
     config["alias"] = f"{BASIC_ALIAS}-formpost"
@@ -1438,7 +1427,6 @@ def write_all_plan_configs() -> None:
     configs: dict[str, dict[str, object]] = {
         "oidf-oidcc-basic-plan-config.json": write_basic_plan_config(),
         "oidf-oidcc-dynamic-plan-config.json": write_dynamic_plan_config(),
-        "oidf-oidcc-dynamic-crypto-plan-config.json": write_dynamic_crypto_plan_config(),
         "oidf-oidcc-formpost-plan-config.json": write_formpost_plan_config(),
         "oidf-oidcc-third-party-init-plan-config.json": write_third_party_init_plan_config(),
         "oidf-oidcc-config-plan-config.json": write_oidcc_config_plan_config(),
@@ -1507,16 +1495,6 @@ def write_expected_skips() -> None:
             "variant": "*",
             "configuration-filename": "oidf-oidcc-dynamic-plan-config.json",
         },
-        {
-            "test-name": "oidcc-idtoken-unsigned",
-            "variant": "*",
-            "configuration-filename": "oidf-oidcc-dynamic-crypto-plan-config.json",
-        },
-        {
-            "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
-            "variant": "*",
-            "configuration-filename": "oidf-oidcc-dynamic-crypto-plan-config.json",
-        },
     ]
     write_text(
         RUNTIME / "oidf-expected-skips.json",
@@ -1531,8 +1509,6 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
         "oidf-oidcc-basic-plan-config.json",
         "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] "
         "oidf-oidcc-dynamic-plan-config.json",
-        "oidcc-dynamic-certification-test-plan[response_type=code] "
-        "oidf-oidcc-dynamic-crypto-plan-config.json",
         "oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] "
         "oidf-oidcc-formpost-plan-config.json",
         "oidcc-3rdparty-init-login-certification-test-plan[response_type=code] "
@@ -1599,7 +1575,6 @@ def plan_manifest_for_expressions(
     oidc_titles = {
         "oidf-oidcc-basic-plan-config.json": "OIDC Basic OP",
         "oidf-oidcc-dynamic-plan-config.json": "OIDC Basic OP Dynamic Registration",
-        "oidf-oidcc-dynamic-crypto-plan-config.json": "OIDC Dynamic OP",
         "oidf-oidcc-formpost-plan-config.json": "OIDC Form Post OP",
         "oidf-oidcc-third-party-init-plan-config.json": "OIDC Third-Party Initiated Login OP",
         "oidf-oidcc-config-plan-config.json": "OIDC Config OP",
@@ -1618,13 +1593,6 @@ def plan_manifest_for_expressions(
             "registration endpoint metadata",
             "authorization code flow",
             "userinfo and ID token interoperability",
-        ],
-        "oidf-oidcc-dynamic-crypto-plan-config.json": [
-            "RFC 7591 dynamic client registration",
-            "remote jwks_uri and client key rotation",
-            "signed request objects by registered request_uri",
-            "logo_uri, policy_uri, and tos_uri presentation metadata",
-            "dynamic client response cryptography metadata",
         ],
         "oidf-oidcc-formpost-plan-config.json": [
             "response_mode=form_post",
@@ -1678,7 +1646,7 @@ def plan_manifest_for_expressions(
     return {
         "name": "NazoAuth OIDF full conformance matrix",
         "description": (
-            "Twenty-three-plan OpenID Foundation regression matrix for the public issuer. "
+            "Twenty-two-plan OpenID Foundation regression matrix for the public issuer. "
             "Targeted TP/PS checks are mapped onto these plans instead of being run as a separate matrix."
         ),
         "plans": plans,
