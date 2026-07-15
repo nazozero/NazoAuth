@@ -1,6 +1,7 @@
 use std::{
     io::{Read as _, Write as _},
     net::TcpListener,
+    sync::Arc,
     thread,
     time::Duration,
 };
@@ -9,7 +10,7 @@ use openssl::{
     asn1::Asn1Time,
     bn::{BigNum, MsbOption},
     hash::MessageDigest,
-    pkey::PKey,
+    pkey::{PKey, Private},
     rsa::Rsa,
     ssl::{SslAcceptor, SslMethod, SslVersion},
     x509::{X509, X509NameBuilder},
@@ -17,9 +18,7 @@ use openssl::{
 
 use super::ciba_ping_tls::apply_ciba_ping_tls_policy;
 
-fn single_version_tls_server(
-    version: SslVersion,
-) -> (std::net::SocketAddr, thread::JoinHandle<()>) {
+fn test_identity() -> (PKey<Private>, X509) {
     let key = PKey::from_rsa(Rsa::generate(2048).expect("generate test RSA key"))
         .expect("construct test key");
     let mut name = X509NameBuilder::new().expect("create certificate name");
@@ -52,12 +51,19 @@ fn single_version_tls_server(
     certificate
         .sign(&key, MessageDigest::sha256())
         .expect("sign certificate");
+    (key, certificate.build())
+}
+
+fn single_version_tls_server(
+    version: SslVersion,
+) -> (std::net::SocketAddr, thread::JoinHandle<()>) {
+    let (key, certificate) = test_identity();
 
     let mut acceptor =
         SslAcceptor::mozilla_intermediate(SslMethod::tls_server()).expect("create TLS acceptor");
     acceptor.set_private_key(&key).expect("set TLS private key");
     acceptor
-        .set_certificate(&certificate.build())
+        .set_certificate(&certificate)
         .expect("set TLS certificate");
     acceptor
         .set_min_proto_version(Some(version))
@@ -81,10 +87,45 @@ fn single_version_tls_server(
     (address, handle)
 }
 
-async fn post_to_single_version_server(version: SslVersion) -> reqwest::Result<reqwest::Response> {
-    let (address, server) = single_version_tls_server(version);
+fn rustls13_only_server() -> (std::net::SocketAddr, thread::JoinHandle<()>) {
+    let (key, certificate) = test_identity();
+    let certificate = rustls::pki_types::CertificateDer::from(
+        certificate.to_der().expect("encode test certificate"),
+    );
+    let private_key = rustls::pki_types::PrivatePkcs8KeyDer::from(
+        key.private_key_to_pkcs8().expect("encode test private key"),
+    );
+    let provider = rustls::crypto::aws_lc_rs::default_provider();
+    let config = rustls::ServerConfig::builder_with_provider(Arc::new(provider))
+        .with_protocol_versions(&[&rustls::version::TLS13])
+        .expect("configure TLS 1.3-only test server")
+        .with_no_client_auth()
+        .with_single_cert(vec![certificate], private_key.into())
+        .expect("configure TLS 1.3 test identity");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind TLS 1.3 test server");
+    let address = listener.local_addr().expect("read TLS 1.3 test address");
+    let handle = thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept TLS 1.3 test connection");
+        let connection = rustls::ServerConnection::new(Arc::new(config))
+            .expect("create TLS 1.3 server connection");
+        let mut stream = rustls::StreamOwned::new(connection, stream);
+        let mut request = [0_u8; 2048];
+        let read = stream.read(&mut request).expect("read TLS 1.3 request");
+        assert!(read > 0, "TLS 1.3 client must send an HTTP request");
+        stream
+            .write_all(b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n")
+            .expect("write TLS 1.3 test response");
+    });
+    (address, handle)
+}
+
+async fn post_to_server(
+    address: std::net::SocketAddr,
+    server: thread::JoinHandle<()>,
+) -> reqwest::Result<reqwest::Response> {
     let client =
         apply_ciba_ping_tls_policy(reqwest::Client::builder().danger_accept_invalid_certs(true))
+            .expect("apply CIBA Ping TLS policy")
             .connect_timeout(Duration::from_secs(3))
             .timeout(Duration::from_secs(5))
             .build()
@@ -96,6 +137,11 @@ async fn post_to_single_version_server(version: SslVersion) -> reqwest::Result<r
         .await;
     server.join().expect("join TLS test server");
     result
+}
+
+async fn post_to_single_version_server(version: SslVersion) -> reqwest::Result<reqwest::Response> {
+    let (address, server) = single_version_tls_server(version);
+    post_to_server(address, server).await
 }
 
 #[tokio::test]
@@ -118,9 +164,9 @@ async fn ciba_ping_transport_supports_the_tls12_fapi_baseline() {
 }
 
 #[tokio::test]
-#[cfg(not(target_os = "windows"))]
 async fn ciba_ping_transport_supports_tls13() {
-    let response = post_to_single_version_server(SslVersion::TLS1_3)
+    let (address, server) = rustls13_only_server();
+    let response = post_to_server(address, server)
         .await
         .expect("CIBA Ping must offer TLS 1.3 when the endpoint supports it");
 
