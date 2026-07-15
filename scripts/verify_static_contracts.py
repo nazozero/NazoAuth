@@ -405,6 +405,7 @@ def check_fapi_ciba_boundaries() -> None:
     )
     if not tls_policy_test.is_file():
         raise SystemExit("CIBA ping TLS policy tests must remain outside production source")
+    tls_policy_test_source = tls_policy_test.read_text(encoding="utf-8")
 
     delivery_policy = (
         ROOT / "crates" / "authorization-server-core" / "src" / "ciba_ping.rs"
@@ -414,7 +415,7 @@ def check_fapi_ciba_boundaries() -> None:
         "ciba_ping_transport_supports_the_tls12_fapi_baseline",
         "ciba_ping_transport_supports_tls13",
     ):
-        if required_test not in tls_policy_test:
+        if required_test not in tls_policy_test_source:
             raise SystemExit(f"missing CIBA ping TLS policy test: {required_test}")
     if any(marker in delivery_policy for marker in forbidden_test_markers):
         raise SystemExit("CIBA ping policy tests must remain outside production source")
