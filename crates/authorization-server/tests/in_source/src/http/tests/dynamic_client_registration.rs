@@ -495,6 +495,18 @@ fn registration_access_token_authorization_requires_stored_matching_hash() {
     ));
 }
 
+#[test]
+fn registration_management_get_can_reuse_the_authenticated_bearer_token() {
+    let request = actix_web::test::TestRequest::get()
+        .insert_header(("Authorization", "Bearer registration-token"))
+        .to_http_request();
+
+    assert_eq!(
+        registration_bearer_token(&request),
+        Some("registration-token")
+    );
+}
+
 #[actix_web::test]
 async fn dynamic_registration_prepared_insert_hashes_registration_access_token() {
     let registration = prepare_dynamic_client_registration(
