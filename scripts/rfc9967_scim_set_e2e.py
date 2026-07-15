@@ -255,14 +255,16 @@ def handlers(context: MatrixContext) -> dict[str, Any]:
                 headers=context.headers(UNREGISTERED_TOKEN),
                 timeout=10,
             ),
-            403,
+            401,
         )
         write = expect_status(context.poll("write"), 403)
         no_audience = expect_status(context.poll("no_audience"), 403)
         context.observe(
             case,
             missing.headers.get("WWW-Authenticate") == "Bearer"
-            and unregistered.status_code == write.status_code == no_audience.status_code == 403,
+            and unregistered.headers.get("WWW-Authenticate") == "Bearer"
+            and missing.status_code == unregistered.status_code == 401
+            and write.status_code == no_audience.status_code == 403,
         )
 
     def create_notice(case: str, _: dict[str, object]) -> None:
