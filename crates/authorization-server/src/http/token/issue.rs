@@ -200,10 +200,6 @@ fn id_token_signing_alg_for_client(client: &ClientRow) -> jsonwebtoken::Algorith
     if client.require_dpop_bound_tokens
         || client.require_mtls_bound_tokens
         || client.require_par_request_object
-        || matches!(
-            client.token_endpoint_auth_method.as_str(),
-            "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
-        )
     {
         jsonwebtoken::Algorithm::PS256
     } else {
