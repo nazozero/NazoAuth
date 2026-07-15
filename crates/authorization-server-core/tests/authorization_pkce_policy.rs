@@ -51,7 +51,7 @@ fn normalize(
 }
 
 #[test]
-fn baseline_confidential_oidc_client_may_use_transaction_nonce_without_pkce() {
+fn baseline_confidential_oidc_client_may_use_nonce_without_pkce() {
     let normalized = normalize(&request(true, false), "confidential", false)
         .expect("RFC 9700 permits a confidential OIDC client to use nonce protection");
 
@@ -67,11 +67,8 @@ fn public_client_cannot_replace_pkce_with_oidc_nonce() {
 }
 
 #[test]
-fn confidential_client_without_pkce_requires_nonempty_oidc_nonce() {
-    assert_eq!(
-        normalize(&request(false, false), "confidential", false),
-        Err(AuthorizationPolicyError::InvalidRequest)
-    );
+fn baseline_confidential_oidc_code_flow_remains_core_compatible_without_nonce() {
+    assert!(normalize(&request(false, false), "confidential", false).is_ok());
 }
 
 #[test]

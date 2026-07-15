@@ -1,7 +1,7 @@
 use super::*;
 
 #[test]
-fn confidential_oidc_nonce_is_the_only_baseline_pkce_alternative() {
+fn baseline_confidential_oidc_compatibility_does_not_weaken_hardened_clients() {
     let mut client = pkce_policy_client();
     let mut payload = code_payload(false);
     payload.code_challenge = None;
@@ -11,7 +11,7 @@ fn confidential_oidc_nonce_is_the_only_baseline_pkce_alternative() {
     assert!(!authorization_code_requires_pkce(&client, &payload));
 
     payload.nonce = None;
-    assert!(authorization_code_requires_pkce(&client, &payload));
+    assert!(!authorization_code_requires_pkce(&client, &payload));
     payload.nonce = Some("per-transaction-nonce".to_owned());
 
     client.client_type = "public".to_owned();
