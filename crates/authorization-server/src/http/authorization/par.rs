@@ -354,6 +354,9 @@ async fn par_after_rate_limit_inner(
             redirect_uris: &client.redirect_uris,
             allowed_audiences: &client.allowed_audiences,
             fapi2_requires_explicit_redirect_uri: context.config.profile.requires_fapi2_security(),
+            pkce_required: context.config.profile.requires_fapi2_security()
+                || client.require_dpop_bound_tokens
+                || client.require_mtls_bound_tokens,
         },
     ) {
         return par_admission_error(error);
@@ -461,6 +464,13 @@ fn par_admission_error(error: ParAdmissionError) -> HttpResponse {
         ParAdmissionError::SenderConstraintRequired => (
             StatusCode::BAD_REQUEST,
             "FAPI2 profiles require sender-constrained access tokens.",
+        ),
+        ParAdmissionError::PkceRequired => {
+            (StatusCode::BAD_REQUEST, "FAPI2 PAR requests require PKCE.")
+        }
+        ParAdmissionError::InvalidPkce => (
+            StatusCode::BAD_REQUEST,
+            "PAR code_challenge must use a valid S256 value.",
         ),
         ParAdmissionError::ExplicitRedirectUriRequired => (
             StatusCode::BAD_REQUEST,

@@ -6,8 +6,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    AuthorizationPortError, RedirectUriError, is_subset, parse_resource_indicator_parameter,
-    resolve_registered_redirect_uri,
+    AuthorizationPortError, RedirectUriError, is_subset, is_valid_pkce_value,
+    parse_resource_indicator_parameter, resolve_registered_redirect_uri,
 };
 use crate::{
     OAuthClient,
@@ -445,6 +445,7 @@ pub struct ExpandedParAdmissionPolicy<'a> {
     pub redirect_uris: &'a [String],
     pub allowed_audiences: &'a [String],
     pub fapi2_requires_explicit_redirect_uri: bool,
+    pub pkce_required: bool,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -461,6 +462,8 @@ pub enum ParAdmissionError {
     ConfidentialClientRequired,
     StrongClientAuthenticationRequired,
     SenderConstraintRequired,
+    PkceRequired,
+    InvalidPkce,
     ExplicitRedirectUriRequired,
     RedirectUriRequired,
     RedirectUriNotRegistered,
@@ -478,6 +481,8 @@ impl ParAdmissionError {
             Self::StrongClientAuthenticationRequired => "invalid_client",
             Self::RequestObjectRequired
             | Self::SenderConstraintRequired
+            | Self::PkceRequired
+            | Self::InvalidPkce
             | Self::ExplicitRedirectUriRequired
             | Self::RedirectUriRequired
             | Self::RedirectUriNotRegistered => "invalid_request",
@@ -527,6 +532,15 @@ pub fn validate_expanded_par_admission(
         .is_some_and(|response_type| response_type != "code")
     {
         return Err(ParAdmissionError::UnsupportedResponseType);
+    }
+    match (
+        parameters.get("code_challenge").map(String::as_str),
+        parameters.get("code_challenge_method").map(String::as_str),
+    ) {
+        (None, None) if !policy.pkce_required => {}
+        (None, None) => return Err(ParAdmissionError::PkceRequired),
+        (Some(challenge), Some("S256")) if is_valid_pkce_value(challenge) => {}
+        _ => return Err(ParAdmissionError::InvalidPkce),
     }
     if policy.fapi2_requires_explicit_redirect_uri && !parameters.contains_key("redirect_uri") {
         return Err(ParAdmissionError::ExplicitRedirectUriRequired);
@@ -914,6 +928,8 @@ mod tests {
             ("response_type".to_owned(), "code".to_owned()),
             ("redirect_uri".to_owned(), redirect_uris[0].clone()),
             ("request".to_owned(), "signed.jwt".to_owned()),
+            ("code_challenge".to_owned(), "A".repeat(43)),
+            ("code_challenge_method".to_owned(), "S256".to_owned()),
             (
                 "resource".to_owned(),
                 crate::encode_resource_indicators(&["https://api.example".to_owned()])
@@ -933,6 +949,7 @@ mod tests {
             redirect_uris: &redirect_uris,
             allowed_audiences: &audiences,
             fapi2_requires_explicit_redirect_uri: true,
+            pkce_required: true,
         };
         assert!(validate_raw_par_admission(&parameters, raw).is_ok());
         assert!(validate_expanded_par_admission(&parameters, expanded).is_ok());
@@ -955,6 +972,29 @@ mod tests {
                 }
             ),
             Err(ParAdmissionError::SenderConstraintRequired)
+        );
+        let mut without_pkce = parameters.clone();
+        without_pkce.remove("code_challenge");
+        without_pkce.remove("code_challenge_method");
+        assert_eq!(
+            validate_expanded_par_admission(&without_pkce, expanded),
+            Err(ParAdmissionError::PkceRequired)
+        );
+        assert!(
+            validate_expanded_par_admission(
+                &without_pkce,
+                ExpandedParAdmissionPolicy {
+                    pkce_required: false,
+                    ..expanded
+                }
+            )
+            .is_ok()
+        );
+        let mut plain_pkce = parameters.clone();
+        plain_pkce.insert("code_challenge_method".to_owned(), "plain".to_owned());
+        assert_eq!(
+            validate_expanded_par_admission(&plain_pkce, expanded),
+            Err(ParAdmissionError::InvalidPkce)
         );
         let mut nested = parameters;
         nested.insert("request_uri".to_owned(), "urn:forbidden".to_owned());

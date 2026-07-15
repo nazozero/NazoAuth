@@ -345,7 +345,9 @@ async fn authorize_request_with_context(
                 .config
                 .profile
                 .requires_signed_authorization_response(),
-            pkce_required: context.config.profile.requires_fapi2_security(),
+            pkce_required: context.config.profile.requires_fapi2_security()
+                || client.require_dpop_bound_tokens
+                || client.require_mtls_bound_tokens,
         },
         used_pushed_authorization_request,
     ) {

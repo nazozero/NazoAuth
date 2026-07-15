@@ -1060,6 +1060,43 @@ async fn par_rejects_request_uri_from_request_object_after_client_authentication
 }
 
 #[actix_web::test]
+async fn par_rejects_sender_constrained_request_without_pkce_before_persistence() {
+    let Some(fixture) = LiveParFixture::new_with_settings(|settings| {
+        settings.modules.enable_par_request_object = true;
+    })
+    .await
+    else {
+        return;
+    };
+    let client_id = format!("par-pkce-required-{}", Uuid::now_v7().simple());
+    let secret = par_test_secret();
+    fixture
+        .insert_client_secret_post_client_with_options(&client_id, &secret, false, true, true)
+        .await;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    fixture
+        .set_client_jwks(
+            &client_id,
+            json!({"keys": [key.public_jwk("par-request-object-kid")]}),
+        )
+        .await;
+    let request_object = signed_request_object(&client_id, &key, json!({}));
+    let body = Bytes::from(format!(
+        "client_id={}&client_secret={}&request={}",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&secret),
+        urlencoding::encode(&request_object),
+    ));
+
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
+    let (status, value) = par_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+    assert!(value.get("request_uri").is_none());
+}
+
+#[actix_web::test]
 async fn par_does_not_trust_unsigned_request_object_for_missing_outer_client_id() {
     let Some(fixture) = LiveParFixture::new_with_settings(|s| {
         s.modules.enable_par_request_object = true;
