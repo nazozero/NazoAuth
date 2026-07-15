@@ -9,6 +9,18 @@ def workflow_heredoc_json(workflow: str, name: str):
     return json.loads(payload)
 
 class OidfWorkflowTests(unittest.TestCase):
+    def test_public_seed_workflow_derives_the_complete_ciba_matrix(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (
+            root / ".github" / "workflows" / "oidf-public-seed-configs.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("--derive-fapi-ciba-matrix-configs", workflow)
+        self.assertIn(
+            "--ciba-notification-base-url https://www.certification.openid.net",
+            workflow,
+        )
+
     def test_public_seed_artifacts_include_a_validated_mtls_ca_bundle(self):
         root = Path(__file__).resolve().parents[2]
         validation = (

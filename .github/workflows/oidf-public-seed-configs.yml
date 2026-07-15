@@ -54,6 +54,8 @@ jobs:
             --template docs/conformance/oidf-plan-config-template.json \
             --secret-patch-file oidf-plan-config-secret-patch.merged.json \
             --derive-dynamic-oidcc-config \
+            --derive-fapi-ciba-matrix-configs \
+            --ciba-notification-base-url https://www.certification.openid.net \
             --output oidf-plan-configs.json
           python scripts/export_oidf_public_plan_configs.py \
             --config-json-file oidf-plan-configs.json \
