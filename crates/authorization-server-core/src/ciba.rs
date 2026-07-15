@@ -251,7 +251,7 @@ where
     where
         F: FnMut() -> String,
     {
-        validate_state(state).map_err(CibaCreateFailure::Storage)?;
+        validate_new_state(state).map_err(CibaCreateFailure::Storage)?;
         for _ in 0..CIBA_TRANSITION_MAX_ATTEMPTS {
             let auth_req_id = generate_id();
             match self.store.create(&auth_req_id, state).await {
@@ -477,16 +477,39 @@ pub fn evaluate_ciba_decision(
 fn validate_stored_request<V>(
     stored: CibaStoredRequest<V>,
 ) -> Result<CibaStoredRequest<V>, CibaStatePortError> {
-    validate_state(&stored.state)?;
+    validate_stored_state(&stored.state)?;
     Ok(stored)
 }
 
-fn validate_state(state: &CibaRequestState) -> Result<(), CibaStatePortError> {
+fn validate_new_state(state: &CibaRequestState) -> Result<(), CibaStatePortError> {
+    validate_state_shape(state, false)?;
+    if let Some(notification) = &state.ping_notification
+        && (notification.status != CibaPingNotificationStatus::AwaitingDecision
+            || notification.auth_req_id.is_some())
+    {
+        return Err(CibaStatePortError::CorruptData);
+    }
+    Ok(())
+}
+
+fn validate_stored_state(state: &CibaRequestState) -> Result<(), CibaStatePortError> {
+    validate_state_shape(state, true)
+}
+
+fn validate_state_shape(
+    state: &CibaRequestState,
+    require_persisted_auth_req_id: bool,
+) -> Result<(), CibaStatePortError> {
     if state.expires_at <= 0 || state.retention_expires_at < state.expires_at {
         return Err(CibaStatePortError::CorruptData);
     }
     if let Some(notification) = &state.ping_notification
         && (notification.endpoint.is_empty()
+            || (require_persisted_auth_req_id
+                && notification
+                    .auth_req_id
+                    .as_deref()
+                    .is_none_or(str::is_empty))
             || notification
                 .client_notification_token
                 .as_deref()
@@ -494,11 +517,7 @@ fn validate_state(state: &CibaRequestState) -> Result<(), CibaStatePortError> {
             || (matches!(
                 notification.status,
                 CibaPingNotificationStatus::AwaitingDecision | CibaPingNotificationStatus::Pending
-            ) && (notification
-                .auth_req_id
-                .as_deref()
-                .is_none_or(str::is_empty)
-                || notification.client_notification_token.is_none()))
+            ) && notification.client_notification_token.is_none())
             || (notification.status == CibaPingNotificationStatus::AwaitingDecision
                 && notification.next_attempt_at.is_some())
             || (notification.status == CibaPingNotificationStatus::Pending

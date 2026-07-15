@@ -173,9 +173,14 @@ async fn ciba_decision_atomically_schedules_and_terminally_acks_ping_delivery() 
         }),
     };
     let store = CibaStore::new(&connection);
+    let generated_auth_req_id = auth_req_id.clone();
     assert_eq!(
-        store.create(&auth_req_id, &state).await.unwrap(),
-        AtomicResult::Applied
+        CibaService::new(store.clone())
+            .create_unique(&state, || generated_auth_req_id.clone())
+            .await
+            .unwrap(),
+        auth_req_id,
+        "the core must allow a pre-persistence ping state while the adapter atomically binds auth_req_id"
     );
     CibaService::new(store.clone())
         .decide(&auth_req_id, CibaDecision::Approve, Some(user_id), || now)
