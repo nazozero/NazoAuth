@@ -22,6 +22,7 @@ in the repository.
 - Latest encrypted-response coverage check: [2026-07-11 M7 encrypted response OIDF coverage](2026-07-11-m7-oidf-coverage.md)
 - Latest emerging-protocol governance review: [2026-07-11 M8 watchlist governance](2026-07-11-m8-watchlist-governance.md)
 - Latest M8 official-suite source coverage scan: [2026-07-11 OIDF v5.2.0 coverage](2026-07-11-m8-oidf-v5.2.0-coverage.md)
+- Project-owned RFC 9967 regression scope: [RFC 9967 SCIM SET black-box matrix](rfc9967-scim-set-matrix.md)
 
 The latest recorded official full-matrix suite run is the 2026-07-11 M7
 parallel-isolated run against `https://auth.nazo.run`. It ran from workflow head

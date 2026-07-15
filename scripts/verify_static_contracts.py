@@ -11,6 +11,8 @@ ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "migrations"
 CHECKSUMS = ROOT / "tests" / "contracts" / "migrations.sha256"
 ROUTES = ROOT / "tests" / "contracts" / "routes.json"
+RFC9967_MATRIX = ROOT / "tests" / "contracts" / "rfc9967-scim-set-matrix.json"
+RFC9967_RUNNER = ROOT / "scripts" / "rfc9967_scim_set_e2e.py"
 WORKSTATION_PATH = re.compile(r"(?i)\b[A-Z]:[\\/](?:self|projects)[\\/]")
 REMOVED_ADAPTER_CLAIMS = (
     "Actix Web, Axum/Tower, and tonic adapters",
@@ -48,6 +50,20 @@ FORBIDDEN_CRATE_DEPENDENCIES = {
         "nazo-identity",
     },
     "http-actix": {"diesel", "diesel-async", "fred", "nazo-postgres", "nazo-valkey"},
+}
+
+RFC9967_CASES = {
+    "discovery_exact_event_uris",
+    "poll_authorization_boundaries",
+    "create_notice_set_claims",
+    "receiver_audience_and_ack_isolation",
+    "ack_is_terminal_for_receiver",
+    "set_error_requires_content_language",
+    "patch_notice_and_deactivate_events",
+    "put_notice_and_activate_events",
+    "poll_pagination_preserves_order",
+    "long_poll_wakes_on_new_event",
+    "invalid_poll_shapes_fail_closed",
 }
 
 
@@ -242,6 +258,58 @@ def check_workspace_package_metadata() -> None:
                 )
 
 
+def check_rfc9967_test_boundaries() -> None:
+    production_sources = [
+        *(ROOT / "crates" / "scim-events" / "src").rglob("*.rs"),
+        ROOT / "crates" / "http-actix" / "src" / "scim.rs",
+    ]
+    forbidden_markers = ("#[cfg(test)]", "#[test]", "#[tokio::test]", "mod tests")
+    for path in production_sources:
+        source = path.read_text(encoding="utf-8")
+        markers = [marker for marker in forbidden_markers if marker in source]
+        if markers:
+            raise SystemExit(
+                f"{path.relative_to(ROOT)} embeds tests in production source: {markers}"
+            )
+
+    required_test_files = [
+        ROOT / "crates" / "scim-events" / "tests" / "domain_contract.rs",
+        ROOT / "crates" / "http-actix" / "tests" / "scim_transport.rs",
+        ROOT / "scripts" / "test_rfc9967_scim_set_e2e_source_policy.py",
+    ]
+    missing = [path.relative_to(ROOT) for path in required_test_files if not path.is_file()]
+    if missing:
+        raise SystemExit(f"RFC 9967 separated test files are missing: {missing}")
+
+    payload = json.loads(RFC9967_MATRIX.read_text(encoding="utf-8"))
+    cases = payload.get("cases", [])
+    names = [case.get("name") for case in cases]
+    if (
+        payload.get("schema") != 1
+        or payload.get("standard") != "RFC 9967"
+        or set(names) != RFC9967_CASES
+        or len(names) != len(RFC9967_CASES)
+        or any(not case.get("handler") for case in cases)
+    ):
+        raise SystemExit("RFC 9967 black-box matrix must contain the exact required cases")
+
+    runner = RFC9967_RUNNER.read_text(encoding="utf-8")
+    forbidden_tables = ("scim_security_" + "events", "scim_security_event_" + "receipts")
+    if any(table in runner for table in forbidden_tables):
+        raise SystemExit("RFC 9967 black-box runner must not inspect event persistence tables")
+
+    workflow = (ROOT / ".github" / "workflows" / "conformance-security.yml").read_text(
+        encoding="utf-8"
+    )
+    required_workflow_fragments = (
+        "ENABLE_SCIM_SECURITY_EVENTS: true",
+        "python scripts/rfc9967_scim_set_e2e.py",
+        "python scripts/test_rfc9967_scim_set_e2e_source_policy.py",
+    )
+    if any(fragment not in workflow for fragment in required_workflow_fragments):
+        raise SystemExit("conformance-security workflow does not enforce the RFC 9967 matrix")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -260,6 +328,7 @@ def main() -> None:
         check_toolchain_pins()
         check_crate_dependency_boundaries()
         check_workspace_package_metadata()
+        check_rfc9967_test_boundaries()
 
 
 if __name__ == "__main__":
