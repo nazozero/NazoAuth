@@ -319,7 +319,8 @@ pub async fn client_configuration_get(
         Err(response) => return response,
     };
     let response_types = response_types_from_client(&current);
-    let registration_access_token = endpoint.security.registration_tokens.random_token();
+    let registration_access_token = bearer_token(&request)
+        .expect("authenticated registration requests retain their bearer token");
     let (issued_secret, client_secret_hash) = issue_client_secret(&endpoint, &current);
     let client = match endpoint
         .clients
@@ -330,7 +331,7 @@ pub async fn client_configuration_get(
             &endpoint
                 .security
                 .registration_tokens
-                .token_hash(&registration_access_token),
+                .token_hash(registration_access_token),
         )
         .await
     {
@@ -351,7 +352,7 @@ pub async fn client_configuration_get(
         &response_types,
         issued_secret,
         &endpoint.config.issuer,
-        &registration_access_token,
+        registration_access_token,
     ))
 }
 
@@ -1315,6 +1316,8 @@ mod tests {
             read.headers().get(header::CACHE_CONTROL),
             Some(&header::HeaderValue::from_static("no-store"))
         );
+        let read: Value = test::read_body_json(read).await;
+        assert_eq!(read["registration_access_token"], "registration-token");
 
         let update = test::call_service(
             &service,
