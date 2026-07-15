@@ -90,6 +90,10 @@ NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
 NAZO_LOGIN_SUBMIT_READY_SELECTOR = f"#{NAZO_LOGIN_SUBMIT_ID}:not([disabled])"
 NAZO_CONSENT_APPROVE_ID = "nazo-consent-approve"
 NAZO_CONSENT_DENY_ID = "nazo-consent-deny"
+OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS = max(
+    30,
+    int(os.environ.get("OIDF_LOCAL_BROWSER_CALLBACK_TIMEOUT_SECONDS", "30")),
+)
 NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
     r'("error"\s*:\s*"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"'
     r"|invalid_request|invalid_request_object|access_denied|login_required|server_error)"
@@ -120,7 +124,7 @@ def consent_approve_commands() -> list[list[object]]:
         ["wait-element-visible", "id", NAZO_CONSENT_APPROVE_ID, 30],
         ["click", "id", NAZO_CONSENT_APPROVE_ID],
         ["wait", "contains", "/test/", 30],
-        ["wait", "id", "submission_complete", 10],
+        ["wait", "id", "submission_complete", OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS],
     ]
 
 
@@ -129,7 +133,7 @@ def consent_deny_commands() -> list[list[object]]:
         ["wait-element-visible", "id", NAZO_CONSENT_DENY_ID, 30],
         ["click", "id", NAZO_CONSENT_DENY_ID],
         ["wait", "contains", "/test/", 30],
-        ["wait", "id", "submission_complete", 10],
+        ["wait", "id", "submission_complete", OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS],
     ]
 
 
@@ -774,7 +778,14 @@ def user_reject_browser_automation() -> list[dict[str, object]]:
                 {
                     "task": "Verify callback completion",
                     "match": "*/test/*/callback*",
-                    "commands": [["wait", "id", "submission_complete", 10]],
+                    "commands": [
+                        [
+                            "wait",
+                            "id",
+                            "submission_complete",
+                            OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS,
+                        ]
+                    ],
                 },
             ],
         }
@@ -817,7 +828,14 @@ def browser_automation() -> list[dict[str, object]]:
                 {
                     "task": "Verify callback completion",
                     "match": "*/test/*/callback*",
-                    "commands": [["wait", "id", "submission_complete", 10]],
+                    "commands": [
+                        [
+                            "wait",
+                            "id",
+                            "submission_complete",
+                            OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS,
+                        ]
+                    ],
                 },
             ],
         },

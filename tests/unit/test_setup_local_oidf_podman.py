@@ -14,6 +14,32 @@ def load_setup_module():
 
 
 class SetupLocalOidfPodmanTests(unittest.TestCase):
+    def test_every_callback_completion_wait_has_a_thirty_second_floor(self):
+        module = load_setup_module()
+
+        configs = [
+            module.write_basic_plan_config(),
+            module.write_dynamic_plan_config(),
+            module.write_dynamic_crypto_plan_config(),
+            module.write_formpost_plan_config(),
+            module.write_third_party_init_plan_config(),
+        ]
+        commands = [
+            command
+            for config in configs
+            for entry in config.get("browser", [])
+            for task in entry.get("tasks", [])
+            for command in task.get("commands", [])
+        ]
+        callback_waits = [
+            command
+            for command in commands
+            if command[:3] == ["wait", "id", "submission_complete"]
+        ]
+
+        self.assertTrue(callback_waits)
+        self.assertTrue(all(command[3] >= 30 for command in callback_waits))
+
     def test_session_management_browser_automation_waits_for_result_pages(self):
         module = load_setup_module()
 
