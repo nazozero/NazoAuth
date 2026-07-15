@@ -39,8 +39,8 @@ use chrono::{Duration, Utc};
 use nazo_auth::parse_resource_indicator_parameter;
 use nazo_auth::{
     ExpandedParAdmissionPolicy, ParAdmissionError, RawParAdmissionPolicy,
-    encode_resource_indicators, is_valid_dpop_jkt, validate_expanded_par_admission,
-    validate_raw_par_admission,
+    encode_resource_indicators, is_valid_dpop_jkt, unverified_client_assertion_client_id,
+    validate_expanded_par_admission, validate_raw_par_admission,
 };
 #[cfg(test)]
 use serde_json::Value;
@@ -240,6 +240,15 @@ async fn par_after_rate_limit_inner(
         && let Some(request_object) = params.get("request")
         && let Some(client_id) = unverified_signed_request_object_client_id(request_object)
     {
+        params.insert("client_id".to_owned(), client_id);
+    }
+    if !params.contains_key("client_id")
+        && let Some(client_id) = params
+            .get("client_assertion")
+            .and_then(|assertion| unverified_client_assertion_client_id(assertion))
+    {
+        // This value is only a lookup hint. Client authentication below verifies
+        // the assertion signature and binds its issuer/subject to the client.
         params.insert("client_id".to_owned(), client_id);
     }
     let Some(client_id) = params.get("client_id").cloned() else {

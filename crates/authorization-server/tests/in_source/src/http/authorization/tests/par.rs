@@ -1089,6 +1089,43 @@ async fn par_does_not_trust_unsigned_request_object_for_missing_outer_client_id(
 }
 
 #[actix_web::test]
+async fn par_uses_authenticated_assertion_identity_to_classify_unsigned_request_object() {
+    let Some(fixture) = LiveParFixture::new_with_settings(|settings| {
+        settings.modules.enable_par_request_object = true;
+        settings.protocol.authorization_server_profile =
+            AuthorizationServerProfile::Fapi2MessageSigningAuthzRequest;
+    })
+    .await
+    else {
+        return;
+    };
+    let client_id = format!("par-unsigned-assertion-{}", Uuid::now_v7().simple());
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    fixture
+        .insert_private_key_jwt_client(
+            &client_id,
+            json!({"keys": [key.public_jwk("par-client-assertion-kid")]}),
+            false,
+        )
+        .await;
+    let assertion = private_key_client_assertion(&client_id, "https://issuer.example", &key);
+    let request_object = unsigned_request_object(&client_id);
+    let body = Bytes::from(format!(
+        "client_assertion_type={}&client_assertion={}&request={}",
+        urlencoding::encode(nazo_auth::CLIENT_ASSERTION_TYPE_JWT_BEARER),
+        urlencoding::encode(&assertion),
+        urlencoding::encode(&request_object),
+    ));
+
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
+    let (status, value) = par_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request_object")));
+    assert!(value.get("request_uri").is_none());
+}
+
+#[actix_web::test]
 async fn par_rejects_authorization_details_from_request_object_when_disabled() {
     let Some(fixture) = LiveParFixture::new_with_settings(|settings| {
         settings.modules.enable_par_request_object = true;
