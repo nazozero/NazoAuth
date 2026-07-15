@@ -57,7 +57,14 @@ def public_seed_client(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
     result: dict[str, Any] = {}
-    for key in ("client_id", "scope"):
+    for key in (
+        "client_id",
+        "scope",
+        "backchannel_token_delivery_mode",
+        "backchannel_client_notification_endpoint",
+        "backchannel_authentication_request_signing_alg",
+        "backchannel_user_code_parameter",
+    ):
         if key in value:
             result[key] = copy.deepcopy(value[key])
     if "jwks" in value:
