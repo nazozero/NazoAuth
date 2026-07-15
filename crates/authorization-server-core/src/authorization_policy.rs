@@ -47,6 +47,7 @@ pub struct AuthorizationCapabilityPolicy {
 #[derive(Clone, Copy, Debug)]
 pub struct AuthorizationProfilePolicy {
     pub signed_authorization_response_required: bool,
+    pub pkce_required: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -125,6 +126,12 @@ pub fn normalize_authorization_request(
         return Err(AuthorizationPolicyError::UnsupportedResponseMode);
     }
 
+    let scopes = parse_scope(parameters.get("scope").map(String::as_str).unwrap_or(""));
+    let confidential_oidc_nonce = client.client_type == "confidential"
+        && scopes.iter().any(|scope| scope == "openid")
+        && parameters
+            .get("nonce")
+            .is_some_and(|nonce| !nonce.is_empty());
     let (code_challenge, code_challenge_method) = match (
         parameters.get("code_challenge").map(String::as_str),
         parameters.get("code_challenge_method").map(String::as_str),
@@ -135,7 +142,7 @@ pub fn normalize_authorization_request(
         }
         _ => return Err(AuthorizationPolicyError::InvalidRequest),
     };
-    if code_challenge.is_none() {
+    if code_challenge.is_none() && (profile.pkce_required || !confidential_oidc_nonce) {
         return Err(AuthorizationPolicyError::InvalidRequest);
     }
 
@@ -152,7 +159,6 @@ pub fn normalize_authorization_request(
     };
     let requested_claims = requested_claims(parameters)?;
     let acr = requested_acr(parameters, requested_claims.acr.as_ref())?;
-    let scopes = parse_scope(parameters.get("scope").map(String::as_str).unwrap_or(""));
     if !is_subset(&scopes, client.allowed_scopes) {
         return Err(AuthorizationPolicyError::InvalidScope);
     }
@@ -689,6 +695,7 @@ mod tests {
             capabilities(),
             AuthorizationProfilePolicy {
                 signed_authorization_response_required: false,
+                pkce_required: false,
             },
             false,
         )
@@ -725,6 +732,7 @@ mod tests {
                 },
                 AuthorizationProfilePolicy {
                     signed_authorization_response_required: false,
+                    pkce_required: false,
                 },
                 false,
             ),
@@ -742,6 +750,7 @@ mod tests {
                 },
                 AuthorizationProfilePolicy {
                     signed_authorization_response_required: false,
+                    pkce_required: false,
                 },
                 false,
             ),

@@ -345,6 +345,7 @@ async fn authorize_request_with_context(
                 .config
                 .profile
                 .requires_signed_authorization_response(),
+            pkce_required: context.config.profile.requires_fapi2_security(),
         },
         used_pushed_authorization_request,
     ) {
