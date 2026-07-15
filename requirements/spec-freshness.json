@@ -48,6 +48,7 @@
     {"id":"rfc7636","title":"Proof Key for Code Exchange by OAuth Public Clients","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7636","number":7636,"markers":["RFC 7636","Proof Key for Code Exchange"]},
     {"id":"rfc7662","title":"OAuth 2.0 Token Introspection","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7662","number":7662,"markers":["RFC 7662","OAuth 2.0 Token Introspection"]},
     {"id":"rfc8252","title":"OAuth 2.0 for Native Apps","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8252","number":8252,"markers":["RFC 8252","OAuth 2.0 for Native Apps"]},
+    {"id":"rfc8314","title":"Cleartext Considered Obsolete: Use of Transport Layer Security (TLS) for Email Submission and Access","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8314","number":8314,"markers":["RFC 8314","Cleartext Considered Obsolete"]},
     {"id":"rfc8414","title":"OAuth 2.0 Authorization Server Metadata","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8414","number":8414,"markers":["RFC 8414","OAuth 2.0 Authorization Server Metadata"]},
     {"id":"rfc8628","title":"OAuth 2.0 Device Authorization Grant","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8628","number":8628,"markers":["RFC 8628","OAuth 2.0 Device Authorization Grant"]},
     {"id":"rfc8693","title":"OAuth 2.0 Token Exchange","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8693","number":8693,"markers":["RFC 8693","OAuth 2.0 Token Exchange"]},
