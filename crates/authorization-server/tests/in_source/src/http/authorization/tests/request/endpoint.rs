@@ -263,26 +263,6 @@ impl LiveAuthorizationFixture {
         .expect("test client sender constraint update should succeed");
     }
 
-    async fn set_client_presentation(&self, client_id: &str) {
-        let mut conn = get_conn(&self.state.diesel_db)
-            .await
-            .expect("database connection");
-        sql_query(
-            r#"
-            UPDATE oauth_clients
-            SET logo_uri = 'https://client.example/logo.svg',
-                policy_uri = 'https://client.example/privacy',
-                tos_uri = 'https://client.example/terms'
-            WHERE tenant_id = $1 AND client_id = $2
-            "#,
-        )
-        .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
-        .bind::<Text, _>(client_id)
-        .execute(&mut conn)
-        .await
-        .expect("test client presentation update should succeed");
-    }
-
     async fn store_session(&self, user: &DatabaseUserFixture, sid: &str, auth_time: i64) {
         let payload = SessionPayload {
             user_id: user.id,
@@ -563,7 +543,6 @@ async fn authorization_request_allows_server_issued_par_request_uri() {
             true,
         )
         .await;
-    fixture.set_client_presentation(&client_id).await;
     let request_uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
     fixture
         .store_pushed_request(
@@ -604,24 +583,17 @@ async fn authorization_request_allows_server_issued_par_request_uri() {
     );
     assert_eq!(location.path(), "/auth");
     let login_parameters = location.query_pairs().collect::<HashMap<_, _>>();
-    assert_eq!(
-        login_parameters
-            .get("client_logo_uri")
-            .map(|value| value.as_ref()),
-        Some("https://client.example/logo.svg")
-    );
-    assert_eq!(
-        login_parameters
-            .get("client_policy_uri")
-            .map(|value| value.as_ref()),
-        Some("https://client.example/privacy")
-    );
-    assert_eq!(
-        login_parameters
-            .get("client_tos_uri")
-            .map(|value| value.as_ref()),
-        Some("https://client.example/terms")
-    );
+    for attacker_controlled_field in [
+        "client_name",
+        "client_logo_uri",
+        "client_policy_uri",
+        "client_tos_uri",
+    ] {
+        assert!(
+            !login_parameters.contains_key(attacker_controlled_field),
+            "presentation metadata must be loaded authoritatively, not copied into the login URL"
+        );
+    }
     let next = location
         .query_pairs()
         .find_map(|(key, value)| (key == "next").then_some(value.into_owned()))

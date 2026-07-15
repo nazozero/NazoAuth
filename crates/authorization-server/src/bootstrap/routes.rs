@@ -42,6 +42,7 @@ use crate::http::authorization::decision::authorize_decision;
 use crate::http::authorization::{
     consent::authorize_consent,
     par::par,
+    presentation::authorize_client_presentation,
     request::{authorize_get, authorize_post},
 };
 #[cfg(test)]
@@ -91,6 +92,10 @@ pub(crate) fn configure(
     // NO CORS: /authorize
     cfg.route("/authorize", web::get().to(authorize_get))
         .route("/authorize", web::post().to(authorize_post))
+        .route(
+            "/authorize/client-presentation",
+            web::get().to(authorize_client_presentation),
+        )
         .route("/authorize/consent", web::get().to(authorize_consent))
         .route("/authorize/decision", web::post().to(authorize_decision))
         // NO CORS: /par
