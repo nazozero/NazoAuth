@@ -148,10 +148,6 @@ fn authorization_code_requires_pkce(client: &ClientRow, payload: &CodePayload) -
         || payload.dpop_jkt.is_some()
         || payload.mtls_x5t_s256.is_some()
         || !payload.scopes.iter().any(|scope| scope == "openid")
-        || !payload
-            .nonce
-            .as_deref()
-            .is_some_and(|nonce| !nonce.is_empty())
 }
 
 fn authorization_code_dpop_error_response(error: DpopError) -> HttpResponse {

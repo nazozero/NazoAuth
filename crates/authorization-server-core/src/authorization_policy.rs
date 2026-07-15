@@ -127,11 +127,8 @@ pub fn normalize_authorization_request(
     }
 
     let scopes = parse_scope(parameters.get("scope").map(String::as_str).unwrap_or(""));
-    let confidential_oidc_nonce = client.client_type == "confidential"
-        && scopes.iter().any(|scope| scope == "openid")
-        && parameters
-            .get("nonce")
-            .is_some_and(|nonce| !nonce.is_empty());
+    let confidential_oidc =
+        client.client_type == "confidential" && scopes.iter().any(|scope| scope == "openid");
     let (code_challenge, code_challenge_method) = match (
         parameters.get("code_challenge").map(String::as_str),
         parameters.get("code_challenge_method").map(String::as_str),
@@ -142,7 +139,7 @@ pub fn normalize_authorization_request(
         }
         _ => return Err(AuthorizationPolicyError::InvalidRequest),
     };
-    if code_challenge.is_none() && (profile.pkce_required || !confidential_oidc_nonce) {
+    if code_challenge.is_none() && (profile.pkce_required || !confidential_oidc) {
         return Err(AuthorizationPolicyError::InvalidRequest);
     }
 
