@@ -106,11 +106,7 @@ def check_route_fixture() -> None:
 
 def public_document_paths() -> list[Path]:
     paths = [ROOT / "README.md", ROOT / "README.zh-CN.md"]
-    paths.extend(
-        path
-        for path in (ROOT / "docs").rglob("*.md")
-        if "superpowers" not in path.relative_to(ROOT / "docs").parts
-    )
+    paths.extend((ROOT / "docs").rglob("*.md"))
     return paths
 
 

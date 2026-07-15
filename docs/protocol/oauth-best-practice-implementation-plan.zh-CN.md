@@ -184,7 +184,7 @@ cargo test --locked authorization --lib
 
 | 子项 | 当前事实源 | M2 状态 |
 | --- | --- | --- |
-| FAPI2 Security Final | `fapi2-security` runtime profile 已强制 PAR、S256、confidential client、FAPI client auth、sender-constrained token、code TTL 与 PAR TTL；`crates/authorization-server/tests/in_source/src/http/authorization/tests/par.rs`、`crates/authorization-server/tests/in_source/src/http/token/tests/dispatch.rs` 和 `crates/authorization-server/tests/in_source/src/http/tests/well_known.rs` 保持对应负向测试。 | 已由官方 `oidf-conformance-full.yml` run `28953799865` 在 18+2 `parallel-isolated` 矩阵中验证。 |
+| FAPI2 Security Final | `fapi2-security` runtime profile 已强制 PAR、S256、confidential client、FAPI client auth、sender-constrained token、code TTL 与 PAR TTL；`crates/authorization-server/tests/in_source/src/http/authorization/tests/par.rs`、`crates/authorization-server/tests/in_source/src/http/token/tests/dispatch.rs` 和 `crates/authorization-server-core/tests/metadata.rs` 保持对应负向与 metadata-truth 测试。 | 已由官方 `oidf-conformance-full.yml` run `28953799865` 在 18+2 `parallel-isolated` 矩阵中验证。 |
 | Signed request object | `fapi2-message-signing-authz-request` 独立 profile 要求 PAR 中 signed request object；`crates/authorization-server/src/http/authorization/jar.rs` 与 PAR/JAR 测试覆盖 `aud`、`nbf`、`exp`、client 绑定和 replay 边界。 | profile-scoped；不并入 base `fapi2-security`。 |
 | JARM | `fapi2-message-signing-jarm` 独立 profile 继承 FAPI2 Security，并在 request 省略 `response_mode=jwt` 或显式使用默认 query mode 时仍强制签名授权响应；base `fapi2-security` 仍只在协商 `response_mode=jwt` 时签名，不强制全局 JARM。 | profile-scoped；不并入 base `fapi2-security`。 |
 | Signed / nested encrypted introspection | `fapi2-message-signing-introspection` 独立 profile 才发布 RFC 9701 signed introspection 与 JWE metadata；base `fapi2-security` 不发布这些字段。 | profile-scoped；不得在 base profile 中广告。 |
@@ -194,12 +194,13 @@ cargo test --locked authorization --lib
 预计涉及：
 
 - `crates/authorization-server/src/http/authorization/*`
-- `crates/authorization-server/src/http/token/introspect.rs`
+- `crates/authorization-server/src/domain/token_management.rs`
+- `crates/http-actix/src/token_management.rs`
 - `crates/authorization-server/src/http/well_known.rs`
 - `crates/authorization-server/src/settings/profile.rs`
 - `crates/authorization-server/tests/in_source/src/http/authorization/tests/*`
-- `crates/authorization-server/tests/in_source/src/http/token/tests/introspect.rs`
-- `crates/authorization-server/tests/in_source/src/http/tests/well_known.rs`
+- `crates/authorization-server-core/tests/metadata.rs`
+- `crates/http-actix/src/token_management.rs`
 
 验收：
 
@@ -348,7 +349,7 @@ cargo test --locked session --lib
 - `crates/authorization-server/src/http/well_known.rs`
 - `crates/authorization-server/src/settings/profile.rs`
 - `crates/authorization-server/tests/in_source/src/http/token/tests/ciba.rs`
-- `crates/authorization-server/tests/in_source/src/http/tests/well_known.rs`
+- `crates/authorization-server-core/tests/metadata.rs`
 
 验收：
 

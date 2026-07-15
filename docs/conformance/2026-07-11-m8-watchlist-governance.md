@@ -2,6 +2,17 @@
 
 Date: 2026-07-11
 
+## Current status update (2026-07-15)
+
+The decisions below are the dated governance outcome. Two candidates now have
+code-level follow-ups: RFC 9865 remains implemented as described here, and FAPI
+2.0 HTTP Signatures was subsequently implemented as an experimental,
+default-off `/fapi/resource` profile using local RFC 9421/RFC 9530 evidence.
+The latter still has no advertised metadata, dedicated OIDF plan, certification
+claim, or production-adopter approval. The Browser-Based Applications work is
+an audit only. RFC 9967, client attestation, Transaction Tokens, Grant
+Management, OpenID4VCI, and OpenID4VP remain unimplemented product candidates.
+
 ## Scope and conclusion
 
 This record completes the product, standards/conformance, and security-entry

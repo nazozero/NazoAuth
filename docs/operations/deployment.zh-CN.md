@@ -306,10 +306,10 @@ JWK 轮换、时钟监控、Valkey 重放存储、服务端签名密钥托管和
    不得改用叶证书 fingerprint allowlist。
 7. 先运行 `.github/workflows/oidf-conformance.yml` 的单 plan。单 plan workflow
    默认关闭 early-stop monitor，以便失败时上传完整 artifact。
-8. 单 plan 通过后，才运行 `.github/workflows/oidf-conformance-full.yml` 全矩阵。默认全矩阵保持
-   `OIDF_NO_PARALLEL=true`。如需验证 runner 并发，使用 `runner_mode=parallel-isolated`
-   触发同一 workflow；该模式会让并发安全的 plan set 不带 `--no-parallel` 执行，同时把
+8. 单 plan 通过后，才运行 `.github/workflows/oidf-conformance-full.yml` 全矩阵。默认使用
+   `runner_mode=parallel-isolated`：并发安全的 plan set 不带 `--no-parallel` 执行，同时把
    logout 和 session-management 放到独立 matrix job 中运行，使它们拥有独立 runner/浏览器环境。
+   仅在确定性诊断时回退到 `runner_mode=serial`；`OIDF_NO_PARALLEL` 只控制该串行回退。
 9. 在 artifact 过期前保存最终结果到 `docs/conformance`，并关联保存 deployed head、
    workflow run 与 plan ID、artifact digest、CA bundle digest 和最终 PR Checks head。
 
