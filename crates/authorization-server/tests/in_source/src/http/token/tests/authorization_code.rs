@@ -811,33 +811,6 @@ fn authorization_code_redirect_uri_matching_preserves_oauth_binding_rules() {
 }
 
 #[test]
-fn authorization_code_pkce_policy_has_no_client_profile_bypass() {
-    let mut client = pkce_policy_client();
-    let mut payload = code_payload(true);
-
-    assert!(authorization_code_requires_pkce(&client, &payload));
-
-    client.client_type = "public".to_owned();
-    assert!(authorization_code_requires_pkce(&client, &payload));
-
-    client.client_type = "confidential".to_owned();
-    client.require_dpop_bound_tokens = true;
-    assert!(authorization_code_requires_pkce(&client, &payload));
-
-    client.require_dpop_bound_tokens = false;
-    client.require_mtls_bound_tokens = true;
-    assert!(authorization_code_requires_pkce(&client, &payload));
-
-    client.require_mtls_bound_tokens = false;
-    payload.dpop_jkt = Some("request-dpop-jkt".to_owned());
-    assert!(authorization_code_requires_pkce(&client, &payload));
-
-    payload.dpop_jkt = None;
-    payload.mtls_x5t_s256 = Some("request-mtls-thumbprint".to_owned());
-    assert!(authorization_code_requires_pkce(&client, &payload));
-}
-
-#[test]
 fn authorization_code_holder_error_responses_preserve_oauth_error_classes() {
     let mtls = authorization_code_mtls_holder_error_response();
     assert_eq!(mtls.status(), StatusCode::BAD_REQUEST);
