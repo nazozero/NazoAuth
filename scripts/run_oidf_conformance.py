@@ -126,6 +126,14 @@ OIDF_ALLOWED_REVIEW_CONTEXTS_BY_CONFIG = {
             "oidcc-ensure-registered-redirect-uri",
         }),
     ),
+    OIDCC_FORMPOST_CONFIG_FILE: (
+        "oidcc-formpost-basic-certification-test-plan",
+        frozenset({
+            "oidcc-prompt-login",
+            "oidcc-max-age-1",
+            "oidcc-ensure-registered-redirect-uri",
+        }),
+    ),
 }
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
