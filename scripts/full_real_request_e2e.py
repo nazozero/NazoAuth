@@ -2109,7 +2109,7 @@ def run() -> None:
             and set(discovery["revocation_endpoint_auth_signing_alg_values_supported"])
             == {"EdDSA", "RS256", "ES256", "PS256"}
             and set(discovery["request_object_signing_alg_values_supported"])
-            == {"none", "EdDSA", "RS256", "ES256", "PS256"}
+            == {"EdDSA", "RS256", "ES256", "PS256"}
             and set(discovery["dpop_signing_alg_values_supported"])
             == {"EdDSA", "ES256"}
             and {"address", "phone"}.issubset(set(discovery["scopes_supported"]))
