@@ -97,6 +97,14 @@ pub struct DynamicClientRegistrationRequest {
     #[serde(default)]
     pub backchannel_logout_session_required: Option<bool>,
     #[serde(default)]
+    pub backchannel_token_delivery_mode: Option<String>,
+    #[serde(default)]
+    pub backchannel_client_notification_endpoint: Option<String>,
+    #[serde(default)]
+    pub backchannel_authentication_request_signing_alg: Option<String>,
+    #[serde(default)]
+    pub backchannel_user_code_parameter: Option<bool>,
+    #[serde(default)]
     pub frontchannel_logout_uri: Option<String>,
     #[serde(default)]
     pub frontchannel_logout_session_required: Option<bool>,
@@ -163,6 +171,10 @@ pub struct PreparedDynamicClientRegistration {
     pub subject_type: Option<String>,
     pub sector_identifier_uri: Option<String>,
     pub require_dpop_bound_tokens: bool,
+    pub backchannel_token_delivery_mode: String,
+    pub backchannel_client_notification_endpoint: Option<String>,
+    pub backchannel_authentication_request_signing_alg: Option<String>,
+    pub backchannel_user_code_parameter: bool,
     pub backchannel_logout_uri: Option<String>,
     pub backchannel_logout_session_required: bool,
     pub frontchannel_logout_uri: Option<String>,
@@ -245,6 +257,50 @@ pub fn prepare_dynamic_client_registration(
             .map(|uri| validate_https_metadata_uri("tos_uri", uri, false))
             .transpose()?,
     };
+    let backchannel_token_delivery_mode = request
+        .backchannel_token_delivery_mode
+        .unwrap_or_else(|| "poll".to_owned());
+    if !matches!(backchannel_token_delivery_mode.as_str(), "poll" | "ping") {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "backchannel_token_delivery_mode must be poll or ping; push is not supported.",
+        ));
+    }
+    let backchannel_client_notification_endpoint = request
+        .backchannel_client_notification_endpoint
+        .map(|uri| {
+            validate_https_metadata_uri("backchannel_client_notification_endpoint", uri, false)
+        })
+        .transpose()?;
+    match (
+        backchannel_token_delivery_mode.as_str(),
+        backchannel_client_notification_endpoint.as_ref(),
+    ) {
+        ("ping", None) => {
+            return Err(DynamicRegistrationError::invalid_client_metadata(
+                "ping mode requires backchannel_client_notification_endpoint.",
+            ));
+        }
+        ("poll", Some(_)) => {
+            return Err(DynamicRegistrationError::invalid_client_metadata(
+                "poll mode must not register backchannel_client_notification_endpoint.",
+            ));
+        }
+        _ => {}
+    }
+    if request.backchannel_user_code_parameter.unwrap_or(false) {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "backchannel_user_code_parameter=true is not supported.",
+        ));
+    }
+    if request
+        .backchannel_authentication_request_signing_alg
+        .as_deref()
+        .is_some_and(|algorithm| !matches!(algorithm, "EdDSA" | "ES256" | "PS256"))
+    {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "backchannel_authentication_request_signing_alg must be EdDSA, ES256, or PS256.",
+        ));
+    }
     if request
         .application_type
         .as_deref()
@@ -258,6 +314,23 @@ pub fn prepare_dynamic_client_registration(
     let grant_types = request
         .grant_types
         .unwrap_or_else(default_dynamic_client_grant_types);
+    let ciba_enabled = grant_types
+        .iter()
+        .any(|grant| grant == "urn:openid:params:grant-type:ciba");
+    if backchannel_token_delivery_mode == "ping" && !ciba_enabled {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "ping delivery mode requires the CIBA grant type.",
+        ));
+    }
+    if !ciba_enabled
+        && request
+            .backchannel_authentication_request_signing_alg
+            .is_some()
+    {
+        return Err(DynamicRegistrationError::invalid_client_metadata(
+            "backchannel_authentication_request_signing_alg requires the CIBA grant type.",
+        ));
+    }
     let response_types = match request.response_types {
         Some(values) if values.is_empty() => {
             return Err(DynamicRegistrationError::invalid_client_metadata(
@@ -307,6 +380,11 @@ pub fn prepare_dynamic_client_registration(
         subject_type: request.subject_type,
         sector_identifier_uri: request.sector_identifier_uri,
         require_dpop_bound_tokens: request.dpop_bound_access_tokens,
+        backchannel_token_delivery_mode,
+        backchannel_client_notification_endpoint,
+        backchannel_authentication_request_signing_alg: request
+            .backchannel_authentication_request_signing_alg,
+        backchannel_user_code_parameter: false,
         backchannel_logout_uri: request.backchannel_logout_uri,
         backchannel_logout_session_required: request
             .backchannel_logout_session_required
@@ -431,6 +509,11 @@ impl PreparedDynamicClientRegistration {
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience,
             require_par_request_object: false,
+            backchannel_token_delivery_mode: self.backchannel_token_delivery_mode,
+            backchannel_client_notification_endpoint: self.backchannel_client_notification_endpoint,
+            backchannel_authentication_request_signing_alg: self
+                .backchannel_authentication_request_signing_alg,
+            backchannel_user_code_parameter: self.backchannel_user_code_parameter,
             backchannel_logout_uri: self.backchannel_logout_uri,
             backchannel_logout_session_required: self.backchannel_logout_session_required,
             frontchannel_logout_uri: self.frontchannel_logout_uri,
@@ -780,6 +863,10 @@ mod tests {
                 require_par_request_object: false,
                 backchannel_logout_uri: None,
                 backchannel_logout_session_required: false,
+                backchannel_token_delivery_mode: "poll".to_owned(),
+                backchannel_client_notification_endpoint: None,
+                backchannel_authentication_request_signing_alg: None,
+                backchannel_user_code_parameter: false,
                 frontchannel_logout_uri: None,
                 frontchannel_logout_session_required: false,
                 tls_client_auth_subject_dn: None,

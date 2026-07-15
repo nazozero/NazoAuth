@@ -231,7 +231,7 @@ pub fn authorization_server_metadata(
     }
     if capabilities.ciba {
         metadata["backchannel_authentication_endpoint"] = json!(format!("{issuer}/bc-authorize"));
-        metadata["backchannel_token_delivery_modes_supported"] = json!(["poll"]);
+        metadata["backchannel_token_delivery_modes_supported"] = json!(["poll", "ping"]);
         metadata["backchannel_user_code_parameter_supported"] = json!(false);
         metadata["backchannel_authentication_request_signing_alg_values_supported"] =
             json!(FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS);
@@ -268,6 +268,10 @@ pub fn authorization_server_metadata(
             "introspection_endpoint": format!("{mtls_base}/introspect"),
             "userinfo_endpoint": format!("{mtls_base}/userinfo")
         });
+        if capabilities.ciba {
+            metadata["mtls_endpoint_aliases"]["backchannel_authentication_endpoint"] =
+                json!(format!("{mtls_base}/bc-authorize"));
+        }
     }
 
     metadata

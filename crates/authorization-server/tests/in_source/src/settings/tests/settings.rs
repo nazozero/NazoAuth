@@ -243,7 +243,7 @@ fn default_ciba_security_profile_is_oidf_fapi_ciba_compatible() {
 
     assert_eq!(
         settings.protocol.ciba_security_profile,
-        CibaSecurityProfile::FapiCibaId1PlainPrivateKeyJwtPoll
+        CibaSecurityProfile::FapiCibaId1
     );
 }
 
@@ -301,6 +301,7 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     );
     assert_eq!(defaults.ciba.ciba_auth_req_id_ttl_seconds, 600);
     assert_eq!(defaults.ciba.ciba_poll_interval_seconds, 5);
+    assert!(defaults.ciba.ciba_notification_private_origins.is_empty());
 
     let config = ConfigSource::from_pairs_for_test([
         ("ENABLE_REQUEST_OBJECT", "true"),
@@ -322,6 +323,10 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
         ("DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS", "7"),
         ("CIBA_AUTH_REQ_ID_TTL_SECONDS", "240"),
         ("CIBA_POLL_INTERVAL_SECONDS", "6"),
+        (
+            "CIBA_NOTIFICATION_PRIVATE_ORIGINS",
+            "https://nginx:8443, https://callback.internal:9443",
+        ),
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
@@ -350,6 +355,10 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     );
     assert_eq!(settings.ciba.ciba_auth_req_id_ttl_seconds, 240);
     assert_eq!(settings.ciba.ciba_poll_interval_seconds, 6);
+    assert_eq!(
+        settings.ciba.ciba_notification_private_origins,
+        ["https://nginx:8443", "https://callback.internal:9443"]
+    );
 }
 
 #[test]

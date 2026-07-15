@@ -107,6 +107,10 @@ pub(super) struct ClientMetadata<'a> {
     allowed_audiences: &'a [String],
     grant_types: &'a [String],
     token_endpoint_auth_method: &'a str,
+    backchannel_token_delivery_mode: &'a str,
+    backchannel_client_notification_endpoint: Option<&'a str>,
+    backchannel_authentication_request_signing_alg: Option<&'a str>,
+    backchannel_user_code_parameter: bool,
     backchannel_logout_uri: Option<&'a str>,
     frontchannel_logout_uri: Option<&'a str>,
     jwks: Option<&'a Value>,
@@ -141,6 +145,14 @@ impl<'a> ClientMetadata<'a> {
             allowed_audiences: &request.allowed_audiences,
             grant_types: &request.grant_types,
             token_endpoint_auth_method: &request.token_endpoint_auth_method,
+            backchannel_token_delivery_mode: &request.backchannel_token_delivery_mode,
+            backchannel_client_notification_endpoint: request
+                .backchannel_client_notification_endpoint
+                .as_deref(),
+            backchannel_authentication_request_signing_alg: request
+                .backchannel_authentication_request_signing_alg
+                .as_deref(),
+            backchannel_user_code_parameter: request.backchannel_user_code_parameter,
             backchannel_logout_uri: request.backchannel_logout_uri.as_deref(),
             frontchannel_logout_uri: request.frontchannel_logout_uri.as_deref(),
             jwks: request.jwks.as_ref(),
@@ -181,6 +193,14 @@ impl<'a> ClientMetadata<'a> {
             allowed_audiences: &client.allowed_audiences,
             grant_types: &client.grant_types,
             token_endpoint_auth_method: &client.token_endpoint_auth_method,
+            backchannel_token_delivery_mode: &client.backchannel_token_delivery_mode,
+            backchannel_client_notification_endpoint: client
+                .backchannel_client_notification_endpoint
+                .as_deref(),
+            backchannel_authentication_request_signing_alg: client
+                .backchannel_authentication_request_signing_alg
+                .as_deref(),
+            backchannel_user_code_parameter: client.backchannel_user_code_parameter,
             backchannel_logout_uri: client.backchannel_logout_uri.as_deref(),
             frontchannel_logout_uri: client.frontchannel_logout_uri.as_deref(),
             jwks: client.jwks.as_ref(),
@@ -237,6 +257,50 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
     }
     if metadata.client_type == "confidential" && metadata.token_endpoint_auth_method == "none" {
         return invalid("confidential 客户端必须使用机密认证方式");
+    }
+    let ciba_enabled = metadata
+        .grant_types
+        .iter()
+        .any(|grant| grant == "urn:openid:params:grant-type:ciba");
+    if !matches!(metadata.backchannel_token_delivery_mode, "poll" | "ping") {
+        return invalid("backchannel_token_delivery_mode 必须是 poll 或 ping；push 不受支持");
+    }
+    if metadata.backchannel_token_delivery_mode == "ping" && !ciba_enabled {
+        return invalid("ping delivery mode 只能用于启用 CIBA grant 的客户端");
+    }
+    match (
+        metadata.backchannel_token_delivery_mode,
+        metadata.backchannel_client_notification_endpoint,
+    ) {
+        ("ping", None) => {
+            return invalid("ping delivery mode 必须配置 backchannel_client_notification_endpoint");
+        }
+        ("poll", Some(_)) => {
+            return invalid("poll delivery mode 不得配置 backchannel_client_notification_endpoint");
+        }
+        _ => {}
+    }
+    if let Some(uri) = metadata.backchannel_client_notification_endpoint {
+        validate_ciba_notification_uri(uri)?;
+    }
+    if metadata.backchannel_user_code_parameter {
+        return invalid("backchannel_user_code_parameter=true 不受支持");
+    }
+    if metadata
+        .backchannel_authentication_request_signing_alg
+        .is_some_and(|algorithm| !matches!(algorithm, "EdDSA" | "ES256" | "PS256"))
+    {
+        return invalid(
+            "backchannel_authentication_request_signing_alg 必须是 EdDSA、ES256 或 PS256",
+        );
+    }
+    if !ciba_enabled
+        && (metadata
+            .backchannel_authentication_request_signing_alg
+            .is_some()
+            || metadata.backchannel_user_code_parameter)
+    {
+        return invalid("CIBA 注册元数据只能用于启用 CIBA grant 的客户端");
     }
     if let Some(jwks) = metadata.jwks
         && metadata.token_endpoint_auth_method != "self_signed_tls_client_auth"
@@ -354,6 +418,28 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
     }
     if let Some(uri) = metadata.frontchannel_logout_uri {
         validate_logout_uri("frontchannel_logout_uri", uri)?;
+    }
+    Ok(())
+}
+
+fn validate_ciba_notification_uri(uri: &str) -> Result<(), AdminClientError> {
+    if uri.len() > 2048 {
+        return invalid("backchannel_client_notification_endpoint 超过 2048 字节");
+    }
+    let parsed = url::Url::parse(uri).map_err(|_| {
+        AdminClientError::InvalidRequest(
+            "backchannel_client_notification_endpoint 必须是绝对 HTTPS URI".to_owned(),
+        )
+    })?;
+    if parsed.scheme() != "https"
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+        || parsed.fragment().is_some()
+    {
+        return invalid(
+            "backchannel_client_notification_endpoint 必须是无 userinfo 和 fragment 的绝对 HTTPS URI",
+        );
     }
     Ok(())
 }

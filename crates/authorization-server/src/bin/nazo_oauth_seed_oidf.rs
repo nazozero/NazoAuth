@@ -43,6 +43,9 @@ struct FapiClientSeed {
     scopes: Value,
     policy: FapiClientPolicy,
     tls_client_auth_cert_sha256: Option<String>,
+    backchannel_token_delivery_mode: String,
+    backchannel_client_notification_endpoint: Option<String>,
+    backchannel_authentication_request_signing_alg: Option<String>,
 }
 
 struct ClientUpsert<'a> {
@@ -65,6 +68,9 @@ struct ClientUpsert<'a> {
     frontchannel_logout_session_required: bool,
     jwks: Option<&'a Value>,
     authorization_signed_response_alg: Option<&'a str>,
+    backchannel_token_delivery_mode: &'a str,
+    backchannel_client_notification_endpoint: Option<&'a str>,
+    backchannel_authentication_request_signing_alg: Option<&'a str>,
 }
 
 fn env_or(name: &str, default: &str) -> String {
@@ -126,6 +132,14 @@ fn seeded_oauth_client(client: ClientUpsert<'_>) -> anyhow::Result<OAuthClient> 
             require_par_request_object: client.require_par_request_object,
             backchannel_logout_uri: None,
             backchannel_logout_session_required: true,
+            backchannel_token_delivery_mode: client.backchannel_token_delivery_mode.to_owned(),
+            backchannel_client_notification_endpoint: client
+                .backchannel_client_notification_endpoint
+                .map(ToOwned::to_owned),
+            backchannel_authentication_request_signing_alg: client
+                .backchannel_authentication_request_signing_alg
+                .map(ToOwned::to_owned),
+            backchannel_user_code_parameter: false,
             frontchannel_logout_uri: client.frontchannel_logout_uri.map(ToOwned::to_owned),
             frontchannel_logout_session_required: client.frontchannel_logout_session_required,
             tls_client_auth_subject_dn: client.tls_client_auth_subject_dn.map(ToOwned::to_owned),
@@ -300,6 +314,9 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
             authorization_signed_response_alg: None,
+            backchannel_token_delivery_mode: "poll",
+            backchannel_client_notification_endpoint: None,
+            backchannel_authentication_request_signing_alg: None,
         },
         Some(&client_secret_hash),
     )?;
@@ -325,6 +342,9 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
             authorization_signed_response_alg: None,
+            backchannel_token_delivery_mode: "poll",
+            backchannel_client_notification_endpoint: None,
+            backchannel_authentication_request_signing_alg: None,
         },
         Some(&client_secret_hash),
     )?;
@@ -350,6 +370,9 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
             authorization_signed_response_alg: None,
+            backchannel_token_delivery_mode: "poll",
+            backchannel_client_notification_endpoint: None,
+            backchannel_authentication_request_signing_alg: None,
         },
         Some(&client_secret_hash),
     )?;
@@ -375,6 +398,9 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
             authorization_signed_response_alg: None,
+            backchannel_token_delivery_mode: "poll",
+            backchannel_client_notification_endpoint: None,
+            backchannel_authentication_request_signing_alg: None,
         },
         Some(&client_secret_hash),
     )?;
@@ -400,6 +426,9 @@ async fn main() -> anyhow::Result<()> {
             frontchannel_logout_session_required: true,
             jwks: None,
             authorization_signed_response_alg: None,
+            backchannel_token_delivery_mode: "poll",
+            backchannel_client_notification_endpoint: None,
+            backchannel_authentication_request_signing_alg: None,
         },
         Some(&client_secret_hash),
     )?;
@@ -435,6 +464,19 @@ async fn main() -> anyhow::Result<()> {
                 scopes: client_scopes(client),
                 policy,
                 tls_client_auth_cert_sha256: mtls_thumbprint(&plan, key)?,
+                backchannel_token_delivery_mode: client
+                    .get("backchannel_token_delivery_mode")
+                    .and_then(Value::as_str)
+                    .unwrap_or("poll")
+                    .to_owned(),
+                backchannel_client_notification_endpoint: client
+                    .get("backchannel_client_notification_endpoint")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
+                backchannel_authentication_request_signing_alg: client
+                    .get("backchannel_authentication_request_signing_alg")
+                    .and_then(Value::as_str)
+                    .map(ToOwned::to_owned),
             });
         }
     }
@@ -476,6 +518,13 @@ async fn main() -> anyhow::Result<()> {
                 frontchannel_logout_session_required: true,
                 jwks: Some(&seed.jwks),
                 authorization_signed_response_alg: seed.policy.authorization_signed_response_alg,
+                backchannel_token_delivery_mode: &seed.backchannel_token_delivery_mode,
+                backchannel_client_notification_endpoint: seed
+                    .backchannel_client_notification_endpoint
+                    .as_deref(),
+                backchannel_authentication_request_signing_alg: seed
+                    .backchannel_authentication_request_signing_alg
+                    .as_deref(),
             },
             None,
         )?;
@@ -635,6 +684,9 @@ mod tests {
             frontchannel_logout_session_required: false,
             jwks: None,
             authorization_signed_response_alg: Some("PS256"),
+            backchannel_token_delivery_mode: "poll",
+            backchannel_client_notification_endpoint: None,
+            backchannel_authentication_request_signing_alg: None,
         })
         .expect("seed client conversion");
 

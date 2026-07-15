@@ -1,0 +1,173 @@
+use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
+
+use anyhow::Context as _;
+use chrono::Utc;
+use futures_util::{StreamExt as _, stream};
+use nazo_auth::{
+    CibaPingResponseAction, classify_ciba_ping_status, next_ciba_ping_retry_at,
+    validate_ciba_notification_endpoint,
+};
+use nazo_valkey::{CibaPingDelivery, CibaPingFinishOutcome, CibaStore};
+use reqwest::{StatusCode, header};
+use serde_json::json;
+
+use super::sector_identifier::is_blocked_ip;
+
+const DELIVERY_BATCH_SIZE: usize = 20;
+const DELIVERY_CONCURRENCY: usize = 8;
+const DELIVERY_LOCK_SECONDS: i64 = 15;
+const LOOP_INTERVAL: Duration = Duration::from_millis(500);
+
+#[derive(Clone)]
+pub(crate) struct CibaPingDeliveryWorker {
+    store: CibaStore,
+    private_network_origins: Arc<HashSet<String>>,
+}
+
+impl CibaPingDeliveryWorker {
+    pub(crate) fn new(
+        store: CibaStore,
+        private_network_origins: &[String],
+    ) -> anyhow::Result<Self> {
+        let mut origins = HashSet::new();
+        for value in private_network_origins {
+            let parsed = validate_ciba_notification_endpoint(value)
+                .map_err(anyhow::Error::msg)
+                .with_context(|| {
+                    format!("invalid CIBA_NOTIFICATION_PRIVATE_ORIGINS entry {value}")
+                })?;
+            if parsed.path() != "/" || parsed.query().is_some() {
+                anyhow::bail!(
+                    "CIBA_NOTIFICATION_PRIVATE_ORIGINS entries must be HTTPS origins: {value}"
+                );
+            }
+            origins.insert(parsed.origin().ascii_serialization());
+        }
+        Ok(Self {
+            store,
+            private_network_origins: Arc::new(origins),
+        })
+    }
+
+    pub(crate) async fn process_due_batch(&self) -> anyhow::Result<usize> {
+        let now = Utc::now().timestamp();
+        let deliveries = self
+            .store
+            .claim_due_ping(
+                now,
+                now.saturating_add(DELIVERY_LOCK_SECONDS),
+                DELIVERY_BATCH_SIZE,
+            )
+            .await
+            .context("failed to claim CIBA ping deliveries")?;
+        let count = deliveries.len();
+        let outcomes = stream::iter(deliveries)
+            .map(|delivery| async move { self.process_delivery(delivery).await })
+            .buffer_unordered(DELIVERY_CONCURRENCY)
+            .collect::<Vec<_>>()
+            .await;
+        if let Some(error) = outcomes.into_iter().find_map(Result::err) {
+            return Err(error);
+        }
+        Ok(count)
+    }
+
+    async fn process_delivery(&self, delivery: CibaPingDelivery) -> anyhow::Result<()> {
+        let outcome = match self.post(&delivery).await {
+            Ok(PingPostOutcome::Delivered) => CibaPingFinishOutcome::Delivered,
+            Ok(PingPostOutcome::Terminal(status)) => {
+                tracing::warn!(
+                    %status,
+                    endpoint = %delivery.endpoint,
+                    "CIBA ping endpoint rejected the notification; delivery is terminal"
+                );
+                CibaPingFinishOutcome::Failed
+            }
+            Err(error) => {
+                tracing::warn!(
+                    %error,
+                    endpoint = %delivery.endpoint,
+                    attempts = delivery.attempts,
+                    "CIBA ping notification transport failed"
+                );
+                next_ciba_ping_retry_at(
+                    delivery.attempts,
+                    Utc::now().timestamp(),
+                    delivery.expires_at,
+                )
+                .map_or(
+                    CibaPingFinishOutcome::Failed,
+                    CibaPingFinishOutcome::RetryAt,
+                )
+            }
+        };
+        self.store
+            .finish_ping(&delivery, outcome)
+            .await
+            .context("failed to record CIBA ping delivery outcome")?;
+        Ok(())
+    }
+
+    async fn post(&self, delivery: &CibaPingDelivery) -> anyhow::Result<PingPostOutcome> {
+        let endpoint =
+            validate_ciba_notification_endpoint(&delivery.endpoint).map_err(anyhow::Error::msg)?;
+        let host = endpoint
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("CIBA ping endpoint has no host"))?;
+        let port = endpoint.port_or_known_default().unwrap_or(443);
+        let addresses = tokio::net::lookup_host((host, port))
+            .await
+            .context("CIBA ping DNS resolution failed")?
+            .collect::<Vec<SocketAddr>>();
+        if addresses.is_empty() {
+            anyhow::bail!("CIBA ping DNS returned no addresses");
+        }
+        let allow_private = self
+            .private_network_origins
+            .contains(&endpoint.origin().ascii_serialization());
+        if !allow_private && addresses.iter().any(|address| is_blocked_ip(address.ip())) {
+            anyhow::bail!("CIBA ping endpoint resolved to a blocked network");
+        }
+        let client = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::none())
+            .resolve_to_addrs(host, &addresses)
+            .build()
+            .context("failed to build CIBA ping HTTP client")?;
+        let response = client
+            .post(endpoint)
+            .header(header::CONTENT_TYPE, "application/json")
+            .bearer_auth(&delivery.client_notification_token)
+            .json(&json!({"auth_req_id": delivery.auth_req_id}))
+            .send()
+            .await
+            .context("CIBA ping request failed")?;
+        match classify_ciba_ping_status(response.status().as_u16()) {
+            CibaPingResponseAction::Delivered => Ok(PingPostOutcome::Delivered),
+            CibaPingResponseAction::TerminalFailure => {
+                Ok(PingPostOutcome::Terminal(response.status()))
+            }
+            CibaPingResponseAction::Retry => {
+                anyhow::bail!("CIBA ping endpoint returned {}", response.status())
+            }
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum PingPostOutcome {
+    Delivered,
+    Terminal(StatusCode),
+}
+
+pub(crate) fn spawn_ciba_ping_delivery_worker(worker: CibaPingDeliveryWorker) {
+    tokio::spawn(async move {
+        loop {
+            if let Err(error) = worker.process_due_batch().await {
+                tracing::warn!(%error, "CIBA ping delivery worker failed");
+            }
+            tokio::time::sleep(LOOP_INTERVAL).await;
+        }
+    });
+}

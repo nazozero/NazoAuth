@@ -364,6 +364,92 @@ def check_removed_security_capabilities() -> None:
         raise SystemExit(f"security non-implementation policy lacks evidence: {missing}")
 
 
+def check_fapi_ciba_boundaries() -> None:
+    delivery = (
+        ROOT / "crates" / "authorization-server" / "src" / "domain" / "ciba_ping_delivery.rs"
+    ).read_text(encoding="utf-8")
+    forbidden_test_markers = ("#[cfg(test)]", "mod tests", "#[test]")
+    if any(marker in delivery for marker in forbidden_test_markers):
+        raise SystemExit("CIBA ping delivery tests must remain outside production source")
+    required_delivery_guards = (
+        "reqwest::redirect::Policy::none()",
+        ".resolve_to_addrs(host, &addresses)",
+        ".bearer_auth(&delivery.client_notification_token)",
+        "is_blocked_ip(address.ip())",
+        "classify_ciba_ping_status(response.status().as_u16())",
+    )
+    missing = [guard for guard in required_delivery_guards if guard not in delivery]
+    if missing:
+        raise SystemExit(f"CIBA ping delivery security guards are missing: {missing}")
+
+    delivery_policy = (
+        ROOT / "crates" / "authorization-server-core" / "src" / "ciba_ping.rs"
+    ).read_text(encoding="utf-8")
+    if any(marker in delivery_policy for marker in forbidden_test_markers):
+        raise SystemExit("CIBA ping policy tests must remain outside production source")
+    for guard in (
+        'parsed.scheme() != "https"',
+        "200..=299 => CibaPingResponseAction::Delivered",
+        "300..=499 => CibaPingResponseAction::TerminalFailure",
+        "_ => CibaPingResponseAction::Retry",
+        "3 => 9",
+        "next < expires_at",
+    ):
+        if guard not in delivery_policy:
+            raise SystemExit(f"CIBA ping delivery policy guard is missing: {guard}")
+    delivery_policy_test = (
+        ROOT
+        / "crates"
+        / "authorization-server-core"
+        / "tests"
+        / "ciba_ping_delivery_policy.rs"
+    )
+    if not delivery_policy_test.is_file():
+        raise SystemExit("CIBA ping delivery policy tests must remain outside production source")
+
+    workflow = (ROOT / ".github" / "workflows" / "oidf-conformance-full.yml").read_text(
+        encoding="utf-8"
+    )
+    expected_variants = (
+        "[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll]",
+        "[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=poll]",
+        "[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=ping]",
+        "[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=ping]",
+    )
+    missing = [variant for variant in expected_variants if variant not in workflow]
+    if missing:
+        raise SystemExit(f"OIDF workflow lacks FAPI-CIBA combinations: {missing}")
+    if "[ciba_mode=push]" in workflow:
+        raise SystemExit("FAPI-CIBA push must not enter the supported matrix")
+    materializer = (ROOT / "scripts" / "materialize_oidf_plan_config.py").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "derive_fapi_ciba_matrix_configs",
+        "--derive-fapi-ciba-matrix-configs",
+        "backchannel_client_notification_endpoint",
+    ):
+        if marker not in materializer:
+            raise SystemExit(f"official FAPI-CIBA config materialization lacks {marker}")
+    for marker in (
+        "--derive-fapi-ciba-matrix-configs",
+        "--ciba-notification-base-url https://www.certification.openid.net",
+    ):
+        if marker not in workflow:
+            raise SystemExit(f"official FAPI-CIBA workflow lacks {marker}")
+
+    migration = (
+        ROOT / "migrations" / "20260715000400_ciba_delivery_modes" / "up.sql"
+    ).read_text(encoding="utf-8")
+    for constraint in (
+        "ck_oauth_clients_ciba_delivery_mode",
+        "ck_oauth_clients_ciba_notification_endpoint",
+        "ck_oauth_clients_ciba_user_code_disabled",
+    ):
+        if constraint not in migration:
+            raise SystemExit(f"CIBA persistence constraint is missing: {constraint}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -384,6 +470,7 @@ def main() -> None:
         check_workspace_package_metadata()
         check_rfc9967_test_boundaries()
         check_removed_security_capabilities()
+        check_fapi_ciba_boundaries()
 
 
 if __name__ == "__main__":

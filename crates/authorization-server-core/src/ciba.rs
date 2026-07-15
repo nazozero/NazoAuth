@@ -24,6 +24,33 @@ pub struct CibaRequestState {
     pub expires_at: i64,
     pub retention_expires_at: i64,
     pub last_poll_at: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ping_notification: Option<CibaPingNotification>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub struct CibaPingNotification {
+    /// Populated atomically by the state-store adapter when the auth_req_id is
+    /// persisted. It is the only value emitted in the ping JSON body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub auth_req_id: Option<String>,
+    pub endpoint: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_notification_token: Option<String>,
+    pub status: CibaPingNotificationStatus,
+    #[serde(default)]
+    pub attempts: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub next_attempt_at: Option<i64>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CibaPingNotificationStatus {
+    AwaitingDecision,
+    Pending,
+    Delivered,
+    Failed,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -122,7 +149,7 @@ pub enum CibaDecision {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CibaDecisionEvaluation {
-    Commit(CibaRequestState),
+    Commit(Box<CibaRequestState>),
     UserMismatch,
     AlreadyHandled,
     Expired,
@@ -147,7 +174,7 @@ pub struct CibaCommittedDecision {
 pub enum CibaPollCommit {
     AuthorizationPending,
     SlowDown,
-    Approved(CibaRequestState),
+    Approved(Box<CibaRequestState>),
     Denied,
     Expired,
 }
@@ -280,7 +307,7 @@ where
                     {
                         Ok(CibaAtomicResult::Applied) => {
                             return Ok(CibaCommittedDecision {
-                                state: next,
+                                state: *next,
                                 decision,
                             });
                         }
@@ -343,7 +370,7 @@ where
                         .map_err(CibaPollFailure::Storage)?
                     {
                         CibaAtomicResult::Applied => {
-                            return Ok(CibaPollCommit::Approved(stored.state));
+                            return Ok(CibaPollCommit::Approved(Box::new(stored.state)));
                         }
                         result => result,
                     }
@@ -440,7 +467,11 @@ pub fn evaluate_ciba_decision(
         CibaDecision::Approve => CibaStatus::Approved,
         CibaDecision::Deny => CibaStatus::Denied,
     };
-    CibaDecisionEvaluation::Commit(next)
+    if let Some(notification) = next.ping_notification.as_mut() {
+        notification.status = CibaPingNotificationStatus::Pending;
+        notification.next_attempt_at = Some(now);
+    }
+    CibaDecisionEvaluation::Commit(Box::new(next))
 }
 
 fn validate_stored_request<V>(
@@ -452,6 +483,32 @@ fn validate_stored_request<V>(
 
 fn validate_state(state: &CibaRequestState) -> Result<(), CibaStatePortError> {
     if state.expires_at <= 0 || state.retention_expires_at < state.expires_at {
+        return Err(CibaStatePortError::CorruptData);
+    }
+    if let Some(notification) = &state.ping_notification
+        && (notification.endpoint.is_empty()
+            || notification
+                .client_notification_token
+                .as_deref()
+                .is_some_and(str::is_empty)
+            || (matches!(
+                notification.status,
+                CibaPingNotificationStatus::AwaitingDecision | CibaPingNotificationStatus::Pending
+            ) && (notification
+                .auth_req_id
+                .as_deref()
+                .is_none_or(str::is_empty)
+                || notification.client_notification_token.is_none()))
+            || (notification.status == CibaPingNotificationStatus::AwaitingDecision
+                && notification.next_attempt_at.is_some())
+            || (notification.status == CibaPingNotificationStatus::Pending
+                && notification.next_attempt_at.is_none())
+            || (matches!(
+                notification.status,
+                CibaPingNotificationStatus::Delivered | CibaPingNotificationStatus::Failed
+            ) && (notification.client_notification_token.is_some()
+                || notification.next_attempt_at.is_some())))
+    {
         return Err(CibaStatePortError::CorruptData);
     }
     Ok(())

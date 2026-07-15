@@ -16,7 +16,7 @@
   "expected_file_markers": {
     "docs/protocol/oauth2-1-self-audit.md": ["draft-ietf-oauth-v2-1-15"],
     "docs/protocol/rfc-compliance-matrix.md": ["draft-ietf-oauth-v2-1-15", "draft 27", "Draft-27 delta audit complete"],
-    "docs/protocol/oauth-spec-implementation-backlog.md": ["fapi-ciba-03", "ID1 / draft-02 compatibility", "draft-ietf-oauth-attestation-based-client-auth-10", "draft-ietf-oauth-transaction-tokens-09", "oauth-v2-grant-management-03", "stable ID1", "draft 07 / Second Implementer's Draft"],
+    "docs/protocol/oauth-spec-implementation-backlog.md": ["fapi-ciba-03", "Stable ID1 compatibility", "draft-ietf-oauth-attestation-based-client-auth-10", "draft-ietf-oauth-transaction-tokens-09", "oauth-v2-grant-management-03", "stable ID1", "draft 07 / Second Implementer's Draft"],
     "docs/conformance/2026-07-11-browser-based-applications-draft-27-audit.md": ["draft-ietf-oauth-browser-based-apps-27", "draft-ietf-httpbis-layered-cookies/02"],
     "docs/conformance/2026-07-11-m8-watchlist-governance.md": ["draft-ietf-oauth-browser-based-apps-27", "draft-ietf-oauth-attestation-based-client-auth-10", "draft-ietf-oauth-transaction-tokens-09", "oauth-v2-grant-management-03", "release `v5.2.0`"],
     "docs/protocol/spec-freshness.md": ["draft-ietf-oauth-v2-1-15", "draft-ietf-oauth-browser-based-apps-27", "draft-ietf-oauth-attestation-based-client-auth-10", "draft-ietf-oauth-transaction-tokens-09", "draft-ietf-httpbis-layered-cookies-02", "fapi-ciba-03", "oauth-v2-grant-management-03", "Second Implementer's Draft", "release-v5.2.0"],

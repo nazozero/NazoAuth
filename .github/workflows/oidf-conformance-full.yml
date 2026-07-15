@@ -67,6 +67,9 @@ jobs:
             "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json",
             "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json",
             "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-mtls-poll-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=ping][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-ping-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=ping][client_registration=static_client] oidf-fapi-ciba-plain-mtls-ping-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
@@ -91,6 +94,9 @@ jobs:
             "oidcc-3rdparty-init-login-certification-test-plan[response_type=code] oidf-oidcc-third-party-init-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
             "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-mtls-poll-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=ping][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-ping-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=ping][client_registration=static_client] oidf-fapi-ciba-plain-mtls-ping-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
@@ -196,6 +202,8 @@ jobs:
             --template docs/conformance/oidf-plan-config-template.json \
             --secret-patch-file oidf-plan-config-secret-patch.merged.json \
             --derive-dynamic-oidcc-config \
+            --derive-fapi-ciba-matrix-configs \
+            --ciba-notification-base-url https://www.certification.openid.net \
             --output oidf-plan-configs.json
           python scripts/export_oidf_public_plan_configs.py \
             --config-json-file oidf-plan-configs.json \
@@ -373,6 +381,8 @@ jobs:
             --template docs/conformance/oidf-plan-config-template.json \
             --secret-patch-file oidf-plan-config-secret-patch.merged.json \
             --derive-dynamic-oidcc-config \
+            --derive-fapi-ciba-matrix-configs \
+            --ciba-notification-base-url https://www.certification.openid.net \
             --output oidf-plan-configs.json
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}

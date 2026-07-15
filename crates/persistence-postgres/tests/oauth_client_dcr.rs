@@ -37,6 +37,10 @@ fn client(tenant: TenantContext) -> OAuthClient {
             require_par_request_object: false,
             backchannel_logout_uri: None,
             backchannel_logout_session_required: true,
+            backchannel_token_delivery_mode: "poll".to_owned(),
+            backchannel_client_notification_endpoint: None,
+            backchannel_authentication_request_signing_alg: None,
+            backchannel_user_code_parameter: false,
             frontchannel_logout_uri: None,
             frontchannel_logout_session_required: true,
             tls_client_auth_subject_dn: None,
@@ -140,6 +144,11 @@ async fn dynamic_profile_metadata_round_trips_through_postgres() {
         policy_uri: Some("https://client.example/privacy".to_owned()),
         tos_uri: Some("https://client.example/terms".to_owned()),
     };
+    client.grant_types = vec!["urn:openid:params:grant-type:ciba".to_owned()];
+    client.backchannel_token_delivery_mode = "ping".to_owned();
+    client.backchannel_client_notification_endpoint =
+        Some("https://client.example/ciba-notification".to_owned());
+    client.backchannel_authentication_request_signing_alg = Some("PS256".to_owned());
 
     repository
         .insert(&client, None, Some("registration-token"))
@@ -151,6 +160,19 @@ async fn dynamic_profile_metadata_round_trips_through_postgres() {
     assert_eq!(persisted.request_uris, client.request_uris);
     assert_eq!(persisted.initiate_login_uri, client.initiate_login_uri);
     assert_eq!(persisted.presentation, client.presentation);
+    assert_eq!(
+        persisted.backchannel_token_delivery_mode,
+        client.backchannel_token_delivery_mode
+    );
+    assert_eq!(
+        persisted.backchannel_client_notification_endpoint,
+        client.backchannel_client_notification_endpoint
+    );
+    assert_eq!(
+        persisted.backchannel_authentication_request_signing_alg,
+        client.backchannel_authentication_request_signing_alg
+    );
+    assert!(!persisted.backchannel_user_code_parameter);
 
     repository
         .deactivate(client.tenant_id, client.id)

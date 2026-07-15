@@ -211,6 +211,7 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "CLIENT_SECRET_PEPPER",
             "CIBA_AUTOMATED_DECISION_TOKEN",
             "CIBA_AUTH_REQ_ID_TTL_SECONDS",
+            "CIBA_NOTIFICATION_PRIVATE_ORIGINS",
             "CIBA_POLL_INTERVAL_SECONDS",
             "CIBA_SECURITY_PROFILE",
             "COOKIE_SECURE",

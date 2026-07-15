@@ -1,6 +1,6 @@
 # OIDF 完整矩阵
 
-本文说明仓库维护的 OpenID Foundation Conformance Suite 完整矩阵。矩阵包含 22 个 plan；针对 TP/PS 的新增检查应映射到这些 plan 的覆盖范围，而不是另开一个临时矩阵。
+本文说明仓库维护的 OpenID Foundation Conformance Suite 完整矩阵。矩阵包含 25 个 plan；针对 TP/PS 的新增检查应映射到这些 plan 的覆盖范围，而不是另开一个临时矩阵。
 
 执行入口仍然是 `runtime/oidf/oidf-plan-set.json`。`scripts/setup_local_oidf_podman.py` 会同时生成 `runtime/oidf/oidf-plan-set-manifest.json`，用于记录每个 plan 的标题、描述和覆盖重点。
 
@@ -28,8 +28,11 @@
 | 18 | OIDC Front-Channel Logout OP | 验证 OP discovery 中 front-channel logout metadata、RP-initiated logout、前通道 iframe 通知、`iss`/`sid` 参数和 `post_logout_redirect_uri`。 |
 | 19 | OIDC Session Management OP | 验证 `check_session_iframe` metadata、授权响应 `session_state`、RP-initiated logout 后的会话状态变化。 |
 | 20 | FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI | 验证 FAPI-CIBA AS discovery、backchannel authentication endpoint、`private_key_jwt` 客户端认证、poll token exchange、错误处理、refresh token 和资源访问。 |
-| 21 | OIDC Form Post OP | 通过浏览器流程验证成功与错误授权响应的 `response_mode=form_post`。 |
-| 22 | OIDC Third-Party Initiated Login OP | 验证 `initiate_login_uri` 动态注册回读，以及非 HTTPS 元数据拒绝。 |
+| 21 | FAPI-CIBA ID1 / mTLS / poll / plain FAPI | 验证 mTLS 客户端认证和证书绑定的 poll token 签发。 |
+| 22 | FAPI-CIBA ID1 / private_key_jwt / ping / plain FAPI | 验证带 Bearer 鉴权的 ping 通知、token endpoint 取令牌、拒绝重定向和 401 终态处理。 |
+| 23 | FAPI-CIBA ID1 / mTLS / ping / plain FAPI | 验证相同 ping 生命周期与 mTLS 客户端认证、持有者绑定令牌的组合。 |
+| 24 | OIDC Form Post OP | 通过浏览器流程验证成功与错误授权响应的 `response_mode=form_post`。 |
+| 25 | OIDC Third-Party Initiated Login OP | 验证 `initiate_login_uri` 动态注册回读，以及非 HTTPS 元数据拒绝。 |
 
 ## TP/PS 覆盖边界
 
@@ -41,15 +44,15 @@
 - `OIDC Third-Party Initiated Login OP` 覆盖 `initiate_login_uri` 注册元数据；该 OP profile 不新增 OP 侧发起端点。
 - `OIDC Config OP` 覆盖 metadata truth，防止 discovery 暴露未实现能力。
 - FAPI2 Security 和 Message Signing plans 覆盖 PAR 强制、`request_uri` 过期、`request_uri` 重用、跨客户端 `request_uri` 使用、外层授权请求参数、PKCE、redirect URI、audience 和 client assertion。
-- `private_key_jwt / DPoP / OpenID Connect / authorization code` 是 TP/PS 改动面的主要单 plan；完整回归以 22-plan 矩阵为准。
+- `private_key_jwt / DPoP / OpenID Connect / authorization code` 是 TP/PS 改动面的主要单 plan；完整回归以 25-plan 矩阵为准。
 - `OIDC Front-Channel Logout OP` 覆盖 NI-008。
 - `OIDC Session Management OP` 覆盖 NI-009。
-- `FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI` 覆盖 NI-007 的 FAPI-CIBA AS 面。
+- 四个 FAPI-CIBA plans 覆盖 `private_key_jwt | mTLS` × `poll | ping` 的正交组合。FAPI-CIBA 禁止 Push，因此项目明确不实现 Push。
 - NI-006 未发现 RFC 7523 third-party JWT bearer grant 专项官方 plan；现有覆盖来自 OIDC/FAPI 中的 client assertion 场景和本地 RFC 7523 tests。
 - NI-010 跟踪 OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1。本项目当前不实现该 trust-chain 生态能力，且已不暴露 `/.well-known/openid-federation`，因此 Federation plans 不纳入必跑矩阵。
 - NI-011 未发现 Native SSO / `device_secret` 官方 OP plan；保留本地 device-secret lifecycle、`ds_hash` 绑定、token exchange 与 refresh-family tests。
 
-因此，临时 targeted plan-set 只适合开发期间快速定位问题；正式回归和证据记录应引用 22-plan 完整矩阵。
+因此，临时 targeted plan-set 只适合开发期间快速定位问题；正式回归和证据记录应引用 25-plan 完整矩阵。
 
 ## 明确的“不实现”边界
 

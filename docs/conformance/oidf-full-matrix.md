@@ -1,6 +1,6 @@
 # OIDF Full Matrix
 
-This document describes the repository-owned OpenID Foundation Conformance Suite matrix. The matrix is a 22-plan suite. New TP/PS and NI checks are mapped onto these plans instead of being added as a separate temporary matrix.
+This document describes the repository-owned OpenID Foundation Conformance Suite matrix. The matrix is a 25-plan suite. New TP/PS and NI checks are mapped onto these plans instead of being added as a separate temporary matrix.
 
 The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/setup_local_oidf_podman.py` also writes `runtime/oidf/oidf-plan-set-manifest.json` with a title, description, and coverage focus for every plan.
 
@@ -28,8 +28,11 @@ The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/s
 | 18 | OIDC Front-Channel Logout OP | Validates front-channel logout metadata, RP-initiated logout, iframe logout notification, `iss`/`sid` parameters, and `post_logout_redirect_uri`. |
 | 19 | OIDC Session Management OP | Validates `check_session_iframe` metadata, authorization response `session_state`, and the session-state transition after RP-initiated logout. |
 | 20 | FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI | Validates FAPI-CIBA AS discovery, the backchannel authentication endpoint, `private_key_jwt` client authentication, poll-mode token exchange, error handling, refresh tokens, and resource access. |
-| 21 | OIDC Form Post OP | Validates `response_mode=form_post` for successful and error authorization responses through the browser flow. |
-| 22 | OIDC Third-Party Initiated Login OP | Validates dynamic registration round-trip of `initiate_login_uri` and rejection of non-HTTPS metadata. |
+| 21 | FAPI-CIBA ID1 / mTLS / poll / plain FAPI | Validates mTLS client authentication and certificate-bound poll-mode token issuance. |
+| 22 | FAPI-CIBA ID1 / private_key_jwt / ping / plain FAPI | Validates authenticated ping notification, token-endpoint retrieval, redirect rejection, and terminal 401 handling. |
+| 23 | FAPI-CIBA ID1 / mTLS / ping / plain FAPI | Validates the same ping lifecycle with mTLS client authentication and holder-of-key tokens. |
+| 24 | OIDC Form Post OP | Validates `response_mode=form_post` for successful and error authorization responses through the browser flow. |
+| 25 | OIDC Third-Party Initiated Login OP | Validates dynamic registration round-trip of `initiate_login_uri` and rejection of non-HTTPS metadata. |
 
 ## TP/PS Coverage Boundary
 
@@ -41,15 +44,15 @@ The matrix covers the current TP/PS work through these paths:
 - `OIDC Third-Party Initiated Login OP` covers `initiate_login_uri` metadata. This OP-side profile is registration metadata; it does not add an OP initiation endpoint.
 - `OIDC Config OP` covers metadata truth and prevents discovery from advertising unsupported capabilities.
 - FAPI2 Security and Message Signing plans cover PAR enforcement, `request_uri` expiry, `request_uri` replay, cross-client `request_uri` use, outer authorization request parameters, PKCE, redirect URI, audience, and client assertions.
-- `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 22-plan matrix.
+- `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 25-plan matrix.
 - `OIDC Front-Channel Logout OP` covers NI-008.
 - `OIDC Session Management OP` covers NI-009.
-- `FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI` covers the FAPI-CIBA AS side of NI-007.
+- Four FAPI-CIBA plans cover the orthogonal `private_key_jwt | mTLS` × `poll | ping` combinations. Push mode is prohibited by the FAPI-CIBA profile and is not implemented.
 - No dedicated official plan was found for NI-006 RFC 7523 third-party JWT bearer grant assertion trust. Existing OIDC/FAPI plans cover client assertion scenarios, and local tests cover the bounded JWT bearer grant.
 - NI-010 tracks OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1. The project does not implement this trust-chain ecosystem surface and no longer exposes `/.well-known/openid-federation`, so Federation plans are not must-pass matrix entries.
 - No official OP plan was found for NI-011 Native SSO / `device_secret`; local tests cover device-secret lifecycle, `ds_hash` binding, token exchange, and refresh-family activity.
 
-Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 22-plan matrix.
+Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 25-plan matrix.
 
 ## Explicit NOT IMPLEMENT Boundary
 

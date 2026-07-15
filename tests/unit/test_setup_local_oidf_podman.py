@@ -69,15 +69,39 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         self.assertEqual(len(authorize_entries), 1)
         self.assertNotIn("override", config)
 
-    def test_fapi_ciba_plan_uses_mtls_sender_constraint(self):
+    def test_fapi_ciba_plans_are_the_orthogonal_supported_combinations(self):
         module = load_setup_module()
 
         configs = module.write_fapi_ciba_plan_config()
-        config = configs["oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json"]
-
-        self.assertEqual(config["nazo"]["sender_constrain"], "mtls")
-        self.assertIn("mtls", config)
-        self.assertIn("mtls2", config)
+        self.assertEqual(
+            {
+                (config["nazo"]["client_auth_type"], config["nazo"]["ciba_mode"])
+                for config in configs.values()
+            },
+            {
+                ("private_key_jwt", "poll"),
+                ("mtls", "poll"),
+                ("private_key_jwt", "ping"),
+                ("mtls", "ping"),
+            },
+        )
+        for config in configs.values():
+            self.assertEqual(config["nazo"]["sender_constrain"], "mtls")
+            self.assertIn("mtls", config)
+            self.assertIn("mtls2", config)
+            for key in ("client", "client2"):
+                self.assertEqual(
+                    config[key]["backchannel_token_delivery_mode"],
+                    config["nazo"]["ciba_mode"],
+                )
+                self.assertEqual(
+                    config[key]["backchannel_authentication_request_signing_alg"],
+                    "PS256",
+                )
+                self.assertEqual(
+                    "backchannel_client_notification_endpoint" in config[key],
+                    config["nazo"]["ciba_mode"] == "ping",
+                )
 
     def test_dynamic_op_certification_is_not_in_supported_matrix(self):
         module = load_setup_module()

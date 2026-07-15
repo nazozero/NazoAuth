@@ -48,7 +48,7 @@ composite score:
 | Static security analysis | CodeQL Rust analysis with `security-extended` and `security-and-quality` queries. |
 | Dependency policy | GitHub dependency review, `cargo audit`, and `cargo deny` over advisories, bans, licenses, and sources. |
 | Runtime security behavior | Real HTTP E2E, load/race gate, and Valkey outage injection in `conformance-security`. |
-| Protocol conformance | Current 22-plan OIDF/FAPI workflow plus archived official 21-plan matrix evidence. |
+| Protocol conformance | Current 25-plan OIDF/FAPI workflow plus archived official 21-plan matrix evidence. |
 | Coverage trend | Codecov LCOV upload from the dedicated coverage workflow. |
 | Release provenance | CycloneDX SBOM, Trivy image scan, Sigstore signing, and GitHub artifact attestations. |
 
@@ -131,7 +131,7 @@ OpenID Foundation Conformance Suite result URLs:
 | OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
 | OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
 | Latest 21-plan official matrix | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
-| Current 22-plan repository matrix | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
+| Current 25-plan repository matrix | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | Latest private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 

@@ -116,10 +116,14 @@ class OidfWorkflowTests(unittest.TestCase):
             "oidf-session-management-plan-set.json",
         )
 
-        self.assertEqual(len(full_plan_set), 22)
-        self.assertEqual(len(concurrent_plan_set), 20)
+        self.assertEqual(len(full_plan_set), 25)
+        self.assertEqual(len(concurrent_plan_set), 23)
         self.assertEqual(len(serial_plan_set), 2)
-        self.assertEqual(len(set(full_plan_set)), 22)
+        self.assertEqual(len(set(full_plan_set)), 25)
+        self.assertEqual(
+            sum("fapi-ciba-id1-test-plan" in plan for plan in concurrent_plan_set),
+            4,
+        )
         self.assertFalse(set(concurrent_plan_set) & set(serial_plan_set))
         self.assertTrue(any("oidcc-basic-certification-test-plan" in plan for plan in concurrent_plan_set))
         self.assertFalse(

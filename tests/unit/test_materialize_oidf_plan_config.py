@@ -37,6 +37,62 @@ class MaterializeOidfPlanConfigTests(unittest.TestCase):
         self.assertEqual(third_party["alias"], "official-basic-third-party-init")
         self.assertEqual(third_party["client"]["initial_access_token"], "initial-token")
 
+    def test_ciba_derivation_creates_four_distinct_orthogonal_profiles(self):
+        module = load_materializer_module()
+        source_slug = "fapi-ciba-plain-private-key-jwt-poll"
+        source = {
+            "alias": f"official-{source_slug}",
+            "client": {
+                "client_id": f"official-{source_slug}-client-1",
+                "jwks": {"keys": [{"kid": f"official-{source_slug}-client-1-key"}]},
+            },
+            "client2": {
+                "client_id": f"official-{source_slug}-client-2",
+                "jwks": {"keys": [{"kid": f"official-{source_slug}-client-2-key"}]},
+            },
+            "mtls": {"cert": "shared-cert", "key": "shared-key"},
+            "nazo": {},
+        }
+        rendered = {"configs": {module.FAPI_CIBA_SOURCE_CONFIG_FILE: source}}
+
+        module.derive_fapi_ciba_matrix_configs(
+            rendered, "https://www.certification.openid.net/"
+        )
+
+        configs = rendered["configs"]
+        ciba_configs = {name: value for name, value in configs.items() if "fapi-ciba" in name}
+        self.assertEqual(len(ciba_configs), 4)
+        self.assertEqual(
+            {
+                (value["nazo"]["client_auth_type"], value["nazo"]["ciba_mode"])
+                for value in ciba_configs.values()
+            },
+            {
+                ("private_key_jwt", "poll"),
+                ("mtls", "poll"),
+                ("private_key_jwt", "ping"),
+                ("mtls", "ping"),
+            },
+        )
+        self.assertEqual(
+            len({value["client"]["client_id"] for value in ciba_configs.values()}), 4
+        )
+        for value in ciba_configs.values():
+            client = value["client"]
+            self.assertEqual(client["backchannel_authentication_request_signing_alg"], "PS256")
+            self.assertFalse(client["backchannel_user_code_parameter"])
+            if value["nazo"]["ciba_mode"] == "ping":
+                self.assertEqual(
+                    client["backchannel_client_notification_endpoint"],
+                    "https://www.certification.openid.net/ciba-notification-endpoint",
+                )
+            else:
+                self.assertNotIn("backchannel_client_notification_endpoint", client)
+        self.assertEqual(
+            ciba_configs[module.FAPI_CIBA_SOURCE_CONFIG_FILE]["mtls"],
+            {"cert": "shared-cert", "key": "shared-key"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

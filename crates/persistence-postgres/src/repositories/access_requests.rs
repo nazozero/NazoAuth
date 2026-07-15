@@ -505,6 +505,14 @@ async fn insert_client(
             oauth_clients::backchannel_logout_uri.eq(&prepared.backchannel_logout_uri),
             oauth_clients::backchannel_logout_session_required
                 .eq(prepared.backchannel_logout_session_required),
+            oauth_clients::backchannel_token_delivery_mode
+                .eq(&prepared.backchannel_token_delivery_mode),
+            oauth_clients::backchannel_client_notification_endpoint
+                .eq(&prepared.backchannel_client_notification_endpoint),
+            oauth_clients::backchannel_authentication_request_signing_alg
+                .eq(&prepared.backchannel_authentication_request_signing_alg),
+            oauth_clients::backchannel_user_code_parameter
+                .eq(prepared.backchannel_user_code_parameter),
             oauth_clients::frontchannel_logout_uri.eq(&prepared.frontchannel_logout_uri),
             oauth_clients::frontchannel_logout_session_required
                 .eq(prepared.frontchannel_logout_session_required),

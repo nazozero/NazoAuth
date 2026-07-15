@@ -9,6 +9,7 @@ mod authorization_policy;
 mod authorization_request;
 mod authorization_service;
 mod ciba;
+mod ciba_ping;
 mod claims;
 mod client;
 mod client_assertion;
@@ -82,10 +83,14 @@ pub use authorization_service::{
 };
 pub use ciba::{
     CibaAtomicResult, CibaCommittedDecision, CibaCreateFailure, CibaDecision,
-    CibaDecisionEvaluation, CibaDecisionFailure, CibaPollCommit, CibaPollFailure,
-    CibaPollTransition, CibaRequestState, CibaService, CibaStateFuture, CibaStatePortError,
-    CibaStateStorePort, CibaStatus, CibaStoredRequest, ciba_retention_deadline,
-    evaluate_ciba_decision, evaluate_ciba_poll,
+    CibaDecisionEvaluation, CibaDecisionFailure, CibaPingNotification, CibaPingNotificationStatus,
+    CibaPollCommit, CibaPollFailure, CibaPollTransition, CibaRequestState, CibaService,
+    CibaStateFuture, CibaStatePortError, CibaStateStorePort, CibaStatus, CibaStoredRequest,
+    ciba_retention_deadline, evaluate_ciba_decision, evaluate_ciba_poll,
+};
+pub use ciba_ping::{
+    CibaPingResponseAction, classify_ciba_ping_status, next_ciba_ping_retry_at,
+    validate_ciba_notification_endpoint,
 };
 pub use claims::{
     AccessTokenClaimsInput, AuthorizationResponseClaimsInput, BackchannelLogoutClaimsInput, Claims,

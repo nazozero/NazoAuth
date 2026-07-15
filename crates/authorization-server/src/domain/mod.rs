@@ -2,6 +2,8 @@
 // 每个子模块只描述一种领域概念，本模块只负责向 crate 内部 re-export。
 mod authorization_decision;
 mod backchannel_logout_worker;
+#[cfg(not(test))]
+mod ciba_ping_delivery;
 pub(crate) mod client_jwe;
 pub(crate) mod client_policy;
 #[cfg(test)]
@@ -35,6 +37,8 @@ pub(crate) use authorization_decision::ServerAuthorizationDecisionOperations;
 pub(crate) use backchannel_logout_worker::{
     BackchannelLogoutWorker, spawn_backchannel_logout_delivery_worker,
 };
+#[cfg(not(test))]
+pub(crate) use ciba_ping_delivery::{CibaPingDeliveryWorker, spawn_ciba_ping_delivery_worker};
 #[cfg(test)]
 pub(crate) use database_user_fixture::{
     DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
