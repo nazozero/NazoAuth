@@ -127,6 +127,7 @@ pub(crate) struct ModuleSettings {
     pub(crate) enable_fapi_http_signatures: bool,
     pub(crate) enable_scim_security_events: bool,
     pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
+    pub(crate) remote_client_document_private_origins: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -426,6 +427,17 @@ impl Settings {
                 enable_scim_security_events: config.bool("ENABLE_SCIM_SECURITY_EVENTS", false)?,
                 enable_dynamic_client_registration,
                 dynamic_client_registration_initial_access_token,
+                remote_client_document_private_origins: config
+                    .optional_string("REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS")
+                    .map(|value| {
+                        value
+                            .split(',')
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(ToOwned::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
             },
             device: DeviceGrantSettings {
                 device_authorization_ttl_seconds,

@@ -118,18 +118,18 @@ class OidfWorkflowTests(unittest.TestCase):
             "oidf-session-management-plan-set.json",
         )
 
-        self.assertEqual(len(full_plan_set), 21)
-        self.assertEqual(len(concurrent_plan_set), 19)
+        self.assertEqual(len(full_plan_set), 23)
+        self.assertEqual(len(concurrent_plan_set), 21)
         self.assertEqual(len(serial_plan_set), 2)
-        self.assertEqual(len(set(full_plan_set)), 21)
+        self.assertEqual(len(set(full_plan_set)), 23)
         self.assertFalse(set(concurrent_plan_set) & set(serial_plan_set))
         self.assertTrue(any("oidcc-basic-certification-test-plan" in plan for plan in concurrent_plan_set))
         self.assertTrue(
             any("oidcc-dynamic-certification-test-plan" in plan for plan in concurrent_plan_set)
         )
         self.assertIn(
-            "oidcc-dynamic-certification-test-plan[response_type=code]:"
-            "oidcc-userinfo-rs256 oidf-oidcc-dynamic-crypto-plan-config.json",
+            "oidcc-dynamic-certification-test-plan[response_type=code] "
+            "oidf-oidcc-dynamic-crypto-plan-config.json",
             concurrent_plan_set,
         )
         self.assertFalse(
@@ -144,8 +144,8 @@ class OidfWorkflowTests(unittest.TestCase):
         )
 
         expected_skips = workflow_heredoc_json(workflow, "oidf-expected-skips.json")
-        self.assertEqual(len(expected_skips), 2)
-        self.assertNotIn(
+        self.assertEqual(len(expected_skips), 4)
+        self.assertIn(
             "oidf-oidcc-dynamic-crypto-plan-config.json",
             {item["configuration-filename"] for item in expected_skips},
         )

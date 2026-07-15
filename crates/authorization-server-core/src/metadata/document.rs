@@ -251,9 +251,13 @@ pub fn authorization_server_metadata(
         metadata["request_object_signing_alg_values_supported"] =
             json!(request_object_signing_algs);
     }
-    // Remote JAR-by-reference fetching is intentionally not implemented. PAR
-    // request URIs are authorization-server issued handles and are unaffected.
-    metadata["request_uri_parameter_supported"] = json!(false);
+    // External request_uri is available only with the dynamically registered,
+    // signed-Request-Object baseline. FAPI continues to require AS-issued PAR handles.
+    metadata["request_uri_parameter_supported"] = json!(
+        capabilities.dynamic_client_registration
+            && capabilities.request_objects
+            && !input.profile.requires_fapi2_security()
+    );
     if input.mtls_enabled {
         let mtls_base = input.mtls_endpoint_base_url;
         metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
@@ -347,7 +351,10 @@ fn response_modes_supported(profile: MetadataAuthorizationServerProfile) -> Vec<
     if profile.requires_signed_authorization_response() {
         return vec!["jwt"];
     }
-    vec!["query", "jwt"]
+    if profile.requires_fapi2_security() {
+        return vec!["query", "jwt"];
+    }
+    vec!["query", "form_post", "jwt"]
 }
 
 fn id_token_signing_alg_values_supported<'a>(active: &'a [&'a str]) -> Vec<&'a str> {

@@ -81,6 +81,7 @@ pub(super) fn authorization_response_mode(
 ) -> Result<Option<String>, ()> {
     match q.get("response_mode").map(String::as_str) {
         None | Some("query") => Ok(None),
+        Some("form_post") => Ok(Some("form_post".to_owned())),
         Some("jwt") => Ok(Some("jwt".to_owned())),
         _ => Err(()),
     }
@@ -357,6 +358,7 @@ pub(super) fn outer_request_uri_parameters_are_fapi_compliant(
         .all(|key| matches!(key.as_str(), "client_id" | "request_uri"))
 }
 
+#[cfg(test)]
 pub(super) fn append_authorization_response_query(
     redirect_uri: &str,
     issuer: &str,

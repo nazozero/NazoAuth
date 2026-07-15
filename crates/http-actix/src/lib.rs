@@ -12,6 +12,7 @@ mod dpop;
 mod dynamic_client_registration;
 mod extract;
 mod fapi_resource;
+mod form_post_response;
 mod local_registration;
 mod metadata;
 mod mfa_profile;
@@ -34,7 +35,7 @@ mod userinfo;
 pub use authorization_decision::{
     AuthorizationDecisionCommand, AuthorizationDecisionEndpoint, AuthorizationDecisionError,
     AuthorizationDecisionForm, AuthorizationDecisionFuture, AuthorizationDecisionOperations,
-    AuthorizationDecisionRedirect, authorize_decision,
+    AuthorizationDecisionResponse, authorize_decision,
 };
 pub use authorization_request_object::{
     request_object_policy_error, request_object_verification_error,
@@ -53,7 +54,8 @@ pub use dynamic_client_registration::{
     DynamicRegistrationDependencyError, DynamicRegistrationEndpoint,
     DynamicRegistrationEndpointConfig, DynamicRegistrationFuture,
     DynamicRegistrationRateLimitError, DynamicRegistrationRequestGuard,
-    DynamicRegistrationSecurity, IpCidr, client_configuration_delete, client_configuration_get,
+    DynamicRegistrationSecurity, DynamicRegistrationSecurityServices, IpCidr, RemoteJwksFuture,
+    RemoteJwksResolverPort, client_configuration_delete, client_configuration_get,
     client_configuration_put, client_ip_with_config, client_ip_with_context,
     dynamic_client_registration, parse_forwarded_for_value, parse_trusted_proxy_cidrs,
     request_from_trusted_proxy_cidrs,
@@ -67,6 +69,7 @@ pub use fapi_resource::{
     FapiResourceAuthorizer, FapiResourceEndpoint, FapiResponseSignature,
     FapiSignatureOperationError, FapiSignatureVerificationError, fapi_resource,
 };
+pub use form_post_response::form_post_authorization_response;
 pub use local_registration::{
     AuthenticationRateLimit, AuthenticationRateLimitError, LocalRegistrationEndpoint,
     LocalRegistrationFuture, LocalRegistrationOperations, RegisterRequest, SendCodeRequest,

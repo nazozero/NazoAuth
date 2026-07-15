@@ -282,6 +282,7 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "RATE_LIMIT_WINDOW_SECONDS",
             "REFRESH_TOKEN_TTL_SECONDS",
             "REQUEST_OBJECT_JTI_POLICY",
+            "REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS",
             "REQUIRE_PUSHED_AUTHORIZATION_REQUESTS",
             "RUST_LOG",
             "SCIM_EVENT_RETENTION_SECONDS",

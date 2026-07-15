@@ -5,7 +5,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use uuid::Uuid;
 
-use crate::{OAuthClient, ValidatedClientRegistration};
+use crate::{ClientPresentationMetadata, OAuthClient, ValidatedClientRegistration};
 
 mod validation;
 
@@ -160,7 +160,15 @@ pub struct CreateClientRequest {
     pub tls_client_auth_san_ip: Vec<String>,
     #[serde(default)]
     pub tls_client_auth_san_email: Vec<String>,
+    #[serde(default, skip_deserializing)]
+    pub jwks_uri: Option<String>,
     pub jwks: Option<Value>,
+    #[serde(default, skip_deserializing)]
+    pub request_uris: Vec<String>,
+    #[serde(default, skip_deserializing)]
+    pub initiate_login_uri: Option<String>,
+    #[serde(default, skip_deserializing)]
+    pub presentation: ClientPresentationMetadata,
     #[serde(default)]
     pub introspection_encrypted_response_alg: Option<String>,
     #[serde(default)]
@@ -478,7 +486,11 @@ where
             tls_client_auth_san_uri: trim_string_vec(request.tls_client_auth_san_uri),
             tls_client_auth_san_ip: trim_string_vec(request.tls_client_auth_san_ip),
             tls_client_auth_san_email: trim_string_vec(request.tls_client_auth_san_email),
+            jwks_uri: trim_optional_string(request.jwks_uri),
             jwks: request.jwks,
+            request_uris: trim_string_vec(request.request_uris),
+            initiate_login_uri: trim_optional_string(request.initiate_login_uri),
+            presentation: request.presentation,
             introspection_encrypted_response_alg: trim_optional_string(
                 request.introspection_encrypted_response_alg,
             ),

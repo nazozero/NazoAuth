@@ -33,6 +33,13 @@ pub use nazo_auth::{
     DynamicRegistrationClientStore, DynamicRegistrationDependencyError, DynamicRegistrationFuture,
 };
 
+pub type RemoteJwksFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, String>> + Send + 'a>>;
+
+/// Resolves a remote JWKS under the embedding server's outbound-document policy.
+pub trait RemoteJwksResolverPort: Send + Sync {
+    fn resolve<'a>(&'a self, uri: &'a str) -> RemoteJwksFuture<'a>;
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DynamicRegistrationRateLimitError {
     Limited { retry_after_seconds: u64 },
@@ -62,13 +69,35 @@ pub struct DynamicRegistrationEndpointConfig {
 }
 
 #[derive(Clone)]
+pub struct DynamicRegistrationSecurityServices {
+    remote_jwks: Arc<dyn RemoteJwksResolverPort>,
+    crypto: Arc<dyn AdminClientCryptoPort>,
+    secret_digester: Arc<dyn ClientSecretDigesterPort>,
+    registration_tokens: Arc<dyn DynamicRegistrationSecretPort>,
+}
+
+impl DynamicRegistrationSecurityServices {
+    pub fn new(
+        remote_jwks: Arc<dyn RemoteJwksResolverPort>,
+        crypto: Arc<dyn AdminClientCryptoPort>,
+        secret_digester: Arc<dyn ClientSecretDigesterPort>,
+        registration_tokens: Arc<dyn DynamicRegistrationSecretPort>,
+    ) -> Self {
+        Self {
+            remote_jwks,
+            crypto,
+            secret_digester,
+            registration_tokens,
+        }
+    }
+}
+
+#[derive(Clone)]
 pub struct DynamicRegistrationEndpoint {
     config: DynamicRegistrationEndpointConfig,
     clients: Arc<dyn DynamicRegistrationClientStore>,
     sector_identifiers: Arc<dyn SectorIdentifierResolverPort>,
-    crypto: Arc<dyn AdminClientCryptoPort>,
-    secret_digester: Arc<dyn ClientSecretDigesterPort>,
-    secrets: Arc<dyn DynamicRegistrationSecretPort>,
+    security: DynamicRegistrationSecurityServices,
     request_guard: Arc<dyn DynamicRegistrationRequestGuard>,
     client_ip: ClientIpConfig,
 }
@@ -78,9 +107,7 @@ impl DynamicRegistrationEndpoint {
         config: DynamicRegistrationEndpointConfig,
         clients: Arc<dyn DynamicRegistrationClientStore>,
         sector_identifiers: Arc<dyn SectorIdentifierResolverPort>,
-        crypto: Arc<dyn AdminClientCryptoPort>,
-        secret_digester: Arc<dyn ClientSecretDigesterPort>,
-        secrets: Arc<dyn DynamicRegistrationSecretPort>,
+        security: DynamicRegistrationSecurityServices,
         request_guard: Arc<dyn DynamicRegistrationRequestGuard>,
     ) -> Self {
         let client_ip =
@@ -89,9 +116,7 @@ impl DynamicRegistrationEndpoint {
             config,
             clients,
             sector_identifiers,
-            crypto,
-            secret_digester,
-            secrets,
+            security,
             request_guard,
             client_ip,
         }
@@ -216,7 +241,7 @@ pub async fn dynamic_client_registration(
         Err(response) => return response,
     };
     if !initial_access_token_authorized(
-        endpoint.secrets.as_ref(),
+        endpoint.security.registration_tokens.as_ref(),
         request
             .headers()
             .get(header::AUTHORIZATION)
@@ -240,7 +265,7 @@ pub async fn dynamic_client_registration(
         Err(error) => return dynamic_registration_error_response(error),
     };
     let response_types = prepared.response_types.clone();
-    let registration_access_token = endpoint.secrets.random_token();
+    let registration_access_token = endpoint.security.registration_tokens.random_token();
     let prepared_insert =
         match prepare_insert(&endpoint, prepared, &registration_access_token).await {
             Ok(prepared) => prepared,
@@ -294,7 +319,7 @@ pub async fn client_configuration_get(
         Err(response) => return response,
     };
     let response_types = response_types_from_client(&current);
-    let registration_access_token = endpoint.secrets.random_token();
+    let registration_access_token = endpoint.security.registration_tokens.random_token();
     let (issued_secret, client_secret_hash) = issue_client_secret(&endpoint, &current);
     let client = match endpoint
         .clients
@@ -302,7 +327,10 @@ pub async fn client_configuration_get(
             current.tenant_id,
             current.id,
             client_secret_hash.as_deref(),
-            &endpoint.secrets.token_hash(&registration_access_token),
+            &endpoint
+                .security
+                .registration_tokens
+                .token_hash(&registration_access_token),
         )
         .await
     {
@@ -376,7 +404,7 @@ pub async fn client_configuration_put(
         Err(error) => return dynamic_registration_error_response(error),
     };
     let response_types = registration.response_types.clone();
-    let registration_access_token = endpoint.secrets.random_token();
+    let registration_access_token = endpoint.security.registration_tokens.random_token();
     let prepared = match prepare_insert(&endpoint, registration, &registration_access_token).await {
         Ok(prepared) => prepared,
         Err(AdminClientError::InvalidRequest(message)) => {
@@ -468,9 +496,16 @@ pub async fn client_configuration_delete(
 
 async fn prepare_insert(
     endpoint: &DynamicRegistrationEndpoint,
-    registration: nazo_auth::PreparedDynamicClientRegistration,
+    mut registration: nazo_auth::PreparedDynamicClientRegistration,
     registration_access_token: &str,
 ) -> Result<PreparedClientRegistration, AdminClientError> {
+    if let Some(uri) = registration.jwks_uri.as_deref() {
+        registration.jwks = Some(endpoint.security.remote_jwks.resolve(uri).await.map_err(
+            |error| {
+                AdminClientError::InvalidRequest(format!("jwks_uri could not be resolved: {error}"))
+            },
+        )?);
+    }
     let policy = AdminClientPolicy {
         tenant: TenantContext::default_system(),
         pairwise_subject_secret: endpoint.config.pairwise_subject_secret.clone(),
@@ -480,11 +515,15 @@ async fn prepare_insert(
         registration.into_create_client_request(),
         &policy,
         endpoint.sector_identifiers.as_ref(),
-        endpoint.crypto.as_ref(),
+        endpoint.security.crypto.as_ref(),
     )
     .await?;
-    prepared.registration_access_token_blake3 =
-        Some(endpoint.secrets.token_hash(registration_access_token));
+    prepared.registration_access_token_blake3 = Some(
+        endpoint
+            .security
+            .registration_tokens
+            .token_hash(registration_access_token),
+    );
     Ok(prepared)
 }
 
@@ -501,7 +540,7 @@ async fn authenticate_registration_client(
         .by_registration_access_token(
             TenantContext::default_system().tenant_id.as_uuid(),
             client_id,
-            &endpoint.secrets.token_hash(token),
+            &endpoint.security.registration_tokens.token_hash(token),
         )
         .await
     {
@@ -522,7 +561,7 @@ async fn submitted_secret_matches(
     let Some(salt) = endpoint.clients.client_secret_salt(current.id).await? else {
         return Ok(false);
     };
-    let candidate = endpoint.secret_digester.client_secret_digest(
+    let candidate = endpoint.security.secret_digester.client_secret_digest(
         secret,
         &endpoint.config.client_secret_pepper,
         &salt,
@@ -546,6 +585,7 @@ fn issue_client_secret(
         return (None, None);
     }
     let (secret, digest) = endpoint
+        .security
         .crypto
         .issue_client_secret(&endpoint.config.client_secret_pepper);
     (Some(secret), Some(digest))
@@ -816,8 +856,25 @@ fn dynamic_registration_response(
     if let Some(uri) = &client.frontchannel_logout_uri {
         body["frontchannel_logout_uri"] = json!(uri);
     }
-    if let Some(jwks) = &client.jwks {
+    if let Some(jwks_uri) = &client.jwks_uri {
+        body["jwks_uri"] = json!(jwks_uri);
+    } else if let Some(jwks) = &client.jwks {
         body["jwks"] = jwks.clone();
+    }
+    if !client.request_uris.is_empty() {
+        body["request_uris"] = json!(client.request_uris);
+    }
+    if let Some(initiate_login_uri) = &client.initiate_login_uri {
+        body["initiate_login_uri"] = json!(initiate_login_uri);
+    }
+    if let Some(logo_uri) = &client.presentation.logo_uri {
+        body["logo_uri"] = json!(logo_uri);
+    }
+    if let Some(policy_uri) = &client.presentation.policy_uri {
+        body["policy_uri"] = json!(policy_uri);
+    }
+    if let Some(tos_uri) = &client.presentation.tos_uri {
+        body["tos_uri"] = json!(tos_uri);
     }
     for (field, value) in [
         (
@@ -991,6 +1048,12 @@ mod tests {
         }
     }
 
+    impl RemoteJwksResolverPort for FakeSecurity {
+        fn resolve<'a>(&'a self, _uri: &'a str) -> RemoteJwksFuture<'a> {
+            Box::pin(async { Ok(json!({"keys": []})) })
+        }
+    }
+
     impl AdminClientCryptoPort for FakeSecurity {
         fn response_signing_algorithms(&self) -> Vec<String> {
             vec!["RS256".to_owned(), "PS256".to_owned()]
@@ -1073,9 +1136,12 @@ mod tests {
             },
             Arc::new(FakeStore::new()),
             Arc::new(FakeSecurity),
-            Arc::new(FakeSecurity),
-            Arc::new(FakeSecurity),
-            Arc::new(FakeSecurity),
+            DynamicRegistrationSecurityServices::new(
+                Arc::new(FakeSecurity),
+                Arc::new(FakeSecurity),
+                Arc::new(FakeSecurity),
+                Arc::new(FakeSecurity),
+            ),
             Arc::new(FakeGuard {
                 enabled,
                 rate_limit: None,
@@ -1197,7 +1263,13 @@ mod tests {
                 .insert_header((header::AUTHORIZATION, "Bearer initial-token"))
                 .set_json(json!({
                     "client_name": "Registered Client",
-                    "redirect_uris": ["https://client.example/callback"]
+                    "redirect_uris": ["https://client.example/callback"],
+                    "jwks_uri": "https://client.example/jwks.json",
+                    "request_uris": ["https://client.example/request.jwt"],
+                    "initiate_login_uri": "https://client.example/login/initiate",
+                    "logo_uri": "https://client.example/logo.svg",
+                    "policy_uri": "https://client.example/privacy",
+                    "tos_uri": "https://client.example/terms"
                 }))
                 .to_request(),
         )
@@ -1211,6 +1283,19 @@ mod tests {
         let client_id = created["client_id"].as_str().expect("client id");
         assert_eq!(created["registration_access_token"], "registration-token");
         assert_eq!(created["client_secret"], "issued-secret");
+        assert_eq!(created["jwks_uri"], "https://client.example/jwks.json");
+        assert!(created.get("jwks").is_none());
+        assert_eq!(
+            created["request_uris"],
+            json!(["https://client.example/request.jwt"])
+        );
+        assert_eq!(
+            created["initiate_login_uri"],
+            "https://client.example/login/initiate"
+        );
+        assert_eq!(created["logo_uri"], "https://client.example/logo.svg");
+        assert_eq!(created["policy_uri"], "https://client.example/privacy");
+        assert_eq!(created["tos_uri"], "https://client.example/terms");
         assert!(created["client_id_issued_at"].is_i64());
         assert_eq!(
             created["registration_client_uri"],
@@ -1328,7 +1413,11 @@ mod tests {
                 tls_client_auth_san_uri: Vec::new(),
                 tls_client_auth_san_ip: Vec::new(),
                 tls_client_auth_san_email: Vec::new(),
+                jwks_uri: None,
                 jwks: None,
+                request_uris: Vec::new(),
+                initiate_login_uri: None,
+                presentation: nazo_auth::ClientPresentationMetadata::default(),
                 introspection_encrypted_response_alg: None,
                 introspection_encrypted_response_enc: None,
                 userinfo_signed_response_alg: None,

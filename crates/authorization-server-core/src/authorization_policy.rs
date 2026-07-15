@@ -41,6 +41,7 @@ pub struct AuthorizationCapabilityPolicy {
     pub authorization_details: bool,
     pub jarm: bool,
     pub native_sso: bool,
+    pub form_post: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -115,6 +116,7 @@ pub fn normalize_authorization_request(
 
     let response_mode = match parameters.get("response_mode").map(String::as_str) {
         None | Some("query") => None,
+        Some("form_post") if capabilities.form_post => Some("form_post".to_owned()),
         Some("jwt") if capabilities.jarm => Some("jwt".to_owned()),
         Some("jwt") => return Err(AuthorizationPolicyError::UnsupportedResponseMode),
         _ => return Err(AuthorizationPolicyError::InvalidRequest),
@@ -496,6 +498,7 @@ pub struct JarmAuthorizationResponse {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum AuthorizationResponsePlan {
     Plain(PlainAuthorizationResponse),
+    FormPost(PlainAuthorizationResponse),
     Jarm(JarmAuthorizationResponse),
 }
 
@@ -548,15 +551,18 @@ pub fn plan_authorization_response(
         }
     }
     parameters.push(("iss".to_owned(), input.issuer.to_owned()));
-    Ok(AuthorizationResponsePlan::Plain(
-        PlainAuthorizationResponse {
-            redirect_uri: input.redirect_uri.to_owned(),
-            parameters,
-            issue_session_state: input.session_management_available
-                && input.code.is_some()
-                && input.error.is_none(),
-        },
-    ))
+    let response = PlainAuthorizationResponse {
+        redirect_uri: input.redirect_uri.to_owned(),
+        parameters,
+        issue_session_state: input.session_management_available
+            && input.code.is_some()
+            && input.error.is_none(),
+    };
+    Ok(if input.response_mode == Some("form_post") {
+        AuthorizationResponsePlan::FormPost(response)
+    } else {
+        AuthorizationResponsePlan::Plain(response)
+    })
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -647,6 +653,7 @@ mod tests {
             authorization_details: true,
             jarm: true,
             native_sso: true,
+            form_post: true,
         }
     }
 

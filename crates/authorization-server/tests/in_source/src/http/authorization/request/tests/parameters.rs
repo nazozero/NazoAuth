@@ -126,10 +126,13 @@ fn authorization_response_mode_accepts_jwt() {
 }
 
 #[test]
-fn authorization_response_mode_rejects_form_post() {
+fn authorization_response_mode_accepts_form_post() {
     let mut q = HashMap::new();
     q.insert("response_mode".to_owned(), "form_post".to_owned());
-    assert_eq!(authorization_response_mode(&q), Err(()));
+    assert_eq!(
+        authorization_response_mode(&q),
+        Ok(Some("form_post".to_owned()))
+    );
 }
 
 #[test]

@@ -63,9 +63,7 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
 
         self.assertTrue(config["alias"].endswith("-dynamic-crypto"))
         self.assertIn(
-            "oidcc-dynamic-certification-test-plan[response_type=code]:"
-            "oidcc-userinfo-rs256 "
-            + filename,
+            "oidcc-dynamic-certification-test-plan[response_type=code] " + filename,
             expressions,
         )
         dynamic_expression = next(
@@ -74,7 +72,7 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         manifest = module.plan_manifest_for_expressions(
             [dynamic_expression], {filename: config}
         )
-        self.assertIn("Twenty-one-plan", manifest["description"])
+        self.assertIn("Twenty-three-plan", manifest["description"])
 
     def test_dynamic_plan_uses_terminal_browser_flow_for_local_redirect_errors(self):
         module = load_setup_module()

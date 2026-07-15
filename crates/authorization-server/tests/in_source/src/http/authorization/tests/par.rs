@@ -1060,7 +1060,7 @@ async fn par_rejects_request_uri_from_request_object_after_client_authentication
 }
 
 #[actix_web::test]
-async fn par_rejects_unsigned_request_object_without_outer_client_id_as_request_object_error() {
+async fn par_does_not_trust_unsigned_request_object_for_missing_outer_client_id() {
     let Some(fixture) = LiveParFixture::new_with_settings(|s| {
         s.modules.enable_par_request_object = true;
     })
@@ -1084,7 +1084,7 @@ async fn par_rejects_unsigned_request_object_without_outer_client_id_as_request_
     let (status, value) = par_json_body(response).await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert_eq!(value.get("error"), Some(&json!("invalid_request_object")));
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
     assert!(value.get("request_uri").is_none());
 }
 

@@ -5,6 +5,13 @@ use nazo_identity::{TenantContext, ports::RepositoryError};
 use nazo_postgres::{OAuthClientRepository, create_pool, get_conn};
 use uuid::Uuid;
 
+fn test_repository() -> OAuthClientRepository {
+    let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    OAuthClientRepository::new(create_pool(database_url, 4).unwrap())
+}
+
 fn client(tenant: TenantContext) -> OAuthClient {
     OAuthClient {
         id: Uuid::now_v7(),
@@ -38,7 +45,11 @@ fn client(tenant: TenantContext) -> OAuthClient {
             tls_client_auth_san_uri: vec![],
             tls_client_auth_san_ip: vec![],
             tls_client_auth_san_email: vec![],
+            jwks_uri: None,
             jwks: None,
+            request_uris: Vec::new(),
+            initiate_login_uri: None,
+            presentation: nazo_auth::ClientPresentationMetadata::default(),
             introspection_encrypted_response_alg: None,
             introspection_encrypted_response_enc: None,
             userinfo_signed_response_alg: None,
@@ -112,6 +123,37 @@ async fn dcr_replace_cannot_resurrect_a_concurrently_deleted_client() {
     sql_query("DELETE FROM oauth_clients WHERE id = $1")
         .bind::<SqlUuid, _>(client.id)
         .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn dynamic_profile_metadata_round_trips_through_postgres() {
+    let repository = test_repository();
+    let mut client = client(TenantContext::default_system());
+    client.jwks_uri = Some("https://client.example/jwks.json".to_owned());
+    client.jwks = Some(serde_json::json!({"keys": []}));
+    client.request_uris = vec!["https://client.example/request.jwt".to_owned()];
+    client.initiate_login_uri = Some("https://client.example/login/initiate".to_owned());
+    client.presentation = nazo_auth::ClientPresentationMetadata {
+        logo_uri: Some("https://client.example/logo.svg".to_owned()),
+        policy_uri: Some("https://client.example/privacy".to_owned()),
+        tos_uri: Some("https://client.example/terms".to_owned()),
+    };
+
+    repository
+        .insert(&client, None, Some("registration-token"))
+        .await
+        .unwrap();
+    let persisted = repository.by_id(client.id).await.unwrap().unwrap();
+    assert_eq!(persisted.jwks_uri, client.jwks_uri);
+    assert_eq!(persisted.jwks, client.jwks);
+    assert_eq!(persisted.request_uris, client.request_uris);
+    assert_eq!(persisted.initiate_login_uri, client.initiate_login_uri);
+    assert_eq!(persisted.presentation, client.presentation);
+
+    repository
+        .deactivate(client.tenant_id, client.id)
         .await
         .unwrap();
 }

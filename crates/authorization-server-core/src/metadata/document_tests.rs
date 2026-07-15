@@ -81,7 +81,7 @@ fn baseline_document_shape_is_locked() {
                 "userinfo_endpoint": "https://issuer.example/userinfo",
                 "jwks_uri": "https://issuer.example/jwks.json",
                 "response_types_supported": ["code"],
-                "response_modes_supported": ["query", "jwt"],
+                "response_modes_supported": ["query", "form_post", "jwt"],
                 "subject_types_supported": ["public"],
                 "id_token_signing_alg_values_supported": ["RS256"],
                 "userinfo_signing_alg_values_supported": ["RS256"],
@@ -245,8 +245,44 @@ fn jarm_capability_controls_jwt_response_mode() {
     let disabled = authorization_server_metadata(input(), &snapshot([]));
     let enabled = authorization_server_metadata(input(), &snapshot([ModuleId::Jarm]));
 
-    assert_eq!(disabled["response_modes_supported"], json!(["query"]));
-    assert_eq!(enabled["response_modes_supported"], json!(["query", "jwt"]));
+    assert_eq!(
+        disabled["response_modes_supported"],
+        json!(["query", "form_post"])
+    );
+    assert_eq!(
+        enabled["response_modes_supported"],
+        json!(["query", "form_post", "jwt"])
+    );
+}
+
+#[test]
+fn external_request_uri_is_advertised_only_with_both_required_modules_on_baseline() {
+    let baseline = authorization_server_metadata(
+        input(),
+        &snapshot([
+            ModuleId::DynamicClientRegistration,
+            ModuleId::RequestObjects,
+        ]),
+    );
+    assert_eq!(baseline["request_uri_parameter_supported"], true);
+
+    let request_objects_only =
+        authorization_server_metadata(input(), &snapshot([ModuleId::RequestObjects]));
+    assert_eq!(
+        request_objects_only["request_uri_parameter_supported"],
+        false
+    );
+
+    let mut fapi = input();
+    fapi.profile = MetadataAuthorizationServerProfile::Fapi2Security;
+    let fapi = authorization_server_metadata(
+        fapi,
+        &snapshot([
+            ModuleId::DynamicClientRegistration,
+            ModuleId::RequestObjects,
+        ]),
+    );
+    assert_eq!(fapi["request_uri_parameter_supported"], false);
 }
 
 #[test]
@@ -386,7 +422,7 @@ fn fapi_profiles_publish_only_the_selected_security_contract() {
 }
 
 #[test]
-fn external_request_uri_is_never_advertised_and_other_configuration_is_preserved() {
+fn fapi_external_request_uri_is_not_advertised_and_other_configuration_is_preserved() {
     const ACTIVE_PS256: &[&str] = &["PS256"];
     const RESPONSE: &[&str] = &["PS256", "EdDSA"];
     let metadata = authorization_server_metadata(

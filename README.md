@@ -48,7 +48,7 @@ composite score:
 | Static security analysis | CodeQL Rust analysis with `security-extended` and `security-and-quality` queries. |
 | Dependency policy | GitHub dependency review, `cargo audit`, and `cargo deny` over advisories, bans, licenses, and sources. |
 | Runtime security behavior | Real HTTP E2E, load/race gate, and Valkey outage injection in `conformance-security`. |
-| Protocol conformance | OIDF/FAPI conformance workflows and archived official 21-plan matrix evidence. |
+| Protocol conformance | Current 23-plan OIDF/FAPI workflow plus archived official 21-plan matrix evidence. |
 | Coverage trend | Codecov LCOV upload from the dedicated coverage workflow. |
 | Release provenance | CycloneDX SBOM, Trivy image scan, Sigstore signing, and GitHub artifact attestations. |
 
@@ -64,6 +64,7 @@ IETF and RFCs:
 | --- | --- |
 | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009), Token Revocation | `/revoke` |
 | [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523), JWT Client Authentication and JWT Bearer Grant | `private_key_jwt` and client-bound JWT bearer grant |
+| [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591), Dynamic Client Registration | authenticated `/register` and protected client configuration lifecycle, including constrained `jwks_uri` and `request_uris` metadata |
 | [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), PKCE | S256 PKCE |
 | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662), Token Introspection | `/introspect` |
 | [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native-app redirect URI policy: claimed HTTPS, private-use schemes, and loopback HTTP with port variance |
@@ -73,7 +74,7 @@ IETF and RFCs:
 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705), OAuth 2.0 mTLS | mTLS client auth and sender-constrained tokens |
 | [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | authorization/PAR/token `resource` handling with JWT `aud` binding and refresh-token audience narrowing |
 | [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), JWT Access Tokens | JWT access-token shape for resource servers |
-| [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101), JAR | signed request objects where enabled |
+| [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101), JAR | signed request objects where enabled, including exact dynamically registered HTTPS `request_uri` on the baseline profile; FAPI remains PAR-only |
 | [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126), PAR | `/par` |
 | [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396), Rich Authorization Requests | behind `ENABLE_AUTHORIZATION_DETAILS` |
 | [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), DPoP | proof validation and sender-constrained tokens |
@@ -94,6 +95,8 @@ OpenID Foundation:
 | --- | --- |
 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) | ID Token, JSON/signed/encrypted UserInfo, claims, authorization code flow |
 | [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) | `/.well-known/openid-configuration` |
+| [OAuth 2.0 Form Post Response Mode](https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html) | secure no-store `response_mode=form_post` responses on the baseline profile |
+| [OpenID Connect Third-Party Initiated Login 1.0](https://openid.net/specs/openid-connect-3rd-party-initiated-login.html) | HTTPS `initiate_login_uri` dynamic registration metadata |
 | [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html) | `/logout` |
 | [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | signed logout tokens with durable outbox delivery |
 | [JWT Secured Authorization Response Mode](https://openid.net/specs/oauth-v2-jarm.html) | signed JARM and optional per-client nested JWE where the request/profile selects JARM |
@@ -128,6 +131,7 @@ OpenID Foundation Conformance Suite result URLs:
 | OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
 | OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
 | Latest 21-plan official matrix | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
+| Current 23-plan repository matrix | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | Latest private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 

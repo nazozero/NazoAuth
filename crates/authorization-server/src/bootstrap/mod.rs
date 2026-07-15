@@ -131,6 +131,12 @@ pub async fn run() -> anyhow::Result<()> {
     let valkey = nazo_valkey::test_support::connect(&valkey_url, valkey_command_timeout).await?;
 
     let settings = Arc::new(Settings::from_config(&config)?);
+    let remote_client_documents = Arc::new(
+        crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(
+            &settings.modules.remote_client_document_private_origins,
+        )
+        .map_err(anyhow::Error::msg)?,
+    );
     let runtime_modules =
         web::Data::new(RuntimeModules::initialize(diesel_db.clone(), &settings).await?);
     RuntimeModules::spawn_reconciler(runtime_modules.clone());
@@ -191,6 +197,7 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::RateLimitStore::new(&dynamic_registration_rate_limit_connection),
         keyset.clone(),
         runtime_modules.registry.clone(),
+        remote_client_documents.clone(),
     ));
     #[cfg(test)]
     let dynamic_registration_handles = web::Data::new(DynamicRegistrationHandles {
@@ -308,6 +315,7 @@ pub async fn run() -> anyhow::Result<()> {
         token_issuance_config.clone(),
         device_service.clone(),
         authorization_runtime.clone(),
+        remote_client_documents.clone(),
     ));
 
     let session = &settings.session;
@@ -346,6 +354,7 @@ pub async fn run() -> anyhow::Result<()> {
         authorization_config.clone().into_inner(),
         admin_sessions.clone().into_inner(),
         runtime_modules.registry.clone(),
+        remote_client_documents.clone(),
     ));
     let admin_federation = web::Data::new(AdminFederationConfig::from_settings(&settings));
     #[cfg(not(test))]

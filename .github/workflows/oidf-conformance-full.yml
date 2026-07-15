@@ -61,7 +61,9 @@ jobs:
           [
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json",
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] oidf-oidcc-dynamic-plan-config.json",
-            "oidcc-dynamic-certification-test-plan[response_type=code]:oidcc-userinfo-rs256 oidf-oidcc-dynamic-crypto-plan-config.json",
+            "oidcc-dynamic-certification-test-plan[response_type=code] oidf-oidcc-dynamic-crypto-plan-config.json",
+            "oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-formpost-plan-config.json",
+            "oidcc-3rdparty-init-login-certification-test-plan oidf-oidcc-third-party-init-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
             "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json",
             "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json",
@@ -86,7 +88,9 @@ jobs:
           [
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-basic-plan-config.json",
             "oidcc-basic-certification-test-plan[server_metadata=discovery][client_registration=dynamic_client] oidf-oidcc-dynamic-plan-config.json",
-            "oidcc-dynamic-certification-test-plan[response_type=code]:oidcc-userinfo-rs256 oidf-oidcc-dynamic-crypto-plan-config.json",
+            "oidcc-dynamic-certification-test-plan[response_type=code] oidf-oidcc-dynamic-crypto-plan-config.json",
+            "oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-formpost-plan-config.json",
+            "oidcc-3rdparty-init-login-certification-test-plan oidf-oidcc-third-party-init-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
             "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
@@ -126,6 +130,16 @@ jobs:
               "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
               "variant": "*",
               "configuration-filename": "oidf-oidcc-dynamic-plan-config.json"
+            },
+            {
+              "test-name": "oidcc-idtoken-unsigned",
+              "variant": "*",
+              "configuration-filename": "oidf-oidcc-dynamic-crypto-plan-config.json"
+            },
+            {
+              "test-name": "oidcc-request-uri-unsigned-supported-correctly-or-rejected-as-unsupported",
+              "variant": "*",
+              "configuration-filename": "oidf-oidcc-dynamic-crypto-plan-config.json"
             }
           ]
           JSON

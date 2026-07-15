@@ -238,28 +238,33 @@ fn dynamic_registration_rejects_jwks_uri_and_jwks_in_same_request() {
 }
 
 #[test]
-fn dynamic_registration_rejects_external_request_uris_metadata() {
+fn dynamic_registration_accepts_registered_https_request_uris_metadata() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
-        request_uris: Some(json!(["https://client.example/request.jwt"])),
+        request_uris: Some(vec!["https://client.example/request.jwt".to_owned()]),
         ..Default::default()
     };
 
-    let err = prepare_dynamic_client_registration(
+    let prepared = prepare_dynamic_client_registration(
         request,
         DynamicRegistrationDefaults {
             default_audience: "https://issuer.example/fapi/resource",
         },
     )
-    .expect_err("external request_uri is intentionally not implemented");
-    assert_eq!(err.error, "invalid_client_metadata");
+    .expect("registered HTTPS request_uri should be supported");
+    assert_eq!(
+        prepared.request_uris,
+        vec!["https://client.example/request.jwt"]
+    );
 }
 
 #[test]
 fn dynamic_registration_rejects_malformed_request_uris_metadata() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
-        request_uris: Some(json!(["urn:ietf:params:oauth:request_uri:external"])),
+        request_uris: Some(vec![
+            "urn:ietf:params:oauth:request_uri:external".to_owned(),
+        ]),
         ..Default::default()
     };
 

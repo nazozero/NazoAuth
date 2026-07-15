@@ -297,6 +297,11 @@ M8 is not an authorization-server runtime profile. Completing its governance
 tasks does not add a profile name, endpoint, grant, authentication method,
 token type, SCIM capability, credential role, or discovery field.
 
+Separately admitted implementations may add their own default-closed module or
+baseline capability after their entry gate is complete; this paragraph does
+not override the implemented RFC 9865, RFC 9967, or bounded HTTP Signatures
+surfaces described below.
+
 The dated [M8 governance review](../conformance/2026-07-11-m8-watchlist-governance.md)
 defines the admission and isolation requirements for FAPI HTTP Signatures,
 RFC 9865/9967, browser-based application guidance, client attestation,

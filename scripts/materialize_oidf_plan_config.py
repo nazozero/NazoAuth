@@ -15,6 +15,8 @@ from typing import Any
 OIDCC_BASIC_CONFIG_FILE = "oidf-oidcc-basic-plan-config.json"
 OIDCC_DYNAMIC_CONFIG_FILE = "oidf-oidcc-dynamic-plan-config.json"
 OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE = "oidf-oidcc-dynamic-crypto-plan-config.json"
+OIDCC_FORMPOST_CONFIG_FILE = "oidf-oidcc-formpost-plan-config.json"
+OIDCC_THIRD_PARTY_INIT_CONFIG_FILE = "oidf-oidcc-third-party-init-plan-config.json"
 
 
 def read_json(path: Path) -> Any:
@@ -88,9 +90,23 @@ def derive_dynamic_oidcc_config(rendered: dict[str, Any], initial_access_token: 
     dynamic_crypto = copy.deepcopy(dynamic)
     dynamic_crypto["alias"] = f"{basic.get('alias', 'nazo-oauth-oidf-basic')}-dynamic-crypto"
     dynamic_crypto["description"] = (
-        "OIDC dynamic-registration signed UserInfo interoperability coverage."
+        "OIDC complete dynamic-registration interoperability coverage."
     )
     configs[OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE] = dynamic_crypto
+
+    formpost = copy.deepcopy(basic)
+    formpost["alias"] = f"{basic.get('alias', 'nazo-oauth-oidf-basic')}-formpost"
+    formpost["description"] = "OIDC Form Post OP certification coverage."
+    configs[OIDCC_FORMPOST_CONFIG_FILE] = formpost
+
+    third_party = copy.deepcopy(dynamic)
+    third_party["alias"] = (
+        f"{basic.get('alias', 'nazo-oauth-oidf-basic')}-third-party-init"
+    )
+    third_party["description"] = (
+        "OIDC third-party initiated login registration coverage."
+    )
+    configs[OIDCC_THIRD_PARTY_INIT_CONFIG_FILE] = third_party
 
 
 def main() -> int:

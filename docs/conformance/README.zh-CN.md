@@ -86,7 +86,8 @@ matrix job 中隔离执行。
 
 ## 兼容性跳过项
 
-当前 OIDC dynamic-registration 兼容矩阵中有 2 个 expected official suite
-skips：服务不支持也不声明 unsigned ID Token；`request_uri` 参数未启用
-（`request_uri_parameter_supported=false`）。这两个跳过项符合当前安全边界，
+当前两个 OIDC dynamic 配置中各有相同的 2 个逻辑 expected official suite
+skips：服务不支持也不声明 unsigned ID Token 和 unsigned Request Object。签名外部
+Request Object 仅允许通过精确动态注册的 HTTPS `request_uri` 与受约束远程获取；
+FAPI profile 仍只允许 PAR。这两个跳过项符合当前安全边界，
 但不能视为 zero-SKIPPED 证据。

@@ -15,8 +15,10 @@ code-level follow-ups: RFC 9865 remains implemented as described here, and FAPI
 default-off `/fapi/resource` profile using local RFC 9421/RFC 9530 evidence.
 The latter still has no advertised metadata, dedicated OIDF plan, certification
 claim, or production-adopter approval. The Browser-Based Applications work is
-an audit only. RFC 9967, client attestation, Transaction Tokens, Grant
-Management, OpenID4VCI, and OpenID4VP remain unimplemented product candidates.
+an audit only. RFC 9967 was subsequently implemented as a default-closed
+notice-only transmitter with authenticated RFC 8936 polling and a project-owned
+black-box matrix. Client attestation, Transaction Tokens, Grant Management,
+OpenID4VCI, and OpenID4VP remain unimplemented product candidates.
 
 ## Scope and conclusion
 
@@ -31,7 +33,7 @@ The review produced these decisions:
 | --- | --- | --- |
 | FAPI 2.0 HTTP Signatures | OIDF working draft dated 2026-06-26; not an OIDF Final Specification | Defer until the profile stabilizes and a resource-API non-repudiation customer exists. |
 | RFC 9865 cursor pagination | IETF Standards Track RFC, published 2025-10 | Implemented after this governance review with local codec, handler, metadata, security, and SCIM regression evidence; no applicable OIDF plan was found. |
-| RFC 9967 SCIM SET profile | IETF Standards Track RFC, published 2026-05 | Defer pending a defined event consumer, delivery topology, trust model, and retention owner. |
+| RFC 9967 SCIM SET profile | IETF Standards Track RFC, published 2026-05 | Historical decision: deferred on 2026-07-11; superseded on 2026-07-15 by the default-closed implementation and project black-box matrix. |
 | OAuth for Browser-Based Applications | `draft-ietf-oauth-browser-based-apps-27`; RFC Editor queue in progress, no RFC number yet | The corrected pre-publication draft-27 audit is recorded in `2026-07-11-browser-based-applications-draft-27-audit.md`; repeat the delta audit after RFC publication and do not add a draft profile switch. |
 | Attestation-Based Client Authentication | active `draft-ietf-oauth-attestation-based-client-auth-10` | Defer while the draft and attester trust ecosystem remain unsettled. |
 | Transaction Tokens | active `draft-ietf-oauth-transaction-tokens-09` | Defer until NazoAuth has a trusted-domain workload call-chain product requirement. |
@@ -175,6 +177,10 @@ this is not an OIDF certification claim.
 
 ### RFC 9967 SCIM Security Event Tokens and asynchronous completion
 
+> This subsection records the 2026-07-11 entry-gate analysis. Its deferred
+> decision was superseded on 2026-07-15. Current behavior is documented in
+> `docs/features/scim.md` and `docs/conformance/rfc9967-scim-set-matrix.md`.
+
 **Product demand and integration.** Potential users are downstream provisioning
 or security systems that need SCIM change events, feed membership events, or
 asynchronous request completion. NazoAuth has no configured SET receiver,
@@ -197,11 +203,12 @@ events, and SSRF-safe receiver configuration. Asynchronous requests additionally
 need durable job state, cancellation/expiry, result authorization, and bounded
 queues.
 
-**Metadata/config and failure policy.** Current capability output remains
-`asyncRequest: none` with no event URIs. A future feature must separately gate
-event generation, delivery method, receiver allowlists, signing keys, audience,
-and asynchronous processing. Event delivery failure must not silently report
-provisioning success, and retry behavior must not duplicate state changes.
+**Metadata/config and failure policy (current update).** `asyncRequest` remains
+`none`. When the default-off SCIM security-events module is enabled,
+`securityEvents.eventUris` truthfully advertises the implemented notice events;
+receiver-bound polling, acknowledgement, signing purpose, retention, and
+audience are separately constrained. Asynchronous SCIM processing remains
+unimplemented.
 
 **Local test strategy.** Test every supported event shape, SET cryptography,
 issuer/audience/time/replay errors, feed authorization, tenant leakage, delivery

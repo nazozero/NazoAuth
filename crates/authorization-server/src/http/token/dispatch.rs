@@ -1,4 +1,6 @@
 //! /token grant_type 分发入口。
+use std::sync::Arc;
+
 use crate::adapters::security::ClientCredentials;
 use crate::adapters::security::blake3_hex;
 #[cfg(test)]
@@ -239,6 +241,8 @@ pub(crate) struct TokenEndpointHandles {
     issuance_config: Data<TokenIssuanceConfig>,
     device_service: Data<super::device::ServerDeviceGrantService>,
     runtime_modules: Data<ServerRuntimeModuleRegistry>,
+    remote_client_documents:
+        Arc<crate::domain::remote_client_documents::RemoteClientDocumentResolver>,
 }
 
 impl TokenEndpointHandles {
@@ -249,6 +253,9 @@ impl TokenEndpointHandles {
         issuance_config: Data<TokenIssuanceConfig>,
         device_service: Data<super::device::ServerDeviceGrantService>,
         runtime_modules: Data<ServerRuntimeModuleRegistry>,
+        remote_client_documents: Arc<
+            crate::domain::remote_client_documents::RemoteClientDocumentResolver,
+        >,
     ) -> Self {
         Self {
             token_service,
@@ -257,6 +264,7 @@ impl TokenEndpointHandles {
             issuance_config,
             device_service,
             runtime_modules,
+            remote_client_documents,
         }
     }
 }
@@ -458,7 +466,8 @@ pub(crate) async fn token_with_service(
         ClientAuthConfig::new(
             issuance_config.issuer(),
             issuance_config.client_secret_pepper(),
-        ),
+        )
+        .with_remote_jwks(&handles.remote_client_documents),
         &auth_request,
         &client,
         &credentials,
@@ -643,6 +652,10 @@ pub(crate) async fn token(
             issuance_config,
             device_service,
             runtime_modules,
+            Arc::new(
+                crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                    .expect("empty remote document policy is valid"),
+            ),
         )),
         req,
         body,

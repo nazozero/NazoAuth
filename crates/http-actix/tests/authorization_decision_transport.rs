@@ -1,6 +1,6 @@
 pub use nazo_http_actix::{
     ClientIpConfig, SessionCookieConfig, client_ip_with_config, csrf_error,
-    login_required_response, oauth_error, redirect_found,
+    form_post_authorization_response, login_required_response, oauth_error, redirect_found,
 };
 
 #[path = "../src/authorization_decision.rs"]
@@ -19,13 +19,13 @@ use actix_web::{
 use authorization_decision::{
     AuthorizationDecisionCommand, AuthorizationDecisionEndpoint, AuthorizationDecisionError,
     AuthorizationDecisionForm, AuthorizationDecisionFuture, AuthorizationDecisionOperations,
-    AuthorizationDecisionRedirect, authorize_decision,
+    AuthorizationDecisionResponse, authorize_decision,
 };
 use nazo_http_actix::ClientIpHeaderMode;
 use serde_json::{Value, json};
 
 struct FakeOperations {
-    result: Mutex<Result<AuthorizationDecisionRedirect, AuthorizationDecisionError>>,
+    result: Mutex<Result<AuthorizationDecisionResponse, AuthorizationDecisionError>>,
     commands: Mutex<Vec<AuthorizationDecisionCommand>>,
 }
 
@@ -38,7 +38,7 @@ impl AuthorizationDecisionOperations for FakeOperations {
 }
 
 fn endpoint(
-    result: Result<AuthorizationDecisionRedirect, AuthorizationDecisionError>,
+    result: Result<AuthorizationDecisionResponse, AuthorizationDecisionError>,
 ) -> (Data<AuthorizationDecisionEndpoint>, Arc<FakeOperations>) {
     let operations = Arc::new(FakeOperations {
         result: Mutex::new(result),
@@ -81,7 +81,7 @@ async fn response_json(response: HttpResponse) -> Value {
 
 #[actix_web::test]
 async fn csrf_is_checked_before_decision_operations() {
-    let (endpoint, operations) = endpoint(Ok(AuthorizationDecisionRedirect {
+    let (endpoint, operations) = endpoint(Ok(AuthorizationDecisionResponse::Redirect {
         location: "https://client.example/callback?code=code".to_owned(),
     }));
 
@@ -94,7 +94,7 @@ async fn csrf_is_checked_before_decision_operations() {
 
 #[actix_web::test]
 async fn invalid_decision_is_rejected_before_session_or_operations() {
-    let (endpoint, operations) = endpoint(Ok(AuthorizationDecisionRedirect {
+    let (endpoint, operations) = endpoint(Ok(AuthorizationDecisionResponse::Redirect {
         location: "https://client.example/callback?code=code".to_owned(),
     }));
 
@@ -112,7 +112,7 @@ async fn invalid_decision_is_rejected_before_session_or_operations() {
 
 #[actix_web::test]
 async fn missing_session_preserves_login_required_and_cookie_clearing() {
-    let (endpoint, operations) = endpoint(Ok(AuthorizationDecisionRedirect {
+    let (endpoint, operations) = endpoint(Ok(AuthorizationDecisionResponse::Redirect {
         location: "https://client.example/callback?code=code".to_owned(),
     }));
 
@@ -132,7 +132,7 @@ async fn missing_session_preserves_login_required_and_cookie_clearing() {
 #[actix_web::test]
 async fn approved_transport_forwards_typed_command_and_preserves_redirect() {
     let location = "https://client.example/callback?code=code&state=state";
-    let (endpoint, operations) = endpoint(Ok(AuthorizationDecisionRedirect {
+    let (endpoint, operations) = endpoint(Ok(AuthorizationDecisionResponse::Redirect {
         location: location.to_owned(),
     }));
 
@@ -154,6 +154,33 @@ async fn approved_transport_forwards_typed_command_and_preserves_redirect() {
         commands[0].decision,
         nazo_auth::UserAuthorizationDecision::Approve
     );
+}
+
+#[actix_web::test]
+async fn form_post_decision_returns_no_store_auto_submit_document() {
+    let (endpoint, _) = endpoint(Ok(AuthorizationDecisionResponse::FormPost {
+        action: "https://client.example/callback".to_owned(),
+        parameters: vec![("code".to_owned(), "code-value".to_owned())],
+        session_state: Some("session-state".to_owned()),
+        csp_nonce: "nonce-value".to_owned(),
+    }));
+
+    let response = authorize_decision(
+        endpoint,
+        request(true, Some("csrf-token")),
+        form("approve", None),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    let body = String::from_utf8(to_bytes(response.into_body()).await.unwrap().to_vec()).unwrap();
+    assert!(body.contains("method=\"post\""));
+    assert!(body.contains("name=\"code\" value=\"code-value\""));
+    assert!(body.contains("name=\"session_state\" value=\"session-state\""));
 }
 
 #[actix_web::test]

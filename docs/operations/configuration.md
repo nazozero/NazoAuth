@@ -149,10 +149,18 @@ deployment path. They are candidates for the administrator UI:
   `PAR_TTL_SECONDS`,
   `PROTECTED_RESOURCE_IDENTIFIER`, `DEVICE_AUTHORIZATION_TTL_SECONDS`,
   `DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS`,
-  `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`
+  `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`,
+  `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS`
 - token and session lifetimes: `SESSION_TTL_SECONDS`, `AUTH_CODE_TTL_SECONDS`,
   `ACCESS_TOKEN_TTL_SECONDS`, `ID_TOKEN_TTL_SECONDS`,
   `REFRESH_TOKEN_TTL_SECONDS`
+
+`REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS` is a comma-separated list of exact
+HTTPS origins allowed to resolve to private/loopback addresses for remote
+dynamic-client JWKS and Request Objects. Leave it empty in production unless a
+specific private client-document service is required. Public destinations are
+always DNS-resolved and blocked when any result is loopback, link-local,
+private, unspecified, or multicast; redirects are disabled.
 - rate limits: `RATE_LIMIT_WINDOW_SECONDS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`,

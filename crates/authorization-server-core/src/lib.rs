@@ -103,7 +103,9 @@ pub use client_authentication::{
     ClientAuthenticationContext, ClientAuthenticationMethod, ClientAuthenticationPolicyError,
     ClientAuthenticationRequirement, PresentedClientCredentials, client_authentication_requirement,
 };
-pub use client_registration::{ApprovedClient, OAuthClient, ValidatedClientRegistration};
+pub use client_registration::{
+    ApprovedClient, ClientPresentationMetadata, OAuthClient, ValidatedClientRegistration,
+};
 pub use device::{
     ApprovedDeviceAuthorization, DeviceAtomicResult, DeviceAuthorizationApproval,
     DeviceAuthorizationPayload, DeviceAuthorizationRequestError, DeviceAuthorizationRequestPolicy,

@@ -76,7 +76,11 @@ pub(super) fn validate_metadata_fixture(metadata: ClientMetadataFixture<'_>) -> 
         tls_client_auth_san_email: mtls
             .map(|value| value.tls_client_auth_san_email.clone())
             .unwrap_or_default(),
+        jwks_uri: None,
         jwks: metadata.jwks.cloned(),
+        request_uris: Vec::new(),
+        initiate_login_uri: None,
+        presentation: crate::ClientPresentationMetadata::default(),
         introspection_encrypted_response_alg: metadata
             .introspection_encrypted_response_alg
             .map(ToOwned::to_owned),

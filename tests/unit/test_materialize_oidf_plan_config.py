@@ -30,11 +30,17 @@ class MaterializeOidfPlanConfigTests(unittest.TestCase):
 
         dynamic = rendered["configs"][module.OIDCC_DYNAMIC_CONFIG_FILE]
         crypto = rendered["configs"][module.OIDCC_DYNAMIC_CRYPTO_CONFIG_FILE]
+        formpost = rendered["configs"][module.OIDCC_FORMPOST_CONFIG_FILE]
+        third_party = rendered["configs"][module.OIDCC_THIRD_PARTY_INIT_CONFIG_FILE]
         self.assertEqual(dynamic["alias"], "official-basic-dynamic")
         self.assertEqual(crypto["alias"], "official-basic-dynamic-crypto")
         self.assertEqual(crypto["client"]["initial_access_token"], "initial-token")
         self.assertEqual(crypto["client"]["scope"], "openid profile")
         self.assertNotIn("client_id", crypto["client"])
+        self.assertEqual(formpost["alias"], "official-basic-formpost")
+        self.assertEqual(formpost["client"]["client_id"], "static-1")
+        self.assertEqual(third_party["alias"], "official-basic-third-party-init")
+        self.assertEqual(third_party["client"]["initial_access_token"], "initial-token")
 
 
 if __name__ == "__main__":

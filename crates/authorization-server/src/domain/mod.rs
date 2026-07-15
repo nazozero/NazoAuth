@@ -17,6 +17,7 @@ mod oidc_logout;
 mod passkey;
 mod password_login;
 mod profile_account;
+pub(crate) mod remote_client_documents;
 mod resource_server;
 mod rows;
 mod scim;

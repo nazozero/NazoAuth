@@ -100,9 +100,10 @@ never advertise `none`; the runtime rejects unsigned Request Objects for every
 client profile. This follows RFC 9101 rather than preserving an OIDC test-only
 compatibility path.
 
-OIDC dynamic-registration compatibility currently has two expected official
-suite skips: unsigned ID Tokens are not supported or advertised, and external
-client-supplied `request_uri` is not implemented
-(`request_uri_parameter_supported=false`).
-These skips are documented as reasonable for the current security posture, but
+OIDC dynamic-registration compatibility has two logical expected official suite
+skips in each dynamic configuration: unsigned ID Tokens and unsigned Request
+Objects are not supported or advertised. Signed external Request Objects are
+supported only through exact dynamically registered HTTPS `request_uri` values,
+with hardened remote fetching; FAPI profiles remain PAR-only. These skips are
+documented as reasonable for the current security posture, but
 they must not be treated as zero-SKIPPED evidence.

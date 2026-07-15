@@ -46,7 +46,8 @@ use nazo_auth::{
     normalize_authorization_request, parse_scope, plan_authorization_response,
 };
 use nazo_http_actix::{
-    OAuthJsonErrorFields, authorization_error_response, oauth_error, redirect_found,
+    OAuthJsonErrorFields, authorization_error_response, form_post_authorization_response,
+    oauth_error, redirect_found,
 };
 use serde_json::Value;
 #[cfg(test)]
@@ -115,9 +116,23 @@ async fn authorize_request_with_context(
     let mut used_pushed_authorization_request = false;
     let mut pending_pushed_request_uri = None;
     let mut pending_pushed_request_digest = None;
+    let mut pending_external_request_uri = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         if !is_pushed_authorization_request_uri(&request_uri) {
-            consumed_request_uri_error = Some("request_uri_not_supported");
+            if context.config.profile.requires_fapi2_security()
+                || !crate::http::authorization::accepts_module(
+                    context,
+                    nazo_runtime_modules::ModuleId::RequestObjects,
+                )
+                || !crate::http::authorization::accepts_module(
+                    context,
+                    nazo_runtime_modules::ModuleId::DynamicClientRegistration,
+                )
+            {
+                consumed_request_uri_error = Some("request_uri_not_supported");
+            } else {
+                pending_external_request_uri = Some(request_uri);
+            }
         } else {
             let pushed = match context.service.load_par(&request_uri).await {
                 Ok(Some(pushed)) => Some(pushed),
@@ -229,6 +244,24 @@ async fn authorize_request_with_context(
             "该客户端未启用 authorization_code 授权类型.",
         );
     }
+    if let Some(request_uri) = pending_external_request_uri.as_deref() {
+        if q.contains_key("request") || !client.request_uris.iter().any(|uri| uri == request_uri) {
+            consumed_request_uri_error = Some("invalid_request_uri");
+        } else if let Some(resolver) = context.remote_client_documents {
+            match resolver.request_object(request_uri).await {
+                Ok(request_object) => {
+                    q.remove("request_uri");
+                    q.insert("request".to_owned(), request_object);
+                }
+                Err(error) => {
+                    tracing::warn!(%error, "registered request_uri could not be resolved");
+                    consumed_request_uri_error = Some("invalid_request_uri");
+                }
+            }
+        } else {
+            consumed_request_uri_error = Some("request_uri_not_supported");
+        }
+    }
     let request_object_error = apply_request_object_with_context(context, q, &client)
         .await
         .err();
@@ -305,6 +338,7 @@ async fn authorize_request_with_context(
                 context,
                 nazo_runtime_modules::ModuleId::NativeSso,
             ),
+            form_post: !context.config.profile.requires_fapi2_security(),
         },
         AuthorizationProfilePolicy {
             signed_authorization_response_required: context
@@ -375,7 +409,9 @@ async fn authorize_request_with_context(
             )
             .await
             {
-                Ok(location) => redirect_found(location),
+                Ok(location) => {
+                    redirect_found(authorization_login_url_with_presentation(location, &client))
+                }
                 Err(response) => response,
             };
         }
@@ -460,6 +496,30 @@ async fn authorize_request_with_context(
         "{}/consent?request_id={request_id}",
         context.config.frontend_base_url.trim_end_matches('/')
     ))
+}
+
+fn authorization_login_url_with_presentation(mut location: String, client: &ClientRow) -> String {
+    let Ok(mut url) = url::Url::parse(&location) else {
+        return location;
+    };
+    {
+        let mut query = url.query_pairs_mut();
+        query.append_pair("client_name", &client.client_name);
+        for (name, value) in [
+            ("client_logo_uri", client.presentation.logo_uri.as_deref()),
+            (
+                "client_policy_uri",
+                client.presentation.policy_uri.as_deref(),
+            ),
+            ("client_tos_uri", client.presentation.tos_uri.as_deref()),
+        ] {
+            if let Some(value) = value {
+                query.append_pair(name, value);
+            }
+        }
+    }
+    location = url.into();
+    location
 }
 
 fn runtime_authorization_capability_error(
@@ -663,8 +723,10 @@ pub(crate) async fn authorization_response_redirect_with_context(
         return authorization_response_redirect_with_protection_context(context, input, protection)
             .await;
     }
-    let AuthorizationResponsePlan::Plain(plain) = plan else {
-        unreachable!("JARM response returned above")
+    let (plain, form_post) = match plan {
+        AuthorizationResponsePlan::Plain(plain) => (plain, false),
+        AuthorizationResponsePlan::FormPost(plain) => (plain, true),
+        AuthorizationResponsePlan::Jarm(_) => unreachable!("JARM response returned above"),
     };
     let session_state = if plain.issue_session_state {
         input
@@ -673,12 +735,16 @@ pub(crate) async fn authorization_response_redirect_with_context(
     } else {
         None
     };
-    redirect_found(append_authorization_response_query(
-        input.redirect_uri,
-        context.config.issuer.as_ref(),
-        input.code,
-        input.error,
-        input.state,
+    if form_post {
+        return form_post_authorization_response(
+            &plain.redirect_uri,
+            &plain.parameters,
+            session_state.as_deref(),
+            &random_urlsafe_token(),
+        );
+    }
+    redirect_found(nazo_auth::plain_authorization_response_uri(
+        &plain,
         session_state.as_deref(),
     ))
 }
