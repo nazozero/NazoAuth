@@ -17,7 +17,9 @@ use openssl::{
 
 use super::ciba_ping_tls::apply_ciba_ping_tls_policy;
 
-fn tls12_only_server() -> (std::net::SocketAddr, thread::JoinHandle<()>) {
+fn single_version_tls_server(
+    version: SslVersion,
+) -> (std::net::SocketAddr, thread::JoinHandle<()>) {
     let key = PKey::from_rsa(Rsa::generate(2048).expect("generate test RSA key"))
         .expect("construct test key");
     let mut name = X509NameBuilder::new().expect("create certificate name");
@@ -58,10 +60,10 @@ fn tls12_only_server() -> (std::net::SocketAddr, thread::JoinHandle<()>) {
         .set_certificate(&certificate.build())
         .expect("set TLS certificate");
     acceptor
-        .set_min_proto_version(Some(SslVersion::TLS1_2))
+        .set_min_proto_version(Some(version))
         .expect("set TLS minimum");
     acceptor
-        .set_max_proto_version(Some(SslVersion::TLS1_2))
+        .set_max_proto_version(Some(version))
         .expect("set TLS maximum");
     let acceptor = acceptor.build();
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind TLS test server");
@@ -79,9 +81,8 @@ fn tls12_only_server() -> (std::net::SocketAddr, thread::JoinHandle<()>) {
     (address, handle)
 }
 
-#[tokio::test]
-async fn ciba_ping_transport_never_falls_back_to_tls12() {
-    let (address, server) = tls12_only_server();
+async fn post_to_single_version_server(version: SslVersion) -> reqwest::Result<reqwest::Response> {
+    let (address, server) = single_version_tls_server(version);
     let client =
         apply_ciba_ping_tls_policy(reqwest::Client::builder().danger_accept_invalid_certs(true))
             .connect_timeout(Duration::from_secs(3))
@@ -93,10 +94,35 @@ async fn ciba_ping_transport_never_falls_back_to_tls12() {
         .post(format!("https://{address}/ciba-notification-endpoint"))
         .send()
         .await;
+    server.join().expect("join TLS test server");
+    result
+}
+
+#[tokio::test]
+async fn ciba_ping_transport_rejects_tls11() {
+    let result = post_to_single_version_server(SslVersion::TLS1_1).await;
 
     assert!(
         result.is_err(),
-        "CIBA Ping delivery must reject a TLS 1.2-only notification endpoint"
+        "CIBA Ping delivery must reject notification endpoints below TLS 1.2"
     );
-    server.join().expect("join TLS test server");
+}
+
+#[tokio::test]
+async fn ciba_ping_transport_supports_the_tls12_fapi_baseline() {
+    let response = post_to_single_version_server(SslVersion::TLS1_2)
+        .await
+        .expect("CIBA Ping must interoperate with a TLS 1.2-only FAPI endpoint");
+
+    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+#[cfg(not(target_os = "windows"))]
+async fn ciba_ping_transport_supports_tls13() {
+    let response = post_to_single_version_server(SslVersion::TLS1_3)
+        .await
+        .expect("CIBA Ping must offer TLS 1.3 when the endpoint supports it");
+
+    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
 }

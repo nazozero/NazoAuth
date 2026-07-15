@@ -388,8 +388,10 @@ def check_fapi_ciba_boundaries() -> None:
     ).read_text(encoding="utf-8")
     if any(marker in tls_policy for marker in forbidden_test_markers):
         raise SystemExit("CIBA ping TLS policy tests must remain outside production source")
-    if "tls_version_min(reqwest::tls::Version::TLS_1_3)" not in tls_policy:
-        raise SystemExit("CIBA ping delivery must require TLS 1.3")
+    if "tls_version_min(reqwest::tls::Version::TLS_1_2)" not in tls_policy:
+        raise SystemExit("CIBA ping delivery must reject TLS versions below 1.2")
+    if "tls_version_max(reqwest::tls::Version::TLS_1_3)" not in tls_policy:
+        raise SystemExit("CIBA ping delivery must offer TLS 1.3")
     tls_policy_test = (
         ROOT
         / "crates"
@@ -407,6 +409,13 @@ def check_fapi_ciba_boundaries() -> None:
     delivery_policy = (
         ROOT / "crates" / "authorization-server-core" / "src" / "ciba_ping.rs"
     ).read_text(encoding="utf-8")
+    for required_test in (
+        "ciba_ping_transport_rejects_tls11",
+        "ciba_ping_transport_supports_the_tls12_fapi_baseline",
+        "ciba_ping_transport_supports_tls13",
+    ):
+        if required_test not in tls_policy_test:
+            raise SystemExit(f"missing CIBA ping TLS policy test: {required_test}")
     if any(marker in delivery_policy for marker in forbidden_test_markers):
         raise SystemExit("CIBA ping policy tests must remain outside production source")
     for guard in (
