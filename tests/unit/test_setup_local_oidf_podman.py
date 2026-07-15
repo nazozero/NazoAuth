@@ -102,6 +102,12 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
                     "backchannel_client_notification_endpoint" in config[key],
                     config["nazo"]["ciba_mode"] == "ping",
                 )
+                if config["nazo"]["ciba_mode"] == "ping":
+                    self.assertEqual(
+                        config[key]["backchannel_client_notification_endpoint"],
+                        f"https://nginx:8443/test/a/{config['alias']}"
+                        "/ciba-notification-endpoint",
+                    )
 
     def test_plan_manifest_description_uses_the_actual_plan_count(self):
         module = load_setup_module()

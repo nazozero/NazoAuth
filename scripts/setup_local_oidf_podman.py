@@ -1339,7 +1339,8 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
         client1_id, client2_id = fapi_client_ids(slug)
         client1_jwks = client_private_jwks(client1_id)
         client2_jwks = client_private_jwks(client2_id)
-        notification_endpoint = f"{SUITE_BASE_URL}/ciba-notification-endpoint"
+        alias = f"local-nazo-oauth-oidf-{slug}"
+        notification_endpoint = test_endpoint_for(alias, "ciba-notification-endpoint")
 
         def ciba_client(client_id: str, jwks: dict[str, object]) -> dict[str, object]:
             client = {
@@ -1358,7 +1359,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
             return client
 
         config = {
-            "alias": f"local-nazo-oauth-oidf-{slug}",
+            "alias": alias,
             "description": (
                 "FAPI-CIBA ID1 AS: plain FAPI profile with "
                 f"{client_auth_type} client authentication and {ciba_mode} delivery mode."

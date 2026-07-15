@@ -175,7 +175,8 @@ def derive_fapi_ciba_matrix_configs(
             client["backchannel_user_code_parameter"] = False
             if ciba_mode == "ping":
                 client["backchannel_client_notification_endpoint"] = (
-                    f"{notification_base_url}/ciba-notification-endpoint"
+                    f"{notification_base_url.rstrip('/')}/test/a/{config['alias']}"
+                    "/ciba-notification-endpoint"
                 )
             else:
                 client.pop("backchannel_client_notification_endpoint", None)

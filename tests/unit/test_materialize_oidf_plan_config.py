@@ -84,7 +84,8 @@ class MaterializeOidfPlanConfigTests(unittest.TestCase):
             if value["nazo"]["ciba_mode"] == "ping":
                 self.assertEqual(
                     client["backchannel_client_notification_endpoint"],
-                    "https://www.certification.openid.net/ciba-notification-endpoint",
+                    "https://www.certification.openid.net/test/a/"
+                    f"{value['alias']}/ciba-notification-endpoint",
                 )
             else:
                 self.assertNotIn("backchannel_client_notification_endpoint", client)
