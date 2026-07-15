@@ -150,8 +150,7 @@ pub(crate) async fn client_configuration_get(
         Err(response) => return response,
     };
     let response_types = response_types_from_client(&current);
-    let registration_access_token = registration_bearer_token(&req)
-        .expect("authenticated registration requests retain their bearer token");
+    let registration_access_token = random_urlsafe_token();
     let (issued_secret, secret_hash) = issue_client_secret(
         &current.client_type,
         &current.token_endpoint_auth_method,
@@ -160,7 +159,7 @@ pub(crate) async fn client_configuration_get(
     let client = match rotate_client_management_credentials(
         &handles,
         &current,
-        blake3_hex(registration_access_token),
+        blake3_hex(&registration_access_token),
         secret_hash,
     )
     .await
@@ -175,7 +174,7 @@ pub(crate) async fn client_configuration_get(
         &response_types,
         issued_secret,
         &handles.config.issuer,
-        registration_access_token,
+        &registration_access_token,
     ))
 }
 
@@ -408,7 +407,14 @@ async fn authenticate_registration_client(
     req: &HttpRequest,
     client_id: &str,
 ) -> Result<ClientRow, HttpResponse> {
-    let Some(token) = registration_bearer_token(req) else {
+    let Some(token) = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().strip_prefix("Bearer "))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
         return Err(registration_access_denied());
     };
     let found = handles
@@ -427,16 +433,6 @@ async fn authenticate_registration_client(
         return Err(registration_access_denied());
     };
     Ok(client)
-}
-
-fn registration_bearer_token(req: &HttpRequest) -> Option<&str> {
-    req
-        .headers()
-        .get(header::AUTHORIZATION)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.trim().strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
 }
 
 fn registration_access_denied() -> HttpResponse {
