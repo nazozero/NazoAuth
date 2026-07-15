@@ -103,6 +103,20 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
                     config["nazo"]["ciba_mode"] == "ping",
                 )
 
+    def test_plan_manifest_description_uses_the_actual_plan_count(self):
+        module = load_setup_module()
+        configs = {
+            "first.json": {"description": "first"},
+            "second.json": {"description": "second"},
+        }
+
+        manifest = module.plan_manifest_for_expressions(
+            ["first-plan first.json", "second-plan second.json"], configs
+        )
+
+        self.assertIn("2-plan", manifest["description"])
+        self.assertEqual(len(manifest["plans"]), 2)
+
     def test_dynamic_op_certification_is_not_in_supported_matrix(self):
         module = load_setup_module()
         configs = {
