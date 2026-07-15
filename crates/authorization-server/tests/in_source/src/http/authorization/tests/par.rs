@@ -1245,9 +1245,10 @@ async fn par_persists_mtls_thumbprint_for_sender_constrained_request_uri() {
         .insert_client_secret_post_client_with_options(&client_id, &secret, false, true, true)
         .await;
     let body = Bytes::from(format!(
-        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid",
+        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid&code_challenge={}&code_challenge_method=S256",
         urlencoding::encode(&client_id),
-        urlencoding::encode(&secret)
+        urlencoding::encode(&secret),
+        "A".repeat(43),
     ));
 
     let response =
