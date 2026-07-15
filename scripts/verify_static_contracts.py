@@ -392,6 +392,10 @@ def check_fapi_ciba_boundaries() -> None:
         raise SystemExit("CIBA ping delivery must reject TLS versions below 1.2")
     if "tls_version_max(reqwest::tls::Version::TLS_1_3)" not in tls_policy:
         raise SystemExit("CIBA ping delivery must offer TLS 1.3")
+    if ".use_rustls_tls()" not in tls_policy:
+        raise SystemExit("CIBA ping delivery must use the Rustls TLS backend")
+    if 'std::env::var_os("SSL_CERT_FILE")' not in tls_policy:
+        raise SystemExit("CIBA ping delivery must explicitly load its configured trust bundle")
     tls_policy_test = (
         ROOT
         / "crates"
