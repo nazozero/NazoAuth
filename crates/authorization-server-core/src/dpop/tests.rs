@@ -8,12 +8,22 @@ use std::{
 
 const NOW: i64 = 1_700_000_000;
 const PRIVATE_KEY: [u8; 32] = [7; 32];
+const OTHER_PRIVATE_KEY: [u8; 32] = [9; 32];
 
 fn proof(header_jwk: Value, claim_overrides: Value) -> String {
-    proof_with_type(header_jwk, "dpop+jwt", claim_overrides)
+    proof_with_type_and_key(header_jwk, "dpop+jwt", claim_overrides, &PRIVATE_KEY)
 }
 
 fn proof_with_type(header_jwk: Value, typ: &str, claim_overrides: Value) -> String {
+    proof_with_type_and_key(header_jwk, typ, claim_overrides, &PRIVATE_KEY)
+}
+
+fn proof_with_type_and_key(
+    header_jwk: Value,
+    typ: &str,
+    claim_overrides: Value,
+    private_key: &[u8; 32],
+) -> String {
     let mut claims = json!({
         "htm": "POST",
         "htu": "https://issuer.example/token",
@@ -27,7 +37,7 @@ fn proof_with_type(header_jwk: Value, typ: &str, claim_overrides: Value) -> Stri
     let encoded_header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).expect("header"));
     let encoded_claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).expect("claims"));
     let signing_input = format!("{encoded_header}.{encoded_claims}");
-    let signature = SigningKey::from_bytes(&PRIVATE_KEY).sign(signing_input.as_bytes());
+    let signature = SigningKey::from_bytes(private_key).sign(signing_input.as_bytes());
     format!(
         "{signing_input}.{}",
         URL_SAFE_NO_PAD.encode(signature.to_bytes())
@@ -35,8 +45,16 @@ fn proof_with_type(header_jwk: Value, typ: &str, claim_overrides: Value) -> Stri
 }
 
 fn public_jwk() -> Value {
+    public_jwk_for(&PRIVATE_KEY)
+}
+
+fn other_public_jwk() -> Value {
+    public_jwk_for(&OTHER_PRIVATE_KEY)
+}
+
+fn public_jwk_for(private_key: &[u8; 32]) -> Value {
     let x = URL_SAFE_NO_PAD.encode(
-        SigningKey::from_bytes(&PRIVATE_KEY)
+        SigningKey::from_bytes(private_key)
             .verifying_key()
             .to_bytes(),
     );
@@ -321,6 +339,54 @@ async fn concurrent_replay_consumption_has_exactly_one_winner_async() {
             .count(),
         1
     );
+}
+
+#[test]
+fn protected_resource_replay_scope_rejects_same_jti_across_dpop_keys() {
+    futures_executor::block_on(
+        protected_resource_replay_scope_rejects_same_jti_across_dpop_keys_async(),
+    );
+}
+
+async fn protected_resource_replay_scope_rejects_same_jti_across_dpop_keys_async() {
+    let state = AtomicDpopState::default();
+    let ath = URL_SAFE_NO_PAD.encode(Sha256::digest(b"access-token"));
+    let left = proof(public_jwk(), json!({"ath": ath, "jti": "shared-jti"}));
+    let ath = URL_SAFE_NO_PAD.encode(Sha256::digest(b"access-token"));
+    let right = proof_with_type_and_key(
+        other_public_jwk(),
+        "dpop+jwt",
+        json!({"ath": ath, "jti": "shared-jti"}),
+        &OTHER_PRIVATE_KEY,
+    );
+    fn resource_request(proof: &str) -> DpopProofRequest<'_> {
+        DpopProofRequest {
+            proof: Some(proof),
+            method: "POST",
+            target_uris: &["https://issuer.example/token"],
+            access_token: Some("access-token"),
+            expected_jkt: None,
+        }
+    }
+
+    validate_authorization_server_dpop_at(
+        &state,
+        resource_request(&left),
+        DpopNoncePolicy::Optional,
+        NOW,
+    )
+    .await
+    .expect("first proof is accepted");
+    assert!(matches!(
+        validate_authorization_server_dpop_at(
+            &state,
+            resource_request(&right),
+            DpopNoncePolicy::Optional,
+            NOW,
+        )
+        .await,
+        Err(DpopError::ReplayDetected(_))
+    ));
 }
 
 #[test]

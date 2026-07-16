@@ -496,6 +496,43 @@ async fn credential_endpoint_rejects_query_tokens_and_non_json_or_jwt_bodies() {
 }
 
 #[actix_web::test]
+async fn credential_endpoint_rejects_multiple_dpop_proof_headers() {
+    let issuer = Arc::new(Issuer::default());
+    let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
+        issuer.clone(),
+        b"management-token".to_vec(),
+    ));
+    let app = test::init_service(
+        App::new()
+            .app_data(endpoint)
+            .route("/credential", web::post().to(credential)),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/credential")
+            .insert_header(("authorization", "DPoP access-token"))
+            .append_header(("dpop", "proof-one.jwt"))
+            .append_header(("dpop", "proof-two.jwt"))
+            .set_json(json!({
+                "credential_configuration_id": "pid",
+                "proofs": {"jwt": ["proof.jwt"]}
+            }))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    let contexts = issuer.credential_contexts.lock().unwrap();
+    assert!(
+        contexts.is_empty(),
+        "duplicate DPoP proofs must be rejected before credential issuance"
+    );
+}
+
+#[actix_web::test]
 async fn credential_endpoint_preserves_dpop_authorization_scheme_and_proof() {
     let issuer = Arc::new(Issuer::default());
     let endpoint = web::Data::new(CredentialIssuerEndpoint::new(

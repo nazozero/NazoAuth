@@ -310,14 +310,26 @@ fn protected_context(
             description: "A Bearer or DPoP access token is required.",
             dpop_nonce: None,
         })?;
+    let dpop_proofs = request.headers().get_all("DPoP");
+    let dpop_proof_count = dpop_proofs.count();
+    if dpop_proof_count > 1 {
+        return Err(CredentialHttpError {
+            status: 401,
+            error: "invalid_dpop_proof",
+            description: "Exactly one DPoP proof header is allowed.",
+            dpop_nonce: None,
+        });
+    }
+    let dpop_proof = request
+        .headers()
+        .get("DPoP")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+
     Ok(CredentialRequestContext {
         bearer_token: bearer_token.to_owned(),
         access_token_scheme,
-        dpop_proof: request
-            .headers()
-            .get("DPoP")
-            .and_then(|value| value.to_str().ok())
-            .map(str::to_owned),
+        dpop_proof,
         request_url: request.uri().to_string(),
         method,
     })
