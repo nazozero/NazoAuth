@@ -55,6 +55,54 @@ type VciService = CredentialIssuerService<
     Openid4vcCredentialCrypto,
 >;
 
+const VCI_CREDENTIAL_IDENTIFIER_PREFIX: &str = "nazo-vci-";
+
+pub(crate) fn openid4vci_authorization_detail(
+    issuer: &str,
+    credential_configuration_id: &str,
+) -> Value {
+    json!({
+        "type": "openid_credential",
+        "credential_configuration_id": credential_configuration_id,
+        "credential_identifiers": [
+            openid4vci_credential_identifier(credential_configuration_id).0
+        ],
+        "locations": [issuer],
+    })
+}
+
+fn openid4vci_credential_identifier(
+    credential_configuration_id: &str,
+) -> nazo_openid4vci::CredentialIdentifier {
+    nazo_openid4vci::CredentialIdentifier(format!(
+        "{VCI_CREDENTIAL_IDENTIFIER_PREFIX}{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(credential_configuration_id)
+    ))
+}
+
+fn openid4vci_configuration_id_from_identifier(
+    identifier: &nazo_openid4vci::CredentialIdentifier,
+) -> Option<String> {
+    let encoded = identifier
+        .0
+        .strip_prefix(VCI_CREDENTIAL_IDENTIFIER_PREFIX)?;
+    let decoded = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(encoded)
+        .ok()?;
+    String::from_utf8(decoded).ok()
+}
+
+fn token_endpoint_dpop_target_uris(issuer: &str, request_url: &str) -> Vec<String> {
+    [
+        request_url.to_owned(),
+        format!("{}/token", issuer.trim_end_matches('/')),
+    ]
+    .into_iter()
+    .collect::<BTreeSet<_>>()
+    .into_iter()
+    .collect()
+}
+
 #[derive(Clone)]
 struct Openid4vcDataset {
     users: nazo_postgres::UserRepository,
@@ -890,13 +938,14 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                         "Pre-authorized code or transaction code is invalid.",
                     )
                 })?;
-            let target_uris = [request.request_url.as_str()];
+            let target_uris = token_endpoint_dpop_target_uris(&self.issuer, &request.request_url);
+            let target_uri_refs = target_uris.iter().map(String::as_str).collect::<Vec<_>>();
             let dpop_jkt = validate_authorization_server_dpop(
                 self.authorization.as_ref(),
                 DpopProofRequest {
                     proof: request.dpop_proof.as_deref(),
                     method: "POST",
-                    target_uris: &target_uris,
+                    target_uris: &target_uri_refs,
                     access_token: None,
                     expected_jkt: None,
                 },
@@ -904,7 +953,11 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
             )
             .await
             .map_err(|_| vci_error(400, "invalid_dpop_proof", "DPoP proof is invalid."))?;
-            let authorization_details = authorization.configuration_ids.iter().map(|id| json!({"type":"openid_credential","credential_configuration_id":id,"locations":[self.issuer]})).collect::<Vec<_>>();
+            let authorization_details = authorization
+                .configuration_ids
+                .iter()
+                .map(|id| openid4vci_authorization_detail(&self.issuer, id))
+                .collect::<Vec<_>>();
             let issued = self
                 .token_service
                 .sign_access_token(nazo_auth::AccessTokenSignInput {
@@ -1623,6 +1676,13 @@ fn resolve_configuration_id(
         )
     })?;
     if let Some(id) = &request.credential_configuration_id {
+        if !access.credential_identifiers.is_empty() {
+            return Err(vci_error(
+                400,
+                "invalid_credential_request",
+                "Credential identifier is required for this access token.",
+            ));
+        }
         return access
             .configuration_ids
             .iter()
@@ -1637,16 +1697,35 @@ fn resolve_configuration_id(
             });
     }
     let identifier = request.credential_identifier.as_ref().expect("validated");
-    access
+    let Some(configuration_id) = access
         .credential_identifiers
         .iter()
         .find(|allowed| *allowed == identifier)
-        .map(|_| identifier.0.clone())
+        .and_then(openid4vci_configuration_id_from_identifier)
+        .or_else(|| {
+            access
+                .configuration_ids
+                .iter()
+                .any(|allowed| allowed == &identifier.0)
+                .then(|| identifier.0.clone())
+        })
+    else {
+        return Err(vci_error(
+            400,
+            "unknown_credential_identifier",
+            "Credential identifier is not authorized.",
+        ));
+    };
+    access
+        .configuration_ids
+        .iter()
+        .any(|allowed| allowed == &configuration_id)
+        .then_some(configuration_id)
         .ok_or_else(|| {
             vci_error(
                 400,
                 "unknown_credential_identifier",
-                "Credential identifier is not authorized.",
+                "Credential identifier does not match an authorized configuration.",
             )
         })
 }

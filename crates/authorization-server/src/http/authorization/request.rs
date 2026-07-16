@@ -495,11 +495,10 @@ async fn authorize_request_with_context(
             selected
                 .into_iter()
                 .map(|credential_configuration_id| {
-                    serde_json::json!({
-                        "type": "openid_credential",
-                        "credential_configuration_id": credential_configuration_id,
-                        "locations": [context.config.issuer.as_ref()],
-                    })
+                    crate::domain::openid4vci_authorization_detail(
+                        context.config.issuer.as_ref(),
+                        &credential_configuration_id,
+                    )
                 })
                 .collect(),
         );

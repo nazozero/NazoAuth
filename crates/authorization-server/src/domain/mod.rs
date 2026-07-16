@@ -72,6 +72,7 @@ pub(crate) use openid4vc::{
 };
 pub(crate) use openid4vc_endpoints::{
     PresentationVerifierConfig, ServerCredentialIssuerOperations, ServerPresentationOperations,
+    openid4vci_authorization_detail,
 };
 pub(crate) use passkey::PasskeyOperationsProvider;
 pub(crate) use password_login::ServerPasswordLoginOperations;
