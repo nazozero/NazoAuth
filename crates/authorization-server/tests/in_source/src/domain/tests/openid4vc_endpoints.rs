@@ -135,13 +135,17 @@ fn vci_authorization_detail_contains_final_credential_identifier() {
 fn vci_token_dpop_targets_include_public_issuer_endpoint() {
     assert_eq!(
         token_endpoint_dpop_target_uris("https://auth.nazo.run/", "https://nginx:8443/token"),
-        vec![
-            "https://auth.nazo.run/token".to_owned(),
-            "https://nginx:8443/token".to_owned(),
-        ]
+        vec!["https://auth.nazo.run/token".to_owned()]
     );
     assert_eq!(
         token_endpoint_dpop_target_uris("https://auth.nazo.run", "https://auth.nazo.run/token"),
+        vec!["https://auth.nazo.run/token".to_owned()]
+    );
+    assert_eq!(
+        token_endpoint_dpop_target_uris(
+            "https://auth.nazo.run",
+            "https://auth.nazo.runhttps://auth.nazo.run/token"
+        ),
         vec!["https://auth.nazo.run/token".to_owned()]
     );
 }

@@ -93,14 +93,21 @@ fn openid4vci_configuration_id_from_identifier(
 }
 
 fn token_endpoint_dpop_target_uris(issuer: &str, request_url: &str) -> Vec<String> {
-    [
-        request_url.to_owned(),
-        format!("{}/token", issuer.trim_end_matches('/')),
-    ]
-    .into_iter()
-    .collect::<BTreeSet<_>>()
-    .into_iter()
-    .collect()
+    let public = format!("{}/token", issuer.trim_end_matches('/'));
+    let trusted_request_url = url::Url::parse(request_url).ok().and_then(|request| {
+        let issuer = url::Url::parse(issuer).ok()?;
+        (request.scheme() == issuer.scheme()
+            && request.host_str() == issuer.host_str()
+            && request.port_or_known_default() == issuer.port_or_known_default()
+            && request.path() == "/token")
+            .then(|| request_url.to_owned())
+    });
+    [Some(public), trusted_request_url]
+        .into_iter()
+        .flatten()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }
 
 #[derive(Clone)]
