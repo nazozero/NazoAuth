@@ -145,6 +145,17 @@ class Openid4vcDriver:
             return
         format_name = str(variant.get("credential_format", "sd_jwt_vc"))
         dcql_format = "mso_mdoc" if format_name == "iso_mdl" else "dc+sd-jwt"
+        credential_type_values = verifier.get("credential_type_values")
+        if not isinstance(credential_type_values, dict):
+            raise RuntimeError("verifier credential_type_values are required")
+        credential_type = credential_type_values.get(format_name)
+        if not isinstance(credential_type, str) or not credential_type:
+            raise RuntimeError(f"verifier credential type is missing for {format_name}")
+        credential_meta = (
+            {"doctype_value": credential_type}
+            if dcql_format == "mso_mdoc"
+            else {"vct_values": [credential_type]}
+        )
         prefix = str(variant.get("client_id_prefix", "x509_hash"))
         method = str(variant.get("request_method", "request_uri_signed"))
         response_mode = str(variant.get("response_mode", "direct_post.jwt" if haip else "direct_post"))
@@ -159,7 +170,12 @@ class Openid4vcDriver:
                 "wallet_authorization_endpoint": wallet_endpoint,
                 "dcql_query": {
                     "credentials": [
-                        {"id": "credential", "format": dcql_format, "require_cryptographic_holder_binding": True}
+                        {
+                            "id": "credential",
+                            "format": dcql_format,
+                            "meta": credential_meta,
+                            "require_cryptographic_holder_binding": True,
+                        }
                     ]
                 },
                 "haip": haip,
