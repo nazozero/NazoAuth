@@ -1763,6 +1763,31 @@ fn oauth_error_code(response: &HttpResponse) -> String {
 }
 
 #[test]
+fn pre_authorized_token_dpop_nonce_error_returns_nonce_challenge_header() {
+    let response = pre_authorized_token_error(nazo_openid4vc_http_actix::CredentialHttpError {
+        status: 400,
+        error: "use_dpop_nonce",
+        description: "Credential issuer requires nonce in DPoP proof.",
+        dpop_nonce: Some("issuer-nonce-1".to_owned()),
+    });
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(&response), "use_dpop_nonce");
+    assert_eq!(
+        response
+            .headers()
+            .get(header::HeaderName::from_static("dpop-nonce")),
+        Some(&header::HeaderValue::from_static("issuer-nonce-1"))
+    );
+    assert_eq!(
+        response.headers().get(header::WWW_AUTHENTICATE),
+        Some(&header::HeaderValue::from_static(
+            r#"DPoP error="use_dpop_nonce""#
+        ))
+    );
+}
+
+#[test]
 fn missing_client_dpop_authorization_code_holder_uses_invalid_grant() {
     let response = authorization_code_holder_missing_client_error(true, false)
         .expect("dpop holder binding should return an error");
