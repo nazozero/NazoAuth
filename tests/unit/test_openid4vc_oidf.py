@@ -349,7 +349,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                 ],
             )
-            self.assertEqual(len(expected_warnings), 8)
+            self.assertEqual(len(expected_warnings), 4)
             self.assertEqual(
                 {
                     item["configuration-filename"]
@@ -357,15 +357,21 @@ class Openid4vcOidfTests(unittest.TestCase):
                     if item["test-name"] == module.VCI_REFRESH_TOKEN_MODULE
                 },
                 {
-                    "openid4vc-vci-sd-wallet-plain.json",
-                    "openid4vc-vci-mdoc-wallet-encrypted.json",
-                    "openid4vc-vci-sd-issuer-encrypted.json",
-                    "openid4vc-vci-mdoc-issuer-plain.json",
                     "openid4vc-vci-haip-sd-wallet.json",
                     "openid4vc-vci-haip-mdoc-wallet.json",
                     "openid4vc-vci-haip-sd-issuer.json",
                     "openid4vc-vci-haip-mdoc-issuer.json",
                 },
+            )
+            self.assertFalse(
+                any(
+                    item["configuration-filename"].startswith("openid4vc-vci-sd-wallet")
+                    or item["configuration-filename"].startswith("openid4vc-vci-mdoc-wallet")
+                    or item["configuration-filename"].startswith("openid4vc-vci-sd-issuer")
+                    or item["configuration-filename"].startswith("openid4vc-vci-mdoc-issuer")
+                    for item in expected_warnings
+                    if "haip" not in item["configuration-filename"]
+                )
             )
             self.assertFalse(
                 any(
