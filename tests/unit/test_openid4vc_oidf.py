@@ -208,6 +208,29 @@ class Openid4vcOidfTests(unittest.TestCase):
             module.oidf.OIDF_API_SSL_CONTEXT = None
             Path(config_path).unlink(missing_ok=True)
 
+    def test_driver_callback_get_uses_oidf_ssl_context(self):
+        module = load("run_openid4vc_conformance.py")
+        context = object()
+        module.oidf.OIDF_API_SSL_CONTEXT = context
+
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_):
+                return None
+
+            def read(self):
+                return b""
+
+        try:
+            with patch.object(module.urllib.request, "urlopen", return_value=Response()) as urlopen:
+                module.get_url("https://localhost:8443/test/a/alias/callback")
+
+            self.assertIs(urlopen.call_args.kwargs["context"], context)
+        finally:
+            module.oidf.OIDF_API_SSL_CONTEXT = None
+
     def test_suite_internal_nginx_urls_are_rewritten_to_control_plane(self):
         module = load("run_openid4vc_conformance.py")
 
