@@ -390,12 +390,12 @@ fn credential_error(error: CredentialHttpError) -> HttpResponse {
     let mut response = HttpResponse::build(status);
     response.insert_header((header::CACHE_CONTROL, "no-store"));
     if status == actix_web::http::StatusCode::UNAUTHORIZED {
-        let scheme = if matches!(error.error, "use_dpop_nonce" | "invalid_dpop_proof") {
-            "DPoP"
+        let challenge = if matches!(error.error, "use_dpop_nonce" | "invalid_dpop_proof") {
+            format!("DPoP error=\"{}\"", error.error)
         } else {
-            "Bearer"
+            "Bearer".to_owned()
         };
-        response.insert_header((header::WWW_AUTHENTICATE, scheme));
+        response.insert_header((header::WWW_AUTHENTICATE, challenge));
     }
     if let Some(nonce) = error.dpop_nonce {
         response.insert_header(("DPoP-Nonce", nonce));

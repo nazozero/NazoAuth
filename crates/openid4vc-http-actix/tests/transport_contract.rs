@@ -117,6 +117,69 @@ impl PresentationOperations for Verifier {
     }
 }
 
+struct DpopNonceIssuer;
+
+impl CredentialIssuerOperations for DpopNonceIssuer {
+    fn metadata(
+        &self,
+    ) -> CredentialIssuerFuture<'_, Result<CredentialIssuerMetadata, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn offer<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialOffer, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn nonce(
+        &self,
+        _: Option<&str>,
+    ) -> CredentialIssuerFuture<'_, Result<String, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn credential<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: CredentialRequestBody<CredentialRequest>,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+        Box::pin(async {
+            Err(CredentialHttpError {
+                status: 401,
+                error: "use_dpop_nonce",
+                description: "Credential issuer requires nonce in DPoP proof.",
+                dpop_nonce: Some("resource-nonce".to_owned()),
+            })
+        })
+    }
+    fn deferred<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: CredentialRequestBody<DeferredCredentialRequest>,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn notify<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: NotificationRequest,
+    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn pre_authorized_token<'a>(
+        &'a self,
+        _: PreAuthorizedTokenRequest,
+    ) -> CredentialIssuerFuture<'a, Result<PreAuthorizedTokenResponse, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn create_offer<'a>(
+        &'a self,
+        _: CreateCredentialOfferRequest,
+    ) -> CredentialIssuerFuture<'a, Result<CreateCredentialOfferResponse, CredentialHttpError>>
+    {
+        Box::pin(async { unreachable!() })
+    }
+}
+
 #[actix_web::test]
 async fn management_endpoints_fail_closed_without_exact_bearer_token() {
     let issuer = web::Data::new(CredentialIssuerEndpoint::new(
@@ -161,6 +224,41 @@ async fn management_endpoints_fail_closed_without_exact_bearer_token() {
             "Bearer"
         );
     }
+}
+
+#[actix_web::test]
+async fn credential_endpoint_preserves_dpop_nonce_challenge_error() {
+    let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
+        Arc::new(DpopNonceIssuer),
+        b"management-token".to_vec(),
+    ));
+    let app = test::init_service(
+        App::new()
+            .app_data(endpoint)
+            .route("/credential", web::post().to(credential)),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/credential")
+            .insert_header(("authorization", "DPoP access-token"))
+            .insert_header(("DPoP", "proof.jwt"))
+            .set_json(json!({"credential_configuration_id":"pid","proof":{"proof_type":"jwt","jwt":"proof"}}))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response.headers().get("www-authenticate").unwrap(),
+        r#"DPoP error="use_dpop_nonce""#
+    );
+    assert_eq!(
+        response.headers().get("dpop-nonce").unwrap(),
+        "resource-nonce"
+    );
 }
 
 #[actix_web::test]
