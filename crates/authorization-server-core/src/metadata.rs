@@ -41,6 +41,7 @@ pub struct MetadataCapabilities {
     pub native_sso: bool,
     pub frontchannel_logout: bool,
     pub session_management: bool,
+    pub openid4vci_issuer: bool,
 }
 
 impl MetadataCapabilities {
@@ -66,6 +67,10 @@ impl MetadataCapabilities {
         if ciba {
             grant_types.push(GrantType::Ciba.as_str());
         }
+        let openid4vci_issuer = visible(ModuleId::Openid4vciIssuer);
+        if openid4vci_issuer {
+            grant_types.push("urn:ietf:params:oauth:grant-type:pre-authorized_code");
+        }
 
         Self {
             grant_types,
@@ -80,6 +85,7 @@ impl MetadataCapabilities {
             native_sso: visible(ModuleId::NativeSso),
             frontchannel_logout: visible(ModuleId::FrontchannelLogout),
             session_management: visible(ModuleId::SessionManagement),
+            openid4vci_issuer,
         }
     }
 }

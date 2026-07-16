@@ -275,6 +275,110 @@ class RunOidfConformanceTests(unittest.TestCase):
             ),
         )
 
+    def test_expected_warning_accepts_oidf_start_block_log_marker(self):
+        module = load_runner_module()
+        info = {
+            "alias": "vci-alias",
+            "testName": "fapi2-security-profile-final-refresh-token",
+            "variant": {
+                "client_auth_type": "client_attestation",
+                "fapi_profile": "vci_haip",
+                "vci_grant_type": "authorization_code",
+            },
+        }
+        logs = [
+            {
+                "blockId": "refresh-token",
+                "src": "-START-BLOCK-",
+                "msg": "Check for refresh token",
+            },
+            {
+                "blockId": "refresh-token",
+                "result": "WARNING",
+                "src": "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken",
+                "msg": "The server configuration supports refresh tokens.",
+            },
+        ]
+        context = (
+            "fapi2-security-profile-final-refresh-token",
+            tuple(sorted(info["variant"].items())),
+            "Check for refresh token",
+            "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken",
+        )
+        allowed = {"vci-alias": frozenset({context})}
+
+        self.assertIsNone(
+            module.oidf_log_failure(
+                "module-id",
+                logs,
+                info=info,
+                allowed_expected_warnings_by_alias=allowed,
+            )
+        )
+        self.assertTrue(module.oidf_log_has_allowed_expected_warning(info, logs, allowed))
+
+    def test_inspect_state_applies_expected_warning_context_to_final_log_scan(self):
+        module = load_runner_module()
+        info = {
+            "_id": "module-id",
+            "alias": "vci-alias",
+            "testName": "fapi2-security-profile-final-refresh-token",
+            "status": "FINISHED",
+            "result": "PASSED",
+            "variant": {
+                "client_auth_type": "client_attestation",
+                "fapi_profile": "vci_haip",
+                "vci_grant_type": "authorization_code",
+            },
+        }
+        logs = [
+            {
+                "blockId": "refresh-token",
+                "src": "-START-BLOCK-",
+                "msg": "Check for refresh token",
+            },
+            {
+                "blockId": "refresh-token",
+                "result": "WARNING",
+                "src": "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken",
+                "msg": "The server configuration supports refresh tokens.",
+            },
+        ]
+        context = (
+            "fapi2-security-profile-final-refresh-token",
+            tuple(sorted(info["variant"].items())),
+            "Check for refresh token",
+            "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken",
+        )
+
+        with (
+            mock.patch.object(
+                module,
+                "fetch_alias_plans",
+                return_value=[
+                    {
+                        "_id": "plan-id",
+                        "planName": "oid4vci-1_0-issuer-test-plan",
+                        "modules": [{"instances": ["module-id"]}],
+                    }
+                ],
+            ),
+            mock.patch.object(
+                module,
+                "oidf_api_request",
+                side_effect=[(200, info), (200, logs)],
+            ),
+        ):
+            failure = module.inspect_oidf_state(
+                "https://suite.example",
+                "token",
+                {"vci-alias"},
+                final=True,
+                allowed_expected_warnings_by_alias={"vci-alias": frozenset({context})},
+            )
+
+        self.assertIsNone(failure)
+
     def test_expected_tls_warning_file_rejects_wildcards(self):
         module = load_runner_module()
         payload = [

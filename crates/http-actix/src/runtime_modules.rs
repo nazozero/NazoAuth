@@ -366,6 +366,8 @@ fn parse_module_id(value: &str) -> Option<ModuleId> {
         "native_sso" => Some(ModuleId::NativeSso),
         "frontchannel_logout" => Some(ModuleId::FrontchannelLogout),
         "session_management" => Some(ModuleId::SessionManagement),
+        "openid4vci_issuer" => Some(ModuleId::Openid4vciIssuer),
+        "openid4vp_verifier" => Some(ModuleId::Openid4vpVerifier),
         _ => None,
     }
 }
@@ -386,6 +388,8 @@ const fn module_id_name(value: ModuleId) -> &'static str {
         ModuleId::NativeSso => "native_sso",
         ModuleId::FrontchannelLogout => "frontchannel_logout",
         ModuleId::SessionManagement => "session_management",
+        ModuleId::Openid4vciIssuer => "openid4vci_issuer",
+        ModuleId::Openid4vpVerifier => "openid4vp_verifier",
     }
 }
 
@@ -405,6 +409,8 @@ const fn module_description(value: ModuleId) -> &'static str {
         ModuleId::NativeSso => "Native SSO",
         ModuleId::FrontchannelLogout => "Front-Channel Logout",
         ModuleId::SessionManagement => "OIDC Session Management",
+        ModuleId::Openid4vciIssuer => "OpenID4VCI Credential Issuer",
+        ModuleId::Openid4vpVerifier => "OpenID4VP Verifier",
     }
 }
 

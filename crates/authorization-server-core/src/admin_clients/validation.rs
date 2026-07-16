@@ -20,6 +20,7 @@ const SUPPORTED_TOKEN_AUTH_METHODS: &[&str] = &[
     "private_key_jwt",
     "tls_client_auth",
     "self_signed_tls_client_auth",
+    "attest_jwt_client_auth",
 ];
 const SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS: &[&str] = &["RSA-OAEP-256"];
 const SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS: &[&str] = &["A256GCM"];

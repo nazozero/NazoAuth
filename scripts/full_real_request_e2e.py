@@ -2953,7 +2953,15 @@ def run() -> None:
             },
             timeout=10,
         )
-        expect_status("POST /par unsupported parameter rejected", par_unknown, 400)
+        par_unknown_body = expect_json(
+            expect_status("POST /par unrecognized parameter ignored", par_unknown, 201)
+        )
+        check(
+            "par_unrecognized_parameter_ignored",
+            str(par_unknown_body.get("request_uri", "")).startswith(
+                "urn:ietf:params:oauth:request_uri:"
+            ),
+        )
 
         par_bad_redirect = requests.post(
             f"{BASE_URL}/par",

@@ -70,10 +70,12 @@ pub enum ModuleId {
     NativeSso,
     FrontchannelLogout,
     SessionManagement,
+    Openid4vciIssuer,
+    Openid4vpVerifier,
 }
 
 impl ModuleId {
-    pub const ALL: [Self; 14] = [
+    pub const ALL: [Self; 16] = [
         Self::DeviceAuthorization,
         Self::TokenExchange,
         Self::JwtBearerGrant,
@@ -88,6 +90,8 @@ impl ModuleId {
         Self::NativeSso,
         Self::FrontchannelLogout,
         Self::SessionManagement,
+        Self::Openid4vciIssuer,
+        Self::Openid4vpVerifier,
     ];
 }
 

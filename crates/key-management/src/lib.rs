@@ -17,6 +17,6 @@ pub use client_registration::{
 pub use model::TestSigningBehavior;
 pub use model::{
     ExternalKeyRegistration, HttpSigningLease, KeyManager, KeyRecord, KeyRecordStatus, KeySettings,
-    KeySnapshot, KeyState, ManagedKey, VerificationKey,
+    KeySnapshot, KeyState, LocalKeyRegistration, ManagedKey, VerificationKey,
 };
 pub use store::{signing_algorithm_from_name, signing_algorithm_name};

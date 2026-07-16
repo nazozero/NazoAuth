@@ -24,6 +24,7 @@ const AUTHORIZATION_REQUEST_PARAMETERS: &[&str] = &[
     "scope",
     "resource",
     "authorization_details",
+    "issuer_state",
     "state",
     "code_challenge",
     "code_challenge_method",
@@ -504,7 +505,10 @@ pub fn validate_raw_par_admission(
         }
         if !matches!(
             policy.client_authentication_method,
-            "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
+            "private_key_jwt"
+                | "tls_client_auth"
+                | "self_signed_tls_client_auth"
+                | "attest_jwt_client_auth"
         ) {
             return Err(ParAdmissionError::StrongClientAuthenticationRequired);
         }

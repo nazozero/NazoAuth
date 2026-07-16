@@ -6,8 +6,10 @@ use argon2::{
 };
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, KeyInit, Mac};
-use nazo_auth::{OAuthClient, ValidatedClientRegistration};
 use nazo_oauth_server::config::{ConfigSource, database_url};
+use nazo_oauth_server::oidf_seed::client::{
+    DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID, OidfClientSpec, oauth_client,
+};
 use nazo_oauth_server::oidf_seed::{
     callback_uris, callback_uris_for_aliases, config::client_scopes, config::mtls_thumbprint,
     config::plan_config_files, config::public_jwks, config::read_plan_config, config::string_value,
@@ -17,11 +19,6 @@ use nazo_postgres::{OidfSeedClient, OidfSeedUser};
 use serde_json::{Value, json};
 use sha2::Sha256;
 use std::{collections::BTreeSet, env, path::Path};
-use uuid::Uuid;
-
-const DEFAULT_TENANT_ID: &str = "00000000-0000-0000-0000-000000000001";
-const DEFAULT_REALM_ID: &str = "00000000-0000-0000-0000-000000000002";
-const DEFAULT_ORGANIZATION_ID: &str = "00000000-0000-0000-0000-000000000003";
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone, Copy, Debug)]
@@ -48,30 +45,7 @@ struct FapiClientSeed {
     backchannel_authentication_request_signing_alg: Option<String>,
 }
 
-struct ClientUpsert<'a> {
-    client_id: &'a str,
-    client_name: &'a str,
-    auth_method: &'a str,
-    redirect_uris: &'a Value,
-    post_logout_redirect_uris: &'a Value,
-    scopes: &'a Value,
-    allowed_audiences: &'a Value,
-    grant_types: &'a Value,
-    require_dpop_bound_tokens: bool,
-    allow_client_assertion_audience_array: bool,
-    allow_client_assertion_endpoint_audience: bool,
-    require_par_request_object: bool,
-    require_mtls_bound_tokens: bool,
-    tls_client_auth_subject_dn: Option<&'a str>,
-    tls_client_auth_cert_sha256: Option<&'a str>,
-    frontchannel_logout_uri: Option<&'a str>,
-    frontchannel_logout_session_required: bool,
-    jwks: Option<&'a Value>,
-    authorization_signed_response_alg: Option<&'a str>,
-    backchannel_token_delivery_mode: &'a str,
-    backchannel_client_notification_endpoint: Option<&'a str>,
-    backchannel_authentication_request_signing_alg: Option<&'a str>,
-}
+type ClientUpsert<'a> = OidfClientSpec<'a>;
 
 fn env_or(name: &str, default: &str) -> String {
     env::var(name)
@@ -103,79 +77,13 @@ fn hash_client_secret(secret: &str, pepper: &str) -> String {
     )
 }
 
-fn seeded_oauth_client(client: ClientUpsert<'_>) -> anyhow::Result<OAuthClient> {
-    let string_array = |value: &Value| -> anyhow::Result<Vec<String>> {
-        serde_json::from_value(value.clone()).map_err(Into::into)
-    };
-    Ok(OAuthClient {
-        id: Uuid::now_v7(),
-        tenant_id: DEFAULT_TENANT_ID.parse()?,
-        realm_id: DEFAULT_REALM_ID.parse()?,
-        organization_id: DEFAULT_ORGANIZATION_ID.parse()?,
-        registration: ValidatedClientRegistration {
-            client_id: client.client_id.to_owned(),
-            client_name: client.client_name.to_owned(),
-            client_type: "confidential".to_owned(),
-            redirect_uris: string_array(client.redirect_uris)?,
-            post_logout_redirect_uris: string_array(client.post_logout_redirect_uris)?,
-            scopes: string_array(client.scopes)?,
-            allowed_audiences: string_array(client.allowed_audiences)?,
-            grant_types: string_array(client.grant_types)?,
-            token_endpoint_auth_method: client.auth_method.to_owned(),
-            subject_type: "public".to_owned(),
-            sector_identifier_uri: None,
-            sector_identifier_host: None,
-            require_dpop_bound_tokens: client.require_dpop_bound_tokens,
-            allow_client_assertion_audience_array: client.allow_client_assertion_audience_array,
-            allow_client_assertion_endpoint_audience: client
-                .allow_client_assertion_endpoint_audience,
-            require_par_request_object: client.require_par_request_object,
-            backchannel_logout_uri: None,
-            backchannel_logout_session_required: true,
-            backchannel_token_delivery_mode: client.backchannel_token_delivery_mode.to_owned(),
-            backchannel_client_notification_endpoint: client
-                .backchannel_client_notification_endpoint
-                .map(ToOwned::to_owned),
-            backchannel_authentication_request_signing_alg: client
-                .backchannel_authentication_request_signing_alg
-                .map(ToOwned::to_owned),
-            backchannel_user_code_parameter: false,
-            frontchannel_logout_uri: client.frontchannel_logout_uri.map(ToOwned::to_owned),
-            frontchannel_logout_session_required: client.frontchannel_logout_session_required,
-            tls_client_auth_subject_dn: client.tls_client_auth_subject_dn.map(ToOwned::to_owned),
-            tls_client_auth_cert_sha256: client.tls_client_auth_cert_sha256.map(ToOwned::to_owned),
-            tls_client_auth_san_dns: Vec::new(),
-            tls_client_auth_san_uri: Vec::new(),
-            tls_client_auth_san_ip: Vec::new(),
-            tls_client_auth_san_email: Vec::new(),
-            jwks_uri: None,
-            jwks: client.jwks.cloned(),
-            request_uris: Vec::new(),
-            initiate_login_uri: None,
-            presentation: nazo_auth::ClientPresentationMetadata::default(),
-            introspection_encrypted_response_alg: None,
-            introspection_encrypted_response_enc: None,
-            userinfo_signed_response_alg: None,
-            userinfo_encrypted_response_alg: None,
-            userinfo_encrypted_response_enc: None,
-            authorization_signed_response_alg: client
-                .authorization_signed_response_alg
-                .map(ToOwned::to_owned),
-            authorization_encrypted_response_alg: None,
-            authorization_encrypted_response_enc: None,
-        },
-        require_mtls_bound_tokens: client.require_mtls_bound_tokens,
-        is_active: true,
-    })
-}
-
 fn push_client(
     clients: &mut Vec<OidfSeedClient>,
     client: ClientUpsert<'_>,
     client_secret_hash: Option<&str>,
 ) -> anyhow::Result<()> {
     clients.push(OidfSeedClient {
-        client: seeded_oauth_client(client)?,
+        client: oauth_client(client)?,
         client_secret_hash: client_secret_hash.map(ToOwned::to_owned),
     });
     Ok(())
@@ -664,7 +572,7 @@ mod tests {
     fn seeded_client_preserves_the_selected_jarm_algorithm() {
         let empty = json!([]);
         let scopes = json!(["openid"]);
-        let client = seeded_oauth_client(ClientUpsert {
+        let client = oauth_client(ClientUpsert {
             client_id: "jarm-client",
             client_name: "JARM client",
             auth_method: "private_key_jwt",

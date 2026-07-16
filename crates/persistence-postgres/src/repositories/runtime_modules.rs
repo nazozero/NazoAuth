@@ -694,6 +694,8 @@ fn parse_module_id(value: &str) -> Result<ModuleId, RepositoryError> {
         "native_sso" => Ok(ModuleId::NativeSso),
         "frontchannel_logout" => Ok(ModuleId::FrontchannelLogout),
         "session_management" => Ok(ModuleId::SessionManagement),
+        "openid4vci_issuer" => Ok(ModuleId::Openid4vciIssuer),
+        "openid4vp_verifier" => Ok(ModuleId::Openid4vpVerifier),
         _ => Err(RepositoryError::Consistency(format!(
             "unknown runtime module id: {value}"
         ))),

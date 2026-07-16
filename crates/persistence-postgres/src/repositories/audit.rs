@@ -494,6 +494,8 @@ pub(super) const fn module_id(value: nazo_runtime_modules::ModuleId) -> &'static
         ModuleId::NativeSso => "native_sso",
         ModuleId::FrontchannelLogout => "frontchannel_logout",
         ModuleId::SessionManagement => "session_management",
+        ModuleId::Openid4vciIssuer => "openid4vci_issuer",
+        ModuleId::Openid4vpVerifier => "openid4vp_verifier",
     }
 }
 

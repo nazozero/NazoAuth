@@ -187,15 +187,37 @@ where
         return Ok(None);
     };
 
-    validate_nonce(store, nonce_policy, verified.nonce.as_deref()).await?;
+    let replay_scope = replay_scope(&request, &verified)?;
     match store
-        .consume_replay(&verified.jkt, &verified.jti, DPOP_REPLAY_TTL_SECONDS)
+        .consume_replay(&replay_scope, &verified.jti, DPOP_REPLAY_TTL_SECONDS)
         .await
     {
-        Ok(true) => Ok(Some(verified.jkt)),
+        Ok(true) => {
+            validate_nonce(store, nonce_policy, verified.nonce.as_deref()).await?;
+            Ok(Some(verified.jkt))
+        }
         Ok(false) => Err(DpopError::ReplayDetected(verified.audit)),
         Err(DpopStateStoreError) => Err(DpopError::InvalidProof),
     }
+}
+
+fn replay_scope(
+    request: &DpopProofRequest<'_>,
+    verified: &VerifiedDpopProof,
+) -> Result<String, DpopError> {
+    if request.access_token.is_none() {
+        return Ok(verified.jkt.clone());
+    }
+    let target = request
+        .target_uris
+        .first()
+        .ok_or(DpopError::InvalidProof)
+        .and_then(|target| normalize_htu(target))?;
+    let material = format!("{}:{target}", request.method.to_ascii_uppercase());
+    Ok(format!(
+        "resource:{}",
+        blake3::hash(material.as_bytes()).to_hex()
+    ))
 }
 
 pub async fn issue_authorization_server_dpop_nonce<S>(store: &S) -> Result<String, DpopError>

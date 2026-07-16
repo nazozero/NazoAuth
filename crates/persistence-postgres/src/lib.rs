@@ -19,7 +19,9 @@ mod repositories;
 pub(crate) mod rows;
 pub(crate) mod schema;
 
-pub use oidf_seed::{OidfSeedClient, OidfSeedUser, seed_oidf_atomically};
+pub use oidf_seed::{
+    OidfSeedClient, OidfSeedUser, seed_oidf_atomically, seed_oidf_clients_atomically,
+};
 pub use pool::{
     DbConnection, DbPool, DbPoolMetrics, cleanup_expired_security_state, create_pool,
     db_pool_metrics, get_conn, run_pending_migrations,
@@ -27,6 +29,7 @@ pub use pool::{
 pub use repositories::{
     AccessRequestRepository, AuditRepository, AuthorizationFlowRepository, AuthorizationRepository,
     FederationRepository, GrantAuthorization, GrantRepository, MfaRepository,
-    OAuthClientRepository, PasskeyRepository, RuntimeModuleEventPage, RuntimeModuleRepository,
-    ScimEventRepository, ScimRepository, TokenIssuanceRepository, TokenRepository, UserRepository,
+    OAuthClientRepository, Openid4vciRepository, Openid4vpRepository, PasskeyRepository,
+    RuntimeModuleEventPage, RuntimeModuleRepository, ScimEventRepository, ScimRepository,
+    TokenIssuanceRepository, TokenRepository, UserRepository,
 };

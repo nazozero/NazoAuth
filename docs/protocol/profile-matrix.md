@@ -299,13 +299,16 @@ token type, SCIM capability, credential role, or discovery field.
 
 Separately admitted implementations may add their own default-closed module or
 baseline capability after their entry gate is complete; this paragraph does
-not override the implemented RFC 9865, RFC 9967, or bounded HTTP Signatures
-surfaces described below.
+not override the implemented RFC 9865, RFC 9967, bounded HTTP Signatures, or
+separately admitted OpenID4VC Issuer/Verifier surfaces described below.
 
 The dated [M8 governance review](../conformance/2026-07-11-m8-watchlist-governance.md)
 defines the admission and isolation requirements for FAPI HTTP Signatures,
 RFC 9865/9967, browser-based application guidance, client attestation,
-Transaction Tokens, Grant Management, and OpenID4VC. Until a candidate's
+Transaction Tokens, Grant Management, and the historical OpenID4VC entry gate.
+OpenID4VCI Issuer and OpenID4VP Verifier subsequently completed that separate
+gate; their current boundary is documented in
+[`openid4vc-final-matrix.md`](../conformance/openid4vc-final-matrix.md). Until a remaining candidate's
 separate implementation and negative tests complete, all existing baseline,
 FAPI2, Message Signing, CIBA, SCIM, and external-provider profile behavior must
 be byte-for-byte unaffected by selecting any existing runtime profile.

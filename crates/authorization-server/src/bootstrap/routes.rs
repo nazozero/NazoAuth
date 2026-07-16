@@ -17,6 +17,11 @@ use nazo_http_actix::{
     client_configuration_delete, client_configuration_get, client_configuration_put,
     dynamic_client_registration, userinfo,
 };
+use nazo_openid4vc_http_actix::{
+    create_credential_offer, create_presentation, credential, credential_issuer_metadata,
+    credential_nonce, credential_offer, deferred_credential, notification, presentation_complete,
+    presentation_request, presentation_response, presentation_result,
+};
 
 use crate::http::admin::{
     access_requests::{
@@ -84,6 +89,32 @@ pub(crate) fn configure(
     settings: &Settings,
     perf_metrics_enabled: bool,
 ) {
+    // Actix scopes consume every request under their prefix, including paths
+    // that are not registered inside the scope. Keep all /.well-known routes
+    // in this single scope so later top-level resources cannot be shadowed.
+    let well_known = web::scope("/.well-known")
+        .wrap(cors::cors_well_known(settings))
+        .route("/openid-configuration", web::get().to(discovery))
+        .route(
+            "/oauth-authorization-server",
+            web::get().to(oauth_authorization_server_metadata),
+        )
+        .route(
+            "/oauth-protected-resource",
+            web::get().to(oauth_protected_resource_metadata),
+        )
+        .route(
+            "/oauth-protected-resource/{tail:.*}",
+            web::get().to(oauth_protected_resource_metadata),
+        );
+    let well_known = if settings.modules.enable_openid4vci_issuer {
+        well_known.route(
+            "/openid-credential-issuer",
+            web::get().to(credential_issuer_metadata),
+        )
+    } else {
+        well_known
+    };
     cfg.service(
         web::resource("/health")
             .wrap(cors::cors_well_known(settings))
@@ -139,23 +170,7 @@ pub(crate) fn configure(
                 .route(web::post().to(fapi_resource)),
         )
         // CORS: cors_well_known — /.well-known/*
-        .service(
-            web::scope("/.well-known")
-                .wrap(cors::cors_well_known(settings))
-                .route("/openid-configuration", web::get().to(discovery))
-                .route(
-                    "/oauth-authorization-server",
-                    web::get().to(oauth_authorization_server_metadata),
-                )
-                .route(
-                    "/oauth-protected-resource",
-                    web::get().to(oauth_protected_resource_metadata),
-                )
-                .route(
-                    "/oauth-protected-resource/{tail:.*}",
-                    web::get().to(oauth_protected_resource_metadata),
-                ),
-        )
+        .service(well_known)
         // CORS: cors_well_known — /jwks.json
         .service(
             web::resource("/jwks.json")
@@ -293,6 +308,46 @@ pub(crate) fn configure(
                 .route(web::put().to(client_configuration_put))
                 .route(web::delete().to(client_configuration_delete)),
         );
+    if settings.modules.enable_openid4vci_issuer {
+        cfg.route(
+            "/openid4vci/offers",
+            web::post().to(create_credential_offer),
+        )
+        .route(
+            "/openid4vci/offers/{offer_id}",
+            web::get().to(credential_offer),
+        )
+        .route("/openid4vci/nonce", web::post().to(credential_nonce))
+        .route("/openid4vci/credential", web::post().to(credential))
+        .route(
+            "/openid4vci/deferred_credential",
+            web::post().to(deferred_credential),
+        )
+        .route("/openid4vci/notification", web::post().to(notification));
+    }
+    if settings.modules.enable_openid4vp_verifier {
+        cfg.route(
+            "/openid4vp/complete/{transaction_id}",
+            web::get().to(presentation_complete),
+        );
+        cfg.route(
+            "/openid4vp/presentations",
+            web::post().to(create_presentation),
+        )
+        .service(
+            web::resource("/openid4vp/request/{transaction_id}")
+                .route(web::get().to(presentation_request))
+                .route(web::post().to(presentation_request)),
+        )
+        .route(
+            "/openid4vp/response/{transaction_id}",
+            web::post().to(presentation_response),
+        )
+        .route(
+            "/openid4vp/result/{transaction_id}",
+            web::get().to(presentation_result),
+        );
+    }
     if perf_metrics_enabled {
         cfg.route("/__perf/metrics", web::get().to(perf_metrics));
     }

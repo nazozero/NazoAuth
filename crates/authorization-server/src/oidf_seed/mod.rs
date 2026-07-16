@@ -9,7 +9,9 @@ use std::{collections::BTreeSet, env};
 const LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER: &str =
     "local-development-client-secret-pepper-00000001";
 
+pub mod client;
 pub mod config;
+pub mod openid4vc;
 
 pub fn callback_uri(suite_base_url: &str, alias: &str) -> String {
     test_endpoint_uri(suite_base_url, alias, "callback")

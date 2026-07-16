@@ -408,6 +408,9 @@ pub(crate) async fn issue_token_response_with_service(
         "expires_in": context.config.access_token_ttl_seconds,
         "scope": issue.scopes.join(" ")
     });
+    if !nazo_auth::authorization_details_empty(&issue.authorization_details) {
+        body["authorization_details"] = issue.authorization_details.clone();
+    }
     if let Some(issued_token_type) = issue.issued_token_type.as_deref() {
         body["issued_token_type"] = json!(issued_token_type);
     }

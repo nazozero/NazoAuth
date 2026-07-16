@@ -54,6 +54,8 @@ impl ModuleCatalog {
             // while allowing check_session polling for OP browser sessions that
             // already exist. Their Valkey TTL is the bounded drain deadline.
             (ModuleId::SessionManagement, drain(durations.session)),
+            (ModuleId::Openid4vciIssuer, drain(durations.refresh_token)),
+            (ModuleId::Openid4vpVerifier, drain(durations.session)),
         ];
         let specs: Vec<_> = policies
             .into_iter()

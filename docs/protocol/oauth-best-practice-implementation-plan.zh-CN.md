@@ -2,6 +2,12 @@
 
 Last reviewed: 2026-07-11.
 
+> 2026-07-16 状态更新：OpenID4VCI 1.0 Final Credential Issuer 与
+> OpenID4VP 1.0 Final Verifier 已通过独立产品边界进入默认关闭模块；不实现 Wallet
+> 角色。当前能力与 alpha 回归矩阵以
+> `docs/conformance/openid4vc-final-matrix.zh-CN.md` 为准。下方 M8 文本保留原始
+> 入场审计背景，不再表示当前实现状态。
+
 ## 文档定位
 
 本文件是 NazoAuth 的 OAuth/OIDC/FAPI 能力未来路线图，用于指导后续实现顺序、
@@ -47,7 +53,7 @@ OAuth 2.1 draft / OIDC / FAPI 2.0 / FAPI-CIBA / CIBA 相关能力，并同时支
 | CIBA / FAPI-CIBA | OpenID Connect CIBA Core 1.0 为 Final；已实现的 FAPI-CIBA 仍是 ID1 / Draft-02 兼容 profile，当前 working draft 已为 `fapi-ciba-03`（2026-06-26）。 | CIBA 默认关闭；FAPI-CIBA 做 ID1 兼容 profile；`fapi2-ciba` 只表示内部强化 profile；采用 working draft 前必须单独做 delta 审计。 |
 | OpenID Federation | OpenID Federation 1.1 与 OpenID Federation for OpenID Connect 1.1 是当前规范线。 | 当前非目标；第三方登录不依赖 OpenID Federation 信任链。 |
 | Browser-based apps | OAuth 2.0 for Browser-Based Applications 仍是 draft。 | 默认偏向 BFF/same-site session；纯 SPA token storage 是产品/部署边界。 |
-| 新兴草案 | Attestation-Based Client Authentication、Transaction Tokens、Grant Management、OpenID4VCI/VP、HTTP message signatures 等。 | 进入 watchlist；没有明确产品需求、威胁模型、metadata gating 和测试前不实现。 |
+| 新兴与相邻规范 | Attestation-Based Client Authentication、Transaction Tokens、Grant Management、OpenID4VCI/VP、HTTP message signatures 等。 | 未完成独立入场门禁的能力保持 watchlist；OpenID4VCI Issuer 与 OpenID4VP Verifier 已在 2026-07-16 以独立模块完成入场。 |
 
 ## 目标能力架构
 
@@ -406,8 +412,9 @@ M8 的完成表示三项进入实现路线的治理门禁已经审计并形成
 [`2026-07-11-m8-watchlist-governance.md`](../conformance/2026-07-11-m8-watchlist-governance.md)
 证据，不表示所有候选协议已经实现或通过认证。后续独立设计已完成 RFC 9865
 SCIM forward cursor pagination，以及默认关闭的 RFC 9967 notice-only SET
-transmitter、事务 outbox 与 RFC 8936 poll/ack/error 投递；OpenID4VCI / OpenID4VP
-需要单独产品立项。Browser-Based Applications draft-27 已完成预发布安全审计，
+transmitter、事务 outbox 与 RFC 8936 poll/ack/error 投递。OpenID4VCI Credential
+Issuer 与 OpenID4VP Verifier 后续已完成单独产品立项和实现，Wallet 角色仍不实现；
+具体边界见 `openid4vc-final-matrix.zh-CN.md`。Browser-Based Applications draft-27 已完成预发布安全审计，
 NazoAuthWeb 保持授权服务器同源前端与 server-managed session 边界（不是 BFF），第三方浏览器应用保持 public code + S256
 PKCE；最终 RFC 发布后仍必须执行差异审计。FAPI HTTP Signatures 也已作为第二个
 bounded candidate 完成 M8-01/02/03：仅在 `ENABLE_FAPI_HTTP_SIGNATURES=true`

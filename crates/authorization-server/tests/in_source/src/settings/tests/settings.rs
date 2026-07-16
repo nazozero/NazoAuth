@@ -287,6 +287,8 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(!defaults.modules.enable_ciba);
     assert!(!defaults.modules.enable_native_sso);
     assert!(!defaults.modules.enable_scim_security_events);
+    assert!(!defaults.modules.enable_openid4vci_issuer);
+    assert!(!defaults.modules.enable_openid4vp_verifier);
     assert_eq!(defaults.storage.scim_event_retention_seconds, 604_800);
     assert!(
         defaults
@@ -314,6 +316,36 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
         ("ENABLE_CIBA", "true"),
         ("ENABLE_NATIVE_SSO", "true"),
         ("ENABLE_SCIM_SECURITY_EVENTS", "true"),
+        ("ENABLE_OPENID4VCI_ISSUER", "true"),
+        ("ENABLE_OPENID4VP_VERIFIER", "true"),
+        (
+            "OPENID4VC_DATA_ENCRYPTION_KEY",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        ),
+        (
+            "OPENID4VC_SIGNING_CERTIFICATE_CHAIN_FILE",
+            "runtime/openid4vc-chain.pem",
+        ),
+        (
+            "OPENID4VC_TRUST_ANCHORS_FILE",
+            "runtime/openid4vc-roots.pem",
+        ),
+        (
+            "OPENID4VP_WALLET_AUTHORIZATION_ORIGINS",
+            "https://wallet.example",
+        ),
+        (
+            "OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON",
+            r#"{"example":{"format":"dc+sd-jwt","scope":"example","cryptographic_binding_methods_supported":["jwk"],"credential_signing_alg_values_supported":["ES256"],"proof_types_supported":{"jwt":{"proof_signing_alg_values_supported":["ES256"]}},"vct":"https://issuer.example/credentials/example"}}"#,
+        ),
+        (
+            "OPENID4VCI_ISSUER_MANAGEMENT_TOKEN",
+            "openid4vci-management-token-at-least-32-bytes",
+        ),
+        (
+            "OPENID4VP_VERIFIER_MANAGEMENT_TOKEN",
+            "openid4vp-management-token-at-least-32-bytes",
+        ),
         ("SCIM_EVENT_RETENTION_SECONDS", "86400"),
         (
             "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN",
@@ -340,6 +372,8 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert!(settings.modules.enable_ciba);
     assert!(settings.modules.enable_native_sso);
     assert!(settings.modules.enable_scim_security_events);
+    assert!(settings.modules.enable_openid4vci_issuer);
+    assert!(settings.modules.enable_openid4vp_verifier);
     assert_eq!(settings.storage.scim_event_retention_seconds, 86_400);
     assert_eq!(
         settings

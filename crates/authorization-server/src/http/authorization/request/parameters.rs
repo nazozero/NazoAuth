@@ -22,6 +22,7 @@ pub(crate) const AUTHORIZED_REQUEST_PARAMETERS: &[&str] = &[
     "scope",
     "resource",
     "authorization_details",
+    "issuer_state",
     "state",
     "code_challenge",
     "code_challenge_method",

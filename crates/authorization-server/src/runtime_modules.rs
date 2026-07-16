@@ -256,6 +256,11 @@ fn module_catalog(
     }
     catalog = catalog
         .with_dependencies(ModuleId::ScimSecurityEvents, [ModuleId::Scim])?
+        .with_dependencies(
+            ModuleId::Openid4vciIssuer,
+            [ModuleId::AuthorizationDetails, ModuleId::RequestObjects],
+        )?
+        .with_dependencies(ModuleId::Openid4vpVerifier, [ModuleId::RequestObjects])?
         .with_runtime_disable_blocked(runtime_disable_blocked);
     Ok(catalog)
 }
@@ -371,6 +376,14 @@ pub(crate) fn inherited_enabled(settings: &Settings) -> BTreeSet<ModuleId> {
         (
             ModuleId::ScimSecurityEvents,
             settings.enable_scim_security_events,
+        ),
+        (
+            ModuleId::Openid4vciIssuer,
+            settings.enable_openid4vci_issuer,
+        ),
+        (
+            ModuleId::Openid4vpVerifier,
+            settings.enable_openid4vp_verifier,
         ),
         (ModuleId::NativeSso, settings.enable_native_sso),
         (
