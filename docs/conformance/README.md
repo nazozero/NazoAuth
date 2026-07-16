@@ -23,6 +23,7 @@ in the repository.
 - Latest emerging-protocol governance review: [2026-07-11 M8 watchlist governance](2026-07-11-m8-watchlist-governance.md)
 - Latest M8 official-suite source coverage scan: [2026-07-11 OIDF v5.2.0 coverage](2026-07-11-m8-oidf-v5.2.0-coverage.md)
 - Project-owned RFC 9967 regression scope: [RFC 9967 SCIM SET black-box matrix](rfc9967-scim-set-matrix.md)
+- Latest OpenID4VC Final / HAIP alpha regression: [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
 
 The latest recorded official full-matrix suite run is the 2026-07-11 M7
 parallel-isolated run against `https://auth.nazo.run`. It ran from workflow head
@@ -58,6 +59,16 @@ The latest NI-006~NI-011 official full-matrix regression ran against
 `28648656293` completed successfully. The workflow executed 18 concurrency-safe
 plans in one job and isolated front-channel logout and session-management into
 separate browser-sensitive matrix jobs.
+
+The latest OpenID4VC Final / HAIP alpha regression ran against
+`https://auth.nazo.run` at implementation SHA
+`8b2f7a70cd4d51f4ff668ea761a6562616a90c37`. The Hostinger local official-suite
+run completed all 17 plan executions against the production target with
+`0 failures`. The GitHub official run
+[`29530484889`](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
+completed successfully, exporting 17 plan archives and 391 finished module
+logs with `0 failures` and four expected HAIP refresh-token warnings. This is
+alpha regression evidence, not an OpenID Foundation certification statement.
 
 ## Coverage Update Rule
 

@@ -64,6 +64,15 @@ OIDF Conformance Suite 固定到 v5.2.0 commit
 因此全绿只能称为“官方套件回归通过”，不能称为 OpenID Foundation 正式认证，
 也不能据此使用 OpenID Certified 标志。
 
+最新长期证据：
+
+- [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
+- Hostinger 远端本地 official-suite 运行使用 `https://auth.nazo.run` 作为被测生产目标，
+  17 个 plan 执行全部完成，`0 failures`。
+- GitHub 官方运行
+  [#29530484889](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
+  针对同一生产 origin 成功完成。
+
 正式规范：
 
 - [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html)

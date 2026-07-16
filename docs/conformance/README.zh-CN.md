@@ -28,6 +28,7 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 - 最新 M7 encrypted-response 覆盖检查：[2026-07-11 M7 encrypted response OIDF coverage](2026-07-11-m7-oidf-coverage.md)
 - 最新 M8 新兴协议治理与覆盖检查：[2026-07-11 M8 watchlist governance](2026-07-11-m8-watchlist-governance.md)
 - 项目自有 RFC 9967 回归范围：[RFC 9967 SCIM SET 黑盒矩阵](rfc9967-scim-set-matrix.md)
+- 最新 OpenID4VC Final / HAIP alpha 回归：[2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
@@ -54,6 +55,15 @@ module-level `SKIPPED` 结果。
 `28648656293` 成功完成；workflow 将 18 个可并发计划放在同一个 job 中执行，
 并将 front-channel logout 与 session-management 分拆到独立 browser-sensitive
 matrix job 中隔离执行。
+
+最新 OpenID4VC Final / HAIP alpha 回归针对 `https://auth.nazo.run` 执行，
+implementation SHA 为 `8b2f7a70cd4d51f4ff668ea761a6562616a90c37`。Hostinger
+远端本地 official-suite 运行以生产 URL 作为被测目标，17 个 plan 执行全部完成，
+`0 failures`。GitHub 官方运行
+[`29530484889`](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
+成功完成，导出 17 个 plan archives 和 391 个 finished module logs，`0 failures`，
+仅有 4 个预期 HAIP refresh-token warning。该结果是 alpha 回归证据，不是
+OpenID Foundation 正式认证声明。
 
 所有 profile 的 Request Object 都必须使用非对称签名。baseline 与 FAPI metadata 均不声明 `none`，运行时对任何客户端都拒绝 unsigned Request Object；项目遵循 RFC 9101，不保留仅为一致性套件服务的兼容旁路。
 

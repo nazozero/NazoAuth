@@ -84,6 +84,15 @@ program. A green run is therefore official-suite regression evidence: it is
 not an OpenID Foundation certification claim. No documentation or UI may use the
 OpenID Certified mark on the basis of these runs.
 
+Latest durable evidence:
+
+- [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
+- Hostinger local official-suite run used `https://auth.nazo.run` as the tested
+  production target and completed all 17 plan executions with zero failures.
+- GitHub official run
+  [#29530484889](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
+  completed successfully against the same production origin.
+
 Normative sources:
 
 - [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html)
