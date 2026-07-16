@@ -1421,7 +1421,9 @@ def oidf_failure_with_log_context(module_id: str, failure: str, logs: object) ->
     return f"{failure}; recent log context: {context[:1200]}"
 
 
-def fetch_alias_plans(base_url: str, token: str, aliases: set[str]) -> list[dict[str, object]]:
+def fetch_alias_plans(
+    base_url: str, token: str | None, aliases: set[str]
+) -> list[dict[str, object]]:
     if not aliases:
         return []
 

@@ -53,7 +53,7 @@ def get_url(url: str) -> None:
         response.read()
 
 
-def module_entries(base_url: str, token: str, aliases: set[str]) -> list[dict[str, object]]:
+def module_entries(base_url: str, token: str | None, aliases: set[str]) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
     for plan in oidf.fetch_alias_plans(base_url, token, aliases):
         plan_name = plan.get("planName")
@@ -82,8 +82,15 @@ class Openid4vcDriver:
 
     def drive_once(self) -> None:
         server = str(self.config["conformance_server"])
-        token = str(self.config.get("conformance_token") or os.environ.get("OIDF_CONFORMANCE_TOKEN", ""))
-        if not token:
+        no_api_token = self.config.get("conformance_no_api_token") is True
+        hostname = urllib.parse.urlparse(server).hostname
+        if no_api_token and hostname not in {"localhost", "127.0.0.1", "::1"}:
+            raise RuntimeError("tokenless conformance API access is restricted to loopback")
+        configured_token = str(
+            self.config.get("conformance_token") or os.environ.get("OIDF_CONFORMANCE_TOKEN", "")
+        )
+        token = None if no_api_token else configured_token
+        if token == "":
             raise RuntimeError("OIDF conformance API token is required")
         aliases = {str(value) for value in self.config["aliases"]}
         for info in module_entries(server, token, aliases):
@@ -184,6 +191,8 @@ def main() -> int:
     if not runner_args:
         fail("arguments for run_oidf_conformance.py are required after --")
     config = json.loads(Path(args.driver_config_json_file).read_text(encoding="utf-8"))
+    if "--no-api-token" in runner_args:
+        config["conformance_no_api_token"] = True
     stop = threading.Event()
     driver = Openid4vcDriver(config, stop)
     thread = threading.Thread(target=driver.run, name="openid4vc-oidf-driver", daemon=True)

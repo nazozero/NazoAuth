@@ -19,6 +19,30 @@ def load(name: str):
 
 
 class Openid4vcOidfTests(unittest.TestCase):
+    def test_tokenless_openid4vc_driver_is_restricted_to_local_suite(self):
+        module = load("run_openid4vc_conformance.py")
+        local = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://localhost:8443",
+                "conformance_no_api_token": True,
+                "aliases": [],
+            },
+            module.threading.Event(),
+        )
+        with patch.object(module, "module_entries", return_value=[]):
+            local.drive_once()
+
+        public = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://www.certification.openid.net",
+                "conformance_no_api_token": True,
+                "aliases": [],
+            },
+            module.threading.Event(),
+        )
+        with self.assertRaisesRegex(RuntimeError, "restricted to loopback"):
+            public.drive_once()
+
     def test_credential_issuer_metadata_is_registered_inside_the_single_well_known_scope(self):
         routes = (ROOT / "crates" / "authorization-server" / "src" / "bootstrap" / "routes.rs").read_text(
             encoding="utf-8"
