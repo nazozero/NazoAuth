@@ -69,6 +69,26 @@ def main() -> int:
     for plan, slug, variants in matrix_cases():
         key = "vci_haip" if plan == VCI_HAIP else "vci" if plan == VCI_STANDARD else "vp_haip" if plan == VP_HAIP else "vp"
         config = copy.deepcopy(base[key])
+        if plan in (VCI_STANDARD, VCI_HAIP):
+            issuer = driver.get("issuer")
+            if not isinstance(issuer, dict):
+                raise SystemExit("driver configuration requires issuer settings")
+            configuration_ids = issuer.get("credential_configuration_ids")
+            if not isinstance(configuration_ids, dict):
+                raise SystemExit("driver issuer requires credential_configuration_ids")
+            format_name = variants["credential_format"]
+            configuration_id = configuration_ids.get(format_name)
+            if not isinstance(configuration_id, str) or not configuration_id:
+                raise SystemExit(f"driver issuer lacks credential configuration for {format_name}")
+            vci = config.get("vci")
+            if not isinstance(vci, dict):
+                raise SystemExit(f"{key} base configuration requires a vci object")
+            vci["credential_issuer_url"] = str(driver["target_origin"])
+            vci["credential_configuration_id"] = configuration_id
+            if variants.get("vci_grant_type") == "pre_authorization_code":
+                tx_code = issuer.get("tx_code")
+                if isinstance(tx_code, str) and tx_code:
+                    vci["static_tx_code"] = tx_code
         prefix = str(config.get("alias", "nazo-openid4vc"))
         alias = f"{prefix}-{slug}"
         config["alias"] = alias

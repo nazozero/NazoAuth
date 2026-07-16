@@ -44,8 +44,20 @@ class Openid4vcOidfTests(unittest.TestCase):
             base = root / "base.json"
             driver = root / "driver.json"
             output = root / "output"
-            base.write_text(json.dumps({name: {"alias": f"nazo-{name}"} for name in ("vci", "vci_haip", "vp", "vp_haip")}), encoding="utf-8")
-            driver.write_text(json.dumps({"issuer": {}, "verifier": {}}), encoding="utf-8")
+            base.write_text(json.dumps({
+                name: {"alias": f"nazo-{name}", **({"vci": {}} if name.startswith("vci") else {})}
+                for name in ("vci", "vci_haip", "vp", "vp_haip")
+            }), encoding="utf-8")
+            driver.write_text(json.dumps({
+                "issuer": {
+                    "credential_configuration_ids": {
+                        "sd_jwt_vc": "pid-sd-jwt",
+                        "mdoc": "org.iso.18013.5.1.mDL",
+                    },
+                    "tx_code": "123456",
+                },
+                "verifier": {},
+            }), encoding="utf-8")
             with patch("sys.argv", [
                 "materialize_openid4vc_oidf_config.py",
                 "--base-config-json-file", str(base),
@@ -62,6 +74,14 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(len(configs), 18)
             self.assertEqual(len(set(materialized_driver["aliases"])), 18)
             self.assertEqual(materialized_driver["target_origin"], "https://auth.nazo.run")
+            for filename, config in configs.items():
+                if "vci-" not in filename:
+                    continue
+                self.assertEqual(config["vci"]["credential_issuer_url"], "https://auth.nazo.run")
+                expected = "org.iso.18013.5.1.mDL" if "mdoc" in filename else "pid-sd-jwt"
+                self.assertEqual(config["vci"]["credential_configuration_id"], expected)
+                if "preauth" in filename:
+                    self.assertEqual(config["vci"]["static_tx_code"], "123456")
 
 
 if __name__ == "__main__":
