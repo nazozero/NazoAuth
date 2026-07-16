@@ -257,7 +257,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                 ],
             )
-            self.assertEqual(len(expected_warnings), 9)
+            self.assertEqual(len(expected_warnings), 10)
             self.assertEqual(
                 {
                     item["configuration-filename"]
@@ -280,13 +280,22 @@ class Openid4vcOidfTests(unittest.TestCase):
                 for item in expected_warnings
                 if item["test-name"] == module.VCI_DPOP_NEGATIVE_MODULE
             ]
-            self.assertEqual(len(dpop_warnings), 1)
+            self.assertEqual(len(dpop_warnings), 2)
             self.assertEqual(
-                dpop_warnings[0]["configuration-filename"],
-                "openid4vc-vci-haip-mdoc-wallet.json",
+                {item["configuration-filename"] for item in dpop_warnings},
+                {
+                    "openid4vc-vci-haip-sd-wallet.json",
+                    "openid4vc-vci-haip-mdoc-wallet.json",
+                },
             )
-            self.assertEqual(dpop_warnings[0]["current-block"], module.VCI_DPOP_REUSE_BLOCK)
-            self.assertEqual(dpop_warnings[0]["condition"], module.VCI_DPOP_STATUS_CONDITION)
+            self.assertEqual(
+                {item["current-block"] for item in dpop_warnings},
+                {module.VCI_DPOP_REUSE_BLOCK},
+            )
+            self.assertEqual(
+                {item["condition"] for item in dpop_warnings},
+                {module.VCI_DPOP_STATUS_CONDITION},
+            )
             self.assertEqual(materialized_driver["target_origin"], "https://auth.nazo.run")
             self.assertEqual(
                 materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],

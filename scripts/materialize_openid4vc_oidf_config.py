@@ -117,7 +117,7 @@ def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) ->
         if (
             plan == VCI_HAIP
             and variants.get("vci_authorization_code_flow_variant") == "wallet_initiated"
-            and variants.get("credential_format") == "mdoc"
+            and variants.get("credential_format") in {"sd_jwt_vc", "mdoc"}
         ):
             warnings.append(
                 {
