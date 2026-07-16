@@ -409,7 +409,18 @@ async fn required_nonce_is_issued_and_atomically_consumed_async() {
         panic!("missing nonce must return use_dpop_nonce");
     };
 
-    let proof_with_nonce = proof(public_jwk(), json!({"nonce": nonce}));
+    assert!(matches!(
+        validate_authorization_server_dpop_at(
+            &state,
+            request(Some(&proof(public_jwk(), json!({"nonce": nonce}))), None),
+            DpopNoncePolicy::Required,
+            NOW,
+        )
+        .await,
+        Err(DpopError::ReplayDetected(_))
+    ));
+
+    let proof_with_nonce = proof(public_jwk(), json!({"nonce": nonce, "jti": "proof-jti-2"}));
     validate_authorization_server_dpop_at(
         &state,
         request(Some(&proof_with_nonce), None),
@@ -426,7 +437,7 @@ async fn required_nonce_is_issued_and_atomically_consumed_async() {
             NOW,
         )
         .await,
-        Err(DpopError::UseNonce(_))
+        Err(DpopError::ReplayDetected(_))
     ));
 }
 
@@ -451,7 +462,7 @@ async fn state_failures_are_fail_closed_with_compatible_error_categories_async()
             NOW,
         )
         .await,
-        Err(DpopError::NonceStoreUnavailable)
+        Err(DpopError::InvalidProof)
     );
 
     let proof_without_nonce = proof(public_jwk(), json!({}));
