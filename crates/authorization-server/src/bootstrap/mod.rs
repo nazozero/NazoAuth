@@ -52,6 +52,10 @@ use crate::domain::{
     ServerSessionManagementOperations, UserinfoConfig, UserinfoHandles,
 };
 use crate::domain::{
+    Openid4vcClientAttestationValidator, Openid4vcCredentialCrypto, Openid4vcProofValidator,
+    PresentationVerifierConfig, ServerCredentialIssuerOperations, ServerPresentationOperations,
+};
+use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
 };
 use crate::domain::{
@@ -79,7 +83,7 @@ use crate::http::token::ServerTokenManagementRequestFactsExtractor;
 use crate::http::token::ciba::{CibaHttpConfig, CibaTokenHandles, ServerCibaService};
 use crate::http::token::device::{DeviceDecisionHandles, ServerDeviceGrantService};
 use crate::http::token::device_config::DeviceHttpConfig;
-use crate::http::token::dispatch::TokenEndpointHandles;
+use crate::http::token::dispatch::{Openid4vcTokenHandles, TokenCoreHandles, TokenEndpointHandles};
 use crate::http::token::issue::TokenIssuanceConfig;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
@@ -92,6 +96,7 @@ use nazo_http_actix::{
     PasswordLoginEndpoint, ProfileAccountEndpoint, RuntimeModuleAdminEndpoint, SessionCookieConfig,
     SessionLogoutEndpoint, SessionManagementConfig, SessionManagementEndpoint, security_headers,
 };
+use nazo_openid4vc_http_actix::{CredentialIssuerEndpoint, PresentationEndpoint};
 use nazo_postgres::create_pool;
 use tracing::Instrument;
 
@@ -311,18 +316,141 @@ pub async fn run() -> anyhow::Result<()> {
     ));
     let authorization_runtime: web::Data<ServerRuntimeModuleRegistry> =
         web::Data::from(runtime_modules.registry.clone());
+    let openid4vc_crypto = if settings.modules.enable_openid4vci_issuer
+        || settings.modules.enable_openid4vp_verifier
+    {
+        let certificate_chain = tokio::fs::read(
+            settings
+                .openid4vc
+                .signing_certificate_chain_file
+                .as_ref()
+                .expect("enabled OpenID4VC modules require a certificate chain"),
+        )
+        .await?;
+        let trust_anchors = tokio::fs::read(
+            settings
+                .openid4vc
+                .trust_anchors_file
+                .as_ref()
+                .expect("enabled OpenID4VC modules require trust anchors"),
+        )
+        .await?;
+        Some(Openid4vcCredentialCrypto::new(
+            keyset.clone(),
+            &certificate_chain,
+            &trust_anchors,
+        )?)
+    } else {
+        None
+    };
+    let client_attestation_validator = settings
+        .openid4vc
+        .client_attestation_issuer
+        .as_ref()
+        .map(|issuer| {
+            Openid4vcClientAttestationValidator::new(
+                issuer,
+                settings
+                    .openid4vc
+                    .attestation_jwks
+                    .clone()
+                    .expect("configured client attestation requires trust keys"),
+            )
+            .map(Arc::new)
+        })
+        .transpose()?;
+    let credential_issuer_endpoint = if settings.modules.enable_openid4vci_issuer {
+        let data_key = settings
+            .openid4vc
+            .data_encryption_key
+            .expect("enabled OpenID4VCI requires a data encryption key");
+        let proof_validator = Openid4vcProofValidator::new(
+            settings
+                .openid4vc
+                .attestation_jwks
+                .clone()
+                .unwrap_or_else(|| serde_json::json!({"keys": []})),
+        )?;
+        Some(web::Data::new(CredentialIssuerEndpoint::new(
+            Arc::new(ServerCredentialIssuerOperations::new(
+                diesel_db.clone(),
+                DEFAULT_TENANT_ID,
+                data_key,
+                token_service.clone().into_inner(),
+                authorization_service.clone().into_inner(),
+                runtime_modules.registry.clone(),
+                openid4vc_crypto
+                    .as_ref()
+                    .expect("enabled OpenID4VCI requires crypto")
+                    .clone(),
+                proof_validator,
+                client_attestation_validator.clone(),
+                settings.endpoint.issuer.clone(),
+                settings.openid4vc.credential_configurations.clone(),
+                settings
+                    .openid4vc
+                    .deferred_credential_configurations
+                    .clone(),
+                settings.protocol.dpop_nonce_policy,
+            )?),
+            settings
+                .openid4vc
+                .issuer_management_token
+                .clone()
+                .expect("enabled OpenID4VCI requires a management token")
+                .into_bytes(),
+        )))
+    } else {
+        None
+    };
+    let presentation_endpoint = if settings.modules.enable_openid4vp_verifier {
+        Some(web::Data::new(PresentationEndpoint::new(
+            Arc::new(ServerPresentationOperations::new(
+                diesel_db.clone(),
+                DEFAULT_TENANT_ID,
+                settings
+                    .openid4vc
+                    .data_encryption_key
+                    .expect("enabled OpenID4VP requires a data encryption key"),
+                openid4vc_crypto
+                    .as_ref()
+                    .expect("enabled OpenID4VP requires crypto")
+                    .clone(),
+                runtime_modules.registry.clone(),
+                PresentationVerifierConfig {
+                    issuer: settings.endpoint.issuer.clone(),
+                    wallet_origins: settings.openid4vc.wallet_authorization_origins.clone(),
+                    transaction_ttl_seconds: settings.openid4vc.transaction_ttl_seconds,
+                },
+            )),
+            settings
+                .openid4vc
+                .verifier_management_token
+                .clone()
+                .expect("enabled OpenID4VP requires a management token")
+                .into_bytes(),
+        )))
+    } else {
+        None
+    };
     let token_endpoint_handles = web::Data::new(TokenEndpointHandles::new(
-        token_service.clone(),
-        authorization_service.clone(),
+        TokenCoreHandles {
+            token_service: token_service.clone(),
+            authorization_service: authorization_service.clone(),
+            device_service: device_service.clone(),
+        },
         CibaTokenHandles::new(
             ciba_service.clone(),
             ciba_users.clone(),
             ciba_config.clone(),
         ),
         token_issuance_config.clone(),
-        device_service.clone(),
         authorization_runtime.clone(),
         remote_client_documents.clone(),
+        Openid4vcTokenHandles {
+            credential_issuer: credential_issuer_endpoint.clone(),
+            client_attestation: client_attestation_validator.clone(),
+        },
     ));
 
     let session = &settings.session;
@@ -362,6 +490,18 @@ pub async fn run() -> anyhow::Result<()> {
         admin_sessions.clone().into_inner(),
         runtime_modules.registry.clone(),
         remote_client_documents.clone(),
+        if settings.modules.enable_openid4vci_issuer {
+            Some(Arc::new(nazo_postgres::Openid4vciRepository::new(
+                diesel_db.clone(),
+                settings
+                    .openid4vc
+                    .data_encryption_key
+                    .expect("enabled OpenID4VCI requires a data encryption key"),
+            ))
+                as Arc<dyn nazo_openid4vci::AuthorizationOfferPort>)
+        } else {
+            None
+        },
     ));
     let admin_federation = web::Data::new(AdminFederationConfig::from_settings(&settings));
     #[cfg(not(test))]
@@ -746,6 +886,21 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(federation_http_config.clone())
             .app_data(dynamic_registration_handles.clone())
             .app_data(scim_endpoint.clone());
+        let app = if let Some(endpoint) = credential_issuer_endpoint.clone() {
+            app.app_data(endpoint)
+        } else {
+            app
+        };
+        let app = if let Some(endpoint) = presentation_endpoint.clone() {
+            app.app_data(endpoint)
+        } else {
+            app
+        };
+        let app = if let Some(validator) = client_attestation_validator.clone() {
+            app.app_data(web::Data::from(validator))
+        } else {
+            app
+        };
         app.configure(|cfg| routes::configure(cfg, &settings, perf_metrics_enabled))
     })
     .bind(addr)?

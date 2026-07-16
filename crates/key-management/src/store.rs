@@ -371,9 +371,14 @@ pub(crate) async fn try_load_keyset(
                     && declared_active_alg.is_some_and(|active_alg| alg != active_alg)
                     && backend == "local-pem"
                 {
-                    [SigningPurpose::IdToken, SigningPurpose::Jarm]
-                        .into_iter()
-                        .collect()
+                    [
+                        SigningPurpose::IdToken,
+                        SigningPurpose::Jarm,
+                        SigningPurpose::Credential,
+                        SigningPurpose::PresentationRequest,
+                    ]
+                    .into_iter()
+                    .collect()
                 } else {
                     BTreeSet::new()
                 },
@@ -449,6 +454,8 @@ fn all_signing_purposes() -> BTreeSet<SigningPurpose> {
         SigningPurpose::LogoutToken,
         SigningPurpose::HttpMessage,
         SigningPurpose::SecurityEvent,
+        SigningPurpose::Credential,
+        SigningPurpose::PresentationRequest,
     ]
     .into_iter()
     .collect()

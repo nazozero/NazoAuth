@@ -486,6 +486,90 @@ def check_fapi_ciba_boundaries() -> None:
             raise SystemExit(f"CIBA persistence constraint is missing: {constraint}")
 
 
+def check_openid4vc_boundaries() -> None:
+    production_roots = (
+        ROOT / "crates" / "digital-credentials" / "src",
+        ROOT / "crates" / "openid4vci" / "src",
+        ROOT / "crates" / "openid4vp" / "src",
+        ROOT / "crates" / "openid4vc-http-actix" / "src",
+    )
+    forbidden_test_markers = ("#[cfg(test)]", "#[test]", "#[tokio::test]", "mod tests")
+    for production_root in production_roots:
+        for source_file in production_root.rglob("*.rs"):
+            source = source_file.read_text(encoding="utf-8")
+            if any(marker in source for marker in forbidden_test_markers):
+                raise SystemExit(
+                    f"OpenID4VC tests must remain outside production source: {source_file}"
+                )
+
+    required_test_files = (
+        ROOT / "crates" / "digital-credentials" / "tests" / "domain_contract.rs",
+        ROOT / "crates" / "digital-credentials" / "tests" / "jwe_contract.rs",
+        ROOT / "crates" / "openid4vci" / "tests" / "protocol_contract.rs",
+        ROOT / "crates" / "openid4vci" / "tests" / "service_contract.rs",
+        ROOT / "crates" / "openid4vp" / "tests" / "protocol_contract.rs",
+        ROOT / "crates" / "openid4vp" / "tests" / "service_contract.rs",
+        ROOT / "crates" / "openid4vc-http-actix" / "tests" / "transport_contract.rs",
+    )
+    missing_tests = [str(path.relative_to(ROOT)) for path in required_test_files if not path.is_file()]
+    if missing_tests:
+        raise SystemExit(f"OpenID4VC separated test contracts are missing: {missing_tests}")
+
+    registry_path = ROOT / "tests" / "contracts" / "openid4vc-oidf-matrix.json"
+    registry = json.loads(registry_path.read_text(encoding="utf-8"))
+    expected_plans = {
+        "oid4vci-1_0-issuer-test-plan",
+        "oid4vci-1_0-issuer-haip-test-plan",
+        "oid4vp-1final-verifier-test-plan",
+        "oid4vp-1final-verifier-haip-test-plan",
+    }
+    actual_plans = {item.get("plan") for item in registry.get("plans", [])}
+    if actual_plans != expected_plans:
+        raise SystemExit(
+            f"OpenID4VC OIDF registry must contain the exact four upstream plans: {actual_plans}"
+        )
+    if registry.get("suite_commit") != "dee9a25160e789f0f80517674693ef7989ab9fa1":
+        raise SystemExit("OpenID4VC OIDF matrix must remain pinned to the audited v5.2.0 commit")
+    if registry.get("status") != "alpha-regression-not-certification":
+        raise SystemExit("OpenID4VC OIDF evidence must not be described as certification")
+
+    workflow = (ROOT / ".github" / "workflows" / "openid4vc-conformance.yml").read_text(
+        encoding="utf-8"
+    )
+    materializer = (
+        ROOT / "scripts" / "materialize_openid4vc_oidf_config.py"
+    ).read_text(encoding="utf-8")
+    driver = (ROOT / "scripts" / "run_openid4vc_conformance.py").read_text(
+        encoding="utf-8"
+    )
+    for plan in expected_plans:
+        if plan not in materializer:
+            raise SystemExit(f"OpenID4VC materializer lacks upstream plan: {plan}")
+    for marker in (
+        "dee9a25160e789f0f80517674693ef7989ab9fa1",
+        "run_openid4vc_conformance.py",
+        "openid4vc-plan-set.json",
+        "openid4vc-driver.json",
+    ):
+        if marker not in workflow:
+            raise SystemExit(f"OpenID4VC workflow lacks hard boundary: {marker}")
+    for forbidden in ("openid4vci_offers", "openid4vp_transactions", "result_ciphertext"):
+        if forbidden in driver:
+            raise SystemExit(f"OpenID4VC black-box driver accesses persistence: {forbidden}")
+    for doc_name in ("openid4vc-final-matrix.md", "openid4vc-final-matrix.zh-CN.md"):
+        doc = (ROOT / "docs" / "conformance" / doc_name).read_text(encoding="utf-8")
+        for statement in ("alpha", "not an OpenID Foundation certification claim") if doc_name.endswith(".md") and not doc_name.endswith("zh-CN.md") else ("alpha", "不能称为 OpenID Foundation 正式认证"):
+            if statement not in doc:
+                raise SystemExit(f"OpenID4VC evidence boundary missing from {doc_name}: {statement}")
+
+    migration = (
+        ROOT / "migrations" / "20260716000100_openid4vc_final" / "up.sql"
+    ).read_text(encoding="utf-8")
+    for forbidden in ("verifier_attestation", "decentralized_identifier", "dc_api"):
+        if forbidden in migration:
+            raise SystemExit(f"unsupported OpenID4VP mechanism entered persistence: {forbidden}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--write-migrations", action="store_true")
@@ -507,6 +591,7 @@ def main() -> None:
         check_rfc9967_test_boundaries()
         check_removed_security_capabilities()
         check_fapi_ciba_boundaries()
+        check_openid4vc_boundaries()
 
 
 if __name__ == "__main__":

@@ -64,6 +64,7 @@ const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "scope",
     "resource",
     "authorization_details",
+    "issuer_state",
     "state",
     "code_challenge",
     "code_challenge_method",
@@ -76,6 +77,28 @@ const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "response_mode",
     "request",
 ];
+
+fn client_attestation_headers(request: &HttpRequest) -> Result<Option<(&str, &str)>, HttpResponse> {
+    let attestation = request
+        .headers()
+        .get("OAuth-Client-Attestation")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty());
+    let proof = request
+        .headers()
+        .get("OAuth-Client-Attestation-PoP")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty());
+    match (attestation, proof) {
+        (None, None) => Ok(None),
+        (Some(attestation), Some(proof)) => Ok(Some((attestation, proof))),
+        _ => Err(oauth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Both client attestation headers are required.",
+        )),
+    }
+}
 
 async fn enforce_par_rate_limit(
     context: &AuthorizationRequestContext<'_>,
@@ -199,8 +222,14 @@ async fn par_after_rate_limit_inner(
     let has_basic = has_basic_authorization_scheme(req.headers());
     let has_assertion =
         params.contains_key("client_assertion_type") || params.contains_key("client_assertion");
+    let attestation_headers = match client_attestation_headers(&req) {
+        Ok(headers) => headers,
+        Err(response) => return response,
+    };
     if has_basic && (params.contains_key("client_secret") || has_assertion)
         || has_assertion && params.contains_key("client_secret")
+        || attestation_headers.is_some()
+            && (has_basic || has_assertion || params.contains_key("client_secret"))
     {
         return oauth_error(
             StatusCode::BAD_REQUEST,
@@ -243,6 +272,13 @@ async fn par_after_rate_limit_inner(
         params.insert("client_id".to_owned(), client_id);
     }
     if !params.contains_key("client_id")
+        && let Some((attestation, _)) = attestation_headers
+        && let Some(client_id) =
+            crate::domain::Openid4vcClientAttestationValidator::unverified_client_id(attestation)
+    {
+        params.insert("client_id".to_owned(), client_id);
+    }
+    if !params.contains_key("client_id")
         && let Some(client_id) = params
             .get("client_assertion")
             .and_then(|assertion| unverified_client_assertion_client_id(assertion))
@@ -258,7 +294,7 @@ async fn par_after_rate_limit_inner(
             "缺少 client_id.",
         );
     };
-    let credentials = extract_client_credentials_with_trusted_proxies(
+    let mut credentials = extract_client_credentials_with_trusted_proxies(
         &req,
         &context.config.trusted_proxy_cidrs,
         Some(&client_id),
@@ -266,6 +302,14 @@ async fn par_after_rate_limit_inner(
         params.get("client_assertion_type").map(String::as_str),
         params.get("client_assertion").map(String::as_str),
     );
+    if attestation_headers.is_some() {
+        credentials = nazo_auth::PresentedClientCredentials {
+            client_id: Some(client_id.clone()),
+            client_secret: None,
+            client_assertion: None,
+            method: "attest_jwt_client_auth".to_owned(),
+        };
+    }
     if has_basic && credentials.method != "client_secret_basic" {
         return oauth_error(
             StatusCode::UNAUTHORIZED,
@@ -296,21 +340,81 @@ async fn par_after_rate_limit_inner(
         }
     };
     let auth_request = client_auth_request_facts(&req, &context.config.trusted_proxy_cidrs);
-    let client_assertion = match authenticate_client_with_dependencies(
-        context.service,
-        crate::http::token::client_auth::ClientAuthConfig::new(
+    let client_assertion = if let Some((attestation, proof)) = attestation_headers {
+        if client.token_endpoint_auth_method != "attest_jwt_client_auth" {
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client_attestation",
+                "Client attestation is not registered for this client.",
+            );
+        }
+        let Some(validator) =
+            req.app_data::<Data<crate::domain::Openid4vcClientAttestationValidator>>()
+        else {
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client_attestation",
+                "Client attestation is not configured.",
+            );
+        };
+        let validated = match validator.validate(
+            attestation,
+            proof,
             &context.config.issuer,
-            &context.config.client_secret_pepper,
-        ),
-        &auth_request,
-        &client,
-        &credentials,
-        nazo_auth::ClientAuthenticationContext::AllowPublicNone,
-    )
-    .await
-    {
-        Ok(assertion) => assertion,
-        Err(error) => return token_management_auth_error(error),
+            Utc::now().timestamp(),
+        ) {
+            Ok(validated) if validated.client_id == client.client_id => validated,
+            _ => {
+                return oauth_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_client_attestation",
+                    "Client attestation validation failed.",
+                );
+            }
+        };
+        let replay_key = format!("client-attestation:{}", validated.client_id);
+        match context
+            .service
+            .consume_private_key_jwt(
+                &replay_key,
+                &validated.replay_id,
+                validated.replay_ttl_seconds,
+            )
+            .await
+        {
+            Ok(true) => None,
+            Ok(false) => {
+                return oauth_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_client_attestation",
+                    "Client attestation proof was replayed.",
+                );
+            }
+            Err(_) => {
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "Client attestation replay state is unavailable.",
+                );
+            }
+        }
+    } else {
+        match authenticate_client_with_dependencies(
+            context.service,
+            crate::http::token::client_auth::ClientAuthConfig::new(
+                &context.config.issuer,
+                &context.config.client_secret_pepper,
+            ),
+            &auth_request,
+            &client,
+            &credentials,
+            nazo_auth::ClientAuthenticationContext::AllowPublicNone,
+        )
+        .await
+        {
+            Ok(assertion) => assertion,
+            Err(error) => return token_management_auth_error(error),
+        }
     };
     params.remove("client_secret");
     params.remove("client_assertion_type");

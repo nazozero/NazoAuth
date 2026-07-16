@@ -35,18 +35,20 @@ const CLAIMS_SUPPORTED: [&str; 24] = [
     "phone_number_verified",
     "updated_at",
 ];
-const CLIENT_AUTH_METHODS: [&str; 6] = [
+const CLIENT_AUTH_METHODS: [&str; 7] = [
     "client_secret_basic",
     "client_secret_post",
     "private_key_jwt",
     "tls_client_auth",
     "self_signed_tls_client_auth",
     "none",
+    "attest_jwt_client_auth",
 ];
-const FAPI2_CLIENT_AUTH_METHODS: [&str; 3] = [
+const FAPI2_CLIENT_AUTH_METHODS: [&str; 4] = [
     "private_key_jwt",
     "tls_client_auth",
     "self_signed_tls_client_auth",
+    "attest_jwt_client_auth",
 ];
 const SCOPES_SUPPORTED: [&str; 6] = [
     "openid",
@@ -158,6 +160,7 @@ pub fn authorization_server_metadata(
         input.profile,
         input.ciba_profile,
         input.mtls_enabled,
+        capabilities.openid4vci_issuer,
     );
     let token_auth_signing_algs =
         token_endpoint_auth_signing_alg_values_supported(input.ciba_profile);
@@ -213,8 +216,17 @@ pub fn authorization_server_metadata(
     });
 
     if capabilities.authorization_details {
-        metadata["authorization_details_types_supported"] =
-            json!(SUPPORTED_AUTHORIZATION_DETAILS_TYPES);
+        metadata["authorization_details_types_supported"] = json!(
+            SUPPORTED_AUTHORIZATION_DETAILS_TYPES
+                .iter()
+                .copied()
+                .filter(|type_| capabilities.openid4vci_issuer || *type_ != "openid_credential")
+                .collect::<Vec<_>>()
+        );
+    }
+    if capabilities.openid4vci_issuer {
+        metadata["client_attestation_signing_alg_values_supported"] = json!(["ES256"]);
+        metadata["client_attestation_pop_signing_alg_values_supported"] = json!(["ES256"]);
     }
     if capabilities.device_authorization {
         metadata["device_authorization_endpoint"] = json!(format!("{issuer}/device_authorization"));
@@ -296,8 +308,13 @@ pub fn protected_resource_metadata(
         metadata["tls_client_certificate_bound_access_tokens"] = json!(true);
     }
     if capabilities.authorization_details {
-        metadata["authorization_details_types_supported"] =
-            json!(SUPPORTED_AUTHORIZATION_DETAILS_TYPES);
+        metadata["authorization_details_types_supported"] = json!(
+            SUPPORTED_AUTHORIZATION_DETAILS_TYPES
+                .iter()
+                .copied()
+                .filter(|type_| *type_ != "openid_credential")
+                .collect::<Vec<_>>()
+        );
     }
     metadata
 }
@@ -314,6 +331,7 @@ fn token_endpoint_auth_methods_supported(
     profile: MetadataAuthorizationServerProfile,
     ciba_profile: CibaMetadataProfile,
     mtls_enabled: bool,
+    client_attestation_enabled: bool,
 ) -> Vec<&'static str> {
     let methods = if profile.requires_fapi2_security() || ciba_profile.requires_fapi2_hardening() {
         FAPI2_CLIENT_AUTH_METHODS.as_slice()
@@ -324,7 +342,8 @@ fn token_endpoint_auth_methods_supported(
         .iter()
         .copied()
         .filter(|method| {
-            mtls_enabled || !matches!(*method, "tls_client_auth" | "self_signed_tls_client_auth")
+            (mtls_enabled || !matches!(*method, "tls_client_auth" | "self_signed_tls_client_auth"))
+                && (client_attestation_enabled || *method != "attest_jwt_client_auth")
         })
         .collect()
 }

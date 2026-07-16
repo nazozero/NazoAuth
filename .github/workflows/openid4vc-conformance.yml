@@ -1,0 +1,101 @@
+name: openid4vc-conformance
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployed_sha:
+        description: Exact deployed NazoAuth commit to test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openid4vc-conformance-${{ inputs.deployed_sha }}
+  cancel-in-progress: false
+
+jobs:
+  official-openid4vc-matrix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      OIDF_REF: dee9a25160e789f0f80517674693ef7989ab9fa1
+      CONFORMANCE_SERVER: https://www.certification.openid.net
+      TARGET_ORIGIN: https://auth.nazo.run
+      OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.deployed_sha }}
+
+      - name: Verify exact source revision
+        shell: bash
+        run: test "$(git rev-parse HEAD)" = "${{ inputs.deployed_sha }}"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Clone pinned official suite
+        shell: bash
+        run: |
+          git init oidf-conformance-suite
+          git -C oidf-conformance-suite remote add origin https://gitlab.com/openid/conformance-suite.git
+          git -C oidf-conformance-suite fetch --depth 1 origin "$OIDF_REF"
+          git -C oidf-conformance-suite checkout --detach FETCH_HEAD
+          test "$(git -C oidf-conformance-suite rev-parse HEAD)" = "$OIDF_REF"
+          diff -u requirements/oidf-conformance.in oidf-conformance-suite/scripts/requirements.txt
+          python scripts/apply_oidf_runner_patch.py --suite-dir oidf-conformance-suite
+
+      - name: Install pinned runner dependencies
+        run: python -m pip install --require-hashes -r requirements/oidf-conformance.txt
+
+      - name: Materialize isolated OpenID4VC configurations
+        shell: bash
+        env:
+          OPENID4VC_OIDF_BASE_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_BASE_CONFIG_JSON }}
+          OPENID4VC_OIDF_DRIVER_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_DRIVER_CONFIG_JSON }}
+        run: |
+          test -n "$OIDF_CONFORMANCE_TOKEN"
+          test -n "$OPENID4VC_OIDF_BASE_CONFIG_JSON"
+          test -n "$OPENID4VC_OIDF_DRIVER_CONFIG_JSON"
+          install -d -m 700 runtime/openid4vc
+          printf '%s' "$OPENID4VC_OIDF_BASE_CONFIG_JSON" > runtime/openid4vc/base.json
+          printf '%s' "$OPENID4VC_OIDF_DRIVER_CONFIG_JSON" > runtime/openid4vc/driver-input.json
+          chmod 600 runtime/openid4vc/*.json
+          python scripts/materialize_openid4vc_oidf_config.py \
+            --base-config-json-file runtime/openid4vc/base.json \
+            --driver-config-json-file runtime/openid4vc/driver-input.json \
+            --conformance-server "$CONFORMANCE_SERVER" \
+            --target-origin "$TARGET_ORIGIN" \
+            --output-dir runtime/openid4vc
+
+      - name: Run official OpenID4VC Final and HAIP alpha matrix
+        shell: bash
+        run: |
+          python -u scripts/run_openid4vc_conformance.py \
+            --driver-config-json-file runtime/openid4vc/openid4vc-driver.json \
+            -- \
+            --suite-dir oidf-conformance-suite \
+            --conformance-server "$CONFORMANCE_SERVER" \
+            --target-issuer "$TARGET_ORIGIN" \
+            --config-json-file runtime/openid4vc/openid4vc-plan-configs.json \
+            --plan-set-json-file runtime/openid4vc/openid4vc-plan-set.json \
+            --export-dir runtime/openid4vc/results \
+            --timeout-seconds 4800 \
+            --monitor-interval-seconds 10
+
+      - name: Remove plaintext secrets
+        if: always()
+        shell: bash
+        run: rm -f runtime/openid4vc/base.json runtime/openid4vc/driver-input.json runtime/openid4vc/openid4vc-driver.json runtime/openid4vc/openid4vc-plan-configs.json
+
+      - name: Upload redacted conformance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: openid4vc-conformance-${{ inputs.deployed_sha }}
+          path: runtime/openid4vc/results
+          if-no-files-found: warn
+          retention-days: 30

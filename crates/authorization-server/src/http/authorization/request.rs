@@ -316,7 +316,7 @@ async fn authorize_request_with_context(
         }
         return error_response;
     }
-    let normalized = match normalize_authorization_request(
+    let mut normalized = match normalize_authorization_request(
         q,
         AuthorizationClientPolicy {
             client_type: &client.client_type,
@@ -419,6 +419,91 @@ async fn authorize_request_with_context(
         AuthorizationSessionDecision::Continue => {}
     }
     let session = session.expect("authorization session policy allowed continuation");
+    if let Some(issuer_state) = q.get("issuer_state") {
+        if !crate::http::authorization::accepts_module(
+            context,
+            nazo_runtime_modules::ModuleId::Openid4vciIssuer,
+        ) {
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "invalid_request",
+                q,
+            )
+            .await;
+        }
+        let Some(offers) = context.credential_authorization_offers else {
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "temporarily_unavailable",
+                q,
+            )
+            .await;
+        };
+        let authorization = match offers
+            .consume_authorization_offer(
+                &blake3_hex(issuer_state),
+                session.user.id(),
+                &client.client_id,
+                Utc::now(),
+            )
+            .await
+        {
+            Ok(Some(authorization)) => authorization,
+            Ok(None) => {
+                return authorization_oauth_error_redirect(
+                    context,
+                    &redirect_uri,
+                    "invalid_request",
+                    q,
+                )
+                .await;
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to consume OpenID4VCI issuer_state");
+                return authorization_oauth_error_redirect(
+                    context,
+                    &redirect_uri,
+                    "temporarily_unavailable",
+                    q,
+                )
+                .await;
+            }
+        };
+        let requested = credential_configuration_ids(&normalized.authorization_details);
+        if requested.iter().any(|id| {
+            !authorization
+                .configuration_ids
+                .iter()
+                .any(|allowed| allowed == id)
+        }) {
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "invalid_request",
+                q,
+            )
+            .await;
+        }
+        let selected = if requested.is_empty() {
+            authorization.configuration_ids
+        } else {
+            requested
+        };
+        normalized.authorization_details = Value::Array(
+            selected
+                .into_iter()
+                .map(|credential_configuration_id| {
+                    serde_json::json!({
+                        "type": "openid_credential",
+                        "credential_configuration_id": credential_configuration_id,
+                        "locations": [context.config.issuer.as_ref()],
+                    })
+                })
+                .collect(),
+        );
+    }
     let now = Utc::now();
     let request_id = Uuid::now_v7().to_string();
     let payload = ConsentPayload {
@@ -497,6 +582,21 @@ async fn authorize_request_with_context(
         "{}/consent?request_id={request_id}",
         context.config.frontend_base_url.trim_end_matches('/')
     ))
+}
+
+fn credential_configuration_ids(authorization_details: &Value) -> Vec<String> {
+    authorization_details
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|detail| detail.get("type").and_then(Value::as_str) == Some("openid_credential"))
+        .filter_map(|detail| {
+            detail
+                .get("credential_configuration_id")
+                .and_then(Value::as_str)
+        })
+        .map(ToOwned::to_owned)
+        .collect()
 }
 
 fn runtime_authorization_capability_error(

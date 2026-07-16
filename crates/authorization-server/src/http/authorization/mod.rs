@@ -11,6 +11,7 @@ pub(crate) mod request;
 
 use std::sync::Arc;
 
+use nazo_openid4vci::AuthorizationOfferPort;
 use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId};
 
 use crate::domain::remote_client_documents::RemoteClientDocumentResolver;
@@ -36,6 +37,7 @@ pub(crate) struct AuthorizationEndpoint {
     sessions: Arc<AdminSessionHandles>,
     runtime_modules: Arc<ServerRuntimeModuleRegistry>,
     remote_client_documents: Arc<RemoteClientDocumentResolver>,
+    credential_authorization_offers: Option<Arc<dyn AuthorizationOfferPort>>,
 }
 
 impl AuthorizationEndpoint {
@@ -45,6 +47,7 @@ impl AuthorizationEndpoint {
         sessions: Arc<AdminSessionHandles>,
         runtime_modules: Arc<ServerRuntimeModuleRegistry>,
         remote_client_documents: Arc<RemoteClientDocumentResolver>,
+        credential_authorization_offers: Option<Arc<dyn AuthorizationOfferPort>>,
     ) -> Self {
         Self {
             service,
@@ -52,6 +55,7 @@ impl AuthorizationEndpoint {
             sessions,
             runtime_modules,
             remote_client_documents,
+            credential_authorization_offers,
         }
     }
 
@@ -62,6 +66,7 @@ impl AuthorizationEndpoint {
             sessions: &self.sessions,
             modules: self.runtime_modules.snapshot().as_ref().clone(),
             remote_client_documents: Some(&self.remote_client_documents),
+            credential_authorization_offers: self.credential_authorization_offers.as_deref(),
         }
     }
 }
@@ -72,6 +77,7 @@ pub(crate) struct AuthorizationRequestContext<'a> {
     pub(crate) sessions: &'a AdminSessionHandles,
     pub(crate) modules: ActiveModuleSnapshot,
     pub(crate) remote_client_documents: Option<&'a RemoteClientDocumentResolver>,
+    pub(crate) credential_authorization_offers: Option<&'a dyn AuthorizationOfferPort>,
 }
 
 impl<'a> AuthorizationRequestContext<'a> {
@@ -92,6 +98,7 @@ impl<'a> AuthorizationRequestContext<'a> {
                 draining: std::collections::BTreeSet::new(),
             },
             remote_client_documents: None,
+            credential_authorization_offers: None,
         }
     }
 }

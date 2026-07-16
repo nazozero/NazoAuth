@@ -8,6 +8,8 @@ pub enum SigningPurpose {
     LogoutToken,
     HttpMessage,
     SecurityEvent,
+    Credential,
+    PresentationRequest,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

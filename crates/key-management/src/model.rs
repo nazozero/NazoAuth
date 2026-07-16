@@ -359,9 +359,14 @@ impl KeyManager {
                 algorithm: crate::store::signing_algorithm_name(algorithm)
                     .unwrap()
                     .to_owned(),
-                purposes: [SigningPurpose::IdToken, SigningPurpose::Jarm]
-                    .into_iter()
-                    .collect(),
+                purposes: [
+                    SigningPurpose::IdToken,
+                    SigningPurpose::Jarm,
+                    SigningPurpose::Credential,
+                    SigningPurpose::PresentationRequest,
+                ]
+                .into_iter()
+                .collect(),
                 state: KeyState::Active,
                 handle: KeyHandle::Local(material.private_pkcs8_der),
             },
@@ -593,6 +598,8 @@ fn all_signing_purposes() -> BTreeSet<SigningPurpose> {
         SigningPurpose::LogoutToken,
         SigningPurpose::HttpMessage,
         SigningPurpose::SecurityEvent,
+        SigningPurpose::Credential,
+        SigningPurpose::PresentationRequest,
     ]
     .into_iter()
     .collect()

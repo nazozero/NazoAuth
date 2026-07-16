@@ -1,0 +1,262 @@
+use std::{
+    collections::BTreeMap,
+    sync::{Arc, Mutex},
+};
+
+use chrono::{Duration, Utc};
+use nazo_digital_credentials::{
+    CredentialFormat, CredentialFuture, CredentialSignInput, CredentialSignerPort,
+    CredentialTrustError,
+};
+use nazo_openid4vci::{
+    CredentialAccess, CredentialConfiguration, CredentialDatasetPort, CredentialError,
+    CredentialIdentifier, CredentialIssuance, CredentialIssuanceError, CredentialIssuerService,
+    CredentialRequest, CredentialStoreError, CredentialStoreFuture, CredentialStorePort,
+    DeferredCredential, IssuanceDisposition, IssuanceNotification, NonceRecord, NotificationHandle,
+    ProofError, ProofTypeMetadata, ProofValidatorPort, Proofs, StoredCredentialOffer,
+    ValidatedProof,
+};
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+#[derive(Clone, Default)]
+struct RecordingStore {
+    nonce_consumed: Arc<Mutex<bool>>,
+    notifications: Arc<Mutex<Vec<NotificationHandle>>>,
+}
+
+impl CredentialStorePort for RecordingStore {
+    fn upsert_access<'a>(
+        &'a self,
+        _: &'a str,
+        _: &'a CredentialAccess,
+    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn offer<'a>(
+        &'a self,
+        _: Uuid,
+        _: chrono::DateTime<Utc>,
+    ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialOffer>, CredentialStoreError>>
+    {
+        Box::pin(async { Ok(None) })
+    }
+    fn consume_pre_authorized_offer<'a>(
+        &'a self,
+        _: &'a str,
+        _: Option<&'a str>,
+        _: &'a str,
+        _: chrono::DateTime<Utc>,
+    ) -> CredentialStoreFuture<
+        'a,
+        Result<Option<nazo_openid4vci::CredentialAuthorization>, CredentialStoreError>,
+    > {
+        Box::pin(async { Ok(None) })
+    }
+    fn issue_nonce<'a>(
+        &'a self,
+        _: &'a NonceRecord,
+    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn consume_nonce<'a>(
+        &'a self,
+        _: &'a str,
+        _: chrono::DateTime<Utc>,
+    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
+        Box::pin(async move {
+            let mut consumed = self.nonce_consumed.lock().unwrap();
+            if *consumed {
+                Ok(false)
+            } else {
+                *consumed = true;
+                Ok(true)
+            }
+        })
+    }
+    fn resolve_access<'a>(
+        &'a self,
+        _: &'a str,
+        _: chrono::DateTime<Utc>,
+    ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
+        Box::pin(async { Ok(None) })
+    }
+    fn store_deferred<'a>(
+        &'a self,
+        _: &'a DeferredCredential,
+    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn consume_ready_deferred<'a>(
+        &'a self,
+        _: &'a str,
+        _: Uuid,
+        _: chrono::DateTime<Utc>,
+    ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredential>, CredentialStoreError>> {
+        Box::pin(async { Ok(None) })
+    }
+    fn record_notification<'a>(
+        &'a self,
+        _: &'a IssuanceNotification,
+    ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
+        Box::pin(async { Ok(true) })
+    }
+    fn issue_notification_handle<'a>(
+        &'a self,
+        handle: &'a NotificationHandle,
+    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
+        Box::pin(async move {
+            self.notifications.lock().unwrap().push(handle.clone());
+            Ok(())
+        })
+    }
+}
+
+#[derive(Clone)]
+struct FixedProofs(Vec<ValidatedProof>);
+
+impl ProofValidatorPort for FixedProofs {
+    fn validate<'a>(
+        &'a self,
+        _: &'a Proofs,
+        _: &'a str,
+        _: &'a str,
+        _: &'a ProofTypeMetadata,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Vec<ValidatedProof>, ProofError>> + Send + 'a>,
+    > {
+        Box::pin(async move { Ok(self.0.clone()) })
+    }
+}
+
+struct Dataset;
+
+impl CredentialDatasetPort for Dataset {
+    fn dataset<'a>(
+        &'a self,
+        _: &'a CredentialAccess,
+        _: &'a str,
+    ) -> std::pin::Pin<
+        Box<dyn std::future::Future<Output = Result<Value, CredentialIssuanceError>> + Send + 'a>,
+    > {
+        Box::pin(async { Ok(json!({"given_name":"Ada"})) })
+    }
+}
+
+#[derive(Clone, Default)]
+struct RecordingSigner(Arc<Mutex<Vec<CredentialSignInput>>>);
+
+impl CredentialSignerPort for RecordingSigner {
+    fn sign<'a>(
+        &'a self,
+        input: &'a CredentialSignInput,
+    ) -> CredentialFuture<'a, Result<String, CredentialTrustError>> {
+        Box::pin(async move {
+            self.0.lock().unwrap().push(input.clone());
+            Ok(format!("credential-{}", self.0.lock().unwrap().len()))
+        })
+    }
+}
+
+fn fixture(
+    now: chrono::DateTime<Utc>,
+) -> (CredentialAccess, CredentialIssuance, CredentialRequest) {
+    let configuration = CredentialConfiguration {
+        format: CredentialFormat::SdJwtVc,
+        scope: Some("pid".to_owned()),
+        cryptographic_binding_methods_supported: vec!["jwk".to_owned()],
+        credential_signing_alg_values_supported: vec!["ES256".to_owned()],
+        proof_types_supported: BTreeMap::from([(
+            "jwt".to_owned(),
+            ProofTypeMetadata {
+                proof_signing_alg_values_supported: vec!["ES256".to_owned()],
+                key_attestations_required: None,
+            },
+        )]),
+        vct: Some("urn:example:pid".to_owned()),
+        doctype: None,
+        credential_metadata: None,
+    };
+    (
+        CredentialAccess {
+            token_id: Uuid::now_v7(),
+            tenant_id: Uuid::now_v7(),
+            subject_id: Uuid::now_v7(),
+            client_id: "wallet".to_owned(),
+            configuration_ids: vec!["pid".to_owned()],
+            credential_identifiers: vec![CredentialIdentifier("pid-1".to_owned())],
+            dpop_jkt: None,
+            expires_at: now + Duration::minutes(5),
+        },
+        CredentialIssuance {
+            configuration_id: "pid".to_owned(),
+            configuration,
+            disposition: IssuanceDisposition::Immediate,
+            status: None,
+            expires_at: now + Duration::days(30),
+        },
+        CredentialRequest {
+            credential_identifier: None,
+            credential_configuration_id: Some("pid".to_owned()),
+            proofs: Some(Proofs(BTreeMap::from([(
+                "jwt".to_owned(),
+                vec![json!("one"), json!("two")],
+            )]))),
+            credential_response_encryption: None,
+            extensions: BTreeMap::new(),
+        },
+    )
+}
+
+#[tokio::test]
+async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
+    let now = Utc::now();
+    let store = RecordingStore::default();
+    let signer = RecordingSigner::default();
+    let proofs = FixedProofs(vec![
+        ValidatedProof {
+            proof_type: "jwt".to_owned(),
+            holder_binding: json!({"jwk":{"kid":"holder-1"}}),
+            nonce: "nonce".to_owned(),
+            key_attestation: None,
+        },
+        ValidatedProof {
+            proof_type: "jwt".to_owned(),
+            holder_binding: json!({"jwk":{"kid":"holder-2"}}),
+            nonce: "nonce".to_owned(),
+            key_attestation: None,
+        },
+    ]);
+    let service = CredentialIssuerService::new(
+        store.clone(),
+        proofs,
+        Dataset,
+        signer.clone(),
+        "https://issuer.example".to_owned(),
+        4,
+    );
+    let (access, issuance, request) = fixture(now);
+
+    let response = service
+        .issue(&access, &request, &issuance, "nonce", now)
+        .await
+        .unwrap();
+    assert_eq!(response.credentials.as_ref().map(Vec::len), Some(2));
+    {
+        let signed = signer.0.lock().unwrap();
+        assert_ne!(
+            signed[0].payload.holder_binding,
+            signed[1].payload.holder_binding
+        );
+    }
+    assert_eq!(store.notifications.lock().unwrap().len(), 1);
+
+    assert_eq!(
+        service
+            .issue(&access, &request, &issuance, "nonce", now)
+            .await,
+        Err(CredentialIssuanceError::Credential(
+            CredentialError::InvalidNonce
+        ))
+    );
+}

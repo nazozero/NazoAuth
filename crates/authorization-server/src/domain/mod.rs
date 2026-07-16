@@ -20,6 +20,8 @@ mod mfa_profile;
 mod oauth;
 pub(crate) mod oidc_claims;
 mod oidc_logout;
+mod openid4vc;
+mod openid4vc_endpoints;
 mod passkey;
 mod password_login;
 mod profile_account;
@@ -65,6 +67,12 @@ pub(crate) use oauth::{
     NativeSsoTokenBinding, PushedAuthorizationRequest, RefreshTokenPolicy, TokenIssue,
 };
 pub(crate) use oidc_logout::{OidcLogoutConfig, OidcLogoutHandles};
+pub(crate) use openid4vc::{
+    Openid4vcClientAttestationValidator, Openid4vcCredentialCrypto, Openid4vcProofValidator,
+};
+pub(crate) use openid4vc_endpoints::{
+    PresentationVerifierConfig, ServerCredentialIssuerOperations, ServerPresentationOperations,
+};
 pub(crate) use passkey::PasskeyOperationsProvider;
 pub(crate) use password_login::ServerPasswordLoginOperations;
 pub(crate) use profile_account::ServerProfileAccountOperations;

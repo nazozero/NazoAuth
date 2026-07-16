@@ -1,0 +1,218 @@
+use chrono::{Duration, Utc};
+use diesel::{
+    sql_query,
+    sql_types::{Text, Uuid as SqlUuid},
+};
+use diesel_async::RunQueryDsl;
+use nazo_digital_credentials::{CredentialFormat, CredentialQuery, DcqlQuery};
+use nazo_openid4vci::{
+    AuthorizationCodeGrant, AuthorizationOfferPort, CredentialAccess, CredentialOfferGrants,
+    CredentialStorePort, NonceRecord, StoredCredentialOffer,
+};
+use nazo_openid4vp::{
+    AuthorizationRequest, ClientIdPrefix, PresentationResult, PresentationStorePort,
+    PresentationTransaction, RequestMethod, ResponseMode,
+};
+use nazo_postgres::{Openid4vciRepository, Openid4vpRepository, create_pool, get_conn};
+use uuid::Uuid;
+
+fn database_url() -> Option<String> {
+    let url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .ok();
+    if url.is_none() && std::env::var_os("CI").is_some() {
+        panic!("CI OpenID4VC repository tests require NAZO_TEST_DATABASE_URL or DATABASE_URL");
+    }
+    url
+}
+
+#[tokio::test]
+async fn openid4vc_state_is_one_time_tenant_bound_and_encrypted_at_rest() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let realm_id = Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+    let organization_id = Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap();
+    let subject_id = Uuid::now_v7();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("INSERT INTO users (id,tenant_id,realm_id,organization_id,username,email,password_hash) VALUES ($1,$2,$3,$4,$5,$6,'test')")
+        .bind::<SqlUuid,_>(subject_id)
+        .bind::<SqlUuid,_>(tenant_id)
+        .bind::<SqlUuid,_>(realm_id)
+        .bind::<SqlUuid,_>(organization_id)
+        .bind::<Text,_>(format!("openid4vc-{subject_id}"))
+        .bind::<Text,_>(format!("openid4vc-{subject_id}@example.test"))
+        .execute(&mut connection).await.unwrap();
+    drop(connection);
+
+    let now = Utc::now();
+    let data_key = [23_u8; 32];
+    let issuer = Openid4vciRepository::new(pool.clone(), data_key);
+    let issuer_state = format!("issuer-state-{}", Uuid::now_v7());
+    let offer = StoredCredentialOffer {
+        id: Uuid::now_v7(),
+        tenant_id,
+        subject_id: Some(subject_id),
+        credential_configuration_ids: vec!["pid".to_owned()],
+        grants: CredentialOfferGrants::new(
+            Some(AuthorizationCodeGrant {
+                issuer_state: Some(issuer_state.clone()),
+                authorization_server: Some("https://issuer.example".to_owned()),
+            }),
+            None,
+        ),
+        expires_at: now + Duration::minutes(5),
+    };
+    let issuer_state_hash = blake3::hash(issuer_state.as_bytes()).to_hex().to_string();
+    issuer
+        .insert_offer(&offer, Some(&issuer_state_hash), None, None)
+        .await
+        .unwrap();
+    let loaded_offer = issuer.offer(offer.id, now).await.unwrap().unwrap();
+    assert_eq!(loaded_offer.id, offer.id);
+    assert_eq!(loaded_offer.tenant_id, offer.tenant_id);
+    assert_eq!(loaded_offer.subject_id, offer.subject_id);
+    assert_eq!(
+        loaded_offer.credential_configuration_ids,
+        offer.credential_configuration_ids
+    );
+    assert_eq!(loaded_offer.grants, offer.grants);
+    assert_eq!(
+        loaded_offer.expires_at.timestamp_micros(),
+        offer.expires_at.timestamp_micros()
+    );
+    let consume_at = Utc::now();
+    assert!(
+        issuer
+            .consume_authorization_offer(&issuer_state_hash, subject_id, "wallet", consume_at)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        issuer
+            .consume_authorization_offer(&issuer_state_hash, subject_id, "wallet", consume_at)
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    let access = CredentialAccess {
+        token_id: Uuid::now_v7(),
+        tenant_id,
+        subject_id,
+        client_id: "wallet".to_owned(),
+        configuration_ids: vec!["pid".to_owned()],
+        credential_identifiers: Vec::new(),
+        dpop_jkt: None,
+        expires_at: now + Duration::minutes(5),
+    };
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    let nonce_hash = blake3::hash(Uuid::now_v7().as_bytes()).to_hex().to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    issuer
+        .issue_nonce(&NonceRecord {
+            nonce_hash: nonce_hash.clone(),
+            expires_at: now + Duration::minutes(1),
+        })
+        .await
+        .unwrap();
+    let nonce_consumed_at = Utc::now();
+    assert!(
+        issuer
+            .consume_nonce(&nonce_hash, nonce_consumed_at)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !issuer
+            .consume_nonce(&nonce_hash, nonce_consumed_at)
+            .await
+            .unwrap()
+    );
+
+    let verifier = Openid4vpRepository::new(pool, tenant_id, data_key);
+    let transaction_id = Uuid::now_v7();
+    let presentation_state = format!("state-{}", Uuid::now_v7());
+    let request = AuthorizationRequest {
+        client_id: "redirect_uri:https://verifier.example/response".to_owned(),
+        response_type: "vp_token".to_owned(),
+        response_mode: "direct_post".to_owned(),
+        response_uri: "https://verifier.example/response".to_owned(),
+        nonce: "nonce".to_owned(),
+        state: presentation_state.clone(),
+        dcql_query: DcqlQuery {
+            credentials: vec![CredentialQuery {
+                id: "pid".to_owned(),
+                format: CredentialFormat::SdJwtVc,
+                meta: None,
+                claims: None,
+                claim_sets: None,
+                trusted_authorities: None,
+                require_cryptographic_holder_binding: Some(true),
+            }],
+            credential_sets: None,
+        },
+        client_metadata: None,
+        verifier_info: None,
+        transaction_data: None,
+        wallet_nonce: None,
+    };
+    let transaction = PresentationTransaction {
+        id: transaction_id,
+        client_id_prefix: ClientIdPrefix::RedirectUri,
+        request_method: RequestMethod::UrlQuery,
+        response_mode: ResponseMode::DirectPost,
+        wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
+        request,
+        request_object: None,
+        request_uri: None,
+        response_encryption_private_key: Some(vec![7_u8; 32]),
+        created_at: now,
+        expires_at: now + Duration::minutes(5),
+    };
+    verifier.create(&transaction).await.unwrap();
+    let loaded = verifier
+        .request(transaction_id, now)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(loaded.response_encryption_private_key, Some(vec![7_u8; 32]));
+    let completed_at = Utc::now();
+    let result = PresentationResult {
+        transaction_id,
+        credentials: Vec::new(),
+        completed_at,
+    };
+    let state_hash = blake3::hash(presentation_state.as_bytes())
+        .to_hex()
+        .to_string();
+    assert!(
+        verifier
+            .complete(transaction_id, &state_hash, &result, completed_at)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !verifier
+            .complete(transaction_id, &state_hash, &result, completed_at)
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        verifier
+            .result(transaction_id, now)
+            .await
+            .unwrap()
+            .unwrap()
+            .completed,
+        Some(result)
+    );
+}
