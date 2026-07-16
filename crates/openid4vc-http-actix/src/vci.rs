@@ -180,8 +180,21 @@ pub async fn create_credential_offer(
 
 pub async fn credential_issuer_metadata(
     endpoint: web::Data<CredentialIssuerEndpoint>,
+    request: HttpRequest,
 ) -> HttpResponse {
     match endpoint.operations.metadata().await {
+        Ok(metadata) if accepts_signed_metadata(&request) => match metadata.signed_metadata {
+            Some(jwt) => HttpResponse::Ok()
+                .insert_header((header::CONTENT_TYPE, "application/jwt"))
+                .insert_header((header::CACHE_CONTROL, "no-store"))
+                .body(jwt),
+            None => credential_error(CredentialHttpError {
+                status: 406,
+                error: "invalid_request",
+                description: "Signed credential issuer metadata is unavailable.",
+                dpop_nonce: None,
+            }),
+        },
         Ok(metadata) => json_no_store(metadata),
         Err(error) => credential_error(error),
     }
@@ -327,6 +340,19 @@ fn credential_success(body: CredentialResponseBody) -> HttpResponse {
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .body(value),
     }
+}
+
+fn accepts_signed_metadata(request: &HttpRequest) -> bool {
+    request
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .is_some_and(|value| {
+            value
+                .split(',')
+                .map(|item| item.split(';').next().unwrap_or("").trim())
+                .any(|mime| mime.eq_ignore_ascii_case("application/jwt"))
+        })
 }
 
 fn credential_body(

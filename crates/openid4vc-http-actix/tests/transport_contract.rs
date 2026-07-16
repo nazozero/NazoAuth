@@ -9,7 +9,7 @@ use nazo_openid4vc_http_actix::{
     PreAuthorizedTokenRequest, PreAuthorizedTokenResponse, PresentationEndpoint,
     PresentationFuture, PresentationHttpError, PresentationOperations, PresentationResponseBody,
     PresentationResponseInput, create_credential_offer, create_presentation, credential,
-    notification, presentation_response,
+    credential_issuer_metadata, notification, presentation_response,
 };
 use nazo_openid4vci::{
     CredentialIssuerMetadata, CredentialOffer, CredentialRequest, DeferredCredentialRequest,
@@ -180,6 +180,77 @@ impl CredentialIssuerOperations for DpopNonceIssuer {
     }
 }
 
+struct MetadataIssuer;
+
+impl CredentialIssuerOperations for MetadataIssuer {
+    fn metadata(
+        &self,
+    ) -> CredentialIssuerFuture<'_, Result<CredentialIssuerMetadata, CredentialHttpError>> {
+        Box::pin(async {
+            Ok(CredentialIssuerMetadata {
+                credential_issuer: "https://issuer.example".to_owned(),
+                authorization_servers: Vec::new(),
+                credential_endpoint: "https://issuer.example/credential".to_owned(),
+                nonce_endpoint: None,
+                deferred_credential_endpoint: None,
+                notification_endpoint: None,
+                credential_request_encryption: None,
+                credential_response_encryption: None,
+                batch_credential_issuance: None,
+                display: Vec::new(),
+                credential_configurations_supported: Default::default(),
+                signed_metadata: Some("signed.metadata.jwt".to_owned()),
+            })
+        })
+    }
+    fn offer<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialOffer, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn nonce(
+        &self,
+        _: Option<&str>,
+    ) -> CredentialIssuerFuture<'_, Result<String, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn credential<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: CredentialRequestBody<CredentialRequest>,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn deferred<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: CredentialRequestBody<DeferredCredentialRequest>,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn notify<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: NotificationRequest,
+    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn pre_authorized_token<'a>(
+        &'a self,
+        _: PreAuthorizedTokenRequest,
+    ) -> CredentialIssuerFuture<'a, Result<PreAuthorizedTokenResponse, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn create_offer<'a>(
+        &'a self,
+        _: CreateCredentialOfferRequest,
+    ) -> CredentialIssuerFuture<'a, Result<CreateCredentialOfferResponse, CredentialHttpError>>
+    {
+        Box::pin(async { unreachable!() })
+    }
+}
+
 #[derive(Default)]
 struct NotificationIssuer {
     notifications: Mutex<Vec<NotificationRequest>>,
@@ -238,6 +309,37 @@ impl CredentialIssuerOperations for NotificationIssuer {
     {
         Box::pin(async { unreachable!() })
     }
+}
+
+#[actix_web::test]
+async fn metadata_endpoint_returns_signed_jwt_when_requested() {
+    let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
+        Arc::new(MetadataIssuer),
+        b"management-token".to_vec(),
+    ));
+    let app = test::init_service(
+        App::new()
+            .app_data(endpoint)
+            .route("/metadata", web::get().to(credential_issuer_metadata)),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::get()
+            .uri("/metadata")
+            .insert_header(("accept", "application/jwt"))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get("content-type").unwrap(),
+        "application/jwt"
+    );
+    let body = test::read_body(response).await;
+    assert_eq!(body, "signed.metadata.jwt");
 }
 
 #[actix_web::test]
