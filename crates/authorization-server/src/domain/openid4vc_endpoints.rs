@@ -959,7 +959,18 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                 self.dpop_nonce_policy,
             )
             .await
-            .map_err(|_| vci_error(400, "invalid_dpop_proof", "DPoP proof is invalid."))?;
+            .map_err(|error| match error {
+                DpopError::UseNonce(nonce) => CredentialHttpError {
+                    status: 400,
+                    error: "use_dpop_nonce",
+                    description: "Credential issuer requires nonce in DPoP proof.",
+                    dpop_nonce: Some(nonce),
+                },
+                DpopError::NonceStoreUnavailable => {
+                    vci_error(503, "server_error", "DPoP nonce validation is unavailable.")
+                }
+                _ => vci_error(400, "invalid_dpop_proof", "DPoP proof is invalid."),
+            })?;
             let authorization_details = authorization
                 .configuration_ids
                 .iter()
