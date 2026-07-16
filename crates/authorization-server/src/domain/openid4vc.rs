@@ -483,7 +483,11 @@ impl Openid4vcCredentialCrypto {
                 tracing::warn!(%error, "OpenID4VP mdoc verifier could not process a credential");
                 CredentialTrustError::InvalidEncoding
             })?;
-        if !verified.is_valid || verified.mdoc.documents.len() != 1 {
+        let standard_device_authentication_valid =
+            verify_standard_mdoc_device_signatures(&verified, session_transcript)?;
+        if (!verified.is_valid && !standard_device_authentication_valid)
+            || verified.mdoc.documents.len() != 1
+        {
             let assessments = verified
                 .assessments
                 .iter()
@@ -544,6 +548,87 @@ impl Openid4vcCredentialCrypto {
                 .transpose()?,
         })
     }
+}
+
+fn standard_device_authentication_bytes(
+    session_transcript: &[u8],
+    doc_type: &str,
+    device_name_spaces: &[u8],
+) -> Result<Vec<u8>, mdoc_rs::MdocError> {
+    let device_authentication = mdoc_rs::session::build_device_authentication_bytes(
+        session_transcript,
+        doc_type,
+        device_name_spaces,
+    )?;
+    encode_cbor_canonical(&wrap_tag24(&device_authentication))
+}
+
+fn verify_standard_mdoc_device_signatures(
+    verified: &mdoc_rs::verifier::VerifiedMDoc,
+    session_transcript: &[u8],
+) -> Result<bool, CredentialTrustError> {
+    if verified.is_valid {
+        return Ok(true);
+    }
+
+    let failed = verified
+        .assessments
+        .iter()
+        .filter(|assessment| assessment.status != mdoc_rs::verifier::VerificationStatus::Passed)
+        .collect::<Vec<_>>();
+    if failed.is_empty()
+        || failed
+            .iter()
+            .any(|assessment| assessment.id != mdoc_rs::verifier::CheckId::DeviceSignatureValidity)
+    {
+        return Ok(false);
+    }
+
+    let mut verified_signatures = 0usize;
+    for document in &verified.mdoc.documents {
+        let Some(device_signed) = document.device_signed.as_ref() else {
+            continue;
+        };
+        if !matches!(
+            device_signed.device_auth,
+            mdoc_rs::model::types::DeviceAuth::Signature(_)
+        ) {
+            return Ok(false);
+        }
+        let mso = document
+            .issuer_signed
+            .issuer_auth
+            .mso()
+            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+        let device_key = mso
+            .device_key_info
+            .as_ref()
+            .map(|device_key_info| &device_key_info.device_key)
+            .ok_or(CredentialTrustError::InvalidHolderBinding)?;
+        let device_key_bytes = device_key
+            .clone()
+            .to_vec()
+            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+        let device_authentication = standard_device_authentication_bytes(
+            session_transcript,
+            &document.doc_type,
+            &device_signed.name_spaces_bytes,
+        )
+        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+        let result = mdoc_rs::device_auth::verify_device_auth(
+            &device_signed.device_auth,
+            &device_authentication,
+            &device_key_bytes,
+            None,
+        )
+        .map_err(|_| CredentialTrustError::InvalidSignature)?;
+        if !result.is_valid {
+            return Ok(false);
+        }
+        verified_signatures += 1;
+    }
+
+    Ok(verified_signatures == failed.len())
 }
 
 fn mdoc_holder_key(device_key: Option<&coset::CoseKey>) -> Result<Value, CredentialTrustError> {

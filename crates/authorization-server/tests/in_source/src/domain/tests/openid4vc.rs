@@ -1,4 +1,5 @@
 use super::*;
+use p256::ecdsa::{Signature, SigningKey, signature::Signer as _};
 
 #[test]
 fn verified_mdoc_holder_binding_preserves_the_device_cose_key() {
@@ -19,5 +20,56 @@ fn verified_mdoc_holder_binding_preserves_the_device_cose_key() {
     assert_eq!(
         mdoc_holder_key(None),
         Err(CredentialTrustError::InvalidHolderBinding)
+    );
+}
+
+#[test]
+fn mdoc_device_signature_uses_tagged_device_authentication_bytes() {
+    let signing_key = SigningKey::from_slice(&[7; 32]).expect("valid P-256 test key");
+    let point = signing_key.verifying_key().to_sec1_point(false);
+    let device_key = CoseKeyBuilder::new_ec2_pub_key(
+        iana::EllipticCurve::P_256,
+        point.x().expect("P-256 x coordinate").to_vec(),
+        point.y().expect("P-256 y coordinate").to_vec(),
+    )
+    .build();
+    let session_transcript = [0x83, 0xf6, 0xf6, 0xf6];
+    let device_name_spaces = [0xa0];
+    let standard_payload = standard_device_authentication_bytes(
+        &session_transcript,
+        "org.iso.18013.5.1.mDL",
+        &device_name_spaces,
+    )
+    .expect("DeviceAuthenticationBytes");
+    let protected = coset::HeaderBuilder::new()
+        .algorithm(iana::Algorithm::ES256)
+        .build();
+    let sign1 = coset::CoseSign1Builder::new()
+        .protected(protected)
+        .create_detached_signature(&standard_payload, &[], |tbs| {
+            let signature: Signature = signing_key.sign(tbs);
+            signature.to_bytes().to_vec()
+        })
+        .build();
+    let auth = mdoc_rs::model::types::DeviceAuth::Signature(sign1);
+    let key_bytes = device_key.to_vec().expect("CBOR COSE key");
+
+    let standard =
+        mdoc_rs::device_auth::verify_device_auth(&auth, &standard_payload, &key_bytes, None)
+            .expect("standard signature verification");
+    assert!(standard.is_valid);
+
+    let untagged_payload = mdoc_rs::session::build_device_authentication_bytes(
+        &session_transcript,
+        "org.iso.18013.5.1.mDL",
+        &device_name_spaces,
+    )
+    .expect("untagged DeviceAuthentication");
+    let untagged =
+        mdoc_rs::device_auth::verify_device_auth(&auth, &untagged_payload, &key_bytes, None)
+            .expect("untagged signature verification result");
+    assert!(
+        !untagged.is_valid,
+        "the ISO DeviceAuthenticationBytes tag is part of the signed payload"
     );
 }
