@@ -540,6 +540,44 @@ impl PresentationStorePort for Openid4vpRepository {
         })
     }
 
+    fn bind_wallet_nonce<'a>(
+        &'a self,
+        transaction_id: Uuid,
+        wallet_nonce: &'a str,
+        now: DateTime<Utc>,
+    ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
+    {
+        Box::pin(async move {
+            let mut connection = self
+                .pool
+                .get()
+                .await
+                .map_err(|_| PresentationStoreError::Unavailable)?;
+            let Some(mut row) = load_presentation(&mut connection, transaction_id, now)
+                .await
+                .map_err(|_| PresentationStoreError::Unavailable)?
+            else {
+                return Ok(None);
+            };
+            let mut request = row.transaction()?.request;
+            request.wallet_nonce = Some(wallet_nonce.to_owned());
+            let encoded = serde_json::to_value(&request)
+                .map_err(|_| PresentationStoreError::InvalidTransition)?;
+            sql_query(
+                "UPDATE openid4vp_transactions SET request = $3 \
+                 WHERE id = $1 AND completed_at IS NULL AND expires_at > $2",
+            )
+            .bind::<sql_types::Uuid, _>(transaction_id)
+            .bind::<sql_types::Timestamptz, _>(now)
+            .bind::<sql_types::Jsonb, _>(encoded.clone())
+            .execute(&mut connection)
+            .await
+            .map_err(|_| PresentationStoreError::Unavailable)?;
+            row.request = encoded;
+            row.transaction_with_key(&self.data_key).map(Some)
+        })
+    }
+
     fn complete<'a>(
         &'a self,
         transaction_id: Uuid,

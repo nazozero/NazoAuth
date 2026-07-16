@@ -35,6 +35,16 @@ impl PresentationStorePort for RecordingStore {
         Box::pin(async { Ok(None) })
     }
 
+    fn bind_wallet_nonce<'a>(
+        &'a self,
+        _transaction_id: Uuid,
+        _wallet_nonce: &'a str,
+        _now: chrono::DateTime<Utc>,
+    ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
+    {
+        Box::pin(async { Ok(None) })
+    }
+
     fn complete<'a>(
         &'a self,
         _transaction_id: Uuid,

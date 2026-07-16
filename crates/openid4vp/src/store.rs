@@ -25,6 +25,13 @@ pub trait PresentationStorePort: Send + Sync {
         now: DateTime<Utc>,
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>;
 
+    fn bind_wallet_nonce<'a>(
+        &'a self,
+        transaction_id: Uuid,
+        wallet_nonce: &'a str,
+        now: DateTime<Utc>,
+    ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>;
+
     fn complete<'a>(
         &'a self,
         transaction_id: Uuid,
