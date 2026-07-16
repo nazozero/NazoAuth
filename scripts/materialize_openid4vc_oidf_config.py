@@ -58,6 +58,35 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
     ]
 
 
+def ec_p256_signing_keys(jwks: object, *, source: str) -> list[dict[str, object]]:
+    if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
+        raise SystemExit(f"{source} requires a jwks.keys array")
+    keys = [
+        copy.deepcopy(key)
+        for key in jwks["keys"]
+        if isinstance(key, dict)
+        and key.get("kty") == "EC"
+        and key.get("crv") == "P-256"
+        and isinstance(key.get("d"), str)
+        and key.get("d")
+    ]
+    if not keys:
+        raise SystemExit(f"{source} requires at least one private EC P-256 JWK")
+    for key in keys:
+        key["alg"] = "ES256"
+    return keys
+
+
+def use_ec_client2_for_mdoc(config: dict[str, object], *, source: str) -> None:
+    client = config.get("client")
+    client2 = config.get("client2")
+    if not isinstance(client, dict):
+        raise SystemExit(f"{source} requires a client object")
+    if not isinstance(client2, dict):
+        raise SystemExit(f"{source} mdoc configurations require a client2 object")
+    client2["jwks"] = {"keys": ec_p256_signing_keys(client.get("jwks"), source=f"{source}.client")}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-config-json-file", required=True)
@@ -140,6 +169,8 @@ def main() -> int:
                 if client_auth_type == "client_attestation"
                 else VCI_PRIVATE_KEY_CLIENT_ID
             )
+            if variants["credential_format"] == "mdoc":
+                use_ec_client2_for_mdoc(config, source=key)
             config["nazo"] = {
                 "openid4vc_role": "issuer",
                 "client_auth_type": client_auth_type,
