@@ -479,8 +479,28 @@ impl Openid4vcCredentialCrypto {
                     ..Default::default()
                 },
             )
-            .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+            .map_err(|error| {
+                tracing::warn!(%error, "OpenID4VP mdoc verifier could not process a credential");
+                CredentialTrustError::InvalidEncoding
+            })?;
         if !verified.is_valid || verified.mdoc.documents.len() != 1 {
+            let assessments = verified
+                .assessments
+                .iter()
+                .map(|assessment| {
+                    format!(
+                        "{}: {:?}: {}",
+                        assessment.check,
+                        assessment.status,
+                        assessment.reason.as_deref().unwrap_or("")
+                    )
+                })
+                .collect::<Vec<_>>();
+            tracing::warn!(
+                document_count = verified.mdoc.documents.len(),
+                ?assessments,
+                "OpenID4VP mdoc credential failed verification"
+            );
             return Err(CredentialTrustError::InvalidSignature);
         }
         let document = &verified.mdoc.documents[0];
