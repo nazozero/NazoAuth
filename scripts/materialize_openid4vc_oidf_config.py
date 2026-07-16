@@ -19,6 +19,8 @@ VP_HAIP = "oid4vp-1final-verifier-haip-test-plan"
 OIDF_VP_SD_JWT_VCT = "urn:eudi:pid:1"
 VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
 VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
+VCI_PRIVATE_KEY_CLIENT2_ID = f"{VCI_PRIVATE_KEY_CLIENT_ID}-2"
+VCI_ATTESTED_CLIENT2_ID = f"{VCI_ATTESTED_CLIENT_ID}-2"
 VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm"
 P256_P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
 P256_A = -3
@@ -154,13 +156,14 @@ def derived_ec_p256_client2_keys(jwks: object, *, source: str) -> list[dict[str,
     return keys
 
 
-def use_ec_client2(config: dict[str, object], *, source: str) -> None:
+def use_ec_client2(config: dict[str, object], *, source: str, client_id: str) -> None:
     client = config.get("client")
     client2 = config.get("client2")
     if not isinstance(client, dict):
         raise SystemExit(f"{source} requires a client object")
     if not isinstance(client2, dict):
         raise SystemExit(f"{source} configurations require a client2 object")
+    client2["client_id"] = client_id
     client2["jwks"] = {
         "keys": derived_ec_p256_client2_keys(client.get("jwks"), source=f"{source}.client")
     }
@@ -252,7 +255,12 @@ def main() -> int:
                 if client_auth_type == "client_attestation"
                 else VCI_PRIVATE_KEY_CLIENT_ID
             )
-            use_ec_client2(config, source=key)
+            client2_id = (
+                VCI_ATTESTED_CLIENT2_ID
+                if client_auth_type == "client_attestation"
+                else VCI_PRIVATE_KEY_CLIENT2_ID
+            )
+            use_ec_client2(config, source=key, client_id=client2_id)
             config["nazo"] = {
                 "openid4vc_role": "issuer",
                 "client_auth_type": client_auth_type,

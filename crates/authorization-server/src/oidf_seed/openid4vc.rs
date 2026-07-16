@@ -13,6 +13,8 @@ use super::{callback_uris, config::client_scopes, config::public_jwks};
 
 pub const PRIVATE_KEY_CLIENT_ID: &str = "nazo-openid4vc-oidf-private-key-jwt";
 pub const ATTESTED_CLIENT_ID: &str = "nazo-openid4vc-oidf-client-attestation";
+pub const PRIVATE_KEY_CLIENT2_ID: &str = "nazo-openid4vc-oidf-private-key-jwt-2";
+pub const ATTESTED_CLIENT2_ID: &str = "nazo-openid4vc-oidf-client-attestation-2";
 const SUITE_REDIRECT_URI_QUERY_SUFFIX: &str = "?dummy1=lorem&dummy2=ipsum";
 
 #[must_use]
@@ -152,11 +154,11 @@ pub fn client_seeds(
             if entry
                 .auth_method
                 .as_deref()
-                .is_some_and(|existing| existing != "private_key_jwt")
+                .is_some_and(|existing| existing != auth_method)
             {
                 anyhow::bail!("{client2_id} is assigned conflicting authentication methods");
             }
-            entry.auth_method = Some("private_key_jwt".to_owned());
+            entry.auth_method = Some(auth_method.to_owned());
             entry
                 .redirect_uris
                 .extend(callback_uris_with_suite_query(suite_base_urls, alias));

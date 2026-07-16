@@ -326,10 +326,7 @@ impl Openid4vcCredentialCrypto {
                 .ok_or(CredentialTrustError::UntrustedIssuer)?,
         )?;
         let mut validation = Validation::new(header.alg);
-        validation.required_spec_claims = ["exp", "iss"]
-            .into_iter()
-            .map(str::to_owned)
-            .collect();
+        validation.required_spec_claims = ["exp", "iss"].into_iter().map(str::to_owned).collect();
         validation.validate_aud = false;
         let credential = decode::<Value>(credential_jwt, &key, &validation)
             .map_err(|_| CredentialTrustError::InvalidSignature)?
