@@ -248,6 +248,10 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
             signed[0].payload.holder_binding,
             signed[1].payload.holder_binding
         );
+        assert_eq!(signed[0].issued_at.timestamp() % 60, 0);
+        assert_eq!(signed[0].expires_at.timestamp() % 60, 0);
+        assert_eq!(signed[0].issued_at, signed[1].issued_at);
+        assert_eq!(signed[0].expires_at, signed[1].expires_at);
     }
     assert_eq!(store.notifications.lock().unwrap().len(), 1);
 

@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-//! Deployment-time seeding of the two bounded OpenID4VC OIDF client classes.
+//! Deployment-time seeding of bounded OpenID4VC OIDF clients.
 //!
 //! This binary is intentionally excluded from the production runtime image.
 //! It consumes the exact materialized plan bundle used by the runner and
@@ -82,9 +82,6 @@ async fn main() -> anyhow::Result<()> {
 
     let pool = nazo_postgres::create_pool(&database_url, 2)?;
     nazo_postgres::seed_oidf_clients_atomically(&pool, &clients).await?;
-    println!(
-        "Seeded {} bounded OpenID4VC OIDF client classes.",
-        clients.len()
-    );
+    println!("Seeded {} bounded OpenID4VC OIDF clients.", clients.len());
     Ok(())
 }

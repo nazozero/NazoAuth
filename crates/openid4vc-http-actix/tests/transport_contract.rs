@@ -9,7 +9,7 @@ use nazo_openid4vc_http_actix::{
     PreAuthorizedTokenRequest, PreAuthorizedTokenResponse, PresentationEndpoint,
     PresentationFuture, PresentationHttpError, PresentationOperations, PresentationResponseBody,
     PresentationResponseInput, create_credential_offer, create_presentation, credential,
-    presentation_response,
+    notification, presentation_response,
 };
 use nazo_openid4vci::{
     CredentialIssuerMetadata, CredentialOffer, CredentialRequest, DeferredCredentialRequest,
@@ -180,6 +180,66 @@ impl CredentialIssuerOperations for DpopNonceIssuer {
     }
 }
 
+#[derive(Default)]
+struct NotificationIssuer {
+    notifications: Mutex<Vec<NotificationRequest>>,
+}
+
+impl CredentialIssuerOperations for NotificationIssuer {
+    fn metadata(
+        &self,
+    ) -> CredentialIssuerFuture<'_, Result<CredentialIssuerMetadata, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn offer<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialOffer, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn nonce(
+        &self,
+        _: Option<&str>,
+    ) -> CredentialIssuerFuture<'_, Result<String, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn credential<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: CredentialRequestBody<CredentialRequest>,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn deferred<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: CredentialRequestBody<DeferredCredentialRequest>,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn notify<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        request: NotificationRequest,
+    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>> {
+        self.notifications.lock().unwrap().push(request);
+        Box::pin(async { Ok(()) })
+    }
+    fn pre_authorized_token<'a>(
+        &'a self,
+        _: PreAuthorizedTokenRequest,
+    ) -> CredentialIssuerFuture<'a, Result<PreAuthorizedTokenResponse, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn create_offer<'a>(
+        &'a self,
+        _: CreateCredentialOfferRequest,
+    ) -> CredentialIssuerFuture<'a, Result<CreateCredentialOfferResponse, CredentialHttpError>>
+    {
+        Box::pin(async { unreachable!() })
+    }
+}
+
 #[actix_web::test]
 async fn management_endpoints_fail_closed_without_exact_bearer_token() {
     let issuer = web::Data::new(CredentialIssuerEndpoint::new(
@@ -259,6 +319,41 @@ async fn credential_endpoint_preserves_dpop_nonce_challenge_error() {
         response.headers().get("dpop-nonce").unwrap(),
         "resource-nonce"
     );
+}
+
+#[actix_web::test]
+async fn notification_endpoint_accepts_extension_members_without_relaxing_authentication() {
+    let issuer = Arc::new(NotificationIssuer::default());
+    let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
+        issuer.clone(),
+        b"management-token".to_vec(),
+    ));
+    let app = test::init_service(
+        App::new()
+            .app_data(endpoint)
+            .route("/notification", web::post().to(notification)),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/notification")
+            .insert_header(("authorization", "DPoP access-token"))
+            .insert_header(("dpop", "proof.jwt"))
+            .set_json(json!({
+                "notification_id": "notification-1",
+                "event": "credential_accepted",
+                "suite_extension": "ignored"
+            }))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
+    let notifications = issuer.notifications.lock().unwrap();
+    assert_eq!(notifications.len(), 1);
+    assert_eq!(notifications[0].notification_id, "notification-1");
 }
 
 #[actix_web::test]

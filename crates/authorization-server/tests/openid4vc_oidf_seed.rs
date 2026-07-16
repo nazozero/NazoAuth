@@ -30,6 +30,12 @@ fn seed_materialization_keeps_authentication_classes_distinct_and_public() {
                     "jwks": {"keys": [{
                         "kty": "EC", "crv": "P-256", "kid": "client", "x": "x", "y": "y", "d": "private"
                     }]}
+                },
+                "client2": {
+                    "client_id": "suite-secondary-client",
+                    "jwks": {"keys": [{
+                        "kty": "EC", "crv": "P-256", "kid": "client2", "x": "x2", "y": "y2", "d": "private2"
+                    }]}
                 }
             },
             "attested.json": {
@@ -51,7 +57,7 @@ fn seed_materialization_keeps_authentication_classes_distinct_and_public() {
 
     let seeds = client_seeds(&bundle, &suite_urls).expect("bounded clients");
 
-    assert_eq!(seeds.len(), 2);
+    assert_eq!(seeds.len(), 3);
     let private = seeds
         .iter()
         .find(|seed| seed.client_id == PRIVATE_KEY_CLIENT_ID)
@@ -74,6 +80,17 @@ fn seed_materialization_keeps_authentication_classes_distinct_and_public() {
         vec!["openid", "pid-attested-scope", "pid-scope"]
     );
     assert!(attested.jwks.is_none());
+    let secondary = seeds
+        .iter()
+        .find(|seed| seed.client_id == "suite-secondary-client")
+        .expect("suite client2");
+    assert_eq!(secondary.auth_method, "private_key_jwt");
+    assert_eq!(secondary.redirect_uris.len(), 2);
+    assert_eq!(
+        secondary.scopes,
+        vec!["openid", "pid-private-scope", "pid-scope"]
+    );
+    assert_eq!(secondary.jwks.as_ref().unwrap()["keys"][0].get("d"), None);
 }
 
 #[test]
