@@ -8,12 +8,12 @@ mod vci;
 mod vp;
 
 pub use vci::{
-    CreateCredentialOfferRequest, CreateCredentialOfferResponse, CredentialHttpError,
-    CredentialIssuerEndpoint, CredentialIssuerFuture, CredentialIssuerOperations,
-    CredentialRequestBody, CredentialRequestContext, CredentialResponseBody,
-    PreAuthorizedTokenRequest, PreAuthorizedTokenResponse, create_credential_offer, credential,
-    credential_issuer_metadata, credential_nonce, credential_offer, deferred_credential,
-    notification,
+    AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
+    CredentialHttpError, CredentialIssuerEndpoint, CredentialIssuerFuture,
+    CredentialIssuerOperations, CredentialRequestBody, CredentialRequestContext,
+    CredentialResponseBody, PreAuthorizedTokenRequest, PreAuthorizedTokenResponse,
+    create_credential_offer, credential, credential_issuer_metadata, credential_nonce,
+    credential_offer, deferred_credential, notification,
 };
 pub use vp::{
     CreatePresentationRequest, CreatePresentationResponse, PresentationEndpoint,

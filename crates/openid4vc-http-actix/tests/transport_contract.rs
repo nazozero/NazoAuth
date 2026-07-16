@@ -1,23 +1,28 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use actix_web::{App, http::StatusCode, test, web};
 use nazo_openid4vc_http_actix::{
-    CreateCredentialOfferRequest, CreateCredentialOfferResponse, CreatePresentationRequest,
-    CreatePresentationResponse, CredentialHttpError, CredentialIssuerEndpoint,
-    CredentialIssuerFuture, CredentialIssuerOperations, CredentialRequestBody,
-    CredentialRequestContext, CredentialResponseBody, PreAuthorizedTokenRequest,
-    PreAuthorizedTokenResponse, PresentationEndpoint, PresentationFuture, PresentationHttpError,
-    PresentationOperations, PresentationResponseBody, PresentationResponseInput,
-    create_credential_offer, create_presentation, credential, presentation_response,
+    AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
+    CreatePresentationRequest, CreatePresentationResponse, CredentialHttpError,
+    CredentialIssuerEndpoint, CredentialIssuerFuture, CredentialIssuerOperations,
+    CredentialRequestBody, CredentialRequestContext, CredentialResponseBody,
+    PreAuthorizedTokenRequest, PreAuthorizedTokenResponse, PresentationEndpoint,
+    PresentationFuture, PresentationHttpError, PresentationOperations, PresentationResponseBody,
+    PresentationResponseInput, create_credential_offer, create_presentation, credential,
+    presentation_response,
 };
 use nazo_openid4vci::{
     CredentialIssuerMetadata, CredentialOffer, CredentialRequest, DeferredCredentialRequest,
     NotificationRequest,
 };
 use nazo_openid4vp::{PresentationResult, PresentationTransaction};
+use serde_json::json;
 use uuid::Uuid;
 
-struct Issuer;
+#[derive(Default)]
+struct Issuer {
+    credential_contexts: Mutex<Vec<CredentialRequestContext>>,
+}
 
 impl CredentialIssuerOperations for Issuer {
     fn metadata(
@@ -39,10 +44,18 @@ impl CredentialIssuerOperations for Issuer {
     }
     fn credential<'a>(
         &'a self,
-        _: CredentialRequestContext,
+        context: CredentialRequestContext,
         _: CredentialRequestBody<CredentialRequest>,
     ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
-        Box::pin(async { unreachable!() })
+        self.credential_contexts.lock().unwrap().push(context);
+        Box::pin(async {
+            Err(CredentialHttpError {
+                status: 409,
+                error: "captured",
+                description: "captured",
+                dpop_nonce: None,
+            })
+        })
     }
     fn deferred<'a>(
         &'a self,
@@ -107,7 +120,7 @@ impl PresentationOperations for Verifier {
 #[actix_web::test]
 async fn management_endpoints_fail_closed_without_exact_bearer_token() {
     let issuer = web::Data::new(CredentialIssuerEndpoint::new(
-        Arc::new(Issuer),
+        Arc::new(Issuer::default()),
         b"management-token".to_vec(),
     ));
     let verifier = web::Data::new(PresentationEndpoint::new(
@@ -153,7 +166,7 @@ async fn management_endpoints_fail_closed_without_exact_bearer_token() {
 #[actix_web::test]
 async fn credential_endpoint_rejects_query_tokens_and_non_json_or_jwt_bodies() {
     let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
-        Arc::new(Issuer),
+        Arc::new(Issuer::default()),
         b"management-token".to_vec(),
     ));
     let app = test::init_service(
@@ -185,6 +198,42 @@ async fn credential_endpoint_rejects_query_tokens_and_non_json_or_jwt_bodies() {
     )
     .await;
     assert_eq!(unsupported.status(), StatusCode::UNSUPPORTED_MEDIA_TYPE);
+}
+
+#[actix_web::test]
+async fn credential_endpoint_preserves_dpop_authorization_scheme_and_proof() {
+    let issuer = Arc::new(Issuer::default());
+    let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
+        issuer.clone(),
+        b"management-token".to_vec(),
+    ));
+    let app = test::init_service(
+        App::new()
+            .app_data(endpoint)
+            .route("/credential", web::post().to(credential)),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/credential")
+            .insert_header(("authorization", "DPoP access-token"))
+            .insert_header(("dpop", "proof.jwt"))
+            .set_json(json!({
+                "credential_configuration_id": "pid",
+                "proofs": {"jwt": ["proof.jwt"]}
+            }))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::CONFLICT);
+    let contexts = issuer.credential_contexts.lock().unwrap();
+    assert_eq!(contexts.len(), 1);
+    assert_eq!(contexts[0].bearer_token, "access-token");
+    assert_eq!(contexts[0].access_token_scheme, AccessTokenScheme::Dpop);
+    assert_eq!(contexts[0].dpop_proof.as_deref(), Some("proof.jwt"));
 }
 
 #[actix_web::test]

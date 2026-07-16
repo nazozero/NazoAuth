@@ -11,9 +11,16 @@ use uuid::Uuid;
 
 pub type CredentialIssuerFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum AccessTokenScheme {
+    Bearer,
+    Dpop,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CredentialRequestContext {
     pub bearer_token: String,
+    pub access_token_scheme: AccessTokenScheme,
     pub dpop_proof: Option<String>,
     pub request_url: String,
     pub method: &'static str,
@@ -268,21 +275,31 @@ fn protected_context(
     request: &HttpRequest,
     method: &'static str,
 ) -> Result<CredentialRequestContext, CredentialHttpError> {
-    let bearer_token = request
+    let (access_token_scheme, bearer_token) = request
         .headers()
         .get(header::AUTHORIZATION)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.strip_prefix("Bearer "))
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
+        .and_then(|value| value.trim().split_once(' '))
+        .and_then(|(scheme, token)| {
+            let scheme = if scheme.eq_ignore_ascii_case("Bearer") {
+                AccessTokenScheme::Bearer
+            } else if scheme.eq_ignore_ascii_case("DPoP") {
+                AccessTokenScheme::Dpop
+            } else {
+                return None;
+            };
+            let token = token.trim();
+            (!token.is_empty()).then_some((scheme, token))
+        })
         .ok_or(CredentialHttpError {
             status: 401,
             error: "invalid_token",
-            description: "A bearer access token is required.",
+            description: "A Bearer or DPoP access token is required.",
             dpop_nonce: None,
         })?;
     Ok(CredentialRequestContext {
         bearer_token: bearer_token.to_owned(),
+        access_token_scheme,
         dpop_proof: request
             .headers()
             .get("DPoP")
@@ -373,7 +390,12 @@ fn credential_error(error: CredentialHttpError) -> HttpResponse {
     let mut response = HttpResponse::build(status);
     response.insert_header((header::CACHE_CONTROL, "no-store"));
     if status == actix_web::http::StatusCode::UNAUTHORIZED {
-        response.insert_header((header::WWW_AUTHENTICATE, "Bearer"));
+        let scheme = if matches!(error.error, "use_dpop_nonce" | "invalid_dpop_proof") {
+            "DPoP"
+        } else {
+            "Bearer"
+        };
+        response.insert_header((header::WWW_AUTHENTICATE, scheme));
     }
     if let Some(nonce) = error.dpop_nonce {
         response.insert_header(("DPoP-Nonce", nonce));
