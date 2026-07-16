@@ -510,6 +510,7 @@ def check_openid4vc_boundaries() -> None:
         ROOT / "crates" / "openid4vp" / "tests" / "protocol_contract.rs",
         ROOT / "crates" / "openid4vp" / "tests" / "service_contract.rs",
         ROOT / "crates" / "openid4vc-http-actix" / "tests" / "transport_contract.rs",
+        ROOT / "crates" / "authorization-server" / "tests" / "openid4vc_oidf_seed.rs",
     )
     missing_tests = [str(path.relative_to(ROOT)) for path in required_test_files if not path.is_file()]
     if missing_tests:
@@ -546,6 +547,12 @@ def check_openid4vc_boundaries() -> None:
         if plan not in materializer:
             raise SystemExit(f"OpenID4VC materializer lacks upstream plan: {plan}")
     for marker in (
+        "nazo-openid4vc-oidf-private-key-jwt",
+        "nazo-openid4vc-oidf-client-attestation",
+    ):
+        if marker not in materializer:
+            raise SystemExit(f"OpenID4VC materializer lacks bounded client identity: {marker}")
+    for marker in (
         "dee9a25160e789f0f80517674693ef7989ab9fa1",
         "run_openid4vc_conformance.py",
         "openid4vc-plan-set.json",
@@ -556,6 +563,15 @@ def check_openid4vc_boundaries() -> None:
     for forbidden in ("openid4vci_offers", "openid4vp_transactions", "result_ciphertext"):
         if forbidden in driver:
             raise SystemExit(f"OpenID4VC black-box driver accesses persistence: {forbidden}")
+    containerfile = (ROOT / "Containerfile").read_text(encoding="utf-8")
+    openid4vc_seed_copy = (
+        "COPY --from=builder /app/target/release/nazo_openid4vc_seed_oidf "
+        "/usr/local/bin/nazo_openid4vc_seed_oidf"
+    )
+    if containerfile.count(openid4vc_seed_copy) != 1:
+        raise SystemExit("OpenID4VC OIDF seed binary must have one image copy boundary")
+    if containerfile.index(openid4vc_seed_copy) > containerfile.index("FROM runtime-base AS runtime"):
+        raise SystemExit("OpenID4VC OIDF seed binary must not enter the production runtime image")
     keyctl = (ROOT / "crates" / "authorization-server" / "src" / "keyctl.rs").read_text(
         encoding="utf-8"
     )

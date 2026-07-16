@@ -13,6 +13,8 @@ VCI_STANDARD = "oid4vci-1_0-issuer-test-plan"
 VCI_HAIP = "oid4vci-1_0-issuer-haip-test-plan"
 VP_STANDARD = "oid4vp-1final-verifier-test-plan"
 VP_HAIP = "oid4vp-1final-verifier-haip-test-plan"
+VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
+VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
 
 
 def matrix_cases() -> list[tuple[str, str, dict[str, str]]]:
@@ -89,6 +91,21 @@ def main() -> int:
                 tx_code = issuer.get("tx_code")
                 if isinstance(tx_code, str) and tx_code:
                     vci["static_tx_code"] = tx_code
+            client = config.get("client")
+            if not isinstance(client, dict):
+                raise SystemExit(f"{key} base configuration requires a client object")
+            client_auth_type = variants.get(
+                "client_auth_type", "client_attestation" if plan == VCI_HAIP else "private_key_jwt"
+            )
+            client["client_id"] = (
+                VCI_ATTESTED_CLIENT_ID
+                if client_auth_type == "client_attestation"
+                else VCI_PRIVATE_KEY_CLIENT_ID
+            )
+            config["nazo"] = {
+                "openid4vc_role": "issuer",
+                "client_auth_type": client_auth_type,
+            }
         prefix = str(config.get("alias", "nazo-openid4vc"))
         alias = f"{prefix}-{slug}"
         config["alias"] = alias

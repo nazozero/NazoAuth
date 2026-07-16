@@ -78,7 +78,21 @@ class Openid4vcOidfTests(unittest.TestCase):
             driver = root / "driver.json"
             output = root / "output"
             base.write_text(json.dumps({
-                name: {"alias": f"nazo-{name}", **({"vci": {}} if name.startswith("vci") else {})}
+                name: {
+                    "alias": f"nazo-{name}",
+                    **(
+                        {
+                            "vci": {},
+                            "client": {
+                                "client_id": "upstream-placeholder",
+                                "scope": "openid pid-scope",
+                                "jwks": {"keys": [{"kty": "EC", "crv": "P-256", "x": "x", "y": "y", "d": "private"}]},
+                            },
+                        }
+                        if name.startswith("vci")
+                        else {}
+                    ),
+                }
                 for name in ("vci", "vci_haip", "vp", "vp_haip")
             }), encoding="utf-8")
             driver.write_text(json.dumps({
@@ -115,6 +129,19 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(config["vci"]["credential_configuration_id"], expected)
                 if "preauth" in filename:
                     self.assertEqual(config["vci"]["static_tx_code"], "123456")
+            private_key_clients = {
+                config["client"]["client_id"]
+                for config in configs.values()
+                if config.get("nazo", {}).get("client_auth_type") == "private_key_jwt"
+            }
+            attested_clients = {
+                config["client"]["client_id"]
+                for config in configs.values()
+                if config.get("nazo", {}).get("client_auth_type") == "client_attestation"
+            }
+            self.assertEqual(private_key_clients, {module.VCI_PRIVATE_KEY_CLIENT_ID})
+            self.assertEqual(attested_clients, {module.VCI_ATTESTED_CLIENT_ID})
+            self.assertTrue(private_key_clients.isdisjoint(attested_clients))
 
 
 if __name__ == "__main__":

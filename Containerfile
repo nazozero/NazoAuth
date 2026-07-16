@@ -25,6 +25,7 @@ WORKDIR /app
 FROM runtime-base AS oidf-seed
 
 COPY --from=builder /app/target/release/nazo_oauth_seed_oidf /usr/local/bin/nazo_oauth_seed_oidf
+COPY --from=builder /app/target/release/nazo_openid4vc_seed_oidf /usr/local/bin/nazo_openid4vc_seed_oidf
 
 FROM runtime-base AS runtime
 
