@@ -10,6 +10,7 @@ OIDF API plus the public and management HTTP surfaces.
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import os
 from pathlib import Path
@@ -25,6 +26,7 @@ import run_oidf_conformance as oidf  # noqa: E402
 
 
 PRE_AUTHORIZED_CODE_GRANT = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
+OIDF_TERMINAL_MODULE_STATUSES = {"FINISHED", "FAILED", "INTERRUPTED"}
 
 
 def fail(message: str) -> None:
@@ -72,36 +74,59 @@ def suite_reachable_url(conformance_server: str, url: str) -> str:
     )
 
 
-def module_entries(base_url: str, token: str | None, aliases: set[str]) -> list[dict[str, object]]:
-    entries: list[dict[str, object]] = []
+def module_entries(
+    base_url: str,
+    token: str | None,
+    aliases: set[str],
+    *,
+    ignored_module_ids: set[str] | None = None,
+    max_workers: int = 8,
+) -> list[dict[str, object]]:
+    ignored = ignored_module_ids or set()
+    candidates: list[tuple[str, object]] = []
     for plan in oidf.fetch_alias_plans(base_url, token, aliases):
         plan_name = plan.get("planName")
-        for module_id in oidf.module_ids_from_plan(plan):
-            status, info = oidf.oidf_api_request(
-                "GET", base_url, f"api/info/{module_id}", token, expected_statuses={200, 404}
-            )
-            if status == 200 and isinstance(info, dict):
-                runner_status, runner_info = oidf.oidf_api_request(
-                    "GET",
-                    base_url,
-                    f"api/runner/{module_id}",
-                    token,
-                    expected_statuses={200, 404},
-                )
-                exposed = (
-                    runner_info.get("exposed")
-                    if runner_status == 200 and isinstance(runner_info, dict)
-                    else None
-                )
-                entries.append(
-                    {
-                        **info,
-                        **({"exposed": exposed} if isinstance(exposed, dict) else {}),
-                        "_driver_module_id": module_id,
-                        "_driver_plan": plan_name,
-                    }
-                )
-    return entries
+        for module_id in sorted(oidf.module_ids_from_plan(plan)):
+            if module_id not in ignored:
+                candidates.append((module_id, plan_name))
+
+    def fetch_entry(candidate: tuple[str, object]) -> dict[str, object] | None:
+        module_id, plan_name = candidate
+        status, info = oidf.oidf_api_request(
+            "GET", base_url, f"api/info/{module_id}", token, expected_statuses={200, 404}
+        )
+        if status != 200 or not isinstance(info, dict):
+            return None
+        entry = {
+            **info,
+            "_driver_module_id": module_id,
+            "_driver_plan": plan_name,
+        }
+        if str(info.get("status", "")).upper() != "WAITING":
+            return entry
+        runner_status, runner_info = oidf.oidf_api_request(
+            "GET",
+            base_url,
+            f"api/runner/{module_id}",
+            token,
+            expected_statuses={200, 404},
+        )
+        exposed = (
+            runner_info.get("exposed")
+            if runner_status == 200 and isinstance(runner_info, dict)
+            else None
+        )
+        return {**entry, **({"exposed": exposed} if isinstance(exposed, dict) else {})}
+
+    if not candidates:
+        return []
+    workers = max(1, min(max_workers, len(candidates)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as executor:
+        return [
+            entry
+            for entry in executor.map(fetch_entry, candidates)
+            if entry is not None
+        ]
 
 
 class Openid4vcDriver:
@@ -109,14 +134,17 @@ class Openid4vcDriver:
         self.config = config
         self.stop = stop
         self.triggered: set[str] = set()
+        self.terminal_modules: set[str] = set()
 
     def run(self) -> None:
         interval = max(1, int(self.config.get("poll_interval_seconds", 2)))
-        while not self.stop.wait(interval):
+        while not self.stop.is_set():
             try:
                 self.drive_once()
             except Exception as exc:  # runner monitor remains authoritative
                 print(f"OpenID4VC driver retryable error: {type(exc).__name__}: {exc}", flush=True)
+            if self.stop.wait(interval):
+                break
 
     def drive_once(self) -> None:
         server = str(self.config["conformance_server"])
@@ -131,9 +159,23 @@ class Openid4vcDriver:
         if token == "":
             raise RuntimeError("OIDF conformance API token is required")
         aliases = {str(value) for value in self.config["aliases"]}
-        for info in module_entries(server, token, aliases):
+        max_workers = int(self.config.get("driver_scan_workers", 8))
+        start = time.monotonic()
+        entries = module_entries(
+            server,
+            token,
+            aliases,
+            ignored_module_ids=self.triggered | self.terminal_modules,
+            max_workers=max_workers,
+        )
+        triggered_before = len(self.triggered)
+        for info in entries:
             module_id = str(info["_driver_module_id"])
-            if module_id in self.triggered or str(info.get("status", "")).upper() != "WAITING":
+            status = str(info.get("status", "")).upper()
+            if status in OIDF_TERMINAL_MODULE_STATUSES:
+                self.terminal_modules.add(module_id)
+                continue
+            if module_id in self.triggered or status != "WAITING":
                 continue
             plan_name = str(info.get("_driver_plan", ""))
             variant = info.get("variant") if isinstance(info.get("variant"), dict) else {}
@@ -142,6 +184,15 @@ class Openid4vcDriver:
                     self.drive_issuer(module_id, info, variant)
             elif plan_name.startswith("oid4vp-"):
                 self.drive_verifier(module_id, info, variant, "haip" in plan_name)
+        if entries:
+            print(
+                "OpenID4VC driver scan completed: "
+                f"{len(entries)} live modules, "
+                f"{len(self.terminal_modules)} cached terminal, "
+                f"{len(self.triggered) - triggered_before} newly triggered, "
+                f"{time.monotonic() - start:.2f}s",
+                flush=True,
+            )
 
     def drive_issuer(self, module_id: str, info: dict[str, object], variant: dict[str, object]) -> None:
         exposed = info.get("exposed")
