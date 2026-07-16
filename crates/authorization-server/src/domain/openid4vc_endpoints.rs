@@ -134,6 +134,41 @@ fn mdoc_namespace_claims(claims: nazo_identity::SubjectClaims) -> Value {
         "resident_address".to_owned(),
         serde_json::to_value(claims.address).unwrap_or(Value::Null),
     );
+    namespace.insert(
+        "issue_date".to_owned(),
+        Value::String("2026-07-16".to_owned()),
+    );
+    namespace.insert(
+        "expiry_date".to_owned(),
+        Value::String("2036-07-16".to_owned()),
+    );
+    namespace.insert("issuing_country".to_owned(), Value::String("UT".to_owned()));
+    namespace.insert(
+        "issuing_authority".to_owned(),
+        Value::String("NazoAuth OpenID4VC OIDF Test Issuer".to_owned()),
+    );
+    namespace.insert(
+        "document_number".to_owned(),
+        Value::String(format!("NAZO-{}", claims.subject.as_uuid().simple())),
+    );
+    namespace.insert(
+        "portrait".to_owned(),
+        Value::String("openid4vc-oidf-placeholder-portrait".to_owned()),
+    );
+    namespace.insert(
+        "driving_privileges".to_owned(),
+        json!([
+            {
+                "vehicle_category_code": "B",
+                "issue_date": "2026-07-16",
+                "expiry_date": "2036-07-16"
+            }
+        ]),
+    );
+    namespace.insert(
+        "un_distinguishing_sign".to_owned(),
+        Value::String("UT".to_owned()),
+    );
     namespace.into()
 }
 

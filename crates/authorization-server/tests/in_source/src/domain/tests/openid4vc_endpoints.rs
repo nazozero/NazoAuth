@@ -43,19 +43,62 @@ fn sd_jwt_vc_dataset_keeps_flat_subject_claims() {
 
 #[test]
 fn mdoc_dataset_uses_iso_namespace_and_mdoc_birth_date_name() {
-    let value = credential_subject_claims(CredentialFormat::MsoMdoc, subject_claims())
-        .expect("mdoc claims");
+    let subject = subject_claims();
+    let document_number = format!("NAZO-{}", subject.subject.as_uuid().simple());
+    let value = credential_subject_claims(CredentialFormat::MsoMdoc, subject).expect("mdoc claims");
 
     assert_eq!(
         value,
         json!({
             "org.iso.18013.5.1": {
+                "birth_date": "1990-01-02",
+                "document_number": document_number,
+                "driving_privileges": [
+                    {
+                        "expiry_date": "2036-07-16",
+                        "issue_date": "2026-07-16",
+                        "vehicle_category_code": "B"
+                    }
+                ],
+                "email": "alice@example.test",
+                "expiry_date": "2036-07-16",
                 "family_name": "Example",
                 "given_name": "Alice",
-                "birth_date": "1990-01-02",
-                "email": "alice@example.test",
-                "resident_address": null
+                "issue_date": "2026-07-16",
+                "issuing_authority": "NazoAuth OpenID4VC OIDF Test Issuer",
+                "issuing_country": "UT",
+                "portrait": "openid4vc-oidf-placeholder-portrait",
+                "resident_address": null,
+                "un_distinguishing_sign": "UT"
             }
         })
     );
+}
+
+#[test]
+fn mdoc_dataset_contains_iso_18013_5_mandatory_mdl_elements() {
+    let value = credential_subject_claims(CredentialFormat::MsoMdoc, subject_claims())
+        .expect("mdoc claims");
+    let namespace = value["org.iso.18013.5.1"]
+        .as_object()
+        .expect("mdoc namespace");
+
+    for element in [
+        "family_name",
+        "given_name",
+        "birth_date",
+        "issue_date",
+        "expiry_date",
+        "issuing_country",
+        "issuing_authority",
+        "document_number",
+        "portrait",
+        "driving_privileges",
+        "un_distinguishing_sign",
+    ] {
+        assert!(
+            namespace.contains_key(element),
+            "missing mandatory mDL element {element}"
+        );
+    }
 }
