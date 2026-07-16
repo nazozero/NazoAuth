@@ -21,9 +21,7 @@ use crate::http::mtls::request_mtls_client_certificate_from_trusted_proxy;
 use crate::http::rate_limit::rate_limited_response;
 #[cfg(test)]
 use crate::settings::Settings;
-use actix_web::http::StatusCode;
-#[cfg(test)]
-use actix_web::http::header;
+use actix_web::http::{StatusCode, header};
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
@@ -390,12 +388,7 @@ pub(crate) async fn token_with_service(
             Ok(response) => HttpResponse::Ok()
                 .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
                 .json(response),
-            Err(error) => oauth_token_error(
-                StatusCode::from_u16(error.status).unwrap_or(StatusCode::BAD_REQUEST),
-                error.error,
-                error.description,
-                false,
-            ),
+            Err(error) => pre_authorized_token_error(error),
         };
     }
 
@@ -799,6 +792,38 @@ fn pre_authorized_parameters(body: &Bytes) -> Result<(String, Option<String>), H
                 false,
             )
         })
+}
+
+fn pre_authorized_token_error(
+    error: nazo_openid4vc_http_actix::CredentialHttpError,
+) -> HttpResponse {
+    let mut response = oauth_token_error(
+        StatusCode::from_u16(error.status).unwrap_or(StatusCode::BAD_REQUEST),
+        error.error,
+        error.description,
+        false,
+    );
+    if let Some(challenge) = match error.error {
+        "use_dpop_nonce" => Some(header::HeaderValue::from_static(
+            r#"DPoP error="use_dpop_nonce""#,
+        )),
+        "invalid_dpop_proof" => Some(header::HeaderValue::from_static(
+            r#"DPoP error="invalid_dpop_proof""#,
+        )),
+        _ => None,
+    } {
+        response
+            .headers_mut()
+            .insert(header::WWW_AUTHENTICATE, challenge);
+    }
+    if let Some(nonce) = error.dpop_nonce
+        && let Ok(value) = header::HeaderValue::from_str(&nonce)
+    {
+        response
+            .headers_mut()
+            .insert(header::HeaderName::from_static("dpop-nonce"), value);
+    }
+    response
 }
 
 fn client_attestation_headers(request: &HttpRequest) -> Result<Option<(&str, &str)>, HttpResponse> {
