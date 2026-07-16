@@ -13,6 +13,7 @@ use super::{callback_uris, config::client_scopes, config::public_jwks};
 
 pub const PRIVATE_KEY_CLIENT_ID: &str = "nazo-openid4vc-oidf-private-key-jwt";
 pub const ATTESTED_CLIENT_ID: &str = "nazo-openid4vc-oidf-client-attestation";
+const SUITE_REDIRECT_URI_QUERY_SUFFIX: &str = "?dummy1=lorem&dummy2=ipsum";
 
 #[must_use]
 pub fn allowed_audiences(issuer: &str, default_audience: &str) -> Vec<String> {
@@ -158,7 +159,7 @@ pub fn client_seeds(
             entry.auth_method = Some("private_key_jwt".to_owned());
             entry
                 .redirect_uris
-                .extend(callback_uris(suite_base_urls, alias));
+                .extend(callback_uris_with_suite_query(suite_base_urls, alias));
             entry.scopes.extend(scopes.iter().cloned());
             entry.scopes.insert(credential_scope.to_owned());
             if entry
@@ -189,6 +190,18 @@ pub fn client_seeds(
                 scopes: entry.scopes.into_iter().collect(),
                 jwks: entry.jwks,
             })
+        })
+        .collect()
+}
+
+fn callback_uris_with_suite_query(suite_base_urls: &[String], alias: &str) -> Vec<String> {
+    callback_uris(suite_base_urls, alias)
+        .into_iter()
+        .flat_map(|uri| {
+            [
+                uri.clone(),
+                format!("{uri}{SUITE_REDIRECT_URI_QUERY_SUFFIX}"),
+            ]
         })
         .collect()
 }
