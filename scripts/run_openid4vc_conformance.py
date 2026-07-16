@@ -51,7 +51,7 @@ def request_json(method: str, url: str, token: str, payload: object | None = Non
 
 
 def get_url(url: str) -> None:
-    with urllib.request.urlopen(url, timeout=30) as response:
+    with urllib.request.urlopen(url, timeout=30, context=oidf.OIDF_API_SSL_CONTEXT) as response:
         response.read()
 
 
