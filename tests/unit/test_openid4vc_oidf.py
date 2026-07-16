@@ -327,9 +327,29 @@ class Openid4vcOidfTests(unittest.TestCase):
                         "variant": "*",
                         "configuration-filename": "openid4vc-vci-sd-preauth.json",
                     },
+                    {
+                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
+                        "variant": "*",
+                        "configuration-filename": "openid4vc-vci-haip-sd-wallet.json",
+                    },
+                    {
+                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
+                        "variant": "*",
+                        "configuration-filename": "openid4vc-vci-haip-mdoc-wallet.json",
+                    },
+                    {
+                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
+                        "variant": "*",
+                        "configuration-filename": "openid4vc-vci-haip-sd-issuer.json",
+                    },
+                    {
+                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
+                        "variant": "*",
+                        "configuration-filename": "openid4vc-vci-haip-mdoc-issuer.json",
+                    },
                 ],
             )
-            self.assertEqual(len(expected_warnings), 10)
+            self.assertEqual(len(expected_warnings), 6)
             self.assertEqual(
                 {
                     item["configuration-filename"]
@@ -341,10 +361,6 @@ class Openid4vcOidfTests(unittest.TestCase):
                     "openid4vc-vci-mdoc-wallet-encrypted.json",
                     "openid4vc-vci-sd-issuer-encrypted.json",
                     "openid4vc-vci-mdoc-issuer-plain.json",
-                    "openid4vc-vci-haip-sd-wallet.json",
-                    "openid4vc-vci-haip-mdoc-wallet.json",
-                    "openid4vc-vci-haip-sd-issuer.json",
-                    "openid4vc-vci-haip-mdoc-issuer.json",
                 },
             )
             dpop_warnings = [

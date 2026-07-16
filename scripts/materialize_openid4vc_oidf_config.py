@@ -64,7 +64,7 @@ def plan_expression(plan: str, variants: dict[str, str], filename: str) -> str:
 
 
 def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, str]]:
-    return [
+    skips = [
         {
             "test-name": VCI_UNSUPPORTED_ENCRYPTION_MODULE,
             "variant": "*",
@@ -73,6 +73,16 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
         for plan, slug, variants in cases
         if plan == VCI_STANDARD and variants.get("vci_credential_encryption") == "plain"
     ]
+    for plan, slug, variants in cases:
+        if plan == VCI_HAIP and full_vci_variant(plan, variants).get("vci_grant_type") == "authorization_code":
+            skips.append(
+                {
+                    "test-name": VCI_REFRESH_TOKEN_MODULE,
+                    "variant": "*",
+                    "configuration-filename": f"openid4vc-{slug}.json",
+                }
+            )
+    return skips
 
 
 def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
@@ -99,7 +109,7 @@ def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) ->
         if plan not in {VCI_STANDARD, VCI_HAIP}:
             continue
         full_variant = full_vci_variant(plan, variants)
-        if full_variant.get("vci_grant_type") == "authorization_code":
+        if plan == VCI_STANDARD and full_variant.get("vci_grant_type") == "authorization_code":
             warnings.append(
                 {
                     "test-name": VCI_REFRESH_TOKEN_MODULE,
