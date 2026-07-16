@@ -232,7 +232,7 @@ where
 
 fn batch_privacy_claim_time(value: DateTime<Utc>) -> DateTime<Utc> {
     let timestamp = value.timestamp();
-    let rounded = timestamp - timestamp.rem_euclid(60);
+    let rounded = timestamp - timestamp.rem_euclid(86_400);
     DateTime::<Utc>::from_timestamp(rounded, 0).unwrap_or(value)
 }
 
