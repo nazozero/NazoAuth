@@ -103,7 +103,7 @@ def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
 def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
     warnings: list[dict[str, object]] = []
     for plan, slug, variants in cases:
-        if plan not in {VCI_STANDARD, VCI_HAIP}:
+        if plan != VCI_HAIP:
             continue
         full_variant = full_vci_variant(plan, variants)
         if full_variant.get("vci_grant_type") == "authorization_code":
