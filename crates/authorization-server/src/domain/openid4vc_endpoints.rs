@@ -24,10 +24,10 @@ use nazo_openid4vci::{
     AuthorizationCodeGrant, BatchCredentialIssuance, CredentialAccess, CredentialConfiguration,
     CredentialDatasetPort, CredentialError, CredentialIssuance, CredentialIssuerMetadata,
     CredentialIssuerService, CredentialOffer, CredentialOfferGrants, CredentialRequest,
-    CredentialResponse, CredentialResponseEncryption, CredentialStorePort,
-    DeferredCredentialRequest, DeferredPayload, EncryptionMetadata, IssuanceDisposition,
-    IssuanceNotification, NonceRecord, NotificationRequest, PreAuthorizedCodeGrant,
-    TxCodeDescription,
+    CredentialRequestEncryptionMetadata, CredentialResponse, CredentialResponseEncryption,
+    CredentialStorePort, DeferredCredentialRequest, DeferredPayload, EncryptionMetadata,
+    IssuanceDisposition, IssuanceNotification, NonceRecord, NotificationRequest,
+    PreAuthorizedCodeGrant, TxCodeDescription,
 };
 use nazo_openid4vp::{
     AuthorizationRequest, AuthorizationResponse, ClientIdPrefix, ClientMetadata,
@@ -177,9 +177,8 @@ impl ServerCredentialIssuerOperations {
                 self.issuer
             )),
             notification_endpoint: Some(format!("{}/openid4vci/notification", self.issuer)),
-            credential_request_encryption: Some(EncryptionMetadata {
+            credential_request_encryption: Some(CredentialRequestEncryptionMetadata {
                 jwks: Some(json!({"keys": [request_key]})),
-                alg_values_supported: vec!["ECDH-ES".to_owned()],
                 enc_values_supported: vec!["A256GCM".to_owned()],
                 zip_values_supported: vec!["DEF".to_owned()],
                 encryption_required: false,

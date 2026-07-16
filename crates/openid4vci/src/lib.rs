@@ -14,7 +14,8 @@ mod store;
 
 pub use metadata::{
     BatchCredentialIssuance, CredentialConfiguration, CredentialDisplay, CredentialIssuerMetadata,
-    CredentialMetadata, EncryptionMetadata, Logo, ProofTypeMetadata,
+    CredentialMetadata, CredentialRequestEncryptionMetadata, EncryptionMetadata, Logo,
+    ProofTypeMetadata,
 };
 pub use model::{
     CredentialError, CredentialIdentifier, CredentialRequest, CredentialResponse,

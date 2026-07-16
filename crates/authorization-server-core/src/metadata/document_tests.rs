@@ -178,11 +178,6 @@ fn runtime_module_advertisements_are_table_driven() {
             expected: json!(["account_information", "payment_initiation"]),
         },
         Case {
-            module: ModuleId::NativeSso,
-            field: "native_sso_supported",
-            expected: json!(true),
-        },
-        Case {
             module: ModuleId::FrontchannelLogout,
             field: "frontchannel_logout_supported",
             expected: json!(true),
@@ -211,6 +206,20 @@ fn runtime_module_advertisements_are_table_driven() {
             case.module
         );
     }
+}
+
+#[test]
+fn native_sso_does_not_emit_nonstandard_discovery_field() {
+    let enabled = authorization_server_metadata(input(), &snapshot([ModuleId::NativeSso]));
+
+    assert!(enabled.get("native_sso_supported").is_none());
+    assert!(
+        enabled["scopes_supported"]
+            .as_array()
+            .expect("scopes_supported")
+            .iter()
+            .any(|scope| scope == "device_sso")
+    );
 }
 
 #[test]
