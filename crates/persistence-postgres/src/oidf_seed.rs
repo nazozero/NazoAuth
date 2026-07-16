@@ -45,6 +45,27 @@ pub async fn seed_oidf_atomically(
         .map_err(|error| RepositoryError::Unexpected(error.to_string()))
 }
 
+pub async fn seed_oidf_clients_atomically(
+    pool: &DbPool,
+    clients: &[OidfSeedClient],
+) -> Result<(), RepositoryError> {
+    let mut connection = pool.get().await.map_err(|_| RepositoryError::Unavailable)?;
+    connection
+        .transaction::<(), diesel::result::Error, _>(async move |connection| {
+            for client in clients {
+                upsert_client_on_connection(
+                    connection,
+                    &client.client,
+                    client.client_secret_hash.as_deref(),
+                )
+                .await?;
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|error| RepositoryError::Unexpected(error.to_string()))
+}
+
 async fn upsert_user(connection: &mut AsyncPgConnection, user: &OidfSeedUser) -> QueryResult<()> {
     sql_query(
         r#"
