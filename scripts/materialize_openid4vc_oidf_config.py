@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import copy
+import hashlib
 import json
 from pathlib import Path
 import urllib.parse
@@ -17,6 +19,13 @@ VP_HAIP = "oid4vp-1final-verifier-haip-test-plan"
 VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
 VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
 VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm"
+P256_P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
+P256_A = -3
+P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
+P256_G = (
+    0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296,
+    0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5,
+)
 
 
 def matrix_cases() -> list[tuple[str, str, dict[str, str]]]:
@@ -58,22 +67,90 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
     ]
 
 
-def ec_p256_signing_keys(jwks: object, *, source: str) -> list[dict[str, object]]:
+def b64url_decode(value: str) -> bytes:
+    padding = "=" * (-len(value) % 4)
+    return base64.urlsafe_b64decode(value + padding)
+
+
+def b64url_uint(value: int) -> str:
+    return base64.urlsafe_b64encode(value.to_bytes(32, "big")).decode("ascii").rstrip("=")
+
+
+def p256_add(
+    p: tuple[int, int] | None,
+    q: tuple[int, int] | None,
+) -> tuple[int, int] | None:
+    if p is None:
+        return q
+    if q is None:
+        return p
+    x1, y1 = p
+    x2, y2 = q
+    if x1 == x2 and (y1 + y2) % P256_P == 0:
+        return None
+    if p == q:
+        slope = ((3 * x1 * x1 + P256_A) * pow(2 * y1, -1, P256_P)) % P256_P
+    else:
+        slope = ((y2 - y1) * pow(x2 - x1, -1, P256_P)) % P256_P
+    x3 = (slope * slope - x1 - x2) % P256_P
+    y3 = (slope * (x1 - x3) - y1) % P256_P
+    return (x3, y3)
+
+
+def p256_multiply(scalar: int, point: tuple[int, int] = P256_G) -> tuple[int, int]:
+    result: tuple[int, int] | None = None
+    addend: tuple[int, int] | None = point
+    while scalar:
+        if scalar & 1:
+            result = p256_add(result, addend)
+        addend = p256_add(addend, addend)
+        scalar >>= 1
+    if result is None:
+        raise SystemExit("derived P-256 public key is the point at infinity")
+    return result
+
+
+def derive_client2_ec_p256_key(key: dict[str, object], *, source: str) -> dict[str, object]:
+    d_value = key.get("d")
+    if not isinstance(d_value, str) or not d_value:
+        raise SystemExit(f"{source} requires a private EC P-256 JWK")
+    d_bytes = b64url_decode(d_value)
+    d_int = int.from_bytes(d_bytes, "big")
+    if not 0 < d_int < P256_N:
+        raise SystemExit(f"{source} contains an invalid P-256 private scalar")
+    kid = key.get("kid")
+    kid_bytes = kid.encode("utf-8") if isinstance(kid, str) else b""
+    seed = hashlib.sha256(b"nazo-openid4vc-client2-ec-p256\0" + d_bytes + kid_bytes).digest()
+    derived = int.from_bytes(seed, "big") % (P256_N - 1) + 1
+    if derived == d_int:
+        derived = derived % (P256_N - 1) + 1
+    x, y = p256_multiply(derived)
+    result = {
+        "kty": "EC",
+        "use": key.get("use", "sig"),
+        "crv": "P-256",
+        "alg": "ES256",
+        "d": b64url_uint(derived),
+        "x": b64url_uint(x),
+        "y": b64url_uint(y),
+    }
+    if isinstance(kid, str) and kid:
+        result["kid"] = f"{kid}-client2"
+    return result
+
+
+def derived_ec_p256_client2_keys(jwks: object, *, source: str) -> list[dict[str, object]]:
     if not isinstance(jwks, dict) or not isinstance(jwks.get("keys"), list):
         raise SystemExit(f"{source} requires a jwks.keys array")
     keys = [
-        copy.deepcopy(key)
-        for key in jwks["keys"]
+        derive_client2_ec_p256_key(key, source=f"{source}.jwks.keys[{index}]")
+        for index, key in enumerate(jwks["keys"])
         if isinstance(key, dict)
         and key.get("kty") == "EC"
         and key.get("crv") == "P-256"
-        and isinstance(key.get("d"), str)
-        and key.get("d")
     ]
     if not keys:
         raise SystemExit(f"{source} requires at least one private EC P-256 JWK")
-    for key in keys:
-        key["alg"] = "ES256"
     return keys
 
 
@@ -84,7 +161,9 @@ def use_ec_client2(config: dict[str, object], *, source: str) -> None:
         raise SystemExit(f"{source} requires a client object")
     if not isinstance(client2, dict):
         raise SystemExit(f"{source} configurations require a client2 object")
-    client2["jwks"] = {"keys": ec_p256_signing_keys(client.get("jwks"), source=f"{source}.client")}
+    client2["jwks"] = {
+        "keys": derived_ec_p256_client2_keys(client.get("jwks"), source=f"{source}.client")
+    }
 
 
 def main() -> int:

@@ -165,7 +165,18 @@ class Openid4vcOidfTests(unittest.TestCase):
                             "client": {
                                 "client_id": "upstream-placeholder",
                                 "scope": "openid pid-scope",
-                                "jwks": {"keys": [{"kty": "EC", "crv": "P-256", "x": "x", "y": "y", "d": "private"}]},
+                                "jwks": {
+                                    "keys": [
+                                        {
+                                            "kty": "EC",
+                                            "crv": "P-256",
+                                            "kid": "client-key",
+                                            "x": "x",
+                                            "y": "y",
+                                            "d": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAE",
+                                        }
+                                    ]
+                                },
                             },
                             "client2": {
                                 "client_id": "upstream-second-client",
@@ -257,6 +268,13 @@ class Openid4vcOidfTests(unittest.TestCase):
                     {(key["kty"], key["crv"], key["alg"]) for key in client2_keys},
                     {("EC", "P-256", "ES256")},
                 )
+                self.assertEqual(client2_keys[0]["kid"], "client-key-client2")
+                self.assertNotEqual(
+                    client2_keys[0]["d"],
+                    config["client"]["jwks"]["keys"][0]["d"],
+                )
+                self.assertNotEqual(client2_keys[0]["x"], "x")
+                self.assertNotEqual(client2_keys[0]["y"], "y")
             private_key_clients = {
                 config["client"]["client_id"]
                 for config in configs.values()
