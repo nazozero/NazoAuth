@@ -233,6 +233,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             materialized_driver = json.loads((output / "openid4vc-driver.json").read_text(encoding="utf-8"))
             configs = json.loads((output / "openid4vc-plan-configs.json").read_text(encoding="utf-8"))["configs"]
             expected_skips = json.loads((output / "openid4vc-expected-skips.json").read_text(encoding="utf-8"))
+            expected_warnings = json.loads((output / "openid4vc-expected-warnings.json").read_text(encoding="utf-8"))
             self.assertEqual(len(plans), 17)
             self.assertEqual(len(configs), 17)
             self.assertEqual(len(set(materialized_driver["aliases"])), 17)
@@ -253,6 +254,35 @@ class Openid4vcOidfTests(unittest.TestCase):
                         "test-name": module.VCI_UNSUPPORTED_ENCRYPTION_MODULE,
                         "variant": "*",
                         "configuration-filename": "openid4vc-vci-sd-preauth.json",
+                    },
+                ],
+            )
+            self.assertEqual(
+                expected_warnings,
+                [
+                    {
+                        "test-name": module.VCI_DPOP_NEGATIVE_MODULE,
+                        "variant": {
+                            "sender_constrain": "dpop",
+                            "client_auth_type": "client_attestation",
+                            "vci_authorization_code_flow_variant": "wallet_initiated",
+                            "credential_format": "mdoc",
+                            "authorization_request_type": "simple",
+                            "openid": "plain_oauth",
+                            "fapi_request_method": "unsigned",
+                            "vci_grant_type": "authorization_code",
+                            "vci_credential_encryption": "plain",
+                            "fapi_profile": "vci_haip",
+                            "fapi_response_mode": "plain_response",
+                        },
+                        "configuration-filename": "openid4vc-vci-haip-mdoc-wallet.json",
+                        "expected-result": "warning",
+                        "current-block": module.VCI_DPOP_REUSE_BLOCK,
+                        "condition": module.VCI_DPOP_STATUS_CONDITION,
+                        "justification": (
+                            "OIDF v5.2.0 reports this block as same-jti replay, but the logged "
+                            "DPoP proofs carry distinct jti values after the resource nonce retry."
+                        ),
                     },
                 ],
             )
