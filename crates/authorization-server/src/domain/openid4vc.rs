@@ -489,6 +489,11 @@ impl Openid4vcCredentialCrypto {
             .issuer_auth
             .mso()
             .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+        let holder_key = mdoc_holder_key(
+            mso.device_key_info
+                .as_ref()
+                .map(|device_key_info| &device_key_info.device_key),
+        )?;
         let mut namespaces = Map::new();
         for (namespace, items) in &document.issuer_signed.name_spaces {
             let mut claims = Map::new();
@@ -510,7 +515,7 @@ impl Openid4vcCredentialCrypto {
                 .map_err(|_| CredentialTrustError::InvalidEncoding)?,
             credential_type: mso.doc_type,
             claims: Value::Object(namespaces),
-            holder_key: None,
+            holder_key: Some(holder_key),
             issued_at: Some(mso.validity_info.signed),
             expires_at: Some(mso.validity_info.valid_until),
             status: mso
@@ -520,6 +525,19 @@ impl Openid4vcCredentialCrypto {
         })
     }
 }
+
+fn mdoc_holder_key(device_key: Option<&coset::CoseKey>) -> Result<Value, CredentialTrustError> {
+    let encoded = device_key
+        .ok_or(CredentialTrustError::InvalidHolderBinding)?
+        .clone()
+        .to_vec()
+        .map_err(|_| CredentialTrustError::InvalidEncoding)?;
+    Ok(json!({"cose_key": URL_SAFE_NO_PAD.encode(encoded)}))
+}
+
+#[cfg(test)]
+#[path = "../../tests/in_source/src/domain/tests/openid4vc.rs"]
+mod tests;
 
 #[derive(Deserialize)]
 struct KeyBindingClaims {

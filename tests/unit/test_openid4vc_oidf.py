@@ -98,7 +98,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             ) as request, patch.object(module, "get_url"):
                 driver.drive_verifier(
                     "module-id",
-                    {"alias": "vp-alias"},
+                    {"alias": "vp-alias", "testName": "oid4vp-1final-verifier-happy-flow"},
                     {
                         "credential_format": credential_format,
                         "client_id_prefix": "x509_san_dns",
@@ -111,6 +111,43 @@ class Openid4vcOidfTests(unittest.TestCase):
                 credential = payload["dcql_query"]["credentials"][0]
                 self.assertEqual(credential["format"], expected_format)
                 self.assertEqual(credential["meta"], expected_meta)
+                self.assertEqual(payload["request_method"], "request_uri_signed_get")
+
+    def test_verifier_driver_uses_post_only_for_the_post_request_uri_module(self):
+        module = load("run_openid4vc_conformance.py")
+        driver = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://localhost:8443",
+                "target_origin": "https://auth.nazo.run",
+                "verifier": {
+                    "management_token": "management-token",
+                    "credential_type_values": {
+                        "sd_jwt_vc": "eu.europa.ec.eudi.pid.1",
+                        "iso_mdl": "org.iso.18013.5.1.mDL",
+                    },
+                },
+            },
+            module.threading.Event(),
+        )
+        with patch.object(
+            module,
+            "request_json",
+            return_value={"authorization_url": "https://localhost:8443/authorize"},
+        ) as request, patch.object(module, "get_url"):
+            driver.drive_verifier(
+                "module-id",
+                {
+                    "alias": "vp-alias",
+                    "testName": "oid4vp-1final-verifier-request-uri-method-post",
+                },
+                {
+                    "credential_format": "sd_jwt_vc",
+                    "request_method": "request_uri_signed",
+                },
+                False,
+            )
+
+        self.assertEqual(request.call_args.args[3]["request_method"], "request_uri_signed_post")
 
     def test_materializer_creates_unique_aliases_and_exact_plan_count(self):
         module = load("materialize_openid4vc_oidf_config.py")

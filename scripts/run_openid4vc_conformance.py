@@ -158,6 +158,14 @@ class Openid4vcDriver:
         )
         prefix = str(variant.get("client_id_prefix", "x509_hash"))
         method = str(variant.get("request_method", "request_uri_signed"))
+        test_name = str(info.get("testName", ""))
+        request_method = (
+            "url_query"
+            if method == "url_query"
+            else "request_uri_signed_post"
+            if test_name == "oid4vp-1final-verifier-request-uri-method-post"
+            else "request_uri_signed_get"
+        )
         response_mode = str(variant.get("response_mode", "direct_post.jwt" if haip else "direct_post"))
         wallet_endpoint = urllib.parse.urljoin(
             str(self.config["conformance_server"]), f"/test/a/{alias}/authorize"
@@ -180,9 +188,7 @@ class Openid4vcDriver:
                 },
                 "haip": haip,
                 "client_id_prefix": prefix,
-                "request_method": (
-                    "url_query" if method == "url_query" else str(verifier.get("signed_request_method", "request_uri_signed_post"))
-                ),
+                "request_method": request_method,
                 "response_mode": response_mode,
             },
         )
