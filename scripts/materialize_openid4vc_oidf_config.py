@@ -77,13 +77,13 @@ def ec_p256_signing_keys(jwks: object, *, source: str) -> list[dict[str, object]
     return keys
 
 
-def use_ec_client2_for_mdoc(config: dict[str, object], *, source: str) -> None:
+def use_ec_client2(config: dict[str, object], *, source: str) -> None:
     client = config.get("client")
     client2 = config.get("client2")
     if not isinstance(client, dict):
         raise SystemExit(f"{source} requires a client object")
     if not isinstance(client2, dict):
-        raise SystemExit(f"{source} mdoc configurations require a client2 object")
+        raise SystemExit(f"{source} configurations require a client2 object")
     client2["jwks"] = {"keys": ec_p256_signing_keys(client.get("jwks"), source=f"{source}.client")}
 
 
@@ -169,8 +169,7 @@ def main() -> int:
                 if client_auth_type == "client_attestation"
                 else VCI_PRIVATE_KEY_CLIENT_ID
             )
-            if variants["credential_format"] == "mdoc":
-                use_ec_client2_for_mdoc(config, source=key)
+            use_ec_client2(config, source=key)
             config["nazo"] = {
                 "openid4vc_role": "issuer",
                 "client_auth_type": client_auth_type,

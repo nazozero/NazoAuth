@@ -253,16 +253,10 @@ class Openid4vcOidfTests(unittest.TestCase):
                 if "preauth" in filename:
                     self.assertEqual(config["vci"]["static_tx_code"], "123456")
                 client2_keys = config["client2"]["jwks"]["keys"]
-                if "mdoc" in filename:
-                    self.assertEqual(
-                        {(key["kty"], key["crv"], key["alg"]) for key in client2_keys},
-                        {("EC", "P-256", "ES256")},
-                    )
-                else:
-                    self.assertEqual(
-                        {(key["kty"], key["alg"]) for key in client2_keys},
-                        {("RSA", "PS256")},
-                    )
+                self.assertEqual(
+                    {(key["kty"], key["crv"], key["alg"]) for key in client2_keys},
+                    {("EC", "P-256", "ES256")},
+                )
             private_key_clients = {
                 config["client"]["client_id"]
                 for config in configs.values()
