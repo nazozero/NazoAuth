@@ -25,6 +25,9 @@ VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encrypt
 VCI_DPOP_NEGATIVE_MODULE = "fapi2-security-profile-final-dpop-negative-tests"
 VCI_DPOP_REUSE_BLOCK = "DPoP reuse, Second use of the same jti, this 'should' fail"
 VCI_DPOP_STATUS_CONDITION = "EnsureHttpStatusCodeIs400or401"
+VCI_REFRESH_TOKEN_MODULE = "fapi2-security-profile-final-refresh-token"
+VCI_REFRESH_TOKEN_BLOCK = "Check for refresh token"
+VCI_REFRESH_TOKEN_CONDITION = "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken"
 P256_P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
 P256_A = -3
 P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
@@ -72,12 +75,12 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
     ]
 
 
-def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
-    warning_variant = {
+def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
+    if plan != VCI_HAIP:
+        return dict(variants)
+    expanded = {
         "sender_constrain": "dpop",
         "client_auth_type": "client_attestation",
-        "vci_authorization_code_flow_variant": "wallet_initiated",
-        "credential_format": "mdoc",
         "authorization_request_type": "simple",
         "openid": "plain_oauth",
         "fapi_request_method": "unsigned",
@@ -86,24 +89,51 @@ def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) ->
         "fapi_profile": "vci_haip",
         "fapi_response_mode": "plain_response",
     }
-    return [
-        {
-            "test-name": VCI_DPOP_NEGATIVE_MODULE,
-            "variant": warning_variant,
-            "configuration-filename": f"openid4vc-{slug}.json",
-            "expected-result": "warning",
-            "current-block": VCI_DPOP_REUSE_BLOCK,
-            "condition": VCI_DPOP_STATUS_CONDITION,
-            "justification": (
-                "OIDF v5.2.0 reports this block as same-jti replay, but the logged "
-                "DPoP proofs carry distinct jti values after the resource nonce retry."
-            ),
-        }
-        for plan, slug, variants in cases
-        if plan == VCI_HAIP
-        and variants.get("vci_authorization_code_flow_variant") == "wallet_initiated"
-        and variants.get("credential_format") == "mdoc"
-    ]
+    expanded.update(variants)
+    return expanded
+
+
+def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
+    warnings: list[dict[str, object]] = []
+    for plan, slug, variants in cases:
+        if plan not in {VCI_STANDARD, VCI_HAIP}:
+            continue
+        full_variant = full_vci_variant(plan, variants)
+        if full_variant.get("vci_grant_type") == "authorization_code":
+            warnings.append(
+                {
+                    "test-name": VCI_REFRESH_TOKEN_MODULE,
+                    "variant": full_variant,
+                    "configuration-filename": f"openid4vc-{slug}.json",
+                    "expected-result": "warning",
+                    "current-block": VCI_REFRESH_TOKEN_BLOCK,
+                    "condition": VCI_REFRESH_TOKEN_CONDITION,
+                    "justification": (
+                        "NazoAuth globally supports refresh_token but intentionally does not "
+                        "issue refresh tokens to OpenID4VC/FAPI credential clients."
+                    ),
+                }
+            )
+        if (
+            plan == VCI_HAIP
+            and variants.get("vci_authorization_code_flow_variant") == "wallet_initiated"
+            and variants.get("credential_format") == "mdoc"
+        ):
+            warnings.append(
+                {
+                    "test-name": VCI_DPOP_NEGATIVE_MODULE,
+                    "variant": full_variant,
+                    "configuration-filename": f"openid4vc-{slug}.json",
+                    "expected-result": "warning",
+                    "current-block": VCI_DPOP_REUSE_BLOCK,
+                    "condition": VCI_DPOP_STATUS_CONDITION,
+                    "justification": (
+                        "OIDF v5.2.0 reports this block as same-jti replay, but the logged "
+                        "DPoP proofs carry distinct jti values after the resource nonce retry."
+                    ),
+                }
+            )
+    return warnings
 
 
 def b64url_decode(value: str) -> bytes:

@@ -257,35 +257,36 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                 ],
             )
+            self.assertEqual(len(expected_warnings), 9)
             self.assertEqual(
-                expected_warnings,
-                [
-                    {
-                        "test-name": module.VCI_DPOP_NEGATIVE_MODULE,
-                        "variant": {
-                            "sender_constrain": "dpop",
-                            "client_auth_type": "client_attestation",
-                            "vci_authorization_code_flow_variant": "wallet_initiated",
-                            "credential_format": "mdoc",
-                            "authorization_request_type": "simple",
-                            "openid": "plain_oauth",
-                            "fapi_request_method": "unsigned",
-                            "vci_grant_type": "authorization_code",
-                            "vci_credential_encryption": "plain",
-                            "fapi_profile": "vci_haip",
-                            "fapi_response_mode": "plain_response",
-                        },
-                        "configuration-filename": "openid4vc-vci-haip-mdoc-wallet.json",
-                        "expected-result": "warning",
-                        "current-block": module.VCI_DPOP_REUSE_BLOCK,
-                        "condition": module.VCI_DPOP_STATUS_CONDITION,
-                        "justification": (
-                            "OIDF v5.2.0 reports this block as same-jti replay, but the logged "
-                            "DPoP proofs carry distinct jti values after the resource nonce retry."
-                        ),
-                    },
-                ],
+                {
+                    item["configuration-filename"]
+                    for item in expected_warnings
+                    if item["test-name"] == module.VCI_REFRESH_TOKEN_MODULE
+                },
+                {
+                    "openid4vc-vci-sd-wallet-plain.json",
+                    "openid4vc-vci-mdoc-wallet-encrypted.json",
+                    "openid4vc-vci-sd-issuer-encrypted.json",
+                    "openid4vc-vci-mdoc-issuer-plain.json",
+                    "openid4vc-vci-haip-sd-wallet.json",
+                    "openid4vc-vci-haip-mdoc-wallet.json",
+                    "openid4vc-vci-haip-sd-issuer.json",
+                    "openid4vc-vci-haip-mdoc-issuer.json",
+                },
             )
+            dpop_warnings = [
+                item
+                for item in expected_warnings
+                if item["test-name"] == module.VCI_DPOP_NEGATIVE_MODULE
+            ]
+            self.assertEqual(len(dpop_warnings), 1)
+            self.assertEqual(
+                dpop_warnings[0]["configuration-filename"],
+                "openid4vc-vci-haip-mdoc-wallet.json",
+            )
+            self.assertEqual(dpop_warnings[0]["current-block"], module.VCI_DPOP_REUSE_BLOCK)
+            self.assertEqual(dpop_warnings[0]["condition"], module.VCI_DPOP_STATUS_CONDITION)
             self.assertEqual(materialized_driver["target_origin"], "https://auth.nazo.run")
             self.assertEqual(
                 materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],
