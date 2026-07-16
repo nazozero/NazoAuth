@@ -209,6 +209,11 @@ class Openid4vcOidfTests(unittest.TestCase):
                     "tx_code": "123456",
                 },
                 "verifier": {
+                    "request_object_trust_anchor_pem": (
+                        "-----BEGIN CERTIFICATE-----\n"
+                        "test-root\n"
+                        "-----END CERTIFICATE-----\n"
+                    ),
                     "credential_type_values": {
                         "sd_jwt_vc": "eu.europa.ec.eudi.pid.1",
                         "iso_mdl": "org.iso.18013.5.1.mDL",
@@ -259,6 +264,15 @@ class Openid4vcOidfTests(unittest.TestCase):
             for filename, config in configs.items():
                 if "vp-" in filename:
                     self.assertEqual(config["client"]["client_id"], "auth.nazo.run")
+                    if "redirect-query" in filename:
+                        self.assertNotIn("request_object_trust_anchor_pem", config["client"])
+                    else:
+                        self.assertEqual(
+                            config["client"]["request_object_trust_anchor_pem"],
+                            "-----BEGIN CERTIFICATE-----\n"
+                            "test-root\n"
+                            "-----END CERTIFICATE-----\n",
+                        )
             for filename, config in configs.items():
                 if "vci-" not in filename:
                     continue

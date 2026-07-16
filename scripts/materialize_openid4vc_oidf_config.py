@@ -208,6 +208,13 @@ def main() -> int:
         raise SystemExit(
             "driver verifier requires non-empty sd_jwt_vc and iso_mdl credential_type_values"
         )
+    request_object_trust_anchor_pem = verifier.get("request_object_trust_anchor_pem") if isinstance(verifier, dict) else None
+    if (
+        not isinstance(request_object_trust_anchor_pem, str)
+        or "-----BEGIN CERTIFICATE-----" not in request_object_trust_anchor_pem
+        or "-----END CERTIFICATE-----" not in request_object_trust_anchor_pem
+    ):
+        raise SystemExit("driver verifier requires request_object_trust_anchor_pem")
     # The OIDF verifier plans issue SD-JWT VC test credentials with the ARF vct
     # value. The similarly named VCI credential configuration id is not the vct
     # and must not leak into VP DCQL matching.
@@ -272,6 +279,8 @@ def main() -> int:
             # The suite uses this value to validate x509_san_dns verifier IDs.
             # Bind it to the deployed verifier rather than the local suite host.
             client["client_id"] = target_hostname
+            if plan == VP_HAIP or variants.get("request_method") == "request_uri_signed":
+                client["request_object_trust_anchor_pem"] = request_object_trust_anchor_pem
         prefix = str(config.get("alias", "nazo-openid4vc"))
         alias = f"{prefix}-{slug}"
         config["alias"] = alias
