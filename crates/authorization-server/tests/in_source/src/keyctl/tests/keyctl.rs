@@ -51,6 +51,7 @@ fn generate_local_parser_requires_explicit_algorithm_and_purposes() {
         vec!["--alg", "ES256"],
         vec!["--purposes", "credential"],
         vec!["--alg", "ES256", "--purposes", "unknown"],
+        vec!["--alg", "ES256", "--purposes", "id_token"],
     ] {
         assert!(parse_generate_local_args(args.into_iter().map(str::to_owned).collect()).is_err());
     }

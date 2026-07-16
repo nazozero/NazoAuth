@@ -719,6 +719,16 @@ pub(crate) async fn register_local_key(
     if registration.purposes.is_empty() {
         anyhow::bail!("purpose-scoped local key requires at least one signing purpose");
     }
+    if registration.purposes.iter().any(|purpose| {
+        !matches!(
+            purpose,
+            SigningPurpose::Credential | SigningPurpose::PresentationRequest
+        )
+    }) {
+        anyhow::bail!(
+            "purpose-scoped local keys are restricted to credential and presentation_request"
+        );
+    }
     let algorithm = signing_algorithm_name(registration.algorithm)
         .ok_or_else(|| anyhow!("unsupported signing alg"))?;
     let path = settings.keys_dir.join("keyset.json");

@@ -161,3 +161,26 @@ async fn overlapping_purpose_scoped_keys_are_rejected() {
 
     tokio::fs::remove_dir_all(directory).await.unwrap();
 }
+
+#[tokio::test]
+async fn purpose_scoped_registration_rejects_oidc_signing_purposes() {
+    let directory = std::env::temp_dir().join(format!(
+        "nazo-purpose-scoped-oidc-rejected-{}",
+        Uuid::now_v7()
+    ));
+    let settings = settings(directory.clone());
+    KeyManager::load_or_create(settings.clone()).await.unwrap();
+
+    let error = KeyManager::register_local(
+        &settings,
+        LocalKeyRegistration {
+            algorithm: jsonwebtoken::Algorithm::ES256,
+            purposes: [SigningPurpose::IdToken].into_iter().collect(),
+        },
+    )
+    .await
+    .unwrap_err();
+    assert!(error.to_string().contains("restricted"));
+
+    tokio::fs::remove_dir_all(directory).await.unwrap();
+}

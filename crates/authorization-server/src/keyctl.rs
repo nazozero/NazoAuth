@@ -81,8 +81,10 @@ async fn generate_local_key(
     settings: &Settings,
     options: GenerateLocalKeyOptions,
 ) -> anyhow::Result<()> {
+    let key_settings = settings.key_settings();
+    nazo_key_management::KeyManager::load_or_create(key_settings.clone()).await?;
     let kid = nazo_key_management::KeyManager::register_local(
-        &settings.key_settings(),
+        &key_settings,
         nazo_key_management::LocalKeyRegistration {
             algorithm: options.alg,
             purposes: options.purposes,
@@ -175,6 +177,16 @@ fn parse_generate_local_args(args: Vec<String>) -> anyhow::Result<GenerateLocalK
                 }
                 if parsed.is_empty() {
                     bail!("generate-local requires non-empty --purposes");
+                }
+                if parsed.iter().any(|purpose| {
+                    !matches!(
+                        purpose,
+                        SigningPurpose::Credential | SigningPurpose::PresentationRequest
+                    )
+                }) {
+                    bail!(
+                        "generate-local purposes are restricted to credential,presentation_request"
+                    );
                 }
                 purposes = Some(parsed);
             }
