@@ -292,6 +292,21 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(private_key_clients, {module.VCI_PRIVATE_KEY_CLIENT_ID})
             self.assertEqual(attested_clients, {module.VCI_ATTESTED_CLIENT_ID})
             self.assertTrue(private_key_clients.isdisjoint(attested_clients))
+            private_key_client2 = {
+                config["client2"]["client_id"]
+                for config in configs.values()
+                if "vci-" in config["alias"]
+                and config.get("nazo", {}).get("client_auth_type") == "private_key_jwt"
+            }
+            attested_client2 = {
+                config["client2"]["client_id"]
+                for config in configs.values()
+                if "vci-" in config["alias"]
+                and config.get("nazo", {}).get("client_auth_type") == "client_attestation"
+            }
+            self.assertEqual(private_key_client2, {module.VCI_PRIVATE_KEY_CLIENT2_ID})
+            self.assertEqual(attested_client2, {module.VCI_ATTESTED_CLIENT2_ID})
+            self.assertTrue(private_key_client2.isdisjoint(attested_client2))
 
 
 if __name__ == "__main__":
