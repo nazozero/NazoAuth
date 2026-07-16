@@ -851,6 +851,32 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                     "Credential issuer is unavailable.",
                 ));
             }
+            let target_uris = token_endpoint_dpop_target_uris(&self.issuer, &request.request_url);
+            let target_uri_refs = target_uris.iter().map(String::as_str).collect::<Vec<_>>();
+            let dpop_jkt = validate_authorization_server_dpop(
+                self.authorization.as_ref(),
+                DpopProofRequest {
+                    proof: request.dpop_proof.as_deref(),
+                    method: "POST",
+                    target_uris: &target_uri_refs,
+                    access_token: None,
+                    expected_jkt: None,
+                },
+                self.dpop_nonce_policy,
+            )
+            .await
+            .map_err(|error| match error {
+                DpopError::UseNonce(nonce) => CredentialHttpError {
+                    status: 400,
+                    error: "use_dpop_nonce",
+                    description: "Credential issuer requires nonce in DPoP proof.",
+                    dpop_nonce: Some(nonce),
+                },
+                DpopError::NonceStoreUnavailable => {
+                    vci_error(503, "server_error", "DPoP nonce validation is unavailable.")
+                }
+                _ => vci_error(400, "invalid_dpop_proof", "DPoP proof is invalid."),
+            })?;
             let attested = match (
                 request.client_attestation.as_deref(),
                 request.client_attestation_pop.as_deref(),
@@ -945,32 +971,6 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                         "Pre-authorized code or transaction code is invalid.",
                     )
                 })?;
-            let target_uris = token_endpoint_dpop_target_uris(&self.issuer, &request.request_url);
-            let target_uri_refs = target_uris.iter().map(String::as_str).collect::<Vec<_>>();
-            let dpop_jkt = validate_authorization_server_dpop(
-                self.authorization.as_ref(),
-                DpopProofRequest {
-                    proof: request.dpop_proof.as_deref(),
-                    method: "POST",
-                    target_uris: &target_uri_refs,
-                    access_token: None,
-                    expected_jkt: None,
-                },
-                self.dpop_nonce_policy,
-            )
-            .await
-            .map_err(|error| match error {
-                DpopError::UseNonce(nonce) => CredentialHttpError {
-                    status: 400,
-                    error: "use_dpop_nonce",
-                    description: "Credential issuer requires nonce in DPoP proof.",
-                    dpop_nonce: Some(nonce),
-                },
-                DpopError::NonceStoreUnavailable => {
-                    vci_error(503, "server_error", "DPoP nonce validation is unavailable.")
-                }
-                _ => vci_error(400, "invalid_dpop_proof", "DPoP proof is invalid."),
-            })?;
             let authorization_details = authorization
                 .configuration_ids
                 .iter()
