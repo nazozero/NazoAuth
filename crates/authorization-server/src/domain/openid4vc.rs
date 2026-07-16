@@ -334,7 +334,11 @@ impl Openid4vcCredentialCrypto {
         let credential = decode::<Value>(credential_jwt, &key, &validation)
             .map_err(|_| CredentialTrustError::InvalidSignature)?
             .claims;
-        if credential.get("_sd_alg").and_then(Value::as_str) != Some("sha-256") {
+        if credential
+            .get("_sd_alg")
+            .and_then(Value::as_str)
+            .is_some_and(|algorithm| algorithm != "sha-256")
+        {
             return Err(CredentialTrustError::InvalidEncoding);
         }
         let expected_digests = credential
