@@ -275,6 +275,48 @@ class RunOidfConformanceTests(unittest.TestCase):
             ),
         )
 
+    def test_expected_warning_accepts_oidf_start_block_log_marker(self):
+        module = load_runner_module()
+        info = {
+            "alias": "vci-alias",
+            "testName": "fapi2-security-profile-final-refresh-token",
+            "variant": {
+                "client_auth_type": "client_attestation",
+                "fapi_profile": "vci_haip",
+                "vci_grant_type": "authorization_code",
+            },
+        }
+        logs = [
+            {
+                "blockId": "refresh-token",
+                "src": "-START-BLOCK-",
+                "msg": "Check for refresh token",
+            },
+            {
+                "blockId": "refresh-token",
+                "result": "WARNING",
+                "src": "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken",
+                "msg": "The server configuration supports refresh tokens.",
+            },
+        ]
+        context = (
+            "fapi2-security-profile-final-refresh-token",
+            tuple(sorted(info["variant"].items())),
+            "Check for refresh token",
+            "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken",
+        )
+        allowed = {"vci-alias": frozenset({context})}
+
+        self.assertIsNone(
+            module.oidf_log_failure(
+                "module-id",
+                logs,
+                info=info,
+                allowed_expected_warnings_by_alias=allowed,
+            )
+        )
+        self.assertTrue(module.oidf_log_has_allowed_expected_warning(info, logs, allowed))
+
     def test_expected_tls_warning_file_rejects_wildcards(self):
         module = load_runner_module()
         payload = [
