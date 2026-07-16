@@ -68,10 +68,15 @@ plans:
 
 The bounded registry is
 [`tests/contracts/openid4vc-oidf-matrix.json`](../../tests/contracts/openid4vc-oidf-matrix.json).
-It expands the plans into 18 executions covering both credential formats and
+It expands the plans into 17 executions covering both credential formats and
 the supported security/transport axes. Management automation can only create
 offers or presentation transactions; it cannot inspect protocol persistence,
 so results are black-box evidence.
+
+The upstream v5.2.0 suite has no modules for the unsupported combination
+`mso_mdoc` + `redirect_uri` client identifier prefix + signed request URI +
+`direct_post.jwt`; `mso_mdoc` encrypted-response coverage is therefore exercised
+through the supported x509-prefixed signed-request variants instead.
 
 The upstream plan display names explicitly call these tests **alpha** and say
 they are incomplete/incorrect or not currently part of the certification

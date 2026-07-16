@@ -51,10 +51,14 @@ OIDF Conformance Suite 固定到 v5.2.0 commit
 - `oid4vp-1final-verifier-test-plan`
 - `oid4vp-1final-verifier-haip-test-plan`
 
-18 个有界执行组合见
+17 个有界执行组合见
 [`tests/contracts/openid4vc-oidf-matrix.json`](../../tests/contracts/openid4vc-oidf-matrix.json)。
 自动化只能经管理 HTTP 创建 offer 或 presentation transaction，不能读取协议状态表，
 因此属于黑盒证据。
+
+上游 v5.2.0 套件没有覆盖 `mso_mdoc` + `redirect_uri` client identifier prefix +
+签名 request URI + `direct_post.jwt` 的模块；`mso_mdoc` 加密响应覆盖因此通过上游
+支持的 x509 前缀签名请求变体执行。
 
 上游计划标题明确标为 **alpha**，并注明可能不完整/不正确或尚未纳入认证计划。
 因此全绿只能称为“官方套件回归通过”，不能称为 OpenID Foundation 正式认证，
