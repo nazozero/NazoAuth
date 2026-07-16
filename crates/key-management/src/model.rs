@@ -52,6 +52,14 @@ pub(crate) struct LoadedKeyset {
 pub struct VerificationKey {
     pub kid: String,
     pub public_jwk: Value,
+    pub(crate) signing_purposes: BTreeSet<SigningPurpose>,
+}
+
+impl VerificationKey {
+    #[must_use]
+    pub fn can_sign(&self, purpose: SigningPurpose) -> bool {
+        self.signing_purposes.contains(&purpose)
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -67,6 +75,27 @@ impl KeySnapshot {
     #[must_use]
     pub fn verification_key(&self, kid: &str) -> Option<&VerificationKey> {
         self.verification_keys.iter().find(|key| key.kid == kid)
+    }
+
+    #[must_use]
+    pub fn signing_verification_key(
+        &self,
+        purpose: SigningPurpose,
+        algorithm: jsonwebtoken::Algorithm,
+    ) -> Option<&VerificationKey> {
+        let algorithm = crate::store::signing_algorithm_name(algorithm)?;
+        let matches = |key: &&VerificationKey| {
+            key.can_sign(purpose)
+                && key.public_jwk.get("alg").and_then(Value::as_str) == Some(algorithm)
+        };
+        self.verification_key(&self.active_kid)
+            .filter(matches)
+            .or_else(|| {
+                self.verification_keys
+                    .iter()
+                    .filter(|key| key.kid != self.active_kid)
+                    .find(matches)
+            })
     }
 
     #[must_use]
@@ -113,13 +142,14 @@ pub struct KeyRecord {
 
 /// Operator-facing categorization derived from persisted keyset metadata.
 ///
-/// This status preserves keyctl's storage/lifecycle presentation and does not
-/// describe runtime signing capability. A persisted non-active auxiliary key
-/// can therefore be `Prepublished` here while its runtime [`ManagedKey`] is
-/// [`KeyState::Active`] for a restricted purpose set.
+/// Purpose-scoped signing keys are reported separately from rotation
+/// candidates so operators cannot mistake them for the next OIDC active key.
+/// Legacy auxiliary entries without explicit `purposes` retain their historical
+/// `Prepublished` presentation for backward compatibility.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyRecordStatus {
     Prepublished,
+    PurposeScoped,
     Active,
     Grace,
     Retired,
@@ -131,6 +161,7 @@ impl KeyRecordStatus {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Prepublished => "prepublished",
+            Self::PurposeScoped => "purpose-scoped",
             Self::Active => "active",
             Self::Grace => "grace",
             Self::Retired => "retired",
@@ -144,6 +175,12 @@ pub struct ExternalKeyRegistration {
     pub algorithm: jsonwebtoken::Algorithm,
     pub key_ref: String,
     pub public_jwk_file: PathBuf,
+}
+
+#[derive(Clone, Debug)]
+pub struct LocalKeyRegistration {
+    pub algorithm: jsonwebtoken::Algorithm,
+    pub purposes: BTreeSet<SigningPurpose>,
 }
 
 pub(crate) struct KeyGeneration {
@@ -270,6 +307,13 @@ impl KeyManager {
         registration: ExternalKeyRegistration,
     ) -> anyhow::Result<()> {
         crate::store::register_external_key(settings, registration).await
+    }
+
+    pub async fn register_local(
+        settings: &KeySettings,
+        registration: LocalKeyRegistration,
+    ) -> anyhow::Result<String> {
+        crate::store::register_local_key(settings, registration).await
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -582,6 +626,11 @@ pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
             .map(|key| VerificationKey {
                 kid: key.managed.kid.clone(),
                 public_jwk: key.public_jwk.clone(),
+                signing_purposes: if key.managed.state == KeyState::Active {
+                    key.managed.purposes.clone()
+                } else {
+                    BTreeSet::new()
+                },
             })
             .collect(),
         id_token_signing_algorithms,

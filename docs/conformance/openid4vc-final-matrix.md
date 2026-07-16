@@ -39,6 +39,22 @@ Unsupported optional mechanisms are not advertised: Wallet behavior,
 Digital Credentials API transport, DID client identifiers, verifier
 attestation client identifiers, and unbound mdoc credentials.
 
+## Signing-key boundary
+
+OpenID4VC signing uses an ES256 local key scoped only to `credential` and
+`presentation_request`. It is generated through the existing atomic key store:
+
+```text
+nazo-oauth-keyctl generate-local --alg ES256 --purposes credential,presentation_request
+```
+
+The persisted `purposes` field is fail-closed. A purpose-scoped key is excluded
+from OIDC rotation and cannot sign access tokens, ID Tokens, JARM, logout
+tokens, HTTP messages or security events. The configured OpenID4VC leaf
+certificate must match this exact scoped key and chain to the configured trust
+anchors; startup fails otherwise. Operators must not edit `keyset.json`
+manually.
+
 ## OIDF suite coverage
 
 The repository pins OIDF Conformance Suite commit

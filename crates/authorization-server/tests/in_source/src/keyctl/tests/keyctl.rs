@@ -14,6 +14,10 @@ fn key_record_status_labels_preserve_cli_output_contract() {
         "prepublished"
     );
     assert_eq!(
+        key_record_status_label(nazo_key_management::KeyRecordStatus::PurposeScoped),
+        "purpose-scoped"
+    );
+    assert_eq!(
         key_record_status_label(nazo_key_management::KeyRecordStatus::Grace),
         "grace"
     );
@@ -21,6 +25,35 @@ fn key_record_status_labels_preserve_cli_output_contract() {
         key_record_status_label(nazo_key_management::KeyRecordStatus::Retired),
         "retired"
     );
+}
+
+#[test]
+fn generate_local_parser_requires_explicit_algorithm_and_purposes() {
+    let options = parse_generate_local_args(vec![
+        "--alg".to_owned(),
+        "ES256".to_owned(),
+        "--purposes".to_owned(),
+        "credential,presentation_request".to_owned(),
+    ])
+    .unwrap();
+    assert_eq!(options.alg, jsonwebtoken::Algorithm::ES256);
+    assert_eq!(
+        options.purposes,
+        [
+            SigningPurpose::Credential,
+            SigningPurpose::PresentationRequest
+        ]
+        .into_iter()
+        .collect()
+    );
+
+    for args in [
+        vec!["--alg", "ES256"],
+        vec!["--purposes", "credential"],
+        vec!["--alg", "ES256", "--purposes", "unknown"],
+    ] {
+        assert!(parse_generate_local_args(args.into_iter().map(str::to_owned).collect()).is_err());
+    }
 }
 
 #[test]
@@ -107,7 +140,7 @@ async fn run_without_command_reports_usage_before_loading_configuration() {
 
     assert_error_contains(
         err,
-        "usage: nazo-oauth-keyctl <list|register-external|validate>",
+        "usage: nazo-oauth-keyctl <list|generate-local|register-external|validate>",
     );
 }
 

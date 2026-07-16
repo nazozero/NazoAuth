@@ -556,8 +556,25 @@ def check_openid4vc_boundaries() -> None:
     for forbidden in ("openid4vci_offers", "openid4vp_transactions", "result_ciphertext"):
         if forbidden in driver:
             raise SystemExit(f"OpenID4VC black-box driver accesses persistence: {forbidden}")
+    keyctl = (ROOT / "crates" / "authorization-server" / "src" / "keyctl.rs").read_text(
+        encoding="utf-8"
+    )
+    key_store = (ROOT / "crates" / "key-management" / "src" / "store.rs").read_text(
+        encoding="utf-8"
+    )
+    for marker in (
+        "generate-local",
+        "LocalKeyRegistration",
+    ):
+        if marker not in keyctl:
+            raise SystemExit(f"OpenID4VC purpose-scoped key CLI boundary is missing: {marker}")
+    for marker in ('entry.get("purposes").is_some()', "key_entry_purposes"):
+        if marker not in key_store:
+            raise SystemExit(f"OpenID4VC purpose-scoped rotation boundary is missing: {marker}")
     for doc_name in ("openid4vc-final-matrix.md", "openid4vc-final-matrix.zh-CN.md"):
         doc = (ROOT / "docs" / "conformance" / doc_name).read_text(encoding="utf-8")
+        if "generate-local --alg ES256 --purposes credential,presentation_request" not in doc:
+            raise SystemExit(f"OpenID4VC purpose-scoped key procedure missing from {doc_name}")
         for statement in ("alpha", "not an OpenID Foundation certification claim") if doc_name.endswith(".md") and not doc_name.endswith("zh-CN.md") else ("alpha", "不能称为 OpenID Foundation 正式认证"):
             if statement not in doc:
                 raise SystemExit(f"OpenID4VC evidence boundary missing from {doc_name}: {statement}")

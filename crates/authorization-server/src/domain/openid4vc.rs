@@ -93,13 +93,21 @@ impl Openid4vcCredentialCrypto {
         }
         let snapshot = keyset.snapshot();
         let leaf_key = leaf.public_key()?;
-        let key_matches = snapshot.verification_keys.iter().any(|key| {
-            key.public_jwk.get("alg").and_then(Value::as_str) == Some("ES256")
-                && p256_pkey_from_jwk(&key.public_jwk)
-                    .is_ok_and(|candidate| candidate.public_eq(&leaf_key))
-        });
+        let credential_key =
+            snapshot.signing_verification_key(SigningPurpose::Credential, Algorithm::ES256);
+        let presentation_key = snapshot
+            .signing_verification_key(SigningPurpose::PresentationRequest, Algorithm::ES256);
+        let key_matches = credential_key.zip(presentation_key).is_some_and(
+            |(credential_key, presentation_key)| {
+                credential_key.kid == presentation_key.kid
+                    && p256_pkey_from_jwk(&credential_key.public_jwk)
+                        .is_ok_and(|candidate| candidate.public_eq(&leaf_key))
+            },
+        );
         if !key_matches {
-            anyhow::bail!("OpenID4VC signing certificate does not match an ES256 managed key");
+            anyhow::bail!(
+                "OpenID4VC signing certificate does not match a credential and presentation-request scoped ES256 managed key"
+            );
         }
         Ok(Self {
             keyset,

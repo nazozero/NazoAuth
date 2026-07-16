@@ -29,6 +29,20 @@ Final 版 mdoc session transcript。HAIP 固定为 `x509_hash`、签名 request 
 client identifier、verifier attestation client identifier，以及无 holder binding
 的 mdoc。
 
+## 签名密钥边界
+
+OpenID4VC 使用只允许 `credential` 与 `presentation_request` 两种用途的 ES256
+本地密钥，并通过现有原子密钥库生成：
+
+```text
+nazo-oauth-keyctl generate-local --alg ES256 --purposes credential,presentation_request
+```
+
+持久化的 `purposes` 字段采用 fail-closed 校验。该专用密钥不会参与 OIDC 轮换，
+也不能签 Access Token、ID Token、JARM、Logout Token、HTTP Message 或 Security
+Event。配置的 OpenID4VC 叶证书必须与这把专用密钥精确匹配，并能链接到配置的
+信任锚；否则服务拒绝启动。运维不得手工编辑 `keyset.json`。
+
 OIDF Conformance Suite 固定到 v5.2.0 commit
 `dee9a25160e789f0f80517674693ef7989ab9fa1`，运行四个上游计划：
 

@@ -24,7 +24,8 @@ use uuid::Uuid;
 
 use crate::model::{
     ActiveSigningKey, ExternalKeyRegistration, ExternalSigningKey, KeyHandle, KeyRecord,
-    KeyRecordStatus, KeySettings, KeyState, LoadedKeyset, ManagedKey, StoredVerificationKey,
+    KeyRecordStatus, KeySettings, KeyState, LoadedKeyset, LocalKeyRegistration, ManagedKey,
+    StoredVerificationKey,
 };
 
 const OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::RS256;
@@ -159,6 +160,9 @@ fn find_prepublished_candidate(
         if entry.get("kid").and_then(Value::as_str) == Some(active_kid) {
             continue;
         }
+        if entry.get("purposes").is_some() {
+            continue;
+        }
         if key_entry_retire_at(entry)?.is_some() || key_entry_algorithm(entry)? != active_alg {
             continue;
         }
@@ -184,7 +188,8 @@ fn has_live_local_key_for_alg(
     now: DateTime<Utc>,
 ) -> anyhow::Result<bool> {
     for entry in keys {
-        if key_entry_backend(entry) != "local-pem"
+        if entry.get("purposes").is_some()
+            || key_entry_backend(entry) != "local-pem"
             || key_entry_algorithm(entry)? != alg
             || !entry
                 .get("file")
@@ -300,6 +305,8 @@ pub(crate) async fn try_load_keyset(
         let alg = key_entry_algorithm(entry)
             .with_context(|| format!("keyset entry {kid} has unsupported alg"))?;
         let backend = key_entry_backend(entry);
+        let explicit_purposes = key_entry_purposes(entry)
+            .with_context(|| format!("keyset entry {kid} has invalid purposes"))?;
         let (public_jwk, signing_key, handle) = match backend {
             "local-pem" => {
                 let file_name = entry
@@ -365,7 +372,9 @@ pub(crate) async fn try_load_keyset(
             managed: ManagedKey {
                 kid: kid.to_owned(),
                 algorithm: signing_algorithm_name(alg).unwrap().to_owned(),
-                purposes: if is_active {
+                purposes: if let Some(purposes) = explicit_purposes.as_ref() {
+                    purposes.clone()
+                } else if is_active {
                     all_signing_purposes()
                 } else if retire_at.is_none()
                     && declared_active_alg.is_some_and(|active_alg| alg != active_alg)
@@ -382,7 +391,7 @@ pub(crate) async fn try_load_keyset(
                 } else {
                     BTreeSet::new()
                 },
-                state: if is_active {
+                state: if explicit_purposes.is_some() || is_active {
                     KeyState::Active
                 } else if retire_at.is_some() {
                     KeyState::Grace
@@ -644,6 +653,8 @@ pub(crate) async fn list_keys(settings: &KeySettings) -> anyhow::Result<Vec<KeyR
                 KeyRecordStatus::Retired
             } else if retire_at.is_some() {
                 KeyRecordStatus::Grace
+            } else if key.get("purposes").is_some() {
+                KeyRecordStatus::PurposeScoped
             } else {
                 KeyRecordStatus::Prepublished
             };
@@ -701,6 +712,64 @@ pub(crate) async fn register_external_key(
     write_json_atomic(&path, &keyset).await
 }
 
+pub(crate) async fn register_local_key(
+    settings: &KeySettings,
+    registration: LocalKeyRegistration,
+) -> anyhow::Result<String> {
+    if registration.purposes.is_empty() {
+        anyhow::bail!("purpose-scoped local key requires at least one signing purpose");
+    }
+    let algorithm = signing_algorithm_name(registration.algorithm)
+        .ok_or_else(|| anyhow!("unsupported signing alg"))?;
+    let path = settings.keys_dir.join("keyset.json");
+    let mut keyset = load_keyset_json(settings).await?;
+    for key in keyset_keys(&keyset)? {
+        if key.get("alg").and_then(Value::as_str) != Some(algorithm) {
+            continue;
+        }
+        let Some(existing) = key_entry_purposes(key)? else {
+            continue;
+        };
+        if existing
+            .iter()
+            .any(|purpose| registration.purposes.contains(purpose))
+        {
+            anyhow::bail!(
+                "a purpose-scoped {algorithm} key already covers one or more requested purposes"
+            );
+        }
+    }
+    let mut entry =
+        create_prepublished_local_key_entry(settings, registration.algorithm, Utc::now()).await?;
+    let kid = entry
+        .get("kid")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("generated local key entry missing kid"))?
+        .to_owned();
+    let file = entry
+        .get("file")
+        .and_then(Value::as_str)
+        .ok_or_else(|| anyhow!("generated local key entry missing file"))?
+        .to_owned();
+    entry["purposes"] = json!(
+        registration
+            .purposes
+            .iter()
+            .map(|purpose| purpose.as_str())
+            .collect::<Vec<_>>()
+    );
+    keyset_keys_mut(&mut keyset)?.push(entry);
+    let result = match validate_keyset_json(&keyset) {
+        Ok(()) => write_json_atomic(&path, &keyset).await,
+        Err(error) => Err(error),
+    };
+    if let Err(error) = result {
+        let _ = tokio::fs::remove_file(settings.keys_dir.join(file)).await;
+        return Err(error);
+    }
+    Ok(kid)
+}
+
 async fn load_keyset_json(settings: &KeySettings) -> anyhow::Result<Value> {
     let path = settings.keys_dir.join("keyset.json");
     let raw = tokio::fs::read_to_string(&path)
@@ -743,9 +812,16 @@ fn validate_keyset_json(value: &Value) -> anyhow::Result<()> {
             }
             _ => anyhow::bail!("key {kid} has unsupported backend {backend}"),
         }
+        let purposes = key_entry_purposes(key)?;
+        if purposes.is_some() && backend != "local-pem" {
+            anyhow::bail!("purpose-scoped key {kid} must use local-pem backend");
+        }
         let retire_at = key_entry_retire_at(key)?;
         if kid == active {
             active_exists = true;
+            if purposes.is_some() {
+                anyhow::bail!("active rotation key {kid} cannot be purpose-scoped");
+            }
             if retire_at.is_some() {
                 anyhow::bail!("active key {kid} cannot have retire_at");
             }
@@ -755,6 +831,30 @@ fn validate_keyset_json(value: &Value) -> anyhow::Result<()> {
         anyhow::bail!("active key {active} does not exist");
     }
     Ok(())
+}
+
+fn key_entry_purposes(entry: &Value) -> anyhow::Result<Option<BTreeSet<SigningPurpose>>> {
+    let Some(raw) = entry.get("purposes") else {
+        return Ok(None);
+    };
+    let values = raw
+        .as_array()
+        .ok_or_else(|| anyhow!("purposes must be an array"))?;
+    if values.is_empty() {
+        anyhow::bail!("purposes must not be empty");
+    }
+    let mut purposes = BTreeSet::new();
+    for value in values {
+        let name = value
+            .as_str()
+            .ok_or_else(|| anyhow!("purpose names must be strings"))?;
+        let purpose = SigningPurpose::from_name(name)
+            .ok_or_else(|| anyhow!("unsupported signing purpose {name}"))?;
+        if !purposes.insert(purpose) {
+            anyhow::bail!("duplicate signing purpose {name}");
+        }
+    }
+    Ok(Some(purposes))
 }
 
 fn validate_external_public_jwk_metadata(key: &Value, kid: &str, alg: &str) -> anyhow::Result<()> {

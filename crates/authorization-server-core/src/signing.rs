@@ -12,6 +12,37 @@ pub enum SigningPurpose {
     PresentationRequest,
 }
 
+impl SigningPurpose {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::AccessToken => "access_token",
+            Self::IdToken => "id_token",
+            Self::Jarm => "jarm",
+            Self::LogoutToken => "logout_token",
+            Self::HttpMessage => "http_message",
+            Self::SecurityEvent => "security_event",
+            Self::Credential => "credential",
+            Self::PresentationRequest => "presentation_request",
+        }
+    }
+
+    #[must_use]
+    pub fn from_name(value: &str) -> Option<Self> {
+        match value {
+            "access_token" => Some(Self::AccessToken),
+            "id_token" => Some(Self::IdToken),
+            "jarm" => Some(Self::Jarm),
+            "logout_token" => Some(Self::LogoutToken),
+            "http_message" => Some(Self::HttpMessage),
+            "security_event" => Some(Self::SecurityEvent),
+            "credential" => Some(Self::Credential),
+            "presentation_request" => Some(Self::PresentationRequest),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct SignRequest<'a> {
     pub purpose: SigningPurpose,
