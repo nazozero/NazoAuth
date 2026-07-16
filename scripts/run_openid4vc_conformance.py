@@ -53,6 +53,25 @@ def get_url(url: str) -> None:
         response.read()
 
 
+def suite_reachable_url(conformance_server: str, url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname not in {"nginx"}:
+        return url
+    base = urllib.parse.urlparse(conformance_server)
+    if base.scheme not in {"http", "https"} or not base.netloc:
+        raise RuntimeError("conformance_server must be an absolute HTTP(S) URL")
+    return urllib.parse.urlunparse(
+        (
+            base.scheme,
+            base.netloc,
+            parsed.path,
+            parsed.params,
+            parsed.query,
+            parsed.fragment,
+        )
+    )
+
+
 def module_entries(base_url: str, token: str | None, aliases: set[str]) -> list[dict[str, object]]:
     entries: list[dict[str, object]] = []
     for plan in oidf.fetch_alias_plans(base_url, token, aliases):
@@ -153,7 +172,7 @@ class Openid4vcDriver:
             callback = f"{endpoint}?{urllib.parse.urlencode({'credential_offer': value})}"
         else:
             callback = f"{endpoint}?{urllib.parse.urlencode({'credential_offer_uri': offer['credential_offer_uri']})}"
-        get_url(callback)
+        get_url(suite_reachable_url(str(self.config["conformance_server"]), callback))
         self.triggered.add(module_id)
         print(f"OpenID4VC driver delivered credential offer to {module_id}", flush=True)
 
