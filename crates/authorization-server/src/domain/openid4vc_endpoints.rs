@@ -1370,7 +1370,12 @@ impl PresentationOperations for ServerPresentationOperations {
             self.service
                 .verify_response(&transaction, &response, Utc::now())
                 .await
-                .map_err(|_| {
+                .map_err(|error| {
+                    tracing::warn!(
+                        %transaction_id,
+                        %error,
+                        "OpenID4VP presentation verification rejected a response"
+                    );
                     vp_error(400, "invalid_request", "Presentation verification failed.")
                 })?;
             Ok(Some(format!(
