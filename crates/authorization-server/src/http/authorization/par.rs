@@ -197,11 +197,11 @@ async fn par_after_rate_limit_inner(
                 "client_secret" | "client_assertion_type" | "client_assertion"
             )
         {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "PAR 请求包含不支持的参数.",
-            );
+            // RFC 6749 requires authorization servers to ignore unrecognized
+            // request parameters. Do not retain them in the pushed request:
+            // this preserves extension interoperability without allowing
+            // attacker-controlled data into the authenticated PAR state.
+            continue;
         }
         if key == "resource" {
             resource_values.push(value);
