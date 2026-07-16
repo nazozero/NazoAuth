@@ -1580,7 +1580,12 @@ def inspect_oidf_state(
             expected_statuses={200, 404},
         )
         if status_code == 200:
-            failure = oidf_log_failure(module_id, logs)
+            failure = oidf_log_failure(
+                module_id,
+                logs,
+                info=info,
+                allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+            )
             if failure:
                 return failure
 
