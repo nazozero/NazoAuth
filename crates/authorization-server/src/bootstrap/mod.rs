@@ -27,6 +27,7 @@ pub(crate) use registration_services::{LocalRegistrationService, RegistrationSec
 use std::{net::SocketAddr, sync::Arc, time::Duration};
 
 use actix_web::{App, HttpServer, dev::Service, middleware::from_fn, web};
+use anyhow::Context as _;
 
 use crate::adapters::email::{SmtpVerificationEmailDelivery, email_delivery_configured};
 use crate::adapters::security::{
@@ -326,20 +327,46 @@ pub async fn run() -> anyhow::Result<()> {
                 .as_ref()
                 .expect("enabled OpenID4VC modules require a certificate chain"),
         )
-        .await?;
-        let trust_anchors = tokio::fs::read(
-            settings
-                .openid4vc
-                .trust_anchors_file
-                .as_ref()
-                .expect("enabled OpenID4VC modules require trust anchors"),
-        )
-        .await?;
+        .await
+        .with_context(|| {
+            format!(
+                "failed to read OpenID4VC signing certificate chain from {}",
+                settings
+                    .openid4vc
+                    .signing_certificate_chain_file
+                    .as_ref()
+                    .expect("enabled OpenID4VC modules require a certificate chain")
+                    .display()
+            )
+        })?;
+        let trust_anchors_path = settings
+            .openid4vc
+            .trust_anchors_file
+            .as_ref()
+            .expect("enabled OpenID4VC modules require trust anchors");
+        let trust_anchors = tokio::fs::read(trust_anchors_path).await.with_context(|| {
+            format!(
+                "failed to read OpenID4VC trust anchors from {}",
+                trust_anchors_path.display()
+            )
+        })?;
         Some(Openid4vcCredentialCrypto::new(
             keyset.clone(),
             &certificate_chain,
             &trust_anchors,
-        )?)
+        )
+        .with_context(|| {
+            format!(
+                "failed to initialize OpenID4VC credential crypto from certificate chain {} and trust anchors {}",
+                settings
+                    .openid4vc
+                    .signing_certificate_chain_file
+                    .as_ref()
+                    .expect("enabled OpenID4VC modules require a certificate chain")
+                    .display(),
+                trust_anchors_path.display()
+            )
+        })?)
     } else {
         None
     };
