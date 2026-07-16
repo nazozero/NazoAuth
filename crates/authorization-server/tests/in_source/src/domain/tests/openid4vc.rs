@@ -24,6 +24,34 @@ fn verified_mdoc_holder_binding_preserves_the_device_cose_key() {
 }
 
 #[test]
+fn mdoc_holder_binding_accepts_rsa_attested_keys() {
+    let modulus = vec![0x81; 256];
+    let exponent = vec![0x01, 0x00, 0x01];
+    let jwk = json!({
+        "kty": "RSA",
+        "alg": "PS256",
+        "n": URL_SAFE_NO_PAD.encode(&modulus),
+        "e": URL_SAFE_NO_PAD.encode(&exponent),
+    });
+
+    let key = jwk_to_cose_key(&jwk).expect("RSA attested holder key must be encodable as COSE");
+
+    assert_eq!(key.kty, coset::KeyType::Assigned(iana::KeyType::RSA));
+    assert_eq!(
+        key.alg,
+        Some(coset::Algorithm::Assigned(iana::Algorithm::PS256))
+    );
+    assert!(key.params.iter().any(|(label, value)| {
+        label == &coset::Label::Int(iana::RsaKeyParameter::N as i64)
+            && value == &CborValue::Bytes(modulus.clone())
+    }));
+    assert!(key.params.iter().any(|(label, value)| {
+        label == &coset::Label::Int(iana::RsaKeyParameter::E as i64)
+            && value == &CborValue::Bytes(exponent.clone())
+    }));
+}
+
+#[test]
 fn mdoc_device_signature_uses_tagged_device_authentication_bytes() {
     let signing_key = SigningKey::from_slice(&[7; 32]).expect("valid P-256 test key");
     let point = signing_key.verifying_key().to_sec1_point(false);
