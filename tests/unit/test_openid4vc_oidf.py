@@ -95,6 +95,91 @@ class Openid4vcOidfTests(unittest.TestCase):
             ["api/info/module-id", "api/runner/module-id"],
         )
 
+    def test_module_entries_do_not_fetch_runner_for_non_waiting_modules(self):
+        module = load("run_openid4vc_conformance.py")
+        with (
+            patch.object(
+                module.oidf,
+                "fetch_alias_plans",
+                return_value=[
+                    {
+                        "planName": "oid4vci-1_0-issuer-test-plan",
+                        "modules": [{"instances": ["finished-module"]}],
+                    }
+                ],
+            ),
+            patch.object(
+                module.oidf,
+                "oidf_api_request",
+                return_value=(
+                    200,
+                    {
+                        "_id": "finished-module",
+                        "alias": "issuer-alias",
+                        "status": "FINISHED",
+                    },
+                ),
+            ) as request,
+        ):
+            entries = module.module_entries("https://suite.example", None, {"issuer-alias"})
+
+        self.assertEqual(entries[0]["_driver_module_id"], "finished-module")
+        self.assertEqual(
+            [call.args[2] for call in request.call_args_list],
+            ["api/info/finished-module"],
+        )
+
+    def test_driver_caches_terminal_modules_between_scans(self):
+        module = load("run_openid4vc_conformance.py")
+        driver = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://localhost:8443",
+                "conformance_no_api_token": True,
+                "aliases": ["issuer-alias"],
+            },
+            module.threading.Event(),
+        )
+        with patch.object(
+            module,
+            "module_entries",
+            return_value=[
+                {
+                    "_driver_module_id": "finished-module",
+                    "_driver_plan": "oid4vci-1_0-issuer-test-plan",
+                    "status": "FINISHED",
+                }
+            ],
+        ) as entries:
+            driver.drive_once()
+            driver.drive_once()
+
+        self.assertEqual(driver.terminal_modules, {"finished-module"})
+        self.assertEqual(entries.call_args_list[1].kwargs["ignored_module_ids"], {"finished-module"})
+
+    def test_driver_loop_scans_before_first_sleep(self):
+        module = load("run_openid4vc_conformance.py")
+        stop = module.threading.Event()
+        driver = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://localhost:8443",
+                "conformance_no_api_token": True,
+                "aliases": [],
+                "poll_interval_seconds": 60,
+            },
+            stop,
+        )
+        calls = 0
+
+        def drive_once() -> None:
+            nonlocal calls
+            calls += 1
+            stop.set()
+
+        with patch.object(driver, "drive_once", side_effect=drive_once):
+            driver.run()
+
+        self.assertEqual(calls, 1)
+
     def test_suite_internal_nginx_urls_are_rewritten_to_control_plane(self):
         module = load("run_openid4vc_conformance.py")
 
