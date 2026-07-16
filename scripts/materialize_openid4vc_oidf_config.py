@@ -7,6 +7,7 @@ import argparse
 import copy
 import json
 from pathlib import Path
+import urllib.parse
 
 
 VCI_STANDARD = "oid4vci-1_0-issuer-test-plan"
@@ -60,6 +61,29 @@ def main() -> int:
         driver["target_origin"] = args.target_origin
     if not driver.get("conformance_server") or not driver.get("target_origin"):
         raise SystemExit("driver configuration requires conformance_server and target_origin")
+    target_origin = urllib.parse.urlparse(str(driver["target_origin"]))
+    target_hostname = target_origin.hostname
+    if (
+        target_origin.scheme != "https"
+        or not target_hostname
+        or target_origin.username is not None
+        or target_origin.password is not None
+        or target_origin.path not in ("", "/")
+        or target_origin.params
+        or target_origin.query
+        or target_origin.fragment
+    ):
+        raise SystemExit("driver target_origin must be an HTTPS origin with a hostname")
+    verifier = driver.get("verifier")
+    credential_type_values = verifier.get("credential_type_values") if isinstance(verifier, dict) else None
+    if not isinstance(credential_type_values, dict) or any(
+        not isinstance(credential_type_values.get(format_name), str)
+        or not credential_type_values[format_name]
+        for format_name in ("sd_jwt_vc", "iso_mdl")
+    ):
+        raise SystemExit(
+            "driver verifier requires non-empty sd_jwt_vc and iso_mdl credential_type_values"
+        )
     required = {"vci", "vci_haip", "vp", "vp_haip"}
     if set(base) != required or not all(isinstance(base[name], dict) for name in required):
         raise SystemExit(f"base configuration must contain exactly {sorted(required)}")
@@ -106,6 +130,13 @@ def main() -> int:
                 "openid4vc_role": "issuer",
                 "client_auth_type": client_auth_type,
             }
+        else:
+            client = config.get("client")
+            if not isinstance(client, dict):
+                raise SystemExit(f"{key} base configuration requires a client object")
+            # The suite uses this value to validate x509_san_dns verifier IDs.
+            # Bind it to the deployed verifier rather than the local suite host.
+            client["client_id"] = target_hostname
         prefix = str(config.get("alias", "nazo-openid4vc"))
         alias = f"{prefix}-{slug}"
         config["alias"] = alias

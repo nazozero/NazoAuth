@@ -70,6 +70,48 @@ class Openid4vcOidfTests(unittest.TestCase):
         self.assertEqual(registry["status"], "alpha-regression-not-certification")
         self.assertEqual(registry["roles"], ["issuer", "verifier"])
 
+    def test_verifier_driver_emits_format_specific_dcql_meta(self):
+        module = load("run_openid4vc_conformance.py")
+        driver = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://localhost:8443",
+                "target_origin": "https://auth.nazo.run",
+                "verifier": {
+                    "management_token": "management-token",
+                    "credential_type_values": {
+                        "sd_jwt_vc": "eu.europa.ec.eudi.pid.1",
+                        "iso_mdl": "org.iso.18013.5.1.mDL",
+                    },
+                },
+            },
+            module.threading.Event(),
+        )
+        cases = {
+            "sd_jwt_vc": ("dc+sd-jwt", {"vct_values": ["eu.europa.ec.eudi.pid.1"]}),
+            "iso_mdl": ("mso_mdoc", {"doctype_value": "org.iso.18013.5.1.mDL"}),
+        }
+        for credential_format, (expected_format, expected_meta) in cases.items():
+            with self.subTest(credential_format=credential_format), patch.object(
+                module,
+                "request_json",
+                return_value={"authorization_url": "https://localhost:8443/authorize"},
+            ) as request, patch.object(module, "get_url"):
+                driver.drive_verifier(
+                    "module-id",
+                    {"alias": "vp-alias"},
+                    {
+                        "credential_format": credential_format,
+                        "client_id_prefix": "x509_san_dns",
+                        "request_method": "request_uri_signed",
+                        "response_mode": "direct_post.jwt",
+                    },
+                    False,
+                )
+                payload = request.call_args.args[3]
+                credential = payload["dcql_query"]["credentials"][0]
+                self.assertEqual(credential["format"], expected_format)
+                self.assertEqual(credential["meta"], expected_meta)
+
     def test_materializer_creates_unique_aliases_and_exact_plan_count(self):
         module = load("materialize_openid4vc_oidf_config.py")
         with tempfile.TemporaryDirectory() as directory:
@@ -90,7 +132,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                             },
                         }
                         if name.startswith("vci")
-                        else {}
+                        else {"client": {"client_id": "{HOSTNAME}"}}
                     ),
                 }
                 for name in ("vci", "vci_haip", "vp", "vp_haip")
@@ -103,7 +145,12 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                     "tx_code": "123456",
                 },
-                "verifier": {},
+                "verifier": {
+                    "credential_type_values": {
+                        "sd_jwt_vc": "eu.europa.ec.eudi.pid.1",
+                        "iso_mdl": "org.iso.18013.5.1.mDL",
+                    }
+                },
             }), encoding="utf-8")
             with patch("sys.argv", [
                 "materialize_openid4vc_oidf_config.py",
@@ -121,6 +168,9 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(len(configs), 18)
             self.assertEqual(len(set(materialized_driver["aliases"])), 18)
             self.assertEqual(materialized_driver["target_origin"], "https://auth.nazo.run")
+            for filename, config in configs.items():
+                if "vp-" in filename:
+                    self.assertEqual(config["client"]["client_id"], "auth.nazo.run")
             for filename, config in configs.items():
                 if "vci-" not in filename:
                     continue
