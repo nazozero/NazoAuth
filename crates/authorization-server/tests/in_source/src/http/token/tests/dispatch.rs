@@ -2036,6 +2036,22 @@ fn fapi2_profile_accepts_self_signed_mtls_confidential_sender_constrained_client
 }
 
 #[test]
+fn attested_client_id_must_match_optional_token_request_client_id_hint() {
+    assert!(attestation_client_id_matches_form_hint(
+        None,
+        "attested-client"
+    ));
+    assert!(attestation_client_id_matches_form_hint(
+        Some("attested-client"),
+        "attested-client"
+    ));
+    assert!(!attestation_client_id_matches_form_hint(
+        Some("other-client"),
+        "attested-client"
+    ));
+}
+
+#[test]
 fn grant_dispatch_rejects_unregistered_grant_without_panicking() {
     let mut client = client();
     client.grant_types = vec!["authorization_code".to_owned()];

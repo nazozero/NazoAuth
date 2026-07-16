@@ -435,7 +435,11 @@ pub(crate) async fn token_with_service(
         Ok(headers) => headers,
         Err(response) => return response,
     };
-    if attestation_headers.is_some() && client_auth_context.has_any_client_auth_material {
+    if attestation_headers.is_some()
+        && (client_auth_context.http_basic
+            || client_auth_context.has_assertion
+            || form.client_secret.is_some())
+    {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_request",
@@ -578,6 +582,15 @@ pub(crate) async fn token_with_service(
                 );
             }
         };
+        if !attestation_client_id_matches_form_hint(form.client_id.as_deref(), &validated.client_id)
+        {
+            return oauth_token_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client",
+                "Token request client_id does not match the client attestation.",
+                false,
+            );
+        }
         let replay_key = format!("client-attestation:{}", validated.client_id);
         match authorization_service
             .consume_private_key_jwt(
@@ -809,6 +822,13 @@ fn client_attestation_headers(request: &HttpRequest) -> Result<Option<(&str, &st
             false,
         )),
     }
+}
+
+fn attestation_client_id_matches_form_hint(
+    form_client_id: Option<&str>,
+    attested_client_id: &str,
+) -> bool {
+    form_client_id.is_none_or(|client_id| client_id == attested_client_id)
 }
 
 #[cfg(not(test))]
