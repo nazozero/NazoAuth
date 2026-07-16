@@ -3,7 +3,10 @@ use nazo_identity::{SubjectClaims, UserId};
 use serde_json::json;
 use uuid::Uuid;
 
-use super::credential_subject_claims;
+use super::{
+    credential_subject_claims, openid4vci_authorization_detail,
+    openid4vci_configuration_id_from_identifier, token_endpoint_dpop_target_uris,
+};
 
 fn subject_claims() -> SubjectClaims {
     SubjectClaims {
@@ -101,4 +104,44 @@ fn mdoc_dataset_contains_iso_18013_5_mandatory_mdl_elements() {
             "missing mandatory mDL element {element}"
         );
     }
+}
+
+#[test]
+fn vci_authorization_detail_contains_final_credential_identifier() {
+    let detail = openid4vci_authorization_detail("https://auth.nazo.run", "org.iso.18013.5.1.mDL");
+    let identifiers = detail["credential_identifiers"]
+        .as_array()
+        .expect("credential_identifiers array");
+    let identifier = nazo_openid4vci::CredentialIdentifier(
+        identifiers[0]
+            .as_str()
+            .expect("identifier string")
+            .to_owned(),
+    );
+
+    assert_eq!(detail["type"], "openid_credential");
+    assert_eq!(
+        detail["credential_configuration_id"],
+        "org.iso.18013.5.1.mDL"
+    );
+    assert_eq!(detail["locations"], json!(["https://auth.nazo.run"]));
+    assert_eq!(
+        openid4vci_configuration_id_from_identifier(&identifier).as_deref(),
+        Some("org.iso.18013.5.1.mDL")
+    );
+}
+
+#[test]
+fn vci_token_dpop_targets_include_public_issuer_endpoint() {
+    assert_eq!(
+        token_endpoint_dpop_target_uris("https://auth.nazo.run/", "https://nginx:8443/token"),
+        vec![
+            "https://auth.nazo.run/token".to_owned(),
+            "https://nginx:8443/token".to_owned(),
+        ]
+    );
+    assert_eq!(
+        token_endpoint_dpop_target_uris("https://auth.nazo.run", "https://auth.nazo.run/token"),
+        vec!["https://auth.nazo.run/token".to_owned()]
+    );
 }
