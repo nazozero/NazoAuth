@@ -187,13 +187,15 @@ where
         return Ok(None);
     };
 
-    validate_nonce(store, nonce_policy, verified.nonce.as_deref()).await?;
     let replay_scope = replay_scope(&request, &verified)?;
     match store
         .consume_replay(&replay_scope, &verified.jti, DPOP_REPLAY_TTL_SECONDS)
         .await
     {
-        Ok(true) => Ok(Some(verified.jkt)),
+        Ok(true) => {
+            validate_nonce(store, nonce_policy, verified.nonce.as_deref()).await?;
+            Ok(Some(verified.jkt))
+        }
         Ok(false) => Err(DpopError::ReplayDetected(verified.audit)),
         Err(DpopStateStoreError) => Err(DpopError::InvalidProof),
     }
