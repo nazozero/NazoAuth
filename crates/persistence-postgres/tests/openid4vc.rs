@@ -185,6 +185,23 @@ async fn openid4vc_state_is_one_time_tenant_bound_and_encrypted_at_rest() {
         .unwrap()
         .unwrap();
     assert_eq!(loaded.response_encryption_private_key, Some(vec![7_u8; 32]));
+    let bound = verifier
+        .bind_wallet_nonce(transaction_id, "wallet-nonce", now)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(bound.request.wallet_nonce.as_deref(), Some("wallet-nonce"));
+    assert_eq!(
+        verifier
+            .request(transaction_id, now)
+            .await
+            .unwrap()
+            .unwrap()
+            .request
+            .wallet_nonce
+            .as_deref(),
+        Some("wallet-nonce")
+    );
     let completed_at = Utc::now();
     let result = PresentationResult {
         transaction_id,

@@ -1397,7 +1397,24 @@ impl PresentationOperations for ServerPresentationOperations {
                             "wallet_nonce is required for POST request_uri retrieval.",
                         )
                     })?;
-                transaction.request.wallet_nonce = Some(nonce.to_owned());
+                transaction = self
+                    .store
+                    .bind_wallet_nonce(transaction_id, nonce, Utc::now())
+                    .await
+                    .map_err(|_| {
+                        vp_error(
+                            503,
+                            "server_error",
+                            "Presentation transaction state is unavailable.",
+                        )
+                    })?
+                    .ok_or_else(|| {
+                        vp_error(
+                            404,
+                            "invalid_request_uri",
+                            "Presentation request URI is invalid.",
+                        )
+                    })?;
                 return self
                     .request_object(&transaction.request)
                     .await
