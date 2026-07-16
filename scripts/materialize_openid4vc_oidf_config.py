@@ -109,7 +109,7 @@ def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) ->
         if plan not in {VCI_STANDARD, VCI_HAIP}:
             continue
         full_variant = full_vci_variant(plan, variants)
-        if plan == VCI_STANDARD and full_variant.get("vci_grant_type") == "authorization_code":
+        if full_variant.get("vci_grant_type") == "authorization_code":
             warnings.append(
                 {
                     "test-name": VCI_REFRESH_TOKEN_MODULE,
