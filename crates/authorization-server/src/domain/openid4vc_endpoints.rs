@@ -1694,6 +1694,13 @@ fn resolve_configuration_id(
         )
     })?;
     if let Some(id) = &request.credential_configuration_id {
+        if !access.configuration_ids.iter().any(|allowed| allowed == id) {
+            return Err(vci_error(
+                400,
+                "unknown_credential_configuration",
+                "Credential configuration is not authorized.",
+            ));
+        }
         if !access.credential_identifiers.is_empty() {
             return Err(vci_error(
                 400,
@@ -1701,18 +1708,7 @@ fn resolve_configuration_id(
                 "Credential identifier is required for this access token.",
             ));
         }
-        return access
-            .configuration_ids
-            .iter()
-            .any(|allowed| allowed == id)
-            .then(|| id.clone())
-            .ok_or_else(|| {
-                vci_error(
-                    400,
-                    "unknown_credential_configuration",
-                    "Credential configuration is not authorized.",
-                )
-            });
+        return Ok(id.clone());
     }
     let identifier = request.credential_identifier.as_ref().expect("validated");
     let Some(configuration_id) = access
