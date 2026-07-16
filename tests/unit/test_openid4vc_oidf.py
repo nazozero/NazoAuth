@@ -95,6 +95,26 @@ class Openid4vcOidfTests(unittest.TestCase):
             ["api/info/module-id", "api/runner/module-id"],
         )
 
+    def test_suite_internal_nginx_urls_are_rewritten_to_control_plane(self):
+        module = load("run_openid4vc_conformance.py")
+
+        rewritten = module.suite_reachable_url(
+            "https://localhost:8443",
+            "https://nginx:8443/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
+        )
+
+        self.assertEqual(
+            rewritten,
+            "https://localhost:8443/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
+        )
+        self.assertEqual(
+            module.suite_reachable_url(
+                "https://localhost:8443",
+                "https://certification.openid.net/test/a/issuer/credential_offer",
+            ),
+            "https://certification.openid.net/test/a/issuer/credential_offer",
+        )
+
     def test_credential_issuer_metadata_is_registered_inside_the_single_well_known_scope(self):
         routes = (ROOT / "crates" / "authorization-server" / "src" / "bootstrap" / "routes.rs").read_text(
             encoding="utf-8"
