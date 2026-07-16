@@ -349,7 +349,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                 ],
             )
-            self.assertEqual(len(expected_warnings), 10)
+            self.assertEqual(len(expected_warnings), 8)
             self.assertEqual(
                 {
                     item["configuration-filename"]
@@ -367,26 +367,11 @@ class Openid4vcOidfTests(unittest.TestCase):
                     "openid4vc-vci-haip-mdoc-issuer.json",
                 },
             )
-            dpop_warnings = [
-                item
-                for item in expected_warnings
-                if item["test-name"] == module.VCI_DPOP_NEGATIVE_MODULE
-            ]
-            self.assertEqual(len(dpop_warnings), 2)
-            self.assertEqual(
-                {item["configuration-filename"] for item in dpop_warnings},
-                {
-                    "openid4vc-vci-haip-sd-wallet.json",
-                    "openid4vc-vci-haip-mdoc-wallet.json",
-                },
-            )
-            self.assertEqual(
-                {item["current-block"] for item in dpop_warnings},
-                {module.VCI_DPOP_REUSE_BLOCK},
-            )
-            self.assertEqual(
-                {item["condition"] for item in dpop_warnings},
-                {module.VCI_DPOP_STATUS_CONDITION},
+            self.assertFalse(
+                any(
+                    item["test-name"] == "fapi2-security-profile-final-dpop-negative-tests"
+                    for item in expected_warnings
+                )
             )
             self.assertEqual(materialized_driver["target_origin"], "https://auth.nazo.run")
             self.assertEqual(
