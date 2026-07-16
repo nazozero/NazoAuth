@@ -566,7 +566,7 @@ def check_openid4vc_boundaries() -> None:
             raise SystemExit(f"OpenID4VC workflow lacks hard boundary: {marker}")
     for marker in (
         "VCI_UNSUPPORTED_ENCRYPTION_MODULE",
-        "VCI_DPOP_NEGATIVE_MODULE",
+        "VCI_REFRESH_TOKEN_MODULE",
         "expected_warnings_for_cases",
         "expected_skips_for_cases",
         "vci_credential_encryption",
