@@ -1,9 +1,11 @@
 //! Runtime settings.
 // Settings are built from the startup configuration snapshot.
 
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use anyhow::bail;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::{
     is_loopback_http_url, validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
     validate_protected_resource_identifier,
@@ -47,6 +49,7 @@ pub(crate) struct Settings {
     pub(crate) modules: ModuleSettings,
     pub(crate) device: DeviceGrantSettings,
     pub(crate) ciba: CibaSettings,
+    pub(crate) openid4vc: Openid4vcSettings,
 }
 
 #[derive(Clone)]
@@ -126,6 +129,8 @@ pub(crate) struct ModuleSettings {
     pub(crate) enable_native_sso: bool,
     pub(crate) enable_fapi_http_signatures: bool,
     pub(crate) enable_scim_security_events: bool,
+    pub(crate) enable_openid4vci_issuer: bool,
+    pub(crate) enable_openid4vp_verifier: bool,
     pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
     pub(crate) remote_client_document_private_origins: Vec<String>,
 }
@@ -142,6 +147,22 @@ pub(crate) struct CibaSettings {
     pub(crate) ciba_poll_interval_seconds: u64,
     pub(crate) ciba_automated_decision_token: Option<String>,
     pub(crate) ciba_notification_private_origins: Vec<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct Openid4vcSettings {
+    pub(crate) signing_certificate_chain_file: Option<PathBuf>,
+    pub(crate) trust_anchors_file: Option<PathBuf>,
+    pub(crate) data_encryption_key: Option<[u8; 32]>,
+    pub(crate) attestation_jwks: Option<serde_json::Value>,
+    pub(crate) client_attestation_issuer: Option<String>,
+    pub(crate) credential_configurations:
+        BTreeMap<String, nazo_openid4vci::CredentialConfiguration>,
+    pub(crate) deferred_credential_configurations: std::collections::BTreeSet<String>,
+    pub(crate) issuer_management_token: Option<String>,
+    pub(crate) wallet_authorization_origins: Vec<String>,
+    pub(crate) verifier_management_token: Option<String>,
+    pub(crate) transaction_ttl_seconds: u64,
 }
 
 impl Settings {
@@ -282,6 +303,141 @@ impl Settings {
             .unwrap_or_default();
         let enable_dynamic_client_registration =
             config.bool("ENABLE_DYNAMIC_CLIENT_REGISTRATION", false)?;
+        let enable_openid4vci_issuer = config.bool("ENABLE_OPENID4VCI_ISSUER", false)?;
+        let enable_openid4vp_verifier = config.bool("ENABLE_OPENID4VP_VERIFIER", false)?;
+        let openid4vc_enabled = enable_openid4vci_issuer || enable_openid4vp_verifier;
+        let openid4vc_data_encryption_key = config
+            .optional_string("OPENID4VC_DATA_ENCRYPTION_KEY")
+            .map(|value| URL_SAFE_NO_PAD.decode(value).map_err(anyhow::Error::from))
+            .transpose()?
+            .map(|value| {
+                <[u8; 32]>::try_from(value).map_err(|_| {
+                    anyhow::anyhow!("OPENID4VC_DATA_ENCRYPTION_KEY must decode to exactly 32 bytes")
+                })
+            })
+            .transpose()?;
+        let openid4vc_attestation_jwks = config
+            .optional_string("OPENID4VC_ATTESTATION_JWKS_JSON")
+            .map(|value| serde_json::from_str::<serde_json::Value>(&value))
+            .transpose()?;
+        let openid4vc_client_attestation_issuer =
+            config.optional_string("OPENID4VC_CLIENT_ATTESTATION_ISSUER");
+        if openid4vc_attestation_jwks.as_ref().is_some_and(|jwks| {
+            jwks.get("keys")
+                .and_then(serde_json::Value::as_array)
+                .is_none_or(Vec::is_empty)
+        }) {
+            bail!("OPENID4VC_ATTESTATION_JWKS_JSON must be a non-empty JWK Set");
+        }
+        let credential_configurations = config
+            .optional_string("OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON")
+            .map(|value| {
+                serde_json::from_str::<BTreeMap<String, nazo_openid4vci::CredentialConfiguration>>(
+                    &value,
+                )
+            })
+            .transpose()?
+            .unwrap_or_default();
+        for configuration in credential_configurations.values() {
+            configuration.validate().map_err(anyhow::Error::from)?;
+        }
+        let deferred_credential_configurations = config
+            .optional_string("OPENID4VCI_DEFERRED_CREDENTIAL_CONFIGURATIONS")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect::<std::collections::BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        let openid4vci_issuer_management_token =
+            config.optional_string("OPENID4VCI_ISSUER_MANAGEMENT_TOKEN");
+        if openid4vci_issuer_management_token
+            .as_ref()
+            .is_some_and(|token| token.len() < 32)
+        {
+            bail!("OPENID4VCI_ISSUER_MANAGEMENT_TOKEN must be at least 32 bytes");
+        }
+        if !deferred_credential_configurations
+            .iter()
+            .all(|id| credential_configurations.contains_key(id))
+        {
+            bail!(
+                "OPENID4VCI_DEFERRED_CREDENTIAL_CONFIGURATIONS must reference configured credentials"
+            );
+        }
+        let credential_configuration_requires_attestation = credential_configurations
+            .values()
+            .flat_map(|configuration| configuration.proof_types_supported.iter())
+            .any(|(proof_type, metadata)| {
+                proof_type == "attestation" || metadata.key_attestations_required.is_some()
+            });
+        let wallet_authorization_origins = config
+            .optional_string("OPENID4VP_WALLET_AUTHORIZATION_ORIGINS")
+            .map(|value| {
+                value
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(ToOwned::to_owned)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        for origin in &wallet_authorization_origins {
+            validate_cors_origin(origin)?;
+        }
+        let openid4vp_verifier_management_token =
+            config.optional_string("OPENID4VP_VERIFIER_MANAGEMENT_TOKEN");
+        if openid4vp_verifier_management_token
+            .as_ref()
+            .is_some_and(|token| token.len() < 32)
+        {
+            bail!("OPENID4VP_VERIFIER_MANAGEMENT_TOKEN must be at least 32 bytes");
+        }
+        let openid4vc_signing_certificate_chain_file = config
+            .optional_string("OPENID4VC_SIGNING_CERTIFICATE_CHAIN_FILE")
+            .map(PathBuf::from);
+        let openid4vc_trust_anchors_file = config
+            .optional_string("OPENID4VC_TRUST_ANCHORS_FILE")
+            .map(PathBuf::from);
+        if openid4vc_enabled
+            && (openid4vc_data_encryption_key.is_none()
+                || openid4vc_signing_certificate_chain_file.is_none()
+                || openid4vc_trust_anchors_file.is_none())
+        {
+            bail!(
+                "OpenID4VC modules require OPENID4VC_DATA_ENCRYPTION_KEY, OPENID4VC_SIGNING_CERTIFICATE_CHAIN_FILE, and OPENID4VC_TRUST_ANCHORS_FILE"
+            );
+        }
+        if enable_openid4vci_issuer && credential_configurations.is_empty() {
+            bail!(
+                "OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON is required when the VCI issuer is enabled"
+            );
+        }
+        if enable_openid4vci_issuer && openid4vci_issuer_management_token.is_none() {
+            bail!("OPENID4VCI_ISSUER_MANAGEMENT_TOKEN is required when the VCI issuer is enabled");
+        }
+        if enable_openid4vci_issuer
+            && credential_configuration_requires_attestation
+            && openid4vc_attestation_jwks.is_none()
+        {
+            bail!("OPENID4VC_ATTESTATION_JWKS_JSON is required by configured VCI proof policy");
+        }
+        if openid4vc_client_attestation_issuer.is_some() && openid4vc_attestation_jwks.is_none() {
+            bail!("OPENID4VC_CLIENT_ATTESTATION_ISSUER requires OPENID4VC_ATTESTATION_JWKS_JSON");
+        }
+        if enable_openid4vp_verifier && wallet_authorization_origins.is_empty() {
+            bail!(
+                "OPENID4VP_WALLET_AUTHORIZATION_ORIGINS is required when the VP verifier is enabled"
+            );
+        }
+        if enable_openid4vp_verifier && openid4vp_verifier_management_token.is_none() {
+            bail!(
+                "OPENID4VP_VERIFIER_MANAGEMENT_TOKEN is required when the VP verifier is enabled"
+            );
+        }
         let dynamic_client_registration_initial_access_token =
             config.optional_string("DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN");
         if enable_dynamic_client_registration
@@ -437,6 +593,8 @@ impl Settings {
                 enable_native_sso: config.bool("ENABLE_NATIVE_SSO", false)?,
                 enable_fapi_http_signatures: config.bool("ENABLE_FAPI_HTTP_SIGNATURES", false)?,
                 enable_scim_security_events: config.bool("ENABLE_SCIM_SECURITY_EVENTS", false)?,
+                enable_openid4vci_issuer,
+                enable_openid4vp_verifier,
                 enable_dynamic_client_registration,
                 dynamic_client_registration_initial_access_token,
                 remote_client_document_private_origins: config
@@ -460,6 +618,24 @@ impl Settings {
                 ciba_poll_interval_seconds,
                 ciba_automated_decision_token,
                 ciba_notification_private_origins,
+            },
+            openid4vc: Openid4vcSettings {
+                signing_certificate_chain_file: openid4vc_signing_certificate_chain_file,
+                trust_anchors_file: openid4vc_trust_anchors_file,
+                data_encryption_key: openid4vc_data_encryption_key,
+                attestation_jwks: openid4vc_attestation_jwks,
+                client_attestation_issuer: openid4vc_client_attestation_issuer,
+                credential_configurations,
+                deferred_credential_configurations,
+                issuer_management_token: openid4vci_issuer_management_token,
+                wallet_authorization_origins,
+                verifier_management_token: openid4vp_verifier_management_token,
+                transaction_ttl_seconds: positive_u64(
+                    config,
+                    "OPENID4VC_TRANSACTION_TTL_SECONDS",
+                    300,
+                    "OPENID4VC_TRANSACTION_TTL_SECONDS",
+                )?,
             },
         })
     }

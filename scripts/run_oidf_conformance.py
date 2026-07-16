@@ -1294,6 +1294,16 @@ def oidf_info_failure_can_wait_for_final_result(info: object) -> bool:
     return result == "REVIEW"
 
 
+def oidf_start_block_name(entry: dict[str, object]) -> tuple[str, str] | None:
+    block_id = entry.get("blockId")
+    msg = entry.get("msg")
+    if not isinstance(block_id, str) or not isinstance(msg, str):
+        return None
+    if entry.get("startBlock") is True or entry.get("src") == "-START-BLOCK-":
+        return (block_id, msg)
+    return None
+
+
 def oidf_log_failure(
     module_id: str,
     logs: object,
@@ -1310,10 +1320,11 @@ def oidf_log_failure(
     for entry in logs:
         if not isinstance(entry, dict):
             continue
+        block_start = oidf_start_block_name(entry)
+        if block_start is not None:
+            block_names[block_start[0]] = block_start[1]
         block_id = entry.get("blockId")
         msg = entry.get("msg")
-        if entry.get("startBlock") is True and isinstance(block_id, str) and isinstance(msg, str):
-            block_names[block_id] = msg
         result = value_as_upper(entry.get("result"))
         if result not in OIDF_BAD_LOG_RESULTS:
             continue
@@ -1344,10 +1355,10 @@ def oidf_log_has_allowed_expected_warning(
     for entry in logs:
         if not isinstance(entry, dict):
             continue
+        block_start = oidf_start_block_name(entry)
+        if block_start is not None:
+            block_names[block_start[0]] = block_start[1]
         block_id = entry.get("blockId")
-        msg = entry.get("msg")
-        if entry.get("startBlock") is True and isinstance(block_id, str) and isinstance(msg, str):
-            block_names[block_id] = msg
         if value_as_upper(entry.get("result")) == "WARNING" and is_allowed_expected_warning(
             info,
             entry,
@@ -1421,7 +1432,9 @@ def oidf_failure_with_log_context(module_id: str, failure: str, logs: object) ->
     return f"{failure}; recent log context: {context[:1200]}"
 
 
-def fetch_alias_plans(base_url: str, token: str, aliases: set[str]) -> list[dict[str, object]]:
+def fetch_alias_plans(
+    base_url: str, token: str | None, aliases: set[str]
+) -> list[dict[str, object]]:
     if not aliases:
         return []
 
@@ -1567,7 +1580,12 @@ def inspect_oidf_state(
             expected_statuses={200, 404},
         )
         if status_code == 200:
-            failure = oidf_log_failure(module_id, logs)
+            failure = oidf_log_failure(
+                module_id,
+                logs,
+                info=info,
+                allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+            )
             if failure:
                 return failure
 

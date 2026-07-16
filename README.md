@@ -102,6 +102,9 @@ OpenID Foundation:
 | [JWT Secured Authorization Response Mode](https://openid.net/specs/oauth-v2-jarm.html) | signed JARM and optional per-client nested JWE where the request/profile selects JARM |
 | [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-security-profile-2_0-final.html) | `fapi2-security` profile |
 | [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-message-signing-2_0-final.html) | signed authorization request, JARM, and signed introspection profile support |
+| [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | default-closed Credential Issuer role for bounded `dc+sd-jwt` and `mso_mdoc` configurations |
+| [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html) | default-closed Verifier role with DCQL, signed request objects, and `direct_post` / `direct_post.jwt` responses |
+| [OpenID4VC HAIP 1.0 Final](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) | high-assurance issuer/verifier combinations within the declared credential trust profile |
 
 Other protocol surfaces:
 
@@ -133,6 +136,7 @@ OpenID Foundation Conformance Suite result URLs:
 | Latest 25-plan official matrix | [docs/conformance/2026-07-15-fapi-ciba-mtls-ping-oidf-results.md](docs/conformance/2026-07-15-fapi-ciba-mtls-ping-oidf-results.md#fapi-ciba-plan-ids) |
 | Archived 21-plan official matrix | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
 | Current 25-plan repository matrix | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
+| OpenID4VC Final/HAIP alpha regression matrix | [docs/conformance/openid4vc-final-matrix.md](docs/conformance/openid4vc-final-matrix.md) |
 | OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | Latest private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
@@ -299,4 +303,13 @@ Windows coverage runs are documented in
 
 ## License
 
-AGPL-3.0-or-later. See [LICENSE](LICENSE).
+The public source code is licensed under
+[AGPL-3.0-or-later](LICENSE). This applies equally to individuals and
+organizations: use remains royalty-free when the AGPL obligations are met,
+including the applicable source-availability requirements for network use.
+
+Organizations that need qualifying closed-source use may obtain a separate
+commercial license from the applicable copyright holders. The repository does
+not itself grant that commercial license; it is available only through a
+separate written agreement. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+copyright-control requirements that preserve this licensing model.

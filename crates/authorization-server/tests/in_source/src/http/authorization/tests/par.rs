@@ -774,7 +774,6 @@ async fn par_rejects_malformed_or_ambiguous_authorization_parameters_before_clie
     let cases: &[&[u8]] = &[
         b"client_id=\xff",
         b"client_id=client-a&request_uri=urn%3Aietf%3Aparams%3Aoauth%3Arequest_uri%3Ax",
-        b"client_id=client-a&unsupported=value",
         b"client_id=client-a&client_id=client-b",
         b"response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback",
     ];
@@ -1315,7 +1314,7 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
         .insert_client_secret_post_client(&client_id, &secret)
         .await;
     let body = Bytes::from(format!(
-        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid+email&state=par-state&dpop_jkt=w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ",
+        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid+email&state=par-state&dpop_jkt=w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ&unknown-extension=first&unknown-extension=second",
         urlencoding::encode(&client_id),
         urlencoding::encode(&secret)
     ));
@@ -1343,6 +1342,10 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
     assert!(
         !raw.contains("client_secret"),
         "PAR storage must not retain client authentication secret material"
+    );
+    assert!(
+        !raw.contains("unknown-extension"),
+        "unrecognized authorization parameters must be ignored, not persisted"
     );
     let stored =
         serde_json::from_str::<PushedAuthorizationRequest>(&raw).expect("PAR payload should parse");

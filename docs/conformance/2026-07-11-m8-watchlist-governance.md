@@ -4,6 +4,12 @@
 > default-closed surface as a notice-only transmitter with RFC 8936 polling.
 > The decision and evidence below remain the historical entry-gate review;
 > current behavior is documented in `docs/features/scim.md` and the RFC matrix.
+>
+> Subsequent status (2026-07-16): OpenID4VCI 1.0 Final Credential Issuer and
+> OpenID4VP 1.0 Final Verifier roles have entered separate, default-closed
+> modules. The implementation and its bounded upstream alpha regression matrix
+> are documented in `openid4vc-final-matrix.md`; NazoAuth does not implement or
+> advertise a Wallet role.
 
 Date: 2026-07-11
 
@@ -17,8 +23,11 @@ The latter still has no advertised metadata, dedicated OIDF plan, certification
 claim, or production-adopter approval. The Browser-Based Applications work is
 an audit only. RFC 9967 was subsequently implemented as a default-closed
 notice-only transmitter with authenticated RFC 8936 polling and a project-owned
-black-box matrix. Client attestation, Transaction Tokens, Grant Management,
-OpenID4VCI, and OpenID4VP remain unimplemented product candidates.
+black-box matrix. OpenID4VCI Credential Issuer and OpenID4VP Verifier were
+subsequently admitted as separate default-closed modules. Transaction Tokens
+and Grant Management remain unimplemented product candidates; client
+attestation is supported only inside the bounded OpenID4VCI trust profile and
+is not advertised as a general-purpose OAuth authentication method.
 
 ## Scope and conclusion
 
@@ -38,7 +47,7 @@ The review produced these decisions:
 | Attestation-Based Client Authentication | active `draft-ietf-oauth-attestation-based-client-auth-10` | Defer while the draft and attester trust ecosystem remain unsettled. |
 | Transaction Tokens | active `draft-ietf-oauth-transaction-tokens-09` | Defer until NazoAuth has a trusted-domain workload call-chain product requirement. |
 | Grant Management | OIDF working draft `oauth-v2-grant-management-03`, rolling copy built 2026-06-26; its `ID1` snapshot is an approved Implementer's Draft, with no Final status | Keep the existing admin grant controls; defer protocol metadata and a client-facing API. |
-| OpenID4VCI 1.0 / OpenID4VP 1.0 | OIDF Final Specifications, published 2025-09-16 and 2025-07-09 | Treat as a separate credential product program, not an extension of the current OP/AS profile. |
+| OpenID4VCI 1.0 / OpenID4VP 1.0 | OIDF Final Specifications, published 2025-09-16 and 2025-07-09 | Historical decision: require a separate credential product program. Superseded on 2026-07-16 by separately admitted, default-closed Issuer and Verifier modules; the Wallet role remains absent. |
 
 No endpoint, grant, authentication method, token type, SCIM capability,
 credential role, feature flag, or metadata field is added by M8 completion.
@@ -404,10 +413,12 @@ proof/key binding, offers, pre-authorized and authorization-code flows, deferred
 state, status/revocation, presentation definitions, response modes, privacy and
 claim minimization, tenant isolation, and unchanged OAuth/OIDC/FAPI behavior.
 
-**Decision and re-entry.** Create a separate product-discovery milestone only
-after selecting the first NazoAuth role, credential format, trust framework,
-schema, adopter, and operational owner. Do not implement a nominal endpoint set
-without that product contract.
+**Decision and re-entry.** This dated entry gate was subsequently satisfied for
+the Credential Issuer and Verifier roles. The admitted implementation supports
+the exact `dc+sd-jwt` and `mso_mdoc` trust profiles documented in
+`openid4vc-final-matrix.md`, keeps both runtime modules default closed, and does
+not add a Wallet role. Optional mechanisms outside that declared profile remain
+unadvertised and fail closed rather than becoming nominal endpoints.
 
 ## M8-03 profile isolation checklist
 
@@ -428,8 +439,7 @@ Every future candidate implementation must prove all applicable rows below:
 
 M8-01, M8-02, and M8-03 can be marked complete as governance gates because
 product boundaries, exact standards/conformance status, local test policy, and
-security isolation are now explicit. The candidate features themselves remain
-absent except for the separately designed and locally verified RFC 9865 SCIM
-cursor implementation. OpenID4VCI/OpenID4VP require a separate product program;
-the remaining items stay on the dated watchlist until their named re-entry
-conditions are met.
+security isolation are now explicit. This paragraph records the 2026-07-11
+outcome; RFC 9967 and the OpenID4VC Issuer/Verifier roles were admitted later
+through separate implementation programs. The remaining items stay on the
+dated watchlist until their named re-entry conditions are met.

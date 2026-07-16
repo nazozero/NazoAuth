@@ -21,9 +21,7 @@ use crate::http::mtls::request_mtls_client_certificate_from_trusted_proxy;
 use crate::http::rate_limit::rate_limited_response;
 #[cfg(test)]
 use crate::settings::Settings;
-use actix_web::http::StatusCode;
-#[cfg(test)]
-use actix_web::http::header;
+use actix_web::http::{StatusCode, header};
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
@@ -235,36 +233,45 @@ async fn enforce_token_rate_limit(
 }
 
 pub(crate) struct TokenEndpointHandles {
-    token_service: Data<ServerTokenService>,
-    authorization_service: Data<ServerAuthorizationService>,
+    core: TokenCoreHandles,
     ciba: CibaTokenHandles,
     issuance_config: Data<TokenIssuanceConfig>,
-    device_service: Data<super::device::ServerDeviceGrantService>,
     runtime_modules: Data<ServerRuntimeModuleRegistry>,
     remote_client_documents:
         Arc<crate::domain::remote_client_documents::RemoteClientDocumentResolver>,
+    openid4vc: Openid4vcTokenHandles,
+}
+
+pub(crate) struct TokenCoreHandles {
+    pub(crate) token_service: Data<ServerTokenService>,
+    pub(crate) authorization_service: Data<ServerAuthorizationService>,
+    pub(crate) device_service: Data<super::device::ServerDeviceGrantService>,
+}
+
+#[derive(Default)]
+pub(crate) struct Openid4vcTokenHandles {
+    pub(crate) credential_issuer: Option<Data<nazo_openid4vc_http_actix::CredentialIssuerEndpoint>>,
+    pub(crate) client_attestation: Option<Arc<crate::domain::Openid4vcClientAttestationValidator>>,
 }
 
 impl TokenEndpointHandles {
     pub(crate) fn new(
-        token_service: Data<ServerTokenService>,
-        authorization_service: Data<ServerAuthorizationService>,
+        core: TokenCoreHandles,
         ciba: CibaTokenHandles,
         issuance_config: Data<TokenIssuanceConfig>,
-        device_service: Data<super::device::ServerDeviceGrantService>,
         runtime_modules: Data<ServerRuntimeModuleRegistry>,
         remote_client_documents: Arc<
             crate::domain::remote_client_documents::RemoteClientDocumentResolver,
         >,
+        openid4vc: Openid4vcTokenHandles,
     ) -> Self {
         Self {
-            token_service,
-            authorization_service,
+            core,
             ciba,
             issuance_config,
-            device_service,
             runtime_modules,
             remote_client_documents,
+            openid4vc,
         }
     }
 }
@@ -274,10 +281,10 @@ pub(crate) async fn token_with_service(
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
-    let token_service = handles.token_service.get_ref();
-    let authorization_service = handles.authorization_service.get_ref();
+    let token_service = handles.core.token_service.get_ref();
+    let authorization_service = handles.core.authorization_service.get_ref();
     let issuance_config = handles.issuance_config.get_ref();
-    let device_service = handles.device_service.get_ref();
+    let device_service = handles.core.device_service.get_ref();
     let runtime_modules = handles.runtime_modules.get_ref();
     if let Err(response) =
         enforce_token_rate_limit(authorization_service, issuance_config, &req).await
@@ -337,18 +344,6 @@ pub(crate) async fn token_with_service(
         );
     }
 
-    if issuance_config
-        .authorization_server_profile()
-        .requires_fapi2_security()
-        && form.grant_type == "password"
-    {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported_grant_type",
-            "FAPI2 profiles do not allow resource owner password credentials.",
-            false,
-        );
-    }
     let auth_facts = token_client_auth_transport_facts(
         &req,
         TokenClientAuthForm {
@@ -369,6 +364,101 @@ pub(crate) async fn token_with_service(
             );
         }
     };
+    let has_client_attestation_material = req.headers().contains_key("OAuth-Client-Attestation")
+        || req.headers().contains_key("OAuth-Client-Attestation-PoP");
+    let has_mtls_material = request_mtls_client_certificate_from_trusted_proxy(
+        &req,
+        issuance_config.trusted_proxy_cidrs(),
+    )
+    .is_some();
+
+    if form.grant_type == nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT {
+        let preauth_has_authenticated_client_material = client_auth_context
+            .has_any_client_auth_material
+            || has_client_attestation_material
+            || has_mtls_material;
+        if preauth_has_authenticated_client_material {
+            // Authenticated OpenID4VCI pre-authorized-code clients must flow
+            // through the shared token endpoint client-authentication path below
+            // so private_key_jwt, mTLS, and client-attestation identities are
+            // verified before they become the issuance client_id.
+        } else {
+            let Some(endpoint) = handles.openid4vc.credential_issuer.as_ref() else {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "unsupported_grant_type",
+                    "OpenID4VCI pre-authorized issuance is not configured.",
+                    false,
+                );
+            };
+            let (pre_authorized_code, tx_code) = match pre_authorized_parameters(&body) {
+                Ok(parameters) => parameters,
+                Err(response) => return response,
+            };
+            let response = endpoint
+                .pre_authorized_token(nazo_openid4vc_http_actix::PreAuthorizedTokenRequest {
+                    pre_authorized_code,
+                    tx_code,
+                    client_id: form.client_id.clone(),
+                    dpop_proof: req
+                        .headers()
+                        .get("DPoP")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    client_attestation: req
+                        .headers()
+                        .get("OAuth-Client-Attestation")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    client_attestation_pop: req
+                        .headers()
+                        .get("OAuth-Client-Attestation-PoP")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    request_url: format!(
+                        "{}{}",
+                        issuance_config.issuer().trim_end_matches('/'),
+                        req.uri()
+                    ),
+                })
+                .await;
+            return match response {
+                Ok(response) => HttpResponse::Ok()
+                    .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+                    .json(response),
+                Err(error) => pre_authorized_token_error(error),
+            };
+        }
+    }
+
+    if issuance_config
+        .authorization_server_profile()
+        .requires_fapi2_security()
+        && form.grant_type == "password"
+    {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+            "FAPI2 profiles do not allow resource owner password credentials.",
+            false,
+        );
+    }
+    let attestation_headers = match client_attestation_headers(&req) {
+        Ok(headers) => headers,
+        Err(response) => return response,
+    };
+    if attestation_headers.is_some()
+        && (client_auth_context.http_basic
+            || client_auth_context.has_assertion
+            || form.client_secret.is_some())
+    {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Client attestation cannot be combined with another client authentication method.",
+            false,
+        );
+    }
     let has_basic = client_auth_context.http_basic;
     let has_client_auth_material = client_auth_context.has_any_client_auth_material;
     let assertion_client_id = auth_facts
@@ -392,6 +482,16 @@ pub(crate) async fn token_with_service(
         };
     let mut credentials =
         auth_facts.presented_credentials(assertion_client_id, form_mtls_client_id);
+    if let Some((attestation, _)) = attestation_headers {
+        credentials = ClientCredentials {
+            client_id: crate::domain::Openid4vcClientAttestationValidator::unverified_client_id(
+                attestation,
+            ),
+            client_secret: None,
+            client_assertion: None,
+            method: "attest_jwt_client_auth".to_owned(),
+        };
+    }
     if credentials.client_id.is_none()
         && !has_basic
         && form.client_secret.is_none()
@@ -457,48 +557,128 @@ pub(crate) async fn token_with_service(
             );
         }
     };
-    if let Err(response) = validate_token_client_enabled(&client, &form.grant_type) {
-        return response;
-    }
-    let auth_request = client_auth_request_facts(&req, issuance_config.trusted_proxy_cidrs());
-    let client_assertion = match authenticate_client_with_dependencies(
-        authorization_service,
-        ClientAuthConfig::new(
-            issuance_config.issuer(),
-            issuance_config.client_secret_pepper(),
-        )
-        .with_remote_jwks(&handles.remote_client_documents),
-        &auth_request,
-        &client,
-        &credentials,
-        ClientAuthenticationContext::AllowPublicNone,
-    )
-    .await
-    {
-        Ok(assertion) => assertion,
-        Err(TokenManagementClientAuthError::PublicClientCredentialsForbidden) => {
+    if form.grant_type == nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT {
+        if !client.is_active {
             return oauth_token_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_client",
-                "public 客户端不能使用 client_secret.",
+                "客户端不存在或已停用.",
                 has_basic,
             );
         }
-        Err(TokenManagementClientAuthError::InvalidClient) => {
+    } else if let Err(response) = validate_token_client_enabled(&client, &form.grant_type) {
+        return response;
+    }
+    let auth_request = client_auth_request_facts(&req, issuance_config.trusted_proxy_cidrs());
+    let client_assertion = if let Some((attestation, proof)) = attestation_headers {
+        if client.token_endpoint_auth_method != "attest_jwt_client_auth" {
+            return oauth_token_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client_attestation",
+                "Client attestation is not registered for this client.",
+                false,
+            );
+        }
+        let Some(validator) = handles.openid4vc.client_attestation.as_ref() else {
+            return oauth_token_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client_attestation",
+                "Client attestation is not configured.",
+                false,
+            );
+        };
+        let validated = match validator.validate(
+            attestation,
+            proof,
+            issuance_config.issuer(),
+            chrono::Utc::now().timestamp(),
+        ) {
+            Ok(validated) if validated.client_id == client.client_id => validated,
+            _ => {
+                return oauth_token_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_client_attestation",
+                    "Client attestation validation failed.",
+                    false,
+                );
+            }
+        };
+        if !attestation_client_id_matches_form_hint(form.client_id.as_deref(), &validated.client_id)
+        {
             return oauth_token_error(
                 StatusCode::UNAUTHORIZED,
                 "invalid_client",
-                "客户端认证失败.",
-                has_basic && credentials.method != "private_key_jwt",
-            );
-        }
-        Err(TokenManagementClientAuthError::StoreUnavailable) => {
-            return oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "客户端认证状态不可用.",
+                "Token request client_id does not match the client attestation.",
                 false,
             );
+        }
+        let replay_key = format!("client-attestation:{}", validated.client_id);
+        match authorization_service
+            .consume_private_key_jwt(
+                &replay_key,
+                &validated.replay_id,
+                validated.replay_ttl_seconds,
+            )
+            .await
+        {
+            Ok(true) => None,
+            Ok(false) => {
+                return oauth_token_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_client_attestation",
+                    "Client attestation proof was replayed.",
+                    false,
+                );
+            }
+            Err(_) => {
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "Client attestation replay state is unavailable.",
+                    false,
+                );
+            }
+        }
+    } else {
+        match authenticate_client_with_dependencies(
+            authorization_service,
+            ClientAuthConfig::new(
+                issuance_config.issuer(),
+                issuance_config.client_secret_pepper(),
+            )
+            .with_remote_jwks(&handles.remote_client_documents),
+            &auth_request,
+            &client,
+            &credentials,
+            ClientAuthenticationContext::AllowPublicNone,
+        )
+        .await
+        {
+            Ok(assertion) => assertion,
+            Err(TokenManagementClientAuthError::PublicClientCredentialsForbidden) => {
+                return oauth_token_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_client",
+                    "public 客户端不能使用 client_secret.",
+                    has_basic,
+                );
+            }
+            Err(TokenManagementClientAuthError::InvalidClient) => {
+                return oauth_token_error(
+                    StatusCode::UNAUTHORIZED,
+                    "invalid_client",
+                    "客户端认证失败.",
+                    has_basic && credentials.method != "private_key_jwt",
+                );
+            }
+            Err(TokenManagementClientAuthError::StoreUnavailable) => {
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "客户端认证状态不可用.",
+                    false,
+                );
+            }
         }
     };
     if let Err(response) = validate_token_request_profile_with_profile(
@@ -587,6 +767,53 @@ pub(crate) async fn token_with_service(
             )
             .await
         }
+        nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT => {
+            let Some(endpoint) = handles.openid4vc.credential_issuer.as_ref() else {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "unsupported_grant_type",
+                    "OpenID4VCI pre-authorized issuance is not configured.",
+                    false,
+                );
+            };
+            let (pre_authorized_code, tx_code) = match pre_authorized_parameters(&body) {
+                Ok(parameters) => parameters,
+                Err(response) => return response,
+            };
+            match endpoint
+                .pre_authorized_token(nazo_openid4vc_http_actix::PreAuthorizedTokenRequest {
+                    pre_authorized_code,
+                    tx_code,
+                    client_id: Some(client.client_id.clone()),
+                    dpop_proof: req
+                        .headers()
+                        .get("DPoP")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    client_attestation: req
+                        .headers()
+                        .get("OAuth-Client-Attestation")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    client_attestation_pop: req
+                        .headers()
+                        .get("OAuth-Client-Attestation-PoP")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    request_url: format!(
+                        "{}{}",
+                        issuance_config.issuer().trim_end_matches('/'),
+                        req.uri()
+                    ),
+                })
+                .await
+            {
+                Ok(response) => HttpResponse::Ok()
+                    .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+                    .json(response),
+                Err(error) => pre_authorized_token_error(error),
+            }
+        }
         TOKEN_EXCHANGE_GRANT_TYPE => {
             token_exchange(
                 token_service,
@@ -606,6 +833,102 @@ pub(crate) async fn token_with_service(
             false,
         ),
     }
+}
+
+fn pre_authorized_parameters(body: &Bytes) -> Result<(String, Option<String>), HttpResponse> {
+    let mut pre_authorized_code = None;
+    let mut tx_code = None;
+    for (name, value) in url::form_urlencoded::parse(body) {
+        match name.as_ref() {
+            "pre-authorized_code" if pre_authorized_code.is_none() && !value.is_empty() => {
+                pre_authorized_code = Some(value.into_owned());
+            }
+            "tx_code" if tx_code.is_none() && !value.is_empty() => {
+                tx_code = Some(value.into_owned());
+            }
+            "pre-authorized_code" | "tx_code" => {
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_request",
+                    "Pre-authorized issuance parameters must be non-empty and must not repeat.",
+                    false,
+                ));
+            }
+            _ => {}
+        }
+    }
+    pre_authorized_code
+        .map(|code| (code, tx_code))
+        .ok_or_else(|| {
+            oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "pre-authorized_code is required.",
+                false,
+            )
+        })
+}
+
+fn pre_authorized_token_error(
+    error: nazo_openid4vc_http_actix::CredentialHttpError,
+) -> HttpResponse {
+    let mut response = oauth_token_error(
+        StatusCode::from_u16(error.status).unwrap_or(StatusCode::BAD_REQUEST),
+        error.error,
+        error.description,
+        false,
+    );
+    if let Some(challenge) = match error.error {
+        "use_dpop_nonce" => Some(header::HeaderValue::from_static(
+            r#"DPoP error="use_dpop_nonce""#,
+        )),
+        "invalid_dpop_proof" => Some(header::HeaderValue::from_static(
+            r#"DPoP error="invalid_dpop_proof""#,
+        )),
+        _ => None,
+    } {
+        response
+            .headers_mut()
+            .insert(header::WWW_AUTHENTICATE, challenge);
+    }
+    if let Some(nonce) = error.dpop_nonce
+        && let Ok(value) = header::HeaderValue::from_str(&nonce)
+    {
+        response
+            .headers_mut()
+            .insert(header::HeaderName::from_static("dpop-nonce"), value);
+    }
+    response
+}
+
+fn client_attestation_headers(request: &HttpRequest) -> Result<Option<(&str, &str)>, HttpResponse> {
+    let attestation = request
+        .headers()
+        .get("OAuth-Client-Attestation")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty());
+    let proof = request
+        .headers()
+        .get("OAuth-Client-Attestation-PoP")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| !value.is_empty());
+    match (attestation, proof) {
+        (None, None) => Ok(None),
+        (Some(attestation), Some(proof)) => Ok(Some((attestation, proof))),
+        _ => Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_request",
+            "Both client attestation headers are required.",
+            false,
+        )),
+    }
+}
+
+fn attestation_client_id_matches_form_hint(
+    form_client_id: Option<&str>,
+    attested_client_id: &str,
+) -> bool {
+    form_client_id.is_none_or(|client_id| client_id == attested_client_id)
 }
 
 #[cfg(not(test))]
@@ -646,16 +969,19 @@ pub(crate) async fn token(
     );
     token_with_service(
         Data::new(TokenEndpointHandles::new(
-            service,
-            authorization_service,
+            TokenCoreHandles {
+                token_service: service,
+                authorization_service,
+                device_service,
+            },
             CibaTokenHandles::new(ciba_service, ciba_users, ciba_config),
             issuance_config,
-            device_service,
             runtime_modules,
             Arc::new(
                 crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
                     .expect("empty remote document policy is valid"),
             ),
+            Openid4vcTokenHandles::default(),
         )),
         req,
         body,

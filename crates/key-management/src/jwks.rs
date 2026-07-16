@@ -30,6 +30,7 @@ mod tests {
                 "kty": "OKP", "crv": "Ed25519", "x": "public", "d": "private",
                 "kid": "public-only", "alg": "EdDSA", "use": "sig"
             }),
+            signing_purposes: Default::default(),
         }]);
         assert!(jwks["keys"][0].get("d").is_none());
     }

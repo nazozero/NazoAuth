@@ -6,8 +6,11 @@ use serde::Deserialize;
 use serde_json::Value;
 
 const AUTHORIZATION_DETAILS_MAX_BYTES: usize = 16 * 1024;
-pub const SUPPORTED_AUTHORIZATION_DETAILS_TYPES: &[&str] =
-    &["account_information", "payment_initiation"];
+pub const SUPPORTED_AUTHORIZATION_DETAILS_TYPES: &[&str] = &[
+    "account_information",
+    "payment_initiation",
+    "openid_credential",
+];
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct AuthorizationDetailsError;
@@ -110,6 +113,33 @@ fn validate_authorization_details(value: &Value) -> Result<(), AuthorizationDeta
             || !SUPPORTED_AUTHORIZATION_DETAILS_TYPES.contains(&type_)
         {
             return Err(AuthorizationDetailsError);
+        }
+        if type_ == "openid_credential" {
+            let has_configuration = object
+                .get("credential_configuration_id")
+                .and_then(Value::as_str)
+                .is_some_and(|value| !value.is_empty() && value.len() <= 255);
+            let has_format = object
+                .get("format")
+                .and_then(Value::as_str)
+                .is_some_and(|value| matches!(value, "dc+sd-jwt" | "mso_mdoc"));
+            if has_configuration == has_format {
+                return Err(AuthorizationDetailsError);
+            }
+            if object.get("locations").is_some_and(|locations| {
+                locations.as_array().is_none_or(|locations| {
+                    locations.is_empty()
+                        || locations.len() > 8
+                        || locations.iter().any(|location| {
+                            location.as_str().is_none_or(|location| {
+                                url::Url::parse(location).is_err()
+                                    || !location.starts_with("https://")
+                            })
+                        })
+                })
+            }) {
+                return Err(AuthorizationDetailsError);
+            }
         }
         if let Some(actions) = object.get("actions") {
             let Some(actions) = actions.as_array() else {

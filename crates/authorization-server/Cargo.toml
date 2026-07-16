@@ -38,10 +38,17 @@ ed25519-dalek.workspace = true
 futures-util.workspace = true
 hmac.workspace = true
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs", "use_pem"] }
+mdoc-rs.workspace = true
+coset.workspace = true
+ciborium.workspace = true
 lettre = { workspace = true, features = ["builder", "smtp-transport", "tokio1", "tokio1-native-tls"] }
 nazo-auth.workspace = true
 nazo-http-signatures.workspace = true
 nazo-http-actix.workspace = true
+nazo-openid4vc-http-actix.workspace = true
+nazo-openid4vci.workspace = true
+nazo-openid4vp.workspace = true
+nazo-digital-credentials.workspace = true
 nazo-identity.workspace = true
 nazo-key-management.workspace = true
 nazo-postgres.workspace = true
