@@ -151,6 +151,8 @@ where
         match issuance.disposition {
             IssuanceDisposition::Immediate => {
                 let mut credentials = Vec::with_capacity(holder_bindings.len());
+                let issued_at = batch_privacy_claim_time(now);
+                let expires_at = batch_privacy_claim_time(issuance.expires_at);
                 for holder_binding in holder_bindings {
                     let credential = self
                         .signer
@@ -169,8 +171,8 @@ where
                                 holder_binding: serde_json::from_value(holder_binding).ok(),
                                 selectively_disclosable_claims: Vec::new(),
                             },
-                            issued_at: now,
-                            expires_at: issuance.expires_at,
+                            issued_at,
+                            expires_at,
                             status: issuance.status.clone(),
                         })
                         .await?;
@@ -226,6 +228,12 @@ where
             }
         }
     }
+}
+
+fn batch_privacy_claim_time(value: DateTime<Utc>) -> DateTime<Utc> {
+    let timestamp = value.timestamp();
+    let rounded = timestamp - timestamp.rem_euclid(60);
+    DateTime::<Utc>::from_timestamp(rounded, 0).unwrap_or(value)
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]

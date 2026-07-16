@@ -107,7 +107,7 @@ pub fn client_seeds(
             .redirect_uris
             .extend(callback_uris(suite_base_urls, alias));
         let scopes: Vec<String> = serde_json::from_value(client_scopes(client))?;
-        entry.scopes.extend(scopes);
+        entry.scopes.extend(scopes.iter().cloned());
         let credential_scope = config
             .get("vci")
             .and_then(Value::as_object)
@@ -137,11 +137,44 @@ pub fn client_seeds(
             }
             entry.jwks = Some(public);
         }
+        if let Some(client2) = config.get("client2").and_then(Value::as_object) {
+            let client2_id = client2
+                .get("client_id")
+                .and_then(Value::as_str)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("{filename}.client2.client_id is missing"))?;
+            let client2_jwks = client2
+                .get("jwks")
+                .ok_or_else(|| anyhow::anyhow!("{filename}.client2.jwks is missing"))?;
+            let public = public_jwks(client2_jwks)?;
+            let entry = clients.entry(client2_id.to_owned()).or_default();
+            if entry
+                .auth_method
+                .as_deref()
+                .is_some_and(|existing| existing != "private_key_jwt")
+            {
+                anyhow::bail!("{client2_id} is assigned conflicting authentication methods");
+            }
+            entry.auth_method = Some("private_key_jwt".to_owned());
+            entry
+                .redirect_uris
+                .extend(callback_uris(suite_base_urls, alias));
+            entry.scopes.extend(scopes.iter().cloned());
+            entry.scopes.insert(credential_scope.to_owned());
+            if entry
+                .jwks
+                .as_ref()
+                .is_some_and(|existing| existing != &public)
+            {
+                anyhow::bail!("{client2_id} is assigned conflicting client JWK sets");
+            }
+            entry.jwks = Some(public);
+        }
     }
 
-    if clients.len() != 2 {
+    if clients.len() < 2 {
         anyhow::bail!(
-            "OpenID4VC OIDF seed requires exactly private-key and attested client classes"
+            "OpenID4VC OIDF seed requires at least private-key and attested client classes"
         );
     }
     clients

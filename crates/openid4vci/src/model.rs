@@ -70,7 +70,6 @@ pub enum NotificationEvent {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct NotificationRequest {
     pub notification_id: String,
     pub event: NotificationEvent,
