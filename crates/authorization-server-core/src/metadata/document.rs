@@ -248,9 +248,6 @@ pub fn authorization_server_metadata(
         metadata["backchannel_authentication_request_signing_alg_values_supported"] =
             json!(FAPI_CIBA_REQUEST_OBJECT_SIGNING_ALGS);
     }
-    if capabilities.native_sso {
-        metadata["native_sso_supported"] = json!(true);
-    }
     if input.profile.requires_signed_introspection() {
         metadata["introspection_signing_alg_values_supported"] = json!(active_signing_algs);
         metadata["introspection_encryption_alg_values_supported"] =

@@ -1,7 +1,10 @@
 use std::collections::BTreeMap;
 
 use nazo_digital_credentials::CredentialFormat;
-use serde::{Deserialize, Serialize};
+use serde::{
+    Deserialize, Serialize,
+    ser::{Error as SerializeError, SerializeMap, Serializer},
+};
 use serde_json::Value;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -47,7 +50,7 @@ pub struct ProofTypeMetadata {
     pub key_attestations_required: Option<BTreeMap<String, Vec<String>>>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CredentialConfiguration {
     pub format: CredentialFormat,
@@ -64,6 +67,67 @@ pub struct CredentialConfiguration {
     pub doctype: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credential_metadata: Option<CredentialMetadata>,
+}
+
+impl Serialize for CredentialConfiguration {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        let mut size = 5;
+        size += usize::from(self.scope.is_some());
+        size += usize::from(!self.cryptographic_binding_methods_supported.is_empty());
+        size += usize::from(!self.proof_types_supported.is_empty());
+        size += usize::from(self.vct.is_some());
+        size += usize::from(self.doctype.is_some());
+        size += usize::from(self.credential_metadata.is_some());
+        let mut map = serializer.serialize_map(Some(size))?;
+        map.serialize_entry("format", &self.format)?;
+        if let Some(scope) = &self.scope {
+            map.serialize_entry("scope", scope)?;
+        }
+        if !self.cryptographic_binding_methods_supported.is_empty() {
+            map.serialize_entry(
+                "cryptographic_binding_methods_supported",
+                &self.cryptographic_binding_methods_supported,
+            )?;
+        }
+        match self.format {
+            CredentialFormat::MsoMdoc => {
+                let algorithms = self
+                    .credential_signing_alg_values_supported
+                    .iter()
+                    .map(|alg| match alg.as_str() {
+                        // COSE ES256 / ECDSA w/ SHA-256, per IANA COSE Algorithms.
+                        "ES256" => Ok(-7),
+                        other => Err(S::Error::custom(format!(
+                            "unsupported mdoc credential signing algorithm {other}"
+                        ))),
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
+                map.serialize_entry("credential_signing_alg_values_supported", &algorithms)?;
+            }
+            _ => {
+                map.serialize_entry(
+                    "credential_signing_alg_values_supported",
+                    &self.credential_signing_alg_values_supported,
+                )?;
+            }
+        }
+        if !self.proof_types_supported.is_empty() {
+            map.serialize_entry("proof_types_supported", &self.proof_types_supported)?;
+        }
+        if let Some(vct) = &self.vct {
+            map.serialize_entry("vct", vct)?;
+        }
+        if let Some(doctype) = &self.doctype {
+            map.serialize_entry("doctype", doctype)?;
+        }
+        if let Some(metadata) = &self.credential_metadata {
+            map.serialize_entry("credential_metadata", metadata)?;
+        }
+        map.end()
+    }
 }
 
 impl CredentialConfiguration {
@@ -126,6 +190,17 @@ pub struct EncryptionMetadata {
     pub encryption_required: bool,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CredentialRequestEncryptionMetadata {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub jwks: Option<Value>,
+    pub enc_values_supported: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub zip_values_supported: Vec<String>,
+    pub encryption_required: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct BatchCredentialIssuance {
@@ -145,7 +220,7 @@ pub struct CredentialIssuerMetadata {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notification_endpoint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub credential_request_encryption: Option<EncryptionMetadata>,
+    pub credential_request_encryption: Option<CredentialRequestEncryptionMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credential_response_encryption: Option<EncryptionMetadata>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -188,12 +263,9 @@ impl CredentialIssuerMetadata {
                 return Err(MetadataError::InvalidHttpsEndpoint);
             }
         }
-        for encryption in [
-            self.credential_request_encryption.as_ref(),
-            self.credential_response_encryption.as_ref(),
-        ]
-        .into_iter()
-        .flatten()
+        for encryption in [self.credential_response_encryption.as_ref()]
+            .into_iter()
+            .flatten()
         {
             if encryption.alg_values_supported != ["ECDH-ES"]
                 || encryption.enc_values_supported != ["A256GCM"]
@@ -204,6 +276,15 @@ impl CredentialIssuerMetadata {
             {
                 return Err(MetadataError::EmptyAlgorithmSet);
             }
+        }
+        if let Some(encryption) = self.credential_request_encryption.as_ref()
+            && (encryption.enc_values_supported != ["A256GCM"]
+                || encryption
+                    .zip_values_supported
+                    .iter()
+                    .any(|zip| zip != "DEF"))
+        {
+            return Err(MetadataError::EmptyAlgorithmSet);
         }
         if self
             .batch_credential_issuance
