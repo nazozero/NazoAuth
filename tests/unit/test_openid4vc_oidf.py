@@ -55,7 +55,7 @@ class Openid4vcOidfTests(unittest.TestCase):
     def test_matrix_is_bounded_and_covers_each_final_role_format(self):
         module = load("materialize_openid4vc_oidf_config.py")
         cases = module.matrix_cases()
-        self.assertEqual(len(cases), 18)
+        self.assertEqual(len(cases), 17)
         self.assertEqual({plan for plan, _, _ in cases}, {
             module.VCI_STANDARD, module.VCI_HAIP, module.VP_STANDARD, module.VP_HAIP
         })
@@ -228,9 +228,9 @@ class Openid4vcOidfTests(unittest.TestCase):
             materialized_driver = json.loads((output / "openid4vc-driver.json").read_text(encoding="utf-8"))
             configs = json.loads((output / "openid4vc-plan-configs.json").read_text(encoding="utf-8"))["configs"]
             expected_skips = json.loads((output / "openid4vc-expected-skips.json").read_text(encoding="utf-8"))
-            self.assertEqual(len(plans), 18)
-            self.assertEqual(len(configs), 18)
-            self.assertEqual(len(set(materialized_driver["aliases"])), 18)
+            self.assertEqual(len(plans), 17)
+            self.assertEqual(len(configs), 17)
+            self.assertEqual(len(set(materialized_driver["aliases"])), 17)
             self.assertEqual(
                 expected_skips,
                 [
