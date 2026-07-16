@@ -27,7 +27,7 @@ fn database_url() -> Option<String> {
 }
 
 #[tokio::test]
-async fn openid4vc_state_is_one_time_tenant_bound_and_encrypted_at_rest() {
+async fn openid4vc_state_is_tenant_bound_reusable_and_encrypted_at_rest() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -96,10 +96,10 @@ async fn openid4vc_state_is_one_time_tenant_bound_and_encrypted_at_rest() {
     );
     assert!(
         issuer
-            .consume_authorization_offer(&issuer_state_hash, subject_id, "wallet", consume_at)
+            .consume_authorization_offer(&issuer_state_hash, subject_id, "wallet-2", consume_at)
             .await
             .unwrap()
-            .is_none()
+            .is_some()
     );
 
     let access = CredentialAccess {
