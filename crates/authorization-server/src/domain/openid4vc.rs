@@ -225,8 +225,11 @@ impl Openid4vcCredentialCrypto {
         let signer = AsyncCoseSigner {
             keyset: self.keyset.clone(),
             certificate_der: self.leaf_der.clone(),
+            runtime: tokio::runtime::Handle::current(),
         };
-        let document = tokio::task::block_in_place(|| builder.sign(&signer))
+        let document = tokio::task::spawn_blocking(move || builder.sign(&signer))
+            .await
+            .map_err(|_| CredentialTrustError::Unavailable)?
             .map_err(|_| CredentialTrustError::Unavailable)?;
         let mut namespace_entries = Vec::new();
         for (namespace, items) in &document.issuer_signed.name_spaces {
@@ -520,11 +523,12 @@ struct KeyBindingClaims {
 struct AsyncCoseSigner {
     keyset: KeyManager,
     certificate_der: Arc<Vec<u8>>,
+    runtime: tokio::runtime::Handle,
 }
 
 impl CoseSigner for AsyncCoseSigner {
     fn sign(&self, tbs: &[u8]) -> Result<Vec<u8>, mdoc_rs::MdocError> {
-        tokio::runtime::Handle::current()
+        self.runtime
             .block_on(self.keyset.sign(SignRequest {
                 purpose: SigningPurpose::Credential,
                 algorithm: "ES256",
