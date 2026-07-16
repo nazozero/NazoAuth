@@ -304,6 +304,9 @@ def main() -> int:
     config = json.loads(Path(args.driver_config_json_file).read_text(encoding="utf-8"))
     if "--no-api-token" in runner_args:
         config["conformance_no_api_token"] = True
+    if "--disable-ssl-verify" in runner_args:
+        config["conformance_disable_ssl_verify"] = True
+        oidf.OIDF_API_SSL_CONTEXT = oidf.ssl._create_unverified_context()
     stop = threading.Event()
     driver = Openid4vcDriver(config, stop)
     thread = threading.Thread(target=driver.run, name="openid4vc-oidf-driver", daemon=True)

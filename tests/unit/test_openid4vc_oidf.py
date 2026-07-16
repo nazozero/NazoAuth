@@ -180,6 +180,34 @@ class Openid4vcOidfTests(unittest.TestCase):
 
         self.assertEqual(calls, 1)
 
+    def test_wrapper_applies_insecure_local_suite_tls_to_parent_driver(self):
+        module = load("run_openid4vc_conformance.py")
+        with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as config:
+            json.dump({"aliases": []}, config)
+            config_path = config.name
+        module.oidf.OIDF_API_SSL_CONTEXT = None
+        try:
+            with (
+                patch(
+                    "sys.argv",
+                    [
+                        "run_openid4vc_conformance.py",
+                        "--driver-config-json-file",
+                        config_path,
+                        "--",
+                        "--disable-ssl-verify",
+                    ],
+                ),
+                patch.object(module.Openid4vcDriver, "run"),
+                patch.object(module.subprocess, "run", return_value=type("Result", (), {"returncode": 0})()),
+            ):
+                self.assertEqual(module.main(), 0)
+
+            self.assertIsNotNone(module.oidf.OIDF_API_SSL_CONTEXT)
+        finally:
+            module.oidf.OIDF_API_SSL_CONTEXT = None
+            Path(config_path).unlink(missing_ok=True)
+
     def test_suite_internal_nginx_urls_are_rewritten_to_control_plane(self):
         module = load("run_openid4vc_conformance.py")
 
