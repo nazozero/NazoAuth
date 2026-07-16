@@ -197,11 +197,12 @@ async fn par_after_rate_limit_inner(
                 "client_secret" | "client_assertion_type" | "client_assertion"
             )
         {
-            return oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "PAR 参数不受支持.",
-            );
+            // Authorization request parameters are extension points. OAuth 2.0
+            // and OpenID4VCI require unrecognized authorization request
+            // parameters to be ignored, not rejected. Do not retain them in the
+            // pushed request: this preserves interoperability without allowing
+            // attacker-controlled extension data into authenticated PAR state.
+            continue;
         }
         if key == "resource" {
             resource_values.push(value);
