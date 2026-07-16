@@ -9,7 +9,8 @@ use base64::Engine as _;
 use chrono::{Duration, Utc};
 use nazo_auth::{DpopError, DpopNoncePolicy, DpopProofRequest, validate_authorization_server_dpop};
 use nazo_digital_credentials::{
-    CredentialSignerPort, EphemeralEncryptionKey, encrypt_ecdh_es, encrypt_ecdh_es_deflate,
+    CredentialFormat, CredentialSignerPort, EphemeralEncryptionKey, encrypt_ecdh_es,
+    encrypt_ecdh_es_deflate,
 };
 use nazo_identity::{TenantId, UserId};
 use nazo_openid4vc_http_actix::{
@@ -57,13 +58,14 @@ type VciService = CredentialIssuerService<
 #[derive(Clone)]
 struct Openid4vcDataset {
     users: nazo_postgres::UserRepository,
+    configurations: Arc<BTreeMap<String, CredentialConfiguration>>,
 }
 
 impl CredentialDatasetPort for Openid4vcDataset {
     fn dataset<'a>(
         &'a self,
         access: &'a CredentialAccess,
-        _configuration_id: &'a str,
+        configuration_id: &'a str,
     ) -> Pin<
         Box<
             dyn Future<Output = Result<Value, nazo_openid4vci::CredentialIssuanceError>>
@@ -82,10 +84,57 @@ impl CredentialDatasetPort for Openid4vcDataset {
                 .await
                 .map_err(|_| nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable)?
                 .ok_or(nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable)?;
-            serde_json::to_value(claims)
-                .map_err(|_| nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable)
+            let configuration = self
+                .configurations
+                .get(configuration_id)
+                .ok_or(nazo_openid4vci::CredentialIssuanceError::InvalidConfiguration)?;
+            credential_subject_claims(configuration.format, claims)
         })
     }
+}
+
+fn credential_subject_claims(
+    format: CredentialFormat,
+    claims: nazo_identity::SubjectClaims,
+) -> Result<Value, nazo_openid4vci::CredentialIssuanceError> {
+    match format {
+        CredentialFormat::SdJwtVc => serde_json::to_value(claims)
+            .map_err(|_| nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable),
+        CredentialFormat::MsoMdoc => Ok(json!({
+            "org.iso.18013.5.1": mdoc_namespace_claims(claims),
+        })),
+    }
+}
+
+fn mdoc_namespace_claims(claims: nazo_identity::SubjectClaims) -> Value {
+    let mut namespace = serde_json::Map::new();
+    namespace.insert(
+        "family_name".to_owned(),
+        Value::String(
+            claims
+                .family_name
+                .or_else(|| claims.name.clone())
+                .unwrap_or_else(|| claims.preferred_username.clone()),
+        ),
+    );
+    namespace.insert(
+        "given_name".to_owned(),
+        Value::String(
+            claims
+                .given_name
+                .or_else(|| claims.name.clone())
+                .unwrap_or(claims.preferred_username),
+        ),
+    );
+    if let Some(birthdate) = claims.birthdate {
+        namespace.insert("birth_date".to_owned(), Value::String(birthdate));
+    }
+    namespace.insert("email".to_owned(), Value::String(claims.email));
+    namespace.insert(
+        "resident_address".to_owned(),
+        serde_json::to_value(claims.address).unwrap_or(Value::Null),
+    );
+    namespace.into()
 }
 
 pub(crate) struct ServerCredentialIssuerOperations {
@@ -122,6 +171,7 @@ impl ServerCredentialIssuerOperations {
         deferred_configurations: BTreeSet<String>,
         dpop_nonce_policy: DpopNoncePolicy,
     ) -> anyhow::Result<Self> {
+        let configurations = Arc::new(configurations);
         let store = nazo_postgres::Openid4vciRepository::new(pool.clone(), data_key);
         let users = nazo_postgres::UserRepository::new(pool.clone());
         let service = CredentialIssuerService::new(
@@ -129,6 +179,7 @@ impl ServerCredentialIssuerOperations {
             proof_validator,
             Openid4vcDataset {
                 users: users.clone(),
+                configurations: configurations.clone(),
             },
             crypto.clone(),
             issuer.clone(),
@@ -146,7 +197,7 @@ impl ServerCredentialIssuerOperations {
                 b"credential-request-encryption",
             )?,
             issuer,
-            configurations: Arc::new(configurations),
+            configurations,
             deferred_configurations: Arc::new(deferred_configurations),
             dpop_nonce_policy,
             client_attestation,
@@ -1600,3 +1651,7 @@ const fn vp_error(
         description,
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/in_source/src/domain/tests/openid4vc_endpoints.rs"]
+mod tests;
