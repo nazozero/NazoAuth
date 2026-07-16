@@ -62,7 +62,26 @@ def module_entries(base_url: str, token: str | None, aliases: set[str]) -> list[
                 "GET", base_url, f"api/info/{module_id}", token, expected_statuses={200, 404}
             )
             if status == 200 and isinstance(info, dict):
-                entries.append({**info, "_driver_module_id": module_id, "_driver_plan": plan_name})
+                runner_status, runner_info = oidf.oidf_api_request(
+                    "GET",
+                    base_url,
+                    f"api/runner/{module_id}",
+                    token,
+                    expected_statuses={200, 404},
+                )
+                exposed = (
+                    runner_info.get("exposed")
+                    if runner_status == 200 and isinstance(runner_info, dict)
+                    else None
+                )
+                entries.append(
+                    {
+                        **info,
+                        **({"exposed": exposed} if isinstance(exposed, dict) else {}),
+                        "_driver_module_id": module_id,
+                        "_driver_plan": plan_name,
+                    }
+                )
     return entries
 
 

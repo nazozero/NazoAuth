@@ -43,6 +43,58 @@ class Openid4vcOidfTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "restricted to loopback"):
             public.drive_once()
 
+    def test_module_entries_merge_runner_exposed_values_with_info_metadata(self):
+        module = load("run_openid4vc_conformance.py")
+        with (
+            patch.object(
+                module.oidf,
+                "fetch_alias_plans",
+                return_value=[
+                    {
+                        "planName": "oid4vci-1_0-issuer-test-plan",
+                        "modules": [{"instances": ["module-id"]}],
+                    }
+                ],
+            ),
+            patch.object(
+                module.oidf,
+                "oidf_api_request",
+                side_effect=[
+                    (
+                        200,
+                        {
+                            "_id": "module-id",
+                            "alias": "issuer-alias",
+                            "variant": {
+                                "vci_authorization_code_flow_variant": "issuer_initiated"
+                            },
+                            "status": "WAITING",
+                        },
+                    ),
+                    (
+                        200,
+                        {
+                            "id": "module-id",
+                            "exposed": {
+                                "credential_offer_endpoint": "https://suite.example/credential_offer"
+                            },
+                        },
+                    ),
+                ],
+            ) as request,
+        ):
+            entries = module.module_entries("https://suite.example", None, {"issuer-alias"})
+
+        self.assertEqual(entries[0]["alias"], "issuer-alias")
+        self.assertEqual(
+            entries[0]["exposed"]["credential_offer_endpoint"],
+            "https://suite.example/credential_offer",
+        )
+        self.assertEqual(
+            [call.args[2] for call in request.call_args_list],
+            ["api/info/module-id", "api/runner/module-id"],
+        )
+
     def test_credential_issuer_metadata_is_registered_inside_the_single_well_known_scope(self):
         routes = (ROOT / "crates" / "authorization-server" / "src" / "bootstrap" / "routes.rs").read_text(
             encoding="utf-8"
