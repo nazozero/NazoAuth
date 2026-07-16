@@ -1,3 +1,23 @@
+NAZOAUTH LICENSING NOTICE
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+
+The source code in this repository is available under the GNU Affero
+General Public License as published by the Free Software Foundation,
+either version 3 of the License, or (at your option) any later version.
+This public license applies equally to individuals and organizations.
+
+Organizations may use NazoAuth without a license fee when they comply with
+the AGPL, including its source-availability obligations. A separate
+commercial license may be available from the applicable NazoAuth copyright
+holders for uses that cannot comply with the AGPL, including qualifying
+closed-source use. No commercial-license rights are granted by this notice;
+they arise only from a separate written agreement with the copyright holders.
+
+The complete, unmodified text of GNU AGPL version 3 follows.
+
+-------------------------------------------------------------------------------
+
                     GNU AFFERO GENERAL PUBLIC LICENSE
                        Version 3, 19 November 2007
 
