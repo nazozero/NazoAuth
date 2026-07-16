@@ -157,7 +157,7 @@ impl CredentialStorePort for Openid4vciRepository {
                 let row = sql_query(
                     "SELECT id,tenant_id,subject_id,credential_configuration_ids,tx_code_hash,expires_at \
                      FROM openid4vci_offers WHERE pre_authorized_code_hash = $1 \
-                       AND consumed_at IS NULL AND expires_at > $2 FOR UPDATE",
+                       AND expires_at > $2 FOR UPDATE",
                 )
                 .bind::<sql_types::Text, _>(code_hash)
                 .bind::<sql_types::Timestamptz, _>(now)
@@ -169,11 +169,19 @@ impl CredentialStorePort for Openid4vciRepository {
                 let Some(subject_id) = row.subject_id else { return Ok(None); };
                 let configuration_ids = serde_json::from_value(row.credential_configuration_ids)
                     .map_err(decode_error)?;
-                sql_query("UPDATE openid4vci_offers SET consumed_at = $2 WHERE id = $1")
-                    .bind::<sql_types::Uuid, _>(row.id)
-                    .bind::<sql_types::Timestamptz, _>(now)
-                    .execute(connection)
-                    .await?;
+                let inserted = sql_query(
+                    "INSERT INTO openid4vci_pre_authorized_code_consumptions \
+                        (offer_id, client_id, consumed_at) VALUES ($1, $2, $3) \
+                     ON CONFLICT (offer_id, client_id) DO NOTHING",
+                )
+                .bind::<sql_types::Uuid, _>(row.id)
+                .bind::<sql_types::Text, _>(client_id)
+                .bind::<sql_types::Timestamptz, _>(now)
+                .execute(connection)
+                .await?;
+                if inserted == 0 {
+                    return Ok(None);
+                }
                 Ok(Some(CredentialAuthorization {
                     tenant_id: row.tenant_id,
                     subject_id,

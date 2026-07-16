@@ -7,7 +7,7 @@ use diesel_async::RunQueryDsl;
 use nazo_digital_credentials::{CredentialFormat, CredentialQuery, DcqlQuery};
 use nazo_openid4vci::{
     AuthorizationCodeGrant, AuthorizationOfferPort, CredentialAccess, CredentialOfferGrants,
-    CredentialStorePort, NonceRecord, StoredCredentialOffer,
+    CredentialStorePort, NonceRecord, PreAuthorizedCodeGrant, StoredCredentialOffer,
 };
 use nazo_openid4vp::{
     AuthorizationRequest, ClientIdPrefix, PresentationResult, PresentationStorePort,
@@ -97,6 +97,56 @@ async fn openid4vc_state_is_tenant_bound_reusable_and_encrypted_at_rest() {
     assert!(
         issuer
             .consume_authorization_offer(&issuer_state_hash, subject_id, "wallet-2", consume_at)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    let pre_authorized_code = format!("preauth-{}", Uuid::now_v7());
+    let pre_authorized_hash = blake3::hash(pre_authorized_code.as_bytes())
+        .to_hex()
+        .to_string();
+    let pre_authorized_offer = StoredCredentialOffer {
+        id: Uuid::now_v7(),
+        tenant_id,
+        subject_id: Some(subject_id),
+        credential_configuration_ids: vec!["pid".to_owned()],
+        grants: CredentialOfferGrants::new(
+            None,
+            Some(PreAuthorizedCodeGrant {
+                pre_authorized_code,
+                tx_code: None,
+                authorization_server: Some("https://issuer.example".to_owned()),
+            }),
+        ),
+        expires_at: now + Duration::minutes(5),
+    };
+    issuer
+        .insert_offer(
+            &pre_authorized_offer,
+            None,
+            Some(&pre_authorized_hash),
+            None,
+        )
+        .await
+        .unwrap();
+    assert!(
+        issuer
+            .consume_pre_authorized_offer(&pre_authorized_hash, None, "wallet-a", consume_at)
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        issuer
+            .consume_pre_authorized_offer(&pre_authorized_hash, None, "wallet-a", consume_at)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        issuer
+            .consume_pre_authorized_offer(&pre_authorized_hash, None, "wallet-b", consume_at)
             .await
             .unwrap()
             .is_some()
