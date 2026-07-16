@@ -167,6 +167,21 @@ class Openid4vcOidfTests(unittest.TestCase):
                                 "scope": "openid pid-scope",
                                 "jwks": {"keys": [{"kty": "EC", "crv": "P-256", "x": "x", "y": "y", "d": "private"}]},
                             },
+                            "client2": {
+                                "client_id": "upstream-second-client",
+                                "scope": "openid pid-scope",
+                                "jwks": {
+                                    "keys": [
+                                        {
+                                            "kty": "RSA",
+                                            "alg": "PS256",
+                                            "n": "modulus",
+                                            "e": "AQAB",
+                                            "d": "private",
+                                        }
+                                    ]
+                                },
+                            },
                         }
                         if name.startswith("vci")
                         else {"client": {"client_id": "{HOSTNAME}"}}
@@ -237,6 +252,17 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(config["vci"]["credential_configuration_id"], expected)
                 if "preauth" in filename:
                     self.assertEqual(config["vci"]["static_tx_code"], "123456")
+                client2_keys = config["client2"]["jwks"]["keys"]
+                if "mdoc" in filename:
+                    self.assertEqual(
+                        {(key["kty"], key["crv"], key["alg"]) for key in client2_keys},
+                        {("EC", "P-256", "ES256")},
+                    )
+                else:
+                    self.assertEqual(
+                        {(key["kty"], key["alg"]) for key in client2_keys},
+                        {("RSA", "PS256")},
+                    )
             private_key_clients = {
                 config["client"]["client_id"]
                 for config in configs.values()
