@@ -326,7 +326,7 @@ impl Openid4vcCredentialCrypto {
                 .ok_or(CredentialTrustError::UntrustedIssuer)?,
         )?;
         let mut validation = Validation::new(header.alg);
-        validation.required_spec_claims = ["exp", "iss", "nbf"]
+        validation.required_spec_claims = ["exp", "iss"]
             .into_iter()
             .map(str::to_owned)
             .collect();
