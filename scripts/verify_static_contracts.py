@@ -566,6 +566,7 @@ def check_openid4vc_boundaries() -> None:
         "VCI_UNSUPPORTED_ENCRYPTION_MODULE",
         "expected_skips_for_cases",
         "vci_credential_encryption",
+        "request_object_trust_anchor_pem",
     ):
         if marker not in materializer:
             raise SystemExit(f"OpenID4VC materializer lacks expected-skip boundary: {marker}")
