@@ -303,4 +303,13 @@ Windows coverage runs are documented in
 
 ## License
 
-AGPL-3.0-or-later. See [LICENSE](LICENSE).
+The public source code is licensed under
+[AGPL-3.0-or-later](LICENSE). This applies equally to individuals and
+organizations: use remains royalty-free when the AGPL obligations are met,
+including the applicable source-availability requirements for network use.
+
+Organizations that need qualifying closed-source use may obtain a separate
+commercial license from the applicable copyright holders. The repository does
+not itself grant that commercial license; it is available only through a
+separate written agreement. See [CONTRIBUTING.md](CONTRIBUTING.md) for the
+copyright-control requirements that preserve this licensing model.
