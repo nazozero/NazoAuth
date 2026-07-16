@@ -344,66 +344,6 @@ pub(crate) async fn token_with_service(
         );
     }
 
-    if form.grant_type == nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT {
-        let Some(endpoint) = handles.openid4vc.credential_issuer.as_ref() else {
-            return oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "unsupported_grant_type",
-                "OpenID4VCI pre-authorized issuance is not configured.",
-                false,
-            );
-        };
-        let (pre_authorized_code, tx_code) = match pre_authorized_parameters(&body) {
-            Ok(parameters) => parameters,
-            Err(response) => return response,
-        };
-        let response = endpoint
-            .pre_authorized_token(nazo_openid4vc_http_actix::PreAuthorizedTokenRequest {
-                pre_authorized_code,
-                tx_code,
-                client_id: form.client_id.clone(),
-                dpop_proof: req
-                    .headers()
-                    .get("DPoP")
-                    .and_then(|value| value.to_str().ok())
-                    .map(ToOwned::to_owned),
-                client_attestation: req
-                    .headers()
-                    .get("OAuth-Client-Attestation")
-                    .and_then(|value| value.to_str().ok())
-                    .map(ToOwned::to_owned),
-                client_attestation_pop: req
-                    .headers()
-                    .get("OAuth-Client-Attestation-PoP")
-                    .and_then(|value| value.to_str().ok())
-                    .map(ToOwned::to_owned),
-                request_url: format!(
-                    "{}{}",
-                    issuance_config.issuer().trim_end_matches('/'),
-                    req.uri()
-                ),
-            })
-            .await;
-        return match response {
-            Ok(response) => HttpResponse::Ok()
-                .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
-                .json(response),
-            Err(error) => pre_authorized_token_error(error),
-        };
-    }
-
-    if issuance_config
-        .authorization_server_profile()
-        .requires_fapi2_security()
-        && form.grant_type == "password"
-    {
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported_grant_type",
-            "FAPI2 profiles do not allow resource owner password credentials.",
-            false,
-        );
-    }
     let auth_facts = token_client_auth_transport_facts(
         &req,
         TokenClientAuthForm {
@@ -424,6 +364,85 @@ pub(crate) async fn token_with_service(
             );
         }
     };
+    let has_client_attestation_material = req.headers().contains_key("OAuth-Client-Attestation")
+        || req.headers().contains_key("OAuth-Client-Attestation-PoP");
+    let has_mtls_material = request_mtls_client_certificate_from_trusted_proxy(
+        &req,
+        issuance_config.trusted_proxy_cidrs(),
+    )
+    .is_some();
+
+    if form.grant_type == nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT {
+        let preauth_has_authenticated_client_material = client_auth_context
+            .has_any_client_auth_material
+            || has_client_attestation_material
+            || has_mtls_material;
+        if preauth_has_authenticated_client_material {
+            // Authenticated OpenID4VCI pre-authorized-code clients must flow
+            // through the shared token endpoint client-authentication path below
+            // so private_key_jwt, mTLS, and client-attestation identities are
+            // verified before they become the issuance client_id.
+        } else {
+            let Some(endpoint) = handles.openid4vc.credential_issuer.as_ref() else {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "unsupported_grant_type",
+                    "OpenID4VCI pre-authorized issuance is not configured.",
+                    false,
+                );
+            };
+            let (pre_authorized_code, tx_code) = match pre_authorized_parameters(&body) {
+                Ok(parameters) => parameters,
+                Err(response) => return response,
+            };
+            let response = endpoint
+                .pre_authorized_token(nazo_openid4vc_http_actix::PreAuthorizedTokenRequest {
+                    pre_authorized_code,
+                    tx_code,
+                    client_id: form.client_id.clone(),
+                    dpop_proof: req
+                        .headers()
+                        .get("DPoP")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    client_attestation: req
+                        .headers()
+                        .get("OAuth-Client-Attestation")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    client_attestation_pop: req
+                        .headers()
+                        .get("OAuth-Client-Attestation-PoP")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    request_url: format!(
+                        "{}{}",
+                        issuance_config.issuer().trim_end_matches('/'),
+                        req.uri()
+                    ),
+                })
+                .await;
+            return match response {
+                Ok(response) => HttpResponse::Ok()
+                    .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+                    .json(response),
+                Err(error) => pre_authorized_token_error(error),
+            };
+        }
+    }
+
+    if issuance_config
+        .authorization_server_profile()
+        .requires_fapi2_security()
+        && form.grant_type == "password"
+    {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "unsupported_grant_type",
+            "FAPI2 profiles do not allow resource owner password credentials.",
+            false,
+        );
+    }
     let attestation_headers = match client_attestation_headers(&req) {
         Ok(headers) => headers,
         Err(response) => return response,
@@ -538,7 +557,16 @@ pub(crate) async fn token_with_service(
             );
         }
     };
-    if let Err(response) = validate_token_client_enabled(&client, &form.grant_type) {
+    if form.grant_type == nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT {
+        if !client.is_active {
+            return oauth_token_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client",
+                "客户端不存在或已停用.",
+                has_basic,
+            );
+        }
+    } else if let Err(response) = validate_token_client_enabled(&client, &form.grant_type) {
         return response;
     }
     let auth_request = client_auth_request_facts(&req, issuance_config.trusted_proxy_cidrs());
@@ -738,6 +766,53 @@ pub(crate) async fn token_with_service(
                 client.token_endpoint_auth_method.as_str(),
             )
             .await
+        }
+        nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT => {
+            let Some(endpoint) = handles.openid4vc.credential_issuer.as_ref() else {
+                return oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "unsupported_grant_type",
+                    "OpenID4VCI pre-authorized issuance is not configured.",
+                    false,
+                );
+            };
+            let (pre_authorized_code, tx_code) = match pre_authorized_parameters(&body) {
+                Ok(parameters) => parameters,
+                Err(response) => return response,
+            };
+            match endpoint
+                .pre_authorized_token(nazo_openid4vc_http_actix::PreAuthorizedTokenRequest {
+                    pre_authorized_code,
+                    tx_code,
+                    client_id: Some(client.client_id.clone()),
+                    dpop_proof: req
+                        .headers()
+                        .get("DPoP")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    client_attestation: req
+                        .headers()
+                        .get("OAuth-Client-Attestation")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    client_attestation_pop: req
+                        .headers()
+                        .get("OAuth-Client-Attestation-PoP")
+                        .and_then(|value| value.to_str().ok())
+                        .map(ToOwned::to_owned),
+                    request_url: format!(
+                        "{}{}",
+                        issuance_config.issuer().trim_end_matches('/'),
+                        req.uri()
+                    ),
+                })
+                .await
+            {
+                Ok(response) => HttpResponse::Ok()
+                    .insert_header((actix_web::http::header::CACHE_CONTROL, "no-store"))
+                    .json(response),
+                Err(error) => pre_authorized_token_error(error),
+            }
         }
         TOKEN_EXCHANGE_GRANT_TYPE => {
             token_exchange(
