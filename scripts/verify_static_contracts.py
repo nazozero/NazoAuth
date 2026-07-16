@@ -556,10 +556,19 @@ def check_openid4vc_boundaries() -> None:
         "dee9a25160e789f0f80517674693ef7989ab9fa1",
         "run_openid4vc_conformance.py",
         "openid4vc-plan-set.json",
+        "openid4vc-expected-skips.json",
+        "--expected-skips-file",
         "openid4vc-driver.json",
     ):
         if marker not in workflow:
             raise SystemExit(f"OpenID4VC workflow lacks hard boundary: {marker}")
+    for marker in (
+        "VCI_UNSUPPORTED_ENCRYPTION_MODULE",
+        "expected_skips_for_cases",
+        "vci_credential_encryption",
+    ):
+        if marker not in materializer:
+            raise SystemExit(f"OpenID4VC materializer lacks expected-skip boundary: {marker}")
     for forbidden in ("openid4vci_offers", "openid4vp_transactions", "result_ciphertext"):
         if forbidden in driver:
             raise SystemExit(f"OpenID4VC black-box driver accesses persistence: {forbidden}")

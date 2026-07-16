@@ -201,9 +201,30 @@ class Openid4vcOidfTests(unittest.TestCase):
             plans = json.loads((output / "openid4vc-plan-set.json").read_text(encoding="utf-8"))
             materialized_driver = json.loads((output / "openid4vc-driver.json").read_text(encoding="utf-8"))
             configs = json.loads((output / "openid4vc-plan-configs.json").read_text(encoding="utf-8"))["configs"]
+            expected_skips = json.loads((output / "openid4vc-expected-skips.json").read_text(encoding="utf-8"))
             self.assertEqual(len(plans), 18)
             self.assertEqual(len(configs), 18)
             self.assertEqual(len(set(materialized_driver["aliases"])), 18)
+            self.assertEqual(
+                expected_skips,
+                [
+                    {
+                        "test-name": module.VCI_UNSUPPORTED_ENCRYPTION_MODULE,
+                        "variant": "*",
+                        "configuration-filename": "openid4vc-vci-sd-wallet-plain.json",
+                    },
+                    {
+                        "test-name": module.VCI_UNSUPPORTED_ENCRYPTION_MODULE,
+                        "variant": "*",
+                        "configuration-filename": "openid4vc-vci-mdoc-issuer-plain.json",
+                    },
+                    {
+                        "test-name": module.VCI_UNSUPPORTED_ENCRYPTION_MODULE,
+                        "variant": "*",
+                        "configuration-filename": "openid4vc-vci-sd-preauth.json",
+                    },
+                ],
+            )
             self.assertEqual(materialized_driver["target_origin"], "https://auth.nazo.run")
             for filename, config in configs.items():
                 if "vp-" in filename:

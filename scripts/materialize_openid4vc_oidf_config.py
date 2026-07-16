@@ -16,6 +16,7 @@ VP_STANDARD = "oid4vp-1final-verifier-test-plan"
 VP_HAIP = "oid4vp-1final-verifier-haip-test-plan"
 VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
 VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
+VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm"
 
 
 def matrix_cases() -> list[tuple[str, str, dict[str, str]]]:
@@ -43,6 +44,18 @@ def matrix_cases() -> list[tuple[str, str, dict[str, str]]]:
 
 def plan_expression(plan: str, variants: dict[str, str], filename: str) -> str:
     return plan + "".join(f"[{name}={value}]" for name, value in variants.items()) + f" {filename}"
+
+
+def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, str]]:
+    return [
+        {
+            "test-name": VCI_UNSUPPORTED_ENCRYPTION_MODULE,
+            "variant": "*",
+            "configuration-filename": f"openid4vc-{slug}.json",
+        }
+        for plan, slug, variants in cases
+        if plan == VCI_STANDARD and variants.get("vci_credential_encryption") == "plain"
+    ]
 
 
 def main() -> int:
@@ -92,7 +105,8 @@ def main() -> int:
     configs: dict[str, object] = {}
     expressions: list[str] = []
     aliases: list[str] = []
-    for plan, slug, variants in matrix_cases():
+    cases = matrix_cases()
+    for plan, slug, variants in cases:
         key = "vci_haip" if plan == VCI_HAIP else "vci" if plan == VCI_STANDARD else "vp_haip" if plan == VP_HAIP else "vp"
         config = copy.deepcopy(base[key])
         if plan in (VCI_STANDARD, VCI_HAIP):
@@ -148,6 +162,10 @@ def main() -> int:
     driver["aliases"] = aliases
     (output / "openid4vc-plan-configs.json").write_text(json.dumps({"configs": configs}, indent=2) + "\n", encoding="utf-8")
     (output / "openid4vc-plan-set.json").write_text(json.dumps(expressions, indent=2) + "\n", encoding="utf-8")
+    (output / "openid4vc-expected-skips.json").write_text(
+        json.dumps(expected_skips_for_cases(cases), indent=2) + "\n",
+        encoding="utf-8",
+    )
     (output / "openid4vc-driver.json").write_text(json.dumps(driver, indent=2) + "\n", encoding="utf-8")
     return 0
 
