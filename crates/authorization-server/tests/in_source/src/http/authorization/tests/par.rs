@@ -1314,7 +1314,7 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
         .insert_client_secret_post_client(&client_id, &secret)
         .await;
     let body = Bytes::from(format!(
-        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid+email&state=par-state&dpop_jkt=w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ&unknown-extension=first&unknown-extension=second",
+        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid+email&state=par-state&dpop_jkt=w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ",
         urlencoding::encode(&client_id),
         urlencoding::encode(&secret)
     ));
@@ -1343,10 +1343,6 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
         !raw.contains("client_secret"),
         "PAR storage must not retain client authentication secret material"
     );
-    assert!(
-        !raw.contains("unknown-extension"),
-        "unrecognized authorization parameters must be ignored, not persisted"
-    );
     let stored =
         serde_json::from_str::<PushedAuthorizationRequest>(&raw).expect("PAR payload should parse");
     assert_eq!(stored.client_id, client_id);
@@ -1358,4 +1354,28 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
         stored.dpop_jkt.as_deref(),
         Some("w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ")
     );
+}
+
+#[actix_web::test]
+async fn par_rejects_unregistered_parameters_before_persistence() {
+    let Some(fixture) = LiveParFixture::new().await else {
+        return;
+    };
+    let client_id = format!("par-unknown-{}", Uuid::now_v7().simple());
+    let secret = par_test_secret();
+    fixture
+        .insert_client_secret_post_client(&client_id, &secret)
+        .await;
+    let body = Bytes::from(format!(
+        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid+email&unexpected=value",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&secret)
+    ));
+
+    let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
+    let (status, value) = par_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(value.get("error"), Some(&json!("invalid_request")));
+    assert!(value.get("request_uri").is_none());
 }
