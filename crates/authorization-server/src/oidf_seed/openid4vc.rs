@@ -96,6 +96,20 @@ pub fn client_seeds(
             .extend(callback_uris(suite_base_urls, alias));
         let scopes: Vec<String> = serde_json::from_value(client_scopes(client))?;
         entry.scopes.extend(scopes);
+        let credential_scope = config
+            .get("vci")
+            .and_then(Value::as_object)
+            .and_then(|value| value.get("credential_configuration_id"))
+            .and_then(Value::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or_else(|| {
+                anyhow::anyhow!("{filename}.vci.credential_configuration_id is missing")
+            })?;
+        // The materialized NazoAuth OIDF plans select credential
+        // configurations whose advertised OAuth scope is the configuration
+        // identifier. Seed that scope in addition to the suite's baseline
+        // client scopes so the authorization request remains least-privilege.
+        entry.scopes.insert(credential_scope.to_owned());
 
         if auth_method == "private_key_jwt" {
             let jwks = client

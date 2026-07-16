@@ -10,6 +10,7 @@ fn seed_materialization_keeps_authentication_classes_distinct_and_public() {
             "private.json": {
                 "alias": "vci-private",
                 "nazo": {"openid4vc_role": "issuer", "client_auth_type": "private_key_jwt"},
+                "vci": {"credential_configuration_id": "pid-private-scope"},
                 "client": {
                     "client_id": PRIVATE_KEY_CLIENT_ID,
                     "scope": "openid pid-scope",
@@ -21,6 +22,7 @@ fn seed_materialization_keeps_authentication_classes_distinct_and_public() {
             "attested.json": {
                 "alias": "vci-attested",
                 "nazo": {"openid4vc_role": "issuer", "client_auth_type": "client_attestation"},
+                "vci": {"credential_configuration_id": "pid-attested-scope"},
                 "client": {"client_id": ATTESTED_CLIENT_ID, "scope": "openid pid-scope"}
             },
             "verifier.json": {
@@ -43,6 +45,10 @@ fn seed_materialization_keeps_authentication_classes_distinct_and_public() {
         .expect("private-key client");
     assert_eq!(private.auth_method, "private_key_jwt");
     assert_eq!(private.redirect_uris.len(), 2);
+    assert_eq!(
+        private.scopes,
+        vec!["openid", "pid-private-scope", "pid-scope"]
+    );
     assert_eq!(private.jwks.as_ref().unwrap()["keys"][0].get("d"), None);
     let attested = seeds
         .iter()
@@ -50,6 +56,10 @@ fn seed_materialization_keeps_authentication_classes_distinct_and_public() {
         .expect("attested client");
     assert_eq!(attested.auth_method, "attest_jwt_client_auth");
     assert_eq!(attested.redirect_uris.len(), 2);
+    assert_eq!(
+        attested.scopes,
+        vec!["openid", "pid-attested-scope", "pid-scope"]
+    );
     assert!(attested.jwks.is_none());
 }
 
