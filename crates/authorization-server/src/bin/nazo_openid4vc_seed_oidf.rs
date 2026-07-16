@@ -12,7 +12,7 @@ use nazo_oauth_server::{
     config::{ConfigSource, database_url},
     oidf_seed::{
         client::{OidfClientSpec, oauth_client},
-        openid4vc::client_seeds,
+        openid4vc::{allowed_audiences, client_seeds},
         suite_base_urls,
     },
 };
@@ -31,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
     let database_url = database_url(&config);
     let issuer = config.string("ISSUER", "https://auth.nazo.run");
+    let default_audience = config.string("DEFAULT_AUDIENCE", "resource://default");
     let suite_base_url = env::var("OIDF_LOCAL_SUITE_BASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
@@ -38,11 +39,7 @@ async fn main() -> anyhow::Result<()> {
     let plan_bundle_path = required_env("OPENID4VC_OIDF_PLAN_CONFIG_JSON_FILE")?;
     let bundle: Value = serde_json::from_str(&fs::read_to_string(&plan_bundle_path)?)?;
     let seeds = client_seeds(&bundle, &suite_base_urls(&suite_base_url))?;
-    let allowed_audiences = json!([
-        issuer,
-        format!("{issuer}/openid4vci/credential"),
-        format!("{issuer}/openid4vci/batch_credential")
-    ]);
+    let allowed_audiences = json!(allowed_audiences(&issuer, &default_audience));
     let grant_types = json!([
         "authorization_code",
         "refresh_token",

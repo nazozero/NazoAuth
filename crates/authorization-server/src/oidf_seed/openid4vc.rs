@@ -14,6 +14,18 @@ use super::{callback_uris, config::client_scopes, config::public_jwks};
 pub const PRIVATE_KEY_CLIENT_ID: &str = "nazo-openid4vc-oidf-private-key-jwt";
 pub const ATTESTED_CLIENT_ID: &str = "nazo-openid4vc-oidf-client-attestation";
 
+#[must_use]
+pub fn allowed_audiences(issuer: &str, default_audience: &str) -> Vec<String> {
+    BTreeSet::from([
+        default_audience.to_owned(),
+        issuer.to_owned(),
+        format!("{issuer}/openid4vci/credential"),
+        format!("{issuer}/openid4vci/batch_credential"),
+    ])
+    .into_iter()
+    .collect()
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Openid4vcOidfClientSeed {
     pub client_id: String,
