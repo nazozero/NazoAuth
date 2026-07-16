@@ -5,7 +5,7 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use chrono::{Duration, Utc};
-use coset::{CborSerializable, CoseKeyBuilder, iana};
+use coset::{CborSerializable, CoseKeyBuilder, cbor::value::Value as CborValue, iana};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use mdoc_rs::{
     builder::{CoseSigner, DocumentBuilder},
@@ -1076,11 +1076,16 @@ fn timestamp_claim(value: &Value, name: &str) -> Option<chrono::DateTime<Utc>> {
 }
 
 fn jwk_to_cose_key(jwk: &Value) -> Result<coset::CoseKey, CredentialTrustError> {
-    if jwk.get("kty").and_then(Value::as_str) != Some("EC")
-        || jwk.get("crv").and_then(Value::as_str) != Some("P-256")
-    {
-        return Err(CredentialTrustError::InvalidHolderBinding);
+    match jwk.get("kty").and_then(Value::as_str) {
+        Some("EC") if jwk.get("crv").and_then(Value::as_str) == Some("P-256") => {
+            jwk_to_ec2_cose_key(jwk)
+        }
+        Some("RSA") => jwk_to_rsa_cose_key(jwk),
+        _ => Err(CredentialTrustError::InvalidHolderBinding),
     }
+}
+
+fn jwk_to_ec2_cose_key(jwk: &Value) -> Result<coset::CoseKey, CredentialTrustError> {
     let x = URL_SAFE_NO_PAD
         .decode(
             jwk.get("x")
@@ -1096,6 +1101,32 @@ fn jwk_to_cose_key(jwk: &Value) -> Result<coset::CoseKey, CredentialTrustError> 
         )
         .map_err(|_| CredentialTrustError::InvalidHolderBinding)?;
     Ok(CoseKeyBuilder::new_ec2_pub_key(iana::EllipticCurve::P_256, x, y).build())
+}
+
+fn jwk_to_rsa_cose_key(jwk: &Value) -> Result<coset::CoseKey, CredentialTrustError> {
+    let n = URL_SAFE_NO_PAD
+        .decode(
+            jwk.get("n")
+                .and_then(Value::as_str)
+                .ok_or(CredentialTrustError::InvalidHolderBinding)?,
+        )
+        .map_err(|_| CredentialTrustError::InvalidHolderBinding)?;
+    let e = URL_SAFE_NO_PAD
+        .decode(
+            jwk.get("e")
+                .and_then(Value::as_str)
+                .ok_or(CredentialTrustError::InvalidHolderBinding)?,
+        )
+        .map_err(|_| CredentialTrustError::InvalidHolderBinding)?;
+    if n.len() < 256 || e.is_empty() {
+        return Err(CredentialTrustError::InvalidHolderBinding);
+    }
+    Ok(CoseKeyBuilder::new()
+        .key_type(iana::KeyType::RSA)
+        .algorithm(iana::Algorithm::PS256)
+        .param(iana::RsaKeyParameter::N as i64, CborValue::Bytes(n))
+        .param(iana::RsaKeyParameter::E as i64, CborValue::Bytes(e))
+        .build())
 }
 
 fn json_to_cbor(value: &Value) -> Result<ciborium::Value, CredentialTrustError> {

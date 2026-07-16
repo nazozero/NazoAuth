@@ -1654,6 +1654,11 @@ fn map_issuance_error(error: nazo_openid4vci::CredentialIssuanceError) -> Creden
         | nazo_openid4vci::CredentialIssuanceError::Proof(_) => {
             vci_error(400, "invalid_proof", "Credential proof is invalid.")
         }
+        nazo_openid4vci::CredentialIssuanceError::InvalidHolderBinding => vci_error(
+            400,
+            "invalid_proof",
+            "Credential holder binding is invalid.",
+        ),
         nazo_openid4vci::CredentialIssuanceError::Unauthorized => vci_error(
             403,
             "insufficient_scope",

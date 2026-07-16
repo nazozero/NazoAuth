@@ -260,10 +260,17 @@ pub enum CredentialIssuanceError {
     DatasetUnavailable,
     #[error("credential signing failed")]
     SigningFailed,
+    #[error("credential holder binding is invalid")]
+    InvalidHolderBinding,
 }
 
 impl From<nazo_digital_credentials::CredentialTrustError> for CredentialIssuanceError {
-    fn from(_: nazo_digital_credentials::CredentialTrustError) -> Self {
-        Self::SigningFailed
+    fn from(error: nazo_digital_credentials::CredentialTrustError) -> Self {
+        match error {
+            nazo_digital_credentials::CredentialTrustError::InvalidHolderBinding => {
+                Self::InvalidHolderBinding
+            }
+            _ => Self::SigningFailed,
+        }
     }
 }

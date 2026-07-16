@@ -158,6 +158,18 @@ impl CredentialSignerPort for RecordingSigner {
     }
 }
 
+#[derive(Clone)]
+struct InvalidHolderBindingSigner;
+
+impl CredentialSignerPort for InvalidHolderBindingSigner {
+    fn sign<'a>(
+        &'a self,
+        _: &'a CredentialSignInput,
+    ) -> CredentialFuture<'a, Result<String, CredentialTrustError>> {
+        Box::pin(async { Err(CredentialTrustError::InvalidHolderBinding) })
+    }
+}
+
 fn fixture(
     now: chrono::DateTime<Utc>,
 ) -> (CredentialAccess, CredentialIssuance, CredentialRequest) {
@@ -262,5 +274,31 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
         Err(CredentialIssuanceError::Credential(
             CredentialError::InvalidNonce
         ))
+    );
+}
+
+#[tokio::test]
+async fn invalid_holder_binding_remains_a_protocol_error_not_a_generic_signing_failure() {
+    let now = Utc::now();
+    let service = CredentialIssuerService::new(
+        RecordingStore::default(),
+        FixedProofs(vec![ValidatedProof {
+            proof_type: "jwt".to_owned(),
+            holder_binding: json!({"jwk":{"kty":"unsupported"}}),
+            nonce: "nonce".to_owned(),
+            key_attestation: None,
+        }]),
+        Dataset,
+        InvalidHolderBindingSigner,
+        "https://issuer.example".to_owned(),
+        4,
+    );
+    let (access, issuance, request) = fixture(now);
+
+    assert_eq!(
+        service
+            .issue(&access, &request, &issuance, "nonce", now)
+            .await,
+        Err(CredentialIssuanceError::InvalidHolderBinding)
     );
 }
