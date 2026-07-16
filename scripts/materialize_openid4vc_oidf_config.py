@@ -41,7 +41,7 @@ def matrix_cases() -> list[tuple[str, str, dict[str, str]]]:
         (VCI_HAIP, "vci-haip-sd-issuer", {"vci_authorization_code_flow_variant":"issuer_initiated","credential_format":"sd_jwt_vc"}),
         (VCI_HAIP, "vci-haip-mdoc-issuer", {"vci_authorization_code_flow_variant":"issuer_initiated","credential_format":"mdoc"}),
         (VP_STANDARD, "vp-sd-redirect-query", {"vp_profile":"plain_vp","credential_format":"sd_jwt_vc","client_id_prefix":"redirect_uri","request_method":"url_query","response_mode":"direct_post"}),
-        (VP_STANDARD, "vp-mdoc-redirect-query-jwt", {"vp_profile":"plain_vp","credential_format":"iso_mdl","client_id_prefix":"redirect_uri","request_method":"url_query","response_mode":"direct_post.jwt"}),
+        (VP_STANDARD, "vp-mdoc-redirect-signed-jwt", {"vp_profile":"plain_vp","credential_format":"iso_mdl","client_id_prefix":"redirect_uri","request_method":"request_uri_signed","response_mode":"direct_post.jwt"}),
         (VP_STANDARD, "vp-sd-x509dns-signed", {"vp_profile":"plain_vp","credential_format":"sd_jwt_vc","client_id_prefix":"x509_san_dns","request_method":"request_uri_signed","response_mode":"direct_post"}),
         (VP_STANDARD, "vp-mdoc-x509dns-signed-jwt", {"vp_profile":"plain_vp","credential_format":"iso_mdl","client_id_prefix":"x509_san_dns","request_method":"request_uri_signed","response_mode":"direct_post.jwt"}),
         (VP_STANDARD, "vp-sd-x509hash-signed-jwt", {"vp_profile":"plain_vp","credential_format":"sd_jwt_vc","client_id_prefix":"x509_hash","request_method":"request_uri_signed","response_mode":"direct_post.jwt"}),
