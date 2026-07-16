@@ -305,7 +305,7 @@ impl Openid4vcCredentialCrypto {
         presentation: &PresentedCredential,
     ) -> Result<VerifiedCredential, CredentialTrustError> {
         let parts = presentation.encoded.split('~').collect::<Vec<_>>();
-        if parts.len() < 3
+        if parts.len() < 2
             || parts[0].is_empty()
             || parts.last().is_some_and(|part| part.is_empty())
         {
@@ -395,7 +395,11 @@ impl Openid4vcCredentialCrypto {
         {
             return Err(CredentialTrustError::InvalidHolderBinding);
         }
-        let sd_input = format!("{}~{}~", credential_jwt, disclosures.join("~"));
+        let sd_input = if disclosures.is_empty() {
+            format!("{credential_jwt}~")
+        } else {
+            format!("{}~{}~", credential_jwt, disclosures.join("~"))
+        };
         if binding.sd_hash != URL_SAFE_NO_PAD.encode(Sha256::digest(sd_input.as_bytes())) {
             return Err(CredentialTrustError::InvalidHolderBinding);
         }
