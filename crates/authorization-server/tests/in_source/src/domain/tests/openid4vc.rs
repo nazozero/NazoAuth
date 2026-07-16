@@ -90,3 +90,58 @@ fn mdoc_device_signature_uses_tagged_device_authentication_bytes() {
         "the ISO DeviceAuthenticationBytes tag is part of the signed payload"
     );
 }
+
+#[test]
+fn mdoc_fallback_accepts_only_project_verified_chain_and_device_signature_failures() {
+    let issuer = assessment(
+        mdoc_rs::verifier::CheckId::IssuerCertificateValidity,
+        mdoc_rs::verifier::VerificationStatus::Failed,
+    );
+    let device = assessment(
+        mdoc_rs::verifier::CheckId::DeviceSignatureValidity,
+        mdoc_rs::verifier::VerificationStatus::Failed,
+    );
+    let issuer_signature = assessment(
+        mdoc_rs::verifier::CheckId::IssuerSignatureValidity,
+        mdoc_rs::verifier::VerificationStatus::Failed,
+    );
+
+    assert!(mdoc_failed_assessments_accepted(
+        [&issuer, &device].into_iter(),
+        true,
+        true,
+    ));
+    assert!(!mdoc_failed_assessments_accepted(
+        [&issuer, &device].into_iter(),
+        false,
+        true,
+    ));
+    assert!(!mdoc_failed_assessments_accepted(
+        [&issuer, &device].into_iter(),
+        true,
+        false,
+    ));
+    assert!(!mdoc_failed_assessments_accepted(
+        [&issuer, &issuer_signature].into_iter(),
+        true,
+        true,
+    ));
+    assert!(!mdoc_failed_assessments_accepted(
+        std::iter::empty(),
+        true,
+        true,
+    ));
+}
+
+fn assessment(
+    id: mdoc_rs::verifier::CheckId,
+    status: mdoc_rs::verifier::VerificationStatus,
+) -> mdoc_rs::verifier::VerificationAssessment {
+    mdoc_rs::verifier::VerificationAssessment {
+        status,
+        check: "test assessment".to_owned(),
+        reason: None,
+        category: mdoc_rs::verifier::VerificationCategory::IssuerAuth,
+        id,
+    }
+}

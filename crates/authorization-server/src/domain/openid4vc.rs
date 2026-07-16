@@ -490,8 +490,13 @@ impl Openid4vcCredentialCrypto {
             })?;
         let standard_device_authentication_valid =
             verify_standard_mdoc_device_signatures(&verified, session_transcript)?;
-        if (!verified.is_valid && !standard_device_authentication_valid)
-            || verified.mdoc.documents.len() != 1
+        let issuer_chain_valid =
+            verify_mdoc_issuer_certificate_chains(&verified, self.trust_anchors.as_ref())?;
+        if !mdoc_assessments_accepted(
+            &verified,
+            standard_device_authentication_valid,
+            issuer_chain_valid,
+        ) || verified.mdoc.documents.len() != 1
         {
             let assessments = verified
                 .assessments
@@ -581,11 +586,11 @@ fn verify_standard_mdoc_device_signatures(
         .iter()
         .filter(|assessment| assessment.status != mdoc_rs::verifier::VerificationStatus::Passed)
         .collect::<Vec<_>>();
-    if failed.is_empty()
-        || failed
-            .iter()
-            .any(|assessment| assessment.id != mdoc_rs::verifier::CheckId::DeviceSignatureValidity)
-    {
+    let failed_device_signatures = failed
+        .iter()
+        .filter(|assessment| assessment.id == mdoc_rs::verifier::CheckId::DeviceSignatureValidity)
+        .count();
+    if failed_device_signatures == 0 {
         return Ok(false);
     }
 
@@ -633,7 +638,96 @@ fn verify_standard_mdoc_device_signatures(
         verified_signatures += 1;
     }
 
-    Ok(verified_signatures == failed.len())
+    Ok(verified_signatures == failed_device_signatures)
+}
+
+fn verify_mdoc_issuer_certificate_chains(
+    verified: &mdoc_rs::verifier::VerifiedMDoc,
+    trust_anchors: &[Vec<u8>],
+) -> Result<bool, CredentialTrustError> {
+    if verified.mdoc.documents.is_empty() {
+        return Ok(false);
+    }
+    for document in &verified.mdoc.documents {
+        let certificates = document
+            .issuer_signed
+            .issuer_auth
+            .certificate_chain_der()
+            .map_err(|_| CredentialTrustError::InvalidEncoding)?
+            .into_iter()
+            .map(|value| X509::from_der(&value).map_err(|_| CredentialTrustError::InvalidEncoding))
+            .collect::<Result<Vec<_>, _>>()?;
+        let leaf = certificates
+            .first()
+            .ok_or(CredentialTrustError::UntrustedIssuer)?;
+        let mut store = X509StoreBuilder::new().map_err(|_| CredentialTrustError::Unavailable)?;
+        for anchor in trust_anchors {
+            store
+                .add_cert(X509::from_der(anchor).map_err(|_| CredentialTrustError::Unavailable)?)
+                .map_err(|_| CredentialTrustError::Unavailable)?;
+        }
+        let store = store.build();
+        let mut chain = Stack::new().map_err(|_| CredentialTrustError::Unavailable)?;
+        for intermediate in certificates.iter().skip(1) {
+            if trust_anchors
+                .iter()
+                .any(|anchor| intermediate.to_der().is_ok_and(|der| der == *anchor))
+            {
+                continue;
+            }
+            chain
+                .push(intermediate.clone())
+                .map_err(|_| CredentialTrustError::Unavailable)?;
+        }
+        let mut context = X509StoreContext::new().map_err(|_| CredentialTrustError::Unavailable)?;
+        let trusted = context
+            .init(&store, leaf, &chain, |context| context.verify_cert())
+            .map_err(|_| CredentialTrustError::UntrustedIssuer)?;
+        if !trusted {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
+fn mdoc_assessments_accepted(
+    verified: &mdoc_rs::verifier::VerifiedMDoc,
+    standard_device_authentication_valid: bool,
+    issuer_chain_valid: bool,
+) -> bool {
+    if verified.is_valid {
+        return true;
+    }
+
+    mdoc_failed_assessments_accepted(
+        verified.assessments.iter(),
+        standard_device_authentication_valid,
+        issuer_chain_valid,
+    )
+}
+
+fn mdoc_failed_assessments_accepted<'a>(
+    assessments: impl Iterator<Item = &'a mdoc_rs::verifier::VerificationAssessment>,
+    standard_device_authentication_valid: bool,
+    issuer_chain_valid: bool,
+) -> bool {
+    let mut failed = 0usize;
+    for assessment in assessments
+        .filter(|assessment| assessment.status != mdoc_rs::verifier::VerificationStatus::Passed)
+    {
+        failed += 1;
+        let accepted = match assessment.id {
+            mdoc_rs::verifier::CheckId::DeviceSignatureValidity => {
+                standard_device_authentication_valid
+            }
+            mdoc_rs::verifier::CheckId::IssuerCertificateValidity => issuer_chain_valid,
+            _ => false,
+        };
+        if !accepted {
+            return false;
+        }
+    }
+    failed > 0
 }
 
 fn mdoc_holder_key(device_key: Option<&coset::CoseKey>) -> Result<Value, CredentialTrustError> {
