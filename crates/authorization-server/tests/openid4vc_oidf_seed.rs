@@ -1,7 +1,20 @@
 use nazo_oauth_server::oidf_seed::openid4vc::{
-    ATTESTED_CLIENT_ID, PRIVATE_KEY_CLIENT_ID, client_seeds,
+    ATTESTED_CLIENT_ID, PRIVATE_KEY_CLIENT_ID, allowed_audiences, client_seeds,
 };
 use serde_json::json;
+
+#[test]
+fn seeded_audiences_include_only_the_configured_default_and_vci_endpoints() {
+    assert_eq!(
+        allowed_audiences("https://issuer.example", "resource://default"),
+        vec![
+            "https://issuer.example",
+            "https://issuer.example/openid4vci/batch_credential",
+            "https://issuer.example/openid4vci/credential",
+            "resource://default",
+        ]
+    );
+}
 
 #[test]
 fn seed_materialization_keeps_authentication_classes_distinct_and_public() {
