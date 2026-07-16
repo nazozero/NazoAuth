@@ -19,6 +19,15 @@ def load(name: str):
 
 
 class Openid4vcOidfTests(unittest.TestCase):
+    def test_credential_issuer_metadata_is_registered_inside_the_single_well_known_scope(self):
+        routes = (ROOT / "crates" / "authorization-server" / "src" / "bootstrap" / "routes.rs").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertEqual(routes.count('web::scope("/.well-known")'), 1)
+        self.assertIn('"/openid-credential-issuer"', routes)
+        self.assertNotIn('"/.well-known/openid-credential-issuer"', routes)
+
     def test_matrix_is_bounded_and_covers_each_final_role_format(self):
         module = load("materialize_openid4vc_oidf_config.py")
         cases = module.matrix_cases()

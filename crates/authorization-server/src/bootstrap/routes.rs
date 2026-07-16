@@ -89,6 +89,32 @@ pub(crate) fn configure(
     settings: &Settings,
     perf_metrics_enabled: bool,
 ) {
+    // Actix scopes consume every request under their prefix, including paths
+    // that are not registered inside the scope. Keep all /.well-known routes
+    // in this single scope so later top-level resources cannot be shadowed.
+    let well_known = web::scope("/.well-known")
+        .wrap(cors::cors_well_known(settings))
+        .route("/openid-configuration", web::get().to(discovery))
+        .route(
+            "/oauth-authorization-server",
+            web::get().to(oauth_authorization_server_metadata),
+        )
+        .route(
+            "/oauth-protected-resource",
+            web::get().to(oauth_protected_resource_metadata),
+        )
+        .route(
+            "/oauth-protected-resource/{tail:.*}",
+            web::get().to(oauth_protected_resource_metadata),
+        );
+    let well_known = if settings.modules.enable_openid4vci_issuer {
+        well_known.route(
+            "/openid-credential-issuer",
+            web::get().to(credential_issuer_metadata),
+        )
+    } else {
+        well_known
+    };
     cfg.service(
         web::resource("/health")
             .wrap(cors::cors_well_known(settings))
@@ -144,23 +170,7 @@ pub(crate) fn configure(
                 .route(web::post().to(fapi_resource)),
         )
         // CORS: cors_well_known — /.well-known/*
-        .service(
-            web::scope("/.well-known")
-                .wrap(cors::cors_well_known(settings))
-                .route("/openid-configuration", web::get().to(discovery))
-                .route(
-                    "/oauth-authorization-server",
-                    web::get().to(oauth_authorization_server_metadata),
-                )
-                .route(
-                    "/oauth-protected-resource",
-                    web::get().to(oauth_protected_resource_metadata),
-                )
-                .route(
-                    "/oauth-protected-resource/{tail:.*}",
-                    web::get().to(oauth_protected_resource_metadata),
-                ),
-        )
+        .service(well_known)
         // CORS: cors_well_known — /jwks.json
         .service(
             web::resource("/jwks.json")
@@ -300,10 +310,6 @@ pub(crate) fn configure(
         );
     if settings.modules.enable_openid4vci_issuer {
         cfg.route(
-            "/.well-known/openid-credential-issuer",
-            web::get().to(credential_issuer_metadata),
-        )
-        .route(
             "/openid4vci/offers",
             web::post().to(create_credential_offer),
         )
