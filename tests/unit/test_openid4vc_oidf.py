@@ -79,7 +79,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                 "verifier": {
                     "management_token": "management-token",
                     "credential_type_values": {
-                        "sd_jwt_vc": "eu.europa.ec.eudi.pid.1",
+                        "sd_jwt_vc": "urn:eudi:pid:1",
                         "iso_mdl": "org.iso.18013.5.1.mDL",
                     },
                 },
@@ -87,7 +87,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             module.threading.Event(),
         )
         cases = {
-            "sd_jwt_vc": ("dc+sd-jwt", {"vct_values": ["eu.europa.ec.eudi.pid.1"]}),
+            "sd_jwt_vc": ("dc+sd-jwt", {"vct_values": ["urn:eudi:pid:1"]}),
             "iso_mdl": ("mso_mdoc", {"doctype_value": "org.iso.18013.5.1.mDL"}),
         }
         for credential_format, (expected_format, expected_meta) in cases.items():
@@ -122,7 +122,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                 "verifier": {
                     "management_token": "management-token",
                     "credential_type_values": {
-                        "sd_jwt_vc": "eu.europa.ec.eudi.pid.1",
+                        "sd_jwt_vc": "urn:eudi:pid:1",
                         "iso_mdl": "org.iso.18013.5.1.mDL",
                     },
                 },
@@ -252,6 +252,10 @@ class Openid4vcOidfTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(materialized_driver["target_origin"], "https://auth.nazo.run")
+            self.assertEqual(
+                materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],
+                "urn:eudi:pid:1",
+            )
             for filename, config in configs.items():
                 if "vp-" in filename:
                     self.assertEqual(config["client"]["client_id"], "auth.nazo.run")
