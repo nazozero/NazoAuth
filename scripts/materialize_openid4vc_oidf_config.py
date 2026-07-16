@@ -16,6 +16,7 @@ VCI_STANDARD = "oid4vci-1_0-issuer-test-plan"
 VCI_HAIP = "oid4vci-1_0-issuer-haip-test-plan"
 VP_STANDARD = "oid4vp-1final-verifier-test-plan"
 VP_HAIP = "oid4vp-1final-verifier-haip-test-plan"
+OIDF_VP_SD_JWT_VCT = "urn:eudi:pid:1"
 VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
 VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
 VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm"
@@ -204,6 +205,10 @@ def main() -> int:
         raise SystemExit(
             "driver verifier requires non-empty sd_jwt_vc and iso_mdl credential_type_values"
         )
+    # The OIDF verifier plans issue SD-JWT VC test credentials with the ARF vct
+    # value. The similarly named VCI credential configuration id is not the vct
+    # and must not leak into VP DCQL matching.
+    credential_type_values["sd_jwt_vc"] = OIDF_VP_SD_JWT_VCT
     required = {"vci", "vci_haip", "vp", "vp_haip"}
     if set(base) != required or not all(isinstance(base[name], dict) for name in required):
         raise SystemExit(f"base configuration must contain exactly {sorted(required)}")
