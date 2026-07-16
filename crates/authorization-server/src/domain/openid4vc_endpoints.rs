@@ -7,18 +7,18 @@ use std::{
 
 use base64::Engine as _;
 use chrono::{Duration, Utc};
-use nazo_auth::{DpopNoncePolicy, DpopProofRequest, validate_authorization_server_dpop};
+use nazo_auth::{DpopError, DpopNoncePolicy, DpopProofRequest, validate_authorization_server_dpop};
 use nazo_digital_credentials::{
     CredentialSignerPort, EphemeralEncryptionKey, encrypt_ecdh_es, encrypt_ecdh_es_deflate,
 };
 use nazo_identity::{TenantId, UserId};
 use nazo_openid4vc_http_actix::{
-    CreateCredentialOfferRequest, CreateCredentialOfferResponse, CreatePresentationRequest,
-    CreatePresentationResponse, CredentialHttpError, CredentialIssuerFuture,
-    CredentialIssuerOperations, CredentialRequestBody, CredentialRequestContext,
-    CredentialResponseBody, PreAuthorizedTokenRequest, PreAuthorizedTokenResponse,
-    PresentationFuture, PresentationHttpError, PresentationOperations, PresentationResponseBody,
-    PresentationResponseInput,
+    AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
+    CreatePresentationRequest, CreatePresentationResponse, CredentialHttpError,
+    CredentialIssuerFuture, CredentialIssuerOperations, CredentialRequestBody,
+    CredentialRequestContext, CredentialResponseBody, PreAuthorizedTokenRequest,
+    PreAuthorizedTokenResponse, PresentationFuture, PresentationHttpError, PresentationOperations,
+    PresentationResponseBody, PresentationResponseInput,
 };
 use nazo_openid4vci::{
     AuthorizationCodeGrant, BatchCredentialIssuance, CredentialAccess, CredentialConfiguration,
@@ -275,7 +275,29 @@ impl ServerCredentialIssuerOperations {
                 })?,
         };
         let dpop_jkt = claims.cnf.as_ref().and_then(|cnf| cnf.jkt.clone());
-        if dpop_jkt.is_some() || context.dpop_proof.is_some() {
+        match (
+            dpop_jkt.as_deref(),
+            context.access_token_scheme,
+            context.dpop_proof.as_deref(),
+        ) {
+            (Some(_), AccessTokenScheme::Dpop, Some(_)) => {}
+            (None, AccessTokenScheme::Bearer, None) => {}
+            (Some(_), _, _) => {
+                return Err(vci_error(
+                    401,
+                    "invalid_token",
+                    "A DPoP-bound access token requires the DPoP authorization scheme and proof.",
+                ));
+            }
+            (None, _, _) => {
+                return Err(vci_error(
+                    401,
+                    "invalid_dpop_proof",
+                    "An unbound access token cannot be presented with DPoP.",
+                ));
+            }
+        }
+        if dpop_jkt.is_some() {
             let target = format!(
                 "{}{}",
                 self.issuer.trim_end_matches('/'),
@@ -293,7 +315,18 @@ impl ServerCredentialIssuerOperations {
                 self.dpop_nonce_policy,
             )
             .await
-            .map_err(|_| vci_error(401, "invalid_token", "DPoP proof is invalid."))?;
+            .map_err(|error| match error {
+                DpopError::UseNonce(nonce) => CredentialHttpError {
+                    status: 401,
+                    error: "use_dpop_nonce",
+                    description: "Credential issuer requires nonce in DPoP proof.",
+                    dpop_nonce: Some(nonce),
+                },
+                DpopError::NonceStoreUnavailable => {
+                    vci_error(503, "server_error", "DPoP nonce validation is unavailable.")
+                }
+                _ => vci_error(401, "invalid_dpop_proof", "DPoP proof is invalid."),
+            })?;
         }
         let (configuration_ids, credential_identifiers) = authorized_credentials(
             &claims.authorization_details,
