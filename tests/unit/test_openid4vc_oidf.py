@@ -278,6 +278,61 @@ class Openid4vcOidfTests(unittest.TestCase):
         self.assertEqual(registry["status"], "alpha-regression-not-certification")
         self.assertEqual(registry["roles"], ["issuer", "verifier"])
 
+    def test_openid4vc_target_boundary_allows_external_attester_role(self):
+        module = load("run_oidf_conformance.py")
+
+        module.assert_config_target_boundaries(
+            {
+                "vci": {
+                    "credential_issuer_url": "https://issuer.example",
+                    "client_attester_issuer": "https://client-attester.example.org",
+                }
+            },
+            "openid4vc-vci-haip-sd-wallet.json",
+            "https://issuer.example",
+        )
+        module.assert_config_target_boundaries(
+            {
+                "client": {
+                    "client_id": "issuer.example",
+                    "request_object_trust_anchor_uri": "https://trust-anchor.example.org/root.pem",
+                }
+            },
+            "openid4vc-vp-haip-sd.json",
+            "https://issuer.example",
+        )
+
+    def test_openid4vc_target_boundary_rejects_local_targets(self):
+        module = load("run_oidf_conformance.py")
+
+        with self.assertRaisesRegex(SystemExit, "local-only URL"):
+            module.assert_config_target_boundaries(
+                {
+                    "vci": {
+                        "credential_issuer_url": "https://issuer.example",
+                        "credential_offer_endpoint": "https://nginx:8443/test/a/issuer/offer",
+                    }
+                },
+                "openid4vc-vci-sd-wallet-plain.json",
+                "https://issuer.example",
+            )
+
+    def test_openid4vc_target_boundary_requires_role_target_binding(self):
+        module = load("run_oidf_conformance.py")
+
+        with self.assertRaisesRegex(SystemExit, "credential_issuer_url"):
+            module.assert_config_target_boundaries(
+                {"vci": {"credential_issuer_url": "https://wrong.example"}},
+                "openid4vc-vci-sd-wallet-plain.json",
+                "https://issuer.example",
+            )
+        with self.assertRaisesRegex(SystemExit, "verifier client_id"):
+            module.assert_config_target_boundaries(
+                {"client": {"client_id": "wrong.example"}},
+                "openid4vc-vp-haip-sd.json",
+                "https://issuer.example",
+            )
+
     def test_verifier_driver_emits_format_specific_dcql_meta(self):
         module = load("run_openid4vc_conformance.py")
         driver = module.Openid4vcDriver(
@@ -485,36 +540,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                 ],
             )
-            self.assertEqual(len(expected_warnings), 4)
-            self.assertEqual(
-                {
-                    item["configuration-filename"]
-                    for item in expected_warnings
-                    if item["test-name"] == module.VCI_REFRESH_TOKEN_MODULE
-                },
-                {
-                    "openid4vc-vci-haip-sd-wallet.json",
-                    "openid4vc-vci-haip-mdoc-wallet.json",
-                    "openid4vc-vci-haip-sd-issuer.json",
-                    "openid4vc-vci-haip-mdoc-issuer.json",
-                },
-            )
-            self.assertFalse(
-                any(
-                    item["configuration-filename"].startswith("openid4vc-vci-sd-wallet")
-                    or item["configuration-filename"].startswith("openid4vc-vci-mdoc-wallet")
-                    or item["configuration-filename"].startswith("openid4vc-vci-sd-issuer")
-                    or item["configuration-filename"].startswith("openid4vc-vci-mdoc-issuer")
-                    for item in expected_warnings
-                    if "haip" not in item["configuration-filename"]
-                )
-            )
-            self.assertFalse(
-                any(
-                    item["test-name"] == "fapi2-security-profile-final-dpop-negative-tests"
-                    for item in expected_warnings
-                )
-            )
+            self.assertEqual(expected_warnings, [])
             self.assertEqual(materialized_driver["target_origin"], "https://issuer.example")
             self.assertEqual(
                 materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],
