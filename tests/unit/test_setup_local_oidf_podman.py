@@ -134,7 +134,10 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
             },
         )
         for config in configs.values():
-            self.assertEqual(config["nazo"]["sender_constrain"], "mtls")
+            if config["nazo"]["client_auth_type"] == "mtls":
+                self.assertEqual(config["nazo"]["sender_constrain"], "mtls")
+            else:
+                self.assertNotIn("sender_constrain", config["nazo"])
             self.assertIn("mtls", config)
             self.assertIn("mtls2", config)
             for key in ("client", "client2"):
