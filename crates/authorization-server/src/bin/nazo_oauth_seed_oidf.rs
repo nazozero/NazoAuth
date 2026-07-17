@@ -22,6 +22,11 @@ use std::{collections::BTreeSet, env, path::Path};
 type HmacSha256 = Hmac<Sha256>;
 
 const DEFAULT_OIDF_BASIC_ALIAS: &str = "nazo-oauth-oidf";
+const DEFAULT_OIDF_BASIC_CLIENT_ID: &str = "oidf-basic-client";
+const DEFAULT_OIDF_BASIC_CLIENT2_ID: &str = "oidf-basic-client-2";
+const DEFAULT_OIDF_FORMPOST_CLIENT_ID: &str = "oidf-post-client";
+const DEFAULT_OIDF_FRONTCHANNEL_CLIENT_ID: &str = "oidf-frontchannel-client";
+const DEFAULT_OIDF_SESSION_CLIENT_ID: &str = "oidf-session-client";
 
 #[derive(Clone, Copy, Debug)]
 struct FapiClientPolicy {
@@ -221,7 +226,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-basic-client",
+            client_id: DEFAULT_OIDF_BASIC_CLIENT_ID,
             client_name: "Local OIDF Basic Client",
             auth_method: "client_secret_basic",
             redirect_uris: &basic_redirect_uris,
@@ -249,7 +254,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-basic-client-2",
+            client_id: DEFAULT_OIDF_BASIC_CLIENT2_ID,
             client_name: "Local OIDF Basic Client 2",
             auth_method: "client_secret_basic",
             redirect_uris: &basic_redirect_uris,
@@ -277,7 +282,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-post-client",
+            client_id: DEFAULT_OIDF_FORMPOST_CLIENT_ID,
             client_name: "Local OIDF Post Client",
             auth_method: "client_secret_post",
             redirect_uris: &basic_redirect_uris,
@@ -305,7 +310,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-frontchannel-client",
+            client_id: DEFAULT_OIDF_FRONTCHANNEL_CLIENT_ID,
             client_name: "Local OIDF Front-Channel Logout Client",
             auth_method: "client_secret_basic",
             redirect_uris: &frontchannel_redirect_uris,
@@ -333,7 +338,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-session-client",
+            client_id: DEFAULT_OIDF_SESSION_CLIENT_ID,
             client_name: "Local OIDF Session Management Client",
             auth_method: "client_secret_basic",
             redirect_uris: &session_redirect_uris,
@@ -589,6 +594,15 @@ mod tests {
     #[test]
     fn default_basic_alias_matches_generated_oidf_plan_configs() {
         assert_eq!(DEFAULT_OIDF_BASIC_ALIAS, "nazo-oauth-oidf");
+    }
+
+    #[test]
+    fn default_oidc_client_ids_match_generated_oidf_plan_configs() {
+        assert_eq!(DEFAULT_OIDF_BASIC_CLIENT_ID, "oidf-basic-client");
+        assert_eq!(DEFAULT_OIDF_BASIC_CLIENT2_ID, "oidf-basic-client-2");
+        assert_eq!(DEFAULT_OIDF_FORMPOST_CLIENT_ID, "oidf-post-client");
+        assert_eq!(DEFAULT_OIDF_FRONTCHANNEL_CLIENT_ID, "oidf-frontchannel-client");
+        assert_eq!(DEFAULT_OIDF_SESSION_CLIENT_ID, "oidf-session-client");
     }
 
     #[test]
