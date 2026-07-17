@@ -1,7 +1,7 @@
 # OpenID4VC Final 一致性矩阵
 
-NazoAuth 实现 OpenID4VCI 1.0 Final 的 **Credential Issuer** 角色和
-OpenID4VP 1.0 Final 的 **Verifier** 角色；不实现、也不宣告 Wallet 角色。
+本实现提供 OpenID4VCI 1.0 Final 的 **Credential Issuer** 角色和 OpenID4VP
+1.0 Final 的 **Verifier** 角色；不实现、也不宣告 Wallet 角色。
 
 实现按职责拆分为四个协议边界：
 
