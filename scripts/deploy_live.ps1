@@ -5,6 +5,8 @@ param(
     [string]$BackendCommit,
     [Parameter(Mandatory = $true)]
     [string]$FrontendCommit,
+    [string]$ExpectedBackendBranch = "codex/modular-workspace-architecture",
+    [string]$ExpectedFrontendBranch = "codex/modular-workspace-architecture",
     [string]$LocalFrontendWorktree = "",
     [string]$LocalBackendWorktree = ".",
     [string]$ImageRepository = "localhost/nazo-oauth-server",
@@ -47,9 +49,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 $ExpectedBackendRemote = "https://github.com/nazozero/NazoAuth"
-$ExpectedBackendBranch = "codex/modular-workspace-architecture"
 $ExpectedFrontendRemote = "https://github.com/nazozero/NazoAuthWeb"
-$ExpectedFrontendBranch = "codex/modular-workspace-architecture"
 
 if ($RemoteHost.StartsWith('-') -or
     $RemoteHost -notmatch '^(?:[A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$') {
