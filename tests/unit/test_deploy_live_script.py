@@ -697,7 +697,14 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn('Join-Path $backendBuildContext "Containerfile"', self.source)
         self.assertIn('$backendBuildContext', self.source)
         self.assertIn('ExpectedBackendRemote = "https://github.com/nazozero/NazoAuth"', self.source)
-        self.assertIn('ExpectedBackendBranch = "codex/modular-workspace-architecture"', self.source)
+        self.assertIn(
+            '[string]$ExpectedBackendBranch = "codex/modular-workspace-architecture"',
+            self.source,
+        )
+        self.assertIn(
+            '[string]$ExpectedFrontendBranch = "codex/modular-workspace-architecture"',
+            self.source,
+        )
         self.assertIn('ExpectedFrontendRemote = "https://github.com/nazozero/NazoAuthWeb"', self.source)
         self.assertIn("Assert-GitOrigin", self.source)
 
