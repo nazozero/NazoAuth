@@ -139,15 +139,15 @@ OpenID Foundation Conformance Suite result URLs:
 | Current 25-plan repository matrix | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | OpenID4VC Final/HAIP alpha regression matrix | [docs/conformance/openid4vc-final-matrix.md](docs/conformance/openid4vc-final-matrix.md) |
 | OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
-| Archived private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
+| Archived diagnostic full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
 The latest public black-box official evidence used an operator-provided
 production issuer; this repository stores `https://issuer.example` only as a
 sanitized placeholder. Workflow users must provide their own reachable
 `OIDF_TARGET_ISSUER` and `OPENID4VC_TARGET_ORIGIN` values. It ran the 25-plan
 OIDC/FAPI/FAPI-CIBA matrix and the 17-plan OpenID4VC Final/HAIP matrix in GitHub
-Actions against that public production origin. Local endpoints, private DNS,
-private CAs, and local-suite hostnames are not accepted as conformance evidence.
+Actions against that public production origin. Non-public endpoints, private DNS,
+private trust roots, and suite-private hostnames are not accepted as conformance evidence.
 The 25-plan OIDC/FAPI/FAPI-CIBA matrix ran in
 the 23+2 parallel-isolated layout and exported 787 modules: 748 passed, 22
 modules with bounded official-ingress TLS warnings, 9 expected review states,
@@ -156,7 +156,7 @@ It is therefore not zero-SKIPPED or zero-WARNING official evidence; the exact
 warning contexts and upstream ingress boundary are recorded in the linked
 evidence document.
 
-Archived private full-matrix regression records remain useful for debugging, but
+Archived diagnostic full-matrix regression records remain useful for debugging, but
 they are not current conformance evidence.
 
 ## Features
@@ -186,7 +186,7 @@ Requirements:
 - The exact Rust stable version pinned by `rust-toolchain.toml`
 - PostgreSQL 18 or a compatible PostgreSQL server
 - Valkey 8 or a compatible Redis protocol server
-- Docker or Podman for the local integration stack
+- Container runtime for the optional integration stack
 
 Run with Docker Compose:
 
@@ -304,7 +304,7 @@ python scripts/full_real_request_e2e.py
 python scripts/full_real_request_load.py
 ```
 
-Windows coverage runs are documented in
+Coverage runs are documented in
 [docs/coverage/codecov-docker-runbook.md](docs/coverage/codecov-docker-runbook.md).
 
 ## License

@@ -6,7 +6,7 @@ This record is the current conformance evidence for the production deployment.
 It only counts public black-box official-suite runs against an
 operator-provided production issuer. The public repository uses
 `https://issuer.example` only as a sanitized placeholder; it is not a default
-test target and is not the maintainer deployment address.
+test target and is not a repository default deployment address.
 
 | Gate | Result |
 |---|---|
@@ -22,8 +22,8 @@ The two official runs cover 42 plan executions in total:
 - 17 OpenID4VC Final / HAIP alpha plans from `openid4vc-conformance`
 
 Both workflows ran from GitHub Actions against the public production origin. No
-local Podman DNS name, loopback endpoint, internal reverse proxy, private test
-CA, or suite-local endpoint is accepted as evidence in this record.
+non-public endpoint, private DNS name, private reverse proxy, private test
+CA, or suite-private endpoint is accepted as evidence in this record.
 
 ## Tested revision and production boundary
 
@@ -33,13 +33,11 @@ CA, or suite-local endpoint is accepted as evidence in this record.
 | Tested origin | operator-provided production HTTPS origin, sanitized as `https://issuer.example` |
 | Production health | `{"status":"正常"}` |
 | Production OCI revision | `ae19cc50af4cc50f3f35f678a3a1c38332d475e2` |
-| Local suite TLS override | Not present (`SSL_CERT_FILE` unset) |
-| Local/internal markers in production container | None found for `nginx`, `8443`, or `oidf-local` |
 
 Testing is production. The acceptable test target is the public service surface
-that external clients use. Local official-suite attempts that depended on
-internal addresses, private Podman DNS, locally trusted CAs, or suite-local
-callback origins are intentionally excluded from this evidence.
+that external clients use. Diagnostic runs that depend on non-public
+connectivity, private trust roots, or suite-private callback origins are
+intentionally excluded from this evidence.
 
 ## OIDC / FAPI / FAPI-CIBA official public matrix
 
@@ -114,16 +112,16 @@ Artifact:
 
 ## Evidence boundary
 
-This record deliberately does not cite local Hostinger suite runs as passing
-evidence. Local execution can still be useful for debugging, but conformance
-claims for this project must be based on public black-box runs against
+This record deliberately does not cite diagnostic suite runs as
+passing evidence. Diagnostic execution can still be useful for debugging, but
+conformance claims for this project must be based on public black-box runs against
 an explicitly configured production issuer using the same externally reachable
 issuer, redirect surfaces, callback paths, TLS configuration, and
 client-visible metadata that a real deployment exposes. Public workflow users
 must supply their own `OIDF_TARGET_ISSUER` and `OPENID4VC_TARGET_ORIGIN`; the
-repository must not route conformance traffic to a maintainer-owned service by
+repository must not route conformance traffic to any repository-owned service by
 default.
 
-If a future run requires local endpoints, private DNS, local CA injection, or
-suite-only callbacks to pass, that run is not production-equivalent evidence and
-must not be used to claim OIDF conformance.
+If a future run requires non-public endpoints, private trust roots, or
+suite-only callbacks to pass, that run is not production-equivalent evidence
+and must not be used to claim OIDF conformance.

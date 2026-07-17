@@ -87,7 +87,7 @@ OpenID Certified mark on the basis of these runs.
 Latest durable evidence:
 
 - [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
-- Maintainer-run local official-suite debugging used an operator-provided
+- Diagnostic official-suite debugging used an operator-provided
   production target, sanitized in this repository as `https://issuer.example`,
   and completed all 17 plan executions with zero failures. It is useful
   debugging evidence, not the default target for repository users.

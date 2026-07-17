@@ -51,7 +51,7 @@ recorded for this change. NI-005 is therefore covered by local protocol tests
 and the existing official dynamic-client matrix evidence, with the SKIPPED
 limitation called out explicitly.
 
-## Local Evidence
+## Repository Evidence
 
 - `tests/in_source/src/http/tests/dynamic_client_registration.rs`
 - `src/http/dynamic_client_registration.rs`

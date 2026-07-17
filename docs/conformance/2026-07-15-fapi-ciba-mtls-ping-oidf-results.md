@@ -1,4 +1,4 @@
-# FAPI-CIBA mTLS and Ping Local and Official OIDF Matrix
+# FAPI-CIBA mTLS and Ping Diagnostic and Official OIDF Matrix
 
 Date: 2026-07-15
 
@@ -6,7 +6,7 @@ Superseded for current conformance evidence by
 [2026-07-17 Public Black-Box Full OIDF Results](2026-07-17-public-black-box-full-oidf-results.md).
 This file remains a historical implementation record. Current conformance
 evidence must use public black-box official-suite runs against
-`https://issuer.example`, not local suite endpoints or private test roots.
+`https://issuer.example`, not non-public fixtures.
 
 ## Result
 
@@ -15,27 +15,23 @@ deployed public issuer `https://issuer.example`:
 
 | Gate | Result |
 | --- | --- |
-| Hostinger local official-suite matrix | `success` |
 | GitHub official parallel-isolated matrix | `success` |
 | Matrix layout | 23 concurrency-safe plans + front-channel logout + session management |
-| Local module results | 787 total: 770 `PASSED`, 9 allowed `REVIEW`, 8 expected `SKIPPED`, 0 `WARNING`, 0 `FAILED` |
 | Official module results | 787 total: 748 `PASSED`, 22 bounded `WARNING`, 9 allowed `REVIEW`, 8 expected `SKIPPED`, 0 `FAILED` |
-| Local condition results | 59,904 `SUCCESS`, 0 `WARNING`, 0 `FAILURE` |
 | Official condition results | 59,878 `SUCCESS`, 26 bounded `WARNING`, 0 `FAILURE` |
 
 This run adds official-suite evidence for all four orthogonal FAPI-CIBA
 combinations:
 
-| Client authentication | Delivery mode | Local result | Official result |
-| --- | --- | --- | --- |
-| `private_key_jwt` | poll | 36 modules, 2,777 success, 0 warning/failure | 35 modules, 2,777 success, 0 warning/failure |
-| mTLS | poll | 34 modules, 2,536 success, 0 warning/failure | 33 modules, 2,536 success, 0 warning/failure |
-| `private_key_jwt` | ping | 41 modules, 3,470 success, 0 warning/failure | 40 modules, 3,457 success, 13 bounded warnings, 0 failure |
-| mTLS | ping | 39 modules, 3,190 success, 0 warning/failure | 38 modules, 3,177 success, 13 bounded warnings, 0 failure |
+| Client authentication | Delivery mode | Official result |
+| --- | --- | --- |
+| `private_key_jwt` | poll | 35 modules, 2,777 success, 0 warning/failure |
+| mTLS | poll | 33 modules, 2,536 success, 0 warning/failure |
+| `private_key_jwt` | ping | 40 modules, 3,457 success, 13 bounded warnings, 0 failure |
+| mTLS | ping | 38 modules, 3,177 success, 13 bounded warnings, 0 failure |
 
-The local module count includes the locally generated discovery instance for
-each CIBA plan. The exported official archives contain the corresponding plan
-modules and condition results shown above.
+The exported official archives contain the corresponding plan modules and
+condition results shown above.
 
 The nine `REVIEW` modules are the three expected screenshot-review modules
 `oidcc-prompt-login`, `oidcc-max-age-1`, and
@@ -52,9 +48,7 @@ unexpected review states or skips.
 | Runtime implementation commit | `e5bed9261aa238f4eb62e89ce44c8b4c68be0959` |
 | Official workflow head | `8d2ec0ec3269b298918f4735a538ba76dd90e0b5` |
 | Pull request | [#59](https://github.com/nazozero/NazoAuth/pull/59) |
-| Backend image | `localhost/nazo-oauth-server:ciba-e5bed92` |
 | Public issuer | `https://issuer.example` |
-| Hostinger result directory | `/root/oauth2_server/oidf-matrix-e5bed92-v5.2.0` |
 | Suite version | `5.2.0` |
 | Suite commit | `dee9a25160e789f0f80517674693ef7989ab9fa1` |
 | Official workflow | [`oidf-conformance-full` run 29445723200](https://github.com/nazozero/NazoAuth/actions/runs/29445723200) |
@@ -70,14 +64,14 @@ explicitly unsupported because the FAPI-CIBA profile prohibits it.
 
 ## FAPI-CIBA Plan IDs
 
-| Profile | Hostinger local | Official |
-| --- | --- | --- |
-| `private_key_jwt` / poll | `SmKGkyROnSCwF` | [`hLo7pVeEdnw6v`](https://www.certification.openid.net/plan-detail.html?plan=hLo7pVeEdnw6v) |
-| mTLS / poll | `wdA0Ww8lolVVx` | [`tQ5AR14JGHGAy`](https://www.certification.openid.net/plan-detail.html?plan=tQ5AR14JGHGAy) |
-| `private_key_jwt` / ping | `ufsv0jX35Pyz9` | [`EqUEoOMoQQKTc`](https://www.certification.openid.net/plan-detail.html?plan=EqUEoOMoQQKTc) |
-| mTLS / ping | `PUVBIX13MnPUi` | [`anoFWADUcSCsy`](https://www.certification.openid.net/plan-detail.html?plan=anoFWADUcSCsy) |
-| Front-Channel Logout | `AHMUqtv8gmtIo` | [`ux2Ed93E8ksDV`](https://www.certification.openid.net/plan-detail.html?plan=ux2Ed93E8ksDV) |
-| Session Management | `D6XnFC13XWNM6` | [`RpKUiCWP3Zaso`](https://www.certification.openid.net/plan-detail.html?plan=RpKUiCWP3Zaso) |
+| Profile | Official |
+| --- | --- |
+| `private_key_jwt` / poll | [`hLo7pVeEdnw6v`](https://www.certification.openid.net/plan-detail.html?plan=hLo7pVeEdnw6v) |
+| mTLS / poll | [`tQ5AR14JGHGAy`](https://www.certification.openid.net/plan-detail.html?plan=tQ5AR14JGHGAy) |
+| `private_key_jwt` / ping | [`EqUEoOMoQQKTc`](https://www.certification.openid.net/plan-detail.html?plan=EqUEoOMoQQKTc) |
+| mTLS / ping | [`anoFWADUcSCsy`](https://www.certification.openid.net/plan-detail.html?plan=anoFWADUcSCsy) |
+| Front-Channel Logout | [`ux2Ed93E8ksDV`](https://www.certification.openid.net/plan-detail.html?plan=ux2Ed93E8ksDV) |
+| Session Management | [`RpKUiCWP3Zaso`](https://www.certification.openid.net/plan-detail.html?plan=RpKUiCWP3Zaso) |
 
 The remaining OIDC, FAPI2 Security, and FAPI2 Message Signing plans also
 completed in both 25-plan runs. Their exported archives are retained in the
@@ -96,12 +90,8 @@ or a missing expected record fails the workflow.
 
 The official callback ingress negotiated TLS 1.2 with the recommended
 BCP 195 cipher, so the companion suite condition
-`EnsureIncomingTls12WithSecureCipherOrTls13` passed. Direct verification
-showed that `www.certification.openid.net:443` rejected a TLS 1.3 ClientHello
-with a protocol-version alert while accepting TLS 1.2. The same NazoAuth
-runtime negotiated TLS 1.3 with the Hostinger local official-suite ingress;
-the local 25-plan run consequently reported zero warnings. NazoAuth's ping
-client offers TLS 1.3, permits TLS 1.2 as the FAPI-CIBA minimum, validates the
+`EnsureIncomingTls12WithSecureCipherOrTls13` passed. NazoAuth's ping client
+offers TLS 1.3, permits TLS 1.2 as the FAPI-CIBA minimum, validates the
 configured trust roots, rejects redirects, and fails closed.
 
 This is a bounded upstream-ingress observation, not a waiver for a NazoAuth

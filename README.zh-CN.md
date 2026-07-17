@@ -118,15 +118,15 @@ OpenID Foundation Conformance Suite 结果 URL：
 | 最新 25-plan 官方矩阵 | [docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md](docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md#oidc--fapi--fapi-ciba-官方公网矩阵) |
 | 已归档 21-plan 官方矩阵 | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
 | OIDF 矩阵范围 | [docs/conformance/oidf-full-matrix.zh-CN.md](docs/conformance/oidf-full-matrix.zh-CN.md) |
-| 已归档私有 full-matrix 回归 | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
+| 已归档诊断 full-matrix 回归 | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
 最新公网黑盒官方证据使用操作者提供的生产 issuer；公开仓库中的
 `https://issuer.example` 只是脱敏占位符。运行 workflow 的用户必须显式提供自己的
 `OIDF_TARGET_ISSUER` 与 `OPENID4VC_TARGET_ORIGIN`。该证据的 workflow head SHA 为
-`ae19cc50af4cc50f3f35f678a3a1c38332d475e2`。它在 GitHub Actions 中针对公网生产 origin 运行 25-plan OIDC/FAPI/FAPI-CIBA 矩阵与 17-plan OpenID4VC Final/HAIP 矩阵。本地 endpoint、私有 DNS、私有 CA 和本地套件地址不计入一致性证据。
+`ae19cc50af4cc50f3f35f678a3a1c38332d475e2`。它在 GitHub Actions 中针对公网生产 origin 运行 25-plan OIDC/FAPI/FAPI-CIBA 矩阵与 17-plan OpenID4VC Final/HAIP 矩阵。非公网 endpoint、私有 DNS、私有信任根和 suite-private 地址不计入一致性证据。
 25-plan OIDC/FAPI/FAPI-CIBA 矩阵采用 23+2 parallel-isolated 布局，导出 787 个模块：748 个通过、22 个模块带有官方入口 TLS 有界 warning、9 个预期 review 状态、8 个预期 unsigned 兼容 skip，没有失败模块或失败 condition。因此它不是 zero-SKIPPED 或 zero-WARNING 官方证据；具体 warning 上下文和上游入口边界记录在链接的证据文档中。
 
-已归档的私有 full-matrix 回归记录仍可用于调试，但不是当前一致性证据。
+已归档的诊断 full-matrix 回归记录仍可用于调试，但不是当前一致性证据。
 
 ## 功能
 
@@ -145,7 +145,7 @@ OpenID Foundation Conformance Suite 结果 URL：
 - `rust-toolchain.toml` 精确锁定的 Rust stable 版本
 - PostgreSQL 18 或兼容版本
 - Valkey 8 或兼容 Redis protocol 的服务
-- Docker 或 Podman
+- 可选集成栈所需的容器运行时
 
 用 Docker Compose 启动：
 
@@ -255,7 +255,7 @@ python scripts/full_real_request_e2e.py
 python scripts/full_real_request_load.py
 ```
 
-Windows coverage 见
+Coverage 运行说明见
 [docs/coverage/codecov-docker-runbook.md](docs/coverage/codecov-docker-runbook.md)。
 
 ## 许可证

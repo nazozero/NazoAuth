@@ -103,7 +103,5 @@ only the 26 exact `EnsureIncomingTls13` warning contexts in
 [`oidf-official-expected-warnings.json`](../../tests/contracts/oidf-official-expected-warnings.json).
 Every record is bound to a configuration, full variant, module, block,
 condition, and result. Unexpected warnings and missing expected records both
-fail the workflow. The companion secure-TLS-1.2-or-TLS-1.3 condition passes,
-and the Hostinger local suite negotiates TLS 1.3 with the same NazoAuth runtime
-and produces zero warnings. See the linked evidence record for the measured
-boundary and artifact digests.
+fail the workflow. The companion secure-TLS-1.2-or-TLS-1.3 condition passes.
+See the linked evidence record for the measured boundary and artifact digests.
