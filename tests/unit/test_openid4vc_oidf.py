@@ -333,6 +333,47 @@ class Openid4vcOidfTests(unittest.TestCase):
                 "https://issuer.example",
             )
 
+    def test_openid4vc_plan_config_writer_does_not_require_oidc_discovery_url(self):
+        module = load("run_oidf_conformance.py")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite_scripts = root / "suite" / "scripts"
+            suite_scripts.mkdir(parents=True)
+            config_json = root / "configs.json"
+            config_json.write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            "openid4vc-vci-sd-wallet-plain.json": {
+                                "alias": "openid4vc-vci-sd-wallet-plain",
+                                "vci": {
+                                    "credential_issuer_url": "https://issuer.example",
+                                    "client_attester_issuer": "https://client-attester.example.org",
+                                },
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            written, aliases = module.write_plan_configs(
+                suite_scripts,
+                "ignored.json",
+                "OPENID4VC_CONFIGS",
+                str(config_json),
+                "https://issuer.example",
+            )
+
+        self.assertEqual(written, {"openid4vc-vci-sd-wallet-plain.json"})
+        self.assertEqual(
+            aliases,
+            {
+                "openid4vc-vci-sd-wallet-plain.json": "openid4vc-vci-sd-wallet-plain"
+            },
+        )
+
     def test_verifier_driver_emits_format_specific_dcql_meta(self):
         module = load("run_openid4vc_conformance.py")
         driver = module.Openid4vcDriver(

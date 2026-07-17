@@ -426,6 +426,10 @@ def assert_only_target_issuer_urls(value: object, config_name: str, target_issue
 OPENID4VC_LOCAL_TARGET_HOSTS = {"localhost", "127.0.0.1", "::1", "nginx", "host.docker.internal"}
 
 
+def is_openid4vc_config(config_name: str) -> bool:
+    return config_name.startswith("openid4vc-")
+
+
 def http_urls_in_value(value: object) -> list[str]:
     urls: list[str] = []
     if isinstance(value, list):
@@ -474,7 +478,7 @@ def assert_config_target_boundaries(
     config_name: str,
     target_issuer: str,
 ) -> None:
-    if config_name.startswith("openid4vc-"):
+    if is_openid4vc_config(config_name):
         assert_openid4vc_target_boundaries(value, config_name, target_issuer)
     else:
         assert_only_target_issuer_urls(value, config_name, target_issuer)
@@ -1013,7 +1017,8 @@ def write_plan_configs(
     if configs is None:
         if target_issuer:
             assert_config_target_boundaries(parsed, file_name, target_issuer)
-        add_nazo_browser_overrides(parsed)
+        if not is_openid4vc_config(file_name):
+            add_nazo_browser_overrides(parsed)
         if target_issuer:
             assert_config_target_boundaries(parsed, file_name, target_issuer)
         validate_browser_automation(file_name, parsed)
@@ -1035,7 +1040,8 @@ def write_plan_configs(
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
         if target_issuer:
             assert_config_target_boundaries(config_value, config_name, target_issuer)
-        add_nazo_browser_overrides(config_value)
+        if not is_openid4vc_config(config_name):
+            add_nazo_browser_overrides(config_value)
         if target_issuer:
             assert_config_target_boundaries(config_value, config_name, target_issuer)
         validate_browser_automation(config_name, config_value)
