@@ -48,7 +48,7 @@ composite score:
 | Static security analysis | CodeQL Rust analysis with `security-extended` and `security-and-quality` queries. |
 | Dependency policy | GitHub dependency review, `cargo audit`, and `cargo deny` over advisories, bans, licenses, and sources. |
 | Runtime security behavior | Real HTTP E2E, load/race gate, and Valkey outage injection in `conformance-security`. |
-| Protocol conformance | Current 25-plan OIDF/FAPI workflow with local and official-suite evidence. |
+| Protocol conformance | Public black-box official-suite evidence for the current 25-plan OIDF/FAPI matrix and 17-plan OpenID4VC matrix. |
 | Coverage trend | Codecov LCOV upload from the dedicated coverage workflow. |
 | Release provenance | CycloneDX SBOM, Trivy image scan, Sigstore signing, and GitHub artifact attestations. |
 
@@ -133,25 +133,29 @@ OpenID Foundation Conformance Suite result URLs:
 | --- | --- |
 | OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
 | OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
-| Latest 25-plan official matrix | [docs/conformance/2026-07-15-fapi-ciba-mtls-ping-oidf-results.md](docs/conformance/2026-07-15-fapi-ciba-mtls-ping-oidf-results.md#fapi-ciba-plan-ids) |
+| Latest public black-box full OIDF evidence | [docs/conformance/2026-07-17-public-black-box-full-oidf-results.md](docs/conformance/2026-07-17-public-black-box-full-oidf-results.md) |
+| Latest 25-plan official matrix | [docs/conformance/2026-07-17-public-black-box-full-oidf-results.md](docs/conformance/2026-07-17-public-black-box-full-oidf-results.md#oidc--fapi--fapi-ciba-official-public-matrix) |
 | Archived 21-plan official matrix | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
 | Current 25-plan repository matrix | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | OpenID4VC Final/HAIP alpha regression matrix | [docs/conformance/openid4vc-final-matrix.md](docs/conformance/openid4vc-final-matrix.md) |
 | OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
-| Latest private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
+| Archived private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
-The latest official full matrix tested `https://auth.nazo.run` from workflow
-head SHA `8d2ec0ec3269b298918f4735a538ba76dd90e0b5`. It ran the 25-plan matrix in
+The latest public black-box official evidence tested `https://auth.nazo.run`
+from workflow head SHA `ae19cc50af4cc50f3f35f678a3a1c38332d475e2`. It ran the
+25-plan OIDC/FAPI/FAPI-CIBA matrix and the 17-plan OpenID4VC Final/HAIP matrix in
+GitHub Actions against the public production origin. Local endpoints, private
+DNS, private CAs, and `https://nginx:8443` are not accepted as conformance
+evidence. The 25-plan OIDC/FAPI/FAPI-CIBA matrix ran in
 the 23+2 parallel-isolated layout and exported 787 modules: 748 passed, 22
 modules with bounded official-ingress TLS warnings, 9 expected review states,
 8 expected unsigned-compatibility skips, and no failed module or condition.
-The matching Hostinger local run produced 770 passed modules and zero warnings
-or failures. It is therefore not zero-SKIPPED or zero-WARNING official
-evidence; the exact warning contexts and upstream ingress boundary are recorded
-in the linked evidence document.
+It is therefore not zero-SKIPPED or zero-WARNING official evidence; the exact
+warning contexts and upstream ingress boundary are recorded in the linked
+evidence document.
 
-The latest private full-matrix regression tested runtime commit `31e8f9f`, ran
-all 16 plans and 578 modules, and reported `0 failures` and `0 warnings`.
+Archived private full-matrix regression records remain useful for debugging, but
+they are not current conformance evidence.
 
 ## Features
 
