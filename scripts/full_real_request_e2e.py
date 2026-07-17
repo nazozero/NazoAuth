@@ -2013,36 +2013,10 @@ def exercise_fapi_http_signature_profile(admin: requests.Session) -> None:
         expected_status = int(parameters["expected_status"])
         target_uri = f"{target}?case={query}"
         authorization = f"DPoP {dpop_token}"
-        initial_proof = dpop_proof("GET", target_uri, dpop_key, access_token=dpop_token)
-        challenge_headers = fapi_http_signature_fields(
-            key,
-            kid,
-            "GET",
-            target_uri,
-            authorization,
-            dpop=initial_proof,
-        )
-        challenge = requests.get(
-            f"{signed_base}/fapi/resource?case={query}",
-            headers=challenge_headers,
-            timeout=10,
-        )
-        check("fapi_http_signature_dpop_nonce_challenge", challenge.status_code == 401)
-        nonce = challenge.headers.get("DPoP-Nonce")
-        check("fapi_http_signature_dpop_nonce_present", bool(nonce))
-        verify_fapi_http_signature_response(
-            challenge,
-            server_jwks,
-            method="GET",
-            target_uri=target_uri,
-            request_body=b"",
-            request_headers=challenge_headers,
-        )
         proof = dpop_proof(
             "GET",
             target_uri,
             dpop_key,
-            nonce=nonce,
             access_token=dpop_token,
         )
         response, headers, _ = signed_request(
@@ -2055,6 +2029,16 @@ def exercise_fapi_http_signature_profile(admin: requests.Session) -> None:
         )
         check("fapi_http_signature_dpop_is_covered", '"dpop"' in headers["Signature-Input"])
         check("fapi_http_signature_dpop_client_binding", expect_json(response).get("client_id") == dpop_client["client_id"])
+        replay = requests.get(
+            f"{signed_base}/fapi/resource?case={query}",
+            headers=headers,
+            timeout=10,
+        )
+        expect_status("GET /fapi/resource signed DPoP replay rejected", replay, 400)
+        check(
+            "fapi_http_signature_dpop_replay_invalid_dpop_proof",
+            expect_json(replay).get("error") == "invalid_dpop_proof",
+        )
 
     handlers = {
         "relative_created": handle_relative_created,
