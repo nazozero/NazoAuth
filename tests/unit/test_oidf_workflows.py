@@ -113,6 +113,8 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("parallel-isolated", workflow)
         self.assertIn("oidf-concurrent-plan-set.json", workflow)
         self.assertIn("oidf-ciba-plan-set.json", workflow)
+        self.assertIn("01-oidc-core.json", workflow)
+        self.assertIn("07-fapi-private-mtls.json", workflow)
         self.assertIn("oidf-frontchannel-plan-set.json", workflow)
         self.assertIn("oidf-session-management-plan-set.json", workflow)
 
@@ -193,9 +195,11 @@ class OidfWorkflowTests(unittest.TestCase):
             },
         )
         self.assertIn(
-            "--expected-failures-file tests/contracts/oidf-official-expected-warnings.json",
+            "--expected-failures-file \"$expected_warnings_file\"",
             workflow,
         )
+        self.assertIn("tests/contracts/oidf-official-expected-warnings.json", workflow)
+        self.assertIn('local expected_skips_file="$RUNNER_TEMP/${plan_set_file%.json}-expected-skips.json"', workflow)
 
         expected_warnings = json.loads(
             (root / "tests" / "contracts" / "oidf-official-expected-warnings.json").read_text(
@@ -224,8 +228,10 @@ class OidfWorkflowTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         parallel_case = workflow.split("parallel-isolated)", 1)[1].split(";;", 1)[0]
-        self.assertIn("run_oidf_plan_set oidf-concurrent-plan-set.json concurrent", parallel_case)
-        self.assertIn("run_oidf_plan_set oidf-ciba-plan-set.json ciba --no-parallel", parallel_case)
+        self.assertIn("run_oidf_plan_set 01-oidc-core.json 01-oidc-core", parallel_case)
+        self.assertIn("run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json 02-oidc-formpost-thirdparty-config", parallel_case)
+        self.assertIn("run_oidf_plan_set 03-fapi-ciba.json 03-fapi-ciba --no-parallel", parallel_case)
+        self.assertIn("run_oidf_plan_set 07-fapi-private-mtls.json 07-fapi-private-mtls", parallel_case)
         self.assertNotIn("oidf-browser-sensitive-plan-set.json", parallel_case)
 
         self.assertIn("oidf-conformance-browser-isolated:", workflow)

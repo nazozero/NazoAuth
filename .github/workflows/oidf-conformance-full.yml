@@ -121,6 +121,55 @@ jobs:
             "fapi-ciba-id1-test-plan[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=ping][client_registration=static_client] oidf-fapi-ciba-plain-mtls-ping-plan-config.json"
           ]
           JSON
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          plans = json.loads(Path("oidf-full-plan-set.json").read_text())
+
+          def matches(*needles):
+              return [
+                  plan
+                  for plan in plans
+                  if all(needle in plan for needle in needles)
+              ]
+
+          groups = {
+              "01-oidc-core.json": matches("oidcc-basic-certification-test-plan"),
+              "02-oidc-formpost-thirdparty-config.json": [
+                  *matches("oidcc-formpost-basic-certification-test-plan"),
+                  *matches("oidcc-3rdparty-init-login-certification-test-plan"),
+                  *matches("oidcc-config-certification-test-plan"),
+              ],
+              "03-fapi-ciba.json": matches("fapi-ciba-id1-test-plan"),
+              "04-fapi-message-and-mtls-dpop.json": [
+                  *matches("fapi2-message-signing-final-test-plan"),
+                  *matches("fapi2-security-profile-final-test-plan", "client_auth_type=mtls", "sender_constrain=dpop"),
+              ],
+              "05-fapi-mtls-mtls.json": matches(
+                  "fapi2-security-profile-final-test-plan",
+                  "client_auth_type=mtls",
+                  "sender_constrain=mtls",
+              ),
+              "06-fapi-private-dpop.json": matches(
+                  "fapi2-security-profile-final-test-plan",
+                  "client_auth_type=private_key_jwt",
+                  "sender_constrain=dpop",
+              ),
+              "07-fapi-private-mtls.json": matches(
+                  "fapi2-security-profile-final-test-plan",
+                  "client_auth_type=private_key_jwt",
+                  "sender_constrain=mtls",
+              ),
+              "08-frontchannel.json": matches("frontchannel-rp-initiated-logout"),
+              "09-session.json": matches("session-management-certification-test-plan"),
+          }
+          flattened = [plan for group in groups.values() for plan in group]
+          if sorted(flattened) != sorted(plans):
+              raise SystemExit("bounded OIDF plan groups do not exactly cover the full plan set")
+          for name, group in groups.items():
+              Path(name).write_text(json.dumps(group, indent=2) + "\n")
+          PY
           cat > oidf-frontchannel-plan-set.json <<'JSON'
           [
             "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json"
@@ -238,14 +287,33 @@ jobs:
             local plan_set_file="$1"
             local export_subdir="$2"
             shift 2
+            local expected_skips_file="$RUNNER_TEMP/${plan_set_file%.json}-expected-skips.json"
+            local expected_warnings_file="$RUNNER_TEMP/${plan_set_file%.json}-expected-warnings.json"
+
+            python - "$plan_set_file" oidf-expected-skips.json tests/contracts/oidf-official-expected-warnings.json "$expected_skips_file" "$expected_warnings_file" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          plan_set = json.loads(Path(sys.argv[1]).read_text())
+          configs = {plan.rsplit(" ", 1)[1] for plan in plan_set}
+          for source, target in ((sys.argv[2], sys.argv[4]), (sys.argv[3], sys.argv[5])):
+              records = json.loads(Path(source).read_text())
+              filtered = [
+                  record
+                  for record in records
+                  if record.get("configuration-filename") in configs
+              ]
+              Path(target).write_text(json.dumps(filtered, indent=2) + "\n")
+          PY
 
             local args=(
               --suite-dir oidf-conformance-suite
               --conformance-server "$CONFORMANCE_SERVER"
               --config-json-file oidf-plan-configs.json
               --plan-set-json-file "$plan_set_file"
-              --expected-failures-file tests/contracts/oidf-official-expected-warnings.json
-              --expected-skips-file oidf-expected-skips.json
+              --expected-failures-file "$expected_warnings_file"
+              --expected-skips-file "$expected_skips_file"
               --target-issuer "$OIDF_TARGET_ISSUER"
               --timeout-seconds "$RUN_TIMEOUT_SECONDS"
               --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
@@ -276,8 +344,13 @@ jobs:
               run_oidf_plan_set oidf-full-plan-set.json "" "${serial_args[@]}"
               ;;
             parallel-isolated)
-              run_oidf_plan_set oidf-concurrent-plan-set.json concurrent
-              run_oidf_plan_set oidf-ciba-plan-set.json ciba --no-parallel
+              run_oidf_plan_set 01-oidc-core.json 01-oidc-core
+              run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json 02-oidc-formpost-thirdparty-config
+              run_oidf_plan_set 03-fapi-ciba.json 03-fapi-ciba --no-parallel
+              run_oidf_plan_set 04-fapi-message-and-mtls-dpop.json 04-fapi-message-and-mtls-dpop
+              run_oidf_plan_set 05-fapi-mtls-mtls.json 05-fapi-mtls-mtls
+              run_oidf_plan_set 06-fapi-private-dpop.json 06-fapi-private-dpop
+              run_oidf_plan_set 07-fapi-private-mtls.json 07-fapi-private-mtls
               ;;
             *)
               echo "Unsupported RUNNER_MODE: $RUNNER_MODE" >&2

@@ -232,6 +232,44 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
                 ["native_sso_supported"],
             )
 
+    def test_bounded_parallel_groups_cover_the_full_matrix_once(self):
+        module = load_setup_module()
+        configs = {
+            "oidf-oidcc-basic-plan-config.json": module.write_basic_plan_config(),
+            "oidf-oidcc-dynamic-plan-config.json": module.write_dynamic_plan_config(),
+            "oidf-oidcc-formpost-plan-config.json": module.write_formpost_plan_config(),
+            "oidf-oidcc-third-party-init-plan-config.json": module.write_third_party_init_plan_config(),
+            "oidf-oidcc-config-plan-config.json": module.write_oidcc_config_plan_config(),
+            "oidf-oidcc-frontchannel-logout-plan-config.json": module.write_frontchannel_logout_plan_config(),
+            "oidf-oidcc-session-management-plan-config.json": module.write_session_management_plan_config(),
+        }
+        configs.update(module.write_fapi_ciba_plan_config())
+        configs.update(module.write_fapi_matrix_plan_configs())
+        plan_set = module.plan_expressions_for_configs(configs)
+
+        groups = module.bounded_parallel_plan_groups(plan_set)
+
+        self.assertEqual(
+            list(groups),
+            [
+                "01-oidc-core.json",
+                "02-oidc-formpost-thirdparty-config.json",
+                "03-fapi-ciba.json",
+                "04-fapi-message-and-mtls-dpop.json",
+                "05-fapi-mtls-mtls.json",
+                "06-fapi-private-dpop.json",
+                "07-fapi-private-mtls.json",
+                "08-frontchannel.json",
+                "09-session.json",
+            ],
+        )
+        flattened = [plan for group in groups.values() for plan in group]
+        self.assertEqual(len(flattened), 25)
+        self.assertEqual(sorted(flattened), sorted(plan_set))
+        self.assertEqual(len(groups["03-fapi-ciba.json"]), 4)
+        self.assertEqual(len(groups["08-frontchannel.json"]), 1)
+        self.assertEqual(len(groups["09-session.json"]), 1)
+
     def test_help_exits_before_generating_runtime_files(self):
         module = load_setup_module()
 

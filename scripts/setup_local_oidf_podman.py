@@ -1528,6 +1528,8 @@ def write_all_plan_configs() -> None:
         json.dumps(session, indent=2) + "\n",
         0o600,
     )
+    for file_name, group in bounded_parallel_plan_groups(plan_set).items():
+        write_text(RUNTIME / file_name, json.dumps(group, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "oidf-plan-set-manifest.json", json.dumps(plan_manifest, indent=2) + "\n", 0o600)
     write_text(
         RUNTIME / "oidf-local.env",
@@ -1673,6 +1675,46 @@ def partition_plan_expressions(
         expression for expression in expressions if expression not in isolated
     ]
     return concurrent, ciba, frontchannel, session
+
+
+def bounded_parallel_plan_groups(expressions: list[str]) -> dict[str, list[str]]:
+    def matches(*needles: str) -> list[str]:
+        return [
+            expression
+            for expression in expressions
+            if all(needle in expression for needle in needles)
+        ]
+
+    return {
+        "01-oidc-core.json": matches("oidcc-basic-certification-test-plan"),
+        "02-oidc-formpost-thirdparty-config.json": [
+            *matches("oidcc-formpost-basic-certification-test-plan"),
+            *matches("oidcc-3rdparty-init-login-certification-test-plan"),
+            *matches("oidcc-config-certification-test-plan"),
+        ],
+        "03-fapi-ciba.json": matches("fapi-ciba-id1-test-plan"),
+        "04-fapi-message-and-mtls-dpop.json": [
+            *matches("fapi2-message-signing-final-test-plan"),
+            *matches("fapi2-security-profile-final-test-plan", "client_auth_type=mtls", "sender_constrain=dpop"),
+        ],
+        "05-fapi-mtls-mtls.json": matches(
+            "fapi2-security-profile-final-test-plan",
+            "client_auth_type=mtls",
+            "sender_constrain=mtls",
+        ),
+        "06-fapi-private-dpop.json": matches(
+            "fapi2-security-profile-final-test-plan",
+            "client_auth_type=private_key_jwt",
+            "sender_constrain=dpop",
+        ),
+        "07-fapi-private-mtls.json": matches(
+            "fapi2-security-profile-final-test-plan",
+            "client_auth_type=private_key_jwt",
+            "sender_constrain=mtls",
+        ),
+        "08-frontchannel.json": matches("frontchannel-rp-initiated-logout"),
+        "09-session.json": matches("session-management-certification-test-plan"),
+    }
 
 
 def plan_manifest_for_expressions(
