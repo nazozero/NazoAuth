@@ -357,7 +357,7 @@ def check_removed_security_capabilities() -> None:
         "RFC 8707",
         "RFC 6750",
         "RFC 8314",
-        "Not implemented by security policy",
+        "Never supported by security policy",
     )
     missing = [item for item in required_policy_evidence if item not in policy]
     if missing:

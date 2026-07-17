@@ -248,11 +248,11 @@ These capabilities must not become default behavior:
 | Implicit grant | Forbidden | Superseded by authorization code + PKCE; increases token exposure. |
 | Resource owner password credentials grant | Forbidden | Contradicts modern delegation and phishing-resistant architecture. |
 | Plain PKCE | Compatibility-only if ever needed | S256 is the secure default and FAPI requirement. |
-| Authorization code without PKCE | Not implemented by security policy | RFC 9700 and the OAuth 2.1 direction justify one S256 invariant for every client type. |
-| Unsigned request object | Not implemented by security policy | RFC 9101 requires Request Objects to be signed or signed and encrypted. |
-| External client-supplied `request_uri` | Not implemented by security policy | Optional RFC 9101 remote fetching adds SSRF/cache/lifecycle obligations; server-issued RFC 9126 PAR handles remain supported. |
-| Legacy `audience` outside RFC 8693 Token Exchange | Not implemented by security policy | RFC 8707 repeatable URI-valued `resource` is the authorization/token target parameter. |
-| Global environment-backed SCIM bearer | Not implemented by security policy | It cannot provide scoped, expiring, revocable, receiver-bound, auditable credential identity. |
+| Authorization code without PKCE | Never supported by security policy | RFC 9700 and the OAuth 2.1 direction justify one S256 invariant for every client type. |
+| Unsigned request object | Never supported by security policy | RFC 9101 requires Request Objects to be signed or signed and encrypted. |
+| External client-supplied `request_uri` | Never supported by security policy | Optional RFC 9101 remote fetching adds SSRF/cache/lifecycle obligations; server-issued RFC 9126 PAR handles remain supported. |
+| Legacy `audience` outside RFC 8693 Token Exchange | Never supported by security policy | RFC 8707 repeatable URI-valued `resource` is the authorization/token target parameter. |
+| Global environment-backed SCIM bearer | Never supported by security policy | It cannot provide scoped, expiring, revocable, receiver-bound, auditable credential identity. |
 | Bearer access token for FAPI clients requiring sender constraints | Forbidden | Violates FAPI sender-constraint boundary. |
 | Token request resource expansion beyond authorization grant | Forbidden | Breaks resource/audience authorization binding. |
 | Metadata overclaiming | Forbidden | Creates false client assumptions and security downgrade risk. |
