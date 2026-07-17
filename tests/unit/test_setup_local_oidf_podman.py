@@ -286,7 +286,10 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
             [
                 "01-oidc-core.json",
                 "02-oidc-formpost-thirdparty-config.json",
-                "03-fapi-ciba.json",
+                "03a-fapi-ciba-private-key-jwt-poll.json",
+                "03b-fapi-ciba-mtls-poll.json",
+                "03c-fapi-ciba-private-key-jwt-ping.json",
+                "03d-fapi-ciba-mtls-ping.json",
                 "04-fapi-message-and-mtls-dpop.json",
                 "05-fapi-mtls-mtls.json",
                 "06-fapi-private-dpop.json",
@@ -298,7 +301,10 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         flattened = [plan for group in groups.values() for plan in group]
         self.assertEqual(len(flattened), 25)
         self.assertEqual(sorted(flattened), sorted(plan_set))
-        self.assertEqual(len(groups["03-fapi-ciba.json"]), 4)
+        self.assertEqual(len(groups["03a-fapi-ciba-private-key-jwt-poll.json"]), 1)
+        self.assertEqual(len(groups["03b-fapi-ciba-mtls-poll.json"]), 1)
+        self.assertEqual(len(groups["03c-fapi-ciba-private-key-jwt-ping.json"]), 1)
+        self.assertEqual(len(groups["03d-fapi-ciba-mtls-ping.json"]), 1)
         self.assertEqual(len(groups["08-frontchannel.json"]), 1)
         self.assertEqual(len(groups["09-session.json"]), 1)
 

@@ -1704,7 +1704,26 @@ def bounded_parallel_plan_groups(expressions: list[str]) -> dict[str, list[str]]
             *matches("oidcc-3rdparty-init-login-certification-test-plan"),
             *matches("oidcc-config-certification-test-plan"),
         ],
-        "03-fapi-ciba.json": matches("fapi-ciba-id1-test-plan"),
+        "03a-fapi-ciba-private-key-jwt-poll.json": matches(
+            "fapi-ciba-id1-test-plan",
+            "client_auth_type=private_key_jwt",
+            "ciba_mode=poll",
+        ),
+        "03b-fapi-ciba-mtls-poll.json": matches(
+            "fapi-ciba-id1-test-plan",
+            "client_auth_type=mtls",
+            "ciba_mode=poll",
+        ),
+        "03c-fapi-ciba-private-key-jwt-ping.json": matches(
+            "fapi-ciba-id1-test-plan",
+            "client_auth_type=private_key_jwt",
+            "ciba_mode=ping",
+        ),
+        "03d-fapi-ciba-mtls-ping.json": matches(
+            "fapi-ciba-id1-test-plan",
+            "client_auth_type=mtls",
+            "ciba_mode=ping",
+        ),
         "04-fapi-message-and-mtls-dpop.json": [
             *matches("fapi2-message-signing-final-test-plan"),
             *matches("fapi2-security-profile-final-test-plan", "client_auth_type=mtls", "sender_constrain=dpop"),
