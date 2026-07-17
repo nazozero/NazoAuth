@@ -53,7 +53,7 @@ conditions:
    defaults, and project-specific hardening are not conflated.
 4. Every sender-constrained-token, issuer, audience, redirect, replay, key,
    JWT, PAR/JAR/JARM, DPoP, mTLS, refresh-token, consent, and metadata rule has
-   negative tests, not only happy-path tests.
+   happy-path tests and negative tests.
 5. Compatibility exceptions are per-client and per-profile, are never global
    defaults, and cannot apply to FAPI or sender-constrained clients.
 6. Deferred standards are invisible in discovery metadata until their full
@@ -272,7 +272,7 @@ These capabilities must not become default behavior:
 | P1 | OAuth Security BCP delta audit | `draft-ietf-oauth-security-topics-update-03` may update the RFC 9700 baseline. | Requirement-by-requirement delta audit, metadata consequences, negative tests, and regression evidence before changing any public claim. |
 | P1 | JWT BCP and JWT assertion bis audits | `draft-ietf-oauth-rfc8725bis-06` and `draft-ietf-oauth-rfc7523bis-11` are the current successors for JWT best practice and assertion/client-auth profiles. | Update alg/key/confusion/replay/audience tests before adopting any new metadata or client-auth behavior. |
 | P1 | Browser and cross-device BCP final audits | Browser-based apps and cross-device flows are both in the RFC Editor queue. | Re-audit browser clients, Device Grant, CIBA, Native SSO, and hosted UI flows after RFC publication. |
-| P1 | FAPI precision regression pack | FAPI profile is not only PAR+PKCE+sender constraints; it has precise timing, redirect, JWT/JWKS, and authorization-endpoint restrictions. | Keep code lifetime, PAR lifetime, PAR `redirect_uri`, outer parameter restriction, 303 redirect, JWT skew, duplicate `kid`, client auth, sender constraint, and non-PAR rejection tests green. |
+| P1 | FAPI precision regression pack | FAPI profile includes more than PAR, PKCE, and sender constraints; it also defines precise timing, redirect, JWT/JWKS, and authorization-endpoint restrictions. | Keep code lifetime, PAR lifetime, PAR `redirect_uri`, outer parameter restriction, 303 redirect, JWT skew, duplicate `kid`, client auth, sender constraint, and non-PAR rejection tests green. |
 | P2 | Refresh-token and authorization-expiration metadata | `draft-ietf-oauth-refresh-token-expiration-03` can improve client visibility into authorization lifetime. | Add explicit state model, rotation/revocation semantics, metadata, and E2E tests before advertising. |
 | P2 | First-party app and client-id metadata profiles | First-party deployments and public-client metadata bootstrap may be useful but can blur client trust boundaries. | Define same-party/BFF boundaries, issuer/client metadata trust, downgrade behavior, and discovery truth tests. |
 | P2 | SPIFFE client authentication | Useful only for workload identity deployments with a SPIFFE trust domain. | Add workload identity policy, trust bundle validation, token binding, replay tests, and metadata isolation. |
@@ -290,7 +290,7 @@ These capabilities must not become default behavior:
 Every new OAuth/OIDC/FAPI feature must pass this gate before README metadata or
 discovery metadata claims are updated:
 
-1. Define the exact profile, not just the RFC name.
+1. Define the exact profile, including version and variant.
 2. Identify whether the feature changes grant issuance, client authentication,
    redirect handling, token format, token audience, replay state, key use,
    consent, metadata, or resource-server behavior.

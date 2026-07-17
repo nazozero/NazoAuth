@@ -4,17 +4,9 @@
 
 本目录保存 OpenID Foundation Conformance Suite 的长期证据索引。GitHub Actions artifact 会过期，因此仓库内记录保留 run metadata、plan ID、artifact digest 和被测试 commit SHA。
 
-## 当前认证状态
-
-Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
-
-- [Certified OpenID Provider profiles](https://openid.net/certification/certified-openid-providers-profiles/)
-- [Certified FAPI 2.0 OP Security Profile Final and Message Signing Final](https://openid.net/certification/certified-fapi-2-0-op-security-profile-final-message-signing-final/)
-
-认证部署名为 `Nazo Auth Server 0.1.0`，日期为 `09-Jun-2026`。
-
 ## 当前证据
 
+- 认证与一致性入口：[认证与一致性证据](certification.zh-CN.md)
 - 认证基线：[2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - 矩阵范围说明：[OIDF 完整矩阵](oidf-full-matrix.zh-CN.md)
 - 已归档诊断 full-matrix 回归：[2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)

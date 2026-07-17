@@ -21,6 +21,7 @@ set can be scanned from one place.
 | OpenID Connect integration | [integration/openid-connect.md](integration/openid-connect.md) |
 | Chinese OpenID Connect integration | [integration/openid-connect.zh-CN.md](integration/openid-connect.zh-CN.md) |
 | Protocol and profile status | [protocol/profile-matrix.md](protocol/profile-matrix.md) |
+| Certification and conformance evidence | [conformance/certification.md](conformance/certification.md) |
 | OIDF conformance evidence | [conformance/README.md](conformance/README.md) |
 | Performance benchmark overview | [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) |
 
@@ -107,6 +108,8 @@ set can be scanned from one place.
 | --- | --- |
 | [conformance/README.md](conformance/README.md) | English conformance record index and update rules. |
 | [conformance/README.zh-CN.md](conformance/README.zh-CN.md) | Chinese conformance record index. |
+| [conformance/certification.md](conformance/certification.md) | Certification and current public black-box evidence entry point. |
+| [conformance/certification.zh-CN.md](conformance/certification.zh-CN.md) | Chinese certification and current public black-box evidence entry point. |
 | [conformance/oidf-full-matrix.md](conformance/oidf-full-matrix.md) | OIDF full-matrix scope. |
 | [conformance/oidf-full-matrix.zh-CN.md](conformance/oidf-full-matrix.zh-CN.md) | Chinese OIDF full-matrix scope. |
 | [conformance/negative-fixtures.md](conformance/negative-fixtures.md) | Negative conformance fixture notes. |
