@@ -118,9 +118,9 @@ conformance claims for this project must be based on public black-box runs again
 an explicitly configured production issuer using the same externally reachable
 issuer, redirect surfaces, callback paths, TLS configuration, and
 client-visible metadata that a real deployment exposes. Public workflow users
-must supply their own `OIDF_TARGET_ISSUER` and `OPENID4VC_TARGET_ORIGIN`; the
-repository must not route conformance traffic to any repository-owned service by
-default.
+must supply their own `target_issuer` / `target_origin` workflow inputs, or
+configure private automation variables in their own repository. The repository
+must not route conformance traffic to any repository-owned service by default.
 
 If a future run requires non-public endpoints, private trust roots, or
 suite-only callbacks to pass, that run is not production-equivalent evidence

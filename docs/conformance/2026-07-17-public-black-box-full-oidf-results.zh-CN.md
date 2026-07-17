@@ -109,8 +109,8 @@ Artifact:
 本记录刻意不把诊断套件运行作为通过证据。诊断运行可以用于调试，但本项目
 的一致性声明必须基于针对显式配置生产 issuer 的公网黑盒运行，并使用真实对外可达
 的 issuer、redirect surface、callback path、TLS 配置和客户端可见 metadata。
-运行公开 workflow 的用户必须提供自己的 `OIDF_TARGET_ISSUER` 与
-`OPENID4VC_TARGET_ORIGIN`；仓库不得默认把一致性流量导向任何仓库自有服务。
+运行公开 workflow 的用户必须提供自己的 `target_issuer` / `target_origin`
+workflow 输入，或在自己的仓库中配置私有自动化变量；仓库不得默认把一致性流量导向任何仓库自有服务。
 
 如果后续某次运行需要非公网 endpoint、私有信任根或 suite-only callback 才能通过，
 那次运行不是生产等价证据，不能用于声明 OIDF conformance。

@@ -25,7 +25,7 @@ OpenID Foundation 认证页面列出了 `Nazo Auth Server 0.1.0`，日期为
 [2026-07-17 公网黑盒 OIDF 全矩阵结果](2026-07-17-public-black-box-full-oidf-results.zh-CN.md)。
 运行目标是操作者提供的生产 HTTPS issuer。公开文档中的
 `https://issuer.example` 只是脱敏占位符。仓库 workflow 要求操作者提供自己的公网可达
-`OIDF_TARGET_ISSUER` 与 `OPENID4VC_TARGET_ORIGIN`。
+`target_issuer` / `target_origin` workflow 输入，或在自己的仓库中配置私有自动化变量。
 
 | 矩阵 | 结果 | 范围 |
 | --- | --- | --- |

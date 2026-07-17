@@ -555,6 +555,8 @@ def check_openid4vc_boundaries() -> None:
     for marker in (
         "dee9a25160e789f0f80517674693ef7989ab9fa1",
         "run_openid4vc_conformance.py",
+        "target_origin",
+        "${{ inputs.target_origin || vars.OPENID4VC_TARGET_ORIGIN }}",
         "openid4vc-plan-set.json",
         "openid4vc-expected-skips.json",
         "openid4vc-expected-warnings.json",
