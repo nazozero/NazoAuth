@@ -131,6 +131,8 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("oidf-concurrent-plan-set.json", workflow)
         self.assertIn("oidf-ciba-plan-set.json", workflow)
         self.assertIn("01-oidc-core.json", workflow)
+        self.assertIn("03a-fapi-ciba-private-key-jwt-poll.json", workflow)
+        self.assertIn("03d-fapi-ciba-mtls-ping.json", workflow)
         self.assertIn("07-fapi-private-mtls.json", workflow)
         self.assertIn("oidf-frontchannel-plan-set.json", workflow)
         self.assertIn("oidf-session-management-plan-set.json", workflow)
@@ -247,7 +249,23 @@ class OidfWorkflowTests(unittest.TestCase):
         parallel_case = workflow.split("parallel-isolated)", 1)[1].split(";;", 1)[0]
         self.assertIn("run_oidf_plan_set 01-oidc-core.json 01-oidc-core", parallel_case)
         self.assertIn("run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json 02-oidc-formpost-thirdparty-config", parallel_case)
-        self.assertIn("run_oidf_plan_set 03-fapi-ciba.json 03-fapi-ciba --no-parallel", parallel_case)
+        self.assertIn(
+            "run_oidf_plan_set 03a-fapi-ciba-private-key-jwt-poll.json 03a-fapi-ciba-private-key-jwt-poll --no-parallel",
+            parallel_case,
+        )
+        self.assertIn(
+            "run_oidf_plan_set 03b-fapi-ciba-mtls-poll.json 03b-fapi-ciba-mtls-poll --no-parallel",
+            parallel_case,
+        )
+        self.assertIn(
+            "run_oidf_plan_set 03c-fapi-ciba-private-key-jwt-ping.json 03c-fapi-ciba-private-key-jwt-ping --no-parallel",
+            parallel_case,
+        )
+        self.assertIn(
+            "run_oidf_plan_set 03d-fapi-ciba-mtls-ping.json 03d-fapi-ciba-mtls-ping --no-parallel",
+            parallel_case,
+        )
+        self.assertNotIn("run_oidf_plan_set 03-fapi-ciba.json", parallel_case)
         self.assertIn("run_oidf_plan_set 07-fapi-private-mtls.json 07-fapi-private-mtls", parallel_case)
         self.assertNotIn("oidf-browser-sensitive-plan-set.json", parallel_case)
 

@@ -145,7 +145,26 @@ jobs:
                   *matches("oidcc-3rdparty-init-login-certification-test-plan"),
                   *matches("oidcc-config-certification-test-plan"),
               ],
-              "03-fapi-ciba.json": matches("fapi-ciba-id1-test-plan"),
+              "03a-fapi-ciba-private-key-jwt-poll.json": matches(
+                  "fapi-ciba-id1-test-plan",
+                  "client_auth_type=private_key_jwt",
+                  "ciba_mode=poll",
+              ),
+              "03b-fapi-ciba-mtls-poll.json": matches(
+                  "fapi-ciba-id1-test-plan",
+                  "client_auth_type=mtls",
+                  "ciba_mode=poll",
+              ),
+              "03c-fapi-ciba-private-key-jwt-ping.json": matches(
+                  "fapi-ciba-id1-test-plan",
+                  "client_auth_type=private_key_jwt",
+                  "ciba_mode=ping",
+              ),
+              "03d-fapi-ciba-mtls-ping.json": matches(
+                  "fapi-ciba-id1-test-plan",
+                  "client_auth_type=mtls",
+                  "ciba_mode=ping",
+              ),
               "04-fapi-message-and-mtls-dpop.json": [
                   *matches("fapi2-message-signing-final-test-plan"),
                   *matches("fapi2-security-profile-final-test-plan", "client_auth_type=mtls", "sender_constrain=dpop"),
@@ -351,7 +370,10 @@ jobs:
             parallel-isolated)
               run_oidf_plan_set 01-oidc-core.json 01-oidc-core
               run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json 02-oidc-formpost-thirdparty-config
-              run_oidf_plan_set 03-fapi-ciba.json 03-fapi-ciba --no-parallel
+              run_oidf_plan_set 03a-fapi-ciba-private-key-jwt-poll.json 03a-fapi-ciba-private-key-jwt-poll --no-parallel
+              run_oidf_plan_set 03b-fapi-ciba-mtls-poll.json 03b-fapi-ciba-mtls-poll --no-parallel
+              run_oidf_plan_set 03c-fapi-ciba-private-key-jwt-ping.json 03c-fapi-ciba-private-key-jwt-ping --no-parallel
+              run_oidf_plan_set 03d-fapi-ciba-mtls-ping.json 03d-fapi-ciba-mtls-ping --no-parallel
               run_oidf_plan_set 04-fapi-message-and-mtls-dpop.json 04-fapi-message-and-mtls-dpop
               run_oidf_plan_set 05-fapi-mtls-mtls.json 05-fapi-mtls-mtls
               run_oidf_plan_set 06-fapi-private-dpop.json 06-fapi-private-dpop
