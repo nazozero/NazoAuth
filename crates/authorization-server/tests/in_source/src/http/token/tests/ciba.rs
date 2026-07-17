@@ -881,7 +881,7 @@ fn ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant() {
 }
 
 #[actix_web::test]
-async fn ciba_token_request_reports_pending_state_before_mtls_binding() {
+async fn ciba_token_request_requires_mtls_binding_before_pending_state() {
     let Some(valkey) = live_test_valkey().await else {
         return;
     };
@@ -903,7 +903,7 @@ async fn ciba_token_request_reports_pending_state_before_mtls_binding() {
             .extensions()
             .get::<OAuthJsonErrorFields>()
             .map(|fields| fields.error.as_str()),
-        Some("authorization_pending")
+        Some("invalid_grant")
     );
 }
 

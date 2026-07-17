@@ -907,6 +907,7 @@ if "\x00" in source:
     raise SystemExit(f"{config_path} contains a NUL byte")
 
 ca_paths: list[str] = []
+verify_client_modes: list[str] = []
 verify_sources: list[str] = []
 certificate_sources: list[str] = []
 try:
@@ -920,6 +921,10 @@ try:
             if len(directive) != 2:
                 raise ConfigError("ssl_client_certificate must have exactly one argument")
             ca_paths.append(directive[1])
+        if name == "ssl_verify_client":
+            if len(directive) != 2:
+                raise ConfigError("ssl_verify_client must have exactly one argument")
+            verify_client_modes.append(directive[1])
         if name == "proxy_set_header" and len(directive) >= 2:
             header = directive[1].lower()
             if header == "x-ssl-client-verify":
@@ -936,6 +941,10 @@ except ConfigError as error:
 if not ca_paths or any(path != target_path for path in ca_paths):
     raise SystemExit(
         f"ssl_client_certificate must exclusively reference {target_path}"
+    )
+if verify_client_modes != ["optional"]:
+    raise SystemExit(
+        "ssl_verify_client must be exactly optional for verified public mTLS"
     )
 if verify_sources != ["`$ssl_client_verify"]:
     raise SystemExit(
