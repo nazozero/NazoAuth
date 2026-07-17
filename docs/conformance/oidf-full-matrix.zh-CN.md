@@ -50,7 +50,7 @@
 - `private_key_jwt / DPoP / OpenID Connect / authorization code` 是 TP/PS 改动面的主要单 plan；完整回归以 25-plan 矩阵为准。
 - `OIDC Front-Channel Logout OP` 覆盖 NI-008。
 - `OIDC Session Management OP` 覆盖 NI-009。
-- 四个 FAPI-CIBA plans 覆盖 `private_key_jwt | mTLS` × `poll | ping` 的正交组合。[FAPI-CIBA profile](https://openid.net/specs/openid-financial-api-ciba.html) 只支持 poll 与 ping，因此 push mode 不属于受支持的 FAPI-CIBA profile，并且永不支持。
+- 四个 FAPI-CIBA plans 覆盖 `private_key_jwt / mTLS` × `poll / ping` 的正交组合。[FAPI-CIBA profile](https://openid.net/specs/openid-financial-api-ciba.html) 只支持 poll 与 ping，因此 push mode 不属于受支持的 FAPI-CIBA profile，并且永不支持。
 - NI-006 未发现 RFC 7523 third-party JWT bearer grant 专项官方 plan；现有覆盖来自 OIDC/FAPI 中的 client assertion 场景和仓库 RFC 7523 tests。
 - NI-010 跟踪 [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html) 与 [OpenID Federation for OpenID Connect 1.1](https://openid.net/specs/openid-federation-connect-1_1.html)。这两份规范定义的是包含 Entity Statement、Trust Anchor、metadata policy、Trust Mark 和 Federation endpoints 的 federation trust-chain 生态。Federation 当前是**不支持（待实现）**：不宣告、没有 `/.well-known/openid-federation`，在独立 trust-chain 实现完成前，Federation plans 不纳入必跑矩阵。
 - NI-011 未发现 Native SSO / `device_secret` 官方 OP plan；保留仓库级 device-secret lifecycle、`ds_hash` 绑定、token exchange 与 refresh-family tests。
