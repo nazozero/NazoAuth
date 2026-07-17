@@ -22,7 +22,36 @@ def load_setup_module():
     return module
 
 
+def load_setup_module_with_suite_base(suite_base_url: str):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "setup_local_oidf_podman.py"
+    spec = importlib.util.spec_from_file_location("setup_local_oidf_podman", script)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    with mock.patch.dict(
+        "os.environ",
+        {
+            "OIDF_TARGET_ISSUER": "https://issuer.example",
+            "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
+            "OIDF_SUITE_BASE_URL": suite_base_url,
+        },
+        clear=False,
+    ):
+        spec.loader.exec_module(module)
+    return module
+
+
 class SetupLocalOidfPodmanTests(unittest.TestCase):
+    def test_suite_base_must_be_public_dns_not_local_or_raw_ip(self):
+        for suite_base_url in (
+            "https://127.0.0.1:8443",
+            "https://192.0.2.10:8443",
+            "https://localhost:8443",
+            "https://suite.local",
+        ):
+            with self.subTest(suite_base_url=suite_base_url):
+                with self.assertRaisesRegex(RuntimeError, "public DNS hostname"):
+                    load_setup_module_with_suite_base(suite_base_url)
+
     def test_every_callback_completion_wait_has_a_thirty_second_floor(self):
         module = load_setup_module()
 
