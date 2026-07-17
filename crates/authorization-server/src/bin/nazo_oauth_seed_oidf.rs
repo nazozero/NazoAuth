@@ -21,6 +21,8 @@ use sha2::Sha256;
 use std::{collections::BTreeSet, env, path::Path};
 type HmacSha256 = Hmac<Sha256>;
 
+const DEFAULT_OIDF_BASIC_ALIAS: &str = "nazo-oauth-oidf";
+
 #[derive(Clone, Copy, Debug)]
 struct FapiClientPolicy {
     auth_method: &'static str,
@@ -165,7 +167,7 @@ async fn main() -> anyhow::Result<()> {
     let issuer = required_config_string(&config, "ISSUER")?;
     let runtime_dir = env_or("OIDF_LOCAL_RUNTIME_DIR", "runtime/oidf");
     let runtime_dir = Path::new(&runtime_dir);
-    let alias = env_or("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf");
+    let alias = env_or("OIDF_LOCAL_BASIC_ALIAS", DEFAULT_OIDF_BASIC_ALIAS);
     let formpost_alias = format!("{alias}-formpost");
     let frontchannel_alias = format!("{alias}-frontchannel-logout");
     let session_alias = format!("{alias}-session-management");
@@ -461,7 +463,7 @@ async fn main() -> anyhow::Result<()> {
     println!("OIDF_LOCAL_SUITE_BASE_URLS={}", suite_base_urls.join(","));
     println!(
         "OIDF_LOCAL_BASIC_ALIAS={}",
-        env_or("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
+        env_or("OIDF_LOCAL_BASIC_ALIAS", DEFAULT_OIDF_BASIC_ALIAS)
     );
     println!("OIDF_LOCAL_FAPI_CLIENT_COUNT={}", fapi_clients.len());
     Ok(())
@@ -582,6 +584,11 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("must be plain_response or jarm"));
+    }
+
+    #[test]
+    fn default_basic_alias_matches_generated_oidf_plan_configs() {
+        assert_eq!(DEFAULT_OIDF_BASIC_ALIAS, "nazo-oauth-oidf");
     }
 
     #[test]
