@@ -97,10 +97,6 @@ jobs:
             "oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-formpost-plan-config.json",
             "oidcc-3rdparty-init-login-certification-test-plan[response_type=code] oidf-oidcc-third-party-init-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
-            "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
-            "fapi-ciba-id1-test-plan[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-mtls-poll-plan-config.json",
-            "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=ping][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-ping-plan-config.json",
-            "fapi-ciba-id1-test-plan[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=ping][client_registration=static_client] oidf-fapi-ciba-plain-mtls-ping-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=jarm][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json",
             "fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=mtls][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] oidf-fapi-matrix-security-final-mtls-dpop-openid-connect-plain-fapi-plain-response-plan-config.json",
@@ -115,6 +111,14 @@ jobs:
             "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=openid_connect] oidf-fapi-matrix-security-final-private-key-jwt-mtls-openid-connect-plain-fapi-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=fapi_client_credentials_grant][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-fapi-client-credentials-grant-plain-response-plan-config.json",
             "fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=mtls][openid=plain_oauth] oidf-fapi-matrix-security-final-private-key-jwt-mtls-plain-oauth-plain-fapi-plain-response-plan-config.json"
+          ]
+          JSON
+          cat > oidf-ciba-plan-set.json <<'JSON'
+          [
+            "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-mtls-poll-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=ping][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-ping-plan-config.json",
+            "fapi-ciba-id1-test-plan[client_auth_type=mtls][fapi_ciba_profile=plain_fapi][ciba_mode=ping][client_registration=static_client] oidf-fapi-ciba-plain-mtls-ping-plan-config.json"
           ]
           JSON
           cat > oidf-frontchannel-plan-set.json <<'JSON'
@@ -273,6 +277,7 @@ jobs:
               ;;
             parallel-isolated)
               run_oidf_plan_set oidf-concurrent-plan-set.json concurrent
+              run_oidf_plan_set oidf-ciba-plan-set.json ciba --no-parallel
               ;;
             *)
               echo "Unsupported RUNNER_MODE: $RUNNER_MODE" >&2

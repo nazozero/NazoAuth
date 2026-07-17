@@ -4,6 +4,8 @@
 
 执行入口仍然是 `runtime/oidf/oidf-plan-set.json`。`scripts/setup_local_oidf_podman.py` 会同时生成 `runtime/oidf/oidf-plan-set-manifest.json`，用于记录每个 plan 的标题、描述和覆盖重点。
 
+在 `parallel-isolated` 模式下，25 个 plan 按 `19 + 4 + 1 + 1` 执行：19 个普通 OIDC/FAPI plan 放入并发集合，4 个 FAPI-CIBA plan 放入独立的 `--no-parallel` CIBA 集合，Front-Channel Logout 使用独立浏览器 job，Session Management 使用独立浏览器 job。这样保留完整矩阵覆盖，同时避免 CIBA 回调状态和浏览器会话状态在同一个 suite runner 内互相争用。
+
 最新的诊断与官方套件持久证据见
 [`2026-07-15-fapi-ciba-mtls-ping-oidf-results.md`](2026-07-15-fapi-ciba-mtls-ping-oidf-results.md)。
 

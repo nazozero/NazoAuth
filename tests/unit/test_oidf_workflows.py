@@ -112,6 +112,7 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("runner_mode:", workflow)
         self.assertIn("parallel-isolated", workflow)
         self.assertIn("oidf-concurrent-plan-set.json", workflow)
+        self.assertIn("oidf-ciba-plan-set.json", workflow)
         self.assertIn("oidf-frontchannel-plan-set.json", workflow)
         self.assertIn("oidf-session-management-plan-set.json", workflow)
 
@@ -119,6 +120,10 @@ class OidfWorkflowTests(unittest.TestCase):
         concurrent_plan_set = workflow_heredoc_json(
             workflow,
             "oidf-concurrent-plan-set.json",
+        )
+        ciba_plan_set = workflow_heredoc_json(
+            workflow,
+            "oidf-ciba-plan-set.json",
         )
         serial_plan_set = workflow_heredoc_json(
             workflow,
@@ -129,14 +134,18 @@ class OidfWorkflowTests(unittest.TestCase):
         )
 
         self.assertEqual(len(full_plan_set), 25)
-        self.assertEqual(len(concurrent_plan_set), 23)
+        self.assertEqual(len(concurrent_plan_set), 19)
+        self.assertEqual(len(ciba_plan_set), 4)
         self.assertEqual(len(serial_plan_set), 2)
         self.assertEqual(len(set(full_plan_set)), 25)
         self.assertEqual(
-            sum("fapi-ciba-id1-test-plan" in plan for plan in concurrent_plan_set),
+            sum("fapi-ciba-id1-test-plan" in plan for plan in ciba_plan_set),
             4,
         )
+        self.assertFalse(any("fapi-ciba-id1-test-plan" in plan for plan in concurrent_plan_set))
         self.assertFalse(set(concurrent_plan_set) & set(serial_plan_set))
+        self.assertFalse(set(ciba_plan_set) & set(serial_plan_set))
+        self.assertFalse(set(ciba_plan_set) & set(concurrent_plan_set))
         self.assertTrue(any("oidcc-basic-certification-test-plan" in plan for plan in concurrent_plan_set))
         self.assertFalse(
             any("oidcc-dynamic-certification-test-plan" in plan for plan in full_plan_set)
@@ -170,7 +179,7 @@ class OidfWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(
             sorted(full_plan_set),
-            sorted(concurrent_plan_set + serial_plan_set),
+            sorted(concurrent_plan_set + ciba_plan_set + serial_plan_set),
         )
 
         expected_skips = workflow_heredoc_json(workflow, "oidf-expected-skips.json")
@@ -216,6 +225,7 @@ class OidfWorkflowTests(unittest.TestCase):
 
         parallel_case = workflow.split("parallel-isolated)", 1)[1].split(";;", 1)[0]
         self.assertIn("run_oidf_plan_set oidf-concurrent-plan-set.json concurrent", parallel_case)
+        self.assertIn("run_oidf_plan_set oidf-ciba-plan-set.json ciba --no-parallel", parallel_case)
         self.assertNotIn("oidf-browser-sensitive-plan-set.json", parallel_case)
 
         self.assertIn("oidf-conformance-browser-isolated:", workflow)

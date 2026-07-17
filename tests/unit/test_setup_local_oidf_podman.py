@@ -200,12 +200,14 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         session = (
             "oidcc-session-management-certification-test-plan session.json"
         )
+        ciba = "fapi-ciba-id1-test-plan[client_auth_type=mtls] ciba.json"
 
-        concurrent, frontchannel_only, session_only = module.partition_plan_expressions(
-            [parallel, frontchannel, session]
+        concurrent, ciba_only, frontchannel_only, session_only = module.partition_plan_expressions(
+            [parallel, frontchannel, session, ciba]
         )
 
         self.assertEqual(concurrent, [parallel])
+        self.assertEqual(ciba_only, [ciba])
         self.assertEqual(frontchannel_only, [frontchannel])
         self.assertEqual(session_only, [session])
 
