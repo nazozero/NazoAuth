@@ -44,6 +44,37 @@ registration metadata 都是可执行 allowlist。
 | Resource Owner Password Credentials | 永不支持 | 无启用开关；请求时拒绝 | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP 明确 password grant MUST NOT be used。 |
 | 旧 OIDF Dynamic OP 认证 profile | 永不支持 | 无启用开关；OIDF Dynamic OP plan 不进入支持矩阵 | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | 该认证 profile 要求 implicit/hybrid 元数据；RFC 7591/RFC 7592 动态注册仍支持。 |
 
+## 规划中的规范与草案
+
+本节用于说明已经进入路线图、但当前不会在 discovery 或 registration
+metadata 中宣告的能力。它不是当前部署能力清单。只有完成实现、负向测试、
+元数据生成、迁移/回滚策略和一致性证据后，状态才会从“不支持（待实现）”
+调整为“支持”或“完整支持”。
+
+| 规范或草案 | 当前状态 | 进入路线图的原因 | 当前边界 |
+| --- | --- | --- | --- |
+| OAuth 2.1 Authorization Framework | 不支持（待实现） | [draft-ietf-oauth-v2-1-15](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) 已经代表 OAuth 2.x 的合并方向；现有实现已大体对齐 code flow、PKCE、禁用 implicit/password 等要求。 | 等最终 RFC 发布后做逐条审计；在此之前不宣称 OAuth 2.1 final conformance。 |
+| OAuth 2.0 for Browser-Based Applications | 不支持（待实现） | [draft-ietf-oauth-browser-based-apps-27](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/) 已在 RFC Editor 队列；它直接影响 SPA、浏览器客户端、BFF 和 token 存储建议。 | 当前只作为浏览器客户端安全审计依据；不新增单独 runtime profile。 |
+| Cross-Device Flows: Security BCP | 不支持（待实现） | [draft-ietf-oauth-cross-device-security-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-cross-device-security/) 已在 RFC Editor 队列；适用于 Device Grant、CIBA、Native SSO 等跨设备交互。 | 用于现有跨设备流程的安全复审；不会自动扩大 grant type。 |
+| OAuth Security BCP Update | 不支持（待实现） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 后续更新方向。 | 作为 RFC 9700 delta audit；不是新端点或新 metadata。 |
+| JWT BCP / JWT Assertion bis | 不支持（待实现） | [draft-ietf-oauth-rfc8725bis-06](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 和 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 会影响 JWT、client assertion、JWT bearer grant 和 `private_key_jwt`。 | 完成算法 allowlist、audience、replay、key binding 和 cross-JWT confusion 复审后再调整声明。 |
+| Refresh Token and Authorization Expiration | 不支持（待实现） | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) 可以让客户端理解 refresh token 与授权关系的生命周期。 | 需要先定义授权有效期、refresh-family 状态、撤销语义和 metadata。 |
+| First-Party Applications | 不支持（待实现） | [draft-ietf-oauth-first-party-apps-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-first-party-apps/) 对同一方应用、BFF、浏览器前端和授权服务器边界有直接价值。 | 只在严格同源/同方部署模型下评估；不能削弱第三方客户端隔离。 |
+| Client ID Metadata Document | 不支持（待实现） | [draft-ietf-oauth-client-id-metadata-document-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) 可作为 public client 元数据 bootstrap 机制。 | 必须先定义可信获取、缓存、降级、冲突和动态注册交互规则。 |
+| SPIFFE Client Authentication | 不支持（待实现） | [draft-ietf-oauth-spiffe-client-auth-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) 对服务网格和 workload identity 部署有价值。 | 需要明确 SPIFFE trust domain、bundle 验证、证书/身份生命周期和资源服务器验证方式。 |
+| Identity Assertion / Identity Chaining / Transaction Tokens | 不支持（待实现） | [draft-ietf-oauth-identity-assertion-authz-grant-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/)、[draft-ietf-oauth-identity-chaining-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-chaining/) 和 [draft-ietf-oauth-transaction-tokens-09](https://datatracker.ietf.org/doc/draft-ietf-oauth-transaction-tokens/) 覆盖跨域身份断言、链式授权和工作负载调用链。 | 需要单独的 issuer/trust anchor、subject mapping、replay、审计和资源服务器验证模型。 |
+| Token Status List | 不支持（待实现） | [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) 可服务 OpenID4VC 凭证状态、撤销和隐私保护状态发布。 | 只会随 OpenID4VC issuer/verifier 的状态模型实现；不作为通用 OAuth token status endpoint。 |
+
+以下方向目前只是观察项，不属于“待实现”：
+
+| 草案或协议族 | 状态 | 观察原因 |
+| --- | --- | --- |
+| GNAP Core / GNAP Resource Server Connections | 观察中 | [RFC 9635](https://www.rfc-editor.org/rfc/rfc9635.html) 和 [RFC 9767](https://www.rfc-editor.org/rfc/rfc9767.html) 是相邻授权协议；可作为后续 grant negotiation 设计参考，但不是 OAuth/OIDC 开关。 |
+| Agent Authorization Profile | 观察中 | [draft-aap-oauth-profile-01](https://datatracker.ietf.org/doc/draft-aap-oauth-profile/) 对 AI agent delegated access 有参考价值；尚不能作为实现承诺。 |
+| Delegated Authorization / Actor Chain | 观察中 | [draft-li-oauth-delegated-authorization-02](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/) 和 [draft-mw-oauth-actor-chain-01](https://datatracker.ietf.org/doc/draft-mw-oauth-actor-chain/) 与 token exchange、actor delegation、审计链相关。 |
+| Global Token Revocation | 观察中 | [draft-parecki-oauth-global-token-revocation-06](https://datatracker.ietf.org/doc/draft-parecki-oauth-global-token-revocation/) 对账号失陷和事故响应有价值，但需要严格 blast-radius、审计和多客户端策略。 |
+| RAR / Resource Metadata 扩展 | 观察中 | [draft-zehavi-oauth-rar-metadata-05](https://datatracker.ietf.org/doc/draft-zehavi-oauth-rar-metadata/)、[draft-skokan-oauth-resource-response-02](https://datatracker.ietf.org/doc/draft-skokan-oauth-resource-response/) 和 [draft-mcguinness-oauth-rfc9728bis-01](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-rfc9728bis/) 可能改善 typed permissions 与 protected-resource metadata。 |
+
 ## 可发现端点
 
 客户端应从 discovery 读取端点。启用相应模块时，基线部署可以暴露以下端点：
