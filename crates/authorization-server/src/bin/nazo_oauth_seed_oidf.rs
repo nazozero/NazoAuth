@@ -114,7 +114,15 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> anyhow::Result<FapiClien
     let sender_constrain = nazo
         .and_then(|value| value.get("sender_constrain"))
         .and_then(Value::as_str)
-        .unwrap_or(if ciba { "mtls" } else { "dpop" });
+        .unwrap_or(if ciba {
+            if client_auth_type == "mtls" {
+                "mtls"
+            } else {
+                "none"
+            }
+        } else {
+            "dpop"
+        });
     let fapi_profile = nazo
         .and_then(|value| value.get("fapi_profile"))
         .and_then(Value::as_str)
@@ -479,7 +487,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ciba_client_policy_without_sender_constrain_defaults_to_mtls_holder_of_key() {
+    fn ciba_private_key_jwt_policy_without_sender_constraint_stays_bearer_compatible() {
         let policy = fapi_client_policy(
             "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
             &json!({"nazo": {"client_auth_type": "private_key_jwt"}}),
@@ -487,8 +495,22 @@ mod tests {
         .unwrap();
 
         assert!(!policy.require_dpop_bound_tokens);
-        assert!(policy.require_mtls_bound_tokens);
+        assert!(!policy.require_mtls_bound_tokens);
         assert!(policy.allow_client_assertion_endpoint_audience);
+        assert!(policy.ciba);
+    }
+
+    #[test]
+    fn ciba_mtls_policy_without_sender_constraint_remains_mtls_bound() {
+        let policy = fapi_client_policy(
+            "oidf-fapi-ciba-plain-mtls-poll-plan-config.json",
+            &json!({"nazo": {"client_auth_type": "mtls"}}),
+        )
+        .unwrap();
+
+        assert!(!policy.require_dpop_bound_tokens);
+        assert!(policy.require_mtls_bound_tokens);
+        assert!(!policy.allow_client_assertion_endpoint_audience);
         assert!(policy.ciba);
     }
 
