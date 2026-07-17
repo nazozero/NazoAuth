@@ -19,6 +19,8 @@ param(
     [string]$RemoteConfigPath = "/opt/nazo-oauth/.env.yaml",
     [string]$RemoteKeysPath = "/opt/nazo-oauth/runtime/keys",
     [string]$RemoteAvatarsPath = "/opt/nazo-oauth/runtime/avatars",
+    [string]$RemoteCibaPingTlsTrustBundlePath = "",
+    [string]$ContainerCibaPingTlsTrustBundlePath = "/app/ciba-ping-trust-bundle.pem",
     [string]$RemoteUiPath = "/usr/local/angie/html/auth/ui",
     [string]$RemoteUiReleasesRoot = "/usr/local/angie/html/auth-releases",
     [string]$OidfPublicSeedArtifactDirectory = "",
@@ -57,6 +59,17 @@ if ($RemoteHost.StartsWith('-') -or
 }
 if ($RemoteUiPath -notmatch '^/' -or $RemoteUiReleasesRoot -notmatch '^/') {
     throw "RemoteUiPath and RemoteUiReleasesRoot must be absolute Linux paths"
+}
+if ($RemoteCibaPingTlsTrustBundlePath -and (
+    $RemoteCibaPingTlsTrustBundlePath -notmatch '^/' -or
+    $RemoteCibaPingTlsTrustBundlePath.Contains("`n") -or
+    $RemoteCibaPingTlsTrustBundlePath.Contains("`r"))) {
+    throw "RemoteCibaPingTlsTrustBundlePath must be an absolute Linux path when provided"
+}
+if ($ContainerCibaPingTlsTrustBundlePath -notmatch '^/' -or
+    $ContainerCibaPingTlsTrustBundlePath.Contains("`n") -or
+    $ContainerCibaPingTlsTrustBundlePath.Contains("`r")) {
+    throw "ContainerCibaPingTlsTrustBundlePath must be an absolute Linux path"
 }
 if ($RemoteOidfMtlsCaPath -notmatch '^/' -or $RemoteOidfMtlsCaPath -eq '/' -or
     $RemoteOidfMtlsCaPath.Contains("`n") -or $RemoteOidfMtlsCaPath.Contains("`r")) {
@@ -611,6 +624,8 @@ CONTAINER_IP=$(ConvertTo-ShellLiteral $IPAddress)
 CONFIG_PATH=$(ConvertTo-ShellLiteral $RemoteConfigPath)
 KEYS_PATH=$(ConvertTo-ShellLiteral $RemoteKeysPath)
 AVATARS_PATH=$(ConvertTo-ShellLiteral $RemoteAvatarsPath)
+CIBA_PING_TLS_TRUST_BUNDLE_PATH=$(ConvertTo-ShellLiteral $RemoteCibaPingTlsTrustBundlePath)
+CIBA_PING_TLS_TRUST_BUNDLE_CONTAINER_PATH=$(ConvertTo-ShellLiteral $ContainerCibaPingTlsTrustBundlePath)
 UI_PATH=$(ConvertTo-ShellLiteral $RemoteUiPath)
 UI_RELEASES=$(ConvertTo-ShellLiteral $RemoteUiReleasesRoot)
 ANGIE_WORKER_USER=$(ConvertTo-ShellLiteral $AngieWorkerUser)
@@ -648,11 +663,21 @@ WATCHDOG_PID_FILE="`$STATE_FILE.watchdog-pid"
 run_server() {
   local selected_image="`$1"
   local publish_args=()
+  local ciba_ping_tls_args=()
   if [ -n "`$PUBLISH_PORT" ]; then publish_args=(-p "`$PUBLISH_PORT"); fi
+  if [ -n "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH" ]; then
+    test -f "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH"
+    test ! -L "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH"
+    ciba_ping_tls_args=(
+      -e "SSL_CERT_FILE=`$CIBA_PING_TLS_TRUST_BUNDLE_CONTAINER_PATH"
+      -v "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH:`$CIBA_PING_TLS_TRUST_BUNDLE_CONTAINER_PATH:ro"
+    )
+  fi
   podman run -d --name "`$CONTAINER_NAME" \
     --restart=unless-stopped \
     --network "`$NETWORK_NAME" --ip "`$CONTAINER_IP" \
     "`${publish_args[@]}" \
+    "`${ciba_ping_tls_args[@]}" \
     -v "`$CONFIG_PATH:/app/.env.yaml:ro" \
     -v "`$KEYS_PATH:/var/lib/nazo_oauth/keys:rw" \
     -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
