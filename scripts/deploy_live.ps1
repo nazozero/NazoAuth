@@ -523,9 +523,11 @@ $frontendArtifactDigest = Get-FrontendArtifactDigest -DistPath $LocalUiDist
 
 $image = "${ImageRepository}:$ImageTag"
 $safeTag = $ImageTag -replace '[^A-Za-z0-9_.-]', '-'
-$archive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-server-$safeTag.tar"
-$uiArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-web-$safeTag.tar.gz"
-$localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-deploy-$safeTag.sh"
+$deploymentId = [guid]::NewGuid().ToString("N")
+$localStageSuffix = "$safeTag-$deploymentId"
+$archive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-server-$localStageSuffix.tar"
+$uiArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-web-$localStageSuffix.tar.gz"
+$localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-deploy-$localStageSuffix.sh"
 
 Write-Host "Staging $image ($BackendCommit / $FrontendCommit) on $RemoteHost"
 
@@ -587,7 +589,6 @@ if (-not $RenderRemoteScriptPath) {
 }
 
 $skipMigrateValue = if ($SkipMigrate) { "1" } else { "0" }
-$deploymentId = [guid]::NewGuid().ToString("N")
 $remoteBody = @"
 #!/usr/bin/env bash
 set -euo pipefail
