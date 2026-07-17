@@ -50,9 +50,9 @@
 - `private_key_jwt / DPoP / OpenID Connect / authorization code` 是 TP/PS 改动面的主要单 plan；完整回归以 25-plan 矩阵为准。
 - `OIDC Front-Channel Logout OP` 覆盖 NI-008。
 - `OIDC Session Management OP` 覆盖 NI-009。
-- 四个 FAPI-CIBA plans 覆盖 `private_key_jwt | mTLS` × `poll | ping` 的正交组合。FAPI-CIBA 禁止 Push，因此项目明确不实现 Push。
+- 四个 FAPI-CIBA plans 覆盖 `private_key_jwt | mTLS` × `poll | ping` 的正交组合。[FAPI-CIBA profile](https://openid.net/specs/openid-financial-api-ciba.html) 只支持 poll 与 ping，因此 push mode 不属于受支持的 FAPI-CIBA profile，并且不实现。
 - NI-006 未发现 RFC 7523 third-party JWT bearer grant 专项官方 plan；现有覆盖来自 OIDC/FAPI 中的 client assertion 场景和仓库 RFC 7523 tests。
-- NI-010 跟踪 OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1。本项目当前不实现该 trust-chain 生态能力，且已不暴露 `/.well-known/openid-federation`，因此 Federation plans 不纳入必跑矩阵。
+- NI-010 跟踪 [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html) 与 [OpenID Federation for OpenID Connect 1.1](https://openid.net/specs/openid-federation-connect-1_1.html)。这两份规范定义的是包含 Entity Statement、Trust Anchor、metadata policy、Trust Mark 和 Federation endpoints 的 federation trust-chain 生态。当前不宣告也不实现该生态面，且不暴露 `/.well-known/openid-federation`，因此 Federation plans 不纳入必跑矩阵。
 - NI-011 未发现 Native SSO / `device_secret` 官方 OP plan；保留仓库级 device-secret lifecycle、`ds_hash` 绑定、token exchange 与 refresh-family tests。
 
 因此，临时 targeted plan-set 只适合开发期间快速定位问题；正式回归和证据记录应引用 25-plan 完整矩阵。
@@ -61,7 +61,7 @@
 
 OIDF `oidcc-dynamic-certification-test-plan` 明确为**不实现**，不得出现在生成、诊断或官方的 plan set 中。官方套件的 dynamic profile discovery 检查要求同时支持 `code`、`id_token`、`token id_token` 三种 response type，以及 `authorization_code`、`implicit` 两种 grant type；证据见官方套件的 [`OIDCCCheckDiscEndpointResponseTypesSupportedDynamic`](https://gitlab.com/openid/conformance-suite/-/blob/v5.2.0/src/main/java/net/openid/conformance/condition/client/OIDCCCheckDiscEndpointResponseTypesSupportedDynamic.java) 和 [`OIDCCCheckDiscEndpointGrantTypesSupportedDynamic`](https://gitlab.com/openid/conformance-suite/-/blob/v5.2.0/src/main/java/net/openid/conformance/condition/client/OIDCCCheckDiscEndpointGrantTypesSupportedDynamic.java)。
 
-实现该认证档案意味着声明并启用 implicit response；RFC 9700 第 2.1.2 节要求授权服务器 SHOULD NOT 支持 implicit grant。NazoAuth 因此坚持交互流程只使用 authorization code，并保持 discovery 如实声明。RFC 7591 动态客户端注册仍完整实现并由 `OIDC Basic OP Dynamic Registration` 覆盖；“动态注册”不等于旧的 OIDF “Dynamic OP”认证档案。
+实现该认证档案意味着声明并启用 implicit response；RFC 9700 第 2.1.2 节要求授权服务器 SHOULD NOT 支持 implicit grant。因此交互流程保持为 authorization code，并保持 discovery 如实声明。RFC 7591 动态客户端注册仍完整实现并由 `OIDC Basic OP Dynamic Registration` 覆盖；“动态注册”不等于旧的 OIDF “Dynamic OP”认证档案。
 
 ## Expected Skip 策略
 
