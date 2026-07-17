@@ -9,6 +9,7 @@ in the repository.
 
 ## Current Evidence
 
+- Certification and conformance entry point: [Certification and conformance evidence](certification.md)
 - Certification baseline: [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - Matrix scope: [OIDF full matrix](oidf-full-matrix.md)
 - Archived diagnostic full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
