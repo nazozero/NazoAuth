@@ -33,10 +33,10 @@ deployment and every conformance run must use its own public HTTPS issuer.
 | FAPI 2.0 Message Signing | Complete through runtime profile/options | [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-2_0-message-signing.html) | Adds signed authorization requests, JARM, and protected response options according to profile. |
 | OpenID4VCI 1.0 Final | Complete as a separate default-closed Credential Issuer role | [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | Not part of ordinary OIDC RP login; uses its own credential issuer metadata and runtime module. |
 | OpenID4VP 1.0 Final | Complete as a separate default-closed Verifier role | [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html) | Not part of ordinary OIDC RP login; uses its own verifier request/response processing and runtime module. |
-| OIDC Implicit OP | Not implemented by security policy | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | The authorization endpoint does not return ID Tokens or access tokens through the front channel. |
-| OIDC Hybrid OP | Not implemented by security policy | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Interactive flows stay on Authorization Code. |
-| Resource Owner Password Credentials | Not implemented by security policy | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Rejected as an unsafe legacy grant. |
-| Legacy OIDF Dynamic OP certification profile | Not implemented by security policy | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | That certification profile requires implicit/hybrid metadata; RFC 7591/RFC 7592 dynamic registration remains supported. |
+| OIDC Implicit OP | Not implemented; excluded by OAuth Security BCP / OAuth 2.1 direction | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | The authorization endpoint does not return ID Tokens or access tokens through the front channel. |
+| OIDC Hybrid OP | Not implemented; excluded because it requires front-channel token/ID Token delivery | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | Interactive flows stay on Authorization Code. |
+| Resource Owner Password Credentials | Not implemented; prohibited by OAuth Security BCP | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | Rejected as an unsafe legacy grant. |
+| Legacy OIDF Dynamic OP certification profile | Not implemented; conflicts with the implicit/hybrid exclusion above | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | That certification profile requires implicit/hybrid metadata; RFC 7591/RFC 7592 dynamic registration remains supported. |
 
 ## Discoverable endpoints
 
@@ -244,7 +244,7 @@ request path.
 | `RS256` | RSA | SHA-256 | `sig` | Accepted with registered client JWK or resolved `jwks_uri` key using `use=sig` and `alg=RS256` | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) | Baseline interoperability option. |
 | `ES256` | ECDSA P-256 | SHA-256 | `sig` | Accepted with registered client JWK or resolved `jwks_uri` key using `use=sig` and `alg=ES256` | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) | Supported asymmetric option. |
 | `PS256` | RSA-PSS | SHA-256 | `sig` | Accepted with registered client JWK or resolved `jwks_uri` key using `use=sig` and `alg=PS256` | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) | High-assurance/FAPI-compatible option. |
-| `none` | None | None | N/A | Not accepted | [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html), [RFC 8725](https://www.rfc-editor.org/rfc/rfc8725.html) | Rejected by security policy; expected OIDF skips for unsigned modules are bounded and explicit. |
+| `none` | None | None | N/A | Not accepted | [RFC 9101 Section 10.5](https://www.rfc-editor.org/rfc/rfc9101.html#section-10.5), [RFC 8725 Section 3.2](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.2) | Rejected because signed Request Objects are required for protected request-object surfaces; expected OIDF skips for unsigned modules are bounded and explicit. |
 | `HS*`, `RS384`, `RS512`, `ES384`, `ES512`, `PS384`, `PS512` | Various | Various | `sig` | Not accepted | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised by discovery and rejected by client metadata/JWK policy. |
 
 External `request_uri` is not a general internet fetch feature. It is accepted
@@ -282,12 +282,12 @@ Supported interactive response type:
 | Name | Status | Value | References | Notes |
 | --- | --- | --- | --- | --- |
 | Authorization Code | Supported | `code` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html) | The only interactive OIDC response type. Public clients, FAPI clients, sender-constrained clients, and non-OIDC code-flow clients must use S256 PKCE. |
-| Implicit ID Token | Not implemented | `id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Not implemented by security policy. |
-| Implicit Access Token | Not implemented | `token` | [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Not implemented by security policy. |
-| Implicit ID Token + Access Token | Not implemented | `id_token token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Not implemented by security policy. |
-| Hybrid Code + ID Token | Not implemented | `code id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Not implemented by security policy. |
-| Hybrid Code + Token | Not implemented | `code token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Not implemented by security policy. |
-| Hybrid Code + ID Token + Token | Not implemented | `code id_token token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Not implemented by security policy. |
+| Implicit ID Token | Not implemented | `id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Excluded because it relies on front-channel ID Token delivery. |
+| Implicit Access Token | Not implemented | `token` | [RFC 6749 Section 4.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.2), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Excluded because the implicit grant is deprecated by the OAuth Security BCP. |
+| Implicit ID Token + Access Token | Not implemented | `id_token token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Excluded because it depends on implicit front-channel token delivery. |
+| Hybrid Code + ID Token | Not implemented | `code id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Excluded because it adds front-channel ID Token delivery to code flow. |
+| Hybrid Code + Token | Not implemented | `code token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Excluded because it returns an access token through the front channel. |
+| Hybrid Code + ID Token + Token | Not implemented | `code id_token token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Excluded because it combines hybrid and implicit front-channel delivery. |
 
 Supported response modes for baseline OIDC:
 
@@ -315,8 +315,8 @@ browser transport for supported authorization responses.
 | OpenID CIBA grant | Supported when enabled; not advertised when disabled | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html) | CIBA module enabled and client registered for poll or ping delivery | Push delivery mode is not implemented. |
 | `urn:ietf:params:oauth:grant-type:jwt-bearer` | Supported | [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523.html) | Client grant allowlist includes it | JWT bearer grant for bounded resource access. |
 | `urn:ietf:params:oauth:grant-type:token-exchange` | Supported | [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html) | Explicit bounded local profile/client policy | Not a generic arbitrary delegation mechanism. |
-| `password` | Not implemented | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | N/A | Not implemented by security policy. |
-| `implicit` | Not implemented | [RFC 6749 Section 4.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.2), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | N/A | Not implemented by security policy. |
+| `password` | Not implemented | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4) | N/A | RFC 9700 says this grant MUST NOT be used. |
+| `implicit` | Not implemented | [RFC 6749 Section 4.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.2), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | N/A | OAuth Security BCP deprecates implicit front-channel token delivery. |
 
 ## Client authentication
 
@@ -369,13 +369,28 @@ the provider.
 The provider implements secure RFC 7591 / RFC 7592 dynamic client registration, but
 does not implement the legacy OIDF Dynamic OP certification profile. That
 profile requires discovery metadata for implicit and hybrid flows, which are
-not implemented by security policy.
+excluded by RFC 9700 and the OAuth 2.1 direction described below.
 
 Use this terminology precisely:
 
 - "Dynamic Client Registration" means default-closed RFC 7591 / RFC 7592 client
   lifecycle support.
 - "Dynamic OP certification profile" is not supported.
+
+## Specification-backed non-implementation boundaries
+
+The following decisions are not project-local preferences. They are derived
+from current IETF / OpenID security guidance and are encoded as product
+boundaries.
+
+| Capability | Status | Normative or current security source | Reason |
+| --- | --- | --- | --- |
+| Implicit grant and implicit OIDC response types | Not implemented | [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP deprecates implicit because browser front-channel token delivery has weaker leakage and replay properties than code flow with PKCE. |
+| Hybrid response types | Not implemented | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Hybrid profiles add front-channel ID Token and/or access-token delivery; the supported interactive profile remains authorization code. |
+| Resource Owner Password Credentials | Not implemented | [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP states that the password grant MUST NOT be used because it exposes user credentials to clients and does not compose with modern MFA/passkey authentication. |
+| Unsigned Request Objects (`alg=none`) | Not implemented | [RFC 9101 Section 10.5](https://www.rfc-editor.org/rfc/rfc9101.html#section-10.5), [RFC 8725 Section 3.2](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.2) | Protected request-object surfaces require signed Request Objects; JWT BCP requires applications to allow only algorithms that meet the application's security requirements. |
+| Query-string bearer tokens | Not implemented | [RFC 6750 Section 2.3](https://www.rfc-editor.org/rfc/rfc6750.html#section-2.3), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | RFC 6750 documents the query method but says it is not recommended because URLs are commonly logged and leaked. |
+| CIBA push mode | Not implemented | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | The implemented and tested FAPI-CIBA support surface is poll and ping; push would introduce direct token delivery to the client callback and is outside the supported profile set. |
 
 ## Security boundaries
 
@@ -390,8 +405,8 @@ The following are intentionally not supported for new integrations:
 - FAPI form-body bearer tokens;
 - CIBA push mode.
 
-These are security policy decisions, not missing configuration switches. Do not
-attempt to enable them with hidden deployment options.
+These are specification-backed product boundaries, not missing configuration
+switches. Do not attempt to enable them with hidden deployment options.
 
 ## Metadata truth and deployment flags
 
