@@ -1,6 +1,6 @@
 # OAuth, OpenID Connect, and FAPI Specification Backlog
 
-Last reviewed: 2026-07-11.
+Last reviewed: 2026-07-17.
 
 This document records standards and active drafts that were found in the current
 OAuth 2.x, OpenID Connect, and FAPI 2.0 specification landscape but are not
@@ -16,6 +16,59 @@ The scan used primary sources only:
   <https://openid.net/specs/>
 - OpenID Foundation FAPI Working Group specifications:
   <https://openid.net/wg/fapi/specifications/>
+
+## 2026-07-17 Current OAuth Standards Scan
+
+This scan treats the IETF OAuth Working Group Datatracker, the OAuth.net
+specification index, RFC Editor records, and OpenID Foundation Final or
+Implementer's Draft indexes as the authoritative sources. Individual Internet
+Drafts are not roadmap commitments: they remain watch-only until they are
+adopted by the OAuth Working Group, enter IESG/RFC Editor processing, become an
+RFC, or become an OpenID Foundation Implementer's Draft/Final Specification.
+
+The following table lists the current OAuth or OAuth-adjacent standards that
+fit the project's security boundary. `Not supported (planned)` means the item is
+safe to place on the roadmap, but must not be advertised until implementation,
+metadata, migration, and conformance evidence exist.
+
+| Specification | Current source status | Project status | Planning decision |
+| --- | --- | --- | --- |
+| [RFC 9700, Best Current Practice for OAuth 2.0 Security](https://www.rfc-editor.org/info/rfc9700) | Published BCP | Implemented/profile-scoped baseline | Keep as the permanent security checklist for every OAuth change. |
+| [RFC 8252, OAuth 2.0 for Native Apps](https://www.rfc-editor.org/info/rfc8252) | Published BCP | Implemented/profile-scoped | Maintain redirect, loopback, and public-client PKCE rules. |
+| [RFC 8725, JSON Web Token Best Current Practices](https://www.rfc-editor.org/info/rfc8725) | Published BCP | Implemented/profile-scoped | Maintain explicit algorithm allowlists, no `none`, key/alg binding, and JWT confusion defenses. |
+| [RFC 9126, Pushed Authorization Requests](https://www.rfc-editor.org/info/rfc9126) | Published RFC | Implemented | Maintain one-time short-lived PAR handles and FAPI authenticated PAR. |
+| [RFC 9101, JWT-Secured Authorization Request](https://www.rfc-editor.org/info/rfc9101) | Published RFC | Implemented/profile-scoped | Maintain signed request objects and keep unsigned/external-fetch downgrade paths out unless separately designed. |
+| [RFC 9207, Authorization Server Issuer Identification](https://www.rfc-editor.org/info/rfc9207) | Published RFC | Implemented | Maintain `iss` in authorization responses where advertised. |
+| [RFC 9449, Demonstrating Proof of Possession](https://www.rfc-editor.org/info/rfc9449) | Published RFC | Implemented | Maintain DPoP proof, replay, nonce, and sender-bound-token validation. |
+| [RFC 8705, OAuth mTLS Client Authentication and Certificate-Bound Access Tokens](https://www.rfc-editor.org/info/rfc8705) | Published RFC | Implemented/profile-scoped | Maintain strict trusted-proxy and certificate-thumbprint boundaries. |
+| [RFC 8707, Resource Indicators](https://www.rfc-editor.org/info/rfc8707) | Published RFC | Implemented | Maintain URI-valued repeatable `resource`; do not revive legacy `audience`. |
+| [RFC 9396, Rich Authorization Requests](https://www.rfc-editor.org/info/rfc9396) | Published RFC | Implemented/profile-scoped | Keep type allowlists and consent/resource-server binding. |
+| [RFC 9701, JWT Response for OAuth Token Introspection](https://www.rfc-editor.org/info/rfc9701) | Published RFC | Implemented/profile-scoped | Keep signed/nested encrypted introspection metadata tied to runtime profile. |
+| [RFC 9728, OAuth 2.0 Protected Resource Metadata](https://www.rfc-editor.org/info/rfc9728) | Published RFC | Implemented | Keep protected resource identifiers aligned with access-token audiences. |
+| [RFC 8628, Device Authorization Grant](https://www.rfc-editor.org/info/rfc8628) | Published RFC | Implemented/default-closed | Maintain default-closed status, polling controls, rate limits, and user approval UX. |
+| [RFC 8693, Token Exchange](https://www.rfc-editor.org/info/rfc8693) | Published RFC | Implemented/bounded | Maintain local-token exchange only; external issuer trust remains separate future work. |
+| [RFC 7523, JWT Client Authentication and Authorization Grants](https://www.rfc-editor.org/info/rfc7523) | Published RFC | Implemented/bounded | Maintain `private_key_jwt`; third-party assertion issuer trust remains planned separately. |
+| [draft-ietf-oauth-v2-1-15](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth WG active draft | Partially aligned | Not supported as final RFC (planned). Re-audit after publication and map each final requirement to code, metadata, and tests. |
+| [draft-ietf-oauth-browser-based-apps-27](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/) | RFC Editor queue BCP | Draft audit complete | Not supported as final RFC (planned). Re-audit after RFC number assignment and keep browser clients on code + S256 PKCE. |
+| [draft-ietf-oauth-cross-device-security-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-cross-device-security/) | RFC Editor queue BCP | Not supported as a named profile | Not supported (planned). Apply to Device Authorization Grant, CIBA, Native SSO, and any future cross-device flows. |
+| [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) | OAuth WG active draft | Not yet audited | Not supported (planned). Track as the RFC 9700 delta audit rather than a runtime feature. |
+| [draft-ietf-oauth-rfc8725bis-06](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) | Waiting for AD Go-Ahead BCP | Not yet audited | Not supported (planned). Re-run the JWT/JWS/JWE confusion and algorithm-boundary audit when it advances. |
+| [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) | RFC Editor queue | Not yet audited | Not supported (planned). Re-audit `private_key_jwt`, JWT bearer grant, assertion audience, replay, and key-binding rules. |
+| [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) | OAuth WG active draft | Not implemented as metadata/profile | Not supported (planned). Add refresh-token and authorization-expiration metadata only after lifecycle semantics and tests are complete. |
+| [draft-ietf-oauth-first-party-apps-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-first-party-apps/) | OAuth WG active draft | Not implemented as profile | Not supported (planned). Evaluate same-party browser/BFF assumptions without weakening third-party client isolation. |
+| [draft-ietf-oauth-client-id-metadata-document-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) | OAuth WG active draft | Not implemented | Not supported (planned). Consider only as a controlled public-client metadata bootstrap profile. |
+| [draft-ietf-oauth-spiffe-client-auth-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) | OAuth WG active draft | Not implemented | Not supported (planned). Requires a workload identity and SPIFFE trust-domain deployment model. |
+| [draft-ietf-oauth-identity-assertion-authz-grant-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/) | OAuth WG active draft | Not implemented | Not supported (planned). Requires third-party assertion issuer trust, subject mapping, revocation, and audit policy. |
+| [draft-ietf-oauth-identity-chaining-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-chaining/) | RFC Editor queue | Not implemented | Not supported (planned). Requires cross-domain trust-chain, delegation, replay, and resource-server verification model. |
+| [draft-ietf-oauth-transaction-tokens-09](https://datatracker.ietf.org/doc/draft-ietf-oauth-transaction-tokens/) | OAuth WG active draft | Not implemented | Not supported (planned). Requires a trusted-domain Transaction Token Service and workload call-chain model. |
+| [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) | RFC Editor queue | Not implemented | Not supported (planned). Add for OpenID4VC credential status only with issuer/verifier privacy and revocation semantics. |
+| [draft-ietf-oauth-sd-jwt-vc-17](https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/) | AD Evaluation | Implemented/profile-scoped through OpenID4VC credential support | Keep final-delta watch. Do not treat it as complete outside the credential profiles that actually issue or verify `dc+sd-jwt`. |
+| [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html) and [OpenID Federation for OpenID Connect 1.1](https://openid.net/specs/openid-federation-connect-1_1.html) | OpenID Foundation Final Specifications | Not implemented | Not supported (planned). Requires trust anchors, trust chains, metadata policy, trust marks, federation endpoints, key rollover, and conformance evidence. |
+
+Active individual OAuth drafts are excluded from the implementation roadmap by
+default. They may be cited in research notes, but they must not appear in
+metadata, conformance matrices, or committed implementation plans until they
+reach the adoption/stability gates above.
 
 The code comparison used route registration, discovery metadata, token
 `grant_type` dispatch, client metadata validation, and protocol handlers as the

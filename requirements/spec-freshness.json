@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "reviewed_at": "2026-07-11",
+  "reviewed_at": "2026-07-17",
   "active_document_globs": [
     "docs/protocol/*.md"
   ],
@@ -15,11 +15,11 @@
   ],
   "expected_file_markers": {
     "docs/protocol/oauth2-1-self-audit.md": ["draft-ietf-oauth-v2-1-15"],
-    "docs/protocol/rfc-compliance-matrix.md": ["draft-ietf-oauth-v2-1-15", "draft 27", "Draft-27 delta audit complete"],
-    "docs/protocol/oauth-spec-implementation-backlog.md": ["fapi-ciba-03", "Stable ID1 compatibility", "draft-ietf-oauth-attestation-based-client-auth-10", "draft-ietf-oauth-transaction-tokens-09", "oauth-v2-grant-management-03", "stable ID1", "draft 07 / Second Implementer's Draft"],
+    "docs/protocol/rfc-compliance-matrix.md": ["draft-ietf-oauth-v2-1-15", "draft-ietf-oauth-browser-based-apps-27", "draft-ietf-oauth-cross-device-security-16", "draft-ietf-oauth-rfc7523bis-11", "draft-ietf-oauth-status-list-21", "Not supported (planned)"],
+    "docs/protocol/oauth-spec-implementation-backlog.md": ["fapi-ciba-03", "Stable ID1 compatibility", "draft-ietf-oauth-attestation-based-client-auth-10", "draft-ietf-oauth-transaction-tokens-09", "draft-ietf-oauth-client-id-metadata-document-02", "draft-ietf-oauth-security-topics-update-03", "draft-ietf-oauth-refresh-token-expiration-03", "draft-ietf-oauth-first-party-apps-04", "draft-ietf-oauth-identity-chaining-16", "draft-ietf-oauth-status-list-21", "draft-ietf-oauth-rfc8725bis-06", "draft-ietf-oauth-spiffe-client-auth-02", "draft-ietf-oauth-identity-assertion-authz-grant-04", "draft-ietf-oauth-rfc7523bis-11", "draft-ietf-oauth-cross-device-security-16", "draft-ietf-oauth-sd-jwt-vc-17", "oauth-v2-grant-management-03", "stable ID1", "draft 07 / Second Implementer's Draft"],
     "docs/conformance/2026-07-11-browser-based-applications-draft-27-audit.md": ["draft-ietf-oauth-browser-based-apps-27", "draft-ietf-httpbis-layered-cookies/02"],
     "docs/conformance/2026-07-11-m8-watchlist-governance.md": ["draft-ietf-oauth-browser-based-apps-27", "draft-ietf-oauth-attestation-based-client-auth-10", "draft-ietf-oauth-transaction-tokens-09", "oauth-v2-grant-management-03", "release `v5.2.0`"],
-    "docs/protocol/spec-freshness.md": ["draft-ietf-oauth-v2-1-15", "draft-ietf-oauth-browser-based-apps-27", "draft-ietf-oauth-attestation-based-client-auth-10", "draft-ietf-oauth-transaction-tokens-09", "draft-ietf-httpbis-layered-cookies-02", "fapi-ciba-03", "oauth-v2-grant-management-03", "Second Implementer's Draft", "release-v5.2.0"],
+    "docs/protocol/spec-freshness.md": ["draft-ietf-oauth-v2-1-15", "draft-ietf-oauth-browser-based-apps-27", "draft-ietf-oauth-attestation-based-client-auth-10", "draft-ietf-oauth-transaction-tokens-09", "draft-ietf-oauth-client-id-metadata-document-02", "draft-ietf-oauth-security-topics-update-03", "draft-ietf-oauth-refresh-token-expiration-03", "draft-ietf-oauth-first-party-apps-04", "draft-ietf-oauth-identity-chaining-16", "draft-ietf-oauth-status-list-21", "draft-ietf-oauth-rfc8725bis-06", "draft-ietf-oauth-spiffe-client-auth-02", "draft-ietf-oauth-identity-assertion-authz-grant-04", "draft-ietf-oauth-rfc7523bis-11", "draft-ietf-oauth-cross-device-security-16", "draft-ietf-oauth-sd-jwt-vc-17", "draft-ietf-httpbis-layered-cookies-02", "fapi-ciba-03", "oauth-v2-grant-management-03", "Second Implementer's Draft", "release-v5.2.0"],
     ".github/workflows/oidf-conformance.yml": ["dee9a25160e789f0f80517674693ef7989ab9fa1"],
     ".github/workflows/oidf-conformance-full.yml": ["dee9a25160e789f0f80517674693ef7989ab9fa1"]
   },
@@ -34,6 +34,18 @@
     {"id":"oauth-browser-based-apps","title":"OAuth 2.0 for Browser-Based Applications","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/","document":"draft-ietf-oauth-browser-based-apps","revision":"27"},
     {"id":"oauth-attestation-client-auth","title":"OAuth 2.0 Attestation-Based Client Authentication","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/","document":"draft-ietf-oauth-attestation-based-client-auth","revision":"10"},
     {"id":"oauth-transaction-tokens","title":"Transaction Tokens","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-transaction-tokens/","document":"draft-ietf-oauth-transaction-tokens","revision":"09"},
+    {"id":"oauth-client-id-metadata-document","title":"OAuth Client ID Metadata Document","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/","document":"draft-ietf-oauth-client-id-metadata-document","revision":"02"},
+    {"id":"oauth-security-topics-update","title":"Updates to OAuth 2.0 Security Best Current Practice","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/","document":"draft-ietf-oauth-security-topics-update","revision":"03"},
+    {"id":"oauth-refresh-token-expiration","title":"OAuth 2.0 Refresh Token and Authorization Expiration","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/","document":"draft-ietf-oauth-refresh-token-expiration","revision":"03"},
+    {"id":"oauth-first-party-apps","title":"OAuth 2.0 for First-Party Applications","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-first-party-apps/","document":"draft-ietf-oauth-first-party-apps","revision":"04"},
+    {"id":"oauth-identity-chaining","title":"OAuth Identity and Authorization Chaining Across Domains","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-chaining/","document":"draft-ietf-oauth-identity-chaining","revision":"16"},
+    {"id":"oauth-status-list","title":"Token Status List","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/","document":"draft-ietf-oauth-status-list","revision":"21"},
+    {"id":"oauth-rfc8725bis","title":"JSON Web Token Best Current Practices","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/","document":"draft-ietf-oauth-rfc8725bis","revision":"06"},
+    {"id":"oauth-spiffe-client-auth","title":"OAuth SPIFFE Client Authentication","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/","document":"draft-ietf-oauth-spiffe-client-auth","revision":"02"},
+    {"id":"oauth-identity-assertion-authz-grant","title":"Identity Assertion JWT Authorization Grant","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/","document":"draft-ietf-oauth-identity-assertion-authz-grant","revision":"04"},
+    {"id":"oauth-rfc7523bis","title":"Updates to OAuth 2.0 JSON Web Token Client Authentication and Assertion-Based Authorization Grants","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/","document":"draft-ietf-oauth-rfc7523bis","revision":"11"},
+    {"id":"oauth-cross-device-security","title":"Cross-Device Flows: Security Best Current Practice","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-cross-device-security/","document":"draft-ietf-oauth-cross-device-security","revision":"16"},
+    {"id":"oauth-sd-jwt-vc","title":"SD-JWT-based Verifiable Digital Credentials (SD-JWT VC)","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-oauth-sd-jwt-vc/","document":"draft-ietf-oauth-sd-jwt-vc","revision":"17"},
     {"id":"httpbis-layered-cookies","title":"Cookies: HTTP State Management Mechanism","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-httpbis-layered-cookies/","document":"draft-ietf-httpbis-layered-cookies","revision":"02"},
 
     {"id":"rfc6749","title":"The OAuth 2.0 Authorization Framework","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc6749","number":6749,"markers":["RFC 6749","The OAuth 2.0 Authorization Framework"]},
@@ -43,6 +55,8 @@
     {"id":"rfc7644","title":"SCIM Protocol","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7644","number":7644,"markers":["RFC 7644","System for Cross-domain Identity Management: Protocol"]},
     {"id":"rfc7522","title":"SAML 2.0 Profile for OAuth 2.0","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7522","number":7522,"markers":["RFC 7522","Security Assertion Markup Language (SAML) 2.0 Profile for OAuth 2.0"]},
     {"id":"rfc7523","title":"JWT Profile for OAuth 2.0","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7523","number":7523,"markers":["RFC 7523","JSON Web Token (JWT) Profile for OAuth 2.0"]},
+    {"id":"rfc7516","title":"JSON Web Encryption","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7516","number":7516,"markers":["RFC 7516","JSON Web Encryption"]},
+    {"id":"rfc7518","title":"JSON Web Algorithms","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7518","number":7518,"markers":["RFC 7518","JSON Web Algorithms"]},
     {"id":"rfc7591","title":"OAuth 2.0 Dynamic Client Registration Protocol","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7591","number":7591,"markers":["RFC 7591","OAuth 2.0 Dynamic Client Registration Protocol"]},
     {"id":"rfc7592","title":"OAuth 2.0 Dynamic Client Registration Management Protocol","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7592","number":7592,"markers":["RFC 7592","OAuth 2.0 Dynamic Client Registration Management Protocol"]},
     {"id":"rfc7636","title":"Proof Key for Code Exchange by OAuth Public Clients","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7636","number":7636,"markers":["RFC 7636","Proof Key for Code Exchange"]},
