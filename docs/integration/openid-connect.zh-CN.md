@@ -47,23 +47,24 @@ registration metadata 都是可执行 allowlist。
 ## 规划中的规范与草案
 
 本节用于说明已经进入路线图、但当前不会在 discovery 或 registration
-metadata 中宣告的能力。它不是当前部署能力清单。只有完成实现、负向测试、
-元数据生成、迁移/回滚策略和一致性证据后，状态才会从“不支持（待实现）”
-调整为“支持”或“完整支持”。
+metadata 中宣告的能力。它不是当前部署能力清单。状态为“已基本支持；待最终
+RFC 审计”的项目已经由当前实现覆盖主要行为，但还不能宣称最终 RFC
+一致性；状态为“不支持（待实现）”的项目还缺少可执行实现或完整 profile
+边界。
 
-| 规范或草案 | 当前状态 | 进入路线图的原因 | 当前边界 |
+| 规范或草案 | 当前状态 | 为什么现在不作为可宣告能力 | 后续完成条件 |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | 不支持（待实现） | [draft-ietf-oauth-v2-1-15](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) 已经代表 OAuth 2.x 的合并方向；现有实现已大体对齐 code flow、PKCE、禁用 implicit/password 等要求。 | 等最终 RFC 发布后做逐条审计；在此之前不宣称 OAuth 2.1 final conformance。 |
-| OAuth 2.0 for Browser-Based Applications | 不支持（待实现） | [draft-ietf-oauth-browser-based-apps-27](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/) 已在 RFC Editor 队列；它直接影响 SPA、浏览器客户端、BFF 和 token 存储建议。 | 当前只作为浏览器客户端安全审计依据；不新增单独 runtime profile。 |
-| Cross-Device Flows: Security BCP | 不支持（待实现） | [draft-ietf-oauth-cross-device-security-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-cross-device-security/) 已在 RFC Editor 队列；适用于 Device Grant、CIBA、Native SSO 等跨设备交互。 | 用于现有跨设备流程的安全复审；不会自动扩大 grant type。 |
-| OAuth Security BCP Update | 不支持（待实现） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 后续更新方向。 | 作为 RFC 9700 delta audit；不是新端点或新 metadata。 |
-| JWT BCP / JWT Assertion bis | 不支持（待实现） | [draft-ietf-oauth-rfc8725bis-06](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 和 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 会影响 JWT、client assertion、JWT bearer grant 和 `private_key_jwt`。 | 完成算法 allowlist、audience、replay、key binding 和 cross-JWT confusion 复审后再调整声明。 |
-| Refresh Token and Authorization Expiration | 不支持（待实现） | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) 可以让客户端理解 refresh token 与授权关系的生命周期。 | 需要先定义授权有效期、refresh-family 状态、撤销语义和 metadata。 |
-| First-Party Applications | 不支持（待实现） | [draft-ietf-oauth-first-party-apps-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-first-party-apps/) 对同一方应用、BFF、浏览器前端和授权服务器边界有直接价值。 | 只在严格同源/同方部署模型下评估；不能削弱第三方客户端隔离。 |
-| Client ID Metadata Document | 不支持（待实现） | [draft-ietf-oauth-client-id-metadata-document-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) 可作为 public client 元数据 bootstrap 机制。 | 必须先定义可信获取、缓存、降级、冲突和动态注册交互规则。 |
-| SPIFFE Client Authentication | 不支持（待实现） | [draft-ietf-oauth-spiffe-client-auth-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) 对服务网格和 workload identity 部署有价值。 | 需要明确 SPIFFE trust domain、bundle 验证、证书/身份生命周期和资源服务器验证方式。 |
-| Identity Assertion / Identity Chaining / Transaction Tokens | 不支持（待实现） | [draft-ietf-oauth-identity-assertion-authz-grant-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-assertion-authz-grant/)、[draft-ietf-oauth-identity-chaining-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-identity-chaining/) 和 [draft-ietf-oauth-transaction-tokens-09](https://datatracker.ietf.org/doc/draft-ietf-oauth-transaction-tokens/) 覆盖跨域身份断言、链式授权和工作负载调用链。 | 需要单独的 issuer/trust anchor、subject mapping、replay、审计和资源服务器验证模型。 |
-| Token Status List | 不支持（待实现） | [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) 可服务 OpenID4VC 凭证状态、撤销和隐私保护状态发布。 | 只会随 OpenID4VC issuer/verifier 的状态模型实现；不作为通用 OAuth token status endpoint。 |
+| OAuth 2.1 Authorization Framework | 已基本支持；待最终 RFC 审计 | [draft-ietf-oauth-v2-1-15](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) 仍是草案，不是最终 RFC；因此不能宣称 OAuth 2.1 final conformance。当前实现已经对齐 code flow、S256 PKCE、禁用 implicit/password、精确 redirect 和安全默认值。 | 等最终 RFC 发布后做逐条审计，并把最终要求映射到代码、metadata、负向测试和一致性证据。 |
+| OAuth 2.0 for Browser-Based Applications | 不支持（待实现） | [draft-ietf-oauth-browser-based-apps-27](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/) 已在 RFC Editor 队列，但当前没有以该草案命名的 runtime profile 或 discovery claim。 | RFC 发布后复审 SPA/BFF/browser-client 要求；保持 code + S256 PKCE，不引入浏览器前通道 token 泄漏。 |
+| Cross-Device Flows: Security BCP | 不支持（待实现） | [draft-ietf-oauth-cross-device-security-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-cross-device-security/) 是跨设备安全 BCP，不是单个端点；当前没有以它命名的 profile。 | 用最终 BCP 复审 Device Grant、CIBA、Native SSO 和未来跨设备流程。 |
+| OAuth Security BCP Update | 不支持（待实现） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 的增量更新方向，不是新能力。 | 作为 RFC 9700 delta audit；任何行为变化都必须同步 metadata、测试和文档。 |
+| JWT BCP / JWT Assertion bis | 不支持（待实现） | [draft-ietf-oauth-rfc8725bis-06](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 与 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 尚未完成最终发布；当前只按 RFC 8725/RFC 7523 执行。 | 完成算法 allowlist、audience、replay、key binding、cross-JWT confusion 和 `private_key_jwt` 复审。 |
+| Refresh Token and Authorization Expiration | 不支持（待实现） | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) 要求把授权关系和 refresh token 生命周期显式建模；当前 metadata 不宣告这类过期语义。 | 定义授权有效期、refresh-family 状态、撤销语义、metadata 和端到端测试。 |
+| First-Party Applications | 不支持（待实现） | [draft-ietf-oauth-first-party-apps-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-first-party-apps/) 依赖同方/同源部署假设；当前不能把它泛化到第三方客户端。 | 明确 same-party/BFF 边界，并证明不会削弱第三方客户端隔离。 |
+| Client ID Metadata Document | 不支持（待实现） | [draft-ietf-oauth-client-id-metadata-document-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) 涉及 public client 元数据远程获取；当前没有可信获取、缓存和冲突处理模型。 | 定义可信来源、缓存、降级、冲突、动态注册交互和失败策略。 |
+| SPIFFE Client Authentication | 不支持（待实现） | [draft-ietf-oauth-spiffe-client-auth-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) 需要部署方提供 SPIFFE trust domain；普通 OAuth/OIDC 部署不具备该前提。 | 建立 trust bundle 验证、证书/身份生命周期、资源服务器验证和 metadata 隔离。 |
+| Identity Assertion / Identity Chaining / Transaction Tokens | 不支持（待实现） | 这些草案覆盖跨域身份断言、链式授权和工作负载调用链；当前缺少 issuer/trust anchor、subject mapping、Transaction Token Service 和资源服务器验证模型。 | 完成信任域、replay、审计、撤销、资源服务器验证和最小权限传播设计。 |
+| Token Status List | 不支持（待实现） | [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) 更适合 OpenID4VC 凭证状态；当前没有凭证状态发布和隐私模型。 | 随 OpenID4VC issuer/verifier 状态模型实现，不作为通用 OAuth token status endpoint。 |
 
 以下方向目前只是观察项，不属于“待实现”：
 
