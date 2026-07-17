@@ -27,7 +27,8 @@ Current conformance evidence is recorded in
 The run used an operator-provided production HTTPS issuer. Public documentation
 uses `https://issuer.example` only as a sanitized placeholder. Repository
 workflows require operators to provide their own externally reachable
-`OIDF_TARGET_ISSUER` and `OPENID4VC_TARGET_ORIGIN`.
+`target_issuer` / `target_origin` workflow inputs, or their own repository
+variables for private automation.
 
 | Matrix | Result | Scope |
 | --- | --- | --- |
