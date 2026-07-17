@@ -6,33 +6,33 @@
 
 ## 规范与 Profile 支持
 
-| 规范或 Profile | 状态 | 引用 | 说明 |
-| --- | --- | --- | --- |
-| OpenID Connect Core 1.0 | Authorization Code OP 集成完整支持 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) | 交互式登录只使用 `response_type=code`；ID Token 会签名并绑定客户端。 |
-| OpenID Connect Discovery 1.0 | 完整支持 | [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) | Discovery 元数据由当前运行 profile 和已启用模块生成。 |
-| OAuth 2.0 Authorization Server Metadata | 完整支持 | [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414.html) | OAuth 元数据必须反映授权服务器实际可执行行为。 |
-| OAuth 2.0 Protected Resource Metadata | 完整支持 | [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html) | 提供通用和 FAPI 资源元数据面。 |
-| OAuth 2.0 Form Post Response Mode | 对 code 响应完整支持 | [OAuth 2.0 Form Post Response Mode](https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html) | 不启用 implicit 或 hybrid 前通道令牌交付。 |
-| OpenID Connect Third-Party Initiated Login | OP 侧客户端元数据完整支持 | [OpenID Connect Third-Party Initiated Login 1.0](https://openid.net/specs/openid-connect-3rd-party-initiated-login.html) | `initiate_login_uri` 只接受 HTTPS 注册元数据。 |
-| Dynamic Client Registration | 完整支持，默认关闭 | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [OpenID Connect Dynamic Client Registration 1.0](https://openid.net/specs/openid-connect-registration-1_0.html) | 需要 `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`；公网部署应配置 initial access token。 |
-| Dynamic Client Registration Management | 对 DCR 创建的客户端完整支持 | [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) | 使用受保护的 `registration_client_uri` 和 registration access token。 |
-| Pushed Authorization Requests | 完整支持 | [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126.html) | FAPI profile 必需；基线客户端不强制使用 PAR，除非客户端策略要求。 |
-| JWT Secured Authorization Request | 对签名 Request Object 完整支持 | [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) | unsigned Request Object 会被拒绝。 |
-| JWT Secured Authorization Response Mode / JARM | 按客户端/profile 策略完整支持 | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | 用于 message-signing profile 和要求 JARM 的客户端元数据。 |
-| PKCE | 完整支持；仅 S256 | [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | public、FAPI、sender-constrained 客户端必须使用；新 code-flow 客户端也应使用。 |
-| Resource Indicators | 完整支持 | [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html) | 使用重复的 URI 形式 `resource` 参数；外部协议输入不接受 JSON 数组语法。 |
-| Token Introspection | 完整支持 | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html) | FAPI message-signing profile 可使用受保护 introspection 响应。 |
-| Token Revocation | 完整支持 | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html) | 通过 revocation endpoint 提供。 |
-| Device Authorization Grant | 启用时支持；禁用时不宣告 | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | 需要启用 Device Authorization Grant 模块，且客户端 grant allowlist 包含 device code。 |
-| OpenID CIBA / FAPI-CIBA | 启用时支持；禁用时不宣告 | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | 注册 CIBA 客户端支持 poll 和 ping；不实现 push。 |
-| FAPI 2.0 Security Profile | 通过运行 profile 完整支持 | [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) | 要求 confidential client、PAR、sender constraint 和强客户端认证。 |
-| FAPI 2.0 Message Signing | 通过运行 profile / 选项完整支持 | [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-2_0-message-signing.html) | 按 profile 增加签名授权请求、JARM 和受保护响应选项。 |
-| OpenID4VCI 1.0 Final | 完整支持；默认关闭 Credential Issuer 角色 | [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | 不属于普通 OIDC RP 登录；使用独立 credential issuer 元数据和运行模块。 |
-| OpenID4VP 1.0 Final | 完整支持；默认关闭 Verifier 角色 | [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html) | 不属于普通 OIDC RP 登录；使用独立 verifier 请求/响应处理和运行模块。 |
-| OIDC Implicit OP | 不实现；由 OAuth Security BCP / OAuth 2.1 方向排除 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | 授权端点不通过前通道返回 ID Token 或 access token。 |
-| OIDC Hybrid OP | 不实现；因为它要求前通道 token / ID Token 交付 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | 交互式流程保持 Authorization Code。 |
-| Resource Owner Password Credentials | 不实现；OAuth Security BCP 禁止使用 | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | 作为不安全 legacy grant 拒绝。 |
-| 旧 OIDF Dynamic OP 认证 profile | 不实现；与上面的 implicit/hybrid 排除边界冲突 | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | 该认证 profile 要求 implicit/hybrid 元数据；RFC 7591/RFC 7592 动态注册仍支持。 |
+| 能力 | 状态 | 启用 / 宣告条件 | 规范依据 | 说明 |
+| --- | --- | --- | --- | --- |
+| OpenID Connect Core 1.0 | 完整支持 | OIDC 部署始终可用；交互式登录仅使用 Authorization Code | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) | ID Token 会签名并绑定客户端。 |
+| OpenID Connect Discovery 1.0 | 完整支持 | OIDC 部署始终可用 | [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) | Discovery 元数据由当前运行 profile 和已启用模块生成。 |
+| OAuth 2.0 Authorization Server Metadata | 完整支持 | OAuth/OIDC 部署可用 | [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414.html) | OAuth 元数据必须反映授权服务器实际可执行行为。 |
+| OAuth 2.0 Protected Resource Metadata | 完整支持 | 配置对应 protected-resource metadata 表面后可用 | [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html) | 提供通用和 FAPI 资源元数据面。 |
+| OAuth 2.0 Form Post Response Mode | 完整支持 | active profile 允许 `form_post` 时为基线 code-flow 客户端宣告 | [OAuth 2.0 Form Post Response Mode](https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html) | 不启用 implicit 或 hybrid 前通道令牌交付。 |
+| OpenID Connect Third-Party Initiated Login | 完整支持 | 通过 HTTPS `initiate_login_uri` 客户端元数据提供 | [OpenID Connect Third-Party Initiated Login 1.0](https://openid.net/specs/openid-connect-3rd-party-initiated-login.html) | 这是 OP 侧元数据支持；initiation URI 本身是 RP 端点。 |
+| Dynamic Client Registration | 完整支持 | 默认关闭；仅在 `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true` 时宣告 | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [OpenID Connect Dynamic Client Registration 1.0](https://openid.net/specs/openid-connect-registration-1_0.html) | 公网部署应配置 initial access token。 |
+| Dynamic Client Registration Management | 完整支持 | 对通过 Dynamic Client Registration 创建的客户端可用 | [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) | 使用受保护的 `registration_client_uri` 和 registration access token。 |
+| Pushed Authorization Requests | 完整支持 | FAPI profile 必需；基线客户端按客户端策略可用 | [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126.html) | 基线客户端不强制使用 PAR，除非客户端策略要求。 |
+| JWT Secured Authorization Request | 完整支持 | 客户端/profile 策略允许 JAR 时接受签名 Request Object | [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) | unsigned Request Object 会被拒绝。 |
+| JWT Secured Authorization Response Mode / JARM | 完整支持 | JARM 模块/profile/客户端元数据启用签名授权响应时宣告 | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | 用于 message-signing profile 和要求 JARM 的客户端元数据。 |
+| PKCE | 完整支持 | public、FAPI、sender-constrained、非 OIDC code-flow 客户端强制 S256 | [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | 新 confidential OIDC 集成也应发送 S256 PKCE。 |
+| Resource Indicators | 完整支持 | authorization、token、refresh 流程携带 resource indicators 时可用 | [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html) | 使用重复 URI 形式 `resource` 参数；外部协议输入不接受 JSON 数组语法。 |
+| Token Introspection | 完整支持 | introspection endpoint 可用，受客户端策略限制 | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html) | FAPI message-signing profile 可使用受保护 introspection 响应。 |
+| Token Revocation | 完整支持 | revocation endpoint 可用 | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html) | 按 token 类型和客户端策略撤销 token。 |
+| Device Authorization Grant | 支持 | 默认关闭；仅在 device 模块启用且客户端 grant allowlist 包含 device code 时宣告 | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | 禁用部署不声明该 grant。 |
+| OpenID CIBA / FAPI-CIBA | 支持 | 默认关闭；仅在 CIBA 启用且客户端注册 poll 或 ping 时宣告 | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | 不实现 push。 |
+| FAPI 2.0 Security Profile | 完整支持 | 选择 FAPI 运行 profile 并注册 FAPI-compatible 客户端后启用 | [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) | 要求 confidential client、PAR、sender constraint 和强客户端认证。 |
+| FAPI 2.0 Message Signing | 完整支持 | 选择 message-signing profile/选项和兼容客户端元数据后启用 | [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-2_0-message-signing.html) | 按 profile 增加签名授权请求、JARM 和受保护响应选项。 |
+| OpenID4VCI 1.0 Final | 完整支持 | 默认关闭；启用 Credential Issuer 角色并完成 credential/trust 配置后，通过 OpenID4VCI issuer metadata 宣告 | [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | 不属于普通 OIDC RP 登录。 |
+| OpenID4VP 1.0 Final | 完整支持 | 默认关闭；启用 Verifier 角色并完成 trust 配置后，通过 OpenID4VP verifier metadata 宣告 | [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html) | 不属于普通 OIDC RP 登录。 |
+| OIDC Implicit OP | 不实现 | 无启用开关；不宣告 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | 由 OAuth Security BCP / OAuth 2.1 方向排除。 |
+| OIDC Hybrid OP | 不实现 | 无启用开关；不宣告 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | 因为它要求前通道 token / ID Token 交付。 |
+| Resource Owner Password Credentials | 不实现 | 无启用开关；请求时拒绝 | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP 明确 password grant MUST NOT be used。 |
+| 旧 OIDF Dynamic OP 认证 profile | 不实现 | 无启用开关；OIDF Dynamic OP plan 不进入支持矩阵 | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | 该认证 profile 要求 implicit/hybrid 元数据；RFC 7591/RFC 7592 动态注册仍支持。 |
 
 ## 可发现端点
 
@@ -271,8 +271,8 @@ Content encryption algorithms：
 | `authorization_code` | 支持 | [RFC 6749 Section 4.1](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.1), [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) | 客户端 grant allowlist 包含它 | 主要 OIDC 登录 grant。 |
 | `refresh_token` | 支持 | [RFC 6749 Section 6](https://www.rfc-editor.org/rfc/rfc6749.html#section-6) | 客户端策略、consent 和 grant 允许 | 永远不从 implicit/front-channel flow 返回。 |
 | `client_credentials` | 支持 | [RFC 6749 Section 4.4](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.4) | 客户端 grant allowlist 包含它 | 仅 OAuth 资源访问；不是 OIDC login flow。 |
-| `urn:ietf:params:oauth:grant-type:device_code` | 启用时支持；禁用时不宣告 | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | Device Authorization Grant 模块启用且客户端 allowlist 包含 | 禁用部署不声明该 grant。 |
-| OpenID CIBA grant | 启用时支持；禁用时不宣告 | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html) | CIBA 模块启用且客户端注册 poll 或 ping delivery | 不实现 push delivery mode。 |
+| `urn:ietf:params:oauth:grant-type:device_code` | 支持 | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | Device Authorization Grant 模块启用且客户端 allowlist 包含 | 禁用部署不声明该 grant。 |
+| OpenID CIBA grant | 支持 | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html) | CIBA 模块启用且客户端注册 poll 或 ping delivery | 不实现 push delivery mode。 |
 | `urn:ietf:params:oauth:grant-type:jwt-bearer` | 支持 | [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523.html) | 客户端 grant allowlist 包含它 | 用于有边界的资源访问。 |
 | `urn:ietf:params:oauth:grant-type:token-exchange` | 支持 | [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html) | 显式 bounded local profile / client policy | 不是通用任意委托机制。 |
 | `password` | 不实现 | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4) | N/A | RFC 9700 明确该 grant MUST NOT be used。 |
@@ -287,9 +287,9 @@ Content encryption algorithms：
 | `client_secret_post` | 支持，仅兼容用途 | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | 有存储 secret 的 confidential client；FAPI profile 排除 | 优先使用 `client_secret_basic`、`private_key_jwt` 或 mTLS。 |
 | `client_secret_jwt` | 不实现 | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) | N/A | JWT client assertion 使用 `private_key_jwt`。 |
 | `private_key_jwt` | 支持 | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523.html) | 客户端有有效注册签名密钥 | 支持签名算法为 `EdDSA`、`RS256`、`ES256`、`PS256`；高保障 profile 可收窄。 |
-| `tls_client_auth` | mTLS 启用时支持 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | 配置可信 mTLS/proxy 边界；客户端元数据绑定证书 subject/SAN/hash | 仅在部署 mTLS 支持激活时宣告。 |
-| `self_signed_tls_client_auth` | mTLS 启用时支持 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | 配置可信 mTLS/proxy 边界；客户端注册 self-signed certificate material | 仅在部署 mTLS 支持激活时宣告。 |
-| `attest_jwt_client_auth` | 启用时支持；禁用时不宣告 | [OAuth Client Attestation draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/) | Client Attestation 模块启用且客户端策略要求 | 禁用部署不声明该客户端认证方式。 |
+| `tls_client_auth` | 支持 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | 配置可信 mTLS/proxy 边界；客户端元数据绑定证书 subject/SAN/hash | 仅在部署 mTLS 支持激活时宣告。 |
+| `self_signed_tls_client_auth` | 支持 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | 配置可信 mTLS/proxy 边界；客户端注册 self-signed certificate material | 仅在部署 mTLS 支持激活时宣告。 |
+| `attest_jwt_client_auth` | 支持 | [OAuth Client Attestation draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/) | Client Attestation 模块启用且客户端策略要求 | 禁用部署不声明该客户端认证方式。 |
 
 高保障集成应优先使用非对称或 sender-constrained 客户端认证。FAPI profile 排除 shared-secret POST 认证。
 
