@@ -99,11 +99,9 @@ failures` and `0 warnings`, but it is not zero-SKIPPED evidence.
 
 ## Expected Warning Policy
 
-The official-suite ingress currently negotiates TLS 1.2 for CIBA ping
-callbacks even when the client offers TLS 1.3. The workflow therefore permits
-only the 26 exact `EnsureIncomingTls13` warning contexts in
-[`oidf-official-expected-warnings.json`](../../tests/contracts/oidf-official-expected-warnings.json).
-Every record is bound to a configuration, full variant, module, block,
-condition, and result. Unexpected warnings and missing expected records both
-fail the workflow. The companion secure-TLS-1.2-or-TLS-1.3 condition passes.
-See the linked evidence record for the measured boundary and artifact digests.
+The current matrix has zero expected warnings:
+[`oidf-official-expected-warnings.json`](../../tests/contracts/oidf-official-expected-warnings.json)
+is intentionally empty. TLS, callback, browser, and protocol checks must pass
+against the deployed public issuer. A warning means the deployment or protocol
+boundary needs repair rather than a broader allowlist. Unexpected warnings and
+missing expected records both fail the workflow.
