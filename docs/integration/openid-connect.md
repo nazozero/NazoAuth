@@ -31,6 +31,8 @@ deployment and every conformance run must use its own public HTTPS issuer.
 | OpenID CIBA / FAPI-CIBA | Optional module | Supports poll and ping modes for registered CIBA clients; push is not implemented. |
 | FAPI 2.0 Security Profile | Supported through runtime profile | Requires confidential clients, PAR, sender constraints, and strong client authentication. |
 | FAPI 2.0 Message Signing | Supported through runtime profile/options | Adds signed authorization requests, JARM, and protected response options according to profile. |
+| OpenID4VCI 1.0 Final | Supported as a separate default-closed Credential Issuer role | Not part of ordinary OIDC RP login; uses its own credential issuer metadata and runtime module. |
+| OpenID4VP 1.0 Final | Supported as a separate default-closed Verifier role | Not part of ordinary OIDC RP login; uses its own verifier request/response processing and runtime module. |
 | OIDC Implicit OP | Not implemented by security policy | NazoAuth does not return ID Tokens or access tokens from the authorization endpoint front channel. |
 | OIDC Hybrid OP | Not implemented by security policy | Interactive flows stay on Authorization Code. |
 | Resource Owner Password Credentials | Not implemented by security policy | Rejected as an unsafe legacy grant. |
@@ -213,51 +215,121 @@ discovery document does not advertise. Metadata truth is a hard contract in
 NazoAuth: advertised algorithms must be executable, and unadvertised algorithms
 must not be assumed.
 
+### JWT signing algorithms
+
+The following table summarizes the JOSE signing algorithms NazoAuth supports
+for OIDC/OAuth client-configurable surfaces. A deployment may advertise a subset
+when the active keyset or runtime profile is narrower.
+
+| Algorithm | Key type | Hashing algorithm | Use | Supported surfaces | Default conditions | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| `EdDSA` | Ed25519 | EdDSA | `sig` | Request Objects, client assertions, UserInfo, JARM, introspection/revocation response JWTs where the surface is enabled | Requires an active Ed25519 signing key or registered client Ed25519 public key, depending on direction | Supported as an asymmetric high-assurance option. |
+| `RS256` | RSA | SHA-256 | `sig` | ID Token baseline compatibility, Request Objects, client assertions, UserInfo, JARM, introspection/revocation response JWTs where enabled | Requires an RSA key accepted by the active keyset/client JWK policy | Included for broad OIDC interoperability. RSA keys must meet the deployment key-strength policy. |
+| `ES256` | ECDSA P-256 | SHA-256 | `sig` | Request Objects, client assertions, UserInfo, JARM, introspection/revocation response JWTs where enabled | Requires a P-256 key accepted by the active keyset/client JWK policy | Supported for asymmetric client and response signing. |
+| `PS256` | RSA-PSS | SHA-256 | `sig` | FAPI/FAPI-CIBA, Request Objects, client assertions, UserInfo, JARM, introspection/revocation response JWTs where enabled | Requires an RSA key accepted by the active keyset/client JWK policy | Preferred/required by several high-assurance profiles. |
+| `HS256`, `HS384`, `HS512` | Symmetric | SHA-256 / SHA-384 / SHA-512 | `sig` | Not supported | N/A | NazoAuth does not use shared client secrets for OP response signing or Request Object validation. |
+| `RS384`, `RS512` | RSA | SHA-384 / SHA-512 | `sig` | Not supported | N/A | Not advertised; use an advertised algorithm instead. |
+| `ES384`, `ES512` | ECDSA P-384 / P-521 | SHA-384 / SHA-512 | `sig` | Not supported | N/A | Not advertised; use an advertised algorithm instead. |
+| `PS384`, `PS512` | RSA-PSS | SHA-384 / SHA-512 | `sig` | Not supported | N/A | Not advertised; use `PS256` where RSA-PSS is required. |
+| `none` | None | None | N/A | Not supported | N/A | Unsigned ID Tokens and unsigned Request Objects are intentionally not implemented. |
+
+### Request Object algorithms
+
+Request Objects are accepted only when the client and runtime policy allow that
+request path.
+
+| Algorithm | Key type | Hashing algorithm | Use | Client authentication / registration condition | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `EdDSA` | Ed25519 | EdDSA | `sig` | Registered client JWK or resolved `jwks_uri` key with `use=sig` and `alg=EdDSA` | Supported for signed Request Objects and client assertions. |
+| `RS256` | RSA | SHA-256 | `sig` | Registered client JWK or resolved `jwks_uri` key with `use=sig` and `alg=RS256` | Baseline interoperability option. |
+| `ES256` | ECDSA P-256 | SHA-256 | `sig` | Registered client JWK or resolved `jwks_uri` key with `use=sig` and `alg=ES256` | Supported asymmetric option. |
+| `PS256` | RSA-PSS | SHA-256 | `sig` | Registered client JWK or resolved `jwks_uri` key with `use=sig` and `alg=PS256` | High-assurance/FAPI-compatible option. |
+| `none` | None | None | N/A | Not accepted | Rejected by security policy; expected OIDF skips for unsigned modules are bounded and explicit. |
+| `HS*`, `RS384`, `RS512`, `ES384`, `ES512`, `PS384`, `PS512` | Various | Various | `sig` | Not accepted | Not advertised by discovery and rejected by client metadata/JWK policy. |
+
+External `request_uri` is not a general internet fetch feature. It is accepted
+only for exact HTTPS URIs that were registered through authenticated client
+metadata and that pass the deployment's remote-document safety policy. FAPI
+profiles continue to prefer PAR and server-issued request URIs.
+
+### JWE encryption algorithms
+
+NazoAuth deliberately exposes a narrow JWE set for client-encrypted UserInfo,
+encrypted JARM, and other client-bound response JWT surfaces.
+
+Key management algorithms:
+
+| Algorithm | Key type | Use | JWK condition | Notes |
+| --- | --- | --- | --- | --- |
+| `RSA-OAEP-256` | RSA | `enc` | Client JWK must contain an RSA public key with `use=enc`, `alg=RSA-OAEP-256`, and a `kid` | Only supported key-management algorithm for client response encryption. |
+| `RSA1_5` | RSA | `enc` | Not supported | Rejected; do not configure clients to require it. |
+| `RSA-OAEP` | RSA | `enc` | Not supported | Use `RSA-OAEP-256`. |
+| `ECDH-ES`, `ECDH-ES+A*KW` | EC | `enc` | Not supported | Not advertised. |
+| `A*KW`, `dir`, `PBES2-*` | Symmetric/password-based | `enc` | Not supported | Shared symmetric/password JWE modes are not used for OIDC client responses. |
+
+Content encryption algorithms:
+
+| Algorithm | Supported | Notes |
+| --- | --- | --- |
+| `A256GCM` | Yes | Required when encrypted client response JWTs are configured. |
+| `A128GCM`, `A192GCM` | No | Not advertised. |
+| `A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512` | No | Not advertised. |
+
 ## Response types and response modes
 
 Supported interactive response type:
 
-| Response type | Status |
-| --- | --- |
-| `code` | Supported |
-| `id_token`, `token`, `id_token token` | Not implemented by security policy |
-| Hybrid combinations such as `code id_token` or `code token` | Not implemented by security policy |
+| Name | Supported | Value | Notes |
+| --- | --- | --- | --- |
+| Authorization Code | Yes | `code` | The only interactive OIDC response type. Public clients, FAPI clients, sender-constrained clients, and non-OIDC code-flow clients must use S256 PKCE. |
+| Implicit ID Token | No | `id_token` | Not implemented by security policy. |
+| Implicit Access Token | No | `token` | Not implemented by security policy. |
+| Implicit ID Token + Access Token | No | `id_token token` | Not implemented by security policy. |
+| Hybrid Code + ID Token | No | `code id_token` | Not implemented by security policy. |
+| Hybrid Code + Token | No | `code token` | Not implemented by security policy. |
+| Hybrid Code + ID Token + Token | No | `code id_token token` | Not implemented by security policy. |
 
 Supported response modes for baseline OIDC:
 
-| Response mode | Status |
-| --- | --- |
-| `query` | Supported for code responses |
-| `form_post` | Supported for code responses |
-| `jwt` / JARM response modes | Supported when negotiated and enabled by client/profile policy |
-| `fragment` carrying tokens | Not implemented for interactive token delivery |
+| Name | Supported | Value | Conditions | Notes |
+| --- | --- | --- | --- | --- |
+| Query String | Yes | `query` | Baseline code flow and profiles that allow plain authorization responses | Default mode for `response_type=code` when no stricter profile applies. |
+| OAuth 2.0 Form Post | Yes | `form_post` | Baseline code flow; not available for FAPI profiles that require stricter response policy | Returns a no-store, CSP-protected auto-submit HTML form to the registered redirect URI. |
+| JARM | Yes | `jwt` | JARM module/profile/client metadata enabled | Signed authorization response JWT; may be nested JWE when client encryption metadata is valid. |
+| Form Post JARM | No | `form_post.jwt` | N/A | Not advertised; use `jwt` for JARM or `form_post` for plain code form-post. |
+| Query JARM | No | `query.jwt` | N/A | Not advertised as a distinct response mode. |
+| Fragment JARM | No | `fragment.jwt` | N/A | Not advertised. |
+| Fragment | No | `fragment` | N/A | Front-channel token delivery is not implemented. |
 
 `form_post` does not enable implicit or hybrid token delivery. It is only a
 browser transport for supported authorization responses.
 
 ## Grant types
 
-| Grant type | Status |
-| --- | --- |
-| `authorization_code` | Supported |
-| `refresh_token` | Supported according to client policy |
-| `client_credentials` | Supported for OAuth resource access; not an OIDC login flow |
-| `urn:ietf:params:oauth:grant-type:device_code` | Supported only when the Device Authorization Grant module and client allowlist are enabled |
-| OpenID CIBA grant | Supported only when CIBA is enabled and the client is registered for it |
-| `urn:ietf:params:oauth:grant-type:token-exchange` | Supported as a bounded local profile |
-| `password` | Not implemented by security policy |
-| `implicit` | Not implemented by security policy |
+| Grant type | Supported | Advertisement / enablement rule | Notes |
+| --- | --- | --- | --- |
+| `authorization_code` | Yes | Client grant allowlist includes it | Primary OIDC login grant. |
+| `refresh_token` | Yes | Client policy, consent, and grant allow it | Never returned from implicit/front-channel flows. |
+| `client_credentials` | Yes | Client grant allowlist includes it | OAuth resource access only; not an OIDC login flow. |
+| `urn:ietf:params:oauth:grant-type:device_code` | Optional | Device Authorization Grant module enabled and client allowlist includes it | Not advertised when disabled. |
+| OpenID CIBA grant | Optional | CIBA module enabled and client registered for poll or ping delivery | Push delivery mode is not implemented. |
+| `urn:ietf:params:oauth:grant-type:jwt-bearer` | Yes | Client grant allowlist includes it | RFC 7523 JWT bearer grant for bounded resource access. |
+| `urn:ietf:params:oauth:grant-type:token-exchange` | Yes | Explicit bounded local profile/client policy | Not a generic arbitrary delegation mechanism. |
+| `password` | No | N/A | Not implemented by security policy. |
+| `implicit` | No | N/A | Not implemented by security policy. |
 
 ## Client authentication
 
-Baseline clients may use:
-
-- `none` for public clients with PKCE;
-- `client_secret_basic`;
-- `client_secret_post` for compatibility only;
-- `private_key_jwt`;
-- `tls_client_auth`;
-- `self_signed_tls_client_auth`.
+| Method | Supported | Client type / conditions | Notes |
+| --- | --- | --- | --- |
+| `none` | Yes | Public clients only; S256 PKCE required | Not allowed for confidential-client grants. |
+| `client_secret_basic` | Yes | Confidential clients with stored secret | Baseline shared-secret method. |
+| `client_secret_post` | Yes, compatibility only | Confidential clients with stored secret; excluded by FAPI profiles | Prefer `client_secret_basic`, `private_key_jwt`, or mTLS. |
+| `client_secret_jwt` | No | N/A | Not implemented; use `private_key_jwt` for JWT client assertions. |
+| `private_key_jwt` | Yes | Client has a valid registered signing key | Supported signing algorithms are `EdDSA`, `RS256`, `ES256`, and `PS256`; high-assurance profiles may narrow this set. |
+| `tls_client_auth` | Yes when mTLS is enabled | Trusted mTLS/proxy boundary configured; client metadata binds certificate subject/SAN/hash | Advertised only when deployment mTLS support is active. |
+| `self_signed_tls_client_auth` | Yes when mTLS is enabled | Trusted mTLS/proxy boundary configured; client has registered self-signed certificate material | Advertised only when deployment mTLS support is active. |
+| `attest_jwt_client_auth` | Optional | Client-attestation module enabled and client policy requires it | Advertised only when the runtime module is enabled. |
 
 High-assurance integrations should prefer asymmetric or sender-constrained
 client authentication. FAPI profiles exclude shared-secret POST authentication.
@@ -331,10 +403,10 @@ server must not advertise disabled or incomplete behavior.
 | Dynamic Client Registration | `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; public deployments should configure an initial access token. |
 | Device Authorization Grant | `ENABLE_DEVICE_AUTHORIZATION_GRANT=true` and client grant allowlist includes device code. |
 | CIBA | `ENABLE_CIBA=true` and registered CIBA clients with allowed delivery mode. |
-| SCIM Security Events | SCIM events module enabled and at least one valid receiver configuration. |
 | mTLS client authentication / sender constraints | Trusted mTLS/proxy boundary configured and client metadata registered. |
 | FAPI profiles | `AUTHORIZATION_SERVER_PROFILE` and client policy must enforce PAR, sender constraints, strong client authentication, and PKCE where applicable. |
 | UserInfo/JARM encryption | Client metadata includes valid encryption preferences and exactly one usable public key for the selected algorithm. |
+| OpenID4VCI / OpenID4VP | Corresponding runtime module enabled, credential/trust configuration complete, and public metadata generated from that configuration. |
 
 ## Integration checklist
 
