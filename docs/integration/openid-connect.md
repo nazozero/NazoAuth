@@ -8,6 +8,15 @@ implemented, and the deployment flags that affect metadata.
 Use `https://issuer.example` only as a placeholder in this document. Every
 deployment and every conformance run must use its own public HTTPS issuer.
 
+Status terms are literal. **Complete** means the capability is implemented for
+the stated role/profile and is advertised only when its enablement conditions
+are true. **Not implemented** means no runtime flag, client metadata field, or
+hidden compatibility path enables that capability. When a row says
+**not supported** for a standards-defined optional value, the reference explains
+the syntax and security model, while discovery and registration metadata are the
+executable allowlist. A standards-defined optional value is not automatically a
+claim that the value is safe or implemented here.
+
 ## Standards and profile support
 
 | Capability | Status | Enablement / advertisement condition | References | Notes |
@@ -118,7 +127,7 @@ Accepted client metadata includes the usual OIDC/OAuth fields:
 | `authorization_signed_response_alg` | Supported for JARM-capable clients/profiles | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | Must be executable by the active keyset. |
 | `authorization_encrypted_response_alg` / `authorization_encrypted_response_enc` | Supported for nested encrypted JARM | [JARM](https://openid.net/specs/oauth-v2-jarm.html), [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html) | Requires a valid client encryption key. |
 | `initiate_login_uri` | Supported; HTTPS only | [Third-Party Initiated Login](https://openid.net/specs/openid-connect-3rd-party-initiated-login.html) | OP-side metadata for RP-initiated login initiation. |
-| `software_statement` | Not implemented | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html) | No software-statement trust framework is exposed. |
+| `software_statement` | Not implemented | [RFC 7591 Section 2](https://www.rfc-editor.org/rfc/rfc7591.html#section-2) | RFC 7591 defines software statements as signed client metadata from a trusted statement issuer. No software-statement issuer, trust anchor, or verification policy is configured or advertised. |
 
 Recommended baseline registration metadata:
 
@@ -216,6 +225,12 @@ discovery document does not advertise. Metadata truth is a hard contract in
 this implementation: advertised algorithms must be executable, and unadvertised algorithms
 must not be assumed.
 
+The JOSE tables intentionally separate two cases: algorithms excluded by a
+security boundary, and optional JOSE algorithms that are standards-defined but
+not advertised by the current metadata. For optional unadvertised algorithms,
+the cited RFC is the syntax reference, not a statement that the RFC forbids that
+algorithm.
+
 ### JWT signing algorithms
 
 The following table summarizes the JOSE signing algorithms supported
@@ -228,11 +243,11 @@ when the active keyset or runtime profile is narrower.
 | `RS256` | RSA | SHA-256 | `sig` | Supported for ID Token baseline compatibility, Request Objects, client assertions, UserInfo, JARM, introspection/revocation response JWTs where enabled | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) | Included for broad OIDC interoperability. RSA keys must meet the deployment key-strength policy. |
 | `ES256` | ECDSA P-256 | SHA-256 | `sig` | Supported for Request Objects, client assertions, UserInfo, JARM, introspection/revocation response JWTs where enabled | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Requires a P-256 key accepted by the active keyset/client JWK policy. |
 | `PS256` | RSA-PSS | SHA-256 | `sig` | Supported for FAPI/FAPI-CIBA, Request Objects, client assertions, UserInfo, JARM, introspection/revocation response JWTs where enabled | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [FAPI 2.0 Security](https://openid.net/specs/fapi-2_0-security-profile.html) | Preferred/required by several high-assurance profiles. |
-| `HS256`, `HS384`, `HS512` | Symmetric | SHA-256 / SHA-384 / SHA-512 | `sig` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Shared client secrets are not used for OP response signing or Request Object validation. |
-| `RS384`, `RS512` | RSA | SHA-384 / SHA-512 | `sig` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised; use an advertised algorithm instead. |
-| `ES384`, `ES512` | ECDSA P-384 / P-521 | SHA-384 / SHA-512 | `sig` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised; use an advertised algorithm instead. |
-| `PS384`, `PS512` | RSA-PSS | SHA-384 / SHA-512 | `sig` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised; use `PS256` where RSA-PSS is required. |
-| `none` | None | None | N/A | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725](https://www.rfc-editor.org/rfc/rfc8725.html), [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) | Unsigned ID Tokens and unsigned Request Objects are intentionally not implemented. |
+| `HS256`, `HS384`, `HS512` | Symmetric | SHA-256 / SHA-384 / SHA-512 | `sig` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [OpenID Connect Core Section 10.1](https://openid.net/specs/openid-connect-core-1_0.html#SigEnc), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | OIDC derives symmetric signing keys from `client_secret` and forbids symmetric signatures for public clients. Shared secrets are stored as verifier material and are not used as OP response-signing or Request Object-verification keys. |
+| `RS384`, `RS512` | RSA | SHA-384 / SHA-512 | `sig` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Standards-defined optional JOSE algorithms, but not advertised; clients must use the advertised algorithm allowlist. |
+| `ES384`, `ES512` | ECDSA P-384 / P-521 | SHA-384 / SHA-512 | `sig` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Standards-defined optional JOSE algorithms, but not advertised; clients must use the advertised algorithm allowlist. |
+| `PS384`, `PS512` | RSA-PSS | SHA-384 / SHA-512 | `sig` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Standards-defined optional JOSE algorithms, but not advertised; use `PS256` where RSA-PSS is required. |
+| `none` | None | None | N/A | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1), [RFC 9101 Section 4](https://www.rfc-editor.org/rfc/rfc9101.html#section-4) | Unsigned ID Tokens and unsigned Request Objects are intentionally not implemented. Request Objects must be signed or signed and encrypted. |
 
 ### Request Object algorithms
 
@@ -245,8 +260,8 @@ request path.
 | `RS256` | RSA | SHA-256 | `sig` | Accepted with registered client JWK or resolved `jwks_uri` key using `use=sig` and `alg=RS256` | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) | Baseline interoperability option. |
 | `ES256` | ECDSA P-256 | SHA-256 | `sig` | Accepted with registered client JWK or resolved `jwks_uri` key using `use=sig` and `alg=ES256` | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) | Supported asymmetric option. |
 | `PS256` | RSA-PSS | SHA-256 | `sig` | Accepted with registered client JWK or resolved `jwks_uri` key using `use=sig` and `alg=PS256` | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101.html) | High-assurance/FAPI-compatible option. |
-| `none` | None | None | N/A | Not accepted | [RFC 9101 Section 10.5](https://www.rfc-editor.org/rfc/rfc9101.html#section-10.5), [RFC 8725 Section 3.2](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.2) | Rejected because signed Request Objects are required for protected request-object surfaces; expected OIDF skips for unsigned modules are bounded and explicit. |
-| `HS*`, `RS384`, `RS512`, `ES384`, `ES512`, `PS384`, `PS512` | Various | Various | `sig` | Not accepted | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised by discovery and rejected by client metadata/JWK policy. |
+| `none` | None | None | N/A | Not accepted | [RFC 9101 Section 4](https://www.rfc-editor.org/rfc/rfc9101.html#section-4), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Rejected because signed Request Objects are required for protected request-object surfaces; expected OIDF skips for unsigned modules are bounded and explicit. |
+| `HS*`, `RS384`, `RS512`, `ES384`, `ES512`, `PS384`, `PS512` | Various | Various | `sig` | Not accepted | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1), [RFC 9101 Section 6.1](https://www.rfc-editor.org/rfc/rfc9101.html#section-6.1) | Standards-defined JOSE algorithms, but not advertised for Request Objects. Request Object validation uses a strict per-client algorithm allowlist. |
 
 External `request_uri` is not a general internet fetch feature. It is accepted
 only for exact HTTPS URIs that were registered through authenticated client
@@ -266,19 +281,19 @@ Key management algorithms:
 | `ECDH-ES` | ECDH-ES with P-256 | `enc` | Supported; client JWK must contain a public P-256 EC key with `use=enc`, `alg=ECDH-ES`, and a `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Direct ECDH key agreement for client response encryption. |
 | `ECDH-ES+A256KW` | ECDH-ES with P-256 and AES-256 Key Wrap | `enc` | Supported; client JWK must contain a public P-256 EC key with `use=enc`, `alg=ECDH-ES+A256KW`, and a `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Preferred ECDH key-wrap mode. |
 | `ECDH-ES+A128KW` | ECDH-ES with P-256 and AES-128 Key Wrap | `enc` | Supported; client JWK must contain a public P-256 EC key with `use=enc`, `alg=ECDH-ES+A128KW`, and a `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Compatibility ECDH key-wrap mode. |
-| `RSA1_5` | RSA | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725](https://www.rfc-editor.org/rfc/rfc8725.html) | Rejected; do not configure clients to require it. |
-| `RSA-OAEP` | RSA | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Use `RSA-OAEP-256`. |
-| `ECDH-ES+A192KW` | ECDH-ES with AES-192 Key Wrap | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised. |
-| `A128KW`, `A256KW` | Symmetric AES Key Wrap | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) | Symmetric response encryption would require a reversible client response-encryption key. Client secrets are stored as one-way hashes and are not reused as JWE wrapping keys. |
-| `A192KW`, `dir`, `PBES2-*` | Symmetric/password-based | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725](https://www.rfc-editor.org/rfc/rfc8725.html) | Not advertised. |
+| `RSA1_5` | RSA | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.2](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.2) | Rejected by the algorithm allowlist; do not configure clients to require it. |
+| `RSA-OAEP` | RSA | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Standards-defined optional JOSE algorithm, but not advertised; use `RSA-OAEP-256`. |
+| `ECDH-ES+A192KW` | ECDH-ES with AES-192 Key Wrap | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Standards-defined optional JOSE algorithm, but not advertised. |
+| `A128KW`, `A256KW` | Symmetric AES Key Wrap | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [OpenID Connect Core Section 10.2](https://openid.net/specs/openid-connect-core-1_0.html#Encryption), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | OIDC symmetric response encryption derives keys from `client_secret` and forbids public clients. Client secrets are stored as one-way hashes, so this mode is not implemented without a separate encrypted response-key model. |
+| `A192KW`, `dir`, `PBES2-*` | Symmetric/password-based | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Standards-defined optional JOSE algorithms, but not advertised by the response-encryption allowlist. |
 
 Content encryption algorithms:
 
 | Algorithm | Status | References | Notes |
 | --- | --- | --- | --- |
 | `A256GCM` | Supported | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Required when encrypted client response JWTs are configured. |
-| `A128GCM`, `A192GCM` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised. |
-| `A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised. |
+| `A128GCM`, `A192GCM` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Standards-defined optional content encryption algorithms, but not advertised; use `A256GCM`. |
+| `A128CBC-HS256`, `A192CBC-HS384`, `A256CBC-HS512` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Standards-defined optional content encryption algorithms, but not advertised; use `A256GCM`. |
 
 ## Response types and response modes
 
@@ -301,9 +316,9 @@ Supported response modes for baseline OIDC:
 | Query String | Supported | `query` | [OAuth 2.0 Multiple Response Type Encoding Practices](https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html) | Baseline code flow and profiles that allow plain authorization responses | Default mode for `response_type=code` when no stricter profile applies. |
 | OAuth 2.0 Form Post | Supported | `form_post` | [OAuth 2.0 Form Post Response Mode](https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html) | Baseline code flow; not available for FAPI profiles that require stricter response policy | Returns a no-store, CSP-protected auto-submit HTML form to the registered redirect URI. |
 | JARM | Supported | `jwt` | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | JARM module/profile/client metadata enabled | Signed authorization response JWT; may be nested JWE when client encryption metadata is valid. |
-| Form Post JARM | Not implemented | `form_post.jwt` | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | N/A | Not advertised; use `jwt` for JARM or `form_post` for plain code form-post. |
-| Query JARM | Not implemented | `query.jwt` | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | N/A | Not advertised as a distinct response mode. |
-| Fragment JARM | Not implemented | `fragment.jwt` | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | N/A | Not advertised. |
+| Form Post JARM | Not supported | `form_post.jwt` | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | N/A | Standards-defined response mode, but not advertised; use `jwt` for JARM or `form_post` for plain code form-post. |
+| Query JARM | Not supported | `query.jwt` | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | N/A | Standards-defined response mode, but not advertised as a distinct response mode. |
+| Fragment JARM | Not supported | `fragment.jwt` | [JARM](https://openid.net/specs/oauth-v2-jarm.html) | N/A | Standards-defined response mode, but not advertised. |
 | Fragment | Not implemented | `fragment` | [OAuth 2.0 Multiple Response Type Encoding Practices](https://openid.net/specs/oauth-v2-multiple-response-types-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | N/A | Front-channel token delivery is not implemented. |
 
 `form_post` does not enable implicit or hybrid token delivery. It is only a
@@ -330,7 +345,7 @@ browser transport for supported authorization responses.
 | `none` | Supported | [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html), [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html) | Public clients only; S256 PKCE required | Not allowed for confidential-client grants. |
 | `client_secret_basic` | Supported | [RFC 6749 Section 2.3.1](https://www.rfc-editor.org/rfc/rfc6749.html#section-2.3.1), [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) | Confidential clients with stored secret | Baseline shared-secret method. |
 | `client_secret_post` | Supported, compatibility only | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Confidential clients with stored secret; excluded by FAPI profiles | Prefer `client_secret_basic`, `private_key_jwt`, or mTLS. |
-| `client_secret_jwt` | Not implemented | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) | N/A | Use `private_key_jwt` for JWT client assertions. |
+| `client_secret_jwt` | Not supported | [OpenID Connect Core Section 9](https://openid.net/specs/openid-connect-core-1_0.html#ClientAuthentication), [RFC 9700 Section 2.5](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.5) | N/A | Standards-defined for confidential clients, but not advertised. JWT client assertions use `private_key_jwt`; high-assurance clients should use asymmetric or sender-constrained authentication. |
 | `private_key_jwt` | Supported | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523.html) | Client has a valid registered signing key | Supported signing algorithms are `EdDSA`, `RS256`, `ES256`, and `PS256`; high-assurance profiles may narrow this set. |
 | `tls_client_auth` | Supported | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | Trusted mTLS/proxy boundary configured; client metadata binds certificate subject/SAN/hash | Advertised only when deployment mTLS support is active. |
 | `self_signed_tls_client_auth` | Supported | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | Trusted mTLS/proxy boundary configured; client has registered self-signed certificate material | Advertised only when deployment mTLS support is active. |
@@ -393,7 +408,7 @@ boundaries.
 | Implicit grant and implicit OIDC response types | Not implemented | [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP deprecates implicit because browser front-channel token delivery has weaker leakage and replay properties than code flow with PKCE. |
 | Hybrid response types | Not implemented | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Hybrid profiles add front-channel ID Token and/or access-token delivery; the supported interactive profile remains authorization code. |
 | Resource Owner Password Credentials | Not implemented | [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP states that the password grant MUST NOT be used because it exposes user credentials to clients and does not compose with modern MFA/passkey authentication. |
-| Unsigned Request Objects (`alg=none`) | Not implemented | [RFC 9101 Section 10.5](https://www.rfc-editor.org/rfc/rfc9101.html#section-10.5), [RFC 8725 Section 3.2](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.2) | Protected request-object surfaces require signed Request Objects; JWT BCP requires applications to allow only algorithms that meet the application's security requirements. |
+| Unsigned Request Objects (`alg=none`) | Not implemented | [RFC 9101 Section 4](https://www.rfc-editor.org/rfc/rfc9101.html#section-4), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Protected request-object surfaces require signed Request Objects; JWT BCP requires applications to allow only algorithms that meet the application's security requirements. |
 | Query-string bearer tokens | Not implemented | [RFC 6750 Section 2.3](https://www.rfc-editor.org/rfc/rfc6750.html#section-2.3), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | RFC 6750 documents the query method but says it is not recommended because URLs are commonly logged and leaked. |
 | CIBA push mode | Not implemented | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | The implemented and tested FAPI-CIBA support surface is poll and ping; push would introduce direct token delivery to the client callback and is outside the supported profile set. |
 
