@@ -423,6 +423,63 @@ def assert_only_target_issuer_urls(value: object, config_name: str, target_issue
                 )
 
 
+OPENID4VC_LOCAL_TARGET_HOSTS = {"localhost", "127.0.0.1", "::1", "nginx", "host.docker.internal"}
+
+
+def http_urls_in_value(value: object) -> list[str]:
+    urls: list[str] = []
+    if isinstance(value, list):
+        for item in value:
+            urls.extend(http_urls_in_value(item))
+    elif isinstance(value, dict):
+        for item in value.values():
+            urls.extend(http_urls_in_value(item))
+    elif isinstance(value, str):
+        urls.extend(match.group(0) for match in HTTP_URL_PATTERN.finditer(value))
+    return urls
+
+
+def assert_openid4vc_target_boundaries(
+    config_value: dict[str, object],
+    config_name: str,
+    target_issuer: str,
+) -> None:
+    target_origin = normalized_origin(target_issuer)
+    target_host = urlparse(target_origin).hostname
+    if not target_host:
+        fail(f"{config_name} target issuer lacks a hostname")
+
+    if config_name.startswith("openid4vc-vci-"):
+        vci = config_value.get("vci")
+        if not isinstance(vci, dict) or vci.get("credential_issuer_url") != target_origin:
+            fail(
+                f"{config_name} must bind vci.credential_issuer_url to the operator-provided issuer"
+            )
+    elif config_name.startswith("openid4vc-vp-"):
+        client = config_value.get("client")
+        if not isinstance(client, dict) or client.get("client_id") != target_host:
+            fail(f"{config_name} must bind verifier client_id to the operator-provided host")
+
+    for url in http_urls_in_value(config_value):
+        parsed = urlparse(url)
+        if (parsed.hostname or "").lower() in OPENID4VC_LOCAL_TARGET_HOSTS:
+            fail(
+                f"{config_name} contains local-only URL {url}; OpenID4VC conformance "
+                "must run against public black-box targets"
+            )
+
+
+def assert_config_target_boundaries(
+    value: dict[str, object],
+    config_name: str,
+    target_issuer: str,
+) -> None:
+    if config_name.startswith("openid4vc-"):
+        assert_openid4vc_target_boundaries(value, config_name, target_issuer)
+    else:
+        assert_only_target_issuer_urls(value, config_name, target_issuer)
+
+
 def config_alias(config_value: dict[str, object]) -> str | None:
     alias = config_value.get("alias")
     if isinstance(alias, str) and alias.strip():
@@ -955,10 +1012,10 @@ def write_plan_configs(
     configs = parsed.get("configs")
     if configs is None:
         if target_issuer:
-            assert_only_target_issuer_urls(parsed, file_name, target_issuer)
+            assert_config_target_boundaries(parsed, file_name, target_issuer)
         add_nazo_browser_overrides(parsed)
         if target_issuer:
-            assert_only_target_issuer_urls(parsed, file_name, target_issuer)
+            assert_config_target_boundaries(parsed, file_name, target_issuer)
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         atomic_write_json_file(target, parsed)
@@ -977,10 +1034,10 @@ def write_plan_configs(
         if not isinstance(config_value, dict):
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
         if target_issuer:
-            assert_only_target_issuer_urls(config_value, config_name, target_issuer)
+            assert_config_target_boundaries(config_value, config_name, target_issuer)
         add_nazo_browser_overrides(config_value)
         if target_issuer:
-            assert_only_target_issuer_urls(config_value, config_name, target_issuer)
+            assert_config_target_boundaries(config_value, config_name, target_issuer)
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:

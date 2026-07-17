@@ -101,27 +101,7 @@ def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
 
 
 def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
-    warnings: list[dict[str, object]] = []
-    for plan, slug, variants in cases:
-        if plan != VCI_HAIP:
-            continue
-        full_variant = full_vci_variant(plan, variants)
-        if full_variant.get("vci_grant_type") == "authorization_code":
-            warnings.append(
-                {
-                    "test-name": VCI_REFRESH_TOKEN_MODULE,
-                    "variant": full_variant,
-                    "configuration-filename": f"openid4vc-{slug}.json",
-                    "expected-result": "warning",
-                    "current-block": VCI_REFRESH_TOKEN_BLOCK,
-                    "condition": VCI_REFRESH_TOKEN_CONDITION,
-                    "justification": (
-                        "NazoAuth globally supports refresh_token but intentionally does not "
-                        "issue refresh tokens to OpenID4VC/FAPI credential clients."
-                    ),
-                }
-            )
-    return warnings
+    return []
 
 
 def b64url_decode(value: str) -> bytes:
