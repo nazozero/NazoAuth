@@ -477,13 +477,39 @@ async fn missing_required_nonce_does_not_consume_replay_marker_async() {
         .expect("the original jti must remain usable after a nonce challenge");
     assert_eq!(replay.keys.lock().unwrap().len(), 1);
 
-    let fresh_with_nonce = dpop_proof(
+    let fresh_with_stale_nonce = dpop_proof(
         &dpop,
         &access_token,
         "GET",
         "https://api.example/orders",
         "fresh-jti-after-nonce",
         Some(&nonce),
+        None,
+    );
+    let fresh_nonce = match service
+        .authorize(
+            request(
+                &access_token,
+                AccessTokenScheme::Dpop,
+                Some(&fresh_with_stale_nonce),
+            ),
+            context(None),
+        )
+        .await
+        .expect_err("a consumed nonce must return a fresh challenge")
+    {
+        ProtectedResourceAuthorizationError::UseDpopNonce(nonce) => nonce,
+        error => panic!("unexpected nonce challenge error: {error:?}"),
+    };
+    assert_eq!(replay.keys.lock().unwrap().len(), 1);
+
+    let fresh_with_nonce = dpop_proof(
+        &dpop,
+        &access_token,
+        "GET",
+        "https://api.example/orders",
+        "fresh-jti-after-nonce",
+        Some(&fresh_nonce),
         None,
     );
     service
@@ -496,7 +522,7 @@ async fn missing_required_nonce_does_not_consume_replay_marker_async() {
             context(None),
         )
         .await
-        .expect("a fresh jti with the issued nonce must authorize");
+        .expect("a fresh jti with the current issued nonce must authorize");
     assert_eq!(replay.keys.lock().unwrap().len(), 2);
 }
 
