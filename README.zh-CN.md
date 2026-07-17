@@ -39,7 +39,7 @@ Nazo Auth Server 是一个用 Rust 写的自托管 OAuth 2.x / OAuth 2.1-aligned
 | 静态安全分析 | CodeQL Rust analysis，启用 `security-extended` 和 `security-and-quality` queries。 |
 | 依赖策略 | GitHub dependency review、`cargo audit`、`cargo deny`，覆盖 advisories、bans、licenses 和 sources。 |
 | 运行时安全行为 | `conformance-security` 中的真实 HTTP E2E、load/race gate、Valkey outage injection。 |
-| 协议一致性 | OIDF/FAPI conformance workflows，以及已归档的官方 21-plan matrix 证据。 |
+| 协议一致性 | 当前 25-plan OIDF/FAPI 矩阵与 17-plan OpenID4VC 矩阵的公网黑盒官方套件证据。 |
 | 覆盖率趋势 | 专用 coverage workflow 上传 Codecov LCOV。 |
 | 发布来源证明 | CycloneDX SBOM、Trivy image scan、Sigstore signing、GitHub artifact attestations。 |
 
@@ -114,17 +114,17 @@ OpenID Foundation Conformance Suite 结果 URL：
 | --- | --- |
 | OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
 | OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
-| 最新 21-plan 官方矩阵 | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
+| 最新公网黑盒完整 OIDF 证据 | [docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md](docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md) |
+| 最新 25-plan 官方矩阵 | [docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md](docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md#oidc--fapi--fapi-ciba-官方公网矩阵) |
+| 已归档 21-plan 官方矩阵 | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
 | OIDF 矩阵范围 | [docs/conformance/oidf-full-matrix.zh-CN.md](docs/conformance/oidf-full-matrix.zh-CN.md) |
-| 最新私有 full-matrix 回归 | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
+| 已归档私有 full-matrix 回归 | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
-最新官方 full matrix 针对 `https://auth.nazo.run` 执行，workflow head SHA 为
-`371b4f6e61674c4d1bd9ace7ba5b518314c8ff0f`。该运行以 19+2
-parallel-isolated 形式完成 21 个 plan，导出 640 个模块：632 个 `PASSED`、6 个
-预期 `REVIEW`、2 个预期 `SKIPPED`，没有失败模块、condition failure 或
-warning，因此不能作为 zero-SKIPPED 证据。
+最新公网黑盒官方证据针对 `https://auth.nazo.run` 执行，workflow head SHA 为
+`ae19cc50af4cc50f3f35f678a3a1c38332d475e2`。它在 GitHub Actions 中针对公网生产 origin 运行 25-plan OIDC/FAPI/FAPI-CIBA 矩阵与 17-plan OpenID4VC Final/HAIP 矩阵。本地 endpoint、私有 DNS、私有 CA 和 `https://nginx:8443` 不计入一致性证据。
+25-plan OIDC/FAPI/FAPI-CIBA 矩阵采用 23+2 parallel-isolated 布局，导出 787 个模块：748 个通过、22 个模块带有官方入口 TLS 有界 warning、9 个预期 review 状态、8 个预期 unsigned 兼容 skip，没有失败模块或失败 condition。因此它不是 zero-SKIPPED 或 zero-WARNING 官方证据；具体 warning 上下文和上游入口边界记录在链接的证据文档中。
 
-最新私有 full-matrix 回归针对 runtime commit `31e8f9f` 执行，跑完全部 16 个 plan、578 个模块，结果为 `0 failures`、`0 warnings`。
+已归档的私有 full-matrix 回归记录仍可用于调试，但不是当前一致性证据。
 
 ## 功能
 

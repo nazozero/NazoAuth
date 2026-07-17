@@ -11,30 +11,40 @@ in the repository.
 
 - Certification baseline: [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - Matrix scope: [OIDF full matrix](oidf-full-matrix.md)
-- Latest private full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
-- Latest official full matrix: [2026-07-11 M7 encrypted response OIDF results](2026-07-11-m7-official-encrypted-responses-oidf-results.md)
+- Archived private full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
+- Archived M7 official full matrix: [2026-07-11 M7 encrypted response OIDF results](2026-07-11-m7-official-encrypted-responses-oidf-results.md)
 - Latest RFC coverage check: [2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
-- Latest NI-006~NI-011 private targeted OIDF results: [2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
+- Archived NI-006~NI-011 private targeted OIDF results: [2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
 - Latest public NI-007 FAPI-CIBA targeted OIDF result: [2026-07-03 NI-007 public FAPI-CIBA OIDF results](2026-07-03-ni-007-public-ciba-oidf-results.md)
-- Latest NI-006~NI-011 official parallel-isolated full matrix: [2026-07-03 NI-006~NI-011 official parallel-isolated OIDF results](2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md)
-- Latest M2 official parallel-isolated full matrix: [2026-07-08 M2 official parallel-isolated OIDF results](2026-07-08-m2-official-parallel-isolated-oidf-results.md)
-- Latest M6 FAPI-CIBA local and official full matrix: [2026-07-11 M6 FAPI-CIBA OIDF results](2026-07-11-m6-official-fapi-ciba-oidf-results.md)
+- Archived NI-006~NI-011 official parallel-isolated full matrix: [2026-07-03 NI-006~NI-011 official parallel-isolated OIDF results](2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md)
+- Archived M2 official parallel-isolated full matrix: [2026-07-08 M2 official parallel-isolated OIDF results](2026-07-08-m2-official-parallel-isolated-oidf-results.md)
+- Archived M6 FAPI-CIBA local and official full matrix: [2026-07-11 M6 FAPI-CIBA OIDF results](2026-07-11-m6-official-fapi-ciba-oidf-results.md)
 - Latest encrypted-response coverage check: [2026-07-11 M7 encrypted response OIDF coverage](2026-07-11-m7-oidf-coverage.md)
 - Latest emerging-protocol governance review: [2026-07-11 M8 watchlist governance](2026-07-11-m8-watchlist-governance.md)
 - Latest M8 official-suite source coverage scan: [2026-07-11 OIDF v5.2.0 coverage](2026-07-11-m8-oidf-v5.2.0-coverage.md)
 - Project-owned RFC 9967 regression scope: [RFC 9967 SCIM SET black-box matrix](rfc9967-scim-set-matrix.md)
 - Latest OpenID4VC Final / HAIP alpha regression: [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
+- Current public black-box full evidence: [2026-07-17 public black-box full OIDF results](2026-07-17-public-black-box-full-oidf-results.md)
 
-The latest recorded official full-matrix suite run is the 2026-07-11 M7
-parallel-isolated run against `https://auth.nazo.run`. It ran from workflow head
-SHA `371b4f6e61674c4d1bd9ace7ba5b518314c8ff0f`, deployed image
-`localhost/nazo-oauth-server:m7-371b4f6`, and completed the repository's
-21-plan public OIDF matrix in the 19+2 layout with all GitHub Actions jobs
-ending in `success`. The exported results contain 640 modules: 632 passed, 6
-expected review states, 2 expected skips, and no failed module, condition
-failure, or warning.
+The latest recorded public black-box OIDF evidence is the 2026-07-17 run set
+against `https://auth.nazo.run` at production revision
+`ae19cc50af4cc50f3f35f678a3a1c38332d475e2`. GitHub Actions runs
+[`29543012193`](https://github.com/nazozero/NazoAuth/actions/runs/29543012193)
+and
+[`29545407427`](https://github.com/nazozero/NazoAuth/actions/runs/29545407427)
+completed successfully, covering 42 plan executions across OIDC, FAPI,
+FAPI-CIBA, OpenID4VC Final, and HAIP. The combined exported results contain
+1,178 finished modules, 101,519 condition successes, 0 condition failures, 30
+bounded warnings, 15 expected skips, and 136 review entries. The evidence counts
+only public official-suite runs against the production origin; local endpoints,
+private DNS names, private CAs, and `https://nginx:8443` are not accepted as
+conformance evidence.
 
-The latest private full-matrix regression record is the 2026-07-01 TP/PS run
+Archived private/local suite records remain useful for debugging regressions,
+but they are not current conformance evidence. Current conformance evidence is
+the public black-box run set above.
+
+The archived private full-matrix regression record is the 2026-07-01 TP/PS run
 against `https://auth.nazo.run` at runtime commit `31e8f9f`. It used the
 repository 16-plan matrix, exported 16 plan archives, and reported 578 test
 modules with `0 failures` and `0 warnings`.
@@ -60,15 +70,9 @@ The latest NI-006~NI-011 official full-matrix regression ran against
 plans in one job and isolated front-channel logout and session-management into
 separate browser-sensitive matrix jobs.
 
-The latest OpenID4VC Final / HAIP alpha regression ran against
-`https://auth.nazo.run` at implementation SHA
-`8b2f7a70cd4d51f4ff668ea761a6562616a90c37`. The Hostinger local official-suite
-run completed all 17 plan executions against the production target with
-`0 failures`. The GitHub official run
-[`29530484889`](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
-completed successfully, exporting 17 plan archives and 391 finished module
-logs with `0 failures` and four expected HAIP refresh-token warnings. This is
-alpha regression evidence, not an OpenID Foundation certification statement.
+The 2026-07-16 OpenID4VC Final / HAIP alpha record remains historical evidence
+for the feature branch. The current production-equivalent OpenID4VC evidence is
+the 2026-07-17 public black-box run above.
 
 ## Coverage Update Rule
 
