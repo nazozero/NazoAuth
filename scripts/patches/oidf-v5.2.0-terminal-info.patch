@@ -71,3 +71,32 @@ index 61a71fe..137f97a 100755
              module_info['logs'] = await conformance.get_test_log(module_id)
          except Exception as cleanup_exc:
              module_info['error'] = str(cleanup_exc)
+diff --git a/scripts/conformance.py b/scripts/conformance.py
+index dd01cc1..ada128c 100644
+--- a/scripts/conformance.py
++++ b/scripts/conformance.py
+@@ -367,14 +367,16 @@ class Conformance(object):
+                         print("module id {} status changed to {}".format(module_id, persisted))
+                         return persisted
+                     raise Exception("Test module {} has moved to INTERRUPTED".format(module_id))
+-                # Non-terminal persisted status (RUNNING/WAITING/CONFIGURED/...): the runner
+-                # lost an in-progress test, almost certainly a restart. Even if this status
+-                # is in required_states, we must NOT return it — the test no longer exists in
+-                # the runner, so the caller couldn't drive it forward. Retry the module.
+-                raise ServerUnavailableError(
+-                    "wait_for_state {} long-poll returned 404 but persisted test info shows "
+-                    "non-terminal state {} - server likely restarted, retrying".format(
+-                        module_id, persisted))
++                # Non-terminal persisted status (CREATED/RUNNING/WAITING/CONFIGURED/...) can
++                # appear before the in-memory runner map is visible to wait-state, especially
++                # immediately after module creation. Treat it as a transient long-poll miss and
++                # fall back to persisted status within the same overall timeout. If the module
++                # was truly lost, the caller times out instead of churning through retry attempts.
++                if persisted in required_states:
++                    print("module id {} status changed to {}".format(module_id, persisted))
++                    return persisted
++                await asyncio.sleep(1)
++                continue
+             if resp.status_code != 200:
+                 raise Exception(
+                     "wait_for_state {} failed - HTTP {:d} {}".format(

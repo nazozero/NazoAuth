@@ -14,11 +14,15 @@ from typing import Mapping
 ROOT = Path(__file__).resolve().parents[1]
 OIDF_REF = "dee9a25160e789f0f80517674693ef7989ab9fa1"
 PATCH_PATH = ROOT / "scripts" / "patches" / "oidf-v5.2.0-terminal-info.patch"
-PATCH_SHA256 = "efc4268ac3d2eb91ae9f2cc1febc2d77fe826de25f2417b84f38848091143e7d"
+PATCH_SHA256 = "68d28efba2263f85607a39e87899db02f516d6a13bd9d65d8cb3d33ada112eab"
 TARGET_HASHES = {
     "scripts/run-test-plan.py": (
         "a3ddb43b2c295f85a6f853a36697881abb4b1c8dddb6d6944ecb787e05fb40f9",
         "5676bbff70979d0d7742efdfb3f90c497cb2060fb2f44c370bdc7bd66090c3d1",
+    ),
+    "scripts/conformance.py": (
+        "5bc022d3e9b95103c43e6e4f7d50ed3365cb1113840b2f55a9be15e3544cd0d3",
+        "2f4280e3ce687efdac01c816ce7a915ef9f8a882b770514227764843b63fe213",
     ),
 }
 class OidfRunnerPatchError(RuntimeError):
