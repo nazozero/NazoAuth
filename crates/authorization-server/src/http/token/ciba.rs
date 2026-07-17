@@ -1539,6 +1539,10 @@ pub(crate) async fn token_ciba(
     {
         return super::token_client_assertion_error(error);
     }
+    let (dpop_jkt, mtls_x5t_s256) = match ciba_issue_binding(issuance, req, client).await {
+        Ok(binding) => binding,
+        Err(response) => return response,
+    };
     let ciba = match ciba_service
         .poll(auth_req_id, &client.client_id, initial, || {
             Utc::now().timestamp()
@@ -1579,10 +1583,6 @@ pub(crate) async fn token_ciba(
         }
         Ok(CibaPollCommit::Approved(ciba)) => ciba,
         Err(failure) => return ciba_poll_failure_response(failure),
-    };
-    let (dpop_jkt, mtls_x5t_s256) = match ciba_issue_binding(issuance, req, client).await {
-        Ok(binding) => binding,
-        Err(response) => return response,
     };
     let user = match users
         .public_account_by_id(

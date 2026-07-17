@@ -618,6 +618,7 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn('[string]$AngieServiceName = "nginx.service"', self.source)
         self.assertIn('systemctl reload "`$ANGIE_SERVICE"', self.source)
         self.assertIn("certificate verification must not be overridden with SUCCESS", self.source)
+        self.assertIn("ssl_verify_client must be exactly optional for verified public mTLS", self.source)
         self.assertIn("ANGIE_CONFIG_BACKUP", self.source)
         self.assertIn("reload_angie_and_wait", self.source)
         self.assertIn("old_worker_remaining", self.source)
