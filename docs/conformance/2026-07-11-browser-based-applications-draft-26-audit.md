@@ -110,7 +110,7 @@ can safely retain long-lived bearer refresh tokens.
 | Token-mediating backend | Compatible third-party architecture, but not implemented by NazoAuthWeb and not advertised as a distinct AS profile. |
 | Browser-only public client | Supported at the AS boundary through code + S256 PKCE and minimal non-credentialed CORS; token storage and application compromise remain the client's responsibility. |
 
-## Local verification
+## Repository verification
 
 The focused audit commands are:
 

@@ -5,7 +5,7 @@
 | Field | Value |
 | --- | --- |
 | Target issuer | `https://issuer.example` |
-| Deployment host | Private SSH deployment target |
+| Deployment host | Details intentionally omitted |
 | Branch | `codex/ni-006-011-oidc-profiles` |
 | Workflow | `oidf-conformance.yml` |
 | Run URL | `https://github.com/nazozero/NazoAuth/actions/runs/28636561869` |
@@ -50,8 +50,8 @@ The failed public CIBA path had three separate invariants that were not being
 held at the same time:
 
 1. The public issuer must be reachable through a stable reverse-proxy target.
-   The previous live path depended on mutable Podman networking and Angie
-   proxying to host loopback while also publishing app/database/cache ports.
+   The previous live path depended on mutable deployment networking and
+   ambiguous proxy routing.
 2. The public test database must be seeded from public-only OIDF plan configs
    that match the exact client IDs and client constraints used by the official
    plan.
@@ -64,21 +64,9 @@ held at the same time:
 The CIBA application code was not the root cause of the final public failure.
 The failing condition was a test input completeness failure.
 
-## Correct Deployment Path
+## Deployment Boundary
 
-The live Podman network is fixed to `nazo_oauth_net` with subnet
-`10.101.0.0/24` and gateway `10.101.0.1`. The long-lived container addresses are:
-
-| Service | Container | IP |
-| --- | --- | --- |
-| App | `nazo-oauth-server` | `10.101.0.20` |
-| Postgres | `nazo-oauth-postgres` | `10.101.0.10` |
-| Valkey | `nazo-oauth-valkey` | `10.101.0.11` |
-
-Angie must proxy `issuer.example` directly to `http://10.101.0.20:8000`.
-The app accepts trusted proxy headers only from `10.101.0.1/32`.
-
-Do not publish `8000`, `5432`, or `6379` on the host for the live stack.
+This record keeps only public conformance inputs and results. Deployment topology details are intentionally omitted from conformance evidence.
 
 ## Correct Public OIDF Test Path
 

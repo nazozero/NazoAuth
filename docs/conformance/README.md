@@ -11,7 +11,7 @@ in the repository.
 
 - Certification baseline: [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - Matrix scope: [OIDF full matrix](oidf-full-matrix.md)
-- Archived private full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
+- Archived diagnostic full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
 - Archived M7 official full matrix: [2026-07-11 M7 encrypted response OIDF results](2026-07-11-m7-official-encrypted-responses-oidf-results.md)
 - Latest RFC coverage check: [2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
 - Archived NI-006~NI-011 private targeted OIDF results: [2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
@@ -38,21 +38,21 @@ FAPI-CIBA, OpenID4VC Final, and HAIP. The combined exported results contain
 1,178 finished modules, 101,519 condition successes, 0 condition failures, 30
 bounded warnings, 15 expected skips, and 136 review entries. The evidence counts
 only public official-suite runs against an explicitly configured production
-origin; local endpoints, private DNS names, private CAs, and local-suite
+origin; non-public endpoints, private DNS names, private trust roots, and suite-private
 hostnames are not accepted as conformance evidence. Public workflow users must
-provide their own target issuer values; maintainer-owned infrastructure is not a
+provide their own target issuer values; repository-owned infrastructure is not a
 repository default.
 
-Archived private/local suite records remain useful for debugging regressions,
-but they are not current conformance evidence. Current conformance evidence is
-the public black-box run set above.
+Archived diagnostic records remain useful for debugging regressions, but they
+are not current conformance evidence. Current conformance evidence is the public
+black-box run set above.
 
-The archived private full-matrix regression record is the 2026-07-01 TP/PS run
+The archived diagnostic full-matrix regression record is the 2026-07-01 TP/PS run
 against `https://issuer.example` at runtime commit `31e8f9f`. It used the
 repository 16-plan matrix, exported 16 plan archives, and reported 578 test
 modules with `0 failures` and `0 warnings`.
 
-The latest NI-006~NI-011 targeted private conformance run used local official suite
+The latest NI-006~NI-011 targeted diagnostic conformance run used diagnostic official suite
 snapshot `edbf2514e1e5c850ccf28544953608bda50daf4d`. NI-007 FAPI-CIBA,
 NI-008 Front-Channel Logout, and NI-009 Session Management passed with
 `0 failures`, `0 warnings`, and `0 skipped modules`. The NI-008/NI-009
@@ -95,7 +95,8 @@ security-boundary tests remain mandatory either way.
 
 - implementation commit SHA
 - current documentation commit SHA, when different
-- workflow name and run URL, or local suite runner path
+- workflow name and run URL; diagnostic-only runs may be summarized without
+  publishing local runner paths or host details
 - job URL and matrix name, when applicable
 - pass time and suite runtime
 - profiles and feature combinations

@@ -32,7 +32,7 @@ client identifier、verifier attestation client identifier，以及无 holder bi
 ## 签名密钥边界
 
 OpenID4VC 使用只允许 `credential` 与 `presentation_request` 两种用途的 ES256
-本地密钥，并通过现有原子密钥库生成：
+仓库生成的测试密钥，并通过现有原子密钥库生成：
 
 ```text
 nazo-oauth-keyctl generate-local --alg ES256 --purposes credential,presentation_request
@@ -67,7 +67,7 @@ OIDF Conformance Suite 固定到 v5.2.0 commit
 最新长期证据：
 
 - [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
-- 维护者远端本地 official-suite 调试运行使用操作者提供的生产目标；公开仓库中脱敏为
+- official-suite 调试运行使用操作者提供的生产目标；公开仓库中脱敏为
   `https://issuer.example`。17 个 plan 执行全部完成，`0 failures`。它是调试证据，
   不是仓库用户的默认测试目标。
 - GitHub 官方运行

@@ -63,7 +63,7 @@ all BFF, token-mediating-backend, or third-party SPA responsibilities.
 
 OpenID conformance-suite release `v5.2.0`
 (`dee9a25160e789f0f80517674693ef7989ab9fa1`) has no dedicated
-Browser-Based Applications OP plan. Local security tests and the normal OIDC /
+Browser-Based Applications OP plan. Repository security tests and the normal OIDC /
 FAPI regression matrices remain the evidence source.
 
 After an RFC number is assigned, compare the final RFC against draft 27,
