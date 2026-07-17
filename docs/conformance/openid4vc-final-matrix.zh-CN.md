@@ -67,8 +67,9 @@ OIDF Conformance Suite 固定到 v5.2.0 commit
 最新长期证据：
 
 - [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
-- Hostinger 远端本地 official-suite 运行使用 `https://auth.nazo.run` 作为被测生产目标，
-  17 个 plan 执行全部完成，`0 failures`。
+- 维护者远端本地 official-suite 调试运行使用操作者提供的生产目标；公开仓库中脱敏为
+  `https://issuer.example`。17 个 plan 执行全部完成，`0 failures`。它是调试证据，
+  不是仓库用户的默认测试目标。
 - GitHub 官方运行
   [#29530484889](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
   针对同一生产 origin 成功完成。

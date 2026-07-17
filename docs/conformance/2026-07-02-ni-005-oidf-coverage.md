@@ -26,7 +26,7 @@ The latest official repository evidence is:
 - Dynamic-client plan:
   <https://www.certification.openid.net/plan-detail.html?plan=k9vtssH5SjqqT>
 
-That official 17-plan matrix ran against `https://auth.nazo.run`, reported
+That official 17-plan matrix ran against `https://issuer.example`, reported
 `0 failures` and `0 warnings`, and included the OIDC Basic dynamic-client plan.
 It also reported 2 expected `SKIPPED` modules in that plan, so it must not be
 used as zero-SKIPPED evidence.

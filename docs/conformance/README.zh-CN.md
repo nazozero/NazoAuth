@@ -31,13 +31,13 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 - 最新 OpenID4VC Final / HAIP alpha 回归：[2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
 - 当前公网黑盒完整证据：[2026-07-17 公网黑盒 OIDF 全矩阵结果](2026-07-17-public-black-box-full-oidf-results.zh-CN.md)
 
-`2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
+`2026-06-09` full matrix 是当前官方认证证据，针对 `https://issuer.example` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
-最新记录的公网黑盒 OIDF 证据是 2026-07-17 针对 `https://auth.nazo.run` 的运行组，生产 revision 为 `ae19cc50af4cc50f3f35f678a3a1c38332d475e2`。GitHub Actions runs [`29543012193`](https://github.com/nazozero/NazoAuth/actions/runs/29543012193) 和 [`29545407427`](https://github.com/nazozero/NazoAuth/actions/runs/29545407427) 均成功完成，覆盖 OIDC、FAPI、FAPI-CIBA、OpenID4VC Final 与 HAIP 共 42 个 plan execution。合并导出结果包含 1,178 个 finished module、101,519 个 condition success、0 个 condition failure、30 个有界 warning、15 个预期 skip 和 136 个 review entry。该证据只接受针对公网生产 origin 的官方套件运行；本地 endpoint、私有 DNS、私有 CA 和 `https://nginx:8443` 不计入一致性证据。
+最新记录的公网黑盒 OIDF 证据是 2026-07-17 针对操作者提供的生产 issuer 的运行组；公开文档将实际 issuer 脱敏为 `https://issuer.example`。生产 revision 为 `ae19cc50af4cc50f3f35f678a3a1c38332d475e2`。GitHub Actions runs [`29543012193`](https://github.com/nazozero/NazoAuth/actions/runs/29543012193) 和 [`29545407427`](https://github.com/nazozero/NazoAuth/actions/runs/29545407427) 均成功完成，覆盖 OIDC、FAPI、FAPI-CIBA、OpenID4VC Final 与 HAIP 共 42 个 plan execution。合并导出结果包含 1,178 个 finished module、101,519 个 condition success、0 个 condition failure、30 个有界 warning、15 个预期 skip 和 136 个 review entry。该证据只接受针对显式配置生产 origin 的官方套件运行；本地 endpoint、私有 DNS、私有 CA 和本地套件地址不计入一致性证据。公开 workflow 的用户必须提供自己的目标 issuer，仓库不得默认使用维护者自有基础设施。
 
 已归档的私有/本地套件记录仍可用于调试回归，但不是当前一致性证据。当前一致性证据以上面的公网黑盒运行组为准。
 
-已归档私有 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://auth.nazo.run`，runtime commit 为 `31e8f9f`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
+已归档私有 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://issuer.example`，runtime commit 为 `31e8f9f`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
 
 最新 NI-006~NI-011 私有一致性测试环境 targeted 运行使用本地 official suite 快照
 `edbf2514e1e5c850ccf28544953608bda50daf4d`。NI-007 FAPI-CIBA、NI-008
@@ -47,13 +47,13 @@ Front-Channel Logout 和 NI-009 Session Management 均通过，结果为
 module-level `SKIPPED` 结果。
 
 最新 public NI-007 FAPI-CIBA targeted workflow 于 2026-07-03 针对
-`https://auth.nazo.run` 执行，workflow head SHA 为
+`https://issuer.example` 执行，workflow head SHA 为
 `0374141ae7aec76c573b06dc8406b10819915309`。GitHub Actions run
 `28636561869` 成功完成；导出的 suite artifact 包含 35 个 module JSON log，
 全部为 `PASSED`，condition 统计为 2768 个 `SUCCESS`、`0 failures`、`0 warnings`。
 
 最新 NI-006~NI-011 官方 full-matrix 回归于 2026-07-03 针对
-`https://auth.nazo.run` 执行，workflow head SHA 为
+`https://issuer.example` 执行，workflow head SHA 为
 `056cf7f90061a9054394593ee1fa7b43f5e26b54`。GitHub Actions run
 `28648656293` 成功完成；workflow 将 18 个可并发计划放在同一个 job 中执行，
 并将 front-channel logout 与 session-management 分拆到独立 browser-sensitive

@@ -4,7 +4,7 @@
 
 OpenID Foundation Conformance Suite official full-matrix regression for PR 15
 after the security-findings hardening branch had been deployed to the public
-issuer at `https://auth.nazo.run`.
+issuer at `https://issuer.example`.
 
 The official suite completed all configured 16 plans with `0 failures` and
 `0 warnings`.
@@ -16,7 +16,7 @@ The official suite completed all configured 16 plans with `0 failures` and
 | Current PR head at verification time | `bac10af902e574d4bd98741eaa2ce0121278608c` |
 | Runtime implementation commit | `be7ef9f6a9197520235a59d42866a0918a293014` |
 | Branch | `codex/security-findings-20260625` |
-| Public issuer under test | `https://auth.nazo.run` |
+| Public issuer under test | `https://issuer.example` |
 | Deployment runner | Private deployment runner |
 | Deployment mode | Podman |
 | Service image | `localhost/nazo-oauth-server:main-be7ef9f` |
@@ -52,7 +52,7 @@ python3 scripts/run_oidf_conformance.py \
   --conformance-server https://www.certification.openid.net/ \
   --plan-set-json-file runtime/oidf/oidf-plan-set.json \
   --config-json-file runtime/oidf/oidf-plan-configs.json \
-  --target-issuer https://auth.nazo.run \
+  --target-issuer https://issuer.example \
   --export-dir oidf-official-results/run-20260627T002306Z \
   --timeout-seconds 10800 \
   --monitor-interval-seconds 10

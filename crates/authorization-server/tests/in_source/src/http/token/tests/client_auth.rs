@@ -432,7 +432,7 @@ async fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
 async fn token_endpoint_audience_is_allowed_only_by_registered_client_policy() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.endpoint.issuer = "https://auth.nazo.run".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
     let state = token_management_state_with_settings(settings);
     let key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
     let public_jwk = key.public_jwk("client-kid");
@@ -446,7 +446,7 @@ async fn token_endpoint_audience_is_allowed_only_by_registered_client_policy() {
         let mut credentials = client_credentials("private_key_jwt");
         credentials.client_assertion = Some(signed_client_assertion_with_alg(
             &client_id,
-            "https://auth.nazo.run/token",
+            "https://issuer.example/token",
             "client-kid",
             &key,
             jti,
@@ -485,7 +485,7 @@ async fn token_endpoint_audience_is_allowed_only_by_registered_client_policy() {
 async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("default settings should load");
-    settings.endpoint.issuer = "https://auth.nazo.run".to_owned();
+    settings.endpoint.issuer = "https://issuer.example".to_owned();
     let state = token_management_state_with_settings(settings);
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let public_jwk = key.public_jwk("client-kid");
@@ -497,9 +497,9 @@ async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
     let req = TestRequest::post().uri("/bc-authorize").to_http_request();
 
     for (index, audience) in [
-        "https://auth.nazo.run",
-        "https://auth.nazo.run/bc-authorize",
-        "https://auth.nazo.run/token",
+        "https://issuer.example",
+        "https://issuer.example/bc-authorize",
+        "https://issuer.example/token",
     ]
     .into_iter()
     .enumerate()
@@ -525,7 +525,7 @@ async fn ciba_private_key_jwt_accepts_ps256_endpoint_and_issuer_audiences() {
     let mut wrong_endpoint = client_credentials("private_key_jwt");
     wrong_endpoint.client_assertion = Some(signed_client_assertion_with_alg(
         &client.client_id,
-        "https://auth.nazo.run/introspect",
+        "https://issuer.example/introspect",
         "client-kid",
         &key,
         "ciba-client-assertion-wrong-endpoint",

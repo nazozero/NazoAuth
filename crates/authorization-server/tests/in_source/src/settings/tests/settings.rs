@@ -357,7 +357,7 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
         ("CIBA_POLL_INTERVAL_SECONDS", "6"),
         (
             "CIBA_NOTIFICATION_PRIVATE_ORIGINS",
-            "https://nginx:8443, https://callback.internal:9443",
+            "https://suite.example, https://callback.internal:9443",
         ),
     ]);
     let settings = Settings::from_config(&config).unwrap();
@@ -391,7 +391,7 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert_eq!(settings.ciba.ciba_poll_interval_seconds, 6);
     assert_eq!(
         settings.ciba.ciba_notification_private_origins,
-        ["https://nginx:8443", "https://callback.internal:9443"]
+        ["https://suite.example", "https://callback.internal:9443"]
     );
 }
 

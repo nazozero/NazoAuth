@@ -137,8 +137,7 @@ OIDF_ALLOWED_REVIEW_CONTEXTS_BY_CONFIG = {
 }
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
-NAZO_PUBLIC_ISSUER_ORIGIN = "https://auth.nazo.run"
-NAZO_RUN_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]*nazo\.run(?::\d+)?(?:/[^\s\"'<>)]*)?")
+HTTP_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]+(?::\d+)?(?:/[^\s\"'<>)]*)?")
 NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
 NAZO_LOGIN_PASSWORD_ID = "nazo-login-password"
 NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
@@ -289,7 +288,10 @@ def issuer_from_config(config_value: dict[str, object]) -> str | None:
 
 
 def nazo_public_issuer_origin(config_value: dict[str, object]) -> str:
-    return issuer_from_config(config_value) or NAZO_PUBLIC_ISSUER_ORIGIN
+    issuer = issuer_from_config(config_value)
+    if issuer is None:
+        fail("OIDF plan config must include server.discoveryUrl so the target issuer is explicit")
+    return issuer
 
 
 def nazo_authorization_prefix(config_value: dict[str, object]) -> str:
@@ -304,8 +306,8 @@ def is_hosted_authorization_match(match: object, config_value: dict[str, object]
     return isinstance(match, str) and match.startswith(nazo_authorization_prefix(config_value))
 
 
-def uses_public_nazo_ui(config_value: dict[str, object]) -> bool:
-    return nazo_public_issuer_origin(config_value).rstrip("/") == NAZO_PUBLIC_ISSUER_ORIGIN
+def uses_nazo_hosted_ui(config_value: dict[str, object]) -> bool:
+    return isinstance(config_value.get("nazo"), dict)
 
 
 def non_empty_string(value: object) -> str | None:
@@ -396,28 +398,28 @@ def normalized_origin(value: str) -> str:
     parsed = urlparse(value.strip().rstrip("/"))
     if parsed.scheme not in {"https", "http"} or not parsed.netloc or parsed.path:
         fail(f"target issuer must be an origin URL without a path: {value}")
-    origin = f"{parsed.scheme}://{parsed.netloc}"
-    if origin != NAZO_PUBLIC_ISSUER_ORIGIN:
-        fail(f"target issuer must be {NAZO_PUBLIC_ISSUER_ORIGIN}")
-    return origin
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def assert_only_auth_nazo_run_urls(value: object, config_name: str) -> None:
+def assert_only_target_issuer_urls(value: object, config_name: str, target_issuer: str) -> None:
+    target_origin = normalized_origin(target_issuer)
     if isinstance(value, list):
         for item in value:
-            assert_only_auth_nazo_run_urls(item, config_name)
+            assert_only_target_issuer_urls(item, config_name, target_origin)
     elif isinstance(value, dict):
         for item in value.values():
-            assert_only_auth_nazo_run_urls(item, config_name)
+            assert_only_target_issuer_urls(item, config_name, target_origin)
     elif isinstance(value, str):
-        for match in NAZO_RUN_URL_PATTERN.finditer(value):
+        for match in HTTP_URL_PATTERN.finditer(value):
             url = match.group(0)
             parsed = urlparse(url)
             origin = f"{parsed.scheme}://{parsed.netloc}"
-            if origin != NAZO_PUBLIC_ISSUER_ORIGIN:
+            if "/test/" in parsed.path or parsed.netloc == urlparse(target_origin).netloc:
+                continue
+            if origin != target_origin:
                 fail(
-                    f"{config_name} contains unsupported Nazo URL {url}; "
-                    f"use {NAZO_PUBLIC_ISSUER_ORIGIN} only"
+                    f"{config_name} contains URL {url} outside target issuer {target_origin}; "
+                    "OIDF configs must be materialized for the operator-provided issuer"
                 )
 
 
@@ -626,7 +628,7 @@ def use_nazo_user_facing_task_commands(config_value: dict[str, object], task: ob
 
 
 def use_nazo_user_facing_browser_commands(config_value: dict[str, object]) -> None:
-    if not uses_public_nazo_ui(config_value):
+    if not uses_nazo_hosted_ui(config_value):
         return
 
     browser = config_value.get("browser")
@@ -953,10 +955,10 @@ def write_plan_configs(
     configs = parsed.get("configs")
     if configs is None:
         if target_issuer:
-            assert_only_auth_nazo_run_urls(parsed, file_name)
+            assert_only_target_issuer_urls(parsed, file_name, target_issuer)
         add_nazo_browser_overrides(parsed)
         if target_issuer:
-            assert_only_auth_nazo_run_urls(parsed, file_name)
+            assert_only_target_issuer_urls(parsed, file_name, target_issuer)
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         atomic_write_json_file(target, parsed)
@@ -975,10 +977,10 @@ def write_plan_configs(
         if not isinstance(config_value, dict):
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
         if target_issuer:
-            assert_only_auth_nazo_run_urls(config_value, config_name)
+            assert_only_target_issuer_urls(config_value, config_name, target_issuer)
         add_nazo_browser_overrides(config_value)
         if target_issuer:
-            assert_only_auth_nazo_run_urls(config_value, config_name)
+            assert_only_target_issuer_urls(config_value, config_name, target_issuer)
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:
@@ -1937,7 +1939,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--target-issuer",
         default=os.environ.get("OIDF_TARGET_ISSUER", ""),
-        help=f"expected issuer origin; Nazo URLs must use {NAZO_PUBLIC_ISSUER_ORIGIN}",
+        help="expected HTTPS issuer origin supplied by the operator; no repository default is provided",
     )
     parser.add_argument("--token-env", default="OIDF_CONFORMANCE_TOKEN")
     parser.add_argument(

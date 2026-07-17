@@ -17,7 +17,7 @@ passed on `main`.
 | Workflow event | `workflow_dispatch` |
 | Head branch | `main` |
 | Implementation commit | `4c3533ef707dc6cce15862a02ec7188b814cb7a7` |
-| Public issuer under test | `https://auth.nazo.run` |
+| Public issuer under test | `https://issuer.example` |
 | Conformance server | `https://www.certification.openid.net/` |
 | Started | `2026-06-09T15:42:50Z` |
 | Completed | `2026-06-09T15:52:25Z` |

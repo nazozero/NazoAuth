@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Target issuer | `https://auth.nazo.run` |
+| Target issuer | `https://issuer.example` |
 | Repository path | `/root/oauth2_server/NazoAuth` |
 | Suite path | `/root/oauth2_server/oidf-conformance-suite` |
 | Suite commit | `edbf2514e1e5c850ccf28544953608bda50daf4d` |

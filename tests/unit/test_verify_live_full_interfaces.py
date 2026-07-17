@@ -36,10 +36,11 @@ class VerifyLiveCliTests(unittest.TestCase):
         self.assertIn("--secrets-path", completed.stdout)
         self.assertIn("--expected-backend-sha", completed.stdout)
 
-    def test_source_keeps_production_defaults(self) -> None:
+    def test_source_requires_operator_supplied_public_origin(self) -> None:
         source = SCRIPT.read_text(encoding="utf-8")
 
-        self.assertIn('default="https://auth.nazo.run"', source)
+        self.assertIn('parser.add_argument("--base-url", required=True)', source)
+        self.assertNotIn('default="https://issuer.example"', source)
         self.assertIn('default="/opt/nazo-oauth/secrets.json"', source)
 
     def test_backend_sha_is_bound_to_record_and_running_container(self) -> None:

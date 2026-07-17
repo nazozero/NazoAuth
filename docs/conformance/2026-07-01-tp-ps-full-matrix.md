@@ -13,7 +13,7 @@ It completed all 16 plans with `0 failures` and `0 warnings`.
 | Result | Passed |
 | Runtime implementation commit | `31e8f9f` |
 | Commit title | `Complete TP and PS OAuth profile work` |
-| Public issuer under test | `https://auth.nazo.run` |
+| Public issuer under test | `https://issuer.example` |
 | Plan set | `runtime/oidf/oidf-plan-set.json` |
 | Conformance environment | Private runner |
 | Exported plan archives | `16` |
