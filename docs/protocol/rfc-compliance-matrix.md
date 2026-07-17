@@ -199,12 +199,12 @@ and tested.
 
 | Standard or draft | Source status on 2026-07-17 | Project decision | Planning boundary |
 | --- | --- | --- | --- |
-| `draft-ietf-oauth-v2-1-15` | OAuth WG active draft | Mostly aligned; final RFC audit pending | Current behavior follows the draft direction, but final OAuth 2.1 conformance is not claimed until the RFC is published and audited requirement by requirement. |
-| `draft-ietf-oauth-browser-based-apps-27` | RFC Editor queue BCP | Draft-27 audit complete; final RFC audit pending | Current behavior already follows the secure browser direction; re-audit after RFC publication before claiming final BCP alignment. |
-| `draft-ietf-oauth-cross-device-security-16` | RFC Editor queue BCP | Related flows implemented; final BCP audit pending | Apply to Device Grant, CIBA, Native SSO, and future cross-device flows before claiming named BCP alignment. |
-| `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | RFC 9700 supported; update draft audit pending | Treat as an RFC 9700 delta audit, not as a runtime feature. |
-| `draft-ietf-oauth-rfc8725bis-06` | Waiting for AD Go-Ahead BCP | RFC 8725 behavior implemented; bis audit pending | Re-run JWT/JWS/JWE algorithm, key-binding, and cross-JWT confusion tests when it advances. |
-| `draft-ietf-oauth-rfc7523bis-11` | RFC Editor queue | RFC 7523 behavior implemented/bounded; bis audit pending | Re-audit `private_key_jwt`, JWT bearer grants, assertion audience, replay, and key binding. |
+| `draft-ietf-oauth-v2-1-15` | OAuth WG active draft | Supported (draft-15-compatible implementation) | Current behavior follows draft-15, but final OAuth 2.1 conformance is not claimed until the RFC is published and audited requirement by requirement. |
+| `draft-ietf-oauth-browser-based-apps-27` | RFC Editor queue BCP | Supported (audited against draft-27) | Current behavior follows draft-27 secure browser guidance; re-audit after RFC publication before claiming final BCP alignment. |
+| `draft-ietf-oauth-cross-device-security-16` | RFC Editor queue BCP | Not supported (audit pending) | Device Grant, CIBA, Native SSO, and future cross-device flows must be audited against the BCP before claiming named support. |
+| `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | Not supported (audit pending) | RFC 9700 behavior is implemented; this update draft is not claimed until its delta is audited. |
+| `draft-ietf-oauth-rfc8725bis-06` | Waiting for AD Go-Ahead BCP | Not supported (audit pending) | RFC 8725 behavior is implemented; this bis draft is not claimed until JWT/JWS/JWE algorithm, key-binding, and cross-JWT confusion deltas are audited. |
+| `draft-ietf-oauth-rfc7523bis-11` | RFC Editor queue | Not supported (audit pending) | RFC 7523 behavior is implemented/bounded; this bis draft is not claimed until `private_key_jwt`, JWT bearer grants, assertion audience, replay, and key-binding deltas are audited. |
 | `draft-ietf-oauth-refresh-token-expiration-03` | OAuth WG active draft | Not supported (planned) | Add only after refresh-token and authorization-expiration state, metadata, revocation, and tests exist. |
 | `draft-ietf-oauth-first-party-apps-04` | OAuth WG active draft | Not supported (planned) | Evaluate same-party browser/BFF assumptions without weakening third-party client isolation. |
 | `draft-ietf-oauth-client-id-metadata-document-02` | OAuth WG active draft | Not supported (planned) | Consider only as a controlled public-client metadata bootstrap profile. |

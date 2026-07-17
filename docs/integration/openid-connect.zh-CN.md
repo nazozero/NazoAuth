@@ -50,18 +50,18 @@ registration metadata 都是可执行 allowlist。
 ## 规划中的规范与草案
 
 本节用于说明已经进入路线图、但当前不会在 discovery 或 registration
-metadata 中宣告的能力。它不是当前部署能力清单。状态为“已基本支持；待最终
-RFC 审计”的项目已经由当前实现覆盖主要行为，但还不能宣称最终 RFC
-一致性；状态为“不支持（待实现）”的项目还缺少可执行实现或完整 profile
-边界。
+metadata 中宣告的能力。它不是当前部署能力清单。状态为“支持”的项目表示
+当前实现已按该行链接的规范或草案提供对应行为；状态为“不支持（待审计）”
+表示相关稳定规范或相邻流程可能已经存在，但尚未按该行链接的草案逐条审计；
+状态为“不支持（待实现）”的项目还缺少可执行实现或完整 profile 边界。
 
 | 规范或草案 | 当前状态 | 为什么现在不作为可宣告能力 | 后续完成条件 |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | 已基本支持；待最终 RFC 审计 | [draft-ietf-oauth-v2-1-15](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) 仍是草案，不是最终 RFC；因此不能宣称 OAuth 2.1 final conformance。当前实现已经对齐 code flow、S256 PKCE、禁用 implicit/password、精确 redirect 和安全默认值。 | 等最终 RFC 发布后做逐条审计，并把最终要求映射到代码、metadata、负向测试和一致性证据。 |
-| OAuth 2.0 for Browser-Based Applications | 已完成 draft-27 审计；待最终 RFC 审计 | [draft-ietf-oauth-browser-based-apps-27](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/) 已在 RFC Editor 队列；当前实现已经采用 code + S256 PKCE、禁用 implicit、避免浏览器前通道 token 交付，并完成 draft-27 delta audit。 | RFC 发布后复审 SPA/BFF/browser-client 要求；不新增虚假的 runtime profile 或 discovery claim。 |
-| Cross-Device Flows: Security BCP | 相关流程已支持；待最终 BCP 审计 | [draft-ietf-oauth-cross-device-security-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-cross-device-security/) 是跨设备安全 BCP，不是单个端点；Device Grant、CIBA、Native SSO 已作为独立模块存在。 | 用最终 BCP 复审这些跨设备流程；不会自动扩大 grant type。 |
-| OAuth Security BCP Update | RFC 9700 已支持；更新草案待审计 | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 的增量更新方向，不是新能力。 | 作为 RFC 9700 delta audit；任何行为变化都必须同步 metadata、测试和文档。 |
-| JWT BCP / JWT Assertion bis | 现行 RFC 已支持；bis 草案待审计 | [draft-ietf-oauth-rfc8725bis-06](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 与 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 尚未完成最终发布；当前按 RFC 8725/RFC 7523 执行 JWT allowlist、`private_key_jwt` 和 bounded JWT bearer grant。 | 完成算法 allowlist、audience、replay、key binding、cross-JWT confusion 和 `private_key_jwt` 复审。 |
+| OAuth 2.1 Authorization Framework | 支持（按 draft-15 兼容实现） | [draft-ietf-oauth-v2-1-15](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) 仍是草案，不是最终 RFC；因此不能宣称 OAuth 2.1 final conformance。当前实现已经对齐 code flow、S256 PKCE、禁用 implicit/password、精确 redirect 和安全默认值。 | 等最终 RFC 发布后做逐条审计，并把最终要求映射到代码、metadata、负向测试和一致性证据。 |
+| OAuth 2.0 for Browser-Based Applications | 支持（按 draft-27 已审计） | [draft-ietf-oauth-browser-based-apps-27](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/) 已在 RFC Editor 队列；当前实现已经采用 code + S256 PKCE、禁用 implicit、避免浏览器前通道 token 交付，并完成 draft-27 delta audit。 | RFC 发布后复审 SPA/BFF/browser-client 要求；不新增虚假的 runtime profile 或 discovery claim。 |
+| Cross-Device Flows: Security BCP | 不支持（待审计） | [draft-ietf-oauth-cross-device-security-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-cross-device-security/) 是跨设备安全 BCP，不是单个端点；Device Grant、CIBA、Native SSO 已作为独立模块存在，但尚未按该 BCP 做逐条一致性审计。 | 用最终 BCP 复审这些跨设备流程；不会自动扩大 grant type。 |
+| OAuth Security BCP Update | 不支持（待审计） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 的增量更新方向。当前支持 RFC 9700，但尚未按该更新草案做逐条差异审计。 | 作为 RFC 9700 delta audit；任何行为变化都必须同步 metadata、测试和文档。 |
+| JWT BCP / JWT Assertion bis | 不支持（待审计） | [draft-ietf-oauth-rfc8725bis-06](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 与 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 尚未完成最终发布。当前支持的是 RFC 8725/RFC 7523 行为，不宣称支持这两个 bis 草案。 | 完成算法 allowlist、audience、replay、key binding、cross-JWT confusion 和 `private_key_jwt` 复审。 |
 | OAuth Client Attestation | 支持；默认关闭；待最终 RFC 审计 | [draft-ietf-oauth-attestation-based-client-auth-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/) 仍是草案；当前实现支持 `attest_jwt_client_auth`，但只在 Client Attestation 模块启用且客户端策略要求时宣告。 | 最终 RFC 发布后复审 challenge/freshness、key binding、trust store、replay、revocation、DPoP/refresh 交互和 downgrade 测试。 |
 | FAPI 2.0 HTTP Signatures | 实验性支持；默认关闭；待稳定规范审计 | [FAPI 2.0 HTTP Signatures working draft](https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html) 不是 Final Specification；当前只在 `ENABLE_FAPI_HTTP_SIGNATURES=true` 时保护 `/fapi/resource`，且没有 OIDF 专项 plan。 | 规范稳定或有 adopter 后再决定是否宣告；每个新草案/Final 都必须做 delta audit。 |
 | Refresh Token and Authorization Expiration | 不支持（待实现） | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) 要求把授权关系和 refresh token 生命周期显式建模；当前 metadata 不宣告这类过期语义。 | 定义授权有效期、refresh-family 状态、撤销语义、metadata 和端到端测试。 |
