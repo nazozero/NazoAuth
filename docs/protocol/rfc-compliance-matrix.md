@@ -213,8 +213,27 @@ discovery metadata until fully implemented and tested.
 | `draft-ietf-oauth-sd-jwt-vc-17` | AD Evaluation | Implemented/profile-scoped | Keep final-delta watch inside the OpenID4VC `dc+sd-jwt` issuer/verifier profiles only. |
 | OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1 | OpenID Foundation Final Specifications | Not supported (planned) | Requires trust anchors, trust-chain resolution, metadata policy, trust marks, federation endpoints, key rollover, and conformance evidence. |
 
-Active individual OAuth drafts are watch-only. They are not implementation
-roadmap items until adoption or equivalent stability evidence exists.
+### Exploratory OAuth Draft Watchlist
+
+The following individual drafts are worth monitoring because they align with
+current product directions such as agent delegation, auditability, credential
+status, sender constraints, and resource metadata. They are **watchlist only**:
+no discovery metadata, conformance matrix, migration, or implementation claim may
+refer to them until they are promoted through the Review Gate for New Standards.
+
+| Draft or protocol family | Current posture | Why it matters |
+| --- | --- | --- |
+| RFC 9635 / RFC 9767 GNAP | Watch only | Adjacent authorization protocol; useful design reference, not an OAuth/OIDC feature toggle. |
+| `draft-aap-oauth-profile-01` | Watch only | Agent Authorization Profile may become relevant for AI-agent delegated access. |
+| `draft-li-oauth-delegated-authorization-02` | Watch only | Subordinate delegated tokens overlap with bounded Token Exchange and agent delegation. |
+| `draft-mcguinness-oauth-mission-00` | Watch only | Mission-bound authorization can inform bounded-purpose grants. |
+| `draft-mcguinness-oauth-client-instance-assertion-01` | Watch only | Client-instance identity may complement attestation-based client authentication. |
+| Actor delegation drafts (`draft-mcguinness-oauth-actor-profile-00`, `draft-mcguinness-oauth-actor-proofs-00`, `draft-mcguinness-oauth-actor-receipts-00`, `draft-mw-oauth-actor-chain-01`) | Watch only | Relevant to auditable multi-agent or multi-hop delegation. |
+| `draft-liu-oauth-authorization-evidence-01` | Watch only | Could improve access-token audit evidence if privacy and minimization are solved. |
+| `draft-parecki-oauth-global-token-revocation-06` | Watch only | Operationally useful for compromise response; requires careful blast-radius controls. |
+| RAR/resource metadata drafts (`draft-zehavi-oauth-rar-metadata-05`, `draft-skokan-oauth-resource-response-02`, `draft-mcguinness-oauth-rfc9728bis-01`) | Watch only | Could improve discovery of typed permissions and protected resource metadata. |
+| Sender-constraint drafts (`draft-mw-oauth-tls-session-bound-tokens-07`, `draft-richer-oauth-httpsig-02`) | Watch only | Potential future proof-of-possession alternatives; deployment feasibility remains unproven. |
+| `draft-moros-oauth-browser-session-handoff-00` | Watch only | Relevant to safe browser/native session handoff only if no-token-leakage guarantees hold. |
 
 ## Forbidden or Compatibility-Only Capabilities
 
