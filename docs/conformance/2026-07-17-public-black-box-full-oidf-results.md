@@ -87,14 +87,11 @@ Artifacts:
 | Expected skips | `7` |
 | Review entries | `32` |
 
-The four warnings are the expected HAIP refresh-token advisory:
-
-> The server supports refresh tokens, but did not issue one.
-
-This is expected for the bounded HAIP client policy. The OpenID4VC upstream plan
-families are still alpha regression plans; this record is official-suite
-regression evidence, not an OpenID Foundation certification claim for
-OpenID4VC.
+The four warnings are the expected HAIP refresh-token advisory: the server
+supports refresh tokens generally, but the bounded HAIP client policy does not
+issue one in those flows. The OpenID4VC upstream plan families are still alpha
+regression plans; this record is official-suite regression evidence, not an
+OpenID Foundation certification claim for OpenID4VC.
 
 Artifact:
 

@@ -84,12 +84,10 @@ Artifacts:
 | 预期 skips | `7` |
 | Review entries | `32` |
 
-4 个 warning 是预期的 HAIP refresh-token advisory：
-
-> The server supports refresh tokens, but did not issue one.
-
-这符合 HAIP 客户端的受限策略。OpenID4VC 上游 plan 族仍是 alpha regression
-plan；本记录是官方套件回归证据，不是 OpenID Foundation 对 OpenID4VC 的正式认证声明。
+4 个 warning 是预期的 HAIP refresh-token advisory：服务端总体支持 refresh token，
+但受限 HAIP 客户端策略不会在这些流程中签发 refresh token。这符合 HAIP 客户端的
+受限策略。OpenID4VC 上游 plan 族仍是 alpha regression plan；本记录是官方套件回归
+证据，不是 OpenID Foundation 对 OpenID4VC 的正式认证声明。
 
 Artifact:
 
