@@ -225,16 +225,11 @@ class OidfWorkflowTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(len(expected_warnings), 26)
         self.assertEqual(
-            {item["configuration-filename"] for item in expected_warnings},
-            {
-                "oidf-fapi-ciba-plain-private-key-jwt-ping-plan-config.json",
-                "oidf-fapi-ciba-plain-mtls-ping-plan-config.json",
-            },
+            expected_warnings,
+            [],
+            "production conformance runs must not whitelist TLS downgrade warnings",
         )
-        self.assertEqual({item["condition"] for item in expected_warnings}, {"EnsureIncomingTls13"})
-        self.assertEqual({item["expected-result"] for item in expected_warnings}, {"warning"})
 
         self.assertIn('"$GITHUB_WORKSPACE/oidf-results/$export_subdir"', workflow)
 
