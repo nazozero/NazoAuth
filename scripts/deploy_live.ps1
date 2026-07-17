@@ -29,7 +29,7 @@ param(
     [string]$OidfPublicSeedArtifactId = "",
     [string]$OidfPublicSeedArtifactDigest = "",
     [string]$RemoteOidfMtlsCaPath = "/usr/local/angie/conf/oidf-mtls-ca.crt",
-    [string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/nazo-auth.conf",
+    [string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/auth.nazo.run.conf",
     [string]$AngieServiceName = "nginx.service",
     [string]$AngieWorkerUser = "www",
     [string]$RemoteDeploymentRoot = "/opt/nazo-oauth",
@@ -970,6 +970,40 @@ assert_angie_oidf_config_unchanged() {
   fi
 }
 
+assert_angie_backend_upstream() {
+  local active_config
+  test -f "`$ANGIE_OIDF_CONFIG" || return 1
+  test ! -L "`$ANGIE_OIDF_CONFIG" || return 1
+  if ! active_config="`$(angie -T 2>&1)"; then
+    echo "Angie configuration dump failed" >&2
+    return 1
+  fi
+  grep -F "# configuration file `$ANGIE_OIDF_CONFIG:" <<<"`$active_config" >/dev/null || {
+    echo "`$ANGIE_OIDF_CONFIG is not present in the active Angie configuration" >&2
+    return 1
+  }
+  python3 - "`$ANGIE_OIDF_CONFIG" "`$CONTAINER_IP" <<'PY'
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+container_ip = sys.argv[2]
+source = path.read_text(encoding="utf-8")
+if "\x00" in source:
+    raise SystemExit("Angie config contains a NUL byte")
+matches = re.findall(r"proxy_pass\s+http://(?P<host>10\.101\.0\.\d+):8000\s*;", source)
+if matches != [container_ip]:
+    raise SystemExit(
+        f"Angie backend proxy_pass must point only to {container_ip}:8000, got {matches}"
+    )
+if "https://127.0.0.1:8443" in source and "location ^~ /test/" not in source:
+    raise SystemExit("local conformance-suite proxy is only permitted in the /test/ location")
+PY
+}
+
 restore_angie_oidf_config() {
   local current_digest target_dir temporary
   require_sha256 "`$ANGIE_CONFIG_BACKUP" "`$angie_oidf_config_sha256" "Angie OIDF configuration backup" || return 1
@@ -1391,6 +1425,7 @@ PY
   podman exec nazo-oauth-valkey valkey-cli ping | grep -Fx PONG >/dev/null
   validate_oidf_ca_artifact || return 1
   assert_angie_oidf_ca_target || return 1
+  assert_angie_backend_upstream || return 1
 
   install -d -m 0755 "`$UI_RELEASES"
   mkdir -p "`$DEPLOYMENTS"
@@ -1509,6 +1544,7 @@ PY
   curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/health" >/dev/null
   discovery="`$(curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/.well-known/openid-configuration")"
   python3 -c 'import json,sys; assert json.load(sys.stdin)["issuer"] == sys.argv[1]' "`$EXPECTED_ISSUER" <<<"`$discovery"
+  assert_angie_backend_upstream || return 1
   assert_pending_lease
   install_oidf_ca
   assert_pending_lease
