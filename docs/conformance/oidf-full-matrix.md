@@ -4,6 +4,8 @@ This document describes the repository-owned OpenID Foundation Conformance Suite
 
 The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/setup_local_oidf_podman.py` also writes `runtime/oidf/oidf-plan-set-manifest.json` with a title, description, and coverage focus for every plan.
 
+In `parallel-isolated` mode the 25 plans are executed as `19 + 4 + 1 + 1`: 19 ordinary OIDC/FAPI plans run in the concurrent set, the four FAPI-CIBA plans run in a dedicated `--no-parallel` CIBA set, Front-Channel Logout runs in its own browser job, and Session Management runs in its own browser job. This preserves full matrix coverage while preventing CIBA callback and browser-session state from competing inside the same suite runner.
+
 The latest durable local and official-suite evidence is
 [`2026-07-15-fapi-ciba-mtls-ping-oidf-results.md`](2026-07-15-fapi-ciba-mtls-ping-oidf-results.md).
 

@@ -1498,17 +1498,24 @@ def write_all_plan_configs() -> None:
     configs.update(write_fapi_ciba_plan_config())
     configs.update(write_fapi_matrix_plan_configs())
     plan_set = plan_expressions_for_configs(configs)
-    concurrent, frontchannel, session = partition_plan_expressions(plan_set)
+    concurrent, ciba, frontchannel, session = partition_plan_expressions(plan_set)
     if len(frontchannel) != 1 or len(session) != 1:
         raise RuntimeError(
             "OIDF full matrix must contain exactly one front-channel and one session-management plan"
         )
+    if len(ciba) != 4:
+        raise RuntimeError("OIDF full matrix must contain exactly four FAPI-CIBA plans")
     plan_manifest = plan_manifest_for_expressions(plan_set, configs)
     write_text(RUNTIME / "oidf-plan-configs.json", json.dumps({"configs": configs}, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "oidf-plan-set.json", json.dumps(plan_set, indent=2) + "\n", 0o600)
     write_text(
         RUNTIME / "oidf-plan-set-concurrent.json",
         json.dumps(concurrent, indent=2) + "\n",
+        0o600,
+    )
+    write_text(
+        RUNTIME / "oidf-plan-set-ciba.json",
+        json.dumps(ciba, indent=2) + "\n",
         0o600,
     )
     write_text(
@@ -1647,7 +1654,10 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
 
 def partition_plan_expressions(
     expressions: list[str],
-) -> tuple[list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    ciba = [
+        expression for expression in expressions if "fapi-ciba-id1-test-plan" in expression
+    ]
     frontchannel = [
         expression
         for expression in expressions
@@ -1658,11 +1668,11 @@ def partition_plan_expressions(
         for expression in expressions
         if "session-management-certification-test-plan" in expression
     ]
-    browser_sensitive = set(frontchannel + session)
+    isolated = set(ciba + frontchannel + session)
     concurrent = [
-        expression for expression in expressions if expression not in browser_sensitive
+        expression for expression in expressions if expression not in isolated
     ]
-    return concurrent, frontchannel, session
+    return concurrent, ciba, frontchannel, session
 
 
 def plan_manifest_for_expressions(
