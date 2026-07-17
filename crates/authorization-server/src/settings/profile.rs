@@ -104,15 +104,33 @@ impl CibaSecurityProfile {
 pub(super) fn dpop_nonce_policy_from_config(
     config: &ConfigSource,
 ) -> anyhow::Result<DpopNoncePolicy> {
+    dpop_nonce_policy_from_config_key(config, "DPOP_NONCE_POLICY", "required")
+}
+
+pub(super) fn fapi_resource_dpop_nonce_policy_from_config(
+    config: &ConfigSource,
+) -> anyhow::Result<DpopNoncePolicy> {
+    // RFC 9449 resource-server nonces are optional. The official FAPI2 DPoP
+    // resource tests do not retry an initial protected-resource nonce
+    // challenge, so the resource endpoint keeps nonce challenges optional by
+    // default while DPoP jti replay protection remains mandatory.
+    dpop_nonce_policy_from_config_key(config, "FAPI_RESOURCE_DPOP_NONCE_POLICY", "optional")
+}
+
+fn dpop_nonce_policy_from_config_key(
+    config: &ConfigSource,
+    key: &str,
+    default: &str,
+) -> anyhow::Result<DpopNoncePolicy> {
     match config
-        .string("DPOP_NONCE_POLICY", "required")
+        .string(key, default)
         .trim()
         .to_ascii_lowercase()
         .as_str()
     {
         "required" | "require" | "strict" => Ok(DpopNoncePolicy::Required),
         "optional" => Ok(DpopNoncePolicy::Optional),
-        value => bail!("DPOP_NONCE_POLICY must be required or optional, got {value}"),
+        value => bail!("{key} must be required or optional, got {value}"),
     }
 }
 

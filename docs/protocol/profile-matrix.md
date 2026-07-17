@@ -126,7 +126,7 @@ Required negative tests:
 | Response types | `code` |
 | Client auth | Static clients, public or confidential according to registration |
 | Token binding | Bearer, DPoP, or mTLS depending on client policy |
-| DPoP nonce | `DPOP_NONCE_POLICY=required` by default; `optional` is available only for baseline interoperability |
+| DPoP nonce | Authorization-server and token endpoints use `DPOP_NONCE_POLICY=required` by default. The FAPI protected resource endpoint uses `FAPI_RESOURCE_DPOP_NONCE_POLICY=optional` by default because RFC 9449 makes resource nonces optional and the official FAPI2 DPoP resource tests exercise replay through `jti`, not a mandatory initial resource nonce challenge. |
 | PAR | Optional unless client/profile requires it |
 | JAR | Optional; signed request objects validated when supplied |
 | ID Token | RS256 support must be real; active signing alg is advertised |
@@ -173,7 +173,7 @@ Required negative tests:
 | Response types | `code` |
 | Client auth | `private_key_jwt` or mTLS |
 | Token binding | DPoP or mTLS sender-constrained access tokens |
-| DPoP nonce | Required, regardless of a baseline `DPOP_NONCE_POLICY=optional` setting |
+| DPoP nonce | Authorization-server and token endpoints remain governed by `DPOP_NONCE_POLICY` and default to required. The protected resource endpoint is governed separately by `FAPI_RESOURCE_DPOP_NONCE_POLICY`; its default is optional for OIDF FAPI2 DPoP resource conformance while DPoP `jti` replay protection remains required. |
 | PAR | Required; authorization requests that do not use PAR must be rejected |
 | PKCE | S256 required for authorization code flow |
 | Authorization code TTL | 60 seconds or less |
@@ -188,9 +188,10 @@ must document that exception and keep the replay-detection state machine from
 Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-security`.
 The setting forces PAR globally, caps authorization code lifetime at 60 seconds,
 rejects password grant requests, limits clients to confidential clients, allows
-only `private_key_jwt` or mTLS client authentication, requires DPoP or mTLS
-sender-constrained access tokens, and keeps DPoP nonce enforcement required
-even if a baseline deployment configured `DPOP_NONCE_POLICY=optional`.
+only `private_key_jwt` or mTLS client authentication, and requires DPoP or mTLS
+sender-constrained access tokens. DPoP nonce enforcement is split by endpoint:
+authorization-server and token endpoint checks use `DPOP_NONCE_POLICY`, while
+the FAPI protected resource endpoint uses `FAPI_RESOURCE_DPOP_NONCE_POLICY`.
 
 Required negative tests:
 

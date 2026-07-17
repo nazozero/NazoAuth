@@ -20,6 +20,10 @@ fn baseline_profile_can_use_optional_dpop_nonce_policy() {
         settings.protocol.dpop_nonce_policy,
         DpopNoncePolicy::Optional
     );
+    assert_eq!(
+        settings.protocol.fapi_resource_dpop_nonce_policy,
+        DpopNoncePolicy::Optional
+    );
 }
 
 #[test]
@@ -36,6 +40,10 @@ fn fapi_profiles_default_to_required_dpop_nonce_policy() {
         assert_eq!(
             settings.protocol.dpop_nonce_policy,
             DpopNoncePolicy::Required
+        );
+        assert_eq!(
+            settings.protocol.fapi_resource_dpop_nonce_policy,
+            DpopNoncePolicy::Optional
         );
         assert!(
             settings.protocol.require_pushed_authorization_requests,
@@ -61,6 +69,43 @@ fn fapi_profiles_can_use_optional_dpop_nonce_policy() {
 
     assert_eq!(
         settings.protocol.dpop_nonce_policy,
+        DpopNoncePolicy::Optional
+    );
+    assert_eq!(
+        settings.protocol.fapi_resource_dpop_nonce_policy,
+        DpopNoncePolicy::Optional
+    );
+}
+
+#[test]
+fn fapi_resource_nonce_policy_is_independent_from_token_nonce_policy() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("DPOP_NONCE_POLICY", "required"),
+        ("FAPI_RESOURCE_DPOP_NONCE_POLICY", "required"),
+    ]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert_eq!(
+        settings.protocol.dpop_nonce_policy,
+        DpopNoncePolicy::Required
+    );
+    assert_eq!(
+        settings.protocol.fapi_resource_dpop_nonce_policy,
+        DpopNoncePolicy::Required
+    );
+
+    let config = ConfigSource::from_pairs_for_test([
+        ("DPOP_NONCE_POLICY", "required"),
+        ("FAPI_RESOURCE_DPOP_NONCE_POLICY", "optional"),
+    ]);
+    let settings = Settings::from_config(&config).unwrap();
+
+    assert_eq!(
+        settings.protocol.dpop_nonce_policy,
+        DpopNoncePolicy::Required
+    );
+    assert_eq!(
+        settings.protocol.fapi_resource_dpop_nonce_policy,
         DpopNoncePolicy::Optional
     );
 }
@@ -190,6 +235,21 @@ fn invalid_dpop_nonce_policy_is_rejected() {
     assert_eq!(
         err.to_string(),
         "DPOP_NONCE_POLICY must be required or optional, got sometimes"
+    );
+}
+
+#[test]
+fn invalid_fapi_resource_dpop_nonce_policy_is_rejected() {
+    let config =
+        ConfigSource::from_pairs_for_test([("FAPI_RESOURCE_DPOP_NONCE_POLICY", "sometimes")]);
+
+    let Err(err) = Settings::from_config(&config) else {
+        panic!("invalid FAPI resource DPoP nonce policy must be rejected");
+    };
+
+    assert_eq!(
+        err.to_string(),
+        "FAPI_RESOURCE_DPOP_NONCE_POLICY must be required or optional, got sometimes"
     );
 }
 
