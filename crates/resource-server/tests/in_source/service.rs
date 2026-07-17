@@ -416,11 +416,11 @@ async fn dpop_accepts_any_explicit_transport_target_without_retrying_authorizati
 }
 
 #[test]
-fn replay_marker_is_consumed_before_required_nonce_validation() {
-    block_on(replay_marker_is_consumed_before_required_nonce_validation_async());
+fn missing_required_nonce_does_not_consume_replay_marker() {
+    block_on(missing_required_nonce_does_not_consume_replay_marker_async());
 }
 
-async fn replay_marker_is_consumed_before_required_nonce_validation_async() {
+async fn missing_required_nonce_does_not_consume_replay_marker_async() {
     let fixture = fixture();
     let dpop = dpop_fixture();
     let access_token = token(&fixture, json!({"cnf": {"jkt": dpop.jkt}}), None);
@@ -453,7 +453,7 @@ async fn replay_marker_is_consumed_before_required_nonce_validation_async() {
         ProtectedResourceAuthorizationError::UseDpopNonce(nonce) => nonce,
         error => panic!("unexpected nonce challenge error: {error:?}"),
     };
-    assert_eq!(replay.keys.lock().unwrap().len(), 1);
+    assert_eq!(replay.keys.lock().unwrap().len(), 0);
 
     let replayed_with_nonce = dpop_proof(
         &dpop,
@@ -464,7 +464,7 @@ async fn replay_marker_is_consumed_before_required_nonce_validation_async() {
         Some(&nonce),
         None,
     );
-    let replay_error = service
+    service
         .authorize(
             request(
                 &access_token,
@@ -474,11 +474,8 @@ async fn replay_marker_is_consumed_before_required_nonce_validation_async() {
             context(None),
         )
         .await
-        .expect_err("the same jti must be rejected even after a nonce challenge");
-    assert_eq!(
-        replay_error,
-        ProtectedResourceAuthorizationError::ReplayDetected
-    );
+        .expect("the original jti must remain usable after a nonce challenge");
+    assert_eq!(replay.keys.lock().unwrap().len(), 1);
 
     let fresh_with_nonce = dpop_proof(
         &dpop,
