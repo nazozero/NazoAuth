@@ -601,7 +601,10 @@ mod tests {
         assert_eq!(DEFAULT_OIDF_BASIC_CLIENT_ID, "oidf-basic-client");
         assert_eq!(DEFAULT_OIDF_BASIC_CLIENT2_ID, "oidf-basic-client-2");
         assert_eq!(DEFAULT_OIDF_FORMPOST_CLIENT_ID, "oidf-post-client");
-        assert_eq!(DEFAULT_OIDF_FRONTCHANNEL_CLIENT_ID, "oidf-frontchannel-client");
+        assert_eq!(
+            DEFAULT_OIDF_FRONTCHANNEL_CLIENT_ID,
+            "oidf-frontchannel-client"
+        );
         assert_eq!(DEFAULT_OIDF_SESSION_CLIENT_ID, "oidf-session-client");
     }
 
