@@ -18,6 +18,7 @@ set can be scanned from one place.
 | Deployment | [operations/deployment.md](operations/deployment.md) |
 | Chinese deployment | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) |
 | Configuration | [operations/configuration.md](operations/configuration.md) |
+| OpenID Connect integration | [integration/openid-connect.md](integration/openid-connect.md) |
 | Protocol and profile status | [protocol/profile-matrix.md](protocol/profile-matrix.md) |
 | OIDF conformance evidence | [conformance/README.md](conformance/README.md) |
 | Performance benchmark overview | [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) |
@@ -26,6 +27,7 @@ set can be scanned from one place.
 
 | Area | Directory | Purpose |
 | --- | --- | --- |
+| Integration | [integration](integration) | Relying-party and ecosystem integration guides. |
 | Operations | [operations](operations) | Configuration, deployment, release-security, PostgreSQL, and Valkey operations. |
 | Protocol | [protocol](protocol) | OAuth/OIDC/FAPI profile matrices, RFC coverage, protocol self-audits, and implementation backlog. |
 | Features | [features](features) | Feature design and integration notes for ecosystem onboarding, tenancy, SCIM, federation, MFA, passkeys, and resource-server verification. |
@@ -57,6 +59,12 @@ set can be scanned from one place.
 | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) | Chinese deployment guide. |
 | [operations/ha-operations.md](operations/ha-operations.md) | PostgreSQL and Valkey operational guidance. |
 | [operations/release-security.md](operations/release-security.md) | Release security checks, provenance, and supply-chain controls. |
+
+### Integration
+
+| Document | Role |
+| --- | --- |
+| [integration/openid-connect.md](integration/openid-connect.md) | OpenID Connect relying-party integration guide and security boundaries. |
 
 ### Protocol
 
