@@ -256,6 +256,7 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "FEDERATION_SAML_GATEWAY_ISSUER",
             "FEDERATION_SAML_GATEWAY_SECRET",
             "FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS",
+            "FAPI_RESOURCE_DPOP_NONCE_POLICY",
             "ID_TOKEN_TTL_SECONDS",
             "ISSUER",
             "JWK_KEYS_DIR",

@@ -69,6 +69,7 @@ pub(crate) struct ProtocolSettings {
     pub(crate) authorization_server_profile: AuthorizationServerProfile,
     pub(crate) ciba_security_profile: CibaSecurityProfile,
     pub(crate) dpop_nonce_policy: DpopNoncePolicy,
+    pub(crate) fapi_resource_dpop_nonce_policy: DpopNoncePolicy,
     pub(crate) request_object_jti_policy: RequestObjectJtiPolicy,
     pub(crate) auth_code_ttl_seconds: u64,
     pub(crate) access_token_ttl_seconds: i64,
@@ -245,6 +246,8 @@ impl Settings {
             .unwrap_or_else(|| default_protected_resource_identifier(&issuer));
         validate_protected_resource_identifier(&protected_resource_identifier)?;
         let dpop_nonce_policy = profile::dpop_nonce_policy_from_config(config)?;
+        let fapi_resource_dpop_nonce_policy =
+            profile::fapi_resource_dpop_nonce_policy_from_config(config)?;
         let request_object_jti_policy = RequestObjectJtiPolicy::from_config(config)?;
         let auth_code_ttl_seconds =
             positive_u64(config, "AUTH_CODE_TTL_SECONDS", 60, "AUTH_CODE_TTL_SECONDS")?;
@@ -516,6 +519,7 @@ impl Settings {
                 authorization_server_profile,
                 ciba_security_profile,
                 dpop_nonce_policy,
+                fapi_resource_dpop_nonce_policy,
                 request_object_jti_policy,
                 auth_code_ttl_seconds,
                 access_token_ttl_seconds: positive_i64(

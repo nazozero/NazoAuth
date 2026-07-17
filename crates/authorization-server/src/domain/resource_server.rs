@@ -21,7 +21,7 @@ impl From<&Settings> for ResourceServerConfig {
             mtls_endpoint_base_url: endpoint.mtls_endpoint_base_url.clone(),
             default_audience: protocol.default_audience.to_owned(),
             protected_resource_identifier: protocol.protected_resource_identifier.to_owned(),
-            dpop_nonce_policy: protocol.dpop_nonce_policy,
+            dpop_nonce_policy: protocol.fapi_resource_dpop_nonce_policy,
             fapi_http_signature_max_age_seconds: protocol.fapi_http_signature_max_age_seconds,
             trusted_proxy_cidrs: endpoint.trusted_proxy_cidrs.to_vec(),
         }
