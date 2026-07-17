@@ -50,6 +50,39 @@ cases, discovery and registration metadata are the executable allowlist.
 | Resource Owner Password Credentials | Never supported | No enablement switch; rejected if requested | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP says the password grant MUST NOT be used. |
 | Legacy OIDF Dynamic OP certification profile | Never supported | No enablement switch; the OIDF Dynamic OP plan is excluded from supported matrices | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | That certification profile requires implicit/hybrid metadata; RFC 7591/RFC 7592 dynamic registration remains supported. |
 
+## Planned specifications and drafts
+
+This section records standards work that is relevant to integration planning but
+is not necessarily a current discovery or registration metadata claim. `Mostly
+aligned; final RFC audit pending` means the current implementation covers the
+main draft behavior but does not claim final-RFC conformance. `Not supported
+(planned)` means no executable implementation or complete profile boundary is
+available yet.
+
+| Specification or draft | Current status | Why it is not a current advertised capability | Completion condition |
+| --- | --- | --- | --- |
+| OAuth 2.1 Authorization Framework | Mostly aligned; final RFC audit pending | [draft-ietf-oauth-v2-1-15](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) is still a draft, not a final RFC. The implementation already aligns with code flow, S256 PKCE, no implicit/password grants, exact redirect matching, and secure defaults. | After RFC publication, map every final requirement to code, metadata, negative tests, and conformance evidence. |
+| OAuth 2.0 for Browser-Based Applications | Not supported (planned) | [draft-ietf-oauth-browser-based-apps-27](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/) is in the RFC Editor queue, but there is no runtime profile or discovery claim named after it. | Re-audit SPA, BFF, and browser-client guidance after RFC publication; keep code + S256 PKCE and no browser front-channel token leakage. |
+| Cross-Device Flows: Security BCP | Not supported (planned) | [draft-ietf-oauth-cross-device-security-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-cross-device-security/) is a BCP for multiple flows, not a single endpoint or grant. | Apply the final BCP to Device Grant, CIBA, Native SSO, and future cross-device flows. |
+| OAuth Security BCP Update | Not supported (planned) | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) is an update track for [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html), not a new protocol surface. | Treat it as an RFC 9700 delta audit; update behavior, metadata, tests, and documentation together. |
+| JWT BCP / JWT Assertion bis | Not supported (planned) | [draft-ietf-oauth-rfc8725bis-06](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) and [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) are not final yet; current behavior follows RFC 8725/RFC 7523. | Re-audit algorithm allowlists, audience, replay, key binding, cross-JWT confusion, and `private_key_jwt`. |
+| Refresh Token and Authorization Expiration | Not supported (planned) | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) requires explicit authorization and refresh-token lifetime modeling; current metadata does not claim these expiration semantics. | Define authorization lifetime, refresh-family state, revocation semantics, metadata, and E2E tests. |
+| First-Party Applications | Not supported (planned) | [draft-ietf-oauth-first-party-apps-04](https://datatracker.ietf.org/doc/draft-ietf-oauth-first-party-apps/) depends on same-party deployment assumptions that must not be generalized to third-party clients. | Define same-party/BFF boundaries and prove third-party client isolation remains intact. |
+| Client ID Metadata Document | Not supported (planned) | [draft-ietf-oauth-client-id-metadata-document-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-client-id-metadata-document/) implies remote public-client metadata retrieval; there is no trusted fetch, cache, or conflict model yet. | Define trusted sources, cache behavior, downgrade handling, conflicts, DCR interaction, and failure policy. |
+| SPIFFE Client Authentication | Not supported (planned) | [draft-ietf-oauth-spiffe-client-auth-02](https://datatracker.ietf.org/doc/draft-ietf-oauth-spiffe-client-auth/) requires a deployed SPIFFE trust domain, which ordinary OAuth/OIDC deployments do not provide. | Add trust-bundle validation, certificate/identity lifecycle, resource-server verification, and metadata isolation. |
+| Identity Assertion / Identity Chaining / Transaction Tokens | Not supported (planned) | These drafts cover cross-domain identity assertions, chained authorization, and workload call chains; there is no issuer/trust-anchor, subject-mapping, Transaction Token Service, or resource-server verification model yet. | Complete trust-domain, replay, audit, revocation, resource-server verification, and least-privilege propagation design. |
+| Token Status List | Not supported (planned) | [draft-ietf-oauth-status-list-21](https://datatracker.ietf.org/doc/draft-ietf-oauth-status-list/) primarily fits OpenID4VC credential status; no credential status publication or privacy model is currently advertised. | Implement with the OpenID4VC issuer/verifier status model, not as a generic OAuth token-status endpoint. |
+
+The following are watchlist items, not planned implementation commitments:
+
+| Draft or protocol family | Status | Why it is watched |
+| --- | --- | --- |
+| GNAP Core / GNAP Resource Server Connections | Watch only | [RFC 9635](https://www.rfc-editor.org/rfc/rfc9635.html) and [RFC 9767](https://www.rfc-editor.org/rfc/rfc9767.html) are adjacent authorization protocols and useful design references, but they are not OAuth/OIDC switches. |
+| Agent Authorization Profile | Watch only | [draft-aap-oauth-profile-01](https://datatracker.ietf.org/doc/draft-aap-oauth-profile/) is relevant to AI-agent delegated access but is not stable enough for an implementation claim. |
+| Delegated Authorization / Actor Chain | Watch only | [draft-li-oauth-delegated-authorization-02](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/) and [draft-mw-oauth-actor-chain-01](https://datatracker.ietf.org/doc/draft-mw-oauth-actor-chain/) overlap with token exchange, actor delegation, and audit chains. |
+| Global Token Revocation | Watch only | [draft-parecki-oauth-global-token-revocation-06](https://datatracker.ietf.org/doc/draft-parecki-oauth-global-token-revocation/) is operationally useful for compromise response but needs strict blast-radius, audit, and multi-client policy. |
+| RAR / Resource Metadata extensions | Watch only | [draft-zehavi-oauth-rar-metadata-05](https://datatracker.ietf.org/doc/draft-zehavi-oauth-rar-metadata/), [draft-skokan-oauth-resource-response-02](https://datatracker.ietf.org/doc/draft-skokan-oauth-resource-response/), and [draft-mcguinness-oauth-rfc9728bis-01](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-rfc9728bis/) may improve typed permissions and protected-resource metadata. |
+
 ## Discoverable endpoints
 
 Relying parties should read endpoints from discovery. A baseline deployment can

@@ -196,7 +196,7 @@ discovery metadata until fully implemented and tested.
 
 | Standard or draft | Source status on 2026-07-17 | Project decision | Planning boundary |
 | --- | --- | --- | --- |
-| `draft-ietf-oauth-v2-1-15` | OAuth WG active draft | Not supported as final RFC (planned) | Re-audit after publication; do not claim final OAuth 2.1 conformance before an RFC exists. |
+| `draft-ietf-oauth-v2-1-15` | OAuth WG active draft | Mostly aligned; final RFC audit pending | Current behavior follows the draft direction, but final OAuth 2.1 conformance is not claimed until the RFC is published and audited requirement by requirement. |
 | `draft-ietf-oauth-browser-based-apps-27` | RFC Editor queue BCP | Not supported as final RFC (planned) | Re-audit after RFC publication; maintain code + S256 PKCE and no browser token leakage. |
 | `draft-ietf-oauth-cross-device-security-16` | RFC Editor queue BCP | Not supported (planned) | Apply to Device Grant, CIBA, Native SSO, and future cross-device flows. |
 | `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | Not supported (planned) | Treat as an RFC 9700 delta audit, not as a runtime feature. |
