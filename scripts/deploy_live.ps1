@@ -46,7 +46,8 @@ param(
     [string]$RenderRemoteTempDir = "/tmp/nazo-oauth-deploy.render",
     [switch]$SkipBuild,
     [switch]$SkipFrontendBuild,
-    [switch]$SkipMigrate
+    [switch]$SkipMigrate,
+    [switch]$NoCacheBuild
 )
 
 $ErrorActionPreference = "Stop"
@@ -551,11 +552,16 @@ if ($RenderRemoteScriptPath) {
 else {
     $backendBuildContext = Export-GitCommit -Worktree $LocalBackendWorktree -Commit $BackendCommit -Label "backend-source"
     try {
-        Invoke-Checked docker @(
+        $dockerBuildArgs = @(
             "build", "-f", (Join-Path $backendBuildContext "Containerfile"),
             "--label", "org.opencontainers.image.revision=$BackendCommit",
-            "-t", $image, $backendBuildContext
+            "-t", $image
         )
+        if ($NoCacheBuild) {
+            $dockerBuildArgs += "--no-cache"
+        }
+        $dockerBuildArgs += $backendBuildContext
+        Invoke-Checked docker $dockerBuildArgs
     }
     finally {
         Remove-Item -LiteralPath $backendBuildContext -Recurse -Force -ErrorAction SilentlyContinue
