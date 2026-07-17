@@ -9,6 +9,7 @@ use std::sync::{
     Arc,
     atomic::{AtomicUsize, Ordering},
 };
+use std::time::Duration as StdDuration;
 use tracing::Subscriber;
 use tracing_subscriber::{Layer, layer::Context, prelude::*};
 
@@ -59,6 +60,117 @@ fn ciba_test_state_with(configure: impl FnOnce(&mut Settings)) -> TestAppState {
 
 fn ciba_test_state() -> TestAppState {
     ciba_test_state_with(|_| {})
+}
+
+async fn live_test_valkey() -> Option<nazo_valkey::test_support::Client> {
+    let valkey_url = std::env::var("VALKEY_URL").ok()?;
+    Some(
+        nazo_valkey::test_support::connect(&valkey_url, StdDuration::from_secs(1))
+            .await
+            .expect("VALKEY_URL should point to a reachable test Valkey instance"),
+    )
+}
+
+fn ciba_token_form(auth_req_id: String) -> TokenForm {
+    TokenForm {
+        grant_type: CIBA_GRANT_TYPE.to_owned(),
+        code: None,
+        device_code: None,
+        auth_req_id: Some(auth_req_id),
+        redirect_uri: None,
+        code_verifier: None,
+        refresh_token: None,
+        device_secret: None,
+        scope: None,
+        client_id: None,
+        client_secret: None,
+        client_assertion_type: None,
+        client_assertion: None,
+        assertion: None,
+        requested_token_type: None,
+        subject_token: None,
+        subject_token_type: None,
+        actor_token: None,
+        actor_token_type: None,
+        audiences: Vec::new(),
+        has_audience_param: false,
+    }
+}
+
+async fn store_ciba_state(
+    state: &TestAppState,
+    client: &ClientRow,
+    auth_req_id: &str,
+    status: CibaStatus,
+) {
+    let now = Utc::now().timestamp();
+    CibaStore::new(&state.valkey_connection())
+        .create(
+            auth_req_id,
+            &CibaRequestState {
+                client_id: client.client_id.clone(),
+                user_id: Uuid::now_v7(),
+                scopes: vec!["openid".to_owned()],
+                audiences: vec!["resource://default".to_owned()],
+                acr: None,
+                binding_message: None,
+                issued_at: now,
+                status,
+                interval_seconds: 5,
+                expires_at: now + 600,
+                retention_expires_at: now + 720,
+                last_poll_at: None,
+                ping_notification: None,
+            },
+        )
+        .await
+        .expect("CIBA state should be stored");
+}
+
+async fn call_ciba_token_for_test(
+    state: &TestAppState,
+    client: &ClientRow,
+    auth_req_id: String,
+) -> HttpResponse {
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let form = ciba_token_form(auth_req_id);
+    let connection = state.valkey_connection();
+    let ciba_service = ServerCibaService::new(CibaStore::new(&connection));
+    let users = nazo_postgres::UserRepository::new(state.diesel_db.clone());
+    let token_service = ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
+        state.keyset.clone(),
+    );
+    let issuance_config = TokenIssuanceConfig::from(state.settings.as_ref());
+    let ciba_config = CibaHttpConfig::from(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
+    let authorization = super::super::issue::test_authorization_service(state);
+    let issuance = TokenIssuanceContext {
+        config: &issuance_config,
+        modules: &modules,
+        authorization: &authorization,
+    };
+    let handles = CibaTokenHandles::new(
+        Data::new(ciba_service),
+        Data::new(users),
+        Data::new(ciba_config),
+    );
+    token_ciba(
+        CibaTokenContext {
+            token_service: &token_service,
+            issuance: &issuance,
+            handles: &handles,
+            request: &req,
+        },
+        client,
+        &form,
+        None,
+        "private_key_jwt",
+    )
+    .await
 }
 
 fn ciba_private_key_jwt_client_with_alg(kid: &str, fixture: &ClientSigningFixture) -> ClientRow {
@@ -769,75 +881,48 @@ fn ciba_token_grant_state_rejects_other_client_auth_req_id_as_invalid_grant() {
 }
 
 #[actix_web::test]
-async fn ciba_token_request_validates_mtls_before_auth_req_id_state() {
-    let state = ciba_test_state_with(|settings| {
+async fn ciba_token_request_reports_pending_state_before_mtls_binding() {
+    let Some(valkey) = live_test_valkey().await else {
+        return;
+    };
+    let mut state = ciba_test_state_with(|settings| {
         settings.modules.enable_ciba = true;
     });
+    state.valkey = valkey;
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
     client.require_mtls_bound_tokens = true;
-    let req = actix_web::test::TestRequest::post()
-        .uri("/token")
-        .to_http_request();
-    let form = TokenForm {
-        grant_type: CIBA_GRANT_TYPE.to_owned(),
-        code: None,
-        device_code: None,
-        auth_req_id: Some("missing-auth-req-id".to_owned()),
-        redirect_uri: None,
-        code_verifier: None,
-        refresh_token: None,
-        device_secret: None,
-        scope: None,
-        client_id: None,
-        client_secret: None,
-        client_assertion_type: None,
-        client_assertion: None,
-        assertion: None,
-        requested_token_type: None,
-        subject_token: None,
-        subject_token_type: None,
-        actor_token: None,
-        actor_token_type: None,
-        audiences: Vec::new(),
-        has_audience_param: false,
-    };
+    let auth_req_id = format!("pending-mtls-{}", Uuid::now_v7());
+    store_ciba_state(&state, &client, &auth_req_id, CibaStatus::Pending).await;
 
-    let connection = state.valkey_connection();
-    let ciba_service = ServerCibaService::new(CibaStore::new(&connection));
-    let users = nazo_postgres::UserRepository::new(state.diesel_db.clone());
-    let token_service = ServerTokenService::new(
-        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
-        nazo_valkey::TokenIssuanceStateAdapter::new(&connection),
-        state.keyset.clone(),
+    let response = call_ciba_token_for_test(&state, &client, auth_req_id).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        response
+            .extensions()
+            .get::<OAuthJsonErrorFields>()
+            .map(|fields| fields.error.as_str()),
+        Some("authorization_pending")
     );
-    let issuance_config = TokenIssuanceConfig::from(state.settings.as_ref());
-    let ciba_config = CibaHttpConfig::from(state.settings.as_ref());
-    let modules = state.active_module_snapshot();
-    let authorization = super::super::issue::test_authorization_service(&state);
-    let issuance = TokenIssuanceContext {
-        config: &issuance_config,
-        modules: &modules,
-        authorization: &authorization,
+}
+
+#[actix_web::test]
+async fn ciba_token_request_validates_mtls_binding_before_issuing_approved_token() {
+    let Some(valkey) = live_test_valkey().await else {
+        return;
     };
-    let handles = CibaTokenHandles::new(
-        Data::new(ciba_service),
-        Data::new(users),
-        Data::new(ciba_config),
-    );
-    let response = token_ciba(
-        CibaTokenContext {
-            token_service: &token_service,
-            issuance: &issuance,
-            handles: &handles,
-            request: &req,
-        },
-        &client,
-        &form,
-        None,
-        "private_key_jwt",
-    )
-    .await;
+    let mut state = ciba_test_state_with(|settings| {
+        settings.modules.enable_ciba = true;
+    });
+    state.valkey = valkey;
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("ciba-kid", &key);
+    client.require_mtls_bound_tokens = true;
+    let auth_req_id = format!("approved-mtls-{}", Uuid::now_v7());
+    store_ciba_state(&state, &client, &auth_req_id, CibaStatus::Approved).await;
+
+    let response = call_ciba_token_for_test(&state, &client, auth_req_id).await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(

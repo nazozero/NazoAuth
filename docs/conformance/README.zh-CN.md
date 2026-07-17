@@ -7,6 +7,7 @@
 ## 当前证据
 
 - 认证与一致性入口：[认证与一致性证据](certification.zh-CN.md)
+- 必须遵守的公网黑盒运行流程：[OIDF 公网黑盒一致性测试流程](oidf-public-black-box-runbook.zh-CN.md)
 - 认证基线：[2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - 矩阵范围说明：[OIDF 完整矩阵](oidf-full-matrix.zh-CN.md)
 - 已归档诊断 full-matrix 回归：[2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
