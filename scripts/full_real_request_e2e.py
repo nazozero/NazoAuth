@@ -4177,36 +4177,20 @@ def run() -> None:
             expect_json(holder_missing_proof).get("error") == "invalid_grant",
         )
 
-        fapi_dpop_challenge = requests.get(
-            f"{BASE_URL}/fapi/resource",
-            headers={
-                "Authorization": f"DPoP {access_token}",
-                "DPoP": dpop_proof(
-                    "GET",
-                    f"{ISSUER_URL}/fapi/resource",
-                    dpop_key,
-                    access_token=access_token,
-                ),
-            },
-            timeout=10,
+        fapi_dpop_proof = dpop_proof(
+            "GET",
+            f"{ISSUER_URL}/fapi/resource",
+            dpop_key,
+            access_token=access_token,
         )
-        expect_status("GET /fapi/resource DPoP nonce challenge", fapi_dpop_challenge, 401)
-        fapi_dpop_nonce = fapi_dpop_challenge.headers.get("DPoP-Nonce")
-        check("fapi_resource_dpop_nonce_header", bool(fapi_dpop_nonce))
         fapi_dpop = expect_json(
             expect_status(
-                "GET /fapi/resource DPoP",
+                "GET /fapi/resource DPoP without resource nonce",
                 requests.get(
                     f"{BASE_URL}/fapi/resource",
                     headers={
                         "Authorization": f"DPoP {access_token}",
-                        "DPoP": dpop_proof(
-                            "GET",
-                            f"{ISSUER_URL}/fapi/resource",
-                            dpop_key,
-                            nonce=fapi_dpop_nonce,
-                            access_token=access_token,
-                        ),
+                        "DPoP": fapi_dpop_proof,
                     },
                     timeout=10,
                 ),
@@ -4217,6 +4201,19 @@ def run() -> None:
             "fapi_resource_dpop_claims",
             fapi_dpop.get("client_id") == public_client_id and bool(fapi_dpop.get("sub")),
             fapi_dpop,
+        )
+        fapi_dpop_replay = requests.get(
+            f"{BASE_URL}/fapi/resource",
+            headers={
+                "Authorization": f"DPoP {access_token}",
+                "DPoP": fapi_dpop_proof,
+            },
+            timeout=10,
+        )
+        expect_status("GET /fapi/resource DPoP replay rejected", fapi_dpop_replay, 400)
+        check(
+            "fapi_resource_dpop_replay_invalid_dpop_proof",
+            expect_json(fapi_dpop_replay).get("error") == "invalid_dpop_proof",
         )
 
         userinfo_no_nonce = requests.get(

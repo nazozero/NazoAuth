@@ -290,6 +290,17 @@ class FakeLifecycle:
         self.ui_path.parent.mkdir(parents=True, mode=0o755)
         (self.deployment / ".env.yaml").write_text("server: {}\n", encoding="utf-8")
         self.remote_temp.mkdir()
+        angie_root = root / "angie"
+        angie_root.mkdir()
+        self.angie_oidf_config = angie_root / "issuer.example.conf"
+        self.angie_oidf_config.write_text(
+            "server {\n"
+            "  location / {\n"
+            "    proxy_pass http://10.101.0.20:8000;\n"
+            "  }\n"
+            "}\n",
+            encoding="utf-8",
+        )
         render_arguments = [
                 "-RenderRemoteTempDir", bash_path(self.remote_temp),
                 "-RemoteDeploymentRoot", bash_path(self.deployment),
@@ -298,14 +309,13 @@ class FakeLifecycle:
                 "-RemoteAvatarsPath", bash_path(self.avatars),
                 "-RemoteUiPath", bash_path(self.ui_path),
                 "-RemoteUiReleasesRoot", bash_path(self.ui_releases),
+                "-RemoteAngieOidfConfigPath", bash_path(self.angie_oidf_config),
                 "-VerificationLeaseSeconds", str(lease_seconds),
         ]
         self.oidf_ca_target: Path | None = None
         self.previous_oidf_ca: bytes | None = None
         if enable_oidf_ca:
             artifact = root / "oidf-public-plan-configs"
-            angie_root = root / "angie"
-            angie_root.mkdir()
             self.oidf_ca_target = angie_root / "oidf-mtls-ca.crt"
             old_key = angie_root / "old-ca.key"
             subprocess.run(
@@ -321,17 +331,20 @@ class FakeLifecycle:
             )
             old_key.unlink()
             self.previous_oidf_ca = self.oidf_ca_target.read_bytes()
-            self.angie_oidf_config = angie_root / "issuer.example.conf"
             self.angie_oidf_config.write_text(
+                "server {\n"
                 f"ssl_client_certificate {self.oidf_ca_target.as_posix()};\n"
                 "proxy_set_header X-SSL-Client-Verify $ssl_client_verify;\n"
-                "proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;\n",
+                "proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;\n"
+                "location / {\n"
+                "proxy_pass http://10.101.0.20:8000;\n"
+                "}\n"
+                "}\n",
                 encoding="utf-8",
             )
             render_arguments.extend(
                 [
                     "-RemoteOidfMtlsCaPath", bash_path(self.oidf_ca_target),
-                    "-RemoteAngieOidfConfigPath", bash_path(self.angie_oidf_config),
                 ]
             )
         rendered = render_fixture(
@@ -382,9 +395,7 @@ class FakeLifecycle:
                 "FAKE_STATE": bash_path(self.fake_state),
                 "FAKE_BACKEND_COMMIT": self.backend_commit,
                 "FAKE_OLD_IMAGE": self.OLD_IMAGE,
-                "FAKE_ANGIE_CONFIG": bash_path(self.angie_oidf_config)
-                if enable_oidf_ca
-                else "",
+                "FAKE_ANGIE_CONFIG": bash_path(self.angie_oidf_config),
                 "MSYS": "winsymlinks:sys",
             }
         )
@@ -648,6 +659,18 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertLess(worker_probe, public_probe)
         self.assertLess(public_probe, asset_probe)
         self.assertLess(asset_probe, commit)
+
+    def test_public_angie_vhost_upstream_is_bound_to_candidate_container(self) -> None:
+        self.assertIn(
+            '[string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/auth.nazo.run.conf"',
+            self.source,
+        )
+        self.assertNotIn(
+            '[string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/nazo-auth.conf"',
+            self.source,
+        )
+        self.assertIn("assert_angie_backend_upstream", self.source)
+        self.assertIn("Angie backend proxy_pass must point only to", self.source)
         self.assertIn("/ui/assets/", self.source)
 
     def test_remote_host_rejects_ssh_options_and_shell_metacharacters(self) -> None:
