@@ -10,6 +10,7 @@ import subprocess
 import copy
 import base64
 import hashlib
+import ipaddress
 import re
 import shutil
 import urllib.parse
@@ -49,6 +50,14 @@ if not SUITE_BASE_URL:
 parsed_suite = urllib.parse.urlsplit(SUITE_BASE_URL)
 if parsed_suite.scheme != "https" or not parsed_suite.netloc or parsed_suite.path not in ("", "/"):
     raise RuntimeError("OIDF_SUITE_BASE_URL must be an HTTPS origin without a path")
+suite_host = parsed_suite.hostname or ""
+try:
+    ipaddress.ip_address(suite_host)
+except ValueError:
+    if suite_host.lower() == "localhost" or suite_host.lower().endswith(".local"):
+        raise RuntimeError("OIDF_SUITE_BASE_URL must use a public DNS hostname")
+else:
+    raise RuntimeError("OIDF_SUITE_BASE_URL must use a public DNS hostname, not a raw IP")
 SUITE_ORIGIN = urllib.parse.urlsplit(SUITE_BASE_URL)._replace(path="", query="", fragment="").geturl()
 ISSUER_HOST = urllib.parse.urlsplit(ISSUER).hostname
 if not ISSUER_HOST:
