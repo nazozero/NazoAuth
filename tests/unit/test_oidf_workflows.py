@@ -103,6 +103,23 @@ class OidfWorkflowTests(unittest.TestCase):
             workflow,
         )
 
+    def test_full_matrix_workflow_requires_explicit_target_issuer(self):
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github"
+            / "workflows"
+            / "oidf-conformance-full.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("target_issuer:", workflow)
+        self.assertIn("required: true", workflow)
+        self.assertIn(
+            "OIDF_TARGET_ISSUER: ${{ inputs.target_issuer || vars.OIDF_TARGET_ISSUER }}",
+            workflow,
+        )
+        self.assertNotIn("OIDF_TARGET_ISSUER || 'https://auth.nazo.run'", workflow)
+        self.assertIn("Supply workflow_dispatch input target_issuer", workflow)
+
     def test_full_matrix_workflow_has_parallel_isolated_mode(self):
         root = Path(__file__).resolve().parents[2]
         workflow = (root / ".github" / "workflows" / "oidf-conformance-full.yml").read_text(
