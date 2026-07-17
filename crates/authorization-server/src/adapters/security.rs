@@ -285,8 +285,9 @@ pub(crate) fn pkce_s256(verifier: &str) -> String {
 pub(crate) use nazo_auth::{CLIENT_ASSERTION_TYPE_JWT_BEARER, ValidatedClientAssertion};
 #[cfg(test)]
 pub(crate) const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256", "ES256", "PS256"];
-pub(crate) const SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS: &[&str] = &["RSA-OAEP-256"];
-pub(crate) const SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS: &[&str] = &["A256GCM"];
+pub(crate) use nazo_auth::{
+    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+};
 
 pub(crate) use nazo_auth::PresentedClientCredentials as ClientCredentials;
 
