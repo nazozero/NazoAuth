@@ -217,7 +217,6 @@ def derive_fapi_ciba_matrix_configs(
         nazo.update(
             {
                 "client_auth_type": client_auth_type,
-                "sender_constrain": "mtls",
                 "fapi_ciba_profile": "plain_fapi",
                 "ciba_mode": ciba_mode,
                 "matrix_title": (
@@ -225,6 +224,10 @@ def derive_fapi_ciba_matrix_configs(
                 ),
             }
         )
+        if client_auth_type == "mtls":
+            nazo["sender_constrain"] = "mtls"
+        else:
+            nazo.pop("sender_constrain", None)
 
 
 def main() -> int:

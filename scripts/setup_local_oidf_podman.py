@@ -1396,6 +1396,31 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
                 client["backchannel_client_notification_endpoint"] = notification_endpoint
             return client
 
+        nazo = {
+            **nazo_login_metadata(),
+            "client_auth_type": client_auth_type,
+            "openid": "openid_connect",
+            "fapi_profile": "plain_fapi",
+            "fapi_ciba_profile": "plain_fapi",
+            "ciba_mode": ciba_mode,
+            "matrix_title": (
+                f"FAPI-CIBA ID1 / {client_auth_type} / {ciba_mode} / plain FAPI"
+            ),
+            "matrix_description": (
+                "Covers FAPI-CIBA discovery, backchannel authentication, "
+                f"{ciba_mode} delivery, token exchange, negative handling, and resource access."
+            ),
+            "matrix_focus": [
+                "CIBA discovery metadata",
+                "backchannel authentication endpoint",
+                f"{client_auth_type} client authentication",
+                f"{ciba_mode} mode token issuance",
+                "FAPI-CIBA request-object and error handling",
+            ],
+        }
+        if client_auth_type == "mtls":
+            nazo["sender_constrain"] = "mtls"
+
         config = {
             "alias": alias,
             "description": (
@@ -1422,29 +1447,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
             "client2": ciba_client(client2_id, client2_jwks),
             "mtls": mtls_named_config(mtls_client_cert_name(client1_id)),
             "mtls2": mtls_named_config(mtls_client_cert_name(client2_id)),
-            "nazo": {
-                **nazo_login_metadata(),
-                "client_auth_type": client_auth_type,
-                "sender_constrain": "mtls",
-                "openid": "openid_connect",
-                "fapi_profile": "plain_fapi",
-                "fapi_ciba_profile": "plain_fapi",
-                "ciba_mode": ciba_mode,
-                "matrix_title": (
-                    f"FAPI-CIBA ID1 / {client_auth_type} / {ciba_mode} / plain FAPI"
-                ),
-                "matrix_description": (
-                    "Covers FAPI-CIBA discovery, backchannel authentication, "
-                    f"{ciba_mode} delivery, token exchange, negative handling, and resource access."
-                ),
-                "matrix_focus": [
-                    "CIBA discovery metadata",
-                    "backchannel authentication endpoint",
-                    f"{client_auth_type} client authentication",
-                    f"{ciba_mode} mode token issuance",
-                    "FAPI-CIBA request-object and error handling",
-                ],
-            },
+            "nazo": nazo,
             "browser": browser_automation(),
         }
         name = f"oidf-{slug}-plan-config.json"
