@@ -265,6 +265,7 @@ jobs:
             --derive-dynamic-oidcc-config \
             --derive-fapi-ciba-matrix-configs \
             --ciba-notification-base-url https://www.certification.openid.net \
+            --target-issuer "$OIDF_TARGET_ISSUER" \
             --output oidf-plan-configs.json
           python scripts/export_oidf_public_plan_configs.py \
             --config-json-file oidf-plan-configs.json \
@@ -474,6 +475,7 @@ jobs:
             --derive-dynamic-oidcc-config \
             --derive-fapi-ciba-matrix-configs \
             --ciba-notification-base-url https://www.certification.openid.net \
+            --target-issuer "$OIDF_TARGET_ISSUER" \
             --output oidf-plan-configs.json
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
