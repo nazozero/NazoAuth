@@ -25,16 +25,17 @@ param(
     [string]$OidfPublicSeedArtifactId = "",
     [string]$OidfPublicSeedArtifactDigest = "",
     [string]$RemoteOidfMtlsCaPath = "/usr/local/angie/conf/oidf-mtls-ca.crt",
-    [string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/auth.nazo.run.conf",
+    [string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/nazo-auth.conf",
     [string]$AngieServiceName = "nginx.service",
     [string]$AngieWorkerUser = "www",
     [string]$RemoteDeploymentRoot = "/opt/nazo-oauth",
     [string]$LocalUiDist = "",
     [string]$PublishPort = "",
-    [string]$HealthUrl = "https://auth.nazo.run/health",
-    [string]$DiscoveryUrl = "https://auth.nazo.run/.well-known/openid-configuration",
-    [string]$UiUrl = "https://auth.nazo.run/ui/auth",
-    [string]$ExpectedIssuer = "https://auth.nazo.run",
+    [string]$HealthUrl = "",
+    [string]$DiscoveryUrl = "",
+    [string]$UiUrl = "",
+    [Parameter(Mandatory = $true)]
+    [string]$ExpectedIssuer,
     [ValidateRange(1, 3600)]
     [int]$VerificationLeaseSeconds = 120,
     [string]$RenderRemoteScriptPath = "",
@@ -67,6 +68,19 @@ if ($RemoteAngieOidfConfigPath -notmatch '^/' -or $RemoteAngieOidfConfigPath -eq
 }
 if ($AngieServiceName -notmatch '^[A-Za-z0-9_.@-]+$') {
     throw "AngieServiceName must be a safe systemd unit name"
+}
+if ($ExpectedIssuer -notmatch '^https://[^/?#]+/?$') {
+    throw "ExpectedIssuer must be an HTTPS origin without path, query, or fragment"
+}
+$ExpectedIssuer = $ExpectedIssuer.TrimEnd('/')
+if ([string]::IsNullOrWhiteSpace($HealthUrl)) {
+    $HealthUrl = "$ExpectedIssuer/health"
+}
+if ([string]::IsNullOrWhiteSpace($DiscoveryUrl)) {
+    $DiscoveryUrl = "$ExpectedIssuer/.well-known/openid-configuration"
+}
+if ([string]::IsNullOrWhiteSpace($UiUrl)) {
+    $UiUrl = "$ExpectedIssuer/ui/auth"
 }
 if ($RemoteUiPath -eq '/' -or $RemoteUiReleasesRoot -eq '/' -or
     $RemoteUiPath.TrimEnd('/') -eq $RemoteUiReleasesRoot.TrimEnd('/')) {

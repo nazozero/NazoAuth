@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Target issuer | `https://auth.nazo.run` |
+| Target issuer | `https://issuer.example` |
 | Branch | `codex/m2-fapi2-default-security` |
 | Workflow | `oidf-conformance-full.yml` |
 | Run URL | `https://github.com/nazozero/NazoAuth/actions/runs/28953799865` |
@@ -16,7 +16,7 @@
 
 ## Deployment Input
 
-Before this run, `auth.nazo.run` was deployed from the same workflow head SHA.
+Before this run, `issuer.example` was deployed from the same workflow head SHA.
 The live Podman container was `nazo-oauth-server` on image
 `localhost/nazo-oauth-server:m2-7ddc6b3` with fixed container IP
 `10.101.0.20`.
@@ -30,13 +30,13 @@ The seed reported `OIDF_LOCAL_FAPI_CLIENT_COUNT=38`.
 
 Post-deploy probes passed for:
 
-- `https://auth.nazo.run/health`
-- `https://auth.nazo.run/.well-known/openid-configuration`
-- `https://auth.nazo.run/jwks.json`
-- `https://auth.nazo.run/.well-known/oauth-protected-resource/fapi/resource`
-- `POST https://auth.nazo.run/par`
-- `GET https://auth.nazo.run/check_session`
-- `POST https://auth.nazo.run/token`
+- `https://issuer.example/health`
+- `https://issuer.example/.well-known/openid-configuration`
+- `https://issuer.example/jwks.json`
+- `https://issuer.example/.well-known/oauth-protected-resource/fapi/resource`
+- `POST https://issuer.example/par`
+- `GET https://issuer.example/check_session`
+- `POST https://issuer.example/token`
 
 ## Isolation Model
 

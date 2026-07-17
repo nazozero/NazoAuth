@@ -4,7 +4,7 @@
 
 OpenID Foundation Conformance Suite full-matrix regression after the
 2026-06-25 security findings hardening branch was deployed to the public
-issuer at `https://auth.nazo.run`.
+issuer at `https://issuer.example`.
 
 The same deployed commit was verified in two stages:
 
@@ -19,7 +19,7 @@ Both stages completed all configured 16 plans with `0 failures` and
 | Result | Passed |
 | Implementation commit | `be7ef9f6a9197520235a59d42866a0918a293014` |
 | Branch | `codex/security-findings-20260625` |
-| Public issuer under test | `https://auth.nazo.run` |
+| Public issuer under test | `https://issuer.example` |
 | Public health check | `{"status":"正常"}` |
 | Deployment runner | Private deployment runner |
 | Deployment mode | Podman |
@@ -45,8 +45,8 @@ holder-bound clients:
 | Field | Value |
 | --- | --- |
 | Result | Passed |
-| Conformance server | `https://localhost:8443` |
-| Target issuer | `https://auth.nazo.run` |
+| Conformance server | local suite origin (private regression only; not conformance evidence) |
+| Target issuer | `https://issuer.example` |
 | Export directory | `oidf-local-results/run-20260626T165725Z` |
 | Runner log | `runtime/oidf/oidf-run-local-full-20260626T165725Z.log` |
 | Exported plan archives | `16` |
@@ -59,10 +59,10 @@ Run command:
 ```bash
 python3 scripts/run_oidf_conformance.py \
   --suite-dir oidf-conformance-suite \
-  --conformance-server https://localhost:8443 \
+  --conformance-server "$LOCAL_SUITE_ORIGIN" \
   --plan-set-json-file runtime/oidf/oidf-plan-set.json \
   --config-json-file runtime/oidf/oidf-plan-configs.json \
-  --target-issuer https://auth.nazo.run \
+  --target-issuer https://issuer.example \
   --no-api-token \
   --disable-ssl-verify \
   --export-dir oidf-local-results/run-20260626T165725Z \
@@ -98,7 +98,7 @@ Overall totals: ran 71 test modules. Conditions: 6464 successes, 0 failures, 0 w
 | --- | --- |
 | Result | Passed |
 | Conformance server | `https://www.certification.openid.net/` |
-| Target issuer | `https://auth.nazo.run` |
+| Target issuer | `https://issuer.example` |
 | Export directory | `oidf-official-results/run-20260626T170746Z` |
 | Runner log | `runtime/oidf/oidf-run-official-full-20260626T170746Z.log` |
 | Exported plan archives | `16` |
@@ -193,8 +193,8 @@ Deployment verification:
 ```bash
 git rev-parse --short=12 HEAD
 podman ps --filter name=nazo-oauth-server
-curl -fsS https://auth.nazo.run/health
-curl -fsS https://auth.nazo.run/.well-known/openid-configuration
+curl -fsS https://issuer.example/health
+curl -fsS https://issuer.example/.well-known/openid-configuration
 ```
 
 Result verification:

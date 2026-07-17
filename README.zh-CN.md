@@ -26,7 +26,7 @@ Nazo Auth Server 是一个用 Rust 写的自托管 OAuth 2.x / OAuth 2.1-aligned
 | 许可证 | AGPL-3.0-or-later |
 | 语言 | Rust 2024 |
 | 运行依赖 | PostgreSQL、Valkey |
-| 已认证公开 issuer | `https://auth.nazo.run` |
+| 一致性测试 issuer | 操作者提供的公网 HTTPS origin |
 | 默认部署模型 | 同域 |
 
 ## 质量信号
@@ -120,8 +120,10 @@ OpenID Foundation Conformance Suite 结果 URL：
 | OIDF 矩阵范围 | [docs/conformance/oidf-full-matrix.zh-CN.md](docs/conformance/oidf-full-matrix.zh-CN.md) |
 | 已归档私有 full-matrix 回归 | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
-最新公网黑盒官方证据针对 `https://auth.nazo.run` 执行，workflow head SHA 为
-`ae19cc50af4cc50f3f35f678a3a1c38332d475e2`。它在 GitHub Actions 中针对公网生产 origin 运行 25-plan OIDC/FAPI/FAPI-CIBA 矩阵与 17-plan OpenID4VC Final/HAIP 矩阵。本地 endpoint、私有 DNS、私有 CA 和 `https://nginx:8443` 不计入一致性证据。
+最新公网黑盒官方证据使用操作者提供的生产 issuer；公开仓库中的
+`https://issuer.example` 只是脱敏占位符。运行 workflow 的用户必须显式提供自己的
+`OIDF_TARGET_ISSUER` 与 `OPENID4VC_TARGET_ORIGIN`。该证据的 workflow head SHA 为
+`ae19cc50af4cc50f3f35f678a3a1c38332d475e2`。它在 GitHub Actions 中针对公网生产 origin 运行 25-plan OIDC/FAPI/FAPI-CIBA 矩阵与 17-plan OpenID4VC Final/HAIP 矩阵。本地 endpoint、私有 DNS、私有 CA 和本地套件地址不计入一致性证据。
 25-plan OIDC/FAPI/FAPI-CIBA 矩阵采用 23+2 parallel-isolated 布局，导出 787 个模块：748 个通过、22 个模块带有官方入口 TLS 有界 warning、9 个预期 review 状态、8 个预期 unsigned 兼容 skip，没有失败模块或失败 condition。因此它不是 zero-SKIPPED 或 zero-WARNING 官方证据；具体 warning 上下文和上游入口边界记录在链接的证据文档中。
 
 已归档的私有 full-matrix 回归记录仍可用于调试，但不是当前一致性证据。

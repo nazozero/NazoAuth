@@ -34,7 +34,7 @@ protocol state.
 | License | AGPL-3.0-or-later |
 | Language | Rust 2024 |
 | Runtime services | PostgreSQL, Valkey |
-| Certified public issuer | `https://auth.nazo.run` |
+| Conformance test issuer | operator-provided public HTTPS origin |
 | Default deployment model | same-origin |
 
 ## Quality Signals
@@ -141,12 +141,14 @@ OpenID Foundation Conformance Suite result URLs:
 | OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
 | Archived private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
 
-The latest public black-box official evidence tested `https://auth.nazo.run`
-from workflow head SHA `ae19cc50af4cc50f3f35f678a3a1c38332d475e2`. It ran the
-25-plan OIDC/FAPI/FAPI-CIBA matrix and the 17-plan OpenID4VC Final/HAIP matrix in
-GitHub Actions against the public production origin. Local endpoints, private
-DNS, private CAs, and `https://nginx:8443` are not accepted as conformance
-evidence. The 25-plan OIDC/FAPI/FAPI-CIBA matrix ran in
+The latest public black-box official evidence used an operator-provided
+production issuer; this repository stores `https://issuer.example` only as a
+sanitized placeholder. Workflow users must provide their own reachable
+`OIDF_TARGET_ISSUER` and `OPENID4VC_TARGET_ORIGIN` values. It ran the 25-plan
+OIDC/FAPI/FAPI-CIBA matrix and the 17-plan OpenID4VC Final/HAIP matrix in GitHub
+Actions against that public production origin. Local endpoints, private DNS,
+private CAs, and local-suite hostnames are not accepted as conformance evidence.
+The 25-plan OIDC/FAPI/FAPI-CIBA matrix ran in
 the 23+2 parallel-isolated layout and exported 787 modules: 748 passed, 22
 modules with bounded official-ingress TLS warnings, 9 expected review states,
 8 expected unsigned-compatibility skips, and no failed module or condition.

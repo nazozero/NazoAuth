@@ -9,7 +9,16 @@ def load_setup_module():
     spec = importlib.util.spec_from_file_location("setup_local_oidf_podman", script)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    spec.loader.exec_module(module)
+    with mock.patch.dict(
+        "os.environ",
+        {
+            "OIDF_TARGET_ISSUER": "https://issuer.example",
+            "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
+            "OIDF_SUITE_BASE_URL": "https://suite.example",
+        },
+        clear=False,
+    ):
+        spec.loader.exec_module(module)
     return module
 
 
@@ -69,6 +78,16 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         self.assertEqual(len(authorize_entries), 1)
         self.assertNotIn("override", config)
 
+    def test_local_reverse_proxy_uses_operator_supplied_issuer_host(self):
+        module = load_setup_module()
+
+        module.write_nginx()
+        nginx = (module.RUNTIME / "nginx.conf").read_text(encoding="utf-8")
+
+        self.assertIn("proxy_set_header Host issuer.example;", nginx)
+        self.assertIn("proxy_set_header X-Forwarded-Host issuer.example;", nginx)
+        self.assertNotIn("auth.nazo.run", nginx)
+
     def test_fapi_ciba_plans_are_the_orthogonal_supported_combinations(self):
         module = load_setup_module()
 
@@ -105,7 +124,7 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
                 if config["nazo"]["ciba_mode"] == "ping":
                     self.assertEqual(
                         config[key]["backchannel_client_notification_endpoint"],
-                        f"https://nginx:8443/test/a/{config['alias']}"
+                        f"https://suite.example/test/a/{config['alias']}"
                         "/ciba-notification-endpoint",
                     )
 

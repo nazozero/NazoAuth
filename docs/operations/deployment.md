@@ -145,13 +145,13 @@ Default live assumptions:
 | Remote config | `/opt/nazo-oauth/.env.yaml` |
 | Keys path | `/opt/nazo-oauth/runtime/keys` |
 | Avatars path | `/opt/nazo-oauth/runtime/avatars` |
-| Health URL | `https://auth.nazo.run/health` |
-| Discovery URL | `https://auth.nazo.run/.well-known/openid-configuration` |
-| Expected issuer | `https://auth.nazo.run` |
+| Health URL | `https://issuer.example/health` |
+| Discovery URL | `https://issuer.example/.well-known/openid-configuration` |
+| Expected issuer | `https://issuer.example` |
 | UI path | `/usr/local/angie/html/auth/ui` |
 | UI releases | `/usr/local/angie/html/auth-releases/<frontend-sha>` |
 | Angie worker | `www` |
-| Public UI probe | `https://auth.nazo.run/ui/auth` plus one referenced `/ui/assets/...` resource |
+| Public UI probe | `https://issuer.example/ui/auth` plus one referenced `/ui/assets/...` resource |
 | Verification lease | 120 seconds by default (`-VerificationLeaseSeconds`) |
 | Deployment records | `/opt/nazo-oauth/deployments/<backend-sha>-<frontend-sha>-<deployment-id>.json` |
 
@@ -193,14 +193,14 @@ written through a mode-`0600` same-directory temporary file and atomic rename;
 missing, partial, corrupt, or foreign state fails closed. Only one remote
 deployment transaction may be active.
 
-The script uses the configured SSH target to deploy the `auth.nazo.run`
+The script uses the configured SSH target to deploy the `issuer.example`
 environment. Recheck the live listener, reverse-proxy config, container
 network, TLS settings, and expected issuer before using it for a different
 host.
 
 ### Fixed Internal IP and Angie
 
-The `auth.nazo.run` live path uses Podman's `nazo_oauth_net` bridge network with
+The `issuer.example` live path uses Podman's `nazo_oauth_net` bridge network with
 subnet `10.101.0.0/24`, gateway `10.101.0.1`, and application container IP
 `10.101.0.20`. The deployment script requires that exact subnet/gateway layout
 (additional or different subnets fail closed), verifies
@@ -372,11 +372,11 @@ until client JWK rotation, clock monitoring, Valkey replay storage, signing-key
 custody, and evidence retention have named owners. The profile is default-off,
 is not advertised in metadata, and has no dedicated OIDF conformance plan.
 
-The `nazo.run` deployment helper [scripts/verify_live_full_interfaces.py](../../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against `https://auth.nazo.run`. It reads host-local secrets and runs only in the intended deployment environment. The expected SHA is mandatory and is checked against both the successful deployment record and the running container image label:
+The deployment helper [scripts/verify_live_full_interfaces.py](../../scripts/verify_live_full_interfaces.py) exercises a broader HTTPS path against the operator-provided public issuer. It reads host-local secrets and runs only in the intended deployment environment. The expected SHA is mandatory and is checked against both the successful deployment record and the running container image label:
 
 ```sh
 python scripts/verify_live_full_interfaces.py \
-  --base-url https://auth.nazo.run \
+  --base-url https://issuer.example \
   --secrets-path /opt/nazo-oauth/secrets.json \
   --expected-backend-sha "$BACKEND_COMMIT"
 ```
@@ -393,8 +393,8 @@ Before launching a full OpenID Foundation conformance run:
 2. Run `oidf-public-seed-configs` for that exact head and download its `oidf-public-plan-configs` artifact. The artifact contains the public plan JSON files, `oidf-mtls-ca-bundle.pem`, and a deterministic manifest binding the source commit, file tree, and CA DER fingerprints; private mTLS keys are never included. Preserve the workflow run ID, workflow head SHA, artifact digest, downloaded artifact digest, manifest digest, and CA-bundle digest as linked evidence. Reject an artifact whose head does not equal the deployment commit.
 3. Confirm Angie proxies to fixed container IP `10.101.0.20:8000`, and `.env.yaml` trusts only the actual controlled proxy address.
 4. Deploy the same commit to the public entrypoint with `scripts/deploy_live.ps1 -OidfPublicSeedArtifactArchive <downloaded-artifact.zip> -OidfPublicSeedWorkflowRunId <run-id> -OidfPublicSeedArtifactId <artifact-id> -OidfPublicSeedArtifactDigest sha256:<digest>`. For a real deployment all artifact identity arguments are mandatory: the script verifies the GitHub run result, branch, head, artifact identity and archive digest, extracts a private snapshot, and requires its manifest head to equal the backend commit. The deployment transaction then validates the public JSON and CA bundle together, binds the staged and installed bundle to the same SHA-256 digest, backs up the existing Angie CA file and hash, atomically replaces it in the same directory, validates and reloads Angie, and restores the prior bytes and metadata if deployment or verification rolls back. `-OidfPublicSeedArtifactDirectory` exists only for render-only test fixtures. This remains inside the existing deployment lock and verification lease; do not create a separate manual CA installation channel.
-5. Put the same exact artifact in the live OIDF runtime directory and use the same commit's `oidf-seed` image / `nazo_oauth_seed_oidf` binary to seed the database used by the public `auth.nazo.run` entrypoint. Do not seed only the `compose.oidf.local.yml` 9443 stack and then run official public tests.
-6. Verify the running deployment head and artifact/CA digests, then verify health, discovery, JWKS, mTLS aliases, certificate forwarding, and Angie configuration over the public issuer. Discovery `issuer` must be `https://auth.nazo.run`. Trust the validated CA chain from the exact-head artifact; do not replace it with a leaf-certificate fingerprint allowlist.
+5. Put the same exact artifact in the live OIDF runtime directory and use the same commit's `oidf-seed` image / `nazo_oauth_seed_oidf` binary to seed the database used by the public `issuer.example` entrypoint. Do not seed only the `compose.oidf.local.yml` 9443 stack and then run official public tests.
+6. Verify the running deployment head and artifact/CA digests, then verify health, discovery, JWKS, mTLS aliases, certificate forwarding, and Angie configuration over the public issuer. Discovery `issuer` must be `https://issuer.example`. Trust the validated CA chain from the exact-head artifact; do not replace it with a leaf-certificate fingerprint allowlist.
 7. Run the targeted `.github/workflows/oidf-conformance.yml` plan first. The targeted workflow disables the early-stop monitor by default so failed runs still upload diagnostic artifacts.
 8. Run `.github/workflows/oidf-conformance-full.yml` only after the targeted plan passes. The default `runner_mode=parallel-isolated` runs the concurrency-safe plan set without `--no-parallel` while running logout and session-management in separate isolated matrix jobs with their own runner/browser environment. Use `runner_mode=serial` only as a deterministic diagnostic fallback; `OIDF_NO_PARALLEL` applies to that fallback.
 9. Preserve the final result index under `docs/conformance` before artifacts expire, together with the deployed head, workflow run and plan IDs, artifact digest, CA-bundle digest, and final PR-check head.

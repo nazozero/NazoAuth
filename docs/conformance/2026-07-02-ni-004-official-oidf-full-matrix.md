@@ -4,7 +4,7 @@
 
 OpenID Foundation Conformance Suite official full-matrix regression for the
 NI-004 dynamic client registration hardening branch, executed against the public
-issuer at `https://auth.nazo.run`.
+issuer at `https://issuer.example`.
 
 The GitHub Actions workflow completed successfully. The suite reported `0
 failures` and `0 warnings`, but the run was not a zero-SKIPPED run: two OIDC
@@ -24,7 +24,7 @@ the repository `oidf-expected-skips.json` file generated in the workflow.
 | Branch | `codex/ni-004-dynamic-client-registration` |
 | Workflow head SHA | `0b00ea7d50443cb54fc17631a9238126fa837e42` |
 | Runtime implementation commit | Not independently recorded in this workflow log |
-| Public issuer under test | `https://auth.nazo.run` |
+| Public issuer under test | `https://issuer.example` |
 | Conformance server | `https://www.certification.openid.net/` |
 | Official suite ref | `33a724c7d809a6f9db05cbb513ff2a77cbac905e` |
 | Plan set | Generated `oidf-full-plan-set.json` in `.github/workflows/oidf-conformance-full.yml` |

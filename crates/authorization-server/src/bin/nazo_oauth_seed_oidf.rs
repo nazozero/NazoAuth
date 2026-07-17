@@ -54,6 +54,14 @@ fn env_or(name: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_owned())
 }
 
+fn required_config_string(config: &ConfigSource, name: &str) -> anyhow::Result<String> {
+    let value = config.string(name, "");
+    if value.trim().is_empty() {
+        anyhow::bail!("{name} is required for OIDF seeding")
+    }
+    Ok(value)
+}
+
 fn hash_password(password: &str) -> anyhow::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     Ok(Argon2::default()
@@ -144,9 +152,17 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> anyhow::Result<FapiClien
 async fn main() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
     let database_url = database_url(&config);
-    let suite_base_url = env_or("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443");
+    let suite_base_url = env::var("OIDF_SUITE_BASE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var("OIDF_LOCAL_SUITE_BASE_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .ok_or_else(|| anyhow::anyhow!("OIDF_SUITE_BASE_URL is required for OIDF seeding"))?;
     let suite_base_urls = suite_base_urls(&suite_base_url);
-    let issuer = config.string("ISSUER", "https://auth.nazo.run");
+    let issuer = required_config_string(&config, "ISSUER")?;
     let runtime_dir = env_or("OIDF_LOCAL_RUNTIME_DIR", "runtime/oidf");
     let runtime_dir = Path::new(&runtime_dir);
     let alias = env_or("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf");

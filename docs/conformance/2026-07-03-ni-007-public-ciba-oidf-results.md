@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Target issuer | `https://auth.nazo.run` |
+| Target issuer | `https://issuer.example` |
 | Deployment host | Private SSH deployment target |
 | Branch | `codex/ni-006-011-oidc-profiles` |
 | Workflow | `oidf-conformance.yml` |
@@ -75,7 +75,7 @@ The live Podman network is fixed to `nazo_oauth_net` with subnet
 | Postgres | `nazo-oauth-postgres` | `10.101.0.10` |
 | Valkey | `nazo-oauth-valkey` | `10.101.0.11` |
 
-Angie must proxy `auth.nazo.run` directly to `http://10.101.0.20:8000`.
+Angie must proxy `issuer.example` directly to `http://10.101.0.20:8000`.
 The app accepts trusted proxy headers only from `10.101.0.1/32`.
 
 Do not publish `8000`, `5432`, or `6379` on the host for the live stack.
@@ -83,7 +83,7 @@ Do not publish `8000`, `5432`, or `6379` on the host for the live stack.
 ## Correct Public OIDF Test Path
 
 1. Deploy through the private live deployment path and verify public health:
-   `https://auth.nazo.run/health`.
+   `https://issuer.example/health`.
 2. Export public-only OIDF seed configs. Do not copy raw rendered plan configs
    containing passwords, browser automation secrets, private keys, or mTLS keys.
 3. Upload the sanitized seed bundle to the private live deployment host and

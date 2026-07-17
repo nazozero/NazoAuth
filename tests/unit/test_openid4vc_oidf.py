@@ -231,17 +231,17 @@ class Openid4vcOidfTests(unittest.TestCase):
         finally:
             module.oidf.OIDF_API_SSL_CONTEXT = None
 
-    def test_suite_internal_nginx_urls_are_rewritten_to_control_plane(self):
+    def test_suite_internal_urls_are_rewritten_to_control_plane(self):
         module = load("run_openid4vc_conformance.py")
 
         rewritten = module.suite_reachable_url(
             "https://localhost:8443",
-            "https://nginx:8443/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
+            "https://suite.example/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
         )
 
         self.assertEqual(
             rewritten,
-            "https://localhost:8443/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
+            "https://suite.example/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
         )
         self.assertEqual(
             module.suite_reachable_url(
@@ -283,7 +283,7 @@ class Openid4vcOidfTests(unittest.TestCase):
         driver = module.Openid4vcDriver(
             {
                 "conformance_server": "https://localhost:8443",
-                "target_origin": "https://auth.nazo.run",
+                "target_origin": "https://issuer.example",
                 "verifier": {
                     "management_token": "management-token",
                     "credential_type_values": {
@@ -326,7 +326,7 @@ class Openid4vcOidfTests(unittest.TestCase):
         driver = module.Openid4vcDriver(
             {
                 "conformance_server": "https://localhost:8443",
-                "target_origin": "https://auth.nazo.run",
+                "target_origin": "https://issuer.example",
                 "verifier": {
                     "management_token": "management-token",
                     "credential_type_values": {
@@ -433,7 +433,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                 "--base-config-json-file", str(base),
                 "--driver-config-json-file", str(driver),
                 "--conformance-server", "https://suite.example",
-                "--target-origin", "https://auth.nazo.run",
+                "--target-origin", "https://issuer.example",
                 "--output-dir", str(output),
             ]):
                 self.assertEqual(module.main(), 0)
@@ -515,14 +515,14 @@ class Openid4vcOidfTests(unittest.TestCase):
                     for item in expected_warnings
                 )
             )
-            self.assertEqual(materialized_driver["target_origin"], "https://auth.nazo.run")
+            self.assertEqual(materialized_driver["target_origin"], "https://issuer.example")
             self.assertEqual(
                 materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],
                 "urn:eudi:pid:1",
             )
             for filename, config in configs.items():
                 if "vp-" in filename:
-                    self.assertEqual(config["client"]["client_id"], "auth.nazo.run")
+                    self.assertEqual(config["client"]["client_id"], "issuer.example")
                     if "redirect-query" in filename:
                         self.assertNotIn("request_object_trust_anchor_pem", config["client"])
                     else:
@@ -535,7 +535,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             for filename, config in configs.items():
                 if "vci-" not in filename:
                     continue
-                self.assertEqual(config["vci"]["credential_issuer_url"], "https://auth.nazo.run")
+                self.assertEqual(config["vci"]["credential_issuer_url"], "https://issuer.example")
                 expected = "org.iso.18013.5.1.mDL" if "mdoc" in filename else "pid-sd-jwt"
                 self.assertEqual(config["vci"]["credential_configuration_id"], expected)
                 if "preauth" in filename:

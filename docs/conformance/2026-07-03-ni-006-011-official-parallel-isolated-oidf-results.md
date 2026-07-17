@@ -4,7 +4,7 @@
 
 | Field | Value |
 | --- | --- |
-| Target issuer | `https://auth.nazo.run` |
+| Target issuer | `https://issuer.example` |
 | Branch | `codex/ni-006-011-oidc-profiles` |
 | Workflow | `oidf-conformance-full.yml` |
 | Run URL | `https://github.com/nazozero/NazoAuth/actions/runs/28648656293` |

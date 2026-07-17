@@ -20,10 +20,39 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_ROOT = ROOT.parent / "NazoAuthWeb"
 RUNTIME = ROOT / "runtime" / "oidf"
-ISSUER = "https://auth.nazo.run"
-MTLS_ISSUER = "https://auth.nazo.run"
-SUITE_BASE_URL = os.environ.get("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443").rstrip("/")
+
+
+def required_origin_env(name: str) -> str:
+    value = os.environ.get(name, "").strip().rstrip("/")
+    if not value:
+        raise RuntimeError(f"{name} is required; do not rely on a repository default issuer")
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.path not in ("", "/"):
+        raise RuntimeError(f"{name} must be an HTTPS origin without a path")
+    return value
+
+
+ISSUER = required_origin_env("OIDF_TARGET_ISSUER")
+MTLS_ISSUER = os.environ.get("OIDF_MTLS_TARGET_ISSUER", ISSUER).strip().rstrip("/")
+parsed_mtls = urllib.parse.urlsplit(MTLS_ISSUER)
+if parsed_mtls.scheme != "https" or not parsed_mtls.netloc or parsed_mtls.path not in ("", "/"):
+    raise RuntimeError("OIDF_MTLS_TARGET_ISSUER must be an HTTPS origin without a path")
+SUITE_BASE_URL = (
+    os.environ.get("OIDF_SUITE_BASE_URL")
+    or os.environ.get("OIDF_LOCAL_SUITE_BASE_URL")
+    or ""
+).strip().rstrip("/")
+if not SUITE_BASE_URL:
+    raise RuntimeError(
+        "OIDF_SUITE_BASE_URL is required; local suite hostnames are not repository defaults"
+    )
+parsed_suite = urllib.parse.urlsplit(SUITE_BASE_URL)
+if parsed_suite.scheme != "https" or not parsed_suite.netloc or parsed_suite.path not in ("", "/"):
+    raise RuntimeError("OIDF_SUITE_BASE_URL must be an HTTPS origin without a path")
 SUITE_ORIGIN = urllib.parse.urlsplit(SUITE_BASE_URL)._replace(path="", query="", fragment="").geturl()
+ISSUER_HOST = urllib.parse.urlsplit(ISSUER).hostname
+if not ISSUER_HOST:
+    raise RuntimeError("OIDF_TARGET_ISSUER must be an HTTPS origin with a hostname")
 BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
 USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
 USER_PASSWORD = os.environ.get("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password")
@@ -306,9 +335,9 @@ def ensure_cert() -> None:
             "-out",
             str(cert),
             "-subj",
-            "/CN=auth.nazo.run",
+            f"/CN={ISSUER_HOST}",
             "-addext",
-            "subjectAltName=DNS:auth.nazo.run",
+            f"subjectAltName=DNS:{ISSUER_HOST}",
         ],
         check=True,
         cwd=ROOT,
@@ -515,16 +544,16 @@ http {
 
     location / {
       proxy_pass http://nazo_oauth_server:8000;
-      proxy_set_header Host auth.nazo.run;
+      proxy_set_header Host __ISSUER_HOST__;
       proxy_set_header X-Forwarded-Proto https;
-      proxy_set_header X-Forwarded-Host auth.nazo.run;
+      proxy_set_header X-Forwarded-Host __ISSUER_HOST__;
       proxy_set_header X-Forwarded-Port 9444;
       proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
       proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;
     }
   }
 }
-""",
+""".replace("__ISSUER_HOST__", ISSUER_HOST),
     )
 
 

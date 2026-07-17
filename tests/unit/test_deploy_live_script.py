@@ -214,6 +214,7 @@ def render_fixture(
         "-RemoteHost", "render-only",
         "-BackendCommit", backend_commit,
         "-FrontendCommit", frontend_commit,
+        "-ExpectedIssuer", "https://issuer.example",
         "-LocalBackendWorktree", str(backend),
         "-LocalFrontendWorktree", str(frontend),
         "-LocalUiDist", str(ui),
@@ -249,6 +250,7 @@ def run_render_only(
         "-RemoteHost", "render-only",
         "-BackendCommit", backend_commit,
         "-FrontendCommit", frontend_commit,
+        "-ExpectedIssuer", "https://issuer.example",
         "-LocalBackendWorktree", str(backend),
         "-RenderRemoteScriptPath", str(rendered),
         "-SkipBuild", "-SkipFrontendBuild", "-SkipMigrate",
@@ -319,7 +321,7 @@ class FakeLifecycle:
             )
             old_key.unlink()
             self.previous_oidf_ca = self.oidf_ca_target.read_bytes()
-            self.angie_oidf_config = angie_root / "auth.nazo.run.conf"
+            self.angie_oidf_config = angie_root / "issuer.example.conf"
             self.angie_oidf_config.write_text(
                 f"ssl_client_certificate {self.oidf_ca_target.as_posix()};\n"
                 "proxy_set_header X-SSL-Client-Verify $ssl_client_verify;\n"
@@ -443,7 +445,7 @@ esac
             r'''#!/usr/bin/env bash
 set -euo pipefail
 url="${*: -1}"
-if [[ "$url" == *openid-configuration ]]; then printf '%s\n' '{"issuer":"https://auth.nazo.run"}'; exit 0; fi
+if [[ "$url" == *openid-configuration ]]; then printf '%s\n' '{"issuer":"https://issuer.example"}'; exit 0; fi
 if [ "${FAIL_ROLLBACK_HEALTH:-0}" = 1 ] && [ "$(cat "$FAKE_STATE/container-image" 2>/dev/null || true)" = "$FAKE_OLD_IMAGE" ]; then exit 22; fi
 printf '%s\n' ok
 ''', encoding="utf-8", newline="\n")
@@ -633,7 +635,12 @@ class DeployLiveContractTests(unittest.TestCase):
     def test_public_ui_defaults_are_worker_traversable_and_probed_before_commit(self) -> None:
         self.assertIn('[string]$RemoteUiPath = "/usr/local/angie/html/auth/ui"', self.source)
         self.assertIn('[string]$AngieWorkerUser = "www"', self.source)
-        self.assertIn('[string]$UiUrl = "https://auth.nazo.run/ui/auth"', self.source)
+        self.assertIn('[string]$UiUrl = ""', self.source)
+        self.assertIn('$UiUrl = "$ExpectedIssuer/ui/auth"', self.source)
+        self.assertRegex(
+            self.source,
+            r"\[Parameter\(Mandatory\s*=\s*\$true\)\]\s*\[string\]\$ExpectedIssuer",
+        )
         worker_probe = self.source.index('runuser -u "`$ANGIE_WORKER_USER" -- test -r "`$UI_PATH/index.html"')
         public_probe = self.source.index("Invoke-WebRequest -Uri $UiUrl")
         asset_probe = self.source.index("Invoke-WebRequest -Uri $assetUrl")
@@ -659,6 +666,7 @@ class DeployLiveContractTests(unittest.TestCase):
                         "-File", str(SCRIPT), "-RemoteHost", remote_host,
                         "-BackendCommit", valid_commit,
                         "-FrontendCommit", valid_commit,
+                        "-ExpectedIssuer", "https://issuer.example",
                     ],
                     cwd=ROOT, capture_output=True, text=True, errors="replace",
                     timeout=10, check=False,

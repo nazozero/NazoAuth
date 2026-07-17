@@ -6,12 +6,12 @@ Superseded for current conformance evidence by
 [2026-07-17 Public Black-Box Full OIDF Results](2026-07-17-public-black-box-full-oidf-results.md).
 This file remains a historical implementation record. Current conformance
 evidence must use public black-box official-suite runs against
-`https://auth.nazo.run`, not local suite endpoints or private test roots.
+`https://issuer.example`, not local suite endpoints or private test roots.
 
 ## Result
 
 The FAPI-CIBA matrix passed both required conformance gates against the
-deployed public issuer `https://auth.nazo.run`:
+deployed public issuer `https://issuer.example`:
 
 | Gate | Result |
 | --- | --- |
@@ -53,7 +53,7 @@ unexpected review states or skips.
 | Official workflow head | `8d2ec0ec3269b298918f4735a538ba76dd90e0b5` |
 | Pull request | [#59](https://github.com/nazozero/NazoAuth/pull/59) |
 | Backend image | `localhost/nazo-oauth-server:ciba-e5bed92` |
-| Public issuer | `https://auth.nazo.run` |
+| Public issuer | `https://issuer.example` |
 | Hostinger result directory | `/root/oauth2_server/oidf-matrix-e5bed92-v5.2.0` |
 | Suite version | `5.2.0` |
 | Suite commit | `dee9a25160e789f0f80517674693ef7989ab9fa1` |

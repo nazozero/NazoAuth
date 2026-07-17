@@ -5,7 +5,7 @@ Date: 2026-07-11
 ## Result
 
 M6 passed both required conformance gates against the deployed public issuer
-`https://auth.nazo.run`:
+`https://issuer.example`:
 
 | Gate | Result |
 | --- | --- |
@@ -31,7 +31,7 @@ failures and warnings, but it is not zero-SKIPPED evidence.
 | Implementation commit | `07e69855948ca0a12d4dcd26bb9372e3ea2d04d3` |
 | Backend image | `localhost/nazo-oauth-server:m6-07e6985` |
 | Backend container address | `10.101.0.20:8000` behind Angie |
-| Public issuer | `https://auth.nazo.run` |
+| Public issuer | `https://issuer.example` |
 | Local suite commit | `f326f6aa25d6a2b8f1ae30a6ec80a57e342333ce` |
 | Official workflow suite ref | `33a724c7d809a6f9db05cbb513ff2a77cbac905e` |
 | Exported suite version | `5.2.0` |

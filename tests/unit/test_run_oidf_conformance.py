@@ -622,7 +622,7 @@ class RunOidfConformanceTests(unittest.TestCase):
                     "result": "FAILURE",
                     "msg": "MalformedJsonException",
                     "args": {
-                        "endpoint": "https://auth.nazo.run/bc-authorize?code=secret",
+                        "endpoint": "https://issuer.example/bc-authorize?code=secret",
                         "body": "<html>token=secret</html>",
                         "response_status_code": 404,
                     },
@@ -631,7 +631,7 @@ class RunOidfConformanceTests(unittest.TestCase):
         )
 
         self.assertIn("CallBackchannelAuthenticationEndpoint", context)
-        self.assertIn("https://auth.nazo.run/bc-authorize?redacted=1", context)
+        self.assertIn("https://issuer.example/bc-authorize?redacted=1", context)
         self.assertIn("response_status_code=404", context)
         self.assertIn("token=<redacted>", context)
         self.assertNotIn("secret", context)
