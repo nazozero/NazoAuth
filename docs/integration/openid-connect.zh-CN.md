@@ -222,11 +222,15 @@ Key management algorithms：
 
 | Algorithm | Key type | Use | 状态 / JWK 条件 | 引用 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| `RSA-OAEP-256` | RSA | `enc` | 支持；client JWK 必须包含 RSA 公钥、`use=enc`、`alg=RSA-OAEP-256` 和 `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | 唯一支持的客户端响应加密 key-management algorithm。 |
+| `RSA-OAEP-256` | RSA | `enc` | 支持；client JWK 必须包含 RSA 公钥、`use=enc`、`alg=RSA-OAEP-256` 和 `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | 使用 SHA-256 的 RSA-OAEP。 |
+| `ECDH-ES` | ECDH-ES with P-256 | `enc` | 支持；client JWK 必须包含 P-256 EC 公钥、`use=enc`、`alg=ECDH-ES` 和 `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | 直接 ECDH key agreement，用于客户端响应加密。 |
+| `ECDH-ES+A256KW` | ECDH-ES with P-256 and AES-256 Key Wrap | `enc` | 支持；client JWK 必须包含 P-256 EC 公钥、`use=enc`、`alg=ECDH-ES+A256KW` 和 `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | 推荐的 ECDH key-wrap 模式。 |
+| `ECDH-ES+A128KW` | ECDH-ES with P-256 and AES-128 Key Wrap | `enc` | 支持；client JWK 必须包含 P-256 EC 公钥、`use=enc`、`alg=ECDH-ES+A128KW` 和 `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | 兼容性 ECDH key-wrap 模式。 |
 | `RSA1_5` | RSA | `enc` | 不支持 | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725](https://www.rfc-editor.org/rfc/rfc8725.html) | 拒绝；不要配置客户端要求它。 |
 | `RSA-OAEP` | RSA | `enc` | 不支持 | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | 使用 `RSA-OAEP-256`。 |
-| `ECDH-ES`, `ECDH-ES+A*KW` | EC | `enc` | 不支持 | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | 不宣告。 |
-| `A*KW`, `dir`, `PBES2-*` | Symmetric/password-based | `enc` | 不支持 | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | OIDC 客户端响应不使用共享对称/密码类 JWE 模式。 |
+| `ECDH-ES+A192KW` | ECDH-ES with AES-192 Key Wrap | `enc` | 不支持 | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | 不宣告。 |
+| `A128KW`, `A256KW` | Symmetric AES Key Wrap | `enc` | 不支持 | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) | 对称响应加密需要可逆的客户端响应加密密钥；当前 client secret 只做单向哈希保存，不复用为 JWE wrapping key。 |
+| `A192KW`, `dir`, `PBES2-*` | Symmetric/password-based | `enc` | 不支持 | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725](https://www.rfc-editor.org/rfc/rfc8725.html) | 不宣告。 |
 
 Content encryption algorithms：
 

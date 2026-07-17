@@ -59,8 +59,8 @@ Required negative tests:
 | --- | --- |
 | UserInfo default | UTF-8 JSON with `application/json` when no response-protection metadata is registered |
 | Signed UserInfo | `userinfo_signed_response_alg` selects an asymmetric JWS algorithm that the current Keyset snapshot can actually sign; signed claims include `iss` and client-bound `aud` |
-| Encrypted UserInfo | `userinfo_encrypted_response_alg=RSA-OAEP-256` and `userinfo_encrypted_response_enc=A256GCM` require exactly one matching public RSA JWK with `use=enc` and `kid`; signing plus encryption produces a nested JWT |
-| Encrypted JARM | A JARM response is signed first, then encrypted with the same narrow JWE policy when `authorization_encrypted_response_alg` and `authorization_encrypted_response_enc` are registered |
+| Encrypted UserInfo | `userinfo_encrypted_response_alg` values `RSA-OAEP-256`, `ECDH-ES`, `ECDH-ES+A128KW`, and `ECDH-ES+A256KW` with `userinfo_encrypted_response_enc=A256GCM` require exactly one matching public `use=enc` JWK with `kid`; signing plus encryption produces a nested JWT |
+| Encrypted JARM | A JARM response is signed first, then encrypted with the same client JWE policy when `authorization_encrypted_response_alg` and `authorization_encrypted_response_enc` are registered |
 | Metadata surfaces | Admin client management and RFC 7591/7592 registration persist and return all six response-crypto metadata fields |
 | Failure behavior | Metadata, key lookup, signing, and encryption failures return `server_error`; UserInfo never falls back to JSON and JARM never exposes a code/state in a plain query response |
 
@@ -278,7 +278,7 @@ Required negative tests:
 | Base | `fapi2-security` |
 | Response negotiation | JWT introspection is returned only when the authenticated caller sends `Accept: application/token-introspection+jwt` |
 | JWT envelope | Header `typ=token-introspection+jwt`; top-level `iss`, `aud`, and `iat`; JSON introspection body nested under `token_introspection` |
-| JWE envelope | If the authenticated caller has `introspection_encrypted_response_alg=RSA-OAEP-256`, `introspection_encrypted_response_enc=A256GCM`, and a matching `use=enc` RSA JWK, the signed JWT is returned as a nested compact JWE with `cty=JWT` |
+| JWE envelope | If the authenticated caller has supported client JWE metadata (`RSA-OAEP-256`, `ECDH-ES`, `ECDH-ES+A128KW`, or `ECDH-ES+A256KW` with `A256GCM`) and exactly one matching `use=enc` JWK, the signed JWT is returned as a nested compact JWE with `cty=JWT` |
 | Audience | Authenticated introspection client/resource-server `client_id` |
 | Metadata | Introspection signing and encryption algorithm metadata is advertised only by this profile and only for implemented algorithms |
 | Non-goals | Normal OAuth error responses remain JSON |

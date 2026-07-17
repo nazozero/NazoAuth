@@ -6,7 +6,10 @@ use base64::{
 };
 use chrono::Utc;
 use jsonwebtoken::{Algorithm, DecodingKey};
-use nazo_auth::{AdminClientCryptoPort, ClientSecretDigesterPort};
+use nazo_auth::{
+    AdminClientCryptoPort, ClientSecretDigesterPort, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+    client_jwe_encryption_key_matches_alg,
+};
 use openssl::{asn1::Asn1Time, hash::MessageDigest, pkey::PKey, sign::Signer, x509::X509};
 use serde_json::Value;
 
@@ -14,7 +17,6 @@ use crate::KeyManager;
 
 const CLIENT_SECRET_HASH_VERSION: &str = "client-secret-v1";
 const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256", "ES256", "PS256"];
-const SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS: &[&str] = &["RSA-OAEP-256"];
 
 /// Concrete client-registration crypto bound to the active signing key snapshot.
 #[derive(Clone)]
@@ -74,11 +76,7 @@ pub fn client_jwks_matching_encryption_key_count(jwks: &Value, alg: &str) -> usi
         .and_then(Value::as_array)
         .map_or(0, |keys| {
             keys.iter()
-                .filter(|key| {
-                    key.get("use").and_then(Value::as_str) == Some("enc")
-                        && key.get("alg").and_then(Value::as_str) == Some(alg)
-                        && valid_rsa_jwe_encryption_key(key)
-                })
+                .filter(|key| client_jwe_encryption_key_matches_alg(key, alg))
                 .count()
         })
 }
@@ -156,7 +154,7 @@ pub fn validate_client_jwks_with_missing_kid_policy(
             }
             "enc" => {
                 if !SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS.contains(&alg)
-                    || !valid_rsa_jwe_encryption_key(key)
+                    || !client_jwe_encryption_key_matches_alg(key, alg)
                 {
                     return Err("jwks 公钥材料与 alg 不匹配".to_owned());
                 }
@@ -194,25 +192,6 @@ fn ensure_public_client_jwk(jwk: &serde_json::Map<String, Value>) -> Result<(), 
         return Err("jwks 不能包含私钥材料或对称密钥材料".to_owned());
     }
     Ok(())
-}
-
-fn valid_rsa_jwe_encryption_key(key: &Value) -> bool {
-    if key.get("kty").and_then(Value::as_str) != Some("RSA") {
-        return false;
-    }
-    let Some(n) = key.get("n").and_then(Value::as_str) else {
-        return false;
-    };
-    let Some(e) = key.get("e").and_then(Value::as_str) else {
-        return false;
-    };
-    let Ok(modulus) = URL_SAFE_NO_PAD.decode(n) else {
-        return false;
-    };
-    let Ok(exponent) = URL_SAFE_NO_PAD.decode(e) else {
-        return false;
-    };
-    modulus.len() >= 256 && !exponent.is_empty()
 }
 
 fn client_jwt_algorithm_from_name(value: &str) -> Option<Algorithm> {
@@ -331,6 +310,10 @@ fn client_secret_digest(secret: &str, pepper: &str, salt: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use p256::{
+        SecretKey,
+        elliptic_curve::{Generate, sec1::ToSec1Point},
+    };
     use serde_json::json;
 
     use super::*;
@@ -361,5 +344,75 @@ mod tests {
         )
         .expect_err("private key material must be rejected");
         assert_eq!(error, "jwks 不能包含私钥材料或对称密钥材料");
+    }
+
+    #[test]
+    fn client_jwks_accept_supported_ecdh_encryption_keys() {
+        let jwks = json!({
+            "keys": [
+                p256_encryption_jwk("ecdh-direct", "ECDH-ES"),
+                p256_encryption_jwk("ecdh-a128kw", "ECDH-ES+A128KW"),
+                p256_encryption_jwk("ecdh-a256kw", "ECDH-ES+A256KW")
+            ]
+        });
+
+        validate_client_jwks_with_missing_kid_policy(&jwks, false)
+            .expect("supported ECDH encryption keys should be accepted");
+        assert_eq!(
+            client_jwks_matching_encryption_key_count(&jwks, "ECDH-ES"),
+            1
+        );
+        assert_eq!(
+            client_jwks_matching_encryption_key_count(&jwks, "ECDH-ES+A128KW"),
+            1
+        );
+        assert_eq!(
+            client_jwks_matching_encryption_key_count(&jwks, "ECDH-ES+A256KW"),
+            1
+        );
+    }
+
+    #[test]
+    fn client_jwks_reject_symmetric_jwe_keys() {
+        let error = validate_client_jwks_with_missing_kid_policy(
+            &json!({
+                "keys": [{
+                    "kid": "sym",
+                    "use": "enc",
+                    "alg": "A256KW",
+                    "kty": "oct",
+                    "k": URL_SAFE_NO_PAD.encode([0xA5_u8; 32])
+                }]
+            }),
+            false,
+        )
+        .expect_err("symmetric keys must not enter client jwks");
+
+        assert_eq!(error, "jwks 不能包含私钥材料或对称密钥材料");
+    }
+
+    #[test]
+    fn client_jwks_reject_unsupported_ecdh_key_wrap_width() {
+        let error = validate_client_jwks_with_missing_kid_policy(
+            &json!({ "keys": [p256_encryption_jwk("ecdh-a192kw", "ECDH-ES+A192KW")] }),
+            false,
+        )
+        .expect_err("unsupported ECDH key-wrap width must be rejected");
+
+        assert_eq!(error, "jwks 公钥材料与 alg 不匹配");
+    }
+
+    fn p256_encryption_jwk(kid: &str, alg: &str) -> Value {
+        let key = SecretKey::generate();
+        let point = key.public_key().to_sec1_point(false);
+        json!({
+            "kid": kid,
+            "use": "enc",
+            "alg": alg,
+            "kty": "EC",
+            "crv": "P-256",
+            "x": URL_SAFE_NO_PAD.encode(point.x().expect("P-256 x coordinate")),
+            "y": URL_SAFE_NO_PAD.encode(point.y().expect("P-256 y coordinate"))
+        })
     }
 }

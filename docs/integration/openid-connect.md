@@ -261,11 +261,15 @@ Key management algorithms:
 
 | Algorithm | Key type | Use | Status / JWK condition | References | Notes |
 | --- | --- | --- | --- | --- | --- |
-| `RSA-OAEP-256` | RSA | `enc` | Supported; client JWK must contain an RSA public key with `use=enc`, `alg=RSA-OAEP-256`, and a `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Only supported key-management algorithm for client response encryption. |
+| `RSA-OAEP-256` | RSA | `enc` | Supported; client JWK must contain an RSA public key with `use=enc`, `alg=RSA-OAEP-256`, and a `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | RSA-OAEP using SHA-256. |
+| `ECDH-ES` | ECDH-ES with P-256 | `enc` | Supported; client JWK must contain a public P-256 EC key with `use=enc`, `alg=ECDH-ES`, and a `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Direct ECDH key agreement for client response encryption. |
+| `ECDH-ES+A256KW` | ECDH-ES with P-256 and AES-256 Key Wrap | `enc` | Supported; client JWK must contain a public P-256 EC key with `use=enc`, `alg=ECDH-ES+A256KW`, and a `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Preferred ECDH key-wrap mode. |
+| `ECDH-ES+A128KW` | ECDH-ES with P-256 and AES-128 Key Wrap | `enc` | Supported; client JWK must contain a public P-256 EC key with `use=enc`, `alg=ECDH-ES+A128KW`, and a `kid` | [RFC 7516](https://www.rfc-editor.org/rfc/rfc7516.html), [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Compatibility ECDH key-wrap mode. |
 | `RSA1_5` | RSA | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725](https://www.rfc-editor.org/rfc/rfc8725.html) | Rejected; do not configure clients to require it. |
 | `RSA-OAEP` | RSA | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Use `RSA-OAEP-256`. |
-| `ECDH-ES`, `ECDH-ES+A*KW` | EC | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised. |
-| `A*KW`, `dir`, `PBES2-*` | Symmetric/password-based | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Shared symmetric/password JWE modes are not used for OIDC client responses. |
+| `ECDH-ES+A192KW` | ECDH-ES with AES-192 Key Wrap | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html) | Not advertised. |
+| `A128KW`, `A256KW` | Symmetric AES Key Wrap | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html) | Symmetric response encryption would require a reversible client response-encryption key. Client secrets are stored as one-way hashes and are not reused as JWE wrapping keys. |
+| `A192KW`, `dir`, `PBES2-*` | Symmetric/password-based | `enc` | Not supported | [RFC 7518](https://www.rfc-editor.org/rfc/rfc7518.html), [RFC 8725](https://www.rfc-editor.org/rfc/rfc8725.html) | Not advertised. |
 
 Content encryption algorithms:
 

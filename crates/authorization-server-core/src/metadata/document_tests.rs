@@ -85,10 +85,14 @@ fn baseline_document_shape_is_locked() {
                 "subject_types_supported": ["public"],
                 "id_token_signing_alg_values_supported": ["RS256"],
                 "userinfo_signing_alg_values_supported": ["RS256"],
-                "userinfo_encryption_alg_values_supported": ["RSA-OAEP-256"],
+                "userinfo_encryption_alg_values_supported": [
+                    "RSA-OAEP-256", "ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW"
+                ],
                 "userinfo_encryption_enc_values_supported": ["A256GCM"],
                 "authorization_signing_alg_values_supported": ["RS256"],
-                "authorization_encryption_alg_values_supported": ["RSA-OAEP-256"],
+                "authorization_encryption_alg_values_supported": [
+                    "RSA-OAEP-256", "ECDH-ES", "ECDH-ES+A128KW", "ECDH-ES+A256KW"
+                ],
                 "authorization_encryption_enc_values_supported": ["A256GCM"]
             }),
             json!({

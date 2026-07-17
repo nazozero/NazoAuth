@@ -11,9 +11,10 @@ M7 adds per-client response protection for two existing protocol surfaces:
 - JARM authorization responses can use a per-client signing algorithm and can
   be signed and then encrypted as a nested compact JWE.
 
-The implemented JWE policy is deliberately narrow:
-`alg=RSA-OAEP-256`, `enc=A256GCM`, a public RSA JWK with `use=enc`, and a
-non-empty `kid`. Each configured response alg must match exactly one such key;
+The implemented JWE policy is deliberately narrow: `enc=A256GCM`, a public
+`use=enc` JWK with a non-empty `kid`, and one supported key-management
+algorithm (`RSA-OAEP-256`, `ECDH-ES`, `ECDH-ES+A128KW`, or
+`ECDH-ES+A256KW`). Each configured response alg must match exactly one such key;
 ambiguous key selection is rejected both during registration and again at the
 runtime encryption boundary. Unsupported, incomplete, ambiguous, or unusable
 metadata is rejected at registration or fails closed with no JSON/plain
