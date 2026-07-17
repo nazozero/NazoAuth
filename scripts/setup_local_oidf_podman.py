@@ -1418,8 +1418,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
                 "FAPI-CIBA request-object and error handling",
             ],
         }
-        if client_auth_type == "mtls":
-            nazo["sender_constrain"] = "mtls"
+        nazo["sender_constrain"] = "mtls"
 
         config = {
             "alias": alias,
