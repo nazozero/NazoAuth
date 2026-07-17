@@ -18,7 +18,7 @@ deployment can satisfy.
 | `fapi2-message-signing-authz-request` | FAPI2 Security plus signed authorization requests at PAR. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
 | `fapi2-message-signing-jarm` | FAPI2 Message Signing authorization response signing option. | Runtime profile switch implemented; OIDF-tested for recorded matrix variant |
 | `fapi2-message-signing-introspection` | FAPI2 Message Signing signed and encrypted introspection response option. | Runtime profile switch implemented; advertised only by this profile |
-| `fapi-ciba-id1` | OIDF FAPI-CIBA AS compatibility profile with orthogonal `private_key_jwt | mTLS` client authentication and `poll | ping` delivery. | Default CIBA security profile when `ENABLE_CIBA=true`; Push and `user_code` are not implemented |
+| `fapi-ciba-id1` | OIDF FAPI-CIBA AS compatibility profile with orthogonal `private_key_jwt / mTLS` client authentication and `poll / ping` delivery. | Default CIBA security profile when `ENABLE_CIBA=true`; Push and `user_code` are not implemented |
 | `fapi2-ciba` | Internal CIBA hardening profile: CIBA Core + FAPI-CIBA compatibility + applicable FAPI2 Security controls. | Runtime CIBA security switch implemented; not an official OIDF certification profile name |
 
 ## `oauth2-baseline`
@@ -212,7 +212,7 @@ grant. CIBA uses `CIBA_SECURITY_PROFILE` instead of
 
 | Profile | Policy |
 | --- | --- |
-| `fapi-ciba-id1` | Preserves the OIDF FAPI-CIBA ID1 plain FAPI behavior across `private_key_jwt | mTLS` × `poll | ping`: signed backchannel authentication requests, endpoint-audience compatibility where explicitly registered, mTLS holder-of-key tokens, and authenticated ping carrying only `auth_req_id`. The former poll-specific value remains a migration alias. |
+| `fapi-ciba-id1` | Preserves the OIDF FAPI-CIBA ID1 plain FAPI behavior across `private_key_jwt / mTLS` × `poll / ping`: signed backchannel authentication requests, endpoint-audience compatibility where explicitly registered, mTLS holder-of-key tokens, and authenticated ping carrying only `auth_req_id`. The former poll-specific value remains a migration alias. |
 | `fapi2-ciba` | Requires confidential clients, `private_key_jwt` or mTLS client authentication, issuer-only private_key_jwt audience policy, signed backchannel authentication requests, strong CIBA JWT algorithms, and DPoP or mTLS sender-constrained access tokens. |
 
 The internal `fapi2-ciba` profile applies only CIBA-applicable FAPI2 Security

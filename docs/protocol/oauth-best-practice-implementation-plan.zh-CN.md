@@ -72,7 +72,7 @@ OAuth 2.1 draft / OIDC / FAPI 2.0 / FAPI-CIBA / CIBA 相关能力，并同时支
 | `oauth2-oidc-baseline` | 普通 Web、Native、BFF、API client。 | OAuth 2.1-aligned：authorization code + PKCE、truthful metadata、refresh rotation、无 implicit/password。 |
 | `fapi2-security` | 现代高安全默认链路。 | FAPI 2.0 Security Final：PAR、S256、confidential client、private_key_jwt/mTLS、DPoP 或 mTLS sender constraint、严格 JWT/JWKS。 |
 | `fapi2-message-signing-*` | FAPI2 Message Signing 独立选项。 | signed request object、JARM、RFC 9701 signed/nested introspection、ID Token signing 按选项启用；失败 fail closed。 |
-| `fapi-ciba-id1` | 官方 FAPI-CIBA ID1 兼容 profile，覆盖 `private_key_jwt | mTLS` × `poll | ping`。 | 只表示 CIBA/FAPI-CIBA 兼容，不表示 FAPI 2.0 CIBA；旧 poll 专用值只作为迁移别名。 |
+| `fapi-ciba-id1` | 官方 FAPI-CIBA ID1 兼容 profile，覆盖 `private_key_jwt / mTLS` × `poll / ping`。 | 只表示 CIBA/FAPI-CIBA 兼容，不表示 FAPI 2.0 CIBA；旧 poll 专用值只作为迁移别名。 |
 | `fapi2-ciba` | 本项目内部 CIBA 强化 profile。 | 将适用于 CIBA 的 FAPI2 控制叠加到 CIBA；不得作为官方 FAPI2-CIBA 标准广告。 |
 | `external-provider-login-rp` | 我们作为 RP 接入第三方登录。 | provider 默认关闭，按 provider id 单独启用；OIDC issuer、OAuth2 endpoint、SAML metadata 均须 allowlist。 |
 
