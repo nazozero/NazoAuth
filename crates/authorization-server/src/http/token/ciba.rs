@@ -201,6 +201,12 @@ struct CibaAuthenticationRequestClaims {
 }
 
 #[derive(Deserialize)]
+struct UnverifiedCibaAuthenticationRequestClaims {
+    iss: Option<String>,
+    sub: Option<String>,
+}
+
+#[derive(Deserialize)]
 pub(crate) struct CibaDecisionRequest {
     decision: String,
     csrf_token: Option<String>,
@@ -276,6 +282,7 @@ pub(crate) async fn backchannel_authentication(
             "CIBA request cannot mix client authentication methods.",
         );
     }
+    apply_ciba_request_object_client_id_hint(&mut form, has_basic, has_assertion);
     let credentials = extract_client_credentials_with_trusted_proxies(
         &req,
         &config.trusted_proxy_cidrs,
@@ -742,6 +749,45 @@ fn signed_ciba_request_object_claims(
     )
     .map(|data| data.claims)
     .map_err(|_| ciba_invalid_request("CIBA request object signature is invalid."))
+}
+
+fn apply_ciba_request_object_client_id_hint(
+    form: &mut BackchannelAuthenticationForm,
+    has_basic: bool,
+    has_assertion: bool,
+) {
+    if form.client_id.is_some() || has_basic || has_assertion {
+        return;
+    }
+    if let Some(client_id) = form
+        .request
+        .as_deref()
+        .and_then(unverified_signed_ciba_request_object_client_id)
+    {
+        form.client_id = Some(client_id);
+    }
+}
+
+fn unverified_signed_ciba_request_object_client_id(request_object: &str) -> Option<String> {
+    let (header_part, payload_part, signature_part) = split_compact_jwt(request_object)?;
+    if signature_part.is_empty() {
+        return None;
+    }
+    let header_value = decode_jwt_header_value(header_part).ok()?;
+    if header_value.get("alg").and_then(Value::as_str) == Some("none") {
+        return None;
+    }
+    let bytes = URL_SAFE_NO_PAD.decode(payload_part).ok()?;
+    let claims: UnverifiedCibaAuthenticationRequestClaims = serde_json::from_slice(&bytes).ok()?;
+    let issuer = claims.iss?.trim().to_owned();
+    if issuer.is_empty() {
+        return None;
+    }
+    let subject_matches = claims
+        .sub
+        .as_deref()
+        .is_none_or(|subject| subject == issuer);
+    subject_matches.then_some(issuer)
 }
 
 fn split_compact_jwt(token: &str) -> Option<(&str, &str, &str)> {

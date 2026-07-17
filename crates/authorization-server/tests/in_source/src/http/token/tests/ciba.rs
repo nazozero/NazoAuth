@@ -155,6 +155,18 @@ fn signed_ciba_request_object(
     signed_ciba_request_object_with_alg(kid, jsonwebtoken::Algorithm::PS256, fixture, extra_claims)
 }
 
+fn unsigned_ciba_request_object(client_id: &str) -> String {
+    let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#);
+    let payload = URL_SAFE_NO_PAD.encode(
+        serde_json::to_vec(&json!({
+            "iss": client_id,
+            "sub": client_id,
+        }))
+        .expect("payload should serialize"),
+    );
+    format!("{header}.{payload}.")
+}
+
 #[test]
 fn ciba_request_key_hashes_auth_req_id() {
     let key = ciba_request_key("auth-req-id");
@@ -860,6 +872,47 @@ fn ciba_signed_request_object_missing_audience_maps_to_invalid_request() {
         Some("invalid_request")
     );
     assert!(form.scope.is_none());
+}
+
+#[test]
+fn ciba_mtls_lookup_may_use_signed_request_object_issuer_as_hint() {
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let request_object = signed_ciba_request_object(
+        "ciba-kid",
+        &key,
+        json!({
+            "nbf": null,
+            "sub": "client-1"
+        }),
+    );
+    let mut form = BackchannelAuthenticationForm {
+        request: Some(request_object),
+        ..BackchannelAuthenticationForm::default()
+    };
+
+    apply_ciba_request_object_client_id_hint(&mut form, false, false);
+
+    assert_eq!(form.client_id.as_deref(), Some("client-1"));
+}
+
+#[test]
+fn ciba_lookup_hint_never_trusts_unsigned_request_object_or_mixed_auth() {
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let signed = signed_ciba_request_object("ciba-kid", &key, json!({"sub": "client-1"}));
+    let mut unsigned = BackchannelAuthenticationForm {
+        request: Some(unsigned_ciba_request_object("client-1")),
+        ..BackchannelAuthenticationForm::default()
+    };
+    let mut basic = BackchannelAuthenticationForm {
+        request: Some(signed),
+        ..BackchannelAuthenticationForm::default()
+    };
+
+    apply_ciba_request_object_client_id_hint(&mut unsigned, false, false);
+    apply_ciba_request_object_client_id_hint(&mut basic, true, false);
+
+    assert!(unsigned.client_id.is_none());
+    assert!(basic.client_id.is_none());
 }
 
 #[test]
