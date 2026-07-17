@@ -235,7 +235,7 @@ where
                 }
                 self.validate_dpop_nonce(verification.nonce.as_deref(), now)
                     .await?;
-                let proof = match self
+                match self
                     .replay
                     .consume(DpopReplayKey {
                         jkt: actual_jkt,
@@ -249,8 +249,7 @@ where
                     DpopReplayConsumptionResult::Replay => {
                         return Err(ProtectedResourceAuthorizationError::ReplayDetected);
                     }
-                };
-                proof
+                }
             }
         };
 
