@@ -50,9 +50,9 @@ The matrix covers the current TP/PS work through these paths:
 - `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 25-plan matrix.
 - `OIDC Front-Channel Logout OP` covers NI-008.
 - `OIDC Session Management OP` covers NI-009.
-- Four FAPI-CIBA plans cover the orthogonal `private_key_jwt | mTLS` × `poll | ping` combinations. Push mode is prohibited by the FAPI-CIBA profile and is not implemented.
+- Four FAPI-CIBA plans cover the orthogonal `private_key_jwt | mTLS` × `poll | ping` combinations. The [FAPI-CIBA profile](https://openid.net/specs/openid-financial-api-ciba.html) only supports poll and ping modes, so push mode is outside the supported FAPI-CIBA profile and is not implemented.
 - No dedicated official plan was found for NI-006 RFC 7523 third-party JWT bearer grant assertion trust. Existing OIDC/FAPI plans cover client assertion scenarios, and local tests cover the bounded JWT bearer grant.
-- NI-010 tracks OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1. The project does not implement this trust-chain ecosystem surface and no longer exposes `/.well-known/openid-federation`, so Federation plans are not must-pass matrix entries.
+- NI-010 tracks [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html) and [OpenID Federation for OpenID Connect 1.1](https://openid.net/specs/openid-federation-connect-1_1.html). Those specifications define a federation trust-chain ecosystem with Entity Statements, Trust Anchors, metadata policy, Trust Marks, and Federation endpoints. This implementation does not advertise or implement that ecosystem surface and does not expose `/.well-known/openid-federation`, so Federation plans are not must-pass matrix entries.
 - No official OP plan was found for NI-011 Native SSO / `device_secret`; local tests cover device-secret lifecycle, `ds_hash` binding, token exchange, and refresh-family activity.
 
 Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 25-plan matrix.
@@ -71,11 +71,11 @@ conditions.
 
 Implementing that certification profile would require advertising and enabling
 implicit response modes. RFC 9700, section 2.1.2, says authorization servers
-SHOULD NOT support the implicit grant. NazoAuth therefore keeps authorization
-code as its interactive flow and preserves truthful discovery metadata. RFC
-7591 dynamic client registration remains implemented and is covered by `OIDC
-Basic OP Dynamic Registration`; "dynamic registration" and the legacy OIDF
-"Dynamic OP" certification profile are not the same support claim.
+SHOULD NOT support the implicit grant. The interactive flow therefore remains
+authorization code, and discovery metadata stays truthful. RFC 7591 dynamic
+client registration remains implemented and is covered by `OIDC Basic OP
+Dynamic Registration`; "dynamic registration" and the legacy OIDF "Dynamic OP"
+certification profile are not the same support claim.
 
 ## Expected Skip Policy
 

@@ -37,7 +37,7 @@ claim that the value is safe or implemented here.
 | Token Introspection | Complete | Available through the introspection endpoint when client policy permits it | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html) | FAPI message-signing profiles can use protected introspection responses. |
 | Token Revocation | Complete | Available through the revocation endpoint | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html) | Revokes tokens according to token type and client policy. |
 | Device Authorization Grant | Supported | Disabled by default; advertised only when the device module is enabled and the client grant allowlist includes device code | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | Disabled deployments do not claim this grant. |
-| OpenID CIBA / FAPI-CIBA | Supported | Disabled by default; advertised only when CIBA is enabled and the client is registered for poll or ping | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | Push is not implemented. |
+| OpenID CIBA / FAPI-CIBA | Supported | Disabled by default; advertised only when CIBA is enabled and the client is registered for poll or ping | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | FAPI-CIBA supports poll and ping only; push is not implemented. |
 | FAPI 2.0 Security Profile | Complete | Enabled by selecting the FAPI runtime profile and registering FAPI-compatible clients | [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-2_0-security-profile.html) | Requires confidential clients, PAR, sender constraints, and strong client authentication. |
 | FAPI 2.0 Message Signing | Complete | Enabled by selecting the message-signing profile/options and compatible client metadata | [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-2_0-message-signing.html) | Adds signed authorization requests, JARM, and protected response options according to profile. |
 | OpenID4VCI 1.0 Final | Complete | Disabled by default; advertised through OpenID4VCI issuer metadata after enabling the Credential Issuer role and complete credential/trust configuration | [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | Not part of ordinary OIDC RP login. |
@@ -302,7 +302,7 @@ Supported interactive response type:
 | Name | Status | Value | References | Notes |
 | --- | --- | --- | --- | --- |
 | Authorization Code | Supported | `code` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 6749](https://www.rfc-editor.org/rfc/rfc6749.html) | The only interactive OIDC response type. Public clients, FAPI clients, sender-constrained clients, and non-OIDC code-flow clients must use S256 PKCE. |
-| Implicit ID Token | Not implemented | `id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Excluded because it relies on front-channel ID Token delivery. |
+| Implicit ID Token | Not implemented | `id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | OIDC Core defines the value, but it delivers the ID Token through the browser front channel without a token-endpoint exchange. The interactive profile keeps ID Token issuance behind authorization-code exchange. |
 | Implicit Access Token | Not implemented | `token` | [RFC 6749 Section 4.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.2), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Excluded because the implicit grant is deprecated by the OAuth Security BCP. |
 | Implicit ID Token + Access Token | Not implemented | `id_token token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | Excluded because it depends on implicit front-channel token delivery. |
 | Hybrid Code + ID Token | Not implemented | `code id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | OIDC Core defines the value, but it sends an ID Token through the browser front channel before token-endpoint exchange. That preserves the same exposure class RFC 9700 moves away from for implicit-style responses. |
@@ -332,7 +332,7 @@ browser transport for supported authorization responses.
 | `refresh_token` | Supported | [RFC 6749 Section 6](https://www.rfc-editor.org/rfc/rfc6749.html#section-6) | Client policy, consent, and grant allow it | Never returned from implicit/front-channel flows. |
 | `client_credentials` | Supported | [RFC 6749 Section 4.4](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.4) | Client grant allowlist includes it | OAuth resource access only; not an OIDC login flow. |
 | `urn:ietf:params:oauth:grant-type:device_code` | Supported | [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628.html) | Device Authorization Grant module enabled and client allowlist includes it | Disabled deployments do not claim this grant. |
-| OpenID CIBA grant | Supported | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html) | CIBA module enabled and client registered for poll or ping delivery | Push delivery mode is not implemented. |
+| OpenID CIBA grant | Supported | [OpenID CIBA Core](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html), [FAPI-CIBA](https://openid.net/specs/openid-financial-api-ciba.html) | CIBA module enabled and client registered for poll or ping delivery | FAPI-CIBA supports poll and ping only; push delivery mode is not implemented. |
 | `urn:ietf:params:oauth:grant-type:jwt-bearer` | Supported | [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523.html) | Client grant allowlist includes it | JWT bearer grant for bounded resource access. |
 | `urn:ietf:params:oauth:grant-type:token-exchange` | Supported | [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693.html) | Explicit bounded local profile/client policy | Not a generic arbitrary delegation mechanism. |
 | `password` | Not implemented | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4) | N/A | RFC 9700 says this grant MUST NOT be used. |
@@ -399,13 +399,13 @@ Use this terminology precisely:
 
 ## Specification-backed non-implementation boundaries
 
-The following decisions are not project-local preferences. They are derived
-from current IETF / OpenID security guidance and are encoded as product
+The following decisions are not local preferences. They are derived
+from current IETF / OpenID security guidance and are encoded as implementation
 boundaries.
 
 | Capability | Status | Normative or current security source | Reason |
 | --- | --- | --- | --- |
-| Implicit grant and implicit OIDC response types | Not implemented | [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP deprecates implicit because browser front-channel token delivery has weaker leakage and replay properties than code flow with PKCE. |
+| Implicit grant and implicit OIDC response types | Not implemented | [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP deprecates implicit because browser front-channel token delivery has weaker leakage and replay properties than code flow with PKCE. This boundary also excludes OIDC implicit ID Token responses from the supported interactive profile. |
 | Hybrid response types | Not implemented | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | OIDC Core defines Hybrid Flow, but it exposes ID Tokens and/or access tokens through the browser front channel before the token endpoint. RFC 9700 deprecates implicit front-channel token delivery; the supported interactive profile remains authorization code with PKCE/sender constraints where required. |
 | Resource Owner Password Credentials | Not implemented | [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP states that the password grant MUST NOT be used because it exposes user credentials to clients and does not compose with modern MFA/passkey authentication. |
 | Unsigned Request Objects (`alg=none`) | Not implemented | [RFC 9101 Section 4](https://www.rfc-editor.org/rfc/rfc9101.html#section-4), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | Protected request-object surfaces require signed Request Objects; JWT BCP requires applications to allow only algorithms that meet the application's security requirements. |
@@ -425,7 +425,7 @@ The following are intentionally not supported for new integrations:
 - FAPI form-body bearer tokens;
 - CIBA push mode.
 
-These are specification-backed product boundaries, not missing configuration
+These are specification-backed implementation boundaries, not missing configuration
 switches. Do not attempt to enable them with hidden deployment options.
 
 ## Metadata truth and deployment flags
