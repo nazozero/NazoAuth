@@ -19,6 +19,7 @@ set can be scanned from one place.
 | Chinese deployment | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) |
 | Configuration | [operations/configuration.md](operations/configuration.md) |
 | OpenID Connect integration | [integration/openid-connect.md](integration/openid-connect.md) |
+| Chinese OpenID Connect integration | [integration/openid-connect.zh-CN.md](integration/openid-connect.zh-CN.md) |
 | Protocol and profile status | [protocol/profile-matrix.md](protocol/profile-matrix.md) |
 | OIDF conformance evidence | [conformance/README.md](conformance/README.md) |
 | Performance benchmark overview | [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) |
@@ -65,6 +66,7 @@ set can be scanned from one place.
 | Document | Role |
 | --- | --- |
 | [integration/openid-connect.md](integration/openid-connect.md) | OpenID Connect relying-party integration guide and security boundaries. |
+| [integration/openid-connect.zh-CN.md](integration/openid-connect.zh-CN.md) | Chinese OpenID Connect relying-party integration guide and security boundaries. |
 
 ### Protocol
 
