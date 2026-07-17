@@ -1,5 +1,11 @@
 # 2026-07-16 OpenID4VC Final / HAIP OIDF results
 
+Superseded for current conformance evidence by
+[2026-07-17 Public Black-Box Full OIDF Results](2026-07-17-public-black-box-full-oidf-results.md).
+This file remains a historical implementation record. Current conformance
+evidence must use public black-box official-suite runs against
+`https://auth.nazo.run`, not local suite endpoints or private test roots.
+
 ## Summary
 
 OpenID4VCI Credential Issuer and OpenID4VP Verifier passed both required

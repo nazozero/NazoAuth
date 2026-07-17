@@ -17,24 +17,27 @@ Nazo Auth Server 已发布在 OpenID Foundation 官方认证列表中：
 
 - 认证基线：[2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - 矩阵范围说明：[OIDF 完整矩阵](oidf-full-matrix.zh-CN.md)
-- 最新私有 full-matrix 回归：[2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
-- 最新官方 full matrix：[2026-07-11 M7 encrypted response OIDF results](2026-07-11-m7-official-encrypted-responses-oidf-results.md)
+- 已归档私有 full-matrix 回归：[2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
+- 已归档 M7 官方 full matrix：[2026-07-11 M7 encrypted response OIDF results](2026-07-11-m7-official-encrypted-responses-oidf-results.md)
 - 最新 RFC 覆盖检查：[2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
-- 最新 NI-006~NI-011 私有 OIDF targeted 结果：[2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
+- 已归档 NI-006~NI-011 私有 OIDF targeted 结果：[2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
 - 最新 public NI-007 FAPI-CIBA targeted 结果：[2026-07-03 NI-007 public FAPI-CIBA OIDF results](2026-07-03-ni-007-public-ciba-oidf-results.md)
-- 最新 NI-006~NI-011 官方 parallel-isolated full matrix：[2026-07-03 NI-006~NI-011 official parallel-isolated OIDF results](2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md)
-- 最新 M2 官方 parallel-isolated full matrix：[2026-07-08 M2 official parallel-isolated OIDF results](2026-07-08-m2-official-parallel-isolated-oidf-results.md)
-- 最新 M6 FAPI-CIBA 本地与官方 full matrix：[2026-07-11 M6 FAPI-CIBA OIDF results](2026-07-11-m6-official-fapi-ciba-oidf-results.md)
+- 已归档 NI-006~NI-011 官方 parallel-isolated full matrix：[2026-07-03 NI-006~NI-011 official parallel-isolated OIDF results](2026-07-03-ni-006-011-official-parallel-isolated-oidf-results.md)
+- 已归档 M2 官方 parallel-isolated full matrix：[2026-07-08 M2 official parallel-isolated OIDF results](2026-07-08-m2-official-parallel-isolated-oidf-results.md)
+- 已归档 M6 FAPI-CIBA 本地与官方 full matrix：[2026-07-11 M6 FAPI-CIBA OIDF results](2026-07-11-m6-official-fapi-ciba-oidf-results.md)
 - 最新 M7 encrypted-response 覆盖检查：[2026-07-11 M7 encrypted response OIDF coverage](2026-07-11-m7-oidf-coverage.md)
 - 最新 M8 新兴协议治理与覆盖检查：[2026-07-11 M8 watchlist governance](2026-07-11-m8-watchlist-governance.md)
 - 项目自有 RFC 9967 回归范围：[RFC 9967 SCIM SET 黑盒矩阵](rfc9967-scim-set-matrix.md)
 - 最新 OpenID4VC Final / HAIP alpha 回归：[2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
+- 当前公网黑盒完整证据：[2026-07-17 公网黑盒 OIDF 全矩阵结果](2026-07-17-public-black-box-full-oidf-results.zh-CN.md)
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://auth.nazo.run` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
-最新记录的官方 full-matrix suite run 是 2026-07-11 M7 parallel-isolated 官方运行，针对 `https://auth.nazo.run` 执行。该运行使用 workflow head SHA `371b4f6e61674c4d1bd9ace7ba5b518314c8ff0f`，部署镜像为 `localhost/nazo-oauth-server:m7-371b4f6`，以 19+2 形式完成仓库 21-plan public OIDF 矩阵，三个 GitHub Actions jobs 均为 `success`。导出结果包含 640 个模块：632 个 `PASSED`、6 个预期 `REVIEW`、2 个预期 `SKIPPED`，没有失败模块、condition failure 或 warning。
+最新记录的公网黑盒 OIDF 证据是 2026-07-17 针对 `https://auth.nazo.run` 的运行组，生产 revision 为 `ae19cc50af4cc50f3f35f678a3a1c38332d475e2`。GitHub Actions runs [`29543012193`](https://github.com/nazozero/NazoAuth/actions/runs/29543012193) 和 [`29545407427`](https://github.com/nazozero/NazoAuth/actions/runs/29545407427) 均成功完成，覆盖 OIDC、FAPI、FAPI-CIBA、OpenID4VC Final 与 HAIP 共 42 个 plan execution。合并导出结果包含 1,178 个 finished module、101,519 个 condition success、0 个 condition failure、30 个有界 warning、15 个预期 skip 和 136 个 review entry。该证据只接受针对公网生产 origin 的官方套件运行；本地 endpoint、私有 DNS、私有 CA 和 `https://nginx:8443` 不计入一致性证据。
 
-最新私有 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://auth.nazo.run`，runtime commit 为 `31e8f9f`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
+已归档的私有/本地套件记录仍可用于调试回归，但不是当前一致性证据。当前一致性证据以上面的公网黑盒运行组为准。
+
+已归档私有 full-matrix 回归记录是 2026-07-01 TP/PS 运行，测试对象为 `https://auth.nazo.run`，runtime commit 为 `31e8f9f`。该运行使用仓库原有 16-plan 完整矩阵，导出 16 个 plan archives，共执行 578 个测试模块，结果为 `0 failures`、`0 warnings`。
 
 最新 NI-006~NI-011 私有一致性测试环境 targeted 运行使用本地 official suite 快照
 `edbf2514e1e5c850ccf28544953608bda50daf4d`。NI-007 FAPI-CIBA、NI-008
@@ -56,14 +59,7 @@ module-level `SKIPPED` 结果。
 并将 front-channel logout 与 session-management 分拆到独立 browser-sensitive
 matrix job 中隔离执行。
 
-最新 OpenID4VC Final / HAIP alpha 回归针对 `https://auth.nazo.run` 执行，
-implementation SHA 为 `8b2f7a70cd4d51f4ff668ea761a6562616a90c37`。Hostinger
-远端本地 official-suite 运行以生产 URL 作为被测目标，17 个 plan 执行全部完成，
-`0 failures`。GitHub 官方运行
-[`29530484889`](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
-成功完成，导出 17 个 plan archives 和 391 个 finished module logs，`0 failures`，
-仅有 4 个预期 HAIP refresh-token warning。该结果是 alpha 回归证据，不是
-OpenID Foundation 正式认证声明。
+2026-07-16 OpenID4VC Final / HAIP alpha 记录保留为功能分支历史证据。当前生产等价的 OpenID4VC 证据以 2026-07-17 公网黑盒运行组为准。
 
 所有 profile 的 Request Object 都必须使用非对称签名。baseline 与 FAPI metadata 均不声明 `none`，运行时对任何客户端都拒绝 unsigned Request Object；项目遵循 RFC 9101，不保留仅为一致性套件服务的兼容旁路。
 
