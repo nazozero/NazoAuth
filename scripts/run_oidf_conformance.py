@@ -279,12 +279,15 @@ def validate_browser_automation(config_name: str, config_value: dict[str, object
 
 def issuer_from_config(config_value: dict[str, object]) -> str | None:
     server = config_value.get("server")
-    if not isinstance(server, dict):
-        return None
-    discovery_url = server.get("discoveryUrl")
-    if not isinstance(discovery_url, str):
-        return None
-    return issuer_from_discovery_url(discovery_url)
+    if isinstance(server, dict):
+        discovery_url = server.get("discoveryUrl")
+        if isinstance(discovery_url, str):
+            return issuer_from_discovery_url(discovery_url)
+    vci = config_value.get("vci")
+    credential_issuer_url = vci.get("credential_issuer_url") if isinstance(vci, dict) else None
+    if isinstance(credential_issuer_url, str) and credential_issuer_url.strip():
+        return normalized_origin(credential_issuer_url)
+    return None
 
 
 def nazo_public_issuer_origin(config_value: dict[str, object]) -> str:
@@ -1017,7 +1020,7 @@ def write_plan_configs(
     if configs is None:
         if target_issuer:
             assert_config_target_boundaries(parsed, file_name, target_issuer)
-        if not is_openid4vc_config(file_name):
+        if issuer_from_config(parsed) is not None:
             add_nazo_browser_overrides(parsed)
         if target_issuer:
             assert_config_target_boundaries(parsed, file_name, target_issuer)
@@ -1040,7 +1043,7 @@ def write_plan_configs(
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
         if target_issuer:
             assert_config_target_boundaries(config_value, config_name, target_issuer)
-        if not is_openid4vc_config(config_name):
+        if issuer_from_config(config_value) is not None:
             add_nazo_browser_overrides(config_value)
         if target_issuer:
             assert_config_target_boundaries(config_value, config_name, target_issuer)

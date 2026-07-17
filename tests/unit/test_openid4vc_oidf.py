@@ -374,6 +374,69 @@ class Openid4vcOidfTests(unittest.TestCase):
             },
         )
 
+    def test_openid4vc_issuer_user_reject_module_denies_consent(self):
+        module = load("run_oidf_conformance.py")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite_scripts = root / "suite" / "scripts"
+            suite_scripts.mkdir(parents=True)
+            config_json = root / "configs.json"
+            config_json.write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            "openid4vc-vci-haip-sd-wallet.json": {
+                                "alias": "openid4vc-vci-haip-sd-wallet",
+                                "vci": {"credential_issuer_url": "https://issuer.example"},
+                                "nazo": {
+                                    "oidf_user_email": "user@example.test",
+                                    "oidf_user_password": "correct horse battery staple",
+                                },
+                                "browser": [
+                                    {
+                                        "match": "https://issuer.example/authorize*",
+                                        "tasks": [
+                                            {
+                                                "task": "Complete login page",
+                                                "match": "https://issuer.example/ui/auth*",
+                                                "commands": [],
+                                            },
+                                            {
+                                                "task": "Complete consent page",
+                                                "match": "https://issuer.example/ui/consent*",
+                                                "commands": [],
+                                            },
+                                        ],
+                                    }
+                                ],
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            module.write_plan_configs(
+                suite_scripts,
+                "ignored.json",
+                "OPENID4VC_CONFIGS",
+                str(config_json),
+                "https://issuer.example",
+            )
+            written = json.loads(
+                (suite_scripts / "openid4vc-vci-haip-sd-wallet.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        user_reject_override = written["override"][
+            "fapi2-security-profile-final-user-rejects-authentication"
+        ]["browser"][0]
+        deny_task = user_reject_override["tasks"][1]
+        self.assertEqual(deny_task["task"], "Deny consent page")
+        self.assertIn(["click", "id", "nazo-consent-deny"], deny_task["commands"])
+
     def test_verifier_driver_emits_format_specific_dcql_meta(self):
         module = load("run_openid4vc_conformance.py")
         driver = module.Openid4vcDriver(
