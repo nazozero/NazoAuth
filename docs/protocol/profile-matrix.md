@@ -64,12 +64,15 @@ Required negative tests:
 | Metadata surfaces | Admin client management and RFC 7591/7592 registration persist and return all six response-crypto metadata fields |
 | Failure behavior | Metadata, key lookup, signing, and encryption failures return `server_error`; UserInfo never falls back to JSON and JARM never exposes a code/state in a plain query response |
 
-The server does not fetch remote `jwks_uri` values. Encryption keys are
-registered by value, validated as public material, and selected only when the
-`use` and `alg` policy has exactly one matching non-empty `kid`. UserInfo and
-authorization-response signing algorithms advertised by discovery are the
-same Keyset-snapshot capabilities accepted by registration and used by
-signing execution.
+For response encryption, keys are registered by value, validated as public
+material, and selected only when the `use` and `alg` policy has exactly one
+matching non-empty `kid`. Dynamic registration may resolve a client's
+`jwks_uri` through the constrained HTTPS remote-document resolver for client
+authentication and Request Object keys, but response-encryption key selection
+still uses the persisted client JWK material and never falls back to an
+unregistered remote document. UserInfo and authorization-response signing
+algorithms advertised by discovery are the same Keyset-snapshot capabilities
+accepted by registration and used by signing execution.
 
 ## Ecosystem Onboarding Surfaces
 
@@ -79,7 +82,7 @@ client onboarding guidance lives in
 
 | Surface | Profile boundary | Metadata rule |
 | --- | --- | --- |
-| Dynamic Client Registration / DCRM | Default-closed RFC 7591 and RFC 7592 client lifecycle for DCR-created clients only; registration and management operations emit non-secret audit events. | `registration_endpoint` appears only when `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; software statements and remote `jwks_uri` trust remain deferred. |
+| Dynamic Client Registration / DCRM | Default-closed RFC 7591 and RFC 7592 client lifecycle for DCR-created clients only; registration and management operations emit non-secret audit events. `jwks_uri` is accepted only when the constrained HTTPS remote-document resolver can fetch and validate the client JWK Set. | `registration_endpoint` appears only when `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; software statement issuer trust remains deferred. |
 | Device Authorization Grant | Default-closed constrained-input client profile that requires the client grant allowlist. | Device endpoint and `device_code` grant metadata appear only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`. |
 | Token Exchange local profile | Bounded RFC 8693 access-token to access-token exchange for locally issued subject/actor tokens and explicitly allowed targets. | The grant type is advertised only because the local profile is implemented; external, refresh-token, and ID-token exchange profiles are not implied. |
 | Third-party JWT bearer assertion trust | Deferred profile for external assertion issuers and non-client subjects; the implemented JWT bearer grant remains client-bound. | No discovery metadata is advertised until issuer allowlists, subject mapping, replay, revocation, audit, and negative tests exist. |

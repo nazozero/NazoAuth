@@ -1,9 +1,9 @@
 # OpenID4VC Final conformance matrix
 
-NazoAuth implements the **Credential Issuer** role from OpenID for Verifiable
-Credential Issuance 1.0 Final and the **Verifier** role from OpenID for
-Verifiable Presentations 1.0 Final. It does not implement or advertise a Wallet
-role.
+This implementation provides the **Credential Issuer** role from OpenID for
+Verifiable Credential Issuance 1.0 Final and the **Verifier** role from OpenID
+for Verifiable Presentations 1.0 Final. It does not implement or advertise a
+Wallet role.
 
 The implementation is split into four protocol boundaries:
 

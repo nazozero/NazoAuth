@@ -169,7 +169,7 @@ conditions:
 | OAuth 2.1 draft | Directional target, not final RFC; treat as work in progress until published as RFC. | Partial/aligned | Track latest draft and turn into final RFC audit when published. Do not cite draft conformance as final RFC conformance. |
 | OIDC Core | Required for certified OP profile. | Implemented/profile-scoped | Keep authorization-code OP profile; do not imply implicit/hybrid support. Maintain ID Token, nonce, `auth_time`/`max_age`, `acr`/`amr`, claims, JSON/signed/encrypted UserInfo, and offline access controls as separate testable rows. |
 | OIDC Discovery | Required. | Implemented | Keep discovery generated from runtime facts. |
-| OIDC Dynamic Client Registration | Useful but high-risk provisioning surface. | Implemented/default-closed | Advertise only when `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; protect public deployments with `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`; support RFC 7592 management only for DCR-created clients with hashed registration access tokens and dynamic-client audit events; software statements and remote `jwks_uri` fetching remain deferred. |
+| OIDC Dynamic Client Registration | Useful but high-risk provisioning surface. | Implemented/default-closed | Advertise only when `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; protect public deployments with `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`; support RFC 7592 management only for DCR-created clients with hashed registration access tokens and dynamic-client audit events; support `jwks_uri` only through the constrained HTTPS remote-document resolver; software statements remain deferred. |
 | OIDC RP-Initiated Logout | Required where advertised. | Implemented | Keep exact post-logout redirect validation. |
 | OIDC Back-Channel Logout | Useful for server-side logout propagation. | Implemented/profile-scoped | Keep signed logout token, durable outbox, bounded retry, terminal failure state, and metadata truth aligned. |
 | OIDC Front-Channel Logout | Browser-mediated and weaker than back-channel. | Implemented/profile-scoped/default-closed | Advertise only when `ENABLE_FRONTCHANNEL_LOGOUT=true`; keep RP metadata validation, iframe notification escaping, `iss`/`sid` behavior, and back-channel logout as the stronger path. |
@@ -190,21 +190,25 @@ conditions:
 ## Current OAuth Standards Roadmap
 
 The following items are current OAuth WG RFCs, BCPs, active WG drafts, or
-IESG/RFC Editor queue documents that fit the security boundary. Items marked
-`Not supported (planned)` are roadmap candidates; they remain invisible in
-discovery metadata until fully implemented and tested.
+IESG/RFC Editor queue documents that fit the security boundary. Rows marked as
+mostly aligned, draft-audited, or supported/profile-scoped describe behavior
+that exists today but still needs a final-specification delta audit before a
+Final/RFC conformance claim. Rows marked `Not supported (planned)` are roadmap
+candidates; they remain invisible in discovery metadata until fully implemented
+and tested.
 
 | Standard or draft | Source status on 2026-07-17 | Project decision | Planning boundary |
 | --- | --- | --- | --- |
 | `draft-ietf-oauth-v2-1-15` | OAuth WG active draft | Mostly aligned; final RFC audit pending | Current behavior follows the draft direction, but final OAuth 2.1 conformance is not claimed until the RFC is published and audited requirement by requirement. |
-| `draft-ietf-oauth-browser-based-apps-27` | RFC Editor queue BCP | Not supported as final RFC (planned) | Re-audit after RFC publication; maintain code + S256 PKCE and no browser token leakage. |
-| `draft-ietf-oauth-cross-device-security-16` | RFC Editor queue BCP | Not supported (planned) | Apply to Device Grant, CIBA, Native SSO, and future cross-device flows. |
-| `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | Not supported (planned) | Treat as an RFC 9700 delta audit, not as a runtime feature. |
-| `draft-ietf-oauth-rfc8725bis-06` | Waiting for AD Go-Ahead BCP | Not supported (planned) | Re-run JWT/JWS/JWE algorithm, key-binding, and cross-JWT confusion tests when it advances. |
-| `draft-ietf-oauth-rfc7523bis-11` | RFC Editor queue | Not supported (planned) | Re-audit `private_key_jwt`, JWT bearer grants, assertion audience, replay, and key binding. |
+| `draft-ietf-oauth-browser-based-apps-27` | RFC Editor queue BCP | Draft-27 audit complete; final RFC audit pending | Current behavior already follows the secure browser direction; re-audit after RFC publication before claiming final BCP alignment. |
+| `draft-ietf-oauth-cross-device-security-16` | RFC Editor queue BCP | Related flows implemented; final BCP audit pending | Apply to Device Grant, CIBA, Native SSO, and future cross-device flows before claiming named BCP alignment. |
+| `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | RFC 9700 supported; update draft audit pending | Treat as an RFC 9700 delta audit, not as a runtime feature. |
+| `draft-ietf-oauth-rfc8725bis-06` | Waiting for AD Go-Ahead BCP | RFC 8725 behavior implemented; bis audit pending | Re-run JWT/JWS/JWE algorithm, key-binding, and cross-JWT confusion tests when it advances. |
+| `draft-ietf-oauth-rfc7523bis-11` | RFC Editor queue | RFC 7523 behavior implemented/bounded; bis audit pending | Re-audit `private_key_jwt`, JWT bearer grants, assertion audience, replay, and key binding. |
 | `draft-ietf-oauth-refresh-token-expiration-03` | OAuth WG active draft | Not supported (planned) | Add only after refresh-token and authorization-expiration state, metadata, revocation, and tests exist. |
 | `draft-ietf-oauth-first-party-apps-04` | OAuth WG active draft | Not supported (planned) | Evaluate same-party browser/BFF assumptions without weakening third-party client isolation. |
 | `draft-ietf-oauth-client-id-metadata-document-02` | OAuth WG active draft | Not supported (planned) | Consider only as a controlled public-client metadata bootstrap profile. |
+| `draft-ietf-oauth-attestation-based-client-auth-10` | OAuth WG active draft | Supported/profile-scoped; final RFC audit pending | `attest_jwt_client_auth` is advertised only when the Client Attestation module and client policy require it. Re-audit after final RFC publication. |
 | `draft-ietf-oauth-spiffe-client-auth-02` | OAuth WG active draft | Not supported (planned) | Requires a workload identity deployment and SPIFFE trust-domain boundary. |
 | `draft-ietf-oauth-identity-assertion-authz-grant-04` | OAuth WG active draft | Not supported (planned) | Requires trusted third-party assertion issuers, subject mapping, revocation, replay, and audit policy. |
 | `draft-ietf-oauth-identity-chaining-16` | RFC Editor queue | Not supported (planned) | Requires cross-domain trust-chain, delegation, replay, and resource-server verification semantics. |
@@ -277,7 +281,7 @@ These capabilities must not become default behavior:
 | P2 | Token Status List for OpenID4VC | Credential status belongs with the credential issuer/verifier privacy and revocation model. | Add status list publication, privacy analysis, revocation semantics, verifier handling, and OIDF matrix evidence where available. |
 | P2 | Device Authorization Grant hardening follow-up | Useful for constrained devices but abuse-prone; baseline support is implemented behind a feature gate. | Expand product UX copy, audit events, brute-force telemetry, and full browser approval E2E around the existing `/device` flow. |
 | P2 | Token Exchange hardening follow-up | Baseline local access-token exchange is implemented. | Add external issuer trust profiles, refresh-token or ID-token exchange only if needed, richer audit events, and black-box service-chain E2E coverage. |
-| P2 | DCR trust-policy follow-up | Baseline RFC 7591 and RFC 7592 DCR management are implemented, but richer trust policy still expands client lifecycle authority. | Optional software statement trust, optional remote JWKS fetch policy, black-box lifecycle conformance fixtures, and no automatic high-privilege defaults. |
+| P2 | DCR trust-policy follow-up | Baseline RFC 7591 and RFC 7592 DCR management are implemented, and constrained HTTPS `jwks_uri` resolution exists; richer trust policy still expands client lifecycle authority. | Optional software statement trust, black-box lifecycle conformance fixtures, remote-JWKS SSRF/size/type/redirect regressions, and no automatic high-privilege defaults. |
 | P3 | Front-Channel Logout / Session Management | Interop feature, weaker than server-side logout paths. | Metadata, iframe/session behavior, browser tests, no weakening of RP-Initiated or Back-Channel Logout. |
 | P3 | OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1 | Ecosystem trust-chain feature. | Entity statements, trust anchors, trust chain resolution, metadata policy, trust marks, fetch/list/resolve endpoints, and conformance evidence. |
 
