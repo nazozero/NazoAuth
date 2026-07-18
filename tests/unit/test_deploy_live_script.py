@@ -748,9 +748,12 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn("Assert-GitOrigin", self.source)
 
     def test_ssh_remote_action_is_one_argument_without_bash_lc_boundary_ambiguity(self) -> None:
-        self.assertIn('Invoke-Checked ssh $RemoteHost @($deployCommand)', self.source)
-        self.assertIn('Invoke-Checked ssh $RemoteHost @($commitCommand)', self.source)
-        self.assertIn('& ssh $RemoteHost $rollbackCommand', self.source)
+        self.assertIn('"BatchMode=yes"', self.source)
+        self.assertIn('"ConnectTimeout=30"', self.source)
+        self.assertIn('"ServerAliveInterval=15"', self.source)
+        self.assertIn("Invoke-SshChecked @($deployCommand)", self.source)
+        self.assertIn("Invoke-SshChecked @($commitCommand)", self.source)
+        self.assertIn("& ssh @SshOptions $RemoteHost $rollbackCommand", self.source)
         self.assertNotIn('& ssh $RemoteHost bash -lc', self.source)
 
     def test_prebuilt_artifacts_are_not_accepted_for_a_real_deployment(self) -> None:
