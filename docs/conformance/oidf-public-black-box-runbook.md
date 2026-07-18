@@ -32,7 +32,12 @@ text, not from the behavior of one suite module.
 
 2. Generate runtime conformance material for the target issuer.
 
-   - The operator must supply the public issuer and suite base URL.
+   - The operator must supply the public issuer and one primary suite base
+     origin.
+   - `OIDF_SUITE_BASE_URL` is a single HTTPS origin. It is not a comma-separated
+     list. Additional callback origins must use
+     `OIDF_LOCAL_EXTRA_SUITE_BASE_URLS` and must be validated as separate HTTPS
+     origins.
    - The generated configs must use only public HTTPS URLs for protocol-visible
      issuer, redirect, logout, notification, credential, and verifier endpoints.
    - Scan generated configs before running the suite. Internal hostnames,
@@ -96,6 +101,9 @@ Before any public or official run, verify:
 - expected skips are generated per batch, not reused as a broad global bypass;
 - review allowances are bound to exact plan/config/module triples;
 - seed inputs and executed plan configs come from the same artifact generation;
+- no seeded redirect URI, post-logout redirect URI, front-channel URI, CIBA
+  notification URI, credential URI, or verifier URI contains a comma-joined
+  origin;
 - the deployed service reports the commit SHA being tested.
 
 ## Cheating Definition

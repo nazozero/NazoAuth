@@ -4,8 +4,9 @@ use super::*;
 fn suite_base_urls_are_trimmed_deduplicated_and_sorted() {
     let urls = suite_base_urls_from_extra(
         "https://suite.example/",
-        Some(" https://suite.example, https://local.example/ ,, https://z.example/path/ "),
-    );
+        Some(" https://suite.example, https://local.example/ ,, https://z.example:8443/ "),
+    )
+    .expect("valid suite origins");
 
     assert_eq!(
         urls,
@@ -13,10 +14,27 @@ fn suite_base_urls_are_trimmed_deduplicated_and_sorted() {
             "https://local.example".to_owned(),
             "https://suite.example".to_owned(),
             "https://www.certification.openid.net".to_owned(),
-            "https://z.example/path".to_owned(),
+            "https://z.example:8443".to_owned(),
         ],
         "OIDF callback base URLs must be deterministic and must not duplicate redirect URIs"
     );
+}
+
+#[test]
+fn suite_base_url_primary_must_be_a_single_https_origin() {
+    assert!(
+        suite_base_urls_from_extra(
+            "https://suite.example,https://www.certification.openid.net",
+            None
+        )
+        .is_err(),
+        "comma-joined suite origins must fail closed instead of becoming malformed redirect URIs"
+    );
+    assert!(
+        suite_base_urls_from_extra("https://suite.example/path", None).is_err(),
+        "the public black-box runner must pass an origin, not a path-bearing callback base"
+    );
+    assert!(suite_base_urls_from_extra("http://suite.example", None).is_err());
 }
 
 #[test]

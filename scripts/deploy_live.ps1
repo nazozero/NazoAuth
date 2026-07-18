@@ -84,12 +84,12 @@ if ($RemoteAngieOidfConfigPath -notmatch '^/' -or $RemoteAngieOidfConfigPath -eq
 if ($AngieServiceName -notmatch '^[A-Za-z0-9_.@-]+$') {
     throw "AngieServiceName must be a safe systemd unit name"
 }
-if ($ExpectedIssuer -notmatch '^https://[^/?#]+/?$') {
+if ($ExpectedIssuer -notmatch '^https://[^/?#,\s]+/?$') {
     throw "ExpectedIssuer must be an HTTPS origin without path, query, or fragment"
 }
 $ExpectedIssuer = $ExpectedIssuer.TrimEnd('/')
-if ($OidfSuiteBaseUrl -notmatch '^https://[^/?#]+/?$') {
-    throw "OidfSuiteBaseUrl must be an HTTPS origin without path, query, or fragment"
+if ($OidfSuiteBaseUrl -notmatch '^https://[^/?#,\s]+/?$') {
+    throw "OidfSuiteBaseUrl must be a single HTTPS origin without path, query, fragment, whitespace, or comma"
 }
 $OidfSuiteBaseUrl = $OidfSuiteBaseUrl.TrimEnd('/')
 if ([string]::IsNullOrWhiteSpace($HealthUrl)) {
