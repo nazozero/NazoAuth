@@ -13,8 +13,8 @@
 | 不泄露私有目标 | 生成的 plan config 和提交的文档不得把 suite 私有主机名、内部反向代理名、localhost issuer 或私有信任根 endpoint 作为被测 issuer。 |
 | 控制面分离 | 可以使用本地 conformance-suite 控制面驱动测试，但被测 issuer 必须仍然是公网 HTTPS origin。控制面地址本身不是一致性证据。 |
 | 禁止测试专用产品行为 | 产品代码不得根据 suite alias、suite hostname、test plan 名称或 conformance 专用请求形状分支。 |
-| 只允许确定性播种 | runner 可以从本次执行的精确 plan artifact 播种 client、key、redirect URI、scope 和测试用户；不得手工修改协议状态来制造通过。 |
-| 播种后必须校验 | 部署在切换或测试 issuer 前，必须回读校验数据库中的 client JWKS、mTLS 证书绑定、redirect URI、scope、grant、认证方式和 CIBA 投递元数据均来自同一个 artifact。 |
+| 只允许确定性播种 | runner 只能从本次执行 plan config 的同一批生成材料中播种 client、公钥、证书绑定、redirect URI、scope 和测试用户；不得手工修改协议状态来制造通过。 |
+| 播种后必须校验 | 部署在测试 issuer 前，必须回读校验数据库中的 client JWKS 公钥成员、mTLS 证书绑定、redirect URI、scope、grant、认证方式和 CIBA 投递元数据均与 runner 执行材料一致。 |
 | 证据必须精确 | 记录 commit SHA、部署 runtime revision、脱敏 target issuer、suite 版本、plan set、expected skip、review allowance、artifact digest 和 run URL。 |
 
 ## 正确流程
@@ -34,13 +34,21 @@
    - 生成配置中，所有协议可见的 issuer、redirect、logout、notification、credential、verifier endpoint 都必须是公网 HTTPS URL。
    - 运行前扫描生成配置；内部主机名、localhost issuer 和私有反向代理名均视为失败。
 
-3. 使用同一 artifact 播种。
+3. 使用执行材料派生出的播种材料。
 
-   - 本地/公网 dry run 必须使用本次生成的公网 artifact 播种。
-   - 官方运行必须使用该官方 workflow 产出的 artifact 播种。
-   - 不得混用本地套件和官方套件的 key、certificate、callback URL 或 client JWKS。
+   - 本地/公网 dry run 必须使用本次执行的 runner config 播种。对于
+     private-key client，runner config 持有私钥；seed 过程只能派生并存储
+     JWK 公钥成员。
+   - 如果公开 seed artifact 不包含私钥成员，它就是部署播种 artifact，
+     不是可执行 runner config。它不得覆盖 runner 私钥 JWKS、client secret、
+     initial access token、server metadata、browser automation 或登录用户字段。
+   - 官方运行必须使用该官方 workflow 的同一批材料播种。如果官方 artifact
+     有意只包含公开材料，只能用于生产播种，官方 runner 的可执行私钥材料必须
+     单独保留。
+   - 不得混用本地套件和官方套件的 key、certificate、callback URL、client JWKS
+     或 CIBA notification metadata。
    - 成功复制 artifact 或安装 CA 不等于完成播种。部署必须使用精确候选镜像中的
-     seed binary 执行播种，并在数据库状态与 artifact 不一致时失败关闭。
+     seed binary 执行播种，并在数据库状态与 runner 派生的公开材料不一致时失败关闭。
 
 4. 执行公网黑盒矩阵。
 
@@ -80,7 +88,10 @@
 - 生成的 plan 文件没有把内部主机名作为被测 issuer；
 - expected skip 按批次生成，不能把全局清单当作宽泛绕过；
 - review allowance 绑定到精确的 plan/config/module；
-- 播种输入和执行的 plan config 来自同一次 artifact 生成；
+- 播种输入和执行的 plan config 来自同一次材料生成；
+- 可执行 runner config 保留所需私钥、client secret、initial access token、
+  server metadata、browser automation 字段和托管登录用户字段；
+- 只含公开材料的 seed artifact 不得当作可执行 runner config 使用；
 - 播种后的 redirect URI、post-logout redirect URI、front-channel URI、
   CIBA notification URI、credential URI 或 verifier URI 中不得包含逗号拼接的 origin；
 - 已部署服务报告的 revision 与被测 commit 一致。
