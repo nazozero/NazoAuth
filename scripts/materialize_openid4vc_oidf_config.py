@@ -377,6 +377,7 @@ def main() -> int:
                 raise SystemExit(f"{key} base configuration requires a vci object")
             vci["credential_issuer_url"] = str(driver["target_origin"])
             vci["credential_configuration_id"] = configuration_id
+            vci.pop("static_tx_code", None)
             if variants.get("vci_grant_type") == "pre_authorization_code":
                 tx_code = issuer.get("tx_code")
                 if isinstance(tx_code, str) and tx_code:

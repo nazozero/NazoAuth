@@ -1045,6 +1045,8 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(config["vci"]["credential_configuration_id"], expected)
                 if "preauth" in filename:
                     self.assertEqual(config["vci"]["static_tx_code"], "123456")
+                elif "vci" in config:
+                    self.assertNotIn("static_tx_code", config["vci"])
                 if "vci-haip-" in filename:
                     self.assertIn("offline_access", config["client"]["scope"].split())
                     self.assertIn("offline_access", config["client2"]["scope"].split())
