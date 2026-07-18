@@ -16,8 +16,8 @@ text, not from the behavior of one suite module.
 | No private target leakage | Generated plan configs and committed docs must not contain private suite hostnames, internal reverse-proxy names, localhost issuer URLs, or private trust-root endpoints as the tested issuer. |
 | Control plane separation | A local conformance-suite control plane may be used to drive the tests, but the issuer under test must remain the public HTTPS origin. The control plane address is not conformance evidence. |
 | No test-only product behavior | Product code must not branch on suite aliases, suite hostnames, test plan names, or conformance-specific request shapes. |
-| Deterministic seeding only | The runner may seed clients, keys, redirect URIs, scopes, and test users from the exact plan artifact being executed. It must not manually edit protocol state to manufacture a pass. |
-| Seed verification | Deployment must verify that seeded client JWKS, mTLS certificate bindings, redirect URIs, scopes, grants, authentication methods, and CIBA delivery metadata match the same artifact before the issuer is switched or tested. |
+| Deterministic seeding only | The runner may seed clients, public keys, certificate bindings, redirect URIs, scopes, and test users only from the same generated material family used by the executed plan configs. It must not manually edit protocol state to manufacture a pass. |
+| Seed verification | Deployment must verify that seeded client JWKS public members, mTLS certificate bindings, redirect URIs, scopes, grants, authentication methods, and CIBA delivery metadata match the executed runner material before the issuer is tested. |
 | Exact evidence | Record the commit SHA, deployed runtime revision, target-issuer placeholder, suite version, plan set, expected skips, review allowances, artifact digests when available, and run URLs. |
 
 ## Correct Flow
@@ -43,15 +43,26 @@ text, not from the behavior of one suite module.
    - Scan generated configs before running the suite. Internal hostnames,
      localhost issuer URLs, and private reverse-proxy names are failures.
 
-3. Seed from the same artifact that will be executed.
+3. Seed from material derived from the executed runner configs.
 
-   - Local/public dry runs must seed from the generated local public artifact.
-   - Official runs must seed from the official workflow artifact for that run.
-   - Do not mix local suite keys, certificates, callback URLs, or client JWKS
-     with official-suite artifacts.
+   - Local/public dry runs must seed from the same generated runner configs
+     that will execute the run. For private-key clients, the runner config
+     contains the private key and the seed process must derive and store only
+     the public JWK members.
+   - A public seed artifact that omits private key members is a deployment
+     artifact, not an executable runner config. It must not overwrite runner
+     private JWKS, client secrets, initial access tokens, server metadata, or
+     browser automation fields.
+   - Official runs must seed from the official workflow material for that run.
+     If an official artifact is intentionally public-only, use it only for
+     production seeding and keep the official runner's executable private
+     material separate.
+   - Do not mix local suite keys, certificates, callback URLs, client JWKS, or
+     CIBA notification metadata with official-suite material.
    - Do not treat a successful artifact copy or CA installation as sufficient.
      The deployment must run the seeding binary from the exact candidate image
-     and fail closed if the database state does not match the artifact.
+     and fail closed if the database state does not match the runner-derived
+     public material.
 
 4. Run the public black-box matrix.
 
@@ -100,7 +111,11 @@ Before any public or official run, verify:
 - no generated plan file uses an internal hostname as the tested issuer;
 - expected skips are generated per batch, not reused as a broad global bypass;
 - review allowances are bound to exact plan/config/module triples;
-- seed inputs and executed plan configs come from the same artifact generation;
+- seed inputs and executed plan configs come from the same material generation;
+- executable runner configs retain required private key material, client
+  secrets, initial access tokens, server metadata, browser automation fields,
+  and hosted-UI login fields;
+- public-only seed artifacts are never used as executable runner configs;
 - no seeded redirect URI, post-logout redirect URI, front-channel URI, CIBA
   notification URI, credential URI, or verifier URI contains a comma-joined
   origin;

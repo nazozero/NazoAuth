@@ -224,7 +224,10 @@ def derive_fapi_ciba_matrix_configs(
                 ),
             }
         )
-        nazo["sender_constrain"] = "mtls"
+        if client_auth_type == "mtls":
+            nazo["sender_constrain"] = "mtls"
+        else:
+            nazo.pop("sender_constrain", None)
 
 
 def main() -> int:
