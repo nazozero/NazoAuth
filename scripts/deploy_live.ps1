@@ -59,6 +59,13 @@ if ($RemoteHost.StartsWith('-') -or
     $RemoteHost -notmatch '^(?:[A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$') {
     throw "RemoteHost must be a safe SSH host alias, hostname, or user@host"
 }
+$SshOptions = @(
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=30",
+    "-o", "ServerAliveInterval=15",
+    "-o", "ServerAliveCountMax=4"
+)
+$ScpOptions = $SshOptions
 if ($RemoteUiPath -notmatch '^/' -or $RemoteUiReleasesRoot -notmatch '^/') {
     throw "RemoteUiPath and RemoteUiReleasesRoot must be absolute Linux paths"
 }
@@ -130,6 +137,21 @@ function Get-CommandOutput {
         throw "Command failed: $FilePath $($Arguments -join ' ')"
     }
     return ($output | Select-Object -First 1)
+}
+
+function Invoke-SshChecked {
+    param([Parameter(Mandatory = $true)][string[]]$RemoteArguments)
+    Invoke-Checked ssh @($SshOptions + $RemoteHost + $RemoteArguments)
+}
+
+function Get-SshCommandOutput {
+    param([Parameter(Mandatory = $true)][string[]]$RemoteArguments)
+    Get-CommandOutput ssh @($SshOptions + $RemoteHost + $RemoteArguments)
+}
+
+function Invoke-ScpChecked {
+    param([Parameter(Mandatory = $true)][string[]]$ScpArguments)
+    Invoke-Checked scp @($ScpOptions + $ScpArguments)
 }
 
 function Get-GitHubApiJson {
@@ -580,7 +602,7 @@ else {
     Invoke-Checked docker @("save", $image, "-o", $archive)
     $expectedImageId = Get-ArchiveImageConfigId -Archive $archive -ExpectedTag $image
     Invoke-Checked tar @("-C", $LocalUiDist, "-czf", $uiArchive, ".")
-    $remoteTempDir = Get-CommandOutput ssh $RemoteHost @("mktemp", "-d", "/tmp/nazo-oauth-deploy.XXXXXX")
+    $remoteTempDir = Get-SshCommandOutput @("mktemp", "-d", "/tmp/nazo-oauth-deploy.XXXXXX")
 }
 $remoteArchive = "$remoteTempDir/nazo-oauth-server-$safeTag.tar"
 $remoteUiArchive = "$remoteTempDir/nazo-oauth-web-$safeTag.tar.gz"
@@ -591,13 +613,13 @@ $remoteOidfCaValidator = "$remoteTempDir/oidf_mtls_ca_bundle.py"
 $remoteOidfCaBackup = "$remoteTempDir/oidf-mtls-ca.previous"
 $remoteAngieConfigBackup = "$remoteTempDir/angie-oidf-config.previous"
 if (-not $RenderRemoteScriptPath) {
-    Invoke-Checked scp $archive "${RemoteHost}:$remoteArchive"
-    Invoke-Checked scp $uiArchive "${RemoteHost}:$remoteUiArchive"
+    Invoke-ScpChecked @($archive, "${RemoteHost}:$remoteArchive")
+    Invoke-ScpChecked @($uiArchive, "${RemoteHost}:$remoteUiArchive")
     if ($oidfCaEnabledValue -eq "1") {
-        Invoke-Checked ssh $RemoteHost @("install", "-d", "-m", "0700", $remoteOidfArtifactDir)
+        Invoke-SshChecked @("install", "-d", "-m", "0700", $remoteOidfArtifactDir)
         $oidfScpArguments = @($oidfArtifactFiles.FullName) + "${RemoteHost}:$remoteOidfArtifactDir/"
-        Invoke-Checked scp $oidfScpArguments
-        Invoke-Checked scp $localOidfCaValidator "${RemoteHost}:$remoteOidfCaValidator"
+        Invoke-ScpChecked $oidfScpArguments
+        Invoke-ScpChecked @($localOidfCaValidator, "${RemoteHost}:$remoteOidfCaValidator")
     }
     if ($verifiedArtifactDirectory) {
         $resolvedArtifactDirectory = [IO.Path]::GetFullPath($verifiedArtifactDirectory)
@@ -1644,9 +1666,9 @@ $deployCommand = "bash $remoteScriptLiteral deploy"
 $commitCommand = "bash $remoteScriptLiteral commit"
 $rollbackCommand = "if [ -f $remoteScriptLiteral ]; then bash $remoteScriptLiteral rollback; fi"
 try {
-    Invoke-Checked scp $localRemoteScript "${RemoteHost}:$remoteScript"
+    Invoke-ScpChecked @($localRemoteScript, "${RemoteHost}:$remoteScript")
     $remoteStarted = $true
-    Invoke-Checked ssh $RemoteHost @($deployCommand)
+    Invoke-SshChecked @($deployCommand)
 
     $health = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 20
     if ($health.StatusCode -ne 200) { throw "Health probe failed: HTTP $($health.StatusCode)" }
@@ -1674,13 +1696,13 @@ try {
         throw "Public UI asset probe failed: HTTP $($asset.StatusCode)"
     }
 
-    Invoke-Checked ssh $RemoteHost @($commitCommand)
+    Invoke-SshChecked @($commitCommand)
     $remoteStarted = $false
     Write-Host "Deployment verified: $image deployment-success"
 }
 catch {
     if ($remoteStarted) {
-        & ssh $RemoteHost $rollbackCommand
+        & ssh @SshOptions $RemoteHost $rollbackCommand
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Automatic rollback command failed; inspect $RemoteHost immediately"
         }
