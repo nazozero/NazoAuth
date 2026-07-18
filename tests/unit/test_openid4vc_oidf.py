@@ -343,6 +343,77 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertIn(str(export / "group-01"), invocations[0])
             self.assertIn(str(export / "group-02"), invocations[1])
 
+    def test_openid4vc_runner_rejects_stale_or_cross_run_material(self):
+        runner = load("run_openid4vc_conformance.py")
+        materializer = load("materialize_openid4vc_oidf_config.py")
+        cases = materializer.matrix_cases()
+        names = [f"openid4vc-{slug}.json" for _, slug, _ in cases]
+        aliases = [f"alias-{index}" for index in range(len(cases))]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            configs = root / "configs.json"
+            plans = root / "plans.json"
+            warnings = root / "warnings.json"
+            skips = root / "skips.json"
+            configs.write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            name: {"alias": alias}
+                            for name, alias in zip(names, aliases, strict=True)
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            plans.write_text(
+                json.dumps(
+                    [
+                        materializer.plan_expression(plan, variants, name)
+                        for (plan, _, variants), name in zip(cases, names, strict=True)
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            warnings.write_text(
+                json.dumps(materializer.expected_warnings_for_cases(cases)),
+                encoding="utf-8",
+            )
+            skips.write_text(
+                json.dumps(materializer.expected_skips_for_cases(cases)),
+                encoding="utf-8",
+            )
+            arguments = [
+                "--config-json-file",
+                str(configs),
+                "--plan-set-json-file",
+                str(plans),
+                "--expected-failures-file",
+                str(warnings),
+                "--expected-skips-file",
+                str(skips),
+            ]
+
+            runner.validate_materialized_matrix({"aliases": aliases}, arguments)
+
+            with self.assertRaisesRegex(SystemExit, "driver aliases"):
+                runner.validate_materialized_matrix(
+                    {"aliases": [*aliases[:-1], "alias-from-another-run"]},
+                    arguments,
+                )
+
+            stale_warnings = materializer.expected_warnings_for_cases(cases)
+            stale_warnings.append(
+                {
+                    "configuration-filename": names[0],
+                    "condition": "stale-condition",
+                }
+            )
+            warnings.write_text(json.dumps(stale_warnings), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "expected warnings"):
+                runner.validate_materialized_matrix({"aliases": aliases}, arguments)
+
     def test_official_openid4vc_workflow_uses_bounded_groups(self):
         workflow = (ROOT / ".github" / "workflows" / "openid4vc-conformance.yml").read_text(
             encoding="utf-8"

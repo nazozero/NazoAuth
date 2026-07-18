@@ -26,6 +26,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_oidf_conformance as oidf  # noqa: E402
+import materialize_openid4vc_oidf_config as materializer  # noqa: E402
 from apply_public_conformance_onboarding import (  # noqa: E402
     ControlPlaneSession,
     OnboardingError,
@@ -480,6 +481,60 @@ def filter_records_for_configs(source: Path | None, selected_configs: set[str], 
     return target
 
 
+def validate_materialized_matrix(
+    driver_config: dict[str, object], runner_args: list[str]
+) -> None:
+    required_options = {
+        "--config-json-file": "plan configurations",
+        "--plan-set-json-file": "plan set",
+        "--expected-failures-file": "expected warnings",
+        "--expected-skips-file": "expected skips",
+    }
+    paths: dict[str, Path] = {}
+    for option, label in required_options.items():
+        value = option_value(runner_args, option)
+        if not value:
+            fail(f"OpenID4VC public matrix requires {label} via {option}")
+        paths[option] = Path(value)
+
+    config_document = json.loads(paths["--config-json-file"].read_text(encoding="utf-8"))
+    configs = config_document.get("configs") if isinstance(config_document, dict) else None
+    if not isinstance(configs, dict):
+        fail("OpenID4VC plan configurations must contain a configs object")
+
+    cases = materializer.matrix_cases()
+    expected_config_names = [f"openid4vc-{slug}.json" for _, slug, _ in cases]
+    if list(configs) != expected_config_names:
+        fail("OpenID4VC plan configurations do not match the current matrix registry")
+
+    plans = json.loads(paths["--plan-set-json-file"].read_text(encoding="utf-8"))
+    expected_plans = [
+        materializer.plan_expression(plan, variants, filename)
+        for (plan, _, variants), filename in zip(cases, expected_config_names, strict=True)
+    ]
+    if plans != expected_plans:
+        fail("OpenID4VC plan set does not match the current matrix registry")
+
+    aliases = [
+        config.get("alias") if isinstance(config, dict) else None
+        for config in configs.values()
+    ]
+    if any(not isinstance(alias, str) or not alias for alias in aliases) or len(set(aliases)) != len(
+        aliases
+    ):
+        fail("OpenID4VC plan configurations require unique non-empty aliases")
+    driver_aliases = driver_config.get("aliases")
+    if not isinstance(driver_aliases, list) or driver_aliases != aliases:
+        fail("OpenID4VC driver aliases do not match the materialized plan configurations")
+
+    warnings = json.loads(paths["--expected-failures-file"].read_text(encoding="utf-8"))
+    if warnings != materializer.expected_warnings_for_cases(cases):
+        fail("OpenID4VC expected warnings do not match the current matrix registry")
+    skips = json.loads(paths["--expected-skips-file"].read_text(encoding="utf-8"))
+    if skips != materializer.expected_skips_for_cases(cases):
+        fail("OpenID4VC expected skips do not match the current matrix registry")
+
+
 def grouped_runner_args(runner_args: list[str], group_size: int, temp_dir: Path) -> list[list[str]]:
     plan_set_file = option_value(runner_args, "--plan-set-json-file")
     config_json_file = option_value(runner_args, "--config-json-file")
@@ -551,6 +606,7 @@ def main() -> int:
     config = json.loads(Path(args.driver_config_json_file).read_text(encoding="utf-8"))
     if "--no-api-token" in runner_args or "--disable-ssl-verify" in runner_args:
         fail("public black-box OpenID4VC runs require API authentication and TLS verification")
+    validate_materialized_matrix(config, runner_args)
     admin, installed_datasets = install_credential_datasets(config)
     stop = threading.Event()
     driver = Openid4vcDriver(config, stop)
