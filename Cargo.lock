@@ -731,6 +731,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "coset"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1eb98d5e9155e2cf7cd942c8b3033097d4563b6fb0a00b9caecb74669555c058"
+dependencies = [
+ "ciborium",
+ "ciborium-io",
+]
+
+[[package]]
 name = "cpubits"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1905,7 +1915,7 @@ dependencies = [
  "libc",
  "percent-encoding",
  "pin-project-lite",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tokio",
  "tower-service",
  "tracing",
@@ -2316,7 +2326,7 @@ dependencies = [
  "chrono",
  "ciborium",
  "const-oid 0.9.6",
- "coset",
+ "coset 0.3.8",
  "der 0.7.10",
  "digest 0.10.7",
  "ecdsa 0.16.9",
@@ -2559,7 +2569,7 @@ dependencies = [
  "blake3",
  "chrono",
  "ciborium",
- "coset",
+ "coset 0.4.2",
  "diesel",
  "diesel-async",
  "diesel_migrations",
@@ -3343,7 +3353,7 @@ dependencies = [
  "quinn-udp",
  "rustc-hash",
  "rustls",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "thiserror",
  "tokio",
  "tracing",
@@ -3381,7 +3391,7 @@ dependencies = [
  "cfg_aliases",
  "libc",
  "once_cell",
- "socket2 0.5.10",
+ "socket2 0.6.4",
  "tracing",
  "windows-sys 0.52.0",
 ]
