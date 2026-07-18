@@ -260,6 +260,45 @@ def require_manifest(path: Path) -> dict[str, Any]:
     return value
 
 
+def persist_onboarding_state(path: Path, state: dict[str, Any]) -> None:
+    """Durably journal every externally visible onboarding mutation."""
+    write_private_json(path, state)
+
+
+def access_request_for_id(session: ControlPlaneSession, request_id: str) -> dict[str, Any] | None:
+    listed = session.request_json("GET", "/auth/me/access-requests", expected_status=200)
+    return next(
+        (
+            candidate
+            for candidate in listed.get("items", [])
+            if isinstance(candidate, dict) and candidate.get("id") == request_id
+        ),
+        None,
+    )
+
+
+def delivered_client_for_request(
+    session: ControlPlaneSession,
+    request_id: str,
+) -> tuple[str, str | None] | None:
+    request = access_request_for_id(session, request_id)
+    token = request.get("delivery_token") if isinstance(request, dict) else None
+    if not isinstance(token, str) or not token:
+        return None
+    delivery = session.request_json(
+        "GET",
+        f"/auth/me/access-delivery?token={urllib.parse.quote(token, safe='')}",
+        expected_status=200,
+    )
+    client_id = delivery.get("client_id")
+    secret = delivery.get("client_secret")
+    if not isinstance(client_id, str) or not client_id:
+        raise OnboardingError(f"credential delivery for request {request_id} returned no client_id")
+    if secret is not None and (not isinstance(secret, str) or not secret):
+        raise OnboardingError(f"credential delivery for request {request_id} returned an invalid client_secret")
+    return client_id, secret
+
+
 def apply_onboarding(args: argparse.Namespace) -> int:
     manifest = require_manifest(args.manifest)
     origin = canonical_https_origin(str(manifest.get("target_issuer", "")), label="target_issuer")
@@ -296,8 +335,12 @@ def apply_onboarding(args: argparse.Namespace) -> int:
         "approver_user_id": admin_me.get("id"),
         "clients": [],
     }
+    persist_onboarding_state(args.state_file, state)
     for item in manifest["clients"]:
         logical_id = item["logical_client_id"]
+        state_entry: dict[str, Any] = {"logical_client_id": logical_id}
+        state["clients"].append(state_entry)
+        persist_onboarding_state(args.state_file, state)
         access = applicant.request_json(
             "POST",
             "/auth/me/access-requests",
@@ -312,36 +355,26 @@ def apply_onboarding(args: argparse.Namespace) -> int:
         request_id = access.get("id")
         if not isinstance(request_id, str):
             raise OnboardingError(f"access request for {logical_id} returned no id")
-        admin.request_json(
+        state_entry["access_request_id"] = request_id
+        persist_onboarding_state(args.state_file, state)
+        approval = admin.request_json(
             "POST",
             f"/admin/access-requests/{urllib.parse.quote(request_id, safe='')}/approve",
             item["request"],
             expected_status=200,
             csrf=True,
         )
-        listed = applicant.request_json("GET", "/auth/me/access-requests", expected_status=200)
-        approved = next(
-            (
-                candidate
-                for candidate in listed.get("items", [])
-                if isinstance(candidate, dict) and candidate.get("id") == request_id
-            ),
-            None,
-        )
-        token = approved.get("delivery_token") if isinstance(approved, dict) else None
-        if not isinstance(token, str) or not token:
+        approved_client_record_id = approval.get("approved_client_id")
+        if isinstance(approved_client_record_id, str) and approved_client_record_id:
+            state_entry["approved_client_record_id"] = approved_client_record_id
+        state_entry["access_request_approved"] = True
+        persist_onboarding_state(args.state_file, state)
+        delivered = delivered_client_for_request(applicant, request_id)
+        if delivered is None:
             raise OnboardingError(f"approved access request {request_id} has no one-time delivery token")
-        delivery = applicant.request_json(
-            "GET",
-            f"/auth/me/access-delivery?token={urllib.parse.quote(token, safe='')}",
-            expected_status=200,
-        )
-        actual_id = delivery.get("client_id")
-        if not isinstance(actual_id, str) or not actual_id:
-            raise OnboardingError(f"credential delivery for {logical_id} returned no client_id")
-        secret = delivery.get("client_secret")
-        if secret is not None and (not isinstance(secret, str) or not secret):
-            raise OnboardingError(f"credential delivery for {logical_id} returned an invalid client_secret")
+        actual_id, secret = delivered
+        state_entry["client_id"] = actual_id
+        persist_onboarding_state(args.state_file, state)
         replacements = replace_client_material(plan_document, logical_id, actual_id, secret)
         if replacements == 0:
             raise OnboardingError(f"logical client {logical_id} is absent from the plan configs")
@@ -361,6 +394,8 @@ def apply_onboarding(args: argparse.Namespace) -> int:
             trust_request_id = trust_request.get("id")
             if not isinstance(trust_request_id, str):
                 raise OnboardingError(f"mTLS trust application for {logical_id} returned no id")
+            state_entry["mtls_trust_request_id"] = trust_request_id
+            persist_onboarding_state(args.state_file, state)
             admin.request_json(
                 "POST",
                 f"/admin/mtls-trust-requests/{urllib.parse.quote(trust_request_id, safe='')}/approve",
@@ -368,14 +403,8 @@ def apply_onboarding(args: argparse.Namespace) -> int:
                 expected_status=200,
                 csrf=True,
             )
-        state["clients"].append(
-            {
-                "logical_client_id": logical_id,
-                "client_id": actual_id,
-                "access_request_id": request_id,
-                "mtls_trust_request_id": trust_request_id,
-            }
-        )
+            state_entry["mtls_trust_approved"] = True
+            persist_onboarding_state(args.state_file, state)
 
     bundle, _ = admin.request("GET", "/admin/mtls-trust-anchors.pem", expected_status=200)
     bundle_text = bundle.decode("ascii")
@@ -385,7 +414,8 @@ def apply_onboarding(args: argparse.Namespace) -> int:
     write_private_json(args.plan_configs, plan_document)
     write_runner_env(args.runner_env, plan_document, args.plan_set, args.plan_manifest)
     write_private_text(args.trust_bundle, bundle_text)
-    write_private_json(args.state_file, state)
+    state["complete"] = True
+    persist_onboarding_state(args.state_file, state)
     return 0
 
 
@@ -397,26 +427,71 @@ def cleanup_onboarding(args: argparse.Namespace) -> int:
     configured = canonical_https_origin(args.target_issuer, label="--target-issuer")
     if origin != configured:
         raise OnboardingError("cleanup state target_issuer does not match --target-issuer")
+    applicant_email = os.environ.get("OIDF_APPLICANT_EMAIL", "")
+    applicant_password = os.environ.get("OIDF_APPLICANT_PASSWORD", "")
     admin_email = os.environ.get("OIDF_ADMIN_EMAIL", "")
     admin_password = os.environ.get("OIDF_ADMIN_PASSWORD", "")
-    if not admin_email or not admin_password:
-        raise OnboardingError("OIDF_ADMIN_EMAIL and OIDF_ADMIN_PASSWORD are required")
+    if not applicant_email or not applicant_password or not admin_email or not admin_password:
+        raise OnboardingError(
+            "OIDF_APPLICANT_EMAIL, OIDF_APPLICANT_PASSWORD, OIDF_ADMIN_EMAIL, and OIDF_ADMIN_PASSWORD are required"
+        )
+    applicant = ControlPlaneSession.login(origin, applicant_email, applicant_password)
     admin = ControlPlaneSession.login(origin, admin_email, admin_password)
     for item in reversed(state.get("clients", [])):
         if not isinstance(item, dict):
             raise OnboardingError("cleanup state contains an invalid client record")
         trust_request_id = item.get("mtls_trust_request_id")
         if isinstance(trust_request_id, str):
-            admin.request_json(
-                "POST",
-                f"/admin/mtls-trust-requests/{urllib.parse.quote(trust_request_id, safe='')}/revoke",
-                {"reason": "Public conformance run completed."},
-                expected_status=200,
-                csrf=True,
+            trust_requests = applicant.request_json(
+                "GET", "/auth/me/mtls-trust-requests", expected_status=200
             )
+            trust_request = next(
+                (
+                    candidate
+                    for candidate in trust_requests.get("items", [])
+                    if isinstance(candidate, dict) and candidate.get("id") == trust_request_id
+                ),
+                None,
+            )
+            status = trust_request.get("status") if isinstance(trust_request, dict) else None
+            if status == 0:
+                admin.request_json(
+                    "POST",
+                    f"/admin/mtls-trust-requests/{urllib.parse.quote(trust_request_id, safe='')}/reject",
+                    {"admin_note": "Public conformance onboarding did not complete."},
+                    expected_status=200,
+                    csrf=True,
+                )
+            elif status == 1:
+                admin.request_json(
+                    "POST",
+                    f"/admin/mtls-trust-requests/{urllib.parse.quote(trust_request_id, safe='')}/revoke",
+                    {"reason": "Public conformance run completed."},
+                    expected_status=200,
+                    csrf=True,
+                )
         client_id = item.get("client_id")
+        request_id = item.get("access_request_id")
         if not isinstance(client_id, str) or not client_id:
-            raise OnboardingError("cleanup state contains an invalid client_id")
+            if isinstance(request_id, str):
+                request = access_request_for_id(applicant, request_id)
+                status = request.get("status") if isinstance(request, dict) else None
+                if status == 0:
+                    admin.request_json(
+                        "POST",
+                        f"/admin/access-requests/{urllib.parse.quote(request_id, safe='')}/reject",
+                        {"admin_note": "Public conformance onboarding did not complete."},
+                        expected_status=200,
+                        csrf=True,
+                    )
+                    continue
+                delivered = delivered_client_for_request(applicant, request_id)
+                if delivered is not None:
+                    client_id = delivered[0]
+            if not isinstance(client_id, str) or not client_id:
+                raise OnboardingError(
+                    f"cannot recover client_id for onboarding record {item.get('logical_client_id')}"
+                )
         admin.request_json(
             "PATCH",
             f"/admin/clients/{urllib.parse.quote(client_id, safe='')}",

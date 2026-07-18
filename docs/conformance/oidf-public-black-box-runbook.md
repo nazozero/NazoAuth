@@ -10,6 +10,8 @@ runtime mounts, or alternate protocol behavior.
 | Surface | Authority | Required boundary |
 |---|---|---|
 | OAuth client registration and management | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) | A conformance client follows the same application, approval, credential-delivery, registration, and management rules as any other client. |
+| CIBA token lifecycle | [OpenID Connect CIBA Core 1.0](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html) | A successful CIBA token response can include a refresh token. Client registration therefore permits `ciba + refresh_token` without inventing an authorization-code dependency; runtime issuance still requires the registered grant and `offline_access` policy. |
+| Logout client metadata | [OpenID Connect Front-Channel Logout 1.0](https://openid.net/specs/openid-connect-frontchannel-1_0.html), [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | Both `*_logout_session_required` values default to `false`. A client that needs `sid` explicitly registers the corresponding URI and opts in. |
 | mTLS client authentication and certificate-bound access tokens | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html), [RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html), [RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | `tls_client_auth` and certificate-bound tokens remain independent capabilities. The authorization server requires one subject selector, canonical DN matching, type-aware SAN matching, and an optional narrowing certificate pin. |
 | X.509 validation | [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280.html) | Only a current CA certificate with a supported public key, critical CA basic constraint, and critical `keyCertSign` use may enter a trust request. |
 | Trust-anchor administration | [RFC 6024](https://www.rfc-editor.org/rfc/rfc6024.html) | RFC 6024 supplies the trust-anchor-management security model: authenticate and authorize the source, protect integrity, detect replay, constrain trust purposes, and retain recovery. The product control plane additionally requires a distinct approver, bounded reasons, append-only audit, and revocation. |
@@ -100,6 +102,11 @@ operator:
 All requests are exact-origin HTTPS requests with normal certificate
 verification, redirects disabled, response-size limits, JSON content checks,
 and CSRF tokens on mutations. The resulting state and bundle are private files.
+The state file is created before the first public mutation and atomically
+updated after every application, approval, credential delivery, and trust
+decision. A failed or interrupted apply must be cleaned up before another apply;
+cleanup rejects journaled pending applications, revokes approved trust anchors,
+and deactivates delivered clients through the same public control plane.
 
 ## 4. Install only the approved trust bundle
 

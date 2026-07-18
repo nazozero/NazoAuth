@@ -377,12 +377,18 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
         .grant_types
         .iter()
         .any(|grant| grant == "refresh_token")
-        && !metadata
-            .grant_types
-            .iter()
-            .any(|grant| grant == "authorization_code")
+        && !metadata.grant_types.iter().any(|grant| {
+            matches!(
+                grant.as_str(),
+                "authorization_code"
+                    | "urn:openid:params:grant-type:ciba"
+                    | "urn:ietf:params:oauth:grant-type:device_code"
+            )
+        })
     {
-        return invalid("refresh_token 授权类型必须与 authorization_code 一起启用");
+        return invalid(
+            "refresh_token 必须与当前实现能够签发 refresh token 的 authorization_code、CIBA 或 device_code 授权类型一起启用",
+        );
     }
     if metadata
         .scopes
@@ -632,8 +638,4 @@ fn validate_unique_non_empty(name: &str, values: &[String]) -> Result<(), AdminC
 
 fn invalid<T>(message: impl Into<String>) -> Result<T, AdminClientError> {
     Err(AdminClientError::InvalidRequest(message.into()))
-}
-
-pub(super) fn default_true() -> bool {
-    true
 }

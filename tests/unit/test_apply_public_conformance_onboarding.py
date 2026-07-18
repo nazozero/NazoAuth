@@ -1,7 +1,11 @@
 import importlib.util
+import json
+import os
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 
 def load_module():
@@ -18,6 +22,157 @@ def load_module():
 
 
 class ApplyPublicConformanceOnboardingTests(unittest.TestCase):
+    def test_apply_journals_partial_state_before_remote_approval_failure(self):
+        module = load_module()
+
+        class Applicant:
+            def request_json(self, method, path, payload=None, **kwargs):
+                if (method, path) == ("GET", "/auth/me"):
+                    return {"id": "applicant", "admin_level": 0}
+                if (method, path) == ("POST", "/auth/me/access-requests"):
+                    return {"id": "request-1"}
+                raise AssertionError((method, path, payload, kwargs))
+
+        class Admin:
+            def request_json(self, method, path, payload=None, **kwargs):
+                if (method, path) == ("GET", "/auth/me"):
+                    return {"id": "admin", "admin_level": 1}
+                if method == "POST" and path.endswith("/approve"):
+                    raise module.OnboardingError("approval rejected")
+                raise AssertionError((method, path, payload, kwargs))
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            manifest = root / "manifest.json"
+            configs = root / "configs.json"
+            plan_set = root / "plans.json"
+            plan_manifest = root / "plan-manifest.json"
+            state = root / "state.json"
+            manifest.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "target_issuer": "https://issuer.example",
+                        "suite_base_url": "https://suite.example",
+                        "applicant_email": "applicant@example.com",
+                        "clients": [
+                            {
+                                "logical_client_id": "logical-client",
+                                "request": {"client_type": "confidential"},
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            configs.write_text(
+                '{"configs":{"plan":{"client_id":"logical-client"}}}', encoding="utf-8"
+            )
+            plan_set.write_text("[]", encoding="utf-8")
+            plan_manifest.write_text("{}", encoding="utf-8")
+            args = SimpleNamespace(
+                manifest=manifest,
+                target_issuer="https://issuer.example",
+                state_file=state,
+                plan_configs=configs,
+                plan_set=plan_set,
+                plan_manifest=plan_manifest,
+                runner_env=root / "runner.env",
+                trust_bundle=root / "trust.pem",
+            )
+
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "OIDF_APPLICANT_PASSWORD": "applicant-password",
+                        "OIDF_ADMIN_EMAIL": "admin@example.com",
+                        "OIDF_ADMIN_PASSWORD": "admin-password",
+                    },
+                    clear=True,
+                ),
+                mock.patch.object(
+                    module.ControlPlaneSession,
+                    "login",
+                    side_effect=[Applicant(), Admin()],
+                ),
+            ):
+                with self.assertRaisesRegex(module.OnboardingError, "approval rejected"):
+                    module.apply_onboarding(args)
+
+            journal = json.loads(state.read_text(encoding="utf-8"))
+            self.assertNotIn("complete", journal)
+            self.assertEqual(
+                journal["clients"],
+                [
+                    {
+                        "logical_client_id": "logical-client",
+                        "access_request_id": "request-1",
+                    }
+                ],
+            )
+
+    def test_cleanup_rejects_a_journaled_pending_request_without_a_client(self):
+        module = load_module()
+
+        class Applicant:
+            def request_json(self, method, path, payload=None, **kwargs):
+                if (method, path) == ("GET", "/auth/me/access-requests"):
+                    return {"items": [{"id": "request-1", "status": 0}]}
+                raise AssertionError((method, path, payload, kwargs))
+
+        class Admin:
+            def __init__(self):
+                self.calls = []
+
+            def request_json(self, method, path, payload=None, **kwargs):
+                self.calls.append((method, path, payload, kwargs))
+                return {"id": "request-1", "status": 2}
+
+        admin = Admin()
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            state.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "target_issuer": "https://issuer.example",
+                        "clients": [
+                            {
+                                "logical_client_id": "logical-client",
+                                "access_request_id": "request-1",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                state_file=state,
+                target_issuer="https://issuer.example",
+            )
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "OIDF_APPLICANT_EMAIL": "applicant@example.com",
+                        "OIDF_APPLICANT_PASSWORD": "applicant-password",
+                        "OIDF_ADMIN_EMAIL": "admin@example.com",
+                        "OIDF_ADMIN_PASSWORD": "admin-password",
+                    },
+                    clear=True,
+                ),
+                mock.patch.object(
+                    module.ControlPlaneSession,
+                    "login",
+                    side_effect=[Applicant(), admin],
+                ),
+            ):
+                self.assertEqual(module.cleanup_onboarding(args), 0)
+
+            self.assertFalse(state.exists())
+            self.assertEqual(admin.calls[0][0:2], ("POST", "/admin/access-requests/request-1/reject"))
+
     def test_target_must_be_an_exact_https_origin(self):
         module = load_module()
 

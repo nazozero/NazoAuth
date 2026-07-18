@@ -49,6 +49,18 @@ def load_setup_module_with_suite_base(suite_base_url: str):
 
 
 class PrepareOidfBlackBoxTests(unittest.TestCase):
+    def test_baseline_logout_session_flags_follow_specification_defaults(self):
+        module = load_setup_module()
+
+        request = module.base_client_request(
+            name="Baseline client",
+            auth_method="client_secret_basic",
+            redirect_uris=["https://client.example/callback"],
+        )
+
+        self.assertFalse(request["frontchannel_logout_session_required"])
+        self.assertFalse(request["backchannel_logout_session_required"])
+
     def test_operator_clients_use_a_stable_non_official_run_namespace(self):
         first = load_setup_module_with_suite_base("https://suite.example")
         second = load_setup_module_with_suite_base("https://other-suite.example")

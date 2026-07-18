@@ -9,7 +9,7 @@ use crate::{ClientPresentationMetadata, OAuthClient, ValidatedClientRegistration
 
 mod validation;
 
-use validation::{ClientMetadata, default_true, validate_client_metadata};
+use validation::{ClientMetadata, validate_client_metadata};
 
 pub type AdminClientFuture<'a, T> =
     Pin<Box<dyn Future<Output = Result<T, AdminClientPortError>> + Send + 'a>>;
@@ -153,11 +153,11 @@ pub struct CreateClientRequest {
     pub backchannel_user_code_parameter: bool,
     #[serde(default)]
     pub backchannel_logout_uri: Option<String>,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub backchannel_logout_session_required: bool,
     #[serde(default)]
     pub frontchannel_logout_uri: Option<String>,
-    #[serde(default = "default_true")]
+    #[serde(default)]
     pub frontchannel_logout_session_required: bool,
     #[serde(default)]
     pub tls_client_auth_subject_dn: Option<String>,

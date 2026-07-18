@@ -463,8 +463,10 @@ def base_client_request(
         "require_par_request_object": False,
         "backchannel_token_delivery_mode": "poll",
         "backchannel_user_code_parameter": False,
-        "backchannel_logout_session_required": True,
-        "frontchannel_logout_session_required": True,
+        # Both OpenID Connect logout specifications define false as the
+        # default when the related session-required metadata is omitted.
+        "backchannel_logout_session_required": False,
+        "frontchannel_logout_session_required": False,
         "jwks": None,
     }
 
@@ -520,6 +522,7 @@ def onboarding_clients(configs: dict[str, dict[str, object]]) -> list[dict[str, 
     frontchannel_request["frontchannel_logout_uri"] = test_endpoint_for(
         frontchannel_alias, "frontchannel_logout"
     )
+    frontchannel_request["frontchannel_logout_session_required"] = True
     add(FRONTCHANNEL_CLIENT_ID, frontchannel_request)
 
     session_alias = f"{BASIC_ALIAS}-session-management"

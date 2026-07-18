@@ -390,11 +390,11 @@ pub fn prepare_dynamic_client_registration(
         backchannel_logout_uri: request.backchannel_logout_uri,
         backchannel_logout_session_required: request
             .backchannel_logout_session_required
-            .unwrap_or(true),
+            .unwrap_or(false),
         frontchannel_logout_uri: request.frontchannel_logout_uri,
         frontchannel_logout_session_required: request
             .frontchannel_logout_session_required
-            .unwrap_or(true),
+            .unwrap_or(false),
         tls_client_auth_subject_dn: request.tls_client_auth_subject_dn,
         // RFC 8705 defines each PKI subject selector as a single string and
         // requires exactly one selector for tls_client_auth. The internal
@@ -686,8 +686,8 @@ mod tests {
                 "offline_access"
             ]
         );
-        assert!(prepared.backchannel_logout_session_required);
-        assert!(prepared.frontchannel_logout_session_required);
+        assert!(!prepared.backchannel_logout_session_required);
+        assert!(!prepared.frontchannel_logout_session_required);
     }
 
     #[test]
