@@ -9,11 +9,49 @@ def load_setup_module():
     spec = importlib.util.spec_from_file_location("setup_local_oidf_podman", script)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    spec.loader.exec_module(module)
+    with mock.patch.dict(
+        "os.environ",
+        {
+            "OIDF_TARGET_ISSUER": "https://issuer.example",
+            "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
+            "OIDF_SUITE_BASE_URL": "https://suite.example",
+        },
+        clear=False,
+    ):
+        spec.loader.exec_module(module)
+    return module
+
+
+def load_setup_module_with_suite_base(suite_base_url: str):
+    script = Path(__file__).resolve().parents[2] / "scripts" / "setup_local_oidf_podman.py"
+    spec = importlib.util.spec_from_file_location("setup_local_oidf_podman", script)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    with mock.patch.dict(
+        "os.environ",
+        {
+            "OIDF_TARGET_ISSUER": "https://issuer.example",
+            "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
+            "OIDF_SUITE_BASE_URL": suite_base_url,
+        },
+        clear=False,
+    ):
+        spec.loader.exec_module(module)
     return module
 
 
 class SetupLocalOidfPodmanTests(unittest.TestCase):
+    def test_suite_base_must_be_public_dns_not_local_or_raw_ip(self):
+        for suite_base_url in (
+            "https://127.0.0.1:8443",
+            "https://192.0.2.10:8443",
+            "https://localhost:8443",
+            "https://suite.local",
+        ):
+            with self.subTest(suite_base_url=suite_base_url):
+                with self.assertRaisesRegex(RuntimeError, "public DNS hostname"):
+                    load_setup_module_with_suite_base(suite_base_url)
+
     def test_every_callback_completion_wait_has_a_thirty_second_floor(self):
         module = load_setup_module()
 
@@ -69,6 +107,16 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         self.assertEqual(len(authorize_entries), 1)
         self.assertNotIn("override", config)
 
+    def test_local_reverse_proxy_uses_operator_supplied_issuer_host(self):
+        module = load_setup_module()
+
+        module.write_nginx()
+        nginx = (module.RUNTIME / "nginx.conf").read_text(encoding="utf-8")
+
+        self.assertIn("proxy_set_header Host issuer.example;", nginx)
+        self.assertIn("proxy_set_header X-Forwarded-Host issuer.example;", nginx)
+        self.assertNotIn("auth.nazo.run", nginx)
+
     def test_fapi_ciba_plans_are_the_orthogonal_supported_combinations(self):
         module = load_setup_module()
 
@@ -89,6 +137,7 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
             self.assertEqual(config["nazo"]["sender_constrain"], "mtls")
             self.assertIn("mtls", config)
             self.assertIn("mtls2", config)
+            self.assertTrue(config["resource"]["resourceUrl"].startswith("https://"))
             for key in ("client", "client2"):
                 self.assertEqual(
                     config[key]["backchannel_token_delivery_mode"],
@@ -105,7 +154,7 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
                 if config["nazo"]["ciba_mode"] == "ping":
                     self.assertEqual(
                         config[key]["backchannel_client_notification_endpoint"],
-                        f"https://nginx:8443/test/a/{config['alias']}"
+                        f"https://suite.example/test/a/{config['alias']}"
                         "/ciba-notification-endpoint",
                     )
 
@@ -181,12 +230,14 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         session = (
             "oidcc-session-management-certification-test-plan session.json"
         )
+        ciba = "fapi-ciba-id1-test-plan[client_auth_type=mtls] ciba.json"
 
-        concurrent, frontchannel_only, session_only = module.partition_plan_expressions(
-            [parallel, frontchannel, session]
+        concurrent, ciba_only, frontchannel_only, session_only = module.partition_plan_expressions(
+            [parallel, frontchannel, session, ciba]
         )
 
         self.assertEqual(concurrent, [parallel])
+        self.assertEqual(ciba_only, [ciba])
         self.assertEqual(frontchannel_only, [frontchannel])
         self.assertEqual(session_only, [session])
 
@@ -210,6 +261,50 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
                 config["server"]["allow_unexpected_metadata_fields"],
                 ["native_sso_supported"],
             )
+
+    def test_bounded_parallel_groups_cover_the_full_matrix_once(self):
+        module = load_setup_module()
+        configs = {
+            "oidf-oidcc-basic-plan-config.json": module.write_basic_plan_config(),
+            "oidf-oidcc-dynamic-plan-config.json": module.write_dynamic_plan_config(),
+            "oidf-oidcc-formpost-plan-config.json": module.write_formpost_plan_config(),
+            "oidf-oidcc-third-party-init-plan-config.json": module.write_third_party_init_plan_config(),
+            "oidf-oidcc-config-plan-config.json": module.write_oidcc_config_plan_config(),
+            "oidf-oidcc-frontchannel-logout-plan-config.json": module.write_frontchannel_logout_plan_config(),
+            "oidf-oidcc-session-management-plan-config.json": module.write_session_management_plan_config(),
+        }
+        configs.update(module.write_fapi_ciba_plan_config())
+        configs.update(module.write_fapi_matrix_plan_configs())
+        plan_set = module.plan_expressions_for_configs(configs)
+
+        groups = module.bounded_parallel_plan_groups(plan_set)
+
+        self.assertEqual(
+            list(groups),
+            [
+                "01-oidc-core.json",
+                "02-oidc-formpost-thirdparty-config.json",
+                "03a-fapi-ciba-private-key-jwt-poll.json",
+                "03b-fapi-ciba-mtls-poll.json",
+                "03c-fapi-ciba-private-key-jwt-ping.json",
+                "03d-fapi-ciba-mtls-ping.json",
+                "04-fapi-message-and-mtls-dpop.json",
+                "05-fapi-mtls-mtls.json",
+                "06-fapi-private-dpop.json",
+                "07-fapi-private-mtls.json",
+                "08-frontchannel.json",
+                "09-session.json",
+            ],
+        )
+        flattened = [plan for group in groups.values() for plan in group]
+        self.assertEqual(len(flattened), 25)
+        self.assertEqual(sorted(flattened), sorted(plan_set))
+        self.assertEqual(len(groups["03a-fapi-ciba-private-key-jwt-poll.json"]), 1)
+        self.assertEqual(len(groups["03b-fapi-ciba-mtls-poll.json"]), 1)
+        self.assertEqual(len(groups["03c-fapi-ciba-private-key-jwt-ping.json"]), 1)
+        self.assertEqual(len(groups["03d-fapi-ciba-mtls-ping.json"]), 1)
+        self.assertEqual(len(groups["08-frontchannel.json"]), 1)
+        self.assertEqual(len(groups["09-session.json"]), 1)
 
     def test_help_exits_before_generating_runtime_files(self):
         module = load_setup_module()

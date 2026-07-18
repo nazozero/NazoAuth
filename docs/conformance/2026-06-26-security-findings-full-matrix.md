@@ -4,11 +4,11 @@
 
 OpenID Foundation Conformance Suite full-matrix regression after the
 2026-06-25 security findings hardening branch was deployed to the public
-issuer at `https://auth.nazo.run`.
+issuer at `https://issuer.example`.
 
 The same deployed commit was verified in two stages:
 
-1. Private local Conformance Suite against the public issuer.
+1. Diagnostic Conformance Suite regression against the public issuer.
 2. Official OpenID Foundation Conformance Suite against the public issuer.
 
 Both stages completed all configured 16 plans with `0 failures` and
@@ -19,11 +19,9 @@ Both stages completed all configured 16 plans with `0 failures` and
 | Result | Passed |
 | Implementation commit | `be7ef9f6a9197520235a59d42866a0918a293014` |
 | Branch | `codex/security-findings-20260625` |
-| Public issuer under test | `https://auth.nazo.run` |
+| Public issuer under test | `https://issuer.example` |
 | Public health check | `{"status":"正常"}` |
-| Deployment runner | Private deployment runner |
-| Deployment mode | Podman |
-| Service image | `localhost/nazo-oauth-server:main-be7ef9f` |
+| Deployment runner | Diagnostic runner details intentionally omitted |
 | Service HEAD after deployment | `be7ef9f` |
 
 ## Security Boundary
@@ -40,37 +38,21 @@ holder-bound clients:
   material and are still filtered by the requested claim name and any
   `value` / `values` constraints.
 
-## Private Local Suite
+## Diagnostic Suite Regression
 
 | Field | Value |
 | --- | --- |
 | Result | Passed |
-| Conformance server | `https://localhost:8443` |
-| Target issuer | `https://auth.nazo.run` |
-| Export directory | `oidf-local-results/run-20260626T165725Z` |
-| Runner log | `runtime/oidf/oidf-run-local-full-20260626T165725Z.log` |
+| Conformance server | diagnostic suite origin (private regression only; not conformance evidence) |
+| Target issuer | `https://issuer.example` |
+| Export directory | `sanitized diagnostic artifact` |
+| Runner log | `sanitized diagnostic artifact` |
 | Exported plan archives | `16` |
 | Plan summaries | `16` |
 | Final line | `All tests ran to completion. See above for any test condition failures.` |
 | Largest plan summary | `Overall totals: ran 71 test modules. Conditions: 6464 successes, 0 failures, 0 warnings. 330.1 seconds` |
 
-Run command:
-
-```bash
-python3 scripts/run_oidf_conformance.py \
-  --suite-dir oidf-conformance-suite \
-  --conformance-server https://localhost:8443 \
-  --plan-set-json-file runtime/oidf/oidf-plan-set.json \
-  --config-json-file runtime/oidf/oidf-plan-configs.json \
-  --target-issuer https://auth.nazo.run \
-  --no-api-token \
-  --disable-ssl-verify \
-  --export-dir oidf-local-results/run-20260626T165725Z \
-  --timeout-seconds 10800 \
-  --monitor-interval-seconds 10
-```
-
-Every printed local-suite plan summary reported `0 failures` and
+Every printed diagnostic plan summary reported `0 failures` and
 `0 warnings`:
 
 ```text
@@ -98,7 +80,7 @@ Overall totals: ran 71 test modules. Conditions: 6464 successes, 0 failures, 0 w
 | --- | --- |
 | Result | Passed |
 | Conformance server | `https://www.certification.openid.net/` |
-| Target issuer | `https://auth.nazo.run` |
+| Target issuer | `https://issuer.example` |
 | Export directory | `oidf-official-results/run-20260626T170746Z` |
 | Runner log | `runtime/oidf/oidf-run-official-full-20260626T170746Z.log` |
 | Exported plan archives | `16` |
@@ -188,31 +170,10 @@ Artifact contents in `oidf-official-results/run-20260626T170746Z`:
 
 ## Verification Commands
 
-Deployment verification:
-
-```bash
-git rev-parse --short=12 HEAD
-podman ps --filter name=nazo-oauth-server
-curl -fsS https://auth.nazo.run/health
-curl -fsS https://auth.nazo.run/.well-known/openid-configuration
-```
-
-Result verification:
-
-```bash
-find oidf-local-results/run-20260626T165725Z -name "*.zip" | wc -l
-grep -c "Overall totals:" runtime/oidf/oidf-run-local-full-20260626T165725Z.log
-tail -n 8 runtime/oidf/oidf-run-local-full-20260626T165725Z.log
-
-find oidf-official-results/run-20260626T170746Z -name "*.zip" | wc -l
-grep -c "Overall totals:" runtime/oidf/oidf-run-official-full-20260626T170746Z.log
-tail -n 8 runtime/oidf/oidf-run-official-full-20260626T170746Z.log
-```
-
 ## Notes
 
 - The record intentionally excludes plan configuration bodies, suite logs, API
-  tokens, private client keys, certificates, and local credentials.
+  tokens, private client keys, certificates, runner paths, and credentials.
 - The official runner wrote all summaries and result archives, then left a
   residual process that did not exit by itself. The residual process was
   terminated after the completed log and 16 official exported plan archives

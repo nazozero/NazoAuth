@@ -6,7 +6,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "OIDF production ingress currently rejects TLS 1.3 and negotiates TLS 1.2; NazoAuth separately proves TLS 1.3 client support and still requires BCP195 TLS 1.2 or TLS 1.3."
+    "comment": "Official suite public callback ingress currently negotiates TLS 1.2 for CIBA ping callbacks; the implementation separately proves TLS 1.3 client support and still requires BCP 195 TLS 1.2 or TLS 1.3."
   },
   {
     "test-name": "fapi-ciba-id1",
@@ -15,7 +15,7 @@
     "current-block": "Second client: Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Same bounded OIDF production ingress TLS 1.2 limitation for the second client callback."
+    "comment": "Same bounded official suite public callback ingress TLS 1.2 observation for the second client callback."
   },
   {
     "test-name": "fapi-ciba-id1-user-rejects-authentication",
@@ -24,7 +24,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ensure-authorization-request-with-binding-message-succeeds",
@@ -33,7 +33,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ensure-other-scope-order-succeeds",
@@ -42,7 +42,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ensure-requested-expiry-as-string-succeeds",
@@ -51,7 +51,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-backchannel-notification-endpoint-response-has-body",
@@ -60,7 +60,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-backchannel-notification-endpoint-response-401",
@@ -69,7 +69,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-backchannel-notification-endpoint-response-403",
@@ -78,7 +78,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-with-mtls-ciba-notification-endpoint-response-401-and-require-server-does-not-retry",
@@ -87,7 +87,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-backchannel-notification-endpoint-return-redirect-request",
@@ -96,7 +96,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-refresh-token",
@@ -105,7 +105,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-refresh-token",
@@ -114,7 +114,7 @@
     "current-block": "Second client: Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Same bounded OIDF production ingress TLS 1.2 limitation for the second client callback."
+    "comment": "Same bounded official suite public callback ingress TLS 1.2 observation for the second client callback."
   },
   {
     "test-name": "fapi-ciba-id1",
@@ -123,7 +123,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "OIDF production ingress currently rejects TLS 1.3 and negotiates TLS 1.2; NazoAuth separately proves TLS 1.3 client support and still requires BCP195 TLS 1.2 or TLS 1.3."
+    "comment": "Official suite public callback ingress currently negotiates TLS 1.2 for CIBA ping callbacks; the implementation separately proves TLS 1.3 client support and still requires BCP 195 TLS 1.2 or TLS 1.3."
   },
   {
     "test-name": "fapi-ciba-id1",
@@ -132,7 +132,7 @@
     "current-block": "Second client: Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Same bounded OIDF production ingress TLS 1.2 limitation for the second client callback."
+    "comment": "Same bounded official suite public callback ingress TLS 1.2 observation for the second client callback."
   },
   {
     "test-name": "fapi-ciba-id1-user-rejects-authentication",
@@ -141,7 +141,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ensure-authorization-request-with-binding-message-succeeds",
@@ -150,7 +150,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ensure-other-scope-order-succeeds",
@@ -159,7 +159,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ensure-requested-expiry-as-string-succeeds",
@@ -168,7 +168,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-backchannel-notification-endpoint-response-has-body",
@@ -177,7 +177,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-backchannel-notification-endpoint-response-401",
@@ -186,7 +186,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-backchannel-notification-endpoint-response-403",
@@ -195,7 +195,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-with-mtls-ciba-notification-endpoint-response-401-and-require-server-does-not-retry",
@@ -204,7 +204,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-ping-backchannel-notification-endpoint-return-redirect-request",
@@ -213,7 +213,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-refresh-token",
@@ -222,7 +222,7 @@
     "current-block": "Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Bounded OIDF production ingress TLS 1.2 limitation."
+    "comment": "Bounded official suite public callback ingress TLS 1.2 observation."
   },
   {
     "test-name": "fapi-ciba-id1-refresh-token",
@@ -231,6 +231,6 @@
     "current-block": "Second client: Verify notification callback",
     "condition": "EnsureIncomingTls13",
     "expected-result": "warning",
-    "comment": "Same bounded OIDF production ingress TLS 1.2 limitation for the second client callback."
+    "comment": "Same bounded official suite public callback ingress TLS 1.2 observation for the second client callback."
   }
 ]

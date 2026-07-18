@@ -1,19 +1,17 @@
-# M6 FAPI-CIBA Local and Official OIDF Full Matrix
+# M6 FAPI-CIBA Diagnostic and Official OIDF Full Matrix
 
 Date: 2026-07-11
 
 ## Result
 
 M6 passed both required conformance gates against the deployed public issuer
-`https://auth.nazo.run`:
+`https://issuer.example`:
 
 | Gate | Result |
 | --- | --- |
-| Hostinger local official-suite matrix | `success` |
 | GitHub official parallel-isolated matrix | `success` |
 | Matrix layout | 18 concurrency-safe plans + front-channel logout + session management |
 | Module results, each gate | 639 total: 631 `PASSED`, 6 allowed `REVIEW`, 2 expected `SKIPPED`, 0 `FAILED` |
-| Local condition results | 43,415 `SUCCESS`, 0 `FAILURE`, 0 `WARNING` |
 | Official condition results | 45,039 `SUCCESS`, 0 `FAILURE`, 0 `WARNING` |
 
 The six `REVIEW` modules are the expected screenshot-review modules
@@ -29,10 +27,7 @@ failures and warnings, but it is not zero-SKIPPED evidence.
 | Field | Value |
 | --- | --- |
 | Implementation commit | `07e69855948ca0a12d4dcd26bb9372e3ea2d04d3` |
-| Backend image | `localhost/nazo-oauth-server:m6-07e6985` |
-| Backend container address | `10.101.0.20:8000` behind Angie |
-| Public issuer | `https://auth.nazo.run` |
-| Local suite commit | `f326f6aa25d6a2b8f1ae30a6ec80a57e342333ce` |
+| Public issuer | `https://issuer.example` |
 | Official workflow suite ref | `33a724c7d809a6f9db05cbb513ff2a77cbac905e` |
 | Exported suite version | `5.2.0` |
 | Official workflow | [`oidf-conformance-full` run 29131918401](https://github.com/nazozero/NazoAuth/actions/runs/29131918401) |
@@ -42,8 +37,8 @@ failures and warnings, but it is not zero-SKIPPED evidence.
 
 ## Plan IDs
 
-| Plan | Hostinger local | Official |
-| --- | --- | --- |
+| Plan | Official |
+| --- | --- |
 | OIDC Basic static | `ampOh31JYd6Ae` | [`uy25zwms5OTxa`](https://www.certification.openid.net/plan-detail.html?plan=uy25zwms5OTxa) |
 | OIDC Basic dynamic | `y6pv0z6AUm0qf` | [`wqeK8msLxAdCm`](https://www.certification.openid.net/plan-detail.html?plan=wqeK8msLxAdCm) |
 | OIDC Config | `jUm1IQBF3TW8a` | [`FDTAyE4otGAnC`](https://www.certification.openid.net/plan-detail.html?plan=FDTAyE4otGAnC) |

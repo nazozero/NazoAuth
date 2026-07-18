@@ -233,7 +233,9 @@ where
                 if !constant_time_eq(expected_jkt.as_bytes(), actual_jkt.as_bytes()) {
                     return Err(ProtectedResourceAuthorizationError::DpopBindingMismatch);
                 }
-                let proof = match self
+                self.validate_dpop_nonce(verification.nonce.as_deref(), now)
+                    .await?;
+                match self
                     .replay
                     .consume(DpopReplayKey {
                         jkt: actual_jkt,
@@ -247,10 +249,7 @@ where
                     DpopReplayConsumptionResult::Replay => {
                         return Err(ProtectedResourceAuthorizationError::ReplayDetected);
                     }
-                };
-                self.validate_dpop_nonce(verification.nonce.as_deref(), now)
-                    .await?;
-                proof
+                }
             }
         };
 

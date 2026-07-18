@@ -108,7 +108,7 @@ fn mdoc_dataset_contains_iso_18013_5_mandatory_mdl_elements() {
 
 #[test]
 fn vci_authorization_detail_contains_final_credential_identifier() {
-    let detail = openid4vci_authorization_detail("https://auth.nazo.run", "org.iso.18013.5.1.mDL");
+    let detail = openid4vci_authorization_detail("https://issuer.example", "org.iso.18013.5.1.mDL");
     let identifiers = detail["credential_identifiers"]
         .as_array()
         .expect("credential_identifiers array");
@@ -124,7 +124,7 @@ fn vci_authorization_detail_contains_final_credential_identifier() {
         detail["credential_configuration_id"],
         "org.iso.18013.5.1.mDL"
     );
-    assert_eq!(detail["locations"], json!(["https://auth.nazo.run"]));
+    assert_eq!(detail["locations"], json!(["https://issuer.example"]));
     assert_eq!(
         openid4vci_configuration_id_from_identifier(&identifier).as_deref(),
         Some("org.iso.18013.5.1.mDL")
@@ -134,19 +134,19 @@ fn vci_authorization_detail_contains_final_credential_identifier() {
 #[test]
 fn vci_token_dpop_targets_include_public_issuer_endpoint() {
     assert_eq!(
-        token_endpoint_dpop_target_uris("https://auth.nazo.run/", "https://nginx:8443/token"),
-        vec!["https://auth.nazo.run/token".to_owned()]
+        token_endpoint_dpop_target_uris("https://issuer.example/", "https://suite.example/token"),
+        vec!["https://issuer.example/token".to_owned()]
     );
     assert_eq!(
-        token_endpoint_dpop_target_uris("https://auth.nazo.run", "https://auth.nazo.run/token"),
-        vec!["https://auth.nazo.run/token".to_owned()]
+        token_endpoint_dpop_target_uris("https://issuer.example", "https://issuer.example/token"),
+        vec!["https://issuer.example/token".to_owned()]
     );
     assert_eq!(
         token_endpoint_dpop_target_uris(
-            "https://auth.nazo.run",
-            "https://auth.nazo.runhttps://auth.nazo.run/token"
+            "https://issuer.example",
+            "https://issuer.examplehttps://issuer.example/token"
         ),
-        vec!["https://auth.nazo.run/token".to_owned()]
+        vec!["https://issuer.example/token".to_owned()]
     );
 }
 

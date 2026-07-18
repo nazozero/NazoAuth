@@ -1,7 +1,7 @@
 # OpenID4VC Final 一致性矩阵
 
-NazoAuth 实现 OpenID4VCI 1.0 Final 的 **Credential Issuer** 角色和
-OpenID4VP 1.0 Final 的 **Verifier** 角色；不实现、也不宣告 Wallet 角色。
+本实现提供 OpenID4VCI 1.0 Final 的 **Credential Issuer** 角色和 OpenID4VP
+1.0 Final 的 **Verifier** 角色；不实现、也不宣告 Wallet 角色。
 
 实现按职责拆分为四个协议边界：
 
@@ -32,7 +32,7 @@ client identifier、verifier attestation client identifier，以及无 holder bi
 ## 签名密钥边界
 
 OpenID4VC 使用只允许 `credential` 与 `presentation_request` 两种用途的 ES256
-本地密钥，并通过现有原子密钥库生成：
+仓库生成的测试密钥，并通过现有原子密钥库生成：
 
 ```text
 nazo-oauth-keyctl generate-local --alg ES256 --purposes credential,presentation_request
@@ -56,9 +56,22 @@ OIDF Conformance Suite 固定到 v5.2.0 commit
 自动化只能经管理 HTTP 创建 offer 或 presentation transaction，不能读取协议状态表，
 因此属于黑盒证据。
 
+官方套件执行按 4 个 plan 一批有界运行。这是 runner 调度边界，不是协议豁免：
+17 个生成的 plan expression 仍全部针对操作者提供的同一个公网 issuer 执行；
+每批只接收与本批配置文件匹配的 expected skip/warning 记录。这样可以避免
+Issuer/Verifier 驱动型 `WAITING` 模块一次性压垮官方控制面 API，同时保留黑盒协议覆盖。
+
 上游 v5.2.0 套件没有覆盖 `mso_mdoc` + `redirect_uri` client identifier prefix +
 签名 request URI + `direct_post.jwt` 的模块；`mso_mdoc` 加密响应覆盖因此通过上游
 支持的 x509 前缀签名请求变体执行。
+
+HAIP issuer plan 可能在 `Check for refresh token` 块中产生上游
+`FAPIEnsureServerConfigurationDoesNotSupportRefreshToken` advisory。套件文本明确说明：
+如果授权服务器整体声明支持 refresh token，但按策略只向部分客户端签发 refresh token，
+该情况可以接受。因此矩阵只允许 4 条精确 warning：4 个 HAIP issuer 执行组合、
+该模块、该 block、该 condition。由于官方 runner 在该可接受 warning 后会把模块
+终态标记为 `SKIPPED`，同样的 4 个上下文也登记为 expected skip。任何其他 warning
+或 skip 仍视为失败。
 
 上游计划标题明确标为 **alpha**，并注明可能不完整/不正确或尚未纳入认证计划。
 因此全绿只能称为“官方套件回归通过”，不能称为 OpenID Foundation 正式认证，
@@ -67,8 +80,9 @@ OIDF Conformance Suite 固定到 v5.2.0 commit
 最新长期证据：
 
 - [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
-- Hostinger 远端本地 official-suite 运行使用 `https://auth.nazo.run` 作为被测生产目标，
-  17 个 plan 执行全部完成，`0 failures`。
+- official-suite 调试运行使用操作者提供的生产目标；公开仓库中脱敏为
+  `https://issuer.example`。17 个 plan 执行全部完成，`0 failures`。它是调试证据，
+  不是仓库用户的默认测试目标。
 - GitHub 官方运行
   [#29530484889](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
   针对同一生产 origin 成功完成。

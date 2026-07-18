@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare gitignored local files for Podman OIDF conformance runs."""
+"""Prepare gitignored OIDF conformance runtime files."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ import subprocess
 import copy
 import base64
 import hashlib
+import ipaddress
 import re
 import shutil
 import urllib.parse
@@ -20,11 +21,48 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 FRONTEND_ROOT = ROOT.parent / "NazoAuthWeb"
 RUNTIME = ROOT / "runtime" / "oidf"
-ISSUER = "https://auth.nazo.run"
-MTLS_ISSUER = "https://auth.nazo.run"
-SUITE_BASE_URL = os.environ.get("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443").rstrip("/")
+
+
+def required_origin_env(name: str) -> str:
+    value = os.environ.get(name, "").strip().rstrip("/")
+    if not value:
+        raise RuntimeError(f"{name} is required; do not rely on a repository default issuer")
+    parsed = urllib.parse.urlsplit(value)
+    if parsed.scheme != "https" or not parsed.netloc or parsed.path not in ("", "/"):
+        raise RuntimeError(f"{name} must be an HTTPS origin without a path")
+    return value
+
+
+ISSUER = required_origin_env("OIDF_TARGET_ISSUER")
+MTLS_ISSUER = os.environ.get("OIDF_MTLS_TARGET_ISSUER", ISSUER).strip().rstrip("/")
+parsed_mtls = urllib.parse.urlsplit(MTLS_ISSUER)
+if parsed_mtls.scheme != "https" or not parsed_mtls.netloc or parsed_mtls.path not in ("", "/"):
+    raise RuntimeError("OIDF_MTLS_TARGET_ISSUER must be an HTTPS origin without a path")
+SUITE_BASE_URL = (
+    os.environ.get("OIDF_SUITE_BASE_URL")
+    or os.environ.get("OIDF_LOCAL_SUITE_BASE_URL")
+    or ""
+).strip().rstrip("/")
+if not SUITE_BASE_URL:
+    raise RuntimeError(
+        "OIDF_SUITE_BASE_URL is required; suite-private hostnames are not repository defaults"
+    )
+parsed_suite = urllib.parse.urlsplit(SUITE_BASE_URL)
+if parsed_suite.scheme != "https" or not parsed_suite.netloc or parsed_suite.path not in ("", "/"):
+    raise RuntimeError("OIDF_SUITE_BASE_URL must be an HTTPS origin without a path")
+suite_host = parsed_suite.hostname or ""
+try:
+    ipaddress.ip_address(suite_host)
+except ValueError:
+    if suite_host.lower() == "localhost" or suite_host.lower().endswith(".local"):
+        raise RuntimeError("OIDF_SUITE_BASE_URL must use a public DNS hostname")
+else:
+    raise RuntimeError("OIDF_SUITE_BASE_URL must use a public DNS hostname, not a raw IP")
 SUITE_ORIGIN = urllib.parse.urlsplit(SUITE_BASE_URL)._replace(path="", query="", fragment="").geturl()
-BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
+ISSUER_HOST = urllib.parse.urlsplit(ISSUER).hostname
+if not ISSUER_HOST:
+    raise RuntimeError("OIDF_TARGET_ISSUER must be an HTTPS origin with a hostname")
+BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "nazo-oauth-oidf")
 USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
 USER_PASSWORD = os.environ.get("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password")
 CLIENT_SECRET = os.environ.get("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret")
@@ -40,7 +78,7 @@ OIDF_CIBA_AUTOMATED_DECISION_TOKEN = os.environ.get(
     "OIDF_LOCAL_CIBA_AUTOMATED_DECISION_TOKEN",
     "oidf-local-ciba-automated-decision-token",
 )
-FAPI_CLIENT_PREFIX = os.environ.get("OIDF_LOCAL_FAPI_CLIENT_PREFIX", "local-oidf-fapi")
+FAPI_CLIENT_PREFIX = os.environ.get("OIDF_LOCAL_FAPI_CLIENT_PREFIX", "oidf-fapi")
 TRUSTED_PROXY_CIDRS = os.environ.get("OIDF_LOCAL_TRUSTED_PROXY_CIDRS", "10.89.0.0/16")
 WRITE_ENV_YAML = os.environ.get("OIDF_LOCAL_WRITE_ENV_YAML", "1") != "0"
 SKIP_UI_BUILD = os.environ.get("OIDF_LOCAL_SKIP_UI_BUILD", "0") == "1"
@@ -248,12 +286,12 @@ def ensure_server_oidf_keyset() -> None:
     live_ps256 = live_server_key(keys, key_dir, "PS256", now)
     if live_ps256 is None:
         live_ps256 = create_server_key(
-            keys, key_dir, "PS256", "ps256-local-oidf-server", now
+            keys, key_dir, "PS256", "ps256-oidf-server", now
         )
     live_rs256 = live_server_key(keys, key_dir, "RS256", now)
     if live_rs256 is None:
         live_rs256 = create_server_key(
-            keys, key_dir, "RS256", "rs256-local-oidf-server", now
+            keys, key_dir, "RS256", "rs256-oidf-server", now
         )
 
     normalize_server_rsa_private_key(key_dir / str(live_ps256["file"]))
@@ -306,9 +344,9 @@ def ensure_cert() -> None:
             "-out",
             str(cert),
             "-subj",
-            "/CN=auth.nazo.run",
+            f"/CN={ISSUER_HOST}",
             "-addext",
-            "subjectAltName=DNS:auth.nazo.run",
+            f"subjectAltName=DNS:{ISSUER_HOST}",
         ],
         check=True,
         cwd=ROOT,
@@ -337,7 +375,7 @@ def ensure_mtls_ca() -> None:
                 "-out",
                 str(ca_cert),
                 "-subj",
-                "/CN=Nazo OAuth Local OIDF mTLS CA",
+                "/CN=Nazo OAuth OIDF mTLS CA",
             ],
             check=True,
             cwd=ROOT,
@@ -515,16 +553,16 @@ http {
 
     location / {
       proxy_pass http://nazo_oauth_server:8000;
-      proxy_set_header Host auth.nazo.run;
+      proxy_set_header Host __ISSUER_HOST__;
       proxy_set_header X-Forwarded-Proto https;
-      proxy_set_header X-Forwarded-Host auth.nazo.run;
+      proxy_set_header X-Forwarded-Host __ISSUER_HOST__;
       proxy_set_header X-Forwarded-Port 9444;
       proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
       proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;
     }
   }
 }
-""",
+""".replace("__ISSUER_HOST__", ISSUER_HOST),
     )
 
 
@@ -762,7 +800,7 @@ def user_reject_browser_automation() -> list[dict[str, object]]:
     return [
         {
             "comment": (
-                "Local Podman Nazo OAuth signs in after an explicit browser click, "
+                "NazoAuth conformance automation signs in after an explicit browser click, "
                 "then lets this negative module deny consent before auto-approval."
             ),
             "match": f"{ISSUER}/authorize*",
@@ -798,7 +836,7 @@ def user_reject_browser_automation() -> list[dict[str, object]]:
 def browser_automation() -> list[dict[str, object]]:
     return [
         {
-            "comment": "Local Podman Nazo OAuth conformance browser automation.",
+            "comment": "NazoAuth conformance browser automation.",
             "match": f"{ISSUER}/authorize*",
             "tasks": [
                 {
@@ -843,7 +881,7 @@ def browser_automation() -> list[dict[str, object]]:
             ],
         },
         {
-            "comment": "Local Podman Nazo OAuth post-logout redirect browser automation.",
+            "comment": "NazoAuth post-logout redirect browser automation.",
             "match": f"{ISSUER}/logout*",
             "tasks": [
                 {
@@ -854,7 +892,7 @@ def browser_automation() -> list[dict[str, object]]:
             ],
         },
         {
-            "comment": "Local Podman OIDC Session Management first verification automation.",
+            "comment": "NazoAuth OIDC Session Management first verification automation.",
             "match": "*/test/*/session_verify*",
             "tasks": [
                 {
@@ -865,7 +903,7 @@ def browser_automation() -> list[dict[str, object]]:
             ],
         },
         {
-            "comment": "Local Podman OIDC Session Management second verification automation.",
+            "comment": "NazoAuth OIDC Session Management second verification automation.",
             "match": "*/test/*/second_session_verify*",
             "tasks": [
                 {
@@ -951,17 +989,17 @@ def write_basic_plan_config() -> dict[str, object]:
         "description": "OIDC Basic OP: discovery and authorization-code interoperability.",
         "server": oidf_server_config(),
         "client": {
-            "client_id": "local-oidf-basic-client",
+            "client_id": "oidf-basic-client",
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email address phone offline_access",
         },
         "client2": {
-            "client_id": "local-oidf-basic-client-2",
+            "client_id": "oidf-basic-client-2",
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email address phone offline_access",
         },
         "client_secret_post": {
-            "client_id": "local-oidf-post-client",
+            "client_id": "oidf-post-client",
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email address phone offline_access",
         },
@@ -1136,7 +1174,7 @@ def fapi_plan_focus(plan_kind: str, fapi_profile: str, fapi_response_mode: str) 
 
 def write_oidcc_config_plan_config() -> dict[str, object]:
     config = {
-        "alias": "local-nazo-oauth-oidf-config",
+        "alias": "nazo-oauth-oidf-config",
         "description": "OIDC Config OP: provider metadata accuracy for the public issuer.",
         "server": oidf_server_config(),
     }
@@ -1151,7 +1189,7 @@ def write_frontchannel_logout_plan_config() -> dict[str, object]:
         "description": "OIDC Front-Channel Logout OP: RP-initiated logout, frontchannel iframe notification, and post-logout redirect validation.",
         "server": oidf_server_config(),
         "client": {
-            "client_id": "local-oidf-frontchannel-client",
+            "client_id": "oidf-frontchannel-client",
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email",
         },
@@ -1169,7 +1207,7 @@ def write_session_management_plan_config() -> dict[str, object]:
         "description": "OIDC Session Management OP: check_session_iframe, session_state, and RP-initiated logout state transition validation.",
         "server": oidf_server_config(),
         "client": {
-            "client_id": "local-oidf-session-client",
+            "client_id": "oidf-session-client",
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email",
         },
@@ -1275,7 +1313,7 @@ def fapi_matrix_plan_config(
         fapi_response_mode,
     )
     config = fapi_plan_config(
-        f"local-nazo-oauth-oidf-{slug}",
+        f"nazo-oauth-oidf-{slug}",
         description,
         slug,
         False,
@@ -1297,26 +1335,26 @@ def fapi_matrix_plan_config(
 def write_fapi_plan_configs() -> dict[str, dict[str, object]]:
     configs = {
         "oidf-fapi-security-final-plan-config.json": fapi_plan_config(
-            "local-nazo-oauth-oidf-fapi-security-final",
-            "Local Podman Nazo OAuth FAPI2 Security Final conformance configuration",
+            "nazo-oauth-oidf-fapi-security-final",
+            "NazoAuth FAPI2 Security Final conformance configuration",
             "security-final",
             False,
         ),
         "oidf-fapi-message-final-plan-config.json": fapi_plan_config(
-            "local-nazo-oauth-oidf-fapi-message-final",
-            "Local Podman Nazo OAuth FAPI2 Message Signing Final conformance configuration",
+            "nazo-oauth-oidf-fapi-message-final",
+            "NazoAuth FAPI2 Message Signing Final conformance configuration",
             "message-final",
             False,
         ),
         "oidf-fapi-security-id2-plan-config.json": fapi_plan_config(
-            "local-nazo-oauth-oidf-fapi-security-id2",
-            "Local Podman Nazo OAuth FAPI2 Security ID2 conformance configuration",
+            "nazo-oauth-oidf-fapi-security-id2",
+            "NazoAuth FAPI2 Security ID2 conformance configuration",
             "security-id2",
             True,
         ),
         "oidf-fapi-message-id1-plan-config.json": fapi_plan_config(
-            "local-nazo-oauth-oidf-fapi-message-id1",
-            "Local Podman Nazo OAuth FAPI2 Message Signing ID1 conformance configuration",
+            "nazo-oauth-oidf-fapi-message-id1",
+            "NazoAuth FAPI2 Message Signing ID1 conformance configuration",
             "message-id1",
             True,
         ),
@@ -1339,7 +1377,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
         client1_id, client2_id = fapi_client_ids(slug)
         client1_jwks = client_private_jwks(client1_id)
         client2_jwks = client_private_jwks(client2_id)
-        alias = f"local-nazo-oauth-oidf-{slug}"
+        alias = f"nazo-oauth-oidf-{slug}"
         notification_endpoint = test_endpoint_for(alias, "ciba-notification-endpoint")
 
         def ciba_client(client_id: str, jwks: dict[str, object]) -> dict[str, object]:
@@ -1358,6 +1396,33 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
                 client["backchannel_client_notification_endpoint"] = notification_endpoint
             return client
 
+        nazo = {
+            **nazo_login_metadata(),
+            "client_auth_type": client_auth_type,
+            "openid": "openid_connect",
+            "fapi_profile": "plain_fapi",
+            "fapi_ciba_profile": "plain_fapi",
+            "ciba_mode": ciba_mode,
+            "matrix_title": (
+                f"FAPI-CIBA ID1 / {client_auth_type} / {ciba_mode} / plain FAPI"
+            ),
+            "matrix_description": (
+                "Covers FAPI-CIBA discovery, backchannel authentication, "
+                f"{ciba_mode} delivery, token exchange, negative handling, and resource access."
+            ),
+            "matrix_focus": [
+                "CIBA discovery metadata",
+                "backchannel authentication endpoint",
+                f"{client_auth_type} client authentication",
+                f"{ciba_mode} mode token issuance",
+                "FAPI-CIBA request-object and error handling",
+            ],
+        }
+        # FAPI-CIBA ID1 separates client authentication from token sender
+        # constraint. Both private_key_jwt and mTLS authenticated CIBA clients
+        # receive mTLS holder-of-key access tokens.
+        nazo["sender_constrain"] = "mtls"
+
         config = {
             "alias": alias,
             "description": (
@@ -1366,7 +1431,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
             ),
             "server": oidf_server_config(),
             "resource": {
-                "resourceUrl": f"{ISSUER}/fapi/resource",
+                "resourceUrl": f"{MTLS_ISSUER}/fapi/resource",
                 "resourceMethod": "GET",
                 "resourceMediaType": "application/json",
                 "resourceRequestBody": "",
@@ -1384,29 +1449,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
             "client2": ciba_client(client2_id, client2_jwks),
             "mtls": mtls_named_config(mtls_client_cert_name(client1_id)),
             "mtls2": mtls_named_config(mtls_client_cert_name(client2_id)),
-            "nazo": {
-                **nazo_login_metadata(),
-                "client_auth_type": client_auth_type,
-                "sender_constrain": "mtls",
-                "openid": "openid_connect",
-                "fapi_profile": "plain_fapi",
-                "fapi_ciba_profile": "plain_fapi",
-                "ciba_mode": ciba_mode,
-                "matrix_title": (
-                    f"FAPI-CIBA ID1 / {client_auth_type} / {ciba_mode} / plain FAPI"
-                ),
-                "matrix_description": (
-                    "Covers FAPI-CIBA discovery, backchannel authentication, "
-                    f"{ciba_mode} delivery, token exchange, negative handling, and resource access."
-                ),
-                "matrix_focus": [
-                    "CIBA discovery metadata",
-                    "backchannel authentication endpoint",
-                    f"{client_auth_type} client authentication",
-                    f"{ciba_mode} mode token issuance",
-                    "FAPI-CIBA request-object and error handling",
-                ],
-            },
+            "nazo": nazo,
             "browser": browser_automation(),
         }
         name = f"oidf-{slug}-plan-config.json"
@@ -1469,17 +1512,24 @@ def write_all_plan_configs() -> None:
     configs.update(write_fapi_ciba_plan_config())
     configs.update(write_fapi_matrix_plan_configs())
     plan_set = plan_expressions_for_configs(configs)
-    concurrent, frontchannel, session = partition_plan_expressions(plan_set)
+    concurrent, ciba, frontchannel, session = partition_plan_expressions(plan_set)
     if len(frontchannel) != 1 or len(session) != 1:
         raise RuntimeError(
             "OIDF full matrix must contain exactly one front-channel and one session-management plan"
         )
+    if len(ciba) != 4:
+        raise RuntimeError("OIDF full matrix must contain exactly four FAPI-CIBA plans")
     plan_manifest = plan_manifest_for_expressions(plan_set, configs)
     write_text(RUNTIME / "oidf-plan-configs.json", json.dumps({"configs": configs}, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "oidf-plan-set.json", json.dumps(plan_set, indent=2) + "\n", 0o600)
     write_text(
         RUNTIME / "oidf-plan-set-concurrent.json",
         json.dumps(concurrent, indent=2) + "\n",
+        0o600,
+    )
+    write_text(
+        RUNTIME / "oidf-plan-set-ciba.json",
+        json.dumps(ciba, indent=2) + "\n",
         0o600,
     )
     write_text(
@@ -1492,6 +1542,8 @@ def write_all_plan_configs() -> None:
         json.dumps(session, indent=2) + "\n",
         0o600,
     )
+    for file_name, group in bounded_parallel_plan_groups(plan_set).items():
+        write_text(RUNTIME / file_name, json.dumps(group, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "oidf-plan-set-manifest.json", json.dumps(plan_manifest, indent=2) + "\n", 0o600)
     write_text(
         RUNTIME / "oidf-local.env",
@@ -1618,7 +1670,10 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
 
 def partition_plan_expressions(
     expressions: list[str],
-) -> tuple[list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str], list[str]]:
+    ciba = [
+        expression for expression in expressions if "fapi-ciba-id1-test-plan" in expression
+    ]
     frontchannel = [
         expression
         for expression in expressions
@@ -1629,11 +1684,70 @@ def partition_plan_expressions(
         for expression in expressions
         if "session-management-certification-test-plan" in expression
     ]
-    browser_sensitive = set(frontchannel + session)
+    isolated = set(ciba + frontchannel + session)
     concurrent = [
-        expression for expression in expressions if expression not in browser_sensitive
+        expression for expression in expressions if expression not in isolated
     ]
-    return concurrent, frontchannel, session
+    return concurrent, ciba, frontchannel, session
+
+
+def bounded_parallel_plan_groups(expressions: list[str]) -> dict[str, list[str]]:
+    def matches(*needles: str) -> list[str]:
+        return [
+            expression
+            for expression in expressions
+            if all(needle in expression for needle in needles)
+        ]
+
+    return {
+        "01-oidc-core.json": matches("oidcc-basic-certification-test-plan"),
+        "02-oidc-formpost-thirdparty-config.json": [
+            *matches("oidcc-formpost-basic-certification-test-plan"),
+            *matches("oidcc-3rdparty-init-login-certification-test-plan"),
+            *matches("oidcc-config-certification-test-plan"),
+        ],
+        "03a-fapi-ciba-private-key-jwt-poll.json": matches(
+            "fapi-ciba-id1-test-plan",
+            "client_auth_type=private_key_jwt",
+            "ciba_mode=poll",
+        ),
+        "03b-fapi-ciba-mtls-poll.json": matches(
+            "fapi-ciba-id1-test-plan",
+            "client_auth_type=mtls",
+            "ciba_mode=poll",
+        ),
+        "03c-fapi-ciba-private-key-jwt-ping.json": matches(
+            "fapi-ciba-id1-test-plan",
+            "client_auth_type=private_key_jwt",
+            "ciba_mode=ping",
+        ),
+        "03d-fapi-ciba-mtls-ping.json": matches(
+            "fapi-ciba-id1-test-plan",
+            "client_auth_type=mtls",
+            "ciba_mode=ping",
+        ),
+        "04-fapi-message-and-mtls-dpop.json": [
+            *matches("fapi2-message-signing-final-test-plan"),
+            *matches("fapi2-security-profile-final-test-plan", "client_auth_type=mtls", "sender_constrain=dpop"),
+        ],
+        "05-fapi-mtls-mtls.json": matches(
+            "fapi2-security-profile-final-test-plan",
+            "client_auth_type=mtls",
+            "sender_constrain=mtls",
+        ),
+        "06-fapi-private-dpop.json": matches(
+            "fapi2-security-profile-final-test-plan",
+            "client_auth_type=private_key_jwt",
+            "sender_constrain=dpop",
+        ),
+        "07-fapi-private-mtls.json": matches(
+            "fapi2-security-profile-final-test-plan",
+            "client_auth_type=private_key_jwt",
+            "sender_constrain=mtls",
+        ),
+        "08-frontchannel.json": matches("frontchannel-rp-initiated-logout"),
+        "09-session.json": matches("session-management-certification-test-plan"),
+    }
 
 
 def plan_manifest_for_expressions(
@@ -1723,7 +1837,7 @@ def plan_manifest_for_expressions(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare gitignored local files for Podman OIDF conformance runs."
+        description="Prepare gitignored OIDF conformance runtime files."
     )
     return parser.parse_args(argv)
 
@@ -1738,7 +1852,7 @@ def main(argv: list[str] | None = None) -> int:
     write_nginx()
     write_ui()
     write_all_plan_configs()
-    print(f"Prepared local OIDF runtime files under {RUNTIME}")
+    print(f"Prepared OIDF runtime files under {RUNTIME}")
     print(f"Issuer: {ISSUER}")
     print(f"Suite callback base: {SUITE_BASE_URL}")
     return 0

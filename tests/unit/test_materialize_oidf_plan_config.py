@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import unittest
 from pathlib import Path
 
@@ -74,6 +75,8 @@ class MaterializeOidfPlanConfigTests(unittest.TestCase):
                 ("mtls", "ping"),
             },
         )
+        for value in ciba_configs.values():
+            self.assertEqual(value["nazo"]["sender_constrain"], "mtls")
         self.assertEqual(
             len({value["client"]["client_id"] for value in ciba_configs.values()}), 4
         )
@@ -92,6 +95,69 @@ class MaterializeOidfPlanConfigTests(unittest.TestCase):
         self.assertEqual(
             ciba_configs[module.FAPI_CIBA_SOURCE_CONFIG_FILE]["mtls"],
             {"cert": "shared-cert", "key": "shared-key"},
+        )
+
+    def test_target_issuer_rewrites_every_template_issuer_url(self):
+        module = load_materializer_module()
+        rendered = {
+            "configs": {
+                module.FAPI_CIBA_SOURCE_CONFIG_FILE: {
+                    "alias": "official-fapi-ciba-plain-private-key-jwt-poll",
+                    "server": {
+                        "discoveryUrl": "https://issuer.example/.well-known/openid-configuration",
+                    },
+                    "resource": {
+                        "resourceUrl": "https://issuer.example/fapi/resource",
+                    },
+                    "browser": [
+                        {"match": "https://issuer.example/authorize*"},
+                        {"match": "*/test/*/callback*"},
+                    ],
+                    "client": {
+                        "client_id": "official-fapi-ciba-plain-private-key-jwt-poll-client-1",
+                        "jwks": {
+                            "keys": [
+                                {
+                                    "kid": (
+                                        "official-fapi-ciba-plain-private-key-jwt-poll"
+                                        "-client-1-key"
+                                    )
+                                }
+                            ]
+                        },
+                    },
+                    "client2": {
+                        "client_id": "official-fapi-ciba-plain-private-key-jwt-poll-client-2",
+                        "jwks": {
+                            "keys": [
+                                {
+                                    "kid": (
+                                        "official-fapi-ciba-plain-private-key-jwt-poll"
+                                        "-client-2-key"
+                                    )
+                                }
+                            ]
+                        },
+                    },
+                    "nazo": {},
+                }
+            }
+        }
+
+        module.derive_fapi_ciba_matrix_configs(
+            rendered, "https://www.certification.openid.net"
+        )
+        rewritten = module.replace_template_issuer(rendered, "https://public.example")
+        serialized = json.dumps(rewritten, sort_keys=True)
+
+        self.assertNotIn("https://issuer.example", serialized)
+        self.assertIn("https://public.example/authorize*", serialized)
+        self.assertIn("https://public.example/.well-known/openid-configuration", serialized)
+        self.assertIn("https://public.example/fapi/resource", serialized)
+        self.assertIn(
+            "https://www.certification.openid.net/test/a/"
+            "official-fapi-ciba-plain-mtls-ping/ciba-notification-endpoint",
+            serialized,
         )
 
 

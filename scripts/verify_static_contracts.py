@@ -357,7 +357,7 @@ def check_removed_security_capabilities() -> None:
         "RFC 8707",
         "RFC 6750",
         "RFC 8314",
-        "Not implemented by security policy",
+        "Never supported by security policy",
     )
     missing = [item for item in required_policy_evidence if item not in policy]
     if missing:
@@ -555,6 +555,8 @@ def check_openid4vc_boundaries() -> None:
     for marker in (
         "dee9a25160e789f0f80517674693ef7989ab9fa1",
         "run_openid4vc_conformance.py",
+        "target_origin",
+        "${{ inputs.target_origin || vars.OPENID4VC_TARGET_ORIGIN }}",
         "openid4vc-plan-set.json",
         "openid4vc-expected-skips.json",
         "openid4vc-expected-warnings.json",
@@ -578,14 +580,16 @@ def check_openid4vc_boundaries() -> None:
         if forbidden in driver:
             raise SystemExit(f"OpenID4VC black-box driver accesses persistence: {forbidden}")
     containerfile = (ROOT / "Containerfile").read_text(encoding="utf-8")
-    openid4vc_seed_copy = (
-        "COPY --from=builder /app/target/release/nazo_openid4vc_seed_oidf "
-        "/usr/local/bin/nazo_openid4vc_seed_oidf"
-    )
-    if containerfile.count(openid4vc_seed_copy) != 1:
-        raise SystemExit("OpenID4VC OIDF seed binary must have one image copy boundary")
-    if containerfile.index(openid4vc_seed_copy) > containerfile.index("FROM runtime-base AS runtime"):
-        raise SystemExit("OpenID4VC OIDF seed binary must not enter the production runtime image")
+    runtime_start = containerfile.index("FROM runtime-base AS runtime")
+    for binary in ("nazo_oauth_seed_oidf", "nazo_openid4vc_seed_oidf"):
+        seed_copy = (
+            f"COPY --from=builder /app/target/release/{binary} "
+            f"/usr/local/bin/{binary}"
+        )
+        if containerfile.count(seed_copy) != 1:
+            raise SystemExit(f"{binary} must have one image copy boundary")
+        if containerfile.index(seed_copy) < runtime_start:
+            raise SystemExit(f"{binary} must be available in the exact runtime image")
     keyctl = (ROOT / "crates" / "authorization-server" / "src" / "keyctl.rs").read_text(
         encoding="utf-8"
     )

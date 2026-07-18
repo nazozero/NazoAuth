@@ -1,8 +1,7 @@
 # Codecov Docker Runbook
 
-This project should run local coverage in Docker on Windows. The host Rust
-toolchain may fail on native OpenSSL/libpq linking, while the Docker runner keeps
-the compiler, PostgreSQL, Valkey, and Python environment consistent.
+This project runs coverage in a containerized runner so the compiler,
+PostgreSQL, Valkey, and Python environment remain consistent across operators.
 
 ## Recommended Command
 
@@ -33,7 +32,7 @@ docker run --rm --name nazo-oauth-codecov-runner \
   bash -lc '. /usr/local/cargo/env && bash scripts/generate_codecov_lcov.sh'
 ```
 
-PowerShell equivalent:
+Shell equivalent:
 
 ```powershell
 $repo = git rev-parse --show-toplevel
@@ -61,7 +60,7 @@ docker run --rm --name nazo-oauth-codecov-runner `
 
 ## Known Failure Modes
 
-- Run the PowerShell command from the resolved NazoAuth repository root.
+- Run the command from the resolved NazoAuth repository root.
   `${PWD}:/workspace` must mount the directory containing `Cargo.toml`. If in
   doubt, set `$repo = git rev-parse --show-toplevel` and mount
   `${repo}:/workspace`; do not commit a workstation-specific absolute path.

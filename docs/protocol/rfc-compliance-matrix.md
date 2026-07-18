@@ -1,6 +1,6 @@
 # OAuth, OAuth 2.1, OIDC, and FAPI Best-Practice Matrix — 10/10 Revision
 
-Last reviewed: 2026-07-11.
+Last reviewed: 2026-07-17.
 
 ## Scope
 
@@ -29,6 +29,10 @@ The matrix follows these source families:
   <https://www.rfc-editor.org/info/rfc9325/>
 - OAuth 2.0 for Browser-Based Applications draft:
   <https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/>
+- Current IETF OAuth Working Group document list:
+  <https://datatracker.ietf.org/wg/oauth/documents/>
+- OAuth.net working-group specification index:
+  <https://oauth.net/specs/>
 
 The decision rule is deliberately conservative: standards conformance never
 justifies weakening a protocol security boundary. If a conformance suite and a
@@ -49,7 +53,7 @@ conditions:
    defaults, and project-specific hardening are not conflated.
 4. Every sender-constrained-token, issuer, audience, redirect, replay, key,
    JWT, PAR/JAR/JARM, DPoP, mTLS, refresh-token, consent, and metadata rule has
-   negative tests, not only happy-path tests.
+   happy-path tests and negative tests.
 5. Compatibility exceptions are per-client and per-profile, are never global
    defaults, and cannot apply to FAPI or sender-constrained clients.
 6. Deferred standards are invisible in discovery metadata until their full
@@ -78,7 +82,8 @@ conditions:
 | Recommended | Should be enabled for high-value deployments; safe to keep optional in baseline only when metadata and policy are truthful. |
 | Compatibility-only | Allowed only through explicit per-client/profile exception and must not weaken secure defaults. |
 | Forbidden | Must not be implemented or advertised for this project profile because it is obsolete, unsafe, or contradicts the security model. |
-| Deferred | Potentially valid standard, but not implemented until product scope, threat model, metadata, and tests exist. |
+| Not supported (planned) | Potentially valid current standard or active Working Group draft that fits the security boundary, but is not implemented until product scope, threat model, metadata, migration, and tests exist. |
+| Deferred | Historical wording retained in older dated records; new roadmap rows should use `Not supported (planned)` or `Never supported`. |
 | External | Primarily deployment, client, or resource-server responsibility; document and test integration boundaries where possible. |
 
 ## Best-Practice Control Matrix
@@ -96,7 +101,7 @@ conditions:
 | FAPI authorization endpoint invariants | In FAPI authorization-code flow, accept only `response_type=code`, require S256 PKCE, return authorization response `iss`, reject reused authorization codes, issue authorization codes with lifetime <= 60 seconds, require authorization responses over encrypted channels except native loopback, and avoid HTTP 307 redirects for credential-bearing requests; prefer 303 when redirecting after credential submission. | FAPI2, RFC 9207, RFC 8252, RFC 9700 | Required for FAPI profile. | Authorization, PKCE, redirect, issuer, and OIDF conformance tests | Add explicit tests for code lifetime, non-PAR rejection, missing PAR `redirect_uri`, 307 rejection, 303 preference path, and authorization endpoint receiving only `client_id` + `request_uri` from FAPI clients. |
 | JAR | Accept signed request objects where enabled; require signed JAR for the FAPI Message Signing authorization-request option. Validate issuer/client, audience, expiry, not-before, signature, alg allowlist, key status, and parameter conflict rules. | RFC 9101, FAPI2 Message Signing, RFC 8725 | Required for FAPI message-signing authorization-request option; optional in baseline. | `crates/authorization-server/src/http/authorization/jar.rs`, JAR/PAR tests, OIDF plans | External `request_uri` by-reference fetching is deferred because it needs SSRF, cache, lifetime, trust, and content-type controls. |
 | Request object replay | Reject signed request-object replay when `jti` is supplied; allow stricter deployments to require `jti`. | RFC 9101, FAPI2 hardening | Recommended; configurable strict policy exists. | `crates/authorization-server/src/http/authorization/jar.rs`, JAR validation and replay cache tests | For high-value production, prefer requiring signed request-object `jti`. |
-| JARM / protected authorization response | Support signed authorization responses when the FAPI Message Signing response option or client/profile policy selects it. When per-client JWE metadata is registered, sign first and encrypt as compact JWE using `RSA-OAEP-256` and `A256GCM`. Never fall back to an unsigned/plain query response after policy lookup, signing, or encryption failure. | JARM, FAPI2 Message Signing, RFC 8725 | Required only when advertised by active profile/request; not required by the base FAPI 2.0 Security Profile. | Authorization response JWT/JWE tests and OIDF signed-JARM plans | Metadata must distinguish unsigned code response, signed response, and encrypted response support. OIDF has no encrypted-JARM OP module at the recorded suite snapshot. |
+| JARM / protected authorization response | Support signed authorization responses when the FAPI Message Signing response option or client/profile policy selects it. When per-client JWE metadata is registered, sign first and encrypt as compact JWE using supported client key-management algorithms (`RSA-OAEP-256`, `ECDH-ES`, `ECDH-ES+A128KW`, `ECDH-ES+A256KW`) with `A256GCM`. Never fall back to an unsigned/plain query response after policy lookup, signing, or encryption failure. | JARM, FAPI2 Message Signing, RFC 7516, RFC 7518, RFC 8725 | Required only when advertised by active profile/request; not required by the base FAPI 2.0 Security Profile. | Authorization response JWT/JWE tests and OIDF signed-JARM plans | Metadata must distinguish unsigned code response, signed response, and encrypted response support. OIDF has no encrypted-JARM OP module at the recorded suite snapshot. |
 | Resource indicators | Validate `resource` as absolute URI without fragment, preserve multiple resources, bind authorization/PAR/token/refresh flows, and narrow rather than expand resource sets. | RFC 8707, RFC 9700, FAPI2 | Required. | Resource/audience tests across authorization, PAR, token forms, authorization code, refresh, and resource endpoint | Keep duplicate and fragment rejection at input boundaries. |
 | Audience binding | Every access token must carry the intended resource audience. Resource servers must reject wrong audience. | RFC 8707, RFC 9068, RFC 9700, FAPI2 | Required. | JWT token claims and resource-server verifier tests | Do not issue broad default audience tokens for clients that requested specific resources. |
 | RAR | Accept `authorization_details` only behind explicit feature flag and type allowlist. Bind details through consent, code, token, and resource-server verification. | RFC 9396, FAPI2 ecosystem practice | Recommended for typed high-value permissions; profile-scoped. | Authorization-details domain tests, token-claim tests, resource-server tests | Do not advertise generic arbitrary RAR support. New detail types require parser, consent, policy, and verifier tests. |
@@ -164,13 +169,13 @@ conditions:
 | OAuth 2.1 draft | Directional target, not final RFC; treat as work in progress until published as RFC. | Partial/aligned | Track latest draft and turn into final RFC audit when published. Do not cite draft conformance as final RFC conformance. |
 | OIDC Core | Required for certified OP profile. | Implemented/profile-scoped | Keep authorization-code OP profile; do not imply implicit/hybrid support. Maintain ID Token, nonce, `auth_time`/`max_age`, `acr`/`amr`, claims, JSON/signed/encrypted UserInfo, and offline access controls as separate testable rows. |
 | OIDC Discovery | Required. | Implemented | Keep discovery generated from runtime facts. |
-| OIDC Dynamic Client Registration | Useful but high-risk provisioning surface. | Implemented/default-closed | Advertise only when `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; protect public deployments with `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`; support RFC 7592 management only for DCR-created clients with hashed registration access tokens and dynamic-client audit events; software statements and remote `jwks_uri` fetching remain deferred. |
+| OIDC Dynamic Client Registration | Useful but high-risk provisioning surface. | Implemented/default-closed | Advertise only when `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; protect public deployments with `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`; support RFC 7592 management only for DCR-created clients with hashed registration access tokens and dynamic-client audit events; support `jwks_uri` only through the constrained HTTPS remote-document resolver; software statements remain deferred. |
 | OIDC RP-Initiated Logout | Required where advertised. | Implemented | Keep exact post-logout redirect validation. |
 | OIDC Back-Channel Logout | Useful for server-side logout propagation. | Implemented/profile-scoped | Keep signed logout token, durable outbox, bounded retry, terminal failure state, and metadata truth aligned. |
 | OIDC Front-Channel Logout | Browser-mediated and weaker than back-channel. | Implemented/profile-scoped/default-closed | Advertise only when `ENABLE_FRONTCHANNEL_LOGOUT=true`; keep RP metadata validation, iframe notification escaping, `iss`/`sid` behavior, and back-channel logout as the stronger path. |
 | OIDC Session Management | Browser polling-based legacy-style session feature. | Implemented/profile-scoped/default-closed | Advertise only when `ENABLE_SESSION_MANAGEMENT=true`; keep `session_state` deterministic, iframe no-store, and polling status isolated from primary logout enforcement. |
 | JARM | Required for FAPI message-signing authorization response option. | Implemented/profile-scoped | Keep signed response fail-closed; apply per-client nested JWE only after successful signing and never downgrade on encryption failure. |
-| OIDC CIBA / FAPI-CIBA | Separate decoupled authentication product surface. | Implemented/profile-scoped/default-closed | Advertise only when `ENABLE_CIBA=true`; support `poll | ping` with `private_key_jwt | mTLS`, user binding, CSRF-protected decisions, interval enforcement, signed backchannel requests, atomic `auth_req_id`/notification lifecycle, bounded non-redirecting ping delivery, and optional internal `CIBA_SECURITY_PROFILE=fapi2-ciba` hardening. Push and `user_code` are not implemented; do not advertise an official “FAPI2-CIBA” profile. |
+| OIDC CIBA / FAPI-CIBA | Separate decoupled authentication product surface. | Implemented/profile-scoped/default-closed | Advertise only when `ENABLE_CIBA=true`; support `poll / ping` with `private_key_jwt / mTLS`, user binding, CSRF-protected decisions, interval enforcement, signed backchannel requests, atomic `auth_req_id`/notification lifecycle, bounded non-redirecting ping delivery, and optional internal `CIBA_SECURITY_PROFILE=fapi2-ciba` hardening. Push and `user_code` are not implemented; do not advertise an official “FAPI2-CIBA” profile. |
 | OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1 | Trust-chain ecosystem feature, not external login. | Deferred/not implemented | No endpoint or configuration gate is exposed. If this becomes product scope later, implement against the 1.1 specifications with trust anchors, trust chains, metadata policy, trust marks, federation fetch/list/resolve, key rollover, and conformance evidence before advertising support. |
 | OIDC Native SSO | Mobile app SSO using ID Token plus `device_secret`. | Implemented/profile-scoped/default-closed | Advertise only when `ENABLE_NATIVE_SSO=true`; bind `device_secret` to ID Token `ds_hash`/`sid`, validate refresh-family activity, and require destination clients to be explicitly scoped for `device_sso`. |
 | FAPI 2.0 Security Profile Final | Highest current practical server profile for high-value API access. | Implemented/profile-scoped | Keep conformance evidence and local negative tests aligned with runtime profile. Enforce authenticated PAR, `code`, S256 PKCE, `redirect_uri` in PAR, code lifetime <= 60 seconds, PAR `expires_in` < 600 seconds, FAPI client authentication, sender constraints, issuer metadata, JWT/JWKS rules, and authorization endpoint parameter restrictions. |
@@ -180,7 +185,59 @@ conditions:
 | RFC 9967 SCIM SETs and asynchronous completion | Default-closed provisioning notice SET transmitter with transactional PostgreSQL outbox, receiver-bound signed SETs, RFC 8936 poll/ack/error delivery, and bounded retention. | Implemented for create/put/patch/activate/deactivate notices; soft delete emits deactivate. Async requests, hard-delete events, full-resource payloads, and push delivery are not implemented. | `securityEvents.eventUris` is populated only while new event creation is enabled; `asyncRequest` remains `none`. Event receivers require a database SCIM token with `scim:events` and `event_audience`. |
 | RFC 8725 | Governing JWT implementation BCP across ID Tokens, access-token JWTs, client assertions, request objects, JARM, DPoP proofs, and signed introspection. | Implemented/profile-scoped | Enforce explicit alg allowlists, key/alg binding, no `none`, full crypto validation, and cross-JWT confusion defenses. |
 | RFC 9325 / BCP 195 | Governing TLS deployment baseline. | External/profile-scoped | Prefer TLS 1.3; allow TLS 1.2 only with modern ciphers; forbid SSL/TLS legacy versions; use HSTS for browser-facing endpoints. |
-| OAuth 2.0 for Browser-Based Applications draft | BCP guidance for SPA/browser OAuth clients; draft 27 is in the RFC Editor queue without an RFC number on 2026-07-11. | Draft-27 delta audit complete; publication watch remains | NazoAuthWeb is an authorization-server frontend, not a BFF; public browser clients use code + S256 PKCE and endpoint-specific non-credentialed CORS. Re-audit every requirement after RFC publication and do not invent a draft runtime profile. |
+| OAuth 2.0 for Browser-Based Applications draft | BCP guidance for SPA/browser OAuth clients; `draft-ietf-oauth-browser-based-apps-27` is in the RFC Editor queue without an RFC number on 2026-07-17. | Draft-27 delta audit complete; publication watch remains | The hosted authorization-server frontend is not a BFF; public browser clients use code + S256 PKCE and endpoint-specific non-credentialed CORS. Re-audit every requirement after RFC publication and do not invent a draft runtime profile. |
+
+## Current OAuth Standards Roadmap
+
+The following items are current OAuth WG RFCs, BCPs, active WG drafts, or
+IESG/RFC Editor queue documents that fit the security boundary. Rows marked as
+mostly aligned, draft-audited, or supported/profile-scoped describe behavior
+that exists today but still needs a final-specification delta audit before a
+Final/RFC conformance claim. Rows marked `Not supported (planned)` are roadmap
+candidates; they remain invisible in discovery metadata until fully implemented
+and tested.
+
+| Standard or draft | Source status on 2026-07-17 | Project decision | Planning boundary |
+| --- | --- | --- | --- |
+| `draft-ietf-oauth-v2-1-15` | OAuth WG active draft | Supported (draft-15-compatible implementation) | Current behavior follows draft-15, but final OAuth 2.1 conformance is not claimed until the RFC is published and audited requirement by requirement. |
+| `draft-ietf-oauth-browser-based-apps-27` | RFC Editor queue BCP | Supported (audited against draft-27) | Current behavior follows draft-27 secure browser guidance; re-audit after RFC publication before claiming final BCP alignment. |
+| `draft-ietf-oauth-cross-device-security-16` | RFC Editor queue BCP | Not supported (audit pending) | Device Grant, CIBA, Native SSO, and future cross-device flows must be audited against the BCP before claiming named support. |
+| `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | Not supported (audit pending) | RFC 9700 behavior is implemented; this update draft is not claimed until its delta is audited. |
+| `draft-ietf-oauth-rfc8725bis-06` | Waiting for AD Go-Ahead BCP | Not supported (audit pending) | RFC 8725 behavior is implemented; this bis draft is not claimed until JWT/JWS/JWE algorithm, key-binding, and cross-JWT confusion deltas are audited. |
+| `draft-ietf-oauth-rfc7523bis-11` | RFC Editor queue | Not supported (audit pending) | RFC 7523 behavior is implemented/bounded; this bis draft is not claimed until `private_key_jwt`, JWT bearer grants, assertion audience, replay, and key-binding deltas are audited. |
+| `draft-ietf-oauth-refresh-token-expiration-03` | OAuth WG active draft | Not supported (planned) | Add only after refresh-token and authorization-expiration state, metadata, revocation, and tests exist. |
+| `draft-ietf-oauth-first-party-apps-04` | OAuth WG active draft | Not supported (planned) | Evaluate same-party browser/BFF assumptions without weakening third-party client isolation. |
+| `draft-ietf-oauth-client-id-metadata-document-02` | OAuth WG active draft | Not supported (planned) | Consider only as a controlled public-client metadata bootstrap profile. |
+| `draft-ietf-oauth-attestation-based-client-auth-10` | OAuth WG active draft | Supported/profile-scoped; final RFC audit pending | `attest_jwt_client_auth` is advertised only when the Client Attestation module and client policy require it. Re-audit after final RFC publication. |
+| `draft-ietf-oauth-spiffe-client-auth-02` | OAuth WG active draft | Not supported (planned) | Requires a workload identity deployment and SPIFFE trust-domain boundary. |
+| `draft-ietf-oauth-identity-assertion-authz-grant-04` | OAuth WG active draft | Not supported (planned) | Requires trusted third-party assertion issuers, subject mapping, revocation, replay, and audit policy. |
+| `draft-ietf-oauth-identity-chaining-16` | RFC Editor queue | Not supported (planned) | Requires cross-domain trust-chain, delegation, replay, and resource-server verification semantics. |
+| `draft-ietf-oauth-transaction-tokens-09` | OAuth WG active draft | Not supported (planned) | Requires a trusted-domain Transaction Token Service and workload call-chain model. |
+| `draft-ietf-oauth-status-list-21` | RFC Editor queue | Not supported (planned) | Add for OpenID4VC credential status only with privacy-preserving status, revocation, and verifier semantics. |
+| `draft-ietf-oauth-sd-jwt-vc-17` | AD Evaluation | Implemented/profile-scoped | Keep final-delta watch inside the OpenID4VC `dc+sd-jwt` issuer/verifier profiles only. |
+| OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1 | OpenID Foundation Final Specifications | Not supported (planned) | Requires trust anchors, trust-chain resolution, metadata policy, trust marks, federation endpoints, key rollover, and conformance evidence. |
+
+### Exploratory OAuth Draft Watchlist
+
+The following individual drafts are worth monitoring because they align with
+current product directions such as agent delegation, auditability, credential
+status, sender constraints, and resource metadata. They are **watchlist only**:
+no discovery metadata, conformance matrix, migration, or implementation claim may
+refer to them until they are promoted through the Review Gate for New Standards.
+
+| Draft or protocol family | Current posture | Why it matters |
+| --- | --- | --- |
+| RFC 9635 / RFC 9767 GNAP | Watch only | Adjacent authorization protocol; useful design reference, not an OAuth/OIDC feature toggle. |
+| `draft-aap-oauth-profile-01` | Watch only | Agent Authorization Profile may become relevant for AI-agent delegated access. |
+| `draft-li-oauth-delegated-authorization-02` | Watch only | Subordinate delegated tokens overlap with bounded Token Exchange and agent delegation. |
+| `draft-mcguinness-oauth-mission-00` | Watch only | Mission-bound authorization can inform bounded-purpose grants. |
+| `draft-mcguinness-oauth-client-instance-assertion-01` | Watch only | Client-instance identity may complement attestation-based client authentication. |
+| Actor delegation drafts (`draft-mcguinness-oauth-actor-profile-00`, `draft-mcguinness-oauth-actor-proofs-00`, `draft-mcguinness-oauth-actor-receipts-00`, `draft-mw-oauth-actor-chain-01`) | Watch only | Relevant to auditable multi-agent or multi-hop delegation. |
+| `draft-liu-oauth-authorization-evidence-01` | Watch only | Could improve access-token audit evidence if privacy and minimization are solved. |
+| `draft-parecki-oauth-global-token-revocation-06` | Watch only | Operationally useful for compromise response; requires careful blast-radius controls. |
+| RAR/resource metadata drafts (`draft-zehavi-oauth-rar-metadata-05`, `draft-skokan-oauth-resource-response-02`, `draft-mcguinness-oauth-rfc9728bis-01`) | Watch only | Could improve discovery of typed permissions and protected resource metadata. |
+| Sender-constraint drafts (`draft-mw-oauth-tls-session-bound-tokens-07`, `draft-richer-oauth-httpsig-02`) | Watch only | Potential future proof-of-possession alternatives; deployment feasibility remains unproven. |
+| `draft-moros-oauth-browser-session-handoff-00` | Watch only | Relevant to safe browser/native session handoff only if no-token-leakage guarantees hold. |
 
 ## Forbidden or Compatibility-Only Capabilities
 
@@ -191,11 +248,11 @@ These capabilities must not become default behavior:
 | Implicit grant | Forbidden | Superseded by authorization code + PKCE; increases token exposure. |
 | Resource owner password credentials grant | Forbidden | Contradicts modern delegation and phishing-resistant architecture. |
 | Plain PKCE | Compatibility-only if ever needed | S256 is the secure default and FAPI requirement. |
-| Authorization code without PKCE | Not implemented by security policy | RFC 9700 and the OAuth 2.1 direction justify one S256 invariant for every client type. |
-| Unsigned request object | Not implemented by security policy | RFC 9101 requires Request Objects to be signed or signed and encrypted. |
-| External client-supplied `request_uri` | Not implemented by security policy | Optional RFC 9101 remote fetching adds SSRF/cache/lifecycle obligations; server-issued RFC 9126 PAR handles remain supported. |
-| Legacy `audience` outside RFC 8693 Token Exchange | Not implemented by security policy | RFC 8707 repeatable URI-valued `resource` is the authorization/token target parameter. |
-| Global environment-backed SCIM bearer | Not implemented by security policy | It cannot provide scoped, expiring, revocable, receiver-bound, auditable credential identity. |
+| Authorization code without PKCE | Never supported by security policy | RFC 9700 and the OAuth 2.1 direction justify one S256 invariant for every client type. |
+| Unsigned request object | Never supported by security policy | RFC 9101 requires Request Objects to be signed or signed and encrypted. |
+| External client-supplied `request_uri` | Never supported by security policy | Optional RFC 9101 remote fetching adds SSRF/cache/lifecycle obligations; server-issued RFC 9126 PAR handles remain supported. |
+| Legacy `audience` outside RFC 8693 Token Exchange | Never supported by security policy | RFC 8707 repeatable URI-valued `resource` is the authorization/token target parameter. |
+| Global environment-backed SCIM bearer | Never supported by security policy | It cannot provide scoped, expiring, revocable, receiver-bound, auditable credential identity. |
 | Bearer access token for FAPI clients requiring sender constraints | Forbidden | Violates FAPI sender-constraint boundary. |
 | Token request resource expansion beyond authorization grant | Forbidden | Breaks resource/audience authorization binding. |
 | Metadata overclaiming | Forbidden | Creates false client assumptions and security downgrade risk. |
@@ -212,11 +269,19 @@ These capabilities must not become default behavior:
 | Priority | Work item | Why it matters | Minimum safe implementation |
 | --- | --- | --- | --- |
 | P1 | Dedicated OAuth 2.1 final audit | OAuth 2.1 is still a draft; final RFC may change requirements. | Requirement-by-requirement matrix after publication, discovery checks, grant/auth/PKCE/refresh tests. |
-| P1 | FAPI precision regression pack | FAPI profile is not only PAR+PKCE+sender constraints; it has precise timing, redirect, JWT/JWKS, and authorization-endpoint restrictions. | Keep code lifetime, PAR lifetime, PAR `redirect_uri`, outer parameter restriction, 303 redirect, JWT skew, duplicate `kid`, client auth, sender constraint, and non-PAR rejection tests green. |
+| P1 | OAuth Security BCP delta audit | `draft-ietf-oauth-security-topics-update-03` may update the RFC 9700 baseline. | Requirement-by-requirement delta audit, metadata consequences, negative tests, and regression evidence before changing any public claim. |
+| P1 | JWT BCP and JWT assertion bis audits | `draft-ietf-oauth-rfc8725bis-06` and `draft-ietf-oauth-rfc7523bis-11` are the current successors for JWT best practice and assertion/client-auth profiles. | Update alg/key/confusion/replay/audience tests before adopting any new metadata or client-auth behavior. |
+| P1 | Browser and cross-device BCP final audits | Browser-based apps and cross-device flows are both in the RFC Editor queue. | Re-audit browser clients, Device Grant, CIBA, Native SSO, and hosted UI flows after RFC publication. |
+| P1 | FAPI precision regression pack | FAPI profile includes more than PAR, PKCE, and sender constraints; it also defines precise timing, redirect, JWT/JWKS, and authorization-endpoint restrictions. | Keep code lifetime, PAR lifetime, PAR `redirect_uri`, outer parameter restriction, 303 redirect, JWT skew, duplicate `kid`, client auth, sender constraint, and non-PAR rejection tests green. |
+| P2 | Refresh-token and authorization-expiration metadata | `draft-ietf-oauth-refresh-token-expiration-03` can improve client visibility into authorization lifetime. | Add explicit state model, rotation/revocation semantics, metadata, and E2E tests before advertising. |
+| P2 | First-party app and client-id metadata profiles | First-party deployments and public-client metadata bootstrap may be useful but can blur client trust boundaries. | Define same-party/BFF boundaries, issuer/client metadata trust, downgrade behavior, and discovery truth tests. |
+| P2 | SPIFFE client authentication | Useful only for workload identity deployments with a SPIFFE trust domain. | Add workload identity policy, trust bundle validation, token binding, replay tests, and metadata isolation. |
 | P2 | Third-party JWT bearer assertion trust implementation | Needed only if external assertion issuers or non-client subjects become product scope. | Implement the deferred design in `docs/features/ecosystem-onboarding.md`: issuer allowlist, subject mapping, audience, expiry, `jti` replay, revocation, metadata gating, negative tests, and audit events. |
+| P2 | Identity assertion, identity chaining, and Transaction Tokens | These are useful for cross-domain delegation or workload call chains, but require explicit trust-domain semantics. | Define issuer/trust anchors, subject mapping, transaction-token service responsibilities, replay/expiry, resource-server verification, and audit trails. |
+| P2 | Token Status List for OpenID4VC | Credential status belongs with the credential issuer/verifier privacy and revocation model. | Add status list publication, privacy analysis, revocation semantics, verifier handling, and OIDF matrix evidence where available. |
 | P2 | Device Authorization Grant hardening follow-up | Useful for constrained devices but abuse-prone; baseline support is implemented behind a feature gate. | Expand product UX copy, audit events, brute-force telemetry, and full browser approval E2E around the existing `/device` flow. |
 | P2 | Token Exchange hardening follow-up | Baseline local access-token exchange is implemented. | Add external issuer trust profiles, refresh-token or ID-token exchange only if needed, richer audit events, and black-box service-chain E2E coverage. |
-| P2 | DCR trust-policy follow-up | Baseline RFC 7591 and RFC 7592 DCR management are implemented, but richer trust policy still expands client lifecycle authority. | Optional software statement trust, optional remote JWKS fetch policy, black-box lifecycle conformance fixtures, and no automatic high-privilege defaults. |
+| P2 | DCR trust-policy follow-up | Baseline RFC 7591 and RFC 7592 DCR management are implemented, and constrained HTTPS `jwks_uri` resolution exists; richer trust policy still expands client lifecycle authority. | Optional software statement trust, black-box lifecycle conformance fixtures, remote-JWKS SSRF/size/type/redirect regressions, and no automatic high-privilege defaults. |
 | P3 | Front-Channel Logout / Session Management | Interop feature, weaker than server-side logout paths. | Metadata, iframe/session behavior, browser tests, no weakening of RP-Initiated or Back-Channel Logout. |
 | P3 | OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1 | Ecosystem trust-chain feature. | Entity statements, trust anchors, trust chain resolution, metadata policy, trust marks, fetch/list/resolve endpoints, and conformance evidence. |
 
@@ -225,7 +290,7 @@ These capabilities must not become default behavior:
 Every new OAuth/OIDC/FAPI feature must pass this gate before README metadata or
 discovery metadata claims are updated:
 
-1. Define the exact profile, not just the RFC name.
+1. Define the exact profile, including version and variant.
 2. Identify whether the feature changes grant issuance, client authentication,
    redirect handling, token format, token audience, replay state, key use,
    consent, metadata, or resource-server behavior.

@@ -208,6 +208,92 @@ class Openid4vcOidfTests(unittest.TestCase):
             module.oidf.OIDF_API_SSL_CONTEXT = None
             Path(config_path).unlink(missing_ok=True)
 
+    def test_grouped_openid4vc_runner_filters_expected_records_per_batch(self):
+        module = load("run_openid4vc_conformance.py")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "configs.json"
+            plans = root / "plans.json"
+            warnings = root / "warnings.json"
+            skips = root / "skips.json"
+            export = root / "results"
+            config.write_text(
+                json.dumps({"configs": {"a.json": {"alias": "a"}, "b.json": {"alias": "b"}, "c.json": {"alias": "c"}}}),
+                encoding="utf-8",
+            )
+            plans.write_text(
+                json.dumps([
+                    "plan-one a.json",
+                    "plan-two b.json",
+                    "plan-three c.json",
+                ]),
+                encoding="utf-8",
+            )
+            warnings.write_text(
+                json.dumps([
+                    {"configuration-filename": "a.json", "test-name": "warning-a"},
+                    {"configuration-filename": "c.json", "test-name": "warning-c"},
+                ]),
+                encoding="utf-8",
+            )
+            skips.write_text(
+                json.dumps([
+                    {"configuration-filename": "b.json", "test-name": "skip-b"},
+                    {"configuration-filename": "c.json", "test-name": "skip-c"},
+                ]),
+                encoding="utf-8",
+            )
+
+            invocations = module.grouped_runner_args(
+                [
+                    "--suite-dir", "suite",
+                    "--conformance-server", "https://suite.example",
+                    "--config-json-file", str(config),
+                    "--plan-set-json-file", str(plans),
+                    "--expected-failures-file", str(warnings),
+                    "--expected-skips-file", str(skips),
+                    "--export-dir", str(export),
+                ],
+                2,
+                root / "groups",
+            )
+
+            self.assertEqual(len(invocations), 2)
+            first_plan_set = Path(invocations[0][invocations[0].index("--plan-set-json-file") + 1])
+            second_plan_set = Path(invocations[1][invocations[1].index("--plan-set-json-file") + 1])
+            self.assertEqual(json.loads(first_plan_set.read_text(encoding="utf-8")), ["plan-one a.json", "plan-two b.json"])
+            self.assertEqual(json.loads(second_plan_set.read_text(encoding="utf-8")), ["plan-three c.json"])
+
+            first_warnings = Path(invocations[0][invocations[0].index("--expected-failures-file") + 1])
+            first_skips = Path(invocations[0][invocations[0].index("--expected-skips-file") + 1])
+            second_warnings = Path(invocations[1][invocations[1].index("--expected-failures-file") + 1])
+            second_skips = Path(invocations[1][invocations[1].index("--expected-skips-file") + 1])
+            self.assertEqual(
+                [item["test-name"] for item in json.loads(first_warnings.read_text(encoding="utf-8"))],
+                ["warning-a"],
+            )
+            self.assertEqual(
+                [item["test-name"] for item in json.loads(first_skips.read_text(encoding="utf-8"))],
+                ["skip-b"],
+            )
+            self.assertEqual(
+                [item["test-name"] for item in json.loads(second_warnings.read_text(encoding="utf-8"))],
+                ["warning-c"],
+            )
+            self.assertEqual(
+                [item["test-name"] for item in json.loads(second_skips.read_text(encoding="utf-8"))],
+                ["skip-c"],
+            )
+            self.assertIn(str(export / "group-01"), invocations[0])
+            self.assertIn(str(export / "group-02"), invocations[1])
+
+    def test_official_openid4vc_workflow_uses_bounded_groups(self):
+        workflow = (ROOT / ".github" / "workflows" / "openid4vc-conformance.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("--plan-group-size 4", workflow)
+
     def test_driver_callback_get_uses_oidf_ssl_context(self):
         module = load("run_openid4vc_conformance.py")
         context = object()
@@ -231,17 +317,17 @@ class Openid4vcOidfTests(unittest.TestCase):
         finally:
             module.oidf.OIDF_API_SSL_CONTEXT = None
 
-    def test_suite_internal_nginx_urls_are_rewritten_to_control_plane(self):
+    def test_suite_internal_urls_are_rewritten_to_control_plane(self):
         module = load("run_openid4vc_conformance.py")
 
         rewritten = module.suite_reachable_url(
             "https://localhost:8443",
-            "https://nginx:8443/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
+            "https://suite.example/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
         )
 
         self.assertEqual(
             rewritten,
-            "https://localhost:8443/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
+            "https://suite.example/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
         )
         self.assertEqual(
             module.suite_reachable_url(
@@ -278,12 +364,171 @@ class Openid4vcOidfTests(unittest.TestCase):
         self.assertEqual(registry["status"], "alpha-regression-not-certification")
         self.assertEqual(registry["roles"], ["issuer", "verifier"])
 
+    def test_openid4vc_target_boundary_allows_external_attester_role(self):
+        module = load("run_oidf_conformance.py")
+
+        module.assert_config_target_boundaries(
+            {
+                "vci": {
+                    "credential_issuer_url": "https://issuer.example",
+                    "client_attester_issuer": "https://client-attester.example.org",
+                }
+            },
+            "openid4vc-vci-haip-sd-wallet.json",
+            "https://issuer.example",
+        )
+        module.assert_config_target_boundaries(
+            {
+                "client": {
+                    "client_id": "issuer.example",
+                    "request_object_trust_anchor_uri": "https://trust-anchor.example.org/root.pem",
+                }
+            },
+            "openid4vc-vp-haip-sd.json",
+            "https://issuer.example",
+        )
+
+    def test_openid4vc_target_boundary_rejects_local_targets(self):
+        module = load("run_oidf_conformance.py")
+
+        with self.assertRaisesRegex(SystemExit, "local-only URL"):
+            module.assert_config_target_boundaries(
+                {
+                    "vci": {
+                        "credential_issuer_url": "https://issuer.example",
+                        "credential_offer_endpoint": "https://nginx:8443/test/a/issuer/offer",
+                    }
+                },
+                "openid4vc-vci-sd-wallet-plain.json",
+                "https://issuer.example",
+            )
+
+    def test_openid4vc_target_boundary_requires_role_target_binding(self):
+        module = load("run_oidf_conformance.py")
+
+        with self.assertRaisesRegex(SystemExit, "credential_issuer_url"):
+            module.assert_config_target_boundaries(
+                {"vci": {"credential_issuer_url": "https://wrong.example"}},
+                "openid4vc-vci-sd-wallet-plain.json",
+                "https://issuer.example",
+            )
+        with self.assertRaisesRegex(SystemExit, "verifier client_id"):
+            module.assert_config_target_boundaries(
+                {"client": {"client_id": "wrong.example"}},
+                "openid4vc-vp-haip-sd.json",
+                "https://issuer.example",
+            )
+
+    def test_openid4vc_plan_config_writer_does_not_require_oidc_discovery_url(self):
+        module = load("run_oidf_conformance.py")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite_scripts = root / "suite" / "scripts"
+            suite_scripts.mkdir(parents=True)
+            config_json = root / "configs.json"
+            config_json.write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            "openid4vc-vci-sd-wallet-plain.json": {
+                                "alias": "openid4vc-vci-sd-wallet-plain",
+                                "vci": {
+                                    "credential_issuer_url": "https://issuer.example",
+                                    "client_attester_issuer": "https://client-attester.example.org",
+                                },
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            written, aliases = module.write_plan_configs(
+                suite_scripts,
+                "ignored.json",
+                "OPENID4VC_CONFIGS",
+                str(config_json),
+                "https://issuer.example",
+            )
+
+        self.assertEqual(written, {"openid4vc-vci-sd-wallet-plain.json"})
+        self.assertEqual(
+            aliases,
+            {
+                "openid4vc-vci-sd-wallet-plain.json": "openid4vc-vci-sd-wallet-plain"
+            },
+        )
+
+    def test_openid4vc_issuer_user_reject_module_denies_consent(self):
+        module = load("run_oidf_conformance.py")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite_scripts = root / "suite" / "scripts"
+            suite_scripts.mkdir(parents=True)
+            config_json = root / "configs.json"
+            config_json.write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            "openid4vc-vci-haip-sd-wallet.json": {
+                                "alias": "openid4vc-vci-haip-sd-wallet",
+                                "vci": {"credential_issuer_url": "https://issuer.example"},
+                                "nazo": {
+                                    "oidf_user_email": "user@example.test",
+                                    "oidf_user_password": "correct horse battery staple",
+                                },
+                                "browser": [
+                                    {
+                                        "match": "https://issuer.example/authorize*",
+                                        "tasks": [
+                                            {
+                                                "task": "Complete login page",
+                                                "match": "https://issuer.example/ui/auth*",
+                                                "commands": [],
+                                            },
+                                            {
+                                                "task": "Complete consent page",
+                                                "match": "https://issuer.example/ui/consent*",
+                                                "commands": [],
+                                            },
+                                        ],
+                                    }
+                                ],
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            module.write_plan_configs(
+                suite_scripts,
+                "ignored.json",
+                "OPENID4VC_CONFIGS",
+                str(config_json),
+                "https://issuer.example",
+            )
+            written = json.loads(
+                (suite_scripts / "openid4vc-vci-haip-sd-wallet.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        user_reject_override = written["override"][
+            "fapi2-security-profile-final-user-rejects-authentication"
+        ]["browser"][0]
+        deny_task = user_reject_override["tasks"][1]
+        self.assertEqual(deny_task["task"], "Deny consent page")
+        self.assertIn(["click", "id", "nazo-consent-deny"], deny_task["commands"])
+
     def test_verifier_driver_emits_format_specific_dcql_meta(self):
         module = load("run_openid4vc_conformance.py")
         driver = module.Openid4vcDriver(
             {
                 "conformance_server": "https://localhost:8443",
-                "target_origin": "https://auth.nazo.run",
+                "target_origin": "https://issuer.example",
                 "verifier": {
                     "management_token": "management-token",
                     "credential_type_values": {
@@ -326,7 +571,7 @@ class Openid4vcOidfTests(unittest.TestCase):
         driver = module.Openid4vcDriver(
             {
                 "conformance_server": "https://localhost:8443",
-                "target_origin": "https://auth.nazo.run",
+                "target_origin": "https://issuer.example",
                 "verifier": {
                     "management_token": "management-token",
                     "credential_type_values": {
@@ -433,7 +678,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                 "--base-config-json-file", str(base),
                 "--driver-config-json-file", str(driver),
                 "--conformance-server", "https://suite.example",
-                "--target-origin", "https://auth.nazo.run",
+                "--target-origin", "https://issuer.example",
                 "--output-dir", str(output),
             ]):
                 self.assertEqual(module.main(), 0)
@@ -445,8 +690,12 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(len(plans), 17)
             self.assertEqual(len(configs), 17)
             self.assertEqual(len(set(materialized_driver["aliases"])), 17)
+            self.assertEqual(len(expected_skips), 7)
             self.assertEqual(
-                expected_skips,
+                [
+                    item for item in expected_skips
+                    if item["test-name"] == module.VCI_UNSUPPORTED_ENCRYPTION_MODULE
+                ],
                 [
                     {
                         "test-name": module.VCI_UNSUPPORTED_ENCRYPTION_MODULE,
@@ -463,35 +712,11 @@ class Openid4vcOidfTests(unittest.TestCase):
                         "variant": "*",
                         "configuration-filename": "openid4vc-vci-sd-preauth.json",
                     },
-                    {
-                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
-                        "variant": "*",
-                        "configuration-filename": "openid4vc-vci-haip-sd-wallet.json",
-                    },
-                    {
-                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
-                        "variant": "*",
-                        "configuration-filename": "openid4vc-vci-haip-mdoc-wallet.json",
-                    },
-                    {
-                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
-                        "variant": "*",
-                        "configuration-filename": "openid4vc-vci-haip-sd-issuer.json",
-                    },
-                    {
-                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
-                        "variant": "*",
-                        "configuration-filename": "openid4vc-vci-haip-mdoc-issuer.json",
-                    },
                 ],
             )
             self.assertEqual(len(expected_warnings), 4)
             self.assertEqual(
-                {
-                    item["configuration-filename"]
-                    for item in expected_warnings
-                    if item["test-name"] == module.VCI_REFRESH_TOKEN_MODULE
-                },
+                {item["configuration-filename"] for item in expected_warnings},
                 {
                     "openid4vc-vci-haip-sd-wallet.json",
                     "openid4vc-vci-haip-mdoc-wallet.json",
@@ -499,30 +724,97 @@ class Openid4vcOidfTests(unittest.TestCase):
                     "openid4vc-vci-haip-mdoc-issuer.json",
                 },
             )
-            self.assertFalse(
-                any(
-                    item["configuration-filename"].startswith("openid4vc-vci-sd-wallet")
-                    or item["configuration-filename"].startswith("openid4vc-vci-mdoc-wallet")
-                    or item["configuration-filename"].startswith("openid4vc-vci-sd-issuer")
-                    or item["configuration-filename"].startswith("openid4vc-vci-mdoc-issuer")
+            self.assertEqual(
+                {
+                    (
+                        item["expected-result"],
+                        item["test-name"],
+                        item["current-block"],
+                        item["condition"],
+                    )
                     for item in expected_warnings
-                    if "haip" not in item["configuration-filename"]
-                )
+                },
+                {
+                    (
+                        "warning",
+                        module.VCI_REFRESH_TOKEN_MODULE,
+                        module.VCI_REFRESH_TOKEN_BLOCK,
+                        module.VCI_REFRESH_TOKEN_CONDITION,
+                    )
+                },
             )
-            self.assertFalse(
-                any(
-                    item["test-name"] == "fapi2-security-profile-final-dpop-negative-tests"
+            self.assertEqual(
+                {tuple(sorted(item["variant"].items())) for item in expected_warnings},
+                {
+                    tuple(
+                        sorted(
+                            module.full_vci_variant(
+                                module.VCI_HAIP,
+                                {
+                                    "vci_authorization_code_flow_variant": "wallet_initiated",
+                                    "credential_format": "sd_jwt_vc",
+                                },
+                            ).items()
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            module.full_vci_variant(
+                                module.VCI_HAIP,
+                                {
+                                    "vci_authorization_code_flow_variant": "wallet_initiated",
+                                    "credential_format": "mdoc",
+                                },
+                            ).items()
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            module.full_vci_variant(
+                                module.VCI_HAIP,
+                                {
+                                    "vci_authorization_code_flow_variant": "issuer_initiated",
+                                    "credential_format": "sd_jwt_vc",
+                                },
+                            ).items()
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            module.full_vci_variant(
+                                module.VCI_HAIP,
+                                {
+                                    "vci_authorization_code_flow_variant": "issuer_initiated",
+                                    "credential_format": "mdoc",
+                                },
+                            ).items()
+                        )
+                    ),
+                },
+            )
+            refresh_skips = [
+                item for item in expected_skips
+                if item["test-name"] == module.VCI_REFRESH_TOKEN_MODULE
+            ]
+            self.assertEqual(len(refresh_skips), 4)
+            self.assertEqual(
+                {
+                    (item["configuration-filename"], tuple(sorted(item["variant"].items())))
+                    for item in refresh_skips
+                },
+                {
+                    (item["configuration-filename"], tuple(sorted(item["variant"].items())))
                     for item in expected_warnings
-                )
+                },
             )
-            self.assertEqual(materialized_driver["target_origin"], "https://auth.nazo.run")
+            self.assertEqual(materialized_driver["target_origin"], "https://issuer.example")
             self.assertEqual(
                 materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],
                 "urn:eudi:pid:1",
             )
             for filename, config in configs.items():
                 if "vp-" in filename:
-                    self.assertEqual(config["client"]["client_id"], "auth.nazo.run")
+                    self.assertEqual(config["client"]["client_id"], "issuer.example")
                     if "redirect-query" in filename:
                         self.assertNotIn("request_object_trust_anchor_pem", config["client"])
                     else:
@@ -535,11 +827,14 @@ class Openid4vcOidfTests(unittest.TestCase):
             for filename, config in configs.items():
                 if "vci-" not in filename:
                     continue
-                self.assertEqual(config["vci"]["credential_issuer_url"], "https://auth.nazo.run")
+                self.assertEqual(config["vci"]["credential_issuer_url"], "https://issuer.example")
                 expected = "org.iso.18013.5.1.mDL" if "mdoc" in filename else "pid-sd-jwt"
                 self.assertEqual(config["vci"]["credential_configuration_id"], expected)
                 if "preauth" in filename:
                     self.assertEqual(config["vci"]["static_tx_code"], "123456")
+                if "vci-haip-" in filename:
+                    self.assertIn("offline_access", config["client"]["scope"].split())
+                    self.assertIn("offline_access", config["client2"]["scope"].split())
                 client2_keys = config["client2"]["jwks"]["keys"]
                 self.assertEqual(
                     {(key["kty"], key["crv"], key["alg"]) for key in client2_keys},

@@ -26,7 +26,7 @@ Nazo Auth Server 是一个用 Rust 写的自托管 OAuth 2.x / OAuth 2.1-aligned
 | 许可证 | AGPL-3.0-or-later |
 | 语言 | Rust 2024 |
 | 运行依赖 | PostgreSQL、Valkey |
-| 已认证公开 issuer | `https://auth.nazo.run` |
+| 一致性测试 issuer | 操作者提供的公网 HTTPS origin |
 | 默认部署模型 | 同域 |
 
 ## 质量信号
@@ -45,86 +45,11 @@ Nazo Auth Server 是一个用 Rust 写的自托管 OAuth 2.x / OAuth 2.1-aligned
 
 ## 标准
 
-Nazo Auth Server 实现了现代授权服务器需要的核心标准。兼容性例外会明确写在文档里，不靠 discovery metadata 模糊带过。
-
-IETF 和 RFC：
-
-| 标准 | 实现 |
-| --- | --- |
-| [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009), Token Revocation | `/revoke` |
-| [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523), JWT Client Authentication 和 JWT Bearer Grant | `private_key_jwt`，以及绑定客户端自身身份的 JWT bearer grant |
-| [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), PKCE | S256 PKCE |
-| [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662), Token Introspection | `/introspect` |
-| [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native app redirect URI 策略：claimed HTTPS、private-use scheme、允许端口变化的 loopback HTTP |
-| [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414), Authorization Server Metadata | `/.well-known/oauth-authorization-server` |
-| [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628), Device Authorization Grant | `/device_authorization`、`/device` 和 `device_code` token grant，由 `ENABLE_DEVICE_AUTHORIZATION_GRANT` 控制 |
-| [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693), Token Exchange | 面向已注册 `urn:ietf:params:oauth:grant-type:token-exchange` 客户端的受限本地 access-token exchange |
-| [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705), OAuth 2.0 mTLS | mTLS client auth 和 sender-constrained token |
-| [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | authorization/PAR/token `resource` 处理、JWT `aud` 绑定，以及 refresh token audience 收窄 |
-| [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), JWT Access Tokens | 面向 resource server 的 JWT access token |
-| [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101), JAR | 启用后支持 signed request object |
-| [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126), PAR | `/par` |
-| [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396), Rich Authorization Requests | 由 `ENABLE_AUTHORIZATION_DETAILS` 控制 |
-| [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), DPoP | proof 校验和 sender-constrained token |
-| [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700), OAuth 2.0 Security BCP | code-only authorization response、无 password/implicit grant、PKCE、redirect URI 绑定、bearer token 防护和 sender-constrained token 加固 |
-| [RFC 9701](https://www.rfc-editor.org/rfc/rfc9701), JWT Response for OAuth Token Introspection | profile-gated signed 和 nested encrypted introspection response |
-| [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728), Protected Resource Metadata | `/.well-known/oauth-protected-resource` 和 `/.well-known/oauth-protected-resource/fapi/resource` |
-| OAuth 2.1 draft 方向 | OAuth 2.1 风格默认值，兼容例外需要显式开关 |
-
-OpenID Foundation：
-
-<p align="center">
-  <a href="https://openid.net/certification/certified-openid-providers-profiles/">
-    <img src="https://openid.net/wordpress-content/uploads/2016/04/oid-l-certification-mark-l-rgb-150dpi-90mm-300x157.png" alt="OpenID Certified" width="140">
-  </a>
-</p>
-
-| 规格 | 实现 |
-| --- | --- |
-| [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) | ID Token、JSON/signed/encrypted UserInfo、claims、authorization code flow |
-| [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) | `/.well-known/openid-configuration` |
-| [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html) | `/logout` |
-| [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | signed logout token + durable outbox delivery |
-| [JWT Secured Authorization Response Mode](https://openid.net/specs/oauth-v2-jarm.html) | active profile 或请求选择 JARM 时支持签名响应，并支持可选 per-client nested JWE |
-| [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-security-profile-2_0-final.html) | `fapi2-security` profile |
-| [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-message-signing-2_0-final.html) | signed authorization request、JARM 和 signed introspection profile support |
-
-其他协议能力：
-
-| 标准 | 实现 |
-| --- | --- |
-| SCIM 2.0 provisioning，包含 [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865) / [RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) 能力发现 | 默认 tenant 的 user provisioning；index pagination 仍为默认方法，forward cursor pagination 使用 10 分钟有效、绑定 actor/query 的不透明 cursor；RFC 9967 Security Events 仍关闭 |
-| WebAuthn | passkey 注册和登录 |
-
-新兴协议由 [M8 watchlist 治理审计](docs/conformance/2026-07-11-m8-watchlist-governance.md)
-跟踪。该记录完成产品与 conformance 准入门禁，不表示 deferred 候选项已经获得运行时支持。
+📚 [标准与 Profile 支持](docs/integration/openid-connect.zh-CN.md)
 
 ## 认证
 
-Nazo Auth Server 已列入 OpenID Foundation 认证列表，名称为
-`Nazo Auth Server 0.1.0`，日期为 `09-Jun-2026`。
-
-- [OpenID Connect Certified providers](https://openid.net/certification/#OPs)
-- [Certified OpenID Provider profiles](https://openid.net/certification/certified-openid-providers-profiles/)
-- [Certified FAPI 2.0 OP Security Profile Final and Message Signing Final](https://openid.net/certification/certified-fapi-2-0-op-security-profile-final-message-signing-final/)
-
-OpenID Foundation Conformance Suite 结果 URL：
-
-| 结果 | URL |
-| --- | --- |
-| OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
-| OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
-| 最新公网黑盒完整 OIDF 证据 | [docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md](docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md) |
-| 最新 25-plan 官方矩阵 | [docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md](docs/conformance/2026-07-17-public-black-box-full-oidf-results.zh-CN.md#oidc--fapi--fapi-ciba-官方公网矩阵) |
-| 已归档 21-plan 官方矩阵 | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
-| OIDF 矩阵范围 | [docs/conformance/oidf-full-matrix.zh-CN.md](docs/conformance/oidf-full-matrix.zh-CN.md) |
-| 已归档私有 full-matrix 回归 | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
-
-最新公网黑盒官方证据针对 `https://auth.nazo.run` 执行，workflow head SHA 为
-`ae19cc50af4cc50f3f35f678a3a1c38332d475e2`。它在 GitHub Actions 中针对公网生产 origin 运行 25-plan OIDC/FAPI/FAPI-CIBA 矩阵与 17-plan OpenID4VC Final/HAIP 矩阵。本地 endpoint、私有 DNS、私有 CA 和 `https://nginx:8443` 不计入一致性证据。
-25-plan OIDC/FAPI/FAPI-CIBA 矩阵采用 23+2 parallel-isolated 布局，导出 787 个模块：748 个通过、22 个模块带有官方入口 TLS 有界 warning、9 个预期 review 状态、8 个预期 unsigned 兼容 skip，没有失败模块或失败 condition。因此它不是 zero-SKIPPED 或 zero-WARNING 官方证据；具体 warning 上下文和上游入口边界记录在链接的证据文档中。
-
-已归档的私有 full-matrix 回归记录仍可用于调试，但不是当前一致性证据。
+🏅 [认证与一致性证据](docs/conformance/certification.zh-CN.md)
 
 ## 功能
 
@@ -143,7 +68,7 @@ OpenID Foundation Conformance Suite 结果 URL：
 - `rust-toolchain.toml` 精确锁定的 Rust stable 版本
 - PostgreSQL 18 或兼容版本
 - Valkey 8 或兼容 Redis protocol 的服务
-- Docker 或 Podman
+- 可选集成栈所需的容器运行时
 
 用 Docker Compose 启动：
 
@@ -253,7 +178,7 @@ python scripts/full_real_request_e2e.py
 python scripts/full_real_request_load.py
 ```
 
-Windows coverage 见
+Coverage 运行说明见
 [docs/coverage/codecov-docker-runbook.md](docs/coverage/codecov-docker-runbook.md)。
 
 ## 许可证

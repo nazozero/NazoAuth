@@ -2,7 +2,7 @@
 
 ## Outcome
 
-Private OpenID Foundation Conformance Suite full-matrix regression for the
+Diagnostic OpenID Foundation Conformance Suite full-matrix regression for the
 TP/PS hardening work deployed to the public issuer.
 
 The run used the repository full matrix, not the temporary targeted plan-set.
@@ -13,9 +13,9 @@ It completed all 16 plans with `0 failures` and `0 warnings`.
 | Result | Passed |
 | Runtime implementation commit | `31e8f9f` |
 | Commit title | `Complete TP and PS OAuth profile work` |
-| Public issuer under test | `https://auth.nazo.run` |
+| Public issuer under test | `https://issuer.example` |
 | Plan set | `runtime/oidf/oidf-plan-set.json` |
-| Conformance environment | Private runner |
+| Conformance environment | Diagnostic runner details intentionally omitted |
 | Exported plan archives | `16` |
 | Final line | `All tests ran to completion. See above for any test condition failures.` |
 
@@ -85,12 +85,11 @@ Per-plan module counts:
 
 ## Verification
 
-The private runner exported `16` plan archives and printed `16` plan summaries.
+The diagnostic runner exported `16` plan archives and printed `16` plan summaries.
 The result archive paths and runner host details are intentionally not recorded
 in the public repository.
 
 ## Notes
 
 - The full regression record intentionally excludes plan configuration bodies,
-  suite logs, runner host details, private keys, certificates, and local
-  credentials.
+  suite logs, runner host details, private keys, certificates, and credentials.

@@ -26,8 +26,11 @@ notice-only transmitter with authenticated RFC 8936 polling and a project-owned
 black-box matrix. OpenID4VCI Credential Issuer and OpenID4VP Verifier were
 subsequently admitted as separate default-closed modules. Transaction Tokens
 and Grant Management remain unimplemented product candidates; client
-attestation is supported only inside the bounded OpenID4VCI trust profile and
-is not advertised as a general-purpose OAuth authentication method.
+attestation subsequently entered a profile-scoped, default-closed
+`attest_jwt_client_auth` surface. It is advertised only when the Client
+Attestation module and client policy require it, and remains a draft-10
+implementation pending final-RFC delta audit rather than a final conformance
+claim.
 
 ## Scope and conclusion
 
@@ -44,7 +47,7 @@ The review produced these decisions:
 | RFC 9865 cursor pagination | IETF Standards Track RFC, published 2025-10 | Implemented after this governance review with local codec, handler, metadata, security, and SCIM regression evidence; no applicable OIDF plan was found. |
 | RFC 9967 SCIM SET profile | IETF Standards Track RFC, published 2026-05 | Historical decision: deferred on 2026-07-11; superseded on 2026-07-15 by the default-closed implementation and project black-box matrix. |
 | OAuth for Browser-Based Applications | `draft-ietf-oauth-browser-based-apps-27`; RFC Editor queue in progress, no RFC number yet | The corrected pre-publication draft-27 audit is recorded in `2026-07-11-browser-based-applications-draft-27-audit.md`; repeat the delta audit after RFC publication and do not add a draft profile switch. |
-| Attestation-Based Client Authentication | active `draft-ietf-oauth-attestation-based-client-auth-10` | Defer while the draft and attester trust ecosystem remain unsettled. |
+| Attestation-Based Client Authentication | active `draft-ietf-oauth-attestation-based-client-auth-10` | Historical decision: deferred on 2026-07-11; superseded by the later profile-scoped, default-closed `attest_jwt_client_auth` implementation. Final-RFC conformance still requires a delta audit. |
 | Transaction Tokens | active `draft-ietf-oauth-transaction-tokens-09` | Defer until NazoAuth has a trusted-domain workload call-chain product requirement. |
 | Grant Management | OIDF working draft `oauth-v2-grant-management-03`, rolling copy built 2026-06-26; its `ID1` snapshot is an approved Implementer's Draft, with no Final status | Keep the existing admin grant controls; defer protocol metadata and a client-facing API. |
 | OpenID4VCI 1.0 / OpenID4VP 1.0 | OIDF Final Specifications, published 2025-09-16 and 2025-07-09 | Historical decision: require a separate credential product program. Superseded on 2026-07-16 by separately admitted, default-closed Issuer and Verifier modules; the Wallet role remains absent. |

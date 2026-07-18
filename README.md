@@ -34,7 +34,7 @@ protocol state.
 | License | AGPL-3.0-or-later |
 | Language | Rust 2024 |
 | Runtime services | PostgreSQL, Valkey |
-| Certified public issuer | `https://auth.nazo.run` |
+| Conformance test issuer | operator-provided public HTTPS origin |
 | Default deployment model | same-origin |
 
 ## Quality Signals
@@ -54,108 +54,11 @@ composite score:
 
 ## Standards
 
-Nazo Auth Server implements the core standards expected from a modern
-authorization server. Compatibility exceptions are documented instead of hidden
-behind discovery metadata.
-
-IETF and RFCs:
-
-| Standard | Implementation |
-| --- | --- |
-| [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009), Token Revocation | `/revoke` |
-| [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523), JWT Client Authentication and JWT Bearer Grant | `private_key_jwt` and client-bound JWT bearer grant |
-| [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591), Dynamic Client Registration | authenticated `/register` and protected client configuration lifecycle, including constrained `jwks_uri` and `request_uris` metadata |
-| [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636), PKCE | S256 PKCE |
-| [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662), Token Introspection | `/introspect` |
-| [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252), OAuth 2.0 for Native Apps | public native-app redirect URI policy: claimed HTTPS, private-use schemes, and loopback HTTP with port variance |
-| [RFC 8414](https://www.rfc-editor.org/rfc/rfc8414), Authorization Server Metadata | `/.well-known/oauth-authorization-server` |
-| [RFC 8628](https://www.rfc-editor.org/rfc/rfc8628), Device Authorization Grant | `/device_authorization`, `/device`, and `device_code` token grant behind `ENABLE_DEVICE_AUTHORIZATION_GRANT` |
-| [RFC 8693](https://www.rfc-editor.org/rfc/rfc8693), Token Exchange | bounded local access-token exchange for clients registered with `urn:ietf:params:oauth:grant-type:token-exchange` |
-| [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705), OAuth 2.0 mTLS | mTLS client auth and sender-constrained tokens |
-| [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707), Resource Indicators | authorization/PAR/token `resource` handling with JWT `aud` binding and refresh-token audience narrowing |
-| [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068), JWT Access Tokens | JWT access-token shape for resource servers |
-| [RFC 9101](https://www.rfc-editor.org/rfc/rfc9101), JAR | signed request objects where enabled, including exact dynamically registered HTTPS `request_uri` on the baseline profile; FAPI remains PAR-only |
-| [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126), PAR | `/par` |
-| [RFC 9396](https://www.rfc-editor.org/rfc/rfc9396), Rich Authorization Requests | behind `ENABLE_AUTHORIZATION_DETAILS` |
-| [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449), DPoP | proof validation and sender-constrained tokens |
-| [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700), OAuth 2.0 Security BCP | code-only authorization responses, no password or implicit grants, PKCE, redirect URI binding, bearer-token protections, and sender-constrained-token hardening |
-| [RFC 9701](https://www.rfc-editor.org/rfc/rfc9701), JWT Response for OAuth Token Introspection | profile-gated signed and nested encrypted introspection responses |
-| [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728), Protected Resource Metadata | `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource/fapi/resource` |
-| OAuth 2.1 draft direction | OAuth 2.1-style defaults with explicit compatibility switches |
-
-OpenID Foundation:
-
-<p align="center">
-  <a href="https://openid.net/certification/certified-openid-providers-profiles/">
-    <img src="https://openid.net/wordpress-content/uploads/2016/04/oid-l-certification-mark-l-rgb-150dpi-90mm-300x157.png" alt="OpenID Certified" width="140">
-  </a>
-</p>
-
-| Specification | Implementation |
-| --- | --- |
-| [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html) | ID Token, JSON/signed/encrypted UserInfo, claims, authorization code flow |
-| [OpenID Connect Discovery 1.0](https://openid.net/specs/openid-connect-discovery-1_0.html) | `/.well-known/openid-configuration` |
-| [OAuth 2.0 Form Post Response Mode](https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html) | secure no-store `response_mode=form_post` responses on the baseline profile |
-| [OpenID Connect Third-Party Initiated Login 1.0](https://openid.net/specs/openid-connect-3rd-party-initiated-login.html) | HTTPS `initiate_login_uri` dynamic registration metadata |
-| [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html) | `/logout` |
-| [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | signed logout tokens with durable outbox delivery |
-| [JWT Secured Authorization Response Mode](https://openid.net/specs/oauth-v2-jarm.html) | signed JARM and optional per-client nested JWE where the request/profile selects JARM |
-| [FAPI 2.0 Security Profile Final](https://openid.net/specs/fapi-security-profile-2_0-final.html) | `fapi2-security` profile |
-| [FAPI 2.0 Message Signing Final](https://openid.net/specs/fapi-message-signing-2_0-final.html) | signed authorization request, JARM, and signed introspection profile support |
-| [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html) | default-closed Credential Issuer role for bounded `dc+sd-jwt` and `mso_mdoc` configurations |
-| [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html) | default-closed Verifier role with DCQL, signed request objects, and `direct_post` / `direct_post.jwt` responses |
-| [OpenID4VC HAIP 1.0 Final](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html) | high-assurance issuer/verifier combinations within the declared credential trust profile |
-
-Other protocol surfaces:
-
-| Standard | Implementation |
-| --- | --- |
-| SCIM 2.0 provisioning with [RFC 9865](https://www.rfc-editor.org/rfc/rfc9865) / [RFC 9967](https://www.rfc-editor.org/rfc/rfc9967) | default-tenant user provisioning; index pagination remains the default and forward cursor pagination uses opaque 10-minute actor/query-bound cursors; default-closed RFC 9967 notice SETs use a transactional outbox and RFC 8936 poll delivery |
-| WebAuthn | passkey registration and login |
-
-Emerging protocols are tracked through the
-[M8 watchlist governance review](docs/conformance/2026-07-11-m8-watchlist-governance.md).
-That review records product and conformance entry gates; it does not claim
-runtime support for the deferred candidates.
+📚 [Standards and profile support](docs/integration/openid-connect.md)
 
 ## Certification
 
-Nazo Auth Server is listed by the OpenID Foundation as
-`Nazo Auth Server 0.1.0`, dated `09-Jun-2026`.
-
-- [OpenID Connect Certified providers](https://openid.net/certification/#OPs)
-- [Certified OpenID Provider profiles](https://openid.net/certification/certified-openid-providers-profiles/)
-- [Certified FAPI 2.0 OP Security Profile Final and Message Signing Final](https://openid.net/certification/certified-fapi-2-0-op-security-profile-final-message-signing-final/)
-
-OpenID Foundation Conformance Suite result URLs:
-
-| Result | URL |
-| --- | --- |
-| OIDC Basic OP | <https://www.certification.openid.net/plan-detail.html?plan=Srk6iaVDVcqO5> |
-| OIDC Config OP | <https://www.certification.openid.net/plan-detail.html?plan=fGiz8QZYR1LVy> |
-| Latest public black-box full OIDF evidence | [docs/conformance/2026-07-17-public-black-box-full-oidf-results.md](docs/conformance/2026-07-17-public-black-box-full-oidf-results.md) |
-| Latest 25-plan official matrix | [docs/conformance/2026-07-17-public-black-box-full-oidf-results.md](docs/conformance/2026-07-17-public-black-box-full-oidf-results.md#oidc--fapi--fapi-ciba-official-public-matrix) |
-| Archived 21-plan official matrix | [docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md](docs/conformance/2026-07-11-m7-official-encrypted-responses-oidf-results.md#plan-ids) |
-| Current 25-plan repository matrix | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
-| OpenID4VC Final/HAIP alpha regression matrix | [docs/conformance/openid4vc-final-matrix.md](docs/conformance/openid4vc-final-matrix.md) |
-| OIDF matrix scope | [docs/conformance/oidf-full-matrix.md](docs/conformance/oidf-full-matrix.md) |
-| Archived private full-matrix regression | [docs/conformance/2026-07-01-tp-ps-full-matrix.md](docs/conformance/2026-07-01-tp-ps-full-matrix.md) |
-
-The latest public black-box official evidence tested `https://auth.nazo.run`
-from workflow head SHA `ae19cc50af4cc50f3f35f678a3a1c38332d475e2`. It ran the
-25-plan OIDC/FAPI/FAPI-CIBA matrix and the 17-plan OpenID4VC Final/HAIP matrix in
-GitHub Actions against the public production origin. Local endpoints, private
-DNS, private CAs, and `https://nginx:8443` are not accepted as conformance
-evidence. The 25-plan OIDC/FAPI/FAPI-CIBA matrix ran in
-the 23+2 parallel-isolated layout and exported 787 modules: 748 passed, 22
-modules with bounded official-ingress TLS warnings, 9 expected review states,
-8 expected unsigned-compatibility skips, and no failed module or condition.
-It is therefore not zero-SKIPPED or zero-WARNING official evidence; the exact
-warning contexts and upstream ingress boundary are recorded in the linked
-evidence document.
-
-Archived private full-matrix regression records remain useful for debugging, but
-they are not current conformance evidence.
+🏅 [Certification and conformance evidence](docs/conformance/certification.md)
 
 ## Features
 
@@ -184,7 +87,7 @@ Requirements:
 - The exact Rust stable version pinned by `rust-toolchain.toml`
 - PostgreSQL 18 or a compatible PostgreSQL server
 - Valkey 8 or a compatible Redis protocol server
-- Docker or Podman for the local integration stack
+- Container runtime for the optional integration stack
 
 Run with Docker Compose:
 
@@ -302,7 +205,7 @@ python scripts/full_real_request_e2e.py
 python scripts/full_real_request_load.py
 ```
 
-Windows coverage runs are documented in
+Coverage runs are documented in
 [docs/coverage/codecov-docker-runbook.md](docs/coverage/codecov-docker-runbook.md).
 
 ## License

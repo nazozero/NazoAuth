@@ -1,7 +1,10 @@
 #[cfg(test)]
 use super::sector_identifier_host_for_redirects;
 use super::{AdminClientCryptoPort, AdminClientError, CreateClientRequest};
-use crate::{OAuthClient, normalize_sha256_thumbprint, validate_oauth_redirect_uri};
+use crate::{
+    OAuthClient, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+    normalize_sha256_thumbprint, validate_oauth_redirect_uri,
+};
 use serde_json::Value;
 
 const SUPPORTED_GRANT_TYPES: &[&str] = &[
@@ -22,8 +25,6 @@ const SUPPORTED_TOKEN_AUTH_METHODS: &[&str] = &[
     "self_signed_tls_client_auth",
     "attest_jwt_client_auth",
 ];
-const SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS: &[&str] = &["RSA-OAEP-256"];
-const SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS: &[&str] = &["A256GCM"];
 const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256", "ES256", "PS256"];
 
 #[cfg(test)]

@@ -15,11 +15,18 @@ use nazo_oauth_server::oidf_seed::{
     config::plan_config_files, config::public_jwks, config::read_plan_config, config::string_value,
     seed_client_secret_pepper, suite_base_urls, test_endpoint_uri, test_endpoint_uris,
 };
-use nazo_postgres::{OidfSeedClient, OidfSeedUser};
+use nazo_postgres::{OAuthClientRepository, OidfSeedClient, OidfSeedUser};
 use serde_json::{Value, json};
 use sha2::Sha256;
 use std::{collections::BTreeSet, env, path::Path};
 type HmacSha256 = Hmac<Sha256>;
+
+const DEFAULT_OIDF_BASIC_ALIAS: &str = "nazo-oauth-oidf";
+const DEFAULT_OIDF_BASIC_CLIENT_ID: &str = "oidf-basic-client";
+const DEFAULT_OIDF_BASIC_CLIENT2_ID: &str = "oidf-basic-client-2";
+const DEFAULT_OIDF_FORMPOST_CLIENT_ID: &str = "oidf-post-client";
+const DEFAULT_OIDF_FRONTCHANNEL_CLIENT_ID: &str = "oidf-frontchannel-client";
+const DEFAULT_OIDF_SESSION_CLIENT_ID: &str = "oidf-session-client";
 
 #[derive(Clone, Copy, Debug)]
 struct FapiClientPolicy {
@@ -54,6 +61,14 @@ fn env_or(name: &str, default: &str) -> String {
         .unwrap_or_else(|| default.to_owned())
 }
 
+fn required_config_string(config: &ConfigSource, name: &str) -> anyhow::Result<String> {
+    let value = config.string(name, "");
+    if value.trim().is_empty() {
+        anyhow::bail!("{name} is required for OIDF seeding")
+    }
+    Ok(value)
+}
+
 fn hash_password(password: &str) -> anyhow::Result<String> {
     let salt = SaltString::generate(&mut OsRng);
     Ok(Argon2::default()
@@ -86,6 +101,100 @@ fn push_client(
         client: oauth_client(client)?,
         client_secret_hash: client_secret_hash.map(ToOwned::to_owned),
     });
+    Ok(())
+}
+
+fn string_set(values: &[String]) -> BTreeSet<String> {
+    values.iter().cloned().collect()
+}
+
+async fn verify_seeded_clients(
+    repository: &OAuthClientRepository,
+    clients: &[OidfSeedClient],
+) -> anyhow::Result<()> {
+    for expected in clients {
+        let actual = repository
+            .by_client_id(expected.client.tenant_id, &expected.client.client_id)
+            .await?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "seeded OIDF client {} is missing",
+                    expected.client.client_id
+                )
+            })?;
+        if actual.token_endpoint_auth_method != expected.client.token_endpoint_auth_method {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected authentication method",
+                expected.client.client_id
+            );
+        }
+        if actual.jwks != expected.client.jwks {
+            anyhow::bail!(
+                "seeded OIDF client {} has stale or mismatched JWKS",
+                expected.client.client_id
+            );
+        }
+        if actual.tls_client_auth_cert_sha256 != expected.client.tls_client_auth_cert_sha256 {
+            anyhow::bail!(
+                "seeded OIDF client {} has stale or mismatched mTLS certificate binding",
+                expected.client.client_id
+            );
+        }
+        if actual.backchannel_token_delivery_mode != expected.client.backchannel_token_delivery_mode
+        {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected CIBA delivery mode",
+                expected.client.client_id
+            );
+        }
+        if actual.backchannel_client_notification_endpoint
+            != expected.client.backchannel_client_notification_endpoint
+        {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected CIBA notification endpoint",
+                expected.client.client_id
+            );
+        }
+        if string_set(&actual.redirect_uris) != string_set(&expected.client.redirect_uris) {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected redirect URIs",
+                expected.client.client_id
+            );
+        }
+        if string_set(&actual.post_logout_redirect_uris)
+            != string_set(&expected.client.post_logout_redirect_uris)
+        {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected post-logout redirect URIs",
+                expected.client.client_id
+            );
+        }
+        if string_set(&actual.scopes) != string_set(&expected.client.scopes) {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected scopes",
+                expected.client.client_id
+            );
+        }
+        if string_set(&actual.grant_types) != string_set(&expected.client.grant_types) {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected grant types",
+                expected.client.client_id
+            );
+        }
+        if actual.require_dpop_bound_tokens != expected.client.require_dpop_bound_tokens
+            || actual.require_mtls_bound_tokens != expected.client.require_mtls_bound_tokens
+            || actual.require_par_request_object != expected.client.require_par_request_object
+            || actual.allow_client_assertion_audience_array
+                != expected.client.allow_client_assertion_audience_array
+            || actual.allow_client_assertion_endpoint_audience
+                != expected.client.allow_client_assertion_endpoint_audience
+        {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected security policy flags",
+                expected.client.client_id
+            );
+        }
+    }
     Ok(())
 }
 
@@ -144,12 +253,20 @@ fn fapi_client_policy(file_name: &str, plan: &Value) -> anyhow::Result<FapiClien
 async fn main() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
     let database_url = database_url(&config);
-    let suite_base_url = env_or("OIDF_LOCAL_SUITE_BASE_URL", "https://nginx:8443");
-    let suite_base_urls = suite_base_urls(&suite_base_url);
-    let issuer = config.string("ISSUER", "https://auth.nazo.run");
+    let suite_base_url = env::var("OIDF_SUITE_BASE_URL")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .or_else(|| {
+            env::var("OIDF_LOCAL_SUITE_BASE_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .ok_or_else(|| anyhow::anyhow!("OIDF_SUITE_BASE_URL is required for OIDF seeding"))?;
+    let suite_base_urls = suite_base_urls(&suite_base_url).map_err(anyhow::Error::msg)?;
+    let issuer = required_config_string(&config, "ISSUER")?;
     let runtime_dir = env_or("OIDF_LOCAL_RUNTIME_DIR", "runtime/oidf");
     let runtime_dir = Path::new(&runtime_dir);
-    let alias = env_or("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf");
+    let alias = env_or("OIDF_LOCAL_BASIC_ALIAS", DEFAULT_OIDF_BASIC_ALIAS);
     let formpost_alias = format!("{alias}-formpost");
     let frontchannel_alias = format!("{alias}-frontchannel-logout");
     let session_alias = format!("{alias}-session-management");
@@ -203,7 +320,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-basic-client",
+            client_id: DEFAULT_OIDF_BASIC_CLIENT_ID,
             client_name: "Local OIDF Basic Client",
             auth_method: "client_secret_basic",
             redirect_uris: &basic_redirect_uris,
@@ -231,7 +348,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-basic-client-2",
+            client_id: DEFAULT_OIDF_BASIC_CLIENT2_ID,
             client_name: "Local OIDF Basic Client 2",
             auth_method: "client_secret_basic",
             redirect_uris: &basic_redirect_uris,
@@ -259,7 +376,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-post-client",
+            client_id: DEFAULT_OIDF_FORMPOST_CLIENT_ID,
             client_name: "Local OIDF Post Client",
             auth_method: "client_secret_post",
             redirect_uris: &basic_redirect_uris,
@@ -287,7 +404,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-frontchannel-client",
+            client_id: DEFAULT_OIDF_FRONTCHANNEL_CLIENT_ID,
             client_name: "Local OIDF Front-Channel Logout Client",
             auth_method: "client_secret_basic",
             redirect_uris: &frontchannel_redirect_uris,
@@ -315,7 +432,7 @@ async fn main() -> anyhow::Result<()> {
     push_client(
         &mut seeded_clients,
         ClientUpsert {
-            client_id: "local-oidf-session-client",
+            client_id: DEFAULT_OIDF_SESSION_CLIENT_ID,
             client_name: "Local OIDF Session Management Client",
             auth_method: "client_secret_basic",
             redirect_uris: &session_redirect_uris,
@@ -439,13 +556,14 @@ async fn main() -> anyhow::Result<()> {
     }
 
     nazo_postgres::seed_oidf_atomically(&pool, &seed_user, &seeded_clients).await?;
+    verify_seeded_clients(&OAuthClientRepository::new(pool.clone()), &seeded_clients).await?;
 
-    println!("Seeded local OIDF user, OIDC basic clients, and FAPI clients.");
+    println!("Seeded and verified OIDF user, OIDC basic clients, and FAPI clients.");
     println!("OIDF_LOCAL_USER_EMAIL={user_email}");
     println!("OIDF_LOCAL_SUITE_BASE_URLS={}", suite_base_urls.join(","));
     println!(
         "OIDF_LOCAL_BASIC_ALIAS={}",
-        env_or("OIDF_LOCAL_BASIC_ALIAS", "local-nazo-oauth-oidf")
+        env_or("OIDF_LOCAL_BASIC_ALIAS", DEFAULT_OIDF_BASIC_ALIAS)
     );
     println!("OIDF_LOCAL_FAPI_CLIENT_COUNT={}", fapi_clients.len());
     Ok(())
@@ -456,7 +574,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn ciba_client_policy_without_sender_constrain_defaults_to_mtls_holder_of_key() {
+    fn ciba_private_key_jwt_policy_without_sender_constraint_defaults_to_mtls_bound() {
         let policy = fapi_client_policy(
             "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
             &json!({"nazo": {"client_auth_type": "private_key_jwt"}}),
@@ -466,6 +584,20 @@ mod tests {
         assert!(!policy.require_dpop_bound_tokens);
         assert!(policy.require_mtls_bound_tokens);
         assert!(policy.allow_client_assertion_endpoint_audience);
+        assert!(policy.ciba);
+    }
+
+    #[test]
+    fn ciba_mtls_policy_without_sender_constraint_remains_mtls_bound() {
+        let policy = fapi_client_policy(
+            "oidf-fapi-ciba-plain-mtls-poll-plan-config.json",
+            &json!({"nazo": {"client_auth_type": "mtls"}}),
+        )
+        .unwrap();
+
+        assert!(!policy.require_dpop_bound_tokens);
+        assert!(policy.require_mtls_bound_tokens);
+        assert!(!policy.allow_client_assertion_endpoint_audience);
         assert!(policy.ciba);
     }
 
@@ -566,6 +698,23 @@ mod tests {
         .unwrap_err();
 
         assert!(error.to_string().contains("must be plain_response or jarm"));
+    }
+
+    #[test]
+    fn default_basic_alias_matches_generated_oidf_plan_configs() {
+        assert_eq!(DEFAULT_OIDF_BASIC_ALIAS, "nazo-oauth-oidf");
+    }
+
+    #[test]
+    fn default_oidc_client_ids_match_generated_oidf_plan_configs() {
+        assert_eq!(DEFAULT_OIDF_BASIC_CLIENT_ID, "oidf-basic-client");
+        assert_eq!(DEFAULT_OIDF_BASIC_CLIENT2_ID, "oidf-basic-client-2");
+        assert_eq!(DEFAULT_OIDF_FORMPOST_CLIENT_ID, "oidf-post-client");
+        assert_eq!(
+            DEFAULT_OIDF_FRONTCHANNEL_CLIENT_ID,
+            "oidf-frontchannel-client"
+        );
+        assert_eq!(DEFAULT_OIDF_SESSION_CLIENT_ID, "oidf-session-client");
     }
 
     #[test]

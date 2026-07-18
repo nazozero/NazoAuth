@@ -2,8 +2,9 @@
 
 ## 摘要
 
-这是当前生产部署的一致性证据记录。只有针对公网
-`https://auth.nazo.run` 执行的官方套件黑盒运行计入证据。
+这是当前生产部署的一致性证据记录。只有针对操作者显式提供的生产 issuer
+执行的官方套件公网黑盒运行计入证据。公开仓库中的 `https://issuer.example`
+只是脱敏占位符，不是默认测试目标，也不是仓库默认部署地址。
 
 | 门禁 | 结果 |
 |---|---|
@@ -19,23 +20,20 @@
 - `openid4vc-conformance` 的 17 个 OpenID4VC Final / HAIP alpha plan
 
 两个 workflow 都在 GitHub Actions 中针对公网生产 origin 执行。本记录不接受
-本地 Podman DNS、loopback、内网反向代理、私有测试 CA 或
-`https://nginx:8443` 作为证据。
+非公网 endpoint、私有 DNS、私有反向代理、私有测试 CA 或
+suite-private endpoint 作为证据。
 
 ## 被测 revision 与生产边界
 
 | 项目 | 值 |
 |---|---|
 | 被测 commit | `ae19cc50af4cc50f3f35f678a3a1c38332d475e2` |
-| 被测 origin | `https://auth.nazo.run` |
+| 被测 origin | 操作者提供的生产 HTTPS origin，公开文档脱敏为 `https://issuer.example` |
 | 生产健康检查 | `{"status":"正常"}` |
 | 生产 OCI revision | `ae19cc50af4cc50f3f35f678a3a1c38332d475e2` |
-| 本地套件 TLS 覆盖 | 不存在（未设置 `SSL_CERT_FILE`） |
-| 生产容器中的本地/内网标记 | 未发现 `nginx`、`8443` 或 `oidf-local` |
 
-测试即生产。可接受的测试目标只能是外部客户端真实使用的公网服务面。依赖内网地址、
-私有 Podman DNS、本地信任 CA 或 suite-local callback origin 的本地官方套件运行，
-不计入本记录证据。
+测试即生产。可接受的测试目标只能是外部客户端真实使用的公网服务面。依赖非公网连通性、
+私有信任根或 suite-private callback origin 的诊断运行，不计入本记录证据。
 
 ## OIDC / FAPI / FAPI-CIBA 官方公网矩阵
 
@@ -108,9 +106,11 @@ Artifact:
 
 ## 证据边界
 
-本记录刻意不把 Hostinger 本地套件运行作为通过证据。本地运行可以用于调试，但本项目
-的一致性声明必须基于针对 `https://auth.nazo.run` 的公网黑盒运行，并使用真实对外可达
+本记录刻意不把诊断套件运行作为通过证据。诊断运行可以用于调试，但本项目
+的一致性声明必须基于针对显式配置生产 issuer 的公网黑盒运行，并使用真实对外可达
 的 issuer、redirect surface、callback path、TLS 配置和客户端可见 metadata。
+运行公开 workflow 的用户必须提供自己的 `target_issuer` / `target_origin`
+workflow 输入，或在自己的仓库中配置私有自动化变量；仓库不得默认把一致性流量导向任何仓库自有服务。
 
-如果后续某次运行需要本地 endpoint、私有 DNS、本地 CA 注入或 suite-only callback
-才能通过，那次运行不是生产等价证据，不能用于声明 OIDF conformance。
+如果后续某次运行需要非公网 endpoint、私有信任根或 suite-only callback 才能通过，
+那次运行不是生产等价证据，不能用于声明 OIDF conformance。

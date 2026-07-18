@@ -5,6 +5,8 @@ param(
     [string]$BackendCommit,
     [Parameter(Mandatory = $true)]
     [string]$FrontendCommit,
+    [string]$ExpectedBackendBranch = "codex/modular-workspace-architecture",
+    [string]$ExpectedFrontendBranch = "codex/modular-workspace-architecture",
     [string]$LocalFrontendWorktree = "",
     [string]$LocalBackendWorktree = ".",
     [string]$ImageRepository = "localhost/nazo-oauth-server",
@@ -17,6 +19,8 @@ param(
     [string]$RemoteConfigPath = "/opt/nazo-oauth/.env.yaml",
     [string]$RemoteKeysPath = "/opt/nazo-oauth/runtime/keys",
     [string]$RemoteAvatarsPath = "/opt/nazo-oauth/runtime/avatars",
+    [string]$RemoteCibaPingTlsTrustBundlePath = "",
+    [string]$ContainerCibaPingTlsTrustBundlePath = "/app/ciba-ping-trust-bundle.pem",
     [string]$RemoteUiPath = "/usr/local/angie/html/auth/ui",
     [string]$RemoteUiReleasesRoot = "/usr/local/angie/html/auth-releases",
     [string]$OidfPublicSeedArtifactDirectory = "",
@@ -24,6 +28,7 @@ param(
     [string]$OidfPublicSeedWorkflowRunId = "",
     [string]$OidfPublicSeedArtifactId = "",
     [string]$OidfPublicSeedArtifactDigest = "",
+    [string]$OidfSuiteBaseUrl = "https://www.certification.openid.net",
     [string]$RemoteOidfMtlsCaPath = "/usr/local/angie/conf/oidf-mtls-ca.crt",
     [string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/auth.nazo.run.conf",
     [string]$AngieServiceName = "nginx.service",
@@ -31,31 +36,49 @@ param(
     [string]$RemoteDeploymentRoot = "/opt/nazo-oauth",
     [string]$LocalUiDist = "",
     [string]$PublishPort = "",
-    [string]$HealthUrl = "https://auth.nazo.run/health",
-    [string]$DiscoveryUrl = "https://auth.nazo.run/.well-known/openid-configuration",
-    [string]$UiUrl = "https://auth.nazo.run/ui/auth",
-    [string]$ExpectedIssuer = "https://auth.nazo.run",
+    [string]$HealthUrl = "",
+    [string]$DiscoveryUrl = "",
+    [string]$UiUrl = "",
+    [Parameter(Mandatory = $true)]
+    [string]$ExpectedIssuer,
     [ValidateRange(1, 3600)]
     [int]$VerificationLeaseSeconds = 120,
     [string]$RenderRemoteScriptPath = "",
     [string]$RenderRemoteTempDir = "/tmp/nazo-oauth-deploy.render",
     [switch]$SkipBuild,
     [switch]$SkipFrontendBuild,
-    [switch]$SkipMigrate
+    [switch]$SkipMigrate,
+    [switch]$NoCacheBuild
 )
 
 $ErrorActionPreference = "Stop"
 $ExpectedBackendRemote = "https://github.com/nazozero/NazoAuth"
-$ExpectedBackendBranch = "codex/modular-workspace-architecture"
 $ExpectedFrontendRemote = "https://github.com/nazozero/NazoAuthWeb"
-$ExpectedFrontendBranch = "codex/modular-workspace-architecture"
 
 if ($RemoteHost.StartsWith('-') -or
     $RemoteHost -notmatch '^(?:[A-Za-z0-9_][A-Za-z0-9._-]*@)?[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?$') {
     throw "RemoteHost must be a safe SSH host alias, hostname, or user@host"
 }
+$SshOptions = @(
+    "-o", "BatchMode=yes",
+    "-o", "ConnectTimeout=30",
+    "-o", "ServerAliveInterval=15",
+    "-o", "ServerAliveCountMax=4"
+)
+$ScpOptions = $SshOptions
 if ($RemoteUiPath -notmatch '^/' -or $RemoteUiReleasesRoot -notmatch '^/') {
     throw "RemoteUiPath and RemoteUiReleasesRoot must be absolute Linux paths"
+}
+if ($RemoteCibaPingTlsTrustBundlePath -and (
+    $RemoteCibaPingTlsTrustBundlePath -notmatch '^/' -or
+    $RemoteCibaPingTlsTrustBundlePath.Contains("`n") -or
+    $RemoteCibaPingTlsTrustBundlePath.Contains("`r"))) {
+    throw "RemoteCibaPingTlsTrustBundlePath must be an absolute Linux path when provided"
+}
+if ($ContainerCibaPingTlsTrustBundlePath -notmatch '^/' -or
+    $ContainerCibaPingTlsTrustBundlePath.Contains("`n") -or
+    $ContainerCibaPingTlsTrustBundlePath.Contains("`r")) {
+    throw "ContainerCibaPingTlsTrustBundlePath must be an absolute Linux path"
 }
 if ($RemoteOidfMtlsCaPath -notmatch '^/' -or $RemoteOidfMtlsCaPath -eq '/' -or
     $RemoteOidfMtlsCaPath.Contains("`n") -or $RemoteOidfMtlsCaPath.Contains("`r")) {
@@ -67,6 +90,23 @@ if ($RemoteAngieOidfConfigPath -notmatch '^/' -or $RemoteAngieOidfConfigPath -eq
 }
 if ($AngieServiceName -notmatch '^[A-Za-z0-9_.@-]+$') {
     throw "AngieServiceName must be a safe systemd unit name"
+}
+if ($ExpectedIssuer -notmatch '^https://[^/?#,\s]+/?$') {
+    throw "ExpectedIssuer must be an HTTPS origin without path, query, or fragment"
+}
+$ExpectedIssuer = $ExpectedIssuer.TrimEnd('/')
+if ($OidfSuiteBaseUrl -notmatch '^https://[^/?#,\s]+/?$') {
+    throw "OidfSuiteBaseUrl must be a single HTTPS origin without path, query, fragment, whitespace, or comma"
+}
+$OidfSuiteBaseUrl = $OidfSuiteBaseUrl.TrimEnd('/')
+if ([string]::IsNullOrWhiteSpace($HealthUrl)) {
+    $HealthUrl = "$ExpectedIssuer/health"
+}
+if ([string]::IsNullOrWhiteSpace($DiscoveryUrl)) {
+    $DiscoveryUrl = "$ExpectedIssuer/.well-known/openid-configuration"
+}
+if ([string]::IsNullOrWhiteSpace($UiUrl)) {
+    $UiUrl = "$ExpectedIssuer/ui/auth"
 }
 if ($RemoteUiPath -eq '/' -or $RemoteUiReleasesRoot -eq '/' -or
     $RemoteUiPath.TrimEnd('/') -eq $RemoteUiReleasesRoot.TrimEnd('/')) {
@@ -97,6 +137,21 @@ function Get-CommandOutput {
         throw "Command failed: $FilePath $($Arguments -join ' ')"
     }
     return ($output | Select-Object -First 1)
+}
+
+function Invoke-SshChecked {
+    param([Parameter(Mandatory = $true)][string[]]$RemoteArguments)
+    Invoke-Checked ssh @($SshOptions + $RemoteHost + $RemoteArguments)
+}
+
+function Get-SshCommandOutput {
+    param([Parameter(Mandatory = $true)][string[]]$RemoteArguments)
+    Get-CommandOutput ssh @($SshOptions + $RemoteHost + $RemoteArguments)
+}
+
+function Invoke-ScpChecked {
+    param([Parameter(Mandatory = $true)][string[]]$ScpArguments)
+    Invoke-Checked scp @($ScpOptions + $ScpArguments)
 }
 
 function Get-GitHubApiJson {
@@ -509,9 +564,12 @@ $frontendArtifactDigest = Get-FrontendArtifactDigest -DistPath $LocalUiDist
 
 $image = "${ImageRepository}:$ImageTag"
 $safeTag = $ImageTag -replace '[^A-Za-z0-9_.-]', '-'
-$archive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-server-$safeTag.tar"
-$uiArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-web-$safeTag.tar.gz"
-$localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-deploy-$safeTag.sh"
+$deploymentId = [guid]::NewGuid().ToString("N")
+$localStageSuffix = "$safeTag-$deploymentId"
+$archive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-server-$localStageSuffix.tar"
+$uiArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-web-$localStageSuffix.tar.gz"
+$oidfArtifactArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oidf-public-artifact-$localStageSuffix.tar.gz"
+$localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-deploy-$localStageSuffix.sh"
 
 Write-Host "Staging $image ($BackendCommit / $FrontendCommit) on $RemoteHost"
 
@@ -522,11 +580,16 @@ if ($RenderRemoteScriptPath) {
 else {
     $backendBuildContext = Export-GitCommit -Worktree $LocalBackendWorktree -Commit $BackendCommit -Label "backend-source"
     try {
-        Invoke-Checked docker @(
+        $dockerBuildArgs = @(
             "build", "-f", (Join-Path $backendBuildContext "Containerfile"),
             "--label", "org.opencontainers.image.revision=$BackendCommit",
-            "-t", $image, $backendBuildContext
+            "-t", $image
         )
+        if ($NoCacheBuild) {
+            $dockerBuildArgs += "--no-cache"
+        }
+        $dockerBuildArgs += $backendBuildContext
+        Invoke-Checked docker $dockerBuildArgs
     }
     finally {
         Remove-Item -LiteralPath $backendBuildContext -Recurse -Force -ErrorAction SilentlyContinue
@@ -536,14 +599,18 @@ else {
     if ($localDescriptorId -notmatch '^sha256:[0-9a-f]{64}$') {
         throw "Docker returned an invalid immutable image descriptor: $localDescriptorId"
     }
-    Remove-Item -LiteralPath $archive, $uiArchive -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $archive, $uiArchive, $oidfArtifactArchive -Force -ErrorAction SilentlyContinue
     Invoke-Checked docker @("save", $image, "-o", $archive)
     $expectedImageId = Get-ArchiveImageConfigId -Archive $archive -ExpectedTag $image
     Invoke-Checked tar @("-C", $LocalUiDist, "-czf", $uiArchive, ".")
-    $remoteTempDir = Get-CommandOutput ssh $RemoteHost @("mktemp", "-d", "/tmp/nazo-oauth-deploy.XXXXXX")
+    if ($oidfCaEnabledValue -eq "1") {
+        Invoke-Checked tar @("-C", $OidfPublicSeedArtifactDirectory, "-czf", $oidfArtifactArchive, ".")
+    }
+    $remoteTempDir = Get-SshCommandOutput @("mktemp", "-d", "/tmp/nazo-oauth-deploy.XXXXXX")
 }
 $remoteArchive = "$remoteTempDir/nazo-oauth-server-$safeTag.tar"
 $remoteUiArchive = "$remoteTempDir/nazo-oauth-web-$safeTag.tar.gz"
+$remoteOidfArtifactArchive = "$remoteTempDir/oidf-public-plan-configs.tar.gz"
 $remoteScript = "$remoteTempDir/deploy.sh"
 $remoteState = "$remoteTempDir/state.json"
 $remoteOidfArtifactDir = "$remoteTempDir/oidf-public-plan-configs"
@@ -551,13 +618,13 @@ $remoteOidfCaValidator = "$remoteTempDir/oidf_mtls_ca_bundle.py"
 $remoteOidfCaBackup = "$remoteTempDir/oidf-mtls-ca.previous"
 $remoteAngieConfigBackup = "$remoteTempDir/angie-oidf-config.previous"
 if (-not $RenderRemoteScriptPath) {
-    Invoke-Checked scp $archive "${RemoteHost}:$remoteArchive"
-    Invoke-Checked scp $uiArchive "${RemoteHost}:$remoteUiArchive"
+    Invoke-ScpChecked @($archive, "${RemoteHost}:$remoteArchive")
+    Invoke-ScpChecked @($uiArchive, "${RemoteHost}:$remoteUiArchive")
     if ($oidfCaEnabledValue -eq "1") {
-        Invoke-Checked ssh $RemoteHost @("install", "-d", "-m", "0700", $remoteOidfArtifactDir)
-        $oidfScpArguments = @($oidfArtifactFiles.FullName) + "${RemoteHost}:$remoteOidfArtifactDir/"
-        Invoke-Checked scp $oidfScpArguments
-        Invoke-Checked scp $localOidfCaValidator "${RemoteHost}:$remoteOidfCaValidator"
+        Invoke-SshChecked @("install", "-d", "-m", "0700", $remoteOidfArtifactDir)
+        Invoke-ScpChecked @($oidfArtifactArchive, "${RemoteHost}:$remoteOidfArtifactArchive")
+        Invoke-SshChecked @("tar", "-xzf", $remoteOidfArtifactArchive, "-C", $remoteOidfArtifactDir)
+        Invoke-ScpChecked @($localOidfCaValidator, "${RemoteHost}:$remoteOidfCaValidator")
     }
     if ($verifiedArtifactDirectory) {
         $resolvedArtifactDirectory = [IO.Path]::GetFullPath($verifiedArtifactDirectory)
@@ -573,7 +640,6 @@ if (-not $RenderRemoteScriptPath) {
 }
 
 $skipMigrateValue = if ($SkipMigrate) { "1" } else { "0" }
-$deploymentId = [guid]::NewGuid().ToString("N")
 $remoteBody = @"
 #!/usr/bin/env bash
 set -euo pipefail
@@ -586,6 +652,7 @@ FRONTEND_ARTIFACT_SHA256=$(ConvertTo-ShellLiteral $frontendArtifactDigest)
 DEPLOYMENT_ID=$(ConvertTo-ShellLiteral $deploymentId)
 REMOTE_ARCHIVE=$(ConvertTo-ShellLiteral $remoteArchive)
 REMOTE_UI_ARCHIVE=$(ConvertTo-ShellLiteral $remoteUiArchive)
+REMOTE_OIDF_ARTIFACT_ARCHIVE=$(ConvertTo-ShellLiteral $remoteOidfArtifactArchive)
 REMOTE_SCRIPT=$(ConvertTo-ShellLiteral $remoteScript)
 STATE_FILE=$(ConvertTo-ShellLiteral $remoteState)
 CONTAINER_NAME=$(ConvertTo-ShellLiteral $ContainerName)
@@ -596,6 +663,8 @@ CONTAINER_IP=$(ConvertTo-ShellLiteral $IPAddress)
 CONFIG_PATH=$(ConvertTo-ShellLiteral $RemoteConfigPath)
 KEYS_PATH=$(ConvertTo-ShellLiteral $RemoteKeysPath)
 AVATARS_PATH=$(ConvertTo-ShellLiteral $RemoteAvatarsPath)
+CIBA_PING_TLS_TRUST_BUNDLE_PATH=$(ConvertTo-ShellLiteral $RemoteCibaPingTlsTrustBundlePath)
+CIBA_PING_TLS_TRUST_BUNDLE_CONTAINER_PATH=$(ConvertTo-ShellLiteral $ContainerCibaPingTlsTrustBundlePath)
 UI_PATH=$(ConvertTo-ShellLiteral $RemoteUiPath)
 UI_RELEASES=$(ConvertTo-ShellLiteral $RemoteUiReleasesRoot)
 ANGIE_WORKER_USER=$(ConvertTo-ShellLiteral $AngieWorkerUser)
@@ -606,6 +675,7 @@ EXPECTED_IMAGE_ID=$(ConvertTo-ShellLiteral $expectedImageId)
 SKIP_MIGRATE=$(ConvertTo-ShellLiteral $skipMigrateValue)
 VERIFICATION_LEASE_SECONDS=$(ConvertTo-ShellLiteral $VerificationLeaseSeconds)
 OIDF_CA_ENABLED=$(ConvertTo-ShellLiteral $oidfCaEnabledValue)
+OIDF_SUITE_BASE_URL=$(ConvertTo-ShellLiteral $OidfSuiteBaseUrl)
 OIDF_CA_SHA256=$(ConvertTo-ShellLiteral $oidfCaSha256)
 OIDF_MANIFEST_SHA256=$(ConvertTo-ShellLiteral $oidfManifestSha256)
 OIDF_CA_ARTIFACT_DIR=$(ConvertTo-ShellLiteral $remoteOidfArtifactDir)
@@ -633,11 +703,21 @@ WATCHDOG_PID_FILE="`$STATE_FILE.watchdog-pid"
 run_server() {
   local selected_image="`$1"
   local publish_args=()
+  local ciba_ping_tls_args=()
   if [ -n "`$PUBLISH_PORT" ]; then publish_args=(-p "`$PUBLISH_PORT"); fi
+  if [ -n "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH" ]; then
+    test -f "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH"
+    test ! -L "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH"
+    ciba_ping_tls_args=(
+      -e "SSL_CERT_FILE=`$CIBA_PING_TLS_TRUST_BUNDLE_CONTAINER_PATH"
+      -v "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH:`$CIBA_PING_TLS_TRUST_BUNDLE_CONTAINER_PATH:ro"
+    )
+  fi
   podman run -d --name "`$CONTAINER_NAME" \
     --restart=unless-stopped \
     --network "`$NETWORK_NAME" --ip "`$CONTAINER_IP" \
     "`${publish_args[@]}" \
+    "`${ciba_ping_tls_args[@]}" \
     -v "`$CONFIG_PATH:/app/.env.yaml:ro" \
     -v "`$KEYS_PATH:/var/lib/nazo_oauth/keys:rw" \
     -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
@@ -861,6 +941,7 @@ if "\x00" in source:
     raise SystemExit(f"{config_path} contains a NUL byte")
 
 ca_paths: list[str] = []
+verify_client_modes: list[str] = []
 verify_sources: list[str] = []
 certificate_sources: list[str] = []
 try:
@@ -874,6 +955,10 @@ try:
             if len(directive) != 2:
                 raise ConfigError("ssl_client_certificate must have exactly one argument")
             ca_paths.append(directive[1])
+        if name == "ssl_verify_client":
+            if len(directive) != 2:
+                raise ConfigError("ssl_verify_client must have exactly one argument")
+            verify_client_modes.append(directive[1])
         if name == "proxy_set_header" and len(directive) >= 2:
             header = directive[1].lower()
             if header == "x-ssl-client-verify":
@@ -890,6 +975,10 @@ except ConfigError as error:
 if not ca_paths or any(path != target_path for path in ca_paths):
     raise SystemExit(
         f"ssl_client_certificate must exclusively reference {target_path}"
+    )
+if verify_client_modes != ["optional"]:
+    raise SystemExit(
+        "ssl_verify_client must be exactly optional for verified public mTLS"
     )
 if verify_sources != ["`$ssl_client_verify"]:
     raise SystemExit(
@@ -922,6 +1011,40 @@ assert_angie_oidf_config_unchanged() {
     echo "Angie OIDF configuration changed during deployment" >&2
     return 1
   fi
+}
+
+assert_angie_backend_upstream() {
+  local active_config
+  test -f "`$ANGIE_OIDF_CONFIG" || return 1
+  test ! -L "`$ANGIE_OIDF_CONFIG" || return 1
+  if ! active_config="`$(angie -T 2>&1)"; then
+    echo "Angie configuration dump failed" >&2
+    return 1
+  fi
+  grep -F "# configuration file `$ANGIE_OIDF_CONFIG:" <<<"`$active_config" >/dev/null || {
+    echo "`$ANGIE_OIDF_CONFIG is not present in the active Angie configuration" >&2
+    return 1
+  }
+  python3 - "`$ANGIE_OIDF_CONFIG" "`$CONTAINER_IP" <<'PY'
+from __future__ import annotations
+
+import pathlib
+import re
+import sys
+
+path = pathlib.Path(sys.argv[1])
+container_ip = sys.argv[2]
+source = path.read_text(encoding="utf-8")
+if "\x00" in source:
+    raise SystemExit("Angie config contains a NUL byte")
+matches = re.findall(r"proxy_pass\s+http://(?P<host>10\.101\.0\.\d+):8000\s*;", source)
+if matches != [container_ip]:
+    raise SystemExit(
+        f"Angie backend proxy_pass must point only to {container_ip}:8000, got {matches}"
+    )
+if "https://127.0.0.1:8443" in source and "location ^~ /test/" not in source:
+    raise SystemExit("local conformance-suite proxy is only permitted in the /test/ location")
+PY
 }
 
 restore_angie_oidf_config() {
@@ -995,6 +1118,20 @@ install_oidf_ca() {
   assert_angie_oidf_config_unchanged || return 1
   python3 "`$OIDF_CA_VALIDATOR" verify --bundle "`$OIDF_CA_TARGET" || return 1
   require_sha256 "`$OIDF_CA_TARGET" "`$OIDF_CA_SHA256" "installed OIDF CA bundle" || return 1
+}
+
+seed_oidf_public_clients() {
+  [ "`$OIDF_CA_ENABLED" = "1" ] || return 0
+  validate_oidf_ca_artifact || return 1
+  podman run --rm --name "`$CONTAINER_NAME-oidf-seed-`$(date +%s)" \
+    --network "`$NETWORK_NAME" \
+    -e "OIDF_SUITE_BASE_URL=`$OIDF_SUITE_BASE_URL" \
+    -e "OIDF_LOCAL_RUNTIME_DIR=/app/oidf-public-plan-configs" \
+    -v "`$CONFIG_PATH:/app/.env.yaml:ro" \
+    -v "`$KEYS_PATH:/var/lib/nazo_oauth/keys:rw" \
+    -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
+    -v "`$OIDF_CA_ARTIFACT_DIR:/app/oidf-public-plan-configs:ro" \
+    "`$IMAGE" nazo_oauth_seed_oidf || return 1
 }
 
 restore_oidf_ca() {
@@ -1250,7 +1387,7 @@ rollback() {
 }
 
 cleanup() {
-  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_SCRIPT" "`$STATE_FILE" \
+  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_OIDF_ARTIFACT_ARCHIVE" "`$REMOTE_SCRIPT" "`$STATE_FILE" \
     "`$WATCHDOG_PID_FILE" "`$LEASE_PENDING" "`$LEASE_COMMITTED" "`$LEASE_ROLLBACK" \
     "`$CURRENT_LINK_TEMP" "`$OIDF_CA_VALIDATOR" "`$OIDF_CA_BACKUP" "`$ANGIE_CONFIG_BACKUP"
   rm -rf "`$UI_RELEASE.tmp" "`$OIDF_CA_ARTIFACT_DIR"
@@ -1345,6 +1482,7 @@ PY
   podman exec nazo-oauth-valkey valkey-cli ping | grep -Fx PONG >/dev/null
   validate_oidf_ca_artifact || return 1
   assert_angie_oidf_ca_target || return 1
+  assert_angie_backend_upstream || return 1
 
   install -d -m 0755 "`$UI_RELEASES"
   mkdir -p "`$DEPLOYMENTS"
@@ -1449,6 +1587,7 @@ PY
       -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
       "`$IMAGE" nazo-oauth-migrate
   fi
+  seed_oidf_public_clients
   assert_pending_lease
 
   candidate_started="1"
@@ -1463,6 +1602,7 @@ PY
   curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/health" >/dev/null
   discovery="`$(curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/.well-known/openid-configuration")"
   python3 -c 'import json,sys; assert json.load(sys.stdin)["issuer"] == sys.argv[1]' "`$EXPECTED_ISSUER" <<<"`$discovery"
+  assert_angie_backend_upstream || return 1
   assert_pending_lease
   install_oidf_ca
   assert_pending_lease
@@ -1532,9 +1672,9 @@ $deployCommand = "bash $remoteScriptLiteral deploy"
 $commitCommand = "bash $remoteScriptLiteral commit"
 $rollbackCommand = "if [ -f $remoteScriptLiteral ]; then bash $remoteScriptLiteral rollback; fi"
 try {
-    Invoke-Checked scp $localRemoteScript "${RemoteHost}:$remoteScript"
+    Invoke-ScpChecked @($localRemoteScript, "${RemoteHost}:$remoteScript")
     $remoteStarted = $true
-    Invoke-Checked ssh $RemoteHost @($deployCommand)
+    Invoke-SshChecked @($deployCommand)
 
     $health = Invoke-WebRequest -Uri $HealthUrl -UseBasicParsing -TimeoutSec 20
     if ($health.StatusCode -ne 200) { throw "Health probe failed: HTTP $($health.StatusCode)" }
@@ -1562,13 +1702,13 @@ try {
         throw "Public UI asset probe failed: HTTP $($asset.StatusCode)"
     }
 
-    Invoke-Checked ssh $RemoteHost @($commitCommand)
+    Invoke-SshChecked @($commitCommand)
     $remoteStarted = $false
     Write-Host "Deployment verified: $image deployment-success"
 }
 catch {
     if ($remoteStarted) {
-        & ssh $RemoteHost $rollbackCommand
+        & ssh @SshOptions $RemoteHost $rollbackCommand
         if ($LASTEXITCODE -ne 0) {
             Write-Error "Automatic rollback command failed; inspect $RemoteHost immediately"
         }
@@ -1576,5 +1716,5 @@ catch {
     throw
 }
 finally {
-    Remove-Item -LiteralPath $localRemoteScript, $uiArchive, $archive -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $localRemoteScript, $uiArchive, $archive, $oidfArtifactArchive -Force -ErrorAction SilentlyContinue
 }

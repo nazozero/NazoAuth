@@ -18,7 +18,7 @@ deployment can satisfy.
 | `fapi2-message-signing-authz-request` | FAPI2 Security plus signed authorization requests at PAR. | Runtime profile switch implemented; OIDF-tested for recorded matrix variants |
 | `fapi2-message-signing-jarm` | FAPI2 Message Signing authorization response signing option. | Runtime profile switch implemented; OIDF-tested for recorded matrix variant |
 | `fapi2-message-signing-introspection` | FAPI2 Message Signing signed and encrypted introspection response option. | Runtime profile switch implemented; advertised only by this profile |
-| `fapi-ciba-id1` | OIDF FAPI-CIBA AS compatibility profile with orthogonal `private_key_jwt | mTLS` client authentication and `poll | ping` delivery. | Default CIBA security profile when `ENABLE_CIBA=true`; Push and `user_code` are not implemented |
+| `fapi-ciba-id1` | OIDF FAPI-CIBA AS compatibility profile with orthogonal `private_key_jwt / mTLS` client authentication and `poll / ping` delivery. | Default CIBA security profile when `ENABLE_CIBA=true`; Push and `user_code` are not implemented |
 | `fapi2-ciba` | Internal CIBA hardening profile: CIBA Core + FAPI-CIBA compatibility + applicable FAPI2 Security controls. | Runtime CIBA security switch implemented; not an official OIDF certification profile name |
 
 ## `oauth2-baseline`
@@ -59,17 +59,20 @@ Required negative tests:
 | --- | --- |
 | UserInfo default | UTF-8 JSON with `application/json` when no response-protection metadata is registered |
 | Signed UserInfo | `userinfo_signed_response_alg` selects an asymmetric JWS algorithm that the current Keyset snapshot can actually sign; signed claims include `iss` and client-bound `aud` |
-| Encrypted UserInfo | `userinfo_encrypted_response_alg=RSA-OAEP-256` and `userinfo_encrypted_response_enc=A256GCM` require exactly one matching public RSA JWK with `use=enc` and `kid`; signing plus encryption produces a nested JWT |
-| Encrypted JARM | A JARM response is signed first, then encrypted with the same narrow JWE policy when `authorization_encrypted_response_alg` and `authorization_encrypted_response_enc` are registered |
+| Encrypted UserInfo | `userinfo_encrypted_response_alg` values `RSA-OAEP-256`, `ECDH-ES`, `ECDH-ES+A128KW`, and `ECDH-ES+A256KW` with `userinfo_encrypted_response_enc=A256GCM` require exactly one matching public `use=enc` JWK with `kid`; signing plus encryption produces a nested JWT |
+| Encrypted JARM | A JARM response is signed first, then encrypted with the same client JWE policy when `authorization_encrypted_response_alg` and `authorization_encrypted_response_enc` are registered |
 | Metadata surfaces | Admin client management and RFC 7591/7592 registration persist and return all six response-crypto metadata fields |
 | Failure behavior | Metadata, key lookup, signing, and encryption failures return `server_error`; UserInfo never falls back to JSON and JARM never exposes a code/state in a plain query response |
 
-The server does not fetch remote `jwks_uri` values. Encryption keys are
-registered by value, validated as public material, and selected only when the
-`use` and `alg` policy has exactly one matching non-empty `kid`. UserInfo and
-authorization-response signing algorithms advertised by discovery are the
-same Keyset-snapshot capabilities accepted by registration and used by
-signing execution.
+For response encryption, keys are registered by value, validated as public
+material, and selected only when the `use` and `alg` policy has exactly one
+matching non-empty `kid`. Dynamic registration may resolve a client's
+`jwks_uri` through the constrained HTTPS remote-document resolver for client
+authentication and Request Object keys, but response-encryption key selection
+still uses the persisted client JWK material and never falls back to an
+unregistered remote document. UserInfo and authorization-response signing
+algorithms advertised by discovery are the same Keyset-snapshot capabilities
+accepted by registration and used by signing execution.
 
 ## Ecosystem Onboarding Surfaces
 
@@ -79,7 +82,7 @@ client onboarding guidance lives in
 
 | Surface | Profile boundary | Metadata rule |
 | --- | --- | --- |
-| Dynamic Client Registration / DCRM | Default-closed RFC 7591 and RFC 7592 client lifecycle for DCR-created clients only; registration and management operations emit non-secret audit events. | `registration_endpoint` appears only when `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; software statements and remote `jwks_uri` trust remain deferred. |
+| Dynamic Client Registration / DCRM | Default-closed RFC 7591 and RFC 7592 client lifecycle for DCR-created clients only; registration and management operations emit non-secret audit events. `jwks_uri` is accepted only when the constrained HTTPS remote-document resolver can fetch and validate the client JWK Set. | `registration_endpoint` appears only when `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`; software statement issuer trust remains deferred. |
 | Device Authorization Grant | Default-closed constrained-input client profile that requires the client grant allowlist. | Device endpoint and `device_code` grant metadata appear only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`. |
 | Token Exchange local profile | Bounded RFC 8693 access-token to access-token exchange for locally issued subject/actor tokens and explicitly allowed targets. | The grant type is advertised only because the local profile is implemented; external, refresh-token, and ID-token exchange profiles are not implied. |
 | Third-party JWT bearer assertion trust | Deferred profile for external assertion issuers and non-client subjects; the implemented JWT bearer grant remains client-bound. | No discovery metadata is advertised until issuer allowlists, subject mapping, replay, revocation, audit, and negative tests exist. |
@@ -123,7 +126,7 @@ Required negative tests:
 | Response types | `code` |
 | Client auth | Static clients, public or confidential according to registration |
 | Token binding | Bearer, DPoP, or mTLS depending on client policy |
-| DPoP nonce | `DPOP_NONCE_POLICY=required` by default; `optional` is available only for baseline interoperability |
+| DPoP nonce | Authorization-server and token endpoints use `DPOP_NONCE_POLICY=required` by default. The FAPI protected resource endpoint uses `FAPI_RESOURCE_DPOP_NONCE_POLICY=optional` by default because RFC 9449 makes resource nonces optional and the official FAPI2 DPoP resource tests exercise replay through `jti`, not a mandatory initial resource nonce challenge. |
 | PAR | Optional unless client/profile requires it |
 | JAR | Optional; signed request objects validated when supplied |
 | ID Token | RS256 support must be real; active signing alg is advertised |
@@ -170,7 +173,7 @@ Required negative tests:
 | Response types | `code` |
 | Client auth | `private_key_jwt` or mTLS |
 | Token binding | DPoP or mTLS sender-constrained access tokens |
-| DPoP nonce | Required, regardless of a baseline `DPOP_NONCE_POLICY=optional` setting |
+| DPoP nonce | Authorization-server and token endpoints remain governed by `DPOP_NONCE_POLICY` and default to required. The protected resource endpoint is governed separately by `FAPI_RESOURCE_DPOP_NONCE_POLICY`; its default is optional for OIDF FAPI2 DPoP resource conformance while DPoP `jti` replay protection remains required. |
 | PAR | Required; authorization requests that do not use PAR must be rejected |
 | PKCE | S256 required for authorization code flow |
 | Authorization code TTL | 60 seconds or less |
@@ -185,9 +188,10 @@ must document that exception and keep the replay-detection state machine from
 Runtime enforcement is selected with `AUTHORIZATION_SERVER_PROFILE=fapi2-security`.
 The setting forces PAR globally, caps authorization code lifetime at 60 seconds,
 rejects password grant requests, limits clients to confidential clients, allows
-only `private_key_jwt` or mTLS client authentication, requires DPoP or mTLS
-sender-constrained access tokens, and keeps DPoP nonce enforcement required
-even if a baseline deployment configured `DPOP_NONCE_POLICY=optional`.
+only `private_key_jwt` or mTLS client authentication, and requires DPoP or mTLS
+sender-constrained access tokens. DPoP nonce enforcement is split by endpoint:
+authorization-server and token endpoint checks use `DPOP_NONCE_POLICY`, while
+the FAPI protected resource endpoint uses `FAPI_RESOURCE_DPOP_NONCE_POLICY`.
 
 Required negative tests:
 
@@ -209,7 +213,7 @@ grant. CIBA uses `CIBA_SECURITY_PROFILE` instead of
 
 | Profile | Policy |
 | --- | --- |
-| `fapi-ciba-id1` | Preserves the OIDF FAPI-CIBA ID1 plain FAPI behavior across `private_key_jwt | mTLS` × `poll | ping`: signed backchannel authentication requests, endpoint-audience compatibility where explicitly registered, mTLS holder-of-key tokens, and authenticated ping carrying only `auth_req_id`. The former poll-specific value remains a migration alias. |
+| `fapi-ciba-id1` | Preserves the OIDF FAPI-CIBA ID1 plain FAPI behavior across `private_key_jwt / mTLS` × `poll / ping`: signed backchannel authentication requests, endpoint-audience compatibility where explicitly registered, mTLS holder-of-key tokens, and authenticated ping carrying only `auth_req_id`. The former poll-specific value remains a migration alias. |
 | `fapi2-ciba` | Requires confidential clients, `private_key_jwt` or mTLS client authentication, issuer-only private_key_jwt audience policy, signed backchannel authentication requests, strong CIBA JWT algorithms, and DPoP or mTLS sender-constrained access tokens. |
 
 The internal `fapi2-ciba` profile applies only CIBA-applicable FAPI2 Security
@@ -278,7 +282,7 @@ Required negative tests:
 | Base | `fapi2-security` |
 | Response negotiation | JWT introspection is returned only when the authenticated caller sends `Accept: application/token-introspection+jwt` |
 | JWT envelope | Header `typ=token-introspection+jwt`; top-level `iss`, `aud`, and `iat`; JSON introspection body nested under `token_introspection` |
-| JWE envelope | If the authenticated caller has `introspection_encrypted_response_alg=RSA-OAEP-256`, `introspection_encrypted_response_enc=A256GCM`, and a matching `use=enc` RSA JWK, the signed JWT is returned as a nested compact JWE with `cty=JWT` |
+| JWE envelope | If the authenticated caller has supported client JWE metadata (`RSA-OAEP-256`, `ECDH-ES`, `ECDH-ES+A128KW`, or `ECDH-ES+A256KW` with `A256GCM`) and exactly one matching `use=enc` JWK, the signed JWT is returned as a nested compact JWE with `cty=JWT` |
 | Audience | Authenticated introspection client/resource-server `client_id` |
 | Metadata | Introspection signing and encryption algorithm metadata is advertised only by this profile and only for implemented algorithms |
 | Non-goals | Normal OAuth error responses remain JSON |

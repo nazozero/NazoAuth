@@ -9,9 +9,11 @@ in the repository.
 
 ## Current Evidence
 
+- Certification and conformance entry point: [Certification and conformance evidence](certification.md)
+- Required public black-box run process: [OIDF public black-box conformance runbook](oidf-public-black-box-runbook.md)
 - Certification baseline: [2026-06-09 OIDF full matrix](2026-06-09-oidf-full-matrix.md)
 - Matrix scope: [OIDF full matrix](oidf-full-matrix.md)
-- Archived private full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
+- Archived diagnostic full-matrix regression: [2026-07-01 TP/PS OIDF full matrix](2026-07-01-tp-ps-full-matrix.md)
 - Archived M7 official full matrix: [2026-07-11 M7 encrypted response OIDF results](2026-07-11-m7-official-encrypted-responses-oidf-results.md)
 - Latest RFC coverage check: [2026-07-02 NI-005 RFC 7592 OIDF coverage](2026-07-02-ni-005-oidf-coverage.md)
 - Archived NI-006~NI-011 private targeted OIDF results: [2026-07-02 NI-006~NI-011 private OIDF results](2026-07-02-ni-006-011-private-oidf-results.md)
@@ -27,7 +29,8 @@ in the repository.
 - Current public black-box full evidence: [2026-07-17 public black-box full OIDF results](2026-07-17-public-black-box-full-oidf-results.md)
 
 The latest recorded public black-box OIDF evidence is the 2026-07-17 run set
-against `https://auth.nazo.run` at production revision
+against an operator-provided production issuer, sanitized in public documents as
+`https://issuer.example`, at production revision
 `ae19cc50af4cc50f3f35f678a3a1c38332d475e2`. GitHub Actions runs
 [`29543012193`](https://github.com/nazozero/NazoAuth/actions/runs/29543012193)
 and
@@ -36,20 +39,22 @@ completed successfully, covering 42 plan executions across OIDC, FAPI,
 FAPI-CIBA, OpenID4VC Final, and HAIP. The combined exported results contain
 1,178 finished modules, 101,519 condition successes, 0 condition failures, 30
 bounded warnings, 15 expected skips, and 136 review entries. The evidence counts
-only public official-suite runs against the production origin; local endpoints,
-private DNS names, private CAs, and `https://nginx:8443` are not accepted as
-conformance evidence.
+only public official-suite runs against an explicitly configured production
+origin; non-public endpoints, private DNS names, private trust roots, and suite-private
+hostnames are not accepted as conformance evidence. Public workflow users must
+provide their own target issuer values; repository-owned infrastructure is not a
+repository default.
 
-Archived private/local suite records remain useful for debugging regressions,
-but they are not current conformance evidence. Current conformance evidence is
-the public black-box run set above.
+Archived diagnostic records remain useful for debugging regressions, but they
+are not current conformance evidence. Current conformance evidence is the public
+black-box run set above.
 
-The archived private full-matrix regression record is the 2026-07-01 TP/PS run
-against `https://auth.nazo.run` at runtime commit `31e8f9f`. It used the
+The archived diagnostic full-matrix regression record is the 2026-07-01 TP/PS run
+against `https://issuer.example` at runtime commit `31e8f9f`. It used the
 repository 16-plan matrix, exported 16 plan archives, and reported 578 test
 modules with `0 failures` and `0 warnings`.
 
-The latest NI-006~NI-011 targeted private conformance run used local official suite
+The latest NI-006~NI-011 targeted diagnostic conformance run used diagnostic official suite
 snapshot `edbf2514e1e5c850ccf28544953608bda50daf4d`. NI-007 FAPI-CIBA,
 NI-008 Front-Channel Logout, and NI-009 Session Management passed with
 `0 failures`, `0 warnings`, and `0 skipped modules`. The NI-008/NI-009
@@ -57,14 +62,14 @@ exported JSON logs contain informational optional-condition
 `Skipped evaluation ...` entries; those are not module-level `SKIPPED` results.
 
 The latest public NI-007 FAPI-CIBA targeted workflow ran against
-`https://auth.nazo.run` on 2026-07-03 at workflow head SHA
+`https://issuer.example` on 2026-07-03 at workflow head SHA
 `0374141ae7aec76c573b06dc8406b10819915309`. GitHub Actions run
 `28636561869` completed successfully. The exported suite artifact contains 35
 module JSON logs, all `PASSED`, with 2768 condition successes, `0 failures`,
 and `0 warnings`.
 
 The latest NI-006~NI-011 official full-matrix regression ran against
-`https://auth.nazo.run` on 2026-07-03 at workflow head SHA
+`https://issuer.example` on 2026-07-03 at workflow head SHA
 `056cf7f90061a9054394593ee1fa7b43f5e26b54`. GitHub Actions run
 `28648656293` completed successfully. The workflow executed 18 concurrency-safe
 plans in one job and isolated front-channel logout and session-management into
@@ -92,7 +97,8 @@ security-boundary tests remain mandatory either way.
 
 - implementation commit SHA
 - current documentation commit SHA, when different
-- workflow name and run URL, or local suite runner path
+- workflow name and run URL; diagnostic-only runs may be summarized without
+  publishing local runner paths or host details
 - job URL and matrix name, when applicable
 - pass time and suite runtime
 - profiles and feature combinations
