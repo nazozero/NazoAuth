@@ -690,8 +690,12 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(len(plans), 17)
             self.assertEqual(len(configs), 17)
             self.assertEqual(len(set(materialized_driver["aliases"])), 17)
+            self.assertEqual(len(expected_skips), 7)
             self.assertEqual(
-                expected_skips,
+                [
+                    item for item in expected_skips
+                    if item["test-name"] == module.VCI_UNSUPPORTED_ENCRYPTION_MODULE
+                ],
                 [
                     {
                         "test-name": module.VCI_UNSUPPORTED_ENCRYPTION_MODULE,
@@ -786,6 +790,21 @@ class Openid4vcOidfTests(unittest.TestCase):
                             ).items()
                         )
                     ),
+                },
+            )
+            refresh_skips = [
+                item for item in expected_skips
+                if item["test-name"] == module.VCI_REFRESH_TOKEN_MODULE
+            ]
+            self.assertEqual(len(refresh_skips), 4)
+            self.assertEqual(
+                {
+                    (item["configuration-filename"], tuple(sorted(item["variant"].items())))
+                    for item in refresh_skips
+                },
+                {
+                    (item["configuration-filename"], tuple(sorted(item["variant"].items())))
+                    for item in expected_warnings
                 },
             )
             self.assertEqual(materialized_driver["target_origin"], "https://issuer.example")

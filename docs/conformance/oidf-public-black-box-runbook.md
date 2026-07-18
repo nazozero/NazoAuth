@@ -92,7 +92,9 @@ text, not from the behavior of one suite module.
      permits the deployed policy and the allowlist binds the exact plan,
      configuration, variant, block, and condition. OpenID4VC/HAIP refresh-token
      advisories follow this rule: the policy is client-specific refresh-token
-     issuance, not a wildcard warning waiver.
+     issuance, not a wildcard warning waiver. If the official runner marks that
+     same advisory module as `SKIPPED`, the expected skip must bind the same
+     configuration and variant; it must not use a wildcard.
    - `SKIPPED` is acceptable only when it matches the committed expected-skip
      allowlist for the exact configuration and module.
    - `REVIEW` is acceptable only when the committed review allowlist identifies
