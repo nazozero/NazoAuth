@@ -2523,22 +2523,31 @@ def run() -> None:
         rsa_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         ps_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
         ec_key = ec.generate_private_key(ec.SECP256R1())
-        jwks_without_kid = admin.post(
+        ambiguous_jwks_without_kid = admin.post(
             f"{BASE_URL}/admin/clients",
             json={
-                "client_name": "Invalid JWKS Full E2E",
+                "client_name": "Ambiguous JWKS Full E2E",
                 "client_type": "confidential",
                 "redirect_uris": [],
                 "scopes": ["profile"],
                 "allowed_audiences": [DEFAULT_AUDIENCE],
                 "grant_types": ["client_credentials"],
                 "token_endpoint_auth_method": "private_key_jwt",
-                "jwks": {"keys": [ed25519_public_jwk(private_key)]},
+                "jwks": {
+                    "keys": [
+                        ed25519_public_jwk(private_key),
+                        ed25519_public_jwk(ed25519.Ed25519PrivateKey.generate()),
+                    ]
+                },
             },
             headers=csrf_header(admin),
             timeout=10,
         )
-        expect_status("POST /admin/clients private_key_jwt jwks kid required", jwks_without_kid, 400)
+        expect_status(
+            "POST /admin/clients private_key_jwt ambiguous kidless jwks rejected",
+            ambiguous_jwks_without_kid,
+            400,
+        )
 
         jwk_with_private_material = ed25519_public_jwk(private_key, "private-key-material-e2e")
         jwk_with_private_material["d"] = b64url(
