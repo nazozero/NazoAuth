@@ -137,6 +137,10 @@ OIDF_ALLOWED_REVIEW_CONTEXTS_BY_CONFIG = {
     ),
 }
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
+OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS = max(
+    30,
+    int(os.environ.get("OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS", "30")),
+)
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 HTTP_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]+(?::\d+)?(?:/[^\s\"'<>)]*)?")
 NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
@@ -372,7 +376,7 @@ def nazo_consent_approve_commands(config_value: dict[str, object]) -> list[list[
         ["wait-element-visible", "id", NAZO_CONSENT_APPROVE_ID, 30],
         ["click", "id", NAZO_CONSENT_APPROVE_ID],
         ["wait", "contains", "/test/", 30],
-        ["wait", "id", "submission_complete", 10],
+        ["wait", "id", "submission_complete", OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS],
     ]
 
 
@@ -381,7 +385,7 @@ def nazo_consent_deny_commands(config_value: dict[str, object]) -> list[list[obj
         ["wait-element-visible", "id", NAZO_CONSENT_DENY_ID, 30],
         ["click", "id", NAZO_CONSENT_DENY_ID],
         ["wait", "contains", "/test/", 30],
-        ["wait", "id", "submission_complete", 10],
+        ["wait", "id", "submission_complete", OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS],
     ]
 
 
@@ -520,6 +524,14 @@ def normalize_oidf_callback_waits(config_value: dict[str, object]) -> None:
 def normalize_oidf_callback_waits_in_value(value: object, expected_callback_path: str) -> None:
     if isinstance(value, list):
         if (
+            len(value) >= 4
+            and value[0] == "wait"
+            and value[1] == "id"
+            and value[2] == "submission_complete"
+            and isinstance(value[3], int)
+        ):
+            value[3] = max(value[3], OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS)
+        if (
             len(value) >= 3
             and value[0] == "wait"
             and value[1] == "contains"
@@ -579,7 +591,14 @@ def nazo_user_reject_browser_automation(config_value: dict[str, object]) -> list
                 {
                     "task": "Verify callback completion",
                     "match": "*/test/*/callback*",
-                    "commands": [["wait", "id", "submission_complete", 10]],
+                    "commands": [
+                        [
+                            "wait",
+                            "id",
+                            "submission_complete",
+                            OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS,
+                        ]
+                    ],
                 },
             ],
         }
@@ -995,6 +1014,9 @@ def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
     add_nazo_par_reuse_before_auth_override(config_value)
     add_nazo_user_reject_override(config_value)
     use_nazo_user_facing_browser_commands(config_value)
+    # Some module-specific overrides are synthesized above. Normalize the final
+    # tree as well so no later override can reintroduce a shorter callback wait.
+    normalize_oidf_callback_waits(config_value)
     config_value.pop("nazo", None)
 
 

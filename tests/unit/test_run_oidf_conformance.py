@@ -19,6 +19,28 @@ def load_runner_module():
 
 
 class RunOidfConformanceTests(unittest.TestCase):
+    def test_callback_completion_waits_have_a_thirty_second_floor(self):
+        module = load_runner_module()
+        value = {
+            "tasks": [
+                {"commands": [["wait", "id", "submission_complete", 10]]},
+                {"commands": [["wait", "id", "submission_complete", 60]]},
+            ]
+        }
+
+        module.normalize_oidf_callback_waits_in_value(value, "/test/a/alias/callback")
+
+        waits = [task["commands"][0][3] for task in value["tasks"]]
+        self.assertEqual(waits, [30, 60])
+        self.assertEqual(
+            module.nazo_consent_approve_commands({})[-1][3],
+            module.OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS,
+        )
+        self.assertEqual(
+            module.nazo_consent_deny_commands({})[-1][3],
+            module.OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS,
+        )
+
     def test_config_file_name_requires_json_extension(self):
         module = load_runner_module()
 
