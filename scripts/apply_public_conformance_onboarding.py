@@ -340,6 +340,7 @@ def apply_onboarding(args: argparse.Namespace) -> int:
         "approver_user_id": admin_me.get("id"),
         "clients": [],
     }
+    delivered_clients: list[dict[str, Any]] = []
     persist_onboarding_state(args.state_file, state)
     for item in manifest["clients"]:
         logical_id = item["logical_client_id"]
@@ -378,6 +379,13 @@ def apply_onboarding(args: argparse.Namespace) -> int:
         if delivered is None:
             raise OnboardingError(f"approved access request {request_id} has no one-time delivery token")
         actual_id, secret = delivered
+        delivered_clients.append(
+            {
+                "logical_client_id": logical_id,
+                "client_id": actual_id,
+                "client_secret": secret,
+            }
+        )
         state_entry["client_id"] = actual_id
         persist_onboarding_state(args.state_file, state)
         replacements = replace_client_material(plan_document, logical_id, actual_id, secret)
@@ -417,7 +425,17 @@ def apply_onboarding(args: argparse.Namespace) -> int:
         raise OnboardingError("approved mTLS trust bundle contains no certificate")
     state["trust_bundle_sha256"] = hashlib.sha256(bundle).hexdigest()
     write_private_json(args.plan_configs, plan_document)
-    write_runner_env(args.runner_env, plan_document, args.plan_set, args.plan_manifest)
+    if not args.no_runner_env:
+        write_runner_env(args.runner_env, plan_document, args.plan_set, args.plan_manifest)
+    write_private_json(
+        args.delivered_client_material,
+        {
+            "schema": 1,
+            "target_issuer": origin,
+            "suite_base_url": manifest["suite_base_url"],
+            "clients": delivered_clients,
+        },
+    )
     write_private_text(args.trust_bundle, bundle_text)
     state["complete"] = True
     persist_onboarding_state(args.state_file, state)
@@ -508,6 +526,7 @@ def cleanup_onboarding(args: argparse.Namespace) -> int:
             csrf=True,
         )
     args.state_file.unlink()
+    args.delivered_client_material.unlink(missing_ok=True)
     return 0
 
 
@@ -524,6 +543,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=Path("runtime/oidf/oidf-plan-set-manifest.json"),
     )
     parser.add_argument("--runner-env", type=Path, default=Path("runtime/oidf/oidf-runner.env"))
+    parser.add_argument(
+        "--delivered-client-material",
+        type=Path,
+        default=Path("runtime/oidf/oidf-delivered-client-material.json"),
+    )
+    parser.add_argument("--no-runner-env", action="store_true")
     parser.add_argument("--state-file", type=Path, default=Path("runtime/oidf/oidf-onboarding-state.json"))
     parser.add_argument(
         "--trust-bundle",

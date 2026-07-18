@@ -66,6 +66,20 @@ gh workflow run oidf-conformance-full.yml \
 
 该模式调用可复用的接入材料 workflow，校验 bundle 并上传私有 artifact；两个一致性测试 job 都不会执行。进入第 3 步前，必须下载该 artifact，并按相同 source commit 完成校验。artifact 本身仍不具有生产权限：客户端创建和 CA 审批必须由不同身份通过公网控制面完成。
 
+使用以下命令把已校验的官方 artifact 转换为生产申请，不得重新生成客户端、密钥或证书：
+
+```sh
+python scripts/prepare_official_oidf_public_onboarding.py \
+  --artifact-directory runtime/official-onboarding \
+  --expected-source-commit <已部署-sha> \
+  --target-issuer "$OIDF_TARGET_ISSUER" \
+  --suite-base-url "$OIDF_SUITE_BASE_URL" \
+  --applicant-email "$OIDF_APPLICANT_EMAIL" \
+  --output-dir runtime/official-onboarding-apply
+```
+
+转换器会再次校验 artifact manifest 和证书 bundle，核对申请人邮箱承诺，并为当前完整 OIDC/FAPI/CIBA/OpenID4VC 矩阵生成恰好 53 个不重复申请。该步骤不访问数据库，也不创建客户端。
+
 官方 OpenID4VC mTLS 身份必须单独保存在仓库 Secret `OPENID4VC_OIDF_MTLS_CONFIG_JSON` 中。其结构为一张 `ca` 证书，以及各自包含 `cert` 和 `key` 的 `mtls`、`mtls2` 对象；基础协议配置不得重复保存这组可轮换身份。接入材料导出与官方 runner 必须覆盖同一份 Secret，避免已审批 CA、导出的叶证书与套件实际使用的私钥发生漂移。公开 artifact 会移除全部私钥，并在上传前对每张叶证书执行 CA 链验证。
 
 每次运行都必须从当前检出的产品提交重新生成 OpenID4VC 材料，不得把上一轮的 `openid4vc-plan-configs.json`、driver 或预期结果清单复制到新运行目录。公开接入会把逻辑钱包标识替换为审批后签发的客户端标识，因此已经 apply 的配置是运行输出，不是下一轮的输入。安装 credential dataset 或创建套件 plan 之前，OpenID4VC wrapper 会硬性核对当前 17 个 plan、对应的 17 个配置、driver alias 集合、7 条有界 skip 和 4 条 HAIP warning；跨轮次或过期材料会在任何生产写入前失败。
@@ -80,7 +94,13 @@ gh workflow run oidf-conformance-full.yml \
 
 ```sh
 python scripts/apply_public_conformance_onboarding.py apply \
-  --target-issuer "$OIDF_TARGET_ISSUER"
+  --target-issuer "$OIDF_TARGET_ISSUER" \
+  --manifest runtime/official-onboarding-apply/oidf-onboarding-manifest.json \
+  --plan-configs runtime/official-onboarding-apply/oidf-plan-configs.json \
+  --delivered-client-material runtime/official-onboarding-apply/oidf-delivered-client-material.json \
+  --state-file runtime/official-onboarding-apply/oidf-onboarding-state.json \
+  --trust-bundle runtime/official-onboarding-apply/approved-mtls-trust-anchors.pem \
+  --no-runner-env
 ```
 
 每个客户端都执行普通运行者可用的正式流程：
@@ -95,6 +115,8 @@ python scripts/apply_public_conformance_onboarding.py apply \
 8. 从公网服务导出当前已经批准的租户信任 bundle。
 
 所有请求都必须是精确同源 HTTPS 请求：启用正常证书校验、禁止重定向、限制响应大小、校验 JSON Content-Type，并在变更请求中携带 CSRF token。输出的状态文件与 bundle 均属于私密运行材料。
+
+apply 成功后，通过标准输入把交付映射保存为仓库私密 Secret `OIDF_DELIVERED_CLIENT_MATERIAL_JSON`。官方 OIDC 与 OpenID4VC workflow 缺少该 Secret 时必须拒绝启动，并同时校验目标 issuer 与 suite origin。该映射只包含实际客户端标识和少量签发的 client secret，只能替换私密 runner 配置中的精确 `client_id` 字段；它不是服务端 seed，cleanup 后必须删除。
 
 状态文件会在第一次公网变更前创建，并在每次申请、审批、凭据交付和信任决策后原子更新。apply 失败或中断后，必须先执行 cleanup，不能直接覆盖重跑。cleanup 会通过同一公网控制面拒绝已记录的待审批申请、撤销已批准信任锚并停用已交付客户端。
 

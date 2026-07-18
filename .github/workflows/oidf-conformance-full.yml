@@ -300,9 +300,18 @@ jobs:
             --ciba-notification-base-url "$CONFORMANCE_SERVER" \
             --target-issuer "$OIDF_TARGET_ISSUER" \
             --output oidf-plan-configs.json
+          test -n "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON"
+          printf '%s' "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON" > oidf-delivered-client-material.json
+          chmod 600 oidf-delivered-client-material.json
+          python scripts/apply_oidf_delivered_client_material.py \
+            --material-json-file oidf-delivered-client-material.json \
+            --config-json-file oidf-plan-configs.json \
+            --expected-target-issuer "$OIDF_TARGET_ISSUER" \
+            --expected-suite-base-url "$CONFORMANCE_SERVER"
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
+          OIDF_DELIVERED_CLIENT_MATERIAL_JSON: ${{ secrets.OIDF_DELIVERED_CLIENT_MATERIAL_JSON }}
 
       - name: Run full OIDF matrix
         run: |
@@ -499,9 +508,18 @@ jobs:
             --ciba-notification-base-url "$CONFORMANCE_SERVER" \
             --target-issuer "$OIDF_TARGET_ISSUER" \
             --output oidf-plan-configs.json
+          test -n "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON"
+          printf '%s' "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON" > oidf-delivered-client-material.json
+          chmod 600 oidf-delivered-client-material.json
+          python scripts/apply_oidf_delivered_client_material.py \
+            --material-json-file oidf-delivered-client-material.json \
+            --config-json-file oidf-plan-configs.json \
+            --expected-target-issuer "$OIDF_TARGET_ISSUER" \
+            --expected-suite-base-url "$CONFORMANCE_SERVER"
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
+          OIDF_DELIVERED_CLIENT_MATERIAL_JSON: ${{ secrets.OIDF_DELIVERED_CLIENT_MATERIAL_JSON }}
 
       - name: Run isolated OIDF browser-sensitive plan
         run: |

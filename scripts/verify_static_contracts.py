@@ -779,6 +779,12 @@ def check_conformance_provisioning_boundaries() -> None:
     openid4vc_onboarding = (
         ROOT / "scripts" / "prepare_openid4vc_public_onboarding.py"
     ).read_text(encoding="utf-8")
+    official_onboarding = (
+        ROOT / "scripts" / "prepare_official_oidf_public_onboarding.py"
+    ).read_text(encoding="utf-8")
+    delivered_material = (
+        ROOT / "scripts" / "apply_oidf_delivered_client_material.py"
+    ).read_text(encoding="utf-8")
     for marker in (
         "/auth/me/access-requests",
         "/admin/access-requests/",
@@ -803,6 +809,8 @@ def check_conformance_provisioning_boundaries() -> None:
             forbidden in onboarding
             or forbidden in black_box_materializer
             or forbidden in openid4vc_onboarding
+            or forbidden in official_onboarding
+            or forbidden in delivered_material
         ):
             raise SystemExit(f"public conformance tooling contains a forbidden deployment coupling: {forbidden}")
 
@@ -810,6 +818,8 @@ def check_conformance_provisioning_boundaries() -> None:
         onboarding,
         black_box_materializer,
         openid4vc_onboarding,
+        official_onboarding,
+        delivered_material,
         (ROOT / "scripts" / "run_oidf_conformance.py").read_text(encoding="utf-8"),
         (ROOT / "scripts" / "run_openid4vc_conformance.py").read_text(encoding="utf-8"),
         (ROOT / ".github" / "workflows" / "oidf-conformance-full.yml").read_text(encoding="utf-8"),
@@ -830,6 +840,27 @@ def check_conformance_provisioning_boundaries() -> None:
         if marker not in openid4vc_onboarding:
             raise SystemExit(
                 f"OpenID4VC public onboarding boundary is missing: {marker}"
+            )
+
+    for marker in (
+        "validate_artifact_directory",
+        "prepare_oidc_clients",
+        "prepare_openid4vc_clients",
+        "applicant email does not match the official artifact commitment",
+        "53 unique clients",
+    ):
+        if marker not in official_onboarding:
+            raise SystemExit(
+                f"official public onboarding conversion lacks hard boundary: {marker}"
+            )
+    for marker in (
+        "target issuer does not match this run",
+        "suite base URL does not match this run",
+        "delivered client material does not match any runner client",
+    ):
+        if marker not in delivered_material:
+            raise SystemExit(
+                f"OIDF delivered-client material lacks hard boundary: {marker}"
             )
 
     retired_owner = "bymoye" + "/NazoAuth"

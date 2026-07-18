@@ -88,6 +88,8 @@ class ApplyPublicConformanceOnboardingTests(unittest.TestCase):
                 plan_set=plan_set,
                 plan_manifest=plan_manifest,
                 runner_env=root / "runner.env",
+                delivered_client_material=root / "delivered.json",
+                no_runner_env=False,
                 trust_bundle=root / "trust.pem",
             )
 
@@ -160,6 +162,7 @@ class ApplyPublicConformanceOnboardingTests(unittest.TestCase):
             args = SimpleNamespace(
                 state_file=state,
                 target_issuer="https://issuer.example",
+                delivered_client_material=Path(directory) / "delivered.json",
             )
             with (
                 mock.patch.dict(
@@ -205,6 +208,7 @@ class ApplyPublicConformanceOnboardingTests(unittest.TestCase):
             args = SimpleNamespace(
                 state_file=state,
                 target_issuer="https://issuer.example",
+                delivered_client_material=Path(directory) / "delivered.json",
             )
             with (
                 mock.patch.dict(

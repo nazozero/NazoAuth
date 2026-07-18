@@ -61,6 +61,17 @@ class OidfWorkflowTests(unittest.TestCase):
             workflow,
         )
 
+    def test_official_runners_require_production_delivered_client_material(self):
+        root = Path(__file__).resolve().parents[2]
+        for name in ("oidf-conformance-full.yml", "openid4vc-conformance.yml"):
+            workflow = (root / ".github" / "workflows" / name).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("OIDF_DELIVERED_CLIENT_MATERIAL_JSON", workflow)
+            self.assertIn("apply_oidf_delivered_client_material.py", workflow)
+            self.assertIn("--expected-target-issuer", workflow)
+            self.assertIn("--expected-suite-base-url", workflow)
+
     def test_public_onboarding_artifacts_include_a_validated_mtls_ca_bundle(self):
         root = Path(__file__).resolve().parents[2]
         validation = (

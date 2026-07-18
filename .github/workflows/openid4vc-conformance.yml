@@ -61,6 +61,7 @@ jobs:
           OPENID4VC_OIDF_BASE_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_BASE_CONFIG_JSON }}
           OPENID4VC_OIDF_MTLS_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_MTLS_CONFIG_JSON }}
           OPENID4VC_OIDF_DRIVER_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_DRIVER_CONFIG_JSON }}
+          OIDF_DELIVERED_CLIENT_MATERIAL_JSON: ${{ secrets.OIDF_DELIVERED_CLIENT_MATERIAL_JSON }}
         run: |
           test -n "$OIDF_CONFORMANCE_TOKEN"
           test -n "$TARGET_ORIGIN" || {
@@ -84,6 +85,14 @@ jobs:
             --target-origin "$TARGET_ORIGIN" \
             --onboarding-profile official \
             --output-dir runtime/openid4vc
+          test -n "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON"
+          printf '%s' "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON" > runtime/openid4vc/delivered-client-material.json
+          chmod 600 runtime/openid4vc/delivered-client-material.json
+          python scripts/apply_oidf_delivered_client_material.py \
+            --material-json-file runtime/openid4vc/delivered-client-material.json \
+            --config-json-file runtime/openid4vc/openid4vc-plan-configs.json \
+            --expected-target-issuer "$TARGET_ORIGIN" \
+            --expected-suite-base-url "$CONFORMANCE_SERVER"
 
       - name: Run official OpenID4VC Final and HAIP alpha matrix
         shell: bash
@@ -113,7 +122,7 @@ jobs:
       - name: Remove plaintext secrets
         if: always()
         shell: bash
-        run: rm -f runtime/openid4vc/base.json runtime/openid4vc/mtls.json runtime/openid4vc/driver-input.json runtime/openid4vc/openid4vc-driver.json runtime/openid4vc/openid4vc-plan-configs.json
+        run: rm -f runtime/openid4vc/base.json runtime/openid4vc/mtls.json runtime/openid4vc/driver-input.json runtime/openid4vc/delivered-client-material.json runtime/openid4vc/openid4vc-driver.json runtime/openid4vc/openid4vc-plan-configs.json
 
       - name: Upload redacted conformance evidence
         if: always()

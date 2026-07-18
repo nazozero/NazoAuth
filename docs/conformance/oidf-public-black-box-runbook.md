@@ -107,6 +107,24 @@ verify that artifact at the same source commit before step 3. The artifact still
 has no production authority: client creation and CA approval remain separate
 applicant and administrator operations through the public control plane.
 
+Convert the verified official artifact into production applications without
+generating replacement clients, keys, or certificates:
+
+```sh
+python scripts/prepare_official_oidf_public_onboarding.py \
+  --artifact-directory runtime/official-onboarding \
+  --expected-source-commit <deployed-sha> \
+  --target-issuer "$OIDF_TARGET_ISSUER" \
+  --suite-base-url "$OIDF_SUITE_BASE_URL" \
+  --applicant-email "$OIDF_APPLICANT_EMAIL" \
+  --output-dir runtime/official-onboarding-apply
+```
+
+The converter verifies the artifact manifest and certificate bundle again,
+checks the applicant-email commitment, and emits exactly 53 unique applications
+for the current full OIDC/FAPI/CIBA/OpenID4VC matrix. It does not contact the
+database or create a client.
+
 Keep the official OpenID4VC mTLS identities in the dedicated
 `OPENID4VC_OIDF_MTLS_CONFIG_JSON` repository secret. Its schema is one `ca`
 certificate plus `mtls` and `mtls2` objects containing `cert` and `key`. The
@@ -139,7 +157,13 @@ Run:
 
 ```sh
 python scripts/apply_public_conformance_onboarding.py apply \
-  --target-issuer "$OIDF_TARGET_ISSUER"
+  --target-issuer "$OIDF_TARGET_ISSUER" \
+  --manifest runtime/official-onboarding-apply/oidf-onboarding-manifest.json \
+  --plan-configs runtime/official-onboarding-apply/oidf-plan-configs.json \
+  --delivered-client-material runtime/official-onboarding-apply/oidf-delivered-client-material.json \
+  --state-file runtime/official-onboarding-apply/oidf-onboarding-state.json \
+  --trust-bundle runtime/official-onboarding-apply/approved-mtls-trust-anchors.pem \
+  --no-runner-env
 ```
 
 For every client, the tool performs the same public operations available to an
@@ -157,6 +181,13 @@ operator:
 All requests are exact-origin HTTPS requests with normal certificate
 verification, redirects disabled, response-size limits, JSON content checks,
 and CSRF tokens on mutations. The resulting state and bundle are private files.
+After a successful apply, install the delivered-client material as the private
+`OIDF_DELIVERED_CLIENT_MATERIAL_JSON` repository secret through standard input.
+The official OIDC and OpenID4VC workflows refuse to start without it and bind it
+to both the selected target issuer and suite origin. This mapping contains the
+actual client identifiers and the few generated client secrets; it replaces
+only exact `client_id` fields in private runner configuration. It is never a
+server seed and is removed after cleanup.
 The state file is created before the first public mutation and atomically
 updated after every application, approval, credential delivery, and trust
 decision. A failed or interrupted apply must be cleaned up before another apply;
