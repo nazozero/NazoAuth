@@ -225,10 +225,34 @@ class OidfWorkflowTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
+        self.assertEqual(len(expected_warnings), 26)
         self.assertEqual(
-            expected_warnings,
-            [],
-            "production conformance runs must not whitelist TLS downgrade warnings",
+            {item["condition"] for item in expected_warnings},
+            {"EnsureIncomingTls13"},
+        )
+        self.assertEqual(
+            {item["expected-result"] for item in expected_warnings},
+            {"warning"},
+        )
+        self.assertEqual(
+            {item["variant"]["client_auth_type"] for item in expected_warnings},
+            {"private_key_jwt", "mtls"},
+        )
+        self.assertEqual(
+            {item["variant"]["ciba_mode"] for item in expected_warnings},
+            {"ping"},
+        )
+        self.assertEqual(
+            {item["variant"]["fapi_ciba_profile"] for item in expected_warnings},
+            {"plain_fapi"},
+        )
+        self.assertEqual(
+            {item["variant"]["client_registration"] for item in expected_warnings},
+            {"static_client"},
+        )
+        self.assertFalse(
+            any("*" in json.dumps(item, sort_keys=True) for item in expected_warnings),
+            "OIDF expected warnings must remain exact, not wildcard based",
         )
 
         self.assertIn('"$GITHUB_WORKSPACE/oidf-results/$export_subdir"', workflow)
