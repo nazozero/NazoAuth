@@ -409,18 +409,7 @@ async fn required_nonce_is_issued_and_atomically_consumed_async() {
         panic!("missing nonce must return use_dpop_nonce");
     };
 
-    assert!(matches!(
-        validate_authorization_server_dpop_at(
-            &state,
-            request(Some(&proof(public_jwk(), json!({"nonce": nonce}))), None),
-            DpopNoncePolicy::Required,
-            NOW,
-        )
-        .await,
-        Err(DpopError::ReplayDetected(_))
-    ));
-
-    let proof_with_nonce = proof(public_jwk(), json!({"nonce": nonce, "jti": "proof-jti-2"}));
+    let proof_with_nonce = proof(public_jwk(), json!({"nonce": nonce}));
     validate_authorization_server_dpop_at(
         &state,
         request(Some(&proof_with_nonce), None),
@@ -428,11 +417,24 @@ async fn required_nonce_is_issued_and_atomically_consumed_async() {
         NOW,
     )
     .await
-    .expect("issued nonce is accepted once");
+    .expect("the challenged jti remains usable after adding the issued nonce");
+    let fresh_nonce = match validate_authorization_server_dpop_at(
+        &state,
+        request(Some(&proof_with_nonce), None),
+        DpopNoncePolicy::Required,
+        NOW,
+    )
+    .await
+    .expect_err("a consumed nonce must return a fresh challenge")
+    {
+        DpopError::UseNonce(nonce) => nonce,
+        error => panic!("unexpected stale nonce error: {error:?}"),
+    };
+    let replay_with_fresh_nonce = proof(public_jwk(), json!({"nonce": fresh_nonce}));
     assert!(matches!(
         validate_authorization_server_dpop_at(
             &state,
-            request(Some(&proof_with_nonce), None),
+            request(Some(&replay_with_fresh_nonce), None),
             DpopNoncePolicy::Required,
             NOW,
         )
@@ -462,7 +464,7 @@ async fn state_failures_are_fail_closed_with_compatible_error_categories_async()
             NOW,
         )
         .await,
-        Err(DpopError::InvalidProof)
+        Err(DpopError::NonceStoreUnavailable)
     );
 
     let proof_without_nonce = proof(public_jwk(), json!({}));
