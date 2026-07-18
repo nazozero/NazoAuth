@@ -59,6 +59,11 @@ text, not from the behavior of one suite module.
      material separate.
    - Do not mix local suite keys, certificates, callback URLs, client JWKS, or
      CIBA notification metadata with official-suite material.
+   - FAPI-CIBA ID1 has two independent dimensions: client authentication
+     (`private_key_jwt` or mTLS) and access-token sender constraint. All four
+     supported FAPI-CIBA ID1 combinations (`private_key_jwt / mTLS` x
+     `poll / ping`) must seed mTLS holder-of-key access-token policy. Do not
+     treat `private_key_jwt` client authentication as a bearer-token profile.
    - Do not treat a successful artifact copy or CA installation as sufficient.
      The deployment must run the seeding binary from the exact candidate image
      and fail closed if the database state does not match the runner-derived

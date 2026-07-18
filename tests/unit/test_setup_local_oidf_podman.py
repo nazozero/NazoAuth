@@ -134,12 +134,10 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
             },
         )
         for config in configs.values():
-            if config["nazo"]["client_auth_type"] == "mtls":
-                self.assertEqual(config["nazo"]["sender_constrain"], "mtls")
-            else:
-                self.assertNotIn("sender_constrain", config["nazo"])
+            self.assertEqual(config["nazo"]["sender_constrain"], "mtls")
             self.assertIn("mtls", config)
             self.assertIn("mtls2", config)
+            self.assertTrue(config["resource"]["resourceUrl"].startswith("https://"))
             for key in ("client", "client2"):
                 self.assertEqual(
                     config[key]["backchannel_token_delivery_mode"],
