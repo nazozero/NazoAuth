@@ -1,4 +1,5 @@
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -49,6 +50,34 @@ def load_setup_module_with_suite_base(suite_base_url: str):
 
 
 class PrepareOidfBlackBoxTests(unittest.TestCase):
+    def test_generated_mtls_ca_has_explicit_ca_signing_constraints(self):
+        module = load_setup_module()
+
+        with tempfile.TemporaryDirectory() as directory:
+            module.RUNTIME = Path(directory)
+
+            def generate_key(command, **_kwargs):
+                Path(command[command.index("-keyout") + 1]).touch()
+
+            with mock.patch.object(
+                module.subprocess, "run", side_effect=generate_key
+            ) as run:
+                module.ensure_mtls_ca()
+
+        command = run.call_args.args[0]
+        extensions = [
+            command[index + 1]
+            for index, argument in enumerate(command[:-1])
+            if argument == "-addext"
+        ]
+        self.assertEqual(
+            extensions,
+            [
+                "basicConstraints=critical,CA:TRUE",
+                "keyUsage=critical,keyCertSign,cRLSign",
+            ],
+        )
+
     def test_baseline_logout_session_flags_follow_specification_defaults(self):
         module = load_setup_module()
 
