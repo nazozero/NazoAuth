@@ -107,6 +107,15 @@ verify that artifact at the same source commit before step 3. The artifact still
 has no production authority: client creation and CA approval remain separate
 applicant and administrator operations through the public control plane.
 
+Keep the official OpenID4VC mTLS identities in the dedicated
+`OPENID4VC_OIDF_MTLS_CONFIG_JSON` repository secret. Its schema is one `ca`
+certificate plus `mtls` and `mtls2` objects containing `cert` and `key`. The
+base protocol configuration must not duplicate that rotating identity material.
+Both the onboarding export and the official runner overlay the same secret, so
+the approved CA, exported leaf certificates, and the private keys actually used
+by the suite cannot drift. The public artifact strips every private key and
+cryptographically verifies each leaf against its declared CA before upload.
+
 Generate OpenID4VC material from the checked-out product commit for every run.
 Do not copy a prior run's `openid4vc-plan-configs.json`, driver, or expected
 result registries into a new run directory. Public onboarding replaces logical

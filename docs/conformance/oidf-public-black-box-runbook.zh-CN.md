@@ -66,6 +66,8 @@ gh workflow run oidf-conformance-full.yml \
 
 该模式调用可复用的接入材料 workflow，校验 bundle 并上传私有 artifact；两个一致性测试 job 都不会执行。进入第 3 步前，必须下载该 artifact，并按相同 source commit 完成校验。artifact 本身仍不具有生产权限：客户端创建和 CA 审批必须由不同身份通过公网控制面完成。
 
+官方 OpenID4VC mTLS 身份必须单独保存在仓库 Secret `OPENID4VC_OIDF_MTLS_CONFIG_JSON` 中。其结构为一张 `ca` 证书，以及各自包含 `cert` 和 `key` 的 `mtls`、`mtls2` 对象；基础协议配置不得重复保存这组可轮换身份。接入材料导出与官方 runner 必须覆盖同一份 Secret，避免已审批 CA、导出的叶证书与套件实际使用的私钥发生漂移。公开 artifact 会移除全部私钥，并在上传前对每张叶证书执行 CA 链验证。
+
 每次运行都必须从当前检出的产品提交重新生成 OpenID4VC 材料，不得把上一轮的 `openid4vc-plan-configs.json`、driver 或预期结果清单复制到新运行目录。公开接入会把逻辑钱包标识替换为审批后签发的客户端标识，因此已经 apply 的配置是运行输出，不是下一轮的输入。安装 credential dataset 或创建套件 plan 之前，OpenID4VC wrapper 会硬性核对当前 17 个 plan、对应的 17 个配置、driver alias 集合、7 条有界 skip 和 4 条 HAIP warning；跨轮次或过期材料会在任何生产写入前失败。
 
 ## 2. 部署精确提交

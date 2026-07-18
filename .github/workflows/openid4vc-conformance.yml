@@ -59,6 +59,7 @@ jobs:
         shell: bash
         env:
           OPENID4VC_OIDF_BASE_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_BASE_CONFIG_JSON }}
+          OPENID4VC_OIDF_MTLS_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_MTLS_CONFIG_JSON }}
           OPENID4VC_OIDF_DRIVER_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_DRIVER_CONFIG_JSON }}
         run: |
           test -n "$OIDF_CONFORMANCE_TOKEN"
@@ -67,13 +68,16 @@ jobs:
             exit 1
           }
           test -n "$OPENID4VC_OIDF_BASE_CONFIG_JSON"
+          test -n "$OPENID4VC_OIDF_MTLS_CONFIG_JSON"
           test -n "$OPENID4VC_OIDF_DRIVER_CONFIG_JSON"
           install -d -m 700 runtime/openid4vc
           printf '%s' "$OPENID4VC_OIDF_BASE_CONFIG_JSON" > runtime/openid4vc/base.json
+          printf '%s' "$OPENID4VC_OIDF_MTLS_CONFIG_JSON" > runtime/openid4vc/mtls.json
           printf '%s' "$OPENID4VC_OIDF_DRIVER_CONFIG_JSON" > runtime/openid4vc/driver-input.json
           chmod 600 runtime/openid4vc/*.json
           python scripts/materialize_openid4vc_oidf_config.py \
             --base-config-json-file runtime/openid4vc/base.json \
+            --mtls-config-json-file runtime/openid4vc/mtls.json \
             --driver-config-json-file runtime/openid4vc/driver-input.json \
             --credential-datasets-json-file tests/contracts/openid4vc-conformance-datasets.json \
             --conformance-server "$CONFORMANCE_SERVER" \
@@ -109,7 +113,7 @@ jobs:
       - name: Remove plaintext secrets
         if: always()
         shell: bash
-        run: rm -f runtime/openid4vc/base.json runtime/openid4vc/driver-input.json runtime/openid4vc/openid4vc-driver.json runtime/openid4vc/openid4vc-plan-configs.json
+        run: rm -f runtime/openid4vc/base.json runtime/openid4vc/mtls.json runtime/openid4vc/driver-input.json runtime/openid4vc/openid4vc-driver.json runtime/openid4vc/openid4vc-plan-configs.json
 
       - name: Upload redacted conformance evidence
         if: always()

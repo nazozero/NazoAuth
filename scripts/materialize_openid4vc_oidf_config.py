@@ -33,6 +33,38 @@ P256_G = (
 )
 
 
+def apply_official_mtls_material(
+    base: dict[str, object], material: object
+) -> None:
+    if not isinstance(material, dict) or set(material) != {"ca", "mtls", "mtls2"}:
+        raise SystemExit(
+            "official OpenID4VC mTLS material must contain exactly ca, mtls, and mtls2"
+        )
+    ca = material.get("ca")
+    if not isinstance(ca, str) or "-----BEGIN CERTIFICATE-----" not in ca:
+        raise SystemExit("official OpenID4VC mTLS material requires a PEM CA certificate")
+    identities: dict[str, dict[str, str]] = {}
+    for name in ("mtls", "mtls2"):
+        identity = material.get(name)
+        if not isinstance(identity, dict) or set(identity) != {"cert", "key"}:
+            raise SystemExit(
+                f"official OpenID4VC {name} material must contain exactly cert and key"
+            )
+        cert = identity.get("cert")
+        key = identity.get("key")
+        if not isinstance(cert, str) or "-----BEGIN CERTIFICATE-----" not in cert:
+            raise SystemExit(f"official OpenID4VC {name} requires a PEM certificate")
+        if not isinstance(key, str) or "PRIVATE KEY-----" not in key:
+            raise SystemExit(f"official OpenID4VC {name} requires a PEM private key")
+        identities[name] = {"ca": ca, "cert": cert, "key": key}
+    for section in ("vci", "vci_haip"):
+        target = base.get(section)
+        if not isinstance(target, dict):
+            raise SystemExit(f"base configuration requires a {section} object")
+        for name, identity in identities.items():
+            target[name] = copy.deepcopy(identity)
+
+
 def vci_client_ids(onboarding_profile: str, run_namespace: str | None) -> dict[str, str]:
     if onboarding_profile == "operator-black-box":
         namespace = (run_namespace or "").strip().lower()
@@ -253,6 +285,7 @@ def require_scope(metadata: dict[str, object], scope: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-config-json-file", required=True)
+    parser.add_argument("--mtls-config-json-file")
     parser.add_argument("--driver-config-json-file", required=True)
     parser.add_argument("--credential-datasets-json-file", required=True)
     parser.add_argument("--output-dir", required=True)
@@ -266,6 +299,19 @@ def main() -> int:
     parser.add_argument("--run-namespace")
     args = parser.parse_args()
     base = json.loads(Path(args.base_config_json_file).read_text(encoding="utf-8"))
+    if args.onboarding_profile == "official":
+        if not args.mtls_config_json_file:
+            raise SystemExit(
+                "official OpenID4VC material requires --mtls-config-json-file"
+            )
+        apply_official_mtls_material(
+            base,
+            json.loads(Path(args.mtls_config_json_file).read_text(encoding="utf-8")),
+        )
+    elif args.mtls_config_json_file:
+        raise SystemExit(
+            "operator-black-box OpenID4VC material must use its run-scoped mTLS identities"
+        )
     driver = json.loads(Path(args.driver_config_json_file).read_text(encoding="utf-8"))
     credential_datasets = json.loads(
         Path(args.credential_datasets_json_file).read_text(encoding="utf-8")

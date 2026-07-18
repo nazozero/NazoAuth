@@ -858,6 +858,7 @@ class Openid4vcOidfTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             base = root / "base.json"
+            mtls = root / "mtls.json"
             driver = root / "driver.json"
             output = root / "output"
             base.write_text(json.dumps({
@@ -904,6 +905,22 @@ class Openid4vcOidfTests(unittest.TestCase):
                 }
                 for name in ("vci", "vci_haip", "vp", "vp_haip")
             }), encoding="utf-8")
+            mtls.write_text(
+                json.dumps(
+                    {
+                        "ca": "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n",
+                        "mtls": {
+                            "cert": "-----BEGIN CERTIFICATE-----\none\n-----END CERTIFICATE-----\n",
+                            "key": "-----BEGIN PRIVATE KEY-----\none\n-----END PRIVATE KEY-----\n",
+                        },
+                        "mtls2": {
+                            "cert": "-----BEGIN CERTIFICATE-----\ntwo\n-----END CERTIFICATE-----\n",
+                            "key": "-----BEGIN PRIVATE KEY-----\ntwo\n-----END PRIVATE KEY-----\n",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
             driver.write_text(json.dumps({
                 "issuer": {
                     "dedicated_conformance_subject": True,
@@ -928,6 +945,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             with patch("sys.argv", [
                 "materialize_openid4vc_oidf_config.py",
                 "--base-config-json-file", str(base),
+                "--mtls-config-json-file", str(mtls),
                 "--driver-config-json-file", str(driver),
                 "--credential-datasets-json-file",
                 str(
@@ -975,6 +993,14 @@ class Openid4vcOidfTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(len(expected_warnings), 4)
+            for config in configs.values():
+                if "vci-" not in config["alias"]:
+                    continue
+                material = json.loads(mtls.read_text(encoding="utf-8"))
+                self.assertEqual(config["mtls"]["ca"], material["ca"])
+                self.assertEqual(
+                    config["mtls2"]["cert"], material["mtls2"]["cert"]
+                )
             self.assertEqual(
                 {item["configuration-filename"] for item in expected_warnings},
                 {

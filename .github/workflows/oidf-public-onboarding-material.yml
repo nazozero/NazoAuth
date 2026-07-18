@@ -28,6 +28,8 @@ on:
         required: true
       OPENID4VC_OIDF_BASE_CONFIG_JSON:
         required: true
+      OPENID4VC_OIDF_MTLS_CONFIG_JSON:
+        required: true
       OPENID4VC_OIDF_DRIVER_CONFIG_JSON:
         required: true
 
@@ -87,13 +89,16 @@ jobs:
             --target-issuer "${{ inputs.target_issuer }}" \
             --output oidf-plan-configs.json
           test -n "$OPENID4VC_OIDF_BASE_CONFIG_JSON"
+          test -n "$OPENID4VC_OIDF_MTLS_CONFIG_JSON"
           test -n "$OPENID4VC_OIDF_DRIVER_CONFIG_JSON"
           install -d -m 700 runtime/openid4vc
           printf '%s' "$OPENID4VC_OIDF_BASE_CONFIG_JSON" > runtime/openid4vc/base.json
+          printf '%s' "$OPENID4VC_OIDF_MTLS_CONFIG_JSON" > runtime/openid4vc/mtls.json
           printf '%s' "$OPENID4VC_OIDF_DRIVER_CONFIG_JSON" > runtime/openid4vc/driver.json
           chmod 600 runtime/openid4vc/*.json
           python scripts/materialize_openid4vc_oidf_config.py \
             --base-config-json-file runtime/openid4vc/base.json \
+            --mtls-config-json-file runtime/openid4vc/mtls.json \
             --driver-config-json-file runtime/openid4vc/driver.json \
             --credential-datasets-json-file tests/contracts/openid4vc-conformance-datasets.json \
             --conformance-server "${{ inputs.suite_base_url }}" \
@@ -118,7 +123,12 @@ jobs:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
           OPENID4VC_OIDF_BASE_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_BASE_CONFIG_JSON }}
+          OPENID4VC_OIDF_MTLS_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_MTLS_CONFIG_JSON }}
           OPENID4VC_OIDF_DRIVER_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_DRIVER_CONFIG_JSON }}
+
+      - name: Remove plaintext secrets
+        if: always()
+        run: rm -f oidf-plan-config.agekey oidf-plan-config-secret-patch.json oidf-plan-config-ciba-secret-patch.json oidf-plan-config-secret-patch.merged.json runtime/openid4vc/base.json runtime/openid4vc/mtls.json runtime/openid4vc/driver.json runtime/openid4vc/materialized/openid4vc-driver.json runtime/openid4vc/materialized/openid4vc-plan-configs.json
 
       - name: Upload public OIDF onboarding material
         uses: actions/upload-artifact@v7.0.1

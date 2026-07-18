@@ -38,6 +38,7 @@ class OidfWorkflowTests(unittest.TestCase):
             "OIDF_PLAN_CONFIG_AGE_IDENTITY",
             "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
             "OPENID4VC_OIDF_BASE_CONFIG_JSON",
+            "OPENID4VC_OIDF_MTLS_CONFIG_JSON",
             "OPENID4VC_OIDF_DRIVER_CONFIG_JSON",
         ):
             self.assertIn(f"      {secret}:\n        required: true", workflow)
