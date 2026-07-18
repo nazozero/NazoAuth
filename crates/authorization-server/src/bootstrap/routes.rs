@@ -97,6 +97,7 @@ pub(crate) fn configure(
     settings: &Settings,
     perf_metrics_enabled: bool,
 ) {
+    let enable_openid4vci_issuer = settings.modules.enable_openid4vci_issuer;
     // Actix scopes consume every request under their prefix, including paths
     // that are not registered inside the scope. Keep all /.well-known routes
     // in this single scope so later top-level resources cannot be shadowed.
@@ -335,7 +336,21 @@ pub(crate) fn configure(
                 .route(
                     "/access-requests/{request_id}/reject",
                     web::post().to(admin_reject_access_request),
-                ),
+                )
+                .configure(move |admin| {
+                    if enable_openid4vci_issuer {
+                        admin.service(
+                            web::scope("/openid4vci").service(
+                                web::resource(
+                                    "/credential-datasets/{subject_id}/{configuration_id}",
+                                )
+                                .route(web::get().to(admin_get_credential_dataset))
+                                .route(web::put().to(admin_put_credential_dataset))
+                                .route(web::delete().to(admin_delete_credential_dataset)),
+                            ),
+                        );
+                    }
+                }),
         );
     cfg.route("/register", web::post().to(dynamic_client_registration))
         .service(
@@ -345,17 +360,7 @@ pub(crate) fn configure(
                 .route(web::delete().to(client_configuration_delete)),
         );
     if settings.modules.enable_openid4vci_issuer {
-        cfg.service(
-            web::scope("/admin/openid4vci")
-                .wrap(cors::cors_admin(settings))
-                .service(
-                    web::resource("/credential-datasets/{subject_id}/{configuration_id}")
-                        .route(web::get().to(admin_get_credential_dataset))
-                        .route(web::put().to(admin_put_credential_dataset))
-                        .route(web::delete().to(admin_delete_credential_dataset)),
-                ),
-        )
-        .route(
+        cfg.route(
             "/openid4vci/offers",
             web::post().to(create_credential_offer),
         )
