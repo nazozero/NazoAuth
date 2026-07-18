@@ -568,6 +568,7 @@ $deploymentId = [guid]::NewGuid().ToString("N")
 $localStageSuffix = "$safeTag-$deploymentId"
 $archive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-server-$localStageSuffix.tar"
 $uiArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-web-$localStageSuffix.tar.gz"
+$oidfArtifactArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oidf-public-artifact-$localStageSuffix.tar.gz"
 $localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-deploy-$localStageSuffix.sh"
 
 Write-Host "Staging $image ($BackendCommit / $FrontendCommit) on $RemoteHost"
@@ -598,14 +599,18 @@ else {
     if ($localDescriptorId -notmatch '^sha256:[0-9a-f]{64}$') {
         throw "Docker returned an invalid immutable image descriptor: $localDescriptorId"
     }
-    Remove-Item -LiteralPath $archive, $uiArchive -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $archive, $uiArchive, $oidfArtifactArchive -Force -ErrorAction SilentlyContinue
     Invoke-Checked docker @("save", $image, "-o", $archive)
     $expectedImageId = Get-ArchiveImageConfigId -Archive $archive -ExpectedTag $image
     Invoke-Checked tar @("-C", $LocalUiDist, "-czf", $uiArchive, ".")
+    if ($oidfCaEnabledValue -eq "1") {
+        Invoke-Checked tar @("-C", $OidfPublicSeedArtifactDirectory, "-czf", $oidfArtifactArchive, ".")
+    }
     $remoteTempDir = Get-SshCommandOutput @("mktemp", "-d", "/tmp/nazo-oauth-deploy.XXXXXX")
 }
 $remoteArchive = "$remoteTempDir/nazo-oauth-server-$safeTag.tar"
 $remoteUiArchive = "$remoteTempDir/nazo-oauth-web-$safeTag.tar.gz"
+$remoteOidfArtifactArchive = "$remoteTempDir/oidf-public-plan-configs.tar.gz"
 $remoteScript = "$remoteTempDir/deploy.sh"
 $remoteState = "$remoteTempDir/state.json"
 $remoteOidfArtifactDir = "$remoteTempDir/oidf-public-plan-configs"
@@ -617,8 +622,8 @@ if (-not $RenderRemoteScriptPath) {
     Invoke-ScpChecked @($uiArchive, "${RemoteHost}:$remoteUiArchive")
     if ($oidfCaEnabledValue -eq "1") {
         Invoke-SshChecked @("install", "-d", "-m", "0700", $remoteOidfArtifactDir)
-        $oidfScpArguments = @($oidfArtifactFiles.FullName) + "${RemoteHost}:$remoteOidfArtifactDir/"
-        Invoke-ScpChecked $oidfScpArguments
+        Invoke-ScpChecked @($oidfArtifactArchive, "${RemoteHost}:$remoteOidfArtifactArchive")
+        Invoke-SshChecked @("tar", "-xzf", $remoteOidfArtifactArchive, "-C", $remoteOidfArtifactDir)
         Invoke-ScpChecked @($localOidfCaValidator, "${RemoteHost}:$remoteOidfCaValidator")
     }
     if ($verifiedArtifactDirectory) {
@@ -647,6 +652,7 @@ FRONTEND_ARTIFACT_SHA256=$(ConvertTo-ShellLiteral $frontendArtifactDigest)
 DEPLOYMENT_ID=$(ConvertTo-ShellLiteral $deploymentId)
 REMOTE_ARCHIVE=$(ConvertTo-ShellLiteral $remoteArchive)
 REMOTE_UI_ARCHIVE=$(ConvertTo-ShellLiteral $remoteUiArchive)
+REMOTE_OIDF_ARTIFACT_ARCHIVE=$(ConvertTo-ShellLiteral $remoteOidfArtifactArchive)
 REMOTE_SCRIPT=$(ConvertTo-ShellLiteral $remoteScript)
 STATE_FILE=$(ConvertTo-ShellLiteral $remoteState)
 CONTAINER_NAME=$(ConvertTo-ShellLiteral $ContainerName)
@@ -1381,7 +1387,7 @@ rollback() {
 }
 
 cleanup() {
-  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_SCRIPT" "`$STATE_FILE" \
+  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_OIDF_ARTIFACT_ARCHIVE" "`$REMOTE_SCRIPT" "`$STATE_FILE" \
     "`$WATCHDOG_PID_FILE" "`$LEASE_PENDING" "`$LEASE_COMMITTED" "`$LEASE_ROLLBACK" \
     "`$CURRENT_LINK_TEMP" "`$OIDF_CA_VALIDATOR" "`$OIDF_CA_BACKUP" "`$ANGIE_CONFIG_BACKUP"
   rm -rf "`$UI_RELEASE.tmp" "`$OIDF_CA_ARTIFACT_DIR"
@@ -1710,5 +1716,5 @@ catch {
     throw
 }
 finally {
-    Remove-Item -LiteralPath $localRemoteScript, $uiArchive, $archive -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $localRemoteScript, $uiArchive, $archive, $oidfArtifactArchive -Force -ErrorAction SilentlyContinue
 }
