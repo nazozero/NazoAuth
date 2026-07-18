@@ -19,6 +19,37 @@ def load_runner_module():
 
 
 class RunOidfConformanceTests(unittest.TestCase):
+    def test_official_runner_terminates_nested_process_group_when_interrupted(self):
+        module = load_runner_module()
+
+        class Process:
+            pid = 4321
+
+            def wait(self, timeout=None):
+                raise KeyboardInterrupt
+
+        process = Process()
+        with (
+            mock.patch.object(module.subprocess, "Popen", return_value=process),
+            mock.patch.object(module, "terminate_runner") as terminate,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            module.run_official_runner(
+                ["runner"],
+                [],
+                Path("."),
+                {},
+                30,
+                "https://suite.example/",
+                set(),
+                None,
+                0,
+                {},
+                {},
+            )
+
+        terminate.assert_called_once_with(process)
+
     def test_callback_completion_waits_have_a_thirty_second_floor(self):
         module = load_runner_module()
         value = {

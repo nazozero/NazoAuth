@@ -2150,13 +2150,24 @@ def run_official_runner(
     elif aliases:
         print("OIDF early-stop monitor disabled", flush=True)
 
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def interrupt_runner(_signum, _frame) -> None:  # noqa: ANN001
+        raise InterruptedError("OIDF runner received SIGTERM")
+
+    signal.signal(signal.SIGTERM, interrupt_runner)
     try:
-        exit_code = process.wait(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        print("OIDF official runner timed out; terminating process group", flush=True)
-        terminate_runner(process)
-        return 124
+        try:
+            exit_code = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            print("OIDF official runner timed out; terminating process group", flush=True)
+            terminate_runner(process)
+            return 124
+        except BaseException:
+            terminate_runner(process)
+            raise
     finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
         if monitor is not None:
             monitor.stop()
         if monitor_thread is not None:

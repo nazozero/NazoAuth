@@ -14,6 +14,7 @@ import concurrent.futures
 import json
 import os
 from pathlib import Path
+import signal
 import subprocess
 import sys
 import tempfile
@@ -591,13 +592,48 @@ def grouped_runner_args(runner_args: list[str], group_size: int, temp_dir: Path)
     return invocations
 
 
+def terminate_runner_process(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    killpg = getattr(os, "killpg", None)
+    if killpg is not None:
+        try:
+            killpg(process.pid, signal.SIGTERM)
+            process.wait(timeout=20)
+            return
+        except subprocess.TimeoutExpired:
+            killpg(process.pid, signal.SIGKILL)
+            process.wait()
+            return
+    process.terminate()
+    try:
+        process.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
 def run_runner_invocations(invocations: list[list[str]]) -> int:
     for index, runner_args in enumerate(invocations, start=1):
         print(f"OpenID4VC official runner group {index}/{len(invocations)}", flush=True)
         command = [sys.executable, str(Path(__file__).with_name("run_oidf_conformance.py")), *runner_args]
-        result = subprocess.run(command, check=False)
-        if result.returncode != 0:
-            return result.returncode
+        process = subprocess.Popen(command, start_new_session=True)
+        previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+        def interrupt_runner(_signum, _frame) -> None:  # noqa: ANN001
+            raise InterruptedError("OpenID4VC wrapper received SIGTERM")
+
+        signal.signal(signal.SIGTERM, interrupt_runner)
+        try:
+            try:
+                returncode = process.wait()
+            except BaseException:
+                terminate_runner_process(process)
+                raise
+        finally:
+            signal.signal(signal.SIGTERM, previous_sigterm)
+        if returncode != 0:
+            return returncode
     return 0
 
 

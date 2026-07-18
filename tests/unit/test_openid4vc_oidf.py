@@ -418,6 +418,35 @@ class Openid4vcOidfTests(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, "expected warnings"):
                 runner.validate_materialized_matrix({"aliases": aliases}, arguments)
 
+    def test_openid4vc_wrapper_terminates_the_runner_process_group_on_interruption(self):
+        module = load("run_openid4vc_conformance.py")
+
+        class Process:
+            pid = 1234
+
+            def __init__(self):
+                self.waits = 0
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                self.waits += 1
+                if self.waits == 1:
+                    raise KeyboardInterrupt
+                return 0
+
+        process = Process()
+        with (
+            patch.object(module.subprocess, "Popen", return_value=process),
+            patch.object(module.os, "killpg", create=True) as killpg,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            module.run_runner_invocations([["--suite-dir", "suite"]])
+
+        killpg.assert_called_once_with(process.pid, module.signal.SIGTERM)
+        self.assertEqual(process.waits, 2)
+
     def test_official_openid4vc_workflow_uses_bounded_groups(self):
         workflow = (ROOT / ".github" / "workflows" / "openid4vc-conformance.yml").read_text(
             encoding="utf-8"
