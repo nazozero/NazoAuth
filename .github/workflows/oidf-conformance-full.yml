@@ -15,12 +15,26 @@ on:
         options:
           - serial
           - parallel-isolated
+      onboarding_material_only:
+        description: "Export production-onboarding material without creating suite plans."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
+  export-onboarding-material:
+    if: ${{ inputs.onboarding_material_only }}
+    uses: ./.github/workflows/oidf-public-onboarding-material.yml
+    with:
+      target_issuer: ${{ inputs.target_issuer }}
+      suite_base_url: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
+    secrets: inherit
+
   oidf-conformance-full:
+    if: ${{ !inputs.onboarding_material_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
@@ -384,7 +398,7 @@ jobs:
           if-no-files-found: ignore
 
   oidf-conformance-browser-isolated:
-    if: ${{ inputs.runner_mode == 'parallel-isolated' }}
+    if: ${{ !inputs.onboarding_material_only && inputs.runner_mode == 'parallel-isolated' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:

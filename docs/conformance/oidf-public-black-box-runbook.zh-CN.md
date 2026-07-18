@@ -55,6 +55,17 @@ python scripts/prepare_oidf_black_box.py
 
 命令只在 `runtime/oidf` 生成 runner 配置、密钥、证书、onboarding manifest 以及精确的 plan/skip/review 清单。这些是测试输入，不是生产记录，也不具备修改生产数据库的权限。
 
+若官方 runner 配置保存在仓库的加密材料中，可使用仅导出模式，在不创建套件 plan 的情况下生成接入材料：
+
+```sh
+gh workflow run oidf-conformance-full.yml \
+  --ref <精确分支> \
+  -f target_issuer=https://issuer.example \
+  -f onboarding_material_only=true
+```
+
+该模式调用可复用的接入材料 workflow，校验 bundle 并上传私有 artifact；两个一致性测试 job 都不会执行。进入第 3 步前，必须下载该 artifact，并按相同 source commit 完成校验。artifact 本身仍不具有生产权限：客户端创建和 CA 审批必须由不同身份通过公网控制面完成。
+
 每次运行都必须从当前检出的产品提交重新生成 OpenID4VC 材料，不得把上一轮的 `openid4vc-plan-configs.json`、driver 或预期结果清单复制到新运行目录。公开接入会把逻辑钱包标识替换为审批后签发的客户端标识，因此已经 apply 的配置是运行输出，不是下一轮的输入。安装 credential dataset 或创建套件 plan 之前，OpenID4VC wrapper 会硬性核对当前 17 个 plan、对应的 17 个配置、driver alias 集合、7 条有界 skip 和 4 条 HAIP warning；跨轮次或过期材料会在任何生产写入前失败。
 
 ## 2. 部署精确提交

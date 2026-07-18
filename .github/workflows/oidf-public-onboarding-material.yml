@@ -11,6 +11,25 @@ on:
         description: HTTPS origin of the conformance suite that owns these clients
         required: true
         type: string
+  workflow_call:
+    inputs:
+      target_issuer:
+        description: Public HTTPS issuer that will receive the onboarding material
+        required: true
+        type: string
+      suite_base_url:
+        description: HTTPS origin of the conformance suite that owns these clients
+        required: true
+        type: string
+    secrets:
+      OIDF_PLAN_CONFIG_AGE_IDENTITY:
+        required: true
+      OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN:
+        required: true
+      OPENID4VC_OIDF_BASE_CONFIG_JSON:
+        required: true
+      OPENID4VC_OIDF_DRIVER_CONFIG_JSON:
+        required: true
 
 permissions:
   contents: read

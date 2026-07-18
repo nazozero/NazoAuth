@@ -91,6 +91,22 @@ manifest, and exact plan/skip/review registries under `runtime/oidf`. These are
 test-runner inputs, not production records. They contain no authority to mutate
 the target database.
 
+When the official runner configuration is stored in the repository's encrypted
+material, export it without creating suite plans:
+
+```sh
+gh workflow run oidf-conformance-full.yml \
+  --ref <exact-branch> \
+  -f target_issuer=https://issuer.example \
+  -f onboarding_material_only=true
+```
+
+This mode calls the reusable onboarding-material workflow, validates the bundle,
+and uploads the private artifact. Both conformance jobs are skipped. Download and
+verify that artifact at the same source commit before step 3. The artifact still
+has no production authority: client creation and CA approval remain separate
+applicant and administrator operations through the public control plane.
+
 Generate OpenID4VC material from the checked-out product commit for every run.
 Do not copy a prior run's `openid4vc-plan-configs.json`, driver, or expected
 result registries into a new run directory. Public onboarding replaces logical

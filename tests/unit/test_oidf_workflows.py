@@ -33,6 +33,32 @@ class OidfWorkflowTests(unittest.TestCase):
         )
         self.assertIn("OPENID4VC_OIDF_BASE_CONFIG_JSON", workflow)
         self.assertIn("OPENID4VC_OIDF_DRIVER_CONFIG_JSON", workflow)
+        self.assertIn("workflow_call:", workflow)
+        for secret in (
+            "OIDF_PLAN_CONFIG_AGE_IDENTITY",
+            "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
+            "OPENID4VC_OIDF_BASE_CONFIG_JSON",
+            "OPENID4VC_OIDF_DRIVER_CONFIG_JSON",
+        ):
+            self.assertIn(f"      {secret}:\n        required: true", workflow)
+
+    def test_full_matrix_can_bootstrap_official_onboarding_without_creating_plans(self):
+        root = Path(__file__).resolve().parents[2]
+        workflow = (
+            root / ".github" / "workflows" / "oidf-conformance-full.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("onboarding_material_only:", workflow)
+        self.assertIn(
+            "uses: ./.github/workflows/oidf-public-onboarding-material.yml",
+            workflow,
+        )
+        self.assertIn("secrets: inherit", workflow)
+        self.assertIn("if: ${{ !inputs.onboarding_material_only }}", workflow)
+        self.assertIn(
+            "if: ${{ !inputs.onboarding_material_only && inputs.runner_mode == 'parallel-isolated' }}",
+            workflow,
+        )
 
     def test_public_onboarding_artifacts_include_a_validated_mtls_ca_bundle(self):
         root = Path(__file__).resolve().parents[2]
