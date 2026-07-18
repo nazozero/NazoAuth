@@ -134,6 +134,25 @@ the approved CA, exported leaf certificates, and the private keys actually used
 by the suite cannot drift. The public artifact strips every private key and
 cryptographically verifies each leaf against its declared CA before upload.
 
+Keep the OIDC/FAPI mTLS identities in the age-encrypted repository asset
+`docs/conformance/oidf-mtls-material.json.age`; keep only its decryption
+identity in the `OIDF_MTLS_MATERIAL_AGE_IDENTITY` repository secret. The public
+plan template contains no environment certificate or private key. Both the
+onboarding exporter and official runner must apply this same material after all
+derived FAPI-CIBA configurations exist. The material has one dedicated CA and
+one client certificate/private key per logical mTLS client, so client IDs,
+certificates, and private keys rotate as one source-bound set.
+
+Use `scripts/generate_oidf_mtls_material.py` only as an operator-controlled
+identity rotation step. It creates an RSA-3072 CA with critical `CA:TRUE` and
+critical `keyCertSign`, and RSA-2048 end-entity certificates restricted to
+`clientAuth`. Encrypt the output immediately and remove the plaintext plus CA
+private key. This creates external client cryptographic identities; it does not
+create production client records or grant trust. The latter actions still go
+through the applicant/approver flow. Artifact export rejects a CA whose Basic
+Constraints or Key Usage would be rejected by the production trust-request
+endpoint, including a missing or non-critical `keyCertSign` extension.
+
 Generate OpenID4VC material from the checked-out product commit for every run.
 Do not copy a prior run's `openid4vc-plan-configs.json`, driver, or expected
 result registries into a new run directory. Public onboarding replaces logical

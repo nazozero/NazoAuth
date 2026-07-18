@@ -99,6 +99,46 @@ def replace_template_issuer(value: Any, target_issuer: str) -> Any:
     return value
 
 
+def apply_mtls_material(rendered: dict[str, Any], material: Any) -> None:
+    if not isinstance(material, dict) or material.get("schema") != 1:
+        raise SystemExit("OIDF mTLS material must be a schema-1 object")
+    ca = material.get("ca")
+    clients = material.get("clients")
+    if not isinstance(ca, str) or not ca.startswith("-----BEGIN CERTIFICATE-----"):
+        raise SystemExit("OIDF mTLS material requires a PEM CA certificate")
+    if not isinstance(clients, dict) or not clients:
+        raise SystemExit("OIDF mTLS material requires a non-empty clients object")
+    configs = rendered.get("configs")
+    if not isinstance(configs, dict):
+        raise SystemExit("OIDF rendered config must contain a configs object")
+
+    used: set[str] = set()
+    for file_name, config in configs.items():
+        if not isinstance(config, dict):
+            continue
+        for client_field, mtls_field in (("client", "mtls"), ("client2", "mtls2")):
+            if mtls_field not in config:
+                continue
+            client = config.get(client_field)
+            client_id = client.get("client_id") if isinstance(client, dict) else None
+            if not isinstance(client_id, str) or not client_id:
+                raise SystemExit(f"{file_name}.{client_field}.client_id is required for {mtls_field}")
+            identity = clients.get(client_id)
+            if not isinstance(identity, dict):
+                raise SystemExit(f"OIDF mTLS material is missing client {client_id}")
+            cert = identity.get("cert")
+            key = identity.get("key")
+            if not isinstance(cert, str) or not cert.startswith("-----BEGIN CERTIFICATE-----"):
+                raise SystemExit(f"OIDF mTLS client {client_id} requires a PEM certificate")
+            if not isinstance(key, str) or "PRIVATE KEY-----" not in key:
+                raise SystemExit(f"OIDF mTLS client {client_id} requires a PEM private key")
+            config[mtls_field] = {"ca": ca, "cert": cert, "key": key}
+            used.add(client_id)
+    unused = sorted(set(clients) - used)
+    if unused:
+        raise SystemExit("OIDF mTLS material contains unused clients: " + ", ".join(unused))
+
+
 def derive_dynamic_oidcc_config(rendered: dict[str, Any], initial_access_token: str) -> None:
     configs = rendered.get("configs")
     if not isinstance(configs, dict):
@@ -247,6 +287,12 @@ def main() -> int:
         help="environment variable prefix for gzip+base64 secret patch chunks",
     )
     parser.add_argument(
+        "--mtls-material-file",
+        type=Path,
+        default=None,
+        help="replace all OIDF mTLS identities from a schema-bound material file",
+    )
+    parser.add_argument(
         "--derive-dynamic-oidcc-config",
         action="store_true",
         help="derive RFC 7591 dynamic OIDC Basic config from the static OIDC Basic config",
@@ -294,6 +340,10 @@ def main() -> int:
         if not isinstance(rendered, dict):
             raise SystemExit("OIDF rendered config must be a JSON object")
         derive_fapi_ciba_matrix_configs(rendered, args.ciba_notification_base_url)
+    if args.mtls_material_file is not None:
+        if not isinstance(rendered, dict):
+            raise SystemExit("OIDF rendered config must be a JSON object")
+        apply_mtls_material(rendered, read_json(args.mtls_material_file))
     if args.target_issuer:
         rendered = replace_template_issuer(
             rendered, validate_https_origin(args.target_issuer, "--target-issuer")

@@ -915,6 +915,25 @@ def check_conformance_provisioning_boundaries() -> None:
     public_onboarding_workflow = (
         ROOT / ".github" / "workflows" / "oidf-public-onboarding-material.yml"
     ).read_text(encoding="utf-8")
+    full_oidf_workflow = (
+        ROOT / ".github" / "workflows" / "oidf-conformance-full.yml"
+    ).read_text(encoding="utf-8")
+    oidf_template = (
+        ROOT / "docs" / "conformance" / "oidf-plan-config-template.json"
+    ).read_text(encoding="utf-8")
+    if "-----BEGIN CERTIFICATE-----" in oidf_template or "PRIVATE KEY" in oidf_template:
+        raise SystemExit("OIDF public plan template must not embed environment mTLS material")
+    for workflow_name, workflow in (
+        ("public onboarding", public_onboarding_workflow),
+        ("full conformance", full_oidf_workflow),
+    ):
+        for marker in (
+            "OIDF_MTLS_MATERIAL_AGE_IDENTITY",
+            "docs/conformance/oidf-mtls-material.json.age",
+            "--mtls-material-file oidf-mtls-material.json",
+        ):
+            if marker not in workflow:
+                raise SystemExit(f"{workflow_name} workflow omits managed OIDF mTLS material: {marker}")
     for marker in (
         "materialize_openid4vc_oidf_config.py",
         "openid4vc-plan-configs.json",

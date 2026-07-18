@@ -82,6 +82,20 @@ python scripts/prepare_official_oidf_public_onboarding.py \
 
 官方 OpenID4VC mTLS 身份必须单独保存在仓库 Secret `OPENID4VC_OIDF_MTLS_CONFIG_JSON` 中。其结构为一张 `ca` 证书，以及各自包含 `cert` 和 `key` 的 `mtls`、`mtls2` 对象；基础协议配置不得重复保存这组可轮换身份。接入材料导出与官方 runner 必须覆盖同一份 Secret，避免已审批 CA、导出的叶证书与套件实际使用的私钥发生漂移。公开 artifact 会移除全部私钥，并在上传前对每张叶证书执行 CA 链验证。
 
+OIDC/FAPI mTLS 身份保存在 age 加密的仓库文件
+`docs/conformance/oidf-mtls-material.json.age` 中，解密身份只保存在仓库 Secret
+`OIDF_MTLS_MATERIAL_AGE_IDENTITY`。公开 plan 模板不得包含任何环境证书或私钥；
+接入材料导出和官方 runner 必须在所有 FAPI-CIBA 派生配置生成后覆盖同一份材料。
+该材料只包含一个专用 CA，以及每个逻辑 mTLS 客户端各自的客户端证书和私钥，
+使客户端标识、证书和私钥作为同一组 source-bound 材料轮换。
+
+`scripts/generate_oidf_mtls_material.py` 只用于受控的客户端身份轮换。它生成带
+critical `CA:TRUE` 和 critical `keyCertSign` 的 RSA-3072 CA，以及限制为
+`clientAuth` 的 RSA-2048 终端证书。输出必须立即加密，并删除明文与 CA 私钥。
+该工具只生成外部测试客户端的密码学身份，不创建生产客户端，也不授予 CA 信任；
+生产接入和信任仍必须经过申请人与审批人流程。artifact 导出与生产信任申请采用同一
+CA 边界：缺失 `keyCertSign`、扩展非 critical，或 Basic Constraints 不合格时均拒绝。
+
 每次运行都必须从当前检出的产品提交重新生成 OpenID4VC 材料，不得把上一轮的 `openid4vc-plan-configs.json`、driver 或预期结果清单复制到新运行目录。公开接入会把逻辑钱包标识替换为审批后签发的客户端标识，因此已经 apply 的配置是运行输出，不是下一轮的输入。安装 credential dataset 或创建套件 plan 之前，OpenID4VC wrapper 会硬性核对当前 17 个 plan、对应的 17 个配置、driver alias 集合、7 条有界 skip 和 4 条 HAIP warning；跨轮次或过期材料会在任何生产写入前失败。
 
 ## 2. 部署精确提交

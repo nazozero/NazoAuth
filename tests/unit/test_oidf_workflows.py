@@ -36,12 +36,33 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("workflow_call:", workflow)
         for secret in (
             "OIDF_PLAN_CONFIG_AGE_IDENTITY",
+            "OIDF_MTLS_MATERIAL_AGE_IDENTITY",
             "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
             "OPENID4VC_OIDF_BASE_CONFIG_JSON",
             "OPENID4VC_OIDF_MTLS_CONFIG_JSON",
             "OPENID4VC_OIDF_DRIVER_CONFIG_JSON",
         ):
             self.assertIn(f"      {secret}:\n        required: true", workflow)
+
+    def test_oidc_fapi_mtls_material_is_encrypted_and_applied_everywhere(self):
+        root = Path(__file__).resolve().parents[2]
+        encrypted = root / "docs" / "conformance" / "oidf-mtls-material.json.age"
+        self.assertTrue(encrypted.is_file())
+        self.assertNotIn("PRIVATE KEY", encrypted.read_bytes().decode("latin-1"))
+        template = (
+            root / "docs" / "conformance" / "oidf-plan-config-template.json"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("-----BEGIN CERTIFICATE-----", template)
+        for name in (
+            "oidf-public-onboarding-material.yml",
+            "oidf-conformance-full.yml",
+        ):
+            workflow = (root / ".github" / "workflows" / name).read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("OIDF_MTLS_MATERIAL_AGE_IDENTITY", workflow)
+            self.assertIn("docs/conformance/oidf-mtls-material.json.age", workflow)
+            self.assertIn("--mtls-material-file oidf-mtls-material.json", workflow)
 
     def test_full_matrix_can_bootstrap_official_onboarding_without_creating_plans(self):
         root = Path(__file__).resolve().parents[2]

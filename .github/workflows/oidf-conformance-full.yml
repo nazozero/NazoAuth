@@ -275,6 +275,11 @@ jobs:
             --identity oidf-plan-config.agekey \
             --output oidf-plan-config-ciba-secret-patch.json \
             docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          printf '%s\n' "$OIDF_MTLS_MATERIAL_AGE_IDENTITY" > oidf-mtls-material.agekey
+          rage --decrypt \
+            --identity oidf-mtls-material.agekey \
+            --output oidf-mtls-material.json \
+            docs/conformance/oidf-mtls-material.json.age
           python - <<'PY'
           import json
 
@@ -295,6 +300,7 @@ jobs:
           python scripts/materialize_oidf_plan_config.py \
             --template docs/conformance/oidf-plan-config-template.json \
             --secret-patch-file oidf-plan-config-secret-patch.merged.json \
+            --mtls-material-file oidf-mtls-material.json \
             --derive-dynamic-oidcc-config \
             --derive-fapi-ciba-matrix-configs \
             --ciba-notification-base-url "$CONFORMANCE_SERVER" \
@@ -310,6 +316,7 @@ jobs:
             --expected-suite-base-url "$CONFORMANCE_SERVER"
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
+          OIDF_MTLS_MATERIAL_AGE_IDENTITY: ${{ secrets.OIDF_MTLS_MATERIAL_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
           OIDF_DELIVERED_CLIENT_MATERIAL_JSON: ${{ secrets.OIDF_DELIVERED_CLIENT_MATERIAL_JSON }}
 
@@ -483,6 +490,11 @@ jobs:
             --identity oidf-plan-config.agekey \
             --output oidf-plan-config-ciba-secret-patch.json \
             docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          printf '%s\n' "$OIDF_MTLS_MATERIAL_AGE_IDENTITY" > oidf-mtls-material.agekey
+          rage --decrypt \
+            --identity oidf-mtls-material.agekey \
+            --output oidf-mtls-material.json \
+            docs/conformance/oidf-mtls-material.json.age
           python - <<'PY'
           import json
 
@@ -503,6 +515,7 @@ jobs:
           python scripts/materialize_oidf_plan_config.py \
             --template docs/conformance/oidf-plan-config-template.json \
             --secret-patch-file oidf-plan-config-secret-patch.merged.json \
+            --mtls-material-file oidf-mtls-material.json \
             --derive-dynamic-oidcc-config \
             --derive-fapi-ciba-matrix-configs \
             --ciba-notification-base-url "$CONFORMANCE_SERVER" \
@@ -518,6 +531,7 @@ jobs:
             --expected-suite-base-url "$CONFORMANCE_SERVER"
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
+          OIDF_MTLS_MATERIAL_AGE_IDENTITY: ${{ secrets.OIDF_MTLS_MATERIAL_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
           OIDF_DELIVERED_CLIENT_MATERIAL_JSON: ${{ secrets.OIDF_DELIVERED_CLIENT_MATERIAL_JSON }}
 

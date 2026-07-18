@@ -443,7 +443,7 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                             export_args(input_path, root / f"public-{name}")
                         )
 
-    def test_export_accepts_absent_ca_key_usage_but_rejects_restrictive_usage(self):
+    def test_export_rejects_absent_or_restrictive_ca_key_usage(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             unrestricted = make_mtls_material(
@@ -456,6 +456,11 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                 "restricted-ca-key-usage",
                 ca_key_usage="critical,digitalSignature",
             )
+            noncritical = make_mtls_material(
+                root,
+                "noncritical-ca-key-usage",
+                ca_key_usage="keyCertSign,cRLSign",
+            )
             input_path = root / "configs.json"
             input_path.write_text(
                 json.dumps(
@@ -463,12 +468,10 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            self.assertEqual(
+            with self.assertRaises(SystemExit):
                 module.main_with_args_for_test(
                     export_args(input_path, root / "public-missing-ca-key-usage")
-                ),
-                0,
-            )
+                )
 
             input_path.write_text(
                 json.dumps(
@@ -479,6 +482,17 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 module.main_with_args_for_test(
                     export_args(input_path, root / "public-restricted-ca-key-usage")
+                )
+
+            input_path.write_text(
+                json.dumps(
+                    {"configs": {"test.json": {"alias": "test", "mtls": noncritical}}}
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit):
+                module.main_with_args_for_test(
+                    export_args(input_path, root / "public-noncritical-ca-key-usage")
                 )
 
     def test_failed_export_does_not_replace_existing_bundle(self):
@@ -601,29 +615,21 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
 
     def test_real_fapi_matrix_template_preserves_onboarding_policy_fields(self):
         template = Path(__file__).resolve().parents[2] / "docs" / "conformance" / "oidf-plan-config-template.json"
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            output_dir = tmp_path / "public"
+        template_text = template.read_text(encoding="utf-8")
+        configs = json.loads(template_text)["configs"]
+        mtls = module.public_onboarding_config(
+            configs[
+                "oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json"
+            ]
+        )
+        jarm = module.public_onboarding_config(
+            configs[
+                "oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json"
+            ]
+        )
 
-            self.assertEqual(
-                module.main_with_args_for_test(
-                    export_args(template, output_dir)
-                ),
-                0,
-            )
-
-            mtls = json.loads(
-                (
-                    output_dir
-                    / "oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json"
-                ).read_text()
-            )
-            jarm = json.loads(
-                (
-                    output_dir
-                    / "oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json"
-                ).read_text()
-            )
+        self.assertNotIn("-----BEGIN CERTIFICATE-----", template_text)
+        self.assertNotIn("Local OIDF mTLS", template_text)
 
         self.assertEqual(mtls["nazo"]["client_auth_type"], "mtls")
         self.assertEqual(mtls["nazo"]["sender_constrain"], "mtls")

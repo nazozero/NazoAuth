@@ -14,6 +14,48 @@ def load_materializer_module():
 
 
 class MaterializeOidfPlanConfigTests(unittest.TestCase):
+    def test_mtls_material_replaces_every_identity_and_rejects_unused_clients(self):
+        module = load_materializer_module()
+        rendered = {
+            "configs": {
+                "one.json": {
+                    "client": {"client_id": "client-one"},
+                    "client2": {"client_id": "client-two"},
+                    "mtls": {"ca": "old", "cert": "old", "key": "old"},
+                    "mtls2": {"ca": "old", "cert": "old", "key": "old"},
+                },
+                "two.json": {
+                    "client": {"client_id": "client-one"},
+                    "mtls": {"ca": "old", "cert": "old", "key": "old"},
+                },
+            }
+        }
+        material = {
+            "schema": 1,
+            "ca": "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n",
+            "clients": {
+                "client-one": {
+                    "cert": "-----BEGIN CERTIFICATE-----\none\n-----END CERTIFICATE-----\n",
+                    "key": "-----BEGIN PRIVATE KEY-----\none\n-----END PRIVATE KEY-----\n",
+                },
+                "client-two": {
+                    "cert": "-----BEGIN CERTIFICATE-----\ntwo\n-----END CERTIFICATE-----\n",
+                    "key": "-----BEGIN PRIVATE KEY-----\ntwo\n-----END PRIVATE KEY-----\n",
+                },
+            },
+        }
+
+        module.apply_mtls_material(rendered, material)
+
+        self.assertEqual(rendered["configs"]["one.json"]["mtls"]["ca"], material["ca"])
+        self.assertEqual(
+            rendered["configs"]["two.json"]["mtls"]["cert"],
+            material["clients"]["client-one"]["cert"],
+        )
+        material["clients"]["unused"] = material["clients"]["client-one"]
+        with self.assertRaisesRegex(SystemExit, "unused clients: unused"):
+            module.apply_mtls_material(rendered, material)
+
     def test_dynamic_derivation_creates_distinct_signed_userinfo_config(self):
         module = load_materializer_module()
         basic = {

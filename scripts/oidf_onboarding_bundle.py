@@ -72,12 +72,14 @@ def _require_ca_certificate(der: bytes, label: str) -> None:
     normalized_key_usage = re.sub(rb"\s+", b"", key_usage.stdout).upper()
     if key_usage.returncode != 0:
         raise BundleError(f"{label} key usage could not be inspected")
-    # RFC 5280 section 4.2.1.3 restricts certificate signing when KeyUsage is
-    # present.  Some OIDF-issued test CAs omit the extension; OpenSSL then
-    # emits no extension text, and the verified BasicConstraints/signature
-    # chain remains authoritative.  A present KeyUsage must allow signing.
-    if normalized_key_usage and b"CERTIFICATESIGN" not in normalized_key_usage:
-        raise BundleError(f"{label} key usage does not permit certificate signing")
+    if (
+        not normalized_key_usage
+        or b"CRITICAL" not in normalized_key_usage
+        or b"CERTIFICATESIGN" not in normalized_key_usage
+    ):
+        raise BundleError(
+            f"{label} requires critical key usage permitting certificate signing"
+        )
 
 
 def _require_end_entity_certificate(der: bytes, label: str) -> None:
