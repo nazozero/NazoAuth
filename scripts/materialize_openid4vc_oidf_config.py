@@ -60,8 +60,8 @@ def plan_expression(plan: str, variants: dict[str, str], filename: str) -> str:
     return plan + "".join(f"[{name}={value}]" for name, value in variants.items()) + f" {filename}"
 
 
-def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, str]]:
-    return [
+def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
+    unsupported_encryption = [
         {
             "test-name": VCI_UNSUPPORTED_ENCRYPTION_MODULE,
             "variant": "*",
@@ -70,6 +70,16 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
         for plan, slug, variants in cases
         if plan == VCI_STANDARD and variants.get("vci_credential_encryption") == "plain"
     ]
+    haip_refresh_token_policy = [
+        {
+            "test-name": VCI_REFRESH_TOKEN_MODULE,
+            "variant": full_vci_variant(plan, variants),
+            "configuration-filename": f"openid4vc-{slug}.json",
+        }
+        for plan, slug, variants in cases
+        if plan == VCI_HAIP
+    ]
+    return unsupported_encryption + haip_refresh_token_policy
 
 
 def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:

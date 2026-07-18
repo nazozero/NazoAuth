@@ -72,6 +72,8 @@
      部署策略，并且清单精确绑定 plan、configuration、variant、block 和 condition
      时，warning 才可作为预期项接受。OpenID4VC/HAIP refresh-token advisory
      属于这种情况：策略是按客户端限制 refresh token 签发，不是通配 warning 豁免。
+     如果官方 runner 随后把同一 advisory 模块标记为 `SKIPPED`，expected skip
+     也必须绑定同一个 configuration 和 variant，不能使用通配符。
    - `SKIPPED` 只有在与提交的 expected-skip 清单精确匹配时才可接受。
    - `REVIEW` 只有在清单精确限定 plan、config、alias 和 module 时才可接受。
    - 任何新增 skip、review、warning 或 module interruption 都必须诊断。

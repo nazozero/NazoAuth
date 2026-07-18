@@ -92,7 +92,10 @@ The HAIP issuer plan can emit the upstream
 authorization server advertises refresh-token support generally but has a
 policy of issuing refresh tokens only to some clients. The matrix therefore
 allows exactly four warning records: the four HAIP issuer executions, this
-module, this block, and this condition. Any other warning remains a failure.
+module, this block, and this condition. The same four contexts are also
+registered as expected skips because the official runner marks the advisory
+module `SKIPPED` after the acceptable warning. Any other warning or skip remains
+a failure.
 
 The upstream plan display names explicitly call these tests **alpha** and say
 they are incomplete/incorrect or not currently part of the certification
