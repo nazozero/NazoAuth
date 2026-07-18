@@ -100,7 +100,6 @@ def base_client_request(
     scopes: list[str],
     audiences: list[str],
     jwks: dict[str, object],
-    require_par: bool,
 ) -> dict[str, object]:
     return {
         "client_name": name,
@@ -115,7 +114,11 @@ def base_client_request(
         "require_mtls_bound_tokens": False,
         "allow_client_assertion_audience_array": False,
         "allow_client_assertion_endpoint_audience": auth_method == "private_key_jwt",
-        "require_par_request_object": require_par,
+        # HAIP 1.0 requires client-authenticated PAR for issuance, but it does
+        # not apply the separate FAPI 2.0 Message Signing profile. Requiring a
+        # JAR Request Object here would conflate those two profiles and reject
+        # conforming HAIP authorization requests.
+        "require_par_request_object": False,
         "backchannel_token_delivery_mode": "poll",
         "backchannel_user_code_parameter": False,
         "backchannel_logout_session_required": False,
@@ -168,7 +171,6 @@ def prepare_clients(
                     "jwks": candidate_jwks,
                     "redirect_uris": set(),
                     "scopes": set(),
-                    "require_par": auth_method == "attest_jwt_client_auth",
                 },
             )
             if entry["auth_method"] != auth_method or entry["jwks"] != candidate_jwks:
@@ -206,7 +208,6 @@ def prepare_clients(
                     scopes=sorted(policy["scopes"]),
                     audiences=audiences,
                     jwks=policy["jwks"],
-                    require_par=bool(policy["require_par"]),
                 ),
                 "mtls_trust_anchor_pem": None,
             }

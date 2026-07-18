@@ -822,7 +822,7 @@ def check_conformance_provisioning_boundaries() -> None:
     for marker in (
         '"token_endpoint_auth_method": auth_method',
         '"require_dpop_bound_tokens": True',
-        '"require_par_request_object": require_par',
+        '"require_par_request_object": False',
         'PRIVATE_JWK_MEMBERS',
         'output / "oidf-onboarding-manifest.json"',
         'output / "openid4vc-plan-set-manifest.json"',

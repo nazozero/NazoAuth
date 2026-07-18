@@ -122,9 +122,15 @@ class PrepareOpenid4vcPublicOnboardingTests(unittest.TestCase):
 
         attested = by_id["attested-wallet"]
         self.assertEqual(attested["token_endpoint_auth_method"], "attest_jwt_client_auth")
-        self.assertTrue(attested["require_par_request_object"])
+        self.assertFalse(attested["require_par_request_object"])
         self.assertFalse(attested["allow_client_assertion_endpoint_audience"])
         self.assertEqual(set(attested["scopes"]), {"pid-sd", "mdl", "offline_access"})
+
+        self.assertTrue(
+            all(not request["require_par_request_object"] for request in by_id.values()),
+            "HAIP issuance uses authenticated PAR without enabling the separate "
+            "FAPI 2.0 Message Signing profile",
+        )
 
         for primary_id, secondary_id in (
             ("private-wallet", "private-wallet-2"),
