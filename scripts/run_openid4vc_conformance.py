@@ -504,7 +504,7 @@ def validate_materialized_matrix(
 
     cases = materializer.matrix_cases()
     expected_config_names = [f"openid4vc-{slug}.json" for _, slug, _ in cases]
-    if list(configs) != expected_config_names:
+    if len(configs) != len(expected_config_names) or set(configs) != set(expected_config_names):
         fail("OpenID4VC plan configurations do not match the current matrix registry")
 
     plans = json.loads(paths["--plan-set-json-file"].read_text(encoding="utf-8"))
@@ -524,7 +524,12 @@ def validate_materialized_matrix(
     ):
         fail("OpenID4VC plan configurations require unique non-empty aliases")
     driver_aliases = driver_config.get("aliases")
-    if not isinstance(driver_aliases, list) or driver_aliases != aliases:
+    if (
+        not isinstance(driver_aliases, list)
+        or any(not isinstance(alias, str) or not alias for alias in driver_aliases)
+        or len(driver_aliases) != len(set(driver_aliases))
+        or set(driver_aliases) != set(aliases)
+    ):
         fail("OpenID4VC driver aliases do not match the materialized plan configurations")
 
     warnings = json.loads(paths["--expected-failures-file"].read_text(encoding="utf-8"))

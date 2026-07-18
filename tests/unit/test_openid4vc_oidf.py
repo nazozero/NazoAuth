@@ -361,7 +361,9 @@ class Openid4vcOidfTests(unittest.TestCase):
                     {
                         "configs": {
                             name: {"alias": alias}
-                            for name, alias in zip(names, aliases, strict=True)
+                            for name, alias in reversed(
+                                list(zip(names, aliases, strict=True))
+                            )
                         }
                     }
                 ),
@@ -395,7 +397,9 @@ class Openid4vcOidfTests(unittest.TestCase):
                 str(skips),
             ]
 
-            runner.validate_materialized_matrix({"aliases": aliases}, arguments)
+            runner.validate_materialized_matrix(
+                {"aliases": list(reversed(aliases))}, arguments
+            )
 
             with self.assertRaisesRegex(SystemExit, "driver aliases"):
                 runner.validate_materialized_matrix(
