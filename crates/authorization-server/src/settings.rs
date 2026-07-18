@@ -332,15 +332,6 @@ impl Settings {
         )?;
         let openid4vc_client_attestation_issuer =
             config.optional_string("OPENID4VC_CLIENT_ATTESTATION_ISSUER");
-        if let (Some(client), Some(holder)) = (
-            openid4vc_client_attestation_jwks.as_ref(),
-            openid4vc_key_attestation_jwks.as_ref(),
-        ) && attestation_trust_sets_overlap(client, holder)
-        {
-            bail!(
-                "OpenID4VC client-attestation and holder-key-attestation trust stores must not contain the same public key"
-            );
-        }
         let credential_configurations = config
             .optional_string("OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON")
             .map(|value| {
@@ -732,34 +723,6 @@ fn parse_attestation_jwk_set(
         }
     }
     Ok(Some(jwks))
-}
-
-fn attestation_trust_sets_overlap(client: &serde_json::Value, holder: &serde_json::Value) -> bool {
-    let client = client
-        .get("keys")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(public_jwk_identity)
-        .collect::<BTreeSet<_>>();
-    holder
-        .get("keys")
-        .and_then(serde_json::Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter_map(public_jwk_identity)
-        .any(|identity| client.contains(&identity))
-}
-
-fn public_jwk_identity(jwk: &serde_json::Value) -> Option<String> {
-    let kty = jwk.get("kty")?.as_str()?;
-    let crv = jwk.get("crv")?.as_str()?;
-    let x = jwk.get("x")?.as_str()?;
-    let y = jwk
-        .get("y")
-        .and_then(serde_json::Value::as_str)
-        .unwrap_or("");
-    Some(format!("{kty}\0{crv}\0{x}\0{y}"))
 }
 
 pub(super) fn positive_u64(

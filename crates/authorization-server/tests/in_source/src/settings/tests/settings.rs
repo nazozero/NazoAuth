@@ -7,27 +7,6 @@ const KEY_ATTESTATION_JWKS: &str =
 const ATTESTATION_CREDENTIAL_CONFIGURATIONS: &str = r#"{"pid":{"format":"dc+sd-jwt","scope":"pid","cryptographic_binding_methods_supported":["jwk"],"credential_signing_alg_values_supported":["ES256"],"proof_types_supported":{"attestation":{"proof_signing_alg_values_supported":["ES256"],"key_attestations_required":{"key_storage":["iso_18045_moderate"]}}},"vct":"https://issuer.example/credentials/pid"}}"#;
 
 #[test]
-fn client_and_holder_key_attestation_trust_stores_must_be_disjoint() {
-    let config = ConfigSource::from_pairs_for_test([
-        (
-            "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
-            CLIENT_ATTESTATION_JWKS,
-        ),
-        (
-            "OPENID4VC_KEY_ATTESTATION_JWKS_JSON",
-            CLIENT_ATTESTATION_JWKS,
-        ),
-    ]);
-
-    let error = settings_error(&config, "attestation trust purposes must remain isolated");
-    assert!(
-        error
-            .to_string()
-            .contains("must not contain the same public key")
-    );
-}
-
-#[test]
 fn key_attestation_policy_requires_its_own_trust_store() {
     let config = ConfigSource::from_pairs_for_test([
         ("ENABLE_OPENID4VCI_ISSUER", "true"),

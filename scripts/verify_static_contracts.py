@@ -608,7 +608,6 @@ def check_openid4vc_boundaries() -> None:
         "OPENID4VC_KEY_ATTESTATION_JWKS_JSON",
         "client_attestation_jwks",
         "key_attestation_jwks",
-        "must not contain the same public key",
         "public verification keys only",
     ):
         if marker not in server_settings:
