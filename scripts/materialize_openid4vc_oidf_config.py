@@ -95,7 +95,7 @@ def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) ->
         {
             "expected-result": "warning",
             "test-name": VCI_REFRESH_TOKEN_MODULE,
-            "variant": dict(variants),
+            "variant": full_vci_variant(plan, variants),
             "configuration-filename": f"openid4vc-{slug}.json",
             "current-block": VCI_REFRESH_TOKEN_BLOCK,
             "condition": VCI_REFRESH_TOKEN_CONDITION,

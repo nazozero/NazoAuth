@@ -656,10 +656,50 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(
                 {tuple(sorted(item["variant"].items())) for item in expected_warnings},
                 {
-                    tuple(sorted({"vci_authorization_code_flow_variant": "wallet_initiated", "credential_format": "sd_jwt_vc"}.items())),
-                    tuple(sorted({"vci_authorization_code_flow_variant": "wallet_initiated", "credential_format": "mdoc"}.items())),
-                    tuple(sorted({"vci_authorization_code_flow_variant": "issuer_initiated", "credential_format": "sd_jwt_vc"}.items())),
-                    tuple(sorted({"vci_authorization_code_flow_variant": "issuer_initiated", "credential_format": "mdoc"}.items())),
+                    tuple(
+                        sorted(
+                            module.full_vci_variant(
+                                module.VCI_HAIP,
+                                {
+                                    "vci_authorization_code_flow_variant": "wallet_initiated",
+                                    "credential_format": "sd_jwt_vc",
+                                },
+                            ).items()
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            module.full_vci_variant(
+                                module.VCI_HAIP,
+                                {
+                                    "vci_authorization_code_flow_variant": "wallet_initiated",
+                                    "credential_format": "mdoc",
+                                },
+                            ).items()
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            module.full_vci_variant(
+                                module.VCI_HAIP,
+                                {
+                                    "vci_authorization_code_flow_variant": "issuer_initiated",
+                                    "credential_format": "sd_jwt_vc",
+                                },
+                            ).items()
+                        )
+                    ),
+                    tuple(
+                        sorted(
+                            module.full_vci_variant(
+                                module.VCI_HAIP,
+                                {
+                                    "vci_authorization_code_flow_variant": "issuer_initiated",
+                                    "credential_format": "mdoc",
+                                },
+                            ).items()
+                        )
+                    ),
                 },
             )
             self.assertEqual(materialized_driver["target_origin"], "https://issuer.example")
