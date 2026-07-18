@@ -65,19 +65,22 @@ The official workflow ran from the same exact source revision and against
 | Condition successes | `41,781` |
 | Review states | `32` |
 | Skipped conditions/modules | `7` |
-| Warnings | `4` expected HAIP refresh-token warnings |
+| Warnings | `4` historical HAIP refresh-token warnings |
 | Failures | `0` |
 
 The exported artifact is
 `openid4vc-conformance-8b2f7a70cd4d51f4ff668ea761a6562616a90c37`.
 
-The four warnings are all the official suite's
+The four historical warnings were all the official suite's
 `fapi2-security-profile-final-refresh-token` advisory:
 
 > The server supports refresh tokens, but did not issue one.
 
-This is expected for the bounded HAIP client policy and does not represent a
-failed condition.
+This record is retained as historical evidence only. Current gating no longer
+treats this warning as acceptable: HAIP authorization-code conformance
+configurations request `offline_access`, and refresh-token behavior must be
+proven through the normal OAuth token policy rather than through an expected
+warning allowlist.
 
 ## Evidence boundary
 

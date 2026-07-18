@@ -15,7 +15,7 @@ use nazo_oauth_server::oidf_seed::{
     config::plan_config_files, config::public_jwks, config::read_plan_config, config::string_value,
     seed_client_secret_pepper, suite_base_urls, test_endpoint_uri, test_endpoint_uris,
 };
-use nazo_postgres::{OidfSeedClient, OidfSeedUser};
+use nazo_postgres::{OAuthClientRepository, OidfSeedClient, OidfSeedUser};
 use serde_json::{Value, json};
 use sha2::Sha256;
 use std::{collections::BTreeSet, env, path::Path};
@@ -101,6 +101,100 @@ fn push_client(
         client: oauth_client(client)?,
         client_secret_hash: client_secret_hash.map(ToOwned::to_owned),
     });
+    Ok(())
+}
+
+fn string_set(values: &[String]) -> BTreeSet<String> {
+    values.iter().cloned().collect()
+}
+
+async fn verify_seeded_clients(
+    repository: &OAuthClientRepository,
+    clients: &[OidfSeedClient],
+) -> anyhow::Result<()> {
+    for expected in clients {
+        let actual = repository
+            .by_client_id(expected.client.tenant_id, &expected.client.client_id)
+            .await?
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "seeded OIDF client {} is missing",
+                    expected.client.client_id
+                )
+            })?;
+        if actual.token_endpoint_auth_method != expected.client.token_endpoint_auth_method {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected authentication method",
+                expected.client.client_id
+            );
+        }
+        if actual.jwks != expected.client.jwks {
+            anyhow::bail!(
+                "seeded OIDF client {} has stale or mismatched JWKS",
+                expected.client.client_id
+            );
+        }
+        if actual.tls_client_auth_cert_sha256 != expected.client.tls_client_auth_cert_sha256 {
+            anyhow::bail!(
+                "seeded OIDF client {} has stale or mismatched mTLS certificate binding",
+                expected.client.client_id
+            );
+        }
+        if actual.backchannel_token_delivery_mode != expected.client.backchannel_token_delivery_mode
+        {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected CIBA delivery mode",
+                expected.client.client_id
+            );
+        }
+        if actual.backchannel_client_notification_endpoint
+            != expected.client.backchannel_client_notification_endpoint
+        {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected CIBA notification endpoint",
+                expected.client.client_id
+            );
+        }
+        if string_set(&actual.redirect_uris) != string_set(&expected.client.redirect_uris) {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected redirect URIs",
+                expected.client.client_id
+            );
+        }
+        if string_set(&actual.post_logout_redirect_uris)
+            != string_set(&expected.client.post_logout_redirect_uris)
+        {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected post-logout redirect URIs",
+                expected.client.client_id
+            );
+        }
+        if string_set(&actual.scopes) != string_set(&expected.client.scopes) {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected scopes",
+                expected.client.client_id
+            );
+        }
+        if string_set(&actual.grant_types) != string_set(&expected.client.grant_types) {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected grant types",
+                expected.client.client_id
+            );
+        }
+        if actual.require_dpop_bound_tokens != expected.client.require_dpop_bound_tokens
+            || actual.require_mtls_bound_tokens != expected.client.require_mtls_bound_tokens
+            || actual.require_par_request_object != expected.client.require_par_request_object
+            || actual.allow_client_assertion_audience_array
+                != expected.client.allow_client_assertion_audience_array
+            || actual.allow_client_assertion_endpoint_audience
+                != expected.client.allow_client_assertion_endpoint_audience
+        {
+            anyhow::bail!(
+                "seeded OIDF client {} has unexpected security policy flags",
+                expected.client.client_id
+            );
+        }
+    }
     Ok(())
 }
 
@@ -470,8 +564,9 @@ async fn main() -> anyhow::Result<()> {
     }
 
     nazo_postgres::seed_oidf_atomically(&pool, &seed_user, &seeded_clients).await?;
+    verify_seeded_clients(&OAuthClientRepository::new(pool.clone()), &seeded_clients).await?;
 
-    println!("Seeded local OIDF user, OIDC basic clients, and FAPI clients.");
+    println!("Seeded and verified OIDF user, OIDC basic clients, and FAPI clients.");
     println!("OIDF_LOCAL_USER_EMAIL={user_email}");
     println!("OIDF_LOCAL_SUITE_BASE_URLS={}", suite_base_urls.join(","));
     println!(

@@ -334,6 +334,7 @@ class FakeLifecycle:
             self.angie_oidf_config.write_text(
                 "server {\n"
                 f"ssl_client_certificate {self.oidf_ca_target.as_posix()};\n"
+                "ssl_verify_client optional;\n"
                 "proxy_set_header X-SSL-Client-Verify $ssl_client_verify;\n"
                 "proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;\n"
                 "location / {\n"
@@ -437,6 +438,10 @@ case "${1:-}" in
     if [[ " $* " == *" nazo-oauth-migrate "* ]]; then
       count=0; [ ! -f "$state/migrations" ] || count="$(cat "$state/migrations")"
       printf '%s\n' "$((count + 1))" >"$state/migrations"; exit 0
+    fi
+    if [[ " $* " == *" nazo_oauth_seed_oidf "* ]]; then
+      count=0; [ ! -f "$state/oidf-seeds" ] || count="$(cat "$state/oidf-seeds")"
+      printf '%s\n' "$((count + 1))" >"$state/oidf-seeds"; exit 0
     fi
     if [[ " $* " == *" pg_isready "* ]]; then exit 0; fi
     selected="${args[$((${#args[@]} - 2))]}"
@@ -607,8 +612,13 @@ class DeployLiveContractTests(unittest.TestCase):
 
     def test_oidf_ca_bundle_is_part_of_the_existing_deployment_transaction(self) -> None:
         self.assertIn("OidfPublicSeedArtifactDirectory", self.source)
+        self.assertIn('[string]$OidfSuiteBaseUrl = "https://www.certification.openid.net"', self.source)
         self.assertIn("--artifact-directory", self.source)
         self.assertIn("OIDF_CA_SHA256", self.source)
+        self.assertIn("seed_oidf_public_clients", self.source)
+        self.assertIn("nazo_oauth_seed_oidf", self.source)
+        self.assertIn("OIDF_SUITE_BASE_URL", self.source)
+        self.assertIn("OIDF_LOCAL_RUNTIME_DIR=/app/oidf-public-plan-configs", self.source)
         self.assertIn("ANGIE_OIDF_CONFIG", self.source)
         self.assertIn('mktemp "`$target_dir/.oidf-mtls-ca.XXXXXX"', self.source)
         self.assertIn('mv -f "`$temporary" "`$OIDF_CA_TARGET"', self.source)
@@ -1077,6 +1087,7 @@ bash "$1" deploy
 
             deployed = lifecycle.run("deploy")
             self.assertEqual(deployed.returncode, 0, deployed.stderr)
+            self.assertEqual((lifecycle.fake_state / "oidf-seeds").read_text().strip(), "1")
             self.assertNotEqual(target.read_bytes(), previous)
             self.assertIn(
                 b"BEGIN CERTIFICATE",

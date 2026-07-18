@@ -17,6 +17,7 @@ text, not from the behavior of one suite module.
 | Control plane separation | A local conformance-suite control plane may be used to drive the tests, but the issuer under test must remain the public HTTPS origin. The control plane address is not conformance evidence. |
 | No test-only product behavior | Product code must not branch on suite aliases, suite hostnames, test plan names, or conformance-specific request shapes. |
 | Deterministic seeding only | The runner may seed clients, keys, redirect URIs, scopes, and test users from the exact plan artifact being executed. It must not manually edit protocol state to manufacture a pass. |
+| Seed verification | Deployment must verify that seeded client JWKS, mTLS certificate bindings, redirect URIs, scopes, grants, authentication methods, and CIBA delivery metadata match the same artifact before the issuer is switched or tested. |
 | Exact evidence | Record the commit SHA, deployed runtime revision, target-issuer placeholder, suite version, plan set, expected skips, review allowances, artifact digests when available, and run URLs. |
 
 ## Correct Flow
@@ -43,6 +44,9 @@ text, not from the behavior of one suite module.
    - Official runs must seed from the official workflow artifact for that run.
    - Do not mix local suite keys, certificates, callback URLs, or client JWKS
      with official-suite artifacts.
+   - Do not treat a successful artifact copy or CA installation as sufficient.
+     The deployment must run the seeding binary from the exact candidate image
+     and fail closed if the database state does not match the artifact.
 
 4. Run the public black-box matrix.
 
@@ -57,6 +61,10 @@ text, not from the behavior of one suite module.
 5. Interpret suite output.
 
    - `FAILURE` or unexpected `WARNING` is not acceptable.
+   - Expected-warning allowlists are not a substitute for protocol behavior.
+     For example, OpenID4VC/HAIP credential refresh warnings must be resolved by
+     truthful metadata and OAuth refresh-token policy, not by broadening the
+     expected-warning list.
    - `SKIPPED` is acceptable only when it matches the committed expected-skip
      allowlist for the exact configuration and module.
    - `REVIEW` is acceptable only when the committed review allowlist identifies

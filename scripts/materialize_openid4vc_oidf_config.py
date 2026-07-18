@@ -61,7 +61,7 @@ def plan_expression(plan: str, variants: dict[str, str], filename: str) -> str:
 
 
 def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, str]]:
-    skips = [
+    return [
         {
             "test-name": VCI_UNSUPPORTED_ENCRYPTION_MODULE,
             "variant": "*",
@@ -70,16 +70,6 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
         for plan, slug, variants in cases
         if plan == VCI_STANDARD and variants.get("vci_credential_encryption") == "plain"
     ]
-    for plan, slug, variants in cases:
-        if plan == VCI_HAIP and full_vci_variant(plan, variants).get("vci_grant_type") == "authorization_code":
-            skips.append(
-                {
-                    "test-name": VCI_REFRESH_TOKEN_MODULE,
-                    "variant": "*",
-                    "configuration-filename": f"openid4vc-{slug}.json",
-                }
-            )
-    return skips
 
 
 def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
@@ -204,6 +194,14 @@ def use_ec_client2(config: dict[str, object], *, source: str, client_id: str) ->
     }
 
 
+def require_scope(metadata: dict[str, object], scope: str) -> None:
+    current = metadata.get("scope")
+    scopes = [item for item in current.split() if item] if isinstance(current, str) else []
+    if scope not in scopes:
+        scopes.append(scope)
+    metadata["scope"] = " ".join(scopes)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-config-json-file", required=True)
@@ -292,6 +290,11 @@ def main() -> int:
             client_auth_type = variants.get(
                 "client_auth_type", "client_attestation" if plan == VCI_HAIP else "private_key_jwt"
             )
+            if (
+                plan == VCI_HAIP
+                and full_vci_variant(plan, variants).get("vci_grant_type") == "authorization_code"
+            ):
+                require_scope(client, "offline_access")
             client["client_id"] = (
                 VCI_ATTESTED_CLIENT_ID
                 if client_auth_type == "client_attestation"
@@ -303,6 +306,13 @@ def main() -> int:
                 else VCI_PRIVATE_KEY_CLIENT2_ID
             )
             use_ec_client2(config, source=key, client_id=client2_id)
+            client2 = config.get("client2")
+            if (
+                isinstance(client2, dict)
+                and plan == VCI_HAIP
+                and full_vci_variant(plan, variants).get("vci_grant_type") == "authorization_code"
+            ):
+                require_scope(client2, "offline_access")
             config["nazo"] = {
                 "openid4vc_role": "issuer",
                 "client_auth_type": client_auth_type,
