@@ -1081,7 +1081,7 @@ def oidf_api_request(
         method=method,
         headers=headers,
     )
-    attempts = 3
+    attempts = 8
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
@@ -1097,13 +1097,13 @@ def oidf_api_request(
             body = exc.read()
             if status < 500 or attempt == attempts:
                 break
-            time.sleep(attempt * 2)
+            time.sleep(min(attempt * 2, 15))
             continue
         except (urllib.error.URLError, http.client.RemoteDisconnected) as exc:
             last_error = exc
             if attempt == attempts:
                 fail(f"OIDF API {method} {path} failed: {exc}")
-            time.sleep(attempt * 2)
+            time.sleep(min(attempt * 2, 15))
             continue
         break
     else:
