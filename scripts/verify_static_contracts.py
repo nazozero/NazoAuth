@@ -885,6 +885,7 @@ def check_conformance_provisioning_boundaries() -> None:
         "role = 'admin' AND admin_level > 0",
         "user_id <> $3",
         "require_mtls_bound_tokens = TRUE",
+        "c.tls_client_auth_cert_sha256 IS NOT NULL",
         "pg_advisory_xact_lock",
         "MAX_ACTIVE_TRUST_ANCHORS_PER_CLIENT",
         "MAX_ACTIVE_TRUST_ANCHORS_PER_TENANT",

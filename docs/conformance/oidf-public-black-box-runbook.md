@@ -12,7 +12,7 @@ runtime mounts, or alternate protocol behavior.
 | OAuth client registration and management | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) | A conformance client follows the same application, approval, credential-delivery, registration, and management rules as any other client. |
 | CIBA token lifecycle | [OpenID Connect CIBA Core 1.0](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html) | A successful CIBA token response can include a refresh token. Client registration therefore permits `ciba + refresh_token` without inventing an authorization-code dependency; runtime issuance still requires the registered grant and `offline_access` policy. |
 | Logout client metadata | [OpenID Connect Front-Channel Logout 1.0](https://openid.net/specs/openid-connect-frontchannel-1_0.html), [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | Both `*_logout_session_required` values default to `false`. A client that needs `sid` explicitly registers the corresponding URI and opts in. |
-| mTLS client authentication and certificate-bound access tokens | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html), [RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html), [RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | `tls_client_auth` and certificate-bound tokens remain independent capabilities. The authorization server requires one subject selector, canonical DN matching, type-aware SAN matching, and an optional narrowing certificate pin. |
+| mTLS client authentication and certificate-bound access tokens | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html), [RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html), [RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | `tls_client_auth` and certificate-bound tokens remain independent capabilities. The authorization server requires one subject selector, canonical DN matching, and type-aware SAN matching. RFC 8705 Section 7.4's cross-CA spoofing boundary is enforced on the public CA-approval path by also requiring a narrowing leaf-certificate pin for `tls_client_auth`. |
 | X.509 validation | [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280.html) | Only a current CA certificate with a supported public key, critical CA basic constraint, and critical `keyCertSign` use may enter a trust request. |
 | Trust-anchor administration | [RFC 6024](https://www.rfc-editor.org/rfc/rfc6024.html) | RFC 6024 supplies the trust-anchor-management security model: authenticate and authorize the source, protect integrity, detect replay, constrain trust purposes, and retain recovery. The product control plane additionally requires a distinct approver, bounded reasons, append-only audit, and revocation. |
 | OpenID4VC issuance and presentation | [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html), [OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html) | Protocol endpoints implement the specifications. Issuer dataset administration is not defined by OpenID4VCI and therefore remains an authenticated, CSRF-protected admin control plane; it is never advertised as a protocol endpoint. |
@@ -223,7 +223,9 @@ alias. Do not install CA material directly from generated runner files.
 
 The proxy validates the certificate chain. The authorization server still
 enforces the registered RFC 8705 client subject selector and client policy.
-Accepting a CA at the proxy does not authorize every certificate issued by it.
+PKI clients admitted through the public CA-approval path must also match their
+administrator-registered leaf-certificate pin. Accepting a CA at the proxy does
+not authorize every certificate issued by it at the OAuth layer.
 
 ## 5. Install dedicated OpenID4VC evidence through the admin API
 

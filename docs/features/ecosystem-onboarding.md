@@ -19,11 +19,14 @@ protocol surface.
 - The admin client API remains the default explicit onboarding path.
 - `/register` is mounted and `registration_endpoint` is advertised only when
   `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`.
-- Public deployments should set
-  `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`; otherwise registration is
-  intentionally open for controlled test deployments only.
-- `software_statement` and remote `jwks_uri` fetching are not supported by
-  the baseline RFC 7591 endpoint.
+- Enabling the endpoint requires
+  `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`; startup fails instead of
+  exposing anonymous registration. RFC 7591 deliberately leaves issuance of
+  this token to the deployment.
+- `software_statement` is not supported because no statement issuer or trust
+  policy is configured. Remote `jwks_uri` is supported only through the shared
+  HTTPS remote-document resolver with DNS rebinding, address-class,
+  redirect, media-type, size, timeout, and cache controls.
 - RFC 7592 Client Configuration Management is available only for clients
   created through DCR and only while `ENABLE_DYNAMIC_CLIENT_REGISTRATION=true`.
 - Successful DCR registration and RFC 7592 read/update/delete operations emit
@@ -40,33 +43,38 @@ protocol surface.
   admin client API, including private-key rejection and signing-key `kid`
   requirements where the authentication method needs stable key selection.
 - `software_statement` is rejected with `invalid_software_statement`.
-- `jwks_uri` is rejected until a separate remote-key trust and SSRF model
-  exists.
+- `jwks_uri` and inline `jwks` are mutually exclusive. A remote key set is
+  resolved before registration is committed, and retrieval failures do not
+  create a partial client.
 - Registration access token storage and rotation use server-side BLAKE3 hashes;
   plaintext registration access tokens are returned only in DCR management
   responses.
 - Metadata truth tests proving discovery only advertises DCR when the registration endpoint is enabled and protected.
 
-### Deferred Scope
+### Unsupported or separately scoped behavior
 
-- Initial access token issuance, per-token scope, expiry, replay prevention,
-  and revocation for broad public onboarding.
-- Optional `jwks_uri` fetching, cache lifetime, stale-key behavior, SSRF
-  prevention, host allowlists, size limits, MIME validation, timeout policy,
-  and key rotation.
+- A public protocol for issuing initial access tokens is not implemented.
+  RFC 7591 explicitly leaves issuance and validation policy out of scope; the
+  production applicant/approver workflow is a separate authenticated product
+  control plane, not a private extension of `/register`.
 - Software statement trust anchors, issuer/audience validation, expiry windows,
   replay prevention, metadata merge rules, and signed onboarding policy.
-- Browser or black-box conformance fixtures that exercise the full
-  registration management lifecycle against a deployed issuer.
+- [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html)
+  automatic and explicit registration are separate trust protocols and are not
+  partially emulated by the product approval endpoints.
 
 ### Required Tests
 
 - DCR is absent from discovery by default and `/register` is not routed when disabled.
 - Invalid redirect URIs are rejected.
 - Weak or unsupported client authentication metadata is rejected.
-- `jwks_uri` is rejected until remote fetch policy exists; if adopted later, it cannot fetch loopback, link-local, private, metadata-service, or non-HTTPS URLs unless an explicit deployment allowlist permits them.
+- `jwks_uri` cannot fetch loopback, link-local, private, metadata-service, or
+  non-HTTPS targets unless a deployment explicitly allowlists the exact private
+  HTTPS origin. Redirects and DNS rebinding cannot escape the resolved policy.
 - Duplicate `kid`, private JWK material, and stale JWKS cache behavior are covered.
-- Initial access token replay and expired-token paths fail closed.
+- Missing or incorrect deployment initial access tokens fail closed. This
+  endpoint does not claim token issuance, expiry, or replay semantics that RFC
+  7591 leaves to the deployment.
 - Registered clients cannot escalate from public to confidential or from baseline to FAPI profile capabilities without policy approval.
 - Dynamic client registration, read, update, and delete audit event names remain
   allowlisted and use non-secret fields only.
@@ -85,10 +93,10 @@ default-closed DCR surface.
 - Server-managed fields are immutable from the client request:
   `registration_access_token`, `registration_client_uri`,
   `client_secret_expires_at`, and `client_id_issued_at`.
-- Successful read and update responses rotate the registration access token.
-  Secret-authenticated dynamic clients also receive a rotated `client_secret`
-  because the server stores only keyed secret digests, never recoverable
-  plaintext secrets.
+- A successful read preserves the authenticated registration access token but
+  rotates a secret client's `client_secret`, because only keyed digests are
+  stored and old plaintext cannot be recovered. A successful full replacement
+  rotates both the registration access token and the client secret.
 - DELETE deactivates the client, clears the registration access token hash,
   revokes active refresh-token rows for the client, and removes stored user
   grants. Existing self-contained access tokens remain bounded by their normal
@@ -97,12 +105,11 @@ default-closed DCR surface.
   events with the client id, client type, grant types, token endpoint auth
   method, and source IP hash.
 
-### Activation Criteria
+### Separately scoped behavior
 
-- Optional `jwks_uri` fetching, if ever supported, with SSRF and cache controls.
 - Software statement trust anchors and metadata merge policy.
-- Browser or black-box conformance fixtures that exercise the full
-  registration management lifecycle against a deployed issuer.
+- [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html)
+  automatic or explicit registration.
 
 ## Client Onboarding Profiles
 
@@ -116,7 +123,46 @@ The runtime must keep discovery metadata aligned with these boundaries.
 | FAPI 2.0 Message Signing client | Same as FAPI Security plus signed request-object, JARM, or signed/nested encrypted introspection metadata only for the selected message-signing profile. | `private_key_jwt` or mTLS, with registered signing keys and algorithm allowlists. | Message-signing discovery fields are advertised only by their matching runtime profile and usable key state. DCR cannot opt into JARM or signed introspection without policy approval. | Unsupported request-object/JARM/introspection metadata is rejected or ignored according to the endpoint contract; a client cannot force metadata advertisement by registration alone. |
 | CIBA client | Register `poll` or `ping` metadata only when CIBA is enabled. Ping requires an exact HTTPS notification endpoint and never carries tokens. | Confidential `private_key_jwt` or mTLS client authentication, signed backchannel requests, mTLS sender-constrained tokens for the FAPI-CIBA ID1 profile, and outbound Ping delivery with a TLS 1.2 minimum and TLS 1.3 support. | CIBA endpoints and grant metadata are absent unless `ENABLE_CIBA=true`; Push and `user_code` are rejected. The compatibility profile remains separate from internal `fapi2-ciba` hardening. | Invalid signatures/audiences/algorithms, polling violations, unsafe notification targets, TLS 1.1-or-older notification endpoints, redirects, expired `auth_req_id` values, and unbounded retries fail closed. |
 | Device Authorization Grant client | Register `urn:ietf:params:oauth:grant-type:device_code` explicitly; do not infer device capability from public client type. | Public or confidential according to client registration; token polling still enforces the client boundary and interval policy. | `device_authorization_endpoint` and `device_code` grant metadata appear only when `ENABLE_DEVICE_AUTHORIZATION_GRANT=true`. | Pending requests return `authorization_pending`, excessive polling returns `slow_down`, denied or expired requests fail without revealing extra user-code state. |
-| DCR / DCRM client lifecycle | DCR accepts bounded RFC 7591 metadata; DCRM uses `registration_client_uri`, `registration_access_token`, full replacement `PUT`, and `DELETE` deactivation for DCR-created clients only. | Registration uses optional initial access token. DCRM uses bearer registration access token and, for secret clients, matching current `client_secret` in update payloads. | DCR/DCRM routes exist only under the dynamic-registration feature gate. RFC 7592 management credentials rotate on successful read and update. | Server-managed fields are immutable in `PUT`; stale or missing registration tokens return `invalid_token`; update/deletion failures do not leak whether an inactive or unknown client id exists. |
+| DCR / DCRM client lifecycle | DCR accepts bounded RFC 7591 metadata; DCRM uses `registration_client_uri`, `registration_access_token`, full replacement `PUT`, and `DELETE` deactivation for DCR-created clients only. | Registration requires the deployment initial access token. DCRM uses the bearer registration access token and, for secret clients, the matching current `client_secret` in update payloads. | DCR/DCRM routes exist only under the dynamic-registration feature gate. A read preserves its registration token while rotating a non-recoverable client secret; full replacement rotates both credentials. | Server-managed fields are immutable in `PUT`; stale or missing registration tokens return `invalid_token`; update/deletion failures do not leak whether an inactive or unknown client id exists. |
+
+## Public applicant and approval control plane
+
+The public application, administrator approval, one-time credential delivery,
+and mTLS trust-review endpoints are product control-plane operations. They are
+not advertised as OAuth or OpenID protocol endpoints.
+
+- [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html) and
+  [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) govern the client
+  record and its protocol lifecycle after approval. RFC 7591 leaves the method
+  of issuing an initial access token out of scope; it does not define an
+  asynchronous human approval API.
+- [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) governs mTLS client
+  identity and certificate-bound tokens, but Section 7.3 leaves CA trust
+  decisions to the deployment. [RFC 6024](https://www.rfc-editor.org/rfc/rfc6024.html)
+  supplies trust-anchor-management requirements. The HTTP approval workflow is
+  therefore product behavior with its own least-privilege boundary.
+- [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html)
+  defines automatic and explicit registration through signed entity statements
+  and trust chains. It is a possible future protocol, not a standards label for
+  the current manual approval workflow.
+
+The applicant must be an active owner of the approved client. A different
+active administrator resolves each request. Approval and client creation use a
+compare-and-swap transaction; losing concurrent decisions roll back. A secret
+is staged before the database transaction, becomes claimable only after the
+matching client commit, expires, and is consumed atomically by the same owner.
+Cleanup uses the same public APIs to reject pending requests, deactivate
+clients, and revoke trust anchors.
+
+RFC 8705 Section 7.4 warns that a different trusted CA can issue a certificate
+with the same subject. The public CA-approval path therefore requires
+`tls_client_auth` clients to have an administrator-registered SHA-256 leaf
+certificate pin in addition to the single RFC 8705 DN/SAN selector. Clients
+authenticated by `private_key_jwt` that use mTLS only as a sender constraint do
+not use the certificate as their authentication identity. CA inputs are still
+bounded to one current RFC 5280 CA certificate, use two-person approval,
+tenant-scoped serialization, quotas, revocation, bundle export, and append-only
+audit.
 
 ## Device Authorization Grant
 

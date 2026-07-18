@@ -128,7 +128,10 @@ impl MtlsTrustAnchorRepository {
                  FROM oauth_clients c
                  WHERE c.tenant_id = $2 AND c.client_id = $4 AND c.is_active = TRUE
                    AND (
-                       c.token_endpoint_auth_method = 'tls_client_auth'
+                       (
+                           c.token_endpoint_auth_method = 'tls_client_auth'
+                           AND c.tls_client_auth_cert_sha256 IS NOT NULL
+                       )
                        OR c.require_mtls_bound_tokens = TRUE
                    )
                    AND $8 <= CURRENT_TIMESTAMP AND $9 > CURRENT_TIMESTAMP

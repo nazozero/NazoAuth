@@ -111,7 +111,7 @@ pub(crate) async fn create_mtls_trust_request(
         Err(nazo_identity::ports::RepositoryError::NotFound) => oauth_error(
             StatusCode::NOT_FOUND,
             "invalid_request",
-            "客户端不存在、未启用 tls_client_auth 或证书绑定令牌，或不属于当前申请人.",
+            "客户端不存在、不属于当前申请人，或未满足 mTLS 信任申请的证书绑定策略.",
         ),
         Err(nazo_identity::ports::RepositoryError::Conflict) => oauth_error(
             StatusCode::CONFLICT,

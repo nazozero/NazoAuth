@@ -416,10 +416,20 @@ tokens. It does not define an operator approval endpoint or how a deployment
 changes its reverse proxy trust store. [RFC 6024](https://www.rfc-editor.org/rfc/rfc6024.html)
 provides the applicable trust-anchor-management security model, while the HTTP
 control plane described here is product behavior rather than an OAuth endpoint.
+RFC 8705 Section 7.4 also warns that a certificate with the same subject from a
+different trusted CA can impersonate a PKI client unless the accepted CA set is
+strictly constrained.
 
 - An active user may apply only for a client granted to that user through the
   normal client-access workflow. The client must be active and use
   `tls_client_auth` or certificate-bound tokens.
+- A `tls_client_auth` client using this public CA-approval path must also have
+  an administrator-registered SHA-256 leaf-certificate pin. The pin narrows
+  the RFC 8705 subject match and prevents another approved CA from minting a
+  same-subject certificate that authenticates as that client. A client using
+  `private_key_jwt` plus certificate-bound tokens does not use the certificate
+  as its authentication identity and therefore does not require this extra
+  pin merely to request sender-constrained tokens.
 - The input is exactly one current RFC 5280 CA certificate, at most 16 KiB,
   with critical CA Basic Constraints, critical `keyCertSign`, and an accepted
   RSA or NIST-curve public key.
@@ -431,8 +441,10 @@ control plane described here is product behavior rather than an OAuth endpoint.
   distinct current anchors. Creation and approval are serialized per tenant.
 - The reverse proxy installs only the exported approved bundle. Application
   authentication still enforces the client's single registered RFC 8705
-  subject selector or self-signed certificate key, so trusting a CA does not
-  authorize every certificate issued by it.
+  subject selector and, for publicly approved PKI trust, its leaf-certificate
+  pin. Self-signed clients remain bound to their registered certificate key.
+  Trusting a CA at the TLS layer therefore does not authorize every certificate
+  issued by it at the OAuth layer.
 - Subject DNs must be valid RFC 4514 values and are compared with OpenSSL's
   canonical X.509 name comparison, following the RFC 4517
   `distinguishedNameMatch` requirement. DNS and email domains are

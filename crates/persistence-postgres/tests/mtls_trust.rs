@@ -164,6 +164,25 @@ async fn mtls_trust_lifecycle_is_owned_two_person_current_and_revocable() {
         .await
         .unwrap();
     drop(connection);
+    assert_eq!(
+        repository
+            .create_for_owned_client(request(tenant, requester, &client_id, '9'))
+            .await,
+        Err(RepositoryError::NotFound),
+        "the public CA approval control plane must not widen a subject-only tls_client_auth registration"
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query(
+        "UPDATE oauth_clients
+         SET tls_client_auth_cert_sha256 = $2
+         WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(client_database_id)
+    .bind::<Text, _>(std::iter::repeat_n('9', 64).collect::<String>())
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
     let bound_request = repository
         .create_for_owned_client(request(tenant, requester, &bound_client_id, 'c'))
         .await

@@ -9,7 +9,7 @@
 | OAuth 客户端注册与管理 | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html)、[RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) | 一致性测试客户端与普通客户端走同一套申请、审批、凭据交付、注册和管理流程。 |
 | CIBA 令牌生命周期 | [OpenID Connect CIBA Core 1.0](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html) | CIBA 成功令牌响应可以包含 refresh token，因此客户端注册允许 `ciba + refresh_token`，不虚构对 authorization code 的依赖；运行时仍要求客户端登记该 grant 并满足 `offline_access` 策略。 |
 | Logout 客户端元数据 | [OpenID Connect Front-Channel Logout 1.0](https://openid.net/specs/openid-connect-frontchannel-1_0.html)、[OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | 两个 `*_logout_session_required` 的规范默认值都是 `false`；需要 `sid` 的客户端必须登记对应 URI 并显式启用。 |
-| mTLS 客户端认证和证书绑定访问令牌 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html)、[RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html)、[RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | `tls_client_auth` 与证书绑定令牌是两个独立能力；授权服务器要求唯一 subject selector、规范 DN 匹配、按类型匹配 SAN，并只允许附加证书 pin 收紧结果。 |
+| mTLS 客户端认证和证书绑定访问令牌 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html)、[RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html)、[RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | `tls_client_auth` 与证书绑定令牌是两个独立能力；授权服务器要求唯一 subject selector、规范 DN 匹配和按类型匹配 SAN。公网 CA 审批流程还要求 `tls_client_auth` 登记叶证书 pin，以落实 RFC 8705 第 7.4 节的跨 CA 冒充防护。 |
 | X.509 验证 | [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280.html) | 只有当前有效、使用受支持公钥、带 critical CA Basic Constraints 和 critical `keyCertSign` 的 CA 证书才能提交信任申请。 |
 | 信任锚管理 | [RFC 6024](https://www.rfc-editor.org/rfc/rfc6024.html) | RFC 6024 提供信任锚管理的安全模型：认证并授权来源、保护完整性、检测重放、限制信任用途并保留恢复能力。产品控制面另行强制不同人员审批、有界原因、追加式审计和撤销。 |
 | OpenID4VC 签发与出示 | [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)、[OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html) | 协议端点按正式规范实现。OpenID4VCI 没有定义签发方数据集管理 API，因此该能力只能位于带管理员认证和 CSRF 防护的控制面，不能宣告为协议端点。 |
@@ -138,7 +138,7 @@ apply 成功后，通过标准输入把交付映射保存为仓库私密 Secret 
 
 使用部署系统正常的原子配置流程，把 `runtime/oidf/approved-mtls-trust-anchors.pem` 安装到公网反向代理的客户端证书信任库。记录 bundle SHA-256，建立回滚副本，验证完整代理配置，reload 后从公网验证 mTLS alias。不得直接安装 runner 生成目录中的 CA 文件。
 
-代理负责验证证书链；授权服务器仍会按 RFC 8705 验证客户端登记的 subject selector 和客户端策略。代理信任一个 CA 不等于授权该 CA 签发的所有证书。
+代理负责验证证书链；授权服务器仍会按 RFC 8705 验证客户端登记的 subject selector 和客户端策略。经公网审批的 `tls_client_auth` 客户端还必须匹配管理员登记的叶证书 pin。代理信任一个 CA 不等于 OAuth 层授权该 CA 签发的所有证书。
 
 ## 5. 通过管理员 API 安装专用 OpenID4VC 数据
 
