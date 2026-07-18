@@ -204,6 +204,51 @@ class RunOidfConformanceTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
         sleep.assert_called_once_with(2)
 
+    def test_oidf_api_request_retries_transient_server_error(self):
+        module = load_runner_module()
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            @staticmethod
+            def read():
+                return b'{"ok": true}'
+
+        error = module.urllib.error.HTTPError(
+            "https://localhost:8443/api/log/module",
+            503,
+            "Service Unavailable",
+            {},
+            None,
+        )
+
+        with (
+            mock.patch.object(
+                module.urllib.request,
+                "urlopen",
+                side_effect=[error, FakeResponse()],
+            ) as urlopen,
+            mock.patch.object(module.time, "sleep") as sleep,
+        ):
+            status, payload = module.oidf_api_request(
+                "GET",
+                "https://localhost:8443/",
+                "api/log/module",
+                None,
+                expected_statuses={200},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, {"ok": True})
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(2)
+
     def test_successful_completion_log_allows_browser_script_noise(self):
         module = load_runner_module()
 
