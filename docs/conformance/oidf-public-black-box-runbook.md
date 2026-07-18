@@ -47,6 +47,26 @@ claimed by RFC 8705 or RFC 6024.
   the run. Every approved test trust anchor is revoked after the run.
 - Expected skips and reviews are exact tuples of configuration, plan, variant,
   and module. An unlisted skip, review, warning, or failure fails the run.
+- A public suite runs with development-mode identity injection disabled. Its
+  `/api/*` routes return `401` without a suite API token.
+
+## 0. Secure the public suite operator
+
+Register the suite's OIDC operator client through the same application and
+approval flow used by other confidential clients. Its redirect URI is the
+public HTTPS login callback supplied by the suite; internal ports, raw IPs, and
+container hostnames are not registered as alternatives. The complete proxy
+chain must preserve the public scheme, host, and port so Spring generates the
+same callback and post-login origin seen by the browser.
+
+Disable the suite's development profile before exposing it. A normal,
+non-administrator user then signs in through OIDC and creates a short-lived API
+token through the suite's `/api/token` endpoint. Store that token in a
+root-readable runtime secret file and verify both boundaries before scheduling
+plans: bearer access returns `200`, while the same API request without the
+token returns `401`. Do not create suite tokens in MongoDB, reuse a product
+administrator session as a suite bearer token, or depend on a source-control
+provider account.
 
 ## 1. Prepare immutable runner material
 
@@ -70,6 +90,16 @@ The command generates runner configurations, keys, certificates, an onboarding
 manifest, and exact plan/skip/review registries under `runtime/oidf`. These are
 test-runner inputs, not production records. They contain no authority to mutate
 the target database.
+
+Generate OpenID4VC material from the checked-out product commit for every run.
+Do not copy a prior run's `openid4vc-plan-configs.json`, driver, or expected
+result registries into a new run directory. Public onboarding replaces logical
+wallet identifiers with approved client identifiers, so an already-applied
+configuration is an output, not a reusable source. Before installing a
+credential dataset or creating a suite plan, the OpenID4VC wrapper now requires
+the current 17-plan registry, the same 17 configuration files, the exact driver
+alias set, seven bounded skips, and four bounded HAIP warnings to agree. Any
+cross-run or stale combination fails before a production mutation.
 
 ## 2. Deploy the exact product commit
 

@@ -533,6 +533,27 @@ def validate_materialized_matrix(
     ):
         fail("OpenID4VC driver aliases do not match the materialized plan configurations")
 
+    issuer = driver_config.get("issuer")
+    tx_code = issuer.get("tx_code") if isinstance(issuer, dict) else None
+    if not isinstance(tx_code, str) or not tx_code:
+        fail("OpenID4VC driver requires a non-empty issuer transaction code")
+    for (_, _, variants), filename in zip(cases, expected_config_names, strict=True):
+        config = configs[filename]
+        if not isinstance(config, dict):
+            fail(f"OpenID4VC plan configuration {filename} must be an object")
+        vci = config.get("vci")
+        static_tx_code = vci.get("static_tx_code") if isinstance(vci, dict) else None
+        if variants.get("vci_grant_type") == "pre_authorization_code":
+            if static_tx_code != tx_code:
+                fail(
+                    "OpenID4VC pre-authorized plan transaction codes do not match "
+                    "the driver material"
+                )
+        elif static_tx_code is not None:
+            fail(
+                f"OpenID4VC non-pre-authorized plan {filename} must not contain a transaction code"
+            )
+
     warnings = json.loads(paths["--expected-failures-file"].read_text(encoding="utf-8"))
     if warnings != materializer.expected_warnings_for_cases(cases):
         fail("OpenID4VC expected warnings do not match the current matrix registry")

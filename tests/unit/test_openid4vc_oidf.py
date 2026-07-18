@@ -360,9 +360,17 @@ class Openid4vcOidfTests(unittest.TestCase):
                 json.dumps(
                     {
                         "configs": {
-                            name: {"alias": alias}
-                            for name, alias in reversed(
-                                list(zip(names, aliases, strict=True))
+                            name: {
+                                "alias": alias,
+                                **(
+                                    {"vci": {"static_tx_code": "123456"}}
+                                    if variants.get("vci_grant_type")
+                                    == "pre_authorization_code"
+                                    else {}
+                                ),
+                            }
+                            for (_, _, variants), name, alias in reversed(
+                                list(zip(cases, names, aliases, strict=True))
                             )
                         }
                     }
@@ -398,14 +406,41 @@ class Openid4vcOidfTests(unittest.TestCase):
             ]
 
             runner.validate_materialized_matrix(
-                {"aliases": list(reversed(aliases))}, arguments
+                {
+                    "aliases": list(reversed(aliases)),
+                    "issuer": {"tx_code": "123456"},
+                },
+                arguments,
             )
 
             with self.assertRaisesRegex(SystemExit, "driver aliases"):
                 runner.validate_materialized_matrix(
-                    {"aliases": [*aliases[:-1], "alias-from-another-run"]},
+                    {
+                        "aliases": [*aliases[:-1], "alias-from-another-run"],
+                        "issuer": {"tx_code": "123456"},
+                    },
                     arguments,
                 )
+
+            mismatched_configs = json.loads(configs.read_text(encoding="utf-8"))
+            pre_authorized_name = next(
+                name
+                for (_, _, variants), name in zip(cases, names, strict=True)
+                if variants.get("vci_grant_type") == "pre_authorization_code"
+            )
+            mismatched_configs["configs"][pre_authorized_name]["vci"][
+                "static_tx_code"
+            ] = "654321"
+            configs.write_text(json.dumps(mismatched_configs), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "transaction codes"):
+                runner.validate_materialized_matrix(
+                    {"aliases": aliases, "issuer": {"tx_code": "123456"}},
+                    arguments,
+                )
+            mismatched_configs["configs"][pre_authorized_name]["vci"][
+                "static_tx_code"
+            ] = "123456"
+            configs.write_text(json.dumps(mismatched_configs), encoding="utf-8")
 
             stale_warnings = materializer.expected_warnings_for_cases(cases)
             stale_warnings.append(
@@ -416,7 +451,10 @@ class Openid4vcOidfTests(unittest.TestCase):
             )
             warnings.write_text(json.dumps(stale_warnings), encoding="utf-8")
             with self.assertRaisesRegex(SystemExit, "expected warnings"):
-                runner.validate_materialized_matrix({"aliases": aliases}, arguments)
+                runner.validate_materialized_matrix(
+                    {"aliases": aliases, "issuer": {"tx_code": "123456"}},
+                    arguments,
+                )
 
     def test_openid4vc_wrapper_terminates_the_runner_process_group_on_interruption(self):
         module = load("run_openid4vc_conformance.py")

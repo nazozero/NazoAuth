@@ -28,6 +28,13 @@
 - 申请人与审批人必须是两个不同的有效账号；审批人的 `admin_level` 必须大于 0。自动化账号仍遵守正常账号生命周期和 MFA 策略。
 - 每次运行使用独立命名空间；运行结束后停用所有新建客户端并撤销本次批准的信任锚。
 - expected skip/review 必须精确绑定 configuration、plan、variant 和 module；任何额外 skip、review、warning 或 failure 都使运行失败。
+- 公网套件必须关闭 development-mode 身份注入；未携带套件 API token 的 `/api/*` 请求必须返回 `401`。
+
+## 0. 保护公网套件操作员入口
+
+套件的 OIDC 操作员客户端与其他机密客户端走同一套申请和审批流程。只登记套件提供的公网 HTTPS 登录回调；不得额外登记内部端口、裸 IP 或容器主机名。完整反向代理链必须保留浏览器实际使用的公网 scheme、host 和 port，确保 Spring 生成的回调和登录后地址与公网地址一致。
+
+公网开放前必须关闭套件的 development profile。普通非管理员用户随后通过 OIDC 登录，并从套件正式 `/api/token` 端点创建短期 API token。该 token 只保存在 root 可读的运行时 secret 文件中。创建 plan 前同时验证两个边界：携带 Bearer token 的请求返回 `200`，不携带 token 的相同 API 请求返回 `401`。禁止直接向 MongoDB 写入套件 token、禁止把产品管理员 session 当成套件 Bearer token，也不得依赖源码托管平台账号。
 
 ## 1. 生成不可变的 runner 材料
 
@@ -47,6 +54,8 @@ python scripts/prepare_oidf_black_box.py
 ```
 
 命令只在 `runtime/oidf` 生成 runner 配置、密钥、证书、onboarding manifest 以及精确的 plan/skip/review 清单。这些是测试输入，不是生产记录，也不具备修改生产数据库的权限。
+
+每次运行都必须从当前检出的产品提交重新生成 OpenID4VC 材料，不得把上一轮的 `openid4vc-plan-configs.json`、driver 或预期结果清单复制到新运行目录。公开接入会把逻辑钱包标识替换为审批后签发的客户端标识，因此已经 apply 的配置是运行输出，不是下一轮的输入。安装 credential dataset 或创建套件 plan 之前，OpenID4VC wrapper 会硬性核对当前 17 个 plan、对应的 17 个配置、driver alias 集合、7 条有界 skip 和 4 条 HAIP warning；跨轮次或过期材料会在任何生产写入前失败。
 
 ## 2. 部署精确提交
 
