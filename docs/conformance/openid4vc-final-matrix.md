@@ -73,6 +73,14 @@ the supported security/transport axes. Management automation can only create
 offers or presentation transactions; it cannot inspect protocol persistence,
 so results are black-box evidence.
 
+Official-suite execution uses bounded 4-plan groups. This is a runner
+scheduling boundary, not a protocol exemption: every one of the 17 generated
+plan expressions is still executed against the same operator-supplied public
+issuer, and each group receives only the expected skip/warning records that
+match that group's configuration files. The grouping prevents issuer/verifier
+driver-triggered `WAITING` modules from overloading the official control-plane
+API while preserving black-box protocol coverage.
+
 The upstream v5.2.0 suite has no modules for the unsupported combination
 `mso_mdoc` + `redirect_uri` client identifier prefix + signed request URI +
 `direct_post.jwt`; `mso_mdoc` encrypted-response coverage is therefore exercised

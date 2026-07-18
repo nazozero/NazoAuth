@@ -16,6 +16,7 @@ import os
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -292,8 +293,123 @@ class Openid4vcDriver:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--driver-config-json-file", required=True)
+    parser.add_argument(
+        "--plan-group-size",
+        type=int,
+        default=0,
+        help=(
+            "run the OpenID4VC plan set in bounded groups of this size; "
+            "0 preserves the upstream runner's default parallel scheduling"
+        ),
+    )
     parser.add_argument("runner_args", nargs=argparse.REMAINDER)
     return parser.parse_args()
+
+
+def option_value(arguments: list[str], option: str) -> str | None:
+    try:
+        index = arguments.index(option)
+    except ValueError:
+        return None
+    if index + 1 >= len(arguments):
+        fail(f"{option} requires a value")
+    return arguments[index + 1]
+
+
+def replace_option(arguments: list[str], option: str, value: str) -> list[str]:
+    updated = list(arguments)
+    try:
+        index = updated.index(option)
+    except ValueError:
+        updated.extend([option, value])
+        return updated
+    if index + 1 >= len(updated):
+        fail(f"{option} requires a value")
+    updated[index + 1] = value
+    return updated
+
+
+def chunked(values: list[str], size: int) -> list[list[str]]:
+    if size <= 0:
+        fail("--plan-group-size must be greater than zero when grouping is enabled")
+    return [values[index : index + size] for index in range(0, len(values), size)]
+
+
+def filter_records_for_configs(source: Path | None, selected_configs: set[str], target: Path) -> Path | None:
+    if source is None:
+        return None
+    records = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(records, list):
+        fail(f"{source} must contain a JSON array")
+    filtered = [
+        item
+        for item in records
+        if isinstance(item, dict)
+        and str(item.get("configuration-filename", "")) in selected_configs
+    ]
+    target.write_text(json.dumps(filtered, indent=2) + "\n", encoding="utf-8")
+    return target
+
+
+def grouped_runner_args(runner_args: list[str], group_size: int, temp_dir: Path) -> list[list[str]]:
+    plan_set_file = option_value(runner_args, "--plan-set-json-file")
+    config_json_file = option_value(runner_args, "--config-json-file")
+    if not plan_set_file:
+        fail("--plan-group-size requires --plan-set-json-file")
+    if not config_json_file:
+        fail("--plan-group-size requires --config-json-file")
+
+    plans = json.loads(Path(plan_set_file).read_text(encoding="utf-8"))
+    if not isinstance(plans, list) or not all(isinstance(item, str) and item.strip() for item in plans):
+        fail(f"{plan_set_file} must contain a JSON array of plan expression strings")
+    config_payload = json.loads(Path(config_json_file).read_text(encoding="utf-8"))
+    configs = config_payload.get("configs") if isinstance(config_payload, dict) else None
+    if not isinstance(configs, dict):
+        fail(f"{config_json_file} must contain a configs object")
+    config_names = {str(name) for name in configs}
+
+    expected_failures = option_value(runner_args, "--expected-failures-file")
+    expected_skips = option_value(runner_args, "--expected-skips-file")
+    export_dir = option_value(runner_args, "--export-dir")
+
+    invocations: list[list[str]] = []
+    for index, group in enumerate(chunked([item.strip() for item in plans], group_size), start=1):
+        selected_configs = oidf.config_names_from_plan_expressions(group, config_names)
+        if not selected_configs:
+            fail(f"OpenID4VC plan group {index} does not reference a known config")
+        group_dir = temp_dir / f"group-{index:02d}"
+        group_dir.mkdir(parents=True, exist_ok=True)
+        group_plan_set = group_dir / "openid4vc-plan-set.json"
+        group_plan_set.write_text(json.dumps(group, indent=2) + "\n", encoding="utf-8")
+        group_args = replace_option(runner_args, "--plan-set-json-file", str(group_plan_set))
+        if expected_failures:
+            filtered = filter_records_for_configs(
+                Path(expected_failures),
+                selected_configs,
+                group_dir / "openid4vc-expected-warnings.json",
+            )
+            group_args = replace_option(group_args, "--expected-failures-file", str(filtered))
+        if expected_skips:
+            filtered = filter_records_for_configs(
+                Path(expected_skips),
+                selected_configs,
+                group_dir / "openid4vc-expected-skips.json",
+            )
+            group_args = replace_option(group_args, "--expected-skips-file", str(filtered))
+        if export_dir:
+            group_args = replace_option(group_args, "--export-dir", str(Path(export_dir) / f"group-{index:02d}"))
+        invocations.append(group_args)
+    return invocations
+
+
+def run_runner_invocations(invocations: list[list[str]]) -> int:
+    for index, runner_args in enumerate(invocations, start=1):
+        print(f"OpenID4VC official runner group {index}/{len(invocations)}", flush=True)
+        command = [sys.executable, str(Path(__file__).with_name("run_oidf_conformance.py")), *runner_args]
+        result = subprocess.run(command, check=False)
+        if result.returncode != 0:
+            return result.returncode
+    return 0
 
 
 def main() -> int:
@@ -301,6 +417,8 @@ def main() -> int:
     runner_args = args.runner_args[1:] if args.runner_args[:1] == ["--"] else args.runner_args
     if not runner_args:
         fail("arguments for run_oidf_conformance.py are required after --")
+    if args.plan_group_size < 0:
+        fail("--plan-group-size must be zero or greater")
     config = json.loads(Path(args.driver_config_json_file).read_text(encoding="utf-8"))
     if "--no-api-token" in runner_args:
         config["conformance_no_api_token"] = True
@@ -311,9 +429,12 @@ def main() -> int:
     driver = Openid4vcDriver(config, stop)
     thread = threading.Thread(target=driver.run, name="openid4vc-oidf-driver", daemon=True)
     thread.start()
-    command = [sys.executable, str(Path(__file__).with_name("run_oidf_conformance.py")), *runner_args]
     try:
-        return subprocess.run(command, check=False).returncode
+        if args.plan_group_size:
+            with tempfile.TemporaryDirectory(prefix="openid4vc-oidf-groups-") as directory:
+                invocations = grouped_runner_args(runner_args, args.plan_group_size, Path(directory))
+                return run_runner_invocations(invocations)
+        return run_runner_invocations([runner_args])
     finally:
         stop.set()
         thread.join(timeout=5)

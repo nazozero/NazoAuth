@@ -59,6 +59,9 @@
 
    - 可并发计划应并发执行。
    - 共享浏览器会话、轮询状态、callback alias 或 CIBA transaction 状态的计划必须拆成隔离批次。
+   - OpenID4VC Issuer/Verifier 驱动型 plan 在官方套件中必须按有界 plan group 执行。
+     每批只能接收 `configuration-filename` 属于该批的 expected skip/warning 记录。
+     分组只允许作为 runner 调度手段，不得删除 plan expression 或改变产品行为。
    - Front-Channel Logout 和 Session Management 与主并发矩阵隔离。
    - FAPI-CIBA poll 和 ping 变体不得在同一批次中共享可变 CIBA transaction alias。
 
@@ -93,6 +96,7 @@
 - 生成的 plan 文件只包含预期的公网 issuer 占位符或操作者提供的公网 issuer；
 - 生成的 plan 文件没有把内部主机名作为被测 issuer；
 - expected skip 按批次生成，不能把全局清单当作宽泛绕过；
+- OpenID4VC expected warning 按批次生成，不能把全局清单当作宽泛绕过；
 - review allowance 绑定到精确的 plan/config/module；
 - 播种输入和执行的 plan config 来自同一次材料生成；
 - 可执行 runner config 保留所需私钥、client secret、initial access token、

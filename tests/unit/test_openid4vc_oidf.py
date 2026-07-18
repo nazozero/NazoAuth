@@ -208,6 +208,92 @@ class Openid4vcOidfTests(unittest.TestCase):
             module.oidf.OIDF_API_SSL_CONTEXT = None
             Path(config_path).unlink(missing_ok=True)
 
+    def test_grouped_openid4vc_runner_filters_expected_records_per_batch(self):
+        module = load("run_openid4vc_conformance.py")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            config = root / "configs.json"
+            plans = root / "plans.json"
+            warnings = root / "warnings.json"
+            skips = root / "skips.json"
+            export = root / "results"
+            config.write_text(
+                json.dumps({"configs": {"a.json": {"alias": "a"}, "b.json": {"alias": "b"}, "c.json": {"alias": "c"}}}),
+                encoding="utf-8",
+            )
+            plans.write_text(
+                json.dumps([
+                    "plan-one a.json",
+                    "plan-two b.json",
+                    "plan-three c.json",
+                ]),
+                encoding="utf-8",
+            )
+            warnings.write_text(
+                json.dumps([
+                    {"configuration-filename": "a.json", "test-name": "warning-a"},
+                    {"configuration-filename": "c.json", "test-name": "warning-c"},
+                ]),
+                encoding="utf-8",
+            )
+            skips.write_text(
+                json.dumps([
+                    {"configuration-filename": "b.json", "test-name": "skip-b"},
+                    {"configuration-filename": "c.json", "test-name": "skip-c"},
+                ]),
+                encoding="utf-8",
+            )
+
+            invocations = module.grouped_runner_args(
+                [
+                    "--suite-dir", "suite",
+                    "--conformance-server", "https://suite.example",
+                    "--config-json-file", str(config),
+                    "--plan-set-json-file", str(plans),
+                    "--expected-failures-file", str(warnings),
+                    "--expected-skips-file", str(skips),
+                    "--export-dir", str(export),
+                ],
+                2,
+                root / "groups",
+            )
+
+            self.assertEqual(len(invocations), 2)
+            first_plan_set = Path(invocations[0][invocations[0].index("--plan-set-json-file") + 1])
+            second_plan_set = Path(invocations[1][invocations[1].index("--plan-set-json-file") + 1])
+            self.assertEqual(json.loads(first_plan_set.read_text(encoding="utf-8")), ["plan-one a.json", "plan-two b.json"])
+            self.assertEqual(json.loads(second_plan_set.read_text(encoding="utf-8")), ["plan-three c.json"])
+
+            first_warnings = Path(invocations[0][invocations[0].index("--expected-failures-file") + 1])
+            first_skips = Path(invocations[0][invocations[0].index("--expected-skips-file") + 1])
+            second_warnings = Path(invocations[1][invocations[1].index("--expected-failures-file") + 1])
+            second_skips = Path(invocations[1][invocations[1].index("--expected-skips-file") + 1])
+            self.assertEqual(
+                [item["test-name"] for item in json.loads(first_warnings.read_text(encoding="utf-8"))],
+                ["warning-a"],
+            )
+            self.assertEqual(
+                [item["test-name"] for item in json.loads(first_skips.read_text(encoding="utf-8"))],
+                ["skip-b"],
+            )
+            self.assertEqual(
+                [item["test-name"] for item in json.loads(second_warnings.read_text(encoding="utf-8"))],
+                ["warning-c"],
+            )
+            self.assertEqual(
+                [item["test-name"] for item in json.loads(second_skips.read_text(encoding="utf-8"))],
+                ["skip-c"],
+            )
+            self.assertIn(str(export / "group-01"), invocations[0])
+            self.assertIn(str(export / "group-02"), invocations[1])
+
+    def test_official_openid4vc_workflow_uses_bounded_groups(self):
+        workflow = (ROOT / ".github" / "workflows" / "openid4vc-conformance.yml").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("--plan-group-size 4", workflow)
+
     def test_driver_callback_get_uses_oidf_ssl_context(self):
         module = load("run_openid4vc_conformance.py")
         context = object()

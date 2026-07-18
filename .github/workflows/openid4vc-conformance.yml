@@ -87,6 +87,7 @@ jobs:
         run: |
           python -u scripts/run_openid4vc_conformance.py \
             --driver-config-json-file runtime/openid4vc/openid4vc-driver.json \
+            --plan-group-size 4 \
             -- \
             --suite-dir oidf-conformance-suite \
             --conformance-server "$CONFORMANCE_SERVER" \
