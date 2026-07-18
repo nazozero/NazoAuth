@@ -74,6 +74,11 @@ text, not from the behavior of one suite module.
    - Run concurrency-safe plans in parallel.
    - Split plans that share browser session state, polling state, callback
      aliases, or CIBA transaction state into isolated batches.
+   - OpenID4VC issuer/verifier driver plans must use bounded plan groups for
+     official-suite execution. Each group must receive only the expected
+     skip/warning records whose `configuration-filename` belongs to that group.
+     Grouping is allowed only as runner scheduling; it must not remove plan
+     expressions or change product behavior.
    - Front-channel logout and session-management plans remain isolated from the
      main parallel matrix.
    - FAPI-CIBA poll and ping variants must not share one mutable CIBA transaction
@@ -117,6 +122,8 @@ Before any public or official run, verify:
   operator-supplied public issuer only;
 - no generated plan file uses an internal hostname as the tested issuer;
 - expected skips are generated per batch, not reused as a broad global bypass;
+- OpenID4VC expected warnings are generated per batch, not reused as a broad
+  global bypass;
 - review allowances are bound to exact plan/config/module triples;
 - seed inputs and executed plan configs come from the same material generation;
 - executable runner configs retain required private key material, client

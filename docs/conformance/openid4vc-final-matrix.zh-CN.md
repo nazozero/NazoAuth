@@ -56,6 +56,11 @@ OIDF Conformance Suite 固定到 v5.2.0 commit
 自动化只能经管理 HTTP 创建 offer 或 presentation transaction，不能读取协议状态表，
 因此属于黑盒证据。
 
+官方套件执行按 4 个 plan 一批有界运行。这是 runner 调度边界，不是协议豁免：
+17 个生成的 plan expression 仍全部针对操作者提供的同一个公网 issuer 执行；
+每批只接收与本批配置文件匹配的 expected skip/warning 记录。这样可以避免
+Issuer/Verifier 驱动型 `WAITING` 模块一次性压垮官方控制面 API，同时保留黑盒协议覆盖。
+
 上游 v5.2.0 套件没有覆盖 `mso_mdoc` + `redirect_uri` client identifier prefix +
 签名 request URI + `direct_post.jwt` 的模块；`mso_mdoc` 加密响应覆盖因此通过上游
 支持的 x509 前缀签名请求变体执行。
