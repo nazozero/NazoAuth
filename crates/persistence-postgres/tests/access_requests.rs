@@ -3,7 +3,7 @@ use diesel::{
     sql_types::{BigInt, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
-use nazo_auth::ValidatedClientRegistration;
+use nazo_auth::{PreparedClientRegistration, ValidatedClientRegistration};
 use nazo_identity::{
     AccessRequestStatus, NewAccessRequest, TenantContext, TenantId, UserId, ports::RepositoryError,
 };
@@ -101,6 +101,21 @@ fn client(suffix: &str) -> ValidatedClientRegistration {
         authorization_signed_response_alg: None,
         authorization_encrypted_response_alg: None,
         authorization_encrypted_response_enc: None,
+    }
+}
+
+fn prepared_client(
+    tenant: TenantContext,
+    registration: ValidatedClientRegistration,
+    require_mtls_bound_tokens: bool,
+) -> PreparedClientRegistration {
+    PreparedClientRegistration {
+        tenant,
+        registration,
+        require_mtls_bound_tokens,
+        issued_secret: None,
+        client_secret_hash: None,
+        registration_access_token_blake3: None,
     }
 }
 
@@ -216,15 +231,15 @@ async fn concurrent_approval_has_one_cas_winner_and_rolls_back_losing_client() {
         ))
         .await
         .unwrap();
-    let left_client = client(&Uuid::now_v7().simple().to_string());
-    let right_client = client(&Uuid::now_v7().simple().to_string());
+    let left_client = prepared_client(tenant, client(&Uuid::now_v7().simple().to_string()), false);
+    let right_client = prepared_client(tenant, client(&Uuid::now_v7().simple().to_string()), false);
     let client_ids = [
-        left_client.client_id.clone(),
-        right_client.client_id.clone(),
+        left_client.registration.client_id.clone(),
+        right_client.registration.client_id.clone(),
     ];
     let (left, right) = tokio::join!(
-        repository.approve(tenant, request.id, user_id, &left_client, None, None),
-        repository.approve(tenant, request.id, user_id, &right_client, None, None)
+        repository.approve(tenant, request.id, user_id, &left_client),
+        repository.approve(tenant, request.id, user_id, &right_client)
     );
     assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
     assert!(
@@ -272,9 +287,7 @@ async fn approval_rejects_mismatched_actor_context() {
             tenant,
             request.id,
             UserId::new(Uuid::now_v7()).unwrap(),
-            &client(&Uuid::now_v7().simple().to_string()),
-            None,
-            None,
+            &prepared_client(tenant, client(&Uuid::now_v7().simple().to_string()), false),
         )
         .await
         .unwrap_err();
@@ -335,9 +348,9 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
         .create(new_request(tenant, user_id, &format!("first-{suffix}")))
         .await
         .unwrap();
-    let prepared = client(&suffix);
+    let prepared = prepared_client(tenant, client(&suffix), true);
     let approved = repository
-        .approve(tenant, first.id, user_id, &prepared, None, None)
+        .approve(tenant, first.id, user_id, &prepared)
         .await
         .unwrap();
     let client_repository = OAuthClientRepository::new(pool.clone());
@@ -349,6 +362,15 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
             .unwrap()
             .client_id,
         approved.client_id
+    );
+    assert!(
+        client_repository
+            .by_id(approved.id)
+            .await
+            .unwrap()
+            .unwrap()
+            .require_mtls_bound_tokens,
+        "access-request approval must preserve the mTLS sender constraint"
     );
     assert_eq!(
         client_repository
@@ -389,7 +411,7 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
         .unwrap();
 
     let error = repository
-        .approve(tenant, second.id, user_id, &prepared, None, None)
+        .approve(tenant, second.id, user_id, &prepared)
         .await
         .unwrap_err();
 
