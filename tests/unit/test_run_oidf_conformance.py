@@ -249,6 +249,19 @@ class RunOidfConformanceTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
         sleep.assert_called_once_with(2)
 
+    def test_monitor_interval_has_floor_when_aliases_are_present(self):
+        module = load_runner_module()
+
+        self.assertEqual(
+            module.effective_monitor_interval_seconds({"oidf-alias"}, 0),
+            60,
+        )
+        self.assertEqual(
+            module.effective_monitor_interval_seconds({"oidf-alias"}, 30),
+            30,
+        )
+        self.assertEqual(module.effective_monitor_interval_seconds(set(), 0), 0)
+
     def test_successful_completion_log_allows_browser_script_noise(self):
         module = load_runner_module()
 
