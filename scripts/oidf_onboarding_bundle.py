@@ -10,13 +10,14 @@ import re
 import ssl
 import subprocess
 import tempfile
+import urllib.parse
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 
 BUNDLE_FILE_NAME = "oidf-mtls-ca-bundle.pem"
-MANIFEST_FILE_NAME = "oidf-public-plan-configs.manifest.json"
+MANIFEST_FILE_NAME = "oidf-public-onboarding.manifest.json"
 _COMMIT_SHA = re.compile(r"^[0-9a-f]{40}$")
 _CERTIFICATE_BLOCK = re.compile(
     r"-----BEGIN CERTIFICATE-----\s+"
@@ -118,11 +119,34 @@ def validate_ca_bundle(bundle: bytes, label: str = BUNDLE_FILE_NAME) -> bytes:
     return canonical
 
 
-def build_artifact_manifest(files: Mapping[str, bytes], source_commit: str) -> bytes:
+def _https_origin(value: str, label: str) -> str:
+    parsed = urllib.parse.urlsplit(value.strip().rstrip("/"))
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in ("", "/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise BundleError(f"{label} must be an HTTPS origin without path, query, fragment, or userinfo")
+    return urllib.parse.urlunsplit(("https", parsed.netloc, "", "", ""))
+
+
+def build_artifact_manifest(
+    files: Mapping[str, bytes],
+    source_commit: str,
+    target_issuer: str,
+    suite_base_url: str,
+    onboarding_profile: str,
+) -> bytes:
     if not _COMMIT_SHA.fullmatch(source_commit):
-        raise BundleError("OIDF public seed source commit must be a full lowercase Git SHA")
+        raise BundleError("OIDF public onboarding source commit must be a full lowercase Git SHA")
     if MANIFEST_FILE_NAME in files:
         raise BundleError(f"artifact files must not include {MANIFEST_FILE_NAME}")
+    if onboarding_profile not in {"official", "operator-black-box"}:
+        raise BundleError("OIDF onboarding profile must be official or operator-black-box")
     file_hashes = {
         name: hashlib.sha256(content).hexdigest()
         for name, content in sorted(files.items())
@@ -142,8 +166,11 @@ def build_artifact_manifest(files: Mapping[str, bytes], source_commit: str) -> b
         for der in _certificate_der_blocks(bundle_text, BUNDLE_FILE_NAME)
     )
     payload = {
-        "schema": 1,
+        "schema": 2,
         "source_commit": source_commit,
+        "onboarding_profile": onboarding_profile,
+        "target_issuer": _https_origin(target_issuer, "OIDF onboarding target issuer"),
+        "suite_base_url": _https_origin(suite_base_url, "OIDF onboarding suite base URL"),
         "tree_sha256": hashlib.sha256(tree_input).hexdigest(),
         "ca_der_sha256": ca_fingerprints,
         "files": file_hashes,
@@ -154,74 +181,96 @@ def build_artifact_manifest(files: Mapping[str, bytes], source_commit: str) -> b
 def validate_artifact_directory(
     directory: Path,
     expected_source_commit: str | None = None,
+    expected_target_issuer: str | None = None,
+    expected_suite_base_url: str | None = None,
+    expected_onboarding_profile: str | None = None,
 ) -> bytes:
     if not directory.is_dir():
-        raise BundleError(f"OIDF public seed artifact directory does not exist: {directory}")
+        raise BundleError(f"OIDF public onboarding artifact directory does not exist: {directory}")
     entries = list(directory.iterdir())
     if len(entries) > 128:
-        raise BundleError("OIDF public seed artifact contains too many files")
+        raise BundleError("OIDF public onboarding artifact contains too many files")
     total_size = 0
     configs: dict[str, Any] = {}
     for path in sorted(entries, key=lambda item: item.name):
         if path.is_symlink() or not path.is_file():
-            raise BundleError(f"OIDF public seed artifact contains a non-regular file: {path.name}")
+            raise BundleError(f"OIDF public onboarding artifact contains a non-regular file: {path.name}")
         size = path.stat().st_size
         if size > 1024 * 1024:
-            raise BundleError(f"OIDF public seed artifact file is too large: {path.name}")
+            raise BundleError(f"OIDF public onboarding artifact file is too large: {path.name}")
         total_size += size
         if total_size > 16 * 1024 * 1024:
-            raise BundleError("OIDF public seed artifact is too large")
+            raise BundleError("OIDF public onboarding artifact is too large")
         if path.name in {BUNDLE_FILE_NAME, MANIFEST_FILE_NAME}:
             continue
         if path.suffix != ".json":
-            raise BundleError(f"OIDF public seed artifact contains an unexpected file: {path.name}")
+            raise BundleError(f"OIDF public onboarding artifact contains an unexpected file: {path.name}")
         try:
             configs[path.name] = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, UnicodeError, json.JSONDecodeError) as error:
-            raise BundleError(f"OIDF public seed config is invalid: {path.name}") from error
+            raise BundleError(f"OIDF public onboarding config is invalid: {path.name}") from error
     bundle_path = directory / BUNDLE_FILE_NAME
     if not bundle_path.is_file() or bundle_path.is_symlink():
-        raise BundleError(f"OIDF public seed artifact is missing {BUNDLE_FILE_NAME}")
+        raise BundleError(f"OIDF public onboarding artifact is missing {BUNDLE_FILE_NAME}")
     expected, _ = build_ca_bundle(configs)
     actual = validate_ca_bundle(bundle_path.read_bytes(), str(bundle_path))
     if actual != expected:
-        raise BundleError("OIDF mTLS CA bundle does not match the public seed configs")
+        raise BundleError("OIDF mTLS CA bundle does not match the public onboarding material")
     manifest_path = directory / MANIFEST_FILE_NAME
     if not manifest_path.is_file() or manifest_path.is_symlink():
-        raise BundleError(f"OIDF public seed artifact is missing {MANIFEST_FILE_NAME}")
+        raise BundleError(f"OIDF public onboarding artifact is missing {MANIFEST_FILE_NAME}")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as error:
-        raise BundleError("OIDF public seed artifact manifest is invalid") from error
+        raise BundleError("OIDF public onboarding artifact manifest is invalid") from error
     source_commit = manifest.get("source_commit") if isinstance(manifest, dict) else None
     recorded_files = manifest.get("files") if isinstance(manifest, dict) else None
     if (
         not isinstance(manifest, dict)
-        or manifest.get("schema") != 1
+        or manifest.get("schema") != 2
         or not isinstance(source_commit, str)
         or not _COMMIT_SHA.fullmatch(source_commit)
         or not isinstance(recorded_files, dict)
     ):
-        raise BundleError("OIDF public seed artifact manifest has an invalid schema")
+        raise BundleError("OIDF public onboarding artifact manifest has an invalid schema")
     if expected_source_commit is not None and source_commit != expected_source_commit:
         raise BundleError(
-            "OIDF public seed artifact source commit does not match the deployed backend commit"
+            "OIDF public onboarding artifact source commit does not match the deployed backend commit"
         )
+    for field, expected, label in (
+        ("target_issuer", expected_target_issuer, "target issuer"),
+        ("suite_base_url", expected_suite_base_url, "suite base URL"),
+        ("onboarding_profile", expected_onboarding_profile, "onboarding profile"),
+    ):
+        if expected is not None and manifest.get(field) != (
+            _https_origin(expected, f"expected OIDF onboarding {label}")
+            if field != "onboarding_profile"
+            else expected
+        ):
+            raise BundleError(f"OIDF public onboarding artifact {label} does not match deployment")
     actual_files = {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
         for path in directory.iterdir()
         if path.name != MANIFEST_FILE_NAME
     }
     if recorded_files != dict(sorted(actual_files.items())):
-        raise BundleError("OIDF public seed artifact manifest does not match its files")
+        raise BundleError("OIDF public onboarding artifact manifest does not match its files")
     actual_contents = {
         path.name: path.read_bytes()
         for path in directory.iterdir()
         if path.name != MANIFEST_FILE_NAME
     }
-    expected_manifest = json.loads(build_artifact_manifest(actual_contents, source_commit))
+    expected_manifest = json.loads(
+        build_artifact_manifest(
+            actual_contents,
+            source_commit,
+            manifest.get("target_issuer", ""),
+            manifest.get("suite_base_url", ""),
+            manifest.get("onboarding_profile", ""),
+        )
+    )
     if manifest != expected_manifest:
-        raise BundleError("OIDF public seed artifact manifest metadata is not canonical")
+        raise BundleError("OIDF public onboarding artifact manifest metadata is not canonical")
     return actual
 
 
@@ -314,6 +363,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     source.add_argument("--bundle", type=Path)
     source.add_argument("--artifact-directory", type=Path)
     parser.add_argument("--expected-source-commit")
+    parser.add_argument("--expected-target-issuer")
+    parser.add_argument("--expected-suite-base-url")
+    parser.add_argument("--expected-onboarding-profile")
     args = parser.parse_args(argv)
     if args.verify not in (None, "verify"):
         parser.error("only the verify operation is supported")
@@ -321,9 +373,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         validate_artifact_directory(
             args.artifact_directory,
             expected_source_commit=args.expected_source_commit,
+            expected_target_issuer=args.expected_target_issuer,
+            expected_suite_base_url=args.expected_suite_base_url,
+            expected_onboarding_profile=args.expected_onboarding_profile,
         )
-    elif args.expected_source_commit is not None:
-        parser.error("--expected-source-commit requires --artifact-directory")
+    elif any(
+        value is not None
+        for value in (
+            args.expected_source_commit,
+            args.expected_target_issuer,
+            args.expected_suite_base_url,
+            args.expected_onboarding_profile,
+        )
+    ):
+        parser.error("expected artifact metadata requires --artifact-directory")
     else:
         validate_ca_bundle(args.bundle.read_bytes(), str(args.bundle))
     return 0

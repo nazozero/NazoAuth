@@ -110,7 +110,7 @@ docker run -d --name nazo-oauth-server \
 
 ## 在线部署脚本
 
-仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)。脚本要求后端和前端 worktree 均干净且 HEAD 与指定完整 SHA 一致，并固定核对分支 `codex/modular-workspace-architecture` 以及精确 HTTPS origin `https://github.com/nazozero/NazoAuth[.git]`、`https://github.com/nazozero/NazoAuthWeb[.git]`。它读取前端已提交的 `packageManager`，要求匹配的 `package-lock.json` 和精确 npm 版本，执行 `npm ci` 及 `package.json` 中实际存在的聚合验证脚本，只接受该门禁生成的 `dist`。随后脚本校验 `dist` 摘要，从已验证的后端 worktree 构建镜像，并在远端加载后再次校验不可变 image ID。UI release 发布到 Angie worker 可遍历的独立静态目录，并在切换前后以 worker 身份校验可读性。切换应用容器前，脚本会为应用、PostgreSQL 和 Valkey 设置 `unless-stopped` restart policy，并启用 `podman-restart.service`，从而覆盖进程退出和主机重启两类恢复场景。远端事务状态持久化后立即启动独立于 SSH 会话的 watchdog，因此租约覆盖制品 staging、镜像加载、数据库迁移、容器切换和公网验证；只有公网 health、discovery、`/ui/auth` 及其引用的至少一个 `/ui/assets/...` 制品全部返回非空 HTTP 200 后，部署才会提交租约。
+仓库提供 [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1)。脚本要求后端和前端 worktree 均干净且 HEAD 与指定完整 SHA 一致。分支默认是 `main`；合并前部署必须显式指定评审分支。脚本还会核对精确 HTTPS origin `https://github.com/nazozero/NazoAuth[.git]`、`https://github.com/nazozero/NazoAuthWeb[.git]`。它读取前端已提交的 `packageManager`，要求匹配的 `package-lock.json` 和精确 npm 版本，执行 `npm ci` 及 `package.json` 中实际存在的聚合验证脚本，只接受该门禁生成的 `dist`。随后脚本校验 `dist` 摘要，从已验证的后端 worktree 构建镜像，并在远端加载后再次校验不可变 image ID。UI release 发布到 Angie worker 可遍历的独立静态目录，并在切换前后以 worker 身份校验可读性。切换应用容器前，脚本会为应用、PostgreSQL 和 Valkey 设置 `unless-stopped` restart policy，并启用 `podman-restart.service`，从而覆盖进程退出和主机重启两类恢复场景。远端事务状态持久化后立即启动独立于 SSH 会话的 watchdog，因此租约覆盖制品 staging、镜像加载、数据库迁移、容器切换和公网验证；只有公网 health、discovery、`/ui/auth` 及其引用的至少一个 `/ui/assets/...` 制品全部返回非空 HTTP 200 后，部署才会提交租约。
 
 默认 live 假设：
 
@@ -274,44 +274,12 @@ JWK 轮换、时钟监控、Valkey 重放存储、服务端签名密钥托管和
 
 ## OIDF 准备
 
-启动 OpenID Foundation conformance run 前，固定按以下顺序执行，不从失败的 run
-里倒推 seed 输入：
+必须遵守 [OIDF 公网黑盒一致性测试流程](../conformance/oidf-public-black-box-runbook.zh-CN.md)。
+发布部署只安装正常产品镜像和 UI。客户端记录、OpenID4VC 数据集和 mTLS 信任锚必须在部署后
+通过公网生产控制面创建；发布代码不得用 SQL 写入这些记录，也不得直接安装 runner 生成的 CA。
 
-1. 确定要测的精确 commit，要求工作区干净且没有混入无关部署补丁。修改生产前，先保留
-   当前不可变镜像、UI release、部署记录、数据库备份及其他可验证回滚所需材料。
-2. 对该精确 head 运行 `oidf-public-seed-configs` workflow，并下载
-   `oidf-public-plan-configs` artifact。该 artifact 同时包含公开 plan JSON、
-   `oidf-mtls-ca-bundle.pem` 以及绑定 source commit、文件树与 CA DER 指纹的确定性 manifest，
-   绝不包含 mTLS 私钥。关联保存 workflow run ID、workflow head SHA、平台 artifact digest、
-   下载后 artifact digest、manifest digest 和 CA bundle digest；artifact
-   head 与待部署 commit 不一致时必须拒绝。
-3. 确认 Angie 已反代到固定容器 IP `10.101.0.20:8000`，且 `.env.yaml`
-   的可信代理范围只包含实际受控代理地址。
-4. 使用 `scripts/deploy_live.ps1 -OidfPublicSeedArtifactArchive <下载后的-artifact.zip>
-   -OidfPublicSeedWorkflowRunId <run-id>
-   -OidfPublicSeedArtifactId <artifact-id> -OidfPublicSeedArtifactDigest sha256:<digest>` 将同一 commit
-   部署到公网入口。真实部署强制提供全部 artifact 身份参数；脚本先核验 GitHub run 结果、分支、
-   head、artifact 身份和下载归档 digest，解压到私有快照，并要求 manifest head 等于 backend
-   commit。随后现有部署事务共同验证公开 JSON 与 CA bundle，将暂存和安装后的 bundle 绑定到同一
-   SHA-256 digest，备份当前 Angie CA 文件及 hash，在同目录原子替换，校验并 reload Angie；部署或
-   验证回滚时恢复原字节和文件元数据。`-OidfPublicSeedArtifactDirectory` 仅供 render-only 测试夹具
-   使用。整个过程沿用现有部署锁和 verification lease，不得建立独立的手工 CA 安装通道。
-5. 将同一个精确 artifact 放到 live 环境的 OIDF runtime 目录，并使用同一 commit 的
-   `oidf-seed` image / `nazo_oauth_seed_oidf` binary，对公网入口
-   `issuer.example` 实际使用的数据库执行 seed。不要 seed
-   `compose.oidf.local.yml` 的 9443 专用栈后去跑官方公网测试。
-6. 先核对实际运行 head、artifact digest 和 CA bundle digest，再从公网校验 health、
-   discovery、JWKS、mTLS alias、证书转发和 Angie 配置；discovery `issuer` 必须是
-   `https://issuer.example`。信任来源必须是精确 head artifact 中经过验证的 CA chain，
-   不得改用叶证书 fingerprint allowlist。
-7. 先运行 `.github/workflows/oidf-conformance.yml` 的单 plan。单 plan workflow
-   默认关闭 early-stop monitor，以便失败时上传完整 artifact。
-8. 单 plan 通过后，才运行 `.github/workflows/oidf-conformance-full.yml` 全矩阵。默认使用
-   `runner_mode=parallel-isolated`：并发安全的 plan set 不带 `--no-parallel` 执行，同时把
-   logout 和 session-management 放到独立 matrix job 中运行，使它们拥有独立 runner/浏览器环境。
-   仅在确定性诊断时回退到 `runner_mode=serial`；`OIDF_NO_PARALLEL` 只控制该串行回退。
-9. 在 artifact 过期前保存最终结果到 `docs/conformance`，并关联保存 deployed head、
-   workflow run 与 plan ID、artifact digest、CA bundle digest 和最终 PR Checks head。
+反向代理只能安装从已审批 mTLS 信任锚控制面导出的 bundle。必须留存 digest 和回滚副本，
+验证完整代理配置，并在 reload 后从公网验证 mTLS 入口。仓库不提供默认公网发行方或套件地址。
 
 ## 运维检查清单
 

@@ -1,145 +1,109 @@
 # OIDF 公网黑盒一致性测试流程
 
-## 目的
+本文规定唯一受支持的 OIDF 一致性测试流程。被测对象是正常的公网生产部署；测试工具不得获得数据库访问权、私有服务网络地址、特权运行时挂载或另一套协议行为。
 
-本文定义 OpenID Foundation 一致性回归的固定流程。套件结果只能作为验证证据，不能作为实现依据。实现决策必须来自对应 RFC、OpenID、FAPI、OpenID4VC、HAIP 或安全 BCP 的规范文本，而不是某个测试模块的行为。
+## 规范面与控制面边界
 
-## 硬性边界
+| 能力 | 规范依据 | 必须遵守的边界 |
+|---|---|---|
+| OAuth 客户端注册与管理 | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html)、[RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) | 一致性测试客户端与普通客户端走同一套申请、审批、凭据交付、注册和管理流程。 |
+| mTLS 客户端认证和证书绑定访问令牌 | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html)、[RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html)、[RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | `tls_client_auth` 与证书绑定令牌是两个独立能力；授权服务器要求唯一 subject selector、规范 DN 匹配、按类型匹配 SAN，并只允许附加证书 pin 收紧结果。 |
+| X.509 验证 | [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280.html) | 只有当前有效、使用受支持公钥、带 critical CA Basic Constraints 和 critical `keyCertSign` 的 CA 证书才能提交信任申请。 |
+| 信任锚管理 | [RFC 6024](https://www.rfc-editor.org/rfc/rfc6024.html) | RFC 6024 提供信任锚管理的安全模型：认证并授权来源、保护完整性、检测重放、限制信任用途并保留恢复能力。产品控制面另行强制不同人员审批、有界原因、追加式审计和撤销。 |
+| OpenID4VC 签发与出示 | [OpenID4VCI 1.0](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0.html)、[OpenID4VP 1.0](https://openid.net/specs/openid-4-verifiable-presentations-1_0.html) | 协议端点按正式规范实现。OpenID4VCI 没有定义签发方数据集管理 API，因此该能力只能位于带管理员认证和 CSRF 防护的控制面，不能宣告为协议端点。 |
 
-| 边界 | 要求 |
-|---|---|
-| 规范优先 | 先实现规范和安全 profile 的语义。如果套件结果与当前规范或已记录的安全策略冲突，只有在实现错误时才修改实现；否则应修订矩阵、expected skip 或文档。 |
-| 公网黑盒目标 | 被测 issuer 必须是操作者显式提供的公网 HTTPS origin。仓库 workflow 和生成文件不得默认指向任何仓库自有生产 issuer。 |
-| 不泄露私有目标 | 生成的 plan config 和提交的文档不得把 suite 私有主机名、内部反向代理名、localhost issuer 或私有信任根 endpoint 作为被测 issuer。 |
-| 控制面分离 | 可以使用本地 conformance-suite 控制面驱动测试，但被测 issuer 必须仍然是公网 HTTPS origin。控制面地址本身不是一致性证据。 |
-| 禁止测试专用产品行为 | 产品代码不得根据 suite alias、suite hostname、test plan 名称或 conformance 专用请求形状分支。 |
-| 只允许确定性播种 | runner 只能从本次执行 plan config 的同一批生成材料中播种 client、公钥、证书绑定、redirect URI、scope 和测试用户；不得手工修改协议状态来制造通过。 |
-| 播种后必须校验 | 部署在测试 issuer 前，必须回读校验数据库中的 client JWKS 公钥成员、mTLS 证书绑定、redirect URI、scope、grant、认证方式和 CIBA 投递元数据均与 runner 执行材料一致。 |
-| 证据必须精确 | 记录 commit SHA、部署 runtime revision、脱敏 target issuer、suite 版本、plan set、expected skip、review allowance、artifact digest 和 run URL。 |
+规范没有定义运维 API，并不意味着可以提供无边界接口。非标准控制面必须满足最小权限、同源、身份认证、CSRF 防护、结构与大小限制、租户绑定、失败关闭和持久化审计。
 
-## 正确流程
+部署安全策略将单租户当前有效的不同信任锚限制为 128 个，单客户端限制为 8 个；单客户端最多保留 4 个待审批申请，单用户在每个租户最多保留 16 个待审批申请。创建和审批都会获取租户级数据库 advisory lock，因此并发请求也不能绕过上限。这些数值属于产品资源边界，不宣称是 RFC 8705 或 RFC 6024 的规范要求。
 
-1. 确认实现边界。
+## 硬性不变量
 
-   - 阅读相关规范章节和安全 BCP。
-   - 区分强制行为、可选行为、不支持行为和明确的安全策略拒绝。
-   - 在使用套件结果前，先补齐本地正向、负向、metadata truth 和安全边界测试。
+- 发行方和套件地址由运行者输入，必须是公网 HTTPS origin；仓库不提供任何部署域名默认值。
+- Discovery 中的 `issuer` 必须等于被测公网 origin。
+- 套件只能访问公网 HTTPS。禁止私有 DNS、裸 IP、loopback、容器服务名和关闭 TLS 校验。
+- 产品逻辑不得根据 plan 名称、suite alias、callback path、测试 header 或 conformance 编译开关分支。
+- 准备工具不得执行 SQL，也不得加载生产 server crate。
+- 申请人与审批人必须是两个不同的有效账号；审批人的 `admin_level` 必须大于 0。自动化账号仍遵守正常账号生命周期和 MFA 策略。
+- 每次运行使用独立命名空间；运行结束后停用所有新建客户端并撤销本次批准的信任锚。
+- expected skip/review 必须精确绑定 configuration、plan、variant 和 module；任何额外 skip、review、warning 或 failure 都使运行失败。
 
-2. 为目标 issuer 生成运行材料。
+## 1. 生成不可变的 runner 材料
 
-   - 操作者必须显式提供公网 issuer 和一个主 suite base origin。
-   - `OIDF_SUITE_BASE_URL` 是单个 HTTPS origin，不是逗号分隔列表。
-     额外 callback origin 必须使用 `OIDF_LOCAL_EXTRA_SUITE_BASE_URLS`，
-     并作为独立 HTTPS origin 校验。
-   - 生成配置中，所有协议可见的 issuer、redirect、logout、notification、credential、verifier endpoint 都必须是公网 HTTPS URL。
-   - 运行前扫描生成配置；内部主机名、localhost issuer 和私有反向代理名均视为失败。
+检出待部署的精确 commit，并确保工作区干净。由运行者设置公网地址和账号：
 
-3. 使用执行材料派生出的播种材料。
+```sh
+export OIDF_TARGET_ISSUER=https://issuer.example
+export OIDF_MTLS_TARGET_ISSUER=https://mtls.issuer.example
+export OIDF_SUITE_BASE_URL=https://suite.example
+export OIDF_APPLICANT_EMAIL=conformance-applicant@example.com
+export OIDF_APPLICANT_PASSWORD=...
+export OIDF_ADMIN_EMAIL=conformance-approver@example.com
+export OIDF_ADMIN_PASSWORD=...
+export OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN=...
+export OIDF_CIBA_AUTOMATED_DECISION_TOKEN=...
+python scripts/prepare_oidf_black_box.py
+```
 
-   - 本地/公网 dry run 必须使用本次执行的 runner config 播种。对于
-     private-key client，runner config 持有私钥；seed 过程只能派生并存储
-     JWK 公钥成员。
-   - 如果公开 seed artifact 不包含私钥成员，它就是部署播种 artifact，
-     不是可执行 runner config。它不得覆盖 runner 私钥 JWKS、client secret、
-     initial access token、server metadata、browser automation 或登录用户字段。
-   - 官方运行必须使用该官方 workflow 的同一批材料播种。如果官方 artifact
-     有意只包含公开材料，只能用于生产播种，官方 runner 的可执行私钥材料必须
-     单独保留。
-   - 不得混用本地套件和官方套件的 key、certificate、callback URL、client JWKS
-     或 CIBA notification metadata。
-   - FAPI-CIBA ID1 有两个独立维度：客户端认证方式（`private_key_jwt` 或
-     mTLS）和 access token sender constraint。受支持的四个 FAPI-CIBA ID1
-     组合（`private_key_jwt / mTLS` x `poll / ping`）都必须播种为 mTLS
-     holder-of-key access token 策略。不得把 `private_key_jwt` 客户端认证
-     误当成 bearer token profile。
-   - 成功复制 artifact 或安装 CA 不等于完成播种。部署必须使用精确候选镜像中的
-     seed binary 执行播种，并在数据库状态与 runner 派生的公开材料不一致时失败关闭。
+命令只在 `runtime/oidf` 生成 runner 配置、密钥、证书、onboarding manifest 以及精确的 plan/skip/review 清单。这些是测试输入，不是生产记录，也不具备修改生产数据库的权限。
 
-4. 执行公网黑盒矩阵。
+## 2. 部署精确提交
 
-   - 可并发计划应并发执行。
-   - 共享浏览器会话、轮询状态、callback alias 或 CIBA transaction 状态的计划必须拆成隔离批次。
-   - OpenID4VC Issuer/Verifier 驱动型 plan 在官方套件中必须按有界 plan group 执行。
-     每批只能接收 `configuration-filename` 属于该批的 expected skip/warning 记录。
-     分组只允许作为 runner 调度手段，不得删除 plan expression 或改变产品行为。
-   - Front-Channel Logout 和 Session Management 与主并发矩阵隔离。
-   - FAPI-CIBA poll 和 ping 变体不得在同一批次中共享可变 CIBA transaction alias。
+部署该 commit 的正常 runtime 镜像和 UI。不得通过 SQL、迁移、专用预置二进制或特殊容器入口安装客户端、credential dataset 或 CA。核对运行镜像的 OCI revision、健康端点、Discovery issuer、JWKS、UI 静态资源和回滚记录。
 
-5. 解读套件结果。
+## 3. 通过生产控制面完成客户端接入
 
-   - `FAILURE` 或非预期 `WARNING` 不可接受。
-   - expected-warning 清单不能替代协议行为。只有当套件 condition 文本本身允许当前
-     部署策略，并且清单精确绑定 plan、configuration、variant、block 和 condition
-     时，warning 才可作为预期项接受。OpenID4VC/HAIP refresh-token advisory
-     属于这种情况：策略是按客户端限制 refresh token 签发，不是通配 warning 豁免。
-     如果官方 runner 随后把同一 advisory 模块标记为 `SKIPPED`，expected skip
-     也必须绑定同一个 configuration 和 variant，不能使用通配符。
-   - `SKIPPED` 只有在与提交的 expected-skip 清单精确匹配时才可接受。
-   - `REVIEW` 只有在清单精确限定 plan、config、alias 和 module 时才可接受。
-   - 任何新增 skip、review、warning 或 module interruption 都必须诊断。
+执行：
 
-6. 公网黑盒矩阵通过后，才运行官方套件。
+```sh
+python scripts/apply_public_conformance_onboarding.py apply \
+  --target-issuer "$OIDF_TARGET_ISSUER"
+```
 
-   - 用官方 artifact 恢复或播种官方 client 材料。
-   - 再次确认部署 revision 和公网 issuer 健康状态。
-   - 启动官方矩阵，并保持本地/公网证据与官方证据分离。
+每个客户端都执行普通运行者可用的正式流程：
 
-7. 只有所有门禁满足后才能合并。
+1. 申请人登录；
+2. 提交客户端接入申请；
+3. 由不同管理员审批；
+4. 申请人领取一次性客户端凭据；
+5. 用实际交付的客户端标识替换 runner 中的逻辑标识；
+6. 需要 mTLS 的客户端提交 CA 信任申请；
+7. 由不同管理员审批；
+8. 从公网服务导出当前已经批准的租户信任 bundle。
 
-   - PR checks 必须通过，除非仓库负责人明确声明某项检查与本变更无关。
-   - 公网黑盒矩阵必须通过。
-   - 官方套件矩阵必须通过。
-   - 一致性记录必须写入最终证据。
+所有请求都必须是精确同源 HTTPS 请求：启用正常证书校验、禁止重定向、限制响应大小、校验 JSON Content-Type，并在变更请求中携带 CSRF token。输出的状态文件与 bundle 均属于私密运行材料。
 
-## Artifact 卫生检查
+## 4. 只安装已经批准的信任 bundle
 
-每次公网或官方运行前必须确认：
+使用部署系统正常的原子配置流程，把 `runtime/oidf/approved-mtls-trust-anchors.pem` 安装到公网反向代理的客户端证书信任库。记录 bundle SHA-256，建立回滚副本，验证完整代理配置，reload 后从公网验证 mTLS alias。不得直接安装 runner 生成目录中的 CA 文件。
 
-- 生成的 plan 文件只包含预期的公网 issuer 占位符或操作者提供的公网 issuer；
-- 生成的 plan 文件没有把内部主机名作为被测 issuer；
-- expected skip 按批次生成，不能把全局清单当作宽泛绕过；
-- OpenID4VC expected warning 按批次生成，不能把全局清单当作宽泛绕过；
-- review allowance 绑定到精确的 plan/config/module；
-- 播种输入和执行的 plan config 来自同一次材料生成；
-- 可执行 runner config 保留所需私钥、client secret、initial access token、
-  server metadata、browser automation 字段和托管登录用户字段；
-- 只含公开材料的 seed artifact 不得当作可执行 runner config 使用；
-- 播种后的 redirect URI、post-logout redirect URI、front-channel URI、
-  CIBA notification URI、credential URI 或 verifier URI 中不得包含逗号拼接的 origin；
-- 已部署服务报告的 revision 与被测 commit 一致。
+代理负责验证证书链；授权服务器仍会按 RFC 8705 验证客户端登记的 subject selector 和客户端策略。代理信任一个 CA 不等于授权该 CA 签发的所有证书。
 
-## 作弊定义
+## 5. 通过管理员 API 安装专用 OpenID4VC 数据
 
-以下行为禁止：
+OpenID4VC runner 只能使用明确标记的专用 conformance 用户。driver 通过同一个公网发行方以管理员身份登录，只能向该 subject 写入有界数据：
+`/admin/openid4vci/credential-datasets/{subject}/{configuration}`。
 
-- 产品代码识别 suite plan、alias、hostname 或 module name；
-- 只为 conformance client 放宽校验；
-- 用本地或私有 issuer URL 作为被测目标，却声称是公网一致性证据；
-- 手工修改数据库协议状态以绕过认证、同意、轮询、签发、撤销或 callback 行为；
-- 没有提交有界理由就接受新增 skip、review、warning 或 interruption；
-- 在同一证据运行中混用官方套件和本地套件的 client 材料。
+该端点要求管理员 session 和 CSRF token，按 credential format、有效期、保留 claim、JSON 大小/深度进行验证，并在同一事务中写入数据和追加式审计事件。它是签发方控制面，不是 OpenID4VCI 协议端点。driver 必须在 `finally` 中删除数据；清理失败即测试失败。
 
-## 失败处理
+## 6. 执行完整公网矩阵
 
-当套件失败时：
+完整仓库矩阵必须针对公网发行方运行。并发安全的 plan 可以并发；logout、session management 以及其他共享浏览器状态的 plan 必须使用隔离 job。延长终态等待只用于吸收套件完成传播延迟，不能放宽任何协议断言。
 
-1. 先找第一个协议可见失败，而不是只看 runner 最终退出码。
-2. 将观察到的行为与相关规范比对。
-3. 如果实现错误，修复实现，并在协议边界增加本地回归测试。
-4. 如果 suite 输入或矩阵错误，只修复生成、播种、分批或 expected-skip/review 元数据，不改变产品协议行为。
-5. 先重跑受影响的公网黑盒批次，再跑完整公网矩阵，最后跑官方矩阵。
+定向 plan 只用于诊断，不能代替全矩阵证据。必须保存精确 target commit、公网 origin、plan ID、module 结果、expected skip/review 匹配和 runner 版本。
 
-## 结果记录
+## 7. 执行官方套件
 
-一致性结果记录必须包含：
+只有同一精确部署提交的完整公网黑盒矩阵通过后，才可请求官方 OIDF 运行。官方配置也必须经过相同的生产接入流程；不得用本地 runner 材料覆盖现有客户端凭据或信任记录。
 
-- implementation commit SHA；
-- deployed runtime revision；
-- suite version 或 source commit；
-- 脱敏 target issuer；
-- plan set 和 batching mode；
-- expected skip 数量和精确原因；
-- review 数量和精确原因；
-- condition success、warning、failure 计数；
-- artifact 名称和 digest；
-- 声称官方证据时的 official run URL。
+直接观察官方套件的 module 终态。CI 是交付证据，但不能替代官方套件的最终 module 结果。
+
+## 8. 清理和证据留存
+
+无论运行结果如何，均执行：
+
+```sh
+python scripts/apply_public_conformance_onboarding.py cleanup \
+  --target-issuer "$OIDF_TARGET_ISSUER"
+```
+
+清理过程通过公网管理员 API 撤销信任申请并停用本次创建的客户端。只有代理回滚流程确认旧信任配置恢复后，才能删除安装的 CA。留存脱敏后的结果、精确 commit、plan manifest、bundle digest、审批/撤销审计 ID 和官方 run ID；文档中严禁保存密码、私钥、session cookie、CSRF token、client secret 或一次性交付 token。

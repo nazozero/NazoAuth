@@ -399,6 +399,13 @@ impl Settings {
         {
             bail!("OPENID4VP_VERIFIER_MANAGEMENT_TOKEN must be at least 32 bytes");
         }
+        if openid4vci_issuer_management_token == openid4vp_verifier_management_token
+            && openid4vci_issuer_management_token.is_some()
+        {
+            bail!(
+                "OPENID4VCI_ISSUER_MANAGEMENT_TOKEN and OPENID4VP_VERIFIER_MANAGEMENT_TOKEN must differ"
+            );
+        }
         let openid4vc_signing_certificate_chain_file = config
             .optional_string("OPENID4VC_SIGNING_CERTIFICATE_CHAIN_FILE")
             .map(PathBuf::from);

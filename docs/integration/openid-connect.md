@@ -42,7 +42,7 @@ executable allowlist.
 | JWT Client Authentication and Authorization Grants | Supported; JWT bearer grant is bounded | `private_key_jwt` is available; the JWT bearer grant is limited to authenticated confidential-client self-assertion | [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523.html) | Does not implement third-party assertion issuer trust, arbitrary subject mapping, or external issuer federation. |
 | JWT Profile for OAuth 2.0 Access Tokens | Complete; current access-token profile | Current access tokens use `typ=at+jwt`, and resource-server verification checks issuer, audience, expiry, scope, and optional `cnf` | [RFC 9068](https://www.rfc-editor.org/rfc/rfc9068.html) | This is the current JWT access-token profile; an opaque-token profile would require a separate introspection design. |
 | OAuth 2.0 Demonstrating Proof of Possession | Supported | Enabled when clients and resource requests use DPoP sender constraints | [RFC 9449](https://www.rfc-editor.org/rfc/rfc9449.html) | Verifies proof signature, `htu`, `htm`, `iat`, `jti`, `ath`, nonce, and access-token `cnf.jkt` binding. |
-| OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access Tokens | Supported | Trusted mTLS/proxy boundary configured and client metadata registered for mTLS authentication or sender constraints | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | Supports `tls_client_auth`, `self_signed_tls_client_auth`, and `x5t#S256` certificate-bound access tokens. |
+| OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access Tokens | Supported | Trusted mTLS/proxy boundary configured and client metadata registered for mTLS authentication or sender constraints | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html), [RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html), [RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | Supports `tls_client_auth`, `self_signed_tls_client_auth`, and `x5t#S256` certificate-bound access tokens. PKI clients register exactly one subject selector. |
 | Resource Indicators | Complete | Available for authorization, token, and refresh flows that carry resource indicators | [RFC 8707](https://www.rfc-editor.org/rfc/rfc8707.html) | Uses repeated URI-valued `resource` parameters; JSON-array syntax is not accepted externally. |
 | Token Introspection | Complete | Available through the introspection endpoint when client policy permits it | [RFC 7662](https://www.rfc-editor.org/rfc/rfc7662.html) | FAPI message-signing profiles can use protected introspection responses. |
 | Token Revocation | Complete | Available through the revocation endpoint | [RFC 7009](https://www.rfc-editor.org/rfc/rfc7009.html) | Revokes tokens according to token type and client policy. |
@@ -395,7 +395,7 @@ browser transport for supported authorization responses.
 | `client_secret_post` | Supported, compatibility only | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | Confidential clients with stored secret; excluded by FAPI profiles | Prefer `client_secret_basic`, `private_key_jwt`, or mTLS. |
 | `client_secret_jwt` | Not supported | [OpenID Connect Core Section 9](https://openid.net/specs/openid-connect-core-1_0.html#ClientAuthentication), [RFC 9700 Section 2.5](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.5) | N/A | Standards-defined for confidential clients, but not advertised. JWT client assertions use `private_key_jwt`; high-assurance clients should use asymmetric or sender-constrained authentication. |
 | `private_key_jwt` | Supported | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 7523](https://www.rfc-editor.org/rfc/rfc7523.html) | Client has a valid registered signing key | Supported signing algorithms are `EdDSA`, `RS256`, `ES256`, and `PS256`; high-assurance profiles may narrow this set. |
-| `tls_client_auth` | Supported | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | Trusted mTLS/proxy boundary configured; client metadata binds certificate subject/SAN/hash | Advertised only when deployment mTLS support is active. |
+| `tls_client_auth` | Supported | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html), [RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html), [RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | Trusted mTLS/proxy boundary configured; client metadata contains exactly one certificate subject DN or SAN selector | DN values are parsed and canonically compared; IP SAN values are compared as binary addresses. An administrator certificate pin may only narrow this match. |
 | `self_signed_tls_client_auth` | Supported | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) | Trusted mTLS/proxy boundary configured; client has registered self-signed certificate material | Advertised only when deployment mTLS support is active. |
 | `attest_jwt_client_auth` | Supported | [OAuth Client Attestation draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-attestation-based-client-auth/) | Client-attestation module enabled and client policy requires it | Disabled deployments do not claim this client authentication method. |
 
@@ -407,6 +407,37 @@ the deployment profile and keep assertion lifetimes short. For mTLS, register
 the correct certificate-bound client metadata and make sure the deployment's
 trusted proxy/mTLS termination boundary is configured before advertising mTLS
 metadata.
+
+### Deployment mTLS trust lifecycle
+
+[RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html) defines client
+authentication, certificate-subject metadata, and certificate-bound access
+tokens. It does not define an operator approval endpoint or how a deployment
+changes its reverse proxy trust store. [RFC 6024](https://www.rfc-editor.org/rfc/rfc6024.html)
+provides the applicable trust-anchor-management security model, while the HTTP
+control plane described here is product behavior rather than an OAuth endpoint.
+
+- An active user may apply only for a client granted to that user through the
+  normal client-access workflow. The client must be active and use
+  `tls_client_auth` or certificate-bound tokens.
+- The input is exactly one current RFC 5280 CA certificate, at most 16 KiB,
+  with critical CA Basic Constraints, critical `keyCertSign`, and an accepted
+  RSA or NIST-curve public key.
+- A different active administrator approves or rejects the request. Rejection
+  and revocation require bounded reasons; every state change is recorded in the
+  same database transaction.
+- A client may have at most 8 current anchors and 4 pending requests; one user
+  may have 16 pending requests per tenant; and a tenant may have at most 128
+  distinct current anchors. Creation and approval are serialized per tenant.
+- The reverse proxy installs only the exported approved bundle. Application
+  authentication still enforces the client's single registered RFC 8705
+  subject selector or self-signed certificate key, so trusting a CA does not
+  authorize every certificate issued by it.
+- Subject DNs must be valid RFC 4514 values and are compared with OpenSSL's
+  canonical X.509 name comparison, following the RFC 4517
+  `distinguishedNameMatch` requirement. DNS and email domains are
+  case-insensitive, URI SANs are exact strings, and IP SANs are compared as
+  parsed binary addresses. Malformed or ambiguous selector data fails closed.
 
 ## Logout and sessions
 

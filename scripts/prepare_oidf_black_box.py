@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare gitignored OIDF conformance runtime files."""
+"""Materialize runner inputs for public black-box OIDF conformance."""
 
 from __future__ import annotations
 
@@ -12,14 +12,12 @@ import base64
 import hashlib
 import ipaddress
 import re
-import shutil
+import secrets
 import urllib.parse
-from datetime import datetime, timezone
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-FRONTEND_ROOT = ROOT.parent / "NazoAuthWeb"
 RUNTIME = ROOT / "runtime" / "oidf"
 
 
@@ -40,7 +38,6 @@ if parsed_mtls.scheme != "https" or not parsed_mtls.netloc or parsed_mtls.path n
     raise RuntimeError("OIDF_MTLS_TARGET_ISSUER must be an HTTPS origin without a path")
 SUITE_BASE_URL = (
     os.environ.get("OIDF_SUITE_BASE_URL")
-    or os.environ.get("OIDF_LOCAL_SUITE_BASE_URL")
     or ""
 ).strip().rstrip("/")
 if not SUITE_BASE_URL:
@@ -62,31 +59,60 @@ SUITE_ORIGIN = urllib.parse.urlsplit(SUITE_BASE_URL)._replace(path="", query="",
 ISSUER_HOST = urllib.parse.urlsplit(ISSUER).hostname
 if not ISSUER_HOST:
     raise RuntimeError("OIDF_TARGET_ISSUER must be an HTTPS origin with a hostname")
-BASIC_ALIAS = os.environ.get("OIDF_LOCAL_BASIC_ALIAS", "nazo-oauth-oidf")
-USER_EMAIL = os.environ.get("OIDF_LOCAL_USER_EMAIL", "oidf-local@example.test")
-USER_PASSWORD = os.environ.get("OIDF_LOCAL_USER_PASSWORD", "oidf-local-password")
-CLIENT_SECRET = os.environ.get("OIDF_LOCAL_CLIENT_SECRET", "oidf-local-client-secret")
-CLIENT_SECRET_PEPPER = os.environ.get(
-    "OIDF_LOCAL_CLIENT_SECRET_PEPPER",
-    "oidf-local-client-secret-pepper-000000000001",
+def oidf_run_namespace() -> str:
+    explicit = os.environ.get("OIDF_RUN_NAMESPACE", "").strip().lower()
+    namespace = explicit or f"bb-{hashlib.sha256(SUITE_ORIGIN.encode('utf-8')).hexdigest()[:12]}"
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?", namespace):
+        raise RuntimeError(
+            "OIDF_RUN_NAMESPACE must contain 1-32 lowercase letters, digits, or internal hyphens"
+        )
+    if namespace in {"official", "oidf", "production"}:
+        raise RuntimeError("OIDF_RUN_NAMESPACE is reserved and cannot identify an operator run")
+    return namespace
+
+
+RUN_NAMESPACE = oidf_run_namespace()
+OIDF_CLIENT_PREFIX = f"oidf-{RUN_NAMESPACE}"
+BASIC_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-basic-client"
+BASIC_CLIENT2_ID = f"{OIDF_CLIENT_PREFIX}-basic-client-2"
+FORMPOST_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-post-client"
+FRONTCHANNEL_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-frontchannel-client"
+SESSION_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-session-client"
+BASIC_ALIAS = os.environ.get(
+    "OIDF_BASIC_ALIAS", f"nazo-oauth-oidf-{RUN_NAMESPACE}"
 )
+USER_EMAIL = os.environ.get(
+    "OIDF_APPLICANT_EMAIL", ""
+)
+USER_PASSWORD = os.environ.get("OIDF_APPLICANT_PASSWORD", "")
+if not USER_EMAIL or not USER_PASSWORD:
+    raise RuntimeError(
+        "OIDF_APPLICANT_EMAIL and OIDF_APPLICANT_PASSWORD are required; "
+        "the applicant must be created through the normal verified-account flow"
+    )
+CLIENT_SECRET = os.environ.get("OIDF_CLIENT_SECRET") or secrets.token_urlsafe(32)
 DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN = os.environ.get(
-    "OIDF_LOCAL_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
-    "oidf-local-dynamic-registration-token",
+    "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN", ""
 )
+if not DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN:
+    raise RuntimeError(
+        "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN is required and must match the target deployment"
+    )
 OIDF_CIBA_AUTOMATED_DECISION_TOKEN = os.environ.get(
-    "OIDF_LOCAL_CIBA_AUTOMATED_DECISION_TOKEN",
-    "oidf-local-ciba-automated-decision-token",
+    "OIDF_CIBA_AUTOMATED_DECISION_TOKEN", ""
 )
-FAPI_CLIENT_PREFIX = os.environ.get("OIDF_LOCAL_FAPI_CLIENT_PREFIX", "oidf-fapi")
-TRUSTED_PROXY_CIDRS = os.environ.get("OIDF_LOCAL_TRUSTED_PROXY_CIDRS", "10.89.0.0/16")
-WRITE_ENV_YAML = os.environ.get("OIDF_LOCAL_WRITE_ENV_YAML", "1") != "0"
-SKIP_UI_BUILD = os.environ.get("OIDF_LOCAL_SKIP_UI_BUILD", "0") == "1"
+if not OIDF_CIBA_AUTOMATED_DECISION_TOKEN:
+    raise RuntimeError(
+        "OIDF_CIBA_AUTOMATED_DECISION_TOKEN is required and must match the target deployment"
+    )
+FAPI_CLIENT_PREFIX = os.environ.get(
+    "OIDF_FAPI_CLIENT_PREFIX", f"{OIDF_CLIENT_PREFIX}-fapi"
+)
 OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES = (
     "oidcc-prompt-login",
     "oidcc-max-age-1",
 )
-OIDCC_LOCAL_AUTHORIZATION_ERROR_MODULES = (
+OIDCC_AUTHORIZATION_ERROR_MODULES = (
     "oidcc-ensure-registered-redirect-uri",
     "oidcc-ensure-redirect-uri-in-authorization-request",
     "oidcc-redirect-uri-query-mismatch",
@@ -132,7 +158,7 @@ NAZO_CONSENT_APPROVE_ID = "nazo-consent-approve"
 NAZO_CONSENT_DENY_ID = "nazo-consent-deny"
 OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS = max(
     30,
-    int(os.environ.get("OIDF_LOCAL_BROWSER_CALLBACK_TIMEOUT_SECONDS", "30")),
+    int(os.environ.get("OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS", "30")),
 )
 NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
     r'("error"\s*:\s*"(invalid_request|invalid_request_object|access_denied|login_required|server_error)"'
@@ -182,176 +208,6 @@ def write_text(path: Path, body: str, mode: int | None = None) -> None:
     path.write_text(body, encoding="utf-8")
     if mode is not None:
         path.chmod(mode)
-
-
-def server_rsa_private_key_is_usable(path: Path) -> bool:
-    return (
-        subprocess.run(
-            ["openssl", "rsa", "-in", str(path), "-check", "-noout"],
-            cwd=ROOT,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            check=False,
-        ).returncode
-        == 0
-    )
-
-
-def live_server_key(
-    keys: list[object],
-    key_dir: Path,
-    alg: str,
-    now: str,
-) -> dict[str, object] | None:
-    live_key = None
-    for key in keys:
-        if not (
-            isinstance(key, dict)
-            and key.get("alg") == alg
-            and isinstance(key.get("kid"), str)
-            and isinstance(key.get("file"), str)
-            and key_dir.joinpath(str(key["file"])).is_file()
-            and key.get("retire_at") is None
-        ):
-            continue
-        if server_rsa_private_key_is_usable(key_dir / str(key["file"])):
-            live_key = key
-            break
-        key["retire_at"] = now
-    return live_key
-
-
-def create_server_key(
-    keys: list[object],
-    key_dir: Path,
-    alg: str,
-    kid_prefix: str,
-    now: str,
-) -> dict[str, object]:
-    kid = kid_prefix
-    file_name = f"{kid}.pem"
-    existing_kids = {
-        key.get("kid")
-        for key in keys
-        if isinstance(key, dict) and isinstance(key.get("kid"), str)
-    }
-    suffix = 2
-    while kid in existing_kids:
-        kid = f"{kid_prefix}-{suffix}"
-        file_name = f"{kid}.pem"
-        suffix += 1
-    pem = key_dir / file_name
-    subprocess.run(
-        [
-            "openssl",
-            "genrsa",
-            "-traditional",
-            "-out",
-            str(pem),
-            "2048",
-        ],
-        check=True,
-        cwd=ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    pem.chmod(0o600)
-    key = {
-        "kid": kid,
-        "alg": alg,
-        "file": file_name,
-        "created_at": now,
-        "retire_at": None,
-    }
-    keys.append(key)
-    return key
-
-
-def ensure_server_oidf_keyset() -> None:
-    key_dir = RUNTIME / "keys"
-    key_dir.mkdir(parents=True, exist_ok=True)
-    keyset_path = key_dir / "keyset.json"
-    keyset: dict[str, object] = {"active_kid": "", "keys": []}
-    if keyset_path.is_file():
-        loaded = json.loads(keyset_path.read_text(encoding="utf-8"))
-        if not isinstance(loaded, dict):
-            raise RuntimeError(f"server keyset must be a JSON object: {keyset_path}")
-        keyset = loaded
-
-    keys = keyset.setdefault("keys", [])
-    if not isinstance(keys, list):
-        raise RuntimeError(f"server keyset keys must be an array: {keyset_path}")
-
-    now = datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    live_ps256 = live_server_key(keys, key_dir, "PS256", now)
-    if live_ps256 is None:
-        live_ps256 = create_server_key(
-            keys, key_dir, "PS256", "ps256-oidf-server", now
-        )
-    live_rs256 = live_server_key(keys, key_dir, "RS256", now)
-    if live_rs256 is None:
-        live_rs256 = create_server_key(
-            keys, key_dir, "RS256", "rs256-oidf-server", now
-        )
-
-    normalize_server_rsa_private_key(key_dir / str(live_ps256["file"]))
-    normalize_server_rsa_private_key(key_dir / str(live_rs256["file"]))
-    keyset["active_kid"] = live_ps256["kid"]
-    write_text(keyset_path, json.dumps(keyset, indent=2) + "\n", 0o600)
-
-
-def normalize_server_rsa_private_key(path: Path) -> None:
-    tmp_path = path.with_name(f".{path.name}.traditional.tmp")
-    subprocess.run(
-        [
-            "openssl",
-            "rsa",
-            "-in",
-            str(path),
-            "-traditional",
-            "-out",
-            str(tmp_path),
-        ],
-        check=True,
-        cwd=ROOT,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-    tmp_path.chmod(0o600)
-    tmp_path.replace(path)
-    path.chmod(0o600)
-
-
-def ensure_cert() -> None:
-    cert_dir = RUNTIME / "certs"
-    cert = cert_dir / "oidf.crt"
-    key = cert_dir / "oidf.key"
-    if cert.is_file() and key.is_file():
-        return
-    cert_dir.mkdir(parents=True, exist_ok=True)
-    subprocess.run(
-        [
-            "openssl",
-            "req",
-            "-x509",
-            "-newkey",
-            "rsa:2048",
-            "-nodes",
-            "-days",
-            "30",
-            "-keyout",
-            str(key),
-            "-out",
-            str(cert),
-            "-subj",
-            f"/CN={ISSUER_HOST}",
-            "-addext",
-            f"subjectAltName=DNS:{ISSUER_HOST}",
-        ],
-        check=True,
-        cwd=ROOT,
-    )
-    key.chmod(0o600)
 
 
 def ensure_mtls_ca() -> None:
@@ -465,142 +321,6 @@ def mtls_named_config(name: str) -> dict[str, str]:
     }
 
 
-def write_env_yaml() -> None:
-    write_text(
-        ROOT / ".env.yaml",
-        f"""BIND: "0.0.0.0:8000"
-DATABASE_URL: "postgresql://postgres:postgres@postgres:5432/oauth"
-VALKEY_URL: "redis://valkey:6379/0"
-ISSUER: "{ISSUER}"
-CLIENT_SECRET_PEPPER: "{CLIENT_SECRET_PEPPER}"
-ENABLE_REQUEST_OBJECT: true
-ENABLE_PAR_REQUEST_OBJECT: true
-ENABLE_DYNAMIC_CLIENT_REGISTRATION: true
-ENABLE_CIBA: true
-ENABLE_FRONTCHANNEL_LOGOUT: true
-ENABLE_SESSION_MANAGEMENT: true
-ENABLE_NATIVE_SSO: true
-CIBA_AUTOMATED_DECISION_TOKEN: "{OIDF_CIBA_AUTOMATED_DECISION_TOKEN}"
-CIBA_NOTIFICATION_PRIVATE_ORIGINS: "{SUITE_ORIGIN}"
-DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN: "{DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN}"
-REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS: "{SUITE_ORIGIN}"
-MTLS_ENDPOINT_BASE_URL: "{MTLS_ISSUER}"
-FRONTEND_BASE_URL: "{ISSUER}/ui"
-CORS_ALLOWED_ORIGINS:
-  - "{ISSUER}"
-COOKIE_SECURE: true
-DEFAULT_AUDIENCE: "resource://default"
-EMAIL_DELIVERY: "disabled"
-AVATAR_STORAGE_DIR: "/var/lib/nazo_oauth/avatars"
-JWK_KEYS_DIR: "/var/lib/nazo_oauth/keys"
-TRUSTED_PROXY_CIDRS: "{TRUSTED_PROXY_CIDRS}"
-RATE_LIMIT_WINDOW_SECONDS: 60
-AUTH_RATE_LIMIT_MAX_REQUESTS: 10000
-TOKEN_RATE_LIMIT_MAX_REQUESTS: 10000
-TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS: 10000
-RUST_LOG: "info"
-""",
-        0o600,
-    )
-
-
-def write_nginx() -> None:
-    write_text(
-        RUNTIME / "nginx.conf",
-        """events {}
-
-http {
-  server {
-    listen 443 ssl;
-    listen 9443 ssl;
-    server_name _;
-
-    ssl_certificate /etc/nginx/certs/oidf.crt;
-    ssl_certificate_key /etc/nginx/certs/oidf.key;
-    ssl_client_certificate /etc/nginx/certs/mtls-ca.crt;
-    ssl_verify_client optional;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers on;
-
-    location /ui/ {
-      root /usr/share/nginx/html;
-      try_files $uri $uri/ /ui/index.html;
-    }
-
-    location / {
-      proxy_pass http://nazo_oauth_server:8000;
-      proxy_set_header Host $host;
-      proxy_set_header X-Forwarded-Proto https;
-      proxy_set_header X-Forwarded-Host $host;
-      proxy_set_header X-Forwarded-Port $server_port;
-      proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
-      proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;
-    }
-  }
-
-  server {
-    listen 9444 ssl;
-    server_name _;
-
-    ssl_certificate /etc/nginx/certs/oidf.crt;
-    ssl_certificate_key /etc/nginx/certs/oidf.key;
-    ssl_client_certificate /etc/nginx/certs/mtls-ca.crt;
-    ssl_verify_client optional;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers on;
-
-    location / {
-      proxy_pass http://nazo_oauth_server:8000;
-      proxy_set_header Host __ISSUER_HOST__;
-      proxy_set_header X-Forwarded-Proto https;
-      proxy_set_header X-Forwarded-Host __ISSUER_HOST__;
-      proxy_set_header X-Forwarded-Port 9444;
-      proxy_set_header X-SSL-Client-Verify $ssl_client_verify;
-      proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;
-    }
-  }
-}
-""".replace("__ISSUER_HOST__", ISSUER_HOST),
-    )
-
-
-def write_ui() -> None:
-    if SKIP_UI_BUILD:
-        target = RUNTIME / "ui"
-        target.mkdir(parents=True, exist_ok=True)
-        index = target / "index.html"
-        if not index.exists():
-            write_text(index, "<!doctype html><html><body>OIDF UI build skipped.</body></html>\n")
-        return
-
-    package_json = FRONTEND_ROOT / "package.json"
-    if not package_json.is_file():
-        raise RuntimeError(f"frontend project not found: {FRONTEND_ROOT}")
-
-    env = os.environ.copy()
-    env.update(
-        {
-            "VITE_BASE_PATH": "/ui/",
-        }
-    )
-    subprocess.run(["npm", "run", "build"], cwd=FRONTEND_ROOT, env=env, check=True)
-
-    dist = FRONTEND_ROOT / "dist"
-    if not (dist / "index.html").is_file():
-        raise RuntimeError(f"frontend build did not produce {dist / 'index.html'}")
-
-    target = RUNTIME / "ui"
-    target.mkdir(parents=True, exist_ok=True)
-    for item in target.iterdir():
-        if item.is_dir():
-            shutil.rmtree(item)
-        else:
-            item.unlink()
-    shutil.copytree(dist, target, dirs_exist_ok=True)
-
-
 def b64url(raw: bytes) -> str:
     return base64.urlsafe_b64encode(raw).rstrip(b"=").decode("ascii")
 
@@ -691,6 +411,195 @@ def public_jwks(private_jwks: dict[str, object]) -> dict[str, object]:
         if isinstance(key, dict):
             keys.append({name: value for name, value in key.items() if name not in private_fields})
     return {"keys": keys}
+
+
+def certificate_subject_dn(certificate_pem: str) -> str:
+    result = subprocess.run(
+        ["openssl", "x509", "-noout", "-subject", "-nameopt", "RFC2253"],
+        input=certificate_pem,
+        check=True,
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+    )
+    subject = result.stdout.strip()
+    if subject.startswith("subject="):
+        subject = subject[len("subject=") :].strip()
+    if not subject or "\n" in subject or "\r" in subject:
+        raise RuntimeError("generated mTLS certificate has no canonical subject DN")
+    return subject
+
+
+def base_client_request(
+    *,
+    name: str,
+    auth_method: str,
+    redirect_uris: list[str],
+    post_logout_redirect_uris: list[str] | None = None,
+    scopes: list[str] | None = None,
+    grant_types: list[str] | None = None,
+) -> dict[str, object]:
+    return {
+        "client_name": name,
+        "client_type": "confidential",
+        "redirect_uris": sorted(set(redirect_uris)),
+        "post_logout_redirect_uris": sorted(set(post_logout_redirect_uris or [])),
+        "scopes": scopes
+        or ["openid", "profile", "email", "address", "phone", "offline_access"],
+        "allowed_audiences": sorted(
+            {
+                "resource://default",
+                f"{ISSUER}/userinfo",
+                f"{ISSUER}/fapi/resource",
+                f"{MTLS_ISSUER}/fapi/resource",
+            }
+        ),
+        "grant_types": grant_types or ["authorization_code", "refresh_token"],
+        "token_endpoint_auth_method": auth_method,
+        "require_dpop_bound_tokens": False,
+        "require_mtls_bound_tokens": False,
+        "allow_client_assertion_audience_array": False,
+        "allow_client_assertion_endpoint_audience": False,
+        "require_par_request_object": False,
+        "backchannel_token_delivery_mode": "poll",
+        "backchannel_user_code_parameter": False,
+        "backchannel_logout_session_required": True,
+        "frontchannel_logout_session_required": True,
+        "jwks": None,
+    }
+
+
+def onboarding_clients(configs: dict[str, dict[str, object]]) -> list[dict[str, object]]:
+    requests: dict[str, dict[str, object]] = {}
+
+    def add(logical_client_id: str, request: dict[str, object], ca_pem: str | None = None) -> None:
+        candidate = {
+            "logical_client_id": logical_client_id,
+            "request": request,
+            "mtls_trust_anchor_pem": ca_pem,
+        }
+        previous = requests.get(logical_client_id)
+        if previous is not None and previous != candidate:
+            raise RuntimeError(f"conflicting onboarding policy for {logical_client_id}")
+        requests[logical_client_id] = candidate
+
+    basic_aliases = [BASIC_ALIAS, f"{BASIC_ALIAS}-formpost"]
+    basic_callbacks = [callback_for(alias) for alias in basic_aliases]
+    add(
+        BASIC_CLIENT_ID,
+        base_client_request(
+            name="OIDF Basic Client",
+            auth_method="client_secret_basic",
+            redirect_uris=basic_callbacks,
+        ),
+    )
+    add(
+        BASIC_CLIENT2_ID,
+        base_client_request(
+            name="OIDF Basic Client 2",
+            auth_method="client_secret_basic",
+            redirect_uris=basic_callbacks,
+        ),
+    )
+    add(
+        FORMPOST_CLIENT_ID,
+        base_client_request(
+            name="OIDF Form Post Client",
+            auth_method="client_secret_post",
+            redirect_uris=basic_callbacks,
+        ),
+    )
+
+    frontchannel_alias = f"{BASIC_ALIAS}-frontchannel-logout"
+    frontchannel_request = base_client_request(
+        name="OIDF Front-Channel Logout Client",
+        auth_method="client_secret_basic",
+        redirect_uris=[callback_for(frontchannel_alias)],
+        post_logout_redirect_uris=[test_endpoint_for(frontchannel_alias, "post_logout_redirect")],
+    )
+    frontchannel_request["frontchannel_logout_uri"] = test_endpoint_for(
+        frontchannel_alias, "frontchannel_logout"
+    )
+    add(FRONTCHANNEL_CLIENT_ID, frontchannel_request)
+
+    session_alias = f"{BASIC_ALIAS}-session-management"
+    add(
+        SESSION_CLIENT_ID,
+        base_client_request(
+            name="OIDF Session Management Client",
+            auth_method="client_secret_basic",
+            redirect_uris=[callback_for(session_alias)],
+            post_logout_redirect_uris=[test_endpoint_for(session_alias, "post_logout_redirect")],
+        ),
+    )
+
+    for file_name, config in sorted(configs.items()):
+        if not file_name.startswith("oidf-fapi-"):
+            continue
+        nazo = config.get("nazo")
+        if not isinstance(nazo, dict):
+            raise RuntimeError(f"{file_name}.nazo is required for FAPI onboarding")
+        alias = str(config["alias"])
+        ciba = file_name.startswith("oidf-fapi-ciba-")
+        auth_type = str(nazo.get("client_auth_type", "private_key_jwt"))
+        sender_constrain = str(nazo.get("sender_constrain", "mtls" if ciba else "dpop"))
+        fapi_profile = str(nazo.get("fapi_profile", "plain_fapi"))
+        response_mode = str(nazo.get("fapi_response_mode", "plain_response"))
+        auth_method = "tls_client_auth" if auth_type == "mtls" else "private_key_jwt"
+        for key, mtls_key in (("client", "mtls"), ("client2", "mtls2")):
+            client = config.get(key)
+            mtls = config.get(mtls_key)
+            if not isinstance(client, dict) or not isinstance(mtls, dict):
+                raise RuntimeError(f"{file_name} is missing {key}/{mtls_key} material")
+            logical_client_id = str(client["client_id"])
+            callback = callback_for(alias)
+            request = base_client_request(
+                name=f"OIDF FAPI Client {logical_client_id}",
+                auth_method=auth_method,
+                redirect_uris=[callback, f"{callback}?dummy1=lorem&dummy2=ipsum"],
+                scopes=str(client.get("scope", "")).split(),
+                grant_types=(
+                    ["client_credentials"]
+                    if fapi_profile == "fapi_client_credentials_grant"
+                    else ["urn:openid:params:grant-type:ciba", "refresh_token"]
+                    if ciba
+                    else ["authorization_code", "refresh_token"]
+                ),
+            )
+            request["jwks"] = public_jwks(client["jwks"])
+            request["require_dpop_bound_tokens"] = sender_constrain == "dpop"
+            request["require_mtls_bound_tokens"] = sender_constrain == "mtls"
+            request["allow_client_assertion_audience_array"] = "-id" in file_name
+            request["allow_client_assertion_endpoint_audience"] = (
+                ciba and auth_method == "private_key_jwt"
+            )
+            request["require_par_request_object"] = (
+                ciba
+                or "-message-" in file_name
+                or nazo.get("fapi_request_method") is not None
+            )
+            request["authorization_signed_response_alg"] = (
+                "PS256" if response_mode == "jarm" else None
+            )
+            request["backchannel_token_delivery_mode"] = str(
+                client.get("backchannel_token_delivery_mode", "poll")
+            )
+            request["backchannel_client_notification_endpoint"] = client.get(
+                "backchannel_client_notification_endpoint"
+            )
+            request["backchannel_authentication_request_signing_alg"] = client.get(
+                "backchannel_authentication_request_signing_alg"
+            )
+            certificate_pem = str(mtls["cert"])
+            ca_pem = str(mtls["ca"])
+            if auth_method == "tls_client_auth":
+                request["tls_client_auth_subject_dn"] = certificate_subject_dn(certificate_pem)
+            add(
+                logical_client_id,
+                request,
+                ca_pem if auth_method == "tls_client_auth" or sender_constrain == "mtls" else None,
+            )
+    return [requests[key] for key in sorted(requests)]
 
 
 def callback_for(alias: str) -> str:
@@ -989,17 +898,17 @@ def write_basic_plan_config() -> dict[str, object]:
         "description": "OIDC Basic OP: discovery and authorization-code interoperability.",
         "server": oidf_server_config(),
         "client": {
-            "client_id": "oidf-basic-client",
+            "client_id": BASIC_CLIENT_ID,
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email address phone offline_access",
         },
         "client2": {
-            "client_id": "oidf-basic-client-2",
+            "client_id": BASIC_CLIENT2_ID,
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email address phone offline_access",
         },
         "client_secret_post": {
-            "client_id": "oidf-post-client",
+            "client_id": FORMPOST_CLIENT_ID,
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email address phone offline_access",
         },
@@ -1012,7 +921,7 @@ def write_basic_plan_config() -> dict[str, object]:
             for module_name in OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES
         },
     }
-    for module_name in OIDCC_LOCAL_AUTHORIZATION_ERROR_MODULES:
+    for module_name in OIDCC_AUTHORIZATION_ERROR_MODULES:
         config["override"][module_name] = {
             "browser": redirect_error_browser_automation()
         }
@@ -1047,7 +956,7 @@ def dynamic_plan_config() -> dict[str, object]:
             for module_name in OIDCC_SECOND_LOGIN_SCREENSHOT_MODULES
         },
     }
-    for module_name in OIDCC_LOCAL_AUTHORIZATION_ERROR_MODULES:
+    for module_name in OIDCC_AUTHORIZATION_ERROR_MODULES:
         config["override"][module_name] = {
             "browser": redirect_error_browser_automation()
         }
@@ -1189,7 +1098,7 @@ def write_frontchannel_logout_plan_config() -> dict[str, object]:
         "description": "OIDC Front-Channel Logout OP: RP-initiated logout, frontchannel iframe notification, and post-logout redirect validation.",
         "server": oidf_server_config(),
         "client": {
-            "client_id": "oidf-frontchannel-client",
+            "client_id": FRONTCHANNEL_CLIENT_ID,
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email",
         },
@@ -1207,7 +1116,7 @@ def write_session_management_plan_config() -> dict[str, object]:
         "description": "OIDC Session Management OP: check_session_iframe, session_state, and RP-initiated logout state transition validation.",
         "server": oidf_server_config(),
         "client": {
-            "client_id": "oidf-session-client",
+            "client_id": SESSION_CLIENT_ID,
             "client_secret": CLIENT_SECRET,
             "scope": "openid profile email",
         },
@@ -1546,7 +1455,7 @@ def write_all_plan_configs() -> None:
         write_text(RUNTIME / file_name, json.dumps(group, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "oidf-plan-set-manifest.json", json.dumps(plan_manifest, indent=2) + "\n", 0o600)
     write_text(
-        RUNTIME / "oidf-local.env",
+        RUNTIME / "oidf-runner.env",
         "\n".join(
             [
                 f"OIDF_PLAN_CONFIG_JSON={json.dumps({'configs': configs})}",
@@ -1564,7 +1473,42 @@ def write_all_plan_configs() -> None:
     }
     write_text(RUNTIME / "callbacks.json", json.dumps(callbacks, indent=2) + "\n", 0o600)
     write_text(RUNTIME / "callback.txt", callback_for(BASIC_ALIAS) + "\n")
+    write_text(
+        RUNTIME / "oidf-onboarding-manifest.json",
+        json.dumps(
+            {
+                "schema": 1,
+                "target_issuer": ISSUER,
+                "suite_base_url": SUITE_ORIGIN,
+                "applicant_email": USER_EMAIL,
+                "clients": onboarding_clients(configs),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        0o600,
+    )
+    write_onboarding_contract()
     write_expected_skips()
+
+
+def onboarding_contract() -> dict[str, object]:
+    return {
+        "schema": 1,
+        "onboarding_profile": "operator-black-box",
+        "target_issuer": ISSUER,
+        "suite_base_url": SUITE_ORIGIN,
+        "run_namespace": RUN_NAMESPACE,
+    }
+
+
+def write_onboarding_contract() -> None:
+    write_text(
+        RUNTIME / "oidf-onboarding-contract.json",
+        json.dumps(onboarding_contract(), indent=2, sort_keys=True) + "\n",
+        0o600,
+    )
 
 
 def expected_skips() -> list[dict[str, str]]:
@@ -1837,22 +1781,16 @@ def plan_manifest_for_expressions(
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare gitignored OIDF conformance runtime files."
+        description="Materialize runner inputs for a caller-supplied public issuer and suite origin."
     )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     parse_args(argv)
-    ensure_cert()
     ensure_mtls_certs()
-    ensure_server_oidf_keyset()
-    if WRITE_ENV_YAML:
-        write_env_yaml()
-    write_nginx()
-    write_ui()
     write_all_plan_configs()
-    print(f"Prepared OIDF runtime files under {RUNTIME}")
+    print(f"Prepared public black-box runner inputs under {RUNTIME}")
     print(f"Issuer: {ISSUER}")
     print(f"Suite callback base: {SUITE_BASE_URL}")
     return 0

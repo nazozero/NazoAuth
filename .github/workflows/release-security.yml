@@ -31,26 +31,31 @@ jobs:
       - name: Check dependency policy
         run: cargo deny check advisories bans licenses sources
       - name: Build release binaries
-        run: cargo build --release --locked
+        run: |
+          cargo build --release --locked --package nazo-oauth-server --bins
       - name: Generate Rust SBOM
         run: |
           cargo cyclonedx --manifest-path crates/authorization-server/Cargo.toml --format json --override-filename nazo-oauth-server.cdx
           mkdir -p target
           mv crates/authorization-server/nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
       - name: Build release image
-        run: docker build -f Containerfile -t nazo-oauth-server:${{ github.sha }} .
-      - name: Export release image
-        run: docker save nazo-oauth-server:${{ github.sha }} -o target/nazo-oauth-server-image.tar
-      - name: Scan release image
         run: |
-          docker run --rm \
-            -v "$PWD/target/nazo-oauth-server-image.tar:/image.tar:ro" \
-            docker.io/aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
-              --format table \
-              --exit-code 1 \
-              --severity CRITICAL,HIGH \
-              --ignore-unfixed \
-              --input /image.tar
+          docker build --target runtime -f Containerfile -t nazo-oauth-server:${{ github.sha }} .
+      - name: Export release images
+        run: |
+          docker save nazo-oauth-server:${{ github.sha }} -o target/nazo-oauth-server-image.tar
+      - name: Scan release images
+        run: |
+          for archive in target/nazo-oauth-server-image.tar; do
+            docker run --rm \
+              -v "$PWD/$archive:/image.tar:ro" \
+              docker.io/aquasec/trivy:0.72.0@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f image \
+                --format table \
+                --exit-code 1 \
+                --severity CRITICAL,HIGH \
+                --ignore-unfixed \
+                --input /image.tar
+          done
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.1.2
       - name: Sign release artifacts
@@ -58,7 +63,6 @@ jobs:
           cosign sign-blob --yes --bundle target/release/nazo-oauth-server.bundle target/release/nazo-oauth-server
           cosign sign-blob --yes --bundle target/release/nazo-oauth-migrate.bundle target/release/nazo-oauth-migrate
           cosign sign-blob --yes --bundle target/release/nazo-oauth-keyctl.bundle target/release/nazo-oauth-keyctl
-          cosign sign-blob --yes --bundle target/release/nazo_oauth_seed_oidf.bundle target/release/nazo_oauth_seed_oidf
           cosign sign-blob --yes --bundle target/nazo-oauth-server.cdx.json.bundle target/nazo-oauth-server.cdx.json
           cosign sign-blob --yes --bundle target/nazo-oauth-server-image.tar.bundle target/nazo-oauth-server-image.tar
       - name: Upload release artifacts
@@ -69,7 +73,6 @@ jobs:
             target/release/nazo-oauth-server
             target/release/nazo-oauth-migrate
             target/release/nazo-oauth-keyctl
-            target/release/nazo_oauth_seed_oidf
             target/nazo-oauth-server.cdx.json
             target/nazo-oauth-server-image.tar
             target/release/*.bundle
@@ -82,9 +85,9 @@ jobs:
             target/release/nazo-oauth-server
             target/release/nazo-oauth-migrate
             target/release/nazo-oauth-keyctl
-            target/release/nazo_oauth_seed_oidf
             target/nazo-oauth-server.cdx.json
       - name: Attest release image archive
         uses: actions/attest-build-provenance@v4.1.1
         with:
-          subject-path: target/nazo-oauth-server-image.tar
+          subject-path: |
+            target/nazo-oauth-server-image.tar

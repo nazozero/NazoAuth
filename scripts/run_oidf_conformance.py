@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -426,9 +427,6 @@ def assert_only_target_issuer_urls(value: object, config_name: str, target_issue
                 )
 
 
-OPENID4VC_LOCAL_TARGET_HOSTS = {"localhost", "127.0.0.1", "::1", "nginx", "host.docker.internal"}
-
-
 def is_openid4vc_config(config_name: str) -> bool:
     return config_name.startswith("openid4vc-")
 
@@ -469,7 +467,13 @@ def assert_openid4vc_target_boundaries(
 
     for url in http_urls_in_value(config_value):
         parsed = urlparse(url)
-        if (parsed.hostname or "").lower() in OPENID4VC_LOCAL_TARGET_HOSTS:
+        hostname = (parsed.hostname or "").lower()
+        try:
+            ipaddress.ip_address(hostname)
+            is_public_dns_name = False
+        except ValueError:
+            is_public_dns_name = "." in hostname and hostname != "localhost"
+        if not is_public_dns_name:
             fail(
                 f"{config_name} contains local-only URL {url}; OpenID4VC conformance "
                 "must run against public black-box targets"

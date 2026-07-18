@@ -1,0 +1,464 @@
+#!/usr/bin/env python3
+"""Provision public conformance clients through the production control plane.
+
+The tool deliberately has no database, server-crate, or host-filesystem integration.
+It performs the same authenticated application, approval, one-time credential delivery,
+and mTLS trust review steps available to ordinary operators.
+"""
+
+from __future__ import annotations
+
+import argparse
+import http.cookiejar
+import hashlib
+import json
+import os
+import ssl
+import tempfile
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+from typing import Any
+
+MAX_RESPONSE_BYTES = 1024 * 1024
+DEFAULT_TIMEOUT_SECONDS = 20.0
+
+
+class OnboardingError(RuntimeError):
+    pass
+
+
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        raise OnboardingError(f"unexpected redirect from control-plane request: {code} {newurl}")
+
+
+def canonical_https_origin(value: str, *, label: str) -> str:
+    parsed = urllib.parse.urlsplit(value.strip())
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise OnboardingError(f"{label} must be an HTTPS origin without credentials, path, query, or fragment")
+    host = parsed.hostname.lower()
+    port = parsed.port
+    authority = host if port in {None, 443} else f"{host}:{port}"
+    return f"https://{authority}"
+
+
+def read_json(path: Path) -> Any:
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise OnboardingError(f"cannot read JSON document {path}: {error}") from error
+
+
+def write_private_json(path: Path, value: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(value, handle, indent=2, sort_keys=True)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.chmod(0o600)
+        temporary.replace(path)
+        path.chmod(0o600)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def write_private_text(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary_name = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+    temporary = Path(temporary_name)
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            handle.write(value)
+            handle.flush()
+            os.fsync(handle.fileno())
+        temporary.chmod(0o600)
+        temporary.replace(path)
+        path.chmod(0o600)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+class ControlPlaneSession:
+    def __init__(
+        self,
+        origin: str,
+        opener: urllib.request.OpenerDirector,
+        csrf_token: str,
+    ) -> None:
+        self.origin = origin
+        self.opener = opener
+        self.csrf_token = csrf_token
+
+    @classmethod
+    def login(cls, origin: str, email: str, password: str) -> "ControlPlaneSession":
+        cookie_jar = http.cookiejar.CookieJar()
+        opener = urllib.request.build_opener(
+            urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+            urllib.request.HTTPCookieProcessor(cookie_jar),
+            NoRedirectHandler(),
+        )
+        session = cls(origin=origin, opener=opener, csrf_token="")
+        body = session.request_json(
+            "POST",
+            "/auth/login",
+            {"email": email, "password": password},
+            expected_status=200,
+            csrf=False,
+        )
+        csrf_token = body.get("csrf_token") if isinstance(body, dict) else None
+        if not isinstance(csrf_token, str) or not csrf_token:
+            raise OnboardingError(f"login for {email} did not establish a CSRF token")
+        if body.get("mfa_required") is True:
+            raise OnboardingError(f"login for {email} requires interactive MFA; use an approved automation identity")
+        session.csrf_token = csrf_token
+        return session
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        payload: Any | None = None,
+        *,
+        expected_status: int,
+        csrf: bool = False,
+    ) -> tuple[bytes, str]:
+        if not path.startswith("/") or path.startswith("//"):
+            raise OnboardingError(f"control-plane path must be origin-relative: {path}")
+        url = f"{self.origin}{path}"
+        data = None
+        headers = {"Accept": "application/json", "User-Agent": "nazo-conformance-onboarding/1"}
+        if payload is not None:
+            data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        if csrf:
+            if not self.csrf_token:
+                raise OnboardingError("CSRF-protected request has no established token")
+            headers["x-csrf-token"] = self.csrf_token
+        request = urllib.request.Request(url, data=data, headers=headers, method=method)
+        try:
+            response = self.opener.open(request, timeout=DEFAULT_TIMEOUT_SECONDS)
+        except urllib.error.HTTPError as error:
+            body = error.read(MAX_RESPONSE_BYTES + 1)
+            detail = body[:MAX_RESPONSE_BYTES].decode("utf-8", errors="replace")
+            raise OnboardingError(f"{method} {path} returned {error.code}: {detail}") from error
+        except (urllib.error.URLError, TimeoutError, OSError) as error:
+            raise OnboardingError(f"{method} {path} failed: {error}") from error
+        with response:
+            body = response.read(MAX_RESPONSE_BYTES + 1)
+            if len(body) > MAX_RESPONSE_BYTES:
+                raise OnboardingError(f"{method} {path} response exceeds {MAX_RESPONSE_BYTES} bytes")
+            if response.status != expected_status:
+                detail = body.decode("utf-8", errors="replace")
+                raise OnboardingError(
+                    f"{method} {path} returned {response.status}, expected {expected_status}: {detail}"
+                )
+            final = urllib.parse.urlsplit(response.geturl())
+            if f"{final.scheme}://{final.netloc}" != self.origin:
+                raise OnboardingError(f"{method} {path} escaped the configured origin")
+            return body, response.headers.get("Content-Type", "")
+
+    def request_json(
+        self,
+        method: str,
+        path: str,
+        payload: Any | None = None,
+        *,
+        expected_status: int,
+        csrf: bool = False,
+    ) -> dict[str, Any]:
+        body, content_type = self.request(
+            method,
+            path,
+            payload,
+            expected_status=expected_status,
+            csrf=csrf,
+        )
+        if "application/json" not in content_type.lower():
+            raise OnboardingError(f"{method} {path} did not return JSON")
+        try:
+            value = json.loads(body)
+        except json.JSONDecodeError as error:
+            raise OnboardingError(f"{method} {path} returned invalid JSON") from error
+        if not isinstance(value, dict):
+            raise OnboardingError(f"{method} {path} must return a JSON object")
+        return value
+
+
+def replace_client_material(value: Any, logical_id: str, actual_id: str, secret: str | None) -> int:
+    replacements = 0
+    if isinstance(value, dict):
+        if value.get("client_id") == logical_id:
+            value["client_id"] = actual_id
+            if secret is not None:
+                value["client_secret"] = secret
+            else:
+                value.pop("client_secret", None)
+            replacements += 1
+        for child in value.values():
+            replacements += replace_client_material(child, logical_id, actual_id, secret)
+    elif isinstance(value, list):
+        for child in value:
+            replacements += replace_client_material(child, logical_id, actual_id, secret)
+    return replacements
+
+
+def write_runner_env(
+    path: Path,
+    plan_document: dict[str, Any],
+    plan_set_path: Path,
+    plan_manifest_path: Path,
+) -> None:
+    plan_set = read_json(plan_set_path)
+    plan_manifest = read_json(plan_manifest_path)
+    if not isinstance(plan_set, list) or not isinstance(plan_manifest, dict):
+        raise OnboardingError("plan set and plan manifest have invalid JSON shapes")
+    write_private_text(
+        path,
+        "\n".join(
+            (
+                f"OIDF_PLAN_CONFIG_JSON={json.dumps(plan_document, separators=(',', ':'))}",
+                f"OIDF_PLAN_SET_JSON={json.dumps(plan_set, separators=(',', ':'))}",
+                f"OIDF_PLAN_MANIFEST_JSON={json.dumps(plan_manifest, separators=(',', ':'))}",
+                "",
+            )
+        ),
+    )
+
+
+def require_manifest(path: Path) -> dict[str, Any]:
+    value = read_json(path)
+    if not isinstance(value, dict) or value.get("schema") != 1:
+        raise OnboardingError("onboarding manifest must be a schema-1 JSON object")
+    clients = value.get("clients")
+    if not isinstance(clients, list) or not clients:
+        raise OnboardingError("onboarding manifest must contain a non-empty clients array")
+    logical_ids: set[str] = set()
+    for index, client in enumerate(clients):
+        if not isinstance(client, dict):
+            raise OnboardingError(f"clients[{index}] must be an object")
+        logical_id = client.get("logical_client_id")
+        request = client.get("request")
+        if not isinstance(logical_id, str) or not logical_id or logical_id in logical_ids:
+            raise OnboardingError(f"clients[{index}] has an invalid or duplicate logical_client_id")
+        if not isinstance(request, dict) or request.get("client_type") != "confidential":
+            raise OnboardingError(f"clients[{index}] must contain a confidential client request")
+        logical_ids.add(logical_id)
+    return value
+
+
+def apply_onboarding(args: argparse.Namespace) -> int:
+    manifest = require_manifest(args.manifest)
+    origin = canonical_https_origin(str(manifest.get("target_issuer", "")), label="target_issuer")
+    configured = canonical_https_origin(args.target_issuer, label="--target-issuer")
+    if origin != configured:
+        raise OnboardingError("onboarding manifest target_issuer does not match --target-issuer")
+    applicant_email = str(manifest.get("applicant_email", "")).strip()
+    if not applicant_email:
+        raise OnboardingError("onboarding manifest applicant_email is required")
+    applicant_password = os.environ.get("OIDF_APPLICANT_PASSWORD", "")
+    admin_email = os.environ.get("OIDF_ADMIN_EMAIL", "")
+    admin_password = os.environ.get("OIDF_ADMIN_PASSWORD", "")
+    if not applicant_password or not admin_email or not admin_password:
+        raise OnboardingError("OIDF_APPLICANT_PASSWORD, OIDF_ADMIN_EMAIL, and OIDF_ADMIN_PASSWORD are required")
+    if args.state_file.exists():
+        raise OnboardingError(f"state file already exists; clean up the prior onboarding first: {args.state_file}")
+
+    plan_document = read_json(args.plan_configs)
+    if not isinstance(plan_document, dict) or not isinstance(plan_document.get("configs"), dict):
+        raise OnboardingError("plan config document must contain a configs object")
+    applicant = ControlPlaneSession.login(origin, applicant_email, applicant_password)
+    admin = ControlPlaneSession.login(origin, admin_email, admin_password)
+    applicant_me = applicant.request_json("GET", "/auth/me", expected_status=200)
+    admin_me = admin.request_json("GET", "/auth/me", expected_status=200)
+    if applicant_me.get("id") == admin_me.get("id"):
+        raise OnboardingError("applicant and approver must be different users")
+    if not isinstance(admin_me.get("admin_level"), int) or admin_me["admin_level"] < 1:
+        raise OnboardingError("OIDF_ADMIN_EMAIL is not an active administrator")
+
+    state: dict[str, Any] = {
+        "schema": 1,
+        "target_issuer": origin,
+        "applicant_user_id": applicant_me.get("id"),
+        "approver_user_id": admin_me.get("id"),
+        "clients": [],
+    }
+    for item in manifest["clients"]:
+        logical_id = item["logical_client_id"]
+        access = applicant.request_json(
+            "POST",
+            "/auth/me/access-requests",
+            {
+                "site_name": f"Conformance client {logical_id}",
+                "site_url": manifest["suite_base_url"],
+                "request_description": "Public black-box conformance onboarding through the production approval flow.",
+            },
+            expected_status=201,
+            csrf=True,
+        )
+        request_id = access.get("id")
+        if not isinstance(request_id, str):
+            raise OnboardingError(f"access request for {logical_id} returned no id")
+        admin.request_json(
+            "POST",
+            f"/admin/access-requests/{urllib.parse.quote(request_id, safe='')}/approve",
+            item["request"],
+            expected_status=200,
+            csrf=True,
+        )
+        listed = applicant.request_json("GET", "/auth/me/access-requests", expected_status=200)
+        approved = next(
+            (
+                candidate
+                for candidate in listed.get("items", [])
+                if isinstance(candidate, dict) and candidate.get("id") == request_id
+            ),
+            None,
+        )
+        token = approved.get("delivery_token") if isinstance(approved, dict) else None
+        if not isinstance(token, str) or not token:
+            raise OnboardingError(f"approved access request {request_id} has no one-time delivery token")
+        delivery = applicant.request_json(
+            "GET",
+            f"/auth/me/access-delivery?token={urllib.parse.quote(token, safe='')}",
+            expected_status=200,
+        )
+        actual_id = delivery.get("client_id")
+        if not isinstance(actual_id, str) or not actual_id:
+            raise OnboardingError(f"credential delivery for {logical_id} returned no client_id")
+        secret = delivery.get("client_secret")
+        if secret is not None and (not isinstance(secret, str) or not secret):
+            raise OnboardingError(f"credential delivery for {logical_id} returned an invalid client_secret")
+        replacements = replace_client_material(plan_document, logical_id, actual_id, secret)
+        if replacements == 0:
+            raise OnboardingError(f"logical client {logical_id} is absent from the plan configs")
+
+        trust_request_id = None
+        certificate_pem = item.get("mtls_trust_anchor_pem")
+        if certificate_pem is not None:
+            if not isinstance(certificate_pem, str) or not certificate_pem.startswith("-----BEGIN CERTIFICATE-----"):
+                raise OnboardingError(f"logical client {logical_id} has an invalid trust anchor")
+            trust_request = applicant.request_json(
+                "POST",
+                "/auth/me/mtls-trust-requests",
+                {"client_id": actual_id, "certificate_pem": certificate_pem},
+                expected_status=201,
+                csrf=True,
+            )
+            trust_request_id = trust_request.get("id")
+            if not isinstance(trust_request_id, str):
+                raise OnboardingError(f"mTLS trust application for {logical_id} returned no id")
+            admin.request_json(
+                "POST",
+                f"/admin/mtls-trust-requests/{urllib.parse.quote(trust_request_id, safe='')}/approve",
+                {"admin_note": "Approved for public conformance validation."},
+                expected_status=200,
+                csrf=True,
+            )
+        state["clients"].append(
+            {
+                "logical_client_id": logical_id,
+                "client_id": actual_id,
+                "access_request_id": request_id,
+                "mtls_trust_request_id": trust_request_id,
+            }
+        )
+
+    bundle, _ = admin.request("GET", "/admin/mtls-trust-anchors.pem", expected_status=200)
+    bundle_text = bundle.decode("ascii")
+    if "-----BEGIN CERTIFICATE-----" not in bundle_text:
+        raise OnboardingError("approved mTLS trust bundle contains no certificate")
+    state["trust_bundle_sha256"] = hashlib.sha256(bundle).hexdigest()
+    write_private_json(args.plan_configs, plan_document)
+    write_runner_env(args.runner_env, plan_document, args.plan_set, args.plan_manifest)
+    write_private_text(args.trust_bundle, bundle_text)
+    write_private_json(args.state_file, state)
+    return 0
+
+
+def cleanup_onboarding(args: argparse.Namespace) -> int:
+    state = read_json(args.state_file)
+    if not isinstance(state, dict) or state.get("schema") != 1:
+        raise OnboardingError("cleanup state must be a schema-1 JSON object")
+    origin = canonical_https_origin(str(state.get("target_issuer", "")), label="state target_issuer")
+    configured = canonical_https_origin(args.target_issuer, label="--target-issuer")
+    if origin != configured:
+        raise OnboardingError("cleanup state target_issuer does not match --target-issuer")
+    admin_email = os.environ.get("OIDF_ADMIN_EMAIL", "")
+    admin_password = os.environ.get("OIDF_ADMIN_PASSWORD", "")
+    if not admin_email or not admin_password:
+        raise OnboardingError("OIDF_ADMIN_EMAIL and OIDF_ADMIN_PASSWORD are required")
+    admin = ControlPlaneSession.login(origin, admin_email, admin_password)
+    for item in reversed(state.get("clients", [])):
+        if not isinstance(item, dict):
+            raise OnboardingError("cleanup state contains an invalid client record")
+        trust_request_id = item.get("mtls_trust_request_id")
+        if isinstance(trust_request_id, str):
+            admin.request_json(
+                "POST",
+                f"/admin/mtls-trust-requests/{urllib.parse.quote(trust_request_id, safe='')}/revoke",
+                {"reason": "Public conformance run completed."},
+                expected_status=200,
+                csrf=True,
+            )
+        client_id = item.get("client_id")
+        if not isinstance(client_id, str) or not client_id:
+            raise OnboardingError("cleanup state contains an invalid client_id")
+        admin.request_json(
+            "PATCH",
+            f"/admin/clients/{urllib.parse.quote(client_id, safe='')}",
+            {"is_active": False},
+            expected_status=200,
+            csrf=True,
+        )
+    args.state_file.unlink()
+    return 0
+
+
+def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("command", choices=("apply", "cleanup"))
+    parser.add_argument("--target-issuer", required=True)
+    parser.add_argument("--manifest", type=Path, default=Path("runtime/oidf/oidf-onboarding-manifest.json"))
+    parser.add_argument("--plan-configs", type=Path, default=Path("runtime/oidf/oidf-plan-configs.json"))
+    parser.add_argument("--plan-set", type=Path, default=Path("runtime/oidf/oidf-plan-set.json"))
+    parser.add_argument(
+        "--plan-manifest",
+        type=Path,
+        default=Path("runtime/oidf/oidf-plan-set-manifest.json"),
+    )
+    parser.add_argument("--runner-env", type=Path, default=Path("runtime/oidf/oidf-runner.env"))
+    parser.add_argument("--state-file", type=Path, default=Path("runtime/oidf/oidf-onboarding-state.json"))
+    parser.add_argument(
+        "--trust-bundle",
+        type=Path,
+        default=Path("runtime/oidf/approved-mtls-trust-anchors.pem"),
+    )
+    return parser.parse_args(argv)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = parse_args(argv)
+    try:
+        if args.command == "apply":
+            return apply_onboarding(args)
+        return cleanup_onboarding(args)
+    except OnboardingError as error:
+        raise SystemExit(str(error)) from error
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

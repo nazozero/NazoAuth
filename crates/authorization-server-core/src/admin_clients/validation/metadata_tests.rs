@@ -27,7 +27,6 @@ fn metadata<'a>(
         backchannel_logout_uri: None,
         frontchannel_logout_uri: None,
         jwks,
-        allow_jwks_without_kid: false,
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
         userinfo_signed_response_alg: None,

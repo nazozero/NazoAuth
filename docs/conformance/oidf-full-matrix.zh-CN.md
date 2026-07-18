@@ -2,7 +2,7 @@
 
 本文说明仓库维护的 OpenID Foundation Conformance Suite 完整矩阵。矩阵包含 25 个 plan；针对 TP/PS 的新增检查应映射到这些 plan 的覆盖范围，而不是另开一个临时矩阵。
 
-执行入口仍然是 `runtime/oidf/oidf-plan-set.json`。`scripts/setup_local_oidf_podman.py` 会同时生成 `runtime/oidf/oidf-plan-set-manifest.json`，用于记录每个 plan 的标题、描述和覆盖重点。
+执行入口为 `runtime/oidf/oidf-plan-set.json`。`scripts/prepare_oidf_black_box.py` 会同时生成 `runtime/oidf/oidf-plan-set-manifest.json`，用于记录每个 plan 的标题、描述和覆盖重点。
 
 在 `parallel-isolated` 模式下，25 个 plan 按有界公网套件批次执行：OIDC core（`2`）、OIDC Form Post / Third-Party Initiated Login / Config（`3`）、FAPI-CIBA（`4`，`--no-parallel`）、FAPI message-signing 与 mTLS/DPoP（`5`）、其余三个 FAPI 分组（各 `3`）、Front-Channel Logout（`1`，独立浏览器 job）和 Session Management（`1`，独立浏览器 job）。这样保留完整矩阵覆盖，同时避免 suite runner 的回调状态和浏览器会话状态互相争用。
 

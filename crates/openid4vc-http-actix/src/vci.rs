@@ -150,15 +150,27 @@ impl CredentialIssuerEndpoint {
         self.operations.pre_authorized_token(request).await
     }
 
-    fn management_authorized(&self, request: &HttpRequest) -> bool {
-        request
+    pub fn management_authorized(&self, request: &HttpRequest) -> bool {
+        authorized_by_exact_bearer(request, &self.management_token)
+    }
+}
+
+fn authorized_by_exact_bearer(request: &HttpRequest, expected: &[u8]) -> bool {
+    !expected.is_empty()
+        && request
             .headers()
             .get(header::AUTHORIZATION)
             .and_then(|value| value.to_str().ok())
             .and_then(|value| value.strip_prefix("Bearer "))
-            .map(str::trim)
-            .is_some_and(|provided| constant_time_eq(provided.as_bytes(), &self.management_token))
-    }
+            .filter(|value| !value.is_empty() && value.trim() == *value)
+            .is_some_and(|provided| constant_time_eq(provided.as_bytes(), expected))
+}
+
+fn management_unauthorized() -> HttpResponse {
+    HttpResponse::Unauthorized()
+        .insert_header((header::WWW_AUTHENTICATE, "Bearer"))
+        .insert_header((header::CACHE_CONTROL, "no-store"))
+        .json(serde_json::json!({"error":"invalid_token"}))
 }
 
 pub async fn create_credential_offer(
@@ -167,10 +179,7 @@ pub async fn create_credential_offer(
     body: web::Json<CreateCredentialOfferRequest>,
 ) -> HttpResponse {
     if !endpoint.management_authorized(&request) {
-        return HttpResponse::Unauthorized()
-            .insert_header((header::WWW_AUTHENTICATE, "Bearer"))
-            .insert_header((header::CACHE_CONTROL, "no-store"))
-            .json(serde_json::json!({"error":"invalid_token"}));
+        return management_unauthorized();
     }
     match endpoint.operations.create_offer(body.into_inner()).await {
         Ok(response) => json_no_store(response),

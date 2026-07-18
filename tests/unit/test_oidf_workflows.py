@@ -9,32 +9,49 @@ def workflow_heredoc_json(workflow: str, name: str):
     return json.loads(payload)
 
 class OidfWorkflowTests(unittest.TestCase):
-    def test_public_seed_workflow_derives_the_complete_ciba_matrix(self):
+    def test_public_onboarding_workflow_derives_the_complete_ciba_matrix(self):
         root = Path(__file__).resolve().parents[2]
         workflow = (
-            root / ".github" / "workflows" / "oidf-public-seed-configs.yml"
+            root / ".github" / "workflows" / "oidf-public-onboarding-material.yml"
         ).read_text(encoding="utf-8")
 
         self.assertIn("--derive-fapi-ciba-matrix-configs", workflow)
         self.assertIn(
-            "--ciba-notification-base-url https://www.certification.openid.net",
+            '--ciba-notification-base-url "${{ inputs.suite_base_url }}"',
             workflow,
         )
+        self.assertIn("suite_base_url:", workflow)
+        self.assertIn(
+            '--suite-base-url "${{ inputs.suite_base_url }}"',
+            workflow,
+        )
+        self.assertNotIn("https://www.certification.openid.net", workflow)
+        self.assertIn("materialize_openid4vc_oidf_config.py", workflow)
+        self.assertIn(
+            "--config-json-file runtime/openid4vc/materialized/openid4vc-plan-configs.json",
+            workflow,
+        )
+        self.assertIn("OPENID4VC_OIDF_BASE_CONFIG_JSON", workflow)
+        self.assertIn("OPENID4VC_OIDF_DRIVER_CONFIG_JSON", workflow)
 
-    def test_public_seed_artifacts_include_a_validated_mtls_ca_bundle(self):
+    def test_public_onboarding_artifacts_include_a_validated_mtls_ca_bundle(self):
         root = Path(__file__).resolve().parents[2]
         validation = (
-            "python scripts/oidf_mtls_ca_bundle.py verify \\\n"
-            "            --artifact-directory oidf-public-plan-configs"
+            "python scripts/oidf_onboarding_bundle.py verify \\\n"
+            "            --artifact-directory oidf-public-onboarding-material"
         )
-        for name in ("oidf-public-seed-configs.yml", "oidf-conformance-full.yml"):
-            workflow = (root / ".github" / "workflows" / name).read_text(
-                encoding="utf-8"
-            )
-            self.assertIn(validation, workflow)
-            self.assertIn('--source-commit "$GITHUB_SHA"', workflow)
-            self.assertIn('--expected-source-commit "$GITHUB_SHA"', workflow)
-            self.assertIn("path: oidf-public-plan-configs", workflow)
+        workflow = (
+            root / ".github" / "workflows" / "oidf-public-onboarding-material.yml"
+        ).read_text(encoding="utf-8")
+        self.assertIn(validation, workflow)
+        self.assertIn('--source-commit "$GITHUB_SHA"', workflow)
+        self.assertIn('--expected-source-commit "$GITHUB_SHA"', workflow)
+        self.assertIn("path: oidf-public-onboarding-material", workflow)
+
+        conformance = (
+            root / ".github" / "workflows" / "oidf-conformance-full.yml"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("Upload public OIDF onboarding material", conformance)
 
     def test_oidf_workflows_default_to_latest_verified_release(self):
         root = Path(__file__).resolve().parents[2]
@@ -176,7 +193,7 @@ class OidfWorkflowTests(unittest.TestCase):
             "oidf-oidcc-third-party-init-plan-config.json"
         )
         self.assertIn(third_party_init, concurrent_plan_set)
-        setup_source = (root / "scripts" / "setup_local_oidf_podman.py").read_text(
+        setup_source = (root / "scripts" / "prepare_oidf_black_box.py").read_text(
             encoding="utf-8"
         )
         runner_source = (root / "scripts" / "run_oidf_conformance.py").read_text(

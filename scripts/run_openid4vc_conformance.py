@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Drive NazoAuth's issuer/verifier management APIs while the official OIDF runner executes.
+"""Drive issuer/verifier management APIs while the official OIDF runner executes.
 
 The upstream OpenID4VC plans test an issuer or verifier, so they wait for the
 implementation under test to initiate the flow. This wrapper is deliberately
@@ -20,10 +20,16 @@ import tempfile
 import threading
 import time
 import urllib.parse
+import urllib.error
 import urllib.request
+import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_oidf_conformance as oidf  # noqa: E402
+from apply_public_conformance_onboarding import (  # noqa: E402
+    ControlPlaneSession,
+    OnboardingError,
+)
 
 
 PRE_AUTHORIZED_CODE_GRANT = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
@@ -34,7 +40,95 @@ def fail(message: str) -> None:
     raise SystemExit(message)
 
 
+def install_credential_datasets(
+    config: dict[str, object],
+) -> tuple[ControlPlaneSession, list[tuple[str, str]]]:
+    issuer = config.get("issuer")
+    if not isinstance(issuer, dict) or issuer.get("dedicated_conformance_subject") is not True:
+        raise RuntimeError(
+            "OpenID4VC black-box runs require an explicitly dedicated conformance subject"
+        )
+    subject_id = issuer.get("subject_id")
+    try:
+        subject_id = str(uuid.UUID(str(subject_id)))
+    except (ValueError, TypeError, AttributeError) as error:
+        raise RuntimeError("issuer subject_id must be a UUID") from error
+    datasets = issuer.get("credential_datasets")
+    if not isinstance(datasets, dict) or not datasets:
+        raise RuntimeError("issuer credential_datasets must be a non-empty object")
+    if any(
+        not isinstance(configuration_id, str)
+        or not configuration_id
+        or not isinstance(claims, dict)
+        or not claims
+        for configuration_id, claims in datasets.items()
+    ):
+        raise RuntimeError("issuer credential_datasets contains an invalid entry")
+    origin = canonical_https_origin(str(config.get("target_origin", "")), label="target_origin")
+    admin_email = os.environ.get("OIDF_ADMIN_EMAIL", "")
+    admin_password = os.environ.get("OIDF_ADMIN_PASSWORD", "")
+    if not admin_email or not admin_password:
+        raise RuntimeError("OIDF_ADMIN_EMAIL and OIDF_ADMIN_PASSWORD are required")
+    try:
+        admin = ControlPlaneSession.login(origin, admin_email, admin_password)
+        profile = admin.request_json("GET", "/auth/me", expected_status=200)
+    except OnboardingError as error:
+        raise RuntimeError(f"OpenID4VC admin control-plane login failed: {error}") from error
+    if int(profile.get("admin_level", 0)) < 1:
+        raise RuntimeError("OpenID4VC dataset operator is not an administrator")
+
+    installed: list[tuple[str, str]] = []
+    try:
+        for configuration_id, claims in sorted(datasets.items()):
+            encoded_configuration = urllib.parse.quote(configuration_id, safe="")
+            path = (
+                f"/admin/openid4vci/credential-datasets/{subject_id}/"
+                f"{encoded_configuration}"
+            )
+            admin.request_json(
+                "PUT",
+                path,
+                {"claims": claims},
+                expected_status=200,
+                csrf=True,
+            )
+            installed.append((subject_id, encoded_configuration))
+    except OnboardingError as error:
+        cleanup_credential_datasets(admin, installed)
+        raise RuntimeError(f"OpenID4VC dataset installation failed: {error}") from error
+    return admin, installed
+
+
+def cleanup_credential_datasets(
+    admin: ControlPlaneSession,
+    installed: list[tuple[str, str]],
+) -> None:
+    failures: list[str] = []
+    for subject_id, encoded_configuration in reversed(installed):
+        path = (
+            f"/admin/openid4vci/credential-datasets/{subject_id}/"
+            f"{encoded_configuration}"
+        )
+        try:
+            admin.request("DELETE", path, expected_status=204, csrf=True)
+        except OnboardingError as error:
+            failures.append(str(error))
+    if failures:
+        raise RuntimeError(
+            "OpenID4VC dataset cleanup failed: " + "; ".join(failures)
+        )
+
+
 def request_json(method: str, url: str, token: str, payload: object | None = None) -> object:
+    parsed = urllib.parse.urlsplit(url)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise RuntimeError("management request URL must be HTTPS without credentials or fragment")
     body = None if payload is None else json.dumps(payload, separators=(",", ":")).encode()
     request = urllib.request.Request(
         url,
@@ -46,33 +140,71 @@ def request_json(method: str, url: str, token: str, payload: object | None = Non
             **({"Content-Type": "application/json"} if body is not None else {}),
         },
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        encoded = response.read()
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(),
+        NoRedirectHandler(),
+    )
+    try:
+        response = opener.open(request, timeout=30)
+    except urllib.error.HTTPError as error:
+        detail = error.read(64 * 1024).decode("utf-8", errors="replace")
+        raise RuntimeError(f"management request failed with HTTP {error.code}: {detail}") from error
+    with response:
+        encoded = response.read(1024 * 1024 + 1)
+        if len(encoded) > 1024 * 1024:
+            raise RuntimeError("management response exceeds 1 MiB")
+        if "application/json" not in response.headers.get("Content-Type", "").lower():
+            raise RuntimeError("management response is not JSON")
     return json.loads(encoded) if encoded else {}
 
 
+class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        raise RuntimeError(f"unexpected redirect while delivering conformance input: {code} {newurl}")
+
+
 def get_url(url: str) -> None:
-    with urllib.request.urlopen(url, timeout=30, context=oidf.OIDF_API_SSL_CONTEXT) as response:
+    opener = urllib.request.build_opener(
+        urllib.request.HTTPSHandler(context=oidf.OIDF_API_SSL_CONTEXT),
+        NoRedirectHandler(),
+    )
+    with opener.open(url, timeout=30) as response:
         response.read()
 
 
-def suite_reachable_url(conformance_server: str, url: str) -> str:
-    parsed = urllib.parse.urlparse(url)
-    if parsed.hostname not in {"nginx"}:
-        return url
-    base = urllib.parse.urlparse(conformance_server)
-    if base.scheme not in {"http", "https"} or not base.netloc:
-        raise RuntimeError("conformance_server must be an absolute HTTP(S) URL")
-    return urllib.parse.urlunparse(
-        (
-            base.scheme,
-            base.netloc,
-            parsed.path,
-            parsed.params,
-            parsed.query,
-            parsed.fragment,
-        )
+def canonical_https_origin(value: str, *, label: str) -> str:
+    parsed = urllib.parse.urlsplit(value.strip())
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.path not in {"", "/"}
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError(f"{label} must be an HTTPS origin")
+    port = parsed.port
+    authority = parsed.hostname.lower() if port in {None, 443} else f"{parsed.hostname.lower()}:{port}"
+    return f"https://{authority}"
+
+
+def suite_callback_url(conformance_server: str, value: str) -> str:
+    suite_origin = canonical_https_origin(conformance_server, label="conformance_server")
+    parsed = urllib.parse.urlsplit(value)
+    candidate_origin = canonical_https_origin(
+        f"{parsed.scheme}://{parsed.netloc}", label="suite callback origin"
     )
+    if (
+        candidate_origin != suite_origin
+        or parsed.username is not None
+        or parsed.password is not None
+        or not parsed.path.startswith("/test/")
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise RuntimeError("suite callback must be a query-free /test/ URL on the configured public suite origin")
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, parsed.path, "", ""))
 
 
 def module_entries(
@@ -149,16 +281,12 @@ class Openid4vcDriver:
 
     def drive_once(self) -> None:
         server = str(self.config["conformance_server"])
-        no_api_token = self.config.get("conformance_no_api_token") is True
-        hostname = urllib.parse.urlparse(server).hostname
-        if no_api_token and hostname not in {"localhost", "127.0.0.1", "::1"}:
-            raise RuntimeError("tokenless conformance API access is restricted to loopback")
         configured_token = str(
             self.config.get("conformance_token") or os.environ.get("OIDF_CONFORMANCE_TOKEN", "")
         )
-        token = None if no_api_token else configured_token
-        if token == "":
+        if configured_token == "":
             raise RuntimeError("OIDF conformance API token is required")
+        token = configured_token
         aliases = {str(value) for value in self.config["aliases"]}
         max_workers = int(self.config.get("driver_scan_workers", 8))
         start = time.monotonic()
@@ -198,8 +326,9 @@ class Openid4vcDriver:
     def drive_issuer(self, module_id: str, info: dict[str, object], variant: dict[str, object]) -> None:
         exposed = info.get("exposed")
         endpoint = exposed.get("credential_offer_endpoint") if isinstance(exposed, dict) else None
-        if not isinstance(endpoint, str) or not endpoint.startswith("https://"):
+        if not isinstance(endpoint, str):
             return
+        endpoint = suite_callback_url(str(self.config["conformance_server"]), endpoint)
         issuer = self.config["issuer"]
         format_name = str(variant.get("credential_format", "sd_jwt_vc"))
         configuration_ids = issuer["credential_configuration_ids"]
@@ -224,7 +353,7 @@ class Openid4vcDriver:
             callback = f"{endpoint}?{urllib.parse.urlencode({'credential_offer': value})}"
         else:
             callback = f"{endpoint}?{urllib.parse.urlencode({'credential_offer_uri': offer['credential_offer_uri']})}"
-        get_url(suite_reachable_url(str(self.config["conformance_server"]), callback))
+        get_url(callback)
         self.triggered.add(module_id)
         print(f"OpenID4VC driver delivered credential offer to {module_id}", flush=True)
 
@@ -420,11 +549,9 @@ def main() -> int:
     if args.plan_group_size < 0:
         fail("--plan-group-size must be zero or greater")
     config = json.loads(Path(args.driver_config_json_file).read_text(encoding="utf-8"))
-    if "--no-api-token" in runner_args:
-        config["conformance_no_api_token"] = True
-    if "--disable-ssl-verify" in runner_args:
-        config["conformance_disable_ssl_verify"] = True
-        oidf.OIDF_API_SSL_CONTEXT = oidf.ssl._create_unverified_context()
+    if "--no-api-token" in runner_args or "--disable-ssl-verify" in runner_args:
+        fail("public black-box OpenID4VC runs require API authentication and TLS verification")
+    admin, installed_datasets = install_credential_datasets(config)
     stop = threading.Event()
     driver = Openid4vcDriver(config, stop)
     thread = threading.Thread(target=driver.run, name="openid4vc-oidf-driver", daemon=True)
@@ -438,6 +565,7 @@ def main() -> int:
     finally:
         stop.set()
         thread.join(timeout=5)
+        cleanup_credential_datasets(admin, installed_datasets)
 
 
 if __name__ == "__main__":

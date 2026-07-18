@@ -4,4 +4,6 @@ pub(crate) mod access_requests;
 pub(crate) mod clients;
 pub(crate) mod federation;
 pub(crate) mod grants;
+pub(crate) mod mtls_trust;
+pub(crate) mod openid4vc;
 pub(crate) mod users;

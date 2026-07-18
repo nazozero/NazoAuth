@@ -64,7 +64,8 @@ pub trait SectorIdentifierResolverPort: Send + Sync {
 pub trait AdminClientCryptoPort: Send + Sync {
     fn response_signing_algorithms(&self) -> Vec<String>;
     fn issue_client_secret(&self, pepper: &str) -> (String, String);
-    fn validate_jwks(&self, jwks: &Value, allow_missing_kid: bool) -> Result<(), String>;
+    fn validate_jwks(&self, jwks: &Value) -> Result<(), String>;
+    fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String>;
     fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize;
     fn contains_signing_key(&self, jwks: &Value) -> bool;
     fn valid_self_signed_mtls_jwks(&self, jwks: &Value) -> bool;
@@ -117,7 +118,7 @@ impl std::fmt::Display for AdminClientError {
 
 impl std::error::Error for AdminClientError {}
 
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, serde::Serialize)]
 pub struct CreateClientRequest {
     pub client_name: String,
     pub client_type: String,
@@ -134,6 +135,8 @@ pub struct CreateClientRequest {
     pub sector_identifier_uri: Option<String>,
     #[serde(default)]
     pub require_dpop_bound_tokens: bool,
+    #[serde(default)]
+    pub require_mtls_bound_tokens: bool,
     #[serde(default)]
     pub allow_client_assertion_audience_array: bool,
     #[serde(default)]
@@ -193,8 +196,6 @@ pub struct CreateClientRequest {
     pub authorization_encrypted_response_alg: Option<String>,
     #[serde(default)]
     pub authorization_encrypted_response_enc: Option<String>,
-    #[serde(default, skip_deserializing)]
-    pub allow_jwks_without_kid: bool,
 }
 
 #[derive(Clone, Debug, Default, Deserialize)]
@@ -206,6 +207,7 @@ pub struct PatchClientRequest {
     pub allowed_audiences: Option<Vec<String>>,
     pub grant_types: Option<Vec<String>>,
     pub require_dpop_bound_tokens: Option<bool>,
+    pub require_mtls_bound_tokens: Option<bool>,
     pub allow_client_assertion_audience_array: Option<bool>,
     pub allow_client_assertion_endpoint_audience: Option<bool>,
     pub require_par_request_object: Option<bool>,
@@ -245,6 +247,7 @@ fn default_ciba_delivery_mode() -> String {
 pub struct PreparedClientRegistration {
     pub tenant: TenantContext,
     pub registration: ValidatedClientRegistration,
+    pub require_mtls_bound_tokens: bool,
     pub issued_secret: Option<String>,
     pub client_secret_hash: Option<String>,
     pub registration_access_token_blake3: Option<String>,
@@ -256,6 +259,7 @@ impl std::fmt::Debug for PreparedClientRegistration {
             .debug_struct("PreparedClientRegistration")
             .field("tenant", &self.tenant)
             .field("registration", &self.registration)
+            .field("require_mtls_bound_tokens", &self.require_mtls_bound_tokens)
             .field(
                 "issued_secret",
                 &self.issued_secret.as_ref().map(|_| "[REDACTED]"),
@@ -415,7 +419,7 @@ pub async fn insert_prepared_client<R: AdminClientRepositoryPort>(
         realm_id: prepared.tenant.realm_id.as_uuid(),
         organization_id: prepared.tenant.organization_id.as_uuid(),
         registration: prepared.registration.clone(),
-        require_mtls_bound_tokens: false,
+        require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
         is_active: true,
     };
     let inserted = repository
@@ -540,6 +544,7 @@ where
                 request.authorization_encrypted_response_enc,
             ),
         },
+        require_mtls_bound_tokens: request.require_mtls_bound_tokens,
         issued_secret,
         client_secret_hash,
         registration_access_token_blake3: None,
@@ -578,6 +583,9 @@ where
     }
     if let Some(value) = request.require_dpop_bound_tokens {
         client.require_dpop_bound_tokens = value;
+    }
+    if let Some(value) = request.require_mtls_bound_tokens {
+        client.require_mtls_bound_tokens = value;
     }
     if let Some(value) = request.allow_client_assertion_audience_array {
         client.allow_client_assertion_audience_array = value;

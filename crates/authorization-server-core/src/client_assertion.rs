@@ -248,13 +248,6 @@ fn client_assertion_decoding_key(
     }
     let keys = client.jwks.as_ref()?.get("keys")?.as_array()?;
     let mut matching = keys.iter().filter_map(|key| {
-        if key
-            .get("kid")
-            .and_then(Value::as_str)
-            .is_some_and(|kid| !kid.trim().is_empty())
-        {
-            return None;
-        }
         jwt_decoding_key_from_jwk(key, algorithm).map(|decoding_key| (None, decoding_key))
     });
     let selected = matching.next()?;

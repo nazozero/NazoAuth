@@ -36,6 +36,7 @@ fn create_request() -> CreateClientRequest {
         grant_types: vec!["authorization_code".to_owned(), "refresh_token".to_owned()],
         token_endpoint_auth_method: "private_key_jwt".to_owned(),
         require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: true,
@@ -66,7 +67,6 @@ fn create_request() -> CreateClientRequest {
         authorization_signed_response_alg: None,
         authorization_encrypted_response_alg: None,
         authorization_encrypted_response_enc: None,
-        allow_jwks_without_kid: false,
         subject_type: None,
         sector_identifier_uri: None,
     }
@@ -137,24 +137,20 @@ async fn prepare_client_insert_does_not_issue_secret_for_public_or_mtls_clients(
 }
 
 #[actix_web::test]
-async fn prepare_client_insert_normalizes_optional_string_metadata() {
+async fn prepare_client_insert_normalizes_logout_strings_with_one_exact_mtls_selector() {
     let mut payload = create_request();
     payload.token_endpoint_auth_method = "tls_client_auth".to_owned();
     payload.jwks = None;
     payload.backchannel_logout_uri = Some("  https://client.example/backchannel  ".to_owned());
     payload.frontchannel_logout_uri = Some("  https://client.example/frontchannel  ".to_owned());
     payload.post_logout_redirect_uris = vec!["https://client.example/logout".to_owned()];
-    payload.tls_client_auth_subject_dn = Some("  CN=client.example  ".to_owned());
+    payload.tls_client_auth_subject_dn = Some("CN=client.example".to_owned());
     payload.tls_client_auth_cert_sha256 = None;
-    payload.tls_client_auth_san_dns = vec!["client.example".to_owned()];
-    payload.tls_client_auth_san_uri = vec!["spiffe://client".to_owned()];
-    payload.tls_client_auth_san_ip = vec!["192.0.2.10".to_owned()];
-    payload.tls_client_auth_san_email = vec!["ops@example.com".to_owned()];
 
     let prepared =
         match prepare_client_insert_for_test(payload, None, "http://localhost:8000").await {
             Ok(prepared) => prepared,
-            Err(_) => panic!("mTLS metadata with surrounding whitespace should be normalizable"),
+            Err(_) => panic!("one exact RFC 8705 selector is valid"),
         };
 
     assert_eq!(
@@ -175,10 +171,10 @@ async fn prepare_client_insert_normalizes_optional_string_metadata() {
         Some("CN=client.example")
     );
     assert!(prepared.tls_client_auth_cert_sha256.is_none());
-    assert_eq!(prepared.tls_client_auth_san_dns, vec!["client.example"]);
-    assert_eq!(prepared.tls_client_auth_san_uri, vec!["spiffe://client"]);
-    assert_eq!(prepared.tls_client_auth_san_ip, vec!["192.0.2.10"]);
-    assert_eq!(prepared.tls_client_auth_san_email, vec!["ops@example.com"]);
+    assert!(prepared.tls_client_auth_san_dns.is_empty());
+    assert!(prepared.tls_client_auth_san_uri.is_empty());
+    assert!(prepared.tls_client_auth_san_ip.is_empty());
+    assert!(prepared.tls_client_auth_san_email.is_empty());
 }
 
 #[actix_web::test]

@@ -10,6 +10,7 @@ pub mod federation;
 pub mod mfa;
 mod mfa_service;
 mod model;
+mod mtls_trust;
 pub mod passkey;
 pub mod ports;
 pub mod profile;
@@ -47,6 +48,10 @@ pub use model::{
     AccountIdentity, AuthMethod, AuthenticationContext, AuthenticationIdentity, IdentityModelError,
     LoginIdentity, PasswordHash, PostalAddress, Principal, PublicAccount, SubjectClaims,
     UserProfile, UserRole,
+};
+pub use mtls_trust::{
+    MtlsTrustAnchorRequest, MtlsTrustAnchorRequestPage, MtlsTrustAnchorStatus,
+    NewMtlsTrustAnchorRequest,
 };
 pub use passkey::{
     PasskeyAuditEvent, PasskeyError, PasskeyLoginBegin, PasskeyRegistrationBegin, PasskeyService,

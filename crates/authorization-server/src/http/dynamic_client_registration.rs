@@ -381,12 +381,12 @@ impl AdminClientCryptoPort for DynamicRegistrationCrypto<'_> {
         (secret, digest)
     }
 
-    fn validate_jwks(&self, jwks: &Value, allow_missing_kid: bool) -> Result<(), String> {
-        crate::domain::client_policy::validate_client_jwks_with_missing_kid_policy(
-            jwks,
-            allow_missing_kid,
-        )
-        .map_err(|error| error.to_string())
+    fn validate_jwks(&self, jwks: &Value) -> Result<(), String> {
+        crate::domain::client_policy::validate_client_jwks(jwks).map_err(|error| error.to_string())
+    }
+
+    fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
+        nazo_key_management::validate_rfc4514_dn(value)
     }
 
     fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {

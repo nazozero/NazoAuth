@@ -214,24 +214,46 @@ pub(crate) fn client_mtls_certificate_matches(
     if client.token_endpoint_auth_method == "self_signed_tls_client_auth" {
         return client_self_signed_mtls_certificate_matches(client, certificate);
     }
-    if certificate
-        .thumbprint
-        .as_deref()
-        .is_some_and(|thumbprint| client_mtls_thumbprint_matches(client, thumbprint))
-    {
-        return true;
+    let selector_count = usize::from(client.tls_client_auth_subject_dn.is_some())
+        + client.tls_client_auth_san_dns.len()
+        + client.tls_client_auth_san_uri.len()
+        + client.tls_client_auth_san_ip.len()
+        + client.tls_client_auth_san_email.len();
+    if selector_count != 1 {
+        // RFC 8705 requires one and only one PKI subject selector. Fail closed
+        // for legacy or manually corrupted rows instead of widening the match.
+        return false;
     }
-    if let (Some(registered), Some(actual)) = (
+    let standard_subject_matches = if let (Some(registered), Some(actual)) = (
         client.tls_client_auth_subject_dn.as_deref(),
         certificate.subject_dn.as_deref(),
-    ) && constant_time_eq(registered.trim().as_bytes(), actual.trim().as_bytes())
-    {
-        return true;
+    ) {
+        nazo_key_management::rfc4514_dn_matches(registered, actual)
+    } else if !client.tls_client_auth_san_dns.is_empty() {
+        registered_dns_values_match(&client.tls_client_auth_san_dns, &certificate.san_dns)
+    } else if !client.tls_client_auth_san_uri.is_empty() {
+        registered_values_match(&client.tls_client_auth_san_uri, &certificate.san_uri)
+    } else if !client.tls_client_auth_san_ip.is_empty() {
+        registered_ip_values_match(&client.tls_client_auth_san_ip, &certificate.san_ip)
+    } else if !client.tls_client_auth_san_email.is_empty() {
+        registered_email_values_match(&client.tls_client_auth_san_email, &certificate.san_email)
+    } else {
+        false
+    };
+    if !standard_subject_matches {
+        return false;
     }
-    registered_values_match(&client.tls_client_auth_san_dns, &certificate.san_dns)
-        || registered_values_match(&client.tls_client_auth_san_uri, &certificate.san_uri)
-        || registered_values_match(&client.tls_client_auth_san_ip, &certificate.san_ip)
-        || registered_values_match(&client.tls_client_auth_san_email, &certificate.san_email)
+    // The SHA-256 field is an administrator-only extra pin, not RFC 8705
+    // registration metadata. When present it narrows the standard subject
+    // match and never acts as an alternative identity selector.
+    match (
+        client.tls_client_auth_cert_sha256.as_deref(),
+        certificate.thumbprint.as_deref(),
+    ) {
+        (None, _) => true,
+        (Some(_), Some(thumbprint)) => client_mtls_thumbprint_matches(client, thumbprint),
+        (Some(_), None) => false,
+    }
 }
 
 pub(crate) fn client_self_signed_mtls_certificate_matches(
@@ -434,6 +456,41 @@ fn registered_values_match(registered: &[String], actual: &[String]) -> bool {
         actual
             .iter()
             .any(|actual| constant_time_eq(registered.as_bytes(), actual.as_bytes()))
+    })
+}
+
+fn registered_dns_values_match(registered: &[String], actual: &[String]) -> bool {
+    registered.iter().any(|registered| {
+        actual
+            .iter()
+            .any(|actual| registered.eq_ignore_ascii_case(actual))
+    })
+}
+
+fn registered_ip_values_match(registered: &[String], actual: &[String]) -> bool {
+    registered.iter().any(|registered| {
+        let Ok(registered) = registered.parse::<IpAddr>() else {
+            return false;
+        };
+        actual
+            .iter()
+            .filter_map(|actual| actual.parse::<IpAddr>().ok())
+            .any(|actual| actual == registered)
+    })
+}
+
+fn registered_email_values_match(registered: &[String], actual: &[String]) -> bool {
+    registered.iter().any(|registered| {
+        let Some((registered_local, registered_domain)) = registered.rsplit_once('@') else {
+            return false;
+        };
+        actual.iter().any(|actual| {
+            let Some((actual_local, actual_domain)) = actual.rsplit_once('@') else {
+                return false;
+            };
+            constant_time_eq(registered_local.as_bytes(), actual_local.as_bytes())
+                && registered_domain.eq_ignore_ascii_case(actual_domain)
+        })
     })
 }
 

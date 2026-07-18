@@ -76,6 +76,25 @@ fn audit_event_definitions_include_mfa_step_up() {
 }
 
 #[test]
+fn audit_event_definitions_include_trust_and_credential_control_planes() {
+    for name in [
+        "mtls_trust_anchor_requested",
+        "mtls_trust_anchor_approved",
+        "mtls_trust_anchor_rejected",
+        "mtls_trust_anchor_revoked",
+        "mtls_trust_bundle_exported",
+    ] {
+        assert_eq!(audit_event_category(name), Some("trust_lifecycle"));
+    }
+    for name in [
+        "openid4vci_credential_dataset_updated",
+        "openid4vci_credential_dataset_deleted",
+    ] {
+        assert_eq!(audit_event_category(name), Some("credential_lifecycle"));
+    }
+}
+
+#[test]
 fn audit_schema_version_is_stable_for_collectors() {
     assert_eq!(AUDIT_SCHEMA_VERSION, "nazo.audit.v1");
 }

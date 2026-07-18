@@ -17,7 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SCRIPT = ROOT / "scripts" / "deploy_live.ps1"
 
 
-EXPECTED_BRANCH = "codex/modular-workspace-architecture"
+EXPECTED_BRANCH = "main"
 
 
 def init_repo(
@@ -90,78 +90,6 @@ def write_frontend_manifest(dist: Path, commit: str) -> None:
     )
 
 
-def create_oidf_artifact(root: Path, artifact: Path, source_commit: str) -> None:
-    fixture = root / "oidf-artifact-fixture"
-    fixture.mkdir()
-    ca_key = fixture / "ca.key"
-    ca_cert = fixture / "ca.pem"
-    leaf_key = fixture / "leaf.key"
-    leaf_csr = fixture / "leaf.csr"
-    leaf_cert = fixture / "leaf.pem"
-    extensions = fixture / "leaf.ext"
-    extensions.write_text(
-        "basicConstraints=critical,CA:FALSE\n"
-        "keyUsage=critical,digitalSignature,keyEncipherment\n"
-        "extendedKeyUsage=clientAuth\n"
-        "subjectKeyIdentifier=hash\n"
-        "authorityKeyIdentifier=keyid,issuer\n",
-        encoding="ascii",
-    )
-    for command in (
-        [
-            "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-            "-keyout", str(ca_key), "-out", str(ca_cert), "-days", "1",
-            "-subj", "/CN=deploy fixture CA",
-            "-addext", "basicConstraints=critical,CA:TRUE",
-            "-addext", "keyUsage=critical,keyCertSign,cRLSign",
-        ],
-        [
-            "openssl", "req", "-newkey", "rsa:2048", "-nodes",
-            "-keyout", str(leaf_key), "-out", str(leaf_csr),
-            "-subj", "/CN=deploy fixture client",
-        ],
-        [
-            "openssl", "x509", "-req", "-in", str(leaf_csr),
-            "-CA", str(ca_cert), "-CAkey", str(ca_key), "-CAcreateserial",
-            "-out", str(leaf_cert), "-days", "1", "-extfile", str(extensions),
-        ],
-    ):
-        subprocess.run(command, check=True, capture_output=True)
-    rendered = fixture / "configs.json"
-    rendered.write_text(
-        json.dumps(
-            {
-                "configs": {
-                    "fixture-plan-config.json": {
-                        "alias": "fixture",
-                        "mtls": {
-                            "ca": ca_cert.read_text(encoding="ascii"),
-                            "cert": leaf_cert.read_text(encoding="ascii"),
-                            "key": leaf_key.read_text(encoding="ascii"),
-                        },
-                    }
-                }
-            }
-        ),
-        encoding="utf-8",
-    )
-    subprocess.run(
-        [
-            "python",
-            str(ROOT / "scripts" / "export_oidf_public_plan_configs.py"),
-            "--config-json-file",
-            str(rendered),
-            "--output-dir",
-            str(artifact),
-            "--source-commit",
-            source_commit,
-        ],
-        cwd=ROOT,
-        check=True,
-        capture_output=True,
-    )
-
-
 def git_bash() -> str:
     candidate = Path(r"C:\Program Files\Git\bin\bash.exe")
     return str(candidate) if candidate.exists() else "bash"
@@ -188,22 +116,11 @@ def render_fixture(
     extra_arguments: list[str] | None = None,
     *,
     skip_migrate: bool = True,
-    oidf_artifact: Path | None = None,
 ) -> Path:
     backend = root / "backend"
     frontend = root / "frontend"
-    backend_commit = init_repo(
-        backend,
-        {
-            "Containerfile": "FROM scratch\n",
-            "scripts/oidf_mtls_ca_bundle.py": (
-                ROOT / "scripts" / "oidf_mtls_ca_bundle.py"
-            ).read_text(encoding="utf-8"),
-        },
-    )
+    backend_commit = init_repo(backend, {"Containerfile": "FROM scratch\n"})
     frontend_commit = init_repo(frontend, {".gitignore": "dist/\n"})
-    if oidf_artifact is not None:
-        create_oidf_artifact(root, oidf_artifact, backend_commit)
     ui = frontend / "dist"
     ui.mkdir()
     (ui / "index.html").write_text("ok", encoding="utf-8")
@@ -224,8 +141,6 @@ def render_fixture(
     if skip_migrate:
         command.append("-SkipMigrate")
     command.extend(extra_arguments or [])
-    if oidf_artifact is not None:
-        command.extend(["-OidfPublicSeedArtifactDirectory", str(oidf_artifact)])
     completed = subprocess.run(
         command, cwd=ROOT, capture_output=True, text=True, errors="replace",
         timeout=20, check=False,
@@ -274,7 +189,6 @@ class FakeLifecycle:
         *,
         lease_seconds: int = 30,
         skip_migrate: bool = False,
-        enable_oidf_ca: bool = False,
     ):
         self.root = root
         self.deployment = root / "remote-deployment"
@@ -292,8 +206,8 @@ class FakeLifecycle:
         self.remote_temp.mkdir()
         angie_root = root / "angie"
         angie_root.mkdir()
-        self.angie_oidf_config = angie_root / "issuer.example.conf"
-        self.angie_oidf_config.write_text(
+        self.angie_config = angie_root / "issuer.example.conf"
+        self.angie_config.write_text(
             "server {\n"
             "  location / {\n"
             "    proxy_pass http://10.101.0.20:8000;\n"
@@ -309,60 +223,14 @@ class FakeLifecycle:
                 "-RemoteAvatarsPath", bash_path(self.avatars),
                 "-RemoteUiPath", bash_path(self.ui_path),
                 "-RemoteUiReleasesRoot", bash_path(self.ui_releases),
-                "-RemoteAngieOidfConfigPath", bash_path(self.angie_oidf_config),
+                "-RemoteAngieConfigPath", bash_path(self.angie_config),
                 "-VerificationLeaseSeconds", str(lease_seconds),
         ]
-        self.oidf_ca_target: Path | None = None
-        self.previous_oidf_ca: bytes | None = None
-        if enable_oidf_ca:
-            artifact = root / "oidf-public-plan-configs"
-            self.oidf_ca_target = angie_root / "oidf-mtls-ca.crt"
-            old_key = angie_root / "old-ca.key"
-            subprocess.run(
-                [
-                    "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes",
-                    "-keyout", str(old_key), "-out", str(self.oidf_ca_target),
-                    "-days", "1", "-subj", "/CN=old deployment CA",
-                    "-addext", "basicConstraints=critical,CA:TRUE",
-                    "-addext", "keyUsage=critical,keyCertSign,cRLSign",
-                ],
-                check=True,
-                capture_output=True,
-            )
-            old_key.unlink()
-            self.previous_oidf_ca = self.oidf_ca_target.read_bytes()
-            self.angie_oidf_config.write_text(
-                "server {\n"
-                f"ssl_client_certificate {self.oidf_ca_target.as_posix()};\n"
-                "ssl_verify_client optional;\n"
-                "proxy_set_header X-SSL-Client-Verify $ssl_client_verify;\n"
-                "proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;\n"
-                "location / {\n"
-                "proxy_pass http://10.101.0.20:8000;\n"
-                "}\n"
-                "}\n",
-                encoding="utf-8",
-            )
-            render_arguments.extend(
-                [
-                    "-RemoteOidfMtlsCaPath", bash_path(self.oidf_ca_target),
-                ]
-            )
         rendered = render_fixture(
             root,
             render_arguments,
             skip_migrate=skip_migrate,
-            oidf_artifact=artifact if enable_oidf_ca else None,
         )
-        if enable_oidf_ca:
-            shutil.copytree(
-                root / "oidf-public-plan-configs",
-                self.remote_temp / "oidf-public-plan-configs",
-            )
-            shutil.copyfile(
-                ROOT / "scripts" / "oidf_mtls_ca_bundle.py",
-                self.remote_temp / "oidf_mtls_ca_bundle.py",
-            )
         source = rendered.read_text(encoding="utf-8")
         self.backend_commit = re.search(r"^BACKEND_COMMIT='([^']+)'", source, re.M).group(1)
         def assigned(name: str) -> Path:
@@ -371,7 +239,6 @@ class FakeLifecycle:
         self.state = assigned("STATE_FILE")
         self.ui_archive = assigned("REMOTE_UI_ARCHIVE")
         self.image_archive = assigned("REMOTE_ARCHIVE")
-        self.oidf_ca_backup = assigned("OIDF_CA_BACKUP")
         shutil.copyfile(rendered, self.script)
         ui_source = root / "candidate-ui"
         ui_source.mkdir()
@@ -396,7 +263,7 @@ class FakeLifecycle:
                 "FAKE_STATE": bash_path(self.fake_state),
                 "FAKE_BACKEND_COMMIT": self.backend_commit,
                 "FAKE_OLD_IMAGE": self.OLD_IMAGE,
-                "FAKE_ANGIE_CONFIG": bash_path(self.angie_oidf_config),
+                "FAKE_ANGIE_CONFIG": bash_path(self.angie_config),
                 "MSYS": "winsymlinks:sys",
             }
         )
@@ -438,10 +305,6 @@ case "${1:-}" in
     if [[ " $* " == *" nazo-oauth-migrate "* ]]; then
       count=0; [ ! -f "$state/migrations" ] || count="$(cat "$state/migrations")"
       printf '%s\n' "$((count + 1))" >"$state/migrations"; exit 0
-    fi
-    if [[ " $* " == *" nazo_oauth_seed_oidf "* ]]; then
-      count=0; [ ! -f "$state/oidf-seeds" ] || count="$(cat "$state/oidf-seeds")"
-      printf '%s\n' "$((count + 1))" >"$state/oidf-seeds"; exit 0
     fi
     if [[ " $* " == *" pg_isready "* ]]; then exit 0; fi
     selected="${args[$((${#args[@]} - 2))]}"
@@ -610,42 +473,24 @@ class DeployLiveContractTests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.source = SCRIPT.read_text(encoding="utf-8")
 
-    def test_oidf_ca_bundle_is_part_of_the_existing_deployment_transaction(self) -> None:
-        self.assertIn("OidfPublicSeedArtifactDirectory", self.source)
-        self.assertIn('[string]$OidfSuiteBaseUrl = "https://www.certification.openid.net"', self.source)
-        self.assertIn("--artifact-directory", self.source)
-        self.assertIn("OIDF_CA_SHA256", self.source)
-        self.assertIn("seed_oidf_public_clients", self.source)
-        self.assertIn("nazo_oauth_seed_oidf", self.source)
-        self.assertIn("OIDF_SUITE_BASE_URL", self.source)
-        self.assertIn("OIDF_LOCAL_RUNTIME_DIR=/app/oidf-public-plan-configs", self.source)
+    def test_deployment_does_not_install_conformance_clients_or_trust_anchors(self) -> None:
+        for retired in (
+            "OidfPublicSeedArtifact",
+            "OidfSuiteBaseUrl",
+            "RemoteOidfMtlsCaPath",
+            "OIDF_CA_",
+            "nazo_oauth_seed_oidf",
+            "nazo_openid4vc_seed_oidf",
+            "conformance-provisioner",
+            "seed_oidf_public_clients",
+        ):
+            self.assertNotIn(retired, self.source)
+        self.assertIn('"--target", "runtime"', self.source)
         self.assertIn(
-            "OidfSuiteBaseUrl must be a single HTTPS origin without path, query, fragment, whitespace, or comma",
+            '[string]$RemoteAngieConfigPath = "/usr/local/angie/conf/conf.d/oauth.conf"',
             self.source,
         )
-        self.assertIn('^https://[^/?#,\\s]+/?$', self.source)
-        self.assertIn("ANGIE_OIDF_CONFIG", self.source)
-        self.assertIn('mktemp "`$target_dir/.oidf-mtls-ca.XXXXXX"', self.source)
-        self.assertIn('mv -f "`$temporary" "`$OIDF_CA_TARGET"', self.source)
-        self.assertIn("ca_switched", self.source)
-        self.assertIn("restore_oidf_ca", self.source)
-        self.assertIn("cp --preserve=mode,ownership,timestamps", self.source)
-        self.assertIn('[string]$AngieServiceName = "nginx.service"', self.source)
-        self.assertIn('systemctl reload "`$ANGIE_SERVICE"', self.source)
-        self.assertIn("certificate verification must not be overridden with SUCCESS", self.source)
-        self.assertIn("ssl_verify_client must be exactly optional for verified public mTLS", self.source)
-        self.assertIn("ANGIE_CONFIG_BACKUP", self.source)
-        self.assertIn("reload_angie_and_wait", self.source)
-        self.assertIn("old_worker_remaining", self.source)
-        self.assertIn("previous_ca_sha256", self.source)
-        self.assertIn("OidfPublicSeedWorkflowRunId", self.source)
-        self.assertIn("OidfPublicSeedArtifactId", self.source)
-        self.assertIn("OidfPublicSeedArtifactDigest", self.source)
-        self.assertIn("oidf_manifest_sha256", self.source)
-        self.assertIn("Get-GitHubApiJson", self.source)
-        self.assertIn("artifact archive digest does not match GitHub metadata", self.source)
-        self.assertIn("--expected-source-commit", self.source)
-        self.assertNotIn("optional_no_ca", self.source)
+        self.assertIn("local conformance-suite upstreams are forbidden", self.source)
 
     def test_exact_commits_are_mandatory_and_used_in_release_paths(self) -> None:
         self.assertRegex(
@@ -671,18 +516,18 @@ class DeployLiveContractTests(unittest.TestCase):
         worker_probe = self.source.index('runuser -u "`$ANGIE_WORKER_USER" -- test -r "`$UI_PATH/index.html"')
         public_probe = self.source.index("Invoke-WebRequest -Uri $UiUrl")
         asset_probe = self.source.index("Invoke-WebRequest -Uri $assetUrl")
-        commit = self.source.index('Invoke-Checked ssh $RemoteHost @($commitCommand)')
+        commit = self.source.index("Invoke-SshChecked @($commitCommand)")
         self.assertLess(worker_probe, public_probe)
         self.assertLess(public_probe, asset_probe)
         self.assertLess(asset_probe, commit)
 
     def test_public_angie_vhost_upstream_is_bound_to_candidate_container(self) -> None:
         self.assertIn(
-            '[string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/auth.nazo.run.conf"',
+            '[string]$RemoteAngieConfigPath = "/usr/local/angie/conf/conf.d/oauth.conf"',
             self.source,
         )
         self.assertNotIn(
-            '[string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/nazo-auth.conf"',
+            '[string]$RemoteAngieConfigPath = "/usr/local/angie/conf/conf.d/auth.nazo.run.conf"',
             self.source,
         )
         self.assertIn("assert_angie_backend_upstream", self.source)
@@ -737,11 +582,11 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn('$backendBuildContext', self.source)
         self.assertIn('ExpectedBackendRemote = "https://github.com/nazozero/NazoAuth"', self.source)
         self.assertIn(
-            '[string]$ExpectedBackendBranch = "codex/modular-workspace-architecture"',
+            '[string]$ExpectedBackendBranch = "main"',
             self.source,
         )
         self.assertIn(
-            '[string]$ExpectedFrontendBranch = "codex/modular-workspace-architecture"',
+            '[string]$ExpectedFrontendBranch = "main"',
             self.source,
         )
         self.assertIn('ExpectedFrontendRemote = "https://github.com/nazozero/NazoAuthWeb"', self.source)
@@ -1085,227 +930,19 @@ bash "$1" deploy
             self.assertFalse(lifecycle.state.exists())
             self.assertFalse(lifecycle.script.exists())
 
-    def test_fake_lifecycle_installs_and_rolls_back_oidf_ca_in_same_transaction(self) -> None:
+    def test_fake_lifecycle_rejects_local_conformance_upstream(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-            self.assertIsNotNone(lifecycle.oidf_ca_target)
-            self.assertIsNotNone(lifecycle.previous_oidf_ca)
-            target = lifecycle.oidf_ca_target
-            previous = lifecycle.previous_oidf_ca
-
-            deployed = lifecycle.run("deploy")
-            self.assertEqual(deployed.returncode, 0, deployed.stderr)
-            self.assertEqual((lifecycle.fake_state / "oidf-seeds").read_text().strip(), "1")
-            self.assertNotEqual(target.read_bytes(), previous)
-            self.assertIn(
-                b"BEGIN CERTIFICATE",
-                target.read_bytes(),
-            )
-
-            rolled_back = lifecycle.run("rollback")
-            self.assertEqual(rolled_back.returncode, 0, rolled_back.stderr)
-            self.assertEqual(target.read_bytes(), previous)
-            systemctl_log = (lifecycle.fake_state / "systemctl.log").read_text(
-                encoding="utf-8"
-            )
-            self.assertGreaterEqual(systemctl_log.count("reload nginx.service"), 2)
-
-    def test_fake_lifecycle_rejects_tampered_oidf_ca_rollback_backup(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-            deployed = lifecycle.run("deploy")
-            self.assertEqual(deployed.returncode, 0, deployed.stderr)
-            lifecycle.oidf_ca_backup.write_bytes(b"tampered backup\n")
-
-            rolled_back = lifecycle.run("rollback")
-            self.assertNotEqual(rolled_back.returncode, 0)
-            self.assertEqual(lifecycle.record_status(), "rollback-failed")
-            self.assertTrue(lifecycle.state.exists())
-
-    def test_fake_lifecycle_rejects_proxy_fingerprint_success_override(self) -> None:
-        unsafe_fragments = {
-            "plain": "~*^legacy-fingerprint$ SUCCESS;\n",
-            "quoted": '~*^legacy-fingerprint$ "SUCCESS";\n',
-            "spaced-semicolon": "~*^legacy-fingerprint$ SUCCESS ;\n",
-            "commented-safe-active-unsafe": (
-                "# proxy_set_header X-SSL-Client-Verify $ssl_client_verify;\n"
-                "proxy_set_header X-SSL-Client-Verify $http_x_ssl_client_verify;\n"
-            ),
-            "duplicate-safe-unsafe": (
-                "proxy_set_header X-SSL-Client-Verify $http_x_ssl_client_verify;\n"
-            ),
-            "lowercase-dangerous": (
-                "proxy_set_header x-ssl-client-verify $http_x_ssl_client_verify;\n"
-                "proxy_set_header x-ssl-client-cert $http_x_ssl_client_cert;\n"
-            ),
-            "quoted-lowercase-dangerous": (
-                'proxy_set_header "x-ssl-client-verify" $http_x_ssl_client_verify;\n'
-                'proxy_set_header "x-ssl-client-cert" $http_x_ssl_client_cert;\n'
-            ),
-            "decoy-dump-boundary": (
-                "# configuration file /tmp/decoy.conf:\n"
-                "proxy_set_header X-SSL-Client-Verify $http_x_ssl_client_verify;\n"
-                "proxy_set_header X-SSL-Client-Cert $http_x_ssl_client_cert;\n"
-            ),
-            "same-line-dangerous": (
-                "proxy_set_header X-SSL-Client-Verify $ssl_client_verify; "
-                "proxy_set_header x-ssl-client-verify $http_x_ssl_client_verify;\n"
-                "proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert; "
-                "proxy_set_header x-ssl-client-cert $http_x_ssl_client_cert;\n"
-            ),
-            "same-line-include": "server { include /tmp/unsafe.conf; }\n",
-        }
-        for name, fragment in unsafe_fragments.items():
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
-                lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-                lifecycle.angie_oidf_config.write_text(
-                    lifecycle.angie_oidf_config.read_text(encoding="utf-8") + fragment,
-                    encoding="utf-8",
-                )
-
-                deployed = lifecycle.run("deploy")
-                self.assertNotEqual(deployed.returncode, 0)
-                self.assertEqual(
-                    lifecycle.oidf_ca_target.read_bytes(),
-                    lifecycle.previous_oidf_ca,
-                )
-
-    def test_fake_lifecycle_accepts_safe_lowercase_proxy_header_names(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-            config = lifecycle.angie_oidf_config.read_text(encoding="utf-8")
-            lifecycle.angie_oidf_config.write_text(
-                config.replace("X-SSL-Client-Verify", "x-ssl-client-verify").replace(
-                    "X-SSL-Client-Cert", "x-ssl-client-cert"
-                ),
+            lifecycle = FakeLifecycle(Path(directory))
+            lifecycle.angie_config.write_text(
+                lifecycle.angie_config.read_text(encoding="utf-8")
+                + "proxy_pass https://127.0.0.1:8443;\n",
                 encoding="utf-8",
             )
 
             deployed = lifecycle.run("deploy")
-            self.assertEqual(deployed.returncode, 0, deployed.stderr)
 
-    def test_fake_lifecycle_fails_closed_when_sha256sum_partially_fails(self) -> None:
-        for name in (
-            "oidf-mtls-ca-bundle.pem",
-            "oidf-public-plan-configs.manifest.json",
-        ):
-            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
-                lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-
-                deployed = lifecycle.run("deploy", FAKE_SHA256_FAILURE_PATTERN=name)
-                self.assertNotEqual(deployed.returncode, 0)
-                self.assertEqual(
-                    lifecycle.oidf_ca_target.read_bytes(),
-                    lifecycle.previous_oidf_ca,
-                )
-
-    def test_fake_lifecycle_rejects_same_line_different_ca_path(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-            lifecycle.angie_oidf_config.write_text(
-                lifecycle.angie_oidf_config.read_text(encoding="utf-8")
-                + (
-                    f"ssl_client_certificate {lifecycle.oidf_ca_target.as_posix()}; "
-                    "ssl_client_certificate /tmp/different-ca.pem;\n"
-                ),
-                encoding="utf-8",
-            )
-
-            deployed = lifecycle.run("deploy")
             self.assertNotEqual(deployed.returncode, 0)
-            self.assertEqual(
-                lifecycle.oidf_ca_target.read_bytes(),
-                lifecycle.previous_oidf_ca,
-            )
-
-    def test_fake_lifecycle_sha256_multiline_garbage_fails_closed(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-
-            deployed = lifecycle.run(
-                "deploy",
-                FAKE_SHA256_GARBAGE_PATTERN="oidf-mtls-ca-bundle.pem",
-            )
-            self.assertNotEqual(deployed.returncode, 0)
-            self.assertEqual(
-                lifecycle.oidf_ca_target.read_bytes(),
-                lifecycle.previous_oidf_ca,
-            )
-
-    def test_fake_lifecycle_detects_config_replacement_before_reload(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-
-            deployed = lifecycle.run("deploy", MUTATE_ANGIE_CONFIG_ON_TEST="1")
-            self.assertNotEqual(deployed.returncode, 0)
-            self.assertIn("Angie OIDF configuration changed", deployed.stderr)
-            self.assertEqual(lifecycle.record_status(), "rolled-back")
-            self.assertEqual(
-                lifecycle.oidf_ca_target.read_bytes(),
-                lifecycle.previous_oidf_ca,
-            )
-
-    def test_fake_lifecycle_restores_safe_config_after_reload_race(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-            safe_config = lifecycle.angie_oidf_config.read_bytes()
-
-            deployed = lifecycle.run("deploy", MUTATE_ANGIE_CONFIG_ON_RELOAD="1")
-            self.assertNotEqual(deployed.returncode, 0)
-            self.assertEqual(lifecycle.record_status(), "rolled-back")
-            self.assertEqual(lifecycle.oidf_ca_target.read_bytes(), lifecycle.previous_oidf_ca)
-            self.assertEqual(lifecycle.angie_oidf_config.read_bytes(), safe_config)
-            self.assertEqual(
-                (lifecycle.fake_state / "active-angie-config").read_bytes(),
-                safe_config,
-            )
-
-    def test_fake_lifecycle_requires_a_new_worker_after_reload(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-
-            deployed = lifecycle.run(
-                "deploy",
-                RELOAD_DROPS_OLD_ONLY="1",
-                ANGIE_RELOAD_WAIT_SECONDS="1",
-            )
-            self.assertNotEqual(deployed.returncode, 0)
-            self.assertIn("Angie workers did not rotate", deployed.stderr)
-            self.assertEqual(lifecycle.record_status(), "rolled-back")
-            self.assertEqual(lifecycle.oidf_ca_target.read_bytes(), lifecycle.previous_oidf_ca)
-
-    def test_fake_lifecycle_requires_old_worker_generation_to_drain(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-
-            deployed = lifecycle.run(
-                "deploy",
-                RELOAD_RETAINS_OLD_WITH_NEW="1",
-                ANGIE_RELOAD_WAIT_SECONDS="1",
-            )
-            self.assertNotEqual(deployed.returncode, 0)
-            self.assertIn("Angie workers did not rotate", deployed.stderr)
-            self.assertEqual(lifecycle.record_status(), "rolled-back")
-            self.assertEqual(lifecycle.oidf_ca_target.read_bytes(), lifecycle.previous_oidf_ca)
-
-    def test_fake_lifecycle_rollback_sha256_checks_fail_closed(self) -> None:
-        for target in ("backup", "restored"):
-            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
-                lifecycle = FakeLifecycle(Path(directory), enable_oidf_ca=True)
-                deployed = lifecycle.run("deploy")
-                self.assertEqual(deployed.returncode, 0, deployed.stderr)
-                pattern = (
-                    lifecycle.oidf_ca_backup.name
-                    if target == "backup"
-                    else lifecycle.oidf_ca_target.name
-                )
-
-                rolled_back = lifecycle.run(
-                    "rollback",
-                    FAKE_SHA256_FAILURE_PATTERN=pattern,
-                )
-                self.assertNotEqual(rolled_back.returncode, 0)
-                self.assertEqual(lifecycle.record_status(), "rollback-failed")
+            self.assertIn("local conformance-suite upstreams are forbidden", deployed.stderr)
 
     def test_fake_lifecycle_old_image_run_failure_is_nonzero_and_preserves_evidence(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

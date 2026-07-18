@@ -1002,6 +1002,13 @@ async fn inactive_account_has_no_issuable_subject_claims() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
     };
+    let repository = UserRepository::new(pool.clone());
+    assert!(
+        repository
+            .is_active_by_tenant_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+    );
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query("UPDATE users SET is_active = false WHERE id = $1")
         .bind::<SqlUuid, _>(user_id.as_uuid())
@@ -1010,12 +1017,18 @@ async fn inactive_account_has_no_issuable_subject_claims() {
         .unwrap();
     drop(connection);
 
-    let claims = UserRepository::new(pool.clone())
+    let claims = repository
         .active_subject_claims_by_tenant_id(tenant.tenant_id, user_id)
         .await
         .unwrap();
 
     assert!(claims.is_none());
+    assert!(
+        !repository
+            .is_active_by_tenant_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+    );
     cleanup(&pool, user_id).await;
 }
 

@@ -66,7 +66,7 @@ pub(crate) mod test_support {
     use crate::adapters::security::{hash_client_secret, random_urlsafe_token};
     use crate::domain::client_policy::{
         client_jwks_contains_signing_key, client_jwks_matching_encryption_key_count,
-        validate_client_jwks_with_missing_kid_policy, validate_self_signed_mtls_jwks,
+        validate_client_jwks, validate_self_signed_mtls_jwks,
     };
     use crate::settings::Settings;
     use nazo_auth::AdminClientCryptoPort;
@@ -153,9 +153,12 @@ pub(crate) mod test_support {
             (secret, digest)
         }
 
-        fn validate_jwks(&self, jwks: &Value, allow_missing_kid: bool) -> Result<(), String> {
-            validate_client_jwks_with_missing_kid_policy(jwks, allow_missing_kid)
-                .map_err(|error| error.to_string())
+        fn validate_jwks(&self, jwks: &Value) -> Result<(), String> {
+            validate_client_jwks(jwks).map_err(|error| error.to_string())
+        }
+
+        fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
+            nazo_key_management::validate_rfc4514_dn(value)
         }
 
         fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {

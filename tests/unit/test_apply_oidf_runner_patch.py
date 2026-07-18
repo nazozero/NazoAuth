@@ -34,7 +34,10 @@ class ApplyOidfRunnerPatchTests(unittest.TestCase):
 
         self.assertEqual(module.OIDF_REF, "dee9a25160e789f0f80517674693ef7989ab9fa1")
         self.assertEqual(module.normalized_sha256(module.PATCH_PATH), module.PATCH_SHA256)
-        self.assertEqual(set(module.TARGET_HASHES), {"scripts/run-test-plan.py"})
+        self.assertEqual(
+            set(module.TARGET_HASHES),
+            {"scripts/run-test-plan.py", "scripts/conformance.py"},
+        )
         self.assertIn("read_authoritative_terminal_info", patch_text)
         self.assertIn("conformance.get_module_info", patch_text)
         self.assertNotIn("from nazo_oidf_runner_consistency import", patch_text)

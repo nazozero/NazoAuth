@@ -60,7 +60,7 @@ fn self_signed_mtls_jwks_requires_a_current_parseable_x5c_certificate() {
 }
 
 #[test]
-fn client_jwks_requires_non_empty_unique_kids() {
+fn client_jwks_allows_one_unidentified_key_class_but_rejects_empty_or_duplicate_kids() {
     let empty = json!({ "keys": [] });
     let error = validate_client_jwks(&empty).expect_err("empty jwks keys must fail closed");
     assert!(
@@ -77,9 +77,22 @@ fn client_jwks_requires_non_empty_unique_kids() {
             "use": "sig"
         }]
     });
-    let error = validate_client_jwks(&missing_kid).expect_err("JWK without kid must fail closed");
+    validate_client_jwks(&missing_kid)
+        .expect("RFC 7517 defines kid as optional when selection remains unambiguous");
+
+    let empty_kid = json!({
+        "keys": [{
+            "kty": "OKP",
+            "crv": "Ed25519",
+            "x": URL_SAFE_NO_PAD.encode([7u8; 32]),
+            "alg": "EdDSA",
+            "use": "sig",
+            "kid": ""
+        }]
+    });
+    let error = validate_client_jwks(&empty_kid).expect_err("an explicit empty kid must fail");
     assert!(
-        error.to_string().contains("jwks 公钥必须包含 kid"),
+        error.to_string().contains("kid"),
         "unexpected error: {error}"
     );
 

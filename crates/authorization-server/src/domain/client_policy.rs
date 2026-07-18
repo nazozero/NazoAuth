@@ -38,16 +38,7 @@ pub(crate) fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
 
 #[cfg(test)]
 pub(crate) fn validate_client_jwks(jwks: &Value) -> anyhow::Result<()> {
-    validate_client_jwks_with_missing_kid_policy(jwks, false)
-}
-
-#[cfg(test)]
-pub(crate) fn validate_client_jwks_with_missing_kid_policy(
-    jwks: &Value,
-    allow_missing_kid: bool,
-) -> anyhow::Result<()> {
-    nazo_key_management::validate_client_jwks_with_missing_kid_policy(jwks, allow_missing_kid)
-        .map_err(anyhow::Error::msg)
+    nazo_key_management::validate_client_jwks(jwks).map_err(anyhow::Error::msg)
 }
 
 #[cfg(test)]

@@ -75,8 +75,10 @@ jobs:
           python scripts/materialize_openid4vc_oidf_config.py \
             --base-config-json-file runtime/openid4vc/base.json \
             --driver-config-json-file runtime/openid4vc/driver-input.json \
+            --credential-datasets-json-file tests/contracts/openid4vc-conformance-datasets.json \
             --conformance-server "$CONFORMANCE_SERVER" \
             --target-origin "$TARGET_ORIGIN" \
+            --onboarding-profile official \
             --output-dir runtime/openid4vc
 
       - name: Run official OpenID4VC Final and HAIP alpha matrix
@@ -84,7 +86,11 @@ jobs:
         env:
           OIDF_USER_EMAIL: ${{ secrets.OIDF_USER_EMAIL }}
           OIDF_USER_PASSWORD: ${{ secrets.OIDF_USER_PASSWORD }}
+          OIDF_ADMIN_EMAIL: ${{ secrets.OIDF_ADMIN_EMAIL }}
+          OIDF_ADMIN_PASSWORD: ${{ secrets.OIDF_ADMIN_PASSWORD }}
         run: |
+          test -n "$OIDF_ADMIN_EMAIL"
+          test -n "$OIDF_ADMIN_PASSWORD"
           python -u scripts/run_openid4vc_conformance.py \
             --driver-config-json-file runtime/openid4vc/openid4vc-driver.json \
             --plan-group-size 4 \

@@ -5,8 +5,8 @@ from unittest import mock
 
 
 def load_setup_module():
-    script = Path(__file__).resolve().parents[2] / "scripts" / "setup_local_oidf_podman.py"
-    spec = importlib.util.spec_from_file_location("setup_local_oidf_podman", script)
+    script = Path(__file__).resolve().parents[2] / "scripts" / "prepare_oidf_black_box.py"
+    spec = importlib.util.spec_from_file_location("prepare_oidf_black_box", script)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     with mock.patch.dict(
@@ -15,16 +15,20 @@ def load_setup_module():
             "OIDF_TARGET_ISSUER": "https://issuer.example",
             "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
             "OIDF_SUITE_BASE_URL": "https://suite.example",
+            "OIDF_APPLICANT_EMAIL": "applicant@example.com",
+            "OIDF_APPLICANT_PASSWORD": "test-applicant-password",
+            "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN": "test-initial-access-token",
+            "OIDF_CIBA_AUTOMATED_DECISION_TOKEN": "test-ciba-decision-token",
         },
-        clear=False,
+        clear=True,
     ):
         spec.loader.exec_module(module)
     return module
 
 
 def load_setup_module_with_suite_base(suite_base_url: str):
-    script = Path(__file__).resolve().parents[2] / "scripts" / "setup_local_oidf_podman.py"
-    spec = importlib.util.spec_from_file_location("setup_local_oidf_podman", script)
+    script = Path(__file__).resolve().parents[2] / "scripts" / "prepare_oidf_black_box.py"
+    spec = importlib.util.spec_from_file_location("prepare_oidf_black_box", script)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     with mock.patch.dict(
@@ -33,14 +37,39 @@ def load_setup_module_with_suite_base(suite_base_url: str):
             "OIDF_TARGET_ISSUER": "https://issuer.example",
             "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
             "OIDF_SUITE_BASE_URL": suite_base_url,
+            "OIDF_APPLICANT_EMAIL": "applicant@example.com",
+            "OIDF_APPLICANT_PASSWORD": "test-applicant-password",
+            "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN": "test-initial-access-token",
+            "OIDF_CIBA_AUTOMATED_DECISION_TOKEN": "test-ciba-decision-token",
         },
-        clear=False,
+        clear=True,
     ):
         spec.loader.exec_module(module)
     return module
 
 
-class SetupLocalOidfPodmanTests(unittest.TestCase):
+class PrepareOidfBlackBoxTests(unittest.TestCase):
+    def test_operator_clients_use_a_stable_non_official_run_namespace(self):
+        first = load_setup_module_with_suite_base("https://suite.example")
+        second = load_setup_module_with_suite_base("https://other-suite.example")
+
+        self.assertTrue(first.RUN_NAMESPACE.startswith("bb-"))
+        self.assertNotEqual(first.RUN_NAMESPACE, second.RUN_NAMESPACE)
+        self.assertNotEqual(first.BASIC_CLIENT_ID, "oidf-basic-client")
+        self.assertTrue(first.BASIC_CLIENT_ID.startswith(f"oidf-{first.RUN_NAMESPACE}-"))
+        self.assertTrue(first.FAPI_CLIENT_PREFIX.startswith(f"oidf-{first.RUN_NAMESPACE}-"))
+
+        self.assertEqual(
+            first.onboarding_contract(),
+            {
+                "schema": 1,
+                "onboarding_profile": "operator-black-box",
+                "target_issuer": "https://issuer.example",
+                "suite_base_url": "https://suite.example",
+                "run_namespace": first.RUN_NAMESPACE,
+            },
+        )
+
     def test_suite_base_must_be_public_dns_not_local_or_raw_ip(self):
         for suite_base_url in (
             "https://127.0.0.1:8443",
@@ -107,15 +136,19 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         self.assertEqual(len(authorize_entries), 1)
         self.assertNotIn("override", config)
 
-    def test_local_reverse_proxy_uses_operator_supplied_issuer_host(self):
-        module = load_setup_module()
+    def test_generator_does_not_materialize_a_private_product_environment(self):
+        source = (Path(__file__).resolve().parents[2] / "scripts" / "prepare_oidf_black_box.py").read_text(
+            encoding="utf-8"
+        )
 
-        module.write_nginx()
-        nginx = (module.RUNTIME / "nginx.conf").read_text(encoding="utf-8")
-
-        self.assertIn("proxy_set_header Host issuer.example;", nginx)
-        self.assertIn("proxy_set_header X-Forwarded-Host issuer.example;", nginx)
-        self.assertNotIn("auth.nazo.run", nginx)
+        for forbidden in (
+            "write_nginx",
+            "write_env_yaml",
+            "write_ui",
+            "ensure_server_oidf_keyset",
+            "listen 9443",
+        ):
+            self.assertNotIn(forbidden, source)
 
     def test_fapi_ciba_plans_are_the_orthogonal_supported_combinations(self):
         module = load_setup_module()
@@ -309,22 +342,22 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
     def test_help_exits_before_generating_runtime_files(self):
         module = load_setup_module()
 
-        with mock.patch.object(module, "ensure_cert") as ensure_cert:
+        with mock.patch.object(module, "ensure_mtls_certs") as ensure_mtls_certs:
             with self.assertRaises(SystemExit) as raised:
                 module.main(["--help"])
 
         self.assertEqual(raised.exception.code, 0)
-        ensure_cert.assert_not_called()
+        ensure_mtls_certs.assert_not_called()
 
     def test_unknown_argument_exits_before_generating_runtime_files(self):
         module = load_setup_module()
 
-        with mock.patch.object(module, "ensure_cert") as ensure_cert:
+        with mock.patch.object(module, "ensure_mtls_certs") as ensure_mtls_certs:
             with self.assertRaises(SystemExit) as raised:
                 module.main(["--not-a-real-option"])
 
         self.assertEqual(raised.exception.code, 2)
-        ensure_cert.assert_not_called()
+        ensure_mtls_certs.assert_not_called()
 
 
 if __name__ == "__main__":
