@@ -762,6 +762,9 @@ def check_conformance_provisioning_boundaries() -> None:
     onboarding = (
         ROOT / "scripts" / "apply_public_conformance_onboarding.py"
     ).read_text(encoding="utf-8")
+    openid4vc_onboarding = (
+        ROOT / "scripts" / "prepare_openid4vc_public_onboarding.py"
+    ).read_text(encoding="utf-8")
     for marker in (
         "/auth/me/access-requests",
         "/admin/access-requests/",
@@ -782,12 +785,17 @@ def check_conformance_provisioning_boundaries() -> None:
         "auth.nazo.run",
         "nginx:8443",
     ):
-        if forbidden in onboarding or forbidden in black_box_materializer:
+        if (
+            forbidden in onboarding
+            or forbidden in black_box_materializer
+            or forbidden in openid4vc_onboarding
+        ):
             raise SystemExit(f"public conformance tooling contains a forbidden deployment coupling: {forbidden}")
 
     public_black_box_sources = [
         onboarding,
         black_box_materializer,
+        openid4vc_onboarding,
         (ROOT / "scripts" / "run_oidf_conformance.py").read_text(encoding="utf-8"),
         (ROOT / "scripts" / "run_openid4vc_conformance.py").read_text(encoding="utf-8"),
         (ROOT / ".github" / "workflows" / "oidf-conformance-full.yml").read_text(encoding="utf-8"),
@@ -796,6 +804,19 @@ def check_conformance_provisioning_boundaries() -> None:
     for forbidden in ("https://nginx:8443", "https://localhost:8443", "https://auth.nazo.run"):
         if any(forbidden in source for source in public_black_box_sources):
             raise SystemExit(f"public black-box conformance tooling hard-codes an operator endpoint: {forbidden}")
+
+    for marker in (
+        '"token_endpoint_auth_method": auth_method',
+        '"require_dpop_bound_tokens": True',
+        '"require_par_request_object": require_par',
+        'PRIVATE_JWK_MEMBERS',
+        'output / "oidf-onboarding-manifest.json"',
+        'output / "openid4vc-plan-set-manifest.json"',
+    ):
+        if marker not in openid4vc_onboarding:
+            raise SystemExit(
+                f"OpenID4VC public onboarding boundary is missing: {marker}"
+            )
 
     retired_owner = "bymoye" + "/NazoAuth"
     for path in ROOT.rglob("*"):
