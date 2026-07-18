@@ -580,14 +580,16 @@ def check_openid4vc_boundaries() -> None:
         if forbidden in driver:
             raise SystemExit(f"OpenID4VC black-box driver accesses persistence: {forbidden}")
     containerfile = (ROOT / "Containerfile").read_text(encoding="utf-8")
-    openid4vc_seed_copy = (
-        "COPY --from=builder /app/target/release/nazo_openid4vc_seed_oidf "
-        "/usr/local/bin/nazo_openid4vc_seed_oidf"
-    )
-    if containerfile.count(openid4vc_seed_copy) != 1:
-        raise SystemExit("OpenID4VC OIDF seed binary must have one image copy boundary")
-    if containerfile.index(openid4vc_seed_copy) > containerfile.index("FROM runtime-base AS runtime"):
-        raise SystemExit("OpenID4VC OIDF seed binary must not enter the production runtime image")
+    runtime_start = containerfile.index("FROM runtime-base AS runtime")
+    for binary in ("nazo_oauth_seed_oidf", "nazo_openid4vc_seed_oidf"):
+        seed_copy = (
+            f"COPY --from=builder /app/target/release/{binary} "
+            f"/usr/local/bin/{binary}"
+        )
+        if containerfile.count(seed_copy) != 1:
+            raise SystemExit(f"{binary} must have one image copy boundary")
+        if containerfile.index(seed_copy) < runtime_start:
+            raise SystemExit(f"{binary} must be available in the exact runtime image")
     keyctl = (ROOT / "crates" / "authorization-server" / "src" / "keyctl.rs").read_text(
         encoding="utf-8"
     )
