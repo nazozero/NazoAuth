@@ -22,6 +22,16 @@ def load_module():
 
 
 class ApplyPublicConformanceOnboardingTests(unittest.TestCase):
+    def test_access_request_site_name_is_stable_unique_and_within_product_limit(self):
+        module = load_module()
+
+        first = module.access_request_site_name("logical-client-" + "a" * 500)
+        second = module.access_request_site_name("logical-client-" + "b" * 500)
+
+        self.assertEqual(first, module.access_request_site_name("logical-client-" + "a" * 500))
+        self.assertNotEqual(first, second)
+        self.assertLessEqual(len(first.encode("utf-8")), 120)
+
     def test_apply_journals_partial_state_before_remote_approval_failure(self):
         module = load_module()
 
@@ -172,6 +182,50 @@ class ApplyPublicConformanceOnboardingTests(unittest.TestCase):
 
             self.assertFalse(state.exists())
             self.assertEqual(admin.calls[0][0:2], ("POST", "/admin/access-requests/request-1/reject"))
+
+    def test_cleanup_ignores_a_journal_entry_created_before_the_remote_request(self):
+        module = load_module()
+
+        class Session:
+            def request_json(self, method, path, payload=None, **kwargs):
+                raise AssertionError((method, path, payload, kwargs))
+
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            state.write_text(
+                json.dumps(
+                    {
+                        "schema": 1,
+                        "target_issuer": "https://issuer.example",
+                        "clients": [{"logical_client_id": "not-yet-submitted"}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                state_file=state,
+                target_issuer="https://issuer.example",
+            )
+            with (
+                mock.patch.dict(
+                    os.environ,
+                    {
+                        "OIDF_APPLICANT_EMAIL": "applicant@example.com",
+                        "OIDF_APPLICANT_PASSWORD": "applicant-password",
+                        "OIDF_ADMIN_EMAIL": "admin@example.com",
+                        "OIDF_ADMIN_PASSWORD": "admin-password",
+                    },
+                    clear=True,
+                ),
+                mock.patch.object(
+                    module.ControlPlaneSession,
+                    "login",
+                    side_effect=[Session(), Session()],
+                ),
+            ):
+                self.assertEqual(module.cleanup_onboarding(args), 0)
+
+            self.assertFalse(state.exists())
 
     def test_target_must_be_an_exact_https_origin(self):
         module = load_module()

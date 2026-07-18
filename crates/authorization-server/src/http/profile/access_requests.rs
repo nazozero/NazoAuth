@@ -138,10 +138,18 @@ pub(crate) async fn create_access_request(
         .await;
     match row {
         Ok(r) => create_access_request_response(r),
-        Err(nazo_identity::ports::RepositoryError::Conflict) => {
-            oauth_error(StatusCode::CONFLICT, "invalid_request", "已有待处理申请.")
+        Err(nazo_identity::AccessRequestCreateError::Validation(error)) => {
+            tracing::warn!(reason = %error, "access request metadata rejected");
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                &error.to_string(),
+            )
         }
-        Err(error) => {
+        Err(nazo_identity::AccessRequestCreateError::Repository(
+            nazo_identity::ports::RepositoryError::Conflict,
+        )) => oauth_error(StatusCode::CONFLICT, "invalid_request", "已有待处理申请."),
+        Err(nazo_identity::AccessRequestCreateError::Repository(error)) => {
             tracing::warn!(%error, "failed to create access request");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,

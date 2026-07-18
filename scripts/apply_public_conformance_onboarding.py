@@ -52,6 +52,11 @@ def canonical_https_origin(value: str, *, label: str) -> str:
     return f"https://{authority}"
 
 
+def access_request_site_name(logical_client_id: str) -> str:
+    digest = hashlib.sha256(logical_client_id.encode("utf-8")).hexdigest()[:24]
+    return f"OIDF conformance client {digest}"
+
+
 def read_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -345,7 +350,7 @@ def apply_onboarding(args: argparse.Namespace) -> int:
             "POST",
             "/auth/me/access-requests",
             {
-                "site_name": f"Conformance client {logical_id}",
+                "site_name": access_request_site_name(logical_id),
                 "site_url": manifest["suite_base_url"],
                 "request_description": "Public black-box conformance onboarding through the production approval flow.",
             },
@@ -441,6 +446,12 @@ def cleanup_onboarding(args: argparse.Namespace) -> int:
         if not isinstance(item, dict):
             raise OnboardingError("cleanup state contains an invalid client record")
         trust_request_id = item.get("mtls_trust_request_id")
+        client_id = item.get("client_id")
+        request_id = item.get("access_request_id")
+        if not any(isinstance(value, str) and value for value in (request_id, client_id, trust_request_id)):
+            continue
+        if not isinstance(request_id, str) or not request_id:
+            raise OnboardingError("cleanup state contains a remote client without an access request")
         if isinstance(trust_request_id, str):
             trust_requests = applicant.request_json(
                 "GET", "/auth/me/mtls-trust-requests", expected_status=200
@@ -470,24 +481,21 @@ def cleanup_onboarding(args: argparse.Namespace) -> int:
                     expected_status=200,
                     csrf=True,
                 )
-        client_id = item.get("client_id")
-        request_id = item.get("access_request_id")
         if not isinstance(client_id, str) or not client_id:
-            if isinstance(request_id, str):
-                request = access_request_for_id(applicant, request_id)
-                status = request.get("status") if isinstance(request, dict) else None
-                if status == 0:
-                    admin.request_json(
-                        "POST",
-                        f"/admin/access-requests/{urllib.parse.quote(request_id, safe='')}/reject",
-                        {"admin_note": "Public conformance onboarding did not complete."},
-                        expected_status=200,
-                        csrf=True,
-                    )
-                    continue
-                delivered = delivered_client_for_request(applicant, request_id)
-                if delivered is not None:
-                    client_id = delivered[0]
+            request = access_request_for_id(applicant, request_id)
+            status = request.get("status") if isinstance(request, dict) else None
+            if status == 0:
+                admin.request_json(
+                    "POST",
+                    f"/admin/access-requests/{urllib.parse.quote(request_id, safe='')}/reject",
+                    {"admin_note": "Public conformance onboarding did not complete."},
+                    expected_status=200,
+                    csrf=True,
+                )
+                continue
+            delivered = delivered_client_for_request(applicant, request_id)
+            if delivered is not None:
+                client_id = delivered[0]
             if not isinstance(client_id, str) or not client_id:
                 raise OnboardingError(
                     f"cannot recover client_id for onboarding record {item.get('logical_client_id')}"

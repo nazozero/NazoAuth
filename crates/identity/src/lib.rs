@@ -58,11 +58,12 @@ pub use passkey::{
     PasskeyServiceConfig, StoredPasskeyAuthentication, StoredPasskeyRegistration,
 };
 pub use profile::{
-    AccessRequestListError, AccessRequestWithDelivery, AccountOverview, AccountProfileService,
-    AccountProfileView, AuthorizedApplicationView, AuthorizedApplicationsView, AvailableDelivery,
-    ClientAccessService, DeliveryReadError, FederationLinksService, NewAccessRequestInput,
-    PendingMfaProfileView, ProfilePatch, ProfileValidationError, UpdateProfileError,
-    access_delivery_token,
+    AccessRequestCreateError, AccessRequestListError, AccessRequestValidationError,
+    AccessRequestWithDelivery, AccountOverview, AccountProfileService, AccountProfileView,
+    AuthorizedApplicationView, AuthorizedApplicationsView, AvailableDelivery, ClientAccessService,
+    DeliveryReadError, FederationLinksService, NewAccessRequestInput, PendingMfaProfileView,
+    ProfilePatch, ProfileValidationError, UpdateProfileError, access_delivery_token,
+    validate_access_request_input,
 };
 pub use registration::{
     RegisterLocalAccountError, RegisterLocalAccountInput, RegistrationService,

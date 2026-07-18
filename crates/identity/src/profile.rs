@@ -363,6 +363,70 @@ pub struct NewAccessRequestInput {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AccessRequestValidationError {
+    Empty(&'static str),
+    TooLong(&'static str),
+    InvalidSiteUrl,
+}
+
+impl std::fmt::Display for AccessRequestValidationError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Empty(field) => write!(formatter, "{field} must not be empty"),
+            Self::TooLong(field) => write!(formatter, "{field} exceeds its length limit"),
+            Self::InvalidSiteUrl => formatter.write_str("site_url must be an absolute HTTPS URL"),
+        }
+    }
+}
+
+impl std::error::Error for AccessRequestValidationError {}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum AccessRequestCreateError {
+    Validation(AccessRequestValidationError),
+    Repository(RepositoryError),
+}
+
+pub fn validate_access_request_input(
+    input: NewAccessRequestInput,
+) -> Result<NewAccessRequestInput, AccessRequestValidationError> {
+    let site_name = required_access_request_text(input.site_name, 120, "site_name")?;
+    let site_url = required_access_request_text(input.site_url, 512, "site_url")?;
+    let request_description =
+        required_access_request_text(input.request_description, 2_000, "request_description")?;
+    let parsed =
+        url::Url::parse(&site_url).map_err(|_| AccessRequestValidationError::InvalidSiteUrl)?;
+    if parsed.scheme() != "https"
+        || parsed.cannot_be_a_base()
+        || parsed.host_str().is_none()
+        || !parsed.username().is_empty()
+        || parsed.password().is_some()
+    {
+        return Err(AccessRequestValidationError::InvalidSiteUrl);
+    }
+    Ok(NewAccessRequestInput {
+        site_name,
+        site_url,
+        request_description,
+    })
+}
+
+fn required_access_request_text(
+    value: String,
+    max_bytes: usize,
+    field: &'static str,
+) -> Result<String, AccessRequestValidationError> {
+    let value = value.trim().to_owned();
+    if value.is_empty() {
+        return Err(AccessRequestValidationError::Empty(field));
+    }
+    if value.len() > max_bytes {
+        return Err(AccessRequestValidationError::TooLong(field));
+    }
+    Ok(value)
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct AvailableDelivery {
     pub token: String,
     pub url: String,
@@ -469,7 +533,9 @@ where
         &self,
         account: &PublicAccount,
         input: NewAccessRequestInput,
-    ) -> Result<AccessRequest, RepositoryError> {
+    ) -> Result<AccessRequest, AccessRequestCreateError> {
+        let input =
+            validate_access_request_input(input).map_err(AccessRequestCreateError::Validation)?;
         self.requests
             .create(NewAccessRequest {
                 tenant_id: account.tenant().tenant_id,
@@ -479,6 +545,7 @@ where
                 request_description: input.request_description,
             })
             .await
+            .map_err(AccessRequestCreateError::Repository)
     }
 
     pub async fn claim_delivery(
