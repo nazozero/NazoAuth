@@ -173,7 +173,14 @@ def prepare_clients(
             )
             if entry["auth_method"] != auth_method or entry["jwks"] != candidate_jwks:
                 fail(f"conflicting wallet policy for {logical_id}")
-            entry["redirect_uris"].add(callback_url(suite_origin, alias))
+            callback = callback_url(suite_origin, alias)
+            entry["redirect_uris"].add(callback)
+            if field == "client2":
+                # The second wallet exercises an independently registered URI
+                # whose query component is significant. Register both exact
+                # values through the normal client-approval flow; the
+                # authorization server must not relax redirect URI matching.
+                entry["redirect_uris"].add(f"{callback}?dummy1=lorem&dummy2=ipsum")
             entry["scopes"].add(configuration_id)
             configured_scopes = str(metadata.get("scope", "")).split()
             if "offline_access" in configured_scopes:

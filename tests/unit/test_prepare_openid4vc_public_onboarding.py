@@ -4,6 +4,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -124,6 +125,22 @@ class PrepareOpenid4vcPublicOnboardingTests(unittest.TestCase):
         self.assertTrue(attested["require_par_request_object"])
         self.assertFalse(attested["allow_client_assertion_endpoint_audience"])
         self.assertEqual(set(attested["scopes"]), {"pid-sd", "mdl", "offline_access"})
+
+        for primary_id, secondary_id in (
+            ("private-wallet", "private-wallet-2"),
+            ("attested-wallet", "attested-wallet-2"),
+        ):
+            primary_callbacks = by_id[primary_id]["redirect_uris"]
+            secondary_callbacks = by_id[secondary_id]["redirect_uris"]
+            self.assertTrue(all(not urlsplit(uri).query for uri in primary_callbacks))
+            self.assertEqual(
+                {urlsplit(uri).path for uri in secondary_callbacks},
+                {urlsplit(uri).path for uri in primary_callbacks},
+            )
+            self.assertEqual(
+                {urlsplit(uri).query for uri in secondary_callbacks},
+                {"", "dummy1=lorem&dummy2=ipsum"},
+            )
 
     def test_cli_writes_apply_compatible_manifest_and_plan_manifest(self):
         module = load_module()
