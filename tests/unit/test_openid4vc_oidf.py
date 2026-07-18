@@ -522,6 +522,40 @@ class Openid4vcOidfTests(unittest.TestCase):
         finally:
             module.oidf.OIDF_API_SSL_CONTEXT = None
 
+    def test_wallet_redirect_handler_accepts_only_the_exact_completion_url(self):
+        module = load("run_openid4vc_conformance.py")
+        expected = (
+            "https://issuer.example/openid4vp/complete/"
+            "018f0000-0000-7000-8000-000000000001"
+        )
+        handler = module.ExactRedirectHandler(expected)
+        request = module.urllib.request.Request("https://wallet.example/authorize")
+
+        redirected = handler.redirect_request(
+            request,
+            None,
+            303,
+            "See Other",
+            {},
+            expected,
+        )
+        self.assertEqual(redirected.full_url, expected)
+        for code, location in (
+            (307, expected),
+            (
+                303,
+                "https://issuer.example/openid4vp/complete/"
+                "018f0000-0000-7000-8000-000000000002",
+            ),
+            (
+                303,
+                "https://other.example/openid4vp/complete/"
+                "018f0000-0000-7000-8000-000000000001",
+            ),
+        ):
+            with self.subTest(code=code, location=location), self.assertRaises(RuntimeError):
+                handler.redirect_request(request, None, code, "redirect", {}, location)
+
     def test_suite_callbacks_are_exact_public_origin_and_never_rewritten(self):
         module = load("run_openid4vc_conformance.py")
 
@@ -748,11 +782,15 @@ class Openid4vcOidfTests(unittest.TestCase):
             "iso_mdl": ("mso_mdoc", {"doctype_value": "org.iso.18013.5.1.mDL"}),
         }
         for credential_format, (expected_format, expected_meta) in cases.items():
+            transaction_id = "018f0000-0000-7000-8000-000000000001"
             with self.subTest(credential_format=credential_format), patch.object(
                 module,
                 "request_json",
-                return_value={"authorization_url": "https://localhost:8443/authorize"},
-            ) as request, patch.object(module, "get_url"):
+                return_value={
+                    "authorization_url": "https://localhost:8443/authorize",
+                    "transaction_id": transaction_id,
+                },
+            ) as request, patch.object(module, "get_url") as get_url:
                 driver.drive_verifier(
                     "module-id",
                     {"alias": "vp-alias", "testName": "oid4vp-1final-verifier-happy-flow"},
@@ -769,6 +807,12 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(credential["format"], expected_format)
                 self.assertEqual(credential["meta"], expected_meta)
                 self.assertEqual(payload["request_method"], "request_uri_signed_get")
+                get_url.assert_called_once_with(
+                    "https://localhost:8443/authorize",
+                    expected_redirect_url=(
+                        "https://issuer.example/openid4vp/complete/" + transaction_id
+                    ),
+                )
 
     def test_verifier_driver_uses_post_only_for_the_post_request_uri_module(self):
         module = load("run_openid4vc_conformance.py")
@@ -789,7 +833,10 @@ class Openid4vcOidfTests(unittest.TestCase):
         with patch.object(
             module,
             "request_json",
-            return_value={"authorization_url": "https://localhost:8443/authorize"},
+            return_value={
+                "authorization_url": "https://localhost:8443/authorize",
+                "transaction_id": "018f0000-0000-7000-8000-000000000001",
+            },
         ) as request, patch.object(module, "get_url"):
             driver.drive_verifier(
                 "module-id",

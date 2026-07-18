@@ -165,10 +165,44 @@ class NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         raise RuntimeError(f"unexpected redirect while delivering conformance input: {code} {newurl}")
 
 
-def get_url(url: str) -> None:
+class ExactRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def __init__(self, expected_url: str) -> None:
+        super().__init__()
+        self.expected_url = strict_https_url(expected_url, label="expected completion URL")
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        resolved = urllib.parse.urljoin(req.full_url, newurl)
+        if code not in {302, 303} or strict_https_url(
+            resolved, label="wallet redirect URL"
+        ) != self.expected_url:
+            raise RuntimeError(
+                f"unexpected redirect while delivering conformance input: {code} {resolved}"
+            )
+        return super().redirect_request(req, fp, code, msg, headers, resolved)
+
+
+def strict_https_url(value: str, *, label: str) -> str:
+    parsed = urllib.parse.urlsplit(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.fragment
+    ):
+        raise RuntimeError(f"{label} must be HTTPS without credentials or fragment")
+    return urllib.parse.urlunsplit(parsed)
+
+
+def get_url(url: str, *, expected_redirect_url: str | None = None) -> None:
+    redirect_handler: urllib.request.BaseHandler = (
+        NoRedirectHandler()
+        if expected_redirect_url is None
+        else ExactRedirectHandler(expected_redirect_url)
+    )
     opener = urllib.request.build_opener(
         urllib.request.HTTPSHandler(context=oidf.OIDF_API_SSL_CONTEXT),
-        NoRedirectHandler(),
+        redirect_handler,
     )
     with opener.open(url, timeout=30) as response:
         response.read()
@@ -416,7 +450,16 @@ class Openid4vcDriver:
         authorization_url = created.get("authorization_url") if isinstance(created, dict) else None
         if not isinstance(authorization_url, str):
             raise RuntimeError("verifier management response lacks authorization_url")
-        get_url(authorization_url)
+        transaction_id = created.get("transaction_id")
+        try:
+            transaction_id = str(uuid.UUID(str(transaction_id)))
+        except (TypeError, ValueError, AttributeError) as error:
+            raise RuntimeError("verifier management response lacks a valid transaction_id") from error
+        completion_url = urllib.parse.urljoin(
+            f"{str(self.config['target_origin']).rstrip('/')}/",
+            f"openid4vp/complete/{transaction_id}",
+        )
+        get_url(authorization_url, expected_redirect_url=completion_url)
         self.triggered.add(module_id)
         print(f"OpenID4VC driver initiated presentation for {module_id}", flush=True)
 
