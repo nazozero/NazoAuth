@@ -1686,6 +1686,15 @@ def ciba_config_has_automated_approval_url(config_json_file: str, env_name: str)
     return False
 
 
+def effective_monitor_interval_seconds(
+    monitor_aliases: set[str],
+    requested_interval_seconds: int,
+) -> int:
+    if monitor_aliases and requested_interval_seconds == 0:
+        return 60
+    return requested_interval_seconds
+
+
 def cancel_alias_plan_instances(
     base_url: str,
     token: str,
@@ -2290,6 +2299,17 @@ def main() -> int:
                 "so the official suite controls approve/deny timing"
             )
 
+    monitor_interval_seconds = effective_monitor_interval_seconds(
+        monitor_aliases,
+        args.monitor_interval_seconds,
+    )
+    if monitor_interval_seconds != args.monitor_interval_seconds:
+        print(
+            "OIDF early-stop monitor interval raised to "
+            f"{monitor_interval_seconds} seconds because runnable aliases are present",
+            flush=True,
+        )
+
     return run_official_runner(
         command,
         expressions,
@@ -2299,7 +2319,7 @@ def main() -> int:
         args.conformance_server,
         monitor_aliases,
         token,
-        args.monitor_interval_seconds,
+        monitor_interval_seconds,
         allowed_review_contexts_by_alias(aliases_by_config),
         expected_warning_contexts_by_alias(expected_failures_file, aliases_by_config),
     )
