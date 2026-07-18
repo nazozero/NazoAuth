@@ -14,6 +14,7 @@
 | 控制面分离 | 可以使用本地 conformance-suite 控制面驱动测试，但被测 issuer 必须仍然是公网 HTTPS origin。控制面地址本身不是一致性证据。 |
 | 禁止测试专用产品行为 | 产品代码不得根据 suite alias、suite hostname、test plan 名称或 conformance 专用请求形状分支。 |
 | 只允许确定性播种 | runner 可以从本次执行的精确 plan artifact 播种 client、key、redirect URI、scope 和测试用户；不得手工修改协议状态来制造通过。 |
+| 播种后必须校验 | 部署在切换或测试 issuer 前，必须回读校验数据库中的 client JWKS、mTLS 证书绑定、redirect URI、scope、grant、认证方式和 CIBA 投递元数据均来自同一个 artifact。 |
 | 证据必须精确 | 记录 commit SHA、部署 runtime revision、脱敏 target issuer、suite 版本、plan set、expected skip、review allowance、artifact digest 和 run URL。 |
 
 ## 正确流程
@@ -35,6 +36,8 @@
    - 本地/公网 dry run 必须使用本次生成的公网 artifact 播种。
    - 官方运行必须使用该官方 workflow 产出的 artifact 播种。
    - 不得混用本地套件和官方套件的 key、certificate、callback URL 或 client JWKS。
+   - 成功复制 artifact 或安装 CA 不等于完成播种。部署必须使用精确候选镜像中的
+     seed binary 执行播种，并在数据库状态与 artifact 不一致时失败关闭。
 
 4. 执行公网黑盒矩阵。
 
@@ -46,6 +49,9 @@
 5. 解读套件结果。
 
    - `FAILURE` 或非预期 `WARNING` 不可接受。
+   - expected-warning 清单不能替代协议行为。例如 OpenID4VC/HAIP 的 credential
+     refresh 警告必须通过真实 metadata 与 OAuth refresh-token 策略修复，
+     不能用扩大 warning 白名单处理。
    - `SKIPPED` 只有在与提交的 expected-skip 清单精确匹配时才可接受。
    - `REVIEW` 只有在清单精确限定 plan、config、alias 和 module 时才可接受。
    - 任何新增 skip、review、warning 或 module interruption 都必须诊断。

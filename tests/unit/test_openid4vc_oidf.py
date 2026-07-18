@@ -622,26 +622,6 @@ class Openid4vcOidfTests(unittest.TestCase):
                         "variant": "*",
                         "configuration-filename": "openid4vc-vci-sd-preauth.json",
                     },
-                    {
-                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
-                        "variant": "*",
-                        "configuration-filename": "openid4vc-vci-haip-sd-wallet.json",
-                    },
-                    {
-                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
-                        "variant": "*",
-                        "configuration-filename": "openid4vc-vci-haip-mdoc-wallet.json",
-                    },
-                    {
-                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
-                        "variant": "*",
-                        "configuration-filename": "openid4vc-vci-haip-sd-issuer.json",
-                    },
-                    {
-                        "test-name": module.VCI_REFRESH_TOKEN_MODULE,
-                        "variant": "*",
-                        "configuration-filename": "openid4vc-vci-haip-mdoc-issuer.json",
-                    },
                 ],
             )
             self.assertEqual(expected_warnings, [])
@@ -670,6 +650,9 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(config["vci"]["credential_configuration_id"], expected)
                 if "preauth" in filename:
                     self.assertEqual(config["vci"]["static_tx_code"], "123456")
+                if "vci-haip-" in filename:
+                    self.assertIn("offline_access", config["client"]["scope"].split())
+                    self.assertIn("offline_access", config["client2"]["scope"].split())
                 client2_keys = config["client2"]["jwks"]["keys"]
                 self.assertEqual(
                     {(key["kty"], key["crv"], key["alg"]) for key in client2_keys},

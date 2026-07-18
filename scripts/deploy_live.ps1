@@ -28,6 +28,7 @@ param(
     [string]$OidfPublicSeedWorkflowRunId = "",
     [string]$OidfPublicSeedArtifactId = "",
     [string]$OidfPublicSeedArtifactDigest = "",
+    [string]$OidfSuiteBaseUrl = "https://www.certification.openid.net",
     [string]$RemoteOidfMtlsCaPath = "/usr/local/angie/conf/oidf-mtls-ca.crt",
     [string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/auth.nazo.run.conf",
     [string]$AngieServiceName = "nginx.service",
@@ -87,6 +88,10 @@ if ($ExpectedIssuer -notmatch '^https://[^/?#]+/?$') {
     throw "ExpectedIssuer must be an HTTPS origin without path, query, or fragment"
 }
 $ExpectedIssuer = $ExpectedIssuer.TrimEnd('/')
+if ($OidfSuiteBaseUrl -notmatch '^https://[^/?#]+/?$') {
+    throw "OidfSuiteBaseUrl must be an HTTPS origin without path, query, or fragment"
+}
+$OidfSuiteBaseUrl = $OidfSuiteBaseUrl.TrimEnd('/')
 if ([string]::IsNullOrWhiteSpace($HealthUrl)) {
     $HealthUrl = "$ExpectedIssuer/health"
 }
@@ -642,6 +647,7 @@ EXPECTED_IMAGE_ID=$(ConvertTo-ShellLiteral $expectedImageId)
 SKIP_MIGRATE=$(ConvertTo-ShellLiteral $skipMigrateValue)
 VERIFICATION_LEASE_SECONDS=$(ConvertTo-ShellLiteral $VerificationLeaseSeconds)
 OIDF_CA_ENABLED=$(ConvertTo-ShellLiteral $oidfCaEnabledValue)
+OIDF_SUITE_BASE_URL=$(ConvertTo-ShellLiteral $OidfSuiteBaseUrl)
 OIDF_CA_SHA256=$(ConvertTo-ShellLiteral $oidfCaSha256)
 OIDF_MANIFEST_SHA256=$(ConvertTo-ShellLiteral $oidfManifestSha256)
 OIDF_CA_ARTIFACT_DIR=$(ConvertTo-ShellLiteral $remoteOidfArtifactDir)
@@ -1084,6 +1090,20 @@ install_oidf_ca() {
   assert_angie_oidf_config_unchanged || return 1
   python3 "`$OIDF_CA_VALIDATOR" verify --bundle "`$OIDF_CA_TARGET" || return 1
   require_sha256 "`$OIDF_CA_TARGET" "`$OIDF_CA_SHA256" "installed OIDF CA bundle" || return 1
+}
+
+seed_oidf_public_clients() {
+  [ "`$OIDF_CA_ENABLED" = "1" ] || return 0
+  validate_oidf_ca_artifact || return 1
+  podman run --rm --name "`$CONTAINER_NAME-oidf-seed-`$(date +%s)" \
+    --network "`$NETWORK_NAME" \
+    -e "OIDF_SUITE_BASE_URL=`$OIDF_SUITE_BASE_URL" \
+    -e "OIDF_LOCAL_RUNTIME_DIR=/app/oidf-public-plan-configs" \
+    -v "`$CONFIG_PATH:/app/.env.yaml:ro" \
+    -v "`$KEYS_PATH:/var/lib/nazo_oauth/keys:rw" \
+    -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
+    -v "`$OIDF_CA_ARTIFACT_DIR:/app/oidf-public-plan-configs:ro" \
+    "`$IMAGE" nazo_oauth_seed_oidf || return 1
 }
 
 restore_oidf_ca() {
@@ -1539,6 +1559,7 @@ PY
       -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
       "`$IMAGE" nazo-oauth-migrate
   fi
+  seed_oidf_public_clients
   assert_pending_lease
 
   candidate_started="1"
