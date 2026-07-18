@@ -3,6 +3,7 @@ import json
 import os
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -22,6 +23,51 @@ def load_module():
 
 
 class ApplyPublicConformanceOnboardingTests(unittest.TestCase):
+    def test_login_retries_transport_failure_but_not_http_failure(self):
+        module = load_module()
+
+        try:
+            raise TimeoutError("temporary connect timeout")
+        except TimeoutError as cause:
+            transport_error = module.OnboardingError("POST /auth/login failed")
+            transport_error.__cause__ = cause
+
+        with (
+            mock.patch.object(
+                module.ControlPlaneSession,
+                "request_json",
+                side_effect=[transport_error, {"csrf_token": "csrf-token"}],
+            ) as request_json,
+            mock.patch.object(module.time, "sleep") as sleep,
+        ):
+            session = module.ControlPlaneSession.login(
+                "https://issuer.example", "operator@example.com", "password"
+            )
+
+        self.assertEqual(session.csrf_token, "csrf-token")
+        self.assertEqual(request_json.call_count, 2)
+        sleep.assert_called_once_with(module.LOGIN_RETRY_BASE_SECONDS)
+
+        http_error = urllib.error.HTTPError(
+            "https://issuer.example/auth/login", 401, "Unauthorized", {}, None
+        )
+        authentication_error = module.OnboardingError("POST /auth/login returned 401")
+        authentication_error.__cause__ = http_error
+        with (
+            mock.patch.object(
+                module.ControlPlaneSession,
+                "request_json",
+                side_effect=authentication_error,
+            ) as request_json,
+            mock.patch.object(module.time, "sleep") as sleep,
+            self.assertRaises(module.OnboardingError),
+        ):
+            module.ControlPlaneSession.login(
+                "https://issuer.example", "operator@example.com", "wrong-password"
+            )
+        request_json.assert_called_once()
+        sleep.assert_not_called()
+
     def test_access_request_site_name_is_stable_unique_and_within_product_limit(self):
         module = load_module()
 

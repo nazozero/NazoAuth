@@ -15,6 +15,7 @@ import json
 import os
 import ssl
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -23,6 +24,8 @@ from typing import Any
 
 MAX_RESPONSE_BYTES = 1024 * 1024
 DEFAULT_TIMEOUT_SECONDS = 20.0
+LOGIN_TRANSPORT_ATTEMPTS = 3
+LOGIN_RETRY_BASE_SECONDS = 1.0
 
 
 class OnboardingError(RuntimeError):
@@ -110,27 +113,43 @@ class ControlPlaneSession:
 
     @classmethod
     def login(cls, origin: str, email: str, password: str) -> "ControlPlaneSession":
-        cookie_jar = http.cookiejar.CookieJar()
-        opener = urllib.request.build_opener(
-            urllib.request.HTTPSHandler(context=ssl.create_default_context()),
-            urllib.request.HTTPCookieProcessor(cookie_jar),
-            NoRedirectHandler(),
-        )
-        session = cls(origin=origin, opener=opener, csrf_token="")
-        body = session.request_json(
-            "POST",
-            "/auth/login",
-            {"email": email, "password": password},
-            expected_status=200,
-            csrf=False,
-        )
-        csrf_token = body.get("csrf_token") if isinstance(body, dict) else None
-        if not isinstance(csrf_token, str) or not csrf_token:
-            raise OnboardingError(f"login for {email} did not establish a CSRF token")
-        if body.get("mfa_required") is True:
-            raise OnboardingError(f"login for {email} requires interactive MFA; use an approved automation identity")
-        session.csrf_token = csrf_token
-        return session
+        for attempt in range(LOGIN_TRANSPORT_ATTEMPTS):
+            cookie_jar = http.cookiejar.CookieJar()
+            opener = urllib.request.build_opener(
+                urllib.request.HTTPSHandler(context=ssl.create_default_context()),
+                urllib.request.HTTPCookieProcessor(cookie_jar),
+                NoRedirectHandler(),
+            )
+            session = cls(origin=origin, opener=opener, csrf_token="")
+            try:
+                body = session.request_json(
+                    "POST",
+                    "/auth/login",
+                    {"email": email, "password": password},
+                    expected_status=200,
+                    csrf=False,
+                )
+            except OnboardingError as error:
+                cause = error.__cause__
+                retryable = isinstance(cause, (urllib.error.URLError, TimeoutError, OSError)) and not isinstance(
+                    cause, urllib.error.HTTPError
+                )
+                if not retryable or attempt + 1 == LOGIN_TRANSPORT_ATTEMPTS:
+                    raise
+                time.sleep(LOGIN_RETRY_BASE_SECONDS * (2**attempt))
+                continue
+
+            csrf_token = body.get("csrf_token") if isinstance(body, dict) else None
+            if not isinstance(csrf_token, str) or not csrf_token:
+                raise OnboardingError(f"login for {email} did not establish a CSRF token")
+            if body.get("mfa_required") is True:
+                raise OnboardingError(
+                    f"login for {email} requires interactive MFA; use an approved automation identity"
+                )
+            session.csrf_token = csrf_token
+            return session
+
+        raise AssertionError("login retry loop exhausted without returning or raising")
 
     def request(
         self,
