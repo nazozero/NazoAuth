@@ -11,6 +11,7 @@ import json
 import os
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 OIDCC_BASIC_CONFIG_FILE = "oidf-oidcc-basic-plan-config.json"
 OIDCC_DYNAMIC_CONFIG_FILE = "oidf-oidcc-dynamic-plan-config.json"
@@ -25,6 +26,7 @@ FAPI_CIBA_MATRIX = (
     ("private_key_jwt", "ping"),
     ("mtls", "ping"),
 )
+TEMPLATE_ISSUER = "https://issuer.example"
 
 
 def read_json(path: Path) -> Any:
@@ -65,6 +67,35 @@ def materialize(value: Any, patch: dict[str, Any]) -> Any:
         return {key: materialize(child, patch) for key, child in value.items()}
     if isinstance(value, list):
         return [materialize(child, patch) for child in value]
+    return value
+
+
+def validate_https_origin(value: str, name: str) -> str:
+    parsed = urlparse(value)
+    if (
+        parsed.scheme != "https"
+        or not parsed.netloc
+        or parsed.path not in ("", "/")
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or parsed.username
+        or parsed.password
+    ):
+        raise SystemExit(f"{name} must be an HTTPS origin")
+    return f"https://{parsed.netloc}".rstrip("/")
+
+
+def replace_template_issuer(value: Any, target_issuer: str) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: replace_template_issuer(child, target_issuer)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [replace_template_issuer(child, target_issuer) for child in value]
+    if isinstance(value, str):
+        return value.replace(TEMPLATE_ISSUER, target_issuer)
     return value
 
 
@@ -186,7 +217,6 @@ def derive_fapi_ciba_matrix_configs(
         nazo.update(
             {
                 "client_auth_type": client_auth_type,
-                "sender_constrain": "mtls",
                 "fapi_ciba_profile": "plain_fapi",
                 "ciba_mode": ciba_mode,
                 "matrix_title": (
@@ -194,6 +224,11 @@ def derive_fapi_ciba_matrix_configs(
                 ),
             }
         )
+        # FAPI-CIBA ID1 uses `private_key_jwt` / mTLS as the client
+        # authentication dimension.  It still inherits FAPI Part 2 sender
+        # constraint requirements for access tokens, so all four supported
+        # CIBA matrix combinations are mTLS holder-of-key token profiles.
+        nazo["sender_constrain"] = "mtls"
 
 
 def main() -> int:
@@ -231,6 +266,14 @@ def main() -> int:
         default="https://www.certification.openid.net",
         help="OIDF suite base URL used by ping notification endpoints",
     )
+    parser.add_argument(
+        "--target-issuer",
+        default="",
+        help=(
+            "production HTTPS issuer under test; when set, rewrites the template "
+            "issuer in all generated config URLs"
+        ),
+    )
     args = parser.parse_args()
 
     template = read_json(args.template)
@@ -251,6 +294,10 @@ def main() -> int:
         if not isinstance(rendered, dict):
             raise SystemExit("OIDF rendered config must be a JSON object")
         derive_fapi_ciba_matrix_configs(rendered, args.ciba_notification_base_url)
+    if args.target_issuer:
+        rendered = replace_template_issuer(
+            rendered, validate_https_origin(args.target_issuer, "--target-issuer")
+        )
     args.output.write_text(json.dumps(rendered, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     return 0
 

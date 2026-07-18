@@ -1,7 +1,10 @@
 use serde_json::{Value, json};
 
 use super::MetadataCapabilities;
-use crate::SUPPORTED_AUTHORIZATION_DETAILS_TYPES;
+use crate::{
+    SUPPORTED_AUTHORIZATION_DETAILS_TYPES, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
+};
 use nazo_runtime_modules::ActiveModuleSnapshot;
 
 const CLIENT_JWT_SIGNING_ALGS: [&str; 4] = ["EdDSA", "RS256", "ES256", "PS256"];
@@ -58,8 +61,6 @@ const SCOPES_SUPPORTED: [&str; 6] = [
     "phone",
     "offline_access",
 ];
-const SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS: [&str; 1] = ["RSA-OAEP-256"];
-const SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS: [&str; 1] = ["A256GCM"];
 const BASELINE_ACR_VALUE: &str = "1";
 
 /// Authorization-server profile choices that affect standard metadata.

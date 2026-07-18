@@ -13,7 +13,7 @@ import uuid
 from pathlib import Path
 
 
-BASE_URL = "https://auth.nazo.run"
+BASE_URL = ""
 REMOTE_BASE = Path("/opt/nazo-oauth")
 SECRETS_PATH = REMOTE_BASE / "secrets.json"
 EXPECTED_BACKEND_SHA = ""
@@ -29,7 +29,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Exercise the complete deployed NazoAuth HTTPS interface set."
     )
-    parser.add_argument("--base-url", default="https://auth.nazo.run")
+    parser.add_argument("--base-url", required=True)
     parser.add_argument("--secrets-path", default="/opt/nazo-oauth/secrets.json")
     parser.add_argument("--expected-backend-sha", required=True)
     return parser.parse_args(argv)
@@ -67,10 +67,20 @@ def main(argv: list[str] | None = None) -> None:
 
     args = parse_args(argv)
     BASE_URL = args.base_url.rstrip("/")
+    parsed_base = urllib.parse.urlparse(BASE_URL)
+    if parsed_base.scheme != "https" or not parsed_base.hostname or parsed_base.path not in ("", "/"):
+        raise SystemExit("--base-url must be an HTTPS origin without a path")
     SECRETS_PATH = Path(args.secrets_path)
     EXPECTED_BACKEND_SHA = args.expected_backend_sha
     load_runtime_dependencies()
     run()
+
+
+def test_email_domain() -> str:
+    hostname = urllib.parse.urlparse(BASE_URL).hostname
+    if not hostname:
+        raise AssertionError("BASE_URL hostname is unavailable")
+    return hostname
 
 
 def verify_deployed_backend(
@@ -241,12 +251,13 @@ def cleanup_rows(conn):
             ),
             test_users AS (
                 SELECT id FROM users
-                WHERE email LIKE 'live-full-%@auth.nazo.run'
-                   OR email LIKE 'registered-live-full-%@auth.nazo.run'
+                WHERE email LIKE %s
+                   OR email LIKE %s
             )
             DELETE FROM access_token_revocations
             WHERE client_id IN (SELECT id FROM test_clients)
-            """
+            """,
+            (f"live-full-%@{test_email_domain()}", f"registered-live-full-%@{test_email_domain()}"),
         )
         cur.execute(
             """
@@ -256,13 +267,14 @@ def cleanup_rows(conn):
             ),
             test_users AS (
                 SELECT id FROM users
-                WHERE email LIKE 'live-full-%@auth.nazo.run'
-                   OR email LIKE 'registered-live-full-%@auth.nazo.run'
+                WHERE email LIKE %s
+                   OR email LIKE %s
             )
             DELETE FROM oauth_tokens
             WHERE client_id IN (SELECT id FROM test_clients)
                OR user_id IN (SELECT id FROM test_users)
-            """
+            """,
+            (f"live-full-%@{test_email_domain()}", f"registered-live-full-%@{test_email_domain()}"),
         )
         cur.execute(
             """
@@ -272,13 +284,14 @@ def cleanup_rows(conn):
             ),
             test_users AS (
                 SELECT id FROM users
-                WHERE email LIKE 'live-full-%@auth.nazo.run'
-                   OR email LIKE 'registered-live-full-%@auth.nazo.run'
+                WHERE email LIKE %s
+                   OR email LIKE %s
             )
             DELETE FROM user_client_grants
             WHERE client_id IN (SELECT id FROM test_clients)
                OR user_id IN (SELECT id FROM test_users)
-            """
+            """,
+            (f"live-full-%@{test_email_domain()}", f"registered-live-full-%@{test_email_domain()}"),
         )
         cur.execute(
             """
@@ -288,14 +301,15 @@ def cleanup_rows(conn):
             ),
             test_users AS (
                 SELECT id FROM users
-                WHERE email LIKE 'live-full-%@auth.nazo.run'
-                   OR email LIKE 'registered-live-full-%@auth.nazo.run'
+                WHERE email LIKE %s
+                   OR email LIKE %s
             )
             DELETE FROM client_access_requests
             WHERE user_id IN (SELECT id FROM test_users)
                OR approved_client_id IN (SELECT id FROM test_clients)
                OR site_name LIKE 'live-full-%'
-            """
+            """,
+            (f"live-full-%@{test_email_domain()}", f"registered-live-full-%@{test_email_domain()}"),
         )
         cur.execute(
             """
@@ -306,15 +320,16 @@ def cleanup_rows(conn):
         cur.execute(
             """
             DELETE FROM users
-            WHERE email LIKE 'live-full-%@auth.nazo.run'
-               OR email LIKE 'registered-live-full-%@auth.nazo.run'
-            """
+            WHERE email LIKE %s
+               OR email LIKE %s
+            """,
+            (f"live-full-%@{test_email_domain()}", f"registered-live-full-%@{test_email_domain()}"),
         )
 
 
 def seed_admin(conn):
     ph = PasswordHasher()
-    email = f"{RUN_ID}@auth.nazo.run"
+    email = f"{RUN_ID}@{test_email_domain()}"
     with conn.cursor() as cur:
         cur.execute(
             """
@@ -592,9 +607,9 @@ def run():
     request(public, "GET", "/.well-known/oauth-authorization-server", expected={200}, name="oauth metadata")
     request(public, "GET", "/jwks.json", expected={200}, name="jwks")
     request(public, "GET", "/auth/captcha-config", expected={200}, name="captcha config")
-    request(public, "POST", "/auth/send-code", expected={503}, name="send-code disabled", json={"email": f"registered-{RUN_ID}@auth.nazo.run"})
+    request(public, "POST", "/auth/send-code", expected={503}, name="send-code disabled", json={"email": f"registered-{RUN_ID}@{test_email_domain()}"})
 
-    register_email = f"registered-{RUN_ID}@auth.nazo.run"
+    register_email = f"registered-{RUN_ID}@{test_email_domain()}"
     code = "731924"
     create_email_code(redis_client, register_email, code)
     registered = request(

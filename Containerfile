@@ -22,16 +22,13 @@ RUN apt-get update \
 
 WORKDIR /app
 
-FROM runtime-base AS oidf-seed
-
-COPY --from=builder /app/target/release/nazo_oauth_seed_oidf /usr/local/bin/nazo_oauth_seed_oidf
-COPY --from=builder /app/target/release/nazo_openid4vc_seed_oidf /usr/local/bin/nazo_openid4vc_seed_oidf
-
 FROM runtime-base AS runtime
 
 COPY --from=builder /app/target/release/nazo-oauth-server /usr/local/bin/nazo-oauth-server
 COPY --from=builder /app/target/release/nazo-oauth-migrate /usr/local/bin/nazo-oauth-migrate
 COPY --from=builder /app/target/release/nazo-oauth-keyctl /usr/local/bin/nazo-oauth-keyctl
+COPY --from=builder /app/target/release/nazo_oauth_seed_oidf /usr/local/bin/nazo_oauth_seed_oidf
+COPY --from=builder /app/target/release/nazo_openid4vc_seed_oidf /usr/local/bin/nazo_openid4vc_seed_oidf
 
 EXPOSE 8000
 

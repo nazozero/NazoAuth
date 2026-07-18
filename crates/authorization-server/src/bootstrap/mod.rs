@@ -163,6 +163,11 @@ pub async fn run() -> anyhow::Result<()> {
     let resource_replay_connection =
         nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
     let resource_server_config = ResourceServerConfig::from(settings.as_ref());
+    tracing::info!(
+        dpop_nonce_policy = ?settings.protocol.dpop_nonce_policy,
+        fapi_resource_dpop_nonce_policy = ?settings.protocol.fapi_resource_dpop_nonce_policy,
+        "loaded DPoP nonce policies"
+    );
     let resource_server_http_data = {
         let replay = nazo_valkey::ReplayStore::new(&resource_replay_connection);
         let authorizer = Arc::new(ServerFapiResourceAuthorizer::new(

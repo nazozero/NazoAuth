@@ -282,7 +282,9 @@ fn dynamic_registration_rejects_malformed_request_uris_metadata() {
 #[actix_web::test]
 async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_clients() {
     let request = DynamicClientRegistrationRequest {
-        redirect_uris: Some(vec!["https://nginx:8443/test/a/client/callback".to_owned()]),
+        redirect_uris: Some(vec![
+            "https://suite.example/test/a/client/callback".to_owned(),
+        ]),
         jwks: Some(json!({
             "keys": [{
                 "kty": "RSA",

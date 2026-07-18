@@ -6,7 +6,7 @@ High-risk negative conformance cases map to durable local tests here. OIDF
 results remain the authority for official suite status; local tests keep
 security-profile regressions visible in `cargo test`.
 
-| Fixture | Local evidence |
+| Fixture | Repository evidence |
 | --- | --- |
 | Overclaimed metadata | `http::well_known::tests::discovery_does_not_advertise_mtls_when_no_trusted_proxy_is_configured`, `http::well_known::tests::discovery_fapi2_security_metadata_is_profile_scoped`, `http::well_known::tests::discovery_message_signing_profile_requires_signed_request_object_algs` |
 | Unsupported or malformed RAR authorization details | `domain::authorization_details::tests::authorization_details_require_array_of_typed_objects`, `http::authorization::request::tests::stored_grant_requires_transaction_binding_for_authorization_details`, `http::well_known::tests::discovery_advertises_supported_rar_types` |

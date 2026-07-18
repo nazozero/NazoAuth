@@ -3,6 +3,7 @@ use serde_json::Value;
 
 use super::{ClientMetadata as ValidatedMetadata, validate_client_metadata as validate_metadata};
 use crate::admin_clients::{AdminClientCryptoPort, CreateClientRequest};
+use crate::client_jwe_encryption_key_matches_alg;
 
 pub(super) const SUPPORTED_CLIENT_JWT_SIGNING_ALGS: &[&str] = &["EdDSA", "RS256", "ES256", "PS256"];
 
@@ -163,13 +164,7 @@ impl AdminClientCryptoPort for MetadataTestCrypto {
             .and_then(Value::as_array)
             .into_iter()
             .flatten()
-            .filter(|key| {
-                key.get("use").and_then(Value::as_str) == Some("enc")
-                    && key.get("alg").and_then(Value::as_str) == Some(algorithm)
-                    && key.get("kty").and_then(Value::as_str) == Some("RSA")
-                    && key.get("n").and_then(Value::as_str).is_some()
-                    && key.get("e").and_then(Value::as_str).is_some()
-            })
+            .filter(|key| client_jwe_encryption_key_matches_alg(key, algorithm))
             .count()
     }
 

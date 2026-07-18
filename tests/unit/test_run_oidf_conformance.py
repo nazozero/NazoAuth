@@ -204,6 +204,64 @@ class RunOidfConformanceTests(unittest.TestCase):
         self.assertEqual(urlopen.call_count, 2)
         sleep.assert_called_once_with(2)
 
+    def test_oidf_api_request_retries_transient_server_error(self):
+        module = load_runner_module()
+
+        class FakeResponse:
+            status = 200
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, traceback):
+                return False
+
+            @staticmethod
+            def read():
+                return b'{"ok": true}'
+
+        error = module.urllib.error.HTTPError(
+            "https://localhost:8443/api/log/module",
+            503,
+            "Service Unavailable",
+            {},
+            None,
+        )
+
+        with (
+            mock.patch.object(
+                module.urllib.request,
+                "urlopen",
+                side_effect=[error, FakeResponse()],
+            ) as urlopen,
+            mock.patch.object(module.time, "sleep") as sleep,
+        ):
+            status, payload = module.oidf_api_request(
+                "GET",
+                "https://localhost:8443/",
+                "api/log/module",
+                None,
+                expected_statuses={200},
+            )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(payload, {"ok": True})
+        self.assertEqual(urlopen.call_count, 2)
+        sleep.assert_called_once_with(2)
+
+    def test_monitor_interval_has_floor_when_aliases_are_present(self):
+        module = load_runner_module()
+
+        self.assertEqual(
+            module.effective_monitor_interval_seconds({"oidf-alias"}, 0),
+            60,
+        )
+        self.assertEqual(
+            module.effective_monitor_interval_seconds({"oidf-alias"}, 30),
+            30,
+        )
+        self.assertEqual(module.effective_monitor_interval_seconds(set(), 0), 0)
+
     def test_successful_completion_log_allows_browser_script_noise(self):
         module = load_runner_module()
 
@@ -622,7 +680,7 @@ class RunOidfConformanceTests(unittest.TestCase):
                     "result": "FAILURE",
                     "msg": "MalformedJsonException",
                     "args": {
-                        "endpoint": "https://auth.nazo.run/bc-authorize?code=secret",
+                        "endpoint": "https://issuer.example/bc-authorize?code=secret",
                         "body": "<html>token=secret</html>",
                         "response_status_code": 404,
                     },
@@ -631,7 +689,7 @@ class RunOidfConformanceTests(unittest.TestCase):
         )
 
         self.assertIn("CallBackchannelAuthenticationEndpoint", context)
-        self.assertIn("https://auth.nazo.run/bc-authorize?redacted=1", context)
+        self.assertIn("https://issuer.example/bc-authorize?redacted=1", context)
         self.assertIn("response_status_code=404", context)
         self.assertIn("token=<redacted>", context)
         self.assertNotIn("secret", context)

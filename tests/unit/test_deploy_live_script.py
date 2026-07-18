@@ -214,6 +214,7 @@ def render_fixture(
         "-RemoteHost", "render-only",
         "-BackendCommit", backend_commit,
         "-FrontendCommit", frontend_commit,
+        "-ExpectedIssuer", "https://issuer.example",
         "-LocalBackendWorktree", str(backend),
         "-LocalFrontendWorktree", str(frontend),
         "-LocalUiDist", str(ui),
@@ -249,6 +250,7 @@ def run_render_only(
         "-RemoteHost", "render-only",
         "-BackendCommit", backend_commit,
         "-FrontendCommit", frontend_commit,
+        "-ExpectedIssuer", "https://issuer.example",
         "-LocalBackendWorktree", str(backend),
         "-RenderRemoteScriptPath", str(rendered),
         "-SkipBuild", "-SkipFrontendBuild", "-SkipMigrate",
@@ -288,6 +290,17 @@ class FakeLifecycle:
         self.ui_path.parent.mkdir(parents=True, mode=0o755)
         (self.deployment / ".env.yaml").write_text("server: {}\n", encoding="utf-8")
         self.remote_temp.mkdir()
+        angie_root = root / "angie"
+        angie_root.mkdir()
+        self.angie_oidf_config = angie_root / "issuer.example.conf"
+        self.angie_oidf_config.write_text(
+            "server {\n"
+            "  location / {\n"
+            "    proxy_pass http://10.101.0.20:8000;\n"
+            "  }\n"
+            "}\n",
+            encoding="utf-8",
+        )
         render_arguments = [
                 "-RenderRemoteTempDir", bash_path(self.remote_temp),
                 "-RemoteDeploymentRoot", bash_path(self.deployment),
@@ -296,14 +309,13 @@ class FakeLifecycle:
                 "-RemoteAvatarsPath", bash_path(self.avatars),
                 "-RemoteUiPath", bash_path(self.ui_path),
                 "-RemoteUiReleasesRoot", bash_path(self.ui_releases),
+                "-RemoteAngieOidfConfigPath", bash_path(self.angie_oidf_config),
                 "-VerificationLeaseSeconds", str(lease_seconds),
         ]
         self.oidf_ca_target: Path | None = None
         self.previous_oidf_ca: bytes | None = None
         if enable_oidf_ca:
             artifact = root / "oidf-public-plan-configs"
-            angie_root = root / "angie"
-            angie_root.mkdir()
             self.oidf_ca_target = angie_root / "oidf-mtls-ca.crt"
             old_key = angie_root / "old-ca.key"
             subprocess.run(
@@ -319,17 +331,21 @@ class FakeLifecycle:
             )
             old_key.unlink()
             self.previous_oidf_ca = self.oidf_ca_target.read_bytes()
-            self.angie_oidf_config = angie_root / "auth.nazo.run.conf"
             self.angie_oidf_config.write_text(
+                "server {\n"
                 f"ssl_client_certificate {self.oidf_ca_target.as_posix()};\n"
+                "ssl_verify_client optional;\n"
                 "proxy_set_header X-SSL-Client-Verify $ssl_client_verify;\n"
-                "proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;\n",
+                "proxy_set_header X-SSL-Client-Cert $ssl_client_escaped_cert;\n"
+                "location / {\n"
+                "proxy_pass http://10.101.0.20:8000;\n"
+                "}\n"
+                "}\n",
                 encoding="utf-8",
             )
             render_arguments.extend(
                 [
                     "-RemoteOidfMtlsCaPath", bash_path(self.oidf_ca_target),
-                    "-RemoteAngieOidfConfigPath", bash_path(self.angie_oidf_config),
                 ]
             )
         rendered = render_fixture(
@@ -380,9 +396,7 @@ class FakeLifecycle:
                 "FAKE_STATE": bash_path(self.fake_state),
                 "FAKE_BACKEND_COMMIT": self.backend_commit,
                 "FAKE_OLD_IMAGE": self.OLD_IMAGE,
-                "FAKE_ANGIE_CONFIG": bash_path(self.angie_oidf_config)
-                if enable_oidf_ca
-                else "",
+                "FAKE_ANGIE_CONFIG": bash_path(self.angie_oidf_config),
                 "MSYS": "winsymlinks:sys",
             }
         )
@@ -425,6 +439,10 @@ case "${1:-}" in
       count=0; [ ! -f "$state/migrations" ] || count="$(cat "$state/migrations")"
       printf '%s\n' "$((count + 1))" >"$state/migrations"; exit 0
     fi
+    if [[ " $* " == *" nazo_oauth_seed_oidf "* ]]; then
+      count=0; [ ! -f "$state/oidf-seeds" ] || count="$(cat "$state/oidf-seeds")"
+      printf '%s\n' "$((count + 1))" >"$state/oidf-seeds"; exit 0
+    fi
     if [[ " $* " == *" pg_isready "* ]]; then exit 0; fi
     selected="${args[$((${#args[@]} - 2))]}"
     [ -n "$selected" ] || exit 0
@@ -443,7 +461,7 @@ esac
             r'''#!/usr/bin/env bash
 set -euo pipefail
 url="${*: -1}"
-if [[ "$url" == *openid-configuration ]]; then printf '%s\n' '{"issuer":"https://auth.nazo.run"}'; exit 0; fi
+if [[ "$url" == *openid-configuration ]]; then printf '%s\n' '{"issuer":"https://issuer.example"}'; exit 0; fi
 if [ "${FAIL_ROLLBACK_HEALTH:-0}" = 1 ] && [ "$(cat "$FAKE_STATE/container-image" 2>/dev/null || true)" = "$FAKE_OLD_IMAGE" ]; then exit 22; fi
 printf '%s\n' ok
 ''', encoding="utf-8", newline="\n")
@@ -594,8 +612,18 @@ class DeployLiveContractTests(unittest.TestCase):
 
     def test_oidf_ca_bundle_is_part_of_the_existing_deployment_transaction(self) -> None:
         self.assertIn("OidfPublicSeedArtifactDirectory", self.source)
+        self.assertIn('[string]$OidfSuiteBaseUrl = "https://www.certification.openid.net"', self.source)
         self.assertIn("--artifact-directory", self.source)
         self.assertIn("OIDF_CA_SHA256", self.source)
+        self.assertIn("seed_oidf_public_clients", self.source)
+        self.assertIn("nazo_oauth_seed_oidf", self.source)
+        self.assertIn("OIDF_SUITE_BASE_URL", self.source)
+        self.assertIn("OIDF_LOCAL_RUNTIME_DIR=/app/oidf-public-plan-configs", self.source)
+        self.assertIn(
+            "OidfSuiteBaseUrl must be a single HTTPS origin without path, query, fragment, whitespace, or comma",
+            self.source,
+        )
+        self.assertIn('^https://[^/?#,\\s]+/?$', self.source)
         self.assertIn("ANGIE_OIDF_CONFIG", self.source)
         self.assertIn('mktemp "`$target_dir/.oidf-mtls-ca.XXXXXX"', self.source)
         self.assertIn('mv -f "`$temporary" "`$OIDF_CA_TARGET"', self.source)
@@ -605,6 +633,7 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn('[string]$AngieServiceName = "nginx.service"', self.source)
         self.assertIn('systemctl reload "`$ANGIE_SERVICE"', self.source)
         self.assertIn("certificate verification must not be overridden with SUCCESS", self.source)
+        self.assertIn("ssl_verify_client must be exactly optional for verified public mTLS", self.source)
         self.assertIn("ANGIE_CONFIG_BACKUP", self.source)
         self.assertIn("reload_angie_and_wait", self.source)
         self.assertIn("old_worker_remaining", self.source)
@@ -633,7 +662,12 @@ class DeployLiveContractTests(unittest.TestCase):
     def test_public_ui_defaults_are_worker_traversable_and_probed_before_commit(self) -> None:
         self.assertIn('[string]$RemoteUiPath = "/usr/local/angie/html/auth/ui"', self.source)
         self.assertIn('[string]$AngieWorkerUser = "www"', self.source)
-        self.assertIn('[string]$UiUrl = "https://auth.nazo.run/ui/auth"', self.source)
+        self.assertIn('[string]$UiUrl = ""', self.source)
+        self.assertIn('$UiUrl = "$ExpectedIssuer/ui/auth"', self.source)
+        self.assertRegex(
+            self.source,
+            r"\[Parameter\(Mandatory\s*=\s*\$true\)\]\s*\[string\]\$ExpectedIssuer",
+        )
         worker_probe = self.source.index('runuser -u "`$ANGIE_WORKER_USER" -- test -r "`$UI_PATH/index.html"')
         public_probe = self.source.index("Invoke-WebRequest -Uri $UiUrl")
         asset_probe = self.source.index("Invoke-WebRequest -Uri $assetUrl")
@@ -641,6 +675,18 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertLess(worker_probe, public_probe)
         self.assertLess(public_probe, asset_probe)
         self.assertLess(asset_probe, commit)
+
+    def test_public_angie_vhost_upstream_is_bound_to_candidate_container(self) -> None:
+        self.assertIn(
+            '[string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/auth.nazo.run.conf"',
+            self.source,
+        )
+        self.assertNotIn(
+            '[string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/nazo-auth.conf"',
+            self.source,
+        )
+        self.assertIn("assert_angie_backend_upstream", self.source)
+        self.assertIn("Angie backend proxy_pass must point only to", self.source)
         self.assertIn("/ui/assets/", self.source)
 
     def test_remote_host_rejects_ssh_options_and_shell_metacharacters(self) -> None:
@@ -659,6 +705,7 @@ class DeployLiveContractTests(unittest.TestCase):
                         "-File", str(SCRIPT), "-RemoteHost", remote_host,
                         "-BackendCommit", valid_commit,
                         "-FrontendCommit", valid_commit,
+                        "-ExpectedIssuer", "https://issuer.example",
                     ],
                     cwd=ROOT, capture_output=True, text=True, errors="replace",
                     timeout=10, check=False,
@@ -689,14 +736,24 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn('Join-Path $backendBuildContext "Containerfile"', self.source)
         self.assertIn('$backendBuildContext', self.source)
         self.assertIn('ExpectedBackendRemote = "https://github.com/nazozero/NazoAuth"', self.source)
-        self.assertIn('ExpectedBackendBranch = "codex/modular-workspace-architecture"', self.source)
+        self.assertIn(
+            '[string]$ExpectedBackendBranch = "codex/modular-workspace-architecture"',
+            self.source,
+        )
+        self.assertIn(
+            '[string]$ExpectedFrontendBranch = "codex/modular-workspace-architecture"',
+            self.source,
+        )
         self.assertIn('ExpectedFrontendRemote = "https://github.com/nazozero/NazoAuthWeb"', self.source)
         self.assertIn("Assert-GitOrigin", self.source)
 
     def test_ssh_remote_action_is_one_argument_without_bash_lc_boundary_ambiguity(self) -> None:
-        self.assertIn('Invoke-Checked ssh $RemoteHost @($deployCommand)', self.source)
-        self.assertIn('Invoke-Checked ssh $RemoteHost @($commitCommand)', self.source)
-        self.assertIn('& ssh $RemoteHost $rollbackCommand', self.source)
+        self.assertIn('"BatchMode=yes"', self.source)
+        self.assertIn('"ConnectTimeout=30"', self.source)
+        self.assertIn('"ServerAliveInterval=15"', self.source)
+        self.assertIn("Invoke-SshChecked @($deployCommand)", self.source)
+        self.assertIn("Invoke-SshChecked @($commitCommand)", self.source)
+        self.assertIn("& ssh @SshOptions $RemoteHost $rollbackCommand", self.source)
         self.assertNotIn('& ssh $RemoteHost bash -lc', self.source)
 
     def test_prebuilt_artifacts_are_not_accepted_for_a_real_deployment(self) -> None:
@@ -1038,6 +1095,7 @@ bash "$1" deploy
 
             deployed = lifecycle.run("deploy")
             self.assertEqual(deployed.returncode, 0, deployed.stderr)
+            self.assertEqual((lifecycle.fake_state / "oidf-seeds").read_text().strip(), "1")
             self.assertNotEqual(target.read_bytes(), previous)
             self.assertIn(
                 b"BEGIN CERTIFICATE",

@@ -103,6 +103,23 @@ class OidfWorkflowTests(unittest.TestCase):
             workflow,
         )
 
+    def test_full_matrix_workflow_requires_explicit_target_issuer(self):
+        workflow = (
+            Path(__file__).resolve().parents[2]
+            / ".github"
+            / "workflows"
+            / "oidf-conformance-full.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("target_issuer:", workflow)
+        self.assertIn("required: true", workflow)
+        self.assertIn(
+            "OIDF_TARGET_ISSUER: ${{ inputs.target_issuer || vars.OIDF_TARGET_ISSUER }}",
+            workflow,
+        )
+        self.assertNotIn("OIDF_TARGET_ISSUER || 'https://auth.nazo.run'", workflow)
+        self.assertIn("Supply workflow_dispatch input target_issuer", workflow)
+
     def test_full_matrix_workflow_has_parallel_isolated_mode(self):
         root = Path(__file__).resolve().parents[2]
         workflow = (root / ".github" / "workflows" / "oidf-conformance-full.yml").read_text(
@@ -112,6 +129,11 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("runner_mode:", workflow)
         self.assertIn("parallel-isolated", workflow)
         self.assertIn("oidf-concurrent-plan-set.json", workflow)
+        self.assertIn("oidf-ciba-plan-set.json", workflow)
+        self.assertIn("01-oidc-core.json", workflow)
+        self.assertIn("03a-fapi-ciba-private-key-jwt-poll.json", workflow)
+        self.assertIn("03d-fapi-ciba-mtls-ping.json", workflow)
+        self.assertIn("07-fapi-private-mtls.json", workflow)
         self.assertIn("oidf-frontchannel-plan-set.json", workflow)
         self.assertIn("oidf-session-management-plan-set.json", workflow)
 
@@ -119,6 +141,10 @@ class OidfWorkflowTests(unittest.TestCase):
         concurrent_plan_set = workflow_heredoc_json(
             workflow,
             "oidf-concurrent-plan-set.json",
+        )
+        ciba_plan_set = workflow_heredoc_json(
+            workflow,
+            "oidf-ciba-plan-set.json",
         )
         serial_plan_set = workflow_heredoc_json(
             workflow,
@@ -129,14 +155,18 @@ class OidfWorkflowTests(unittest.TestCase):
         )
 
         self.assertEqual(len(full_plan_set), 25)
-        self.assertEqual(len(concurrent_plan_set), 23)
+        self.assertEqual(len(concurrent_plan_set), 19)
+        self.assertEqual(len(ciba_plan_set), 4)
         self.assertEqual(len(serial_plan_set), 2)
         self.assertEqual(len(set(full_plan_set)), 25)
         self.assertEqual(
-            sum("fapi-ciba-id1-test-plan" in plan for plan in concurrent_plan_set),
+            sum("fapi-ciba-id1-test-plan" in plan for plan in ciba_plan_set),
             4,
         )
+        self.assertFalse(any("fapi-ciba-id1-test-plan" in plan for plan in concurrent_plan_set))
         self.assertFalse(set(concurrent_plan_set) & set(serial_plan_set))
+        self.assertFalse(set(ciba_plan_set) & set(serial_plan_set))
+        self.assertFalse(set(ciba_plan_set) & set(concurrent_plan_set))
         self.assertTrue(any("oidcc-basic-certification-test-plan" in plan for plan in concurrent_plan_set))
         self.assertFalse(
             any("oidcc-dynamic-certification-test-plan" in plan for plan in full_plan_set)
@@ -170,7 +200,7 @@ class OidfWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(
             sorted(full_plan_set),
-            sorted(concurrent_plan_set + serial_plan_set),
+            sorted(concurrent_plan_set + ciba_plan_set + serial_plan_set),
         )
 
         expected_skips = workflow_heredoc_json(workflow, "oidf-expected-skips.json")
@@ -184,9 +214,11 @@ class OidfWorkflowTests(unittest.TestCase):
             },
         )
         self.assertIn(
-            "--expected-failures-file tests/contracts/oidf-official-expected-warnings.json",
+            "--expected-failures-file \"$expected_warnings_file\"",
             workflow,
         )
+        self.assertIn("tests/contracts/oidf-official-expected-warnings.json", workflow)
+        self.assertIn('local expected_skips_file="$RUNNER_TEMP/${plan_set_file%.json}-expected-skips.json"', workflow)
 
         expected_warnings = json.loads(
             (root / "tests" / "contracts" / "oidf-official-expected-warnings.json").read_text(
@@ -195,14 +227,33 @@ class OidfWorkflowTests(unittest.TestCase):
         )
         self.assertEqual(len(expected_warnings), 26)
         self.assertEqual(
-            {item["configuration-filename"] for item in expected_warnings},
-            {
-                "oidf-fapi-ciba-plain-private-key-jwt-ping-plan-config.json",
-                "oidf-fapi-ciba-plain-mtls-ping-plan-config.json",
-            },
+            {item["condition"] for item in expected_warnings},
+            {"EnsureIncomingTls13"},
         )
-        self.assertEqual({item["condition"] for item in expected_warnings}, {"EnsureIncomingTls13"})
-        self.assertEqual({item["expected-result"] for item in expected_warnings}, {"warning"})
+        self.assertEqual(
+            {item["expected-result"] for item in expected_warnings},
+            {"warning"},
+        )
+        self.assertEqual(
+            {item["variant"]["client_auth_type"] for item in expected_warnings},
+            {"private_key_jwt", "mtls"},
+        )
+        self.assertEqual(
+            {item["variant"]["ciba_mode"] for item in expected_warnings},
+            {"ping"},
+        )
+        self.assertEqual(
+            {item["variant"]["fapi_ciba_profile"] for item in expected_warnings},
+            {"plain_fapi"},
+        )
+        self.assertEqual(
+            {item["variant"]["client_registration"] for item in expected_warnings},
+            {"static_client"},
+        )
+        self.assertFalse(
+            any("*" in json.dumps(item, sort_keys=True) for item in expected_warnings),
+            "OIDF expected warnings must remain exact, not wildcard based",
+        )
 
         self.assertIn('"$GITHUB_WORKSPACE/oidf-results/$export_subdir"', workflow)
 
@@ -215,7 +266,26 @@ class OidfWorkflowTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         parallel_case = workflow.split("parallel-isolated)", 1)[1].split(";;", 1)[0]
-        self.assertIn("run_oidf_plan_set oidf-concurrent-plan-set.json concurrent", parallel_case)
+        self.assertIn("run_oidf_plan_set 01-oidc-core.json 01-oidc-core", parallel_case)
+        self.assertIn("run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json 02-oidc-formpost-thirdparty-config", parallel_case)
+        self.assertIn(
+            "run_oidf_plan_set 03a-fapi-ciba-private-key-jwt-poll.json 03a-fapi-ciba-private-key-jwt-poll --no-parallel",
+            parallel_case,
+        )
+        self.assertIn(
+            "run_oidf_plan_set 03b-fapi-ciba-mtls-poll.json 03b-fapi-ciba-mtls-poll --no-parallel",
+            parallel_case,
+        )
+        self.assertIn(
+            "run_oidf_plan_set 03c-fapi-ciba-private-key-jwt-ping.json 03c-fapi-ciba-private-key-jwt-ping --no-parallel",
+            parallel_case,
+        )
+        self.assertIn(
+            "run_oidf_plan_set 03d-fapi-ciba-mtls-ping.json 03d-fapi-ciba-mtls-ping --no-parallel",
+            parallel_case,
+        )
+        self.assertNotIn("run_oidf_plan_set 03-fapi-ciba.json", parallel_case)
+        self.assertIn("run_oidf_plan_set 07-fapi-private-mtls.json 07-fapi-private-mtls", parallel_case)
         self.assertNotIn("oidf-browser-sensitive-plan-set.json", parallel_case)
 
         self.assertIn("oidf-conformance-browser-isolated:", workflow)

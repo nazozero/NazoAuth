@@ -14,6 +14,7 @@ mod claims;
 mod client;
 mod client_assertion;
 mod client_authentication;
+mod client_jwe_policy;
 mod client_registration;
 mod device;
 mod dpop;
@@ -107,6 +108,11 @@ pub use client_assertion::{
 pub use client_authentication::{
     ClientAuthenticationContext, ClientAuthenticationMethod, ClientAuthenticationPolicyError,
     ClientAuthenticationRequirement, PresentedClientCredentials, client_authentication_requirement,
+};
+pub use client_jwe_policy::{
+    ClientJweKeyManagement, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS,
+    SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, client_jwe_encryption_key_matches_alg,
+    client_jwe_key_management_from_name,
 };
 pub use client_registration::{
     ApprovedClient, ClientPresentationMetadata, OAuthClient, ValidatedClientRegistration,

@@ -137,8 +137,7 @@ OIDF_ALLOWED_REVIEW_CONTEXTS_BY_CONFIG = {
 }
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
-NAZO_PUBLIC_ISSUER_ORIGIN = "https://auth.nazo.run"
-NAZO_RUN_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]*nazo\.run(?::\d+)?(?:/[^\s\"'<>)]*)?")
+HTTP_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]+(?::\d+)?(?:/[^\s\"'<>)]*)?")
 NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
 NAZO_LOGIN_PASSWORD_ID = "nazo-login-password"
 NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
@@ -280,16 +279,22 @@ def validate_browser_automation(config_name: str, config_value: dict[str, object
 
 def issuer_from_config(config_value: dict[str, object]) -> str | None:
     server = config_value.get("server")
-    if not isinstance(server, dict):
-        return None
-    discovery_url = server.get("discoveryUrl")
-    if not isinstance(discovery_url, str):
-        return None
-    return issuer_from_discovery_url(discovery_url)
+    if isinstance(server, dict):
+        discovery_url = server.get("discoveryUrl")
+        if isinstance(discovery_url, str):
+            return issuer_from_discovery_url(discovery_url)
+    vci = config_value.get("vci")
+    credential_issuer_url = vci.get("credential_issuer_url") if isinstance(vci, dict) else None
+    if isinstance(credential_issuer_url, str) and credential_issuer_url.strip():
+        return normalized_origin(credential_issuer_url)
+    return None
 
 
 def nazo_public_issuer_origin(config_value: dict[str, object]) -> str:
-    return issuer_from_config(config_value) or NAZO_PUBLIC_ISSUER_ORIGIN
+    issuer = issuer_from_config(config_value)
+    if issuer is None:
+        fail("OIDF plan config must include server.discoveryUrl so the target issuer is explicit")
+    return issuer
 
 
 def nazo_authorization_prefix(config_value: dict[str, object]) -> str:
@@ -304,8 +309,8 @@ def is_hosted_authorization_match(match: object, config_value: dict[str, object]
     return isinstance(match, str) and match.startswith(nazo_authorization_prefix(config_value))
 
 
-def uses_public_nazo_ui(config_value: dict[str, object]) -> bool:
-    return nazo_public_issuer_origin(config_value).rstrip("/") == NAZO_PUBLIC_ISSUER_ORIGIN
+def uses_nazo_hosted_ui(config_value: dict[str, object]) -> bool:
+    return isinstance(config_value.get("nazo"), dict)
 
 
 def non_empty_string(value: object) -> str | None:
@@ -396,29 +401,90 @@ def normalized_origin(value: str) -> str:
     parsed = urlparse(value.strip().rstrip("/"))
     if parsed.scheme not in {"https", "http"} or not parsed.netloc or parsed.path:
         fail(f"target issuer must be an origin URL without a path: {value}")
-    origin = f"{parsed.scheme}://{parsed.netloc}"
-    if origin != NAZO_PUBLIC_ISSUER_ORIGIN:
-        fail(f"target issuer must be {NAZO_PUBLIC_ISSUER_ORIGIN}")
-    return origin
+    return f"{parsed.scheme}://{parsed.netloc}"
 
 
-def assert_only_auth_nazo_run_urls(value: object, config_name: str) -> None:
+def assert_only_target_issuer_urls(value: object, config_name: str, target_issuer: str) -> None:
+    target_origin = normalized_origin(target_issuer)
     if isinstance(value, list):
         for item in value:
-            assert_only_auth_nazo_run_urls(item, config_name)
+            assert_only_target_issuer_urls(item, config_name, target_origin)
     elif isinstance(value, dict):
         for item in value.values():
-            assert_only_auth_nazo_run_urls(item, config_name)
+            assert_only_target_issuer_urls(item, config_name, target_origin)
     elif isinstance(value, str):
-        for match in NAZO_RUN_URL_PATTERN.finditer(value):
+        for match in HTTP_URL_PATTERN.finditer(value):
             url = match.group(0)
             parsed = urlparse(url)
             origin = f"{parsed.scheme}://{parsed.netloc}"
-            if origin != NAZO_PUBLIC_ISSUER_ORIGIN:
+            if "/test/" in parsed.path or parsed.netloc == urlparse(target_origin).netloc:
+                continue
+            if origin != target_origin:
                 fail(
-                    f"{config_name} contains unsupported Nazo URL {url}; "
-                    f"use {NAZO_PUBLIC_ISSUER_ORIGIN} only"
+                    f"{config_name} contains URL {url} outside target issuer {target_origin}; "
+                    "OIDF configs must be materialized for the operator-provided issuer"
                 )
+
+
+OPENID4VC_LOCAL_TARGET_HOSTS = {"localhost", "127.0.0.1", "::1", "nginx", "host.docker.internal"}
+
+
+def is_openid4vc_config(config_name: str) -> bool:
+    return config_name.startswith("openid4vc-")
+
+
+def http_urls_in_value(value: object) -> list[str]:
+    urls: list[str] = []
+    if isinstance(value, list):
+        for item in value:
+            urls.extend(http_urls_in_value(item))
+    elif isinstance(value, dict):
+        for item in value.values():
+            urls.extend(http_urls_in_value(item))
+    elif isinstance(value, str):
+        urls.extend(match.group(0) for match in HTTP_URL_PATTERN.finditer(value))
+    return urls
+
+
+def assert_openid4vc_target_boundaries(
+    config_value: dict[str, object],
+    config_name: str,
+    target_issuer: str,
+) -> None:
+    target_origin = normalized_origin(target_issuer)
+    target_host = urlparse(target_origin).hostname
+    if not target_host:
+        fail(f"{config_name} target issuer lacks a hostname")
+
+    if config_name.startswith("openid4vc-vci-"):
+        vci = config_value.get("vci")
+        if not isinstance(vci, dict) or vci.get("credential_issuer_url") != target_origin:
+            fail(
+                f"{config_name} must bind vci.credential_issuer_url to the operator-provided issuer"
+            )
+    elif config_name.startswith("openid4vc-vp-"):
+        client = config_value.get("client")
+        if not isinstance(client, dict) or client.get("client_id") != target_host:
+            fail(f"{config_name} must bind verifier client_id to the operator-provided host")
+
+    for url in http_urls_in_value(config_value):
+        parsed = urlparse(url)
+        if (parsed.hostname or "").lower() in OPENID4VC_LOCAL_TARGET_HOSTS:
+            fail(
+                f"{config_name} contains local-only URL {url}; OpenID4VC conformance "
+                "must run against public black-box targets"
+            )
+
+
+def assert_config_target_boundaries(
+    value: dict[str, object],
+    config_name: str,
+    target_issuer: str,
+) -> None:
+    if is_openid4vc_config(config_name):
+        assert_openid4vc_target_boundaries(value, config_name, target_issuer)
+    else:
+        assert_only_target_issuer_urls(value, config_name, target_issuer)
 
 
 def config_alias(config_value: dict[str, object]) -> str | None:
@@ -626,7 +692,7 @@ def use_nazo_user_facing_task_commands(config_value: dict[str, object], task: ob
 
 
 def use_nazo_user_facing_browser_commands(config_value: dict[str, object]) -> None:
-    if not uses_public_nazo_ui(config_value):
+    if not uses_nazo_hosted_ui(config_value):
         return
 
     browser = config_value.get("browser")
@@ -953,10 +1019,11 @@ def write_plan_configs(
     configs = parsed.get("configs")
     if configs is None:
         if target_issuer:
-            assert_only_auth_nazo_run_urls(parsed, file_name)
-        add_nazo_browser_overrides(parsed)
+            assert_config_target_boundaries(parsed, file_name, target_issuer)
+        if issuer_from_config(parsed) is not None:
+            add_nazo_browser_overrides(parsed)
         if target_issuer:
-            assert_only_auth_nazo_run_urls(parsed, file_name)
+            assert_config_target_boundaries(parsed, file_name, target_issuer)
         validate_browser_automation(file_name, parsed)
         target = suite_scripts / file_name
         atomic_write_json_file(target, parsed)
@@ -975,10 +1042,11 @@ def write_plan_configs(
         if not isinstance(config_value, dict):
             fail(f"{env_name}.configs.{config_name} must contain a JSON object")
         if target_issuer:
-            assert_only_auth_nazo_run_urls(config_value, config_name)
-        add_nazo_browser_overrides(config_value)
+            assert_config_target_boundaries(config_value, config_name, target_issuer)
+        if issuer_from_config(config_value) is not None:
+            add_nazo_browser_overrides(config_value)
         if target_issuer:
-            assert_only_auth_nazo_run_urls(config_value, config_name)
+            assert_config_target_boundaries(config_value, config_name, target_issuer)
         validate_browser_automation(config_name, config_value)
         alias = config_alias(config_value)
         if alias:
@@ -1013,7 +1081,7 @@ def oidf_api_request(
         method=method,
         headers=headers,
     )
-    attempts = 3
+    attempts = 8
     last_error: Exception | None = None
     for attempt in range(1, attempts + 1):
         try:
@@ -1029,13 +1097,13 @@ def oidf_api_request(
             body = exc.read()
             if status < 500 or attempt == attempts:
                 break
-            time.sleep(attempt * 2)
+            time.sleep(min(attempt * 2, 15))
             continue
         except (urllib.error.URLError, http.client.RemoteDisconnected) as exc:
             last_error = exc
             if attempt == attempts:
                 fail(f"OIDF API {method} {path} failed: {exc}")
-            time.sleep(attempt * 2)
+            time.sleep(min(attempt * 2, 15))
             continue
         break
     else:
@@ -1618,6 +1686,15 @@ def ciba_config_has_automated_approval_url(config_json_file: str, env_name: str)
     return False
 
 
+def effective_monitor_interval_seconds(
+    monitor_aliases: set[str],
+    requested_interval_seconds: int,
+) -> int:
+    if monitor_aliases and requested_interval_seconds == 0:
+        return 60
+    return requested_interval_seconds
+
+
 def cancel_alias_plan_instances(
     base_url: str,
     token: str,
@@ -1937,7 +2014,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--target-issuer",
         default=os.environ.get("OIDF_TARGET_ISSUER", ""),
-        help=f"expected issuer origin; Nazo URLs must use {NAZO_PUBLIC_ISSUER_ORIGIN}",
+        help="expected HTTPS issuer origin supplied by the operator; no repository default is provided",
     )
     parser.add_argument("--token-env", default="OIDF_CONFORMANCE_TOKEN")
     parser.add_argument(
@@ -2222,6 +2299,17 @@ def main() -> int:
                 "so the official suite controls approve/deny timing"
             )
 
+    monitor_interval_seconds = effective_monitor_interval_seconds(
+        monitor_aliases,
+        args.monitor_interval_seconds,
+    )
+    if monitor_interval_seconds != args.monitor_interval_seconds:
+        print(
+            "OIDF early-stop monitor interval raised to "
+            f"{monitor_interval_seconds} seconds because runnable aliases are present",
+            flush=True,
+        )
+
     return run_official_runner(
         command,
         expressions,
@@ -2231,7 +2319,7 @@ def main() -> int:
         args.conformance_server,
         monitor_aliases,
         token,
-        args.monitor_interval_seconds,
+        monitor_interval_seconds,
         allowed_review_contexts_by_alias(aliases_by_config),
         expected_warning_contexts_by_alias(expected_failures_file, aliases_by_config),
     )

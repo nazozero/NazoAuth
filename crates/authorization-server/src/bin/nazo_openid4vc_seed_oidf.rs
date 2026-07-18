@@ -26,19 +26,35 @@ fn required_env(name: &str) -> anyhow::Result<String> {
         .ok_or_else(|| anyhow::anyhow!("{name} is required"))
 }
 
+fn required_config_string(config: &ConfigSource, name: &str) -> anyhow::Result<String> {
+    let value = config.string(name, "");
+    if value.trim().is_empty() {
+        anyhow::bail!("{name} is required for OpenID4VC OIDF seeding")
+    }
+    Ok(value)
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let config = ConfigSource::load()?;
     let database_url = database_url(&config);
-    let issuer = config.string("ISSUER", "https://auth.nazo.run");
+    let issuer = required_config_string(&config, "ISSUER")?;
     let default_audience = config.string("DEFAULT_AUDIENCE", "resource://default");
-    let suite_base_url = env::var("OIDF_LOCAL_SUITE_BASE_URL")
+    let suite_base_url = env::var("OIDF_SUITE_BASE_URL")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "https://localhost:8443".to_owned());
+        .or_else(|| {
+            env::var("OIDF_LOCAL_SUITE_BASE_URL")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        })
+        .ok_or_else(|| anyhow::anyhow!("OIDF_SUITE_BASE_URL is required for OpenID4VC seeding"))?;
     let plan_bundle_path = required_env("OPENID4VC_OIDF_PLAN_CONFIG_JSON_FILE")?;
     let bundle: Value = serde_json::from_str(&fs::read_to_string(&plan_bundle_path)?)?;
-    let seeds = client_seeds(&bundle, &suite_base_urls(&suite_base_url))?;
+    let seeds = client_seeds(
+        &bundle,
+        &suite_base_urls(&suite_base_url).map_err(anyhow::Error::msg)?,
+    )?;
     let allowed_audiences = json!(allowed_audiences(&issuer, &default_audience));
     let grant_types = json!([
         "authorization_code",

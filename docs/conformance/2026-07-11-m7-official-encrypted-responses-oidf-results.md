@@ -1,19 +1,17 @@
-# M7 Encrypted Responses Local and Official OIDF Full Matrix
+# M7 Encrypted Responses Diagnostic and Official OIDF Full Matrix
 
 Date: 2026-07-11
 
 ## Result
 
 M7 passed both required conformance gates against the deployed public issuer
-`https://auth.nazo.run`:
+`https://issuer.example`:
 
 | Gate | Result |
 | --- | --- |
-| Hostinger local official-suite matrix | `success` |
 | GitHub official parallel-isolated matrix | `success` |
 | Matrix layout | 19 concurrency-safe plans + front-channel logout + session management |
 | Module results, each gate | 640 total: 632 `PASSED`, 6 allowed `REVIEW`, 2 expected `SKIPPED`, 0 `FAILED` |
-| Local condition results | 43,490 `SUCCESS`, 0 `FAILURE`, 0 `WARNING` |
 | Official condition results | 45,117 `SUCCESS`, 0 `FAILURE`, 0 `WARNING` |
 
 The six `REVIEW` modules are the expected screenshot-review modules
@@ -29,11 +27,7 @@ warnings, but it is not zero-SKIPPED evidence.
 | Field | Value |
 | --- | --- |
 | Implementation commit | `371b4f6e61674c4d1bd9ace7ba5b518314c8ff0f` |
-| Backend image | `localhost/nazo-oauth-server:m7-371b4f6` |
-| Backend container address | `10.101.0.20:8000` behind Angie |
-| Public issuer | `https://auth.nazo.run` |
-| Hostinger result directory | `/root/oauth2_server/NazoAuth-m7-abb652e/runtime/oidf/results-m7-371b4f6` |
-| Local suite commit | `f326f6aa25d6a2b8f1ae30a6ec80a57e342333ce` |
+| Public issuer | `https://issuer.example` |
 | Official workflow suite ref | `33a724c7d809a6f9db05cbb513ff2a77cbac905e` |
 | Exported suite version | `5.2.0` |
 | Official workflow | [`oidf-conformance-full` run 29138366781](https://github.com/nazozero/NazoAuth/actions/runs/29138366781) |
@@ -47,8 +41,8 @@ response signing, plus `RSA-OAEP-256` and `A256GCM` for encryption.
 
 ## Plan IDs
 
-| Plan | Hostinger local | Official |
-| --- | --- | --- |
+| Plan | Official |
+| --- | --- |
 | OIDC Basic static | `AfU06eKtIznOi` | [`zY9tHiTZzUtc3`](https://www.certification.openid.net/plan-detail.html?plan=zY9tHiTZzUtc3) |
 | OIDC Basic dynamic | `NSgoZdWMpgn6a` | [`ewZhWOXdwJb17`](https://www.certification.openid.net/plan-detail.html?plan=ewZhWOXdwJb17) |
 | OIDC Dynamic Signed UserInfo | `9gHQ1b160R9Nt` | [`Nlb3jLoapc4jB`](https://www.certification.openid.net/plan-detail.html?plan=Nlb3jLoapc4jB) |

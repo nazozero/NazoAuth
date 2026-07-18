@@ -1,9 +1,9 @@
 # OpenID4VC Final conformance matrix
 
-NazoAuth implements the **Credential Issuer** role from OpenID for Verifiable
-Credential Issuance 1.0 Final and the **Verifier** role from OpenID for
-Verifiable Presentations 1.0 Final. It does not implement or advertise a Wallet
-role.
+This implementation provides the **Credential Issuer** role from OpenID for
+Verifiable Credential Issuance 1.0 Final and the **Verifier** role from OpenID
+for Verifiable Presentations 1.0 Final. It does not implement or advertise a
+Wallet role.
 
 The implementation is split into four protocol boundaries:
 
@@ -73,10 +73,29 @@ the supported security/transport axes. Management automation can only create
 offers or presentation transactions; it cannot inspect protocol persistence,
 so results are black-box evidence.
 
+Official-suite execution uses bounded 4-plan groups. This is a runner
+scheduling boundary, not a protocol exemption: every one of the 17 generated
+plan expressions is still executed against the same operator-supplied public
+issuer, and each group receives only the expected skip/warning records that
+match that group's configuration files. The grouping prevents issuer/verifier
+driver-triggered `WAITING` modules from overloading the official control-plane
+API while preserving black-box protocol coverage.
+
 The upstream v5.2.0 suite has no modules for the unsupported combination
 `mso_mdoc` + `redirect_uri` client identifier prefix + signed request URI +
 `direct_post.jwt`; `mso_mdoc` encrypted-response coverage is therefore exercised
 through the supported x509-prefixed signed-request variants instead.
+
+The HAIP issuer plan can emit the upstream
+`FAPIEnsureServerConfigurationDoesNotSupportRefreshToken` advisory in the
+`Check for refresh token` block. The suite text marks this as acceptable when an
+authorization server advertises refresh-token support generally but has a
+policy of issuing refresh tokens only to some clients. The matrix therefore
+allows exactly four warning records: the four HAIP issuer executions, this
+module, this block, and this condition. The same four contexts are also
+registered as expected skips because the official runner marks the advisory
+module `SKIPPED` after the acceptable warning. Any other warning or skip remains
+a failure.
 
 The upstream plan display names explicitly call these tests **alpha** and say
 they are incomplete/incorrect or not currently part of the certification
@@ -87,8 +106,10 @@ OpenID Certified mark on the basis of these runs.
 Latest durable evidence:
 
 - [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
-- Hostinger local official-suite run used `https://auth.nazo.run` as the tested
-  production target and completed all 17 plan executions with zero failures.
+- Diagnostic official-suite debugging used an operator-provided
+  production target, sanitized in this repository as `https://issuer.example`,
+  and completed all 17 plan executions with zero failures. It is useful
+  debugging evidence, not the default target for repository users.
 - GitHub official run
   [#29530484889](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
   completed successfully against the same production origin.
