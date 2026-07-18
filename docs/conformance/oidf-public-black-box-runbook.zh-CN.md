@@ -65,9 +65,10 @@
 5. 解读套件结果。
 
    - `FAILURE` 或非预期 `WARNING` 不可接受。
-   - expected-warning 清单不能替代协议行为。例如 OpenID4VC/HAIP 的 credential
-     refresh 警告必须通过真实 metadata 与 OAuth refresh-token 策略修复，
-     不能用扩大 warning 白名单处理。
+   - expected-warning 清单不能替代协议行为。只有当套件 condition 文本本身允许当前
+     部署策略，并且清单精确绑定 plan、configuration、variant、block 和 condition
+     时，warning 才可作为预期项接受。OpenID4VC/HAIP refresh-token advisory
+     属于这种情况：策略是按客户端限制 refresh token 签发，不是通配 warning 豁免。
    - `SKIPPED` 只有在与提交的 expected-skip 清单精确匹配时才可接受。
    - `REVIEW` 只有在清单精确限定 plan、config、alias 和 module 时才可接受。
    - 任何新增 skip、review、warning 或 module interruption 都必须诊断。

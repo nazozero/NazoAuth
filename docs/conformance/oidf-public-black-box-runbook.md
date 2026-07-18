@@ -82,10 +82,12 @@ text, not from the behavior of one suite module.
 5. Interpret suite output.
 
    - `FAILURE` or unexpected `WARNING` is not acceptable.
-   - Expected-warning allowlists are not a substitute for protocol behavior.
-     For example, OpenID4VC/HAIP credential refresh warnings must be resolved by
-     truthful metadata and OAuth refresh-token policy, not by broadening the
-     expected-warning list.
+   - Expected-warning allowlists are not a substitute for protocol behavior. An
+     expected warning is acceptable only when the suite condition text itself
+     permits the deployed policy and the allowlist binds the exact plan,
+     configuration, variant, block, and condition. OpenID4VC/HAIP refresh-token
+     advisories follow this rule: the policy is client-specific refresh-token
+     issuance, not a wildcard warning waiver.
    - `SKIPPED` is acceptable only when it matches the committed expected-skip
      allowlist for the exact configuration and module.
    - `REVIEW` is acceptable only when the committed review allowlist identifies

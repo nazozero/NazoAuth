@@ -624,7 +624,44 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                 ],
             )
-            self.assertEqual(expected_warnings, [])
+            self.assertEqual(len(expected_warnings), 4)
+            self.assertEqual(
+                {item["configuration-filename"] for item in expected_warnings},
+                {
+                    "openid4vc-vci-haip-sd-wallet.json",
+                    "openid4vc-vci-haip-mdoc-wallet.json",
+                    "openid4vc-vci-haip-sd-issuer.json",
+                    "openid4vc-vci-haip-mdoc-issuer.json",
+                },
+            )
+            self.assertEqual(
+                {
+                    (
+                        item["expected-result"],
+                        item["test-name"],
+                        item["current-block"],
+                        item["condition"],
+                    )
+                    for item in expected_warnings
+                },
+                {
+                    (
+                        "warning",
+                        module.VCI_REFRESH_TOKEN_MODULE,
+                        module.VCI_REFRESH_TOKEN_BLOCK,
+                        module.VCI_REFRESH_TOKEN_CONDITION,
+                    )
+                },
+            )
+            self.assertEqual(
+                {tuple(sorted(item["variant"].items())) for item in expected_warnings},
+                {
+                    tuple(sorted({"vci_authorization_code_flow_variant": "wallet_initiated", "credential_format": "sd_jwt_vc"}.items())),
+                    tuple(sorted({"vci_authorization_code_flow_variant": "wallet_initiated", "credential_format": "mdoc"}.items())),
+                    tuple(sorted({"vci_authorization_code_flow_variant": "issuer_initiated", "credential_format": "sd_jwt_vc"}.items())),
+                    tuple(sorted({"vci_authorization_code_flow_variant": "issuer_initiated", "credential_format": "mdoc"}.items())),
+                },
+            )
             self.assertEqual(materialized_driver["target_origin"], "https://issuer.example")
             self.assertEqual(
                 materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],
