@@ -546,6 +546,9 @@ def check_openid4vc_boundaries() -> None:
     server_settings = (
         ROOT / "crates" / "authorization-server" / "src" / "settings.rs"
     ).read_text(encoding="utf-8")
+    server_config = (
+        ROOT / "crates" / "authorization-server" / "src" / "config.rs"
+    ).read_text(encoding="utf-8")
     server_routes = (
         ROOT / "crates" / "authorization-server" / "src" / "bootstrap" / "routes.rs"
     ).read_text(encoding="utf-8")
@@ -600,6 +603,18 @@ def check_openid4vc_boundaries() -> None:
     ):
         if forbidden in server_settings or forbidden in server_routes or forbidden in driver:
             raise SystemExit(f"OpenID4VC dataset control plane exposes retired bearer surface: {forbidden}")
+    for marker in (
+        "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
+        "OPENID4VC_KEY_ATTESTATION_JWKS_JSON",
+        "client_attestation_jwks",
+        "key_attestation_jwks",
+        "must not contain the same public key",
+        "public verification keys only",
+    ):
+        if marker not in server_settings:
+            raise SystemExit(f"OpenID4VC purpose-scoped attestation trust boundary is missing: {marker}")
+    if "OPENID4VC_ATTESTATION_JWKS_JSON" in server_settings or "OPENID4VC_ATTESTATION_JWKS_JSON" in server_config:
+        raise SystemExit("OpenID4VC generic attestation trust store must not be reintroduced")
     for marker in (
         "require_admin_or_forbidden_with_handles",
         "has_valid_csrf_token_for_cookies",

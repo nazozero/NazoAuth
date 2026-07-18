@@ -1,6 +1,105 @@
 use super::*;
 use serde_json::json;
 
+const CLIENT_ATTESTATION_JWKS: &str = r#"{"keys":[{"kty":"EC","crv":"P-256","kid":"client-attester","x":"client-x","y":"client-y"}]}"#;
+const KEY_ATTESTATION_JWKS: &str =
+    r#"{"keys":[{"kty":"EC","crv":"P-256","kid":"key-attester","x":"holder-x","y":"holder-y"}]}"#;
+const ATTESTATION_CREDENTIAL_CONFIGURATIONS: &str = r#"{"pid":{"format":"dc+sd-jwt","scope":"pid","cryptographic_binding_methods_supported":["jwk"],"credential_signing_alg_values_supported":["ES256"],"proof_types_supported":{"attestation":{"proof_signing_alg_values_supported":["ES256"],"key_attestations_required":{"key_storage":["iso_18045_moderate"]}}},"vct":"https://issuer.example/credentials/pid"}}"#;
+
+#[test]
+fn client_and_holder_key_attestation_trust_stores_must_be_disjoint() {
+    let config = ConfigSource::from_pairs_for_test([
+        (
+            "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
+            CLIENT_ATTESTATION_JWKS,
+        ),
+        (
+            "OPENID4VC_KEY_ATTESTATION_JWKS_JSON",
+            CLIENT_ATTESTATION_JWKS,
+        ),
+    ]);
+
+    let error = settings_error(&config, "attestation trust purposes must remain isolated");
+    assert!(
+        error
+            .to_string()
+            .contains("must not contain the same public key")
+    );
+}
+
+#[test]
+fn key_attestation_policy_requires_its_own_trust_store() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("ENABLE_OPENID4VCI_ISSUER", "true"),
+        (
+            "OPENID4VC_DATA_ENCRYPTION_KEY",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        ),
+        (
+            "OPENID4VC_SIGNING_CERTIFICATE_CHAIN_FILE",
+            "runtime/openid4vc-chain.pem",
+        ),
+        (
+            "OPENID4VC_TRUST_ANCHORS_FILE",
+            "runtime/openid4vc-roots.pem",
+        ),
+        (
+            "OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON",
+            ATTESTATION_CREDENTIAL_CONFIGURATIONS,
+        ),
+        (
+            "OPENID4VCI_ISSUER_MANAGEMENT_TOKEN",
+            "openid4vci-management-token-at-least-32-bytes",
+        ),
+        (
+            "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
+            CLIENT_ATTESTATION_JWKS,
+        ),
+    ]);
+
+    let error = settings_error(
+        &config,
+        "holder key attestation needs an independent trust store",
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("OPENID4VC_KEY_ATTESTATION_JWKS_JSON is required")
+    );
+}
+
+#[test]
+fn client_attestation_requires_its_own_trust_store() {
+    let config = ConfigSource::from_pairs_for_test([
+        (
+            "OPENID4VC_CLIENT_ATTESTATION_ISSUER",
+            "https://attester.example",
+        ),
+        ("OPENID4VC_KEY_ATTESTATION_JWKS_JSON", KEY_ATTESTATION_JWKS),
+    ]);
+
+    let error = settings_error(
+        &config,
+        "client attestation needs an independent trust store",
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON")
+    );
+}
+
+#[test]
+fn attestation_trust_stores_reject_private_key_material() {
+    let config = ConfigSource::from_pairs_for_test([(
+        "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
+        r#"{"keys":[{"kty":"EC","crv":"P-256","kid":"private","x":"x","y":"y","d":"secret"}]}"#,
+    )]);
+
+    let error = settings_error(&config, "trust configuration must contain public keys only");
+    assert!(error.to_string().contains("public verification keys only"));
+}
+
 #[test]
 fn issuer_and_verifier_management_credentials_must_be_distinct() {
     let shared = "shared-management-credential-at-least-32-bytes";

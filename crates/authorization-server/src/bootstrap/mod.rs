@@ -385,7 +385,7 @@ pub async fn run() -> anyhow::Result<()> {
                 issuer,
                 settings
                     .openid4vc
-                    .attestation_jwks
+                    .client_attestation_jwks
                     .clone()
                     .expect("configured client attestation requires trust keys"),
             )
@@ -401,7 +401,7 @@ pub async fn run() -> anyhow::Result<()> {
             let proof_validator = Openid4vcProofValidator::new(
                 settings
                     .openid4vc
-                    .attestation_jwks
+                    .key_attestation_jwks
                     .clone()
                     .unwrap_or_else(|| serde_json::json!({"keys": []})),
             )?;
