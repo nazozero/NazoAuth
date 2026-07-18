@@ -78,6 +78,14 @@ The upstream v5.2.0 suite has no modules for the unsupported combination
 `direct_post.jwt`; `mso_mdoc` encrypted-response coverage is therefore exercised
 through the supported x509-prefixed signed-request variants instead.
 
+The HAIP issuer plan can emit the upstream
+`FAPIEnsureServerConfigurationDoesNotSupportRefreshToken` advisory in the
+`Check for refresh token` block. The suite text marks this as acceptable when an
+authorization server advertises refresh-token support generally but has a
+policy of issuing refresh tokens only to some clients. The matrix therefore
+allows exactly four warning records: the four HAIP issuer executions, this
+module, this block, and this condition. Any other warning remains a failure.
+
 The upstream plan display names explicitly call these tests **alpha** and say
 they are incomplete/incorrect or not currently part of the certification
 program. A green run is therefore official-suite regression evidence: it is

@@ -91,7 +91,18 @@ def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
 
 
 def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
-    return []
+    return [
+        {
+            "expected-result": "warning",
+            "test-name": VCI_REFRESH_TOKEN_MODULE,
+            "variant": dict(variants),
+            "configuration-filename": f"openid4vc-{slug}.json",
+            "current-block": VCI_REFRESH_TOKEN_BLOCK,
+            "condition": VCI_REFRESH_TOKEN_CONDITION,
+        }
+        for plan, slug, variants in cases
+        if plan == VCI_HAIP
+    ]
 
 
 def b64url_decode(value: str) -> bytes:

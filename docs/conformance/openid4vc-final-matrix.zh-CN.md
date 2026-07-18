@@ -60,6 +60,12 @@ OIDF Conformance Suite 固定到 v5.2.0 commit
 签名 request URI + `direct_post.jwt` 的模块；`mso_mdoc` 加密响应覆盖因此通过上游
 支持的 x509 前缀签名请求变体执行。
 
+HAIP issuer plan 可能在 `Check for refresh token` 块中产生上游
+`FAPIEnsureServerConfigurationDoesNotSupportRefreshToken` advisory。套件文本明确说明：
+如果授权服务器整体声明支持 refresh token，但按策略只向部分客户端签发 refresh token，
+该情况可以接受。因此矩阵只允许 4 条精确 warning：4 个 HAIP issuer 执行组合、
+该模块、该 block、该 condition。任何其他 warning 仍视为失败。
+
 上游计划标题明确标为 **alpha**，并注明可能不完整/不正确或尚未纳入认证计划。
 因此全绿只能称为“官方套件回归通过”，不能称为 OpenID Foundation 正式认证，
 也不能据此使用 OpenID Certified 标志。
