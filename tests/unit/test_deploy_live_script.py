@@ -619,6 +619,11 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn("nazo_oauth_seed_oidf", self.source)
         self.assertIn("OIDF_SUITE_BASE_URL", self.source)
         self.assertIn("OIDF_LOCAL_RUNTIME_DIR=/app/oidf-public-plan-configs", self.source)
+        self.assertIn(
+            "OidfSuiteBaseUrl must be a single HTTPS origin without path, query, fragment, whitespace, or comma",
+            self.source,
+        )
+        self.assertIn('^https://[^/?#,\\s]+/?$', self.source)
         self.assertIn("ANGIE_OIDF_CONFIG", self.source)
         self.assertIn('mktemp "`$target_dir/.oidf-mtls-ca.XXXXXX"', self.source)
         self.assertIn('mv -f "`$temporary" "`$OIDF_CA_TARGET"', self.source)

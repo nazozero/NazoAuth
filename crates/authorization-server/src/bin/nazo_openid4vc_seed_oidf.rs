@@ -51,7 +51,10 @@ async fn main() -> anyhow::Result<()> {
         .ok_or_else(|| anyhow::anyhow!("OIDF_SUITE_BASE_URL is required for OpenID4VC seeding"))?;
     let plan_bundle_path = required_env("OPENID4VC_OIDF_PLAN_CONFIG_JSON_FILE")?;
     let bundle: Value = serde_json::from_str(&fs::read_to_string(&plan_bundle_path)?)?;
-    let seeds = client_seeds(&bundle, &suite_base_urls(&suite_base_url))?;
+    let seeds = client_seeds(
+        &bundle,
+        &suite_base_urls(&suite_base_url).map_err(anyhow::Error::msg)?,
+    )?;
     let allowed_audiences = json!(allowed_audiences(&issuer, &default_audience));
     let grant_types = json!([
         "authorization_code",

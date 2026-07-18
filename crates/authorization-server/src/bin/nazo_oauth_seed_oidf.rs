@@ -270,7 +270,7 @@ async fn main() -> anyhow::Result<()> {
                 .filter(|value| !value.trim().is_empty())
         })
         .ok_or_else(|| anyhow::anyhow!("OIDF_SUITE_BASE_URL is required for OIDF seeding"))?;
-    let suite_base_urls = suite_base_urls(&suite_base_url);
+    let suite_base_urls = suite_base_urls(&suite_base_url).map_err(anyhow::Error::msg)?;
     let issuer = required_config_string(&config, "ISSUER")?;
     let runtime_dir = env_or("OIDF_LOCAL_RUNTIME_DIR", "runtime/oidf");
     let runtime_dir = Path::new(&runtime_dir);

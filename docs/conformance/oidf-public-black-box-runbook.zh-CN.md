@@ -27,7 +27,10 @@
 
 2. 为目标 issuer 生成运行材料。
 
-   - 操作者必须显式提供公网 issuer 和 suite base URL。
+   - 操作者必须显式提供公网 issuer 和一个主 suite base origin。
+   - `OIDF_SUITE_BASE_URL` 是单个 HTTPS origin，不是逗号分隔列表。
+     额外 callback origin 必须使用 `OIDF_LOCAL_EXTRA_SUITE_BASE_URLS`，
+     并作为独立 HTTPS origin 校验。
    - 生成配置中，所有协议可见的 issuer、redirect、logout、notification、credential、verifier endpoint 都必须是公网 HTTPS URL。
    - 运行前扫描生成配置；内部主机名、localhost issuer 和私有反向代理名均视为失败。
 
@@ -78,6 +81,8 @@
 - expected skip 按批次生成，不能把全局清单当作宽泛绕过；
 - review allowance 绑定到精确的 plan/config/module；
 - 播种输入和执行的 plan config 来自同一次 artifact 生成；
+- 播种后的 redirect URI、post-logout redirect URI、front-channel URI、
+  CIBA notification URI、credential URI 或 verifier URI 中不得包含逗号拼接的 origin；
 - 已部署服务报告的 revision 与被测 commit 一致。
 
 ## 作弊定义
