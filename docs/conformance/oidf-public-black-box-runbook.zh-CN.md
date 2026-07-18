@@ -47,6 +47,11 @@
      单独保留。
    - 不得混用本地套件和官方套件的 key、certificate、callback URL、client JWKS
      或 CIBA notification metadata。
+   - FAPI-CIBA ID1 有两个独立维度：客户端认证方式（`private_key_jwt` 或
+     mTLS）和 access token sender constraint。受支持的四个 FAPI-CIBA ID1
+     组合（`private_key_jwt / mTLS` x `poll / ping`）都必须播种为 mTLS
+     holder-of-key access token 策略。不得把 `private_key_jwt` 客户端认证
+     误当成 bearer token profile。
    - 成功复制 artifact 或安装 CA 不等于完成播种。部署必须使用精确候选镜像中的
      seed binary 执行播种，并在数据库状态与 runner 派生的公开材料不一致时失败关闭。
 

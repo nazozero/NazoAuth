@@ -1418,8 +1418,10 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
                 "FAPI-CIBA request-object and error handling",
             ],
         }
-        if client_auth_type == "mtls":
-            nazo["sender_constrain"] = "mtls"
+        # FAPI-CIBA ID1 separates client authentication from token sender
+        # constraint. Both private_key_jwt and mTLS authenticated CIBA clients
+        # receive mTLS holder-of-key access tokens.
+        nazo["sender_constrain"] = "mtls"
 
         config = {
             "alias": alias,
@@ -1429,7 +1431,7 @@ def write_fapi_ciba_plan_config() -> dict[str, dict[str, object]]:
             ),
             "server": oidf_server_config(),
             "resource": {
-                "resourceUrl": f"{ISSUER}/fapi/resource",
+                "resourceUrl": f"{MTLS_ISSUER}/fapi/resource",
                 "resourceMethod": "GET",
                 "resourceMediaType": "application/json",
                 "resourceRequestBody": "",

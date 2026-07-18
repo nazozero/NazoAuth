@@ -76,10 +76,7 @@ class MaterializeOidfPlanConfigTests(unittest.TestCase):
             },
         )
         for value in ciba_configs.values():
-            if value["nazo"]["client_auth_type"] == "mtls":
-                self.assertEqual(value["nazo"]["sender_constrain"], "mtls")
-            else:
-                self.assertNotIn("sender_constrain", value["nazo"])
+            self.assertEqual(value["nazo"]["sender_constrain"], "mtls")
         self.assertEqual(
             len({value["client"]["client_id"] for value in ciba_configs.values()}), 4
         )

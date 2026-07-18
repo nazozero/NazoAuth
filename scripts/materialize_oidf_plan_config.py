@@ -224,10 +224,11 @@ def derive_fapi_ciba_matrix_configs(
                 ),
             }
         )
-        if client_auth_type == "mtls":
-            nazo["sender_constrain"] = "mtls"
-        else:
-            nazo.pop("sender_constrain", None)
+        # FAPI-CIBA ID1 uses `private_key_jwt` / mTLS as the client
+        # authentication dimension.  It still inherits FAPI Part 2 sender
+        # constraint requirements for access tokens, so all four supported
+        # CIBA matrix combinations are mTLS holder-of-key token profiles.
+        nazo["sender_constrain"] = "mtls"
 
 
 def main() -> int:
