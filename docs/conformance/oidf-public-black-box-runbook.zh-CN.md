@@ -70,6 +70,7 @@ python scripts/run_public_oidf_conformance.py \
   --target-issuer https://issuer.example \
   --conformance-server https://suite.example \
   --suite-dir /opt/oidf/conformance-suite \
+  --suite-revision "$(git -C /opt/oidf/conformance-suite rev-parse HEAD)" \
   --work-dir /var/lib/nazo-oidf/runs/<run-id> \
   --export-dir /var/lib/nazo-oidf/results/<run-id> \
   --run-namespace <run-id> \
@@ -77,7 +78,7 @@ python scripts/run_public_oidf_conformance.py \
   --proxy-executable /usr/sbin/nginx
 ```
 
-该入口硬性校验产品提交、官方套件提交和干净源码树；随后自动生成 source-bound 材料，通过不同身份完成申请、审批、一次性交付和信任审批，原子安装已批准的信任 bundle，验证套件 API 的 `401/200` 边界，并按并发、CIBA、Front-Channel Logout 和 Session Management 四个隔离组执行 25 个 plan。无论成功或失败，均通过公网控制面停用本次客户端、撤销信任并恢复代理原配置；私密运行材料和失败结果保留在本次独立目录中，不会被下一次运行覆盖。
+该入口硬性校验产品提交、显式指定的官方套件提交和干净源码树；随后自动生成 source-bound 材料，通过不同身份完成申请、审批、一次性交付和信任审批，原子安装已批准的信任 bundle，验证套件 API 的 `401/200` 边界，并按并发、CIBA、Front-Channel Logout 和 Session Management 四个隔离组执行 25 个 plan。无论成功或失败，均通过公网控制面停用本次客户端、撤销信任并恢复代理原配置；私密运行材料和失败结果保留在本次独立目录中，不会被下一次运行覆盖。
 
 审批仍是正式、可审计的授权事件；自动化只消除文件复制、路径推断、命令拼接和恢复操作，不绕过申请人与审批人分离。
 

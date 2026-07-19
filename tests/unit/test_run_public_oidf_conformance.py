@@ -44,6 +44,7 @@ class PublicOidfRunnerTests(unittest.TestCase):
             root = Path(directory)
             args = Namespace(
                 suite_dir=root / "suite",
+                suite_revision="suite-commit",
                 conformance_server="https://suite.example",
                 target_issuer="https://issuer.example",
                 token_env="OIDF_CONFORMANCE_TOKEN",
@@ -61,6 +62,12 @@ class PublicOidfRunnerTests(unittest.TestCase):
             self.assertIn("--no-parallel", invocations[2])
             self.assertIn("--no-parallel", invocations[3])
             self.assertTrue(all("--no-api-token" not in invocation for invocation in invocations))
+            self.assertTrue(
+                all(
+                    invocation[invocation.index("--suite-revision") + 1] == "suite-commit"
+                    for invocation in invocations
+                )
+            )
 
     def test_proxy_trust_install_and_restore_are_atomic(self):
         with tempfile.TemporaryDirectory() as directory:

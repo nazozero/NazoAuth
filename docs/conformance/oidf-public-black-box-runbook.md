@@ -109,6 +109,7 @@ python scripts/run_public_oidf_conformance.py \
   --target-issuer https://issuer.example \
   --conformance-server https://suite.example \
   --suite-dir /opt/oidf/conformance-suite \
+  --suite-revision "$(git -C /opt/oidf/conformance-suite rev-parse HEAD)" \
   --work-dir /var/lib/nazo-oidf/runs/<run-id> \
   --export-dir /var/lib/nazo-oidf/results/<run-id> \
   --run-namespace <run-id> \
@@ -116,8 +117,8 @@ python scripts/run_public_oidf_conformance.py \
   --proxy-executable /usr/sbin/nginx
 ```
 
-The entry point verifies the deployed product commit, the pinned official-suite
-commit, and clean tracked source trees. It then generates source-bound material,
+The entry point verifies the deployed product commit, the explicitly selected
+official-suite commit, and clean tracked source trees. It then generates source-bound material,
 performs application, approval, one-time delivery, and trust approval under
 separate identities, atomically installs the approved trust bundle, verifies
 the suite API's `401/200` boundary, and runs all 25 plans in concurrent, CIBA,

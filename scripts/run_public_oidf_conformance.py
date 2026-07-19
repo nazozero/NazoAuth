@@ -18,7 +18,6 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SUITE_REVISION = "dee9a25160e789f0f80517674693ef7989ab9fa1"
 REQUIRED_ENV = (
     "OIDF_APPLICANT_EMAIL",
     "OIDF_APPLICANT_PASSWORD",
@@ -68,9 +67,9 @@ def verify_source(deployed_sha: str) -> None:
         raise PublicRunError("product source tree must be clean")
 
 
-def verify_suite(suite_dir: Path) -> None:
-    if output(["git", "rev-parse", "HEAD"], cwd=suite_dir) != SUITE_REVISION:
-        raise PublicRunError(f"suite must be checked out at {SUITE_REVISION}")
+def verify_suite(suite_dir: Path, suite_revision: str) -> None:
+    if output(["git", "rev-parse", "HEAD"], cwd=suite_dir) != suite_revision:
+        raise PublicRunError(f"suite must be checked out at {suite_revision}")
     if output(["git", "status", "--porcelain"], cwd=suite_dir):
         raise PublicRunError("official conformance-suite source tree must be clean")
 
@@ -205,7 +204,7 @@ def run_plan_groups(args: argparse.Namespace, work_dir: Path, env: dict[str, str
             "--suite-dir",
             str(args.suite_dir),
             "--suite-revision",
-            SUITE_REVISION,
+            args.suite_revision,
             "--conformance-server",
             args.conformance_server,
             "--plan-set-json-file",
@@ -241,7 +240,7 @@ def run(args: argparse.Namespace) -> None:
         raise PublicRunError("--work-dir and --export-dir must not already exist")
     validate_output_paths(args.work_dir, args.export_dir, args.suite_dir)
     verify_source(args.deployed_sha)
-    verify_suite(args.suite_dir)
+    verify_suite(args.suite_dir, args.suite_revision)
     env = required_environment(args.token_env)
     env.update(
         {
@@ -291,6 +290,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--target-issuer", required=True)
     parser.add_argument("--conformance-server", required=True)
     parser.add_argument("--suite-dir", type=Path, required=True)
+    parser.add_argument("--suite-revision", required=True)
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--export-dir", type=Path, required=True)
     parser.add_argument("--run-namespace", required=True)
