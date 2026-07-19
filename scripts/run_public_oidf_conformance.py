@@ -26,6 +26,7 @@ REQUIRED_ENV = (
     "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
     "OIDF_CIBA_AUTOMATED_DECISION_TOKEN",
 )
+OFFICIAL_INGRESS_ONLY_WARNING_CONDITIONS = frozenset({"EnsureIncomingTls13"})
 class PublicRunError(RuntimeError):
     pass
 
@@ -188,7 +189,13 @@ def onboarding_args(action: str, work_dir: Path, issuer: str) -> list[str]:
     ]
 
 
-def filter_problem_records(source: Path, plan_set: Path, destination: Path) -> None:
+def filter_problem_records(
+    source: Path,
+    plan_set: Path,
+    destination: Path,
+    *,
+    excluded_conditions: frozenset[str] = frozenset(),
+) -> None:
     plans = json.loads(plan_set.read_text(encoding="utf-8"))
     if not isinstance(plans, list) or not all(isinstance(item, str) for item in plans):
         raise PublicRunError(f"{plan_set} must contain a JSON array of plan expressions")
@@ -197,7 +204,10 @@ def filter_problem_records(source: Path, plan_set: Path, destination: Path) -> N
     if not isinstance(records, list) or not all(isinstance(item, dict) for item in records):
         raise PublicRunError(f"{source} must contain a JSON array of problem records")
     selected = [
-        record for record in records if record.get("configuration-filename") in configs
+        record
+        for record in records
+        if record.get("configuration-filename") in configs
+        and record.get("condition") not in excluded_conditions
     ]
     destination.write_text(json.dumps(selected, indent=2) + "\n", encoding="utf-8")
 
@@ -331,6 +341,7 @@ def run_plan_groups(args: argparse.Namespace, work_dir: Path, env: dict[str, str
             ROOT / "tests" / "contracts" / "oidf-official-expected-warnings.json",
             plan_set_file,
             expected_warnings_file,
+            excluded_conditions=OFFICIAL_INGRESS_ONLY_WARNING_CONDITIONS,
         )
         invocation = [
             sys.executable,

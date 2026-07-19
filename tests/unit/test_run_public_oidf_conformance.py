@@ -143,6 +143,38 @@ class PublicOidfRunnerTests(unittest.TestCase):
                 [{"configuration-filename": "config-a.json", "condition": "A"}],
             )
 
+    def test_official_ingress_warnings_are_not_applied_to_the_public_suite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan_set = root / "plans.json"
+            source = root / "warnings.json"
+            destination = root / "selected.json"
+            plan_set.write_text(json.dumps(["plan-a config-a.json"]), encoding="utf-8")
+            source.write_text(
+                json.dumps(
+                    [
+                        {"configuration-filename": "config-a.json", "condition": "A"},
+                        {
+                            "configuration-filename": "config-a.json",
+                            "condition": "EnsureIncomingTls13",
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            self.module.filter_problem_records(
+                source,
+                plan_set,
+                destination,
+                excluded_conditions=self.module.OFFICIAL_INGRESS_ONLY_WARNING_CONDITIONS,
+            )
+
+            self.assertEqual(
+                json.loads(destination.read_text(encoding="utf-8")),
+                [{"configuration-filename": "config-a.json", "condition": "A"}],
+            )
+
     def test_proxy_trust_install_and_restore_are_atomic(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
