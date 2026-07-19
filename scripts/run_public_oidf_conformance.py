@@ -26,14 +26,6 @@ REQUIRED_ENV = (
     "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN",
     "OIDF_CIBA_AUTOMATED_DECISION_TOKEN",
 )
-PLAN_GROUPS = (
-    ("concurrent", "oidf-plan-set-concurrent.json", False),
-    ("ciba", "oidf-plan-set-ciba.json", False),
-    ("frontchannel", "oidf-plan-set-frontchannel.json", True),
-    ("session", "oidf-plan-set-session.json", True),
-)
-
-
 class PublicRunError(RuntimeError):
     pass
 
@@ -210,9 +202,124 @@ def filter_problem_records(source: Path, plan_set: Path, destination: Path) -> N
     destination.write_text(json.dumps(selected, indent=2) + "\n", encoding="utf-8")
 
 
+def split_plan_groups(work_dir: Path) -> tuple[tuple[str, Path, bool], ...]:
+    source_files = (
+        "oidf-plan-set-concurrent.json",
+        "oidf-plan-set-ciba.json",
+        "oidf-plan-set-frontchannel.json",
+        "oidf-plan-set-session.json",
+    )
+    source_plans: dict[str, list[str]] = {}
+    for filename in source_files:
+        path = work_dir / filename
+        plans = json.loads(path.read_text(encoding="utf-8"))
+        if not isinstance(plans, list) or not all(isinstance(item, str) for item in plans):
+            raise PublicRunError(f"{path} must contain a JSON array of plan expressions")
+        source_plans[filename] = plans
+
+    concurrent = source_plans["oidf-plan-set-concurrent.json"]
+
+    def matches(*needles: str) -> list[str]:
+        return [plan for plan in concurrent if all(needle in plan for needle in needles)]
+
+    grouped: list[tuple[str, list[str], bool]] = [
+        ("01-oidc-core", matches("oidcc-basic-certification-test-plan"), False),
+        (
+            "02-oidc-formpost-thirdparty-config",
+            [
+                *matches("oidcc-formpost-basic-certification-test-plan"),
+                *matches("oidcc-3rdparty-init-login-certification-test-plan"),
+                *matches("oidcc-config-certification-test-plan"),
+            ],
+            False,
+        ),
+    ]
+
+    ciba = source_plans["oidf-plan-set-ciba.json"]
+    for name, client_auth_type, mode in (
+        ("03a-fapi-ciba-private-key-jwt-poll", "private_key_jwt", "poll"),
+        ("03b-fapi-ciba-mtls-poll", "mtls", "poll"),
+        ("03c-fapi-ciba-private-key-jwt-ping", "private_key_jwt", "ping"),
+        ("03d-fapi-ciba-mtls-ping", "mtls", "ping"),
+    ):
+        grouped.append(
+            (
+                name,
+                [
+                    plan
+                    for plan in ciba
+                    if f"client_auth_type={client_auth_type}" in plan
+                    and f"ciba_mode={mode}" in plan
+                ],
+                True,
+            )
+        )
+
+    grouped.extend(
+        (
+            (
+                "04-fapi-message-and-mtls-dpop",
+                [
+                    *matches("fapi2-message-signing-final-test-plan"),
+                    *matches(
+                        "fapi2-security-profile-final-test-plan",
+                        "client_auth_type=mtls",
+                        "sender_constrain=dpop",
+                    ),
+                ],
+                False,
+            ),
+            (
+                "05-fapi-mtls-mtls",
+                matches(
+                    "fapi2-security-profile-final-test-plan",
+                    "client_auth_type=mtls",
+                    "sender_constrain=mtls",
+                ),
+                False,
+            ),
+            (
+                "06-fapi-private-dpop",
+                matches(
+                    "fapi2-security-profile-final-test-plan",
+                    "client_auth_type=private_key_jwt",
+                    "sender_constrain=dpop",
+                ),
+                False,
+            ),
+            (
+                "07-fapi-private-mtls",
+                matches(
+                    "fapi2-security-profile-final-test-plan",
+                    "client_auth_type=private_key_jwt",
+                    "sender_constrain=mtls",
+                ),
+                False,
+            ),
+            (
+                "08-frontchannel",
+                source_plans["oidf-plan-set-frontchannel.json"],
+                True,
+            ),
+            ("09-session", source_plans["oidf-plan-set-session.json"], True),
+        )
+    )
+
+    assigned = [plan for _, plans, _ in grouped for plan in plans]
+    expected = [plan for plans in source_plans.values() for plan in plans]
+    if any(not plans for _, plans, _ in grouped) or sorted(assigned) != sorted(expected):
+        raise PublicRunError("bounded OIDF plan groups must exactly cover every source plan")
+
+    result = []
+    for name, plans, isolated in grouped:
+        destination = work_dir / f"oidf-plan-set-{name}.json"
+        destination.write_text(json.dumps(plans, indent=2) + "\n", encoding="utf-8")
+        result.append((name, destination, isolated))
+    return tuple(result)
+
+
 def run_plan_groups(args: argparse.Namespace, work_dir: Path, env: dict[str, str]) -> None:
-    for name, plan_set, isolated in PLAN_GROUPS:
-        plan_set_file = work_dir / plan_set
+    for name, plan_set_file, isolated in split_plan_groups(work_dir):
         expected_skips_file = work_dir / f"oidf-expected-skips-{name}.json"
         expected_warnings_file = work_dir / f"oidf-expected-warnings-{name}.json"
         filter_problem_records(

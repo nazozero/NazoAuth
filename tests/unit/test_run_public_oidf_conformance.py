@@ -51,8 +51,34 @@ class PublicOidfRunnerTests(unittest.TestCase):
             (contracts / "oidf-official-expected-warnings.json").write_text(
                 "[]\n", encoding="utf-8"
             )
-            for _, filename, _ in self.module.PLAN_GROUPS:
-                (work / filename).write_text("[]\n", encoding="utf-8")
+            concurrent = [
+                "oidcc-basic-certification-test-plan basic.json",
+                "oidcc-formpost-basic-certification-test-plan formpost.json",
+                "oidcc-3rdparty-init-login-certification-test-plan thirdparty.json",
+                "oidcc-config-certification-test-plan config.json",
+                "fapi2-message-signing-final-test-plan message.json",
+            ]
+            for client_auth_type in ("mtls", "private_key_jwt"):
+                for sender_constrain in ("dpop", "mtls"):
+                    concurrent.append(
+                        "fapi2-security-profile-final-test-plan"
+                        f"[client_auth_type={client_auth_type}]"
+                        f"[sender_constrain={sender_constrain}] security-{client_auth_type}-{sender_constrain}.json"
+                    )
+            ciba = [
+                "fapi-ciba-id1-test-plan"
+                f"[client_auth_type={client_auth_type}][ciba_mode={mode}] ciba-{client_auth_type}-{mode}.json"
+                for client_auth_type in ("private_key_jwt", "mtls")
+                for mode in ("poll", "ping")
+            ]
+            files = {
+                "oidf-plan-set-concurrent.json": concurrent,
+                "oidf-plan-set-ciba.json": ciba,
+                "oidf-plan-set-frontchannel.json": ["frontchannel plan-front.json"],
+                "oidf-plan-set-session.json": ["session plan-session.json"],
+            }
+            for filename, plans in files.items():
+                (work / filename).write_text(json.dumps(plans), encoding="utf-8")
             args = Namespace(
                 suite_dir=root / "suite",
                 suite_revision="suite-commit",
@@ -69,12 +95,16 @@ class PublicOidfRunnerTests(unittest.TestCase):
             ):
                 self.module.run_plan_groups(args, work, {})
 
-            self.assertEqual(command.call_count, 4)
+            self.assertEqual(command.call_count, 12)
             invocations = [call.args[0] for call in command.call_args_list]
             self.assertNotIn("--no-parallel", invocations[0])
             self.assertNotIn("--no-parallel", invocations[1])
-            self.assertIn("--no-parallel", invocations[2])
-            self.assertIn("--no-parallel", invocations[3])
+            for invocation in invocations[2:6]:
+                self.assertIn("--no-parallel", invocation)
+            for invocation in invocations[6:10]:
+                self.assertNotIn("--no-parallel", invocation)
+            for invocation in invocations[10:12]:
+                self.assertIn("--no-parallel", invocation)
             self.assertTrue(all("--no-api-token" not in invocation for invocation in invocations))
             self.assertTrue(
                 all(
