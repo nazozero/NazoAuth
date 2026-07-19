@@ -63,6 +63,13 @@ class ReleaseGovernanceTests(unittest.TestCase):
             self.assertIn("paths:", pull_request, name)
             self.assertNotRegex(pull_request, r'(?m)^\s+-\s+"?(?:README\.md|docs/\*\*)"?\s*$')
 
+    def test_codeql_security_page_excludes_quality_only_queries(self) -> None:
+        source = (ROOT / ".github" / "workflows" / "codeql.yml").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("queries: security-extended", source)
+        self.assertNotIn("security-and-quality", source)
+
     def test_performance_images_have_path_scoped_build_and_smoke_checks(self) -> None:
         source = (ROOT / ".github" / "workflows" / "perf-images.yml").read_text(
             encoding="utf-8"

@@ -45,7 +45,7 @@ composite score:
 | Signal | Evidence |
 | --- | --- |
 | Rust quality gate | `cargo fmt --check`, `cargo check --workspace --all-targets --all-features --locked`, `cargo clippy -D warnings`, migrations, and the complete workspace test suite in `code-quality`. |
-| Static security analysis | CodeQL Rust analysis with `security-extended` and `security-and-quality` queries. |
+| Static security analysis | CodeQL Rust analysis with the `security-extended` query suite. |
 | Dependency policy | GitHub dependency review, `cargo audit`, and `cargo deny` over advisories, bans, licenses, and sources. |
 | Runtime security behavior | Real HTTP E2E, load/race gate, and Valkey outage injection in `conformance-security`. |
 | Protocol conformance | Public black-box official-suite evidence for the current 25-plan OIDF/FAPI matrix and 17-plan OpenID4VC matrix. |
