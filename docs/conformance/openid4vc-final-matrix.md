@@ -102,8 +102,16 @@ policy of issuing refresh tokens only to some clients. The matrix therefore
 allows exactly four warning records: the four HAIP issuer executions, this
 module, this block, and this condition. The same four contexts are also
 registered as expected skips because the official runner marks the advisory
-module `SKIPPED` after the acceptable warning. Any other warning or skip remains
-a failure.
+module `SKIPPED` after the acceptable warning.
+
+The two standard VCI pre-authorized-code configurations also skip
+`oid4vci-1_0-issuer-happy-flow-multiple-clients`. That upstream module accepts
+one Credential Offer but redeems the same `pre-authorized_code` again with its
+second client, whereas OpenID4VCI 1.0 Final section 4.1.1 requires the code to be
+short-lived and single-use. The server must not permit per-client replay to make
+the test pass. This waiver is bound to the two exact pre-authorized-code
+configurations and full variants; the authorization-code variants of the same
+module still run and must pass. Any other warning or skip remains a failure.
 
 The upstream plan display names explicitly call these tests **alpha** and say
 they are incomplete/incorrect or not currently part of the certification

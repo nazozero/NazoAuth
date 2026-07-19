@@ -21,6 +21,7 @@ OIDF_VP_SD_JWT_VCT = "urn:eudi:pid:1"
 OFFICIAL_VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
 OFFICIAL_VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
 VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm"
+VCI_MULTIPLE_CLIENTS_MODULE = "oid4vci-1_0-issuer-happy-flow-multiple-clients"
 VCI_REFRESH_TOKEN_MODULE = "fapi2-security-profile-final-refresh-token"
 VCI_REFRESH_TOKEN_BLOCK = "Check for refresh token"
 VCI_REFRESH_TOKEN_CONDITION = "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken"
@@ -138,7 +139,17 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
         for plan, slug, variants in cases
         if plan == VCI_HAIP
     ]
-    return unsupported_encryption + haip_refresh_token_policy
+    pre_authorized_code_replay = [
+        {
+            "test-name": VCI_MULTIPLE_CLIENTS_MODULE,
+            "variant": dict(variants),
+            "configuration-filename": f"openid4vc-{slug}.json",
+        }
+        for plan, slug, variants in cases
+        if plan == VCI_STANDARD
+        and variants.get("vci_grant_type") == "pre_authorization_code"
+    ]
+    return unsupported_encryption + pre_authorized_code_replay + haip_refresh_token_policy
 
 
 def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:

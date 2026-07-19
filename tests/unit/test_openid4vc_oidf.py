@@ -968,7 +968,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(len(plans), 17)
             self.assertEqual(len(configs), 17)
             self.assertEqual(len(set(materialized_driver["aliases"])), 17)
-            self.assertEqual(len(expected_skips), 7)
+            self.assertEqual(len(expected_skips), 9)
             self.assertEqual(
                 [
                     item for item in expected_skips
@@ -991,6 +991,23 @@ class Openid4vcOidfTests(unittest.TestCase):
                         "configuration-filename": "openid4vc-vci-sd-preauth.json",
                     },
                 ],
+            )
+            replay_skips = [
+                item for item in expected_skips
+                if item["test-name"] == module.VCI_MULTIPLE_CLIENTS_MODULE
+            ]
+            self.assertEqual(
+                [item["configuration-filename"] for item in replay_skips],
+                [
+                    "openid4vc-vci-sd-preauth.json",
+                    "openid4vc-vci-mdoc-preauth.json",
+                ],
+            )
+            self.assertTrue(
+                all(
+                    item["variant"]["vci_grant_type"] == "pre_authorization_code"
+                    for item in replay_skips
+                )
             )
             self.assertEqual(len(expected_warnings), 4)
             for config in configs.values():
