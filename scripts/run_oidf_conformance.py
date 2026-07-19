@@ -340,16 +340,16 @@ def nazo_automation_credentials(config_value: dict[str, object]) -> tuple[str, s
     nazo = config_value.get("nazo")
     nazo_object = nazo if isinstance(nazo, dict) else {}
     email = (
-        non_empty_string(nazo_object.get("oidf_user_email"))
+        non_empty_string(os.environ.get("OIDF_USER_EMAIL"))
+        or non_empty_string(nazo_object.get("oidf_user_email"))
         or non_empty_string(nazo_object.get("user_email"))
         or non_empty_string(nazo_object.get("login_email"))
-        or non_empty_string(os.environ.get("OIDF_USER_EMAIL"))
     )
     password = (
-        non_empty_string(nazo_object.get("oidf_user_password"))
+        non_empty_string(os.environ.get("OIDF_USER_PASSWORD"))
+        or non_empty_string(nazo_object.get("oidf_user_password"))
         or non_empty_string(nazo_object.get("user_password"))
         or non_empty_string(nazo_object.get("login_password"))
-        or non_empty_string(os.environ.get("OIDF_USER_PASSWORD"))
     )
     if not email or not password:
         fail(
