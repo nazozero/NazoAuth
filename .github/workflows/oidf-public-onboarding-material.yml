@@ -140,7 +140,7 @@ jobs:
         run: rm -f oidf-plan-config.agekey oidf-mtls-material.agekey oidf-mtls-material.json oidf-plan-config-secret-patch.json oidf-plan-config-ciba-secret-patch.json oidf-plan-config-secret-patch.merged.json runtime/openid4vc/base.json runtime/openid4vc/mtls.json runtime/openid4vc/driver.json runtime/openid4vc/materialized/openid4vc-driver.json runtime/openid4vc/materialized/openid4vc-plan-configs.json
 
       - name: Upload public OIDF onboarding material
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7
         with:
           name: oidf-public-onboarding-material
           path: oidf-public-onboarding-material
