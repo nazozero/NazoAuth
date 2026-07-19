@@ -607,10 +607,10 @@ class Openid4vcOidfTests(unittest.TestCase):
 
         module.assert_config_target_boundaries(
             {
-                "vci": {
-                    "credential_issuer_url": "https://issuer.example",
-                    "client_attester_issuer": "https://client-attester.example.org",
-                }
+                "vci": {"credential_issuer_url": "https://issuer.example"},
+                "client_attestation": {
+                    "issuer": "https://client-attester.example.org"
+                },
             },
             "openid4vc-vci-haip-sd-wallet.json",
             "https://issuer.example",
@@ -671,9 +671,9 @@ class Openid4vcOidfTests(unittest.TestCase):
                         "configs": {
                             "openid4vc-vci-sd-wallet-plain.json": {
                                 "alias": "openid4vc-vci-sd-wallet-plain",
-                                "vci": {
-                                    "credential_issuer_url": "https://issuer.example",
-                                    "client_attester_issuer": "https://client-attester.example.org",
+                                "vci": {"credential_issuer_url": "https://issuer.example"},
+                                "client_attestation": {
+                                    "issuer": "https://client-attester.example.org",
                                 },
                             }
                         }

@@ -152,7 +152,7 @@ OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS = max(
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 HTTP_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]+(?::\d+)?(?:/[^\s\"'<>)]*)?")
 OPENID4VC_EXTERNAL_URL_FIELDS = {
-    ("vci", "client_attester_issuer"),
+    ("client_attestation", "issuer"),
     ("client", "request_object_trust_anchor_uri"),
 }
 NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
