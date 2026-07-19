@@ -119,7 +119,8 @@ run_extended_child() {
     export CAPACITY_DURATION="${EXTENDED_CAPACITY_DURATION:-30m}"
     export CAPACITY_INSTANCES="${EXTENDED_CAPACITY_INSTANCES:-1,2,4}"
     export CAPACITY_RATES="${rates}"
-    export PERF_CPUSET="${cpu_set}"
+    export PERF_APP_CPUSET="${cpu_set}"
+    export PERF_INFRA_CPUSET="${cpu_set}"
     export CNB_CAPACITY_SKIP_BOOTSTRAP=1
     export CNB_CAPACITY_COMMIT=0
     export CNB_BUILD_ID="${CNB_BUILD_ID:-extended-capacity}"

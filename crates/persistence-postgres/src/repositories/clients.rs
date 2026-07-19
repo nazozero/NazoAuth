@@ -378,7 +378,8 @@ impl OAuthClientRepository {
         &self,
         client: &OAuthClient,
         client_secret_hash: Option<&str>,
-        registration_access_token_blake3: Option<&str>,
+        expected_registration_access_token_blake3: &str,
+        new_registration_access_token_blake3: Option<&str>,
     ) -> Result<OAuthClient, RepositoryError> {
         let mut connection = self.connection().await?;
         let mut metadata = serde_json::json!({
@@ -443,8 +444,10 @@ impl OAuthClientRepository {
             "backchannel_user_code_parameter".to_owned(),
             serde_json::json!(client.backchannel_user_code_parameter),
         );
-        let changed = diesel::sql_query(
-            r#"
+        let record = connection
+            .transaction::<OAuthClientRecord, diesel::result::Error, _>(async move |connection| {
+                let changed = diesel::sql_query(
+                    r#"
             UPDATE oauth_clients SET
                 client_name = $3->>'client_name',
                 client_type = $3->>'client_type',
@@ -494,21 +497,36 @@ impl OAuthClientRepository {
                 authorization_encrypted_response_enc = $3->>'authorization_encrypted_response_enc',
                 updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE
+              AND registration_access_token_blake3 = $6
             "#,
-        )
-        .bind::<diesel::sql_types::Uuid, _>(client.tenant_id)
-        .bind::<diesel::sql_types::Uuid, _>(client.id)
-        .bind::<diesel::sql_types::Jsonb, _>(&metadata)
-        .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(client_secret_hash)
-        .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(registration_access_token_blake3)
-        .execute(&mut connection)
-        .await
-        .map_err(map_error)?;
-        if changed == 1 {
-            Ok(client.clone())
-        } else {
-            Err(RepositoryError::NotFound)
-        }
+                )
+                .bind::<diesel::sql_types::Uuid, _>(client.tenant_id)
+                .bind::<diesel::sql_types::Uuid, _>(client.id)
+                .bind::<diesel::sql_types::Jsonb, _>(&metadata)
+                .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
+                    client_secret_hash,
+                )
+                .bind::<diesel::sql_types::Nullable<diesel::sql_types::VarChar>, _>(
+                    new_registration_access_token_blake3,
+                )
+                .bind::<diesel::sql_types::VarChar, _>(
+                    expected_registration_access_token_blake3,
+                )
+                .execute(connection)
+                .await?;
+                if changed != 1 {
+                    return Err(diesel::result::Error::NotFound);
+                }
+                oauth_clients::table
+                    .filter(oauth_clients::tenant_id.eq(client.tenant_id))
+                    .filter(oauth_clients::id.eq(client.id))
+                    .select(OAuthClientRecord::as_select())
+                    .first::<OAuthClientRecord>(connection)
+                    .await
+            })
+            .await
+            .map_err(map_error)?;
+        record.into_domain()
     }
 
     pub async fn rotate_credentials(
@@ -516,18 +534,23 @@ impl OAuthClientRepository {
         tenant_id: Uuid,
         id: Uuid,
         client_secret_hash: Option<&str>,
-        registration_access_token_blake3: &str,
+        expected_registration_access_token_blake3: &str,
+        new_registration_access_token_blake3: &str,
     ) -> Result<OAuthClient, RepositoryError> {
         let mut connection = self.connection().await?;
         diesel::update(
             oauth_clients::table
                 .filter(oauth_clients::tenant_id.eq(tenant_id))
                 .filter(oauth_clients::id.eq(id))
-                .filter(oauth_clients::is_active.eq(true)),
+                .filter(oauth_clients::is_active.eq(true))
+                .filter(
+                    oauth_clients::registration_access_token_blake3
+                        .eq(expected_registration_access_token_blake3),
+                ),
         )
         .set((
             oauth_clients::registration_access_token_blake3
-                .eq(Some(registration_access_token_blake3)),
+                .eq(Some(new_registration_access_token_blake3)),
             oauth_clients::client_secret_hash.eq(client_secret_hash),
             oauth_clients::updated_at.eq(diesel::dsl::now),
         ))
@@ -538,14 +561,24 @@ impl OAuthClientRepository {
         .into_domain()
     }
 
-    pub async fn deactivate(&self, tenant_id: Uuid, id: Uuid) -> Result<bool, RepositoryError> {
+    pub async fn deactivate(
+        &self,
+        tenant_id: Uuid,
+        id: Uuid,
+        expected_registration_access_token_blake3: &str,
+    ) -> Result<bool, RepositoryError> {
         let mut connection = self.connection().await?;
         connection
             .transaction::<bool, diesel::result::Error, _>(async |connection| {
                 let changed = diesel::update(
                     oauth_clients::table
                         .filter(oauth_clients::tenant_id.eq(tenant_id))
-                        .filter(oauth_clients::id.eq(id)),
+                        .filter(oauth_clients::id.eq(id))
+                        .filter(oauth_clients::is_active.eq(true))
+                        .filter(
+                            oauth_clients::registration_access_token_blake3
+                                .eq(expected_registration_access_token_blake3),
+                        ),
                 )
                 .set((
                     oauth_clients::is_active.eq(false),
@@ -554,6 +587,9 @@ impl OAuthClientRepository {
                 ))
                 .execute(connection)
                 .await?;
+                if changed != 1 {
+                    return Err(diesel::result::Error::NotFound);
+                }
                 diesel::update(
                     oauth_tokens::table
                         .filter(oauth_tokens::tenant_id.eq(tenant_id))
@@ -570,7 +606,7 @@ impl OAuthClientRepository {
                 )
                 .execute(connection)
                 .await?;
-                Ok(changed == 1)
+                Ok(true)
             })
             .await
             .map_err(map_error)
@@ -1022,7 +1058,8 @@ impl nazo_auth::DynamicRegistrationClientStore for OAuthClientRepository {
         tenant_id: Uuid,
         client_id: Uuid,
         client_secret_hash: Option<&'a str>,
-        registration_access_token_hash: &'a str,
+        expected_registration_access_token_hash: &'a str,
+        new_registration_access_token_hash: &'a str,
     ) -> nazo_auth::DynamicRegistrationFuture<'a, OAuthClient> {
         Box::pin(async move {
             OAuthClientRepository::rotate_credentials(
@@ -1030,10 +1067,11 @@ impl nazo_auth::DynamicRegistrationClientStore for OAuthClientRepository {
                 tenant_id,
                 client_id,
                 client_secret_hash,
-                registration_access_token_hash,
+                expected_registration_access_token_hash,
+                new_registration_access_token_hash,
             )
             .await
-            .map_err(|_| nazo_auth::DynamicRegistrationDependencyError::Unavailable)
+            .map_err(map_dynamic_registration_mutation_error)
         })
     }
 
@@ -1041,30 +1079,49 @@ impl nazo_auth::DynamicRegistrationClientStore for OAuthClientRepository {
         &'a self,
         client: &'a OAuthClient,
         client_secret_hash: Option<&'a str>,
-        registration_access_token_hash: Option<&'a str>,
+        expected_registration_access_token_hash: &'a str,
+        new_registration_access_token_hash: Option<&'a str>,
     ) -> nazo_auth::DynamicRegistrationFuture<'a, OAuthClient> {
         Box::pin(async move {
             OAuthClientRepository::replace_registration(
                 self,
                 client,
                 client_secret_hash,
-                registration_access_token_hash,
+                expected_registration_access_token_hash,
+                new_registration_access_token_hash,
             )
             .await
-            .map_err(|_| nazo_auth::DynamicRegistrationDependencyError::Unavailable)
+            .map_err(map_dynamic_registration_mutation_error)
         })
     }
 
-    fn deactivate(
-        &self,
+    fn deactivate<'a>(
+        &'a self,
         tenant_id: Uuid,
         client_id: Uuid,
-    ) -> nazo_auth::DynamicRegistrationFuture<'_, bool> {
+        expected_registration_access_token_hash: &'a str,
+    ) -> nazo_auth::DynamicRegistrationFuture<'a, bool> {
         Box::pin(async move {
-            OAuthClientRepository::deactivate(self, tenant_id, client_id)
-                .await
-                .map_err(|_| nazo_auth::DynamicRegistrationDependencyError::Unavailable)
+            OAuthClientRepository::deactivate(
+                self,
+                tenant_id,
+                client_id,
+                expected_registration_access_token_hash,
+            )
+            .await
+            .map_err(map_dynamic_registration_mutation_error)
         })
+    }
+}
+
+fn map_dynamic_registration_mutation_error(
+    error: RepositoryError,
+) -> nazo_auth::DynamicRegistrationDependencyError {
+    match error {
+        RepositoryError::NotFound => {
+            nazo_auth::DynamicRegistrationDependencyError::StaleCredentials
+        }
+        _ => nazo_auth::DynamicRegistrationDependencyError::Unavailable,
     }
 }
 
@@ -1155,7 +1212,10 @@ fn string_array(value: Value, field: &str) -> Result<Vec<String>, RepositoryErro
 }
 
 fn map_error(error: diesel::result::Error) -> RepositoryError {
-    RepositoryError::Unexpected(error.to_string())
+    match error {
+        diesel::result::Error::NotFound => RepositoryError::NotFound,
+        error => RepositoryError::Unexpected(error.to_string()),
+    }
 }
 
 #[cfg(test)]
@@ -1170,6 +1230,14 @@ mod tests {
                 "grant_types"
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn missing_client_rows_preserve_not_found_semantics() {
+        assert_eq!(
+            map_error(diesel::result::Error::NotFound),
+            RepositoryError::NotFound
         );
     }
 }

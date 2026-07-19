@@ -150,13 +150,7 @@ pub fn parse_response_for_verification(
         .join("\n");
     base.push_str("\n\"@signature-params\": ");
     base.push_str(signature_params);
-    let replay_fingerprint = fingerprint(
-        &signature,
-        keyid.as_bytes(),
-        response.status.to_string().as_bytes(),
-        original.input.method.as_bytes(),
-        original.input.target_uri.as_bytes(),
-    );
+    let replay_fingerprint = fingerprint(base.as_bytes(), keyid.as_bytes());
 
     Ok(VerifiedInput::new(
         base.into_bytes(),

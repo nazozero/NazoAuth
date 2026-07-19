@@ -2,17 +2,14 @@
 // 本文件只声明 URL 到 handler 的映射，不承载业务逻辑。
 
 use actix_web::web;
-#[cfg(not(test))]
-use nazo_http_actix::authorize_decision;
 use nazo_http_actix::{
     admin_patch_runtime_module, admin_runtime_module_events, admin_runtime_modules,
-    check_session_iframe, check_session_status, configure_mfa_challenge_route,
+    authorize_decision, check_session_iframe, check_session_status, configure_mfa_challenge_route,
     configure_mfa_profile_routes, configure_passkey_login_routes, configure_passkey_profile_routes,
     discovery, fapi_resource, introspect, jwks, login, oauth_authorization_server_metadata,
     oauth_protected_resource_metadata, oidc_logout, profile_applications, profile_logout,
     profile_me, profile_update, register, revoke, send_code,
 };
-#[cfg(not(test))]
 use nazo_http_actix::{
     client_configuration_delete, client_configuration_get, client_configuration_put,
     dynamic_client_registration, userinfo,
@@ -49,18 +46,11 @@ use crate::http::auth::{
         federation_saml_acs,
     },
 };
-#[cfg(test)]
-use crate::http::authorization::decision::authorize_decision;
 use crate::http::authorization::{
     consent::authorize_consent,
     par::par,
     presentation::authorize_client_presentation,
     request::{authorize_get, authorize_post},
-};
-#[cfg(test)]
-use crate::http::dynamic_client_registration::{
-    client_configuration_delete, client_configuration_get, client_configuration_put,
-    dynamic_client_registration,
 };
 use crate::http::perf_metrics::perf_metrics;
 use crate::http::profile::{
@@ -70,8 +60,6 @@ use crate::http::profile::{
     federation_links::{my_federation_links, unlink_my_federation_link},
     mtls_trust::{create_mtls_trust_request, my_mtls_trust_requests},
 };
-#[cfg(test)]
-use crate::http::token::userinfo::userinfo;
 use crate::http::token::{
     ciba::{
         backchannel_authentication, ciba_automated_decision, ciba_decision, ciba_verification,

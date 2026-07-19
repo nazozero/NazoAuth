@@ -4,7 +4,7 @@ use crate::adapters::security::blake3_hex;
 use crate::adapters::security::constant_time_eq;
 use crate::adapters::security::pkce_s256;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 use crate::domain::client_policy::audiences_allowed;
 #[cfg(test)]
 use crate::domain::client_policy::authorization_code_key;
@@ -227,12 +227,13 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
 
 fn authorization_code_audiences_with_default(
     default_audience: &str,
+    openid4vci_audience: Option<&str>,
     payload: &CodePayload,
     form: &TokenForm,
 ) -> Result<Vec<String>, ()> {
     if payload.resource_indicators.is_empty() {
         return Ok(if form.audiences.is_empty() {
-            vec![default_audience.to_owned()]
+            vec![openid4vci_audience.unwrap_or(default_audience).to_owned()]
         } else {
             form.audiences.clone()
         });
@@ -251,7 +252,13 @@ fn authorization_code_audiences(
     payload: &CodePayload,
     form: &TokenForm,
 ) -> Result<Vec<String>, ()> {
-    authorization_code_audiences_with_default(&settings.protocol.default_audience, payload, form)
+    let config = TokenIssuanceConfig::from(settings);
+    authorization_code_audiences_with_default(
+        config.default_audience(),
+        config.openid4vci_audience(&payload.scopes, &payload.authorization_details),
+        payload,
+        form,
+    )
 }
 
 fn refresh_token_dpop_binding(
@@ -544,6 +551,9 @@ pub(crate) async fn token_authorization_code_with_service(
     }
     let audiences = match authorization_code_audiences_with_default(
         issuance.config.default_audience(),
+        issuance
+            .config
+            .openid4vci_audience(&payload.scopes, &payload.authorization_details),
         &payload,
         form,
     ) {
@@ -648,7 +658,7 @@ pub(crate) async fn token_authorization_code_with_service(
 }
 
 #[cfg(test)]
-fn test_token_service(state: &TestAppState) -> ServerTokenService {
+fn test_token_service(state: &TestInfrastructure) -> ServerTokenService {
     ServerTokenService::new(
         nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
         nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
@@ -658,7 +668,7 @@ fn test_token_service(state: &TestAppState) -> ServerTokenService {
 
 #[cfg(test)]
 async fn load_pending_authorization_code_payload(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     code_hash: &str,
 ) -> Result<Option<Box<CodePayload>>, HttpResponse> {
     load_pending_authorization_code_payload_with_service(&test_token_service(state), code_hash)
@@ -667,7 +677,7 @@ async fn load_pending_authorization_code_payload(
 
 #[cfg(test)]
 async fn begin_authorization_code_consumption(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     code_hash: &str,
 ) -> Result<AuthorizationCodeConsumption, HttpResponse> {
     begin_authorization_code_consumption_with_service(&test_token_service(state), code_hash).await
@@ -675,7 +685,7 @@ async fn begin_authorization_code_consumption(
 
 #[cfg(test)]
 pub(crate) async fn token_authorization_code(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -733,5 +743,5 @@ fn authorization_code_subject(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/authorization_code.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/authorization_code.rs"]
 mod tests;

@@ -8,6 +8,8 @@ pub const SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS: &[&str] = &[
     "ECDH-ES+A256KW",
 ];
 pub const SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS: &[&str] = &["A256GCM"];
+pub const RSA_PUBLIC_KEY_MIN_BITS: usize = 2_048;
+pub const RSA_PUBLIC_KEY_MAX_BITS: usize = 8_192;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ClientJweKeyManagement {
@@ -72,7 +74,29 @@ pub fn valid_rsa_jwe_encryption_key(key: &Value) -> bool {
     let Ok(exponent) = URL_SAFE_NO_PAD.decode(e) else {
         return false;
     };
-    modulus.len() >= 256 && !exponent.is_empty()
+    rsa_public_key_components_are_safe(&modulus, &exponent)
+}
+
+#[must_use]
+pub fn rsa_public_key_components_are_safe(modulus: &[u8], exponent: &[u8]) -> bool {
+    let modulus_bits = unsigned_integer_bit_length(modulus);
+    (RSA_PUBLIC_KEY_MIN_BITS..=RSA_PUBLIC_KEY_MAX_BITS).contains(&modulus_bits)
+        && valid_rsa_public_exponent(exponent)
+}
+
+fn unsigned_integer_bit_length(bytes: &[u8]) -> usize {
+    let Some((offset, first)) = bytes.iter().enumerate().find(|(_, byte)| **byte != 0) else {
+        return 0;
+    };
+    (bytes.len() - offset - 1) * 8 + (u8::BITS - first.leading_zeros()) as usize
+}
+
+fn valid_rsa_public_exponent(bytes: &[u8]) -> bool {
+    let Some((offset, _)) = bytes.iter().enumerate().find(|(_, byte)| **byte != 0) else {
+        return false;
+    };
+    let value = &bytes[offset..];
+    (value.len() > 1 || value[0] >= 3) && value.last().is_some_and(|last| last & 1 == 1)
 }
 
 #[must_use]

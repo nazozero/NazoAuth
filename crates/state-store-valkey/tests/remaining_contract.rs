@@ -8,8 +8,7 @@ use nazo_identity::ports::{
 };
 use nazo_identity::session::SessionRecord;
 use nazo_valkey::{
-    AuthenticationStore, LoginFailureDimension, RateDimension, RateLimitStore, TokenStateStore,
-    ValkeyConnection,
+    AuthenticationStore, RateDimension, RateLimitStore, TokenStateStore, ValkeyConnection,
 };
 use serde_json::json;
 
@@ -317,13 +316,6 @@ async fn concurrent_rate_counters_are_atomic_and_preserve_first_window_ttl() {
         blake3::hash(subject.as_bytes()).to_hex()
     );
     assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
-    assert_eq!(
-        store
-            .login_failure_count(LoginFailureDimension::Email, &subject)
-            .await
-            .unwrap(),
-        0
-    );
 }
 
 #[tokio::test]

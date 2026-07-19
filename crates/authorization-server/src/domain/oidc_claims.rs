@@ -46,7 +46,6 @@ pub(crate) fn compute_subject_for_client(
     .map_err(Into::into)
 }
 
-#[cfg(test)]
 const PROFILE_CLAIMS: &[&str] = &[
     "preferred_username",
     "name",
@@ -64,11 +63,8 @@ const PROFILE_CLAIMS: &[&str] = &[
     "updated_at",
 ];
 
-#[cfg(test)]
 const EMAIL_CLAIMS: &[&str] = &["email", "email_verified"];
-#[cfg(test)]
 const ADDRESS_CLAIMS: &[&str] = &["address"];
-#[cfg(test)]
 const PHONE_CLAIMS: &[&str] = &["phone_number", "phone_number_verified"];
 
 #[cfg(test)]
@@ -77,6 +73,26 @@ pub(crate) fn supported_user_claim(name: &str) -> bool {
         || EMAIL_CLAIMS.contains(&name)
         || ADDRESS_CLAIMS.contains(&name)
         || PHONE_CLAIMS.contains(&name)
+}
+
+pub(crate) fn user_claims_are_covered_by_scopes(
+    scopes: &[String],
+    requested_claims: &[String],
+) -> bool {
+    requested_claims.iter().all(|claim| {
+        let required_scope = if PROFILE_CLAIMS.contains(&claim.as_str()) {
+            "profile"
+        } else if EMAIL_CLAIMS.contains(&claim.as_str()) {
+            "email"
+        } else if ADDRESS_CLAIMS.contains(&claim.as_str()) {
+            "address"
+        } else if PHONE_CLAIMS.contains(&claim.as_str()) {
+            "phone"
+        } else {
+            return false;
+        };
+        scopes.iter().any(|scope| scope == required_scope)
+    })
 }
 
 pub(crate) fn oidc_user_claims(
@@ -409,5 +425,5 @@ pub(crate) fn oidc_id_token_user_claims(
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/oidc_claims.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/oidc_claims.rs"]
 mod tests;

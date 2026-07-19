@@ -144,7 +144,7 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
 
 #[cfg(test)]
 fn test_operations(
-    state: &crate::domain::TestAppState,
+    state: &crate::domain::TestInfrastructure,
 ) -> std::sync::Arc<PasskeyOperationsProvider> {
     std::sync::Arc::new(PasskeyOperationsProvider::new(
         crate::test_support::passkey_service(state)
@@ -161,7 +161,7 @@ fn test_operations(
 
 #[cfg(test)]
 fn test_login_endpoint(
-    state: &crate::domain::TestAppState,
+    state: &crate::domain::TestInfrastructure,
 ) -> actix_web::web::Data<nazo_http_actix::PasskeyLoginEndpoint> {
     let identity = &state.settings.identity;
     let session = &state.settings.session;
@@ -189,7 +189,7 @@ fn test_login_endpoint(
 
 #[cfg(test)]
 fn test_profile_endpoint(
-    state: &crate::domain::TestAppState,
+    state: &crate::domain::TestInfrastructure,
 ) -> actix_web::web::Data<nazo_http_actix::PasskeyProfileEndpoint> {
     let session = &state.settings.session;
     actix_web::web::Data::new(nazo_http_actix::PasskeyProfileEndpoint::new(
@@ -203,9 +203,9 @@ fn test_profile_endpoint(
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/http/auth/tests/passkey.rs"]
+#[path = "../../tests/source_mounted/src/http/auth/tests/passkey.rs"]
 mod login_tests;
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/http/profile/tests/passkeys.rs"]
+#[path = "../../tests/source_mounted/src/http/profile/tests/passkeys.rs"]
 mod profile_tests;

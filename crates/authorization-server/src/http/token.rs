@@ -13,9 +13,6 @@ pub(crate) mod jwt_bearer;
 pub(crate) mod native_sso;
 pub(crate) mod refresh;
 pub(crate) mod token_exchange;
-#[cfg(test)]
-pub(crate) mod userinfo;
-
 use authorization_code::token_authorization_code_with_service;
 use ciba::{CIBA_GRANT_TYPE, token_ciba};
 use client_auth::{
@@ -27,8 +24,6 @@ use device::DEVICE_CODE_GRANT_TYPE;
 use device_issuance::token_device_code_with_service;
 #[cfg(test)]
 use dispatch::validate_token_request_profile;
-#[cfg(test)]
-use issue::access_token_subject_key;
 use issue::{
     mark_failed_authorization_code, revoke_issued_authorization_code_tokens,
     should_issue_refresh_token,
@@ -65,7 +60,7 @@ use actix_web::{
 use nazo_http_actix::{TokenManagementFormError, TokenOnlyForm};
 use nazo_http_actix::{oauth_error, oauth_token_error};
 #[cfg(test)]
-#[path = "../../tests/in_source/src/http/token/tests/forms.rs"]
+#[path = "../../tests/source_mounted/src/http/token/tests/forms.rs"]
 mod forms_tests;
 
 pub(crate) struct ServerTokenManagementRequestFactsExtractor {
@@ -85,10 +80,7 @@ impl nazo_http_actix::TokenManagementRequestFactsExtractor
 {
     fn extract(&self, request: &HttpRequest) -> nazo_http_actix::TokenManagementRequestFacts {
         nazo_http_actix::TokenManagementRequestFacts {
-            source_ip: crate::http::client_ip::client_ip_with_config(
-                request,
-                &self.config.client_ip,
-            ),
+            source_ip: nazo_http_actix::client_ip_with_config(request, &self.config.client_ip),
             endpoint_path: request.path().to_owned(),
             client_certificate: None,
         }
@@ -107,7 +99,7 @@ impl nazo_http_actix::TokenManagementRequestFactsExtractor
 
 pub(crate) fn client_auth_request_facts(
     request: &HttpRequest,
-    trusted_proxy_cidrs: &[crate::http::client_ip::IpCidr],
+    trusted_proxy_cidrs: &[nazo_http_actix::IpCidr],
 ) -> ClientAuthRequestFacts {
     ClientAuthRequestFacts::new(
         request.path(),
@@ -193,7 +185,7 @@ mod lifecycle_boundary_tests {
             "#[cfg(not(test))]",
         );
         for forbidden in [
-            "Data<TestAppState>",
+            "Data<TestInfrastructure>",
             "state.settings",
             "state.diesel_db",
             "state.valkey_connection()",
@@ -235,7 +227,7 @@ mod lifecycle_boundary_tests {
         ] {
             let body = function_body(source, start, end);
             for forbidden in [
-                "TestAppState",
+                "TestInfrastructure",
                 "state.settings",
                 "state.diesel_db",
                 "state.valkey_connection()",
@@ -253,10 +245,10 @@ mod lifecycle_boundary_tests {
 
     #[test]
     fn userinfo_transport_does_not_construct_storage_adapters() {
-        let source = include_str!("token/userinfo.rs");
-        assert!(source.contains("handles: Data<UserinfoHandles>"));
+        let source = include_str!("../../../http-actix/src/userinfo.rs");
+        assert!(source.contains("endpoint: Data<UserinfoEndpoint>"));
         for forbidden in [
-            "Data<TestAppState>",
+            "Data<TestInfrastructure>",
             "Settings",
             "KeyManager",
             "nazo_postgres",
@@ -317,12 +309,11 @@ mod lifecycle_boundary_tests {
             );
         }
         assert!(!source.contains(
-            "pub(crate) async fn backchannel_authentication(\n    state: Data<TestAppState>"
+            "pub(crate) async fn backchannel_authentication(\n    state: Data<TestInfrastructure>"
         ));
-        assert!(
-            !source
-                .contains("pub(crate) async fn ciba_verification(\n    state: Data<TestAppState>")
-        );
+        assert!(!source.contains(
+            "pub(crate) async fn ciba_verification(\n    state: Data<TestInfrastructure>"
+        ));
     }
 
     #[test]
@@ -332,9 +323,9 @@ mod lifecycle_boundary_tests {
             .split("pub(crate) async fn issue_token_response_with_service")
             .nth(1)
             .and_then(|source| source.split("#[cfg(test)]").next())
-            .expect("issuance core must precede test-only compatibility code");
+            .expect("issuance core must precede test-only fixture adapters");
         for forbidden in [
-            "TestAppState",
+            "TestInfrastructure",
             "state.settings",
             "state.diesel_db",
             "state.valkey_connection",
@@ -352,7 +343,7 @@ mod lifecycle_boundary_tests {
     fn device_transport_uses_focused_composition_root_dependencies() {
         let source = include_str!("token/device.rs");
         for forbidden in [
-            "Data<TestAppState>",
+            "Data<TestInfrastructure>",
             "Settings",
             "DeviceStore::new",
             "AuthorizationFlowRepository::new",
@@ -382,7 +373,7 @@ mod lifecycle_boundary_tests {
     fn ciba_decision_transport_uses_focused_composition_root_dependencies() {
         let source = include_str!("token/ciba.rs");
         for forbidden in [
-            "Data<TestAppState>",
+            "Data<TestInfrastructure>",
             "state.permits_existing_module_transaction",
             "client_ip(&req, &state.settings)",
             "has_valid_csrf_token(&state",
@@ -416,7 +407,7 @@ mod lifecycle_boundary_tests {
         assert!(source.contains("validate_dpop_proof_with_authorization_service"));
         assert!(source.contains("consume_token_client_assertion_with_authorization_service"));
         for forbidden in [
-            "TestAppState",
+            "TestInfrastructure",
             "Settings",
             "state.settings",
             "DeviceStore::new",

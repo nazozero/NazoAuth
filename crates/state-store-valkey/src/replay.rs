@@ -183,6 +183,19 @@ impl ReplayStore {
             .await
     }
 
+    pub async fn consume_ciba_request_object(
+        &self,
+        client_id: &str,
+        jti: &str,
+        ttl_seconds: u64,
+    ) -> Result<bool, Error> {
+        self.consume_key(
+            keys::ciba_request_object_replay(client_id, jti),
+            ttl_seconds,
+        )
+        .await
+    }
+
     async fn consume_key(&self, key: String, ttl_seconds: u64) -> Result<bool, Error> {
         command::set_ex_nx(&self.connection, key, "1", ttl_seconds).await
     }

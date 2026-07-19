@@ -112,7 +112,8 @@ fn public_decoding_key(key: &Value, algorithm: Algorithm) -> Option<DecodingKey>
             let e = key.get("e")?.as_str()?;
             let modulus = URL_SAFE_NO_PAD.decode(n).ok()?;
             let exponent = URL_SAFE_NO_PAD.decode(e).ok()?;
-            if unsigned_integer_bit_length(&modulus) < 2048 || !valid_rsa_public_exponent(&exponent)
+            if !(2_048..=8_192).contains(&unsigned_integer_bit_length(&modulus))
+                || !valid_rsa_public_exponent(&exponent)
             {
                 return None;
             }

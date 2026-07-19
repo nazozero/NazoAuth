@@ -1,0 +1,234 @@
+import importlib.util
+import json
+import os
+import subprocess
+import tempfile
+import unittest
+from argparse import Namespace
+from pathlib import Path
+from unittest import mock
+
+
+def load_module():
+    script = Path(__file__).resolve().parents[2] / "scripts" / "run_public_oidf_conformance.py"
+    spec = importlib.util.spec_from_file_location("run_public_oidf_conformance", script)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+class PublicOidfRunnerTests(unittest.TestCase):
+    def setUp(self):
+        self.module = load_module()
+
+    def test_origins_are_normalized_and_non_origin_urls_are_rejected(self):
+        self.assertEqual(
+            self.module.origin("https://suite.example/", "--suite"),
+            "https://suite.example",
+        )
+        for invalid in ("http://suite.example", "https://suite.example/path", "localhost"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaises(self.module.PublicRunError):
+                    self.module.origin(invalid, "--suite")
+
+    def test_required_environment_reports_all_missing_values(self):
+        with mock.patch.dict(os.environ, {}, clear=True):
+            with self.assertRaisesRegex(
+                self.module.PublicRunError,
+                "OIDF_APPLICANT_EMAIL.*OIDF_CONFORMANCE_TOKEN",
+            ):
+                self.module.required_environment("OIDF_CONFORMANCE_TOKEN")
+
+    def test_plan_groups_use_explicit_inputs_and_isolate_browser_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            work = root / "work"
+            work.mkdir()
+            (work / "oidf-expected-skips.json").write_text("[]\n", encoding="utf-8")
+            contracts = root / "tests" / "contracts"
+            contracts.mkdir(parents=True)
+            (contracts / "oidf-official-expected-warnings.json").write_text(
+                "[]\n", encoding="utf-8"
+            )
+            concurrent = [
+                "oidcc-basic-certification-test-plan basic.json",
+                "oidcc-formpost-basic-certification-test-plan formpost.json",
+                "oidcc-3rdparty-init-login-certification-test-plan thirdparty.json",
+                "oidcc-config-certification-test-plan config.json",
+                "fapi2-message-signing-final-test-plan message.json",
+            ]
+            for client_auth_type in ("mtls", "private_key_jwt"):
+                for sender_constrain in ("dpop", "mtls"):
+                    concurrent.append(
+                        "fapi2-security-profile-final-test-plan"
+                        f"[client_auth_type={client_auth_type}]"
+                        f"[sender_constrain={sender_constrain}] security-{client_auth_type}-{sender_constrain}.json"
+                    )
+            ciba = [
+                "fapi-ciba-id1-test-plan"
+                f"[client_auth_type={client_auth_type}][ciba_mode={mode}] ciba-{client_auth_type}-{mode}.json"
+                for client_auth_type in ("private_key_jwt", "mtls")
+                for mode in ("poll", "ping")
+            ]
+            files = {
+                "oidf-plan-set-concurrent.json": concurrent,
+                "oidf-plan-set-ciba.json": ciba,
+                "oidf-plan-set-frontchannel.json": ["frontchannel plan-front.json"],
+                "oidf-plan-set-session.json": ["session plan-session.json"],
+            }
+            for filename, plans in files.items():
+                (work / filename).write_text(json.dumps(plans), encoding="utf-8")
+            args = Namespace(
+                suite_dir=root / "suite",
+                suite_revision="suite-commit",
+                conformance_server="https://suite.example",
+                target_issuer="https://issuer.example",
+                token_env="OIDF_CONFORMANCE_TOKEN",
+                export_dir=root / "results",
+                timeout_seconds=100,
+                monitor_interval_seconds=5,
+            )
+            with (
+                mock.patch.object(self.module, "command") as command,
+                mock.patch.object(self.module, "ROOT", root),
+            ):
+                self.module.run_plan_groups(args, work, {})
+
+            self.assertEqual(command.call_count, 12)
+            invocations = [call.args[0] for call in command.call_args_list]
+            self.assertNotIn("--no-parallel", invocations[0])
+            self.assertNotIn("--no-parallel", invocations[1])
+            for invocation in invocations[2:6]:
+                self.assertIn("--no-parallel", invocation)
+            for invocation in invocations[6:10]:
+                self.assertNotIn("--no-parallel", invocation)
+            for invocation in invocations[10:12]:
+                self.assertIn("--no-parallel", invocation)
+            self.assertTrue(all("--no-api-token" not in invocation for invocation in invocations))
+            self.assertTrue(
+                all(
+                    invocation[invocation.index("--suite-revision") + 1] == "suite-commit"
+                    for invocation in invocations
+                )
+            )
+            self.assertTrue(
+                all("--expected-failures-file" in invocation for invocation in invocations)
+            )
+
+    def test_problem_records_are_filtered_to_the_selected_plan_configs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan_set = root / "plans.json"
+            source = root / "warnings.json"
+            destination = root / "selected.json"
+            plan_set.write_text(
+                json.dumps(["plan-a config-a.json", "plan-b config-b.json"]),
+                encoding="utf-8",
+            )
+            source.write_text(
+                json.dumps(
+                    [
+                        {"configuration-filename": "config-a.json", "condition": "A"},
+                        {"configuration-filename": "config-c.json", "condition": "C"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            self.module.filter_problem_records(source, plan_set, destination)
+
+            self.assertEqual(
+                json.loads(destination.read_text(encoding="utf-8")),
+                [{"configuration-filename": "config-a.json", "condition": "A"}],
+            )
+
+    def test_official_ingress_warnings_are_not_applied_to_the_public_suite(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan_set = root / "plans.json"
+            source = root / "warnings.json"
+            destination = root / "selected.json"
+            plan_set.write_text(json.dumps(["plan-a config-a.json"]), encoding="utf-8")
+            source.write_text(
+                json.dumps(
+                    [
+                        {"configuration-filename": "config-a.json", "condition": "A"},
+                        {
+                            "configuration-filename": "config-a.json",
+                            "condition": "EnsureIncomingTls13",
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            self.module.filter_problem_records(
+                source,
+                plan_set,
+                destination,
+                excluded_conditions=self.module.OFFICIAL_INGRESS_ONLY_WARNING_CONDITIONS,
+            )
+
+            self.assertEqual(
+                json.loads(destination.read_text(encoding="utf-8")),
+                [{"configuration-filename": "config-a.json", "condition": "A"}],
+            )
+
+    def test_proxy_trust_install_and_restore_are_atomic(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "proxy" / "trust.pem"
+            target.parent.mkdir()
+            target.write_text("old\n", encoding="utf-8")
+            executable = root / "proxy-bin"
+            executable.write_text("", encoding="utf-8")
+            approved = root / "approved.pem"
+            approved.write_text("new\n", encoding="utf-8")
+            work = root / "work"
+            work.mkdir()
+            trust = self.module.ProxyTrust(target, executable, work)
+
+            with (
+                mock.patch.object(self.module, "command") as command,
+                mock.patch.object(self.module.ssl, "SSLContext"),
+            ):
+                trust.install(approved)
+                self.assertEqual(target.read_text(encoding="utf-8"), "new\n")
+                trust.restore()
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "old\n")
+            self.assertFalse((work / "proxy-trust-bundle.before.pem").exists())
+            self.assertEqual(command.call_count, 4)
+
+    def test_proxy_validation_failure_restores_previous_bundle(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            target = root / "trust.pem"
+            target.write_text("old\n", encoding="utf-8")
+            executable = root / "proxy-bin"
+            executable.write_text("", encoding="utf-8")
+            approved = root / "approved.pem"
+            approved.write_text("new\n", encoding="utf-8")
+            work = root / "work"
+            work.mkdir()
+            trust = self.module.ProxyTrust(target, executable, work)
+            failure = subprocess.CalledProcessError(1, [str(executable), "-t"])
+
+            with (
+                mock.patch.object(
+                    self.module,
+                    "command",
+                    side_effect=(failure, None, None),
+                ),
+                mock.patch.object(self.module.ssl, "SSLContext"),
+            ):
+                with self.assertRaises(subprocess.CalledProcessError):
+                    trust.install(approved)
+
+            self.assertEqual(target.read_text(encoding="utf-8"), "old\n")
+            self.assertFalse(trust.installed)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -16,7 +16,7 @@ use crate::adapters::security::extract_client_credentials_with_trusted_proxies;
 use crate::adapters::security::has_basic_authorization_scheme;
 use crate::adapters::security::random_urlsafe_token;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 use crate::domain::client_policy::client_supports_grant;
 use crate::domain::client_policy::is_subset;
 use crate::domain::client_policy::parse_scope;
@@ -24,7 +24,6 @@ use crate::domain::tenancy::DEFAULT_TENANT_ID;
 #[cfg(test)]
 use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
-use crate::http::client_ip::client_ip_with_context;
 use crate::http::dpop::DpopError;
 use crate::http::dpop::DpopErrorContext;
 use crate::http::dpop::dpop_error_response;
@@ -45,6 +44,7 @@ use nazo_auth::{
     ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy, ciba_retention_deadline,
     validate_token_request_profile as validate_auth_token_request_profile,
 };
+use nazo_http_actix::client_ip_with_context;
 use nazo_http_actix::{cookie_value, csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_valkey::CibaStore;
 use serde::Deserialize;
@@ -65,12 +65,12 @@ use super::{
     token_management_auth_error,
 };
 use crate::http::authorization::ServerAuthorizationService;
-use crate::http::client_ip::{ClientIpHeaderMode, IpCidr};
 use crate::http::sessions::AdminSessionHandles;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use actix_web::web::Payload;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::ClientAuthenticationContext;
+use nazo_http_actix::{ClientIpHeaderMode, IpCidr};
 use std::collections::HashSet;
 
 pub(crate) const CIBA_GRANT_TYPE: &str = "urn:openid:params:grant-type:ciba";
@@ -198,6 +198,12 @@ struct CibaAuthenticationRequestClaims {
     acr_values: Option<String>,
     requested_expiry: Option<Value>,
     client_notification_token: Option<String>,
+}
+
+#[derive(Debug)]
+struct CibaRequestObjectReplay {
+    jti: String,
+    ttl_seconds: u64,
 }
 
 #[derive(Deserialize)]
@@ -372,11 +378,12 @@ pub(crate) async fn backchannel_authentication(
     {
         return response;
     }
-    if let Err(response) =
-        validate_and_apply_ciba_request_object_claims_with_config(&config, &client, &mut form)
-    {
-        return response;
-    }
+    let request_object_replay = match validate_and_apply_ciba_request_object_claims_with_config(
+        &config, &client, &mut form,
+    ) {
+        Ok(replay) => replay,
+        Err(response) => return response,
+    };
     if let Err(response) = validate_ciba_delivery_request(&client, &form) {
         return response;
     }
@@ -446,6 +453,25 @@ pub(crate) async fn backchannel_authentication(
         }
         None => None,
     };
+    if let Some(replay) = request_object_replay {
+        match authorization_service
+            .consume_ciba_request_object(&client.client_id, &replay.jti, replay.ttl_seconds)
+            .await
+        {
+            Ok(true) => {}
+            Ok(false) => {
+                return ciba_invalid_request("CIBA request object has already been used.");
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to persist CIBA request object replay state");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "CIBA failed.",
+                );
+            }
+        }
+    }
     let now = Utc::now().timestamp();
     let expires_at = now.saturating_add(expires_in.min(i64::MAX as u64) as i64);
     let state_payload = CibaRequestState {
@@ -605,9 +631,9 @@ fn validate_and_apply_ciba_request_object_claims_with_config(
     config: &CibaHttpConfig,
     client: &ClientRow,
     form: &mut BackchannelAuthenticationForm,
-) -> Result<(), HttpResponse> {
+) -> Result<Option<CibaRequestObjectReplay>, HttpResponse> {
     let Some(request_object) = form.request.as_deref() else {
-        return Ok(());
+        return Ok(None);
     };
     let claims = signed_ciba_request_object_claims(request_object, client)?;
     let now = Utc::now().timestamp();
@@ -622,6 +648,17 @@ fn validate_and_apply_ciba_request_object_claims_with_config(
             "CIBA request object claims are invalid.",
         ));
     }
+    let replay = CibaRequestObjectReplay {
+        jti: claims
+            .jti
+            .clone()
+            .expect("validated CIBA request object has jti"),
+        ttl_seconds: claims
+            .exp
+            .expect("validated CIBA request object has exp")
+            .saturating_sub(now)
+            .clamp(1, CIBA_REQUEST_OBJECT_MAX_TTL_SECONDS) as u64,
+    };
     if let Some(binding_message) = claims.binding_message.as_deref()
         && !ciba_binding_message_is_supported(binding_message)
     {
@@ -681,15 +718,15 @@ fn validate_and_apply_ciba_request_object_claims_with_config(
         }
         form.requested_expiry_seconds = Some(seconds);
     }
-    Ok(())
+    Ok(Some(replay))
 }
 
 #[cfg(test)]
 fn validate_and_apply_ciba_request_object_claims(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     client: &ClientRow,
     form: &mut BackchannelAuthenticationForm,
-) -> Result<(), HttpResponse> {
+) -> Result<Option<CibaRequestObjectReplay>, HttpResponse> {
     validate_and_apply_ciba_request_object_claims_with_config(
         &CibaHttpConfig::from(state.settings.as_ref()),
         client,
@@ -1769,9 +1806,9 @@ fn ciba_request_key(auth_req_id: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/ciba.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/ciba.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/ciba_state.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/ciba_state.rs"]
 mod state_tests;

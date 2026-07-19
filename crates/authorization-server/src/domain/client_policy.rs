@@ -55,5 +55,5 @@ pub(crate) fn authorization_code_key(code: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/oauth_client_jwks.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/oauth_client_jwks.rs"]
 mod oauth_client_jwks_tests;

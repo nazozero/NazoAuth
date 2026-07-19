@@ -116,8 +116,6 @@ pub struct VerifiedSenderConstraintProof {
     pub mtls_x5t_s256: Option<String>,
 }
 
-pub type SenderConstraintProof = VerifiedSenderConstraintProof;
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResourceServerRequestError {
     MissingToken,
@@ -422,5 +420,5 @@ fn scope_values(value: &str) -> Vec<String> {
 }
 
 #[cfg(test)]
-#[path = "../tests/in_source/resource_server.rs"]
+#[path = "../tests/source_mounted/resource_server.rs"]
 mod tests;

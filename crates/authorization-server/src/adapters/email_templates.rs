@@ -3,5 +3,5 @@
 pub(crate) use nazo_identity::email::VerificationEmail;
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/email_templates.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/email_templates.rs"]
 mod tests;

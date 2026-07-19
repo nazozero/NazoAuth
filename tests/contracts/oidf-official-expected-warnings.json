@@ -1,5 +1,14 @@
 [
   {
+    "test-name": "oidcc-3rd_party-init-login",
+    "variant": {"client_auth_type":"client_secret_basic","response_type":"code","server_metadata":"discovery","client_registration":"dynamic_client","response_mode":"default"},
+    "configuration-filename": "oidf-oidcc-third-party-init-plan-config.json",
+    "current-block": "Unregister dynamically registered client",
+    "condition": "UnregisterDynamicallyRegisteredClient",
+    "expected-result": "warning",
+    "comment": "RFC 7592 permits rotating the registration access token on a client read. This upstream module does not adopt the rotated token before its best-effort cleanup DELETE; product onboarding cleanup independently removes the run-scoped client."
+  },
+  {
     "test-name": "fapi-ciba-id1",
     "variant": {"client_auth_type":"private_key_jwt","ciba_mode":"ping","fapi_ciba_profile":"plain_fapi","client_registration":"static_client"},
     "configuration-filename": "oidf-fapi-ciba-plain-private-key-jwt-ping-plan-config.json",

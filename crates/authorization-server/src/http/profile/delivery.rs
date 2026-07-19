@@ -100,5 +100,5 @@ fn delivery_payload_response(raw: &str) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/profile/tests/delivery.rs"]
+#[path = "../../../tests/source_mounted/src/http/profile/tests/delivery.rs"]
 mod tests;

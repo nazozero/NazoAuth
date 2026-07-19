@@ -23,13 +23,11 @@ impl RateDimension {
 }
 #[derive(Clone, Copy, Debug)]
 pub enum LoginFailureDimension {
-    Email,
     IpEmail,
 }
 impl LoginFailureDimension {
     fn name(self) -> &'static str {
         match self {
-            Self::Email => "email",
             Self::IpEmail => "ip_email",
         }
     }
@@ -104,25 +102,16 @@ impl RateLimitStore {
 }
 
 impl nazo_identity::ports::LoginThrottlePort for RateLimitStore {
-    fn failure_counts<'a>(
+    fn failure_count<'a>(
         &'a self,
         email: &'a str,
         source_ip: &'a str,
-    ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::ports::LoginFailureCounts> {
+    ) -> nazo_identity::ports::RepositoryFuture<'a, u64> {
         Box::pin(async move {
-            let email_count = self
-                .login_failure_count(LoginFailureDimension::Email, email)
-                .await
-                .map_err(crate::identity_repository_error)?;
             let ip_email = format!("{source_ip}:{email}");
-            let ip_email_count = self
-                .login_failure_count(LoginFailureDimension::IpEmail, &ip_email)
+            self.login_failure_count(LoginFailureDimension::IpEmail, &ip_email)
                 .await
-                .map_err(crate::identity_repository_error)?;
-            Ok(nazo_identity::ports::LoginFailureCounts {
-                email: email_count,
-                ip_email: ip_email_count,
-            })
+                .map_err(crate::identity_repository_error)
         })
     }
 
@@ -133,9 +122,6 @@ impl nazo_identity::ports::LoginThrottlePort for RateLimitStore {
         window_seconds: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            self.increment_login_failure(LoginFailureDimension::Email, email, window_seconds)
-                .await
-                .map_err(crate::identity_repository_error)?;
             self.increment_login_failure(
                 LoginFailureDimension::IpEmail,
                 &format!("{source_ip}:{email}"),
@@ -147,24 +133,19 @@ impl nazo_identity::ports::LoginThrottlePort for RateLimitStore {
         })
     }
 
-    fn clear_failures<'a>(
+    fn clear_failure<'a>(
         &'a self,
         email: &'a str,
         source_ip: &'a str,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            let email_result = self
-                .clear_login_failure(LoginFailureDimension::Email, email)
-                .await
-                .map_err(crate::identity_repository_error);
-            let ip_email_result = self
-                .clear_login_failure(
-                    LoginFailureDimension::IpEmail,
-                    &format!("{source_ip}:{email}"),
-                )
-                .await
-                .map_err(crate::identity_repository_error);
-            email_result.and(ip_email_result).map(|_| ())
+            self.clear_login_failure(
+                LoginFailureDimension::IpEmail,
+                &format!("{source_ip}:{email}"),
+            )
+            .await
+            .map(|_| ())
+            .map_err(crate::identity_repository_error)
         })
     }
 }

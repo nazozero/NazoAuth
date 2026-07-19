@@ -52,5 +52,5 @@ pub(super) async fn persist_refresh_token(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/in_source/src/http/token/tests/refresh_persistence.rs"]
+#[path = "../../../../tests/source_mounted/src/http/token/tests/refresh_persistence.rs"]
 mod tests;

@@ -29,6 +29,7 @@ use crate::model::{
 };
 
 const OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::RS256;
+const FAPI_ID_TOKEN_SIGNING_ALG: jsonwebtoken::Algorithm = jsonwebtoken::Algorithm::PS256;
 
 pub(crate) async fn load_or_create_keyset(settings: &KeySettings) -> anyhow::Result<LoadedKeyset> {
     tokio::fs::create_dir_all(&settings.keys_dir).await?;
@@ -73,7 +74,7 @@ pub(crate) async fn maintain_keyset_lifecycle(
     };
     let mut changed = false;
     let mut new_active_kid = None;
-    let active_alg = {
+    let (active_alg, active_backend) = {
         let Some(keys) = payload.get_mut("keys").and_then(Value::as_array_mut) else {
             return Ok(());
         };
@@ -121,21 +122,18 @@ pub(crate) async fn maintain_keyset_lifecycle(
             keys.push(entry);
             changed = true;
         }
-        current_active_alg
+        (current_active_alg, active_backend)
     };
-    if active_alg != OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG {
+    if active_backend == "local-pem" {
         let Some(keys) = payload.get_mut("keys").and_then(Value::as_array_mut) else {
             return Ok(());
         };
-        if !has_live_local_key_for_alg(keys, OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG, now)? {
-            let entry = create_prepublished_local_key_entry(
-                settings,
-                OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG,
-                now,
-            )
-            .await?;
-            keys.push(entry);
-            changed = true;
+        for algorithm in [OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG, FAPI_ID_TOKEN_SIGNING_ALG] {
+            if algorithm != active_alg && !has_live_protocol_key_for_alg(keys, algorithm, now)? {
+                let entry = create_protocol_signing_key_entry(settings, algorithm, now).await?;
+                keys.push(entry);
+                changed = true;
+            }
         }
     }
     if let Some(next_kid) = new_active_kid {
@@ -182,14 +180,16 @@ fn find_prepublished_candidate(
     Ok(candidate.map(|(index, _)| index))
 }
 
-fn has_live_local_key_for_alg(
+fn has_live_protocol_key_for_alg(
     keys: &[Value],
     alg: jsonwebtoken::Algorithm,
     now: DateTime<Utc>,
 ) -> anyhow::Result<bool> {
     for entry in keys {
-        if entry.get("purposes").is_some()
-            || key_entry_backend(entry) != "local-pem"
+        let purposes = key_entry_purposes(entry)?;
+        if !purposes.as_ref().is_some_and(|purposes| {
+            purposes.contains(&SigningPurpose::IdToken) && purposes.contains(&SigningPurpose::Jarm)
+        }) || key_entry_backend(entry) != "local-pem"
             || key_entry_algorithm(entry)? != alg
             || !entry
                 .get("file")
@@ -206,6 +206,19 @@ fn has_live_local_key_for_alg(
         }
     }
     Ok(false)
+}
+
+async fn create_protocol_signing_key_entry(
+    settings: &KeySettings,
+    alg: jsonwebtoken::Algorithm,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Value> {
+    let mut entry = create_prepublished_local_key_entry(settings, alg, now).await?;
+    entry["purposes"] = json!([
+        SigningPurpose::IdToken.as_str(),
+        SigningPurpose::Jarm.as_str()
+    ]);
+    Ok(entry)
 }
 
 async fn create_prepublished_local_key_entry(
@@ -271,11 +284,6 @@ pub(crate) async fn try_load_keyset(
         .get("keys")
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow!("keyset.json missing keys array"))?;
-    let declared_active_alg = keys
-        .iter()
-        .find(|entry| entry.get("kid").and_then(Value::as_str) == Some(active_kid))
-        .map(key_entry_algorithm)
-        .transpose()?;
     let mut active_signing_key = None;
     let mut active_alg = None;
     let mut seen_kids = std::collections::HashSet::new();
@@ -376,18 +384,6 @@ pub(crate) async fn try_load_keyset(
                     purposes.clone()
                 } else if is_active {
                     all_signing_purposes()
-                } else if retire_at.is_none()
-                    && declared_active_alg.is_some_and(|active_alg| alg != active_alg)
-                    && backend == "local-pem"
-                {
-                    [
-                        SigningPurpose::IdToken,
-                        SigningPurpose::Jarm,
-                        SigningPurpose::Credential,
-                        SigningPurpose::PresentationRequest,
-                    ]
-                    .into_iter()
-                    .collect()
                 } else {
                     BTreeSet::new()
                 },
@@ -395,10 +391,6 @@ pub(crate) async fn try_load_keyset(
                     KeyState::Active
                 } else if retire_at.is_some() {
                     KeyState::Grace
-                } else if declared_active_alg.is_some_and(|active_alg| alg != active_alg)
-                    && backend == "local-pem"
-                {
-                    KeyState::Active
                 } else {
                     KeyState::Prepublished
                 },
@@ -418,41 +410,24 @@ pub(crate) async fn try_load_keyset(
 }
 
 pub(crate) async fn create_new_keyset(settings: &KeySettings) -> anyhow::Result<LoadedKeyset> {
-    let generated = generate_key_material(jsonwebtoken::Algorithm::RS256)?;
-    let private_pkcs8_der = generated.private_pkcs8_der;
-    let kid = format!("rs256-{}", Uuid::now_v7());
-    let file_name = format!("{kid}.pem");
-    let pem = der_to_pem(&private_pkcs8_der, "PRIVATE KEY");
-    write_private_key_pem_atomic(&settings.keys_dir.join(&file_name), &pem).await?;
-    let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true);
+    let now = Utc::now();
+    let rs256 =
+        create_prepublished_local_key_entry(settings, OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG, now)
+            .await?;
+    let active_kid = rs256["kid"]
+        .as_str()
+        .ok_or_else(|| anyhow!("generated RS256 key missing kid"))?
+        .to_owned();
+    let ps256 = create_protocol_signing_key_entry(settings, FAPI_ID_TOKEN_SIGNING_ALG, now).await?;
     let payload = json!({
-        "active_kid": kid,
-        "keys": [{
-            "kid": kid,
-            "alg": "RS256",
-            "file": file_name,
-            "created_at": now,
-            "retire_at": null
-        }]
+        "active_kid": active_kid,
+        "keys": [rs256, ps256]
     });
-    write_json_atomic(&settings.keys_dir.join("keyset.json"), &payload).await?;
-    let public_jwk =
-        public_jwk_from_private_der(&kid, jsonwebtoken::Algorithm::RS256, &private_pkcs8_der)?;
-    Ok(LoadedKeyset {
-        active_kid: kid.clone(),
-        active_alg: jsonwebtoken::Algorithm::RS256,
-        active_signing_key: ActiveSigningKey::LocalPkcs8Der(private_pkcs8_der.clone()),
-        verification_keys: vec![StoredVerificationKey {
-            public_jwk,
-            managed: ManagedKey {
-                kid,
-                algorithm: "RS256".to_owned(),
-                purposes: all_signing_purposes(),
-                state: KeyState::Active,
-                handle: KeyHandle::Local(private_pkcs8_der),
-            },
-        }],
-    })
+    let keyset_path = settings.keys_dir.join("keyset.json");
+    write_json_atomic(&keyset_path, &payload).await?;
+    try_load_keyset(settings, &keyset_path)
+        .await?
+        .ok_or_else(|| anyhow!("newly created keyset could not be loaded"))
 }
 
 fn all_signing_purposes() -> BTreeSet<SigningPurpose> {
@@ -463,8 +438,6 @@ fn all_signing_purposes() -> BTreeSet<SigningPurpose> {
         SigningPurpose::LogoutToken,
         SigningPurpose::HttpMessage,
         SigningPurpose::SecurityEvent,
-        SigningPurpose::Credential,
-        SigningPurpose::PresentationRequest,
     ]
     .into_iter()
     .collect()
@@ -529,12 +502,17 @@ mod tests {
         let mut payload: Value =
             serde_json::from_slice(&tokio::fs::read(&path).await.unwrap()).unwrap();
         assert_eq!(payload["active_kid"], original_kid);
-        assert_eq!(payload["keys"].as_array().unwrap().len(), 2);
+        assert_eq!(payload["keys"].as_array().unwrap().len(), 3);
         payload["keys"][0]["created_at"] =
             json!(timestamp(Utc::now() - chrono::Duration::seconds(4_000)));
-        payload["keys"][1]["created_at"] =
-            json!(timestamp(Utc::now() - chrono::Duration::seconds(2_000)));
-        let candidate_kid = payload["keys"][1]["kid"].as_str().unwrap().to_owned();
+        let candidate = payload["keys"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .find(|key| key["kid"] != original_kid && key["alg"] == "RS256")
+            .unwrap();
+        candidate["created_at"] = json!(timestamp(Utc::now() - chrono::Duration::seconds(2_000)));
+        let candidate_kid = candidate["kid"].as_str().unwrap().to_owned();
         write_json_atomic(&path, &payload).await.unwrap();
 
         maintain_keyset_lifecycle(&settings, &path).await.unwrap();
@@ -1198,5 +1176,5 @@ pub(crate) fn pem_to_der(pem: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-#[path = "tests/keyset_compat.rs"]
-mod compatibility_tests;
+#[path = "tests/keyset_store.rs"]
+mod keyset_store_tests;

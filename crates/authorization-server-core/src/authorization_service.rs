@@ -286,6 +286,12 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         jti: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, bool>;
+    fn consume_ciba_request_object<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        ttl_seconds: u64,
+    ) -> AuthorizationFuture<'a, bool>;
     fn consume_dpop<'a>(
         &'a self,
         thumbprint: &'a str,
@@ -693,6 +699,17 @@ where
         self.state.consume_jwt_bearer(client_id, jti, ttl).await
     }
 
+    pub async fn consume_ciba_request_object(
+        &self,
+        client_id: &str,
+        jti: &str,
+        ttl: u64,
+    ) -> Result<bool, AuthorizationPortError> {
+        self.state
+            .consume_ciba_request_object(client_id, jti, ttl)
+            .await
+    }
+
     pub async fn consume_jwt_bearer_assertion(
         &self,
         client_id: &str,
@@ -1053,6 +1070,15 @@ mod tests {
             Box::pin(async { Ok(true) })
         }
 
+        fn consume_ciba_request_object<'a>(
+            &'a self,
+            _client_id: &'a str,
+            _jti: &'a str,
+            _ttl_seconds: u64,
+        ) -> AuthorizationFuture<'a, bool> {
+            Box::pin(async { Ok(true) })
+        }
+
         fn consume_dpop<'a>(
             &'a self,
             _thumbprint: &'a str,
@@ -1207,6 +1233,17 @@ mod tests {
         store: FakeStore,
     ) -> AuthorizationService<FakeRepository, FakeStore, FakeSigner> {
         AuthorizationService::new(repository, store, FakeSigner)
+    }
+
+    #[test]
+    fn ciba_request_object_replay_is_delegated_to_the_state_store() {
+        let accepted =
+            futures_executor::block_on(
+                service(FakeRepository::default(), FakeStore::default())
+                    .consume_ciba_request_object("client-1", "request-object-jti", 30),
+            )
+            .unwrap();
+        assert!(accepted);
     }
 
     #[test]

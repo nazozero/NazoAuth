@@ -25,9 +25,9 @@ use crate::{
         audit::{audit_event, audit_fields},
         security::{blake3_hex, hash_password_blocking_limited, random_urlsafe_token},
     },
-    http::client_ip::{ClientIpConfig, client_ip_with_config},
     runtime_modules::ServerRuntimeModuleRegistry,
 };
+use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 
 type HmacSha256 = Hmac<Sha256>;
 

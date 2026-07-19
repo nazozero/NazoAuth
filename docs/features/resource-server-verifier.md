@@ -75,7 +75,7 @@ supported public surfaces and must not be restored as dormant feature flags.
 - `ath` matching the presented access token
 - nonce policy when configured
 
-`DpopProofVerifier` performs the proof checks and returns a `VerifiedSenderConstraintProof { dpop_jkt: Some(...) }` value. The access-token authorizer then compares that verified `jkt` with the token `cnf.jkt` before accepting the request. The older `SenderConstraintProof` name is only a compatibility alias for this verified context type.
+`DpopProofVerifier` performs the proof checks and returns a `VerifiedSenderConstraintProof { dpop_jkt: Some(...) }` value. The access-token authorizer then compares that verified `jkt` with the token `cnf.jkt` before accepting the request.
 
 `VerifiedSenderConstraintProof` must never be populated directly from an unverified `DPoP` header. It must come from `DpopProofVerifier` or an equivalent validator that has already checked signature, `jti`, `htu`, `htm`, `ath`, and nonce policy.
 

@@ -3,7 +3,7 @@ use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::OAuthClient;
+use crate::{OAuthClient, rsa_public_key_components_are_safe};
 
 pub const CLIENT_ASSERTION_TYPE_JWT_BEARER: &str =
     "urn:ietf:params:oauth:client-assertion-type:jwt-bearer";
@@ -304,8 +304,7 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<Decodi
             let exponent = key.get("e").and_then(Value::as_str)?;
             let modulus = URL_SAFE_NO_PAD.decode(modulus).ok()?;
             let exponent_bytes = URL_SAFE_NO_PAD.decode(exponent).ok()?;
-            if unsigned_bit_length(&modulus) < 2_048 || !valid_rsa_public_exponent(&exponent_bytes)
-            {
+            if !rsa_public_key_components_are_safe(&modulus, &exponent_bytes) {
                 return None;
             }
             DecodingKey::from_rsa_components(
@@ -330,22 +329,6 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<Decodi
             DecodingKey::from_ec_components(x, y).ok()
         }
     }
-}
-
-fn unsigned_bit_length(bytes: &[u8]) -> usize {
-    let Some((first_index, first)) = bytes.iter().enumerate().find(|(_, byte)| **byte != 0) else {
-        return 0;
-    };
-    (bytes.len() - first_index - 1) * 8 + (u8::BITS - first.leading_zeros()) as usize
-}
-
-fn valid_rsa_public_exponent(bytes: &[u8]) -> bool {
-    let Some((first_index, _)) = bytes.iter().enumerate().find(|(_, byte)| **byte != 0) else {
-        return false;
-    };
-    let value = &bytes[first_index..];
-    let at_least_three = value.len() > 1 || value[0] >= 3;
-    at_least_three && value.last().is_some_and(|last| last & 1 == 1)
 }
 
 fn valid_verification_key_ops(key_ops: Option<&Value>) -> bool {

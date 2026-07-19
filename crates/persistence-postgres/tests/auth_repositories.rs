@@ -232,7 +232,7 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
         .await
         .expect("grant should update");
     let stored = repository
-        .authorization(fixture.user_id, fixture.client_id)
+        .authorization(tenant_id, fixture.user_id, fixture.client_id)
         .await
         .expect("grant should load")
         .expect("grant should exist");
@@ -368,7 +368,7 @@ async fn grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_fami
     assert_eq!(revoked.removed_grants, 1);
     assert!(
         grants
-            .authorization(fixture.user_id, fixture.client_id)
+            .authorization(tenant_id, fixture.user_id, fixture.client_id)
             .await
             .expect("grant state should load")
             .is_none()
@@ -862,7 +862,7 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
         "http/token/native_sso.rs",
         "http/token/refresh.rs",
         "http/token/token_exchange.rs",
-        "http/token/userinfo.rs",
+        "domain/userinfo.rs",
         "domain/client_policy.rs",
         "http/views.rs",
     ] {

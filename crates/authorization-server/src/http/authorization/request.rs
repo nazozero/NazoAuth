@@ -4,7 +4,7 @@ use crate::adapters::security::blake3_hex;
 use crate::adapters::security::pkce_s256;
 use crate::adapters::security::random_urlsafe_token;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 use crate::domain::client_jwe::JwePayloadKind;
 use crate::domain::client_jwe::client_jwe_key;
 use crate::domain::client_jwe::encrypt_compact_jwe;
@@ -442,7 +442,7 @@ async fn authorize_request_with_context(
             .await;
         };
         let authorization = match offers
-            .consume_authorization_offer(
+            .resolve_authorization_offer(
                 &blake3_hex(issuer_state),
                 session.user.id(),
                 &client.client_id,
@@ -461,7 +461,7 @@ async fn authorize_request_with_context(
                 .await;
             }
             Err(error) => {
-                tracing::warn!(%error, "failed to consume OpenID4VCI issuer_state");
+                tracing::warn!(%error, "failed to resolve OpenID4VCI issuer_state");
                 return authorization_oauth_error_redirect(
                     context,
                     &redirect_uri,
@@ -536,6 +536,21 @@ async fn authorize_request_with_context(
         expires_at: now + Duration::seconds(context.config.auth_code_ttl_seconds as i64),
     };
     if normalized.prompt.none {
+        if !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
+            &payload.scopes,
+            &payload.userinfo_claims,
+        ) || !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
+            &payload.scopes,
+            &payload.id_token_claims,
+        ) {
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "consent_required",
+                q,
+            )
+            .await;
+        }
         match user_grant_covers_requested_scopes_with_context(
             context,
             payload.user_id,
@@ -602,10 +617,15 @@ fn runtime_authorization_capability_error(
     context: &AuthorizationRequestContext<'_>,
     parameters: &HashMap<String, String>,
 ) -> Option<HttpResponse> {
-    if !crate::http::authorization::accepts_module(
+    if (!crate::http::authorization::accepts_module(
         context,
         nazo_runtime_modules::ModuleId::RequestObjects,
-    ) && parameters.contains_key("request")
+    ) || (!context.config.enable_request_object
+        && !context
+            .config
+            .profile
+            .requires_signed_authorization_request()))
+        && parameters.contains_key("request")
     {
         return Some(oauth_error(
             StatusCode::BAD_REQUEST,
@@ -682,7 +702,7 @@ pub(crate) async fn consume_pushed_authorization_request_with_context(
 
 #[cfg(test)]
 pub(crate) async fn consume_pushed_authorization_request(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     request_uri: &str,
 ) -> Result<(), PushedAuthorizationRequestConsumeError> {
     let dependencies = super::TestAuthorizationDependencies::new(state);
@@ -825,15 +845,6 @@ pub(crate) async fn authorization_response_redirect_with_context(
     ))
 }
 
-#[cfg(test)]
-pub(crate) async fn authorization_response_redirect(
-    state: &TestAppState,
-    input: AuthorizationResponseRedirect<'_>,
-) -> HttpResponse {
-    let dependencies = super::TestAuthorizationDependencies::new(state);
-    authorization_response_redirect_with_context(&dependencies.context(), input).await
-}
-
 #[derive(Clone, Copy, Default)]
 struct AuthorizationResponseProtection<'a> {
     signing_alg: Option<&'a str>,
@@ -864,7 +875,7 @@ async fn authorization_response_redirect_with_protection_context(
 
 #[cfg(test)]
 async fn authorization_response_redirect_with_protection(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     input: AuthorizationResponseRedirect<'_>,
     protection: AuthorizationResponseProtection<'_>,
 ) -> HttpResponse {
@@ -955,7 +966,7 @@ async fn consume_reauth_nonce_with_context(
 
 #[cfg(test)]
 async fn consume_reauth_nonce(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     q: &mut HashMap<String, String>,
 ) -> Option<i64> {
     let dependencies = super::TestAuthorizationDependencies::new(state);
@@ -981,7 +992,7 @@ async fn authorization_login_url_with_context(
 
 #[cfg(test)]
 async fn authorization_login_url(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     q: &HashMap<String, String>,
     reauthentication_required: bool,
 ) -> Result<String, HttpResponse> {
@@ -1011,5 +1022,5 @@ async fn issue_reauth_nonce(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/authorization/tests/request.rs"]
+#[path = "../../../tests/source_mounted/src/http/authorization/tests/request.rs"]
 mod tests;

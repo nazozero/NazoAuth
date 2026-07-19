@@ -43,6 +43,14 @@ pub(crate) fn jwt_bearer_replay(client_id: &str, jti: &str) -> String {
     )
 }
 
+pub(crate) fn ciba_request_object_replay(client_id: &str, jti: &str) -> String {
+    format!(
+        "oauth:ciba:request_object:jti:{}:{}",
+        blake3_hex(client_id),
+        blake3_hex(jti)
+    )
+}
+
 pub(crate) fn session(session_id: &str) -> String {
     format!("oauth:session:{session_id}")
 }

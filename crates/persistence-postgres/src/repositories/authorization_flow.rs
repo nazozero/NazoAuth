@@ -62,7 +62,7 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>> {
         Box::pin(async move {
             self.grants
-                .authorization(user_id, client_id)
+                .authorization(self.tenant_id, user_id, client_id)
                 .await
                 .map(|grant| {
                     grant.map(|grant| StoredAuthorizationGrant {
