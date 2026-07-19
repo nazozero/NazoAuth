@@ -1293,10 +1293,10 @@ def allowed_review_contexts_by_alias(
     }
 
 
-def expected_warning_contexts_by_alias(
+def expected_problem_contexts_by_alias(
     expected_problems_file: Path | None,
     aliases_by_config: dict[str, str],
-) -> dict[str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]]:
+) -> dict[str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]]:
     if expected_problems_file is None:
         return {}
 
@@ -1307,9 +1307,12 @@ def expected_warning_contexts_by_alias(
     if not isinstance(payload, list):
         fail("OIDF expected problems file must contain a JSON array")
 
-    contexts: dict[str, set[tuple[str, tuple[tuple[str, str], ...], str, str]]] = {}
+    contexts: dict[str, set[tuple[str, str, tuple[tuple[str, str], ...], str, str]]] = {}
     for item in payload:
-        if not isinstance(item, dict) or item.get("expected-result") != "warning":
+        if not isinstance(item, dict):
+            continue
+        expected_result = item.get("expected-result")
+        if expected_result not in {"warning", "failure"}:
             continue
         config_name = item.get("configuration-filename")
         test_name = item.get("test-name")
@@ -1326,16 +1329,22 @@ def expected_warning_contexts_by_alias(
             or not all(isinstance(key, str) and isinstance(value, str) for key, value in variant.items())
         ):
             fail(
-                "OIDF expected warnings used by the early-stop monitor must use exact "
+                "OIDF expected problems used by the early-stop monitor must use exact "
                 "configuration, test, variant, block, and condition values"
             )
         alias = aliases_by_config.get(config_name)
         if alias is None:
             continue
-        context = (test_name, tuple(sorted(variant.items())), current_block, condition)
+        context = (
+            expected_result,
+            test_name,
+            tuple(sorted(variant.items())),
+            current_block,
+            condition,
+        )
         alias_contexts = contexts.setdefault(alias, set())
         if context in alias_contexts:
-            fail(f"duplicate OIDF expected warning for {config_name}: {test_name} / {current_block}")
+            fail(f"duplicate OIDF expected problem for {config_name}: {test_name} / {current_block}")
         alias_contexts.add(context)
 
     return {alias: frozenset(values) for alias, values in contexts.items()}
@@ -1412,12 +1421,12 @@ def is_allowed_expected_skip(
     return (test_name, None) in contexts or (test_name, tuple(sorted(variant.items()))) in contexts
 
 
-def is_allowed_expected_warning(
+def is_allowed_expected_problem(
     info: object,
     log_entry: object,
     current_block: str | None,
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
     ],
 ) -> bool:
     if not isinstance(info, dict) or not isinstance(log_entry, dict) or current_block is None:
@@ -1426,6 +1435,7 @@ def is_allowed_expected_warning(
     test_name = info.get("testName") or info.get("name")
     variant = info.get("variant")
     condition = log_entry.get("src")
+    result = value_as_upper(log_entry.get("result")).lower()
     if (
         not isinstance(alias, str)
         or not isinstance(test_name, str)
@@ -1435,12 +1445,13 @@ def is_allowed_expected_warning(
     ):
         return False
     context = (
+        result,
         module_name_without_variant(test_name),
         tuple(sorted(variant.items())),
         current_block,
         condition,
     )
-    return context in allowed_expected_warnings_by_alias.get(alias, frozenset())
+    return context in allowed_expected_problems_by_alias.get(alias, frozenset())
 
 
 def is_allowed_review_module(
@@ -1531,8 +1542,8 @@ def oidf_log_failure(
     logs: object,
     *,
     info: object = None,
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
     ] | None = None,
 ) -> str | None:
     if not isinstance(logs, list):
@@ -1550,11 +1561,11 @@ def oidf_log_failure(
         result = value_as_upper(entry.get("result"))
         if result not in OIDF_BAD_LOG_RESULTS:
             continue
-        if result == "WARNING" and is_allowed_expected_warning(
+        if is_allowed_expected_problem(
             info,
             entry,
             block_names.get(block_id) if isinstance(block_id, str) else None,
-            allowed_expected_warnings_by_alias or {},
+            allowed_expected_problems_by_alias or {},
         ):
             continue
         src = entry.get("src")
@@ -1566,11 +1577,11 @@ def oidf_log_failure(
     return None
 
 
-def oidf_log_has_allowed_expected_warning(
+def oidf_log_has_allowed_expected_problem(
     info: object,
     logs: object,
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
     ],
 ) -> bool:
     if not isinstance(logs, list):
@@ -1583,11 +1594,11 @@ def oidf_log_has_allowed_expected_warning(
         if block_start is not None:
             block_names[block_start[0]] = block_start[1]
         block_id = entry.get("blockId")
-        if value_as_upper(entry.get("result")) == "WARNING" and is_allowed_expected_warning(
+        if is_allowed_expected_problem(
             info,
             entry,
             block_names.get(block_id) if isinstance(block_id, str) else None,
-            allowed_expected_warnings_by_alias,
+            allowed_expected_problems_by_alias,
         ):
             return True
     return False
@@ -1702,8 +1713,8 @@ def inspect_oidf_state(
     final: bool,
     ignored_plan_ids: set[str] | None = None,
     allowed_reviews_by_alias: dict[str, tuple[str, frozenset[str]]] | None = None,
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
     ] | None = None,
     allowed_expected_skips_by_alias: dict[
         str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
@@ -1786,14 +1797,14 @@ def inspect_oidf_state(
                     module_id,
                     logs,
                     info=info,
-                    allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+                    allowed_expected_problems_by_alias=allowed_expected_problems_by_alias,
                 )
                 if log_failure:
                     return oidf_failure_with_log_context(module_id, log_failure, logs)
-                if result == "WARNING" and oidf_log_has_allowed_expected_warning(
+                if result in OIDF_BAD_FINAL_RESULTS and oidf_log_has_allowed_expected_problem(
                     info,
                     logs,
-                    allowed_expected_warnings_by_alias or {},
+                    allowed_expected_problems_by_alias or {},
                 ):
                     continue
                 if not final and oidf_info_failure_can_wait_for_final_result(info):
@@ -1815,7 +1826,7 @@ def inspect_oidf_state(
                 module_id,
                 logs,
                 info=info,
-                allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+                allowed_expected_problems_by_alias=allowed_expected_problems_by_alias,
             )
             if failure:
                 return failure
@@ -1880,8 +1891,8 @@ class OidfEarlyStopMonitor:
         interval_seconds: int,
         ignored_plan_ids: set[str],
         allowed_reviews_by_alias: dict[str, tuple[str, frozenset[str]]],
-        allowed_expected_warnings_by_alias: dict[
-            str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+        allowed_expected_problems_by_alias: dict[
+            str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
         ],
         allowed_expected_skips_by_alias: dict[
             str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
@@ -1893,7 +1904,7 @@ class OidfEarlyStopMonitor:
         self.interval_seconds = interval_seconds
         self.ignored_plan_ids = ignored_plan_ids
         self.allowed_reviews_by_alias = allowed_reviews_by_alias
-        self.allowed_expected_warnings_by_alias = allowed_expected_warnings_by_alias
+        self.allowed_expected_problems_by_alias = allowed_expected_problems_by_alias
         self.allowed_expected_skips_by_alias = allowed_expected_skips_by_alias
         self.stop_requested = threading.Event()
         self.failure_message: str | None = None
@@ -1912,7 +1923,7 @@ class OidfEarlyStopMonitor:
                     final=False,
                     ignored_plan_ids=self.ignored_plan_ids,
                     allowed_reviews_by_alias=self.allowed_reviews_by_alias,
-                    allowed_expected_warnings_by_alias=self.allowed_expected_warnings_by_alias,
+                    allowed_expected_problems_by_alias=self.allowed_expected_problems_by_alias,
                     allowed_expected_skips_by_alias=self.allowed_expected_skips_by_alias,
                 )
                 self.consecutive_errors = 0
@@ -2247,8 +2258,8 @@ def run_official_runner(
     token: str | None,
     monitor_interval_seconds: int,
     allowed_reviews_by_alias: dict[str, tuple[str, frozenset[str]]],
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
     ],
     allowed_expected_skips_by_alias: dict[
         str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
@@ -2284,7 +2295,7 @@ def run_official_runner(
             monitor_interval_seconds,
             ignored_plan_ids,
             allowed_reviews_by_alias,
-            allowed_expected_warnings_by_alias,
+            allowed_expected_problems_by_alias,
             allowed_expected_skips_by_alias,
         )
         monitor_thread = threading.Thread(
@@ -2338,7 +2349,7 @@ def run_official_runner(
             final=exit_code == 0,
             ignored_plan_ids=ignored_plan_ids,
             allowed_reviews_by_alias=allowed_reviews_by_alias,
-            allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+            allowed_expected_problems_by_alias=allowed_expected_problems_by_alias,
             allowed_expected_skips_by_alias=allowed_expected_skips_by_alias,
         )
         if final_failure:
@@ -2539,7 +2550,7 @@ def main() -> int:
         token,
         monitor_interval_seconds,
         allowed_review_contexts_by_alias(aliases_by_config),
-        expected_warning_contexts_by_alias(expected_failures_file, aliases_by_config),
+        expected_problem_contexts_by_alias(expected_failures_file, aliases_by_config),
         expected_skip_contexts_by_alias(expected_skips_file, aliases_by_config),
     )
 

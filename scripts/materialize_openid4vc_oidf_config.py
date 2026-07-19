@@ -22,6 +22,8 @@ OFFICIAL_VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
 OFFICIAL_VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
 VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm"
 VCI_MULTIPLE_CLIENTS_MODULE = "oid4vci-1_0-issuer-happy-flow-multiple-clients"
+VCI_PREAUTH_REPLAY_BLOCK = "Second client: Verify token endpoint response"
+VCI_PREAUTH_REPLAY_CONDITION = "CheckTokenEndpointHttpStatus200"
 VCI_REFRESH_TOKEN_MODULE = "fapi2-security-profile-final-refresh-token"
 VCI_REFRESH_TOKEN_BLOCK = "Check for refresh token"
 VCI_REFRESH_TOKEN_CONDITION = "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken"
@@ -139,17 +141,7 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
         for plan, slug, variants in cases
         if plan == VCI_HAIP
     ]
-    pre_authorized_code_replay = [
-        {
-            "test-name": VCI_MULTIPLE_CLIENTS_MODULE,
-            "variant": dict(variants),
-            "configuration-filename": f"openid4vc-{slug}.json",
-        }
-        for plan, slug, variants in cases
-        if plan == VCI_STANDARD
-        and variants.get("vci_grant_type") == "pre_authorization_code"
-    ]
-    return unsupported_encryption + pre_authorized_code_replay + haip_refresh_token_policy
+    return unsupported_encryption + haip_refresh_token_policy
 
 
 def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
@@ -170,8 +162,8 @@ def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
     return expanded
 
 
-def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
-    return [
+def expected_problems_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
+    warnings = [
         {
             "expected-result": "warning",
             "test-name": VCI_REFRESH_TOKEN_MODULE,
@@ -183,6 +175,20 @@ def expected_warnings_for_cases(cases: list[tuple[str, str, dict[str, str]]]) ->
         for plan, slug, variants in cases
         if plan == VCI_HAIP
     ]
+    pre_authorized_code_replay = [
+        {
+            "expected-result": "failure",
+            "test-name": VCI_MULTIPLE_CLIENTS_MODULE,
+            "variant": dict(variants),
+            "configuration-filename": f"openid4vc-{slug}.json",
+            "current-block": VCI_PREAUTH_REPLAY_BLOCK,
+            "condition": VCI_PREAUTH_REPLAY_CONDITION,
+        }
+        for plan, slug, variants in cases
+        if plan == VCI_STANDARD
+        and variants.get("vci_grant_type") == "pre_authorization_code"
+    ]
+    return warnings + pre_authorized_code_replay
 
 
 def b64url_decode(value: str) -> bytes:
@@ -499,8 +505,8 @@ def main() -> int:
         json.dumps(expected_skips_for_cases(cases), indent=2) + "\n",
         encoding="utf-8",
     )
-    (output / "openid4vc-expected-warnings.json").write_text(
-        json.dumps(expected_warnings_for_cases(cases), indent=2) + "\n",
+    (output / "openid4vc-expected-problems.json").write_text(
+        json.dumps(expected_problems_for_cases(cases), indent=2) + "\n",
         encoding="utf-8",
     )
     (output / "openid4vc-driver.json").write_text(json.dumps(driver, indent=2) + "\n", encoding="utf-8")

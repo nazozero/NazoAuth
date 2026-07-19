@@ -122,7 +122,7 @@ jobs:
             --target-issuer "$TARGET_ORIGIN" \
             --config-json-file runtime/openid4vc/openid4vc-plan-configs.json \
             --plan-set-json-file runtime/openid4vc/openid4vc-plan-set.json \
-            --expected-failures-file runtime/openid4vc/openid4vc-expected-warnings.json \
+            --expected-failures-file runtime/openid4vc/openid4vc-expected-problems.json \
             --expected-skips-file runtime/openid4vc/openid4vc-expected-skips.json \
             --export-dir runtime/openid4vc/results \
             --timeout-seconds 4800 \

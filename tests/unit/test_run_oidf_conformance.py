@@ -442,6 +442,7 @@ class RunOidfConformanceTests(unittest.TestCase):
             },
         ]
         context = (
+            "warning",
             "fapi-ciba-id1",
             tuple(sorted(info["variant"].items())),
             "Verify notification callback",
@@ -454,10 +455,10 @@ class RunOidfConformanceTests(unittest.TestCase):
                 "module-id",
                 logs,
                 info=info,
-                allowed_expected_warnings_by_alias=allowed,
+                allowed_expected_problems_by_alias=allowed,
             )
         )
-        self.assertTrue(module.oidf_log_has_allowed_expected_warning(info, logs, allowed))
+        self.assertTrue(module.oidf_log_has_allowed_expected_problem(info, logs, allowed))
         logs[1]["src"] = "DifferentCondition"
         self.assertIn(
             "WARNING",
@@ -465,7 +466,7 @@ class RunOidfConformanceTests(unittest.TestCase):
                 "module-id",
                 logs,
                 info=info,
-                allowed_expected_warnings_by_alias=allowed,
+                allowed_expected_problems_by_alias=allowed,
             ),
         )
 
@@ -550,6 +551,7 @@ class RunOidfConformanceTests(unittest.TestCase):
             },
         ]
         context = (
+            "warning",
             "fapi2-security-profile-final-refresh-token",
             tuple(sorted(info["variant"].items())),
             "Check for refresh token",
@@ -562,10 +564,10 @@ class RunOidfConformanceTests(unittest.TestCase):
                 "module-id",
                 logs,
                 info=info,
-                allowed_expected_warnings_by_alias=allowed,
+                allowed_expected_problems_by_alias=allowed,
             )
         )
-        self.assertTrue(module.oidf_log_has_allowed_expected_warning(info, logs, allowed))
+        self.assertTrue(module.oidf_log_has_allowed_expected_problem(info, logs, allowed))
 
     def test_inspect_state_applies_expected_warning_context_to_final_log_scan(self):
         module = load_runner_module()
@@ -595,6 +597,7 @@ class RunOidfConformanceTests(unittest.TestCase):
             },
         ]
         context = (
+            "warning",
             "fapi2-security-profile-final-refresh-token",
             tuple(sorted(info["variant"].items())),
             "Check for refresh token",
@@ -624,7 +627,7 @@ class RunOidfConformanceTests(unittest.TestCase):
                 "token",
                 {"vci-alias"},
                 final=True,
-                allowed_expected_warnings_by_alias={"vci-alias": frozenset({context})},
+                allowed_expected_problems_by_alias={"vci-alias": frozenset({context})},
             )
 
         self.assertIsNone(failure)
@@ -645,7 +648,72 @@ class RunOidfConformanceTests(unittest.TestCase):
             path = Path(directory) / "warnings.json"
             path.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaises(SystemExit):
-                module.expected_warning_contexts_by_alias(path, {"ping.json": "ping-alias"})
+                module.expected_problem_contexts_by_alias(path, {"ping.json": "ping-alias"})
+
+    def test_inspect_state_accepts_an_exact_expected_failure(self):
+        module = load_runner_module()
+        variant = {
+            "credential_format": "sd_jwt_vc",
+            "vci_grant_type": "pre_authorization_code",
+        }
+        info = {
+            "_id": "module-id",
+            "alias": "vci-alias",
+            "testName": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
+            "status": "FINISHED",
+            "result": "FAILED",
+            "variant": variant,
+        }
+        logs = [
+            {
+                "blockId": "second-client-token",
+                "src": "-START-BLOCK-",
+                "msg": "Second client: Verify token endpoint response",
+            },
+            {
+                "blockId": "second-client-token",
+                "result": "FAILURE",
+                "src": "CheckTokenEndpointHttpStatus200",
+                "msg": "Invalid http status",
+            },
+        ]
+        context = (
+            "failure",
+            info["testName"],
+            tuple(sorted(variant.items())),
+            "Second client: Verify token endpoint response",
+            "CheckTokenEndpointHttpStatus200",
+        )
+
+        with (
+            mock.patch.object(
+                module,
+                "fetch_alias_plans",
+                return_value=[
+                    {
+                        "_id": "plan-id",
+                        "planName": "oid4vci-1_0-issuer-test-plan",
+                        "modules": [{"instances": ["module-id"]}],
+                    }
+                ],
+            ),
+            mock.patch.object(
+                module,
+                "oidf_api_request",
+                side_effect=[(200, info), (200, logs)],
+            ),
+        ):
+            failure = module.inspect_oidf_state(
+                "https://suite.example",
+                "token",
+                {"vci-alias"},
+                final=True,
+                allowed_expected_problems_by_alias={
+                    "vci-alias": frozenset({context})
+                },
+            )
+
+        self.assertIsNone(failure)
 
     def test_early_monitor_can_defer_result_failure_without_log_failure(self):
         module = load_runner_module()

@@ -78,12 +78,14 @@ HAIP issuer plan 可能在 `Check for refresh token` 块中产生上游
 该模块、该 block、该 condition。由于官方 runner 在该可接受 warning 后会把模块
 终态标记为 `SKIPPED`，同样的 4 个上下文也登记为 expected skip。
 
-标准 VCI 的两个预授权码组合还会跳过
+标准 VCI 的两个预授权码组合还登记了一项精确 expected failure：
 `oid4vci-1_0-issuer-happy-flow-multiple-clients`。该上游模块只接收一份 Credential
 Offer，却让第二个客户端再次兑换同一 `pre-authorized_code`；OpenID4VCI 1.0 Final
 第 4.1.1 节明确要求该代码短期有效且只能使用一次。服务端不得为满足测试而允许按
-客户端分别重放同一代码。该豁免精确绑定两个预授权码 configuration 和完整 variant；
-授权码组合中的同名多客户端模块仍必须执行并通过。任何其他 warning 或 skip 仍视为失败。
+客户端分别重放同一代码。该预期失败精确绑定两个预授权码 configuration、完整
+variant、`Second client: Verify token endpoint response` block 和
+`CheckTokenEndpointHttpStatus200` condition；授权码组合中的同名多客户端模块仍必须
+执行并通过。任何其他 failure、warning 或 skip 仍视为失败。
 
 上游计划标题明确标为 **alpha**，并注明可能不完整/不正确或尚未纳入认证计划。
 因此全绿只能称为“官方套件回归通过”，不能称为 OpenID Foundation 正式认证，

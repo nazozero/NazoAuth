@@ -577,7 +577,7 @@ def check_openid4vc_boundaries() -> None:
         "TARGET_ORIGIN: ${{ inputs.target_origin }}",
         "openid4vc-plan-set.json",
         "openid4vc-expected-skips.json",
-        "openid4vc-expected-warnings.json",
+        "openid4vc-expected-problems.json",
         "--expected-failures-file",
         "--expected-skips-file",
         "openid4vc-driver.json",
@@ -595,7 +595,7 @@ def check_openid4vc_boundaries() -> None:
     for marker in (
         "VCI_UNSUPPORTED_ENCRYPTION_MODULE",
         "VCI_REFRESH_TOKEN_MODULE",
-        "expected_warnings_for_cases",
+        "expected_problems_for_cases",
         "expected_skips_for_cases",
         "vci_credential_encryption",
         "request_object_trust_anchor_pem",
