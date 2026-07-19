@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import tempfile
+import types
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -19,6 +20,54 @@ def load_runner_module():
 
 
 class RunOidfConformanceTests(unittest.TestCase):
+    def test_main_accepts_omitted_expected_skips_file(self):
+        module = load_runner_module()
+        with tempfile.TemporaryDirectory() as temporary:
+            suite_dir = Path(temporary)
+            scripts_dir = suite_dir / "scripts"
+            scripts_dir.mkdir()
+            (scripts_dir / "run-test-plan.py").touch()
+            args = types.SimpleNamespace(
+                rerun=None,
+                disable_ssl_verify=False,
+                target_issuer="https://issuer.example",
+                suite_dir=str(suite_dir),
+                suite_revision="revision",
+                config_file_name="config.json",
+                config_env="CONFIG",
+                config_json_file=None,
+                plan_expression=[],
+                plan_set_env="PLAN_SET",
+                plan_set_json_file=None,
+                conformance_server="https://suite.example",
+                no_api_token=True,
+                token_env="TOKEN",
+                list=False,
+                no_parallel=False,
+                expected_failures_file=None,
+                expected_skips_file=None,
+                export_dir=None,
+                verbose=False,
+                timeout_seconds=30,
+                monitor_interval_seconds=10,
+            )
+
+            with (
+                mock.patch.object(module, "parse_args", return_value=args),
+                mock.patch.object(module, "verify_pristine_oidf_suite"),
+                mock.patch.object(
+                    module,
+                    "write_plan_configs",
+                    return_value=({"config.json"}, {"config.json": "alias"}),
+                ),
+                mock.patch.object(module, "plan_expressions", return_value=["plan config.json"]),
+                mock.patch.object(module, "cleanup_existing_alias_plans"),
+                mock.patch.object(module, "run_official_runner", return_value=0) as run,
+            ):
+                self.assertEqual(module.main(), 0)
+
+        self.assertEqual(run.call_args.args[-1], {})
+
     def test_official_runner_terminates_nested_process_group_when_interrupted(self):
         module = load_runner_module()
 

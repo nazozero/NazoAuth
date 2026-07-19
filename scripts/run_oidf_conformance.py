@@ -2508,6 +2508,7 @@ def main() -> int:
     )
     if expected_failures_file is not None:
         command.extend(["--expected-failures-file", str(expected_failures_file)])
+    expected_skips_file = None
     if args.expected_skips_file:
         expected_skips_file = Path(args.expected_skips_file).resolve()
         command.extend(["--expected-skips-file", str(expected_skips_file)])
