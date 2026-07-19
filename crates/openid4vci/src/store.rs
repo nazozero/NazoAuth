@@ -10,7 +10,7 @@ use crate::{CredentialIdentifier, CredentialOfferGrants, NotificationEvent};
 pub type CredentialStoreFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
 
 pub trait AuthorizationOfferPort: Send + Sync {
-    fn consume_authorization_offer<'a>(
+    fn resolve_authorization_offer<'a>(
         &'a self,
         issuer_state_hash: &'a str,
         subject_id: Uuid,

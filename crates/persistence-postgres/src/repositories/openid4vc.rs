@@ -695,7 +695,7 @@ impl CredentialStorePort for Openid4vciRepository {
 }
 
 impl AuthorizationOfferPort for Openid4vciRepository {
-    fn consume_authorization_offer<'a>(
+    fn resolve_authorization_offer<'a>(
         &'a self,
         issuer_state_hash: &'a str,
         subject_id: Uuid,
@@ -709,46 +709,29 @@ impl AuthorizationOfferPort for Openid4vciRepository {
                 .get()
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
-            connection
-                .transaction::<Option<CredentialAuthorization>, diesel::result::Error, _>(
-                    async move |connection| {
-                        let row = sql_query(
-                            "SELECT id,tenant_id,credential_configuration_ids,expires_at \
-                             FROM openid4vci_offers WHERE issuer_state_hash = $1 \
-                               AND subject_id = $2 AND consumed_at IS NULL AND expires_at > $3 FOR UPDATE",
-                        )
-                        .bind::<sql_types::Text, _>(issuer_state_hash)
-                        .bind::<sql_types::Uuid, _>(subject_id)
-                        .bind::<sql_types::Timestamptz, _>(now)
-                        .get_result::<AuthorizationOfferRow>(connection)
-                        .await
-                        .optional()?;
-                        let Some(row) = row else { return Ok(None); };
-                        let consumed = sql_query(
-                            "UPDATE openid4vci_offers SET consumed_at = $2 \
-                             WHERE id = $1 AND consumed_at IS NULL",
-                        )
-                        .bind::<sql_types::Uuid, _>(row.id)
-                        .bind::<sql_types::Timestamptz, _>(now)
-                        .execute(connection)
-                        .await?;
-                        if consumed != 1 {
-                            return Ok(None);
-                        }
-                        let configuration_ids = serde_json::from_value(row.credential_configuration_ids)
-                            .map_err(decode_error)?;
-                        Ok(Some(CredentialAuthorization {
-                            tenant_id: row.tenant_id,
-                            subject_id,
-                            client_id: client_id.to_owned(),
-                            configuration_ids,
-                            credential_identifiers: Vec::new(),
-                            expires_at: (now + chrono::Duration::minutes(10)).min(row.expires_at),
-                        }))
-                    },
-                )
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)
+            let row = sql_query(
+                "SELECT tenant_id,credential_configuration_ids,expires_at \
+                 FROM openid4vci_offers WHERE issuer_state_hash = $1 \
+                   AND subject_id = $2 AND expires_at > $3",
+            )
+            .bind::<sql_types::Text, _>(issuer_state_hash)
+            .bind::<sql_types::Uuid, _>(subject_id)
+            .bind::<sql_types::Timestamptz, _>(now)
+            .get_result::<AuthorizationOfferRow>(&mut connection)
+            .await
+            .optional()
+            .map_err(|_| CredentialStoreError::Unavailable)?;
+            let Some(row) = row else { return Ok(None) };
+            let configuration_ids = serde_json::from_value(row.credential_configuration_ids)
+                .map_err(|_| CredentialStoreError::InvalidTransition)?;
+            Ok(Some(CredentialAuthorization {
+                tenant_id: row.tenant_id,
+                subject_id,
+                client_id: client_id.to_owned(),
+                configuration_ids,
+                credential_identifiers: Vec::new(),
+                expires_at: (now + chrono::Duration::minutes(10)).min(row.expires_at),
+            }))
         })
     }
 }
@@ -1004,8 +987,6 @@ struct PreAuthorizedOfferRow {
 
 #[derive(QueryableByName)]
 struct AuthorizationOfferRow {
-    #[diesel(sql_type = sql_types::Uuid)]
-    id: Uuid,
     #[diesel(sql_type = sql_types::Uuid)]
     tenant_id: Uuid,
     #[diesel(sql_type = sql_types::Jsonb)]

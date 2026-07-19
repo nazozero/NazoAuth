@@ -237,7 +237,8 @@ async fn credential_dataset_mutations_require_an_active_admin_and_are_audited_at
 }
 
 #[tokio::test]
-async fn openid4vc_state_is_tenant_bound_single_use_and_encrypted_at_rest() {
+async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and_encrypted_at_rest()
+{
     let Some(database_url) = database_url() else {
         return;
     };
@@ -296,21 +297,15 @@ async fn openid4vc_state_is_tenant_bound_single_use_and_encrypted_at_rest() {
         loaded_offer.expires_at.timestamp_micros(),
         offer.expires_at.timestamp_micros()
     );
-    let consume_at = Utc::now();
-    assert!(
-        issuer
-            .consume_authorization_offer(&issuer_state_hash, subject_id, "wallet", consume_at)
+    let resolve_at = Utc::now();
+    for client_id in ["wallet", "wallet-2"] {
+        let authorization = issuer
+            .resolve_authorization_offer(&issuer_state_hash, subject_id, client_id, resolve_at)
             .await
             .unwrap()
-            .is_some()
-    );
-    assert!(
-        issuer
-            .consume_authorization_offer(&issuer_state_hash, subject_id, "wallet-2", consume_at)
-            .await
-            .unwrap()
-            .is_none()
-    );
+            .expect("the offer should remain valid for multiple wallet clients");
+        assert_eq!(authorization.client_id, client_id);
+    }
 
     let pre_authorized_code = format!("preauth-{}", Uuid::now_v7());
     let pre_authorized_hash = blake3::hash(pre_authorized_code.as_bytes())

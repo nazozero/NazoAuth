@@ -442,7 +442,7 @@ async fn authorize_request_with_context(
             .await;
         };
         let authorization = match offers
-            .consume_authorization_offer(
+            .resolve_authorization_offer(
                 &blake3_hex(issuer_state),
                 session.user.id(),
                 &client.client_id,
@@ -461,7 +461,7 @@ async fn authorize_request_with_context(
                 .await;
             }
             Err(error) => {
-                tracing::warn!(%error, "failed to consume OpenID4VCI issuer_state");
+                tracing::warn!(%error, "failed to resolve OpenID4VCI issuer_state");
                 return authorization_oauth_error_redirect(
                     context,
                     &redirect_uri,
