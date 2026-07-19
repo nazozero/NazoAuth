@@ -227,12 +227,13 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
 
 fn authorization_code_audiences_with_default(
     default_audience: &str,
+    openid4vci_audience: Option<&str>,
     payload: &CodePayload,
     form: &TokenForm,
 ) -> Result<Vec<String>, ()> {
     if payload.resource_indicators.is_empty() {
         return Ok(if form.audiences.is_empty() {
-            vec![default_audience.to_owned()]
+            vec![openid4vci_audience.unwrap_or(default_audience).to_owned()]
         } else {
             form.audiences.clone()
         });
@@ -251,7 +252,13 @@ fn authorization_code_audiences(
     payload: &CodePayload,
     form: &TokenForm,
 ) -> Result<Vec<String>, ()> {
-    authorization_code_audiences_with_default(&settings.protocol.default_audience, payload, form)
+    let config = TokenIssuanceConfig::from(settings);
+    authorization_code_audiences_with_default(
+        config.default_audience(),
+        config.openid4vci_audience(&payload.scopes, &payload.authorization_details),
+        payload,
+        form,
+    )
 }
 
 fn refresh_token_dpop_binding(
@@ -544,6 +551,9 @@ pub(crate) async fn token_authorization_code_with_service(
     }
     let audiences = match authorization_code_audiences_with_default(
         issuance.config.default_audience(),
+        issuance
+            .config
+            .openid4vci_audience(&payload.scopes, &payload.authorization_details),
         &payload,
         form,
     ) {

@@ -477,6 +477,43 @@ fn authorization_code_audiences_reject_token_request_resource_outside_authorizat
     assert!(authorization_code_audiences(&settings, &payload, &form).is_err());
 }
 
+#[test]
+fn authorization_code_audiences_use_credential_issuer_for_openid4vci_scope() {
+    let mut payload = code_payload(true);
+    payload.scopes = vec!["eu.europa.ec.eudi.pid.1".to_owned()];
+    let form = form_for_code("code-1");
+
+    assert_eq!(
+        authorization_code_audiences_with_default(
+            "resource://default",
+            Some("https://issuer.example"),
+            &payload,
+            &form,
+        )
+        .unwrap(),
+        vec!["https://issuer.example".to_owned()]
+    );
+}
+
+#[test]
+fn explicit_token_audience_overrides_openid4vci_default() {
+    let mut payload = code_payload(true);
+    payload.scopes = vec!["eu.europa.ec.eudi.pid.1".to_owned()];
+    let mut form = form_for_code("code-1");
+    form.audiences = vec!["https://issuer.example/openid4vci/credential".to_owned()];
+
+    assert_eq!(
+        authorization_code_audiences_with_default(
+            "resource://default",
+            Some("https://issuer.example"),
+            &payload,
+            &form,
+        )
+        .unwrap(),
+        form.audiences
+    );
+}
+
 async fn token_json_body(response: HttpResponse) -> (StatusCode, Value) {
     let status = response.status();
     let body = actix_web::body::to_bytes(response.into_body())

@@ -1,4 +1,6 @@
 //! 令牌签发响应构造。
+use std::collections::BTreeSet;
+
 use crate::adapters::audit::audit_event;
 use crate::adapters::audit::audit_fields;
 use crate::adapters::security::blake3_hex;
@@ -30,9 +32,7 @@ use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{ClientIpHeaderMode, IpCidr};
 use nazo_http_actix::{json_response_no_store, oauth_token_error};
 use nazo_key_management::signing_algorithm_name;
-#[cfg(test)]
-use serde_json::Value;
-use serde_json::json;
+use serde_json::{Value, json};
 use uuid::Uuid;
 // 统一 access_token、refresh_token 和 id_token 的响应形状。
 
@@ -48,6 +48,8 @@ pub(crate) struct TokenIssuanceConfig {
     dpop_nonce_policy: DpopNoncePolicy,
     trusted_proxy_cidrs: Box<[IpCidr]>,
     default_audience: Box<str>,
+    openid4vci_enabled: bool,
+    openid4vci_credential_scopes: Box<[String]>,
     pairwise_subject_secret: Option<Box<str>>,
     authorization_server_profile: AuthorizationServerProfile,
     client_ip_header_mode: ClientIpHeaderMode,
@@ -68,6 +70,16 @@ impl From<&Settings> for TokenIssuanceConfig {
             dpop_nonce_policy: settings.protocol.dpop_nonce_policy,
             trusted_proxy_cidrs: settings.endpoint.trusted_proxy_cidrs.clone().into(),
             default_audience: settings.protocol.default_audience.as_str().into(),
+            openid4vci_enabled: settings.modules.enable_openid4vci_issuer,
+            openid4vci_credential_scopes: settings
+                .openid4vc
+                .credential_configurations
+                .values()
+                .filter_map(|configuration| configuration.scope.clone())
+                .collect::<BTreeSet<_>>()
+                .into_iter()
+                .collect::<Vec<_>>()
+                .into_boxed_slice(),
             pairwise_subject_secret: settings
                 .protocol
                 .pairwise_subject_secret
@@ -105,6 +117,25 @@ impl TokenIssuanceConfig {
 
     pub(crate) fn default_audience(&self) -> &str {
         &self.default_audience
+    }
+
+    pub(crate) fn openid4vci_audience(
+        &self,
+        scopes: &[String],
+        authorization_details: &Value,
+    ) -> Option<&str> {
+        let requested_by_scope = scopes.iter().any(|scope| {
+            self.openid4vci_credential_scopes
+                .iter()
+                .any(|configured| configured == scope)
+        });
+        let requested_by_authorization_details = authorization_details
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|detail| detail.get("type").and_then(Value::as_str) == Some("openid_credential"));
+        (self.openid4vci_enabled && (requested_by_scope || requested_by_authorization_details))
+            .then_some(self.issuer())
     }
 
     pub(crate) fn pairwise_subject_secret(&self) -> Option<&str> {
