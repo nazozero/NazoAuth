@@ -394,14 +394,14 @@ def check_fapi_ciba_boundaries() -> None:
         raise SystemExit("CIBA ping delivery must offer TLS 1.3")
     if ".use_rustls_tls()" not in tls_policy:
         raise SystemExit("CIBA ping delivery must use the Rustls TLS backend")
-    if 'std::env::var_os("SSL_CERT_FILE")' not in tls_policy:
+    if 'std::env::var_os("CIBA_PING_TLS_TRUST_BUNDLE")' not in tls_policy:
         raise SystemExit("CIBA ping delivery must explicitly load its configured trust bundle")
     tls_policy_test = (
         ROOT
         / "crates"
         / "authorization-server"
         / "tests"
-        / "in_source"
+        / "source_mounted"
         / "src"
         / "domain"
         / "tests"
@@ -577,22 +577,25 @@ def check_openid4vc_boundaries() -> None:
         "TARGET_ORIGIN: ${{ inputs.target_origin }}",
         "openid4vc-plan-set.json",
         "openid4vc-expected-skips.json",
-        "openid4vc-expected-warnings.json",
+        "openid4vc-expected-problems.json",
         "--expected-failures-file",
         "--expected-skips-file",
         "openid4vc-driver.json",
     ):
         if marker not in workflow:
             raise SystemExit(f"OpenID4VC workflow lacks hard boundary: {marker}")
-    if "vars.OPENID4VC_TARGET_ORIGIN" in workflow:
-        raise SystemExit(
-            "OpenID4VC workflow must require an explicit target_origin input; "
-            "repository-variable fallbacks are forbidden"
-        )
+    for marker in (
+        "TRUSTED_TARGET_ORIGIN: ${{ vars.OPENID4VC_TARGET_ORIGIN }}",
+        'test "$TARGET_ORIGIN" = "$TRUSTED_TARGET_ORIGIN"',
+    ):
+        if marker not in workflow:
+            raise SystemExit(
+                f"OpenID4VC workflow does not bind target_origin to the trusted repository origin: {marker}"
+            )
     for marker in (
         "VCI_UNSUPPORTED_ENCRYPTION_MODULE",
         "VCI_REFRESH_TOKEN_MODULE",
-        "expected_warnings_for_cases",
+        "expected_problems_for_cases",
         "expected_skips_for_cases",
         "vci_credential_encryption",
         "request_object_trust_anchor_pem",

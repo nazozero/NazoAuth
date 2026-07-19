@@ -10,8 +10,8 @@ use nazo_identity::{
     PublicAccount, TenantContext, TenantId, UserId, UserRole,
     ports::{
         AuthenticationAuditEvent, AuthenticationAuditPort, LoginAccountRepositoryPort,
-        LoginFailureCounts, LoginSessionCreate, LoginSessionPort, LoginThrottlePort,
-        RememberedMfaDevicePort, RepositoryFuture, SecretVerifyFuture, SecretVerifyPort,
+        LoginSessionCreate, LoginSessionPort, LoginThrottlePort, RememberedMfaDevicePort,
+        RepositoryFuture, SecretVerifyFuture, SecretVerifyPort,
     },
     session::SessionRecord,
 };
@@ -43,17 +43,12 @@ impl LoginAccountRepositoryPort for Accounts {
 struct Throttles(Arc<AtomicUsize>);
 
 impl LoginThrottlePort for Throttles {
-    fn failure_counts<'a>(
+    fn failure_count<'a>(
         &'a self,
         _email: &'a str,
         _source_ip: &'a str,
-    ) -> RepositoryFuture<'a, LoginFailureCounts> {
-        Box::pin(async {
-            Ok(LoginFailureCounts {
-                email: 0,
-                ip_email: 0,
-            })
-        })
+    ) -> RepositoryFuture<'a, u64> {
+        Box::pin(async { Ok(0) })
     }
 
     fn record_failure<'a>(
@@ -66,7 +61,7 @@ impl LoginThrottlePort for Throttles {
         Box::pin(async { Ok(()) })
     }
 
-    fn clear_failures<'a>(
+    fn clear_failure<'a>(
         &'a self,
         _email: &'a str,
         _source_ip: &'a str,
@@ -175,7 +170,6 @@ async fn missing_and_inactive_accounts_share_dummy_verification_and_failure_beha
                 tenant_id: TenantContext::default_system().tenant_id,
                 dummy_password_hash: dummy_hash.clone(),
                 failure_window_seconds: 60,
-                failure_email_max_attempts: 5,
                 failure_ip_email_max_attempts: 5,
                 session_ttl_seconds: 300,
             },

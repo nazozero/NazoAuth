@@ -33,7 +33,7 @@ pub(crate) async fn token_device_code_with_service(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
-    if !issuance.accepts(nazo_runtime_modules::ModuleId::DeviceAuthorization) {
+    if !issuance.permits(nazo_runtime_modules::ModuleId::DeviceAuthorization) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "unsupported_grant_type",

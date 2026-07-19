@@ -4,7 +4,6 @@ use crate::adapters::audit::audit_event;
 use crate::adapters::audit::audit_fields;
 use crate::adapters::security::access_delivery_token;
 use crate::adapters::security::blake3_hex;
-use crate::http::client_ip::{ClientIpConfig, client_ip_with_config};
 use crate::http::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::http::views::pagination;
 use actix_web::http::StatusCode;
@@ -14,6 +13,7 @@ use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
 use nazo_auth::{AdminClientError, CreateClientRequest};
+use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
 use nazo_postgres::AccessRequestRepository;
@@ -458,5 +458,5 @@ fn access_request_already_rejected_response() -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/admin/tests/access_requests.rs"]
+#[path = "../../../tests/source_mounted/src/http/admin/tests/access_requests.rs"]
 mod tests;

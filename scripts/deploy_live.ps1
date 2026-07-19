@@ -201,7 +201,7 @@ function Assert-CleanGitCommit {
     if ($actualCommit -cne $ExpectedCommit) {
         throw "$Label HEAD $actualCommit does not match requested commit $ExpectedCommit"
     }
-    $status = & git -C $root status --porcelain=v1 --untracked-files=all
+    $status = & git -c core.fsmonitor=false -c core.untrackedCache=false -C $root status --porcelain=v1 --untracked-files=all
     if ($LASTEXITCODE -ne 0) {
         throw "Unable to inspect $Label worktree: $root"
     }
@@ -297,29 +297,11 @@ function Find-FrontendWorktree {
     )
     $backendRepository = Split-Path -Parent $commonGitDir
     $siblingRoot = Split-Path -Parent $backendRepository
-    $directories = @(
-        Get-ChildItem -LiteralPath $siblingRoot -Directory -Force |
-            Where-Object { $_.Name -eq "NazoAuthWeb" -or $_.Name -like "NazoAuthWeb-*" } |
-            Sort-Object FullName
-    )
-    $qualified = [System.Collections.Generic.List[string]]::new()
-    $rejected = [System.Collections.Generic.List[string]]::new()
-    foreach ($directory in $directories) {
-        try {
-            $qualified.Add((Assert-FrontendWorktree -Worktree $directory.FullName -ExpectedCommit $ExpectedCommit))
-        }
-        catch {
-            $rejected.Add("$($directory.FullName): $($_.Exception.Message)")
-        }
+    $candidate = Join-Path $siblingRoot "NazoAuthWeb"
+    if (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
+        throw "Expected frontend worktree does not exist at $candidate. Pass LocalFrontendWorktree explicitly."
     }
-    if ($qualified.Count -eq 1) {
-        return $qualified[0]
-    }
-    if ($qualified.Count -gt 1) {
-        throw "Frontend worktree discovery is ambiguous; qualified candidates: $($qualified -join ', '). Pass LocalFrontendWorktree explicitly."
-    }
-    $details = if ($rejected.Count -gt 0) { " Rejected candidates: $($rejected -join '; ')" } else { "" }
-    throw "Unable to discover a unique synchronized sibling NazoAuthWeb worktree under $siblingRoot.$details Pass LocalFrontendWorktree explicitly."
+    return Assert-FrontendWorktree -Worktree $candidate -ExpectedCommit $ExpectedCommit
 }
 
 function Export-GitCommit {
@@ -455,6 +437,8 @@ if (-not $SkipFrontendBuild) {
         Invoke-Checked npm @("--prefix", $frontendBuildContext, "ci")
         Invoke-Checked npm @("--prefix", $frontendBuildContext, "run", "test")
         $builtUiDist = Join-Path $frontendBuildContext "dist"
+        Remove-Item -LiteralPath $builtUiDist -Recurse -Force -ErrorAction SilentlyContinue
+        Invoke-Checked npm @("--prefix", $frontendBuildContext, "run", "build")
         if (-not (Test-Path -LiteralPath (Join-Path $builtUiDist "index.html") -PathType Leaf)) {
             throw "Frontend build did not produce dist/index.html"
         }
@@ -582,7 +566,7 @@ run_server() {
     test -f "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH"
     test ! -L "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH"
     ciba_ping_tls_args=(
-      -e "SSL_CERT_FILE=`$CIBA_PING_TLS_TRUST_BUNDLE_CONTAINER_PATH"
+      -e "CIBA_PING_TLS_TRUST_BUNDLE=`$CIBA_PING_TLS_TRUST_BUNDLE_CONTAINER_PATH"
       -v "`$CIBA_PING_TLS_TRUST_BUNDLE_PATH:`$CIBA_PING_TLS_TRUST_BUNDLE_CONTAINER_PATH:ro"
     )
   fi

@@ -2,13 +2,13 @@
 use crate::adapters::audit::audit_event;
 use crate::adapters::audit::audit_fields;
 use crate::adapters::security::blake3_hex;
-use crate::http::client_ip::{ClientIpConfig, client_ip_with_config};
 use crate::http::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::http::views::admin_user_json;
 use crate::http::views::pagination;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json, Query};
 use actix_web::{HttpRequest, HttpResponse};
+use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
 use nazo_identity::{PublicAccount, ports::AdminUserRepositoryPort};
@@ -193,5 +193,5 @@ fn patch_user_validation_error(payload: &PatchUserRequest) -> Option<HttpRespons
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/admin/tests/users.rs"]
+#[path = "../../../tests/source_mounted/src/http/admin/tests/users.rs"]
 mod tests;

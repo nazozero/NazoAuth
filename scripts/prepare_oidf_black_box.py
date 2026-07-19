@@ -19,7 +19,14 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RUNTIME = ROOT / "runtime" / "oidf"
+
+
+def runtime_directory() -> Path:
+    configured = os.environ.get("OIDF_RUNTIME_DIR", "").strip()
+    return Path(configured).resolve() if configured else ROOT / "runtime" / "oidf"
+
+
+RUNTIME = runtime_directory()
 
 
 def required_origin_env(name: str) -> str:

@@ -67,6 +67,7 @@ NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
     r"|invalid_request|invalid_request_object|access_denied|login_required|server_error)"
 )
 OIDF_BAD_FINAL_RESULTS = {"FAILED", "INTERRUPTED", "WARNING"}
+OIDF_UNACCEPTABLE_FINAL_RESULTS = OIDF_BAD_FINAL_RESULTS | {"SKIPPED"}
 OIDF_BAD_STATUS_VALUES = {"FAILED", "INTERRUPTED"}
 OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
 OIDF_LOG_CONTEXT_SOURCES = {
@@ -101,13 +102,20 @@ OIDF_LOG_CONTEXT_FIELDS = (
 )
 OIDF_SENSITIVE_LOG_FIELDS = {
     "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
     "access_token",
     "refresh_token",
     "id_token",
     "token",
     "code",
+    "device_code",
+    "user_code",
+    "auth_req_id",
     "password",
     "client_secret",
+    "client_assertion",
     "request_uri",
 }
 OIDF_ALLOWED_REVIEW_CONTEXTS_BY_CONFIG = {
@@ -143,6 +151,10 @@ OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS = max(
 )
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 HTTP_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]+(?::\d+)?(?:/[^\s\"'<>)]*)?")
+OPENID4VC_EXTERNAL_URL_FIELDS = {
+    ("client_attestation", "issuer"),
+    ("client", "request_object_trust_anchor_uri"),
+}
 NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
 NAZO_LOGIN_PASSWORD_ID = "nazo-login-password"
 NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
@@ -404,8 +416,8 @@ def nazo_login_observation_commands(config_value: dict[str, object]) -> list[lis
 
 def normalized_origin(value: str) -> str:
     parsed = urlparse(value.strip().rstrip("/"))
-    if parsed.scheme not in {"https", "http"} or not parsed.netloc or parsed.path:
-        fail(f"target issuer must be an origin URL without a path: {value}")
+    if parsed.scheme != "https" or not parsed.netloc or parsed.path:
+        fail(f"target issuer must be an HTTPS origin without a path: {value}")
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
@@ -422,7 +434,7 @@ def assert_only_target_issuer_urls(value: object, config_name: str, target_issue
             url = match.group(0)
             parsed = urlparse(url)
             origin = f"{parsed.scheme}://{parsed.netloc}"
-            if "/test/" in parsed.path or parsed.netloc == urlparse(target_origin).netloc:
+            if "/test/" in parsed.path or origin == target_origin:
                 continue
             if origin != target_origin:
                 fail(
@@ -435,17 +447,35 @@ def is_openid4vc_config(config_name: str) -> bool:
     return config_name.startswith("openid4vc-")
 
 
-def http_urls_in_value(value: object) -> list[str]:
-    urls: list[str] = []
+def http_urls_in_value(
+    value: object,
+    path: tuple[str, ...] = (),
+) -> list[tuple[tuple[str, ...], str]]:
+    urls: list[tuple[tuple[str, ...], str]] = []
     if isinstance(value, list):
-        for item in value:
-            urls.extend(http_urls_in_value(item))
+        for index, item in enumerate(value):
+            urls.extend(http_urls_in_value(item, (*path, str(index))))
     elif isinstance(value, dict):
-        for item in value.values():
-            urls.extend(http_urls_in_value(item))
+        for key, item in value.items():
+            urls.extend(http_urls_in_value(item, (*path, str(key))))
     elif isinstance(value, str):
-        urls.extend(match.group(0) for match in HTTP_URL_PATTERN.finditer(value))
+        urls.extend((path, match.group(0)) for match in HTTP_URL_PATTERN.finditer(value))
     return urls
+
+
+def assert_public_https_url(url: str, config_name: str) -> None:
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not hostname:
+        fail(f"{config_name} contains non-HTTPS URL {url}")
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        if "." not in hostname or hostname == "localhost":
+            fail(f"{config_name} contains non-public URL {url}")
+    else:
+        if not address.is_global:
+            fail(f"{config_name} contains non-public URL {url}")
 
 
 def assert_openid4vc_target_boundaries(
@@ -469,19 +499,17 @@ def assert_openid4vc_target_boundaries(
         if not isinstance(client, dict) or client.get("client_id") != target_host:
             fail(f"{config_name} must bind verifier client_id to the operator-provided host")
 
-    for url in http_urls_in_value(config_value):
+    for field_path, url in http_urls_in_value(config_value):
         parsed = urlparse(url)
-        hostname = (parsed.hostname or "").lower()
-        try:
-            ipaddress.ip_address(hostname)
-            is_public_dns_name = False
-        except ValueError:
-            is_public_dns_name = "." in hostname and hostname != "localhost"
-        if not is_public_dns_name:
-            fail(
-                f"{config_name} contains local-only URL {url}; OpenID4VC conformance "
-                "must run against public black-box targets"
-            )
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        assert_public_https_url(url, config_name)
+        if origin == target_origin or "/test/" in parsed.path:
+            continue
+        if field_path[-2:] in OPENID4VC_EXTERNAL_URL_FIELDS:
+            continue
+        fail(
+            f"{config_name} contains URL {url} outside its explicit OpenID4VC target fields"
+        )
 
 
 def assert_config_target_boundaries(
@@ -1210,16 +1238,45 @@ def redact_url_query_and_fragment(value: str) -> str:
 
 
 def redact_log_text(value: str) -> str:
+    try:
+        structured = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        structured = None
+    if isinstance(structured, (dict, list)):
+        return json.dumps(
+            redact_log_value("", structured), sort_keys=True, separators=(",", ":")
+        )
+
     redacted = re.sub(
         r"https?://[^\s\"'<>]+",
         lambda match: redact_url_query_and_fragment(match.group(0)),
         value,
     )
-    return re.sub(
-        r"(?i)\b(access_token|refresh_token|id_token|token|code|password|client_secret|request_uri|authorization)=([^&\s;]+)",
+    redacted = re.sub(
+        r"(?i)\b(access_token|refresh_token|id_token|token|code|device_code|user_code|auth_req_id|password|client_secret|client_assertion|request_uri|authorization)=([^&\s;]+)",
         lambda match: f"{match.group(1)}=<redacted>",
         redacted,
     )
+    return re.sub(
+        r"(?i)\b(authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\s]+",
+        lambda match: f"{match.group(1)}: <redacted>",
+        redacted,
+    )
+
+
+def redact_log_value(key: str, value: object) -> object:
+    if key.lower() in OIDF_SENSITIVE_LOG_FIELDS:
+        return "<redacted>"
+    if isinstance(value, dict):
+        return {
+            str(child_key): redact_log_value(str(child_key), child_value)
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_log_value("", item) for item in value]
+    if isinstance(value, str):
+        return redact_log_text(value)
+    return value
 
 
 def module_name_without_variant(test_name: str) -> str:
@@ -1236,10 +1293,10 @@ def allowed_review_contexts_by_alias(
     }
 
 
-def expected_warning_contexts_by_alias(
+def expected_problem_contexts_by_alias(
     expected_problems_file: Path | None,
     aliases_by_config: dict[str, str],
-) -> dict[str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]]:
+) -> dict[str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]]:
     if expected_problems_file is None:
         return {}
 
@@ -1250,9 +1307,12 @@ def expected_warning_contexts_by_alias(
     if not isinstance(payload, list):
         fail("OIDF expected problems file must contain a JSON array")
 
-    contexts: dict[str, set[tuple[str, tuple[tuple[str, str], ...], str, str]]] = {}
+    contexts: dict[str, set[tuple[str, str, tuple[tuple[str, str], ...], str, str]]] = {}
     for item in payload:
-        if not isinstance(item, dict) or item.get("expected-result") != "warning":
+        if not isinstance(item, dict):
+            continue
+        expected_result = item.get("expected-result")
+        if expected_result not in {"warning", "failure"}:
             continue
         config_name = item.get("configuration-filename")
         test_name = item.get("test-name")
@@ -1269,27 +1329,104 @@ def expected_warning_contexts_by_alias(
             or not all(isinstance(key, str) and isinstance(value, str) for key, value in variant.items())
         ):
             fail(
-                "OIDF expected warnings used by the early-stop monitor must use exact "
+                "OIDF expected problems used by the early-stop monitor must use exact "
                 "configuration, test, variant, block, and condition values"
             )
         alias = aliases_by_config.get(config_name)
         if alias is None:
             continue
-        context = (test_name, tuple(sorted(variant.items())), current_block, condition)
+        context = (
+            expected_result,
+            test_name,
+            tuple(sorted(variant.items())),
+            current_block,
+            condition,
+        )
         alias_contexts = contexts.setdefault(alias, set())
         if context in alias_contexts:
-            fail(f"duplicate OIDF expected warning for {config_name}: {test_name} / {current_block}")
+            fail(f"duplicate OIDF expected problem for {config_name}: {test_name} / {current_block}")
         alias_contexts.add(context)
 
     return {alias: frozenset(values) for alias, values in contexts.items()}
 
 
-def is_allowed_expected_warning(
+def expected_skip_contexts_by_alias(
+    expected_skips_file: Path | None,
+    aliases_by_config: dict[str, str],
+) -> dict[str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]]:
+    if expected_skips_file is None:
+        return {}
+    try:
+        payload = json.loads(expected_skips_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"could not read OIDF expected skips file: {exc}")
+    if not isinstance(payload, list):
+        fail("OIDF expected skips file must contain a JSON array")
+
+    contexts: dict[str, set[tuple[str, tuple[tuple[str, str], ...] | None]]] = {}
+    for item in payload:
+        if not isinstance(item, dict):
+            fail("OIDF expected skip entries must be JSON objects")
+        config_name = item.get("configuration-filename")
+        test_name = item.get("test-name")
+        variant = item.get("variant")
+        if (
+            not isinstance(config_name, str)
+            or not isinstance(test_name, str)
+            or "*" in config_name
+            or "*" in test_name
+            or not (
+                variant == "*"
+                or (
+                    isinstance(variant, dict)
+                    and all(
+                        isinstance(key, str) and isinstance(value, str)
+                        for key, value in variant.items()
+                    )
+                )
+            )
+        ):
+            fail(
+                "OIDF expected skips used by the early-stop monitor must use an exact "
+                "configuration and test name plus either an exact variant or the upstream '*' variant"
+            )
+        alias = aliases_by_config.get(config_name)
+        if alias is None:
+            continue
+        normalized_variant = None if variant == "*" else tuple(sorted(variant.items()))
+        contexts.setdefault(alias, set()).add((test_name, normalized_variant))
+    return {alias: frozenset(values) for alias, values in contexts.items()}
+
+
+def is_allowed_expected_skip(
+    info: object,
+    allowed_expected_skips_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
+    ],
+) -> bool:
+    if not isinstance(info, dict):
+        return False
+    alias = info.get("alias")
+    test_name_value = info.get("testName") or info.get("name")
+    variant = info.get("variant")
+    if (
+        not isinstance(alias, str)
+        or not isinstance(test_name_value, str)
+        or not isinstance(variant, dict)
+        or not all(isinstance(key, str) and isinstance(value, str) for key, value in variant.items())
+    ):
+        return False
+    test_name = module_name_without_variant(test_name_value)
+    contexts = allowed_expected_skips_by_alias.get(alias, frozenset())
+    return (test_name, None) in contexts or (test_name, tuple(sorted(variant.items()))) in contexts
+
+
+def is_allowed_expected_problem(
     info: object,
     log_entry: object,
     current_block: str | None,
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
     ],
 ) -> bool:
     if not isinstance(info, dict) or not isinstance(log_entry, dict) or current_block is None:
@@ -1298,6 +1435,7 @@ def is_allowed_expected_warning(
     test_name = info.get("testName") or info.get("name")
     variant = info.get("variant")
     condition = log_entry.get("src")
+    result = value_as_upper(log_entry.get("result")).lower()
     if (
         not isinstance(alias, str)
         or not isinstance(test_name, str)
@@ -1307,12 +1445,13 @@ def is_allowed_expected_warning(
     ):
         return False
     context = (
+        result,
         module_name_without_variant(test_name),
         tuple(sorted(variant.items())),
         current_block,
         condition,
     )
-    return context in allowed_expected_warnings_by_alias.get(alias, frozenset())
+    return context in allowed_expected_problems_by_alias.get(alias, frozenset())
 
 
 def is_allowed_review_module(
@@ -1354,7 +1493,7 @@ def oidf_module_failure(
         return f"{test_name} {module_id} reported a structured error"
     if status in OIDF_BAD_STATUS_VALUES:
         return f"{test_name} {module_id} status {status}"
-    if result in OIDF_BAD_FINAL_RESULTS:
+    if result in OIDF_UNACCEPTABLE_FINAL_RESULTS:
         return f"{test_name} {module_id} result {result}"
     if result == "REVIEW" and not is_allowed_review_module(
         test_name,
@@ -1403,8 +1542,8 @@ def oidf_log_failure(
     logs: object,
     *,
     info: object = None,
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
     ] | None = None,
 ) -> str | None:
     if not isinstance(logs, list):
@@ -1422,11 +1561,11 @@ def oidf_log_failure(
         result = value_as_upper(entry.get("result"))
         if result not in OIDF_BAD_LOG_RESULTS:
             continue
-        if result == "WARNING" and is_allowed_expected_warning(
+        if is_allowed_expected_problem(
             info,
             entry,
             block_names.get(block_id) if isinstance(block_id, str) else None,
-            allowed_expected_warnings_by_alias or {},
+            allowed_expected_problems_by_alias or {},
         ):
             continue
         src = entry.get("src")
@@ -1438,11 +1577,11 @@ def oidf_log_failure(
     return None
 
 
-def oidf_log_has_allowed_expected_warning(
+def oidf_log_has_allowed_expected_problem(
     info: object,
     logs: object,
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
     ],
 ) -> bool:
     if not isinstance(logs, list):
@@ -1455,11 +1594,11 @@ def oidf_log_has_allowed_expected_warning(
         if block_start is not None:
             block_names[block_start[0]] = block_start[1]
         block_id = entry.get("blockId")
-        if value_as_upper(entry.get("result")) == "WARNING" and is_allowed_expected_warning(
+        if is_allowed_expected_problem(
             info,
             entry,
             block_names.get(block_id) if isinstance(block_id, str) else None,
-            allowed_expected_warnings_by_alias,
+            allowed_expected_problems_by_alias,
         ):
             return True
     return False
@@ -1506,19 +1645,18 @@ def oidf_log_context_values(entry: dict[str, object]) -> list[tuple[str, object]
 
 
 def oidf_log_context_text(key: str, value: object) -> str:
-    if isinstance(value, (dict, list)):
-        text = json.dumps(value, sort_keys=True, separators=(",", ":"))
-    elif isinstance(value, (str, int, float, bool)):
-        text = str(value)
+    sanitized = redact_log_value(key, value)
+    if isinstance(sanitized, (dict, list)):
+        text = json.dumps(sanitized, sort_keys=True, separators=(",", ":"))
+    elif isinstance(sanitized, (str, int, float, bool)):
+        text = str(sanitized)
     else:
         return ""
 
     text = text.replace("\n", " ").strip()
     if not text:
         return ""
-    if key.lower() in OIDF_SENSITIVE_LOG_FIELDS:
-        return "<redacted>"
-    return redact_log_text(text)
+    return text
 
 
 def oidf_failure_with_log_context(module_id: str, failure: str, logs: object) -> str:
@@ -1575,8 +1713,11 @@ def inspect_oidf_state(
     final: bool,
     ignored_plan_ids: set[str] | None = None,
     allowed_reviews_by_alias: dict[str, tuple[str, frozenset[str]]] | None = None,
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
+    ] | None = None,
+    allowed_expected_skips_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
     ] | None = None,
 ) -> str | None:
     ignored = ignored_plan_ids or set()
@@ -1615,6 +1756,11 @@ def inspect_oidf_state(
         )
         if status_code == 200 and info is not None:
             result = value_as_upper(info.get("result")) if isinstance(info, dict) else ""
+            if result == "SKIPPED" and is_allowed_expected_skip(
+                info,
+                allowed_expected_skips_by_alias or {},
+            ):
+                continue
             if result == "REVIEW" and isinstance(info, dict):
                 alias = info.get("alias")
                 test_name_value = info.get("testName") or info.get("name") or "<unknown>"
@@ -1651,14 +1797,14 @@ def inspect_oidf_state(
                     module_id,
                     logs,
                     info=info,
-                    allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+                    allowed_expected_problems_by_alias=allowed_expected_problems_by_alias,
                 )
                 if log_failure:
                     return oidf_failure_with_log_context(module_id, log_failure, logs)
-                if result == "WARNING" and oidf_log_has_allowed_expected_warning(
+                if result in OIDF_BAD_FINAL_RESULTS and oidf_log_has_allowed_expected_problem(
                     info,
                     logs,
-                    allowed_expected_warnings_by_alias or {},
+                    allowed_expected_problems_by_alias or {},
                 ):
                     continue
                 if not final and oidf_info_failure_can_wait_for_final_result(info):
@@ -1680,7 +1826,7 @@ def inspect_oidf_state(
                 module_id,
                 logs,
                 info=info,
-                allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+                allowed_expected_problems_by_alias=allowed_expected_problems_by_alias,
             )
             if failure:
                 return failure
@@ -1745,8 +1891,11 @@ class OidfEarlyStopMonitor:
         interval_seconds: int,
         ignored_plan_ids: set[str],
         allowed_reviews_by_alias: dict[str, tuple[str, frozenset[str]]],
-        allowed_expected_warnings_by_alias: dict[
-            str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+        allowed_expected_problems_by_alias: dict[
+            str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
+        ],
+        allowed_expected_skips_by_alias: dict[
+            str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
         ],
     ) -> None:
         self.base_url = base_url
@@ -1755,7 +1904,8 @@ class OidfEarlyStopMonitor:
         self.interval_seconds = interval_seconds
         self.ignored_plan_ids = ignored_plan_ids
         self.allowed_reviews_by_alias = allowed_reviews_by_alias
-        self.allowed_expected_warnings_by_alias = allowed_expected_warnings_by_alias
+        self.allowed_expected_problems_by_alias = allowed_expected_problems_by_alias
+        self.allowed_expected_skips_by_alias = allowed_expected_skips_by_alias
         self.stop_requested = threading.Event()
         self.failure_message: str | None = None
         self.consecutive_errors = 0
@@ -1773,7 +1923,8 @@ class OidfEarlyStopMonitor:
                     final=False,
                     ignored_plan_ids=self.ignored_plan_ids,
                     allowed_reviews_by_alias=self.allowed_reviews_by_alias,
-                    allowed_expected_warnings_by_alias=self.allowed_expected_warnings_by_alias,
+                    allowed_expected_problems_by_alias=self.allowed_expected_problems_by_alias,
+                    allowed_expected_skips_by_alias=self.allowed_expected_skips_by_alias,
                 )
                 self.consecutive_errors = 0
             except SystemExit as exc:
@@ -2107,8 +2258,11 @@ def run_official_runner(
     token: str | None,
     monitor_interval_seconds: int,
     allowed_reviews_by_alias: dict[str, tuple[str, frozenset[str]]],
-    allowed_expected_warnings_by_alias: dict[
-        str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
+    allowed_expected_problems_by_alias: dict[
+        str, frozenset[tuple[str, str, tuple[tuple[str, str], ...], str, str]]
+    ],
+    allowed_expected_skips_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
     ],
 ) -> int:
     if timeout_seconds <= 0:
@@ -2141,7 +2295,8 @@ def run_official_runner(
             monitor_interval_seconds,
             ignored_plan_ids,
             allowed_reviews_by_alias,
-            allowed_expected_warnings_by_alias,
+            allowed_expected_problems_by_alias,
+            allowed_expected_skips_by_alias,
         )
         monitor_thread = threading.Thread(
             target=monitor.run,
@@ -2194,7 +2349,8 @@ def run_official_runner(
             final=exit_code == 0,
             ignored_plan_ids=ignored_plan_ids,
             allowed_reviews_by_alias=allowed_reviews_by_alias,
-            allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+            allowed_expected_problems_by_alias=allowed_expected_problems_by_alias,
+            allowed_expected_skips_by_alias=allowed_expected_skips_by_alias,
         )
         if final_failure:
             print(f"OIDF final state check failed: {final_failure}", flush=True)
@@ -2394,7 +2550,8 @@ def main() -> int:
         token,
         monitor_interval_seconds,
         allowed_review_contexts_by_alias(aliases_by_config),
-        expected_warning_contexts_by_alias(expected_failures_file, aliases_by_config),
+        expected_problem_contexts_by_alias(expected_failures_file, aliases_by_config),
+        expected_skip_contexts_by_alias(expected_skips_file, aliases_by_config),
     )
 
 

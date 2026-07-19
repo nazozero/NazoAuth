@@ -19,7 +19,7 @@ SECRETS_PATH = REMOTE_BASE / "secrets.json"
 EXPECTED_BACKEND_SHA = ""
 DEPLOYMENT_RECORD = REMOTE_BASE / "deployments" / "current.json"
 RUN_ID = f"live-full-{int(time.time())}-{secrets.token_hex(3)}"
-PASSWORD = f"{RUN_ID}-Passw0rd!"
+PASSWORD = secrets.token_urlsafe(32)
 CSRF_COOKIE = "nazo_oauth_csrf"
 DEFAULT_AUDIENCE = "resource://default"
 OPENID_SCOPES = "openid profile email address phone offline_access"
@@ -583,6 +583,20 @@ def request_object(client_id: str, jwk: dict, alg: str):
 
 
 def run():
+    try:
+        run_verification()
+    finally:
+        secrets_doc = json.loads(SECRETS_PATH.read_text(encoding="utf-8"))
+        with psycopg.connect(db_url(secrets_doc), autocommit=True) as conn:
+            cleanup_rows(conn)
+        redis_client = redis.Redis(
+            host="10.101.0.11", port=6379, db=0, decode_responses=True
+        )
+        for key in redis_client.scan_iter("oauth:email_verify:*live-full-*"):
+            redis_client.delete(key)
+
+
+def run_verification():
     verify_deployed_backend(EXPECTED_BACKEND_SHA)
     secrets_doc = json.loads(SECRETS_PATH.read_text(encoding="utf-8"))
     redis_client = redis.Redis(host="10.101.0.11", port=6379, db=0, decode_responses=True)
@@ -1095,11 +1109,6 @@ def run():
 
     request(user_session, "POST", "/auth/logout", expected={200}, name="user logout")
     request(admin_session, "POST", "/auth/logout", expected={200}, name="admin logout")
-
-    with psycopg.connect(db_url(secrets_doc), autocommit=True) as conn:
-        cleanup_rows(conn)
-    for key in redis_client.scan_iter("oauth:email_verify:*live-full-*"):
-        redis_client.delete(key)
 
     print(json.dumps({
         "run_id": RUN_ID,

@@ -9,7 +9,7 @@ use base64::Engine as _;
 use chrono::{Duration, Utc};
 use nazo_auth::{
     DpopError, DpopNoncePolicy, DpopProofRequest, issue_authorization_server_dpop_nonce,
-    validate_authorization_server_dpop,
+    token_audience_contains, validate_authorization_server_dpop,
 };
 use nazo_digital_credentials::{
     CredentialSignerPort, EphemeralEncryptionKey, encrypt_ecdh_es, encrypt_ecdh_es_deflate,
@@ -317,6 +317,13 @@ impl ServerCredentialIssuerOperations {
                 )
             })?
             .ok_or_else(|| vci_error(401, "invalid_token", "Access token is invalid."))?;
+        if !token_audience_contains(&claims.aud, &self.issuer) {
+            return Err(vci_error(
+                401,
+                "invalid_token",
+                "Access token is not intended for this credential issuer.",
+            ));
+        }
         let tenant_id = Uuid::parse_str(&claims.tenant_id)
             .map_err(|_| vci_error(401, "invalid_token", "Access token tenant is invalid."))?;
         if self
@@ -2041,5 +2048,5 @@ const fn vp_error(
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/domain/tests/openid4vc_endpoints.rs"]
+#[path = "../../tests/source_mounted/src/domain/tests/openid4vc_endpoints.rs"]
 mod tests;

@@ -1,5 +1,5 @@
-use crate::http::client_ip::IpCidr;
 use crate::settings::{DpopNoncePolicy, Settings};
+use nazo_http_actix::IpCidr;
 
 #[derive(Clone)]
 pub(crate) struct ResourceServerConfig {
@@ -180,11 +180,11 @@ mod production {
 
     #[derive(Clone)]
     pub(crate) struct ServerFapiMtlsResolver {
-        trusted_proxy_cidrs: Arc<[crate::http::client_ip::IpCidr]>,
+        trusted_proxy_cidrs: Arc<[nazo_http_actix::IpCidr]>,
     }
 
     impl ServerFapiMtlsResolver {
-        pub(crate) fn new(trusted_proxy_cidrs: Vec<crate::http::client_ip::IpCidr>) -> Self {
+        pub(crate) fn new(trusted_proxy_cidrs: Vec<nazo_http_actix::IpCidr>) -> Self {
             Self {
                 trusted_proxy_cidrs: trusted_proxy_cidrs.into(),
             }

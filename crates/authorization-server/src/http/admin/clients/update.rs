@@ -3,13 +3,13 @@ use super::{AdminClientConfig, ServerAdminClientService};
 use crate::adapters::audit::audit_event;
 use crate::adapters::audit::audit_fields;
 use crate::adapters::security::blake3_hex;
-use crate::http::client_ip::client_ip_with_config;
 use crate::http::sessions::{AdminSessionHandles, require_admin_or_forbidden_with_handles};
 use crate::http::views::client_json;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
 use nazo_auth::{AdminClientError, PatchClientRequest};
+use nazo_http_actix::client_ip_with_config;
 use nazo_http_actix::{csrf_error, has_valid_csrf_token_for_cookies};
 use nazo_http_actix::{json_response, oauth_error};
 use serde_json::json;
@@ -77,5 +77,5 @@ pub(crate) async fn admin_patch_client(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/in_source/src/http/admin/clients/tests/update.rs"]
+#[path = "../../../../tests/source_mounted/src/http/admin/clients/tests/update.rs"]
 mod tests;

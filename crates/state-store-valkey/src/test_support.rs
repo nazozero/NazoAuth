@@ -1,4 +1,4 @@
-//! Test-only compatibility harness for application contract tests.
+//! Raw Valkey harness for application contract tests.
 //!
 //! Production code must use focused stores rather than these raw inspection
 //! primitives.

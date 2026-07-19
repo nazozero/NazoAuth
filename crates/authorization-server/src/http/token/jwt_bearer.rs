@@ -10,7 +10,7 @@ use super::{
 use crate::adapters::security::ValidatedClientAssertion;
 use crate::adapters::security::client_jwt_decoding_key;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 #[cfg(test)]
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 #[cfg(test)]
@@ -42,6 +42,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 pub(crate) const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+pub(crate) const JWT_BEARER_ASSERTION_TYP: &str = "oauth-jwt-bearer+jwt";
 
 #[derive(Debug)]
 pub(crate) enum JwtBearerAssertionError {
@@ -74,6 +75,9 @@ fn validate_jwt_bearer_assertion_with_issuer(
 ) -> Result<ValidatedJwtBearerAssertion, JwtBearerAssertionError> {
     let header =
         jsonwebtoken::decode_header(assertion).map_err(|_| JwtBearerAssertionError::Invalid)?;
+    if header.typ.as_deref() != Some(JWT_BEARER_ASSERTION_TYP) {
+        return Err(JwtBearerAssertionError::Invalid);
+    }
     let kid = header.kid.ok_or(JwtBearerAssertionError::Invalid)?;
     let decoding_key = client_jwt_decoding_key(client, &kid, header.alg)
         .ok_or(JwtBearerAssertionError::Invalid)?;
@@ -192,7 +196,7 @@ fn jwt_bearer_grant_error_response(
 
 #[cfg(test)]
 async fn consume_jwt_bearer_assertion(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     client: &ClientRow,
     assertion: &ValidatedJwtBearerAssertion,
 ) -> Result<(), JwtBearerAssertionError> {
@@ -342,7 +346,7 @@ pub(crate) async fn token_jwt_bearer_with_service(
 
 #[cfg(test)]
 pub(crate) async fn token_jwt_bearer(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -373,5 +377,5 @@ pub(crate) async fn token_jwt_bearer(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/jwt_bearer.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/jwt_bearer.rs"]
 mod tests;

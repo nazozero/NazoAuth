@@ -13,8 +13,7 @@ use crate::domain::tenancy::DEFAULT_REALM_ID;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{AuthorizationCodeState, ClientRow};
 #[cfg(test)]
-use crate::domain::{CodePayload, TestAppState};
-use crate::http::client_ip::client_ip_with_context;
+use crate::domain::{CodePayload, TestInfrastructure};
 use crate::http::dpop::dpop_proof_present;
 use crate::http::mtls::client_mtls_certificate_matches;
 use crate::http::mtls::request_mtls_client_certificate_from_trusted_proxy;
@@ -30,6 +29,7 @@ use base64::Engine;
 use chrono::{Duration, Utc};
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::client_ip_with_context;
 use nazo_http_actix::{TokenClientAuthForm, oauth_token_error, token_client_auth_transport_facts};
 #[cfg(test)]
 use serde_json::{Value, json};
@@ -39,6 +39,7 @@ use uuid::Uuid;
 use super::ciba::{CibaTokenContext, CibaTokenHandles};
 use super::client_auth::{
     ClientAuthConfig, TokenManagementClientAuthError, authenticate_client_with_dependencies,
+    consume_token_client_assertion_with_authorization_service,
     perform_dummy_client_secret_verification,
 };
 use super::issue::{TokenIssuanceConfig, TokenIssuanceContext};
@@ -77,7 +78,7 @@ fn mtls_client_credentials(client_id: String) -> ClientCredentials {
 
 async fn mtls_client_credentials_without_client_id(
     service: &ServerAuthorizationService,
-    trusted_proxy_cidrs: &[crate::http::client_ip::IpCidr],
+    trusted_proxy_cidrs: &[nazo_http_actix::IpCidr],
     req: &HttpRequest,
 ) -> Result<Option<ClientCredentials>, HttpResponse> {
     let Some(certificate) =
@@ -780,6 +781,15 @@ pub(crate) async fn token_with_service(
                 Ok(parameters) => parameters,
                 Err(response) => return response,
             };
+            if let Err(error) = consume_token_client_assertion_with_authorization_service(
+                authorization_service,
+                &client,
+                client_assertion.as_ref(),
+            )
+            .await
+            {
+                return super::token_client_assertion_error(error);
+            }
             match endpoint
                 .pre_authorized_token(nazo_openid4vc_http_actix::PreAuthorizedTokenRequest {
                     pre_authorized_code,
@@ -936,7 +946,7 @@ pub(crate) use token_with_service as token;
 
 #[cfg(test)]
 pub(crate) async fn token(
-    state: Data<TestAppState>,
+    state: Data<TestInfrastructure>,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -1052,5 +1062,5 @@ fn validate_token_request_profile_with_profile(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/dispatch.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/dispatch.rs"]
 mod tests;

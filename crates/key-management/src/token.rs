@@ -210,9 +210,10 @@ fn decoding_key(
         {
             let modulus = key.get("n")?.as_str()?;
             let exponent = key.get("e")?.as_str()?;
-            if URL_SAFE_NO_PAD.decode(modulus).ok()?.len() < 256
-                || URL_SAFE_NO_PAD.decode(exponent).ok()?.is_empty()
-            {
+            if !nazo_auth::rsa_public_key_components_are_safe(
+                &URL_SAFE_NO_PAD.decode(modulus).ok()?,
+                &URL_SAFE_NO_PAD.decode(exponent).ok()?,
+            ) {
                 return None;
             }
             jsonwebtoken::DecodingKey::from_rsa_components(modulus, exponent).ok()

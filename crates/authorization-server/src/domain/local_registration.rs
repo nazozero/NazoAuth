@@ -122,5 +122,5 @@ impl AuthenticationRateLimit for ServerAuthenticationRateLimit {
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/domain/tests/local_registration.rs"]
+#[path = "../../tests/source_mounted/src/domain/tests/local_registration.rs"]
 mod tests;

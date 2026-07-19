@@ -28,7 +28,6 @@ use crate::{
     json_response_status_no_store, oauth_bearer_error, oauth_error,
 };
 
-pub use nazo_auth::DynamicRegistrationSecretPort as DynamicRegistrationSecurity;
 pub use nazo_auth::{
     DynamicRegistrationClientStore, DynamicRegistrationDependencyError, DynamicRegistrationFuture,
 };
@@ -314,13 +313,17 @@ pub async fn client_configuration_get(
         Ok(source_ip) => source_ip,
         Err(response) => return response,
     };
-    let current = match authenticate_registration_client(&endpoint, &request, &path).await {
-        Ok(client) => client,
-        Err(response) => return response,
-    };
+    let (current, authenticated_token_hash) =
+        match authenticate_registration_client(&endpoint, &request, &path).await {
+            Ok(authenticated) => authenticated,
+            Err(response) => return response,
+        };
     let response_types = response_types_from_client(&current);
-    let registration_access_token = bearer_token(&request)
-        .expect("authenticated registration requests retain their bearer token");
+    let registration_access_token = endpoint.security.registration_tokens.random_token();
+    let new_registration_access_token_hash = endpoint
+        .security
+        .registration_tokens
+        .token_hash(&registration_access_token);
     let (issued_secret, client_secret_hash) = issue_client_secret(&endpoint, &current);
     let client = match endpoint
         .clients
@@ -328,15 +331,16 @@ pub async fn client_configuration_get(
             current.tenant_id,
             current.id,
             client_secret_hash.as_deref(),
-            &endpoint
-                .security
-                .registration_tokens
-                .token_hash(registration_access_token),
+            &authenticated_token_hash,
+            &new_registration_access_token_hash,
         )
         .await
     {
         Ok(client) => client,
-        Err(_error) => {
+        Err(DynamicRegistrationDependencyError::StaleCredentials) => {
+            return registration_access_denied();
+        }
+        Err(DynamicRegistrationDependencyError::Unavailable) => {
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -352,7 +356,7 @@ pub async fn client_configuration_get(
         &response_types,
         issued_secret,
         &endpoint.config.issuer,
-        registration_access_token,
+        &registration_access_token,
     ))
 }
 
@@ -374,10 +378,11 @@ pub async fn client_configuration_put(
         Ok(source_ip) => source_ip,
         Err(response) => return response,
     };
-    let current = match authenticate_registration_client(&endpoint, &request, &path).await {
-        Ok(client) => client,
-        Err(response) => return response,
-    };
+    let (current, authenticated_token_hash) =
+        match authenticate_registration_client(&endpoint, &request, &path).await {
+            Ok(authenticated) => authenticated,
+            Err(response) => return response,
+        };
     let has_secret = match endpoint.clients.has_client_secret(current.id).await {
         Ok(has_secret) => has_secret,
         Err(_error) => {
@@ -434,12 +439,16 @@ pub async fn client_configuration_put(
         .replace_registration(
             &updated,
             prepared.client_secret_hash.as_deref(),
+            &authenticated_token_hash,
             prepared.registration_access_token_blake3.as_deref(),
         )
         .await
     {
         Ok(client) => client,
-        Err(_error) => {
+        Err(DynamicRegistrationDependencyError::StaleCredentials) => {
+            return registration_access_denied();
+        }
+        Err(DynamicRegistrationDependencyError::Unavailable) => {
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -471,17 +480,21 @@ pub async fn client_configuration_delete(
         Ok(source_ip) => source_ip,
         Err(response) => return response,
     };
-    let current = match authenticate_registration_client(&endpoint, &request, &path).await {
-        Ok(client) => client,
-        Err(response) => return response,
-    };
+    let (current, authenticated_token_hash) =
+        match authenticate_registration_client(&endpoint, &request, &path).await {
+            Ok(authenticated) => authenticated,
+            Err(response) => return response,
+        };
     match endpoint
         .clients
-        .deactivate(current.tenant_id, current.id)
+        .deactivate(current.tenant_id, current.id, &authenticated_token_hash)
         .await
     {
         Ok(true) => {}
-        Ok(false) | Err(_) => {
+        Err(DynamicRegistrationDependencyError::StaleCredentials) => {
+            return registration_access_denied();
+        }
+        Ok(false) | Err(DynamicRegistrationDependencyError::Unavailable) => {
             return oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -532,20 +545,21 @@ async fn authenticate_registration_client(
     endpoint: &DynamicRegistrationEndpoint,
     request: &HttpRequest,
     client_id: &str,
-) -> Result<OAuthClient, HttpResponse> {
+) -> Result<(OAuthClient, String), HttpResponse> {
     let Some(token) = bearer_token(request) else {
         return Err(registration_access_denied());
     };
+    let token_hash = endpoint.security.registration_tokens.token_hash(token);
     match endpoint
         .clients
         .by_registration_access_token(
             TenantContext::default_system().tenant_id.as_uuid(),
             client_id,
-            &endpoint.security.registration_tokens.token_hash(token),
+            &token_hash,
         )
         .await
     {
-        Ok(Some(client)) => Ok(client),
+        Ok(Some(client)) => Ok((client, token_hash)),
         Ok(None) => Err(registration_access_denied()),
         Err(_error) => Err(lookup_failed()),
     }
@@ -1040,7 +1054,8 @@ mod tests {
             _tenant_id: Uuid,
             _client_id: Uuid,
             _client_secret_hash: Option<&'a str>,
-            _registration_access_token_hash: &'a str,
+            _expected_registration_access_token_hash: &'a str,
+            _new_registration_access_token_hash: &'a str,
         ) -> DynamicRegistrationFuture<'a, OAuthClient> {
             let client = self.client.lock().expect("client lock").clone();
             Box::pin(async move { client.ok_or(DynamicRegistrationDependencyError::Unavailable) })
@@ -1050,17 +1065,19 @@ mod tests {
             &'a self,
             client: &'a OAuthClient,
             _client_secret_hash: Option<&'a str>,
-            _registration_access_token_hash: Option<&'a str>,
+            _expected_registration_access_token_hash: &'a str,
+            _new_registration_access_token_hash: Option<&'a str>,
         ) -> DynamicRegistrationFuture<'a, OAuthClient> {
             *self.client.lock().expect("client lock") = Some(client.clone());
             Box::pin(async move { Ok(client.clone()) })
         }
 
-        fn deactivate(
-            &self,
+        fn deactivate<'a>(
+            &'a self,
             _tenant_id: Uuid,
             _client_id: Uuid,
-        ) -> DynamicRegistrationFuture<'_, bool> {
+            _expected_registration_access_token_hash: &'a str,
+        ) -> DynamicRegistrationFuture<'a, bool> {
             *self.client.lock().expect("client lock") = None;
             Box::pin(async { Ok(true) })
         }
@@ -1113,7 +1130,7 @@ mod tests {
         }
     }
 
-    impl DynamicRegistrationSecurity for FakeSecurity {
+    impl DynamicRegistrationSecretPort for FakeSecurity {
         fn random_token(&self) -> String {
             "registration-token".to_owned()
         }

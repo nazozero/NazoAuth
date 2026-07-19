@@ -714,6 +714,9 @@ where
                 accepting: accepting_set,
                 draining: draining_set,
             };
+            if !accepting && current.admits(module_id) {
+                self.leases.close_generation(module_id, current.revision);
+            }
             if self
                 .snapshots
                 .compare_and_publish(current.revision, next)

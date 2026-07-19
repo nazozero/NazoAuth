@@ -17,12 +17,12 @@ class OidfWorkflowTests(unittest.TestCase):
 
         self.assertIn("--derive-fapi-ciba-matrix-configs", workflow)
         self.assertIn(
-            '--ciba-notification-base-url "${{ inputs.suite_base_url }}"',
+            '--ciba-notification-base-url "$SUITE_BASE_URL"',
             workflow,
         )
         self.assertIn("suite_base_url:", workflow)
         self.assertIn(
-            '--suite-base-url "${{ inputs.suite_base_url }}"',
+            '--suite-base-url "$SUITE_BASE_URL"',
             workflow,
         )
         self.assertNotIn("https://www.certification.openid.net", workflow)
@@ -103,8 +103,8 @@ class OidfWorkflowTests(unittest.TestCase):
             root / ".github" / "workflows" / "oidf-public-onboarding-material.yml"
         ).read_text(encoding="utf-8")
         self.assertIn(validation, workflow)
-        self.assertIn('--source-commit "$GITHUB_SHA"', workflow)
-        self.assertIn('--expected-source-commit "$GITHUB_SHA"', workflow)
+        self.assertIn('--source-commit "$SOURCE_COMMIT"', workflow)
+        self.assertIn('--expected-source-commit "$SOURCE_COMMIT"', workflow)
         self.assertIn("path: oidf-public-onboarding-material", workflow)
 
         conformance = (
@@ -305,29 +305,29 @@ class OidfWorkflowTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(len(expected_warnings), 26)
+        self.assertEqual(len(expected_warnings), 27)
         self.assertEqual(
             {item["condition"] for item in expected_warnings},
-            {"EnsureIncomingTls13"},
+            {"EnsureIncomingTls13", "UnregisterDynamicallyRegisteredClient"},
         )
         self.assertEqual(
             {item["expected-result"] for item in expected_warnings},
             {"warning"},
         )
+        ciba_warnings = [
+            item for item in expected_warnings if item["condition"] == "EnsureIncomingTls13"
+        ]
         self.assertEqual(
-            {item["variant"]["client_auth_type"] for item in expected_warnings},
+            {item["variant"]["client_auth_type"] for item in ciba_warnings},
             {"private_key_jwt", "mtls"},
         )
+        self.assertEqual({item["variant"]["ciba_mode"] for item in ciba_warnings}, {"ping"})
         self.assertEqual(
-            {item["variant"]["ciba_mode"] for item in expected_warnings},
-            {"ping"},
-        )
-        self.assertEqual(
-            {item["variant"]["fapi_ciba_profile"] for item in expected_warnings},
+            {item["variant"]["fapi_ciba_profile"] for item in ciba_warnings},
             {"plain_fapi"},
         )
         self.assertEqual(
-            {item["variant"]["client_registration"] for item in expected_warnings},
+            {item["variant"]["client_registration"] for item in ciba_warnings},
             {"static_client"},
         )
         self.assertFalse(
@@ -335,7 +335,8 @@ class OidfWorkflowTests(unittest.TestCase):
             "OIDF expected warnings must remain exact, not wildcard based",
         )
 
-        self.assertIn('"$GITHUB_WORKSPACE/oidf-results/$export_subdir"', workflow)
+        self.assertNotIn("--export-dir", workflow)
+        self.assertNotIn("actions/upload-artifact", workflow)
 
     def test_parallel_isolated_mode_uses_separate_browser_sensitive_jobs(self):
         workflow = (
@@ -346,26 +347,26 @@ class OidfWorkflowTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         parallel_case = workflow.split("parallel-isolated)", 1)[1].split(";;", 1)[0]
-        self.assertIn("run_oidf_plan_set 01-oidc-core.json 01-oidc-core", parallel_case)
-        self.assertIn("run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json 02-oidc-formpost-thirdparty-config", parallel_case)
+        self.assertIn("run_oidf_plan_set 01-oidc-core.json", parallel_case)
+        self.assertIn("run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json", parallel_case)
         self.assertIn(
-            "run_oidf_plan_set 03a-fapi-ciba-private-key-jwt-poll.json 03a-fapi-ciba-private-key-jwt-poll --no-parallel",
+            "run_oidf_plan_set 03a-fapi-ciba-private-key-jwt-poll.json --no-parallel",
             parallel_case,
         )
         self.assertIn(
-            "run_oidf_plan_set 03b-fapi-ciba-mtls-poll.json 03b-fapi-ciba-mtls-poll --no-parallel",
+            "run_oidf_plan_set 03b-fapi-ciba-mtls-poll.json --no-parallel",
             parallel_case,
         )
         self.assertIn(
-            "run_oidf_plan_set 03c-fapi-ciba-private-key-jwt-ping.json 03c-fapi-ciba-private-key-jwt-ping --no-parallel",
+            "run_oidf_plan_set 03c-fapi-ciba-private-key-jwt-ping.json --no-parallel",
             parallel_case,
         )
         self.assertIn(
-            "run_oidf_plan_set 03d-fapi-ciba-mtls-ping.json 03d-fapi-ciba-mtls-ping --no-parallel",
+            "run_oidf_plan_set 03d-fapi-ciba-mtls-ping.json --no-parallel",
             parallel_case,
         )
         self.assertNotIn("run_oidf_plan_set 03-fapi-ciba.json", parallel_case)
-        self.assertIn("run_oidf_plan_set 07-fapi-private-mtls.json 07-fapi-private-mtls", parallel_case)
+        self.assertIn("run_oidf_plan_set 07-fapi-private-mtls.json", parallel_case)
         self.assertNotIn("oidf-browser-sensitive-plan-set.json", parallel_case)
 
         self.assertIn("oidf-conformance-browser-isolated:", workflow)
@@ -374,9 +375,8 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("plan_set_file: oidf-session-management-plan-set.json", workflow)
         self.assertIn('--plan-set-json-file "${{ matrix.plan_set_file }}"', workflow)
         self.assertIn("--no-parallel", workflow)
-        self.assertIn("oidf-conformance-results-frontchannel", workflow)
-        self.assertIn("oidf-conformance-results-session-management", workflow)
-        self.assertNotIn("oidf-conformance-results-oidcc-basic-static", workflow)
+        self.assertNotIn("--export-dir", workflow)
+        self.assertNotIn("actions/upload-artifact", workflow)
 
 
 if __name__ == "__main__":

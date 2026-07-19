@@ -3,8 +3,9 @@ use std::time::Duration;
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use futures_util::future::join_all;
+use nazo_auth::AuthorizationStateStorePort;
 use nazo_resource_server::{DpopNonceStorage, DpopNonceValidationResult};
-use nazo_valkey::{ErrorKind, ReplayStore, ValkeyConnection};
+use nazo_valkey::{AuthorizationStateAdapter, ErrorKind, ReplayStore, ValkeyConnection};
 
 fn explicit_valkey_url() -> Option<String> {
     std::env::var("VALKEY_URL").ok()
@@ -114,6 +115,7 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
         format!("oauth:client_assertion:jti:{client_digest}:{digest}"),
         format!("oauth:jar:jti:{client_digest}:{digest}"),
         format!("oauth:jwt_bearer:jti:{client_digest}:{digest}"),
+        format!("oauth:ciba:request_object:jti:{client_digest}:{digest}"),
     ];
     let _: i64 = inspector.del(keys.to_vec()).await.unwrap();
 
@@ -126,6 +128,12 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
     );
     assert!(store.consume_jar(client_id, jti, 30).await.unwrap());
     assert!(store.consume_jwt_bearer(client_id, jti, 30).await.unwrap());
+    assert!(
+        store
+            .consume_ciba_request_object(client_id, jti, 30)
+            .await
+            .unwrap()
+    );
     for key in &keys {
         assert_eq!(inspector.get::<String, _>(key).await.unwrap(), "1");
         assert!((1..=30).contains(&inspector.ttl::<i64, _>(key).await.unwrap()));
@@ -139,6 +147,27 @@ async fn protocol_replay_keys_preserve_hashing_prefix_and_one_time_semantics() {
     );
     assert!(!store.consume_jar(client_id, jti, 30).await.unwrap());
     assert!(!store.consume_jwt_bearer(client_id, jti, 30).await.unwrap());
+    assert!(
+        !store
+            .consume_ciba_request_object(client_id, jti, 30)
+            .await
+            .unwrap()
+    );
+
+    let adapter = AuthorizationStateAdapter::new(&connection);
+    let adapter_jti = "adapter-jti";
+    assert!(
+        adapter
+            .consume_ciba_request_object(client_id, adapter_jti, 30)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !adapter
+            .consume_ciba_request_object(client_id, adapter_jti, 30)
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]

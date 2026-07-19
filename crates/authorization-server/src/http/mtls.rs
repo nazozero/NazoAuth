@@ -4,10 +4,6 @@
 //! peers after the proxy has verified the client certificate and forwarded
 //! `X-SSL-Client-Verify: SUCCESS`.
 
-use super::client_ip::IpCidr;
-#[cfg(test)]
-use super::client_ip::request_from_trusted_proxy;
-use super::client_ip::request_from_trusted_proxy_cidrs;
 use crate::adapters::security::constant_time_eq;
 use crate::domain::ClientRow;
 #[cfg(test)]
@@ -24,6 +20,8 @@ use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use chrono::Utc;
 use nazo_auth::normalize_sha256_thumbprint;
+use nazo_http_actix::IpCidr;
+use nazo_http_actix::request_from_trusted_proxy_cidrs;
 use openssl::asn1::Asn1Time;
 use openssl::nid::Nid;
 use openssl::x509::{X509, X509NameRef};
@@ -75,7 +73,7 @@ pub(crate) fn request_mtls_client_certificate(
     req: &HttpRequest,
     settings: &Settings,
 ) -> Option<MtlsClientCertificate> {
-    if !request_from_trusted_proxy(req, settings) {
+    if !request_from_trusted_proxy_cidrs(req, &settings.endpoint.trusted_proxy_cidrs) {
         return None;
     }
     request_mtls_client_certificate_from_headers(req.headers())
@@ -221,7 +219,7 @@ pub(crate) fn client_mtls_certificate_matches(
         + client.tls_client_auth_san_email.len();
     if selector_count != 1 {
         // RFC 8705 requires one and only one PKI subject selector. Fail closed
-        // for legacy or manually corrupted rows instead of widening the match.
+        // for rows missing configured identity constraints instead of widening the match.
         return false;
     }
     let standard_subject_matches = if let (Some(registered), Some(actual)) = (
@@ -495,5 +493,5 @@ fn registered_email_values_match(registered: &[String], actual: &[String]) -> bo
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/mtls.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/mtls.rs"]
 mod tests;

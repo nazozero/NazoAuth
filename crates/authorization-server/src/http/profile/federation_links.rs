@@ -103,5 +103,5 @@ fn federation_link_json(link: FederationLink) -> Value {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/profile/tests/federation_links.rs"]
+#[path = "../../../tests/source_mounted/src/http/profile/tests/federation_links.rs"]
 mod tests;

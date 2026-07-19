@@ -168,6 +168,7 @@ impl GrantRepository {
 
     pub async fn authorization(
         &self,
+        tenant_id: Uuid,
         user_id: Uuid,
         client_id: Uuid,
     ) -> Result<Option<GrantAuthorization>, RepositoryError> {
@@ -175,6 +176,7 @@ impl GrantRepository {
 
         let mut connection = self.connection().await?;
         user_client_grants::table
+            .filter(user_client_grants::tenant_id.eq(tenant_id))
             .filter(user_client_grants::user_id.eq(user_id))
             .filter(user_client_grants::client_id.eq(client_id))
             .select((
@@ -201,9 +203,14 @@ impl GrantRepository {
             .map_err(map_error)
     }
 
-    pub async fn authorized_client_count(&self, user_id: Uuid) -> Result<i64, RepositoryError> {
+    pub async fn authorized_client_count(
+        &self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+    ) -> Result<i64, RepositoryError> {
         let mut connection = self.connection().await?;
         user_client_grants::table
+            .filter(user_client_grants::tenant_id.eq(tenant_id))
             .filter(user_client_grants::user_id.eq(user_id))
             .select(diesel::dsl::count(user_client_grants::client_id).aggregate_distinct())
             .first::<i64>(&mut connection)
@@ -313,9 +320,12 @@ impl AdminGrantRepositoryPort for GrantRepository {
 impl nazo_identity::ports::GrantSummaryRepositoryPort for GrantRepository {
     fn authorized_client_count(
         &self,
+        tenant_id: nazo_identity::TenantId,
         user_id: Uuid,
     ) -> nazo_identity::ports::RepositoryFuture<'_, i64> {
-        Box::pin(async move { GrantRepository::authorized_client_count(self, user_id).await })
+        Box::pin(async move {
+            GrantRepository::authorized_client_count(self, tenant_id.as_uuid(), user_id).await
+        })
     }
 }
 

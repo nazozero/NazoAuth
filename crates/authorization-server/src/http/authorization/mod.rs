@@ -2,8 +2,6 @@
 // 三个端点分别负责发起授权、读取授权确认页数据、提交授权决策。
 mod config;
 pub(crate) mod consent;
-#[cfg(test)]
-pub(crate) mod decision;
 pub(crate) mod jar;
 pub(crate) mod par;
 pub(crate) mod presentation;
@@ -191,7 +189,7 @@ pub(crate) struct TestAuthorizationDependencies {
 
 #[cfg(test)]
 impl TestAuthorizationDependencies {
-    pub(crate) fn new(state: &crate::domain::TestAppState) -> Self {
+    pub(crate) fn new(state: &crate::domain::TestInfrastructure) -> Self {
         let connection = state.valkey_connection();
         let session = &state.settings.session;
         Self {
@@ -232,13 +230,6 @@ pub(crate) use jar::{
 };
 pub(crate) use par::is_pushed_authorization_request_uri;
 #[cfg(test)]
-pub(crate) use request::authorization_response_redirect;
-#[cfg(test)]
-pub(crate) use request::{
-    AuthorizationResponseRedirect, authorization_response_redirect_with_context,
-};
-
-#[cfg(test)]
 mod boundary_tests {
     #[test]
     fn authorization_entrypoints_use_focused_dependencies() {
@@ -247,12 +238,15 @@ mod boundary_tests {
             ("par", include_str!("par.rs")),
             ("jar", include_str!("jar.rs")),
             ("consent", include_str!("consent.rs")),
-            ("decision", include_str!("decision.rs")),
+            (
+                "decision",
+                include_str!("../../../../http-actix/src/authorization_decision.rs"),
+            ),
             ("prompt_none", include_str!("request/prompt_none.rs")),
         ] {
             assert!(
-                !source.contains("Data<TestAppState>"),
-                "{name} reintroduced the giant TestAppState extractor"
+                !source.contains("Data<TestInfrastructure>"),
+                "{name} reintroduced the giant TestInfrastructure extractor"
             );
             assert!(
                 !source.contains("AuthorizationHandles"),
@@ -263,7 +257,6 @@ mod boundary_tests {
             ("request", include_str!("request.rs")),
             ("par", include_str!("par.rs")),
             ("consent", include_str!("consent.rs")),
-            ("decision", include_str!("decision.rs")),
         ] {
             assert!(
                 source.contains("Data<AuthorizationEndpoint>"),
@@ -281,14 +274,16 @@ mod boundary_tests {
                 );
             }
         }
+        let decision = include_str!("../../../../http-actix/src/authorization_decision.rs");
+        assert!(decision.contains("Data<AuthorizationDecisionEndpoint>"));
         for (name, source) in [
             ("par", include_str!("par.rs")),
             ("jar", include_str!("jar.rs")),
         ] {
             assert!(
-                !source.contains("TestAppState")
+                !source.contains("TestInfrastructure")
                     && !source.contains("TestAuthorizationDependencies"),
-                "{name} reintroduced the legacy authorization test state"
+                "{name} reintroduced the monolithic authorization test fixture"
             );
         }
     }

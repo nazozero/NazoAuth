@@ -1,6 +1,6 @@
 //! 会话用户与权限解析。
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 #[cfg(test)]
 use crate::settings::Settings;
 #[cfg(test)]
@@ -153,7 +153,7 @@ impl AdminSessionHandles {
 }
 
 #[cfg(test)]
-pub(crate) fn login_required_response(state: &TestAppState) -> HttpResponse {
+pub(crate) fn login_required_response(state: &TestInfrastructure) -> HttpResponse {
     let session = &state.settings.session;
     with_cookie_headers(
         oauth_error(
@@ -182,7 +182,7 @@ impl SessionProfileHandles {
     }
 
     #[cfg(test)]
-    pub(crate) fn from_test_state(state: &TestAppState) -> Self {
+    pub(crate) fn from_test_infrastructure(state: &TestInfrastructure) -> Self {
         let session = &state.settings.session;
         Self::new(
             SessionStore::new(&state.valkey_connection()),
@@ -290,7 +290,7 @@ impl SessionPayload {
 
 #[cfg(test)]
 pub(crate) async fn current_user(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
 ) -> anyhow::Result<Option<PublicAccount>> {
     Ok(current_session(state, req)
@@ -300,7 +300,7 @@ pub(crate) async fn current_user(
 
 #[cfg(test)]
 pub(crate) async fn current_session(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
 ) -> anyhow::Result<Option<CurrentSession>> {
     let sessions = SessionStore::new(&state.valkey_connection());
@@ -360,7 +360,7 @@ async fn current_session_by_id_from_handles(
 
 #[cfg(test)]
 pub(crate) async fn current_pending_mfa_session(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
 ) -> anyhow::Result<Option<CurrentSession>> {
     let store = SessionStore::new(&state.valkey_connection());
@@ -413,7 +413,7 @@ async fn current_pending_mfa_session_from_handles(
 
 #[cfg(test)]
 pub(crate) async fn complete_mfa_session(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
     method: &str,
 ) -> anyhow::Result<Option<SessionRotation>> {
@@ -422,7 +422,7 @@ pub(crate) async fn complete_mfa_session(
 
 #[cfg(test)]
 pub(crate) async fn step_up_current_session(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
     method: &str,
 ) -> anyhow::Result<Option<SessionRotation>> {
@@ -431,7 +431,7 @@ pub(crate) async fn step_up_current_session(
 
 #[cfg(test)]
 async fn record_mfa_step_up(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
     method: &str,
     require_pending_mfa: bool,
@@ -538,7 +538,7 @@ fn valid_session_payload(payload: &SessionPayload, now: i64) -> bool {
 
 #[cfg(test)]
 pub(crate) async fn require_admin(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
 ) -> anyhow::Result<Option<PublicAccount>> {
     Ok(current_user(state, req)
@@ -548,7 +548,7 @@ pub(crate) async fn require_admin(
 
 #[cfg(test)]
 pub(crate) async fn current_user_or_login_required(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
 ) -> Result<PublicAccount, HttpResponse> {
     match current_user(state, req).await {
@@ -597,7 +597,7 @@ fn login_required_response_for_cookies(
 
 #[cfg(test)]
 pub(crate) async fn require_admin_or_forbidden(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
 ) -> Result<PublicAccount, HttpResponse> {
     match require_admin(state, req).await {
@@ -636,5 +636,5 @@ fn session_lookup_error_response(error: anyhow::Error) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/sessions.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/sessions.rs"]
 mod tests;

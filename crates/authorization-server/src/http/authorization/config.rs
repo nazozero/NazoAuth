@@ -1,7 +1,7 @@
-use crate::http::client_ip::{ClientIpConfig, IpCidr};
 use crate::settings::{
     AuthorizationServerProfile, DpopNoncePolicy, RequestObjectJtiPolicy, Settings,
 };
+use nazo_http_actix::{ClientIpConfig, IpCidr};
 
 #[derive(Clone)]
 pub(crate) struct AuthorizationHttpConfig {
@@ -14,11 +14,12 @@ pub(crate) struct AuthorizationHttpConfig {
     pub(crate) auth_code_ttl_seconds: u64,
     pub(crate) par_ttl_seconds: u64,
     pub(crate) require_pushed_authorization_requests: bool,
+    pub(crate) enable_request_object: bool,
     pub(crate) enable_par_request_object: bool,
     pub(crate) client_secret_pepper: Box<str>,
     pub(crate) rate_limit_window_seconds: u64,
     pub(crate) token_management_max_requests: u64,
-    pub(crate) client_ip_header_mode: crate::http::client_ip::ClientIpHeaderMode,
+    pub(crate) client_ip_header_mode: nazo_http_actix::ClientIpHeaderMode,
     pub(crate) client_ip: ClientIpConfig,
     pub(crate) trusted_proxy_cidrs: Box<[IpCidr]>,
 }
@@ -39,6 +40,7 @@ impl From<&Settings> for AuthorizationHttpConfig {
             auth_code_ttl_seconds: protocol.auth_code_ttl_seconds,
             par_ttl_seconds: protocol.par_ttl_seconds,
             require_pushed_authorization_requests: protocol.require_pushed_authorization_requests,
+            enable_request_object: modules.enable_request_object,
             enable_par_request_object: modules.enable_par_request_object,
             client_secret_pepper: protocol.client_secret_pepper.as_str().into(),
             rate_limit_window_seconds: rate_limit.window_seconds,

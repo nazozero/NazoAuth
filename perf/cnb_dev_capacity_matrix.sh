@@ -83,7 +83,8 @@ run_child() {
   (
     export CAPACITY_SCENARIOS="${scenario}"
     export CAPACITY_REPORT_SUFFIX="dev-${suffix}"
-    export PERF_CPUSET="${cpu_set}"
+    export PERF_APP_CPUSET="${cpu_set}"
+    export PERF_INFRA_CPUSET="${cpu_set}"
     export CNB_CAPACITY_SKIP_BOOTSTRAP=1
     export CNB_CAPACITY_COMMIT=0
     export CAPACITY_DURATION="${CAPACITY_DURATION:-30m}"

@@ -55,7 +55,6 @@ AVATAR_STORAGE_DIR = DATA_DIR + "/avatars"
 | `PASSWORD_HASH_MAX_CONCURRENCY` | `8` | Maximum concurrent Argon2 password verifications per process; tune from CPU and memory capacity, not by lowering Argon2 cost |
 | `PASSWORD_HASH_QUEUE_TIMEOUT_MS` | `100` | Maximum bounded wait for a password-verification slot before returning `temporarily_unavailable` |
 | `LOGIN_FAILURE_WINDOW_SECONDS` | `900` | Window for failed-login throttling |
-| `LOGIN_FAILURE_EMAIL_MAX_ATTEMPTS` | `50` | Maximum failed login attempts per normalized email in the failed-login window |
 | `LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS` | `5` | Maximum failed login attempts per source IP and normalized email in the failed-login window |
 | `AUTHORIZATION_SERVER_PROFILE` | `oauth2-baseline` | `oauth2-baseline`, `fapi2-security`, `fapi2-message-signing-authz-request`, `fapi2-message-signing-jarm`, or `fapi2-message-signing-introspection` |
 | `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1` | CIBA-specific policy: FAPI-CIBA ID1 with orthogonal poll/ping delivery and private-key/mTLS client authentication, or internal `fapi2-ciba` hardening. Only these canonical values are accepted; conformance-plan names are not runtime profiles. |
@@ -164,7 +163,7 @@ private, unspecified, or multicast; redirects are disabled.
 - rate limits: `RATE_LIMIT_WINDOW_SECONDS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`,
-  `LOGIN_FAILURE_WINDOW_SECONDS`, `LOGIN_FAILURE_EMAIL_MAX_ATTEMPTS`,
+  `LOGIN_FAILURE_WINDOW_SECONDS`,
   `LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS`
 - password verification capacity: `PASSWORD_HASH_MAX_CONCURRENCY`,
   `PASSWORD_HASH_QUEUE_TIMEOUT_MS`

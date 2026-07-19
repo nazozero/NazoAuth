@@ -1,14 +1,12 @@
 use std::fmt;
 
-use sfv::{BareItem, Dictionary, FieldType, InnerList, ListEntry, Parser};
-use sha2::{Digest, Sha256};
-use url::Url;
-
 use crate::request::{
     canonical_target_uri, component, field_component, is_reserved_signature_field, is_token_byte,
     method_component,
 };
 use crate::{RequestInput, SignatureFields, VerifyError, content_digest_field_matches};
+use sfv::{BareItem, Dictionary, FieldType, InnerList, ListEntry, Parser};
+use sha2::{Digest, Sha256};
 
 const REQUEST_TAG: &str = "fapi-2-request";
 
@@ -136,7 +134,7 @@ pub fn parse_request_for_verification(
     validate_time(params, created, policy)?;
     let supplied_digest = validate_digest(&input)?;
 
-    let authorization = unique_header(input.headers, "authorization")
+    unique_header(input.headers, "authorization")
         .map_err(|_| VerifyError::MissingComponent)?
         .ok_or(VerifyError::MissingComponent)?;
     let dpop = unique_header(input.headers, "dpop").map_err(|_| VerifyError::MissingComponent)?;
@@ -196,16 +194,7 @@ pub fn parse_request_for_verification(
     signature_base.extend_from_slice(b"\n\"@signature-params\": ");
     signature_base.extend_from_slice(signature_params.as_bytes());
 
-    let target_uri = Url::parse(input.target_uri)
-        .map_err(|_| VerifyError::MissingComponent)?
-        .to_string();
-    let replay_fingerprint = fingerprint(
-        &signature,
-        keyid.as_bytes(),
-        input.method.as_bytes(),
-        target_uri.as_bytes(),
-        authorization.trim_matches([' ', '\t']).as_bytes(),
-    );
+    let replay_fingerprint = fingerprint(&signature_base, keyid.as_bytes());
 
     Ok(VerifiedInput {
         signature_base,
@@ -380,15 +369,9 @@ fn scan_unquoted(field: &str, mut visit: impl FnMut(u8, usize)) {
     }
 }
 
-pub(crate) fn fingerprint(
-    parts0: &[u8],
-    parts1: &[u8],
-    parts2: &[u8],
-    parts3: &[u8],
-    parts4: &[u8],
-) -> [u8; 32] {
+pub(crate) fn fingerprint(signature_base: &[u8], keyid: &[u8]) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    for part in [parts0, parts1, parts2, parts3, parts4] {
+    for part in [signature_base, keyid] {
         hasher.update((part.len() as u64).to_be_bytes());
         hasher.update(part);
     }

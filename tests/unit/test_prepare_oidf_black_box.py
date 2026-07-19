@@ -5,24 +5,23 @@ from pathlib import Path
 from unittest import mock
 
 
-def load_setup_module():
+def load_setup_module(runtime_dir: str | None = None):
     script = Path(__file__).resolve().parents[2] / "scripts" / "prepare_oidf_black_box.py"
     spec = importlib.util.spec_from_file_location("prepare_oidf_black_box", script)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
-    with mock.patch.dict(
-        "os.environ",
-        {
-            "OIDF_TARGET_ISSUER": "https://issuer.example",
-            "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
-            "OIDF_SUITE_BASE_URL": "https://suite.example",
-            "OIDF_APPLICANT_EMAIL": "applicant@example.com",
-            "OIDF_APPLICANT_PASSWORD": "test-applicant-password",
-            "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN": "test-initial-access-token",
-            "OIDF_CIBA_AUTOMATED_DECISION_TOKEN": "test-ciba-decision-token",
-        },
-        clear=True,
-    ):
+    environment = {
+        "OIDF_TARGET_ISSUER": "https://issuer.example",
+        "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
+        "OIDF_SUITE_BASE_URL": "https://suite.example",
+        "OIDF_APPLICANT_EMAIL": "applicant@example.com",
+        "OIDF_APPLICANT_PASSWORD": "test-applicant-password",
+        "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN": "test-initial-access-token",
+        "OIDF_CIBA_AUTOMATED_DECISION_TOKEN": "test-ciba-decision-token",
+    }
+    if runtime_dir is not None:
+        environment["OIDF_RUNTIME_DIR"] = runtime_dir
+    with mock.patch.dict("os.environ", environment, clear=True):
         spec.loader.exec_module(module)
     return module
 
@@ -50,6 +49,11 @@ def load_setup_module_with_suite_base(suite_base_url: str):
 
 
 class PrepareOidfBlackBoxTests(unittest.TestCase):
+    def test_runtime_directory_can_be_isolated_per_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            module = load_setup_module(directory)
+            self.assertEqual(module.RUNTIME, Path(directory).resolve())
+
     def test_generated_mtls_ca_has_explicit_ca_signing_constraints(self):
         module = load_setup_module()
 

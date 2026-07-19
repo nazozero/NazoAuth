@@ -20,7 +20,7 @@ suites are not version authorities.
 | First-Party Applications | `draft-ietf-oauth-first-party-apps-04` |
 | Identity and Authorization Chaining Across Domains | `draft-ietf-oauth-identity-chaining-16` |
 | Token Status List | `draft-ietf-oauth-status-list-21` |
-| JWT Best Current Practices bis | `draft-ietf-oauth-rfc8725bis-06` |
+| JWT Best Current Practices bis | `draft-ietf-oauth-rfc8725bis-07` |
 | SPIFFE Client Authentication | `draft-ietf-oauth-spiffe-client-auth-02` |
 | Identity Assertion JWT Authorization Grant | `draft-ietf-oauth-identity-assertion-authz-grant-04` |
 | JWT Client Authentication and Assertion-Based Grants bis | `draft-ietf-oauth-rfc7523bis-11` |

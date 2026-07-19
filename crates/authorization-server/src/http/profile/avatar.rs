@@ -216,5 +216,5 @@ pub(crate) async fn delete_avatar(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/profile/tests/avatar.rs"]
+#[path = "../../../tests/source_mounted/src/http/profile/tests/avatar.rs"]
 mod tests;

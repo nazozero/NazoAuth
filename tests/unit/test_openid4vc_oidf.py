@@ -387,7 +387,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                 encoding="utf-8",
             )
             warnings.write_text(
-                json.dumps(materializer.expected_warnings_for_cases(cases)),
+                json.dumps(materializer.expected_problems_for_cases(cases)),
                 encoding="utf-8",
             )
             skips.write_text(
@@ -442,7 +442,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             ] = "123456"
             configs.write_text(json.dumps(mismatched_configs), encoding="utf-8")
 
-            stale_warnings = materializer.expected_warnings_for_cases(cases)
+            stale_warnings = materializer.expected_problems_for_cases(cases)
             stale_warnings.append(
                 {
                     "configuration-filename": names[0],
@@ -450,7 +450,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                 }
             )
             warnings.write_text(json.dumps(stale_warnings), encoding="utf-8")
-            with self.assertRaisesRegex(SystemExit, "expected warnings"):
+            with self.assertRaisesRegex(SystemExit, "expected problems"):
                 runner.validate_materialized_matrix(
                     {"aliases": aliases, "issuer": {"tx_code": "123456"}},
                     arguments,
@@ -607,10 +607,10 @@ class Openid4vcOidfTests(unittest.TestCase):
 
         module.assert_config_target_boundaries(
             {
-                "vci": {
-                    "credential_issuer_url": "https://issuer.example",
-                    "client_attester_issuer": "https://client-attester.example.org",
-                }
+                "vci": {"credential_issuer_url": "https://issuer.example"},
+                "client_attestation": {
+                    "issuer": "https://client-attester.example.org"
+                },
             },
             "openid4vc-vci-haip-sd-wallet.json",
             "https://issuer.example",
@@ -629,7 +629,7 @@ class Openid4vcOidfTests(unittest.TestCase):
     def test_openid4vc_target_boundary_rejects_local_targets(self):
         module = load("run_oidf_conformance.py")
 
-        with self.assertRaisesRegex(SystemExit, "local-only URL"):
+        with self.assertRaisesRegex(SystemExit, "non-public URL"):
             module.assert_config_target_boundaries(
                 {
                     "vci": {
@@ -671,9 +671,9 @@ class Openid4vcOidfTests(unittest.TestCase):
                         "configs": {
                             "openid4vc-vci-sd-wallet-plain.json": {
                                 "alias": "openid4vc-vci-sd-wallet-plain",
-                                "vci": {
-                                    "credential_issuer_url": "https://issuer.example",
-                                    "client_attester_issuer": "https://client-attester.example.org",
+                                "vci": {"credential_issuer_url": "https://issuer.example"},
+                                "client_attestation": {
+                                    "issuer": "https://client-attester.example.org",
                                 },
                             }
                         }
@@ -964,7 +964,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             materialized_driver = json.loads((output / "openid4vc-driver.json").read_text(encoding="utf-8"))
             configs = json.loads((output / "openid4vc-plan-configs.json").read_text(encoding="utf-8"))["configs"]
             expected_skips = json.loads((output / "openid4vc-expected-skips.json").read_text(encoding="utf-8"))
-            expected_warnings = json.loads((output / "openid4vc-expected-warnings.json").read_text(encoding="utf-8"))
+            expected_problems = json.loads((output / "openid4vc-expected-problems.json").read_text(encoding="utf-8"))
             self.assertEqual(len(plans), 17)
             self.assertEqual(len(configs), 17)
             self.assertEqual(len(set(materialized_driver["aliases"])), 17)
@@ -992,7 +992,36 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                 ],
             )
-            self.assertEqual(len(expected_warnings), 4)
+            replay_failures = [
+                item for item in expected_problems
+                if item["test-name"] == module.VCI_MULTIPLE_CLIENTS_MODULE
+            ]
+            self.assertEqual(
+                [item["configuration-filename"] for item in replay_failures],
+                [
+                    "openid4vc-vci-sd-preauth.json",
+                    "openid4vc-vci-mdoc-preauth.json",
+                ],
+            )
+            self.assertTrue(
+                all(
+                    item["variant"]["vci_grant_type"] == "pre_authorization_code"
+                    for item in replay_failures
+                )
+            )
+            self.assertTrue(
+                all(
+                    item["expected-result"] == "failure"
+                    and item["current-block"] == module.VCI_PREAUTH_REPLAY_BLOCK
+                    and item["condition"] == module.VCI_PREAUTH_REPLAY_CONDITION
+                    for item in replay_failures
+                )
+            )
+            self.assertEqual(len(expected_problems), 6)
+            expected_warnings = [
+                item for item in expected_problems
+                if item["expected-result"] == "warning"
+            ]
             for config in configs.values():
                 if "vci-" not in config["alias"]:
                     continue
@@ -1018,7 +1047,8 @@ class Openid4vcOidfTests(unittest.TestCase):
                         item["current-block"],
                         item["condition"],
                     )
-                    for item in expected_warnings
+                    for item in expected_problems
+                    if item["expected-result"] == "warning"
                 },
                 {
                     (

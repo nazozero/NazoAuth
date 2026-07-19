@@ -17,7 +17,7 @@ semantic versioning once public release tags are cut.
 - Added `docs/protocol/profile-matrix.md`, separating OAuth/OIDC, FAPI2 Security, FAPI2 Message Signing, deployment-security, and product-hardening requirements.
 - Added `docs/security/threat-model.md` and `docs/protocol/refresh-token-rotation.md` for security boundaries and refresh-token state-machine behavior.
 - Added `CHANGELOG.md`.
-- Added token endpoint support for the standard RFC 8707 `resource` parameter as the normative single-resource input, while retaining the legacy `audience` parameter as an extension.
+- Added token endpoint support for the standard RFC 8707 `resource` parameter as the normative single-resource input and removed the non-standard `audience` extension.
 - Added supply-chain and release security gates with `cargo audit`, `cargo deny`, CycloneDX SBOM generation, Trivy image scanning, keyless artifact signing, and GitHub provenance attestations.
 - Added README quality signals for CI quality gates, coverage, dependency review, CodeQL, conformance evidence, and release security controls.
 - Added PostgreSQL and Valkey HA, backup, restore, timeout, and partial-outage operations guidance.

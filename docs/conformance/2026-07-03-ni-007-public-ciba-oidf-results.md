@@ -13,13 +13,12 @@
 | Workflow head SHA | `0374141ae7aec76c573b06dc8406b10819915309` |
 | Official suite ref | `33a724c7d809a6f9db05cbb513ff2a77cbac905e` |
 | Exported suite version | `5.1.45` |
-| Artifact | `oidf-conformance-results`, id `8057183613`, 968328 bytes |
-| Result zip | `fapi-ciba-id1-test-plan-private_key_jwt-poll-plain_fapi-static_client-yzxGGbP1vXpgH-03-Jul-2026.zip` |
-| Result zip SHA-256 | `56EF819512BD965D626187326A04B18975229BA521C21C9071857F2E8DB7AB37` |
+| Result artifact | Deleted on 2026-07-19 because the archive contained credential material |
 
-The raw exported artifact includes official suite logs and rendered temporary
-test-client configuration, including private test keys. Keep only the metadata
-and digest in git; do not commit the raw archive.
+Full OIDF result archives are not public evidence. They can contain rendered
+temporary client configuration, browser credentials, tokens, or private test
+keys. Current workflows retain only redacted logs and the public result summary;
+they do not upload complete runner exports.
 
 ## Plan
 
@@ -77,11 +76,12 @@ This record keeps only public conformance inputs and results. Deployment topolog
 3. Upload the sanitized seed bundle to the private live deployment host and
    seed the live app database through the app container network.
 4. Set the targeted GitHub variables:
-   `OIDF_PLAN_EXPRESSION` to the CIBA plan above,
-   `OIDF_MONITOR_INTERVAL_SECONDS=0`, and `OIDF_EXPORT_RESULTS=true`.
+   `OIDF_PLAN_EXPRESSION` to the CIBA plan above and
+   `OIDF_MONITOR_INTERVAL_SECONDS=0`.
 5. Run `oidf-conformance.yml` on
    `codex/ni-006-011-oidc-profiles`.
-6. Verify the workflow conclusion, runner log totals, and artifact metadata.
+6. Verify the workflow conclusion and redacted runner log totals. Do not upload
+   complete suite exports.
 
 ## Follow-up Boundary
 

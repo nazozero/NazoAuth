@@ -280,5 +280,5 @@ fn claim_bool(value: Option<&Value>, claim: &str) -> Option<bool> {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/in_source/src/http/auth/tests/federation_social.rs"]
+#[path = "../../../../tests/source_mounted/src/http/auth/tests/federation_social.rs"]
 mod tests;

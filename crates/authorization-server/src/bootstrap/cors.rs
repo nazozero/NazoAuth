@@ -32,5 +32,5 @@ pub(crate) fn cors_scim(settings: &Settings) -> Cors {
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/bootstrap/tests/cors.rs"]
+#[path = "../../tests/source_mounted/src/bootstrap/tests/cors.rs"]
 mod tests;

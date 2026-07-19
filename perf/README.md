@@ -150,7 +150,6 @@ For strict App CPU tests, `perf/cnb_capacity.sh` also supports:
 | `PERF_APP_TASKSET` | Process-level CPU affinity for NazoAuth. This is the effective limiter in CNB nested Docker environments where CPU quota is not enforced reliably. |
 | `PERF_APP_CPUSET` | Optional CPU set for NazoAuth. |
 | `PERF_INFRA_CPUSET` | Optional CPU set for PostgreSQL, Valkey, keyset, migrate, and perf runner. |
-| `PERF_CPUSET` | Legacy setting that pins all services to the same CPU set. |
 | `SINGLE_INSTANCE_MAX_DURATION` | Duration per point for `cnb_single_instance_full_flow_max.sh`, default `2m`. |
 | `SINGLE_INSTANCE_MAX_RATES` | Comma-separated fixed arrival rates for the full-flow max test, default `16,32,64,96,128,192,256,384,512`. |
 | `SINGLE_INSTANCE_MAX_MAX_VUS` | k6 maximum VUs for the full-flow max test, default `4096`. |

@@ -598,8 +598,8 @@ def validate_materialized_matrix(
             )
 
     warnings = json.loads(paths["--expected-failures-file"].read_text(encoding="utf-8"))
-    if warnings != materializer.expected_warnings_for_cases(cases):
-        fail("OpenID4VC expected warnings do not match the current matrix registry")
+    if warnings != materializer.expected_problems_for_cases(cases):
+        fail("OpenID4VC expected problems do not match the current matrix registry")
     skips = json.loads(paths["--expected-skips-file"].read_text(encoding="utf-8"))
     if skips != materializer.expected_skips_for_cases(cases):
         fail("OpenID4VC expected skips do not match the current matrix registry")
@@ -640,7 +640,7 @@ def grouped_runner_args(runner_args: list[str], group_size: int, temp_dir: Path)
             filtered = filter_records_for_configs(
                 Path(expected_failures),
                 selected_configs,
-                group_dir / "openid4vc-expected-warnings.json",
+                group_dir / "openid4vc-expected-problems.json",
             )
             group_args = replace_option(group_args, "--expected-failures-file", str(filtered))
         if expected_skips:

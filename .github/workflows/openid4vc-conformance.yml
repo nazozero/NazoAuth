@@ -22,20 +22,29 @@ concurrency:
 jobs:
   official-openid4vc-matrix:
     runs-on: ubuntu-latest
+    environment: oidf-conformance
     timeout-minutes: 90
     env:
+      DEPLOYED_SHA: ${{ inputs.deployed_sha }}
       OIDF_REF: dee9a25160e789f0f80517674693ef7989ab9fa1
       CONFORMANCE_SERVER: https://www.certification.openid.net
       TARGET_ORIGIN: ${{ inputs.target_origin }}
+      TRUSTED_TARGET_ORIGIN: ${{ vars.OPENID4VC_TARGET_ORIGIN }}
       OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
     steps:
       - uses: actions/checkout@v7.0.0
         with:
-          ref: ${{ inputs.deployed_sha }}
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
 
-      - name: Verify exact source revision
+      - name: Verify deployed revision and target are trusted
         shell: bash
-        run: test "$(git rev-parse HEAD)" = "${{ inputs.deployed_sha }}"
+        run: |
+          set -euo pipefail
+          git cat-file -e "$DEPLOYED_SHA^{commit}"
+          git merge-base --is-ancestor "$DEPLOYED_SHA" "origin/${{ github.event.repository.default_branch }}"
+          test -n "$TRUSTED_TARGET_ORIGIN"
+          test "$TARGET_ORIGIN" = "$TRUSTED_TARGET_ORIGIN"
 
       - uses: actions/setup-python@v6.3.0
         with:
@@ -113,7 +122,7 @@ jobs:
             --target-issuer "$TARGET_ORIGIN" \
             --config-json-file runtime/openid4vc/openid4vc-plan-configs.json \
             --plan-set-json-file runtime/openid4vc/openid4vc-plan-set.json \
-            --expected-failures-file runtime/openid4vc/openid4vc-expected-warnings.json \
+            --expected-failures-file runtime/openid4vc/openid4vc-expected-problems.json \
             --expected-skips-file runtime/openid4vc/openid4vc-expected-skips.json \
             --export-dir runtime/openid4vc/results \
             --timeout-seconds 4800 \

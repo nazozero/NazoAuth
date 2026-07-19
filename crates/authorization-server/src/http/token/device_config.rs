@@ -1,5 +1,5 @@
-use crate::http::client_ip::{ClientIpHeaderMode, IpCidr};
 use crate::settings::Settings;
+use nazo_http_actix::{ClientIpHeaderMode, IpCidr};
 
 /// Focused transport/configuration projection for RFC 8628 endpoints.
 #[derive(Clone)]

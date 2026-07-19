@@ -104,7 +104,7 @@ async fn enforce_par_rate_limit(
     context: &AuthorizationRequestContext<'_>,
     req: &HttpRequest,
 ) -> Result<(), HttpResponse> {
-    let subject = crate::http::client_ip::client_ip_with_context(
+    let subject = nazo_http_actix::client_ip_with_context(
         req,
         context.config.client_ip_header_mode,
         &context.config.trusted_proxy_cidrs,
@@ -793,5 +793,5 @@ fn validate_pushed_authorization_request_profile_parameters_with_config(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/authorization/tests/par.rs"]
+#[path = "../../../tests/source_mounted/src/http/authorization/tests/par.rs"]
 mod tests;

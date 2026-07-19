@@ -22,13 +22,15 @@ permissions:
 jobs:
   oidf-conformance:
     runs-on: ubuntu-latest
+    environment: oidf-conformance
     timeout-minutes: 360
     env:
+      DEPLOYED_SHA: ${{ inputs.deployed_sha }}
+      TRUSTED_TARGET_ISSUER: ${{ vars.OIDF_TARGET_ISSUER }}
       CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
       OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'dee9a25160e789f0f80517674693ef7989ab9fa1' }}
       PLAN_EXPRESSION: ${{ inputs.plan_expression }}
       OIDF_TARGET_ISSUER: ${{ inputs.target_issuer }}
-      EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'false' }}
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
       NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}
@@ -39,10 +41,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.0
         with:
-          ref: ${{ inputs.deployed_sha }}
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
 
-      - name: Verify exact deployed source revision
-        run: test "$(git rev-parse HEAD)" = "${{ inputs.deployed_sha }}"
+      - name: Verify deployed revision is trusted
+        run: |
+          set -euo pipefail
+          git cat-file -e "$DEPLOYED_SHA^{commit}"
+          git merge-base --is-ancestor "$DEPLOYED_SHA" "origin/${{ github.event.repository.default_branch }}"
+
+      - name: Verify target issuer is trusted
+        run: |
+          set -euo pipefail
+          test -n "$TRUSTED_TARGET_ISSUER"
+          test "$OIDF_TARGET_ISSUER" = "$TRUSTED_TARGET_ISSUER"
 
       - uses: actions/setup-python@v6.3.0
         with:
@@ -113,9 +125,6 @@ jobs:
             --timeout-seconds "$RUN_TIMEOUT_SECONDS"
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
           )
-          if [ "$EXPORT_RESULTS" = "true" ]; then
-            args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
-          fi
           if [ "$VERBOSE" = "true" ]; then
             args+=(--verbose)
           fi
@@ -140,11 +149,3 @@ jobs:
             test "$(git -C oidf-conformance-suite rev-parse HEAD)" = "$OIDF_REF"
             test -z "$(git -C oidf-conformance-suite status --porcelain --untracked-files=no)"
           }
-
-      - name: Upload OIDF result archive
-        if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: oidf-conformance-results
-          path: oidf-results
-          if-no-files-found: ignore

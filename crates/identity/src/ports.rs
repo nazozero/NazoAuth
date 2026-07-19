@@ -170,8 +170,14 @@ pub struct NewFederatedIdentity {
 /// This capability is accepted only by new-identity commands. Authentication
 /// projections return [`PasswordHash`], which deliberately has no extraction
 /// API.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Eq, PartialEq)]
 pub struct PasswordHashInput(String);
+
+impl std::fmt::Debug for PasswordHashInput {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str("PasswordHashInput([REDACTED])")
+    }
+}
 
 impl PasswordHashInput {
     pub fn new(value: impl Into<String>) -> Result<Self, IdentityModelError> {
@@ -393,7 +399,11 @@ pub trait AvatarStoragePort: Send + Sync {
 }
 
 pub trait GrantSummaryRepositoryPort: Send + Sync {
-    fn authorized_client_count(&self, user_id: Uuid) -> RepositoryFuture<'_, i64>;
+    fn authorized_client_count(
+        &self,
+        tenant_id: TenantId,
+        user_id: Uuid,
+    ) -> RepositoryFuture<'_, i64>;
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -629,18 +639,9 @@ pub trait LoginAccountRepositoryPort: Send + Sync {
     ) -> RepositoryFuture<'_, Option<PublicAccount>>;
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct LoginFailureCounts {
-    pub email: u64,
-    pub ip_email: u64,
-}
-
 pub trait LoginThrottlePort: Send + Sync {
-    fn failure_counts<'a>(
-        &'a self,
-        email: &'a str,
-        source_ip: &'a str,
-    ) -> RepositoryFuture<'a, LoginFailureCounts>;
+    fn failure_count<'a>(&'a self, email: &'a str, source_ip: &'a str)
+    -> RepositoryFuture<'a, u64>;
 
     fn record_failure<'a>(
         &'a self,
@@ -649,8 +650,7 @@ pub trait LoginThrottlePort: Send + Sync {
         window_seconds: u64,
     ) -> RepositoryFuture<'a, ()>;
 
-    fn clear_failures<'a>(&'a self, email: &'a str, source_ip: &'a str)
-    -> RepositoryFuture<'a, ()>;
+    fn clear_failure<'a>(&'a self, email: &'a str, source_ip: &'a str) -> RepositoryFuture<'a, ()>;
 }
 
 pub trait SecretVerifyPort: Send + Sync {

@@ -464,7 +464,10 @@ fn fapi_external_request_uri_is_not_advertised_and_other_configuration_is_preser
         &snapshot([]),
     );
 
-    assert_eq!(metadata["subject_types_supported"], json!(["pairwise"]));
+    assert_eq!(
+        metadata["subject_types_supported"],
+        json!(["public", "pairwise"])
+    );
     assert_eq!(
         metadata["id_token_signing_alg_values_supported"],
         json!(["PS256", "RS256"])

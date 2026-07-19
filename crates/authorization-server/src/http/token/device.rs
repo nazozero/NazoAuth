@@ -10,7 +10,6 @@ use crate::domain::ClientRow;
 use crate::domain::client_policy::client_supports_grant;
 use crate::domain::client_policy::parse_resource_indicators;
 use crate::domain::client_policy::parse_scope;
-use crate::http::client_ip::client_ip_with_context;
 use crate::http::rate_limit::TokenManagementRequestLimiter;
 use actix_web::http::StatusCode;
 use actix_web::http::header;
@@ -18,6 +17,7 @@ use actix_web::http::header::HeaderValue;
 use actix_web::web::{Bytes, Data, Form, Query};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::Utc;
+use nazo_http_actix::client_ip_with_context;
 use nazo_http_actix::{cookie_value, csrf_error};
 use nazo_http_actix::{json_response_no_store, oauth_error};
 use serde::Deserialize;
@@ -711,5 +711,5 @@ fn non_empty(value: String) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/device.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/device.rs"]
 mod tests;

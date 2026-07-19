@@ -11,6 +11,7 @@ type GenerationKey = (ModuleId, ModuleRevision);
 struct LeaseState {
     active: BTreeMap<GenerationKey, usize>,
     waiters: BTreeMap<GenerationKey, Vec<Waker>>,
+    closed_through: BTreeMap<ModuleId, ModuleRevision>,
 }
 
 #[derive(Clone, Default)]
@@ -29,18 +30,30 @@ impl RequestLeaseTracker {
             return None;
         }
         let key = (module_id, snapshot.revision);
-        *self
-            .state
-            .lock()
-            .expect("request lease lock poisoned")
-            .active
-            .entry(key)
-            .or_default() += 1;
+        let mut state = self.state.lock().expect("request lease lock poisoned");
+        if state
+            .closed_through
+            .get(&module_id)
+            .is_some_and(|closed| snapshot.revision <= *closed)
+        {
+            return None;
+        }
+        *state.active.entry(key).or_default() += 1;
+        drop(state);
         Some(RequestLease {
             key,
             state: Arc::clone(&self.state),
             snapshot,
         })
+    }
+
+    pub fn close_generation(&self, module_id: ModuleId, generation: ModuleRevision) {
+        let mut state = self.state.lock().expect("request lease lock poisoned");
+        state
+            .closed_through
+            .entry(module_id)
+            .and_modify(|closed| *closed = (*closed).max(generation))
+            .or_insert(generation);
     }
 
     #[must_use]
@@ -97,5 +110,39 @@ impl Drop for RequestLease {
                 waker.wake();
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+
+    #[test]
+    fn closed_generation_rejects_a_delayed_stale_snapshot() {
+        let tracker = RequestLeaseTracker::default();
+        let snapshot = Arc::new(ActiveModuleSnapshot {
+            revision: ModuleRevision::new(7),
+            accepting: BTreeSet::from([ModuleId::Ciba]),
+            draining: BTreeSet::new(),
+        });
+
+        tracker.close_generation(ModuleId::Ciba, snapshot.revision);
+
+        assert!(tracker.acquire(snapshot, ModuleId::Ciba).is_none());
+    }
+
+    #[test]
+    fn closing_an_old_generation_does_not_reject_a_new_generation() {
+        let tracker = RequestLeaseTracker::default();
+        tracker.close_generation(ModuleId::Ciba, ModuleRevision::new(7));
+        let snapshot = Arc::new(ActiveModuleSnapshot {
+            revision: ModuleRevision::new(8),
+            accepting: BTreeSet::from([ModuleId::Ciba]),
+            draining: BTreeSet::new(),
+        });
+
+        assert!(tracker.acquire(snapshot, ModuleId::Ciba).is_some());
     }
 }

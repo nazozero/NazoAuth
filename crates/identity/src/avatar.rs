@@ -233,8 +233,10 @@ where
     }
 
     async fn overview(&self, account: PublicAccount) -> Result<AccountOverview, RepositoryError> {
-        let authorized_application_count =
-            self.grants.authorized_client_count(account.id()).await?;
+        let authorized_application_count = self
+            .grants
+            .authorized_client_count(account.tenant().tenant_id, account.id())
+            .await?;
         Ok(AccountOverview {
             account,
             authorized_application_count,

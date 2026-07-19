@@ -9,7 +9,7 @@ use crate::adapters::security::consume_private_key_jwt;
 use crate::adapters::security::verify_private_key_jwt_claims_for_issuer;
 use crate::domain::ClientRow;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 #[cfg(test)]
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 #[cfg(test)]
@@ -166,7 +166,7 @@ pub(crate) async fn authenticate_revocation_client_with_dependencies(
 
 #[cfg(test)]
 pub(crate) async fn verify_confidential_client(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     request: &ClientAuthRequestFacts,
     client: &ClientRow,
     credentials: &ClientCredentials,
@@ -382,7 +382,7 @@ pub(crate) async fn consume_token_client_assertion_with_authorization_service(
 
 #[cfg(test)]
 pub(crate) async fn consume_token_client_assertion(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     client: &ClientRow,
     assertion: Option<&ValidatedClientAssertion>,
 ) -> Result<(), TokenManagementClientAuthError> {
@@ -395,5 +395,5 @@ pub(crate) async fn consume_token_client_assertion(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/client_auth.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/client_auth.rs"]
 mod tests;

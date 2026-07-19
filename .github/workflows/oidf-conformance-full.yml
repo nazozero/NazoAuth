@@ -41,11 +41,13 @@ jobs:
   oidf-conformance-full:
     if: ${{ !inputs.onboarding_material_only }}
     runs-on: ubuntu-latest
+    environment: oidf-conformance
     timeout-minutes: 360
     env:
+      DEPLOYED_SHA: ${{ inputs.deployed_sha }}
+      TRUSTED_TARGET_ISSUER: ${{ vars.OIDF_TARGET_ISSUER }}
       CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
       OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'dee9a25160e789f0f80517674693ef7989ab9fa1' }}
-      EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'false' }}
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
       NO_PARALLEL: ${{ vars.OIDF_NO_PARALLEL || 'true' }}
@@ -57,10 +59,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.0
         with:
-          ref: ${{ inputs.deployed_sha }}
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
 
-      - name: Verify exact deployed source revision
-        run: test "$(git rev-parse HEAD)" = "${{ inputs.deployed_sha }}"
+      - name: Verify deployed revision is trusted
+        run: |
+          set -euo pipefail
+          git cat-file -e "$DEPLOYED_SHA^{commit}"
+          git merge-base --is-ancestor "$DEPLOYED_SHA" "origin/${{ github.event.repository.default_branch }}"
+
+      - name: Verify target issuer is trusted
+        run: |
+          set -euo pipefail
+          test -n "$TRUSTED_TARGET_ISSUER"
+          test "$OIDF_TARGET_ISSUER" = "$TRUSTED_TARGET_ISSUER"
 
       - uses: actions/setup-python@v6.3.0
         with:
@@ -335,8 +347,7 @@ jobs:
           set -euo pipefail
           run_oidf_plan_set() {
             local plan_set_file="$1"
-            local export_subdir="$2"
-            shift 2
+            shift
             local expected_skips_file="$RUNNER_TEMP/${plan_set_file%.json}-expected-skips.json"
             local expected_warnings_file="$RUNNER_TEMP/${plan_set_file%.json}-expected-warnings.json"
 
@@ -368,13 +379,6 @@ jobs:
               --timeout-seconds "$RUN_TIMEOUT_SECONDS"
               --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
             )
-            if [ "$EXPORT_RESULTS" = "true" ]; then
-              if [ -n "$export_subdir" ]; then
-                args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results/$export_subdir")
-              else
-                args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results")
-              fi
-            fi
             if [ "$VERBOSE" = "true" ]; then
               args+=(--verbose)
             fi
@@ -391,19 +395,19 @@ jobs:
               if [ "$NO_PARALLEL" = "true" ]; then
                 serial_args+=(--no-parallel)
               fi
-              run_oidf_plan_set oidf-full-plan-set.json "" "${serial_args[@]}"
+              run_oidf_plan_set oidf-full-plan-set.json "${serial_args[@]}"
               ;;
             parallel-isolated)
-              run_oidf_plan_set 01-oidc-core.json 01-oidc-core
-              run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json 02-oidc-formpost-thirdparty-config
-              run_oidf_plan_set 03a-fapi-ciba-private-key-jwt-poll.json 03a-fapi-ciba-private-key-jwt-poll --no-parallel
-              run_oidf_plan_set 03b-fapi-ciba-mtls-poll.json 03b-fapi-ciba-mtls-poll --no-parallel
-              run_oidf_plan_set 03c-fapi-ciba-private-key-jwt-ping.json 03c-fapi-ciba-private-key-jwt-ping --no-parallel
-              run_oidf_plan_set 03d-fapi-ciba-mtls-ping.json 03d-fapi-ciba-mtls-ping --no-parallel
-              run_oidf_plan_set 04-fapi-message-and-mtls-dpop.json 04-fapi-message-and-mtls-dpop
-              run_oidf_plan_set 05-fapi-mtls-mtls.json 05-fapi-mtls-mtls
-              run_oidf_plan_set 06-fapi-private-dpop.json 06-fapi-private-dpop
-              run_oidf_plan_set 07-fapi-private-mtls.json 07-fapi-private-mtls
+              run_oidf_plan_set 01-oidc-core.json
+              run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json
+              run_oidf_plan_set 03a-fapi-ciba-private-key-jwt-poll.json --no-parallel
+              run_oidf_plan_set 03b-fapi-ciba-mtls-poll.json --no-parallel
+              run_oidf_plan_set 03c-fapi-ciba-private-key-jwt-ping.json --no-parallel
+              run_oidf_plan_set 03d-fapi-ciba-mtls-ping.json --no-parallel
+              run_oidf_plan_set 04-fapi-message-and-mtls-dpop.json
+              run_oidf_plan_set 05-fapi-mtls-mtls.json
+              run_oidf_plan_set 06-fapi-private-dpop.json
+              run_oidf_plan_set 07-fapi-private-mtls.json
               ;;
             *)
               echo "Unsupported RUNNER_MODE: $RUNNER_MODE" >&2
@@ -423,17 +427,11 @@ jobs:
             test -z "$(git -C oidf-conformance-suite status --porcelain --untracked-files=no)"
           }
 
-      - name: Upload OIDF result archive
-        if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: ${{ env.RUNNER_MODE == 'parallel-isolated' && 'oidf-conformance-results-concurrent' || 'oidf-conformance-results-full' }}
-          path: oidf-results
-          if-no-files-found: ignore
 
   oidf-conformance-browser-isolated:
     if: ${{ !inputs.onboarding_material_only && inputs.runner_mode == 'parallel-isolated' }}
     runs-on: ubuntu-latest
+    environment: oidf-conformance
     timeout-minutes: 360
     strategy:
       fail-fast: false
@@ -441,18 +439,15 @@ jobs:
         include:
           - name: frontchannel
             plan_set_file: oidf-frontchannel-plan-set.json
-            result_subdir: frontchannel
-            artifact_name: oidf-conformance-results-frontchannel
             plan_expression: "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json"
           - name: session-management
             plan_set_file: oidf-session-management-plan-set.json
-            result_subdir: session-management
-            artifact_name: oidf-conformance-results-session-management
             plan_expression: "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json"
     env:
+      DEPLOYED_SHA: ${{ inputs.deployed_sha }}
+      TRUSTED_TARGET_ISSUER: ${{ vars.OIDF_TARGET_ISSUER }}
       CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
       OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'dee9a25160e789f0f80517674693ef7989ab9fa1' }}
-      EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'false' }}
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
       OIDF_TARGET_ISSUER: ${{ inputs.target_issuer }}
@@ -462,10 +457,20 @@ jobs:
     steps:
       - uses: actions/checkout@v7.0.0
         with:
-          ref: ${{ inputs.deployed_sha }}
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
 
-      - name: Verify exact deployed source revision
-        run: test "$(git rev-parse HEAD)" = "${{ inputs.deployed_sha }}"
+      - name: Verify deployed revision is trusted
+        run: |
+          set -euo pipefail
+          git cat-file -e "$DEPLOYED_SHA^{commit}"
+          git merge-base --is-ancestor "$DEPLOYED_SHA" "origin/${{ github.event.repository.default_branch }}"
+
+      - name: Verify target issuer is trusted
+        run: |
+          set -euo pipefail
+          test -n "$TRUSTED_TARGET_ISSUER"
+          test "$OIDF_TARGET_ISSUER" = "$TRUSTED_TARGET_ISSUER"
 
       - uses: actions/setup-python@v6.3.0
         with:
@@ -571,9 +576,6 @@ jobs:
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
             --no-parallel
           )
-          if [ "$EXPORT_RESULTS" = "true" ]; then
-            args+=(--export-dir "$GITHUB_WORKSPACE/oidf-results/${{ matrix.result_subdir }}")
-          fi
           if [ "$VERBOSE" = "true" ]; then
             args+=(--verbose)
           fi
@@ -593,11 +595,3 @@ jobs:
             test "$(git -C oidf-conformance-suite rev-parse HEAD)" = "$OIDF_REF"
             test -z "$(git -C oidf-conformance-suite status --porcelain --untracked-files=no)"
           }
-
-      - name: Upload isolated OIDF result archive
-        if: always() && vars.OIDF_EXPORT_RESULTS != 'false'
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: ${{ matrix.artifact_name }}
-          path: oidf-results/${{ matrix.result_subdir }}
-          if-no-files-found: ignore

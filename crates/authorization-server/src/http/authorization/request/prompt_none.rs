@@ -9,10 +9,10 @@ use crate::http::authorization::request::{
     authorization_response_redirect_with_context,
     consume_pushed_authorization_request_with_context,
 };
-use crate::http::client_ip::client_ip_with_config;
 use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
+use nazo_http_actix::client_ip_with_config;
 use nazo_http_actix::oauth_error;
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -50,7 +50,7 @@ pub(super) async fn user_grant_covers_requested_scopes_with_context(
 
 #[cfg(test)]
 pub(super) async fn user_grant_covers_requested_scopes(
-    state: &crate::domain::TestAppState,
+    state: &crate::domain::TestInfrastructure,
     user_id: Uuid,
     client_id: Uuid,
     requested_scopes: &[String],
@@ -210,7 +210,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
 
 #[cfg(test)]
 pub(super) async fn issue_authorization_code_without_interaction(
-    state: &crate::domain::TestAppState,
+    state: &crate::domain::TestInfrastructure,
     req: &HttpRequest,
     payload: ConsentPayload,
 ) -> HttpResponse {

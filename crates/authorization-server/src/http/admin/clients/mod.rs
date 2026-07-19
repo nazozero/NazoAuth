@@ -18,20 +18,20 @@ pub(crate) type ServerAdminClientService = nazo_auth::AdminClientService<
 
 #[derive(Clone)]
 pub(crate) struct AdminClientConfig {
-    client_ip: crate::http::client_ip::ClientIpConfig,
+    client_ip: nazo_http_actix::ClientIpConfig,
 }
 
 impl AdminClientConfig {
     pub(crate) fn from_settings(settings: &Settings) -> Self {
         Self {
-            client_ip: crate::http::client_ip::ClientIpConfig::new(
+            client_ip: nazo_http_actix::ClientIpConfig::new(
                 &settings.endpoint.trusted_proxy_cidrs,
                 settings.endpoint.client_ip_header_mode,
             ),
         }
     }
 
-    pub(crate) fn client_ip(&self) -> &crate::http::client_ip::ClientIpConfig {
+    pub(crate) fn client_ip(&self) -> &nazo_http_actix::ClientIpConfig {
         &self.client_ip
     }
 }
@@ -222,7 +222,7 @@ mod boundary_tests {
                 "nazo_postgres",
                 "ClientRow",
                 "KeyManager",
-                "Data<TestAppState>",
+                "Data<TestInfrastructure>",
                 "test_dependencies",
             ] {
                 assert!(!source.contains(forbidden), "{name} contains {forbidden}");

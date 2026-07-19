@@ -77,7 +77,7 @@ pub fn scim_service_provider_config_document_with_events(events_enabled: bool) -
         "authenticationSchemes": [{
             "type": "oauthbearertoken",
             "name": "Bearer",
-            "description": "Database-backed bearer credential with legacy deployment-token fallback.",
+            "description": "Database-backed bearer credential.",
             "specUri": "https://www.rfc-editor.org/rfc/rfc6750",
             "primary": true
         }]

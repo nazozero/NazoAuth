@@ -232,6 +232,8 @@ def check_entry(entry: dict, opener=urllib.request.urlopen) -> str:
         expires = data.get("expires")
         if isinstance(expires, str):
             expires_at = datetime.fromisoformat(expires.replace("Z", "+00:00"))
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
             if expires_at <= datetime.now(timezone.utc):
                 raise RuntimeError(
                     f"{entry['id']}: official draft is expired; review its current status"

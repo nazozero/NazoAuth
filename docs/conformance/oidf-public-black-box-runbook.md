@@ -88,6 +88,49 @@ token returns `401`. Do not create suite tokens in MongoDB, reuse a product
 administrator session as a suite bearer token, or depend on a source-control
 provider account.
 
+## Recommended entry point: one reversible run
+
+Use the unified runner for the operator-run public OIDC/FAPI/FAPI-CIBA matrix
+instead of assembling the internal commands below by hand. Provide only the
+two separate production identities, the dynamic-registration/CIBA tokens, and
+a short-lived public-suite API token:
+
+```sh
+export OIDF_APPLICANT_EMAIL=conformance-applicant@example.com
+export OIDF_APPLICANT_PASSWORD=...
+export OIDF_ADMIN_EMAIL=conformance-approver@example.com
+export OIDF_ADMIN_PASSWORD=...
+export OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN=...
+export OIDF_CIBA_AUTOMATED_DECISION_TOKEN=...
+export OIDF_CONFORMANCE_TOKEN=...
+
+python scripts/run_public_oidf_conformance.py \
+  --deployed-sha <deployed-sha> \
+  --target-issuer https://issuer.example \
+  --conformance-server https://suite.example \
+  --suite-dir /opt/oidf/conformance-suite \
+  --suite-revision "$(git -C /opt/oidf/conformance-suite rev-parse HEAD)" \
+  --work-dir /var/lib/nazo-oidf/runs/<run-id> \
+  --export-dir /var/lib/nazo-oidf/results/<run-id> \
+  --run-namespace <run-id> \
+  --proxy-trust-bundle /etc/proxy/oidf-mtls-ca.crt \
+  --proxy-executable /usr/sbin/nginx
+```
+
+The entry point verifies the deployed product commit, the explicitly selected
+official-suite commit, and clean tracked source trees. It then generates source-bound material,
+performs application, approval, one-time delivery, and trust approval under
+separate identities, atomically installs the approved trust bundle, verifies
+the suite API's `401/200` boundary, and runs all 25 plans in concurrent, CIBA,
+Front-Channel Logout, and Session Management groups. Success and failure both
+deactivate the run's clients, revoke trust through the public control plane,
+and restore the proxy configuration. Private inputs and failure evidence remain
+in unique run directories and are never overwritten by a later run.
+
+Approval remains a real, auditable authorization event. Automation removes file
+copying, path inference, command assembly, and recovery work; it does not
+collapse applicant and approver identities.
+
 ## 1. Prepare immutable runner material
 
 Check out the exact commit to be deployed and require a clean worktree. Set

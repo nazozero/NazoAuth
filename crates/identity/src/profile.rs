@@ -235,8 +235,10 @@ where
         &self,
         account: PublicAccount,
     ) -> Result<AccountOverview, RepositoryError> {
-        let authorized_application_count =
-            self.grants.authorized_client_count(account.id()).await?;
+        let authorized_application_count = self
+            .grants
+            .authorized_client_count(account.tenant().tenant_id, account.id())
+            .await?;
         Ok(AccountOverview {
             account,
             authorized_application_count,
@@ -680,7 +682,8 @@ mod tests {
     use uuid::Uuid;
 
     use crate::{
-        AccountIdentity, Principal, PublicAccount, TenantContext, UserId, UserProfile, UserRole,
+        AccountIdentity, Principal, PublicAccount, TenantContext, TenantId, UserId, UserProfile,
+        UserRole,
         ports::{
             AuthorizedApplication, AuthorizedApplicationRepositoryPort, GrantSummaryRepositoryPort,
             ProfileRepositoryPort, ProfileUpdate, RepositoryError, RepositoryFuture,
@@ -719,7 +722,11 @@ mod tests {
     }
 
     impl GrantSummaryRepositoryPort for FailFirstGrantSummary {
-        fn authorized_client_count(&self, _user_id: Uuid) -> RepositoryFuture<'_, i64> {
+        fn authorized_client_count(
+            &self,
+            _tenant_id: TenantId,
+            _user_id: Uuid,
+        ) -> RepositoryFuture<'_, i64> {
             let call = self.calls.fetch_add(1, Ordering::Relaxed);
             Box::pin(async move {
                 if call == 0 {

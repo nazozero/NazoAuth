@@ -1,5 +1,5 @@
 #[cfg(test)]
 include!(concat!(
     env!("CARGO_MANIFEST_DIR"),
-    "/tests/in_source/src/domain/identity_schema.rs"
+    "/tests/source_mounted/src/domain/identity_schema.rs"
 ));

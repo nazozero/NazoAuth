@@ -57,6 +57,9 @@ pub(crate) fn is_blocked_ip(ip: IpAddr) -> bool {
             false
         }
         IpAddr::V6(v6) => {
+            if let Some(mapped) = v6.to_ipv4_mapped() {
+                return is_blocked_ip(IpAddr::V4(mapped));
+            }
             let segments = v6.segments();
             if v6.is_loopback()
                 || segments[0] & 0xffc0 == 0xfe80  // link-local (fe80::/10)
@@ -71,13 +74,6 @@ pub(crate) fn is_blocked_ip(ip: IpAddr) -> bool {
             if segments[0..4] == [0, 0, 0, 0]
                 && segments[4] == 0
                 && segments[5] == 0
-                && segments[6] == 0
-                && segments[7] == 0
-            {
-                return true;
-            }
-            if segments[0..5] == [0, 0, 0, 0, 0]
-                && segments[5] == 0xffff
                 && segments[6] == 0
                 && segments[7] == 0
             {
@@ -172,5 +168,5 @@ pub(crate) async fn fetch_sector_identifier_uris(
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/sector_identifier.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/sector_identifier.rs"]
 mod tests;

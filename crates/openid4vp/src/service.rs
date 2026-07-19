@@ -185,7 +185,8 @@ fn credential_matches_query(
     credential: &VerifiedCredential,
     query: &nazo_digital_credentials::CredentialQuery,
 ) -> bool {
-    if query.require_cryptographic_holder_binding == Some(true) && credential.holder_key.is_none() {
+    if query.require_cryptographic_holder_binding.unwrap_or(true) && credential.holder_key.is_none()
+    {
         return false;
     }
     if let Some(meta) = query.meta.as_ref() {

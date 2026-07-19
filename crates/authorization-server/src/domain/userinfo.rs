@@ -14,10 +14,10 @@ use crate::adapters::security::{access_token_tenant_id, blake3_hex, constant_tim
 use crate::domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
 use crate::domain::client_policy::parse_scope;
 use crate::domain::oidc_claims::oidc_user_claims;
-use crate::http::client_ip::IpCidr;
 use crate::http::dpop::{DpopError, validate_dpop_proof_with_store};
 use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use crate::settings::{DpopNoncePolicy, Settings};
+use nazo_http_actix::IpCidr;
 
 use crate::http::token::ServerTokenService;
 
@@ -324,7 +324,7 @@ impl UserinfoHandles {
     }
 
     #[cfg(test)]
-    pub(crate) fn from_test_state(state: &super::TestAppState) -> Self {
+    pub(crate) fn from_test_infrastructure(state: &super::TestInfrastructure) -> Self {
         Self::new(
             nazo_valkey::ReplayStore::new(&state.valkey_connection()),
             state.keyset.clone(),
@@ -378,3 +378,7 @@ impl UserinfoHandles {
         self.keys.encode_jwt(purpose, &header, claims).await
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/source_mounted/src/http/token/tests/userinfo.rs"]
+mod tests;
