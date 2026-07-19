@@ -584,11 +584,14 @@ def check_openid4vc_boundaries() -> None:
     ):
         if marker not in workflow:
             raise SystemExit(f"OpenID4VC workflow lacks hard boundary: {marker}")
-    if "vars.OPENID4VC_TARGET_ORIGIN" in workflow:
-        raise SystemExit(
-            "OpenID4VC workflow must require an explicit target_origin input; "
-            "repository-variable fallbacks are forbidden"
-        )
+    for marker in (
+        "TRUSTED_TARGET_ORIGIN: ${{ vars.OPENID4VC_TARGET_ORIGIN }}",
+        'test "$TARGET_ORIGIN" = "$TRUSTED_TARGET_ORIGIN"',
+    ):
+        if marker not in workflow:
+            raise SystemExit(
+                f"OpenID4VC workflow does not bind target_origin to the trusted repository origin: {marker}"
+            )
     for marker in (
         "VCI_UNSUPPORTED_ENCRYPTION_MODULE",
         "VCI_REFRESH_TOKEN_MODULE",

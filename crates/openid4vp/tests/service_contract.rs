@@ -7,10 +7,10 @@ use nazo_digital_credentials::{
     VerifiedCredential,
 };
 use nazo_openid4vp::{
-    AuthorizationRequest, AuthorizationResponse, ClientIdPrefix, ClientMetadata,
-    PresentationResult, PresentationService, PresentationStoreError, PresentationStoreFuture,
-    PresentationStorePort, PresentationTransaction, RequestMethod, ResponseMode,
-    StoredPresentation,
+    AuthorizationRequest, AuthorizationResponse, ClientIdPrefix, ClientMetadata, PresentationError,
+    PresentationResult, PresentationService, PresentationServiceError, PresentationStoreError,
+    PresentationStoreFuture, PresentationStorePort, PresentationTransaction, RequestMethod,
+    ResponseMode, StoredPresentation,
 };
 use serde_json::json;
 use uuid::Uuid;
@@ -91,6 +91,29 @@ impl CredentialVerifierPort for RecordingVerifier {
     }
 }
 
+#[derive(Clone)]
+struct MissingHolderVerifier;
+
+impl CredentialVerifierPort for MissingHolderVerifier {
+    fn verify<'a>(
+        &'a self,
+        _presentation: &'a PresentedCredential,
+    ) -> CredentialFuture<'a, Result<VerifiedCredential, CredentialTrustError>> {
+        Box::pin(async {
+            Ok(VerifiedCredential {
+                format: CredentialFormat::MsoMdoc,
+                issuer: "trusted-issuer".to_owned(),
+                credential_type: "org.iso.18013.5.1.mDL".to_owned(),
+                claims: json!({"org.iso.18013.5.1":{"family_name":"Doe"}}),
+                holder_key: None,
+                issued_at: None,
+                expires_at: None,
+                status: None,
+            })
+        })
+    }
+}
+
 #[tokio::test]
 async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
     let response_key = EphemeralEncryptionKey::generate();
@@ -111,7 +134,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
                 claims: None,
                 claim_sets: None,
                 trusted_authorities: None,
-                require_cryptographic_holder_binding: Some(true),
+                require_cryptographic_holder_binding: None,
             }],
             credential_sets: None,
         },
@@ -170,4 +193,22 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
     let handover = values[2].as_array().expect("OpenID4VPHandover");
     assert_eq!(handover[0].as_text(), Some("OpenID4VPHandover"));
     assert_eq!(handover[1].as_bytes().map(Vec::len), Some(32));
+
+    let error = PresentationService::new(RecordingStore, MissingHolderVerifier)
+        .verify_response(
+            &transaction,
+            &AuthorizationResponse {
+                vp_token: Some(json!({"mdl":["base64url-mdoc"]})),
+                state: Some("state".to_owned()),
+                error: None,
+                error_description: None,
+            },
+            now,
+        )
+        .await
+        .expect_err("holder binding is required when the query omits the flag");
+    assert_eq!(
+        error,
+        PresentationServiceError::Presentation(PresentationError::DcqlUnsatisfied)
+    );
 }
