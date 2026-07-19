@@ -20,6 +20,40 @@ def load_runner_module():
 
 
 class RunOidfConformanceTests(unittest.TestCase):
+    def test_runtime_credentials_override_stale_plan_config_credentials(self):
+        module = load_runner_module()
+        config = {
+            "nazo": {
+                "oidf_user_email": "stale@example.test",
+                "oidf_user_password": "stale-password",
+            }
+        }
+
+        with mock.patch.dict(
+            module.os.environ,
+            {
+                "OIDF_USER_EMAIL": "current@example.test",
+                "OIDF_USER_PASSWORD": "current-password",
+            },
+        ):
+            credentials = module.nazo_automation_credentials(config)
+
+        self.assertEqual(credentials, ("current@example.test", "current-password"))
+
+    def test_plan_config_credentials_remain_available_for_local_runs(self):
+        module = load_runner_module()
+        config = {
+            "nazo": {
+                "oidf_user_email": "local@example.test",
+                "oidf_user_password": "local-password",
+            }
+        }
+
+        with mock.patch.dict(module.os.environ, {}, clear=True):
+            credentials = module.nazo_automation_credentials(config)
+
+        self.assertEqual(credentials, ("local@example.test", "local-password"))
+
     def test_main_accepts_omitted_expected_skips_file(self):
         module = load_runner_module()
         with tempfile.TemporaryDirectory() as temporary:
