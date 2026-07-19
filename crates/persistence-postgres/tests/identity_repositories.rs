@@ -2092,7 +2092,7 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
 }
 
 #[test]
-fn client_registration_keeps_plaintext_and_persistence_shape_out_of_core_and_postgres() {
+fn client_registration_keeps_plaintext_out_of_protocol_core_and_postgres() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let auth_registration = std::fs::read_to_string(
         manifest.join("../authorization-server-core/src/client_registration.rs"),
@@ -2107,5 +2107,7 @@ fn client_registration_keeps_plaintext_and_persistence_shape_out_of_core_and_pos
     assert!(!auth_registration.contains("client_secret_hash"));
     assert!(!auth_registration.contains("registration_access_token_blake3"));
     assert!(!postgres_approval.contains("issued_secret"));
-    assert!(postgres_approval.contains("struct ClientInsertCommand"));
+    assert!(postgres_approval.contains("PreparedClientRegistration"));
+    assert!(postgres_approval.contains("client.client_secret_hash.as_deref()"));
+    assert!(postgres_approval.contains("client.registration_access_token_blake3.as_deref()"));
 }
