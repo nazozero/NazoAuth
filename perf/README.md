@@ -68,7 +68,7 @@ infrastructure half. The default scenario is `oidc_cold_login_refresh`, which
 includes PAR, password login, authorization decision, authorization-code token
 exchange, and refresh-token rotation.
 
-Run the extended fixed-arrival-rate matrix on a dedicated CNB runner:
+Run the extended fixed-arrival-rate matrix from a CNB development environment:
 
 ```sh
 ./perf/cnb_extended_capacity_matrix.sh

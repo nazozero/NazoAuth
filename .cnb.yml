@@ -28,16 +28,3 @@ $:
         - name: prefetch rust dependencies
           script:
             - cargo fetch --locked
-
-  api_trigger_capacity_curve:
-    capacity_curve:
-      runner:
-        tags: cnb:arch:amd64
-        cpus: 64
-      services:
-        - docker
-      docker:
-        image: docker:27-cli
-      stages:
-        - name: run capacity curve matrix
-          script: ./perf/cnb_capacity_matrix.sh
