@@ -24,7 +24,7 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
 pub(crate) struct ClientJweKey<'a> {
-    pub(crate) kid: &'a str,
+    pub(crate) kid: Option<&'a str>,
     pub(crate) alg: &'a str,
     pub(crate) enc: &'a str,
     pub(crate) jwk: &'a Value,
@@ -74,8 +74,7 @@ pub(crate) fn client_jwe_key<'a>(
     let kid = jwk
         .get("kid")
         .and_then(Value::as_str)
-        .filter(|kid| !kid.trim().is_empty())
-        .ok_or_else(|| anyhow::anyhow!("{response_name} JWE key has no kid"))?;
+        .filter(|kid| !kid.trim().is_empty());
     Ok(Some(ClientJweKey { kid, alg, enc, jwk }))
 }
 
@@ -93,8 +92,10 @@ pub(crate) fn encrypt_compact_jwe(
     let mut protected_header = serde_json::Map::from_iter([
         ("alg".to_owned(), json!(key.alg)),
         ("enc".to_owned(), json!(key.enc)),
-        ("kid".to_owned(), json!(key.kid)),
     ]);
+    if let Some(kid) = key.kid {
+        protected_header.insert("kid".to_owned(), json!(kid));
+    }
     match payload_kind {
         JwePayloadKind::Claims => {
             protected_header.insert("typ".to_owned(), json!("JWT"));

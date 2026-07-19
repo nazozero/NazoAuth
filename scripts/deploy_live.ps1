@@ -5,8 +5,8 @@ param(
     [string]$BackendCommit,
     [Parameter(Mandatory = $true)]
     [string]$FrontendCommit,
-    [string]$ExpectedBackendBranch = "codex/modular-workspace-architecture",
-    [string]$ExpectedFrontendBranch = "codex/modular-workspace-architecture",
+    [string]$ExpectedBackendBranch = "main",
+    [string]$ExpectedFrontendBranch = "main",
     [string]$LocalFrontendWorktree = "",
     [string]$LocalBackendWorktree = ".",
     [string]$ImageRepository = "localhost/nazo-oauth-server",
@@ -23,15 +23,7 @@ param(
     [string]$ContainerCibaPingTlsTrustBundlePath = "/app/ciba-ping-trust-bundle.pem",
     [string]$RemoteUiPath = "/usr/local/angie/html/auth/ui",
     [string]$RemoteUiReleasesRoot = "/usr/local/angie/html/auth-releases",
-    [string]$OidfPublicSeedArtifactDirectory = "",
-    [string]$OidfPublicSeedArtifactArchive = "",
-    [string]$OidfPublicSeedWorkflowRunId = "",
-    [string]$OidfPublicSeedArtifactId = "",
-    [string]$OidfPublicSeedArtifactDigest = "",
-    [string]$OidfSuiteBaseUrl = "https://www.certification.openid.net",
-    [string]$RemoteOidfMtlsCaPath = "/usr/local/angie/conf/oidf-mtls-ca.crt",
-    [string]$RemoteAngieOidfConfigPath = "/usr/local/angie/conf/conf.d/auth.nazo.run.conf",
-    [string]$AngieServiceName = "nginx.service",
+    [string]$RemoteAngieConfigPath = "/usr/local/angie/conf/conf.d/oauth.conf",
     [string]$AngieWorkerUser = "www",
     [string]$RemoteDeploymentRoot = "/opt/nazo-oauth",
     [string]$LocalUiDist = "",
@@ -80,25 +72,14 @@ if ($ContainerCibaPingTlsTrustBundlePath -notmatch '^/' -or
     $ContainerCibaPingTlsTrustBundlePath.Contains("`r")) {
     throw "ContainerCibaPingTlsTrustBundlePath must be an absolute Linux path"
 }
-if ($RemoteOidfMtlsCaPath -notmatch '^/' -or $RemoteOidfMtlsCaPath -eq '/' -or
-    $RemoteOidfMtlsCaPath.Contains("`n") -or $RemoteOidfMtlsCaPath.Contains("`r")) {
-    throw "RemoteOidfMtlsCaPath must be a safe absolute non-root Linux path"
-}
-if ($RemoteAngieOidfConfigPath -notmatch '^/' -or $RemoteAngieOidfConfigPath -eq '/' -or
-    $RemoteAngieOidfConfigPath.Contains("`n") -or $RemoteAngieOidfConfigPath.Contains("`r")) {
-    throw "RemoteAngieOidfConfigPath must be a safe absolute non-root Linux path"
-}
-if ($AngieServiceName -notmatch '^[A-Za-z0-9_.@-]+$') {
-    throw "AngieServiceName must be a safe systemd unit name"
+if ($RemoteAngieConfigPath -notmatch '^/' -or $RemoteAngieConfigPath -eq '/' -or
+    $RemoteAngieConfigPath.Contains("`n") -or $RemoteAngieConfigPath.Contains("`r")) {
+    throw "RemoteAngieConfigPath must be a safe absolute non-root Linux path"
 }
 if ($ExpectedIssuer -notmatch '^https://[^/?#,\s]+/?$') {
     throw "ExpectedIssuer must be an HTTPS origin without path, query, or fragment"
 }
 $ExpectedIssuer = $ExpectedIssuer.TrimEnd('/')
-if ($OidfSuiteBaseUrl -notmatch '^https://[^/?#,\s]+/?$') {
-    throw "OidfSuiteBaseUrl must be a single HTTPS origin without path, query, fragment, whitespace, or comma"
-}
-$OidfSuiteBaseUrl = $OidfSuiteBaseUrl.TrimEnd('/')
 if ([string]::IsNullOrWhiteSpace($HealthUrl)) {
     $HealthUrl = "$ExpectedIssuer/health"
 }
@@ -413,75 +394,6 @@ if ($backendBranch -cne $ExpectedBackendBranch) {
     throw "Backend branch $backendBranch does not match expected branch $ExpectedBackendBranch"
 }
 Assert-GitOrigin -Worktree $LocalBackendWorktree -ExpectedRemote $ExpectedBackendRemote -Label "Backend"
-$oidfCaEnabledValue = "0"
-$oidfCaSha256 = ""
-$oidfManifestSha256 = ""
-$oidfArtifactFiles = @()
-$verifiedArtifactDirectory = ""
-$localOidfCaValidator = Join-Path $LocalBackendWorktree "scripts/oidf_mtls_ca_bundle.py"
-if ($OidfPublicSeedArtifactDirectory -or $OidfPublicSeedArtifactArchive) {
-    if (-not $RenderRemoteScriptPath) {
-        if (-not $OidfPublicSeedArtifactArchive -or
-            $OidfPublicSeedWorkflowRunId -notmatch '^[1-9][0-9]*$' -or
-            $OidfPublicSeedArtifactId -notmatch '^[1-9][0-9]*$' -or
-            $OidfPublicSeedArtifactDigest -notmatch '^sha256:[0-9a-f]{64}$') {
-            throw "Real OIDF CA deployment requires artifact archive, workflow run ID, artifact ID, and SHA-256 digest"
-        }
-        $archive = Get-Item -LiteralPath $OidfPublicSeedArtifactArchive -Force -ErrorAction Stop
-        if ($archive.PSIsContainer -or ($archive.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
-            throw "OIDF public seed artifact archive must be a regular non-symlink file"
-        }
-        $artifactMetadata = Get-GitHubApiJson "/repos/nazozero/NazoAuth/actions/artifacts/$OidfPublicSeedArtifactId"
-        $runMetadata = Get-GitHubApiJson "/repos/nazozero/NazoAuth/actions/runs/$OidfPublicSeedWorkflowRunId"
-        if ([string]$artifactMetadata.name -cne "oidf-public-plan-configs" -or
-            [bool]$artifactMetadata.expired -or
-            [long]$artifactMetadata.size_in_bytes -le 0 -or
-            [long]$artifactMetadata.size_in_bytes -gt 16777216 -or
-            [string]$artifactMetadata.digest -cne $OidfPublicSeedArtifactDigest -or
-            [string]$artifactMetadata.workflow_run.id -cne $OidfPublicSeedWorkflowRunId -or
-            [string]$artifactMetadata.workflow_run.head_sha -cne $BackendCommit -or
-            [string]$runMetadata.head_sha -cne $BackendCommit -or
-            [string]$runMetadata.head_branch -cne $ExpectedBackendBranch -or
-            [string]$runMetadata.conclusion -cne "success") {
-            throw "OIDF public seed artifact metadata does not match the successful exact-head workflow run"
-        }
-        if ($archive.Length -ne [long]$artifactMetadata.size_in_bytes) {
-            throw "OIDF public seed artifact archive size does not match GitHub metadata"
-        }
-        $archiveSha256 = (Get-FileHash -LiteralPath $archive.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ("sha256:$archiveSha256" -cne $OidfPublicSeedArtifactDigest) {
-            throw "OIDF public seed artifact archive digest does not match GitHub metadata"
-        }
-        $verifiedArtifactDirectory = Join-Path ([IO.Path]::GetTempPath()) (
-            "nazo-oidf-public-artifact-" + [Guid]::NewGuid().ToString("N")
-        )
-        [IO.Compression.ZipFile]::ExtractToDirectory($archive.FullName, $verifiedArtifactDirectory)
-        $OidfPublicSeedArtifactDirectory = $verifiedArtifactDirectory
-    }
-    elseif (-not $OidfPublicSeedArtifactDirectory) {
-        throw "Render-only OIDF CA validation requires OidfPublicSeedArtifactDirectory"
-    }
-    if (-not (Test-Path -LiteralPath $localOidfCaValidator -PathType Leaf)) {
-        throw "Backend commit does not contain scripts/oidf_mtls_ca_bundle.py"
-    }
-    $OidfPublicSeedArtifactDirectory = [System.IO.Path]::GetFullPath(
-        $OidfPublicSeedArtifactDirectory
-    )
-    Invoke-Checked python @(
-        $localOidfCaValidator,
-        "verify",
-        "--artifact-directory",
-        $OidfPublicSeedArtifactDirectory,
-        "--expected-source-commit",
-        $BackendCommit
-    )
-    $localOidfCaBundle = Join-Path $OidfPublicSeedArtifactDirectory "oidf-mtls-ca-bundle.pem"
-    $oidfCaSha256 = (Get-FileHash -LiteralPath $localOidfCaBundle -Algorithm SHA256).Hash.ToLowerInvariant()
-    $localOidfManifest = Join-Path $OidfPublicSeedArtifactDirectory "oidf-public-plan-configs.manifest.json"
-    $oidfManifestSha256 = (Get-FileHash -LiteralPath $localOidfManifest -Algorithm SHA256).Hash.ToLowerInvariant()
-    $oidfArtifactFiles = @(Get-ChildItem -LiteralPath $OidfPublicSeedArtifactDirectory -File)
-    $oidfCaEnabledValue = "1"
-}
 if (-not $LocalFrontendWorktree) {
     $LocalFrontendWorktree = Find-FrontendWorktree `
         -BackendWorktree $LocalBackendWorktree `
@@ -568,7 +480,6 @@ $deploymentId = [guid]::NewGuid().ToString("N")
 $localStageSuffix = "$safeTag-$deploymentId"
 $archive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-server-$localStageSuffix.tar"
 $uiArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-web-$localStageSuffix.tar.gz"
-$oidfArtifactArchive = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oidf-public-artifact-$localStageSuffix.tar.gz"
 $localRemoteScript = Join-Path ([System.IO.Path]::GetTempPath()) "nazo-oauth-deploy-$localStageSuffix.sh"
 
 Write-Host "Staging $image ($BackendCommit / $FrontendCommit) on $RemoteHost"
@@ -582,6 +493,7 @@ else {
     try {
         $dockerBuildArgs = @(
             "build", "-f", (Join-Path $backendBuildContext "Containerfile"),
+            "--target", "runtime",
             "--label", "org.opencontainers.image.revision=$BackendCommit",
             "-t", $image
         )
@@ -599,44 +511,19 @@ else {
     if ($localDescriptorId -notmatch '^sha256:[0-9a-f]{64}$') {
         throw "Docker returned an invalid immutable image descriptor: $localDescriptorId"
     }
-    Remove-Item -LiteralPath $archive, $uiArchive, $oidfArtifactArchive -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $archive, $uiArchive -Force -ErrorAction SilentlyContinue
     Invoke-Checked docker @("save", $image, "-o", $archive)
     $expectedImageId = Get-ArchiveImageConfigId -Archive $archive -ExpectedTag $image
     Invoke-Checked tar @("-C", $LocalUiDist, "-czf", $uiArchive, ".")
-    if ($oidfCaEnabledValue -eq "1") {
-        Invoke-Checked tar @("-C", $OidfPublicSeedArtifactDirectory, "-czf", $oidfArtifactArchive, ".")
-    }
     $remoteTempDir = Get-SshCommandOutput @("mktemp", "-d", "/tmp/nazo-oauth-deploy.XXXXXX")
 }
 $remoteArchive = "$remoteTempDir/nazo-oauth-server-$safeTag.tar"
 $remoteUiArchive = "$remoteTempDir/nazo-oauth-web-$safeTag.tar.gz"
-$remoteOidfArtifactArchive = "$remoteTempDir/oidf-public-plan-configs.tar.gz"
 $remoteScript = "$remoteTempDir/deploy.sh"
 $remoteState = "$remoteTempDir/state.json"
-$remoteOidfArtifactDir = "$remoteTempDir/oidf-public-plan-configs"
-$remoteOidfCaValidator = "$remoteTempDir/oidf_mtls_ca_bundle.py"
-$remoteOidfCaBackup = "$remoteTempDir/oidf-mtls-ca.previous"
-$remoteAngieConfigBackup = "$remoteTempDir/angie-oidf-config.previous"
 if (-not $RenderRemoteScriptPath) {
     Invoke-ScpChecked @($archive, "${RemoteHost}:$remoteArchive")
     Invoke-ScpChecked @($uiArchive, "${RemoteHost}:$remoteUiArchive")
-    if ($oidfCaEnabledValue -eq "1") {
-        Invoke-SshChecked @("install", "-d", "-m", "0700", $remoteOidfArtifactDir)
-        Invoke-ScpChecked @($oidfArtifactArchive, "${RemoteHost}:$remoteOidfArtifactArchive")
-        Invoke-SshChecked @("tar", "-xzf", $remoteOidfArtifactArchive, "-C", $remoteOidfArtifactDir)
-        Invoke-ScpChecked @($localOidfCaValidator, "${RemoteHost}:$remoteOidfCaValidator")
-    }
-    if ($verifiedArtifactDirectory) {
-        $resolvedArtifactDirectory = [IO.Path]::GetFullPath($verifiedArtifactDirectory)
-        $resolvedTempRoot = [IO.Path]::GetFullPath([IO.Path]::GetTempPath()).TrimEnd(
-            [IO.Path]::DirectorySeparatorChar
-        )
-        if ([IO.Path]::GetDirectoryName($resolvedArtifactDirectory) -cne $resolvedTempRoot -or
-            [IO.Path]::GetFileName($resolvedArtifactDirectory) -notmatch '^nazo-oidf-public-artifact-[0-9a-f]{32}$') {
-            throw "Refusing to remove unexpected OIDF artifact staging path: $resolvedArtifactDirectory"
-        }
-        Remove-Item -LiteralPath $resolvedArtifactDirectory -Recurse -Force
-    }
 }
 
 $skipMigrateValue = if ($SkipMigrate) { "1" } else { "0" }
@@ -652,7 +539,6 @@ FRONTEND_ARTIFACT_SHA256=$(ConvertTo-ShellLiteral $frontendArtifactDigest)
 DEPLOYMENT_ID=$(ConvertTo-ShellLiteral $deploymentId)
 REMOTE_ARCHIVE=$(ConvertTo-ShellLiteral $remoteArchive)
 REMOTE_UI_ARCHIVE=$(ConvertTo-ShellLiteral $remoteUiArchive)
-REMOTE_OIDF_ARTIFACT_ARCHIVE=$(ConvertTo-ShellLiteral $remoteOidfArtifactArchive)
 REMOTE_SCRIPT=$(ConvertTo-ShellLiteral $remoteScript)
 STATE_FILE=$(ConvertTo-ShellLiteral $remoteState)
 CONTAINER_NAME=$(ConvertTo-ShellLiteral $ContainerName)
@@ -674,20 +560,7 @@ EXPECTED_ISSUER=$(ConvertTo-ShellLiteral $ExpectedIssuer)
 EXPECTED_IMAGE_ID=$(ConvertTo-ShellLiteral $expectedImageId)
 SKIP_MIGRATE=$(ConvertTo-ShellLiteral $skipMigrateValue)
 VERIFICATION_LEASE_SECONDS=$(ConvertTo-ShellLiteral $VerificationLeaseSeconds)
-OIDF_CA_ENABLED=$(ConvertTo-ShellLiteral $oidfCaEnabledValue)
-OIDF_SUITE_BASE_URL=$(ConvertTo-ShellLiteral $OidfSuiteBaseUrl)
-OIDF_CA_SHA256=$(ConvertTo-ShellLiteral $oidfCaSha256)
-OIDF_MANIFEST_SHA256=$(ConvertTo-ShellLiteral $oidfManifestSha256)
-OIDF_CA_ARTIFACT_DIR=$(ConvertTo-ShellLiteral $remoteOidfArtifactDir)
-OIDF_CA_VALIDATOR=$(ConvertTo-ShellLiteral $remoteOidfCaValidator)
-OIDF_CA_BACKUP=$(ConvertTo-ShellLiteral $remoteOidfCaBackup)
-OIDF_CA_TARGET=$(ConvertTo-ShellLiteral $RemoteOidfMtlsCaPath)
-ANGIE_OIDF_CONFIG=$(ConvertTo-ShellLiteral $RemoteAngieOidfConfigPath)
-ANGIE_CONFIG_BACKUP=$(ConvertTo-ShellLiteral $remoteAngieConfigBackup)
-ANGIE_SERVICE=$(ConvertTo-ShellLiteral $AngieServiceName)
-OIDF_WORKFLOW_RUN_ID=$(ConvertTo-ShellLiteral $OidfPublicSeedWorkflowRunId)
-OIDF_ARTIFACT_ID=$(ConvertTo-ShellLiteral $OidfPublicSeedArtifactId)
-OIDF_ARTIFACT_DIGEST=$(ConvertTo-ShellLiteral $OidfPublicSeedArtifactDigest)
+ANGIE_CONFIG=$(ConvertTo-ShellLiteral $RemoteAngieConfigPath)
 
 DEPLOYMENTS="`$DEPLOYMENT_ROOT/deployments"
 UI_RELEASE="`$UI_RELEASES/`$FRONTEND_COMMIT"
@@ -777,8 +650,8 @@ require_sha256() {
   fi
 }
 
-secure_angie_oidf_config_sha256() {
-  python3 - "`$ANGIE_OIDF_CONFIG" <<'PY'
+secure_angie_config_sha256() {
+  python3 - "`$ANGIE_CONFIG" <<'PY'
 import hashlib
 import os
 import pathlib
@@ -791,10 +664,10 @@ descriptor = os.open(path, flags)
 try:
     metadata = os.fstat(descriptor)
     if not stat.S_ISREG(metadata.st_mode):
-        raise SystemExit("Angie OIDF config must be a regular file")
+        raise SystemExit("Angie config must be a regular file")
     if os.name == "posix":
         if metadata.st_uid != 0 or metadata.st_mode & 0o022:
-            raise SystemExit("Angie OIDF config must be root-owned and not group/world-writable")
+            raise SystemExit("Angie config must be root-owned and not group/world-writable")
         for parent in (path.parent, *path.parents):
             parent_metadata = os.stat(parent, follow_symlinks=False)
             if (
@@ -803,7 +676,7 @@ try:
                 or parent_metadata.st_mode & 0o022
             ):
                 raise SystemExit(
-                    "Angie OIDF config parent directories must be root-owned and not group/world-writable"
+                    "Angie config parent directories must be root-owned and not group/world-writable"
                 )
     with os.fdopen(descriptor, "rb", closefd=False) as source:
         digest = hashlib.sha256(source.read()).hexdigest()
@@ -813,219 +686,20 @@ print(digest)
 PY
 }
 
-validate_oidf_ca_artifact() {
-  [ "`$OIDF_CA_ENABLED" = "1" ] || return 0
-  test -f "`$OIDF_CA_VALIDATOR" || return 1
-  python3 "`$OIDF_CA_VALIDATOR" verify \
-    --artifact-directory "`$OIDF_CA_ARTIFACT_DIR" \
-    --expected-source-commit "`$BACKEND_COMMIT" || return 1
-  require_sha256 "`$OIDF_CA_ARTIFACT_DIR/oidf-mtls-ca-bundle.pem" "`$OIDF_CA_SHA256" "OIDF CA bundle" || return 1
-  require_sha256 "`$OIDF_CA_ARTIFACT_DIR/oidf-public-plan-configs.manifest.json" "`$OIDF_MANIFEST_SHA256" "OIDF manifest" || return 1
-}
-
-assert_angie_oidf_ca_target() {
-  [ "`$OIDF_CA_ENABLED" = "1" ] || return 0
-  local angie_config validated_config_sha256
-  test -f "`$ANGIE_OIDF_CONFIG" || return 1
-  test ! -L "`$ANGIE_OIDF_CONFIG" || return 1
-  if ! angie_config="`$(angie -T 2>&1)"; then
-    echo "Angie configuration dump failed" >&2
-    return 1
-  fi
-  grep -F "# configuration file `$ANGIE_OIDF_CONFIG:" <<<"`$angie_config" >/dev/null || {
-    echo "`$ANGIE_OIDF_CONFIG is not present in the active Angie configuration" >&2
-    return 1
-  }
-  if ! validated_config_sha256="`$(OIDF_EXPECTED_CA_TARGET="`$OIDF_CA_TARGET" python3 - "`$ANGIE_OIDF_CONFIG" <<'PY'
-import hashlib
-import os
-import pathlib
-import stat
-import sys
-
-
-class ConfigError(Exception):
-    pass
-
-
-def directives(source: str):
-    tokens: list[str] = []
-    token: list[str] = []
-    quote: str | None = None
-    escaped = False
-    comment = False
-
-    def flush_token() -> None:
-        if token:
-            tokens.append("".join(token))
-            token.clear()
-
-    for character in source:
-        if comment:
-            if character in "\r\n":
-                comment = False
-            continue
-        if escaped:
-            token.append(character)
-            escaped = False
-            continue
-        if character == "\\":
-            escaped = True
-            continue
-        if quote is not None:
-            if character == quote:
-                quote = None
-            else:
-                token.append(character)
-            continue
-        if character in "'\"":
-            quote = character
-        elif character == "#":
-            flush_token()
-            comment = True
-        elif character.isspace():
-            flush_token()
-        elif character == ";":
-            flush_token()
-            if not tokens:
-                raise ConfigError("empty directive")
-            yield tuple(tokens)
-            tokens.clear()
-        elif character == "{":
-            flush_token()
-            if tokens and tokens[0] == "include":
-                raise ConfigError("include directives are not permitted")
-            tokens.clear()
-        elif character == "}":
-            flush_token()
-            if tokens:
-                raise ConfigError("unterminated directive before block end")
-        else:
-            token.append(character)
-    if quote is not None or escaped:
-        raise ConfigError("unterminated quote or escape")
-    flush_token()
-    if tokens:
-        raise ConfigError("unterminated directive at end of file")
-
-
-config_path = pathlib.Path(sys.argv[1])
-target_path = os.environ["OIDF_EXPECTED_CA_TARGET"]
-flags = os.O_RDONLY | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NOFOLLOW", 0)
-descriptor = os.open(config_path, flags)
-try:
-    metadata = os.fstat(descriptor)
-    if not stat.S_ISREG(metadata.st_mode):
-        raise SystemExit(f"{config_path} must be a regular file")
-    if os.name == "posix":
-        if metadata.st_uid != 0 or metadata.st_mode & 0o022:
-            raise SystemExit(
-                f"{config_path} must be root-owned and not group/world-writable"
-            )
-        for parent in (config_path.parent, *config_path.parents):
-            parent_metadata = os.stat(parent, follow_symlinks=False)
-            if (
-                not stat.S_ISDIR(parent_metadata.st_mode)
-                or parent_metadata.st_uid != 0
-                or parent_metadata.st_mode & 0o022
-            ):
-                raise SystemExit(
-                    f"{config_path} parent directories must be root-owned and not group/world-writable"
-                )
-    with os.fdopen(descriptor, "rb", closefd=False) as config_file:
-        raw_source = config_file.read()
-finally:
-    os.close(descriptor)
-source = raw_source.decode("utf-8")
-if "\x00" in source:
-    raise SystemExit(f"{config_path} contains a NUL byte")
-
-ca_paths: list[str] = []
-verify_client_modes: list[str] = []
-verify_sources: list[str] = []
-certificate_sources: list[str] = []
-try:
-    for directive in directives(source):
-        name = directive[0]
-        if any(token.upper() == "SUCCESS" for token in directive):
-            raise ConfigError("certificate verification must not be overridden with SUCCESS")
-        if name == "include":
-            raise ConfigError("include directives are not permitted")
-        if name == "ssl_client_certificate":
-            if len(directive) != 2:
-                raise ConfigError("ssl_client_certificate must have exactly one argument")
-            ca_paths.append(directive[1])
-        if name == "ssl_verify_client":
-            if len(directive) != 2:
-                raise ConfigError("ssl_verify_client must have exactly one argument")
-            verify_client_modes.append(directive[1])
-        if name == "proxy_set_header" and len(directive) >= 2:
-            header = directive[1].lower()
-            if header == "x-ssl-client-verify":
-                if len(directive) != 3:
-                    raise ConfigError("X-SSL-Client-Verify must have exactly one value")
-                verify_sources.append(directive[2])
-            if header == "x-ssl-client-cert":
-                if len(directive) != 3:
-                    raise ConfigError("X-SSL-Client-Cert must have exactly one value")
-                certificate_sources.append(directive[2])
-except ConfigError as error:
-    raise SystemExit(f"unsafe Angie OIDF configuration: {error}") from error
-
-if not ca_paths or any(path != target_path for path in ca_paths):
-    raise SystemExit(
-        f"ssl_client_certificate must exclusively reference {target_path}"
-    )
-if verify_client_modes != ["optional"]:
-    raise SystemExit(
-        "ssl_verify_client must be exactly optional for verified public mTLS"
-    )
-if verify_sources != ["`$ssl_client_verify"]:
-    raise SystemExit(
-        "X-SSL-Client-Verify must be set exactly once from ssl_client_verify"
-    )
-if certificate_sources != ["`$ssl_client_escaped_cert"]:
-    raise SystemExit(
-        "X-SSL-Client-Cert must be set exactly once from ssl_client_escaped_cert"
-    )
-print(hashlib.sha256(raw_source).hexdigest())
-PY
-)"; then
-    return 1
-  fi
-  if [[ ! "`$validated_config_sha256" =~ ^[0-9a-f]{64}`$ ]]; then
-    echo "Angie OIDF configuration validator returned an invalid digest" >&2
-    return 1
-  fi
-  angie_oidf_config_sha256="`$validated_config_sha256"
-}
-
-assert_angie_oidf_config_unchanged() {
-  [ "`$OIDF_CA_ENABLED" = "1" ] || return 0
-  [ -n "`${angie_oidf_config_sha256:-}" ] || return 1
-  local current_digest
-  if ! current_digest="`$(secure_angie_oidf_config_sha256)"; then
-    return 1
-  fi
-  if [ "`$current_digest" != "`$angie_oidf_config_sha256" ]; then
-    echo "Angie OIDF configuration changed during deployment" >&2
-    return 1
-  fi
-}
-
 assert_angie_backend_upstream() {
   local active_config
-  test -f "`$ANGIE_OIDF_CONFIG" || return 1
-  test ! -L "`$ANGIE_OIDF_CONFIG" || return 1
+  secure_angie_config_sha256 >/dev/null || return 1
+  test -f "`$ANGIE_CONFIG" || return 1
+  test ! -L "`$ANGIE_CONFIG" || return 1
   if ! active_config="`$(angie -T 2>&1)"; then
     echo "Angie configuration dump failed" >&2
     return 1
   fi
-  grep -F "# configuration file `$ANGIE_OIDF_CONFIG:" <<<"`$active_config" >/dev/null || {
-    echo "`$ANGIE_OIDF_CONFIG is not present in the active Angie configuration" >&2
+  grep -F "# configuration file `$ANGIE_CONFIG:" <<<"`$active_config" >/dev/null || {
+    echo "`$ANGIE_CONFIG is not present in the active Angie configuration" >&2
     return 1
   }
-  python3 - "`$ANGIE_OIDF_CONFIG" "`$CONTAINER_IP" <<'PY'
+  python3 - "`$ANGIE_CONFIG" "`$CONTAINER_IP" <<'PY'
 from __future__ import annotations
 
 import pathlib
@@ -1042,126 +716,9 @@ if matches != [container_ip]:
     raise SystemExit(
         f"Angie backend proxy_pass must point only to {container_ip}:8000, got {matches}"
     )
-if "https://127.0.0.1:8443" in source and "location ^~ /test/" not in source:
-    raise SystemExit("local conformance-suite proxy is only permitted in the /test/ location")
+if re.search(r"https?://(?:127\.0\.0\.1|localhost|\[::1\])(?::[0-9]+)?", source):
+    raise SystemExit("local conformance-suite upstreams are forbidden in production Angie configuration")
 PY
-}
-
-restore_angie_oidf_config() {
-  local current_digest target_dir temporary
-  require_sha256 "`$ANGIE_CONFIG_BACKUP" "`$angie_oidf_config_sha256" "Angie OIDF configuration backup" || return 1
-  current_digest="`$(secure_angie_oidf_config_sha256 2>/dev/null || true)"
-  if [ "`$current_digest" != "`$angie_oidf_config_sha256" ]; then
-    target_dir="`$(dirname "`$ANGIE_OIDF_CONFIG")"
-    temporary="`$(mktemp "`$target_dir/.angie-oidf-config.rollback.XXXXXX")" || return 1
-    cp --preserve=mode,ownership,timestamps -- "`$ANGIE_CONFIG_BACKUP" "`$temporary" || return 1
-    require_sha256 "`$temporary" "`$angie_oidf_config_sha256" "staged Angie OIDF configuration rollback" || return 1
-    mv -f "`$temporary" "`$ANGIE_OIDF_CONFIG" || return 1
-    fsync_parent "`$ANGIE_OIDF_CONFIG" || return 1
-  fi
-  assert_angie_oidf_ca_target || return 1
-  assert_angie_oidf_config_unchanged || return 1
-}
-
-reload_angie_and_wait() {
-  local before_workers after_workers deadline master_pid new_worker old_worker_remaining pid
-  master_pid="`$(systemctl show --property MainPID --value "`$ANGIE_SERVICE")" || return 1
-  [[ "`$master_pid" =~ ^[1-9][0-9]*`$ ]] || return 1
-  before_workers="`$(pgrep -P "`$master_pid" -f 'worker process' | sort -n || true)"
-  systemctl reload "`$ANGIE_SERVICE" || return 1
-  deadline=`$((SECONDS + `${ANGIE_RELOAD_WAIT_SECONDS:-15}))
-  while [ "`$SECONDS" -lt "`$deadline" ]; do
-    after_workers="`$(pgrep -P "`$master_pid" -f 'worker process' | sort -n || true)"
-    new_worker="0"
-    for pid in `$after_workers; do
-      if ! grep -Fx "`$pid" <<<"`$before_workers" >/dev/null; then
-        new_worker="1"
-        break
-      fi
-    done
-    old_worker_remaining="0"
-    for pid in `$before_workers; do
-      if grep -Fx "`$pid" <<<"`$after_workers" >/dev/null; then
-        old_worker_remaining="1"
-        break
-      fi
-    done
-    if [ "`$new_worker" = "1" ] && [ "`$old_worker_remaining" = "0" ]; then
-      return 0
-    fi
-    sleep 0.1
-  done
-  echo "Angie workers did not rotate after reload" >&2
-  return 1
-}
-
-install_oidf_ca() {
-  [ "`$OIDF_CA_ENABLED" = "1" ] || return 0
-  validate_oidf_ca_artifact || return 1
-  assert_angie_oidf_ca_target || return 1
-  local target_dir temporary
-  target_dir="`$(dirname "`$OIDF_CA_TARGET")"
-  install -d -m 0755 "`$target_dir" || return 1
-  temporary="`$(mktemp "`$target_dir/.oidf-mtls-ca.XXXXXX")" || return 1
-  install -m 0644 "`$OIDF_CA_ARTIFACT_DIR/oidf-mtls-ca-bundle.pem" "`$temporary" || return 1
-  python3 "`$OIDF_CA_VALIDATOR" verify --bundle "`$temporary" || return 1
-  require_sha256 "`$temporary" "`$OIDF_CA_SHA256" "staged OIDF CA bundle" || return 1
-  assert_angie_oidf_config_unchanged || return 1
-  ca_switched="1"
-  save_state || return 1
-  mv -f "`$temporary" "`$OIDF_CA_TARGET" || return 1
-  fsync_parent "`$OIDF_CA_TARGET" || return 1
-  assert_angie_oidf_config_unchanged || return 1
-  angie -t || return 1
-  assert_angie_oidf_config_unchanged || return 1
-  reload_angie_and_wait || return 1
-  assert_angie_oidf_config_unchanged || return 1
-  python3 "`$OIDF_CA_VALIDATOR" verify --bundle "`$OIDF_CA_TARGET" || return 1
-  require_sha256 "`$OIDF_CA_TARGET" "`$OIDF_CA_SHA256" "installed OIDF CA bundle" || return 1
-}
-
-seed_oidf_public_clients() {
-  [ "`$OIDF_CA_ENABLED" = "1" ] || return 0
-  validate_oidf_ca_artifact || return 1
-  podman run --rm --name "`$CONTAINER_NAME-oidf-seed-`$(date +%s)" \
-    --network "`$NETWORK_NAME" \
-    -e "OIDF_SUITE_BASE_URL=`$OIDF_SUITE_BASE_URL" \
-    -e "OIDF_LOCAL_RUNTIME_DIR=/app/oidf-public-plan-configs" \
-    -v "`$CONFIG_PATH:/app/.env.yaml:ro" \
-    -v "`$KEYS_PATH:/var/lib/nazo_oauth/keys:rw" \
-    -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
-    -v "`$OIDF_CA_ARTIFACT_DIR:/app/oidf-public-plan-configs:ro" \
-    "`$IMAGE" nazo_oauth_seed_oidf || return 1
-}
-
-restore_oidf_ca() {
-  [ "`${ca_switched:-0}" = "1" ] || return 0
-  local target_dir temporary
-  target_dir="`$(dirname "`$OIDF_CA_TARGET")"
-  if [ "`$previous_ca_kind" = "file" ]; then
-    test -f "`$OIDF_CA_BACKUP" || return 1
-    require_sha256 "`$OIDF_CA_BACKUP" "`$previous_ca_sha256" "OIDF CA rollback backup" || return 1
-    temporary="`$(mktemp "`$target_dir/.oidf-mtls-ca.rollback.XXXXXX")" || return 1
-    cp --preserve=mode,ownership,timestamps -- "`$OIDF_CA_BACKUP" "`$temporary" || return 1
-    mv -f "`$temporary" "`$OIDF_CA_TARGET" || return 1
-  elif [ "`$previous_ca_kind" = "missing" ]; then
-    rm -f "`$OIDF_CA_TARGET" || return 1
-  else
-    echo "Invalid previous OIDF CA state: `$previous_ca_kind" >&2
-    return 1
-  fi
-  fsync_parent "`$OIDF_CA_TARGET" || return 1
-  restore_angie_oidf_config || return 1
-  angie -t || return 1
-  assert_angie_oidf_config_unchanged || return 1
-  reload_angie_and_wait || return 1
-  assert_angie_oidf_config_unchanged || return 1
-  if [ "`$previous_ca_kind" = "file" ]; then
-    cmp -s "`$OIDF_CA_BACKUP" "`$OIDF_CA_TARGET" || return 1
-    require_sha256 "`$OIDF_CA_TARGET" "`$previous_ca_sha256" "restored OIDF CA bundle" || return 1
-  else
-    test ! -e "`$OIDF_CA_TARGET" || return 1
-  fi
 }
 
 write_record() {
@@ -1170,9 +727,7 @@ write_record() {
     "`$DEPLOYMENT_ID" "`$IMAGE" "`$EXPECTED_IMAGE_ID" "`$FRONTEND_ARTIFACT_SHA256" \
     "`${previous_image_id:-}" "`${previous_image_name:-}" \
     "`${previous_container_id:-}" "`${previous_ui_target:-}" "`${candidate_container_id:-}" \
-    "`$UI_RELEASE" "`$OIDF_CA_ENABLED" "`$OIDF_CA_SHA256" "`$OIDF_MANIFEST_SHA256" \
-    "`$OIDF_WORKFLOW_RUN_ID" "`$OIDF_ARTIFACT_ID" "`$OIDF_ARTIFACT_DIGEST" \
-    "`${previous_ca_sha256:-}" <<'PY'
+    "`$UI_RELEASE" <<'PY'
 import json, os, pathlib, sys, time
 path = pathlib.Path(sys.argv[1])
 payload = {
@@ -1189,14 +744,6 @@ payload = {
     "previous_ui_target": sys.argv[12],
     "candidate_container_id": sys.argv[13],
     "candidate_ui_release": sys.argv[14],
-    "oidf_ca_installed": sys.argv[15] == "1",
-    "oidf_source_commit": sys.argv[3] if sys.argv[15] == "1" else "",
-    "oidf_ca_sha256": sys.argv[16],
-    "oidf_manifest_sha256": sys.argv[17],
-    "oidf_workflow_run_id": sys.argv[18],
-    "oidf_artifact_id": sys.argv[19],
-    "oidf_artifact_digest": sys.argv[20],
-    "oidf_previous_ca_sha256": sys.argv[21],
     "recorded_at_unix": int(time.time()),
 }
 path.parent.mkdir(parents=True, exist_ok=True)
@@ -1224,18 +771,16 @@ save_state() {
     "`$previous_image_id" "`$previous_image_name" "`$previous_container_id" \
     "`$previous_ui_kind" "`$previous_ui_target" "`$legacy_ui_release" \
     "`$candidate_container_id" "`$previous_current_target" \
-    "`$candidate_started" "`$ui_switched" "`$previous_ca_kind" "`$previous_ca_sha256" "`$ca_switched" \
-    "`${angie_oidf_config_sha256:-}" <<'PY'
+    "`$candidate_started" "`$ui_switched" <<'PY'
 import json, os, sys
 keys = (
     "deployment_id", "previous_image_id", "previous_image_name",
     "previous_container_id", "previous_ui_kind", "previous_ui_target",
     "legacy_ui_release", "candidate_container_id", "previous_current_target",
-    "candidate_started", "ui_switched", "previous_ca_kind", "previous_ca_sha256", "ca_switched",
-    "angie_oidf_config_sha256",
+    "candidate_started", "ui_switched",
 )
 payload = dict(zip(keys, sys.argv[2:], strict=True))
-payload["schema"] = 2
+payload["schema"] = 3
 with open(sys.argv[1], "w", encoding="utf-8") as handle:
     json.dump(payload, handle, sort_keys=True)
     handle.write("\n")
@@ -1253,7 +798,7 @@ PY
 
 validate_state_file() {
   python3 - "`$1" "`$DEPLOYMENT_ID" <<'PY'
-import json, pathlib, re, shlex, sys
+import json, pathlib, shlex, sys
 path = pathlib.Path(sys.argv[1])
 try:
     payload = json.loads(path.read_text(encoding="utf-8"))
@@ -1263,10 +808,9 @@ keys = {
     "schema", "deployment_id", "previous_image_id", "previous_image_name",
     "previous_container_id", "previous_ui_kind", "previous_ui_target",
     "legacy_ui_release", "candidate_container_id", "previous_current_target",
-    "candidate_started", "ui_switched", "previous_ca_kind", "previous_ca_sha256", "ca_switched",
-    "angie_oidf_config_sha256",
+    "candidate_started", "ui_switched",
 }
-if set(payload) != keys or payload.get("schema") != 2:
+if set(payload) != keys or payload.get("schema") != 3:
     raise SystemExit("invalid deployment state schema")
 if payload.get("deployment_id") != sys.argv[2]:
     raise SystemExit("deployment state owner mismatch")
@@ -1275,19 +819,7 @@ for key in keys - {"schema"}:
         raise SystemExit(f"invalid deployment state field: {key}")
 if payload["previous_ui_kind"] not in {"missing", "symlink", "directory"}:
     raise SystemExit("invalid previous_ui_kind")
-if payload["previous_ca_kind"] not in {"disabled", "missing", "file"}:
-    raise SystemExit("invalid previous_ca_kind")
-if payload["previous_ca_kind"] == "file":
-    if not re.fullmatch(r"[0-9a-f]{64}", payload["previous_ca_sha256"]):
-        raise SystemExit("invalid previous_ca_sha256")
-elif payload["previous_ca_sha256"]:
-    raise SystemExit("unexpected previous_ca_sha256")
-if payload["previous_ca_kind"] == "disabled":
-    if payload["angie_oidf_config_sha256"]:
-        raise SystemExit("unexpected angie_oidf_config_sha256")
-elif not re.fullmatch(r"[0-9a-f]{64}", payload["angie_oidf_config_sha256"]):
-    raise SystemExit("invalid angie_oidf_config_sha256")
-if any(payload[key] not in {"0", "1"} for key in ("candidate_started", "ui_switched", "ca_switched")):
+if any(payload[key] not in {"0", "1"} for key in ("candidate_started", "ui_switched")):
     raise SystemExit("invalid deployment state flags")
 for key in sorted(keys - {"schema", "deployment_id"}):
     print(f"{key}={shlex.quote(payload[key])}")
@@ -1303,7 +835,7 @@ load_state() {
 
 rollback() {
   load_state || { write_record "rollback-failed" || true; return 1; }
-  local image_failed=0 ui_failed=0 ca_failed=0 pointer_failed=0 restored_image
+  local image_failed=0 ui_failed=0 pointer_failed=0 restored_image
   if [ "`$candidate_started" = "1" ]; then
     if podman container exists "`$CONTAINER_NAME" && ! podman rm -f "`$CONTAINER_NAME" >/dev/null; then image_failed=1; fi
     if [ -n "`$previous_image_id" ]; then
@@ -1337,9 +869,6 @@ rollback() {
     elif { [ -L "`$UI_PATH" ] || [ -e "`$UI_PATH" ]; } && ! rm -rf "`$UI_PATH"; then
       ui_failed=1
     fi
-  fi
-  if [ "`${ca_switched:-0}" = "1" ] && ! restore_oidf_ca; then
-    ca_failed=1
   fi
   if [ -L "`$DEPLOYMENTS/current.json" ] && [ "`$(readlink "`$DEPLOYMENTS/current.json")" = "`$RECORD" ]; then
     if ! rm -f "`$DEPLOYMENTS/current.json"; then
@@ -1379,7 +908,7 @@ rollback() {
   else
     [ ! -e "`$DEPLOYMENTS/current.json" ] && [ ! -L "`$DEPLOYMENTS/current.json" ] || pointer_failed=1
   fi
-  if [ "`$image_failed" != "0" ] || [ "`$ui_failed" != "0" ] || [ "`$ca_failed" != "0" ] || [ "`$pointer_failed" != "0" ]; then
+  if [ "`$image_failed" != "0" ] || [ "`$ui_failed" != "0" ] || [ "`$pointer_failed" != "0" ]; then
     write_record "rollback-failed" || true
     return 1
   fi
@@ -1387,10 +916,10 @@ rollback() {
 }
 
 cleanup() {
-  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_OIDF_ARTIFACT_ARCHIVE" "`$REMOTE_SCRIPT" "`$STATE_FILE" \
+  rm -f "`$REMOTE_ARCHIVE" "`$REMOTE_UI_ARCHIVE" "`$REMOTE_SCRIPT" "`$STATE_FILE" \
     "`$WATCHDOG_PID_FILE" "`$LEASE_PENDING" "`$LEASE_COMMITTED" "`$LEASE_ROLLBACK" \
-    "`$CURRENT_LINK_TEMP" "`$OIDF_CA_VALIDATOR" "`$OIDF_CA_BACKUP" "`$ANGIE_CONFIG_BACKUP"
-  rm -rf "`$UI_RELEASE.tmp" "`$OIDF_CA_ARTIFACT_DIR"
+    "`$CURRENT_LINK_TEMP"
+  rm -rf "`$UI_RELEASE.tmp"
   if [ -f "`$ACTIVE_DEPLOYMENT/owner" ] && [ "`$(cat "`$ACTIVE_DEPLOYMENT/owner")" = "`$DEPLOYMENT_ID" ]; then
     rm -rf "`$ACTIVE_DEPLOYMENT"
   fi
@@ -1480,8 +1009,6 @@ PY
   podman run --rm --network "`$NETWORK_NAME" docker.io/library/postgres:18 \
     pg_isready -h 10.101.0.10 -p 5432 >/dev/null
   podman exec nazo-oauth-valkey valkey-cli ping | grep -Fx PONG >/dev/null
-  validate_oidf_ca_artifact || return 1
-  assert_angie_oidf_ca_target || return 1
   assert_angie_backend_upstream || return 1
 
   install -d -m 0755 "`$UI_RELEASES"
@@ -1514,27 +1041,6 @@ PY
   candidate_container_id=""
   candidate_started="0"
   ui_switched="0"
-  previous_ca_kind="disabled"
-  previous_ca_sha256=""
-  ca_switched="0"
-  if [ "`$OIDF_CA_ENABLED" = "1" ]; then
-    cp --preserve=mode,ownership,timestamps -- "`$ANGIE_OIDF_CONFIG" "`$ANGIE_CONFIG_BACKUP" || return 1
-    require_sha256 "`$ANGIE_CONFIG_BACKUP" "`$angie_oidf_config_sha256" "Angie OIDF configuration backup" || return 1
-    if [ -L "`$OIDF_CA_TARGET" ] || { [ -e "`$OIDF_CA_TARGET" ] && [ ! -f "`$OIDF_CA_TARGET" ]; }; then
-      echo "OIDF mTLS CA target must be a regular file or absent: `$OIDF_CA_TARGET" >&2
-      return 1
-    elif [ -f "`$OIDF_CA_TARGET" ]; then
-      previous_ca_kind="file"
-      if ! previous_ca_sha256="`$(sha256_file "`$OIDF_CA_TARGET")"; then
-        echo "Existing OIDF CA bundle could not be hashed" >&2
-        return 1
-      fi
-      cp --preserve=mode,ownership,timestamps -- "`$OIDF_CA_TARGET" "`$OIDF_CA_BACKUP"
-      require_sha256 "`$OIDF_CA_BACKUP" "`$previous_ca_sha256" "OIDF CA rollback backup"
-    else
-      previous_ca_kind="missing"
-    fi
-  fi
   previous_current_target=""
   if [ -L "`$DEPLOYMENTS/current.json" ]; then
     previous_current_target="`$(readlink "`$DEPLOYMENTS/current.json")"
@@ -1587,7 +1093,6 @@ PY
       -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
       "`$IMAGE" nazo-oauth-migrate
   fi
-  seed_oidf_public_clients
   assert_pending_lease
 
   candidate_started="1"
@@ -1603,10 +1108,6 @@ PY
   discovery="`$(curl -fsS --max-time 20 "http://`$CONTAINER_IP:8000/.well-known/openid-configuration")"
   python3 -c 'import json,sys; assert json.load(sys.stdin)["issuer"] == sys.argv[1]' "`$EXPECTED_ISSUER" <<<"`$discovery"
   assert_angie_backend_upstream || return 1
-  assert_pending_lease
-  install_oidf_ca
-  assert_pending_lease
-
   ui_switched="1"
   save_state
   if [ "`$previous_ui_kind" = "directory" ]; then mv -T "`$UI_PATH" "`$legacy_ui_release"; fi
@@ -1716,5 +1217,5 @@ catch {
     throw
 }
 finally {
-    Remove-Item -LiteralPath $localRemoteScript, $uiArchive, $archive, $oidfArtifactArchive -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath $localRemoteScript, $uiArchive, $archive -Force -ErrorAction SilentlyContinue
 }

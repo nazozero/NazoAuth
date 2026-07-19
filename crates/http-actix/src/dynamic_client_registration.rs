@@ -426,7 +426,7 @@ pub async fn client_configuration_put(
         realm_id: current.realm_id,
         organization_id: current.organization_id,
         registration: prepared.registration.clone(),
-        require_mtls_bound_tokens: current.require_mtls_bound_tokens,
+        require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
         is_active: current.is_active,
     };
     let client = match endpoint
@@ -846,6 +846,8 @@ fn dynamic_registration_response(
         "response_types": response_types,
         "scope": client.scopes.join(" "),
         "token_endpoint_auth_method": client.token_endpoint_auth_method,
+        "dpop_bound_access_tokens": client.require_dpop_bound_tokens,
+        "tls_client_certificate_bound_access_tokens": client.require_mtls_bound_tokens,
         "subject_type": client.subject_type,
         "post_logout_redirect_uris": client.post_logout_redirect_uris,
         "backchannel_logout_session_required": client.backchannel_logout_session_required,
@@ -864,6 +866,22 @@ fn dynamic_registration_response(
     }
     if let Some(uri) = &client.frontchannel_logout_uri {
         body["frontchannel_logout_uri"] = json!(uri);
+    }
+    if let Some(subject_dn) = &client.tls_client_auth_subject_dn {
+        body["tls_client_auth_subject_dn"] = json!(subject_dn);
+    }
+    for (field, values) in [
+        ("tls_client_auth_san_dns", &client.tls_client_auth_san_dns),
+        ("tls_client_auth_san_uri", &client.tls_client_auth_san_uri),
+        ("tls_client_auth_san_ip", &client.tls_client_auth_san_ip),
+        (
+            "tls_client_auth_san_email",
+            &client.tls_client_auth_san_email,
+        ),
+    ] {
+        if let [value] = values.as_slice() {
+            body[field] = json!(value);
+        }
     }
     if let Some(jwks_uri) = &client.jwks_uri {
         body["jwks_uri"] = json!(jwks_uri);
@@ -975,7 +993,7 @@ mod tests {
                 realm_id: prepared.tenant.realm_id.as_uuid(),
                 organization_id: prepared.tenant.organization_id.as_uuid(),
                 registration: prepared.registration.clone(),
-                require_mtls_bound_tokens: false,
+                require_mtls_bound_tokens: prepared.require_mtls_bound_tokens,
                 is_active: true,
             };
             *self.client.lock().expect("client lock") = Some(inserted.clone());
@@ -1072,8 +1090,14 @@ mod tests {
             ("issued-secret".to_owned(), "stored-secret-hash".to_owned())
         }
 
-        fn validate_jwks(&self, _jwks: &Value, _allow_missing_kid: bool) -> Result<(), String> {
+        fn validate_jwks(&self, _jwks: &Value) -> Result<(), String> {
             Ok(())
+        }
+
+        fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
+            (!value.trim().is_empty() && value.contains('='))
+                .then_some(())
+                .ok_or_else(|| "invalid RFC 4514 DN".to_owned())
         }
 
         fn matching_encryption_key_count(&self, _jwks: &Value, _algorithm: &str) -> usize {

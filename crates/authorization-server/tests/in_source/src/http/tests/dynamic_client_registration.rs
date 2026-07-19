@@ -69,7 +69,7 @@ fn oidc_dynamic_registration_defaults_to_confidential_authorization_code_client(
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
         scope: Some("openid profile email".to_owned()),
-        client_name: Some("OIDF Dynamic Client".to_owned()),
+        client_name: Some("Dynamically Registered Client".to_owned()),
         ..Default::default()
     };
 
@@ -81,7 +81,7 @@ fn oidc_dynamic_registration_defaults_to_confidential_authorization_code_client(
     )
     .expect("valid OIDC dynamic registration metadata should be accepted");
 
-    assert_eq!(prepared.client_name, "OIDF Dynamic Client");
+    assert_eq!(prepared.client_name, "Dynamically Registered Client");
     assert_eq!(prepared.client_type, "confidential");
     assert_eq!(prepared.token_endpoint_auth_method, "client_secret_basic");
     assert_eq!(
@@ -280,11 +280,9 @@ fn dynamic_registration_rejects_malformed_request_uris_metadata() {
 }
 
 #[actix_web::test]
-async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_clients() {
+async fn dynamic_registration_accepts_a_public_jwk_without_the_optional_key_id() {
     let request = DynamicClientRegistrationRequest {
-        redirect_uris: Some(vec![
-            "https://suite.example/test/a/client/callback".to_owned(),
-        ]),
+        redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
         jwks: Some(json!({
             "keys": [{
                 "kty": "RSA",
@@ -303,7 +301,7 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
             default_audience: "https://issuer.example/fapi/resource",
         },
     )
-    .expect("OIDF Basic dynamic registration metadata should parse");
+    .expect("valid dynamic registration metadata should parse");
 
     let create_request = prepared.into_create_client_request();
     assert_eq!(
@@ -319,7 +317,7 @@ async fn dynamic_registration_accepts_oidf_inline_jwks_without_kid_for_secret_cl
     );
     prepare_admin_client_insert_for_test(create_request, None, "https://issuer.example")
         .await
-        .expect("OIDF inline jwks without kid should be accepted for secret clients");
+        .expect("RFC 7517 defines the JWK kid member as optional");
 }
 
 #[actix_web::test]
@@ -618,7 +616,7 @@ fn client_configuration_update_requires_matching_client_id_and_secret() {
 }
 
 #[actix_web::test]
-async fn dynamic_registration_accepts_single_oidf_private_key_jwt_jwk_without_kid() {
+async fn private_key_jwt_registration_accepts_an_unambiguous_jwk_without_key_id() {
     let request = DynamicClientRegistrationRequest {
         redirect_uris: Some(vec!["https://client.example/callback".to_owned()]),
         token_endpoint_auth_method: Some("private_key_jwt".to_owned()),
@@ -648,7 +646,7 @@ async fn dynamic_registration_accepts_single_oidf_private_key_jwt_jwk_without_ki
         "https://issuer.example",
     )
     .await
-    .expect("OIDF dynamic registration must accept one unambiguous signing JWK without kid");
+    .expect("one compatible signing JWK is unambiguous without kid");
     assert!(
         prepared_insert.allow_client_assertion_endpoint_audience,
         "ordinary OIDC private_key_jwt DCR must persist token-endpoint audience compatibility"
@@ -656,7 +654,7 @@ async fn dynamic_registration_accepts_single_oidf_private_key_jwt_jwk_without_ki
 }
 
 #[actix_web::test]
-async fn dynamic_registration_rejects_ambiguous_private_key_jwt_jwks_without_kid() {
+async fn private_key_jwt_registration_rejects_ambiguous_jwks_without_key_ids() {
     let signing_jwk = json!({
         "kty": "RSA",
         "e": "AQAB",

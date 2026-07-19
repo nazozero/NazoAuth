@@ -19,3 +19,5 @@ pub(crate) type ClientAccessProfileService = nazo_identity::ClientAccessService<
 
 pub(crate) type FederationProfileService =
     nazo_identity::FederationLinksService<nazo_postgres::FederationRepository>;
+
+pub(crate) type MtlsTrustAnchorService = nazo_postgres::MtlsTrustAnchorRepository;

@@ -33,6 +33,13 @@ use crate::http::admin::{
     },
     federation::admin_federation_providers,
     grants::{admin_grants, admin_revoke_grant},
+    mtls_trust::{
+        admin_approve_mtls_trust_request, admin_mtls_trust_bundle, admin_mtls_trust_requests,
+        admin_reject_mtls_trust_request, admin_revoke_mtls_trust_anchor,
+    },
+    openid4vc::{
+        admin_delete_credential_dataset, admin_get_credential_dataset, admin_put_credential_dataset,
+    },
     users::{admin_patch_user, admin_users},
 };
 use crate::http::auth::{
@@ -61,6 +68,7 @@ use crate::http::profile::{
     avatar::{delete_avatar, get_avatar, upload_avatar},
     delivery::access_delivery,
     federation_links::{my_federation_links, unlink_my_federation_link},
+    mtls_trust::{create_mtls_trust_request, my_mtls_trust_requests},
 };
 #[cfg(test)]
 use crate::http::token::userinfo::userinfo;
@@ -89,6 +97,7 @@ pub(crate) fn configure(
     settings: &Settings,
     perf_metrics_enabled: bool,
 ) {
+    let enable_openid4vci_issuer = settings.modules.enable_openid4vci_issuer;
     // Actix scopes consume every request under their prefix, including paths
     // that are not registered inside the scope. Keep all /.well-known routes
     // in this single scope so later top-level resources cannot be shadowed.
@@ -250,7 +259,15 @@ pub(crate) fn configure(
                         )
                         .route("/access-requests", web::get().to(my_access_requests))
                         .route("/access-requests", web::post().to(create_access_request))
-                        .route("/access-delivery", web::get().to(access_delivery)),
+                        .route(
+                            "/mtls-trust-requests",
+                            web::get().to(my_mtls_trust_requests),
+                        )
+                        .route(
+                            "/mtls-trust-requests",
+                            web::post().to(create_mtls_trust_request),
+                        )
+                        .route("/access-delivery", web::post().to(access_delivery)),
                 )
                 .route(
                     "/ciba-automated-decision",
@@ -293,13 +310,47 @@ pub(crate) fn configure(
                 .route("/grants/revoke", web::post().to(admin_revoke_grant))
                 .route("/access-requests", web::get().to(admin_access_requests))
                 .route(
+                    "/mtls-trust-requests",
+                    web::get().to(admin_mtls_trust_requests),
+                )
+                .route(
+                    "/mtls-trust-anchors.pem",
+                    web::get().to(admin_mtls_trust_bundle),
+                )
+                .route(
+                    "/mtls-trust-requests/{request_id}/approve",
+                    web::post().to(admin_approve_mtls_trust_request),
+                )
+                .route(
+                    "/mtls-trust-requests/{request_id}/reject",
+                    web::post().to(admin_reject_mtls_trust_request),
+                )
+                .route(
+                    "/mtls-trust-requests/{request_id}/revoke",
+                    web::post().to(admin_revoke_mtls_trust_anchor),
+                )
+                .route(
                     "/access-requests/{request_id}/approve",
                     web::post().to(admin_approve_access_request),
                 )
                 .route(
                     "/access-requests/{request_id}/reject",
                     web::post().to(admin_reject_access_request),
-                ),
+                )
+                .configure(move |admin| {
+                    if enable_openid4vci_issuer {
+                        admin.service(
+                            web::scope("/openid4vci").service(
+                                web::resource(
+                                    "/credential-datasets/{subject_id}/{configuration_id}",
+                                )
+                                .route(web::get().to(admin_get_credential_dataset))
+                                .route(web::put().to(admin_put_credential_dataset))
+                                .route(web::delete().to(admin_delete_credential_dataset)),
+                            ),
+                        );
+                    }
+                }),
         );
     cfg.route("/register", web::post().to(dynamic_client_registration))
         .service(

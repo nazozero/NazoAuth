@@ -3,17 +3,18 @@ use std::sync::{Arc, Mutex};
 use actix_web::{App, http::StatusCode, test, web};
 use nazo_openid4vc_http_actix::{
     AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
-    CreatePresentationRequest, CreatePresentationResponse, CredentialHttpError,
-    CredentialIssuerEndpoint, CredentialIssuerFuture, CredentialIssuerOperations,
-    CredentialRequestBody, CredentialRequestContext, CredentialResponseBody,
-    PreAuthorizedTokenRequest, PreAuthorizedTokenResponse, PresentationEndpoint,
-    PresentationFuture, PresentationHttpError, PresentationOperations, PresentationResponseBody,
-    PresentationResponseInput, create_credential_offer, create_presentation, credential,
-    credential_issuer_metadata, notification, presentation_response,
+    CreatePresentationRequest, CreatePresentationResponse, CredentialEndpointResponse,
+    CredentialHttpError, CredentialIssuerEndpoint, CredentialIssuerFuture,
+    CredentialIssuerOperations, CredentialRequestBody, CredentialRequestContext,
+    CredentialResponseBody, PreAuthorizedTokenRequest, PreAuthorizedTokenResponse,
+    PresentationEndpoint, PresentationFuture, PresentationHttpError, PresentationOperations,
+    PresentationResponseBody, PresentationResponseInput, create_credential_offer,
+    create_presentation, credential, credential_issuer_metadata, deferred_credential, notification,
+    presentation_response,
 };
 use nazo_openid4vci::{
-    CredentialIssuerMetadata, CredentialOffer, CredentialRequest, DeferredCredentialRequest,
-    NotificationRequest,
+    CredentialIssuerMetadata, CredentialOffer, CredentialRequest, CredentialResponse,
+    DeferredCredentialRequest, NotificationRequest,
 };
 use nazo_openid4vp::{PresentationResult, PresentationTransaction};
 use serde_json::json;
@@ -46,7 +47,10 @@ impl CredentialIssuerOperations for Issuer {
         &'a self,
         context: CredentialRequestContext,
         _: CredentialRequestBody<CredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         self.credential_contexts.lock().unwrap().push(context);
         Box::pin(async {
             Err(CredentialHttpError {
@@ -61,14 +65,18 @@ impl CredentialIssuerOperations for Issuer {
         &'a self,
         _: CredentialRequestContext,
         _: CredentialRequestBody<DeferredCredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async { unreachable!() })
     }
     fn notify<'a>(
         &'a self,
         _: CredentialRequestContext,
         _: NotificationRequest,
-    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>
+    {
         Box::pin(async { unreachable!() })
     }
     fn pre_authorized_token<'a>(
@@ -141,7 +149,10 @@ impl CredentialIssuerOperations for DpopNonceIssuer {
         &'a self,
         _: CredentialRequestContext,
         _: CredentialRequestBody<CredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async {
             Err(CredentialHttpError {
                 status: 401,
@@ -155,14 +166,18 @@ impl CredentialIssuerOperations for DpopNonceIssuer {
         &'a self,
         _: CredentialRequestContext,
         _: CredentialRequestBody<DeferredCredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async { unreachable!() })
     }
     fn notify<'a>(
         &'a self,
         _: CredentialRequestContext,
         _: NotificationRequest,
-    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>
+    {
         Box::pin(async { unreachable!() })
     }
     fn pre_authorized_token<'a>(
@@ -219,21 +234,28 @@ impl CredentialIssuerOperations for MetadataIssuer {
         &'a self,
         _: CredentialRequestContext,
         _: CredentialRequestBody<CredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async { unreachable!() })
     }
     fn deferred<'a>(
         &'a self,
         _: CredentialRequestContext,
         _: CredentialRequestBody<DeferredCredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async { unreachable!() })
     }
     fn notify<'a>(
         &'a self,
         _: CredentialRequestContext,
         _: NotificationRequest,
-    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>
+    {
         Box::pin(async { unreachable!() })
     }
     fn pre_authorized_token<'a>(
@@ -254,6 +276,98 @@ impl CredentialIssuerOperations for MetadataIssuer {
 #[derive(Default)]
 struct NotificationIssuer {
     notifications: Mutex<Vec<NotificationRequest>>,
+}
+
+struct SuccessfulIssuer {
+    response: CredentialResponseBody,
+    dpop_nonce: Option<String>,
+}
+
+impl SuccessfulIssuer {
+    fn response(&self) -> CredentialEndpointResponse<CredentialResponseBody> {
+        CredentialEndpointResponse {
+            body: self.response.clone(),
+            dpop_nonce: self.dpop_nonce.clone(),
+        }
+    }
+}
+
+impl CredentialIssuerOperations for SuccessfulIssuer {
+    fn metadata(
+        &self,
+    ) -> CredentialIssuerFuture<'_, Result<CredentialIssuerMetadata, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn offer<'a>(
+        &'a self,
+        _: &'a str,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialOffer, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn nonce(
+        &self,
+        _: Option<&str>,
+    ) -> CredentialIssuerFuture<'_, Result<String, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn credential<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: CredentialRequestBody<CredentialRequest>,
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
+        let response = self.response();
+        Box::pin(async move { Ok(response) })
+    }
+    fn deferred<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: CredentialRequestBody<DeferredCredentialRequest>,
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
+        let response = self.response();
+        Box::pin(async move { Ok(response) })
+    }
+    fn notify<'a>(
+        &'a self,
+        _: CredentialRequestContext,
+        _: NotificationRequest,
+    ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>
+    {
+        let dpop_nonce = self.dpop_nonce.clone();
+        Box::pin(async move {
+            Ok(CredentialEndpointResponse {
+                body: (),
+                dpop_nonce,
+            })
+        })
+    }
+    fn pre_authorized_token<'a>(
+        &'a self,
+        _: PreAuthorizedTokenRequest,
+    ) -> CredentialIssuerFuture<'a, Result<PreAuthorizedTokenResponse, CredentialHttpError>> {
+        Box::pin(async { unreachable!() })
+    }
+    fn create_offer<'a>(
+        &'a self,
+        _: CreateCredentialOfferRequest,
+    ) -> CredentialIssuerFuture<'a, Result<CreateCredentialOfferResponse, CredentialHttpError>>
+    {
+        Box::pin(async { unreachable!() })
+    }
+}
+
+fn immediate_response() -> CredentialResponseBody {
+    CredentialResponseBody::Json(CredentialResponse {
+        credentials: Some(Vec::new()),
+        transaction_id: None,
+        notification_id: None,
+        interval: None,
+    })
 }
 
 impl CredentialIssuerOperations for NotificationIssuer {
@@ -278,23 +392,35 @@ impl CredentialIssuerOperations for NotificationIssuer {
         &'a self,
         _: CredentialRequestContext,
         _: CredentialRequestBody<CredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async { unreachable!() })
     }
     fn deferred<'a>(
         &'a self,
         _: CredentialRequestContext,
         _: CredentialRequestBody<DeferredCredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async { unreachable!() })
     }
     fn notify<'a>(
         &'a self,
         _: CredentialRequestContext,
         request: NotificationRequest,
-    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>
+    {
         self.notifications.lock().unwrap().push(request);
-        Box::pin(async { Ok(()) })
+        Box::pin(async {
+            Ok(CredentialEndpointResponse {
+                body: (),
+                dpop_nonce: None,
+            })
+        })
     }
     fn pre_authorized_token<'a>(
         &'a self,
@@ -421,6 +547,143 @@ async fn credential_endpoint_preserves_dpop_nonce_challenge_error() {
         response.headers().get("dpop-nonce").unwrap(),
         "resource-nonce"
     );
+}
+
+#[actix_web::test]
+async fn credential_success_returns_next_dpop_nonce_for_json_and_jwt_responses() {
+    for (response_body, content_type) in [
+        (immediate_response(), "application/json"),
+        (
+            CredentialResponseBody::Jwt("encrypted.credential.response".to_owned()),
+            "application/jwt",
+        ),
+    ] {
+        let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
+            Arc::new(SuccessfulIssuer {
+                response: response_body,
+                dpop_nonce: Some("next-resource-nonce".to_owned()),
+            }),
+            b"management-token".to_vec(),
+        ));
+        let app = test::init_service(
+            App::new()
+                .app_data(endpoint)
+                .route("/credential", web::post().to(credential)),
+        )
+        .await;
+
+        let response = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri("/credential")
+                .insert_header(("authorization", "DPoP access-token"))
+                .insert_header(("dpop", "proof.jwt"))
+                .set_json(json!({"credential_configuration_id":"pid"}))
+                .to_request(),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response.headers().get("content-type").unwrap(),
+            content_type
+        );
+        assert_eq!(
+            response.headers().get("dpop-nonce").unwrap(),
+            "next-resource-nonce"
+        );
+        assert_eq!(response.headers().get("cache-control").unwrap(), "no-store");
+    }
+}
+
+#[actix_web::test]
+async fn deferred_and_notification_success_return_next_dpop_nonce() {
+    let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
+        Arc::new(SuccessfulIssuer {
+            response: immediate_response(),
+            dpop_nonce: Some("next-resource-nonce".to_owned()),
+        }),
+        b"management-token".to_vec(),
+    ));
+    let app = test::init_service(
+        App::new()
+            .app_data(endpoint)
+            .route("/deferred", web::post().to(deferred_credential))
+            .route("/notification", web::post().to(notification)),
+    )
+    .await;
+
+    let deferred = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/deferred")
+            .insert_header(("authorization", "DPoP access-token"))
+            .insert_header(("dpop", "proof.jwt"))
+            .set_json(json!({"transaction_id":"transaction-1"}))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(deferred.status(), StatusCode::OK);
+    assert_eq!(
+        deferred.headers().get("dpop-nonce").unwrap(),
+        "next-resource-nonce"
+    );
+
+    let notification_response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/notification")
+            .insert_header(("authorization", "DPoP access-token"))
+            .insert_header(("dpop", "proof.jwt"))
+            .set_json(json!({
+                "notification_id":"notification-1",
+                "event":"credential_accepted"
+            }))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(notification_response.status(), StatusCode::NO_CONTENT);
+    assert_eq!(
+        notification_response.headers().get("dpop-nonce").unwrap(),
+        "next-resource-nonce"
+    );
+    assert_eq!(
+        notification_response
+            .headers()
+            .get("cache-control")
+            .unwrap(),
+        "no-store"
+    );
+}
+
+#[actix_web::test]
+async fn bearer_success_does_not_emit_a_dpop_nonce() {
+    let endpoint = web::Data::new(CredentialIssuerEndpoint::new(
+        Arc::new(SuccessfulIssuer {
+            response: immediate_response(),
+            dpop_nonce: None,
+        }),
+        b"management-token".to_vec(),
+    ));
+    let app = test::init_service(
+        App::new()
+            .app_data(endpoint)
+            .route("/credential", web::post().to(credential)),
+    )
+    .await;
+
+    let response = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/credential")
+            .insert_header(("authorization", "Bearer access-token"))
+            .set_json(json!({"credential_configuration_id":"pid"}))
+            .to_request(),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().get("dpop-nonce").is_none());
 }
 
 #[actix_web::test]

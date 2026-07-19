@@ -10,6 +10,7 @@ pub mod federation;
 pub mod mfa;
 mod mfa_service;
 mod model;
+mod mtls_trust;
 pub mod passkey;
 pub mod ports;
 pub mod profile;
@@ -48,16 +49,21 @@ pub use model::{
     LoginIdentity, PasswordHash, PostalAddress, Principal, PublicAccount, SubjectClaims,
     UserProfile, UserRole,
 };
+pub use mtls_trust::{
+    MtlsTrustAnchorRequest, MtlsTrustAnchorRequestPage, MtlsTrustAnchorStatus,
+    NewMtlsTrustAnchorRequest,
+};
 pub use passkey::{
     PasskeyAuditEvent, PasskeyError, PasskeyLoginBegin, PasskeyRegistrationBegin, PasskeyService,
     PasskeyServiceConfig, StoredPasskeyAuthentication, StoredPasskeyRegistration,
 };
 pub use profile::{
-    AccessRequestListError, AccessRequestWithDelivery, AccountOverview, AccountProfileService,
-    AccountProfileView, AuthorizedApplicationView, AuthorizedApplicationsView, AvailableDelivery,
-    ClientAccessService, DeliveryReadError, FederationLinksService, NewAccessRequestInput,
-    PendingMfaProfileView, ProfilePatch, ProfileValidationError, UpdateProfileError,
-    access_delivery_token,
+    AccessRequestCreateError, AccessRequestListError, AccessRequestValidationError,
+    AccessRequestWithDelivery, AccountOverview, AccountProfileService, AccountProfileView,
+    AuthorizedApplicationView, AuthorizedApplicationsView, AvailableDelivery, ClientAccessService,
+    DeliveryReadError, FederationLinksService, NewAccessRequestInput, PendingMfaProfileView,
+    ProfilePatch, ProfileValidationError, UpdateProfileError, access_delivery_token,
+    validate_access_request_input,
 };
 pub use registration::{
     RegisterLocalAccountError, RegisterLocalAccountInput, RegistrationService,

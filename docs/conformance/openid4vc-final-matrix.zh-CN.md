@@ -19,6 +19,12 @@ client-attestation HAIP 路径、一次性 proof nonce、JWT/key-attestation pro
 即时/批量/延迟签发、通知、签名元数据，以及 ECDH-ES/A256GCM（可选 `DEF`）
 请求/响应加密。
 
+HAIP 签发场景中的 Wallet 客户端按 authenticated PAR、S256 PKCE 与 DPoP
+登记。使用 Wallet Attestation 不会自动要求 JAR Request Object。HAIP 1.0 在该
+场景采用 FAPI 2.0 Security Profile；把全部 PAR 授权参数放入签名 Request Object
+是独立的 FAPI 2.0 Message Signing Profile 要求。生态可以另外启用 Message
+Signing，但 HAIP client-attestation profile 不会隐式启用它。
+
 Verifier 支持两种凭证格式的 DCQL、`redirect_uri`/`x509_san_dns`/
 `x509_hash`、`direct_post`/`direct_post.jwt`、URL query 与签名 request URI
 （GET/POST）、每事务密钥加密响应、transaction data、SD-JWT KB-JWT 验证和
@@ -92,3 +98,5 @@ HAIP issuer plan 可能在 `Check for refresh token` 块中产生上游
 - [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html)
 - [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html)
 - [OpenID4VC HAIP 1.0 Final](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html)
+- [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-security-profile-2_0-final.html)
+- [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-message-signing-2_0-final.html)

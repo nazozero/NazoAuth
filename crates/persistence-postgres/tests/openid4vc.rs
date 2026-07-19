@@ -1,19 +1,23 @@
 use chrono::{Duration, Utc};
 use diesel::{
-    sql_query,
-    sql_types::{Text, Uuid as SqlUuid},
+    QueryableByName, sql_query,
+    sql_types::{BigInt, Binary, Text, Uuid as SqlUuid},
 };
 use diesel_async::RunQueryDsl;
 use nazo_digital_credentials::{CredentialFormat, CredentialQuery, DcqlQuery};
 use nazo_openid4vci::{
     AuthorizationCodeGrant, AuthorizationOfferPort, CredentialAccess, CredentialOfferGrants,
-    CredentialStorePort, NonceRecord, PreAuthorizedCodeGrant, StoredCredentialOffer,
+    CredentialStoreError, CredentialStorePort, NonceRecord, PreAuthorizedCodeGrant,
+    StoredCredentialOffer,
 };
 use nazo_openid4vp::{
     AuthorizationRequest, ClientIdPrefix, PresentationResult, PresentationStorePort,
     PresentationTransaction, RequestMethod, ResponseMode,
 };
-use nazo_postgres::{Openid4vciRepository, Openid4vpRepository, create_pool, get_conn};
+use nazo_postgres::{
+    ManagedCredentialDatasetWrite, Openid4vciDatasetRepository, Openid4vciRepository,
+    Openid4vpRepository, create_pool, get_conn,
+};
 use uuid::Uuid;
 
 fn database_url() -> Option<String> {
@@ -24,6 +28,212 @@ fn database_url() -> Option<String> {
         panic!("CI OpenID4VC repository tests require NAZO_TEST_DATABASE_URL or DATABASE_URL");
     }
     url
+}
+
+#[derive(QueryableByName)]
+struct CountRow {
+    #[diesel(sql_type = BigInt)]
+    count: i64,
+}
+
+#[derive(QueryableByName)]
+struct CiphertextRow {
+    #[diesel(sql_type = Binary)]
+    claims_ciphertext: Vec<u8>,
+}
+
+#[tokio::test]
+async fn credential_dataset_mutations_require_an_active_admin_and_are_audited_atomically() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let realm_id = Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap();
+    let organization_id = Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap();
+    let admin_id = Uuid::now_v7();
+    let user_id = Uuid::now_v7();
+    let subject_id = Uuid::now_v7();
+    let mut connection = get_conn(&pool).await.unwrap();
+    for (id, role, admin_level) in [
+        (admin_id, "admin", 1),
+        (user_id, "user", 0),
+        (subject_id, "user", 0),
+    ] {
+        sql_query(
+            "INSERT INTO users
+                (id,tenant_id,realm_id,organization_id,username,email,password_hash,role,admin_level)
+             VALUES ($1,$2,$3,$4,$5,$6,'test',$7,$8)",
+        )
+        .bind::<SqlUuid, _>(id)
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(realm_id)
+        .bind::<SqlUuid, _>(organization_id)
+        .bind::<Text, _>(format!("openid4vc-dataset-{id}"))
+        .bind::<Text, _>(format!("openid4vc-dataset-{id}@example.test"))
+        .bind::<Text, _>(role)
+        .bind::<diesel::sql_types::Integer, _>(admin_level)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    drop(connection);
+
+    let repository = Openid4vciDatasetRepository::new(pool.clone(), [0x51; 32]);
+    let claims = serde_json::json!({"given_name":"Ada"});
+    assert!(
+        !repository
+            .upsert_managed_dataset(ManagedCredentialDatasetWrite {
+                tenant_id,
+                actor_user_id: user_id,
+                subject_id,
+                credential_configuration_id: "pid",
+                claims: &claims,
+                valid_from: None,
+                valid_until: None,
+            })
+            .await
+            .unwrap()
+    );
+    assert!(
+        repository
+            .managed_dataset(tenant_id, subject_id, "pid")
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    assert!(
+        repository
+            .upsert_managed_dataset(ManagedCredentialDatasetWrite {
+                tenant_id,
+                actor_user_id: admin_id,
+                subject_id,
+                credential_configuration_id: "pid",
+                claims: &claims,
+                valid_from: None,
+                valid_until: None,
+            })
+            .await
+            .unwrap()
+    );
+    assert_eq!(
+        repository
+            .managed_dataset(tenant_id, subject_id, "pid")
+            .await
+            .unwrap()
+            .unwrap()
+            .claims,
+        claims
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    let raw = sql_query(
+        "SELECT claims_ciphertext FROM openid4vci_credential_datasets
+         WHERE tenant_id = $1 AND subject_id = $2 AND credential_configuration_id = 'pid'",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(subject_id)
+    .get_result::<CiphertextRow>(&mut connection)
+    .await
+    .unwrap();
+    assert!(
+        !raw.claims_ciphertext
+            .windows(3)
+            .any(|window| window == b"Ada"),
+        "issuer-authoritative credential claims must not be stored as plaintext"
+    );
+    drop(connection);
+    let copied_claims = serde_json::json!({"given_name":"Grace"});
+    assert!(
+        repository
+            .upsert_managed_dataset(ManagedCredentialDatasetWrite {
+                tenant_id,
+                actor_user_id: admin_id,
+                subject_id,
+                credential_configuration_id: "pid-copy",
+                claims: &copied_claims,
+                valid_from: None,
+                valid_until: None,
+            })
+            .await
+            .unwrap()
+    );
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_credential_datasets
+         SET claims_ciphertext = $4
+         WHERE tenant_id = $1 AND subject_id = $2 AND credential_configuration_id = $3",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(subject_id)
+    .bind::<Text, _>("pid-copy")
+    .bind::<Binary, _>(raw.claims_ciphertext)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    assert_eq!(
+        repository
+            .managed_dataset(tenant_id, subject_id, "pid-copy")
+            .await,
+        Err(CredentialStoreError::InvalidTransition),
+        "ciphertext copied to another dataset identity must fail AAD authentication"
+    );
+    assert!(
+        !repository
+            .delete_managed_dataset(tenant_id, user_id, subject_id, "pid")
+            .await
+            .unwrap()
+    );
+    assert!(
+        repository
+            .delete_managed_dataset(tenant_id, admin_id, subject_id, "pid")
+            .await
+            .unwrap()
+    );
+    assert!(
+        repository
+            .delete_managed_dataset(tenant_id, admin_id, subject_id, "pid-copy")
+            .await
+            .unwrap()
+    );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    let events = sql_query(
+        "SELECT COUNT(*)::bigint AS count
+         FROM openid4vci_credential_dataset_events
+         WHERE tenant_id = $1 AND subject_id = $2 AND actor_user_id = $3",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(subject_id)
+    .bind::<SqlUuid, _>(admin_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        events.count, 4,
+        "each dataset upsert and delete must append an audit event"
+    );
+    sql_query(
+        "DELETE FROM openid4vci_credential_dataset_events
+         WHERE tenant_id = $1 AND subject_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(subject_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    sql_query("DELETE FROM users WHERE tenant_id = $1 AND id IN ($2,$3,$4)")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(admin_id)
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<SqlUuid, _>(subject_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
 }
 
 #[tokio::test]

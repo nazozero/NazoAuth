@@ -240,7 +240,7 @@ fn signed_ciba_request_object_with_alg(
         "exp": now + 120,
         "jti": format!("ciba-request-{}", Uuid::now_v7()),
         "scope": "openid profile email",
-        "login_hint": "oidf-local@example.test",
+        "login_hint": "subject@example.test",
         "binding_message": "1234"
     });
     let target = claims.as_object_mut().expect("claims should be object");
@@ -566,7 +566,7 @@ fn ciba_signed_request_object_claims_apply_to_backchannel_form() {
         .expect("valid signed CIBA request object should apply");
 
     assert_eq!(form.scope.as_deref(), Some("openid profile email"));
-    assert_eq!(form.login_hint.as_deref(), Some("oidf-local@example.test"));
+    assert_eq!(form.login_hint.as_deref(), Some("subject@example.test"));
     assert_eq!(form.binding_message.as_deref(), Some("1234"));
     assert_eq!(form.acr_values.as_deref(), Some("1"));
     assert_eq!(form.requested_expiry_seconds, Some(30));
@@ -799,7 +799,7 @@ fn fapi2_ciba_private_key_jwt_requires_issuer_audience_only() {
 
     settings.protocol.ciba_security_profile = crate::settings::CibaSecurityProfile::FapiCibaId1;
     validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
-        .expect("OIDF FAPI-CIBA compatibility profile must preserve endpoint audience allowance");
+        .expect("FAPI-CIBA ID1 permits the registered token endpoint as assertion audience");
 }
 
 #[test]

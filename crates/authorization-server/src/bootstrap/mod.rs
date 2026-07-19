@@ -20,7 +20,7 @@ pub(crate) use passkey_services::{
 };
 pub(crate) use profile_services::{
     AccountProfileService, AvatarProfileService, ClientAccessProfileService,
-    FederationProfileService,
+    FederationProfileService, MtlsTrustAnchorService,
 };
 pub(crate) use registration_services::{LocalRegistrationService, RegistrationSecretHasher};
 
@@ -45,16 +45,17 @@ use crate::domain::{
     spawn_backchannel_logout_delivery_worker, spawn_ciba_ping_delivery_worker,
 };
 use crate::domain::{
+    CredentialDatasetAdminService, Openid4vcClientAttestationValidator, Openid4vcCredentialCrypto,
+    Openid4vcProofValidator, PresentationVerifierConfig, ServerCredentialIssuerOperations,
+    ServerPresentationOperations,
+};
+use crate::domain::{
     DynamicRegistrationConfig, MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS,
     MetadataConfig, OidcLogoutConfig, OidcLogoutHandles, PasskeyOperationsProvider,
     ResourceServerConfig, ServerAuthenticationRateLimit, ServerAuthorizationDecisionOperations,
     ServerLocalRegistrationOperations, ServerMetadataSnapshotSource, ServerMfaProfileOperations,
     ServerMfaSecretHasher, ServerPasswordLoginOperations, ServerProfileAccountOperations,
     ServerSessionManagementOperations, UserinfoConfig, UserinfoHandles,
-};
-use crate::domain::{
-    Openid4vcClientAttestationValidator, Openid4vcCredentialCrypto, Openid4vcProofValidator,
-    PresentationVerifierConfig, ServerCredentialIssuerOperations, ServerPresentationOperations,
 };
 use crate::domain::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
@@ -384,27 +385,27 @@ pub async fn run() -> anyhow::Result<()> {
                 issuer,
                 settings
                     .openid4vc
-                    .attestation_jwks
+                    .client_attestation_jwks
                     .clone()
                     .expect("configured client attestation requires trust keys"),
             )
             .map(Arc::new)
         })
         .transpose()?;
-    let credential_issuer_endpoint = if settings.modules.enable_openid4vci_issuer {
-        let data_key = settings
-            .openid4vc
-            .data_encryption_key
-            .expect("enabled OpenID4VCI requires a data encryption key");
-        let proof_validator = Openid4vcProofValidator::new(
-            settings
+    let (credential_issuer_endpoint, credential_dataset_admin) =
+        if settings.modules.enable_openid4vci_issuer {
+            let data_key = settings
                 .openid4vc
-                .attestation_jwks
-                .clone()
-                .unwrap_or_else(|| serde_json::json!({"keys": []})),
-        )?;
-        Some(web::Data::new(CredentialIssuerEndpoint::new(
-            Arc::new(ServerCredentialIssuerOperations::new(
+                .data_encryption_key
+                .expect("enabled OpenID4VCI requires a data encryption key");
+            let proof_validator = Openid4vcProofValidator::new(
+                settings
+                    .openid4vc
+                    .key_attestation_jwks
+                    .clone()
+                    .unwrap_or_else(|| serde_json::json!({"keys": []})),
+            )?;
+            let operations = Arc::new(ServerCredentialIssuerOperations::new(
                 diesel_db.clone(),
                 DEFAULT_TENANT_ID,
                 data_key,
@@ -424,17 +425,24 @@ pub async fn run() -> anyhow::Result<()> {
                     .deferred_credential_configurations
                     .clone(),
                 settings.protocol.dpop_nonce_policy,
-            )?),
-            settings
-                .openid4vc
-                .issuer_management_token
-                .clone()
-                .expect("enabled OpenID4VCI requires a management token")
-                .into_bytes(),
-        )))
-    } else {
-        None
-    };
+            )?);
+            (
+                Some(web::Data::new(CredentialIssuerEndpoint::new(
+                    operations.clone(),
+                    settings
+                        .openid4vc
+                        .issuer_management_token
+                        .clone()
+                        .expect("enabled OpenID4VCI requires a management token")
+                        .into_bytes(),
+                ))),
+                Some(web::Data::new(CredentialDatasetAdminService::new(
+                    operations,
+                ))),
+            )
+        } else {
+            (None, None)
+        };
     let presentation_endpoint = if settings.modules.enable_openid4vp_verifier {
         Some(web::Data::new(PresentationEndpoint::new(
             Arc::new(ServerPresentationOperations::new(
@@ -624,7 +632,6 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_postgres::AccessRequestRepository::new(diesel_db.clone()),
         profile_delivery_store,
         &settings.protocol.client_secret_pepper,
-        &settings.endpoint.frontend_base_url,
     ));
     let profile_federation = web::Data::new(FederationProfileService::new(
         nazo_postgres::FederationRepository::new(diesel_db.clone()),
@@ -640,6 +647,7 @@ pub async fn run() -> anyhow::Result<()> {
     let admin_access_requests = web::Data::new(nazo_postgres::AccessRequestRepository::new(
         diesel_db.clone(),
     ));
+    let mtls_trust_anchors = web::Data::new(MtlsTrustAnchorService::new(diesel_db.clone()));
     let admin_access_delivery = web::Data::new(nazo_valkey::DeliveryStore::new(&valkey_connection));
     let protocol = &settings.protocol;
     let storage = &settings.storage;
@@ -903,6 +911,7 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(admin_users.clone())
             .app_data(admin_grants.clone())
             .app_data(admin_access_requests.clone())
+            .app_data(mtls_trust_anchors.clone())
             .app_data(admin_access_delivery.clone())
             .app_data(admin_access_request_config.clone())
             .app_data(admin_client_service.clone())
@@ -920,6 +929,11 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(scim_endpoint.clone());
         let app = if let Some(endpoint) = credential_issuer_endpoint.clone() {
             app.app_data(endpoint)
+        } else {
+            app
+        };
+        let app = if let Some(service) = credential_dataset_admin.clone() {
+            app.app_data(service)
         } else {
             app
         };

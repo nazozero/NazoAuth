@@ -122,6 +122,27 @@ impl UserRepository {
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
 
+    pub async fn is_active_by_tenant_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> Result<bool, RepositoryError> {
+        let mut connection = self
+            .pool
+            .get()
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        let count = users::table
+            .find(user_id.as_uuid())
+            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(users::is_active.eq(true))
+            .count()
+            .get_result::<i64>(&mut connection)
+            .await
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?;
+        Ok(count == 1)
+    }
+
     pub async fn public_account_by_email(
         &self,
         tenant_id: TenantId,

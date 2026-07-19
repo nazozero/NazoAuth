@@ -23,8 +23,8 @@ use presentation::{
 };
 use serde_json::Value;
 pub use service::{
-    AccessTokenRevocationLookup, AccessTokenScheme, DpopNonceConsumptionResult, DpopNoncePolicy,
-    DpopNonceStorage, DpopReplayConsumption, DpopReplayConsumptionResult, DpopReplayKey,
+    AccessTokenRevocationLookup, AccessTokenScheme, DpopNoncePolicy, DpopNonceStorage,
+    DpopNonceValidationResult, DpopReplayConsumption, DpopReplayConsumptionResult, DpopReplayKey,
     ProtectedResourceAuthorizationContext, ProtectedResourceAuthorizationError,
     ProtectedResourceAuthorizationRequest, ProtectedResourceAuthorizationResult,
     ProtectedResourceAuthorizationService, ProtectedResourceDependencyError,

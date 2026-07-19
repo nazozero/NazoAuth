@@ -19,29 +19,89 @@ def load(name: str):
 
 
 class Openid4vcOidfTests(unittest.TestCase):
-    def test_tokenless_openid4vc_driver_is_restricted_to_local_suite(self):
+    def test_dataset_fixture_uses_admin_session_csrf_and_is_cleaned_up(self):
         module = load("run_openid4vc_conformance.py")
-        local = module.Openid4vcDriver(
-            {
-                "conformance_server": "https://localhost:8443",
-                "conformance_no_api_token": True,
-                "aliases": [],
-            },
-            module.threading.Event(),
-        )
-        with patch.object(module, "module_entries", return_value=[]):
-            local.drive_once()
 
-        public = module.Openid4vcDriver(
+        class Session:
+            def __init__(self):
+                self.json_calls = []
+                self.calls = []
+
+            def request_json(self, method, path, payload=None, **kwargs):
+                self.json_calls.append((method, path, payload, kwargs))
+                if path == "/auth/me":
+                    return {"admin_level": 1}
+                return {"credential_configuration_id": path.rsplit("/", 1)[-1]}
+
+            def request(self, method, path, payload=None, **kwargs):
+                self.calls.append((method, path, payload, kwargs))
+                return b"", "application/json"
+
+        session = Session()
+        config = {
+            "target_origin": "https://issuer.example",
+            "issuer": {
+                "dedicated_conformance_subject": True,
+                "subject_id": "00000000-0000-0000-0000-000000000123",
+                "credential_datasets": {"pid/1": {"given_name": "Ada"}},
+            },
+        }
+        with (
+            patch.dict(
+                module.os.environ,
+                {"OIDF_ADMIN_EMAIL": "admin@example.test", "OIDF_ADMIN_PASSWORD": "secret"},
+                clear=True,
+            ),
+            patch.object(module.ControlPlaneSession, "login", return_value=session) as login,
+        ):
+            admin, installed = module.install_credential_datasets(config)
+            module.cleanup_credential_datasets(admin, installed)
+
+        login.assert_called_once_with(
+            "https://issuer.example", "admin@example.test", "secret"
+        )
+        put = next(call for call in session.json_calls if call[0] == "PUT")
+        self.assertEqual(
+            put[1],
+            "/admin/openid4vci/credential-datasets/00000000-0000-0000-0000-000000000123/pid%2F1",
+        )
+        self.assertEqual(put[2], {"claims": {"given_name": "Ada"}})
+        self.assertTrue(put[3]["csrf"])
+        self.assertEqual(session.calls[0][0], "DELETE")
+        self.assertEqual(session.calls[0][1], put[1])
+        self.assertTrue(session.calls[0][3]["csrf"])
+
+    def test_dataset_fixture_rejects_non_dedicated_subject_before_login(self):
+        module = load("run_openid4vc_conformance.py")
+        with (
+            patch.object(module.ControlPlaneSession, "login") as login,
+            self.assertRaisesRegex(RuntimeError, "dedicated conformance subject"),
+        ):
+            module.install_credential_datasets(
+                {
+                    "target_origin": "https://issuer.example",
+                    "issuer": {
+                        "subject_id": "00000000-0000-0000-0000-000000000123",
+                        "credential_datasets": {"pid": {"given_name": "Ada"}},
+                    },
+                }
+            )
+        login.assert_not_called()
+
+    def test_openid4vc_driver_requires_authenticated_public_suite_api(self):
+        module = load("run_openid4vc_conformance.py")
+        driver = module.Openid4vcDriver(
             {
                 "conformance_server": "https://www.certification.openid.net",
-                "conformance_no_api_token": True,
                 "aliases": [],
             },
             module.threading.Event(),
         )
-        with self.assertRaisesRegex(RuntimeError, "restricted to loopback"):
-            public.drive_once()
+        with (
+            patch.dict(module.os.environ, {}, clear=True),
+            self.assertRaisesRegex(RuntimeError, "API token is required"),
+        ):
+            driver.drive_once()
 
     def test_module_entries_merge_runner_exposed_values_with_info_metadata(self):
         module = load("run_openid4vc_conformance.py")
@@ -133,8 +193,8 @@ class Openid4vcOidfTests(unittest.TestCase):
         module = load("run_openid4vc_conformance.py")
         driver = module.Openid4vcDriver(
             {
-                "conformance_server": "https://localhost:8443",
-                "conformance_no_api_token": True,
+                "conformance_server": "https://suite.example",
+                "conformance_token": "test-token",
                 "aliases": ["issuer-alias"],
             },
             module.threading.Event(),
@@ -161,8 +221,8 @@ class Openid4vcOidfTests(unittest.TestCase):
         stop = module.threading.Event()
         driver = module.Openid4vcDriver(
             {
-                "conformance_server": "https://localhost:8443",
-                "conformance_no_api_token": True,
+                "conformance_server": "https://suite.example",
+                "conformance_token": "test-token",
                 "aliases": [],
                 "poll_interval_seconds": 60,
             },
@@ -180,32 +240,28 @@ class Openid4vcOidfTests(unittest.TestCase):
 
         self.assertEqual(calls, 1)
 
-    def test_wrapper_applies_insecure_local_suite_tls_to_parent_driver(self):
+    def test_wrapper_rejects_tokenless_or_insecure_suite_modes(self):
         module = load("run_openid4vc_conformance.py")
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as config:
             json.dump({"aliases": []}, config)
             config_path = config.name
-        module.oidf.OIDF_API_SSL_CONTEXT = None
         try:
-            with (
-                patch(
-                    "sys.argv",
-                    [
-                        "run_openid4vc_conformance.py",
-                        "--driver-config-json-file",
-                        config_path,
-                        "--",
-                        "--disable-ssl-verify",
-                    ],
-                ),
-                patch.object(module.Openid4vcDriver, "run"),
-                patch.object(module.subprocess, "run", return_value=type("Result", (), {"returncode": 0})()),
-            ):
-                self.assertEqual(module.main(), 0)
-
-            self.assertIsNotNone(module.oidf.OIDF_API_SSL_CONTEXT)
+            for forbidden in ("--disable-ssl-verify", "--no-api-token"):
+                with (
+                    patch(
+                        "sys.argv",
+                        [
+                            "run_openid4vc_conformance.py",
+                            "--driver-config-json-file",
+                            config_path,
+                            "--",
+                            forbidden,
+                        ],
+                    ),
+                    self.assertRaisesRegex(SystemExit, "require API authentication"),
+                ):
+                    module.main()
         finally:
-            module.oidf.OIDF_API_SSL_CONTEXT = None
             Path(config_path).unlink(missing_ok=True)
 
     def test_grouped_openid4vc_runner_filters_expected_records_per_batch(self):
@@ -287,6 +343,148 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertIn(str(export / "group-01"), invocations[0])
             self.assertIn(str(export / "group-02"), invocations[1])
 
+    def test_openid4vc_runner_rejects_stale_or_cross_run_material(self):
+        runner = load("run_openid4vc_conformance.py")
+        materializer = load("materialize_openid4vc_oidf_config.py")
+        cases = materializer.matrix_cases()
+        names = [f"openid4vc-{slug}.json" for _, slug, _ in cases]
+        aliases = [f"alias-{index}" for index in range(len(cases))]
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            configs = root / "configs.json"
+            plans = root / "plans.json"
+            warnings = root / "warnings.json"
+            skips = root / "skips.json"
+            configs.write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            name: {
+                                "alias": alias,
+                                **(
+                                    {"vci": {"static_tx_code": "123456"}}
+                                    if variants.get("vci_grant_type")
+                                    == "pre_authorization_code"
+                                    else {}
+                                ),
+                            }
+                            for (_, _, variants), name, alias in reversed(
+                                list(zip(cases, names, aliases, strict=True))
+                            )
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            plans.write_text(
+                json.dumps(
+                    [
+                        materializer.plan_expression(plan, variants, name)
+                        for (plan, _, variants), name in zip(cases, names, strict=True)
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            warnings.write_text(
+                json.dumps(materializer.expected_warnings_for_cases(cases)),
+                encoding="utf-8",
+            )
+            skips.write_text(
+                json.dumps(materializer.expected_skips_for_cases(cases)),
+                encoding="utf-8",
+            )
+            arguments = [
+                "--config-json-file",
+                str(configs),
+                "--plan-set-json-file",
+                str(plans),
+                "--expected-failures-file",
+                str(warnings),
+                "--expected-skips-file",
+                str(skips),
+            ]
+
+            runner.validate_materialized_matrix(
+                {
+                    "aliases": list(reversed(aliases)),
+                    "issuer": {"tx_code": "123456"},
+                },
+                arguments,
+            )
+
+            with self.assertRaisesRegex(SystemExit, "driver aliases"):
+                runner.validate_materialized_matrix(
+                    {
+                        "aliases": [*aliases[:-1], "alias-from-another-run"],
+                        "issuer": {"tx_code": "123456"},
+                    },
+                    arguments,
+                )
+
+            mismatched_configs = json.loads(configs.read_text(encoding="utf-8"))
+            pre_authorized_name = next(
+                name
+                for (_, _, variants), name in zip(cases, names, strict=True)
+                if variants.get("vci_grant_type") == "pre_authorization_code"
+            )
+            mismatched_configs["configs"][pre_authorized_name]["vci"][
+                "static_tx_code"
+            ] = "654321"
+            configs.write_text(json.dumps(mismatched_configs), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "transaction codes"):
+                runner.validate_materialized_matrix(
+                    {"aliases": aliases, "issuer": {"tx_code": "123456"}},
+                    arguments,
+                )
+            mismatched_configs["configs"][pre_authorized_name]["vci"][
+                "static_tx_code"
+            ] = "123456"
+            configs.write_text(json.dumps(mismatched_configs), encoding="utf-8")
+
+            stale_warnings = materializer.expected_warnings_for_cases(cases)
+            stale_warnings.append(
+                {
+                    "configuration-filename": names[0],
+                    "condition": "stale-condition",
+                }
+            )
+            warnings.write_text(json.dumps(stale_warnings), encoding="utf-8")
+            with self.assertRaisesRegex(SystemExit, "expected warnings"):
+                runner.validate_materialized_matrix(
+                    {"aliases": aliases, "issuer": {"tx_code": "123456"}},
+                    arguments,
+                )
+
+    def test_openid4vc_wrapper_terminates_the_runner_process_group_on_interruption(self):
+        module = load("run_openid4vc_conformance.py")
+
+        class Process:
+            pid = 1234
+
+            def __init__(self):
+                self.waits = 0
+
+            def poll(self):
+                return None
+
+            def wait(self, timeout=None):
+                self.waits += 1
+                if self.waits == 1:
+                    raise KeyboardInterrupt
+                return 0
+
+        process = Process()
+        with (
+            patch.object(module.subprocess, "Popen", return_value=process),
+            patch.object(module.os, "killpg", create=True) as killpg,
+            self.assertRaises(KeyboardInterrupt),
+        ):
+            module.run_runner_invocations([["--suite-dir", "suite"]])
+
+        killpg.assert_called_once_with(process.pid, module.signal.SIGTERM)
+        self.assertEqual(process.waits, 2)
+
     def test_official_openid4vc_workflow_uses_bounded_groups(self):
         workflow = (ROOT / ".github" / "workflows" / "openid4vc-conformance.yml").read_text(
             encoding="utf-8"
@@ -310,32 +508,72 @@ class Openid4vcOidfTests(unittest.TestCase):
                 return b""
 
         try:
-            with patch.object(module.urllib.request, "urlopen", return_value=Response()) as urlopen:
-                module.get_url("https://localhost:8443/test/a/alias/callback")
+            class Opener:
+                def open(self, *_args, **_kwargs):
+                    return Response()
 
-            self.assertIs(urlopen.call_args.kwargs["context"], context)
+            with patch.object(
+                module.urllib.request, "build_opener", return_value=Opener()
+            ) as build_opener:
+                module.get_url("https://suite.example/test/a/alias/callback")
+
+            https_handler = build_opener.call_args.args[0]
+            self.assertIs(https_handler._context, context)
         finally:
             module.oidf.OIDF_API_SSL_CONTEXT = None
 
-    def test_suite_internal_urls_are_rewritten_to_control_plane(self):
+    def test_wallet_redirect_handler_accepts_only_the_exact_completion_url(self):
+        module = load("run_openid4vc_conformance.py")
+        expected = (
+            "https://issuer.example/openid4vp/complete/"
+            "018f0000-0000-7000-8000-000000000001"
+        )
+        handler = module.ExactRedirectHandler(expected)
+        request = module.urllib.request.Request("https://wallet.example/authorize")
+
+        redirected = handler.redirect_request(
+            request,
+            None,
+            303,
+            "See Other",
+            {},
+            expected,
+        )
+        self.assertEqual(redirected.full_url, expected)
+        for code, location in (
+            (307, expected),
+            (
+                303,
+                "https://issuer.example/openid4vp/complete/"
+                "018f0000-0000-7000-8000-000000000002",
+            ),
+            (
+                303,
+                "https://other.example/openid4vp/complete/"
+                "018f0000-0000-7000-8000-000000000001",
+            ),
+        ):
+            with self.subTest(code=code, location=location), self.assertRaises(RuntimeError):
+                handler.redirect_request(request, None, code, "redirect", {}, location)
+
+    def test_suite_callbacks_are_exact_public_origin_and_never_rewritten(self):
         module = load("run_openid4vc_conformance.py")
 
-        rewritten = module.suite_reachable_url(
-            "https://localhost:8443",
-            "https://suite.example/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
-        )
-
         self.assertEqual(
-            rewritten,
-            "https://suite.example/test/a/issuer/credential_offer?credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffer",
-        )
-        self.assertEqual(
-            module.suite_reachable_url(
-                "https://localhost:8443",
-                "https://certification.openid.net/test/a/issuer/credential_offer",
+            module.suite_callback_url(
+                "https://suite.example",
+                "https://suite.example/test/a/issuer/credential_offer",
             ),
-            "https://certification.openid.net/test/a/issuer/credential_offer",
+            "https://suite.example/test/a/issuer/credential_offer",
         )
+        for callback in [
+            "https://other.example/test/a/issuer/credential_offer",
+            "https://nginx:8443/test/a/issuer/credential_offer",
+            "https://suite.example/private/callback",
+            "https://suite.example/test/a/issuer/credential_offer?unexpected=1",
+        ]:
+            with self.assertRaises(RuntimeError):
+                module.suite_callback_url("https://suite.example", callback)
 
     def test_credential_issuer_metadata_is_registered_inside_the_single_well_known_scope(self):
         routes = (ROOT / "crates" / "authorization-server" / "src" / "bootstrap" / "routes.rs").read_text(
@@ -396,7 +634,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                 {
                     "vci": {
                         "credential_issuer_url": "https://issuer.example",
-                        "credential_offer_endpoint": "https://nginx:8443/test/a/issuer/offer",
+                        "credential_offer_endpoint": "https://internal-service:8443/test/a/issuer/offer",
                     }
                 },
                 "openid4vc-vci-sd-wallet-plain.json",
@@ -544,11 +782,15 @@ class Openid4vcOidfTests(unittest.TestCase):
             "iso_mdl": ("mso_mdoc", {"doctype_value": "org.iso.18013.5.1.mDL"}),
         }
         for credential_format, (expected_format, expected_meta) in cases.items():
+            transaction_id = "018f0000-0000-7000-8000-000000000001"
             with self.subTest(credential_format=credential_format), patch.object(
                 module,
                 "request_json",
-                return_value={"authorization_url": "https://localhost:8443/authorize"},
-            ) as request, patch.object(module, "get_url"):
+                return_value={
+                    "authorization_url": "https://localhost:8443/authorize",
+                    "transaction_id": transaction_id,
+                },
+            ) as request, patch.object(module, "get_url") as get_url:
                 driver.drive_verifier(
                     "module-id",
                     {"alias": "vp-alias", "testName": "oid4vp-1final-verifier-happy-flow"},
@@ -565,6 +807,12 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(credential["format"], expected_format)
                 self.assertEqual(credential["meta"], expected_meta)
                 self.assertEqual(payload["request_method"], "request_uri_signed_get")
+                get_url.assert_called_once_with(
+                    "https://localhost:8443/authorize",
+                    expected_redirect_url=(
+                        "https://issuer.example/openid4vp/complete/" + transaction_id
+                    ),
+                )
 
     def test_verifier_driver_uses_post_only_for_the_post_request_uri_module(self):
         module = load("run_openid4vc_conformance.py")
@@ -585,7 +833,10 @@ class Openid4vcOidfTests(unittest.TestCase):
         with patch.object(
             module,
             "request_json",
-            return_value={"authorization_url": "https://localhost:8443/authorize"},
+            return_value={
+                "authorization_url": "https://localhost:8443/authorize",
+                "transaction_id": "018f0000-0000-7000-8000-000000000001",
+            },
         ) as request, patch.object(module, "get_url"):
             driver.drive_verifier(
                 "module-id",
@@ -607,6 +858,7 @@ class Openid4vcOidfTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             base = root / "base.json"
+            mtls = root / "mtls.json"
             driver = root / "driver.json"
             output = root / "output"
             base.write_text(json.dumps({
@@ -653,8 +905,25 @@ class Openid4vcOidfTests(unittest.TestCase):
                 }
                 for name in ("vci", "vci_haip", "vp", "vp_haip")
             }), encoding="utf-8")
+            mtls.write_text(
+                json.dumps(
+                    {
+                        "ca": "-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n",
+                        "mtls": {
+                            "cert": "-----BEGIN CERTIFICATE-----\none\n-----END CERTIFICATE-----\n",
+                            "key": "-----BEGIN PRIVATE KEY-----\none\n-----END PRIVATE KEY-----\n",
+                        },
+                        "mtls2": {
+                            "cert": "-----BEGIN CERTIFICATE-----\ntwo\n-----END CERTIFICATE-----\n",
+                            "key": "-----BEGIN PRIVATE KEY-----\ntwo\n-----END PRIVATE KEY-----\n",
+                        },
+                    }
+                ),
+                encoding="utf-8",
+            )
             driver.write_text(json.dumps({
                 "issuer": {
+                    "dedicated_conformance_subject": True,
                     "credential_configuration_ids": {
                         "sd_jwt_vc": "pid-sd-jwt",
                         "mdoc": "org.iso.18013.5.1.mDL",
@@ -676,9 +945,18 @@ class Openid4vcOidfTests(unittest.TestCase):
             with patch("sys.argv", [
                 "materialize_openid4vc_oidf_config.py",
                 "--base-config-json-file", str(base),
+                "--mtls-config-json-file", str(mtls),
                 "--driver-config-json-file", str(driver),
+                "--credential-datasets-json-file",
+                str(
+                    Path(__file__).resolve().parents[2]
+                    / "tests"
+                    / "contracts"
+                    / "openid4vc-conformance-datasets.json"
+                ),
                 "--conformance-server", "https://suite.example",
                 "--target-origin", "https://issuer.example",
+                "--onboarding-profile", "official",
                 "--output-dir", str(output),
             ]):
                 self.assertEqual(module.main(), 0)
@@ -715,6 +993,14 @@ class Openid4vcOidfTests(unittest.TestCase):
                 ],
             )
             self.assertEqual(len(expected_warnings), 4)
+            for config in configs.values():
+                if "vci-" not in config["alias"]:
+                    continue
+                material = json.loads(mtls.read_text(encoding="utf-8"))
+                self.assertEqual(config["mtls"]["ca"], material["ca"])
+                self.assertEqual(
+                    config["mtls2"]["cert"], material["mtls2"]["cert"]
+                )
             self.assertEqual(
                 {item["configuration-filename"] for item in expected_warnings},
                 {
@@ -832,6 +1118,8 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(config["vci"]["credential_configuration_id"], expected)
                 if "preauth" in filename:
                     self.assertEqual(config["vci"]["static_tx_code"], "123456")
+                elif "vci" in config:
+                    self.assertNotIn("static_tx_code", config["vci"])
                 if "vci-haip-" in filename:
                     self.assertIn("offline_access", config["client"]["scope"].split())
                     self.assertIn("offline_access", config["client2"]["scope"].split())
@@ -857,8 +1145,9 @@ class Openid4vcOidfTests(unittest.TestCase):
                 for config in configs.values()
                 if config.get("nazo", {}).get("client_auth_type") == "client_attestation"
             }
-            self.assertEqual(private_key_clients, {module.VCI_PRIVATE_KEY_CLIENT_ID})
-            self.assertEqual(attested_clients, {module.VCI_ATTESTED_CLIENT_ID})
+            official_ids = module.vci_client_ids("official", None)
+            self.assertEqual(private_key_clients, {official_ids["private_key"]})
+            self.assertEqual(attested_clients, {official_ids["attested"]})
             self.assertTrue(private_key_clients.isdisjoint(attested_clients))
             private_key_client2 = {
                 config["client2"]["client_id"]
@@ -872,9 +1161,26 @@ class Openid4vcOidfTests(unittest.TestCase):
                 if "vci-" in config["alias"]
                 and config.get("nazo", {}).get("client_auth_type") == "client_attestation"
             }
-            self.assertEqual(private_key_client2, {module.VCI_PRIVATE_KEY_CLIENT2_ID})
-            self.assertEqual(attested_client2, {module.VCI_ATTESTED_CLIENT2_ID})
+            self.assertEqual(private_key_client2, {official_ids["private_key2"]})
+            self.assertEqual(attested_client2, {official_ids["attested2"]})
             self.assertTrue(private_key_client2.isdisjoint(attested_client2))
+            self.assertEqual(
+                json.loads((output / "oidf-onboarding-contract.json").read_text(encoding="utf-8")),
+                {
+                    "schema": 2,
+                    "onboarding_profile": "official",
+                    "suite_base_url": "https://suite.example",
+                    "target_issuer": "https://issuer.example",
+                },
+            )
+
+    def test_operator_openid4vc_client_ids_are_namespaced(self):
+        module = load("materialize_openid4vc_oidf_config.py")
+        ids = module.vci_client_ids("operator-black-box", "bb-example")
+
+        self.assertTrue(all(value.startswith("oidf-bb-example-") for value in ids.values()))
+        with self.assertRaisesRegex(SystemExit, "valid client namespace"):
+            module.vci_client_ids("operator-black-box", "official")
 
 
 if __name__ == "__main__":

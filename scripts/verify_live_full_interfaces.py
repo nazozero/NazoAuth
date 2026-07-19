@@ -728,12 +728,27 @@ def run():
         json=client_payload(f"{RUN_ID} approved delivery", "confidential", "client_secret_post", grants=["authorization_code", "refresh_token"]),
         headers=csrf_headers(admin_session),
     )
-    delivery_pattern = f"oauth:client_delivery:{user_id}:*"
-    delivery_keys = list(redis_client.scan_iter(delivery_pattern))
-    if not delivery_keys:
-        checks.fail("access delivery", "delivery key missing")
-    delivery_token = delivery_keys[0].split(":")[-1]
-    request(user_session, "GET", f"/auth/me/access-delivery?token={urllib.parse.quote(delivery_token)}", expected={200}, name="access delivery")
+    owner_requests = request(
+        user_session,
+        "GET",
+        "/auth/me/access-requests",
+        expected={200},
+        name="list approved access request",
+    ).json()
+    approved_request = next(
+        item for item in owner_requests["items"] if item["id"] == first_request["id"]
+    )
+    if approved_request.get("delivery_available") is not True:
+        checks.fail("access delivery", "owner response did not mark delivery available")
+    request(
+        user_session,
+        "POST",
+        "/auth/me/access-delivery",
+        expected={200},
+        name="access delivery",
+        json={"request_id": first_request["id"]},
+        headers=csrf_headers(user_session),
+    )
     second_request = request(
         user_session,
         "POST",

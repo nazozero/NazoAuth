@@ -114,22 +114,27 @@ impl DpopNonceStorage for AtomicReplayStore {
         })
     }
 
-    fn consume_nonce<'a>(
+    fn validate_nonce<'a>(
         &'a self,
         nonce: &'a str,
     ) -> ResourceServerPortFuture<
         'a,
-        Result<DpopNonceConsumptionResult, ProtectedResourceDependencyError>,
+        Result<DpopNonceValidationResult, ProtectedResourceDependencyError>,
     > {
         Box::pin(async move {
             if self.nonce_failure {
                 return Err(ProtectedResourceDependencyError::DpopNonceStoreUnavailable);
             }
             Ok(
-                if self.nonces.lock().expect("nonce store lock").remove(nonce) {
-                    DpopNonceConsumptionResult::Accepted
+                if self
+                    .nonces
+                    .lock()
+                    .expect("nonce store lock")
+                    .contains(nonce)
+                {
+                    DpopNonceValidationResult::Accepted
                 } else {
-                    DpopNonceConsumptionResult::Unknown
+                    DpopNonceValidationResult::Unknown
                 },
             )
         })
@@ -477,7 +482,7 @@ async fn missing_required_nonce_does_not_consume_replay_marker_async() {
         .expect("the original jti must remain usable after a nonce challenge");
     assert_eq!(replay.keys.lock().unwrap().len(), 1);
 
-    let fresh_with_stale_nonce = dpop_proof(
+    let fresh_with_same_nonce = dpop_proof(
         &dpop,
         &access_token,
         "GET",
@@ -486,48 +491,37 @@ async fn missing_required_nonce_does_not_consume_replay_marker_async() {
         Some(&nonce),
         None,
     );
-    let fresh_nonce = match service
-        .authorize(
-            request(
-                &access_token,
-                AccessTokenScheme::Dpop,
-                Some(&fresh_with_stale_nonce),
-            ),
-            context(None),
-        )
-        .await
-        .expect_err("a consumed nonce must return a fresh challenge")
-    {
-        ProtectedResourceAuthorizationError::UseDpopNonce(nonce) => nonce,
-        error => panic!("unexpected nonce challenge error: {error:?}"),
-    };
-    assert_eq!(replay.keys.lock().unwrap().len(), 1);
-
-    let fresh_with_nonce = dpop_proof(
-        &dpop,
-        &access_token,
-        "GET",
-        "https://api.example/orders",
-        "fresh-jti-after-nonce",
-        Some(&fresh_nonce),
-        None,
-    );
     service
         .authorize(
             request(
                 &access_token,
                 AccessTokenScheme::Dpop,
-                Some(&fresh_with_nonce),
+                Some(&fresh_with_same_nonce),
             ),
             context(None),
         )
         .await
-        .expect("a fresh jti with the current issued nonce must authorize");
+        .expect("a fresh jti may reuse a nonce during its validity window");
     assert_eq!(replay.keys.lock().unwrap().len(), 2);
+
+    assert_eq!(
+        service
+            .authorize(
+                request(
+                    &access_token,
+                    AccessTokenScheme::Dpop,
+                    Some(&replayed_with_nonce),
+                ),
+                context(None),
+            )
+            .await,
+        Err(ProtectedResourceAuthorizationError::ReplayDetected),
+        "nonce reuse must never weaken the independent jti replay boundary"
+    );
 }
 
 #[test]
-fn concurrent_nonce_consumers_have_exactly_one_winner() {
+fn concurrent_distinct_jti_proofs_can_share_a_valid_nonce() {
     let fixture = fixture();
     let dpop = dpop_fixture();
     let access_token = token(&fixture, json!({"cnf": {"jkt": dpop.jkt}}), None);
@@ -593,18 +587,8 @@ fn concurrent_nonce_consumers_have_exactly_one_winner() {
         });
         (left.join().unwrap(), right.join().unwrap())
     });
-    let results = [left, right];
-    assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
-    assert_eq!(
-        results
-            .iter()
-            .filter(|result| matches!(
-                result,
-                Err(ProtectedResourceAuthorizationError::UseDpopNonce(_))
-            ))
-            .count(),
-        1
-    );
+    assert!(left.is_ok());
+    assert!(right.is_ok());
 }
 
 #[test]

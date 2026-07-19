@@ -27,6 +27,14 @@ one-time proof nonces, JWT and key-attestation proofs, immediate and deferred
 issuance, batch issuance, notifications, signed metadata, and ECDH-ES/A256GCM
 credential request/response encryption with optional `DEF` compression.
 
+For HAIP issuance, wallet applications are registered for authenticated PAR,
+S256 PKCE and DPoP. They are not made to require a JAR Request Object merely
+because wallet attestation is used. HAIP 1.0 applies the FAPI 2.0 Security
+Profile to this flow, while the requirement to put every PAR authorization
+parameter in a signed Request Object belongs to the separate FAPI 2.0 Message
+Signing profile. An ecosystem may opt into Message Signing independently, but
+the HAIP client-attestation profile does not silently enable it.
+
 The verifier supports DCQL for `dc+sd-jwt` and `mso_mdoc`, `redirect_uri`,
 `x509_san_dns`, and `x509_hash` Client Identifier Prefixes,
 `direct_post`/`direct_post.jwt`, URL-query and signed request-URI retrieval
@@ -119,3 +127,5 @@ Normative sources:
 - [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html)
 - [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html)
 - [OpenID4VC HAIP 1.0 Final](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html)
+- [FAPI 2.0 Security Profile](https://openid.net/specs/fapi-security-profile-2_0-final.html)
+- [FAPI 2.0 Message Signing](https://openid.net/specs/fapi-message-signing-2_0-final.html)

@@ -4,6 +4,7 @@ pub(crate) mod access_requests;
 pub(crate) mod avatar;
 pub(crate) mod delivery;
 pub(crate) mod federation_links;
+pub(crate) mod mtls_trust;
 
 #[cfg(test)]
 mod tests {

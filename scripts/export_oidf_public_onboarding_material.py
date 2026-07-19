@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Export public-only OIDF plan configs for server-side client seeding."""
+"""Export public-only OIDF plan configs for production control-plane onboarding."""
 
 from __future__ import annotations
 
 import argparse
 import copy
+import hashlib
 import json
 import shutil
 import tempfile
@@ -12,7 +13,7 @@ from pathlib import Path
 from collections.abc import Sequence
 from typing import Any
 
-from oidf_mtls_ca_bundle import (
+from oidf_onboarding_bundle import (
     BUNDLE_FILE_NAME,
     MANIFEST_FILE_NAME,
     build_artifact_manifest,
@@ -21,13 +22,20 @@ from oidf_mtls_ca_bundle import (
 
 
 PRIVATE_JWK_FIELDS = {"d", "p", "q", "dp", "dq", "qi", "oth", "k"}
-SEED_NAZO_FIELDS = {
+OAUTH_ONBOARDING_NAZO_FIELDS = {
     "fapi_profile",
     "fapi_request_method",
     "fapi_response_mode",
     "client_auth_type",
     "sender_constrain",
 }
+OPENID4VC_ONBOARDING_NAZO_FIELDS = {
+    "client_auth_type",
+    "openid4vc_role",
+    "credential_dataset",
+}
+ONBOARDING_NAZO_FIELDS = OAUTH_ONBOARDING_NAZO_FIELDS | OPENID4VC_ONBOARDING_NAZO_FIELDS
+OPENID4VC_ONBOARDING_BUNDLE_FILE = "openid4vc-onboarding-configs.json"
 
 
 def read_json(path: Path) -> Any:
@@ -53,7 +61,7 @@ def strip_private_jwks(value: Any) -> Any:
     return copy.deepcopy(value)
 
 
-def public_seed_client(value: Any) -> dict[str, Any] | None:
+def public_onboarding_client(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
     result: dict[str, Any] = {}
@@ -69,10 +77,14 @@ def public_seed_client(value: Any) -> dict[str, Any] | None:
             result[key] = copy.deepcopy(value[key])
     if "jwks" in value:
         result["jwks"] = strip_private_jwks(value["jwks"])
+    if isinstance(value.get("client_secret"), str) and value["client_secret"]:
+        result["client_secret_sha256"] = hashlib.sha256(
+            value["client_secret"].encode("utf-8")
+        ).hexdigest()
     return result or None
 
 
-def public_seed_mtls(value: Any) -> dict[str, Any] | None:
+def public_onboarding_mtls(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict) or "ca" not in value or "cert" not in value:
         return None
     return {
@@ -81,28 +93,40 @@ def public_seed_mtls(value: Any) -> dict[str, Any] | None:
     }
 
 
-def public_seed_nazo(value: Any) -> dict[str, Any] | None:
+def public_onboarding_nazo(value: Any) -> dict[str, Any] | None:
     if not isinstance(value, dict):
         return None
-    result = {key: copy.deepcopy(value[key]) for key in SEED_NAZO_FIELDS if key in value}
+    result = {key: copy.deepcopy(value[key]) for key in ONBOARDING_NAZO_FIELDS if key in value}
+    for key in ("oidf_user_email", "oidf_user_password"):
+        if isinstance(value.get(key), str) and value[key]:
+            result[f"{key}_sha256"] = hashlib.sha256(
+                value[key].encode("utf-8")
+            ).hexdigest()
     return result or None
 
 
-def public_seed_config(config: Any) -> dict[str, Any]:
+def public_onboarding_config(config: Any) -> dict[str, Any]:
     if not isinstance(config, dict):
         return {}
     result: dict[str, Any] = {}
     if "alias" in config:
         result["alias"] = copy.deepcopy(config["alias"])
-    for key in ("client", "client2"):
-        public_client = public_seed_client(config.get(key))
+    vci = config.get("vci")
+    if isinstance(vci, dict) and isinstance(
+        vci.get("credential_configuration_id"), str
+    ):
+        result["vci"] = {
+            "credential_configuration_id": vci["credential_configuration_id"]
+        }
+    for key in ("client", "client2", "client_secret_post"):
+        public_client = public_onboarding_client(config.get(key))
         if public_client is not None:
             result[key] = public_client
     for key in ("mtls", "mtls2"):
-        public_mtls = public_seed_mtls(config.get(key))
+        public_mtls = public_onboarding_mtls(config.get(key))
         if public_mtls is not None:
             result[key] = public_mtls
-    public_nazo = public_seed_nazo(config.get("nazo"))
+    public_nazo = public_onboarding_nazo(config.get("nazo"))
     if public_nazo is not None:
         result["nazo"] = public_nazo
     return result
@@ -110,15 +134,30 @@ def public_seed_config(config: Any) -> dict[str, Any]:
 
 def main_with_args_for_test(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config-json-file", required=True, type=Path)
+    parser.add_argument(
+        "--config-json-file", required=True, type=Path, action="append"
+    )
     parser.add_argument("--output-dir", required=True, type=Path)
     parser.add_argument("--source-commit", required=True)
+    parser.add_argument("--target-issuer", required=True)
+    parser.add_argument("--suite-base-url", required=True)
+    parser.add_argument(
+        "--onboarding-profile",
+        choices=("official", "operator-black-box"),
+        required=True,
+    )
     args = parser.parse_args(argv)
 
-    rendered = read_json(args.config_json_file)
-    configs = rendered.get("configs") if isinstance(rendered, dict) else None
-    if not isinstance(configs, dict):
-        raise SystemExit("rendered OIDF config must contain a configs object")
+    configs: dict[str, Any] = {}
+    for config_path in args.config_json_file:
+        rendered = read_json(config_path)
+        source_configs = rendered.get("configs") if isinstance(rendered, dict) else None
+        if not isinstance(source_configs, dict):
+            raise SystemExit(f"{config_path} must contain a configs object")
+        for file_name, config in source_configs.items():
+            if file_name in configs:
+                raise SystemExit(f"duplicate OIDF config file name: {file_name}")
+            configs[file_name] = config
 
     try:
         ca_bundle, _ = build_ca_bundle(configs)
@@ -126,15 +165,48 @@ def main_with_args_for_test(argv: Sequence[str] | None = None) -> int:
         raise SystemExit(str(error)) from error
 
     outputs: dict[str, bytes] = {}
+    openid4vc_configs: dict[str, Any] = {}
+    user_email_commitments: set[str] = set()
     for file_name, config in configs.items():
         if Path(file_name).name != file_name or not file_name.endswith(".json"):
             raise SystemExit(f"invalid OIDF config file name: {file_name}")
-        public_config = public_seed_config(config)
+        public_config = public_onboarding_config(config)
+        public_nazo = public_config.get("nazo")
+        if isinstance(public_nazo, dict) and isinstance(
+            public_nazo.get("oidf_user_email_sha256"), str
+        ):
+            user_email_commitments.add(public_nazo["oidf_user_email_sha256"])
+        if file_name.startswith("openid4vc-"):
+            openid4vc_configs[file_name] = public_config
         outputs[file_name] = (
             json.dumps(public_config, indent=2, sort_keys=True) + "\n"
         ).encode("utf-8")
+    if openid4vc_configs:
+        if len(user_email_commitments) != 1:
+            raise SystemExit(
+                "combined OpenID4VC onboarding artifact requires exactly one credential-holder email commitment"
+            )
+        outputs[OPENID4VC_ONBOARDING_BUNDLE_FILE] = (
+            json.dumps(
+                {
+                    "configs": openid4vc_configs,
+                    "credential_holder_email_sha256": next(
+                        iter(user_email_commitments)
+                    ),
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n"
+        ).encode("utf-8")
     outputs[BUNDLE_FILE_NAME] = ca_bundle
-    outputs[MANIFEST_FILE_NAME] = build_artifact_manifest(outputs, args.source_commit)
+    outputs[MANIFEST_FILE_NAME] = build_artifact_manifest(
+        outputs,
+        args.source_commit,
+        args.target_issuer,
+        args.suite_base_url,
+        args.onboarding_profile,
+    )
 
     if args.output_dir.exists():
         raise SystemExit(f"output directory already exists: {args.output_dir}")

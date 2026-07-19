@@ -3,7 +3,7 @@ use std::time::Duration;
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use futures_util::future::join_all;
-use nazo_resource_server::{DpopNonceConsumptionResult, DpopNonceStorage};
+use nazo_resource_server::{DpopNonceStorage, DpopNonceValidationResult};
 use nazo_valkey::{ErrorKind, ReplayStore, ValkeyConnection};
 
 fn explicit_valkey_url() -> Option<String> {
@@ -204,7 +204,7 @@ async fn concurrent_dpop_replay_consumers_have_exactly_one_winner() {
 }
 
 #[tokio::test]
-async fn dpop_nonce_preserves_exact_key_and_is_consumed_once() {
+async fn dpop_nonce_preserves_exact_key_and_remains_valid_until_expiry() {
     let Some(url) = explicit_valkey_url() else {
         return;
     };
@@ -222,8 +222,9 @@ async fn dpop_nonce_preserves_exact_key_and_is_consumed_once() {
 
     store.issue_dpop_nonce(&nonce, 30).await.unwrap();
     assert_eq!(inspector.get::<String, _>(&key).await.unwrap(), "1");
-    assert!(store.consume_dpop_nonce(&nonce).await.unwrap());
-    assert!(!store.consume_dpop_nonce(&nonce).await.unwrap());
+    assert!(store.validate_dpop_nonce(&nonce).await.unwrap());
+    assert!(store.validate_dpop_nonce(&nonce).await.unwrap());
+    assert_eq!(inspector.get::<String, _>(&key).await.unwrap(), "1");
 }
 
 #[tokio::test]
@@ -243,11 +244,11 @@ async fn authorization_and_resource_server_share_the_nonce_key_and_ttl_contract(
         .await
         .unwrap();
     assert_eq!(
-        DpopNonceStorage::consume_nonce(&store, &authorization_nonce)
+        DpopNonceStorage::validate_nonce(&store, &authorization_nonce)
             .await
             .unwrap(),
-        DpopNonceConsumptionResult::Accepted,
-        "the resource-server endpoint must consume authorization-server nonce state"
+        DpopNonceValidationResult::Accepted,
+        "the resource-server endpoint must validate authorization-server nonce state"
     );
 
     let resource_nonce = format!("rs-{}", uuid::Uuid::now_v7());
@@ -266,13 +267,13 @@ async fn authorization_and_resource_server_share_the_nonce_key_and_ttl_contract(
         "resource-server expiry must map to the existing Valkey nonce TTL: {ttl}"
     );
     assert!(
-        store.consume_dpop_nonce(&resource_nonce).await.unwrap(),
-        "the authorization-server endpoint must consume resource-server nonce state"
+        store.validate_dpop_nonce(&resource_nonce).await.unwrap(),
+        "the authorization-server endpoint must validate resource-server nonce state"
     );
 }
 
 #[tokio::test]
-async fn concurrent_resource_server_nonce_consumers_have_exactly_one_winner() {
+async fn concurrent_resource_server_nonce_validations_share_the_validity_window() {
     let Some(url) = explicit_valkey_url() else {
         return;
     };
@@ -293,7 +294,7 @@ async fn concurrent_resource_server_nonce_consumers_have_exactly_one_winner() {
         let store = store.clone();
         let nonce = nonce.clone();
         async move {
-            DpopNonceStorage::consume_nonce(&store, &nonce)
+            DpopNonceStorage::validate_nonce(&store, &nonce)
                 .await
                 .unwrap()
         }
@@ -301,7 +302,10 @@ async fn concurrent_resource_server_nonce_consumers_have_exactly_one_winner() {
     let winners = join_all(attempts)
         .await
         .into_iter()
-        .filter(|result| *result == DpopNonceConsumptionResult::Accepted)
+        .filter(|result| *result == DpopNonceValidationResult::Accepted)
         .count();
-    assert_eq!(winners, 1, "GETDEL must admit exactly one nonce consumer");
+    assert_eq!(
+        winners, 32,
+        "RFC 9449 permits concurrent proofs with distinct jti values to share a valid nonce"
+    );
 }

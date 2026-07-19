@@ -27,7 +27,6 @@ fn metadata<'a>(
         backchannel_logout_uri: None,
         frontchannel_logout_uri: None,
         jwks,
-        allow_jwks_without_kid: false,
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
         userinfo_signed_response_alg: None,
@@ -58,7 +57,7 @@ fn client_metadata_requires_mtls_binding_material() {
     assert!(
         error
             .to_string()
-            .contains("tls_client_auth 客户端必须注册 subject DN、SAN 或证书 SHA-256 绑定材料"),
+            .contains("tls_client_auth 客户端必须且只能注册一个 RFC 8705 subject DN 或 SAN 绑定值"),
         "unexpected error: {error}"
     );
 
@@ -77,6 +76,47 @@ fn client_metadata_requires_mtls_binding_material() {
         Some(&subject_mtls),
     ))
     .expect("tls_client_auth may bind by registered subject DN");
+}
+
+#[test]
+fn client_metadata_requires_exactly_one_rfc8705_pki_subject_selector() {
+    let multiple = ClientMtlsMetadataFixture {
+        tls_client_auth_subject_dn: Some("CN=client-1,O=Example".to_owned()),
+        tls_client_auth_san_dns: vec!["client.example".to_owned()],
+        ..ClientMtlsMetadataFixture::default()
+    };
+    let error = validate_metadata_fixture(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "tls_client_auth",
+        None,
+        Some(&multiple),
+    ))
+    .expect_err("RFC 8705 permits exactly one PKI subject selector");
+    assert!(error.to_string().contains("必须且只能注册一个 RFC 8705"));
+
+    let thumbprint_only = ClientMtlsMetadataFixture {
+        tls_client_auth_cert_sha256: Some(
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff"
+                .to_owned(),
+        ),
+        ..ClientMtlsMetadataFixture::default()
+    };
+    let error = validate_metadata_fixture(metadata(
+        "confidential",
+        &["https://client.example/callback".to_owned()],
+        &["accounts".to_owned()],
+        &["resource://default".to_owned()],
+        &["authorization_code".to_owned()],
+        "tls_client_auth",
+        None,
+        Some(&thumbprint_only),
+    ))
+    .expect_err("administrator certificate pins cannot replace RFC 8705 subject metadata");
+    assert!(error.to_string().contains("必须且只能注册一个 RFC 8705"));
 }
 
 #[test]

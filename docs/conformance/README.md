@@ -26,19 +26,19 @@ in the repository.
 - Latest M8 official-suite source coverage scan: [2026-07-11 OIDF v5.2.0 coverage](2026-07-11-m8-oidf-v5.2.0-coverage.md)
 - Project-owned RFC 9967 regression scope: [RFC 9967 SCIM SET black-box matrix](rfc9967-scim-set-matrix.md)
 - Latest OpenID4VC Final / HAIP alpha regression: [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
-- Current public black-box full evidence: [2026-07-17 public black-box full OIDF results](2026-07-17-public-black-box-full-oidf-results.md)
+- Current public black-box full evidence: [2026-07-19 public black-box full OIDF results](2026-07-19-public-black-box-full-oidf-results.md)
 
-The latest recorded public black-box OIDF evidence is the 2026-07-17 run set
+The latest recorded public black-box OIDF evidence is the 2026-07-19 run set
 against an operator-provided production issuer, sanitized in public documents as
 `https://issuer.example`, at production revision
-`ae19cc50af4cc50f3f35f678a3a1c38332d475e2`. GitHub Actions runs
-[`29543012193`](https://github.com/nazozero/NazoAuth/actions/runs/29543012193)
+`1df7e6c2947833ae4faad15d1699526efa8bb8ec`. GitHub Actions runs
+[`29672914368`](https://github.com/nazozero/NazoAuth/actions/runs/29672914368)
 and
-[`29545407427`](https://github.com/nazozero/NazoAuth/actions/runs/29545407427)
+[`29672915479`](https://github.com/nazozero/NazoAuth/actions/runs/29672915479)
 completed successfully, covering 42 plan executions across OIDC, FAPI,
 FAPI-CIBA, OpenID4VC Final, and HAIP. The combined exported results contain
-1,178 finished modules, 101,519 condition successes, 0 condition failures, 30
-bounded warnings, 15 expected skips, and 136 review entries. The evidence counts
+1,178 module instances, 97,029 condition successes, 0 condition failures, 30
+bounded condition warnings, 15 expected skips, and 9 bounded review modules. The evidence counts
 only public official-suite runs against an explicitly configured production
 origin; non-public endpoints, private DNS names, private trust roots, and suite-private
 hostnames are not accepted as conformance evidence. Public workflow users must
@@ -75,9 +75,9 @@ The latest NI-006~NI-011 official full-matrix regression ran against
 plans in one job and isolated front-channel logout and session-management into
 separate browser-sensitive matrix jobs.
 
-The 2026-07-16 OpenID4VC Final / HAIP alpha record remains historical evidence
-for the feature branch. The current production-equivalent OpenID4VC evidence is
-the 2026-07-17 public black-box run above.
+The 2026-07-16 OpenID4VC Final / HAIP alpha record and the 2026-07-17 public
+black-box record remain historical evidence. The current production-equivalent
+evidence is the 2026-07-19 public black-box run above.
 
 ## Coverage Update Rule
 

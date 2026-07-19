@@ -7,16 +7,18 @@ use std::{
 
 use base64::Engine as _;
 use chrono::{Duration, Utc};
-use nazo_auth::{DpopError, DpopNoncePolicy, DpopProofRequest, validate_authorization_server_dpop};
+use nazo_auth::{
+    DpopError, DpopNoncePolicy, DpopProofRequest, issue_authorization_server_dpop_nonce,
+    validate_authorization_server_dpop,
+};
 use nazo_digital_credentials::{
-    CredentialFormat, CredentialSignerPort, EphemeralEncryptionKey, encrypt_ecdh_es,
-    encrypt_ecdh_es_deflate,
+    CredentialSignerPort, EphemeralEncryptionKey, encrypt_ecdh_es, encrypt_ecdh_es_deflate,
 };
 use nazo_identity::{TenantId, UserId};
 use nazo_openid4vc_http_actix::{
     AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
-    CreatePresentationRequest, CreatePresentationResponse, CredentialHttpError,
-    CredentialIssuerFuture, CredentialIssuerOperations, CredentialRequestBody,
+    CreatePresentationRequest, CreatePresentationResponse, CredentialEndpointResponse,
+    CredentialHttpError, CredentialIssuerFuture, CredentialIssuerOperations, CredentialRequestBody,
     CredentialRequestContext, CredentialResponseBody, PreAuthorizedTokenRequest,
     PreAuthorizedTokenResponse, PresentationFuture, PresentationHttpError, PresentationOperations,
     PresentationResponseBody, PresentationResponseInput,
@@ -54,6 +56,27 @@ type VciService = CredentialIssuerService<
     Openid4vcDataset,
     Openid4vcCredentialCrypto,
 >;
+
+/// Issuer administration input. OpenID4VCI does not define this control-plane object.
+#[derive(Clone, Debug, PartialEq, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct PutCredentialDatasetRequest {
+    pub claims: Value,
+    #[serde(default)]
+    pub valid_from: Option<chrono::DateTime<chrono::Utc>>,
+    #[serde(default)]
+    pub valid_until: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+#[derive(Clone, Debug, PartialEq, serde::Serialize)]
+pub(crate) struct CredentialDatasetResponse {
+    pub subject_id: Uuid,
+    pub credential_configuration_id: String,
+    pub claims: Value,
+    pub valid_from: Option<chrono::DateTime<chrono::Utc>>,
+    pub valid_until: Option<chrono::DateTime<chrono::Utc>>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
 
 const VCI_CREDENTIAL_IDENTIFIER_PREFIX: &str = "nazo-vci-";
 
@@ -112,8 +135,7 @@ fn token_endpoint_dpop_target_uris(issuer: &str, request_url: &str) -> Vec<Strin
 
 #[derive(Clone)]
 struct Openid4vcDataset {
-    users: nazo_postgres::UserRepository,
-    configurations: Arc<BTreeMap<String, CredentialConfiguration>>,
+    store: nazo_postgres::Openid4vciDatasetRepository,
 }
 
 impl CredentialDatasetPort for Openid4vcDataset {
@@ -129,102 +151,13 @@ impl CredentialDatasetPort for Openid4vcDataset {
         >,
     > {
         Box::pin(async move {
-            let tenant = TenantId::new(access.tenant_id)
-                .map_err(|_| nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable)?;
-            let user = UserId::new(access.subject_id)
-                .map_err(|_| nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable)?;
-            let claims = self
-                .users
-                .active_subject_claims_by_tenant_id(tenant, user)
+            self.store
+                .dataset(access.tenant_id, access.subject_id, configuration_id)
                 .await
                 .map_err(|_| nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable)?
-                .ok_or(nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable)?;
-            let configuration = self
-                .configurations
-                .get(configuration_id)
-                .ok_or(nazo_openid4vci::CredentialIssuanceError::InvalidConfiguration)?;
-            credential_subject_claims(configuration.format, claims)
+                .ok_or(nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable)
         })
     }
-}
-
-fn credential_subject_claims(
-    format: CredentialFormat,
-    claims: nazo_identity::SubjectClaims,
-) -> Result<Value, nazo_openid4vci::CredentialIssuanceError> {
-    match format {
-        CredentialFormat::SdJwtVc => serde_json::to_value(claims)
-            .map_err(|_| nazo_openid4vci::CredentialIssuanceError::DatasetUnavailable),
-        CredentialFormat::MsoMdoc => Ok(json!({
-            "org.iso.18013.5.1": mdoc_namespace_claims(claims),
-        })),
-    }
-}
-
-fn mdoc_namespace_claims(claims: nazo_identity::SubjectClaims) -> Value {
-    let mut namespace = serde_json::Map::new();
-    namespace.insert(
-        "family_name".to_owned(),
-        Value::String(
-            claims
-                .family_name
-                .or_else(|| claims.name.clone())
-                .unwrap_or_else(|| claims.preferred_username.clone()),
-        ),
-    );
-    namespace.insert(
-        "given_name".to_owned(),
-        Value::String(
-            claims
-                .given_name
-                .or_else(|| claims.name.clone())
-                .unwrap_or(claims.preferred_username),
-        ),
-    );
-    if let Some(birthdate) = claims.birthdate {
-        namespace.insert("birth_date".to_owned(), Value::String(birthdate));
-    }
-    namespace.insert("email".to_owned(), Value::String(claims.email));
-    namespace.insert(
-        "resident_address".to_owned(),
-        serde_json::to_value(claims.address).unwrap_or(Value::Null),
-    );
-    namespace.insert(
-        "issue_date".to_owned(),
-        Value::String("2026-07-16".to_owned()),
-    );
-    namespace.insert(
-        "expiry_date".to_owned(),
-        Value::String("2036-07-16".to_owned()),
-    );
-    namespace.insert("issuing_country".to_owned(), Value::String("UT".to_owned()));
-    namespace.insert(
-        "issuing_authority".to_owned(),
-        Value::String("NazoAuth OpenID4VC OIDF Test Issuer".to_owned()),
-    );
-    namespace.insert(
-        "document_number".to_owned(),
-        Value::String(format!("NAZO-{}", claims.subject.as_uuid().simple())),
-    );
-    namespace.insert(
-        "portrait".to_owned(),
-        Value::String("openid4vc-oidf-placeholder-portrait".to_owned()),
-    );
-    namespace.insert(
-        "driving_privileges".to_owned(),
-        json!([
-            {
-                "vehicle_category_code": "B",
-                "issue_date": "2026-07-16",
-                "expiry_date": "2036-07-16"
-            }
-        ]),
-    );
-    namespace.insert(
-        "un_distinguishing_sign".to_owned(),
-        Value::String("UT".to_owned()),
-    );
-    namespace.into()
 }
 
 pub(crate) struct ServerCredentialIssuerOperations {
@@ -241,6 +174,7 @@ pub(crate) struct ServerCredentialIssuerOperations {
     dpop_nonce_policy: DpopNoncePolicy,
     client_attestation: Option<Arc<Openid4vcClientAttestationValidator>>,
     users: nazo_postgres::UserRepository,
+    datasets: nazo_postgres::Openid4vciDatasetRepository,
     tenant_id: Uuid,
 }
 
@@ -264,12 +198,12 @@ impl ServerCredentialIssuerOperations {
         let configurations = Arc::new(configurations);
         let store = nazo_postgres::Openid4vciRepository::new(pool.clone(), data_key);
         let users = nazo_postgres::UserRepository::new(pool.clone());
+        let datasets = nazo_postgres::Openid4vciDatasetRepository::new(pool.clone(), data_key);
         let service = CredentialIssuerService::new(
             store.clone(),
             proof_validator,
             Openid4vcDataset {
-                users: users.clone(),
-                configurations: configurations.clone(),
+                store: datasets.clone(),
             },
             crypto.clone(),
             issuer.clone(),
@@ -292,6 +226,7 @@ impl ServerCredentialIssuerOperations {
             dpop_nonce_policy,
             client_attestation,
             users,
+            datasets,
             tenant_id,
         })
     }
@@ -535,6 +470,19 @@ impl ServerCredentialIssuerOperations {
         }
         Ok(CredentialResponseBody::Json(response))
     }
+
+    async fn next_dpop_nonce(
+        &self,
+        access: &CredentialAccess,
+    ) -> Result<Option<String>, CredentialHttpError> {
+        if access.dpop_jkt.is_none() {
+            return Ok(None);
+        }
+        issue_authorization_server_dpop_nonce(self.authorization.as_ref())
+            .await
+            .map(Some)
+            .map_err(|_| vci_error(503, "server_error", "DPoP nonce issuance is unavailable."))
+    }
 }
 
 impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
@@ -638,7 +586,10 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
         &'a self,
         context: CredentialRequestContext,
         body: CredentialRequestBody<CredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async move {
             if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
                 return Err(vci_error(
@@ -649,6 +600,7 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
             }
             let request = self.request_json(body).await?;
             let access = self.access(&context).await?;
+            let dpop_nonce = self.next_dpop_nonce(&access).await?;
             let configuration_id = resolve_configuration_id(&request, &access)?;
             let configuration = self
                 .configurations
@@ -688,8 +640,10 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                 )
                 .await
                 .map_err(map_issuance_error)?;
-            self.finish_response(response, request.credential_response_encryption.as_ref())
-                .await
+            let body = self
+                .finish_response(response, request.credential_response_encryption.as_ref())
+                .await?;
+            Ok(CredentialEndpointResponse { body, dpop_nonce })
         })
     }
 
@@ -697,7 +651,10 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
         &'a self,
         context: CredentialRequestContext,
         body: CredentialRequestBody<DeferredCredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async move {
             if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
                 return Err(vci_error(
@@ -708,6 +665,7 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
             }
             let request = self.request_json(body).await?;
             let access = self.access(&context).await?;
+            let dpop_nonce = self.next_dpop_nonce(&access).await?;
             let deferred = self
                 .store
                 .consume_ready_deferred(
@@ -795,16 +753,18 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                 .map_err(|_| {
                     vci_error(503, "server_error", "Notification state is unavailable.")
                 })?;
-            self.finish_response(
-                CredentialResponse {
-                    credentials: Some(credentials),
-                    transaction_id: None,
-                    notification_id: Some(notification_id),
-                    interval: None,
-                },
-                request.credential_response_encryption.as_ref(),
-            )
-            .await
+            let body = self
+                .finish_response(
+                    CredentialResponse {
+                        credentials: Some(credentials),
+                        transaction_id: None,
+                        notification_id: Some(notification_id),
+                        interval: None,
+                    },
+                    request.credential_response_encryption.as_ref(),
+                )
+                .await?;
+            Ok(CredentialEndpointResponse { body, dpop_nonce })
         })
     }
 
@@ -812,9 +772,11 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
         &'a self,
         context: CredentialRequestContext,
         request: NotificationRequest,
-    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>
+    {
         Box::pin(async move {
             let access = self.access(&context).await?;
+            let dpop_nonce = self.next_dpop_nonce(&access).await?;
             let recorded = self
                 .store
                 .record_notification(&IssuanceNotification {
@@ -835,7 +797,10 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                     "Notification identifier is invalid or already terminal.",
                 ));
             }
-            Ok(())
+            Ok(CredentialEndpointResponse {
+                body: (),
+                dpop_nonce,
+            })
         })
     }
 
@@ -1064,18 +1029,34 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                 .map_err(|_| vci_error(500, "server_error", "Credential tenant is invalid."))?;
             let subject = UserId::new(request.subject_id)
                 .map_err(|_| vci_error(400, "invalid_request", "Credential subject is invalid."))?;
-            if self
+            if !self
                 .users
-                .active_subject_claims_by_tenant_id(tenant, subject)
+                .is_active_by_tenant_id(tenant, subject)
                 .await
                 .map_err(|_| vci_error(503, "server_error", "Credential subject lookup failed."))?
-                .is_none()
             {
                 return Err(vci_error(
                     400,
                     "invalid_request",
                     "Credential subject is not active.",
                 ));
+            }
+            for configuration_id in &request.credential_configuration_ids {
+                let available = self
+                    .datasets
+                    .dataset(self.tenant_id, request.subject_id, configuration_id)
+                    .await
+                    .map_err(|_| {
+                        vci_error(503, "server_error", "Credential dataset lookup failed.")
+                    })?
+                    .is_some();
+                if !available {
+                    return Err(vci_error(
+                        400,
+                        "invalid_request",
+                        "Requested credential data is unavailable for the subject.",
+                    ));
+                }
             }
             if !(30..=600).contains(&request.expires_in) {
                 return Err(vci_error(
@@ -1169,6 +1150,263 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                 },
             })
         })
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct CredentialDatasetAdminService {
+    issuer: Arc<ServerCredentialIssuerOperations>,
+}
+
+impl CredentialDatasetAdminService {
+    pub(crate) fn new(issuer: Arc<ServerCredentialIssuerOperations>) -> Self {
+        Self { issuer }
+    }
+
+    pub(crate) async fn put_dataset(
+        &self,
+        tenant_id: Uuid,
+        actor_user_id: Uuid,
+        subject_id: Uuid,
+        configuration_id: String,
+        request: PutCredentialDatasetRequest,
+    ) -> Result<CredentialDatasetResponse, CredentialHttpError> {
+        self.require_configured_tenant(tenant_id)?;
+        if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
+            return Err(vci_error(
+                503,
+                "temporarily_unavailable",
+                "Credential issuer is unavailable.",
+            ));
+        }
+        let Some(configuration) = self.configurations.get(&configuration_id) else {
+            return Err(vci_error(
+                400,
+                "invalid_request",
+                "Credential configuration is unknown.",
+            ));
+        };
+        validate_managed_dataset(configuration, &request)?;
+        let tenant = TenantId::new(self.tenant_id)
+            .map_err(|_| vci_error(500, "server_error", "Credential tenant is invalid."))?;
+        let subject = UserId::new(subject_id)
+            .map_err(|_| vci_error(400, "invalid_request", "Credential subject is invalid."))?;
+        if !self
+            .users
+            .is_active_by_tenant_id(tenant, subject)
+            .await
+            .map_err(|_| vci_error(503, "server_error", "Credential subject lookup failed."))?
+        {
+            return Err(vci_error(
+                404,
+                "invalid_request",
+                "Credential subject is not active.",
+            ));
+        }
+        let stored = self
+            .datasets
+            .upsert_managed_dataset(nazo_postgres::ManagedCredentialDatasetWrite {
+                tenant_id: self.tenant_id,
+                actor_user_id,
+                subject_id,
+                credential_configuration_id: &configuration_id,
+                claims: &request.claims,
+                valid_from: request.valid_from,
+                valid_until: request.valid_until,
+            })
+            .await
+            .map_err(|_| {
+                vci_error(
+                    503,
+                    "server_error",
+                    "Credential dataset persistence failed.",
+                )
+            })?;
+        if !stored {
+            return Err(vci_error(
+                404,
+                "invalid_request",
+                "Credential subject is not active.",
+            ));
+        }
+        tracing::info!(%subject_id, %configuration_id, "issuer credential dataset updated");
+        self.get_dataset(tenant_id, subject_id, configuration_id)
+            .await
+    }
+
+    pub(crate) async fn get_dataset(
+        &self,
+        tenant_id: Uuid,
+        subject_id: Uuid,
+        configuration_id: String,
+    ) -> Result<CredentialDatasetResponse, CredentialHttpError> {
+        self.require_configured_tenant(tenant_id)?;
+        if !self.configurations.contains_key(&configuration_id) {
+            return Err(vci_error(
+                404,
+                "invalid_request",
+                "Credential configuration is unknown.",
+            ));
+        }
+        let dataset = self
+            .datasets
+            .managed_dataset(self.tenant_id, subject_id, &configuration_id)
+            .await
+            .map_err(|_| vci_error(503, "server_error", "Credential dataset lookup failed."))?
+            .ok_or_else(|| {
+                vci_error(404, "invalid_request", "Credential dataset was not found.")
+            })?;
+        Ok(CredentialDatasetResponse {
+            subject_id,
+            credential_configuration_id: configuration_id,
+            claims: dataset.claims,
+            valid_from: dataset.valid_from,
+            valid_until: dataset.valid_until,
+            updated_at: dataset.updated_at,
+        })
+    }
+
+    pub(crate) async fn delete_dataset(
+        &self,
+        tenant_id: Uuid,
+        actor_user_id: Uuid,
+        subject_id: Uuid,
+        configuration_id: String,
+    ) -> Result<(), CredentialHttpError> {
+        self.require_configured_tenant(tenant_id)?;
+        if !self.configurations.contains_key(&configuration_id) {
+            return Err(vci_error(
+                404,
+                "invalid_request",
+                "Credential configuration is unknown.",
+            ));
+        }
+        let deleted = self
+            .datasets
+            .delete_managed_dataset(self.tenant_id, actor_user_id, subject_id, &configuration_id)
+            .await
+            .map_err(|_| vci_error(503, "server_error", "Credential dataset deletion failed."))?;
+        if !deleted {
+            return Err(vci_error(
+                404,
+                "invalid_request",
+                "Credential dataset was not found.",
+            ));
+        }
+        tracing::info!(%subject_id, %configuration_id, "issuer credential dataset deleted");
+        Ok(())
+    }
+
+    fn require_configured_tenant(&self, tenant_id: Uuid) -> Result<(), CredentialHttpError> {
+        if tenant_id == self.tenant_id {
+            Ok(())
+        } else {
+            Err(vci_error(
+                404,
+                "invalid_request",
+                "Credential dataset was not found.",
+            ))
+        }
+    }
+}
+
+impl std::ops::Deref for CredentialDatasetAdminService {
+    type Target = ServerCredentialIssuerOperations;
+
+    fn deref(&self) -> &Self::Target {
+        &self.issuer
+    }
+}
+
+fn validate_managed_dataset(
+    configuration: &CredentialConfiguration,
+    request: &PutCredentialDatasetRequest,
+) -> Result<(), CredentialHttpError> {
+    let Some(claims) = request
+        .claims
+        .as_object()
+        .filter(|claims| !claims.is_empty())
+    else {
+        return Err(vci_error(
+            400,
+            "invalid_request",
+            "Credential claims must be a non-empty object.",
+        ));
+    };
+    let mut nodes = 0;
+    if serde_json::to_vec(&request.claims).map_or(true, |value| value.len() > 64 * 1024)
+        || !bounded_json(&request.claims, 0, &mut nodes)
+    {
+        return Err(vci_error(
+            400,
+            "invalid_request",
+            "Credential claims exceed structural limits.",
+        ));
+    }
+    if request.valid_until.is_some_and(|valid_until| {
+        request
+            .valid_from
+            .map_or(valid_until <= Utc::now(), |valid_from| {
+                valid_until <= valid_from
+            })
+    }) {
+        return Err(vci_error(
+            400,
+            "invalid_request",
+            "Credential dataset validity is invalid.",
+        ));
+    }
+    match configuration.format {
+        nazo_digital_credentials::CredentialFormat::SdJwtVc => {
+            const RESERVED: &[&str] = &[
+                "iss", "iat", "nbf", "exp", "vct", "_sd", "_sd_alg", "cnf", "status",
+            ];
+            if claims.keys().any(|name| {
+                name.is_empty() || name.len() > 128 || RESERVED.contains(&name.as_str())
+            }) {
+                return Err(vci_error(
+                    400,
+                    "invalid_request",
+                    "Credential claims contain a reserved or invalid name.",
+                ));
+            }
+        }
+        nazo_digital_credentials::CredentialFormat::MsoMdoc => {
+            if claims.iter().any(|(namespace, values)| {
+                namespace.is_empty()
+                    || namespace.len() > 255
+                    || values.as_object().is_none_or(|values| {
+                        values.is_empty()
+                            || values
+                                .keys()
+                                .any(|name| name.is_empty() || name.len() > 128)
+                    })
+            }) {
+                return Err(vci_error(
+                    400,
+                    "invalid_request",
+                    "mdoc claims must be non-empty namespace objects.",
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn bounded_json(value: &Value, depth: usize, nodes: &mut usize) -> bool {
+    *nodes += 1;
+    if depth > 8 || *nodes > 512 {
+        return false;
+    }
+    match value {
+        Value::Object(object) => object
+            .iter()
+            .all(|(key, value)| key.len() <= 255 && bounded_json(value, depth + 1, nodes)),
+        Value::Array(array) => array
+            .iter()
+            .all(|value| bounded_json(value, depth + 1, nodes)),
+        Value::String(value) => value.len() <= 4096,
+        _ => true,
     }
 }
 

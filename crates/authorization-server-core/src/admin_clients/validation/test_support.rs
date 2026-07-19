@@ -18,7 +18,6 @@ pub(super) struct ClientMetadataFixture<'a> {
     pub(super) backchannel_logout_uri: Option<&'a str>,
     pub(super) frontchannel_logout_uri: Option<&'a str>,
     pub(super) jwks: Option<&'a Value>,
-    pub(super) allow_jwks_without_kid: bool,
     pub(super) introspection_encrypted_response_alg: Option<&'a str>,
     pub(super) introspection_encrypted_response_enc: Option<&'a str>,
     pub(super) userinfo_signed_response_alg: Option<&'a str>,
@@ -55,6 +54,7 @@ pub(super) fn validate_metadata_fixture(metadata: ClientMetadataFixture<'_>) -> 
         subject_type: None,
         sector_identifier_uri: None,
         require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
@@ -108,7 +108,6 @@ pub(super) fn validate_metadata_fixture(metadata: ClientMetadataFixture<'_>) -> 
         authorization_encrypted_response_enc: metadata
             .authorization_encrypted_response_enc
             .map(ToOwned::to_owned),
-        allow_jwks_without_kid: metadata.allow_jwks_without_kid,
     };
     let crypto = MetadataTestCrypto;
     let response_signing_algorithms = metadata
@@ -138,7 +137,7 @@ impl AdminClientCryptoPort for MetadataTestCrypto {
         unreachable!("metadata validation must not issue client secrets")
     }
 
-    fn validate_jwks(&self, jwks: &Value, _allow_missing_kid: bool) -> Result<(), String> {
+    fn validate_jwks(&self, jwks: &Value) -> Result<(), String> {
         let keys = jwks
             .get("keys")
             .and_then(Value::as_array)
@@ -157,6 +156,12 @@ impl AdminClientCryptoPort for MetadataTestCrypto {
             return Err("jwks 不能包含私钥材料".to_owned());
         }
         Ok(())
+    }
+
+    fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
+        (!value.trim().is_empty() && value.contains('='))
+            .then_some(())
+            .ok_or_else(|| "invalid RFC 4514 DN".to_owned())
     }
 
     fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {

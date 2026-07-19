@@ -2,7 +2,7 @@
 
 This document describes the repository-owned OpenID Foundation Conformance Suite matrix. The matrix is a 25-plan suite. New TP/PS and NI checks are mapped onto these plans instead of being added as a separate temporary matrix.
 
-The execution entry point is still `runtime/oidf/oidf-plan-set.json`. `scripts/setup_local_oidf_podman.py` also writes `runtime/oidf/oidf-plan-set-manifest.json` with a title, description, and coverage focus for every plan.
+The execution entry point is `runtime/oidf/oidf-plan-set.json`. `scripts/prepare_oidf_black_box.py` also writes `runtime/oidf/oidf-plan-set-manifest.json` with a title, description, and coverage focus for every plan.
 
 In `parallel-isolated` mode the 25 plans are executed as bounded public-suite batches: OIDC core (`2`), OIDC Form Post / Third-Party Initiated Login / Config (`3`), FAPI-CIBA (`4`, `--no-parallel`), FAPI message-signing plus mTLS/DPoP (`5`), three remaining FAPI groups (`3` each), Front-Channel Logout (`1`, isolated browser job), and Session Management (`1`, isolated browser job). This preserves full matrix coverage while avoiding suite-runner callback and browser-session contention.
 

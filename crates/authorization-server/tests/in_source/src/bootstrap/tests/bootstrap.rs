@@ -120,3 +120,49 @@ async fn fapi_resource_static_route_rejects_options_without_cors_and_keeps_secur
         );
     }
 }
+
+#[actix_web::test]
+async fn openid4vci_dataset_route_is_nested_inside_the_admin_scope() {
+    let config = crate::config::ConfigSource::from_pairs_for_test([
+        ("ENABLE_OPENID4VCI_ISSUER", "true"),
+        (
+            "OPENID4VC_DATA_ENCRYPTION_KEY",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        ),
+        (
+            "OPENID4VC_SIGNING_CERTIFICATE_CHAIN_FILE",
+            "runtime/openid4vc-chain.pem",
+        ),
+        (
+            "OPENID4VC_TRUST_ANCHORS_FILE",
+            "runtime/openid4vc-roots.pem",
+        ),
+        (
+            "OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON",
+            r#"{"pid":{"format":"dc+sd-jwt","scope":"pid","cryptographic_binding_methods_supported":["jwk"],"credential_signing_alg_values_supported":["ES256"],"proof_types_supported":{"jwt":{"proof_signing_alg_values_supported":["ES256"]}},"vct":"https://issuer.example/credentials/pid"}}"#,
+        ),
+        (
+            "OPENID4VCI_ISSUER_MANAGEMENT_TOKEN",
+            "openid4vci-management-token-at-least-32-bytes",
+        ),
+    ]);
+    let settings = Settings::from_config(&config).unwrap();
+    let app = actix_test::init_service(
+        App::new().configure(|cfg| routes::configure(cfg, &settings, false)),
+    )
+    .await;
+
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::get()
+            .uri("/admin/openid4vci/credential-datasets/00000000-0000-0000-0000-000000000123/pid")
+            .to_request(),
+    )
+    .await;
+
+    assert_ne!(
+        response.status(),
+        actix_web::http::StatusCode::NOT_FOUND,
+        "the generic /admin scope must not shadow the OpenID4VCI dataset route",
+    );
+}

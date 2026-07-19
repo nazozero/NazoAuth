@@ -83,11 +83,8 @@ impl CibaSecurityProfile {
             .to_ascii_lowercase()
             .as_str()
         {
-            "fapi-ciba-id1"
-            | "fapi-ciba-id1-plain-private-key-jwt-poll"
-            | "fapi-ciba"
-            | "oidf-fapi-ciba" => Ok(Self::FapiCibaId1),
-            "fapi2-ciba" | "experimental-fapi2-ciba" => Ok(Self::Fapi2Ciba),
+            "fapi-ciba-id1" => Ok(Self::FapiCibaId1),
+            "fapi2-ciba" => Ok(Self::Fapi2Ciba),
             value => bail!("CIBA_SECURITY_PROFILE is not supported: {value}"),
         }
     }

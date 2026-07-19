@@ -20,10 +20,6 @@ name = "nazo-oauth-keyctl"
 path = "src/bin/nazo_oauth_keyctl.rs"
 test = false
 
-[[bin]]
-name = "nazo_oauth_seed_oidf"
-path = "src/bin/nazo_oauth_seed_oidf.rs"
-
 [dependencies]
 actix-cors.workspace = true
 actix-multipart = "0.8.0"

@@ -1,6 +1,100 @@
 use super::*;
 use serde_json::json;
 
+const CLIENT_ATTESTATION_JWKS: &str = r#"{"keys":[{"kty":"EC","crv":"P-256","kid":"client-attester","x":"client-x","y":"client-y"}]}"#;
+const KEY_ATTESTATION_JWKS: &str =
+    r#"{"keys":[{"kty":"EC","crv":"P-256","kid":"key-attester","x":"holder-x","y":"holder-y"}]}"#;
+const ATTESTATION_CREDENTIAL_CONFIGURATIONS: &str = r#"{"pid":{"format":"dc+sd-jwt","scope":"pid","cryptographic_binding_methods_supported":["jwk"],"credential_signing_alg_values_supported":["ES256"],"proof_types_supported":{"attestation":{"proof_signing_alg_values_supported":["ES256"],"key_attestations_required":{"key_storage":["iso_18045_moderate"]}}},"vct":"https://issuer.example/credentials/pid"}}"#;
+
+#[test]
+fn key_attestation_policy_requires_its_own_trust_store() {
+    let config = ConfigSource::from_pairs_for_test([
+        ("ENABLE_OPENID4VCI_ISSUER", "true"),
+        (
+            "OPENID4VC_DATA_ENCRYPTION_KEY",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        ),
+        (
+            "OPENID4VC_SIGNING_CERTIFICATE_CHAIN_FILE",
+            "runtime/openid4vc-chain.pem",
+        ),
+        (
+            "OPENID4VC_TRUST_ANCHORS_FILE",
+            "runtime/openid4vc-roots.pem",
+        ),
+        (
+            "OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON",
+            ATTESTATION_CREDENTIAL_CONFIGURATIONS,
+        ),
+        (
+            "OPENID4VCI_ISSUER_MANAGEMENT_TOKEN",
+            "openid4vci-management-token-at-least-32-bytes",
+        ),
+        (
+            "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
+            CLIENT_ATTESTATION_JWKS,
+        ),
+    ]);
+
+    let error = settings_error(
+        &config,
+        "holder key attestation needs an independent trust store",
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("OPENID4VC_KEY_ATTESTATION_JWKS_JSON is required")
+    );
+}
+
+#[test]
+fn client_attestation_requires_its_own_trust_store() {
+    let config = ConfigSource::from_pairs_for_test([
+        (
+            "OPENID4VC_CLIENT_ATTESTATION_ISSUER",
+            "https://attester.example",
+        ),
+        ("OPENID4VC_KEY_ATTESTATION_JWKS_JSON", KEY_ATTESTATION_JWKS),
+    ]);
+
+    let error = settings_error(
+        &config,
+        "client attestation needs an independent trust store",
+    );
+    assert!(
+        error
+            .to_string()
+            .contains("OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON")
+    );
+}
+
+#[test]
+fn attestation_trust_stores_reject_private_key_material() {
+    let config = ConfigSource::from_pairs_for_test([(
+        "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
+        r#"{"keys":[{"kty":"EC","crv":"P-256","kid":"private","x":"x","y":"y","d":"secret"}]}"#,
+    )]);
+
+    let error = settings_error(&config, "trust configuration must contain public keys only");
+    assert!(error.to_string().contains("public verification keys only"));
+}
+
+#[test]
+fn issuer_and_verifier_management_credentials_must_be_distinct() {
+    let shared = "shared-management-credential-at-least-32-bytes";
+    let config = ConfigSource::from_pairs_for_test([
+        ("OPENID4VCI_ISSUER_MANAGEMENT_TOKEN", shared),
+        ("OPENID4VP_VERIFIER_MANAGEMENT_TOKEN", shared),
+    ]);
+
+    let error = match Settings::from_config(&config) {
+        Ok(_) => panic!("roles must not share a bearer secret"),
+        Err(error) => error,
+    };
+
+    assert!(error.to_string().contains("must differ"));
+}
+
 #[test]
 fn default_dpop_nonce_policy_is_required() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
@@ -270,7 +364,7 @@ fn dpop_nonce_policy_rejects_legacy_compatibility_alias() {
 }
 
 #[test]
-fn default_request_object_jti_policy_is_oidf_compatible() {
+fn request_object_jti_is_optional_unless_the_operator_requires_it() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
 
     assert_eq!(
@@ -298,7 +392,7 @@ fn invalid_request_object_jti_policy_is_rejected() {
 }
 
 #[test]
-fn default_ciba_security_profile_is_oidf_fapi_ciba_compatible() {
+fn default_ciba_security_profile_is_fapi_ciba_id1() {
     let settings = Settings::from_config(&ConfigSource::default()).unwrap();
 
     assert_eq!(
@@ -308,15 +402,25 @@ fn default_ciba_security_profile_is_oidf_fapi_ciba_compatible() {
 }
 
 #[test]
-fn ciba_security_profile_accepts_internal_fapi2_ciba_aliases() {
-    for value in ["fapi2-ciba", "experimental-fapi2-ciba"] {
-        let config = ConfigSource::from_pairs_for_test([("CIBA_SECURITY_PROFILE", value)]);
-        let settings = Settings::from_config(&config).unwrap();
+fn ciba_security_profile_accepts_canonical_fapi2_ciba_value() {
+    let config = ConfigSource::from_pairs_for_test([("CIBA_SECURITY_PROFILE", "fapi2-ciba")]);
+    let settings = Settings::from_config(&config).unwrap();
 
-        assert_eq!(
-            settings.protocol.ciba_security_profile,
-            CibaSecurityProfile::Fapi2Ciba
-        );
+    assert_eq!(
+        settings.protocol.ciba_security_profile,
+        CibaSecurityProfile::Fapi2Ciba
+    );
+}
+
+#[test]
+fn ciba_security_profile_rejects_conformance_and_migration_aliases() {
+    for value in [
+        "oidf-fapi-ciba",
+        "fapi-ciba-id1-plain-private-key-jwt-poll",
+        "experimental-fapi2-ciba",
+    ] {
+        let config = ConfigSource::from_pairs_for_test([("CIBA_SECURITY_PROFILE", value)]);
+        assert!(Settings::from_config(&config).is_err());
     }
 }
 

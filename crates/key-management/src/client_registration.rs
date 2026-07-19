@@ -1,16 +1,23 @@
-use std::{cmp::Ordering, collections::HashSet};
+use std::{cmp::Ordering, collections::HashSet, str::FromStr};
 
 use base64::{
     Engine,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use chrono::Utc;
+use der::Encode;
 use jsonwebtoken::{Algorithm, DecodingKey};
 use nazo_auth::{
     AdminClientCryptoPort, ClientSecretDigesterPort, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
     client_jwe_encryption_key_matches_alg,
 };
-use openssl::{asn1::Asn1Time, hash::MessageDigest, pkey::PKey, sign::Signer, x509::X509};
+use openssl::{
+    asn1::Asn1Time,
+    hash::MessageDigest,
+    pkey::PKey,
+    sign::Signer,
+    x509::{X509, X509Name},
+};
 use serde_json::Value;
 
 use crate::KeyManager;
@@ -47,8 +54,12 @@ impl AdminClientCryptoPort for ClientRegistrationCrypto {
         (secret, digest)
     }
 
-    fn validate_jwks(&self, jwks: &Value, allow_missing_kid: bool) -> Result<(), String> {
-        validate_client_jwks_with_missing_kid_policy(jwks, allow_missing_kid)
+    fn validate_jwks(&self, jwks: &Value) -> Result<(), String> {
+        validate_client_jwks(jwks)
+    }
+
+    fn validate_rfc4514_dn(&self, value: &str) -> Result<(), String> {
+        validate_rfc4514_dn(value)
     }
 
     fn matching_encryption_key_count(&self, jwks: &Value, algorithm: &str) -> usize {
@@ -100,10 +111,7 @@ pub fn client_jwks_contains_signing_key(jwks: &Value) -> bool {
         })
 }
 
-pub fn validate_client_jwks_with_missing_kid_policy(
-    jwks: &Value,
-    allow_missing_kid: bool,
-) -> Result<(), String> {
+pub fn validate_client_jwks(jwks: &Value) -> Result<(), String> {
     let keys = jwks
         .get("keys")
         .and_then(Value::as_array)
@@ -112,33 +120,38 @@ pub fn validate_client_jwks_with_missing_kid_policy(
         return Err("jwks.keys 不能为空".to_owned());
     }
     let mut seen_kids = HashSet::new();
-    let mut signing_key_count = 0usize;
-    let mut kidless_signing_key_count = 0usize;
+    let mut unidentified_key_classes = HashSet::new();
     for key in keys {
         let key_object = key
             .as_object()
             .ok_or_else(|| "jwks 公钥必须是 JSON object".to_owned())?;
         ensure_public_client_jwk(key_object)?;
-        let kid = key.get("kid").and_then(Value::as_str).unwrap_or_default();
+        let kid = match key.get("kid") {
+            None => None,
+            Some(Value::String(kid)) if !kid.trim().is_empty() && kid.trim() == kid => {
+                Some(kid.as_str())
+            }
+            Some(Value::String(_)) => return Err("jwks kid 不能为空或包含首尾空白".to_owned()),
+            Some(_) => return Err("jwks kid 必须是字符串".to_owned()),
+        };
         let public_key_use = key.get("use").and_then(Value::as_str).unwrap_or("sig");
-        if public_key_use == "sig" {
-            signing_key_count += 1;
-        }
-        if kid.trim().is_empty() {
-            if public_key_use == "enc" {
-                return Err("jwks 加密公钥必须包含 kid".to_owned());
+        if let Some(kid) = kid {
+            if !seen_kids.insert(kid) {
+                return Err(format!("jwks kid 不能重复: {kid}"));
             }
-            if !allow_missing_kid {
-                return Err("jwks 公钥必须包含 kid".to_owned());
-            }
-            kidless_signing_key_count += 1;
-        } else if !seen_kids.insert(kid) {
-            return Err(format!("jwks kid 不能重复: {kid}"));
+        } else {
+            // RFC 7517 section 4.5 defines `kid` as optional. Runtime key
+            // selection rejects ambiguity when a JOSE message omits it.
         }
         let alg = key
             .get("alg")
             .and_then(Value::as_str)
             .ok_or_else(|| "jwks 公钥必须声明 alg".to_owned())?;
+        if kid.is_none()
+            && !unidentified_key_classes.insert((public_key_use.to_owned(), alg.to_owned()))
+        {
+            return Err("省略 kid 时，相同 use 与 alg 的公钥必须唯一".to_owned());
+        }
         match public_key_use {
             "sig" => {
                 let Some(algorithm) = client_jwt_algorithm_from_name(alg) else {
@@ -162,10 +175,37 @@ pub fn validate_client_jwks_with_missing_kid_policy(
             _ => return Err("jwks 公钥 use 必须为 sig 或 enc".to_owned()),
         }
     }
-    if kidless_signing_key_count > 0 && signing_key_count != 1 {
-        return Err("省略 kid 时 jwks 必须且只能包含一个签名公钥".to_owned());
-    }
     Ok(())
+}
+
+pub fn validate_rfc4514_dn(value: &str) -> Result<(), String> {
+    parse_rfc4514_dn(value).map(|_| ()).ok_or_else(|| {
+        "tls_client_auth_subject_dn 必须是合法的 RFC 4514 distinguished name".to_owned()
+    })
+}
+
+#[must_use]
+pub fn rfc4514_dn_matches(registered: &str, certificate_subject: &str) -> bool {
+    let Some(registered) = parse_rfc4514_dn(registered) else {
+        return false;
+    };
+    let Some(certificate_subject) = parse_rfc4514_dn(certificate_subject) else {
+        return false;
+    };
+    registered
+        .try_cmp(&certificate_subject)
+        .is_ok_and(|ordering| ordering == Ordering::Equal)
+}
+
+fn parse_rfc4514_dn(value: &str) -> Option<X509Name> {
+    if value.is_empty() || value.trim() != value || value.len() > 2_048 {
+        return None;
+    }
+    let name = x509_cert::name::Name::from_str(value).ok()?;
+    if name.is_empty() {
+        return None;
+    }
+    X509Name::from_der(&name.to_der().ok()?).ok()
 }
 
 #[must_use]
@@ -328,20 +368,17 @@ mod tests {
 
     #[test]
     fn client_jwks_reject_private_key_material() {
-        let error = validate_client_jwks_with_missing_kid_policy(
-            &json!({
-                "keys": [{
-                    "kid": "private",
-                    "use": "sig",
-                    "alg": "RS256",
-                    "kty": "RSA",
-                    "n": "AQ",
-                    "e": "AQAB",
-                    "d": "private"
-                }]
-            }),
-            false,
-        )
+        let error = validate_client_jwks(&json!({
+            "keys": [{
+                "kid": "private",
+                "use": "sig",
+                "alg": "RS256",
+                "kty": "RSA",
+                "n": "AQ",
+                "e": "AQAB",
+                "d": "private"
+            }]
+        }))
         .expect_err("private key material must be rejected");
         assert_eq!(error, "jwks 不能包含私钥材料或对称密钥材料");
     }
@@ -356,8 +393,7 @@ mod tests {
             ]
         });
 
-        validate_client_jwks_with_missing_kid_policy(&jwks, false)
-            .expect("supported ECDH encryption keys should be accepted");
+        validate_client_jwks(&jwks).expect("supported ECDH encryption keys should be accepted");
         assert_eq!(
             client_jwks_matching_encryption_key_count(&jwks, "ECDH-ES"),
             1
@@ -374,18 +410,15 @@ mod tests {
 
     #[test]
     fn client_jwks_reject_symmetric_jwe_keys() {
-        let error = validate_client_jwks_with_missing_kid_policy(
-            &json!({
-                "keys": [{
-                    "kid": "sym",
-                    "use": "enc",
-                    "alg": "A256KW",
-                    "kty": "oct",
-                    "k": URL_SAFE_NO_PAD.encode([0xA5_u8; 32])
-                }]
-            }),
-            false,
-        )
+        let error = validate_client_jwks(&json!({
+            "keys": [{
+                "kid": "sym",
+                "use": "enc",
+                "alg": "A256KW",
+                "kty": "oct",
+                "k": URL_SAFE_NO_PAD.encode([0xA5_u8; 32])
+            }]
+        }))
         .expect_err("symmetric keys must not enter client jwks");
 
         assert_eq!(error, "jwks 不能包含私钥材料或对称密钥材料");
@@ -393,13 +426,54 @@ mod tests {
 
     #[test]
     fn client_jwks_reject_unsupported_ecdh_key_wrap_width() {
-        let error = validate_client_jwks_with_missing_kid_policy(
-            &json!({ "keys": [p256_encryption_jwk("ecdh-a192kw", "ECDH-ES+A192KW")] }),
-            false,
-        )
+        let error = validate_client_jwks(&json!({
+            "keys": [p256_encryption_jwk("ecdh-a192kw", "ECDH-ES+A192KW")]
+        }))
         .expect_err("unsupported ECDH key-wrap width must be rejected");
 
         assert_eq!(error, "jwks 公钥材料与 alg 不匹配");
+    }
+
+    #[test]
+    fn client_jwks_accepts_optional_key_ids_but_rejects_duplicate_values() {
+        let mut without_kid = p256_encryption_jwk("unused", "ECDH-ES");
+        without_kid
+            .as_object_mut()
+            .expect("fixture is an object")
+            .remove("kid");
+        validate_client_jwks(&json!({"keys": [without_kid]}))
+            .expect("RFC 7517 defines kid as optional");
+
+        let mut empty_kid = p256_encryption_jwk("unused", "ECDH-ES");
+        empty_kid["kid"] = Value::String(String::new());
+        assert_eq!(
+            validate_client_jwks(&json!({"keys": [empty_kid]})),
+            Err("jwks kid 不能为空或包含首尾空白".to_owned())
+        );
+
+        let error = validate_client_jwks(&json!({
+            "keys": [
+                p256_encryption_jwk("duplicate", "ECDH-ES"),
+                p256_encryption_jwk("duplicate", "ECDH-ES+A256KW")
+            ]
+        }))
+        .expect_err("duplicate key identifiers make key selection ambiguous");
+        assert_eq!(error, "jwks kid 不能重复: duplicate");
+    }
+
+    #[test]
+    fn rfc4514_distinguished_names_are_parsed_and_compared_canonically() {
+        validate_rfc4514_dn("CN=client-1,O=Example").expect("a valid RFC 4514 name is accepted");
+        assert!(rfc4514_dn_matches(
+            "CN=client-1,O=Example",
+            "CN=CLIENT-1,O=example"
+        ));
+        assert!(!rfc4514_dn_matches(
+            "CN=client-1,O=Example",
+            "CN=other,O=Example"
+        ));
+        assert!(validate_rfc4514_dn("not-a-distinguished-name").is_err());
+        assert!(validate_rfc4514_dn(" CN=client-1").is_err());
     }
 
     fn p256_encryption_jwk(kid: &str, alg: &str) -> Value {

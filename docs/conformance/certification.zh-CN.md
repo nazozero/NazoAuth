@@ -22,7 +22,7 @@ OpenID Foundation 认证页面列出了 `Nazo Auth Server 0.1.0`，日期为
 ## 当前公网黑盒证据
 
 当前一致性证据记录在
-[2026-07-17 公网黑盒 OIDF 全矩阵结果](2026-07-17-public-black-box-full-oidf-results.zh-CN.md)。
+[2026-07-19 公网黑盒 OIDF 全矩阵结果](2026-07-19-public-black-box-full-oidf-results.zh-CN.md)。
 运行目标是操作者提供的生产 HTTPS issuer。公开文档中的
 `https://issuer.example` 只是脱敏占位符。仓库 workflow 要求操作者提供自己的公网可达
 `target_issuer` / `target_origin` workflow 输入，或在自己的仓库中配置私有自动化变量。
@@ -37,12 +37,13 @@ OpenID Foundation 认证页面列出了 `Nazo Auth Server 0.1.0`，日期为
 | 指标 | 值 |
 | --- | ---: |
 | Plan executions | 42 |
-| Finished modules | 1,178 |
-| Condition successes | 101,519 |
+| 模块实例 | 1,178 |
+| Passed 模块结果 | 1,132 |
+| 成功条件 | 97,029 |
 | Condition failures | 0 |
-| 有界 warnings | 30 |
+| 有界 warning 条件 | 30 |
 | 预期 skips | 15 |
-| Review entries | 136 |
+| 受限 review 模块 | 9 |
 
 有界 warning 和预期 skip 记录在链接的证据文档中。它们不是隐藏项：
 OIDC/FAPI/FAPI-CIBA 矩阵不是 zero-warning 或 zero-skipped 证据。

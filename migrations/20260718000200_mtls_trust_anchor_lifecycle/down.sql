@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS oauth_client_mtls_trust_anchor_events;
+DROP TABLE IF EXISTS oauth_client_mtls_trust_anchor_requests;

@@ -12,7 +12,7 @@ The official suite completed all configured 16 plans with `0 failures` and
 | Field | Value |
 | --- | --- |
 | Result | Passed |
-| Pull request | <https://github.com/bymoye/NazoAuth/pull/15> |
+| Pull request | <https://github.com/nazozero/NazoAuth/pull/15> |
 | Current PR head at verification time | `bac10af902e574d4bd98741eaa2ce0121278608c` |
 | Runtime implementation commit | `be7ef9f6a9197520235a59d42866a0918a293014` |
 | Branch | `codex/security-findings-20260625` |
@@ -126,7 +126,7 @@ find oidf-official-results/run-20260627T002306Z -maxdepth 1 -name "*.zip" -print
 GitHub PR verification:
 
 ```bash
-gh pr checks 15 --repo bymoye/NazoAuth
+gh pr checks 15 --repo nazozero/NazoAuth
 ```
 
 ## Notes

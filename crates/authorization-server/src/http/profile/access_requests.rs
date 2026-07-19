@@ -22,7 +22,7 @@ use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Utc;
 use nazo_http_actix::csrf_error;
-use nazo_http_actix::{json_response, json_response_status, oauth_error};
+use nazo_http_actix::{json_response_no_store, json_response_status, oauth_error};
 #[cfg(test)]
 use nazo_identity::AccessRequestStatus;
 use serde::Deserialize;
@@ -54,7 +54,7 @@ pub(crate) async fn my_access_requests(
             )
         }
         Err(nazo_identity::AccessRequestListError::DeliveryStore(error)) => {
-            tracing::warn!(%error, "failed to resolve access-request delivery link");
+            tracing::warn!(%error, "failed to resolve access-request delivery availability");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,
                 "server_error",
@@ -81,7 +81,9 @@ fn access_request_items_response(items: Vec<Value>) -> HttpResponse {
                 == Some(nazo_identity::AccessRequestStatus::Pending.code() as i64)
         })
         .count();
-    json_response(json!({"total": items.len(), "pending_count": pending_count, "items": items}))
+    json_response_no_store(
+        json!({"total": items.len(), "pending_count": pending_count, "items": items}),
+    )
 }
 
 fn user_access_request_json(
@@ -99,9 +101,8 @@ fn user_access_request_json(
         "created_at": row.created_at,
         "resolved_at": row.resolved_at,
     });
-    if let Some(delivery) = delivery {
-        value["delivery_token"] = json!(delivery.token);
-        value["delivery_url"] = json!(delivery.url);
+    if delivery.is_some() {
+        value["delivery_available"] = json!(true);
     }
     value
 }
@@ -138,10 +139,18 @@ pub(crate) async fn create_access_request(
         .await;
     match row {
         Ok(r) => create_access_request_response(r),
-        Err(nazo_identity::ports::RepositoryError::Conflict) => {
-            oauth_error(StatusCode::CONFLICT, "invalid_request", "已有待处理申请.")
+        Err(nazo_identity::AccessRequestCreateError::Validation(error)) => {
+            tracing::warn!(reason = %error, "access request metadata rejected");
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                &error.to_string(),
+            )
         }
-        Err(error) => {
+        Err(nazo_identity::AccessRequestCreateError::Repository(
+            nazo_identity::ports::RepositoryError::Conflict,
+        )) => oauth_error(StatusCode::CONFLICT, "invalid_request", "已有待处理申请."),
+        Err(nazo_identity::AccessRequestCreateError::Repository(error)) => {
             tracing::warn!(%error, "failed to create access request");
             oauth_error(
                 StatusCode::SERVICE_UNAVAILABLE,

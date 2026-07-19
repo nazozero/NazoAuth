@@ -1002,6 +1002,13 @@ async fn inactive_account_has_no_issuable_subject_claims() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         panic!("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
     };
+    let repository = UserRepository::new(pool.clone());
+    assert!(
+        repository
+            .is_active_by_tenant_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+    );
     let mut connection = get_conn(&pool).await.unwrap();
     sql_query("UPDATE users SET is_active = false WHERE id = $1")
         .bind::<SqlUuid, _>(user_id.as_uuid())
@@ -1010,12 +1017,18 @@ async fn inactive_account_has_no_issuable_subject_claims() {
         .unwrap();
     drop(connection);
 
-    let claims = UserRepository::new(pool.clone())
+    let claims = repository
         .active_subject_claims_by_tenant_id(tenant.tenant_id, user_id)
         .await
         .unwrap();
 
     assert!(claims.is_none());
+    assert!(
+        !repository
+            .is_active_by_tenant_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+    );
     cleanup(&pool, user_id).await;
 }
 
@@ -1506,7 +1519,7 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
                 .find("committed_delivery_payload")
                 .expect("approval must activate delivery only after commit")
     );
-    assert!(delivery.contains("service.claim_delivery(&user, token)"));
+    assert!(delivery.contains("service.claim_delivery(&user, payload.request_id)"));
     assert!(identity_profile.contains("approved_delivery_matches"));
     assert!(
         identity_profile.find("approved_delivery_matches").unwrap()
@@ -1521,7 +1534,8 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     assert!(!identity_profile.contains("SCAN"));
     assert!(identity_profile.contains("delivery_payload_matches"));
     assert!(identity_profile.contains("delivery_candidate"));
-    assert!(profile.contains("delivery_token"));
+    assert!(profile.contains("delivery_available"));
+    assert!(!profile.contains("delivery_token"));
     assert!(!admin.contains("\"delivery_token\""));
 }
 
@@ -2078,7 +2092,7 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
 }
 
 #[test]
-fn client_registration_keeps_plaintext_and_persistence_shape_out_of_core_and_postgres() {
+fn client_registration_keeps_plaintext_out_of_protocol_core_and_postgres() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let auth_registration = std::fs::read_to_string(
         manifest.join("../authorization-server-core/src/client_registration.rs"),
@@ -2093,5 +2107,7 @@ fn client_registration_keeps_plaintext_and_persistence_shape_out_of_core_and_pos
     assert!(!auth_registration.contains("client_secret_hash"));
     assert!(!auth_registration.contains("registration_access_token_blake3"));
     assert!(!postgres_approval.contains("issued_secret"));
-    assert!(postgres_approval.contains("struct ClientInsertCommand"));
+    assert!(postgres_approval.contains("PreparedClientRegistration"));
+    assert!(postgres_approval.contains("client.client_secret_hash.as_deref()"));
+    assert!(postgres_approval.contains("client.registration_access_token_blake3.as_deref()"));
 }

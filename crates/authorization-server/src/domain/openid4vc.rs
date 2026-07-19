@@ -778,20 +778,20 @@ impl CoseSigner for AsyncCoseSigner {
 
 #[derive(Clone)]
 pub(crate) struct Openid4vcProofValidator {
-    attestation_jwks: Arc<Value>,
+    key_attestation_jwks: Arc<Value>,
 }
 
 impl Openid4vcProofValidator {
-    pub(crate) fn new(attestation_jwks: Value) -> anyhow::Result<Self> {
-        if attestation_jwks
+    pub(crate) fn new(key_attestation_jwks: Value) -> anyhow::Result<Self> {
+        if key_attestation_jwks
             .get("keys")
             .and_then(Value::as_array)
             .is_none()
         {
-            anyhow::bail!("OpenID4VC attestation trust configuration must be a JWK Set");
+            anyhow::bail!("OpenID4VC key-attestation trust configuration must be a JWK Set");
         }
         Ok(Self {
-            attestation_jwks: Arc::new(attestation_jwks),
+            key_attestation_jwks: Arc::new(key_attestation_jwks),
         })
     }
 }
@@ -917,7 +917,7 @@ impl Openid4vcProofValidator {
             .as_deref()
             .ok_or(ProofError::InvalidKeyAttestation)?;
         let key = self
-            .attestation_jwks
+            .key_attestation_jwks
             .get("keys")
             .and_then(Value::as_array)
             .and_then(|keys| {

@@ -63,15 +63,9 @@ ignore:
   - "main.rs"
   - "bin/nazo_oauth_keyctl.rs"
   - "bin/nazo_oauth_migrate.rs"
-  - "bin/nazo_oauth_seed_oidf.rs"
   - "crates/authorization-server/src/main.rs"
   - "crates/authorization-server/src/bin/nazo_oauth_keyctl.rs"
   - "crates/authorization-server/src/bin/nazo_oauth_migrate.rs"
-  # Local OIDF seed tool. Deterministic parsing/JWKS logic lives in
-  # crates/authorization-server/src/oidf_seed
-  # and remains covered; database seeding side effects are exercised by OIDF runs.
-  - "crates/authorization-server/src/bin/nazo_oauth_seed_oidf.rs"
-  - "crates/authorization-server/src/oidf_seed/**"
   # Test implementation files are excluded so coverage measures production code.
   - "tests/**"
   - "crates/authorization-server/tests/**"

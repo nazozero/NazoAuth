@@ -9,6 +9,7 @@ import copy
 import hashlib
 import json
 from pathlib import Path
+import re
 import urllib.parse
 
 
@@ -17,10 +18,8 @@ VCI_HAIP = "oid4vci-1_0-issuer-haip-test-plan"
 VP_STANDARD = "oid4vp-1final-verifier-test-plan"
 VP_HAIP = "oid4vp-1final-verifier-haip-test-plan"
 OIDF_VP_SD_JWT_VCT = "urn:eudi:pid:1"
-VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
-VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
-VCI_PRIVATE_KEY_CLIENT2_ID = f"{VCI_PRIVATE_KEY_CLIENT_ID}-2"
-VCI_ATTESTED_CLIENT2_ID = f"{VCI_ATTESTED_CLIENT_ID}-2"
+OFFICIAL_VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
+OFFICIAL_VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
 VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm"
 VCI_REFRESH_TOKEN_MODULE = "fapi2-security-profile-final-refresh-token"
 VCI_REFRESH_TOKEN_BLOCK = "Check for refresh token"
@@ -32,6 +31,66 @@ P256_G = (
     0x6B17D1F2E12C4247F8BCE6E563A440F277037D812DEB33A0F4A13945D898C296,
     0x4FE342E2FE1A7F9B8EE7EB4A7C0F9E162BCE33576B315ECECBB6406837BF51F5,
 )
+
+
+def apply_official_mtls_material(
+    base: dict[str, object], material: object
+) -> None:
+    if not isinstance(material, dict) or set(material) != {"ca", "mtls", "mtls2"}:
+        raise SystemExit(
+            "official OpenID4VC mTLS material must contain exactly ca, mtls, and mtls2"
+        )
+    ca = material.get("ca")
+    if not isinstance(ca, str) or "-----BEGIN CERTIFICATE-----" not in ca:
+        raise SystemExit("official OpenID4VC mTLS material requires a PEM CA certificate")
+    identities: dict[str, dict[str, str]] = {}
+    for name in ("mtls", "mtls2"):
+        identity = material.get(name)
+        if not isinstance(identity, dict) or set(identity) != {"cert", "key"}:
+            raise SystemExit(
+                f"official OpenID4VC {name} material must contain exactly cert and key"
+            )
+        cert = identity.get("cert")
+        key = identity.get("key")
+        if not isinstance(cert, str) or "-----BEGIN CERTIFICATE-----" not in cert:
+            raise SystemExit(f"official OpenID4VC {name} requires a PEM certificate")
+        if not isinstance(key, str) or "PRIVATE KEY-----" not in key:
+            raise SystemExit(f"official OpenID4VC {name} requires a PEM private key")
+        identities[name] = {"ca": ca, "cert": cert, "key": key}
+    for section in ("vci", "vci_haip"):
+        target = base.get(section)
+        if not isinstance(target, dict):
+            raise SystemExit(f"base configuration requires a {section} object")
+        for name, identity in identities.items():
+            target[name] = copy.deepcopy(identity)
+
+
+def vci_client_ids(onboarding_profile: str, run_namespace: str | None) -> dict[str, str]:
+    if onboarding_profile == "operator-black-box":
+        namespace = (run_namespace or "").strip().lower()
+        if (
+            not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?", namespace)
+            or namespace in {"official", "oidf", "production"}
+        ):
+            raise SystemExit(
+                "operator-black-box OpenID4VC material requires a valid client namespace"
+            )
+        prefix = f"oidf-{namespace}-openid4vc"
+        private_key = f"{prefix}-private-key-jwt"
+        attested = f"{prefix}-client-attestation"
+    elif onboarding_profile == "official":
+        if run_namespace:
+            raise SystemExit("official OpenID4VC material must not declare an operator namespace")
+        private_key = OFFICIAL_VCI_PRIVATE_KEY_CLIENT_ID
+        attested = OFFICIAL_VCI_ATTESTED_CLIENT_ID
+    else:
+        raise SystemExit(f"unsupported OpenID4VC onboarding profile: {onboarding_profile}")
+    return {
+        "private_key": private_key,
+        "attested": attested,
+        "private_key2": f"{private_key}-2",
+        "attested2": f"{attested}-2",
+    }
 
 
 def matrix_cases() -> list[tuple[str, str, dict[str, str]]]:
@@ -226,19 +285,82 @@ def require_scope(metadata: dict[str, object], scope: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-config-json-file", required=True)
+    parser.add_argument("--mtls-config-json-file")
     parser.add_argument("--driver-config-json-file", required=True)
+    parser.add_argument("--credential-datasets-json-file", required=True)
     parser.add_argument("--output-dir", required=True)
     parser.add_argument("--conformance-server")
     parser.add_argument("--target-origin")
+    parser.add_argument(
+        "--onboarding-profile",
+        choices=("official", "operator-black-box"),
+        required=True,
+    )
+    parser.add_argument("--run-namespace")
     args = parser.parse_args()
     base = json.loads(Path(args.base_config_json_file).read_text(encoding="utf-8"))
+    if args.onboarding_profile == "official":
+        if not args.mtls_config_json_file:
+            raise SystemExit(
+                "official OpenID4VC material requires --mtls-config-json-file"
+            )
+        apply_official_mtls_material(
+            base,
+            json.loads(Path(args.mtls_config_json_file).read_text(encoding="utf-8")),
+        )
+    elif args.mtls_config_json_file:
+        raise SystemExit(
+            "operator-black-box OpenID4VC material must use its run-scoped mTLS identities"
+        )
     driver = json.loads(Path(args.driver_config_json_file).read_text(encoding="utf-8"))
+    credential_datasets = json.loads(
+        Path(args.credential_datasets_json_file).read_text(encoding="utf-8")
+    )
+    if not isinstance(credential_datasets, dict) or set(credential_datasets) != {
+        "sd_jwt_vc",
+        "mdoc",
+    }:
+        raise SystemExit(
+            "credential datasets must contain exactly sd_jwt_vc and mdoc objects"
+        )
+    if not all(
+        isinstance(value, dict) and value for value in credential_datasets.values()
+    ):
+        raise SystemExit("credential datasets must be non-empty JSON objects")
+    issuer_settings = driver.get("issuer")
+    configuration_ids = (
+        issuer_settings.get("credential_configuration_ids")
+        if isinstance(issuer_settings, dict)
+        else None
+    )
+    if not isinstance(configuration_ids, dict) or any(
+        not isinstance(configuration_ids.get(format_name), str)
+        or not configuration_ids[format_name]
+        for format_name in ("sd_jwt_vc", "mdoc")
+    ):
+        raise SystemExit(
+            "driver issuer requires credential_configuration_ids for sd_jwt_vc and mdoc"
+        )
+    if issuer_settings.get("dedicated_conformance_subject") is not True:
+        raise SystemExit(
+            "driver issuer must explicitly mark its subject as a dedicated conformance identity"
+        )
+    issuer_settings["credential_datasets"] = {
+        configuration_ids[format_name]: copy.deepcopy(dataset)
+        for format_name, dataset in credential_datasets.items()
+    }
     if args.conformance_server:
         driver["conformance_server"] = args.conformance_server
     if args.target_origin:
         driver["target_origin"] = args.target_origin
     if not driver.get("conformance_server") or not driver.get("target_origin"):
         raise SystemExit("driver configuration requires conformance_server and target_origin")
+    namespace = (
+        (args.run_namespace or "").strip().lower()
+        if args.onboarding_profile == "operator-black-box"
+        else None
+    )
+    ids = vci_client_ids(args.onboarding_profile, namespace)
     target_origin = urllib.parse.urlparse(str(driver["target_origin"]))
     target_hostname = target_origin.hostname
     if (
@@ -301,6 +423,7 @@ def main() -> int:
                 raise SystemExit(f"{key} base configuration requires a vci object")
             vci["credential_issuer_url"] = str(driver["target_origin"])
             vci["credential_configuration_id"] = configuration_id
+            vci.pop("static_tx_code", None)
             if variants.get("vci_grant_type") == "pre_authorization_code":
                 tx_code = issuer.get("tx_code")
                 if isinstance(tx_code, str) and tx_code:
@@ -317,14 +440,14 @@ def main() -> int:
             ):
                 require_scope(client, "offline_access")
             client["client_id"] = (
-                VCI_ATTESTED_CLIENT_ID
+                ids["attested"]
                 if client_auth_type == "client_attestation"
-                else VCI_PRIVATE_KEY_CLIENT_ID
+                else ids["private_key"]
             )
             client2_id = (
-                VCI_ATTESTED_CLIENT2_ID
+                ids["attested2"]
                 if client_auth_type == "client_attestation"
-                else VCI_PRIVATE_KEY_CLIENT2_ID
+                else ids["private_key2"]
             )
             use_ec_client2(config, source=key, client_id=client2_id)
             client2 = config.get("client2")
@@ -337,6 +460,9 @@ def main() -> int:
             config["nazo"] = {
                 "openid4vc_role": "issuer",
                 "client_auth_type": client_auth_type,
+                "credential_dataset": copy.deepcopy(
+                    credential_datasets[format_name]
+                ),
             }
         else:
             client = config.get("client")
@@ -367,6 +493,21 @@ def main() -> int:
         encoding="utf-8",
     )
     (output / "openid4vc-driver.json").write_text(json.dumps(driver, indent=2) + "\n", encoding="utf-8")
+    (output / "oidf-onboarding-contract.json").write_text(
+        json.dumps(
+            {
+                "schema": 1 if args.onboarding_profile == "operator-black-box" else 2,
+                "onboarding_profile": args.onboarding_profile,
+                "target_issuer": str(driver["target_origin"]).rstrip("/"),
+                "suite_base_url": str(driver["conformance_server"]).rstrip("/"),
+                **({"run_namespace": namespace} if namespace else {}),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
     return 0
 
 

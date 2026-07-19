@@ -116,7 +116,6 @@ pub(super) struct ClientMetadata<'a> {
     backchannel_logout_uri: Option<&'a str>,
     frontchannel_logout_uri: Option<&'a str>,
     jwks: Option<&'a Value>,
-    allow_jwks_without_kid: bool,
     introspection_encrypted_response_alg: Option<&'a str>,
     introspection_encrypted_response_enc: Option<&'a str>,
     userinfo_signed_response_alg: Option<&'a str>,
@@ -158,7 +157,6 @@ impl<'a> ClientMetadata<'a> {
             backchannel_logout_uri: request.backchannel_logout_uri.as_deref(),
             frontchannel_logout_uri: request.frontchannel_logout_uri.as_deref(),
             jwks: request.jwks.as_ref(),
-            allow_jwks_without_kid: request.allow_jwks_without_kid,
             introspection_encrypted_response_alg: request
                 .introspection_encrypted_response_alg
                 .as_deref(),
@@ -206,7 +204,6 @@ impl<'a> ClientMetadata<'a> {
             backchannel_logout_uri: client.backchannel_logout_uri.as_deref(),
             frontchannel_logout_uri: client.frontchannel_logout_uri.as_deref(),
             jwks: client.jwks.as_ref(),
-            allow_jwks_without_kid: false,
             introspection_encrypted_response_alg: client
                 .introspection_encrypted_response_alg
                 .as_deref(),
@@ -308,7 +305,7 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
         && metadata.token_endpoint_auth_method != "self_signed_tls_client_auth"
     {
         crypto
-            .validate_jwks(jwks, metadata.allow_jwks_without_kid)
+            .validate_jwks(jwks)
             .map_err(AdminClientError::InvalidRequest)?;
     }
     validate_jwe_metadata(
@@ -344,10 +341,13 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
             return invalid("private_key_jwt 客户端必须配置签名 jwks");
         }
     }
-    if metadata.token_endpoint_auth_method == "tls_client_auth"
-        && !metadata.mtls.has_binding_material()
-    {
-        return invalid("tls_client_auth 客户端必须注册 subject DN、SAN 或证书 SHA-256 绑定材料");
+    if metadata.token_endpoint_auth_method == "tls_client_auth" {
+        let selector_count = metadata.mtls.standard_selector_count();
+        if selector_count != 1 {
+            return invalid(
+                "tls_client_auth 客户端必须且只能注册一个 RFC 8705 subject DN 或 SAN 绑定值",
+            );
+        }
     }
     if metadata.token_endpoint_auth_method == "self_signed_tls_client_auth"
         && !metadata
@@ -356,7 +356,7 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
     {
         return invalid("self_signed_tls_client_auth 客户端必须注册有效 x5c 证书");
     }
-    validate_mtls_metadata(&metadata.mtls)?;
+    validate_mtls_metadata(&metadata.mtls, crypto)?;
     if metadata.client_type == "public"
         && metadata
             .grant_types
@@ -377,12 +377,18 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
         .grant_types
         .iter()
         .any(|grant| grant == "refresh_token")
-        && !metadata
-            .grant_types
-            .iter()
-            .any(|grant| grant == "authorization_code")
+        && !metadata.grant_types.iter().any(|grant| {
+            matches!(
+                grant.as_str(),
+                "authorization_code"
+                    | "urn:openid:params:grant-type:ciba"
+                    | "urn:ietf:params:oauth:grant-type:device_code"
+            )
+        })
     {
-        return invalid("refresh_token 授权类型必须与 authorization_code 一起启用");
+        return invalid(
+            "refresh_token 必须与当前实现能够签发 refresh token 的 authorization_code、CIBA 或 device_code 授权类型一起启用",
+        );
     }
     if metadata
         .scopes
@@ -521,12 +527,20 @@ fn validate_response_crypto_metadata<C: AdminClientCryptoPort + ?Sized>(
     )
 }
 
-fn validate_mtls_metadata(metadata: &ClientMtlsMetadata<'_>) -> Result<(), AdminClientError> {
+fn validate_mtls_metadata<C: AdminClientCryptoPort + ?Sized>(
+    metadata: &ClientMtlsMetadata<'_>,
+    crypto: &C,
+) -> Result<(), AdminClientError> {
     if metadata
         .subject_dn
         .is_some_and(|value| value.trim().is_empty())
     {
         return invalid("tls_client_auth_subject_dn 不能为空");
+    }
+    if let Some(subject_dn) = metadata.subject_dn {
+        crypto
+            .validate_rfc4514_dn(subject_dn)
+            .map_err(AdminClientError::InvalidRequest)?;
     }
     if metadata
         .cert_sha256
@@ -538,6 +552,25 @@ fn validate_mtls_metadata(metadata: &ClientMtlsMetadata<'_>) -> Result<(), Admin
     validate_unique_non_empty("tls_client_auth_san_uri", metadata.san_uri)?;
     validate_unique_non_empty("tls_client_auth_san_ip", metadata.san_ip)?;
     validate_unique_non_empty("tls_client_auth_san_email", metadata.san_email)?;
+    for value in metadata.san_dns {
+        if !matches!(url::Host::parse(value), Ok(url::Host::Domain(_))) {
+            return invalid(format!(
+                "tls_client_auth_san_dns 必须是合法 DNS 名称: {value}"
+            ));
+        }
+    }
+    for value in metadata.san_uri {
+        let parsed = url::Url::parse(value).map_err(|_| {
+            AdminClientError::InvalidRequest(format!(
+                "tls_client_auth_san_uri 必须是合法绝对 URI: {value}"
+            ))
+        })?;
+        if parsed.scheme().is_empty() {
+            return invalid(format!(
+                "tls_client_auth_san_uri 必须是合法绝对 URI: {value}"
+            ));
+        }
+    }
     for value in metadata.san_ip {
         value.parse::<std::net::IpAddr>().map_err(|_| {
             AdminClientError::InvalidRequest(format!(
@@ -545,21 +578,28 @@ fn validate_mtls_metadata(metadata: &ClientMtlsMetadata<'_>) -> Result<(), Admin
             ))
         })?;
     }
+    for value in metadata.san_email {
+        let Some((local, domain)) = value.rsplit_once('@') else {
+            return invalid(format!(
+                "tls_client_auth_san_email 必须是合法邮箱地址: {value}"
+            ));
+        };
+        if local.is_empty() || !matches!(url::Host::parse(domain), Ok(url::Host::Domain(_))) {
+            return invalid(format!(
+                "tls_client_auth_san_email 必须是合法邮箱地址: {value}"
+            ));
+        }
+    }
     Ok(())
 }
 
 impl ClientMtlsMetadata<'_> {
-    fn has_binding_material(&self) -> bool {
-        self.subject_dn
-            .is_some_and(|value| !value.trim().is_empty())
-            || self
-                .cert_sha256
-                .and_then(normalize_sha256_thumbprint)
-                .is_some()
-            || !self.san_dns.is_empty()
-            || !self.san_uri.is_empty()
-            || !self.san_ip.is_empty()
-            || !self.san_email.is_empty()
+    fn standard_selector_count(&self) -> usize {
+        usize::from(self.subject_dn.is_some())
+            + self.san_dns.len()
+            + self.san_uri.len()
+            + self.san_ip.len()
+            + self.san_email.len()
     }
 }
 
@@ -598,8 +638,4 @@ fn validate_unique_non_empty(name: &str, values: &[String]) -> Result<(), AdminC
 
 fn invalid<T>(message: impl Into<String>) -> Result<T, AdminClientError> {
     Err(AdminClientError::InvalidRequest(message.into()))
-}
-
-pub(super) fn default_true() -> bool {
-    true
 }
