@@ -120,19 +120,23 @@ class OidfWorkflowTests(unittest.TestCase):
             self.assertIn(f"OIDF_CONFORMANCE_SUITE_REF || '{expected}'", workflow)
             self.assertNotIn("33a724c7d809a6f9db05cbb513ff2a77cbac905e", workflow)
 
-    def test_every_oidf_suite_checkout_applies_the_sha_bound_runner_patch(self):
+    def test_every_oidf_suite_checkout_preserves_official_tracked_sources(self):
         root = Path(__file__).resolve().parents[2]
-        patch_command = (
-            "python scripts/apply_oidf_runner_patch.py "
-            "--suite-dir oidf-conformance-suite"
-        )
-        for name in ("oidf-conformance.yml", "oidf-conformance-full.yml"):
+        for name in (
+            "oidf-conformance.yml",
+            "oidf-conformance-full.yml",
+            "openid4vc-conformance.yml",
+        ):
             workflow = (root / ".github" / "workflows" / name).read_text(
                 encoding="utf-8"
             )
+            self.assertNotIn("apply_oidf_runner_patch", workflow)
             self.assertEqual(
-                workflow.count(patch_command),
-                workflow.count("git -C oidf-conformance-suite checkout --detach FETCH_HEAD"),
+                workflow.count("status --porcelain --untracked-files=no"),
+                2
+                * workflow.count(
+                    "git -C oidf-conformance-suite checkout --detach FETCH_HEAD"
+                ),
             )
 
     def test_spec_freshness_workflow_separates_offline_and_online_checks(self):
@@ -190,7 +194,7 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("target_issuer:", workflow)
         self.assertIn("required: true", workflow)
         self.assertIn(
-            "OIDF_TARGET_ISSUER: ${{ inputs.target_issuer || vars.OIDF_TARGET_ISSUER }}",
+            "OIDF_TARGET_ISSUER: ${{ inputs.target_issuer }}",
             workflow,
         )
         self.assertNotIn("OIDF_TARGET_ISSUER || 'https://auth.nazo.run'", workflow)

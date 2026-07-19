@@ -183,4 +183,6 @@ Coverage 运行说明见
 
 ## 许可证
 
-AGPL-3.0-or-later。详见 [LICENSE](LICENSE)。
+公开源码采用 [AGPL-3.0-or-later](LICENSE)，个人和企业遵守 AGPL 时适用同一许可。
+符合条件的闭源使用可以另行签署商业许可；仓库本身不自动授予商业权利。详见
+[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md) 和 [CONTRIBUTING.md](CONTRIBUTING.md)。

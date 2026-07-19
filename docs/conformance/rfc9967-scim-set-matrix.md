@@ -51,7 +51,7 @@ CI executes it through
   and execute both the static policy test and the runtime matrix.
 
 These constraints are enforced by `scripts/verify_static_contracts.py` and
-`scripts/test_rfc9967_scim_set_e2e_source_policy.py`; they are not documentation-only
+`tests/unit/test_rfc9967_scim_set_e2e_source_policy.py`; they are not documentation-only
 conventions.
 
 ## Running locally
@@ -62,7 +62,7 @@ same Python dependencies used by the repository E2E runner image:
 
 ```text
 python scripts/rfc9967_scim_set_e2e.py --source-policy-check
-python scripts/test_rfc9967_scim_set_e2e_source_policy.py
+python tests/unit/test_rfc9967_scim_set_e2e_source_policy.py
 python scripts/rfc9967_scim_set_e2e.py
 ```
 

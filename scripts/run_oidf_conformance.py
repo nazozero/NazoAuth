@@ -2024,6 +2024,11 @@ def parse_args() -> argparse.Namespace:
         description="Execute the official OpenID Foundation conformance-suite runner."
     )
     parser.add_argument("--suite-dir", required=True, help="Path to the cloned conformance-suite repository")
+    parser.add_argument(
+        "--suite-revision",
+        default=os.environ.get("OIDF_REF", ""),
+        help="exact official conformance-suite commit expected at --suite-dir",
+    )
     parser.add_argument("--conformance-server", required=True, help="Base URL of the conformance suite")
     parser.add_argument("--plan-expression", default="", help="single run-test-plan.py plan expression")
     parser.add_argument("--plan-set-env", default="OIDF_PLAN_SET_JSON")
@@ -2217,12 +2222,41 @@ def terminate_runner(process: subprocess.Popen[bytes]) -> None:
         process.wait()
 
 
-def ensure_pinned_oidf_runner(suite_dir: Path) -> None:
-    patcher = Path(__file__).resolve().with_name("apply_oidf_runner_patch.py")
-    subprocess.run(
-        [sys.executable, str(patcher), "--suite-dir", str(suite_dir)],
-        check=True,
-    )
+def verify_pristine_oidf_suite(suite_dir: Path, expected_revision: str) -> None:
+    if not expected_revision:
+        fail(
+            "the exact official suite revision is required; pass --suite-revision "
+            "or set OIDF_REF"
+        )
+    try:
+        revision = subprocess.run(
+            ["git", "-C", str(suite_dir), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        tracked_changes = subprocess.run(
+            [
+                "git",
+                "-C",
+                str(suite_dir),
+                "status",
+                "--porcelain",
+                "--untracked-files=no",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError) as error:
+        fail(f"unable to verify official suite checkout: {error}")
+    if revision != expected_revision:
+        fail(
+            "official suite revision mismatch: "
+            f"expected {expected_revision}, found {revision}"
+        )
+    if tracked_changes:
+        fail("official suite contains tracked modifications; refusing to run")
 
 
 def official_runner_command(suite_scripts: Path, runner: Path) -> list[str]:
@@ -2265,7 +2299,7 @@ def main() -> int:
     target_issuer = normalized_origin(args.target_issuer) if args.target_issuer.strip() else ""
 
     suite_dir = Path(args.suite_dir).resolve()
-    ensure_pinned_oidf_runner(suite_dir)
+    verify_pristine_oidf_suite(suite_dir, args.suite_revision)
     suite_scripts = suite_dir / "scripts"
     runner = suite_scripts / "run-test-plan.py"
     if not runner.is_file():

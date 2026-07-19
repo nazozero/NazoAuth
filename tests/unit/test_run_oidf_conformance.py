@@ -143,18 +143,40 @@ class RunOidfConformanceTests(unittest.TestCase):
 
             self.assertEqual(list(root.iterdir()), [])
 
-    def test_host_local_runner_applies_pinned_patch_before_execution(self):
+    def test_host_local_runner_requires_exact_pristine_official_checkout(self):
         module = load_runner_module()
         suite_dir = Path("/tmp/oidf-suite")
 
-        with mock.patch.object(module.subprocess, "run") as run:
-            module.ensure_pinned_oidf_runner(suite_dir)
+        with mock.patch.object(
+            module.subprocess,
+            "run",
+            side_effect=[
+                mock.Mock(stdout="expected-revision\n"),
+                mock.Mock(stdout=""),
+            ],
+        ) as run:
+            module.verify_pristine_oidf_suite(suite_dir, "expected-revision")
 
-        command = run.call_args.args[0]
-        self.assertEqual(command[0], module.sys.executable)
-        self.assertTrue(command[1].endswith("apply_oidf_runner_patch.py"))
-        self.assertEqual(command[2:], ["--suite-dir", str(suite_dir)])
-        self.assertTrue(run.call_args.kwargs["check"])
+        self.assertEqual(
+            run.call_args_list[0].args[0],
+            ["git", "-C", str(suite_dir), "rev-parse", "HEAD"],
+        )
+        self.assertIn("--untracked-files=no", run.call_args_list[1].args[0])
+
+    def test_host_local_runner_rejects_modified_official_checkout(self):
+        module = load_runner_module()
+        with (
+            mock.patch.object(
+                module.subprocess,
+                "run",
+                side_effect=[
+                    mock.Mock(stdout="expected-revision\n"),
+                    mock.Mock(stdout=" M scripts/run-test-plan.py\n"),
+                ],
+            ),
+            self.assertRaises(SystemExit),
+        ):
+            module.verify_pristine_oidf_suite(Path("/tmp/oidf-suite"), "expected-revision")
 
     def test_official_runner_uses_isolated_bootstrap_and_sanitized_environment(self):
         module = load_runner_module()

@@ -61,6 +61,10 @@ set can be scanned from one place.
 | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) | Chinese deployment guide. |
 | [operations/ha-operations.md](operations/ha-operations.md) | PostgreSQL and Valkey operational guidance. |
 | [operations/release-security.md](operations/release-security.md) | Release security checks, provenance, and supply-chain controls. |
+| [operations/release-boundary.md](operations/release-boundary.md) | Production artifact and conformance-tool separation boundary. |
+| [operations/release-boundary.zh-CN.md](operations/release-boundary.zh-CN.md) | Chinese production artifact and conformance-tool separation boundary. |
+| [operations/github-actions-secrets.md](operations/github-actions-secrets.md) | GitHub Actions Secret inventory and rotation rules. |
+| [operations/github-actions-secrets.zh-CN.md](operations/github-actions-secrets.zh-CN.md) | Chinese GitHub Actions Secret inventory and rotation rules. |
 
 ### Integration
 

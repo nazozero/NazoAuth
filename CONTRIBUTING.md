@@ -10,6 +10,8 @@ NazoAuth uses an open-source/commercial dual-licensing model:
 
 The commercial option is a separate written agreement. It is not an additional
 license automatically granted by this repository.
+The public license text is the unmodified AGPL in [LICENSE](LICENSE); the
+commercial licensing notice is [COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md).
 
 ## External code contributions
 

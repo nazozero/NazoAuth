@@ -2,6 +2,22 @@
 
 本文规定唯一受支持的 OIDF 一致性测试流程。被测对象是正常的公网生产部署；测试工具不得获得数据库访问权、私有服务网络地址、特权运行时挂载或另一套协议行为。
 
+## 四步复现
+
+生产接入的安全边界不能省略，但操作者入口固定为四步：
+
+1. 部署一个精确仓库 commit，并记录完整 SHA。
+2. 运行 `oidf-conformance-full.yml`，输入 `deployed_sha`、`target_issuer`，并将
+   `onboarding_material_only` 设为 `true`；下载并校验生成的 bundle。
+3. 由普通申请人与不同的审批人，通过 `apply_public_conformance_onboarding.py`
+   和正式公开控制面完成接入。禁止数据库 seed 和私有网络访问。
+4. 使用相同输入、将 `onboarding_material_only` 设为 `false` 运行完整矩阵。
+   workflow 会检出已部署 SHA、克隆精确官方套件提交，并在发现受版本控制的修改时拒绝运行。
+
+所需 Secret 名称和轮换规则见
+[`GitHub Actions Secrets`](../operations/github-actions-secrets.zh-CN.md)。每个 fork 必须提供自己的
+issuer、账号、客户端材料和 suite token；仓库不提供共享被测部署。
+
 ## 规范面与控制面边界
 
 | 能力 | 规范依据 | 必须遵守的边界 |
@@ -60,6 +76,7 @@ python scripts/prepare_oidf_black_box.py
 ```sh
 gh workflow run oidf-conformance-full.yml \
   --ref <精确分支> \
+  -f deployed_sha=<已部署-sha> \
   -f target_issuer=https://issuer.example \
   -f onboarding_material_only=true
 ```
