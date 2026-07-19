@@ -49,6 +49,7 @@ pub(crate) use ciba_ping_delivery::{CibaPingDeliveryWorker, spawn_ciba_ping_deli
 pub(crate) use database_user_fixture::{
     DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
 };
+#[cfg(not(test))]
 pub(crate) use dynamic_registration::DynamicRegistrationConfig;
 #[cfg(test)]
 pub(crate) use dynamic_registration::DynamicRegistrationHandles;

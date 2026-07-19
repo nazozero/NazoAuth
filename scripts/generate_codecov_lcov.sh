@@ -297,7 +297,10 @@ kill -INT "$SERVER_PID"
 wait "$SERVER_PID" || true
 SERVER_PID=""
 
-cargo test --locked --workspace --all-features --lib
+TEST_OBJECT_MANIFEST="$COVERAGE_DIR/test-objects.jsonl"
+cargo test --locked --workspace --all-features --lib --tests \
+  --no-run --message-format=json > "$TEST_OBJECT_MANIFEST"
+cargo test --locked --workspace --all-features --lib --tests
 
 RUST_HOST="$(rustc -vV | sed -n 's/^host: //p')"
 LLVM_TOOLS_DIR="$(rustc --print sysroot)/lib/rustlib/$RUST_HOST/bin"
@@ -311,9 +314,29 @@ fi
 objects=("$BIN_DIR/nazo-oauth-server")
 while IFS= read -r object; do
   objects+=("$object")
-done < <(find "$BIN_DIR/deps" -maxdepth 1 -type f \( \
-  -name 'nazo_oauth_server-*' \
-\) ! -name '*.d' ! -name '*.rlib' ! -name '*.rmeta')
+done < <(
+  "$PYTHON_BIN" - "$TEST_OBJECT_MANIFEST" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+manifest = Path(sys.argv[1])
+executables = set()
+for line in manifest.read_text(encoding="utf-8").splitlines():
+    try:
+        message = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if message.get("reason") != "compiler-artifact":
+        continue
+    executable = message.get("executable")
+    if executable and message.get("profile", {}).get("test") is True:
+        executables.add(executable)
+
+for executable in sorted(executables):
+    print(executable)
+PY
+)
 
 if [[ ! -x "${objects[0]}" ]]; then
   echo "Instrumented server binary was not found at ${objects[0]}." >&2

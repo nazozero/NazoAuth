@@ -1,6 +1,9 @@
 use diesel::{sql_query, sql_types::Uuid as SqlUuid};
 use diesel_async::{AsyncConnection, RunQueryDsl};
-use nazo_auth::{OAuthClient, ValidatedClientRegistration};
+use nazo_auth::{
+    DynamicRegistrationClientStore, DynamicRegistrationDependencyError, OAuthClient,
+    ValidatedClientRegistration,
+};
 use nazo_identity::{TenantContext, ports::RepositoryError};
 use nazo_postgres::{OAuthClientRepository, create_pool, get_conn};
 use uuid::Uuid;
@@ -228,6 +231,85 @@ async fn registration_token_rotation_rejects_a_stale_authenticated_token() {
 
     repository
         .deactivate(client.tenant_id, client.id, "rotated-token")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn dynamic_registration_store_preserves_atomic_credential_semantics() {
+    let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
+        .or_else(|_| std::env::var("DATABASE_URL"))
+        .expect("NAZO_TEST_DATABASE_URL or DATABASE_URL is required");
+    let pool = create_pool(database_url, 4).unwrap();
+    let repository = OAuthClientRepository::new(pool.clone());
+    let mut client = client(TenantContext::default_system());
+    repository
+        .insert(&client, None, Some("registration-token"))
+        .await
+        .unwrap();
+
+    DynamicRegistrationClientStore::rotate_credentials(
+        &repository,
+        client.tenant_id,
+        client.id,
+        None,
+        "registration-token",
+        "rotated-token",
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        DynamicRegistrationClientStore::rotate_credentials(
+            &repository,
+            client.tenant_id,
+            client.id,
+            None,
+            "registration-token",
+            "stale-write",
+        )
+        .await
+        .unwrap_err(),
+        DynamicRegistrationDependencyError::StaleCredentials
+    );
+
+    client.registration.client_name = "Updated DCR client".to_owned();
+    let replaced = DynamicRegistrationClientStore::replace_registration(
+        &repository,
+        &client,
+        None,
+        "rotated-token",
+        Some("replacement-token"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(replaced.client_name, "Updated DCR client");
+
+    assert!(
+        DynamicRegistrationClientStore::deactivate(
+            &repository,
+            client.tenant_id,
+            client.id,
+            "replacement-token",
+        )
+        .await
+        .unwrap()
+    );
+    assert_eq!(
+        DynamicRegistrationClientStore::deactivate(
+            &repository,
+            client.tenant_id,
+            client.id,
+            "replacement-token",
+        )
+        .await
+        .unwrap_err(),
+        DynamicRegistrationDependencyError::StaleCredentials
+    );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(client.id)
+        .execute(&mut connection)
         .await
         .unwrap();
 }

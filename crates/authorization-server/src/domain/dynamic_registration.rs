@@ -23,6 +23,7 @@ use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::Settings;
 
 #[derive(Clone)]
+#[cfg_attr(test, allow(dead_code))]
 pub(crate) struct DynamicRegistrationConfig {
     pub(crate) issuer: String,
     pub(crate) default_audience: String,
@@ -64,10 +65,6 @@ impl From<&Settings> for DynamicRegistrationConfig {
 #[cfg(test)]
 #[derive(Clone)]
 pub(crate) struct DynamicRegistrationHandles {
-    pub(crate) config: DynamicRegistrationConfig,
-    pub(crate) clients: nazo_postgres::OAuthClientRepository,
-    pub(crate) rate_limits: nazo_valkey::RateLimitStore,
-    pub(crate) keyset: nazo_key_management::KeyManager,
     pub(crate) enabled: bool,
 }
 
@@ -79,10 +76,6 @@ impl DynamicRegistrationHandles {
 
     pub(crate) fn from_app_state(state: &super::TestAppState) -> Self {
         Self {
-            config: DynamicRegistrationConfig::from(state.settings.as_ref()),
-            clients: nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone()),
-            rate_limits: nazo_valkey::RateLimitStore::new(&state.valkey_connection()),
-            keyset: state.keyset.clone(),
             enabled: state.settings.modules.enable_dynamic_client_registration,
         }
     }

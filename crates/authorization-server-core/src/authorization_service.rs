@@ -1236,6 +1236,17 @@ mod tests {
     }
 
     #[test]
+    fn ciba_request_object_replay_is_delegated_to_the_state_store() {
+        let accepted =
+            futures_executor::block_on(
+                service(FakeRepository::default(), FakeStore::default())
+                    .consume_ciba_request_object("client-1", "request-object-jti", 30),
+            )
+            .unwrap();
+        assert!(accepted);
+    }
+
+    #[test]
     fn stored_grant_must_cover_every_scope_and_resource() {
         let stored = StoredAuthorizationGrant {
             scopes: json!(["openid", "profile"]),

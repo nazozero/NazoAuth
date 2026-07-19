@@ -40,9 +40,10 @@ use crate::domain::DynamicRegistrationHandles;
 use crate::domain::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(not(test))]
 use crate::domain::{
-    BackchannelLogoutWorker, CibaPingDeliveryWorker, ServerTokenManagementOperations,
-    ServerTokenManagementRequestGuard, ServerUserinfoOperations, dynamic_registration_endpoint,
-    spawn_backchannel_logout_delivery_worker, spawn_ciba_ping_delivery_worker,
+    BackchannelLogoutWorker, CibaPingDeliveryWorker, DynamicRegistrationConfig,
+    ServerTokenManagementOperations, ServerTokenManagementRequestGuard, ServerUserinfoOperations,
+    dynamic_registration_endpoint, spawn_backchannel_logout_delivery_worker,
+    spawn_ciba_ping_delivery_worker,
 };
 use crate::domain::{
     CredentialDatasetAdminService, Openid4vcClientAttestationValidator, Openid4vcCredentialCrypto,
@@ -50,9 +51,9 @@ use crate::domain::{
     ServerPresentationOperations,
 };
 use crate::domain::{
-    DynamicRegistrationConfig, MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS,
-    MetadataConfig, OidcLogoutConfig, OidcLogoutHandles, PasskeyOperationsProvider,
-    ResourceServerConfig, ServerAuthenticationRateLimit, ServerAuthorizationDecisionOperations,
+    MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, MetadataConfig, OidcLogoutConfig,
+    OidcLogoutHandles, PasskeyOperationsProvider, ResourceServerConfig,
+    ServerAuthenticationRateLimit, ServerAuthorizationDecisionOperations,
     ServerLocalRegistrationOperations, ServerMetadataSnapshotSource, ServerMfaProfileOperations,
     ServerMfaSecretHasher, ServerPasswordLoginOperations, ServerProfileAccountOperations,
     ServerSessionManagementOperations, UserinfoConfig, UserinfoHandles,
@@ -198,9 +199,7 @@ pub async fn run() -> anyhow::Result<()> {
     };
     #[cfg(not(test))]
     let dynamic_registration_rate_limit_connection = valkey.clone();
-    #[cfg(test)]
-    let dynamic_registration_rate_limit_connection =
-        nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+    #[cfg(not(test))]
     let dynamic_registration_config = DynamicRegistrationConfig::from(settings.as_ref());
     #[cfg(not(test))]
     let dynamic_registration_handles = web::Data::new(dynamic_registration_endpoint(
@@ -213,10 +212,6 @@ pub async fn run() -> anyhow::Result<()> {
     ));
     #[cfg(test)]
     let dynamic_registration_handles = web::Data::new(DynamicRegistrationHandles {
-        config: dynamic_registration_config,
-        clients: nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
-        rate_limits: nazo_valkey::RateLimitStore::new(&dynamic_registration_rate_limit_connection),
-        keyset: keyset.clone(),
         enabled: settings.modules.enable_dynamic_client_registration,
     });
     let admin_client_config = web::Data::new(AdminClientConfig::from_settings(&settings));
