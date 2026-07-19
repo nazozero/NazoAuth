@@ -78,6 +78,43 @@ class ApplyPublicConformanceOnboardingTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertLessEqual(len(first.encode("utf-8")), 120)
 
+    def test_delivery_uses_owner_request_id_in_csrf_protected_post(self):
+        module = load_module()
+
+        class Session:
+            def __init__(self):
+                self.calls = []
+
+            def request_json(self, method, path, payload=None, **kwargs):
+                self.calls.append((method, path, payload, kwargs))
+                if (method, path) == ("GET", "/auth/me/access-requests"):
+                    return {
+                        "items": [
+                            {
+                                "id": "request-1",
+                                "delivery_available": True,
+                            }
+                        ]
+                    }
+                if (method, path) == ("POST", "/auth/me/access-delivery"):
+                    return {"client_id": "client-1", "client_secret": "secret-1"}
+                raise AssertionError((method, path, payload, kwargs))
+
+        session = Session()
+        self.assertEqual(
+            module.delivered_client_for_request(session, "request-1"),
+            ("client-1", "secret-1"),
+        )
+        self.assertEqual(
+            session.calls[1],
+            (
+                "POST",
+                "/auth/me/access-delivery",
+                {"request_id": "request-1"},
+                {"expected_status": 200, "csrf": True},
+            ),
+        )
+
     def test_apply_journals_partial_state_before_remote_approval_failure(self):
         module = load_module()
 

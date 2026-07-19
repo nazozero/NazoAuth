@@ -5009,17 +5009,24 @@ def run() -> None:
             )
         )
         check("user_access_requests_total", access_requests["total"] >= 2)
+        approved_access_request = next(
+            item for item in access_requests["items"] if item["id"] == second_request_id
+        )
+        check(
+            "delivery_available_only_to_request_owner",
+            approved_access_request.get("delivery_available") is True,
+        )
 
         valkey = redis.Redis.from_url(VALKEY_URL, decode_responses=True)
         delivery_keys = valkey.keys(f"oauth:client_delivery:{user_id}:*")
         check("delivery_key_created", len(delivery_keys) == 1, delivery_keys)
-        delivery_token = delivery_keys[0].split(":")[-1]
         delivery = expect_json(
             expect_status(
-                "GET /auth/me/access-delivery",
-                user.get(
+                "POST /auth/me/access-delivery",
+                user.post(
                     f"{BASE_URL}/auth/me/access-delivery",
-                    params={"token": delivery_token},
+                    json={"request_id": second_request_id},
+                    headers=csrf_header(user),
                     timeout=10,
                 ),
                 200,
@@ -5030,10 +5037,11 @@ def run() -> None:
             delivery["request_id"] == second_request_id and delivery.get("client_secret"),
         )
         expect_status(
-            "GET /auth/me/access-delivery read once",
-            user.get(
+            "POST /auth/me/access-delivery read once",
+            user.post(
                 f"{BASE_URL}/auth/me/access-delivery",
-                params={"token": delivery_token},
+                json={"request_id": second_request_id},
+                headers=csrf_header(user),
                 timeout=10,
             ),
             404,

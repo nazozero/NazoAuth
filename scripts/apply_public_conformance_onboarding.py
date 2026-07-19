@@ -306,13 +306,14 @@ def delivered_client_for_request(
     request_id: str,
 ) -> tuple[str, str | None] | None:
     request = access_request_for_id(session, request_id)
-    token = request.get("delivery_token") if isinstance(request, dict) else None
-    if not isinstance(token, str) or not token:
+    if not isinstance(request, dict) or request.get("delivery_available") is not True:
         return None
     delivery = session.request_json(
-        "GET",
-        f"/auth/me/access-delivery?token={urllib.parse.quote(token, safe='')}",
+        "POST",
+        "/auth/me/access-delivery",
+        {"request_id": request_id},
         expected_status=200,
+        csrf=True,
     )
     client_id = delivery.get("client_id")
     secret = delivery.get("client_secret")

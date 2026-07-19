@@ -853,6 +853,56 @@ def check_conformance_provisioning_boundaries() -> None:
             raise SystemExit(
                 f"official public onboarding conversion lacks hard boundary: {marker}"
             )
+
+    delivery_handler = (
+        ROOT
+        / "crates"
+        / "authorization-server"
+        / "src"
+        / "http"
+        / "profile"
+        / "delivery.rs"
+    ).read_text(encoding="utf-8")
+    delivery_routes = (
+        ROOT / "crates" / "authorization-server" / "src" / "bootstrap" / "routes.rs"
+    ).read_text(encoding="utf-8")
+    access_request_handler = (
+        ROOT
+        / "crates"
+        / "authorization-server"
+        / "src"
+        / "http"
+        / "profile"
+        / "access_requests.rs"
+    ).read_text(encoding="utf-8")
+    delivery_sources = [
+        delivery_handler,
+        delivery_routes,
+        (ROOT / "crates" / "identity" / "src" / "profile.rs").read_text(encoding="utf-8"),
+        (ROOT / "scripts" / "apply_public_conformance_onboarding.py").read_text(encoding="utf-8"),
+        (ROOT / "scripts" / "full_real_request_e2e.py").read_text(encoding="utf-8"),
+        (ROOT / "scripts" / "verify_live_full_interfaces.py").read_text(encoding="utf-8"),
+    ]
+    for forbidden in (
+        "access-delivery?token=",
+        "delivery_url",
+        'web::get().to(access_delivery)',
+        'Query<HashMap<String, String>>',
+    ):
+        if any(forbidden in source for source in delivery_sources):
+            raise SystemExit(f"one-time credential delivery exposes a retired transport: {forbidden}")
+    for marker in (
+        "has_valid_csrf_token",
+        "Json<AccessDeliveryRequest>",
+        "request_id: Uuid",
+        "json_response_no_store",
+    ):
+        if marker not in delivery_handler:
+            raise SystemExit(f"one-time credential delivery lacks hard boundary: {marker}")
+    if '.route("/access-delivery", web::post().to(access_delivery))' not in delivery_routes:
+        raise SystemExit("one-time credential delivery must remain POST-only")
+    if "delivery_token" in access_request_handler or "delivery_available" not in access_request_handler:
+        raise SystemExit("application list must expose availability, never a delivery capability")
     for marker in (
         "target issuer does not match this run",
         "suite base URL does not match this run",

@@ -76,7 +76,6 @@ pub(crate) mod test_support {
             nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
             nazo_valkey::DeliveryStore::new(&state.valkey_connection()),
             &state.settings.protocol.client_secret_pepper,
-            &state.settings.endpoint.frontend_base_url,
         ))
     }
 

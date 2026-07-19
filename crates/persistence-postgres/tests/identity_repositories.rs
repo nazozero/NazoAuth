@@ -1519,7 +1519,7 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
                 .find("committed_delivery_payload")
                 .expect("approval must activate delivery only after commit")
     );
-    assert!(delivery.contains("service.claim_delivery(&user, token)"));
+    assert!(delivery.contains("service.claim_delivery(&user, payload.request_id)"));
     assert!(identity_profile.contains("approved_delivery_matches"));
     assert!(
         identity_profile.find("approved_delivery_matches").unwrap()
@@ -1534,7 +1534,8 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     assert!(!identity_profile.contains("SCAN"));
     assert!(identity_profile.contains("delivery_payload_matches"));
     assert!(identity_profile.contains("delivery_candidate"));
-    assert!(profile.contains("delivery_token"));
+    assert!(profile.contains("delivery_available"));
+    assert!(!profile.contains("delivery_token"));
     assert!(!admin.contains("\"delivery_token\""));
 }
 

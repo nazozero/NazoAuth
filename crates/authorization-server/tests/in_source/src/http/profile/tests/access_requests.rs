@@ -1,6 +1,6 @@
 use super::*;
 use crate::domain::TestAppState;
-use crate::test_support::{access_request_profiles, profile_sessions};
+use crate::test_support::{access_request_profiles, delivery_profiles, profile_sessions};
 use uuid::Uuid;
 
 use actix_web::cookie::Cookie;
@@ -225,6 +225,10 @@ async fn my_access_requests_response_counts_only_pending_state() {
     ]);
 
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL),
+        Some(&header::HeaderValue::from_static("no-store"))
+    );
     let body = actix_web::body::to_bytes(response.into_body())
         .await
         .expect("access request body should collect");
@@ -274,6 +278,23 @@ async fn create_access_request_rejects_requests_without_csrf() {
         Data::new(state),
         request,
         Json(sample_access_request_payload()),
+    )
+    .await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+}
+
+#[actix_web::test]
+async fn access_delivery_rejects_requests_without_csrf_before_storage_access() {
+    let state = Data::new(test_state());
+    let request = request_with_session_but_no_csrf(&state, "delivery-without-csrf");
+    let response = crate::http::profile::delivery::access_delivery(
+        profile_sessions(&state),
+        delivery_profiles(&state),
+        request,
+        Json(crate::http::profile::delivery::AccessDeliveryRequest {
+            request_id: Uuid::now_v7(),
+        }),
     )
     .await;
 

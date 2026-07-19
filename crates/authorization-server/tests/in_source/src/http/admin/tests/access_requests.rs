@@ -46,13 +46,13 @@ async fn profile_access_requests_from_state(
 async fn profile_delivery_from_state(
     state: Data<TestAppState>,
     req: HttpRequest,
-    query: Query<HashMap<String, String>>,
+    payload: Json<crate::http::profile::delivery::AccessDeliveryRequest>,
 ) -> HttpResponse {
     crate::http::profile::delivery::access_delivery(
         profile_sessions(&state),
         delivery_profiles(&state),
         req,
-        query,
+        payload,
     )
     .await
 }
@@ -1027,7 +1027,6 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
     assert_eq!(client.client_type, "confidential");
     assert!(fixture.client_has_secret_hash(approved_client_id).await);
     assert!(body.get("delivery_token").is_none());
-    assert!(body.get("delivery_url").is_none());
 
     let applicant_sid = format!("applicant-{suffix}");
     fixture.store_session(&applicant, &applicant_sid).await;
@@ -1041,14 +1040,12 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .iter()
         .find(|item| item["id"] == json!(request_id))
         .expect("applicant should see the approved request");
-    let delivery_token = approved_item["delivery_token"]
-        .as_str()
-        .expect("production owner response should provide the one-time token")
-        .to_owned();
-    assert!(
-        approved_item["delivery_url"]
-            .as_str()
-            .is_some_and(|url| url.ends_with(&format!("/delivery?token={delivery_token}")))
+    assert_eq!(approved_item["delivery_available"], json!(true));
+    assert!(approved_item.get("delivery_token").is_none());
+    let delivery_token = access_delivery_token(
+        &fixture.state.settings.protocol.client_secret_pepper,
+        applicant.id,
+        request_id,
     );
     let other_applicant = fixture
         .create_user(&format!("{suffix}-other-user"), "user", 0)
@@ -1066,18 +1063,16 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
             .as_array()
             .unwrap()
             .iter()
-            .all(|item| item.get("delivery_token").is_none())
+            .all(|item| item.get("delivery_available").is_none())
     );
     let other_claim = profile_delivery_from_state(
         fixture.state.clone(),
-        fixture.admin_get_request(
+        fixture.admin_post_request(
             &other_sid,
-            &format!("/profile/access-delivery?token={delivery_token}"),
+            "other-delivery-csrf",
+            "/profile/access-delivery",
         ),
-        Query(HashMap::from([(
-            "token".to_owned(),
-            delivery_token.clone(),
-        )])),
+        Json(crate::http::profile::delivery::AccessDeliveryRequest { request_id }),
     )
     .await;
     assert_eq!(other_claim.status(), StatusCode::NOT_FOUND);
@@ -1122,17 +1117,15 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         serde_json::from_str::<Value>(&recovered_raw).unwrap()["delivery_state"],
         "committed"
     );
-    let delivery_request = fixture.admin_get_request(
+    let delivery_request = fixture.admin_post_request(
         &applicant_sid,
-        &format!("/profile/access-delivery?token={delivery_token}"),
+        "applicant-delivery-csrf",
+        "/profile/access-delivery",
     );
     let delivered = profile_delivery_from_state(
         fixture.state.clone(),
         delivery_request,
-        Query(HashMap::from([(
-            "token".to_owned(),
-            delivery_token.clone(),
-        )])),
+        Json(crate::http::profile::delivery::AccessDeliveryRequest { request_id }),
     )
     .await;
     let (delivery_status, delivery_body) = json_body(delivered).await;
@@ -1151,17 +1144,17 @@ async fn approve_access_request_creates_client_and_marks_request_approved_once()
         .iter()
         .find(|item| item["id"] == json!(request_id))
         .unwrap();
-    assert!(claimed_item.get("delivery_token").is_none());
-    assert!(claimed_item.get("delivery_url").is_none());
+    assert!(claimed_item.get("delivery_available").is_none());
 
-    let replay_request = fixture.admin_get_request(
+    let replay_request = fixture.admin_post_request(
         &applicant_sid,
-        &format!("/profile/access-delivery?token={delivery_token}"),
+        "applicant-delivery-csrf",
+        "/profile/access-delivery",
     );
     let replay = profile_delivery_from_state(
         fixture.state.clone(),
         replay_request,
-        Query(HashMap::from([("token".to_owned(), delivery_token)])),
+        Json(crate::http::profile::delivery::AccessDeliveryRequest { request_id }),
     )
     .await;
     assert_eq!(replay.status(), StatusCode::NOT_FOUND);
@@ -1499,21 +1492,17 @@ async fn approve_access_request_rolls_back_when_status_write_fails_after_client_
         .expect("staged delivery payload should remain after denied cleanup");
     let orphan: Value = serde_json::from_str(&orphan).expect("staged payload should be JSON");
     assert_eq!(orphan["delivery_state"], "staged");
-    let delivery_token = orphan_keys[0]
-        .rsplit(':')
-        .next()
-        .expect("delivery key contains token")
-        .to_owned();
     let applicant_sid = format!("applicant-write-{}", Uuid::now_v7().simple());
     fixture.store_session(&applicant, &applicant_sid).await;
-    let delivery_request = fixture.admin_get_request(
+    let delivery_request = fixture.admin_post_request(
         &applicant_sid,
-        &format!("/profile/access-delivery?token={delivery_token}"),
+        "orphan-delivery-csrf",
+        "/profile/access-delivery",
     );
     let delivery = profile_delivery_from_state(
         fixture.state.clone(),
         delivery_request,
-        Query(HashMap::from([("token".to_owned(), delivery_token)])),
+        Json(crate::http::profile::delivery::AccessDeliveryRequest { request_id }),
     )
     .await;
     assert_eq!(delivery.status(), StatusCode::NOT_FOUND);

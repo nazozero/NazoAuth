@@ -128,6 +128,15 @@ python scripts/apply_public_conformance_onboarding.py apply \
 7. 由不同管理员审批；
 8. 从公网服务导出当前已经批准的租户信任 bundle。
 
+凭据交付必须使用普通用户可用的正式 UI/API：申请人先读取自己的已批准申请，再通过带
+CSRF 防护的 JSON `POST` 提交公开的 `request_id`。服务器根据当前已认证用户和申请标识
+推导私有存储定位值，浏览器不会收到额外的领取凭据。申请列表和交付响应均带
+`Cache-Control: no-store`；敏感凭据不得进入 URL。该约束落实了
+[RFC 9110 第 17.9 节](https://www.rfc-editor.org/rfc/rfc9110.html#section-17.9)
+对 URI 敏感数据泄露的警告，并避免
+[OWASP](https://owasp.org/www-community/vulnerabilities/Information_exposure_through_query_strings_in_url)
+列出的浏览器历史、代理日志和 Referer 泄露路径。系统不保留 GET 兼容入口。
+
 所有请求都必须是精确同源 HTTPS 请求：启用正常证书校验、禁止重定向、限制响应大小、校验 JSON Content-Type，并在变更请求中携带 CSRF token。输出的状态文件与 bundle 均属于私密运行材料。
 
 apply 成功后，通过标准输入把交付映射保存为仓库私密 Secret `OIDF_DELIVERED_CLIENT_MATERIAL_JSON`。官方 OIDC 与 OpenID4VC workflow 缺少该 Secret 时必须拒绝启动，并同时校验目标 issuer 与 suite origin。该映射只包含实际客户端标识和少量签发的 client secret，只能替换私密 runner 配置中的精确 `client_id` 字段；它不是服务端 seed，cleanup 后必须删除。

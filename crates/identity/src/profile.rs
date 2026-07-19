@@ -426,11 +426,8 @@ fn required_access_request_text(
     Ok(value)
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct AvailableDelivery {
-    pub token: String,
-    pub url: String,
-}
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct AvailableDelivery;
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct AccessRequestWithDelivery {
@@ -456,7 +453,6 @@ pub struct ClientAccessService<R, D> {
     requests: R,
     deliveries: D,
     client_secret_pepper: Box<str>,
-    frontend_base_url: Box<str>,
 }
 
 impl<R, D> ClientAccessService<R, D>
@@ -464,17 +460,11 @@ where
     R: AccessRequestRepositoryPort,
     D: DeliveryStorePort,
 {
-    pub fn new(
-        requests: R,
-        deliveries: D,
-        client_secret_pepper: &str,
-        frontend_base_url: &str,
-    ) -> Self {
+    pub fn new(requests: R, deliveries: D, client_secret_pepper: &str) -> Self {
         Self {
             requests,
             deliveries,
             client_secret_pepper: client_secret_pepper.into(),
-            frontend_base_url: frontend_base_url.trim_end_matches('/').into(),
         }
     }
 
@@ -507,16 +497,7 @@ where
                 if let Some(stored) = stored
                     && delivery_payload_matches(candidate, &stored.value)
                 {
-                    deliveries.insert(
-                        candidate.request_id,
-                        AvailableDelivery {
-                            token: candidate.token.clone(),
-                            url: format!(
-                                "{}/delivery?token={}",
-                                self.frontend_base_url, candidate.token
-                            ),
-                        },
-                    );
+                    deliveries.insert(candidate.request_id, AvailableDelivery);
                 }
             }
         }
@@ -551,16 +532,21 @@ where
     pub async fn claim_delivery(
         &self,
         account: &PublicAccount,
-        token: &str,
+        request_id: Uuid,
     ) -> Result<Value, DeliveryReadError> {
+        let token = access_delivery_token(
+            &self.client_secret_pepper,
+            account.user_id().as_uuid(),
+            request_id,
+        );
         let stored = self
             .deliveries
-            .load(account.user_id(), token)
+            .load(account.user_id(), &token)
             .await
             .map_err(DeliveryReadError::DeliveryStore)?
             .ok_or(DeliveryReadError::Invalid)?;
         let Some(claim) = delivery_claim(&stored.value) else {
-            let _ = self.deliveries.delete(account.user_id(), token).await;
+            let _ = self.deliveries.delete(account.user_id(), &token).await;
             return Err(DeliveryReadError::Invalid);
         };
         match self
@@ -576,14 +562,14 @@ where
         {
             Ok(true) => {}
             Ok(false) => {
-                let _ = self.deliveries.delete(account.user_id(), token).await;
+                let _ = self.deliveries.delete(account.user_id(), &token).await;
                 return Err(DeliveryReadError::Invalid);
             }
             Err(error) => return Err(DeliveryReadError::Repository(error)),
         }
         match self
             .deliveries
-            .consume(account.user_id(), token, &stored)
+            .consume(account.user_id(), &token, &stored)
             .await
         {
             Ok(DeliveryConsume::Consumed(value)) => Ok(value),

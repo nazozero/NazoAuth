@@ -197,6 +197,17 @@ operator:
 7. review by the distinct administrator;
 8. export of the currently approved tenant trust bundle.
 
+Credential delivery uses the ordinary authenticated product UI/API: the owner
+lists their approved application, then submits its public `request_id` with a
+CSRF-protected JSON `POST`. The server derives the private storage locator from
+the authenticated owner and request identifier; no delivery capability is sent
+to the browser. The list and delivery responses are `Cache-Control: no-store`,
+and no credential is carried in a URL. This enforces the URI disclosure boundary in
+[RFC 9110 Section 17.9](https://www.rfc-editor.org/rfc/rfc9110.html#section-17.9)
+and avoids the history, proxy-log, and Referer exposure described by
+[OWASP](https://owasp.org/www-community/vulnerabilities/Information_exposure_through_query_strings_in_url).
+There is no GET compatibility route.
+
 All requests are exact-origin HTTPS requests with normal certificate
 verification, redirects disabled, response-size limits, JSON content checks,
 and CSRF tokens on mutations. The resulting state and bundle are private files.

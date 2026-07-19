@@ -632,7 +632,6 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_postgres::AccessRequestRepository::new(diesel_db.clone()),
         profile_delivery_store,
         &settings.protocol.client_secret_pepper,
-        &settings.endpoint.frontend_base_url,
     ));
     let profile_federation = web::Data::new(FederationProfileService::new(
         nazo_postgres::FederationRepository::new(diesel_db.clone()),

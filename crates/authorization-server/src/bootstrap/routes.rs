@@ -267,7 +267,7 @@ pub(crate) fn configure(
                             "/mtls-trust-requests",
                             web::post().to(create_mtls_trust_request),
                         )
-                        .route("/access-delivery", web::get().to(access_delivery)),
+                        .route("/access-delivery", web::post().to(access_delivery)),
                 )
                 .route(
                     "/ciba-automated-decision",

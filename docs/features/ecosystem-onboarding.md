@@ -131,6 +131,20 @@ The public application, administrator approval, one-time credential delivery,
 and mTLS trust-review endpoints are product control-plane operations. They are
 not advertised as OAuth or OpenID protocol endpoints.
 
+The application list tells the authenticated request owner only that a delivery
+is available. Claiming it submits the public application `request_id` in a
+same-origin, CSRF-protected JSON `POST`; the browser never receives a separate
+delivery capability. The server derives its internal storage locator from the
+authenticated owner and request identifier, validates the approved request and
+client binding, and removes the credential atomically after a successful read.
+No secret is placed in a URI, redirect, browser history entry, or `Referer`.
+This is a product security boundary rather than an extension of RFC 7591.
+[RFC 9110 Section 17.9](https://www.rfc-editor.org/rfc/rfc9110.html#section-17.9)
+warns that sensitive data in URIs is liable to disclosure, and the
+[OWASP query-string exposure guidance](https://owasp.org/www-community/vulnerabilities/Information_exposure_through_query_strings_in_url)
+lists browser history, server/proxy logs, and Referer propagation as concrete
+exposure paths.
+
 - [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html) and
   [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) govern the client
   record and its protocol lifecycle after approval. RFC 7591 leaves the method
