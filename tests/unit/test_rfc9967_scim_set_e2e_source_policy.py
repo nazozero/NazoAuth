@@ -9,7 +9,7 @@ import sys
 import unittest
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "scripts" / "rfc9967_scim_set_e2e.py"
 MATRIX = ROOT / "tests" / "contracts" / "rfc9967-scim-set-matrix.json"
 EXPECTED_CASES = {

@@ -3,6 +3,10 @@ name: oidf-public-onboarding-material
 on:
   workflow_dispatch:
     inputs:
+      source_commit:
+        description: Exact repository commit whose material is being exported
+        required: true
+        type: string
       target_issuer:
         description: Public HTTPS issuer that will receive the onboarding material
         required: true
@@ -13,6 +17,10 @@ on:
         type: string
   workflow_call:
     inputs:
+      source_commit:
+        description: Exact repository commit whose material is being exported
+        required: true
+        type: string
       target_issuer:
         description: Public HTTPS issuer that will receive the onboarding material
         required: true
@@ -44,6 +52,11 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.source_commit }}
+
+      - name: Verify exact source revision
+        run: test "$(git rev-parse HEAD)" = "${{ inputs.source_commit }}"
 
       - uses: actions/setup-python@v6.3.0
         with:
