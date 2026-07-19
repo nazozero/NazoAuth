@@ -63,6 +63,18 @@ class ReleaseGovernanceTests(unittest.TestCase):
             self.assertIn("paths:", pull_request, name)
             self.assertNotRegex(pull_request, r'(?m)^\s+-\s+"?(?:README\.md|docs/\*\*)"?\s*$')
 
+    def test_performance_images_have_path_scoped_build_and_smoke_checks(self) -> None:
+        source = (ROOT / ".github" / "workflows" / "perf-images.yml").read_text(
+            encoding="utf-8"
+        )
+        pull_request = source.split("pull_request:", 1)[1].split("push:", 1)[0]
+        self.assertIn('"perf/**"', pull_request)
+        self.assertIn('"scripts/ensure_runtime_keyset.py"', pull_request)
+        self.assertIn("perf/runner/Containerfile", source)
+        self.assertIn("perf/keyset/Containerfile", source)
+        self.assertIn("performance dependencies import successfully", source)
+        self.assertIn("test -s /tmp/keys/keyset.json", source)
+
     def test_proptest_regression_corpus_is_versioned(self) -> None:
         corpus = ROOT / "proptest-regressions" / "support"
         self.assertTrue((corpus / "responses.txt").is_file())
