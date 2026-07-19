@@ -248,10 +248,10 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         })
     }
 
-    fn consume_dpop_nonce<'a>(&'a self, nonce: &'a str) -> AuthorizationFuture<'a, bool> {
+    fn validate_dpop_nonce<'a>(&'a self, nonce: &'a str) -> AuthorizationFuture<'a, bool> {
         Box::pin(async move {
             self.replay
-                .consume_dpop_nonce(nonce)
+                .validate_dpop_nonce(nonce)
                 .await
                 .map_err(map_error)
         })

@@ -306,12 +306,12 @@ impl DpopStateStorePort for AtomicDpopState {
         })
     }
 
-    fn consume_nonce<'a>(&'a self, nonce: &'a str) -> DpopStateFuture<'a, bool> {
+    fn validate_nonce<'a>(&'a self, nonce: &'a str) -> DpopStateFuture<'a, bool> {
         Box::pin(async move {
             if self.unavailable {
                 return Err(DpopStateStoreError);
             }
-            Ok(self.nonces.lock().expect("nonce lock").remove(nonce))
+            Ok(self.nonces.lock().expect("nonce lock").contains(nonce))
         })
     }
 }
@@ -390,11 +390,13 @@ async fn protected_resource_replay_scope_rejects_same_jti_across_dpop_keys_async
 }
 
 #[test]
-fn required_nonce_is_issued_and_atomically_consumed() {
-    futures_executor::block_on(required_nonce_is_issued_and_atomically_consumed_async());
+fn required_nonce_is_reusable_while_jti_replay_remains_one_time() {
+    futures_executor::block_on(
+        required_nonce_is_reusable_while_jti_replay_remains_one_time_async(),
+    );
 }
 
-async fn required_nonce_is_issued_and_atomically_consumed_async() {
+async fn required_nonce_is_reusable_while_jti_replay_remains_one_time_async() {
     let state = AtomicDpopState::default();
     let proof_without_nonce = proof(public_jwk(), json!({}));
     let challenge = validate_authorization_server_dpop_at(
@@ -418,23 +420,23 @@ async fn required_nonce_is_issued_and_atomically_consumed_async() {
     )
     .await
     .expect("the challenged jti remains usable after adding the issued nonce");
-    let fresh_nonce = match validate_authorization_server_dpop_at(
+    let fresh_jti_with_same_nonce = proof(
+        public_jwk(),
+        json!({"nonce": nonce, "jti": "fresh-proof-jti"}),
+    );
+    validate_authorization_server_dpop_at(
         &state,
-        request(Some(&proof_with_nonce), None),
+        request(Some(&fresh_jti_with_same_nonce), None),
         DpopNoncePolicy::Required,
         NOW,
     )
     .await
-    .expect_err("a consumed nonce must return a fresh challenge")
-    {
-        DpopError::UseNonce(nonce) => nonce,
-        error => panic!("unexpected stale nonce error: {error:?}"),
-    };
-    let replay_with_fresh_nonce = proof(public_jwk(), json!({"nonce": fresh_nonce}));
+    .expect("RFC 9449 permits a fresh jti to reuse a nonce during its validity window");
+
     assert!(matches!(
         validate_authorization_server_dpop_at(
             &state,
-            request(Some(&replay_with_fresh_nonce), None),
+            request(Some(&proof_with_nonce), None),
             DpopNoncePolicy::Required,
             NOW,
         )

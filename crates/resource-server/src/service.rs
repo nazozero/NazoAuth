@@ -91,14 +91,15 @@ pub enum DpopNoncePolicy {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DpopNonceConsumptionResult {
+pub enum DpopNonceValidationResult {
     Accepted,
     Unknown,
 }
 
-/// Atomic one-time nonce state used by protected-resource DPoP validation.
-/// Implementations must publish a nonce until at least `expires_at` and must
-/// consume it with one atomic take operation.
+/// Time-bounded nonce state used by protected-resource DPoP validation.
+/// Implementations must publish a nonce until at least `expires_at`. Validation
+/// must not delete it: RFC 9449 Section 11.1 permits nonce reuse while replayed
+/// proof `jti` values remain rejected independently.
 pub trait DpopNonceStorage: Send + Sync {
     fn issue_nonce<'a>(
         &'a self,
@@ -106,12 +107,12 @@ pub trait DpopNonceStorage: Send + Sync {
         expires_at: i64,
     ) -> ResourceServerPortFuture<'a, Result<(), ProtectedResourceDependencyError>>;
 
-    fn consume_nonce<'a>(
+    fn validate_nonce<'a>(
         &'a self,
         nonce: &'a str,
     ) -> ResourceServerPortFuture<
         'a,
-        Result<DpopNonceConsumptionResult, ProtectedResourceDependencyError>,
+        Result<DpopNonceValidationResult, ProtectedResourceDependencyError>,
     >;
 }
 
@@ -292,12 +293,12 @@ where
         };
         match self
             .replay
-            .consume_nonce(nonce)
+            .validate_nonce(nonce)
             .await
             .map_err(ProtectedResourceAuthorizationError::DependencyUnavailable)?
         {
-            DpopNonceConsumptionResult::Accepted => Ok(()),
-            DpopNonceConsumptionResult::Unknown => {
+            DpopNonceValidationResult::Accepted => Ok(()),
+            DpopNonceValidationResult::Unknown => {
                 Err(ProtectedResourceAuthorizationError::UseDpopNonce(
                     self.issue_dpop_nonce(now).await?,
                 ))

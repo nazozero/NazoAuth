@@ -70,8 +70,11 @@ pub trait DpopStateStorePort: Send + Sync {
 
     fn issue_nonce<'a>(&'a self, nonce: &'a str, ttl_seconds: u64) -> DpopStateFuture<'a, ()>;
 
-    /// Atomically takes a nonce, returning false when it is missing or spent.
-    fn consume_nonce<'a>(&'a self, nonce: &'a str) -> DpopStateFuture<'a, bool>;
+    /// Returns whether a server-issued nonce remains inside its validity window.
+    ///
+    /// RFC 9449 Section 11.1 permits a nonce to be accepted more than once as
+    /// long as proof `jti` values are tracked and duplicates are rejected.
+    fn validate_nonce<'a>(&'a self, nonce: &'a str) -> DpopStateFuture<'a, bool>;
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -148,9 +151,9 @@ where
         })
     }
 
-    fn consume_nonce<'a>(&'a self, nonce: &'a str) -> DpopStateFuture<'a, bool> {
+    fn validate_nonce<'a>(&'a self, nonce: &'a str) -> DpopStateFuture<'a, bool> {
         Box::pin(async move {
-            self.consume_dpop_nonce(nonce)
+            self.validate_dpop_nonce(nonce)
                 .await
                 .map_err(|_| DpopStateStoreError)
         })
@@ -252,7 +255,7 @@ where
             ))
         };
     };
-    match store.consume_nonce(nonce).await {
+    match store.validate_nonce(nonce).await {
         Ok(true) => Ok(()),
         Ok(false) => Err(DpopError::UseNonce(
             issue_authorization_server_dpop_nonce(store).await?,
