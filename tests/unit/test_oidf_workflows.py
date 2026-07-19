@@ -370,7 +370,9 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertNotIn("oidf-browser-sensitive-plan-set.json", parallel_case)
 
         self.assertIn("oidf-conformance-browser-isolated:", workflow)
+        self.assertIn("needs: oidf-conformance-full", workflow)
         self.assertIn("fail-fast: false", workflow)
+        self.assertIn("max-parallel: 1", workflow)
         self.assertIn("plan_set_file: oidf-frontchannel-plan-set.json", workflow)
         self.assertIn("plan_set_file: oidf-session-management-plan-set.json", workflow)
         self.assertIn('--plan-set-json-file "${{ matrix.plan_set_file }}"', workflow)
