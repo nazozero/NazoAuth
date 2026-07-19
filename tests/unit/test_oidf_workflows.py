@@ -347,8 +347,11 @@ class OidfWorkflowTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
 
         parallel_case = workflow.split("parallel-isolated)", 1)[1].split(";;", 1)[0]
-        self.assertIn("run_oidf_plan_set 01-oidc-core.json", parallel_case)
-        self.assertIn("run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json", parallel_case)
+        self.assertIn("run_oidf_plan_set 01-oidc-core.json --no-parallel", parallel_case)
+        self.assertIn(
+            "run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json --no-parallel",
+            parallel_case,
+        )
         self.assertIn(
             "run_oidf_plan_set 03a-fapi-ciba-private-key-jwt-poll.json --no-parallel",
             parallel_case,
@@ -366,7 +369,13 @@ class OidfWorkflowTests(unittest.TestCase):
             parallel_case,
         )
         self.assertNotIn("run_oidf_plan_set 03-fapi-ciba.json", parallel_case)
-        self.assertIn("run_oidf_plan_set 07-fapi-private-mtls.json", parallel_case)
+        for plan_set in (
+            "04-fapi-message-and-mtls-dpop.json",
+            "05-fapi-mtls-mtls.json",
+            "06-fapi-private-dpop.json",
+            "07-fapi-private-mtls.json",
+        ):
+            self.assertIn(f"run_oidf_plan_set {plan_set} --no-parallel", parallel_case)
         self.assertNotIn("oidf-browser-sensitive-plan-set.json", parallel_case)
 
         self.assertIn("oidf-conformance-browser-isolated:", workflow)
