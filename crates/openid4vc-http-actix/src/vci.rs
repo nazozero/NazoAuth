@@ -33,6 +33,12 @@ pub enum CredentialResponseBody {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct CredentialEndpointResponse<T> {
+    pub body: T,
+    pub dpop_nonce: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub enum CredentialRequestBody<T> {
     Json(T),
     Jwt(String),
@@ -105,17 +111,23 @@ pub trait CredentialIssuerOperations: Send + Sync {
         &'a self,
         context: CredentialRequestContext,
         request: CredentialRequestBody<CredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>>;
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    >;
     fn deferred<'a>(
         &'a self,
         context: CredentialRequestContext,
         request: CredentialRequestBody<DeferredCredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>>;
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    >;
     fn notify<'a>(
         &'a self,
         context: CredentialRequestContext,
         request: NotificationRequest,
-    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>>;
+    ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>;
     fn pre_authorized_token<'a>(
         &'a self,
         request: PreAuthorizedTokenRequest,
@@ -252,7 +264,7 @@ pub async fn credential(
         Err(error) => return credential_error(error),
     };
     match endpoint.operations.credential(context, body).await {
-        Ok(body) => credential_success(body),
+        Ok(response) => credential_success(response),
         Err(error) => credential_error(error),
     }
 }
@@ -271,7 +283,7 @@ pub async fn deferred_credential(
         Err(error) => return credential_error(error),
     };
     match endpoint.operations.deferred(context, body).await {
-        Ok(body) => credential_success(body),
+        Ok(response) => credential_success(response),
         Err(error) => credential_error(error),
     }
 }
@@ -286,9 +298,12 @@ pub async fn notification(
         Err(error) => return credential_error(error),
     };
     match endpoint.operations.notify(context, body.into_inner()).await {
-        Ok(()) => HttpResponse::NoContent()
-            .insert_header((header::CACHE_CONTROL, "no-store"))
-            .finish(),
+        Ok(response) => {
+            let mut builder = HttpResponse::NoContent();
+            builder.insert_header((header::CACHE_CONTROL, "no-store"));
+            insert_dpop_nonce(&mut builder, response.dpop_nonce);
+            builder.finish()
+        }
         Err(error) => credential_error(error),
     }
 }
@@ -344,7 +359,10 @@ fn protected_context(
     })
 }
 
-fn credential_success(body: CredentialResponseBody) -> HttpResponse {
+fn credential_success(
+    response: CredentialEndpointResponse<CredentialResponseBody>,
+) -> HttpResponse {
+    let CredentialEndpointResponse { body, dpop_nonce } = response;
     let accepted =
         matches!(&body, CredentialResponseBody::Json(value) if value.transaction_id.is_some());
     let status = if accepted {
@@ -352,14 +370,20 @@ fn credential_success(body: CredentialResponseBody) -> HttpResponse {
     } else {
         actix_web::http::StatusCode::OK
     };
+    let mut builder = HttpResponse::build(status);
+    builder.insert_header((header::CACHE_CONTROL, "no-store"));
+    insert_dpop_nonce(&mut builder, dpop_nonce);
     match body {
-        CredentialResponseBody::Json(value) => HttpResponse::build(status)
-            .insert_header((header::CACHE_CONTROL, "no-store"))
-            .json(value),
-        CredentialResponseBody::Jwt(value) => HttpResponse::build(status)
+        CredentialResponseBody::Json(value) => builder.json(value),
+        CredentialResponseBody::Jwt(value) => builder
             .insert_header((header::CONTENT_TYPE, "application/jwt"))
-            .insert_header((header::CACHE_CONTROL, "no-store"))
             .body(value),
+    }
+}
+
+fn insert_dpop_nonce(builder: &mut actix_web::HttpResponseBuilder, nonce: Option<String>) {
+    if let Some(nonce) = nonce {
+        builder.insert_header((header::HeaderName::from_static("dpop-nonce"), nonce));
     }
 }
 

@@ -1432,7 +1432,9 @@ def oidf_log_failure(
         src = entry.get("src")
         src_text = src if isinstance(src, str) and src else "<unknown>"
         msg_text = msg if isinstance(msg, str) and msg else "<no message>"
-        return f"{module_id} log {result} at {src_text}: {msg_text[:300]}"
+        block_name = block_names.get(block_id) if isinstance(block_id, str) else None
+        block_text = f" in block {block_name}" if block_name else ""
+        return f"{module_id} log {result} at {src_text}{block_text}: {msg_text[:300]}"
     return None
 
 
@@ -1652,7 +1654,7 @@ def inspect_oidf_state(
                     allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
                 )
                 if log_failure:
-                    return oidf_failure_with_log_context(module_id, failure, logs)
+                    return oidf_failure_with_log_context(module_id, log_failure, logs)
                 if result == "WARNING" and oidf_log_has_allowed_expected_warning(
                     info,
                     logs,

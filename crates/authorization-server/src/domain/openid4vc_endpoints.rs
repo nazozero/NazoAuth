@@ -7,15 +7,18 @@ use std::{
 
 use base64::Engine as _;
 use chrono::{Duration, Utc};
-use nazo_auth::{DpopError, DpopNoncePolicy, DpopProofRequest, validate_authorization_server_dpop};
+use nazo_auth::{
+    DpopError, DpopNoncePolicy, DpopProofRequest, issue_authorization_server_dpop_nonce,
+    validate_authorization_server_dpop,
+};
 use nazo_digital_credentials::{
     CredentialSignerPort, EphemeralEncryptionKey, encrypt_ecdh_es, encrypt_ecdh_es_deflate,
 };
 use nazo_identity::{TenantId, UserId};
 use nazo_openid4vc_http_actix::{
     AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
-    CreatePresentationRequest, CreatePresentationResponse, CredentialHttpError,
-    CredentialIssuerFuture, CredentialIssuerOperations, CredentialRequestBody,
+    CreatePresentationRequest, CreatePresentationResponse, CredentialEndpointResponse,
+    CredentialHttpError, CredentialIssuerFuture, CredentialIssuerOperations, CredentialRequestBody,
     CredentialRequestContext, CredentialResponseBody, PreAuthorizedTokenRequest,
     PreAuthorizedTokenResponse, PresentationFuture, PresentationHttpError, PresentationOperations,
     PresentationResponseBody, PresentationResponseInput,
@@ -467,6 +470,19 @@ impl ServerCredentialIssuerOperations {
         }
         Ok(CredentialResponseBody::Json(response))
     }
+
+    async fn next_dpop_nonce(
+        &self,
+        access: &CredentialAccess,
+    ) -> Result<Option<String>, CredentialHttpError> {
+        if access.dpop_jkt.is_none() {
+            return Ok(None);
+        }
+        issue_authorization_server_dpop_nonce(self.authorization.as_ref())
+            .await
+            .map(Some)
+            .map_err(|_| vci_error(503, "server_error", "DPoP nonce issuance is unavailable."))
+    }
 }
 
 impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
@@ -570,7 +586,10 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
         &'a self,
         context: CredentialRequestContext,
         body: CredentialRequestBody<CredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async move {
             if !self.enabled(nazo_auth::CapabilityAdmission::NewRequest) {
                 return Err(vci_error(
@@ -581,6 +600,7 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
             }
             let request = self.request_json(body).await?;
             let access = self.access(&context).await?;
+            let dpop_nonce = self.next_dpop_nonce(&access).await?;
             let configuration_id = resolve_configuration_id(&request, &access)?;
             let configuration = self
                 .configurations
@@ -620,8 +640,10 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                 )
                 .await
                 .map_err(map_issuance_error)?;
-            self.finish_response(response, request.credential_response_encryption.as_ref())
-                .await
+            let body = self
+                .finish_response(response, request.credential_response_encryption.as_ref())
+                .await?;
+            Ok(CredentialEndpointResponse { body, dpop_nonce })
         })
     }
 
@@ -629,7 +651,10 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
         &'a self,
         context: CredentialRequestContext,
         body: CredentialRequestBody<DeferredCredentialRequest>,
-    ) -> CredentialIssuerFuture<'a, Result<CredentialResponseBody, CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<
+        'a,
+        Result<CredentialEndpointResponse<CredentialResponseBody>, CredentialHttpError>,
+    > {
         Box::pin(async move {
             if !self.enabled(nazo_auth::CapabilityAdmission::ExistingTransaction) {
                 return Err(vci_error(
@@ -640,6 +665,7 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
             }
             let request = self.request_json(body).await?;
             let access = self.access(&context).await?;
+            let dpop_nonce = self.next_dpop_nonce(&access).await?;
             let deferred = self
                 .store
                 .consume_ready_deferred(
@@ -727,16 +753,18 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                 .map_err(|_| {
                     vci_error(503, "server_error", "Notification state is unavailable.")
                 })?;
-            self.finish_response(
-                CredentialResponse {
-                    credentials: Some(credentials),
-                    transaction_id: None,
-                    notification_id: Some(notification_id),
-                    interval: None,
-                },
-                request.credential_response_encryption.as_ref(),
-            )
-            .await
+            let body = self
+                .finish_response(
+                    CredentialResponse {
+                        credentials: Some(credentials),
+                        transaction_id: None,
+                        notification_id: Some(notification_id),
+                        interval: None,
+                    },
+                    request.credential_response_encryption.as_ref(),
+                )
+                .await?;
+            Ok(CredentialEndpointResponse { body, dpop_nonce })
         })
     }
 
@@ -744,9 +772,11 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
         &'a self,
         context: CredentialRequestContext,
         request: NotificationRequest,
-    ) -> CredentialIssuerFuture<'a, Result<(), CredentialHttpError>> {
+    ) -> CredentialIssuerFuture<'a, Result<CredentialEndpointResponse<()>, CredentialHttpError>>
+    {
         Box::pin(async move {
             let access = self.access(&context).await?;
+            let dpop_nonce = self.next_dpop_nonce(&access).await?;
             let recorded = self
                 .store
                 .record_notification(&IssuanceNotification {
@@ -767,7 +797,10 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
                     "Notification identifier is invalid or already terminal.",
                 ));
             }
-            Ok(())
+            Ok(CredentialEndpointResponse {
+                body: (),
+                dpop_nonce,
+            })
         })
     }
 

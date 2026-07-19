@@ -259,6 +259,15 @@ plans may run concurrently. Logout, session-management, and other browser-state
 sensitive plans run in isolated jobs. A longer terminal wait absorbs legitimate
 suite completion latency; it does not relax protocol assertions.
 
+Expected warnings are environment-scoped evidence, not a global compatibility
+list. Bind each warning to the suite origin, configuration, plan, variant, and
+module that actually produces it. In particular, a public suite ingress that
+successfully negotiates TLS 1.3 must run with no TLS 1.3 warning allowance; the
+bounded warning used for an official ingress that cannot negotiate TLS 1.3 must
+not be copied into that public-suite run. A listed warning that does not occur is
+also a runner-contract failure, because it indicates stale or mis-scoped
+evidence.
+
 Do not substitute targeted plans for full-matrix evidence. Targeted plans are
 diagnostic only. Preserve the exact target commit, public origins, plan IDs,
 module results, expected-skip/review match, and runner version.

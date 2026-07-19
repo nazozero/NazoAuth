@@ -337,6 +337,66 @@ class RunOidfConformanceTests(unittest.TestCase):
 
         self.assertIn("FAILURE", module.oidf_log_failure("module-id", logs))
 
+    def test_inspect_state_reports_precise_early_warning_block_despite_later_log_noise(self):
+        module = load_runner_module()
+        info = {
+            "_id": "module-id",
+            "alias": "vci-alias",
+            "testName": "fapi2-security-profile-final-dpop-negative-tests",
+            "status": "FINISHED",
+            "result": "WARNING",
+        }
+        logs = [
+            {
+                "blockId": "replay",
+                "startBlock": True,
+                "msg": "DPoP reuse, Second use of the same jti, this 'should' fail",
+            },
+            {
+                "blockId": "replay",
+                "result": "WARNING",
+                "src": "EnsureHttpStatusCodeIs400or401",
+                "msg": "resource endpoint returned a different http status than expected",
+            },
+            *[
+                {
+                    "src": "WebRunner",
+                    "msg": f"later browser log {index}",
+                    "result": "INFO",
+                }
+                for index in range(10)
+            ],
+        ]
+
+        with (
+            mock.patch.object(
+                module,
+                "fetch_alias_plans",
+                return_value=[
+                    {
+                        "_id": "plan-id",
+                        "planName": "oid4vci-1_0-issuer-test-plan",
+                        "modules": [{"instances": ["module-id"]}],
+                    }
+                ],
+            ),
+            mock.patch.object(
+                module,
+                "oidf_api_request",
+                side_effect=[(200, info), (200, logs)],
+            ),
+        ):
+            failure = module.inspect_oidf_state(
+                "https://suite.example",
+                "token",
+                {"vci-alias"},
+                final=True,
+            )
+
+        self.assertIn("EnsureHttpStatusCodeIs400or401", failure)
+        self.assertIn("DPoP reuse, Second use of the same jti", failure)
+        self.assertIn("resource endpoint returned a different http status", failure)
+
     def test_expected_tls_warning_requires_exact_alias_variant_module_block_and_condition(self):
         module = load_runner_module()
         info = {
