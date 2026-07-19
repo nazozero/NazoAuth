@@ -185,7 +185,8 @@ fn credential_matches_query(
     credential: &VerifiedCredential,
     query: &nazo_digital_credentials::CredentialQuery,
 ) -> bool {
-    if query.require_cryptographic_holder_binding == Some(true) && credential.holder_key.is_none() {
+    if query.require_cryptographic_holder_binding.unwrap_or(true) && credential.holder_key.is_none()
+    {
         return false;
     }
     if let Some(meta) = query.meta.as_ref() {
@@ -289,4 +290,35 @@ pub enum PresentationServiceError {
     Presentation(#[from] PresentationError),
     #[error(transparent)]
     Store(#[from] PresentationStoreError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn holder_binding_is_required_by_default() {
+        let credential = VerifiedCredential {
+            format: CredentialFormat::MsoMdoc,
+            issuer: "issuer".to_owned(),
+            credential_type: "org.iso.18013.5.1.mDL".to_owned(),
+            claims: json!({}),
+            holder_key: None,
+            issued_at: None,
+            expires_at: None,
+            status: None,
+        };
+        let query = nazo_digital_credentials::CredentialQuery {
+            id: "mdl".to_owned(),
+            format: CredentialFormat::MsoMdoc,
+            meta: None,
+            claims: None,
+            claim_sets: None,
+            trusted_authorities: None,
+            require_cryptographic_holder_binding: None,
+        };
+
+        assert!(!credential_matches_query(&credential, &query));
+    }
 }

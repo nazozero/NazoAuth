@@ -7,7 +7,7 @@ pub(super) fn apply_ciba_ping_tls_policy(
         .use_rustls_tls()
         .tls_version_min(reqwest::tls::Version::TLS_1_2)
         .tls_version_max(reqwest::tls::Version::TLS_1_3);
-    if let Some(path) = std::env::var_os("SSL_CERT_FILE") {
+    if let Some(path) = std::env::var_os("CIBA_PING_TLS_TRUST_BUNDLE") {
         let bundle = std::fs::read(&path).with_context(|| {
             format!(
                 "failed to read CIBA ping TLS trust bundle {}",

@@ -221,6 +221,20 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
         })
     }
 
+    fn consume_ciba_request_object<'a>(
+        &'a self,
+        client_id: &'a str,
+        jti: &'a str,
+        ttl_seconds: u64,
+    ) -> AuthorizationFuture<'a, bool> {
+        Box::pin(async move {
+            self.replay
+                .consume_ciba_request_object(client_id, jti, ttl_seconds)
+                .await
+                .map_err(map_error)
+        })
+    }
+
     fn consume_dpop<'a>(
         &'a self,
         thumbprint: &'a str,

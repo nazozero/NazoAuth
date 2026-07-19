@@ -269,6 +269,15 @@ class FakeLifecycle:
         )
 
     def _write_fake_commands(self) -> None:
+        python_executable = shutil.which("python3") or shutil.which("python")
+        if python_executable is None:
+            raise RuntimeError("deployment lifecycle tests require Python")
+        python3 = self.fake_bin / "python3"
+        python3.write_text(
+            f'#!/usr/bin/env bash\nexec "{bash_path(Path(python_executable))}" "$@"\n',
+            encoding="utf-8",
+            newline="\n",
+        )
         podman = self.fake_bin / "podman"
         podman.write_text(
             r'''#!/usr/bin/env bash
@@ -435,6 +444,7 @@ printf '%s\n' ok
         pgrep.chmod(0o755)
         angie.chmod(0o755)
         sha256sum.chmod(0o755)
+        python3.chmod(0o755)
 
     def run(self, action: str, **flags: str) -> subprocess.CompletedProcess[str]:
         env = self.env.copy()
@@ -562,7 +572,8 @@ class DeployLiveContractTests(unittest.TestCase):
                 )
 
     def test_source_commits_are_bound_to_clean_worktrees_and_frontend_manifest(self) -> None:
-        self.assertIn("Unable to discover a unique synchronized sibling NazoAuthWeb worktree", self.source)
+        self.assertIn('Join-Path $siblingRoot "NazoAuthWeb"', self.source)
+        self.assertNotIn('Where-Object { $_.Name -like "NazoAuthWeb-*" }', self.source)
         self.assertIn("remote\", \"get-url\", \"origin", self.source)
         self.assertIn("branch\", \"--show-current", self.source)
         self.assertIn("HEAD...@{upstream}", self.source)
@@ -713,21 +724,21 @@ class DeployLiveContractTests(unittest.TestCase):
 
         self.assertEqual(syntax.returncode, 0, syntax.stderr)
 
-    def test_frontend_sibling_discovery_skips_wrong_default_and_selects_unique_match(self) -> None:
+    def test_frontend_sibling_discovery_uses_only_the_canonical_sibling(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             backend = root / "NazoAuth"
             backend_commit = init_repo(backend, {"Containerfile": "FROM scratch\n"})
-            init_repo(
-                root / "NazoAuthWeb",
-                {".gitignore": "dist/\n"},
-                branch="wrong-branch",
-            )
-            frontend = root / "NazoAuthWeb-modular-workspace-architecture"
+            frontend = root / "NazoAuthWeb"
             frontend_commit = init_repo(
                 frontend,
                 {".gitignore": "dist/\n"},
                 remote_url="git@github.com:nazozero/NazoAuthWeb.git",
+            )
+            init_repo(
+                root / "NazoAuthWeb-untrusted",
+                {".gitignore": "dist/\n"},
+                remote_url="https://github.com/other/NazoAuthWeb",
             )
             ui = frontend / "dist"
             ui.mkdir()
@@ -738,7 +749,7 @@ class DeployLiveContractTests(unittest.TestCase):
 
         self.assertEqual(completed.returncode, 0, completed.stderr)
 
-    def test_frontend_sibling_discovery_fails_closed_on_ambiguity(self) -> None:
+    def test_frontend_sibling_discovery_requires_the_canonical_sibling(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             backend = root / "NazoAuth"
@@ -756,11 +767,12 @@ class DeployLiveContractTests(unittest.TestCase):
 
         self.assertNotEqual(completed.returncode, 0)
         output = completed.stdout + completed.stderr
-        self.assertIn("Frontend worktree discovery is ambiguous", output)
-        self.assertIn(str(frontend), output)
-        self.assertIn(str(duplicate), output)
+        self.assertIn("Expected frontend worktree does not exist", output)
+        self.assertIn(str(root / "NazoAuthWeb"), output)
+        self.assertNotIn(str(frontend), output)
+        self.assertNotIn(str(duplicate), output)
 
-    def test_frontend_sibling_discovery_reports_rejected_candidates(self) -> None:
+    def test_frontend_sibling_discovery_reports_invalid_canonical_repository(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             backend = root / "NazoAuth"
@@ -777,8 +789,7 @@ class DeployLiveContractTests(unittest.TestCase):
 
         self.assertNotEqual(completed.returncode, 0)
         output = completed.stdout + completed.stderr
-        self.assertIn("Unable to discover a unique synchronized sibling", output)
-        self.assertIn("Rejected candidates", output)
+        self.assertIn("does not match expected branch", output)
         self.assertIn("wrong-branch", output)
 
     def test_explicit_frontend_path_rejects_invalid_repository_state(self) -> None:
@@ -860,12 +871,17 @@ podman() {
   return 0
 }
 flock() { return 0; }
-export -f podman flock
+python3() { "$FAKE_PYTHON" "$@"; }
+export -f podman flock python3
 bash "$1" deploy
 '''
             def execute(layout: dict) -> subprocess.CompletedProcess[str]:
                 environment = os.environ.copy()
                 environment["FAKE_NETWORK_JSON"] = json.dumps([layout])
+                python_executable = shutil.which("python3") or shutil.which("python")
+                if python_executable is None:
+                    raise RuntimeError("network validation tests require Python")
+                environment["FAKE_PYTHON"] = bash_path(Path(python_executable))
                 return subprocess.run(
                     [git_bash(), "-c", shell, "_", bash_path(rendered)],
                     capture_output=True, text=True, errors="replace", timeout=10,

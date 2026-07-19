@@ -854,6 +854,39 @@ class RunOidfConformanceTests(unittest.TestCase):
         self.assertIn("token=<redacted>", context)
         self.assertNotIn("secret", context)
 
+    def test_oidf_log_context_redacts_nested_tokens_headers_and_json_text(self):
+        module = load_runner_module()
+
+        context = module.oidf_log_context(
+            [
+                {
+                    "src": "CallTokenEndpointAndReturnFullResponse",
+                    "result": "FAILURE",
+                    "args": {
+                        "response_body": {
+                            "access_token": "access-secret",
+                            "nested": [{"auth_req_id": "poll-secret"}],
+                            "body": '{"refresh_token":"refresh-secret"}',
+                        },
+                        "backchannel_authentication_endpoint_response_headers": {
+                            "Authorization": "Bearer bearer-secret",
+                            "Set-Cookie": "sid=cookie-secret; Secure",
+                        },
+                    },
+                }
+            ]
+        )
+
+        self.assertIn("<redacted>", context)
+        for secret in (
+            "access-secret",
+            "poll-secret",
+            "refresh-secret",
+            "bearer-secret",
+            "cookie-secret",
+        ):
+            self.assertNotIn(secret, context)
+
     def test_plan_expression_config_names_are_selected_exactly(self):
         module = load_runner_module()
 

@@ -744,7 +744,6 @@ pub async fn run() -> anyhow::Result<()> {
                 .expect("default tenant ID is valid"),
             dummy_password_hash: nazo_identity::PasswordHash::new(dummy_password_hash()?)?,
             failure_window_seconds: identity.rate_limit.login_failure_window_seconds,
-            failure_email_max_attempts: identity.rate_limit.login_failure_email_max_attempts,
             failure_ip_email_max_attempts: identity.rate_limit.login_failure_ip_email_max_attempts,
             session_ttl_seconds: session.session_ttl_seconds,
         },

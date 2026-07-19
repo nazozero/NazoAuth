@@ -318,10 +318,10 @@ pub fn protected_resource_metadata(
 }
 
 fn subject_types_supported(input: AuthorizationServerMetadataInput<'_>) -> Vec<&'static str> {
-    match (input.pairwise_subject_enabled, input.subject_type) {
-        (false, _) => vec!["public"],
-        (true, MetadataSubjectType::Pairwise) => vec!["pairwise"],
-        (true, MetadataSubjectType::Public) => vec!["public", "pairwise"],
+    if input.pairwise_subject_enabled {
+        vec!["public", "pairwise"]
+    } else {
+        vec!["public"]
     }
 }
 

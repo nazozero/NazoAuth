@@ -16,7 +16,6 @@ pub struct AuthenticationServiceConfig {
     pub tenant_id: TenantId,
     pub dummy_password_hash: PasswordHash,
     pub failure_window_seconds: u64,
-    pub failure_email_max_attempts: u64,
     pub failure_ip_email_max_attempts: u64,
     pub session_ttl_seconds: u64,
 }
@@ -121,14 +120,12 @@ where
         &self,
         input: AuthenticatePasswordInput,
     ) -> Result<LoginSuccess, AuthenticatePasswordError> {
-        let counts = self
+        let failure_count = self
             .throttles
-            .failure_counts(&input.email, &input.source_ip)
+            .failure_count(&input.email, &input.source_ip)
             .await
             .map_err(AuthenticatePasswordError::ThrottleUnavailable)?;
-        if counts.email >= self.config.failure_email_max_attempts
-            || counts.ip_email >= self.config.failure_ip_email_max_attempts
-        {
+        if failure_count >= self.config.failure_ip_email_max_attempts {
             return Err(AuthenticatePasswordError::Throttled {
                 retry_after_seconds: self.config.failure_window_seconds,
             });
@@ -183,7 +180,7 @@ where
             .ok_or(AuthenticatePasswordError::InvalidCredentials)?;
         let _ = self
             .throttles
-            .clear_failures(&input.email, &input.source_ip)
+            .clear_failure(&input.email, &input.source_ip)
             .await;
         if !account.principal.active {
             return Err(AuthenticatePasswordError::InactiveAccount);

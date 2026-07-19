@@ -629,7 +629,7 @@ class Openid4vcOidfTests(unittest.TestCase):
     def test_openid4vc_target_boundary_rejects_local_targets(self):
         module = load("run_oidf_conformance.py")
 
-        with self.assertRaisesRegex(SystemExit, "local-only URL"):
+        with self.assertRaisesRegex(SystemExit, "non-public URL"):
             module.assert_config_target_boundaries(
                 {
                     "vci": {

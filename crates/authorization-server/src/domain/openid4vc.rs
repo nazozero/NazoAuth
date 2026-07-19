@@ -577,27 +577,14 @@ fn verify_standard_mdoc_device_signatures(
     verified: &mdoc_rs::verifier::VerifiedMDoc,
     session_transcript: &[u8],
 ) -> Result<bool, CredentialTrustError> {
-    if verified.is_valid {
-        return Ok(true);
-    }
-
-    let failed = verified
-        .assessments
-        .iter()
-        .filter(|assessment| assessment.status != mdoc_rs::verifier::VerificationStatus::Passed)
-        .collect::<Vec<_>>();
-    let failed_device_signatures = failed
-        .iter()
-        .filter(|assessment| assessment.id == mdoc_rs::verifier::CheckId::DeviceSignatureValidity)
-        .count();
-    if failed_device_signatures == 0 {
+    if verified.mdoc.documents.is_empty() {
         return Ok(false);
     }
 
     let mut verified_signatures = 0usize;
     for document in &verified.mdoc.documents {
         let Some(device_signed) = document.device_signed.as_ref() else {
-            continue;
+            return Ok(false);
         };
         if !matches!(
             device_signed.device_auth,
@@ -638,7 +625,7 @@ fn verify_standard_mdoc_device_signatures(
         verified_signatures += 1;
     }
 
-    Ok(verified_signatures == failed_device_signatures)
+    Ok(verified_signatures == verified.mdoc.documents.len())
 }
 
 fn verify_mdoc_issuer_certificate_chains(
@@ -695,6 +682,9 @@ fn mdoc_assessments_accepted(
     standard_device_authentication_valid: bool,
     issuer_chain_valid: bool,
 ) -> bool {
+    if !standard_device_authentication_valid || !issuer_chain_valid {
+        return false;
+    }
     if verified.is_valid {
         return true;
     }

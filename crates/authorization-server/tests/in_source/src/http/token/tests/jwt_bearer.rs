@@ -68,6 +68,22 @@ fn signed_jwt_bearer_assertion(
     fixture: &ClientSigningFixture,
     extra: Value,
 ) -> String {
+    signed_jwt_bearer_assertion_with_typ(
+        client_id,
+        kid,
+        fixture,
+        extra,
+        Some(JWT_BEARER_ASSERTION_TYP),
+    )
+}
+
+fn signed_jwt_bearer_assertion_with_typ(
+    client_id: &str,
+    kid: &str,
+    fixture: &ClientSigningFixture,
+    extra: Value,
+    typ: Option<&str>,
+) -> String {
     let now = Utc::now().timestamp();
     let mut claims = json!({
         "iss": client_id,
@@ -84,6 +100,7 @@ fn signed_jwt_bearer_assertion(
     }
     let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
     header.kid = Some(kid.to_owned());
+    header.typ = typ.map(ToOwned::to_owned);
     fixture.encode_jwt(&header, &claims)
 }
 
@@ -217,6 +234,15 @@ fn jwt_bearer_assertion_validation_binds_client_issuer_audience_and_times() {
         URL_SAFE_NO_PAD.encode(json!({"iss":"client-a","sub":"client-a"}).to_string())
     );
     assert!(validate_jwt_bearer_assertion(&settings, &client, &alg_none).is_err());
+
+    let client_assertion = signed_jwt_bearer_assertion_with_typ(
+        "client-a",
+        "jwt-bearer-kid",
+        &private_key,
+        json!({}),
+        Some("JWT"),
+    );
+    assert!(validate_jwt_bearer_assertion(&settings, &client, &client_assertion).is_err());
 }
 
 #[test]

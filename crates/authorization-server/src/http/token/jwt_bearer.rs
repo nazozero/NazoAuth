@@ -42,6 +42,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 pub(crate) const JWT_BEARER_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:jwt-bearer";
+pub(crate) const JWT_BEARER_ASSERTION_TYP: &str = "oauth-jwt-bearer+jwt";
 
 #[derive(Debug)]
 pub(crate) enum JwtBearerAssertionError {
@@ -74,6 +75,9 @@ fn validate_jwt_bearer_assertion_with_issuer(
 ) -> Result<ValidatedJwtBearerAssertion, JwtBearerAssertionError> {
     let header =
         jsonwebtoken::decode_header(assertion).map_err(|_| JwtBearerAssertionError::Invalid)?;
+    if header.typ.as_deref() != Some(JWT_BEARER_ASSERTION_TYP) {
+        return Err(JwtBearerAssertionError::Invalid);
+    }
     let kid = header.kid.ok_or(JwtBearerAssertionError::Invalid)?;
     let decoding_key = client_jwt_decoding_key(client, &kid, header.alg)
         .ok_or(JwtBearerAssertionError::Invalid)?;

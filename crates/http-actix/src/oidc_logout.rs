@@ -308,7 +308,7 @@ fn error_response(error: OidcLogoutError) -> HttpResponse {
 fn frontchannel_logout_document(frontchannel_urls: &[String], redirect: Option<&str>) -> String {
     let iframe_count = frontchannel_urls.len();
     let iframe_onload = if redirect.is_some() {
-        " onload=\"nazoFrontchannelLogoutFrameDone()\""
+        " onload=\"nazoFrontchannelLogoutFrameDone(this)\""
     } else {
         ""
     };
@@ -329,12 +329,15 @@ fn frontchannel_logout_document(frontchannel_urls: &[String], redirect: Option<&
                 "(function(){{",
                 "var remaining={iframe_count};",
                 "var redirected=false;",
+                "var completed=new WeakSet();",
                 "function finish(){{",
                 "if(redirected){{return;}}",
                 "redirected=true;",
                 "window.location.replace('{location}');",
                 "}}",
-                "window.nazoFrontchannelLogoutFrameDone=function(){{",
+                "window.nazoFrontchannelLogoutFrameDone=function(frame){{",
+                "if(completed.has(frame)){{return;}}",
+                "completed.add(frame);",
                 "remaining-=1;",
                 "if(remaining<=0){{setTimeout(finish,50);}}",
                 "}};",

@@ -1,4 +1,35 @@
 use super::*;
+
+#[test]
+fn prompt_none_claims_require_their_authorizing_scope() {
+    let openid_only = vec!["openid".to_owned()];
+    assert!(user_claims_are_covered_by_scopes(&openid_only, &[]));
+    assert!(!user_claims_are_covered_by_scopes(
+        &openid_only,
+        &["email".to_owned()]
+    ));
+    assert!(!user_claims_are_covered_by_scopes(
+        &openid_only,
+        &["unknown_claim".to_owned()]
+    ));
+
+    let authorized = vec![
+        "openid".to_owned(),
+        "profile".to_owned(),
+        "email".to_owned(),
+        "address".to_owned(),
+        "phone".to_owned(),
+    ];
+    assert!(user_claims_are_covered_by_scopes(
+        &authorized,
+        &[
+            "birthdate".to_owned(),
+            "email_verified".to_owned(),
+            "address".to_owned(),
+            "phone_number".to_owned(),
+        ]
+    ));
+}
 use crate::settings::DpopNoncePolicy;
 
 fn user() -> nazo_identity::SubjectClaims {

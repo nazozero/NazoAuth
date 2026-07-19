@@ -199,11 +199,15 @@ fn decoding_key_from_public_jwk(
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
                 return None;
             }
-            jsonwebtoken::DecodingKey::from_rsa_components(
-                key.get("n")?.as_str()?,
-                key.get("e")?.as_str()?,
-            )
-            .ok()
+            let modulus = key.get("n")?.as_str()?;
+            let exponent = key.get("e")?.as_str()?;
+            if !nazo_auth::rsa_public_key_components_are_safe(
+                &URL_SAFE_NO_PAD.decode(modulus).ok()?,
+                &URL_SAFE_NO_PAD.decode(exponent).ok()?,
+            ) {
+                return None;
+            }
+            jsonwebtoken::DecodingKey::from_rsa_components(modulus, exponent).ok()
         }
         jsonwebtoken::Algorithm::ES256 => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")

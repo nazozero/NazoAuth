@@ -82,11 +82,14 @@ async fn load_or_create_keyset_prepublishes_next_local_key_before_rotation_deadl
 
     assert_eq!(keyset.active_kid, "active");
     let keys = payload["keys"].as_array().unwrap();
-    assert_eq!(keys.len(), 2);
-    let prepublished = keys.iter().find(|key| key["kid"] != "active").unwrap();
+    assert_eq!(keys.len(), 3);
+    let prepublished = keys
+        .iter()
+        .find(|key| key["kid"] != "active" && key["alg"] == "RS256")
+        .unwrap();
     assert_eq!(prepublished["alg"], "RS256");
     assert!(prepublished["file"].as_str().unwrap().starts_with("rs256-"));
-    assert_eq!(keyset.verification_keys.len(), 2);
+    assert_eq!(keyset.verification_keys.len(), 3);
 }
 
 #[tokio::test]
@@ -124,7 +127,7 @@ async fn load_or_create_keyset_records_missing_active_created_at_without_rotatin
 
     assert_eq!(keyset.active_kid, "active");
     assert!(payload["keys"][0]["created_at"].as_str().is_some());
-    assert_eq!(payload["keys"].as_array().unwrap().len(), 1);
+    assert_eq!(payload["keys"].as_array().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -170,7 +173,7 @@ async fn load_or_create_keyset_due_without_candidate_prepublishes_without_activa
 
     assert_eq!(keyset.active_kid, "active");
     assert_eq!(payload["active_kid"], "active");
-    assert_eq!(payload["keys"].as_array().unwrap().len(), 2);
+    assert_eq!(payload["keys"].as_array().unwrap().len(), 3);
     assert!(
         payload["keys"]
             .as_array()
@@ -252,7 +255,7 @@ async fn load_or_create_keyset_activates_prepublished_key_after_window_and_grace
         .with_timezone(&Utc);
     assert!(retire_at >= before_activation + chrono::Duration::seconds(600));
     assert!(retire_at <= Utc::now() + chrono::Duration::seconds(601));
-    assert_eq!(keyset.verification_keys.len(), 2);
+    assert_eq!(keyset.verification_keys.len(), 3);
 }
 
 #[tokio::test]
@@ -413,7 +416,7 @@ async fn load_or_create_keyset_does_not_activate_fresh_prepublished_key() {
 
     assert_eq!(keyset.active_kid, "active");
     assert_eq!(payload["active_kid"], "active");
-    assert_eq!(payload["keys"].as_array().unwrap().len(), 2);
+    assert_eq!(payload["keys"].as_array().unwrap().len(), 3);
     let old_active = payload["keys"]
         .as_array()
         .unwrap()

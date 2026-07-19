@@ -107,7 +107,7 @@ async fn dcr_replace_cannot_resurrect_a_concurrently_deleted_client() {
     let stale = client.clone();
     let put = tokio::spawn(async move {
         repository_for_put
-            .replace_registration(&stale, None, Some("rotated-token"))
+            .replace_registration(&stale, None, "registration-token", Some("rotated-token"))
             .await
     });
     tokio::task::yield_now().await;
@@ -174,8 +174,60 @@ async fn dynamic_profile_metadata_round_trips_through_postgres() {
     );
     assert!(!persisted.backchannel_user_code_parameter);
 
+    let mut replacement = client.clone();
+    replacement.registration.client_id = format!("replacement-{}", Uuid::now_v7());
+    let replaced = repository
+        .replace_registration(
+            &replacement,
+            None,
+            "registration-token",
+            Some("rotated-registration-token"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(replaced.client_id, client.client_id);
+
     repository
-        .deactivate(client.tenant_id, client.id)
+        .deactivate(client.tenant_id, client.id, "rotated-registration-token")
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn registration_token_rotation_rejects_a_stale_authenticated_token() {
+    let repository = test_repository();
+    let client = client(TenantContext::default_system());
+    repository
+        .insert(&client, None, Some("registration-token"))
+        .await
+        .unwrap();
+
+    repository
+        .rotate_credentials(
+            client.tenant_id,
+            client.id,
+            None,
+            "registration-token",
+            "rotated-token",
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        repository
+            .rotate_credentials(
+                client.tenant_id,
+                client.id,
+                None,
+                "registration-token",
+                "attacker-token",
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::NotFound
+    );
+
+    repository
+        .deactivate(client.tenant_id, client.id, "rotated-token")
         .await
         .unwrap();
 }

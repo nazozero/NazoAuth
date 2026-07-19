@@ -237,7 +237,7 @@ async fn credential_dataset_mutations_require_an_active_admin_and_are_audited_at
 }
 
 #[tokio::test]
-async fn openid4vc_state_is_tenant_bound_reusable_and_encrypted_at_rest() {
+async fn openid4vc_state_is_tenant_bound_single_use_and_encrypted_at_rest() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -309,7 +309,7 @@ async fn openid4vc_state_is_tenant_bound_reusable_and_encrypted_at_rest() {
             .consume_authorization_offer(&issuer_state_hash, subject_id, "wallet-2", consume_at)
             .await
             .unwrap()
-            .is_some()
+            .is_none()
     );
 
     let pre_authorized_code = format!("preauth-{}", Uuid::now_v7());
@@ -340,26 +340,42 @@ async fn openid4vc_state_is_tenant_bound_reusable_and_encrypted_at_rest() {
         )
         .await
         .unwrap();
+    let pre_authorized_consume_at = Utc::now();
     assert!(
         issuer
-            .consume_pre_authorized_offer(&pre_authorized_hash, None, "wallet-a", consume_at)
+            .consume_pre_authorized_offer(
+                &pre_authorized_hash,
+                None,
+                "wallet-a",
+                pre_authorized_consume_at,
+            )
             .await
             .unwrap()
             .is_some()
     );
     assert!(
         issuer
-            .consume_pre_authorized_offer(&pre_authorized_hash, None, "wallet-a", consume_at)
+            .consume_pre_authorized_offer(
+                &pre_authorized_hash,
+                None,
+                "wallet-a",
+                pre_authorized_consume_at,
+            )
             .await
             .unwrap()
             .is_none()
     );
     assert!(
         issuer
-            .consume_pre_authorized_offer(&pre_authorized_hash, None, "wallet-b", consume_at)
+            .consume_pre_authorized_offer(
+                &pre_authorized_hash,
+                None,
+                "wallet-b",
+                pre_authorized_consume_at,
+            )
             .await
             .unwrap()
-            .is_some()
+            .is_none()
     );
 
     let access = CredentialAccess {

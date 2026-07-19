@@ -39,6 +39,7 @@ use uuid::Uuid;
 use super::ciba::{CibaTokenContext, CibaTokenHandles};
 use super::client_auth::{
     ClientAuthConfig, TokenManagementClientAuthError, authenticate_client_with_dependencies,
+    consume_token_client_assertion_with_authorization_service,
     perform_dummy_client_secret_verification,
 };
 use super::issue::{TokenIssuanceConfig, TokenIssuanceContext};
@@ -780,6 +781,15 @@ pub(crate) async fn token_with_service(
                 Ok(parameters) => parameters,
                 Err(response) => return response,
             };
+            if let Err(error) = consume_token_client_assertion_with_authorization_service(
+                authorization_service,
+                &client,
+                client_assertion.as_ref(),
+            )
+            .await
+            {
+                return super::token_client_assertion_error(error);
+            }
             match endpoint
                 .pre_authorized_token(nazo_openid4vc_http_actix::PreAuthorizedTokenRequest {
                     pre_authorized_code,

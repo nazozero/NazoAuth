@@ -761,6 +761,19 @@ fn replay_fingerprint_changes_with_authenticated_request_context() {
 }
 
 #[test]
+fn replay_fingerprint_does_not_depend_on_malleable_signature_bytes() {
+    let (_, fields) = fixture();
+    let (_, mut alternate) = fixture();
+    alternate.signature = "sig1=:AQIDBA==:".into();
+
+    let first = parse(fields).unwrap();
+    let second = parse(alternate).unwrap();
+
+    assert_eq!(first.signature_base(), second.signature_base());
+    assert_eq!(first.replay_fingerprint(), second.replay_fingerprint());
+}
+
+#[test]
 fn preserves_custom_method_case_when_reconstructing_the_base() {
     let custom_headers = headers();
     let prepared = prepare_request(

@@ -536,6 +536,21 @@ async fn authorize_request_with_context(
         expires_at: now + Duration::seconds(context.config.auth_code_ttl_seconds as i64),
     };
     if normalized.prompt.none {
+        if !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
+            &payload.scopes,
+            &payload.userinfo_claims,
+        ) || !crate::domain::oidc_claims::user_claims_are_covered_by_scopes(
+            &payload.scopes,
+            &payload.id_token_claims,
+        ) {
+            return authorization_oauth_error_redirect(
+                context,
+                &redirect_uri,
+                "consent_required",
+                q,
+            )
+            .await;
+        }
         match user_grant_covers_requested_scopes_with_context(
             context,
             payload.user_id,
@@ -602,10 +617,15 @@ fn runtime_authorization_capability_error(
     context: &AuthorizationRequestContext<'_>,
     parameters: &HashMap<String, String>,
 ) -> Option<HttpResponse> {
-    if !crate::http::authorization::accepts_module(
+    if (!crate::http::authorization::accepts_module(
         context,
         nazo_runtime_modules::ModuleId::RequestObjects,
-    ) && parameters.contains_key("request")
+    ) || (!context.config.enable_request_object
+        && !context
+            .config
+            .profile
+            .requires_signed_authorization_request()))
+        && parameters.contains_key("request")
     {
         return Some(oauth_error(
             StatusCode::BAD_REQUEST,

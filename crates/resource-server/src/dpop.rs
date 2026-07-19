@@ -359,7 +359,7 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<Decod
             let e = key.get("e").and_then(Value::as_str)?;
             let modulus = URL_SAFE_NO_PAD.decode(n).ok()?;
             let exponent = URL_SAFE_NO_PAD.decode(e).ok()?;
-            if modulus.len() < 256 || exponent.is_empty() {
+            if !rsa_public_key_components_are_safe(&modulus, &exponent) {
                 return None;
             }
             DecodingKey::from_rsa_components(n, e).ok()
@@ -380,6 +380,20 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<Decod
             DecodingKey::from_ec_components(x, y).ok()
         }
     }
+}
+
+fn rsa_public_key_components_are_safe(modulus: &[u8], exponent: &[u8]) -> bool {
+    let Some((offset, first)) = modulus.iter().enumerate().find(|(_, byte)| **byte != 0) else {
+        return false;
+    };
+    let bits = (modulus.len() - offset - 1) * 8 + (u8::BITS - first.leading_zeros()) as usize;
+    let Some((offset, _)) = exponent.iter().enumerate().find(|(_, byte)| **byte != 0) else {
+        return false;
+    };
+    let exponent = &exponent[offset..];
+    (2_048..=8_192).contains(&bits)
+        && (exponent.len() > 1 || exponent[0] >= 3)
+        && exponent.last().is_some_and(|last| last & 1 == 1)
 }
 
 fn supported_dpop_algorithm(alg: Algorithm) -> Option<(&'static str, SupportedDpopAlgorithm)> {

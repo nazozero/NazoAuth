@@ -49,14 +49,33 @@ permissions:
 jobs:
   oidf-public-onboarding-material:
     runs-on: ubuntu-latest
+    environment: oidf-conformance
     timeout-minutes: 60
+    env:
+      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      TARGET_ISSUER: ${{ inputs.target_issuer }}
+      SUITE_BASE_URL: ${{ inputs.suite_base_url }}
+      TRUSTED_TARGET_ISSUER: ${{ vars.OIDF_TARGET_ISSUER }}
+      TRUSTED_SUITE_BASE_URL: ${{ vars.OIDF_CONFORMANCE_SERVER }}
     steps:
       - uses: actions/checkout@v7.0.0
         with:
-          ref: ${{ inputs.source_commit }}
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 0
 
-      - name: Verify exact source revision
-        run: test "$(git rev-parse HEAD)" = "${{ inputs.source_commit }}"
+      - name: Verify source revision is trusted
+        run: |
+          set -euo pipefail
+          git cat-file -e "$SOURCE_COMMIT^{commit}"
+          git merge-base --is-ancestor "$SOURCE_COMMIT" "origin/${{ github.event.repository.default_branch }}"
+
+      - name: Verify external targets are trusted
+        run: |
+          set -euo pipefail
+          test -n "$TRUSTED_TARGET_ISSUER"
+          test -n "$TRUSTED_SUITE_BASE_URL"
+          test "$TARGET_ISSUER" = "$TRUSTED_TARGET_ISSUER"
+          test "$SUITE_BASE_URL" = "$TRUSTED_SUITE_BASE_URL"
 
       - uses: actions/setup-python@v6.3.0
         with:
@@ -106,8 +125,8 @@ jobs:
             --mtls-material-file oidf-mtls-material.json \
             --derive-dynamic-oidcc-config \
             --derive-fapi-ciba-matrix-configs \
-            --ciba-notification-base-url "${{ inputs.suite_base_url }}" \
-            --target-issuer "${{ inputs.target_issuer }}" \
+            --ciba-notification-base-url "$SUITE_BASE_URL" \
+            --target-issuer "$TARGET_ISSUER" \
             --output oidf-plan-configs.json
           test -n "$OPENID4VC_OIDF_BASE_CONFIG_JSON"
           test -n "$OPENID4VC_OIDF_MTLS_CONFIG_JSON"
@@ -122,23 +141,23 @@ jobs:
             --mtls-config-json-file runtime/openid4vc/mtls.json \
             --driver-config-json-file runtime/openid4vc/driver.json \
             --credential-datasets-json-file tests/contracts/openid4vc-conformance-datasets.json \
-            --conformance-server "${{ inputs.suite_base_url }}" \
-            --target-origin "${{ inputs.target_issuer }}" \
+            --conformance-server "$SUITE_BASE_URL" \
+            --target-origin "$TARGET_ISSUER" \
             --onboarding-profile official \
             --output-dir runtime/openid4vc/materialized
           python scripts/export_oidf_public_onboarding_material.py \
             --config-json-file oidf-plan-configs.json \
             --config-json-file runtime/openid4vc/materialized/openid4vc-plan-configs.json \
             --output-dir oidf-public-onboarding-material \
-            --source-commit "$GITHUB_SHA" \
-            --target-issuer "${{ inputs.target_issuer }}" \
-            --suite-base-url "${{ inputs.suite_base_url }}" \
+            --source-commit "$SOURCE_COMMIT" \
+            --target-issuer "$TARGET_ISSUER" \
+            --suite-base-url "$SUITE_BASE_URL" \
             --onboarding-profile official
           python scripts/oidf_onboarding_bundle.py verify \
             --artifact-directory oidf-public-onboarding-material \
-            --expected-source-commit "$GITHUB_SHA" \
-            --expected-target-issuer "${{ inputs.target_issuer }}" \
-            --expected-suite-base-url "${{ inputs.suite_base_url }}" \
+            --expected-source-commit "$SOURCE_COMMIT" \
+            --expected-target-issuer "$TARGET_ISSUER" \
+            --expected-suite-base-url "$SUITE_BASE_URL" \
             --expected-onboarding-profile official
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}

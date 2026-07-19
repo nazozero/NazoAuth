@@ -15,6 +15,7 @@ pub type DynamicRegistrationFuture<'a, T> =
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum DynamicRegistrationDependencyError {
     Unavailable,
+    StaleCredentials,
 }
 
 /// Persistence boundary for RFC 7591 registration and RFC 7592 client management.
@@ -46,17 +47,24 @@ pub trait DynamicRegistrationClientStore: Send + Sync {
         tenant_id: Uuid,
         client_id: Uuid,
         client_secret_hash: Option<&'a str>,
-        registration_access_token_hash: &'a str,
+        expected_registration_access_token_hash: &'a str,
+        new_registration_access_token_hash: &'a str,
     ) -> DynamicRegistrationFuture<'a, OAuthClient>;
 
     fn replace_registration<'a>(
         &'a self,
         client: &'a OAuthClient,
         client_secret_hash: Option<&'a str>,
-        registration_access_token_hash: Option<&'a str>,
+        expected_registration_access_token_hash: &'a str,
+        new_registration_access_token_hash: Option<&'a str>,
     ) -> DynamicRegistrationFuture<'a, OAuthClient>;
 
-    fn deactivate(&self, tenant_id: Uuid, client_id: Uuid) -> DynamicRegistrationFuture<'_, bool>;
+    fn deactivate<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        expected_registration_access_token_hash: &'a str,
+    ) -> DynamicRegistrationFuture<'a, bool>;
 }
 
 /// Secret-material operations kept outside protocol and transport code.

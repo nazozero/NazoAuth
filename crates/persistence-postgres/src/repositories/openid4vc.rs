@@ -444,7 +444,7 @@ impl CredentialStorePort for Openid4vciRepository {
                 let row = sql_query(
                     "SELECT id,tenant_id,subject_id,credential_configuration_ids,tx_code_hash,expires_at \
                      FROM openid4vci_offers WHERE pre_authorized_code_hash = $1 \
-                       AND expires_at > $2 FOR UPDATE",
+                       AND consumed_at IS NULL AND expires_at > $2 FOR UPDATE",
                 )
                 .bind::<sql_types::Text, _>(code_hash)
                 .bind::<sql_types::Timestamptz, _>(now)
@@ -456,17 +456,15 @@ impl CredentialStorePort for Openid4vciRepository {
                 let Some(subject_id) = row.subject_id else { return Ok(None); };
                 let configuration_ids = serde_json::from_value(row.credential_configuration_ids)
                     .map_err(decode_error)?;
-                let inserted = sql_query(
-                    "INSERT INTO openid4vci_pre_authorized_code_consumptions \
-                        (offer_id, client_id, consumed_at) VALUES ($1, $2, $3) \
-                     ON CONFLICT (offer_id, client_id) DO NOTHING",
+                let consumed = sql_query(
+                    "UPDATE openid4vci_offers SET consumed_at = $2 \
+                     WHERE id = $1 AND consumed_at IS NULL",
                 )
                 .bind::<sql_types::Uuid, _>(row.id)
-                .bind::<sql_types::Text, _>(client_id)
                 .bind::<sql_types::Timestamptz, _>(now)
                 .execute(connection)
                 .await?;
-                if inserted == 0 {
+                if consumed != 1 {
                     return Ok(None);
                 }
                 Ok(Some(CredentialAuthorization {
@@ -715,7 +713,7 @@ impl AuthorizationOfferPort for Openid4vciRepository {
                 .transaction::<Option<CredentialAuthorization>, diesel::result::Error, _>(
                     async move |connection| {
                         let row = sql_query(
-                            "SELECT tenant_id,credential_configuration_ids,expires_at \
+                            "SELECT id,tenant_id,credential_configuration_ids,expires_at \
                              FROM openid4vci_offers WHERE issuer_state_hash = $1 \
                                AND subject_id = $2 AND consumed_at IS NULL AND expires_at > $3 FOR UPDATE",
                         )
@@ -726,6 +724,17 @@ impl AuthorizationOfferPort for Openid4vciRepository {
                         .await
                         .optional()?;
                         let Some(row) = row else { return Ok(None); };
+                        let consumed = sql_query(
+                            "UPDATE openid4vci_offers SET consumed_at = $2 \
+                             WHERE id = $1 AND consumed_at IS NULL",
+                        )
+                        .bind::<sql_types::Uuid, _>(row.id)
+                        .bind::<sql_types::Timestamptz, _>(now)
+                        .execute(connection)
+                        .await?;
+                        if consumed != 1 {
+                            return Ok(None);
+                        }
                         let configuration_ids = serde_json::from_value(row.credential_configuration_ids)
                             .map_err(decode_error)?;
                         Ok(Some(CredentialAuthorization {
@@ -995,6 +1004,8 @@ struct PreAuthorizedOfferRow {
 
 #[derive(QueryableByName)]
 struct AuthorizationOfferRow {
+    #[diesel(sql_type = sql_types::Uuid)]
+    id: Uuid,
     #[diesel(sql_type = sql_types::Uuid)]
     tenant_id: Uuid,
     #[diesel(sql_type = sql_types::Jsonb)]

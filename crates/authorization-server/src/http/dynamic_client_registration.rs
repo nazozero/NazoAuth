@@ -145,10 +145,11 @@ pub(crate) async fn client_configuration_get(
         return response;
     }
 
-    let current = match authenticate_registration_client(&handles, &req, &path.into_inner()).await {
-        Ok(client) => client,
-        Err(response) => return response,
-    };
+    let (current, authenticated_token_hash) =
+        match authenticate_registration_client(&handles, &req, &path.into_inner()).await {
+            Ok(authenticated) => authenticated,
+            Err(response) => return response,
+        };
     let response_types = response_types_from_client(&current);
     let registration_access_token = random_urlsafe_token();
     let (issued_secret, secret_hash) = issue_client_secret(
@@ -159,6 +160,7 @@ pub(crate) async fn client_configuration_get(
     let client = match rotate_client_management_credentials(
         &handles,
         &current,
+        &authenticated_token_hash,
         blake3_hex(&registration_access_token),
         secret_hash,
     )
@@ -196,10 +198,11 @@ pub(crate) async fn client_configuration_put(
         return response;
     }
 
-    let current = match authenticate_registration_client(&handles, &req, &path.into_inner()).await {
-        Ok(client) => client,
-        Err(response) => return response,
-    };
+    let (current, authenticated_token_hash) =
+        match authenticate_registration_client(&handles, &req, &path.into_inner()).await {
+            Ok(authenticated) => authenticated,
+            Err(response) => return response,
+        };
     let repository = &handles.clients;
     let submitted_secret = payload.get("client_secret").and_then(Value::as_str);
     let has_secret = match repository.has_client_secret(current.id).await {
@@ -273,7 +276,14 @@ pub(crate) async fn client_configuration_put(
         Err(error) => return insert_error_to_management_response(error),
     };
     let issued_secret = prepared.issued_secret.clone();
-    let client = match replace_client_configuration(&handles, &current, &prepared).await {
+    let client = match replace_client_configuration(
+        &handles,
+        &current,
+        &authenticated_token_hash,
+        &prepared,
+    )
+    .await
+    {
         Ok(client) => client,
         Err(response) => return response,
     };
@@ -305,11 +315,14 @@ pub(crate) async fn client_configuration_delete(
         return response;
     }
 
-    let current = match authenticate_registration_client(&handles, &req, &path.into_inner()).await {
-        Ok(client) => client,
-        Err(response) => return response,
-    };
-    if let Err(response) = deactivate_dynamic_client(&handles, &current).await {
+    let (current, authenticated_token_hash) =
+        match authenticate_registration_client(&handles, &req, &path.into_inner()).await {
+            Ok(authenticated) => authenticated,
+            Err(response) => return response,
+        };
+    if let Err(response) =
+        deactivate_dynamic_client(&handles, &current, &authenticated_token_hash).await
+    {
         return response;
     }
     audit_dynamic_client_event("dynamic_client_deleted", &current, &req, &handles);
@@ -406,7 +419,7 @@ async fn authenticate_registration_client(
     handles: &DynamicRegistrationHandles,
     req: &HttpRequest,
     client_id: &str,
-) -> Result<ClientRow, HttpResponse> {
+) -> Result<(ClientRow, String), HttpResponse> {
     let Some(token) = req
         .headers()
         .get(header::AUTHORIZATION)
@@ -417,9 +430,10 @@ async fn authenticate_registration_client(
     else {
         return Err(registration_access_denied());
     };
+    let token_hash = blake3_hex(token);
     let found = handles
         .clients
-        .by_registration_access_token(DEFAULT_TENANT_ID, client_id, &blake3_hex(token))
+        .by_registration_access_token(DEFAULT_TENANT_ID, client_id, &token_hash)
         .await
         .map_err(|error| {
             tracing::warn!(%error, "failed to query dynamic client configuration credentials");
@@ -432,7 +446,7 @@ async fn authenticate_registration_client(
     let Some(client) = found else {
         return Err(registration_access_denied());
     };
-    Ok(client)
+    Ok((client, token_hash))
 }
 
 fn registration_access_denied() -> HttpResponse {
@@ -446,29 +460,27 @@ fn registration_access_denied() -> HttpResponse {
 async fn rotate_client_management_credentials(
     handles: &DynamicRegistrationHandles,
     current: &ClientRow,
-    registration_access_token_hash: String,
+    expected_registration_access_token_hash: &str,
+    new_registration_access_token_hash: String,
     client_secret_hash: Option<String>,
 ) -> Result<ClientRow, HttpResponse> {
-    handles.clients.rotate_credentials(
-        current.tenant_id,
-        current.id,
-        client_secret_hash.as_deref(),
-        &registration_access_token_hash,
-    )
-    .await
-    .map_err(|error| {
-        tracing::warn!(%error, client_id = %current.client_id, "failed to rotate dynamic client management credentials");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Client configuration update failed.",
+    handles
+        .clients
+        .rotate_credentials(
+            current.tenant_id,
+            current.id,
+            client_secret_hash.as_deref(),
+            expected_registration_access_token_hash,
+            &new_registration_access_token_hash,
         )
-    })
+        .await
+        .map_err(|error| dynamic_registration_mutation_error(error, current, "rotate credentials"))
 }
 
 async fn replace_client_configuration(
     handles: &DynamicRegistrationHandles,
     current: &ClientRow,
+    expected_registration_access_token_hash: &str,
     prepared: &PreparedClientRegistration,
 ) -> Result<ClientRow, HttpResponse> {
     let updated = ClientRow {
@@ -480,38 +492,56 @@ async fn replace_client_configuration(
         require_mtls_bound_tokens: current.require_mtls_bound_tokens,
         is_active: current.is_active,
     };
-    handles.clients.replace_registration(
-        &updated,
-        prepared.client_secret_hash.as_deref(),
-        prepared.registration_access_token_blake3.as_deref(),
-    )
-    .await
-    .map_err(|error| {
-        tracing::warn!(%error, client_id = %current.client_id, "failed to replace dynamic client configuration");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Client configuration update failed.",
+    handles
+        .clients
+        .replace_registration(
+            &updated,
+            prepared.client_secret_hash.as_deref(),
+            expected_registration_access_token_hash,
+            prepared.registration_access_token_blake3.as_deref(),
         )
-    })
+        .await
+        .map_err(|error| {
+            dynamic_registration_mutation_error(error, current, "replace configuration")
+        })
 }
 
 async fn deactivate_dynamic_client(
     handles: &DynamicRegistrationHandles,
     current: &ClientRow,
+    expected_registration_access_token_hash: &str,
 ) -> Result<(), HttpResponse> {
-    handles.clients.deactivate(current.tenant_id, current.id)
-    .await
-    .and_then(|changed| changed.then_some(()).ok_or(nazo_identity::ports::RepositoryError::NotFound))
-    .map_err(|error| {
-        tracing::warn!(%error, client_id = %current.client_id, "failed to delete dynamic client");
-        oauth_error(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "Client deletion failed.",
+    handles
+        .clients
+        .deactivate(
+            current.tenant_id,
+            current.id,
+            expected_registration_access_token_hash,
         )
-    })?;
+        .await
+        .and_then(|changed| {
+            changed
+                .then_some(())
+                .ok_or(nazo_identity::ports::RepositoryError::NotFound)
+        })
+        .map_err(|error| dynamic_registration_mutation_error(error, current, "delete client"))?;
     Ok(())
+}
+
+fn dynamic_registration_mutation_error(
+    error: nazo_identity::ports::RepositoryError,
+    current: &ClientRow,
+    operation: &'static str,
+) -> HttpResponse {
+    if error == nazo_identity::ports::RepositoryError::NotFound {
+        return registration_access_denied();
+    }
+    tracing::warn!(%error, client_id = %current.client_id, operation, "dynamic client mutation failed");
+    oauth_error(
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        "Client configuration update failed.",
+    )
 }
 
 fn insert_error_to_management_response(error: AdminClientError) -> HttpResponse {

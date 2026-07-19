@@ -413,24 +413,23 @@ pub fn token_exchange_issuance_binding(
         policy.require_dpop_bound_tokens,
         policy.require_mtls_bound_tokens,
     );
-    let applied = match subject_binding {
-        TokenExchangeSenderBinding::Dpop(jkt) => apply_sender_constraint(
-            sender_policy,
-            PresentedSenderConstraint {
-                dpop_jkt: Some(jkt),
-                mtls_x5t_s256: None,
-            },
-        ),
-        TokenExchangeSenderBinding::MutualTls(thumbprint) => apply_sender_constraint(
-            sender_policy,
-            PresentedSenderConstraint {
-                dpop_jkt: None,
-                mtls_x5t_s256: Some(thumbprint),
-            },
-        ),
-        TokenExchangeSenderBinding::Bearer => apply_sender_constraint(sender_policy, presented),
+    match subject_binding {
+        TokenExchangeSenderBinding::Dpop(expected)
+            if presented.dpop_jkt != Some(expected.as_str())
+                || presented.mtls_x5t_s256.is_some() =>
+        {
+            return Err(TokenExchangeError::InvalidGrant);
+        }
+        TokenExchangeSenderBinding::MutualTls(expected)
+            if presented.mtls_x5t_s256 != Some(expected.as_str())
+                || presented.dpop_jkt.is_some() =>
+        {
+            return Err(TokenExchangeError::InvalidGrant);
+        }
+        _ => {}
     }
-    .map_err(|_| TokenExchangeError::InvalidGrant)?;
+    let applied = apply_sender_constraint(sender_policy, presented)
+        .map_err(|_| TokenExchangeError::InvalidGrant)?;
     Ok(match applied {
         AppliedSenderConstraint::Bearer => TokenExchangeSenderBinding::Bearer,
         AppliedSenderConstraint::Dpop(jkt) => TokenExchangeSenderBinding::Dpop(jkt.to_owned()),
@@ -624,6 +623,17 @@ mod tests {
                 &subject.sender_binding,
                 PresentedSenderConstraint {
                     dpop_jkt: None,
+                    mtls_x5t_s256: None,
+                },
+                policy,
+            ),
+            Err(TokenExchangeError::InvalidGrant)
+        );
+        assert_eq!(
+            token_exchange_issuance_binding(
+                &subject.sender_binding,
+                PresentedSenderConstraint {
+                    dpop_jkt: Some("subject-jkt"),
                     mtls_x5t_s256: None,
                 },
                 policy,

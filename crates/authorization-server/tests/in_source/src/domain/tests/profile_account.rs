@@ -81,7 +81,11 @@ impl ProfileRepositoryPort for StoredProfile {
 struct FixedGrantSummary(i64);
 
 impl GrantSummaryRepositoryPort for FixedGrantSummary {
-    fn authorized_client_count(&self, _user_id: Uuid) -> RepositoryFuture<'_, i64> {
+    fn authorized_client_count(
+        &self,
+        _tenant_id: TenantId,
+        _user_id: Uuid,
+    ) -> RepositoryFuture<'_, i64> {
         let count = self.0;
         Box::pin(async move { Ok(count) })
     }

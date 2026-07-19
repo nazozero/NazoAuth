@@ -24,8 +24,8 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use hmac::{Hmac, KeyInit, Mac};
 use nazo_auth::{
-    Claims, ClientAssertionVerificationInput, unverified_client_assertion_client_id,
-    verify_private_key_jwt,
+    Claims, ClientAssertionVerificationInput, rsa_public_key_components_are_safe,
+    unverified_client_assertion_client_id, verify_private_key_jwt,
 };
 use serde_json::{Value, json};
 use sha2::Digest;
@@ -581,7 +581,7 @@ pub(crate) fn jwt_decoding_key_from_jwk(
             let e = key.get("e").and_then(Value::as_str)?;
             let modulus = URL_SAFE_NO_PAD.decode(n).ok()?;
             let exponent = URL_SAFE_NO_PAD.decode(e).ok()?;
-            if modulus.len() < 256 || exponent.is_empty() {
+            if !rsa_public_key_components_are_safe(&modulus, &exponent) {
                 return None;
             }
             jsonwebtoken::DecodingKey::from_rsa_components(n, e).ok()

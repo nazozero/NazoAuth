@@ -97,6 +97,18 @@ fn block_ipv6_mapped_unspecified_without_ipv4_text() {
 }
 
 #[test]
+fn ipv4_mapped_ipv6_uses_the_ipv4_network_policy() {
+    assert!(is_blocked_ip("::ffff:127.0.0.1".parse::<IpAddr>().unwrap()));
+    assert!(is_blocked_ip("::ffff:10.0.0.1".parse::<IpAddr>().unwrap()));
+    assert!(is_blocked_ip(
+        "::ffff:169.254.169.254".parse::<IpAddr>().unwrap()
+    ));
+    assert!(!is_blocked_ip(
+        "::ffff:93.184.216.34".parse::<IpAddr>().unwrap()
+    ));
+}
+
+#[test]
 fn block_literal_private_hosts() {
     assert!(is_blocked_host("0.0.0.0"));
     assert!(is_blocked_host("::1"));

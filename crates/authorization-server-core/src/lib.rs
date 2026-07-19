@@ -114,6 +114,9 @@ pub use client_jwe_policy::{
     SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS, client_jwe_encryption_key_matches_alg,
     client_jwe_key_management_from_name,
 };
+pub use client_jwe_policy::{
+    RSA_PUBLIC_KEY_MAX_BITS, RSA_PUBLIC_KEY_MIN_BITS, rsa_public_key_components_are_safe,
+};
 pub use client_registration::{
     ApprovedClient, ClientPresentationMetadata, OAuthClient, ValidatedClientRegistration,
 };

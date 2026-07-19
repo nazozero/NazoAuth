@@ -394,7 +394,7 @@ def check_fapi_ciba_boundaries() -> None:
         raise SystemExit("CIBA ping delivery must offer TLS 1.3")
     if ".use_rustls_tls()" not in tls_policy:
         raise SystemExit("CIBA ping delivery must use the Rustls TLS backend")
-    if 'std::env::var_os("SSL_CERT_FILE")' not in tls_policy:
+    if 'std::env::var_os("CIBA_PING_TLS_TRUST_BUNDLE")' not in tls_policy:
         raise SystemExit("CIBA ping delivery must explicitly load its configured trust bundle")
     tls_policy_test = (
         ROOT

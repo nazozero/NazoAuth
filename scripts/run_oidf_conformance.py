@@ -67,6 +67,7 @@ NAZO_AUTHORIZATION_ERROR_RESPONSE_PATTERN = (
     r"|invalid_request|invalid_request_object|access_denied|login_required|server_error)"
 )
 OIDF_BAD_FINAL_RESULTS = {"FAILED", "INTERRUPTED", "WARNING"}
+OIDF_UNACCEPTABLE_FINAL_RESULTS = OIDF_BAD_FINAL_RESULTS | {"SKIPPED"}
 OIDF_BAD_STATUS_VALUES = {"FAILED", "INTERRUPTED"}
 OIDF_BAD_LOG_RESULTS = {"FAILURE", "WARNING"}
 OIDF_LOG_CONTEXT_SOURCES = {
@@ -101,13 +102,20 @@ OIDF_LOG_CONTEXT_FIELDS = (
 )
 OIDF_SENSITIVE_LOG_FIELDS = {
     "authorization",
+    "proxy-authorization",
+    "cookie",
+    "set-cookie",
     "access_token",
     "refresh_token",
     "id_token",
     "token",
     "code",
+    "device_code",
+    "user_code",
+    "auth_req_id",
     "password",
     "client_secret",
+    "client_assertion",
     "request_uri",
 }
 OIDF_ALLOWED_REVIEW_CONTEXTS_BY_CONFIG = {
@@ -143,6 +151,10 @@ OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS = max(
 )
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 HTTP_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]+(?::\d+)?(?:/[^\s\"'<>)]*)?")
+OPENID4VC_EXTERNAL_URL_FIELDS = {
+    ("vci", "client_attester_issuer"),
+    ("client", "request_object_trust_anchor_uri"),
+}
 NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
 NAZO_LOGIN_PASSWORD_ID = "nazo-login-password"
 NAZO_LOGIN_SUBMIT_ID = "nazo-login-submit"
@@ -404,8 +416,8 @@ def nazo_login_observation_commands(config_value: dict[str, object]) -> list[lis
 
 def normalized_origin(value: str) -> str:
     parsed = urlparse(value.strip().rstrip("/"))
-    if parsed.scheme not in {"https", "http"} or not parsed.netloc or parsed.path:
-        fail(f"target issuer must be an origin URL without a path: {value}")
+    if parsed.scheme != "https" or not parsed.netloc or parsed.path:
+        fail(f"target issuer must be an HTTPS origin without a path: {value}")
     return f"{parsed.scheme}://{parsed.netloc}"
 
 
@@ -422,7 +434,7 @@ def assert_only_target_issuer_urls(value: object, config_name: str, target_issue
             url = match.group(0)
             parsed = urlparse(url)
             origin = f"{parsed.scheme}://{parsed.netloc}"
-            if "/test/" in parsed.path or parsed.netloc == urlparse(target_origin).netloc:
+            if "/test/" in parsed.path or origin == target_origin:
                 continue
             if origin != target_origin:
                 fail(
@@ -435,17 +447,35 @@ def is_openid4vc_config(config_name: str) -> bool:
     return config_name.startswith("openid4vc-")
 
 
-def http_urls_in_value(value: object) -> list[str]:
-    urls: list[str] = []
+def http_urls_in_value(
+    value: object,
+    path: tuple[str, ...] = (),
+) -> list[tuple[tuple[str, ...], str]]:
+    urls: list[tuple[tuple[str, ...], str]] = []
     if isinstance(value, list):
-        for item in value:
-            urls.extend(http_urls_in_value(item))
+        for index, item in enumerate(value):
+            urls.extend(http_urls_in_value(item, (*path, str(index))))
     elif isinstance(value, dict):
-        for item in value.values():
-            urls.extend(http_urls_in_value(item))
+        for key, item in value.items():
+            urls.extend(http_urls_in_value(item, (*path, str(key))))
     elif isinstance(value, str):
-        urls.extend(match.group(0) for match in HTTP_URL_PATTERN.finditer(value))
+        urls.extend((path, match.group(0)) for match in HTTP_URL_PATTERN.finditer(value))
     return urls
+
+
+def assert_public_https_url(url: str, config_name: str) -> None:
+    parsed = urlparse(url)
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not hostname:
+        fail(f"{config_name} contains non-HTTPS URL {url}")
+    try:
+        address = ipaddress.ip_address(hostname)
+    except ValueError:
+        if "." not in hostname or hostname == "localhost":
+            fail(f"{config_name} contains non-public URL {url}")
+    else:
+        if not address.is_global:
+            fail(f"{config_name} contains non-public URL {url}")
 
 
 def assert_openid4vc_target_boundaries(
@@ -469,19 +499,17 @@ def assert_openid4vc_target_boundaries(
         if not isinstance(client, dict) or client.get("client_id") != target_host:
             fail(f"{config_name} must bind verifier client_id to the operator-provided host")
 
-    for url in http_urls_in_value(config_value):
+    for field_path, url in http_urls_in_value(config_value):
         parsed = urlparse(url)
-        hostname = (parsed.hostname or "").lower()
-        try:
-            ipaddress.ip_address(hostname)
-            is_public_dns_name = False
-        except ValueError:
-            is_public_dns_name = "." in hostname and hostname != "localhost"
-        if not is_public_dns_name:
-            fail(
-                f"{config_name} contains local-only URL {url}; OpenID4VC conformance "
-                "must run against public black-box targets"
-            )
+        origin = f"{parsed.scheme}://{parsed.netloc}"
+        assert_public_https_url(url, config_name)
+        if origin == target_origin or "/test/" in parsed.path:
+            continue
+        if field_path[-2:] in OPENID4VC_EXTERNAL_URL_FIELDS:
+            continue
+        fail(
+            f"{config_name} contains URL {url} outside its explicit OpenID4VC target fields"
+        )
 
 
 def assert_config_target_boundaries(
@@ -1210,16 +1238,45 @@ def redact_url_query_and_fragment(value: str) -> str:
 
 
 def redact_log_text(value: str) -> str:
+    try:
+        structured = json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        structured = None
+    if isinstance(structured, (dict, list)):
+        return json.dumps(
+            redact_log_value("", structured), sort_keys=True, separators=(",", ":")
+        )
+
     redacted = re.sub(
         r"https?://[^\s\"'<>]+",
         lambda match: redact_url_query_and_fragment(match.group(0)),
         value,
     )
-    return re.sub(
-        r"(?i)\b(access_token|refresh_token|id_token|token|code|password|client_secret|request_uri|authorization)=([^&\s;]+)",
+    redacted = re.sub(
+        r"(?i)\b(access_token|refresh_token|id_token|token|code|device_code|user_code|auth_req_id|password|client_secret|client_assertion|request_uri|authorization)=([^&\s;]+)",
         lambda match: f"{match.group(1)}=<redacted>",
         redacted,
     )
+    return re.sub(
+        r"(?i)\b(authorization|proxy-authorization|cookie|set-cookie)\s*:\s*[^\s]+",
+        lambda match: f"{match.group(1)}: <redacted>",
+        redacted,
+    )
+
+
+def redact_log_value(key: str, value: object) -> object:
+    if key.lower() in OIDF_SENSITIVE_LOG_FIELDS:
+        return "<redacted>"
+    if isinstance(value, dict):
+        return {
+            str(child_key): redact_log_value(str(child_key), child_value)
+            for child_key, child_value in value.items()
+        }
+    if isinstance(value, list):
+        return [redact_log_value("", item) for item in value]
+    if isinstance(value, str):
+        return redact_log_text(value)
+    return value
 
 
 def module_name_without_variant(test_name: str) -> str:
@@ -1354,7 +1411,7 @@ def oidf_module_failure(
         return f"{test_name} {module_id} reported a structured error"
     if status in OIDF_BAD_STATUS_VALUES:
         return f"{test_name} {module_id} status {status}"
-    if result in OIDF_BAD_FINAL_RESULTS:
+    if result in OIDF_UNACCEPTABLE_FINAL_RESULTS:
         return f"{test_name} {module_id} result {result}"
     if result == "REVIEW" and not is_allowed_review_module(
         test_name,
@@ -1506,19 +1563,18 @@ def oidf_log_context_values(entry: dict[str, object]) -> list[tuple[str, object]
 
 
 def oidf_log_context_text(key: str, value: object) -> str:
-    if isinstance(value, (dict, list)):
-        text = json.dumps(value, sort_keys=True, separators=(",", ":"))
-    elif isinstance(value, (str, int, float, bool)):
-        text = str(value)
+    sanitized = redact_log_value(key, value)
+    if isinstance(sanitized, (dict, list)):
+        text = json.dumps(sanitized, sort_keys=True, separators=(",", ":"))
+    elif isinstance(sanitized, (str, int, float, bool)):
+        text = str(sanitized)
     else:
         return ""
 
     text = text.replace("\n", " ").strip()
     if not text:
         return ""
-    if key.lower() in OIDF_SENSITIVE_LOG_FIELDS:
-        return "<redacted>"
-    return redact_log_text(text)
+    return text
 
 
 def oidf_failure_with_log_context(module_id: str, failure: str, logs: object) -> str:
