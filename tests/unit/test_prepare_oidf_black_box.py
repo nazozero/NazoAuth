@@ -232,6 +232,45 @@ class PrepareOidfBlackBoxTests(unittest.TestCase):
                         "/ciba-notification-endpoint",
                     )
 
+    def test_tls_client_auth_onboarding_narrows_ca_trust_with_leaf_pin(self):
+        module = load_setup_module()
+        config = {
+            "alias": "fapi-mtls",
+            "nazo": {
+                "client_auth_type": "mtls",
+                "sender_constrain": "mtls",
+                "fapi_profile": "plain_fapi",
+            },
+            "client": {"client_id": "mtls-client-1", "scope": "openid", "jwks": {}},
+            "client2": {"client_id": "mtls-client-2", "scope": "openid", "jwks": {}},
+            "mtls": {"cert": "certificate-1", "ca": "ca-certificate"},
+            "mtls2": {"cert": "certificate-2", "ca": "ca-certificate"},
+        }
+
+        with (
+            mock.patch.object(module, "public_jwks", return_value={"keys": []}),
+            mock.patch.object(module, "certificate_subject_dn", return_value="CN=client"),
+            mock.patch.object(
+                module,
+                "certificate_sha256",
+                side_effect=("1" * 64, "2" * 64),
+            ),
+        ):
+            clients = module.onboarding_clients({"oidf-fapi-mtls.json": config})
+
+        by_id = {item["logical_client_id"]: item for item in clients}
+        self.assertEqual(
+            by_id["mtls-client-1"]["request"]["tls_client_auth_cert_sha256"],
+            "1" * 64,
+        )
+        self.assertEqual(
+            by_id["mtls-client-2"]["request"]["tls_client_auth_cert_sha256"],
+            "2" * 64,
+        )
+        self.assertEqual(
+            by_id["mtls-client-1"]["mtls_trust_anchor_pem"], "ca-certificate"
+        )
+
     def test_plan_manifest_description_uses_the_actual_plan_count(self):
         module = load_setup_module()
         configs = {

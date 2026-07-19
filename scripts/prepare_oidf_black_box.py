@@ -13,6 +13,7 @@ import hashlib
 import ipaddress
 import re
 import secrets
+import ssl
 import urllib.parse
 from pathlib import Path
 
@@ -434,6 +435,14 @@ def certificate_subject_dn(certificate_pem: str) -> str:
     return subject
 
 
+def certificate_sha256(certificate_pem: str) -> str:
+    try:
+        der = ssl.PEM_cert_to_DER_cert(certificate_pem)
+    except ValueError as error:
+        raise RuntimeError(f"OIDF mTLS client certificate is malformed: {error}") from error
+    return hashlib.sha256(der).hexdigest()
+
+
 def base_client_request(
     *,
     name: str,
@@ -601,6 +610,7 @@ def onboarding_clients(configs: dict[str, dict[str, object]]) -> list[dict[str, 
             ca_pem = str(mtls["ca"])
             if auth_method == "tls_client_auth":
                 request["tls_client_auth_subject_dn"] = certificate_subject_dn(certificate_pem)
+                request["tls_client_auth_cert_sha256"] = certificate_sha256(certificate_pem)
             add(
                 logical_client_id,
                 request,
