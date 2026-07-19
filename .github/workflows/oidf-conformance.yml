@@ -2,6 +2,19 @@ name: oidf-conformance
 
 on:
   workflow_dispatch:
+    inputs:
+      deployed_sha:
+        description: "Exact deployed repository commit to test."
+        required: true
+        type: string
+      target_issuer:
+        description: "Public HTTPS issuer under test. No repository default is provided."
+        required: true
+        type: string
+      plan_expression:
+        description: "One official run-test-plan.py plan expression and configuration filename."
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -13,7 +26,8 @@ jobs:
     env:
       CONFORMANCE_SERVER: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
       OIDF_REF: ${{ vars.OIDF_CONFORMANCE_SUITE_REF || 'dee9a25160e789f0f80517674693ef7989ab9fa1' }}
-      PLAN_EXPRESSION: ${{ vars.OIDF_PLAN_EXPRESSION || '' }}
+      PLAN_EXPRESSION: ${{ inputs.plan_expression }}
+      OIDF_TARGET_ISSUER: ${{ inputs.target_issuer }}
       EXPORT_RESULTS: ${{ vars.OIDF_EXPORT_RESULTS || 'false' }}
       VERBOSE: ${{ vars.OIDF_VERBOSE || 'true' }}
       DISABLE_SSL_VERIFY: ${{ vars.OIDF_DISABLE_SSL_VERIFY || 'false' }}
@@ -24,6 +38,11 @@ jobs:
       PYTHONUNBUFFERED: "1"
     steps:
       - uses: actions/checkout@v7.0.0
+        with:
+          ref: ${{ inputs.deployed_sha }}
+
+      - name: Verify exact deployed source revision
+        run: test "$(git rev-parse HEAD)" = "${{ inputs.deployed_sha }}"
 
       - uses: actions/setup-python@v6.3.0
         with:
@@ -37,7 +56,7 @@ jobs:
           git -C oidf-conformance-suite fetch --depth 1 origin "$OIDF_REF"
           git -C oidf-conformance-suite checkout --detach FETCH_HEAD
           diff -u requirements/oidf-conformance.in oidf-conformance-suite/scripts/requirements.txt
-          python scripts/apply_oidf_runner_patch.py --suite-dir oidf-conformance-suite
+          test -z "$(git -C oidf-conformance-suite status --porcelain --untracked-files=no)"
 
       - name: Install official runner dependencies
         run: python -m pip install --require-hashes -r requirements/oidf-conformance.txt
@@ -90,6 +109,7 @@ jobs:
             --conformance-server "$CONFORMANCE_SERVER"
             --plan-expression "$PLAN_EXPRESSION"
             --config-json-file oidf-plan-configs.json
+            --target-issuer "$OIDF_TARGET_ISSUER"
             --timeout-seconds "$RUN_TIMEOUT_SECONDS"
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
           )
@@ -112,6 +132,14 @@ jobs:
         env:
           OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
           OIDF_PLAN_SET_JSON: ${{ vars.OIDF_PLAN_SET_JSON }}
+
+      - name: Verify official suite remained pristine
+        if: always()
+        run: |
+          test ! -d oidf-conformance-suite/.git || {
+            test "$(git -C oidf-conformance-suite rev-parse HEAD)" = "$OIDF_REF"
+            test -z "$(git -C oidf-conformance-suite status --porcelain --untracked-files=no)"
+          }
 
       - name: Upload OIDF result archive
         if: always() && vars.OIDF_EXPORT_RESULTS != 'false'

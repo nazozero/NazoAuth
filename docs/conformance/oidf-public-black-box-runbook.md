@@ -5,6 +5,26 @@ system under test is the normal public production deployment. Conformance tools
 must not receive database access, private service-network addresses, privileged
 runtime mounts, or alternate protocol behavior.
 
+## Reproduction in four steps
+
+The security boundary makes production onboarding unavoidable, but the operator
+path is fixed and short:
+
+1. Deploy an exact repository commit and record its full SHA.
+2. Run `oidf-conformance-full.yml` with `deployed_sha`, `target_issuer`, and
+   `onboarding_material_only=true`; download and verify the generated bundle.
+3. Apply the bundle through `apply_public_conformance_onboarding.py` using a
+   normal applicant and a distinct approver. No database seed or private network
+   access is permitted.
+4. Run the same workflow with `onboarding_material_only=false`. The workflow
+   checks out the deployed SHA, clones the exact official suite revision, and
+   refuses tracked modifications before running the public black-box matrix.
+
+The required repository Secret names and their rotation rules are listed in
+[`GitHub Actions secrets`](../operations/github-actions-secrets.md). Each fork
+supplies its own issuer, accounts, client material, and suite token; this
+repository provides no shared deployment target.
+
 ## Standards and control-plane boundary
 
 | Surface | Authority | Required boundary |
@@ -97,6 +117,7 @@ material, export it without creating suite plans:
 ```sh
 gh workflow run oidf-conformance-full.yml \
   --ref <exact-branch> \
+  -f deployed_sha=<deployed-sha> \
   -f target_issuer=https://issuer.example \
   -f onboarding_material_only=true
 ```

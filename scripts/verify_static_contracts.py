@@ -278,7 +278,7 @@ def check_rfc9967_test_boundaries() -> None:
     required_test_files = [
         ROOT / "crates" / "scim-events" / "tests" / "domain_contract.rs",
         ROOT / "crates" / "http-actix" / "tests" / "scim_transport.rs",
-        ROOT / "scripts" / "test_rfc9967_scim_set_e2e_source_policy.py",
+        ROOT / "tests" / "unit" / "test_rfc9967_scim_set_e2e_source_policy.py",
     ]
     missing = [path.relative_to(ROOT) for path in required_test_files if not path.is_file()]
     if missing:
@@ -307,7 +307,7 @@ def check_rfc9967_test_boundaries() -> None:
     required_workflow_fragments = (
         "ENABLE_SCIM_SECURITY_EVENTS: true",
         "python scripts/rfc9967_scim_set_e2e.py",
-        "python scripts/test_rfc9967_scim_set_e2e_source_policy.py",
+        "python tests/unit/test_rfc9967_scim_set_e2e_source_policy.py",
     )
     if any(fragment not in workflow for fragment in required_workflow_fragments):
         raise SystemExit("conformance-security workflow does not enforce the RFC 9967 matrix")

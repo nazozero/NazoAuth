@@ -9,12 +9,13 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent))
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "scripts"))
 
 from full_real_request_source_policy import RuntimeCaseEvidence, execute_case_registry
 
 
-SCRIPT = Path(__file__).with_name("full_real_request_e2e.py")
+SCRIPT = ROOT / "scripts" / "full_real_request_e2e.py"
 
 
 class SourcePolicyTests(unittest.TestCase):

@@ -9,7 +9,7 @@ on:
         type: string
       target_origin:
         description: Public HTTPS issuer origin to test
-        required: false
+        required: true
         type: string
 
 permissions:
@@ -26,10 +26,10 @@ jobs:
     env:
       OIDF_REF: dee9a25160e789f0f80517674693ef7989ab9fa1
       CONFORMANCE_SERVER: https://www.certification.openid.net
-      TARGET_ORIGIN: ${{ inputs.target_origin || vars.OPENID4VC_TARGET_ORIGIN }}
+      TARGET_ORIGIN: ${{ inputs.target_origin }}
       OIDF_CONFORMANCE_TOKEN: ${{ secrets.OIDF_CONFORMANCE_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.0
         with:
           ref: ${{ inputs.deployed_sha }}
 
@@ -37,7 +37,7 @@ jobs:
         shell: bash
         run: test "$(git rev-parse HEAD)" = "${{ inputs.deployed_sha }}"
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6.3.0
         with:
           python-version: "3.13"
 
@@ -50,7 +50,7 @@ jobs:
           git -C oidf-conformance-suite checkout --detach FETCH_HEAD
           test "$(git -C oidf-conformance-suite rev-parse HEAD)" = "$OIDF_REF"
           diff -u requirements/oidf-conformance.in oidf-conformance-suite/scripts/requirements.txt
-          python scripts/apply_oidf_runner_patch.py --suite-dir oidf-conformance-suite
+          test -z "$(git -C oidf-conformance-suite status --porcelain --untracked-files=no)"
 
       - name: Install pinned runner dependencies
         run: python -m pip install --require-hashes -r requirements/oidf-conformance.txt
@@ -65,7 +65,7 @@ jobs:
         run: |
           test -n "$OIDF_CONFORMANCE_TOKEN"
           test -n "$TARGET_ORIGIN" || {
-            echo "Repository workflows do not define a public OpenID4VC target default. Supply workflow_dispatch input target_origin or set vars.OPENID4VC_TARGET_ORIGIN to your own production HTTPS issuer." >&2
+            echo "Supply the public production HTTPS issuer through workflow_dispatch input target_origin." >&2
             exit 1
           }
           test -n "$OPENID4VC_OIDF_BASE_CONFIG_JSON"
@@ -118,6 +118,15 @@ jobs:
             --export-dir runtime/openid4vc/results \
             --timeout-seconds 4800 \
             --monitor-interval-seconds 10
+
+      - name: Verify official suite remained pristine
+        if: always()
+        shell: bash
+        run: |
+          test ! -d oidf-conformance-suite/.git || {
+            test "$(git -C oidf-conformance-suite rev-parse HEAD)" = "$OIDF_REF"
+            test -z "$(git -C oidf-conformance-suite status --porcelain --untracked-files=no)"
+          }
 
       - name: Remove plaintext secrets
         if: always()
