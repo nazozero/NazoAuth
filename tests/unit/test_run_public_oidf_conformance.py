@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import subprocess
 import tempfile
@@ -42,6 +43,16 @@ class PublicOidfRunnerTests(unittest.TestCase):
     def test_plan_groups_use_explicit_inputs_and_isolate_browser_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            work = root / "work"
+            work.mkdir()
+            (work / "oidf-expected-skips.json").write_text("[]\n", encoding="utf-8")
+            contracts = root / "tests" / "contracts"
+            contracts.mkdir(parents=True)
+            (contracts / "oidf-official-expected-warnings.json").write_text(
+                "[]\n", encoding="utf-8"
+            )
+            for _, filename, _ in self.module.PLAN_GROUPS:
+                (work / filename).write_text("[]\n", encoding="utf-8")
             args = Namespace(
                 suite_dir=root / "suite",
                 suite_revision="suite-commit",
@@ -52,8 +63,11 @@ class PublicOidfRunnerTests(unittest.TestCase):
                 timeout_seconds=100,
                 monitor_interval_seconds=5,
             )
-            with mock.patch.object(self.module, "command") as command:
-                self.module.run_plan_groups(args, root / "work", {})
+            with (
+                mock.patch.object(self.module, "command") as command,
+                mock.patch.object(self.module, "ROOT", root),
+            ):
+                self.module.run_plan_groups(args, work, {})
 
             self.assertEqual(command.call_count, 4)
             invocations = [call.args[0] for call in command.call_args_list]
@@ -67,6 +81,36 @@ class PublicOidfRunnerTests(unittest.TestCase):
                     invocation[invocation.index("--suite-revision") + 1] == "suite-commit"
                     for invocation in invocations
                 )
+            )
+            self.assertTrue(
+                all("--expected-failures-file" in invocation for invocation in invocations)
+            )
+
+    def test_problem_records_are_filtered_to_the_selected_plan_configs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan_set = root / "plans.json"
+            source = root / "warnings.json"
+            destination = root / "selected.json"
+            plan_set.write_text(
+                json.dumps(["plan-a config-a.json", "plan-b config-b.json"]),
+                encoding="utf-8",
+            )
+            source.write_text(
+                json.dumps(
+                    [
+                        {"configuration-filename": "config-a.json", "condition": "A"},
+                        {"configuration-filename": "config-c.json", "condition": "C"},
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            self.module.filter_problem_records(source, plan_set, destination)
+
+            self.assertEqual(
+                json.loads(destination.read_text(encoding="utf-8")),
+                [{"configuration-filename": "config-a.json", "condition": "A"}],
             )
 
     def test_proxy_trust_install_and_restore_are_atomic(self):

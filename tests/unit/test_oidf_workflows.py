@@ -305,29 +305,29 @@ class OidfWorkflowTests(unittest.TestCase):
                 encoding="utf-8"
             )
         )
-        self.assertEqual(len(expected_warnings), 26)
+        self.assertEqual(len(expected_warnings), 27)
         self.assertEqual(
             {item["condition"] for item in expected_warnings},
-            {"EnsureIncomingTls13"},
+            {"EnsureIncomingTls13", "UnregisterDynamicallyRegisteredClient"},
         )
         self.assertEqual(
             {item["expected-result"] for item in expected_warnings},
             {"warning"},
         )
+        ciba_warnings = [
+            item for item in expected_warnings if item["condition"] == "EnsureIncomingTls13"
+        ]
         self.assertEqual(
-            {item["variant"]["client_auth_type"] for item in expected_warnings},
+            {item["variant"]["client_auth_type"] for item in ciba_warnings},
             {"private_key_jwt", "mtls"},
         )
+        self.assertEqual({item["variant"]["ciba_mode"] for item in ciba_warnings}, {"ping"})
         self.assertEqual(
-            {item["variant"]["ciba_mode"] for item in expected_warnings},
-            {"ping"},
-        )
-        self.assertEqual(
-            {item["variant"]["fapi_ciba_profile"] for item in expected_warnings},
+            {item["variant"]["fapi_ciba_profile"] for item in ciba_warnings},
             {"plain_fapi"},
         )
         self.assertEqual(
-            {item["variant"]["client_registration"] for item in expected_warnings},
+            {item["variant"]["client_registration"] for item in ciba_warnings},
             {"static_client"},
         )
         self.assertFalse(

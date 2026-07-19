@@ -196,8 +196,35 @@ def onboarding_args(action: str, work_dir: Path, issuer: str) -> list[str]:
     ]
 
 
+def filter_problem_records(source: Path, plan_set: Path, destination: Path) -> None:
+    plans = json.loads(plan_set.read_text(encoding="utf-8"))
+    if not isinstance(plans, list) or not all(isinstance(item, str) for item in plans):
+        raise PublicRunError(f"{plan_set} must contain a JSON array of plan expressions")
+    configs = {expression.rsplit(" ", 1)[-1] for expression in plans}
+    records = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(records, list) or not all(isinstance(item, dict) for item in records):
+        raise PublicRunError(f"{source} must contain a JSON array of problem records")
+    selected = [
+        record for record in records if record.get("configuration-filename") in configs
+    ]
+    destination.write_text(json.dumps(selected, indent=2) + "\n", encoding="utf-8")
+
+
 def run_plan_groups(args: argparse.Namespace, work_dir: Path, env: dict[str, str]) -> None:
     for name, plan_set, isolated in PLAN_GROUPS:
+        plan_set_file = work_dir / plan_set
+        expected_skips_file = work_dir / f"oidf-expected-skips-{name}.json"
+        expected_warnings_file = work_dir / f"oidf-expected-warnings-{name}.json"
+        filter_problem_records(
+            work_dir / "oidf-expected-skips.json",
+            plan_set_file,
+            expected_skips_file,
+        )
+        filter_problem_records(
+            ROOT / "tests" / "contracts" / "oidf-official-expected-warnings.json",
+            plan_set_file,
+            expected_warnings_file,
+        )
         invocation = [
             sys.executable,
             str(ROOT / "scripts" / "run_oidf_conformance.py"),
@@ -208,7 +235,7 @@ def run_plan_groups(args: argparse.Namespace, work_dir: Path, env: dict[str, str
             "--conformance-server",
             args.conformance_server,
             "--plan-set-json-file",
-            str(work_dir / plan_set),
+            str(plan_set_file),
             "--config-json-file",
             str(work_dir / "oidf-plan-configs.json"),
             "--target-issuer",
@@ -218,7 +245,9 @@ def run_plan_groups(args: argparse.Namespace, work_dir: Path, env: dict[str, str
             "--export-dir",
             str(args.export_dir / name),
             "--expected-skips-file",
-            str(work_dir / "oidf-expected-skips.json"),
+            str(expected_skips_file),
+            "--expected-failures-file",
+            str(expected_warnings_file),
             "--timeout-seconds",
             str(args.timeout_seconds),
             "--monitor-interval-seconds",
