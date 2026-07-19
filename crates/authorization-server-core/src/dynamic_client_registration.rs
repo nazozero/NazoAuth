@@ -111,17 +111,17 @@ pub struct DynamicClientRegistrationRequest {
     #[serde(default)]
     pub dpop_bound_access_tokens: bool,
     #[serde(default)]
+    pub tls_client_certificate_bound_access_tokens: bool,
+    #[serde(default)]
     pub tls_client_auth_subject_dn: Option<String>,
     #[serde(default)]
-    pub tls_client_auth_cert_sha256: Option<String>,
+    pub tls_client_auth_san_dns: Option<String>,
     #[serde(default)]
-    pub tls_client_auth_san_dns: Vec<String>,
+    pub tls_client_auth_san_uri: Option<String>,
     #[serde(default)]
-    pub tls_client_auth_san_uri: Vec<String>,
+    pub tls_client_auth_san_ip: Option<String>,
     #[serde(default)]
-    pub tls_client_auth_san_ip: Vec<String>,
-    #[serde(default)]
-    pub tls_client_auth_san_email: Vec<String>,
+    pub tls_client_auth_san_email: Option<String>,
     #[serde(default)]
     pub jwks_uri: Option<String>,
     #[serde(default)]
@@ -171,6 +171,7 @@ pub struct PreparedDynamicClientRegistration {
     pub subject_type: Option<String>,
     pub sector_identifier_uri: Option<String>,
     pub require_dpop_bound_tokens: bool,
+    pub require_mtls_bound_tokens: bool,
     pub backchannel_token_delivery_mode: String,
     pub backchannel_client_notification_endpoint: Option<String>,
     pub backchannel_authentication_request_signing_alg: Option<String>,
@@ -380,6 +381,7 @@ pub fn prepare_dynamic_client_registration(
         subject_type: request.subject_type,
         sector_identifier_uri: request.sector_identifier_uri,
         require_dpop_bound_tokens: request.dpop_bound_access_tokens,
+        require_mtls_bound_tokens: request.tls_client_certificate_bound_access_tokens,
         backchannel_token_delivery_mode,
         backchannel_client_notification_endpoint,
         backchannel_authentication_request_signing_alg: request
@@ -388,17 +390,21 @@ pub fn prepare_dynamic_client_registration(
         backchannel_logout_uri: request.backchannel_logout_uri,
         backchannel_logout_session_required: request
             .backchannel_logout_session_required
-            .unwrap_or(true),
+            .unwrap_or(false),
         frontchannel_logout_uri: request.frontchannel_logout_uri,
         frontchannel_logout_session_required: request
             .frontchannel_logout_session_required
-            .unwrap_or(true),
+            .unwrap_or(false),
         tls_client_auth_subject_dn: request.tls_client_auth_subject_dn,
-        tls_client_auth_cert_sha256: request.tls_client_auth_cert_sha256,
-        tls_client_auth_san_dns: request.tls_client_auth_san_dns,
-        tls_client_auth_san_uri: request.tls_client_auth_san_uri,
-        tls_client_auth_san_ip: request.tls_client_auth_san_ip,
-        tls_client_auth_san_email: request.tls_client_auth_san_email,
+        // RFC 8705 defines each PKI subject selector as a single string and
+        // requires exactly one selector for tls_client_auth. The internal
+        // client model retains vectors for schema compatibility, but dynamic
+        // registration never creates multi-valued selectors.
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: request.tls_client_auth_san_dns.into_iter().collect(),
+        tls_client_auth_san_uri: request.tls_client_auth_san_uri.into_iter().collect(),
+        tls_client_auth_san_ip: request.tls_client_auth_san_ip.into_iter().collect(),
+        tls_client_auth_san_email: request.tls_client_auth_san_email.into_iter().collect(),
         jwks_uri,
         jwks: request.jwks,
         request_uris,
@@ -506,6 +512,7 @@ impl PreparedDynamicClientRegistration {
             subject_type: self.subject_type,
             sector_identifier_uri: self.sector_identifier_uri,
             require_dpop_bound_tokens: self.require_dpop_bound_tokens,
+            require_mtls_bound_tokens: self.require_mtls_bound_tokens,
             allow_client_assertion_audience_array: false,
             allow_client_assertion_endpoint_audience,
             require_par_request_object: false,
@@ -537,7 +544,6 @@ impl PreparedDynamicClientRegistration {
             authorization_signed_response_alg: self.authorization_signed_response_alg,
             authorization_encrypted_response_alg: self.authorization_encrypted_response_alg,
             authorization_encrypted_response_enc: self.authorization_encrypted_response_enc,
-            allow_jwks_without_kid: true,
         }
     }
 }
@@ -680,8 +686,8 @@ mod tests {
                 "offline_access"
             ]
         );
-        assert!(prepared.backchannel_logout_session_required);
-        assert!(prepared.frontchannel_logout_session_required);
+        assert!(!prepared.backchannel_logout_session_required);
+        assert!(!prepared.frontchannel_logout_session_required);
     }
 
     #[test]

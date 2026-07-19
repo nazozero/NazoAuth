@@ -511,7 +511,7 @@ fn client_certificate_matches_registered_subject_dn() {
     let mut client = client();
     client.tls_client_auth_subject_dn = Some("CN=client-1,O=Example".to_owned());
     let certificate = MtlsClientCertificate {
-        subject_dn: Some("CN=client-1,O=Example".to_owned()),
+        subject_dn: Some("CN=CLIENT-1,O=example".to_owned()),
         ..MtlsClientCertificate::default()
     };
 
@@ -519,16 +519,32 @@ fn client_certificate_matches_registered_subject_dn() {
 }
 
 #[test]
-fn client_certificate_matches_registered_thumbprint() {
+fn administrator_thumbprint_pin_can_only_narrow_registered_subject_match() {
     let mut client = client();
+    client.tls_client_auth_subject_dn = Some("CN=client-1,O=Example".to_owned());
     client.tls_client_auth_cert_sha256 =
         Some("00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff".to_owned());
     let certificate = MtlsClientCertificate {
         thumbprint: Some("ABEiM0RVZneImaq7zN3u_wARIjNEVWZ3iJmqu8zd7v8".to_owned()),
+        subject_dn: Some("CN=client-1,O=Example".to_owned()),
         ..MtlsClientCertificate::default()
     };
 
     assert!(client_mtls_certificate_matches(&client, &certificate));
+
+    let wrong_subject = MtlsClientCertificate {
+        thumbprint: certificate.thumbprint.clone(),
+        subject_dn: Some("CN=other,O=Example".to_owned()),
+        ..MtlsClientCertificate::default()
+    };
+    assert!(!client_mtls_certificate_matches(&client, &wrong_subject));
+
+    let mut pin_without_standard_subject = client;
+    pin_without_standard_subject.tls_client_auth_subject_dn = None;
+    assert!(!client_mtls_certificate_matches(
+        &pin_without_standard_subject,
+        &certificate
+    ));
 }
 
 #[test]
@@ -536,7 +552,7 @@ fn client_certificate_matches_registered_san_dns() {
     let mut client = client();
     client.tls_client_auth_san_dns = vec!["client.example".to_owned()];
     let certificate = MtlsClientCertificate {
-        san_dns: vec!["api.client.example".to_owned(), "client.example".to_owned()],
+        san_dns: vec!["api.client.example".to_owned(), "CLIENT.EXAMPLE".to_owned()],
         ..MtlsClientCertificate::default()
     };
 
@@ -547,8 +563,8 @@ fn client_certificate_matches_registered_san_dns() {
 fn client_certificate_matches_registered_san_uri_ip_and_email() {
     let certificate = MtlsClientCertificate {
         san_uri: vec!["urn:client:one".to_owned()],
-        san_ip: vec!["192.0.2.44".to_owned()],
-        san_email: vec!["client@example.com".to_owned()],
+        san_ip: vec!["2001:db8::2c".to_owned()],
+        san_email: vec!["client@EXAMPLE.COM".to_owned()],
         ..MtlsClientCertificate::default()
     };
 
@@ -557,7 +573,7 @@ fn client_certificate_matches_registered_san_uri_ip_and_email() {
     assert!(client_mtls_certificate_matches(&uri_client, &certificate));
 
     let mut ip_client = client();
-    ip_client.tls_client_auth_san_ip = vec!["192.0.2.44".to_owned()];
+    ip_client.tls_client_auth_san_ip = vec!["2001:0db8:0000:0000:0000:0000:0000:002c".to_owned()];
     assert!(client_mtls_certificate_matches(&ip_client, &certificate));
 
     let mut email_client = client();
@@ -573,6 +589,20 @@ fn client_certificate_rejects_unregistered_subject_and_san() {
     let certificate = MtlsClientCertificate {
         subject_dn: Some("CN=other,O=Example".to_owned()),
         san_uri: vec!["urn:client:2".to_owned()],
+        ..MtlsClientCertificate::default()
+    };
+
+    assert!(!client_mtls_certificate_matches(&client, &certificate));
+}
+
+#[test]
+fn client_certificate_rejects_legacy_rows_with_multiple_rfc8705_selectors() {
+    let mut client = client();
+    client.tls_client_auth_subject_dn = Some("CN=client-1,O=Example".to_owned());
+    client.tls_client_auth_san_dns = vec!["client.example".to_owned()];
+    let certificate = MtlsClientCertificate {
+        subject_dn: Some("CN=client-1,O=Example".to_owned()),
+        san_dns: vec!["client.example".to_owned()],
         ..MtlsClientCertificate::default()
     };
 

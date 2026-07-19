@@ -1,7 +1,7 @@
 //! Runtime settings.
 // Settings are built from the startup configuration snapshot.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use anyhow::bail;
@@ -155,7 +155,8 @@ pub(crate) struct Openid4vcSettings {
     pub(crate) signing_certificate_chain_file: Option<PathBuf>,
     pub(crate) trust_anchors_file: Option<PathBuf>,
     pub(crate) data_encryption_key: Option<[u8; 32]>,
-    pub(crate) attestation_jwks: Option<serde_json::Value>,
+    pub(crate) client_attestation_jwks: Option<serde_json::Value>,
+    pub(crate) key_attestation_jwks: Option<serde_json::Value>,
     pub(crate) client_attestation_issuer: Option<String>,
     pub(crate) credential_configurations:
         BTreeMap<String, nazo_openid4vci::CredentialConfiguration>,
@@ -319,19 +320,18 @@ impl Settings {
                 })
             })
             .transpose()?;
-        let openid4vc_attestation_jwks = config
-            .optional_string("OPENID4VC_ATTESTATION_JWKS_JSON")
-            .map(|value| serde_json::from_str::<serde_json::Value>(&value))
-            .transpose()?;
+        let openid4vc_client_attestation_jwks = parse_attestation_jwk_set(
+            config,
+            "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
+            AttestationTrustPurpose::Client,
+        )?;
+        let openid4vc_key_attestation_jwks = parse_attestation_jwk_set(
+            config,
+            "OPENID4VC_KEY_ATTESTATION_JWKS_JSON",
+            AttestationTrustPurpose::HolderKey,
+        )?;
         let openid4vc_client_attestation_issuer =
             config.optional_string("OPENID4VC_CLIENT_ATTESTATION_ISSUER");
-        if openid4vc_attestation_jwks.as_ref().is_some_and(|jwks| {
-            jwks.get("keys")
-                .and_then(serde_json::Value::as_array)
-                .is_none_or(Vec::is_empty)
-        }) {
-            bail!("OPENID4VC_ATTESTATION_JWKS_JSON must be a non-empty JWK Set");
-        }
         let credential_configurations = config
             .optional_string("OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON")
             .map(|value| {
@@ -399,6 +399,13 @@ impl Settings {
         {
             bail!("OPENID4VP_VERIFIER_MANAGEMENT_TOKEN must be at least 32 bytes");
         }
+        if openid4vci_issuer_management_token == openid4vp_verifier_management_token
+            && openid4vci_issuer_management_token.is_some()
+        {
+            bail!(
+                "OPENID4VCI_ISSUER_MANAGEMENT_TOKEN and OPENID4VP_VERIFIER_MANAGEMENT_TOKEN must differ"
+            );
+        }
         let openid4vc_signing_certificate_chain_file = config
             .optional_string("OPENID4VC_SIGNING_CERTIFICATE_CHAIN_FILE")
             .map(PathBuf::from);
@@ -424,12 +431,16 @@ impl Settings {
         }
         if enable_openid4vci_issuer
             && credential_configuration_requires_attestation
-            && openid4vc_attestation_jwks.is_none()
+            && openid4vc_key_attestation_jwks.is_none()
         {
-            bail!("OPENID4VC_ATTESTATION_JWKS_JSON is required by configured VCI proof policy");
+            bail!("OPENID4VC_KEY_ATTESTATION_JWKS_JSON is required by configured VCI proof policy");
         }
-        if openid4vc_client_attestation_issuer.is_some() && openid4vc_attestation_jwks.is_none() {
-            bail!("OPENID4VC_CLIENT_ATTESTATION_ISSUER requires OPENID4VC_ATTESTATION_JWKS_JSON");
+        if openid4vc_client_attestation_issuer.is_some()
+            && openid4vc_client_attestation_jwks.is_none()
+        {
+            bail!(
+                "OPENID4VC_CLIENT_ATTESTATION_ISSUER requires OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON"
+            );
         }
         if enable_openid4vp_verifier && wallet_authorization_origins.is_empty() {
             bail!(
@@ -627,7 +638,8 @@ impl Settings {
                 signing_certificate_chain_file: openid4vc_signing_certificate_chain_file,
                 trust_anchors_file: openid4vc_trust_anchors_file,
                 data_encryption_key: openid4vc_data_encryption_key,
-                attestation_jwks: openid4vc_attestation_jwks,
+                client_attestation_jwks: openid4vc_client_attestation_jwks,
+                key_attestation_jwks: openid4vc_key_attestation_jwks,
                 client_attestation_issuer: openid4vc_client_attestation_issuer,
                 credential_configurations,
                 deferred_credential_configurations,
@@ -643,6 +655,74 @@ impl Settings {
             },
         })
     }
+}
+
+#[derive(Clone, Copy)]
+enum AttestationTrustPurpose {
+    Client,
+    HolderKey,
+}
+
+fn parse_attestation_jwk_set(
+    config: &ConfigSource,
+    key: &'static str,
+    purpose: AttestationTrustPurpose,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let Some(encoded) = config.optional_string(key) else {
+        return Ok(None);
+    };
+    let jwks = serde_json::from_str::<serde_json::Value>(&encoded)?;
+    let keys = jwks
+        .get("keys")
+        .and_then(serde_json::Value::as_array)
+        .filter(|keys| !keys.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("{key} must be a non-empty JWK Set"))?;
+    let mut key_ids = BTreeSet::new();
+    for jwk in keys {
+        let object = jwk
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("{key} must contain JWK objects"))?;
+        if ["d", "p", "q", "dp", "dq", "qi", "oth", "k"]
+            .iter()
+            .any(|name| object.contains_key(*name))
+        {
+            bail!("{key} must contain public verification keys only");
+        }
+        let kid = object
+            .get("kid")
+            .and_then(serde_json::Value::as_str)
+            .filter(|kid| !kid.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("{key} keys must have a non-empty kid"))?;
+        if !key_ids.insert(kid) {
+            bail!("{key} must not contain duplicate kid values");
+        }
+        let supported = match (
+            purpose,
+            object.get("kty").and_then(serde_json::Value::as_str),
+            object.get("crv").and_then(serde_json::Value::as_str),
+        ) {
+            (AttestationTrustPurpose::Client, Some("EC"), Some("P-256")) => {
+                object.get("x").is_some_and(serde_json::Value::is_string)
+                    && object.get("y").is_some_and(serde_json::Value::is_string)
+            }
+            (AttestationTrustPurpose::HolderKey, Some("EC"), Some("P-256")) => {
+                object.get("x").is_some_and(serde_json::Value::is_string)
+                    && object.get("y").is_some_and(serde_json::Value::is_string)
+            }
+            (AttestationTrustPurpose::HolderKey, Some("OKP"), Some("Ed25519")) => {
+                object.get("x").is_some_and(serde_json::Value::is_string)
+            }
+            _ => false,
+        };
+        if !supported {
+            let purpose = match purpose {
+                AttestationTrustPurpose::Client => "client attestation",
+                AttestationTrustPurpose::HolderKey => "holder key attestation",
+            };
+            bail!("{key} contains a key unsupported for {purpose}");
+        }
+    }
+    Ok(Some(jwks))
 }
 
 pub(super) fn positive_u64(

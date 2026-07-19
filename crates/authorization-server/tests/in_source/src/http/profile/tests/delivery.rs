@@ -8,6 +8,14 @@ async fn delivery_payload_response_adds_read_once_notice_without_dropping_creden
     );
 
     assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(actix_web::http::header::CACHE_CONTROL),
+        Some(&actix_web::http::header::HeaderValue::from_static(
+            "no-store"
+        ))
+    );
     let body = actix_web::body::to_bytes(response.into_body())
         .await
         .unwrap();
@@ -19,7 +27,7 @@ async fn delivery_payload_response_adds_read_once_notice_without_dropping_creden
     assert!(body.get("approved_client_id").is_none());
     assert_eq!(
         body["read_once_notice"],
-        "此凭据链接已完成一次性读取并销毁，请立即保存敏感信息。"
+        "此凭据已完成一次性读取并销毁，请立即保存敏感信息。"
     );
 }
 

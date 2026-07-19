@@ -99,6 +99,7 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         grant_types: vec!["authorization_code".to_owned(), "refresh_token".to_owned()],
         token_endpoint_auth_method: "client_secret_post".to_owned(),
         require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
         allow_client_assertion_audience_array: false,
         allow_client_assertion_endpoint_audience: false,
         require_par_request_object: false,
@@ -129,7 +130,6 @@ fn create_client_request(client_name: &str) -> CreateClientRequest {
         authorization_signed_response_alg: None,
         authorization_encrypted_response_alg: None,
         authorization_encrypted_response_enc: None,
-        allow_jwks_without_kid: false,
         subject_type: None,
         sector_identifier_uri: None,
     }
@@ -388,6 +388,7 @@ fn empty_patch() -> PatchClientRequest {
         allowed_audiences: None,
         grant_types: None,
         require_dpop_bound_tokens: None,
+        require_mtls_bound_tokens: None,
         allow_client_assertion_audience_array: None,
         allow_client_assertion_endpoint_audience: None,
         require_par_request_object: None,

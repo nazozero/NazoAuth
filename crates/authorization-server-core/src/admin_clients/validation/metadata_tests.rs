@@ -27,7 +27,6 @@ fn metadata<'a>(
         backchannel_logout_uri: None,
         frontchannel_logout_uri: None,
         jwks,
-        allow_jwks_without_kid: false,
         introspection_encrypted_response_alg: None,
         introspection_encrypted_response_enc: None,
         userinfo_signed_response_alg: None,
@@ -146,7 +145,7 @@ fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
             .contains("client_credentials 客户端不能申请 openid 作用域")
     );
 
-    let refresh_without_authorization_code = validate_metadata_fixture(metadata(
+    let refresh_without_issuing_grant = validate_metadata_fixture(metadata(
         "confidential",
         &[],
         &["accounts".to_owned()],
@@ -157,10 +156,10 @@ fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
         None,
     ));
     assert!(
-        refresh_without_authorization_code
-            .expect_err("refresh_token grant must be paired with authorization_code")
+        refresh_without_issuing_grant
+            .expect_err("refresh_token must be paired with an implemented issuing grant")
             .to_string()
-            .contains("refresh_token 授权类型必须与 authorization_code 一起启用")
+            .contains("authorization_code、CIBA 或 device_code")
     );
 
     let auth_code_without_redirect = validate_metadata_fixture(metadata(
@@ -179,6 +178,26 @@ fn client_metadata_rejects_unsupported_auth_and_unsafe_grant_combinations() {
             .to_string()
             .contains("authorization_code 客户端必须注册 redirect_uri")
     );
+}
+
+#[test]
+fn client_metadata_accepts_refresh_tokens_for_ciba_and_device_grants() {
+    for grant in [
+        "urn:openid:params:grant-type:ciba",
+        "urn:ietf:params:oauth:grant-type:device_code",
+    ] {
+        validate_metadata_fixture(metadata(
+            "confidential",
+            &[],
+            &["openid".to_owned(), "offline_access".to_owned()],
+            &["resource://default".to_owned()],
+            &[grant.to_owned(), "refresh_token".to_owned()],
+            "client_secret_basic",
+            None,
+            None,
+        ))
+        .unwrap_or_else(|error| panic!("{grant} must support an optional refresh token: {error}"));
+    }
 }
 
 #[test]

@@ -33,7 +33,7 @@ profiles are implemented.
 
 ## Runtime Configuration
 
-`scripts/setup_local_oidf_podman.py` generates:
+`scripts/prepare_oidf_black_box.py` generates:
 
 - `oidf-oidcc-dynamic-plan-config.json`
 - a 17-plan full matrix in `runtime/oidf/oidf-plan-set.json`

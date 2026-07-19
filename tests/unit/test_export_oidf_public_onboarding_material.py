@@ -8,12 +8,12 @@ import unittest
 from pathlib import Path
 
 
-script = Path(__file__).resolve().parents[2] / "scripts" / "export_oidf_public_plan_configs.py"
+script = Path(__file__).resolve().parents[2] / "scripts" / "export_oidf_public_onboarding_material.py"
 sys.path.insert(0, str(script.parent))
-spec = importlib.util.spec_from_file_location("export_oidf_public_plan_configs", script)
+spec = importlib.util.spec_from_file_location("export_oidf_public_onboarding_material", script)
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
-oidf_mtls_ca_bundle = importlib.import_module("oidf_mtls_ca_bundle")
+oidf_onboarding_bundle = importlib.import_module("oidf_onboarding_bundle")
 SOURCE_COMMIT = "1" * 40
 
 
@@ -25,6 +25,12 @@ def export_args(input_path: Path, output_dir: Path) -> list[str]:
         str(output_dir),
         "--source-commit",
         SOURCE_COMMIT,
+        "--target-issuer",
+        "https://issuer.example",
+        "--suite-base-url",
+        "https://suite.example",
+        "--onboarding-profile",
+        "official",
     ]
 
 
@@ -94,6 +100,83 @@ def make_mtls_material(
 
 
 class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
+    def test_export_merges_openid4vc_into_one_public_onboarding_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            mtls = make_mtls_material(root, "combined")
+            oauth = root / "oauth.json"
+            oauth.write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            "oauth.json": {
+                                "alias": "oauth",
+                                "mtls": mtls,
+                                "nazo": {
+                                    "oidf_user_email": "holder@example.test"
+                                },
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            openid4vc = root / "openid4vc.json"
+            openid4vc.write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            "openid4vc-issuer.json": {
+                                "alias": "issuer",
+                                "client": {
+                                    "client_id": "openid4vc-client",
+                                    "scope": "openid pid",
+                                    "jwks": {
+                                        "keys": [
+                                            {
+                                                "kty": "EC",
+                                                "crv": "P-256",
+                                                "x": "x",
+                                                "y": "y",
+                                                "d": "private",
+                                            }
+                                        ]
+                                    },
+                                },
+                                "vci": {"credential_configuration_id": "pid"},
+                                "nazo": {
+                                    "openid4vc_role": "issuer",
+                                    "client_auth_type": "private_key_jwt",
+                                    "credential_dataset": {"given_name": "Specimen"},
+                                },
+                            }
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            output = root / "public"
+            args = export_args(oauth, output)
+            args[2:2] = ["--config-json-file", str(openid4vc)]
+            self.assertEqual(module.main_with_args_for_test(args), 0)
+
+            bundle = json.loads(
+                (output / module.OPENID4VC_ONBOARDING_BUNDLE_FILE).read_text(
+                    encoding="utf-8"
+                )
+            )
+            config = bundle["configs"]["openid4vc-issuer.json"]
+            self.assertEqual(config["vci"]["credential_configuration_id"], "pid")
+            self.assertEqual(config["nazo"]["credential_dataset"]["given_name"], "Specimen")
+            self.assertNotIn("d", config["client"]["jwks"]["keys"][0])
+            self.assertRegex(
+                bundle["credential_holder_email_sha256"], r"^[0-9a-f]{64}$"
+            )
+            manifest = json.loads(
+                (output / module.MANIFEST_FILE_NAME).read_text(encoding="utf-8")
+            )
+            self.assertIn(module.OPENID4VC_ONBOARDING_BUNDLE_FILE, manifest["files"])
+
     def test_strip_private_jwks_removes_private_key_fields(self):
         with tempfile.TemporaryDirectory() as tmp:
             tmp_path = Path(tmp)
@@ -101,7 +184,7 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
             rendered = {
                 "configs": {
                     "oidf-test-plan-config.json": {
-                        "alias": "seed-alias",
+                        "alias": "onboarding-alias",
                         "client": {
                             "client_id": "client-1",
                             "client_secret": "secret",
@@ -109,7 +192,7 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                             "backchannel_token_delivery_mode": "ping",
                             "backchannel_client_notification_endpoint": (
                                 "https://www.certification.openid.net/test/a/"
-                                "seed-alias/ciba-notification-endpoint"
+                                "onboarding-alias/ciba-notification-endpoint"
                             ),
                             "backchannel_authentication_request_signing_alg": "PS256",
                             "backchannel_user_code_parameter": False,
@@ -131,6 +214,11 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                                 ]
                             },
                         },
+                        "client_secret_post": {
+                            "client_id": "client-post",
+                            "client_secret": "post-secret",
+                            "scope": "openid",
+                        },
                         "mtls": mtls,
                         "nazo": {
                             "fapi_profile": "plain_fapi",
@@ -138,6 +226,7 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                             "fapi_response_mode": "jarm",
                             "client_auth_type": "mtls",
                             "sender_constrain": "mtls",
+                            "oidf_user_email": "conformance@example.test",
                             "oidf_user_password": "secret",
                         },
                         "automated_ciba_approval_url": "https://example.test/ciba?token=secret",
@@ -161,15 +250,22 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                 encoding="ascii"
             )
 
-        self.assertEqual(exported["alias"], "seed-alias")
+        self.assertEqual(exported["alias"], "onboarding-alias")
         self.assertEqual(exported["client"]["client_id"], "client-1")
         self.assertEqual(exported["client"]["scope"], "openid accounts")
+        self.assertEqual(exported["client_secret_post"]["client_id"], "client-post")
+        self.assertEqual(exported["client_secret_post"]["scope"], "openid")
+        self.assertNotIn("client_secret", exported["client_secret_post"])
+        self.assertEqual(
+            exported["client_secret_post"]["client_secret_sha256"],
+            "1a6979359a4a9a00863d570ad68b30fb1034eb9f032ef613451e9aeef745d69e",
+        )
         self.assertEqual(
             exported["client"]["backchannel_token_delivery_mode"], "ping"
         )
         self.assertEqual(
             exported["client"]["backchannel_client_notification_endpoint"],
-            "https://www.certification.openid.net/test/a/seed-alias/"
+            "https://www.certification.openid.net/test/a/onboarding-alias/"
             "ciba-notification-endpoint",
         )
         self.assertEqual(
@@ -200,6 +296,15 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
         self.assertNotIn("key", exported["mtls"])
         self.assertEqual(exported["mtls"]["ca"], mtls["ca"])
         self.assertNotIn("oidf_user_password", exported["nazo"])
+        self.assertNotIn("oidf_user_email", exported["nazo"])
+        self.assertEqual(
+            exported["nazo"]["oidf_user_password_sha256"],
+            "2bb80d537b1da3e38bd30361aa855686bde0eacd7162fef6a25fe97bf527a25b",
+        )
+        self.assertEqual(
+            exported["nazo"]["oidf_user_email_sha256"],
+            "a23fb0e9642ab8fe5d3bd3288247ae0bbfb0a49a36bd3f3aa9c713279f88cf80",
+        )
         self.assertNotIn("automated_ciba_approval_url", exported)
         self.assertNotIn("browser", exported)
         self.assertIn("BEGIN CERTIFICATE", bundle)
@@ -263,15 +368,15 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
             self.assertTrue(
                 all(re.fullmatch(r"[0-9a-f]{64}", value) for value in manifest["ca_der_sha256"])
             )
-            oidf_mtls_ca_bundle.validate_artifact_directory(
+            oidf_onboarding_bundle.validate_artifact_directory(
                 output_dir,
                 expected_source_commit=SOURCE_COMMIT,
             )
             with self.assertRaisesRegex(
-                oidf_mtls_ca_bundle.BundleError,
+                oidf_onboarding_bundle.BundleError,
                 "does not match the deployed backend commit",
             ):
-                oidf_mtls_ca_bundle.validate_artifact_directory(
+                oidf_onboarding_bundle.validate_artifact_directory(
                     output_dir,
                     expected_source_commit="2" * 40,
                 )
@@ -279,10 +384,10 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
             plan = output_dir / "test.json"
             plan.write_text(plan.read_text(encoding="utf-8") + " ", encoding="utf-8")
             with self.assertRaisesRegex(
-                oidf_mtls_ca_bundle.BundleError,
+                oidf_onboarding_bundle.BundleError,
                 "manifest does not match its files",
             ):
-                oidf_mtls_ca_bundle.validate_artifact_directory(output_dir)
+                oidf_onboarding_bundle.validate_artifact_directory(output_dir)
 
     def test_export_rejects_missing_malformed_non_ca_and_wrong_issuer(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -338,7 +443,7 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                             export_args(input_path, root / f"public-{name}")
                         )
 
-    def test_export_accepts_absent_ca_key_usage_but_rejects_restrictive_usage(self):
+    def test_export_rejects_absent_or_restrictive_ca_key_usage(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             unrestricted = make_mtls_material(
@@ -351,6 +456,11 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                 "restricted-ca-key-usage",
                 ca_key_usage="critical,digitalSignature",
             )
+            noncritical = make_mtls_material(
+                root,
+                "noncritical-ca-key-usage",
+                ca_key_usage="keyCertSign,cRLSign",
+            )
             input_path = root / "configs.json"
             input_path.write_text(
                 json.dumps(
@@ -358,12 +468,10 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
-            self.assertEqual(
+            with self.assertRaises(SystemExit):
                 module.main_with_args_for_test(
                     export_args(input_path, root / "public-missing-ca-key-usage")
-                ),
-                0,
-            )
+                )
 
             input_path.write_text(
                 json.dumps(
@@ -374,6 +482,17 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 module.main_with_args_for_test(
                     export_args(input_path, root / "public-restricted-ca-key-usage")
+                )
+
+            input_path.write_text(
+                json.dumps(
+                    {"configs": {"test.json": {"alias": "test", "mtls": noncritical}}}
+                ),
+                encoding="utf-8",
+            )
+            with self.assertRaises(SystemExit):
+                module.main_with_args_for_test(
+                    export_args(input_path, root / "public-noncritical-ca-key-usage")
                 )
 
     def test_failed_export_does_not_replace_existing_bundle(self):
@@ -468,25 +587,22 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
                     export_args(input_path, root / "public")
                 )
 
-    def test_exported_nazo_fields_exactly_cover_seeder_policy_inputs(self):
-        seeder = (
+    def test_exported_nazo_fields_are_artifact_metadata_not_server_inputs(self):
+        onboarding = (
             Path(__file__).resolve().parents[2]
-            / "crates"
-            / "authorization-server"
-            / "src"
-            / "bin"
-            / "nazo_oauth_seed_oidf.rs"
+            / "scripts"
+            / "apply_public_conformance_onboarding.py"
         ).read_text(encoding="utf-8")
-        policy_body = seeder.split("fn fapi_client_policy", 1)[1].split(
-            "\n}\n\n#[tokio::main]", 1
-        )[0]
-        consumed_nazo_fields = set(
-            re.findall(r'value\.get\("([^"]+)"\)', policy_body)
+
+        self.assertNotIn("DATABASE_URL", onboarding)
+        self.assertNotIn("nazo_postgres", onboarding)
+        self.assertIn("/auth/me/access-requests", onboarding)
+        self.assertEqual(
+            module.OPENID4VC_ONBOARDING_NAZO_FIELDS,
+            {"client_auth_type", "openid4vc_role", "credential_dataset"},
         )
 
-        self.assertEqual(consumed_nazo_fields, module.SEED_NAZO_FIELDS)
-
-    def test_public_export_preserves_every_seed_policy_decision_input(self):
+    def test_public_export_preserves_every_onboarding_policy_decision_input(self):
         policy_inputs = {
             "fapi_profile": "fapi_client_credentials_grant",
             "fapi_request_method": "signed_non_repudiation",
@@ -495,46 +611,35 @@ class ExportOidfPublicPlanConfigsTests(unittest.TestCase):
             "sender_constrain": "mtls",
         }
 
-        self.assertEqual(module.public_seed_nazo(policy_inputs), policy_inputs)
+        self.assertEqual(module.public_onboarding_nazo(policy_inputs), policy_inputs)
 
-    def test_real_fapi_matrix_template_preserves_seed_policy_fields(self):
+    def test_real_fapi_matrix_template_preserves_onboarding_policy_fields(self):
         template = Path(__file__).resolve().parents[2] / "docs" / "conformance" / "oidf-plan-config-template.json"
-        with tempfile.TemporaryDirectory() as tmp:
-            tmp_path = Path(tmp)
-            output_dir = tmp_path / "public"
+        template_text = template.read_text(encoding="utf-8")
+        configs = json.loads(template_text)["configs"]
+        mtls = module.public_onboarding_config(
+            configs[
+                "oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json"
+            ]
+        )
+        jarm = module.public_onboarding_config(
+            configs[
+                "oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json"
+            ]
+        )
 
-            self.assertEqual(
-                module.main_with_args_for_test(
-                    export_args(template, output_dir)
-                ),
-                0,
-            )
-
-            mtls = json.loads(
-                (
-                    output_dir
-                    / "oidf-fapi-matrix-security-final-mtls-mtls-openid-connect-plain-fapi-plain-response-plan-config.json"
-                ).read_text()
-            )
-            jarm = json.loads(
-                (
-                    output_dir
-                    / "oidf-fapi-matrix-message-final-private-key-jwt-dpop-openid-connect-plain-fapi-jarm-plan-config.json"
-                ).read_text()
-            )
+        self.assertNotIn("-----BEGIN CERTIFICATE-----", template_text)
+        self.assertNotIn("Local OIDF mTLS", template_text)
 
         self.assertEqual(mtls["nazo"]["client_auth_type"], "mtls")
         self.assertEqual(mtls["nazo"]["sender_constrain"], "mtls")
+        self.assertEqual(jarm["nazo"]["client_auth_type"], "private_key_jwt")
+        self.assertEqual(jarm["nazo"]["fapi_profile"], "plain_fapi")
         self.assertEqual(
-            jarm["nazo"],
-            {
-                "client_auth_type": "private_key_jwt",
-                "fapi_profile": "plain_fapi",
-                "fapi_request_method": "signed_non_repudiation",
-                "fapi_response_mode": "jarm",
-                "sender_constrain": "dpop",
-            },
+            jarm["nazo"]["fapi_request_method"], "signed_non_repudiation"
         )
+        self.assertEqual(jarm["nazo"]["fapi_response_mode"], "jarm")
+        self.assertEqual(jarm["nazo"]["sender_constrain"], "dpop")
 
 
 if __name__ == "__main__":

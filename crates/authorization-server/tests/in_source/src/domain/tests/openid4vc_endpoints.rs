@@ -1,108 +1,32 @@
+use chrono::{Duration, Utc};
 use nazo_digital_credentials::CredentialFormat;
-use nazo_identity::{SubjectClaims, UserId};
-use serde_json::json;
-use uuid::Uuid;
+use nazo_openid4vci::CredentialConfiguration;
+use serde_json::{Value, json};
 
 use super::{
-    credential_subject_claims, openid4vci_authorization_detail,
+    PutCredentialDatasetRequest, openid4vci_authorization_detail,
     openid4vci_configuration_id_from_identifier, token_endpoint_dpop_target_uris,
+    validate_managed_dataset,
 };
 
-fn subject_claims() -> SubjectClaims {
-    SubjectClaims {
-        subject: UserId::new(Uuid::now_v7()).expect("valid user id"),
-        preferred_username: "oidf-user".to_owned(),
-        name: Some("Alice Example".to_owned()),
-        given_name: Some("Alice".to_owned()),
-        family_name: Some("Example".to_owned()),
-        middle_name: None,
-        nickname: None,
-        profile: None,
-        picture: None,
-        website: None,
-        gender: None,
-        birthdate: Some("1990-01-02".to_owned()),
-        zoneinfo: None,
-        locale: None,
-        email: "alice@example.test".to_owned(),
-        email_verified: true,
-        address: None,
-        phone_number: None,
-        phone_number_verified: false,
-        updated_at: 1_784_192_400,
+fn dataset_configuration(format: CredentialFormat) -> CredentialConfiguration {
+    CredentialConfiguration {
+        format,
+        scope: Some("credential".to_owned()),
+        cryptographic_binding_methods_supported: Vec::new(),
+        credential_signing_alg_values_supported: vec!["ES256".to_owned()],
+        proof_types_supported: Default::default(),
+        vct: None,
+        doctype: None,
+        credential_metadata: None,
     }
 }
 
-#[test]
-fn sd_jwt_vc_dataset_keeps_flat_subject_claims() {
-    let value = credential_subject_claims(CredentialFormat::SdJwtVc, subject_claims())
-        .expect("sd-jwt vc claims");
-
-    assert_eq!(value["given_name"], "Alice");
-    assert_eq!(value["family_name"], "Example");
-    assert_eq!(value["birthdate"], "1990-01-02");
-    assert!(value.get("org.iso.18013.5.1").is_none());
-}
-
-#[test]
-fn mdoc_dataset_uses_iso_namespace_and_mdoc_birth_date_name() {
-    let subject = subject_claims();
-    let document_number = format!("NAZO-{}", subject.subject.as_uuid().simple());
-    let value = credential_subject_claims(CredentialFormat::MsoMdoc, subject).expect("mdoc claims");
-
-    assert_eq!(
-        value,
-        json!({
-            "org.iso.18013.5.1": {
-                "birth_date": "1990-01-02",
-                "document_number": document_number,
-                "driving_privileges": [
-                    {
-                        "expiry_date": "2036-07-16",
-                        "issue_date": "2026-07-16",
-                        "vehicle_category_code": "B"
-                    }
-                ],
-                "email": "alice@example.test",
-                "expiry_date": "2036-07-16",
-                "family_name": "Example",
-                "given_name": "Alice",
-                "issue_date": "2026-07-16",
-                "issuing_authority": "NazoAuth OpenID4VC OIDF Test Issuer",
-                "issuing_country": "UT",
-                "portrait": "openid4vc-oidf-placeholder-portrait",
-                "resident_address": null,
-                "un_distinguishing_sign": "UT"
-            }
-        })
-    );
-}
-
-#[test]
-fn mdoc_dataset_contains_iso_18013_5_mandatory_mdl_elements() {
-    let value = credential_subject_claims(CredentialFormat::MsoMdoc, subject_claims())
-        .expect("mdoc claims");
-    let namespace = value["org.iso.18013.5.1"]
-        .as_object()
-        .expect("mdoc namespace");
-
-    for element in [
-        "family_name",
-        "given_name",
-        "birth_date",
-        "issue_date",
-        "expiry_date",
-        "issuing_country",
-        "issuing_authority",
-        "document_number",
-        "portrait",
-        "driving_privileges",
-        "un_distinguishing_sign",
-    ] {
-        assert!(
-            namespace.contains_key(element),
-            "missing mandatory mDL element {element}"
-        );
+fn dataset_request(claims: Value) -> PutCredentialDatasetRequest {
+    PutCredentialDatasetRequest {
+        claims,
+        valid_from: None,
+        valid_until: None,
     }
 }
 
@@ -129,6 +53,74 @@ fn vci_authorization_detail_contains_final_credential_identifier() {
         openid4vci_configuration_id_from_identifier(&identifier).as_deref(),
         Some("org.iso.18013.5.1.mDL")
     );
+}
+
+#[test]
+fn managed_sd_jwt_dataset_rejects_reserved_claims_and_structural_abuse() {
+    let configuration = dataset_configuration(CredentialFormat::SdJwtVc);
+    for claims in [json!({}), json!({"iss":"attacker"}), json!({"cnf":{}})] {
+        assert!(validate_managed_dataset(&configuration, &dataset_request(claims)).is_err());
+    }
+
+    let mut deep = json!("value");
+    for _ in 0..10 {
+        deep = json!({"nested": deep});
+    }
+    assert!(validate_managed_dataset(&configuration, &dataset_request(deep)).is_err());
+    assert!(
+        validate_managed_dataset(
+            &configuration,
+            &dataset_request(json!({"biography":"x".repeat(4097)})),
+        )
+        .is_err()
+    );
+
+    validate_managed_dataset(
+        &configuration,
+        &dataset_request(json!({"given_name":"Ada","age_over_18":true})),
+    )
+    .expect("ordinary issuer-controlled claims are accepted");
+}
+
+#[test]
+fn managed_mdoc_dataset_requires_nonempty_namespace_objects() {
+    let configuration = dataset_configuration(CredentialFormat::MsoMdoc);
+    for claims in [
+        json!({"org.iso.18013.5.1": "not-an-object"}),
+        json!({"org.iso.18013.5.1": {}}),
+        json!({"": {"family_name":"Lovelace"}}),
+    ] {
+        assert!(validate_managed_dataset(&configuration, &dataset_request(claims)).is_err());
+    }
+
+    validate_managed_dataset(
+        &configuration,
+        &dataset_request(json!({
+            "org.iso.18013.5.1": {"family_name":"Lovelace"}
+        })),
+    )
+    .expect("mdoc namespace objects are accepted");
+}
+
+#[test]
+fn managed_dataset_validity_must_end_after_start_and_now() {
+    let configuration = dataset_configuration(CredentialFormat::SdJwtVc);
+    let now = Utc::now();
+    let claims = json!({"given_name":"Ada"});
+
+    let expired = PutCredentialDatasetRequest {
+        claims: claims.clone(),
+        valid_from: None,
+        valid_until: Some(now - Duration::seconds(1)),
+    };
+    assert!(validate_managed_dataset(&configuration, &expired).is_err());
+
+    let reversed = PutCredentialDatasetRequest {
+        claims,
+        valid_from: Some(now + Duration::hours(2)),
+        valid_until: Some(now + Duration::hours(1)),
+    };
+    assert!(validate_managed_dataset(&configuration, &reversed).is_err());
 }
 
 #[test]

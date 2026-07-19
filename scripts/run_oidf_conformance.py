@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import http.client
+import ipaddress
 import json
 import os
 import re
@@ -136,6 +137,10 @@ OIDF_ALLOWED_REVIEW_CONTEXTS_BY_CONFIG = {
     ),
 }
 OIDF_CALLBACK_PATH_PATTERN = re.compile(r"/test/a/[^/]+/callback")
+OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS = max(
+    30,
+    int(os.environ.get("OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS", "30")),
+)
 OIDF_API_SSL_CONTEXT: ssl.SSLContext | None = None
 HTTP_URL_PATTERN = re.compile(r"https?://[A-Za-z0-9.-]+(?::\d+)?(?:/[^\s\"'<>)]*)?")
 NAZO_LOGIN_EMAIL_ID = "nazo-login-email"
@@ -371,7 +376,7 @@ def nazo_consent_approve_commands(config_value: dict[str, object]) -> list[list[
         ["wait-element-visible", "id", NAZO_CONSENT_APPROVE_ID, 30],
         ["click", "id", NAZO_CONSENT_APPROVE_ID],
         ["wait", "contains", "/test/", 30],
-        ["wait", "id", "submission_complete", 10],
+        ["wait", "id", "submission_complete", OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS],
     ]
 
 
@@ -380,7 +385,7 @@ def nazo_consent_deny_commands(config_value: dict[str, object]) -> list[list[obj
         ["wait-element-visible", "id", NAZO_CONSENT_DENY_ID, 30],
         ["click", "id", NAZO_CONSENT_DENY_ID],
         ["wait", "contains", "/test/", 30],
-        ["wait", "id", "submission_complete", 10],
+        ["wait", "id", "submission_complete", OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS],
     ]
 
 
@@ -426,9 +431,6 @@ def assert_only_target_issuer_urls(value: object, config_name: str, target_issue
                 )
 
 
-OPENID4VC_LOCAL_TARGET_HOSTS = {"localhost", "127.0.0.1", "::1", "nginx", "host.docker.internal"}
-
-
 def is_openid4vc_config(config_name: str) -> bool:
     return config_name.startswith("openid4vc-")
 
@@ -469,7 +471,13 @@ def assert_openid4vc_target_boundaries(
 
     for url in http_urls_in_value(config_value):
         parsed = urlparse(url)
-        if (parsed.hostname or "").lower() in OPENID4VC_LOCAL_TARGET_HOSTS:
+        hostname = (parsed.hostname or "").lower()
+        try:
+            ipaddress.ip_address(hostname)
+            is_public_dns_name = False
+        except ValueError:
+            is_public_dns_name = "." in hostname and hostname != "localhost"
+        if not is_public_dns_name:
             fail(
                 f"{config_name} contains local-only URL {url}; OpenID4VC conformance "
                 "must run against public black-box targets"
@@ -515,6 +523,14 @@ def normalize_oidf_callback_waits(config_value: dict[str, object]) -> None:
 
 def normalize_oidf_callback_waits_in_value(value: object, expected_callback_path: str) -> None:
     if isinstance(value, list):
+        if (
+            len(value) >= 4
+            and value[0] == "wait"
+            and value[1] == "id"
+            and value[2] == "submission_complete"
+            and isinstance(value[3], int)
+        ):
+            value[3] = max(value[3], OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS)
         if (
             len(value) >= 3
             and value[0] == "wait"
@@ -575,7 +591,14 @@ def nazo_user_reject_browser_automation(config_value: dict[str, object]) -> list
                 {
                     "task": "Verify callback completion",
                     "match": "*/test/*/callback*",
-                    "commands": [["wait", "id", "submission_complete", 10]],
+                    "commands": [
+                        [
+                            "wait",
+                            "id",
+                            "submission_complete",
+                            OIDF_BROWSER_CALLBACK_TIMEOUT_SECONDS,
+                        ]
+                    ],
                 },
             ],
         }
@@ -991,6 +1014,9 @@ def add_nazo_browser_overrides(config_value: dict[str, object]) -> None:
     add_nazo_par_reuse_before_auth_override(config_value)
     add_nazo_user_reject_override(config_value)
     use_nazo_user_facing_browser_commands(config_value)
+    # Some module-specific overrides are synthesized above. Normalize the final
+    # tree as well so no later override can reintroduce a shorter callback wait.
+    normalize_oidf_callback_waits(config_value)
     config_value.pop("nazo", None)
 
 
@@ -1406,7 +1432,9 @@ def oidf_log_failure(
         src = entry.get("src")
         src_text = src if isinstance(src, str) and src else "<unknown>"
         msg_text = msg if isinstance(msg, str) and msg else "<no message>"
-        return f"{module_id} log {result} at {src_text}: {msg_text[:300]}"
+        block_name = block_names.get(block_id) if isinstance(block_id, str) else None
+        block_text = f" in block {block_name}" if block_name else ""
+        return f"{module_id} log {result} at {src_text}{block_text}: {msg_text[:300]}"
     return None
 
 
@@ -1626,7 +1654,7 @@ def inspect_oidf_state(
                     allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
                 )
                 if log_failure:
-                    return oidf_failure_with_log_context(module_id, failure, logs)
+                    return oidf_failure_with_log_context(module_id, log_failure, logs)
                 if result == "WARNING" and oidf_log_has_allowed_expected_warning(
                     info,
                     logs,
@@ -2124,13 +2152,24 @@ def run_official_runner(
     elif aliases:
         print("OIDF early-stop monitor disabled", flush=True)
 
+    previous_sigterm = signal.getsignal(signal.SIGTERM)
+
+    def interrupt_runner(_signum, _frame) -> None:  # noqa: ANN001
+        raise InterruptedError("OIDF runner received SIGTERM")
+
+    signal.signal(signal.SIGTERM, interrupt_runner)
     try:
-        exit_code = process.wait(timeout=timeout_seconds)
-    except subprocess.TimeoutExpired:
-        print("OIDF official runner timed out; terminating process group", flush=True)
-        terminate_runner(process)
-        return 124
+        try:
+            exit_code = process.wait(timeout=timeout_seconds)
+        except subprocess.TimeoutExpired:
+            print("OIDF official runner timed out; terminating process group", flush=True)
+            terminate_runner(process)
+            return 124
+        except BaseException:
+            terminate_runner(process)
+            raise
     finally:
+        signal.signal(signal.SIGTERM, previous_sigterm)
         if monitor is not None:
             monitor.stop()
         if monitor_thread is not None:

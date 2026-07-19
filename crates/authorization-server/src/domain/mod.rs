@@ -71,7 +71,8 @@ pub(crate) use openid4vc::{
     Openid4vcClientAttestationValidator, Openid4vcCredentialCrypto, Openid4vcProofValidator,
 };
 pub(crate) use openid4vc_endpoints::{
-    PresentationVerifierConfig, ServerCredentialIssuerOperations, ServerPresentationOperations,
+    CredentialDatasetAdminService, PresentationVerifierConfig, PutCredentialDatasetRequest,
+    ServerCredentialIssuerOperations, ServerPresentationOperations,
     openid4vci_authorization_detail,
 };
 pub(crate) use passkey::PasskeyOperationsProvider;

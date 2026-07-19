@@ -23,7 +23,7 @@ Official listing pages:
 ## Current public black-box evidence
 
 Current conformance evidence is recorded in
-[2026-07-17 public black-box full OIDF results](2026-07-17-public-black-box-full-oidf-results.md).
+[2026-07-19 public black-box full OIDF results](2026-07-19-public-black-box-full-oidf-results.md).
 The run used an operator-provided production HTTPS issuer. Public documentation
 uses `https://issuer.example` only as a sanitized placeholder. Repository
 workflows require operators to provide their own externally reachable
@@ -40,12 +40,13 @@ Combined exported result:
 | Metric | Value |
 | --- | ---: |
 | Plan executions | 42 |
-| Finished modules | 1,178 |
-| Condition successes | 101,519 |
+| Module instances | 1,178 |
+| Passed module results | 1,132 |
+| Condition successes | 97,029 |
 | Condition failures | 0 |
-| Bounded warnings | 30 |
+| Bounded condition warnings | 30 |
 | Expected skips | 15 |
-| Review entries | 136 |
+| Bounded review modules | 9 |
 
 The bounded warnings and expected skips are documented in the linked evidence
 record. They are not hidden: the OIDC/FAPI/FAPI-CIBA matrix is not zero-warning

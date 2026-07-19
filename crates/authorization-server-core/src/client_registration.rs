@@ -2,7 +2,7 @@ use serde_json::Value;
 use std::ops::{Deref, DerefMut};
 use uuid::Uuid;
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq, serde::Serialize)]
 pub struct ClientPresentationMetadata {
     pub logo_uri: Option<String>,
     pub policy_uri: Option<String>,

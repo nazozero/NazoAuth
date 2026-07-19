@@ -112,11 +112,14 @@ fn invalid_access_request_status_response() -> HttpResponse {
 
 fn client_preparation_error_response(error: AdminClientError) -> HttpResponse {
     match error {
-        AdminClientError::InvalidRequest(message) => oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            &format!("客户端创建失败: {message}"),
-        ),
+        AdminClientError::InvalidRequest(message) => {
+            tracing::warn!(reason = %message, "oauth client approval metadata rejected");
+            oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                &format!("客户端创建失败: {message}"),
+            )
+        }
         error => {
             tracing::warn!(%error, "failed to prepare oauth client for access request approval");
             oauth_error(
@@ -239,9 +242,7 @@ pub(crate) async fn admin_approve_access_request(
             admin.principal.tenant,
             request_id,
             admin.user_id(),
-            &prepared.registration,
-            prepared.client_secret_hash.as_deref(),
-            prepared.registration_access_token_blake3.as_deref(),
+            &prepared,
         )
         .await;
     let client = match approval {

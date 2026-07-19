@@ -1,0 +1,147 @@
+name: oidf-public-onboarding-material
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_issuer:
+        description: Public HTTPS issuer that will receive the onboarding material
+        required: true
+        type: string
+      suite_base_url:
+        description: HTTPS origin of the conformance suite that owns these clients
+        required: true
+        type: string
+  workflow_call:
+    inputs:
+      target_issuer:
+        description: Public HTTPS issuer that will receive the onboarding material
+        required: true
+        type: string
+      suite_base_url:
+        description: HTTPS origin of the conformance suite that owns these clients
+        required: true
+        type: string
+    secrets:
+      OIDF_PLAN_CONFIG_AGE_IDENTITY:
+        required: true
+      OIDF_MTLS_MATERIAL_AGE_IDENTITY:
+        required: true
+      OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN:
+        required: true
+      OPENID4VC_OIDF_BASE_CONFIG_JSON:
+        required: true
+      OPENID4VC_OIDF_MTLS_CONFIG_JSON:
+        required: true
+      OPENID4VC_OIDF_DRIVER_CONFIG_JSON:
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  oidf-public-onboarding-material:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7.0.0
+
+      - uses: actions/setup-python@v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Install age decryptor
+        run: cargo install rage --version 0.11.2 --locked
+
+      - name: Export public OIDF onboarding material
+        run: |
+          set -euo pipefail
+          umask 077
+          printf '%s\n' "$OIDF_PLAN_CONFIG_AGE_IDENTITY" > oidf-plan-config.agekey
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-secret-patch.json \
+            docs/conformance/oidf-plan-config-secret-patch.json.age
+          rage --decrypt \
+            --identity oidf-plan-config.agekey \
+            --output oidf-plan-config-ciba-secret-patch.json \
+            docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          printf '%s\n' "$OIDF_MTLS_MATERIAL_AGE_IDENTITY" > oidf-mtls-material.agekey
+          rage --decrypt \
+            --identity oidf-mtls-material.agekey \
+            --output oidf-mtls-material.json \
+            docs/conformance/oidf-mtls-material.json.age
+          python - <<'PY'
+          import json
+
+          with open("oidf-plan-config-secret-patch.json", encoding="utf-8") as handle:
+              base = json.load(handle)
+          with open("oidf-plan-config-ciba-secret-patch.json", encoding="utf-8") as handle:
+              ciba = json.load(handle)
+
+          conflicts = sorted(key for key, value in ciba.items() if key in base and base[key] != value)
+          if conflicts:
+              raise SystemExit("conflicting OIDF secret patch keys: " + ", ".join(conflicts))
+
+          base.update(ciba)
+          with open("oidf-plan-config-secret-patch.merged.json", "w", encoding="utf-8") as handle:
+              json.dump(base, handle, sort_keys=True)
+              handle.write("\n")
+          PY
+          python scripts/materialize_oidf_plan_config.py \
+            --template docs/conformance/oidf-plan-config-template.json \
+            --secret-patch-file oidf-plan-config-secret-patch.merged.json \
+            --mtls-material-file oidf-mtls-material.json \
+            --derive-dynamic-oidcc-config \
+            --derive-fapi-ciba-matrix-configs \
+            --ciba-notification-base-url "${{ inputs.suite_base_url }}" \
+            --target-issuer "${{ inputs.target_issuer }}" \
+            --output oidf-plan-configs.json
+          test -n "$OPENID4VC_OIDF_BASE_CONFIG_JSON"
+          test -n "$OPENID4VC_OIDF_MTLS_CONFIG_JSON"
+          test -n "$OPENID4VC_OIDF_DRIVER_CONFIG_JSON"
+          install -d -m 700 runtime/openid4vc
+          printf '%s' "$OPENID4VC_OIDF_BASE_CONFIG_JSON" > runtime/openid4vc/base.json
+          printf '%s' "$OPENID4VC_OIDF_MTLS_CONFIG_JSON" > runtime/openid4vc/mtls.json
+          printf '%s' "$OPENID4VC_OIDF_DRIVER_CONFIG_JSON" > runtime/openid4vc/driver.json
+          chmod 600 runtime/openid4vc/*.json
+          python scripts/materialize_openid4vc_oidf_config.py \
+            --base-config-json-file runtime/openid4vc/base.json \
+            --mtls-config-json-file runtime/openid4vc/mtls.json \
+            --driver-config-json-file runtime/openid4vc/driver.json \
+            --credential-datasets-json-file tests/contracts/openid4vc-conformance-datasets.json \
+            --conformance-server "${{ inputs.suite_base_url }}" \
+            --target-origin "${{ inputs.target_issuer }}" \
+            --onboarding-profile official \
+            --output-dir runtime/openid4vc/materialized
+          python scripts/export_oidf_public_onboarding_material.py \
+            --config-json-file oidf-plan-configs.json \
+            --config-json-file runtime/openid4vc/materialized/openid4vc-plan-configs.json \
+            --output-dir oidf-public-onboarding-material \
+            --source-commit "$GITHUB_SHA" \
+            --target-issuer "${{ inputs.target_issuer }}" \
+            --suite-base-url "${{ inputs.suite_base_url }}" \
+            --onboarding-profile official
+          python scripts/oidf_onboarding_bundle.py verify \
+            --artifact-directory oidf-public-onboarding-material \
+            --expected-source-commit "$GITHUB_SHA" \
+            --expected-target-issuer "${{ inputs.target_issuer }}" \
+            --expected-suite-base-url "${{ inputs.suite_base_url }}" \
+            --expected-onboarding-profile official
+        env:
+          OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
+          OIDF_MTLS_MATERIAL_AGE_IDENTITY: ${{ secrets.OIDF_MTLS_MATERIAL_AGE_IDENTITY }}
+          OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
+          OPENID4VC_OIDF_BASE_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_BASE_CONFIG_JSON }}
+          OPENID4VC_OIDF_MTLS_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_MTLS_CONFIG_JSON }}
+          OPENID4VC_OIDF_DRIVER_CONFIG_JSON: ${{ secrets.OPENID4VC_OIDF_DRIVER_CONFIG_JSON }}
+
+      - name: Remove plaintext secrets
+        if: always()
+        run: rm -f oidf-plan-config.agekey oidf-mtls-material.agekey oidf-mtls-material.json oidf-plan-config-secret-patch.json oidf-plan-config-ciba-secret-patch.json oidf-plan-config-secret-patch.merged.json runtime/openid4vc/base.json runtime/openid4vc/mtls.json runtime/openid4vc/driver.json runtime/openid4vc/materialized/openid4vc-driver.json runtime/openid4vc/materialized/openid4vc-plan-configs.json
+
+      - name: Upload public OIDF onboarding material
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: oidf-public-onboarding-material
+          path: oidf-public-onboarding-material
+          if-no-files-found: error

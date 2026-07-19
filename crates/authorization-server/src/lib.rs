@@ -6,7 +6,6 @@ pub mod config;
 mod domain;
 mod http;
 pub mod keyctl;
-pub mod oidf_seed;
 mod runtime_modules;
 pub use nazo_resource_server as resource_server;
 mod schema;
@@ -77,7 +76,6 @@ pub(crate) mod test_support {
             nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
             nazo_valkey::DeliveryStore::new(&state.valkey_connection()),
             &state.settings.protocol.client_secret_pepper,
-            &state.settings.endpoint.frontend_base_url,
         ))
     }
 

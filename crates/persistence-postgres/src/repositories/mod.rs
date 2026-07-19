@@ -6,6 +6,7 @@ pub(crate) mod clients;
 mod federation;
 mod grants;
 mod mfa;
+mod mtls_trust;
 mod openid4vc;
 mod passkeys;
 mod runtime_modules;
@@ -22,7 +23,11 @@ pub use clients::OAuthClientRepository;
 pub use federation::FederationRepository;
 pub use grants::{GrantAuthorization, GrantRepository};
 pub use mfa::MfaRepository;
-pub use openid4vc::{Openid4vciRepository, Openid4vpRepository};
+pub use mtls_trust::MtlsTrustAnchorRepository;
+pub use openid4vc::{
+    ManagedCredentialDataset, ManagedCredentialDatasetWrite, Openid4vciDatasetRepository,
+    Openid4vciRepository, Openid4vpRepository,
+};
 pub use passkeys::PasskeyRepository;
 pub use runtime_modules::{RuntimeModuleEventPage, RuntimeModuleRepository};
 pub use scim::ScimRepository;

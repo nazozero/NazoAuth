@@ -414,9 +414,11 @@ async fn mtls_client_auth_accepts_matching_certificate_from_trusted_proxy() {
         .peer_addr("127.0.0.1:443".parse().unwrap())
         .insert_header(("x-ssl-client-verify", "SUCCESS"))
         .insert_header(("x-forwarded-tls-client-cert-sha256", thumbprint.as_str()))
+        .insert_header(("x-forwarded-tls-client-cert-subject-dn", "CN=trusted-proxy"))
         .to_http_request();
     let mut client = confidential_client_with_secret(&fixture_secret("unused"));
     client.token_endpoint_auth_method = "tls_client_auth".to_owned();
+    client.tls_client_auth_subject_dn = Some("CN=trusted-proxy".to_owned());
     client.tls_client_auth_cert_sha256 = Some(thumbprint);
     let credentials = client_credentials("tls_client_auth");
 

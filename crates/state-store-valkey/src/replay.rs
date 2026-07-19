@@ -2,7 +2,7 @@ use crate::{Error, ValkeyConnection, command, keys};
 use chrono::Utc;
 use nazo_auth::{DpopStateFuture, DpopStateStoreError, DpopStateStorePort};
 use nazo_resource_server::{
-    DpopNonceConsumptionResult, DpopNonceStorage, DpopReplayConsumption,
+    DpopNonceStorage, DpopNonceValidationResult, DpopReplayConsumption,
     DpopReplayConsumptionResult, DpopReplayKey, ProtectedResourceDependencyError,
     ResourceServerPortFuture,
 };
@@ -29,9 +29,9 @@ impl DpopStateStorePort for ReplayStore {
         })
     }
 
-    fn consume_nonce<'a>(&'a self, nonce: &'a str) -> DpopStateFuture<'a, bool> {
+    fn validate_nonce<'a>(&'a self, nonce: &'a str) -> DpopStateFuture<'a, bool> {
         Box::pin(async move {
-            self.consume_dpop_nonce(nonce)
+            self.validate_dpop_nonce(nonce)
                 .await
                 .map_err(|_| DpopStateStoreError)
         })
@@ -83,21 +83,21 @@ impl DpopNonceStorage for ReplayStore {
         })
     }
 
-    fn consume_nonce<'a>(
+    fn validate_nonce<'a>(
         &'a self,
         nonce: &'a str,
     ) -> ResourceServerPortFuture<
         'a,
-        Result<DpopNonceConsumptionResult, ProtectedResourceDependencyError>,
+        Result<DpopNonceValidationResult, ProtectedResourceDependencyError>,
     > {
         Box::pin(async move {
-            self.consume_dpop_nonce(nonce)
+            self.validate_dpop_nonce(nonce)
                 .await
-                .map(|consumed| {
-                    if consumed {
-                        DpopNonceConsumptionResult::Accepted
+                .map(|valid| {
+                    if valid {
+                        DpopNonceValidationResult::Accepted
                     } else {
-                        DpopNonceConsumptionResult::Unknown
+                        DpopNonceValidationResult::Unknown
                     }
                 })
                 .map_err(|_| ProtectedResourceDependencyError::DpopNonceStoreUnavailable)
@@ -147,8 +147,8 @@ impl ReplayStore {
         command::set_ex(&self.connection, keys::dpop_nonce(nonce), "1", ttl_seconds).await
     }
 
-    pub async fn consume_dpop_nonce(&self, nonce: &str) -> Result<bool, Error> {
-        Ok(command::take(&self.connection, keys::dpop_nonce(nonce))
+    pub async fn validate_dpop_nonce(&self, nonce: &str) -> Result<bool, Error> {
+        Ok(command::get(&self.connection, keys::dpop_nonce(nonce))
             .await?
             .is_some())
     }

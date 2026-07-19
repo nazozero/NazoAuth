@@ -297,7 +297,7 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         nonce: &'a str,
         ttl_seconds: u64,
     ) -> AuthorizationFuture<'a, ()>;
-    fn consume_dpop_nonce<'a>(&'a self, nonce: &'a str) -> AuthorizationFuture<'a, bool>;
+    fn validate_dpop_nonce<'a>(&'a self, nonce: &'a str) -> AuthorizationFuture<'a, bool>;
     fn increment_rate<'a>(
         &'a self,
         dimension: AuthorizationRateDimension,
@@ -719,8 +719,8 @@ where
     ) -> Result<(), AuthorizationPortError> {
         self.state.issue_dpop_nonce(nonce, ttl).await
     }
-    pub async fn consume_dpop_nonce(&self, nonce: &str) -> Result<bool, AuthorizationPortError> {
-        self.state.consume_dpop_nonce(nonce).await
+    pub async fn validate_dpop_nonce(&self, nonce: &str) -> Result<bool, AuthorizationPortError> {
+        self.state.validate_dpop_nonce(nonce).await
     }
     pub async fn increment_rate(
         &self,
@@ -1070,7 +1070,7 @@ mod tests {
             Box::pin(async { Ok(()) })
         }
 
-        fn consume_dpop_nonce<'a>(&'a self, _nonce: &'a str) -> AuthorizationFuture<'a, bool> {
+        fn validate_dpop_nonce<'a>(&'a self, _nonce: &'a str) -> AuthorizationFuture<'a, bool> {
             Box::pin(async { Ok(true) })
         }
 

@@ -1,12 +1,13 @@
 import importlib.util
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
 
 def load_setup_module():
-    script = Path(__file__).resolve().parents[2] / "scripts" / "setup_local_oidf_podman.py"
-    spec = importlib.util.spec_from_file_location("setup_local_oidf_podman", script)
+    script = Path(__file__).resolve().parents[2] / "scripts" / "prepare_oidf_black_box.py"
+    spec = importlib.util.spec_from_file_location("prepare_oidf_black_box", script)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     with mock.patch.dict(
@@ -15,16 +16,20 @@ def load_setup_module():
             "OIDF_TARGET_ISSUER": "https://issuer.example",
             "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
             "OIDF_SUITE_BASE_URL": "https://suite.example",
+            "OIDF_APPLICANT_EMAIL": "applicant@example.com",
+            "OIDF_APPLICANT_PASSWORD": "test-applicant-password",
+            "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN": "test-initial-access-token",
+            "OIDF_CIBA_AUTOMATED_DECISION_TOKEN": "test-ciba-decision-token",
         },
-        clear=False,
+        clear=True,
     ):
         spec.loader.exec_module(module)
     return module
 
 
 def load_setup_module_with_suite_base(suite_base_url: str):
-    script = Path(__file__).resolve().parents[2] / "scripts" / "setup_local_oidf_podman.py"
-    spec = importlib.util.spec_from_file_location("setup_local_oidf_podman", script)
+    script = Path(__file__).resolve().parents[2] / "scripts" / "prepare_oidf_black_box.py"
+    spec = importlib.util.spec_from_file_location("prepare_oidf_black_box", script)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     with mock.patch.dict(
@@ -33,14 +38,79 @@ def load_setup_module_with_suite_base(suite_base_url: str):
             "OIDF_TARGET_ISSUER": "https://issuer.example",
             "OIDF_MTLS_TARGET_ISSUER": "https://mtls.issuer.example",
             "OIDF_SUITE_BASE_URL": suite_base_url,
+            "OIDF_APPLICANT_EMAIL": "applicant@example.com",
+            "OIDF_APPLICANT_PASSWORD": "test-applicant-password",
+            "OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN": "test-initial-access-token",
+            "OIDF_CIBA_AUTOMATED_DECISION_TOKEN": "test-ciba-decision-token",
         },
-        clear=False,
+        clear=True,
     ):
         spec.loader.exec_module(module)
     return module
 
 
-class SetupLocalOidfPodmanTests(unittest.TestCase):
+class PrepareOidfBlackBoxTests(unittest.TestCase):
+    def test_generated_mtls_ca_has_explicit_ca_signing_constraints(self):
+        module = load_setup_module()
+
+        with tempfile.TemporaryDirectory() as directory:
+            module.RUNTIME = Path(directory)
+
+            def generate_key(command, **_kwargs):
+                Path(command[command.index("-keyout") + 1]).touch()
+
+            with mock.patch.object(
+                module.subprocess, "run", side_effect=generate_key
+            ) as run:
+                module.ensure_mtls_ca()
+
+        command = run.call_args.args[0]
+        extensions = [
+            command[index + 1]
+            for index, argument in enumerate(command[:-1])
+            if argument == "-addext"
+        ]
+        self.assertEqual(
+            extensions,
+            [
+                "basicConstraints=critical,CA:TRUE",
+                "keyUsage=critical,keyCertSign,cRLSign",
+            ],
+        )
+
+    def test_baseline_logout_session_flags_follow_specification_defaults(self):
+        module = load_setup_module()
+
+        request = module.base_client_request(
+            name="Baseline client",
+            auth_method="client_secret_basic",
+            redirect_uris=["https://client.example/callback"],
+        )
+
+        self.assertFalse(request["frontchannel_logout_session_required"])
+        self.assertFalse(request["backchannel_logout_session_required"])
+
+    def test_operator_clients_use_a_stable_non_official_run_namespace(self):
+        first = load_setup_module_with_suite_base("https://suite.example")
+        second = load_setup_module_with_suite_base("https://other-suite.example")
+
+        self.assertTrue(first.RUN_NAMESPACE.startswith("bb-"))
+        self.assertNotEqual(first.RUN_NAMESPACE, second.RUN_NAMESPACE)
+        self.assertNotEqual(first.BASIC_CLIENT_ID, "oidf-basic-client")
+        self.assertTrue(first.BASIC_CLIENT_ID.startswith(f"oidf-{first.RUN_NAMESPACE}-"))
+        self.assertTrue(first.FAPI_CLIENT_PREFIX.startswith(f"oidf-{first.RUN_NAMESPACE}-"))
+
+        self.assertEqual(
+            first.onboarding_contract(),
+            {
+                "schema": 1,
+                "onboarding_profile": "operator-black-box",
+                "target_issuer": "https://issuer.example",
+                "suite_base_url": "https://suite.example",
+                "run_namespace": first.RUN_NAMESPACE,
+            },
+        )
+
     def test_suite_base_must_be_public_dns_not_local_or_raw_ip(self):
         for suite_base_url in (
             "https://127.0.0.1:8443",
@@ -107,15 +177,19 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
         self.assertEqual(len(authorize_entries), 1)
         self.assertNotIn("override", config)
 
-    def test_local_reverse_proxy_uses_operator_supplied_issuer_host(self):
-        module = load_setup_module()
+    def test_generator_does_not_materialize_a_private_product_environment(self):
+        source = (Path(__file__).resolve().parents[2] / "scripts" / "prepare_oidf_black_box.py").read_text(
+            encoding="utf-8"
+        )
 
-        module.write_nginx()
-        nginx = (module.RUNTIME / "nginx.conf").read_text(encoding="utf-8")
-
-        self.assertIn("proxy_set_header Host issuer.example;", nginx)
-        self.assertIn("proxy_set_header X-Forwarded-Host issuer.example;", nginx)
-        self.assertNotIn("auth.nazo.run", nginx)
+        for forbidden in (
+            "write_nginx",
+            "write_env_yaml",
+            "write_ui",
+            "ensure_server_oidf_keyset",
+            "listen 9443",
+        ):
+            self.assertNotIn(forbidden, source)
 
     def test_fapi_ciba_plans_are_the_orthogonal_supported_combinations(self):
         module = load_setup_module()
@@ -157,6 +231,45 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
                         f"https://suite.example/test/a/{config['alias']}"
                         "/ciba-notification-endpoint",
                     )
+
+    def test_tls_client_auth_onboarding_narrows_ca_trust_with_leaf_pin(self):
+        module = load_setup_module()
+        config = {
+            "alias": "fapi-mtls",
+            "nazo": {
+                "client_auth_type": "mtls",
+                "sender_constrain": "mtls",
+                "fapi_profile": "plain_fapi",
+            },
+            "client": {"client_id": "mtls-client-1", "scope": "openid", "jwks": {}},
+            "client2": {"client_id": "mtls-client-2", "scope": "openid", "jwks": {}},
+            "mtls": {"cert": "certificate-1", "ca": "ca-certificate"},
+            "mtls2": {"cert": "certificate-2", "ca": "ca-certificate"},
+        }
+
+        with (
+            mock.patch.object(module, "public_jwks", return_value={"keys": []}),
+            mock.patch.object(module, "certificate_subject_dn", return_value="CN=client"),
+            mock.patch.object(
+                module,
+                "certificate_sha256",
+                side_effect=("1" * 64, "2" * 64),
+            ),
+        ):
+            clients = module.onboarding_clients({"oidf-fapi-mtls.json": config})
+
+        by_id = {item["logical_client_id"]: item for item in clients}
+        self.assertEqual(
+            by_id["mtls-client-1"]["request"]["tls_client_auth_cert_sha256"],
+            "1" * 64,
+        )
+        self.assertEqual(
+            by_id["mtls-client-2"]["request"]["tls_client_auth_cert_sha256"],
+            "2" * 64,
+        )
+        self.assertEqual(
+            by_id["mtls-client-1"]["mtls_trust_anchor_pem"], "ca-certificate"
+        )
 
     def test_plan_manifest_description_uses_the_actual_plan_count(self):
         module = load_setup_module()
@@ -309,22 +422,22 @@ class SetupLocalOidfPodmanTests(unittest.TestCase):
     def test_help_exits_before_generating_runtime_files(self):
         module = load_setup_module()
 
-        with mock.patch.object(module, "ensure_cert") as ensure_cert:
+        with mock.patch.object(module, "ensure_mtls_certs") as ensure_mtls_certs:
             with self.assertRaises(SystemExit) as raised:
                 module.main(["--help"])
 
         self.assertEqual(raised.exception.code, 0)
-        ensure_cert.assert_not_called()
+        ensure_mtls_certs.assert_not_called()
 
     def test_unknown_argument_exits_before_generating_runtime_files(self):
         module = load_setup_module()
 
-        with mock.patch.object(module, "ensure_cert") as ensure_cert:
+        with mock.patch.object(module, "ensure_mtls_certs") as ensure_mtls_certs:
             with self.assertRaises(SystemExit) as raised:
                 module.main(["--not-a-real-option"])
 
         self.assertEqual(raised.exception.code, 2)
-        ensure_cert.assert_not_called()
+        ensure_mtls_certs.assert_not_called()
 
 
 if __name__ == "__main__":

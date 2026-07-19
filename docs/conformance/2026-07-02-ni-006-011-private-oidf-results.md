@@ -80,4 +80,4 @@ mTLS holder-of-key token-polling error precedence.
 - `cargo fmt --check`
 - `rtk proxy cargo fmt --check`
 - `python -m compileall -q scripts tests/unit`
-- `python -m unittest tests.unit.test_setup_local_oidf_podman`
+- `python -m unittest tests.unit.test_prepare_oidf_black_box`

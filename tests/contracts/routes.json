@@ -57,7 +57,7 @@
     {"path":"/auth/me/federation/links","methods":["GET"],"condition":"always"},
     {"path":"/auth/me/federation/links/{link_id}","methods":["DELETE"],"condition":"always"},
     {"path":"/auth/me/access-requests","methods":["GET","POST"],"condition":"always"},
-    {"path":"/auth/me/access-delivery","methods":["GET"],"condition":"always"},
+    {"path":"/auth/me/access-delivery","methods":["POST"],"condition":"always"},
     {"path":"/auth/ciba-automated-decision","methods":["GET","POST"],"condition":"always"},
     {"path":"/auth/ciba/automated","methods":["GET","POST"],"condition":"always"},
     {"path":"/auth/ciba/{auth_req_id}","methods":["GET","POST"],"condition":"always"},

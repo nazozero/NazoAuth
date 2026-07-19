@@ -44,10 +44,6 @@ pub fn client_jwe_key_management_from_name(value: &str) -> Option<ClientJweKeyMa
 pub fn client_jwe_encryption_key_matches_alg(key: &Value, alg: &str) -> bool {
     key.get("use").and_then(Value::as_str) == Some("enc")
         && key.get("alg").and_then(Value::as_str) == Some(alg)
-        && key
-            .get("kid")
-            .and_then(Value::as_str)
-            .is_some_and(|kid| !kid.trim().is_empty())
         && match client_jwe_key_management_from_name(alg) {
             Some(ClientJweKeyManagement::RsaOaep256) => valid_rsa_jwe_encryption_key(key),
             Some(

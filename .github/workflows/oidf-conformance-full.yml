@@ -15,12 +15,26 @@ on:
         options:
           - serial
           - parallel-isolated
+      onboarding_material_only:
+        description: "Export production-onboarding material without creating suite plans."
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
 
 jobs:
+  export-onboarding-material:
+    if: ${{ inputs.onboarding_material_only }}
+    uses: ./.github/workflows/oidf-public-onboarding-material.yml
+    with:
+      target_issuer: ${{ inputs.target_issuer }}
+      suite_base_url: ${{ vars.OIDF_CONFORMANCE_SERVER || 'https://www.certification.openid.net/' }}
+    secrets: inherit
+
   oidf-conformance-full:
+    if: ${{ !inputs.onboarding_material_only }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     env:
@@ -261,6 +275,11 @@ jobs:
             --identity oidf-plan-config.agekey \
             --output oidf-plan-config-ciba-secret-patch.json \
             docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          printf '%s\n' "$OIDF_MTLS_MATERIAL_AGE_IDENTITY" > oidf-mtls-material.agekey
+          rage --decrypt \
+            --identity oidf-mtls-material.agekey \
+            --output oidf-mtls-material.json \
+            docs/conformance/oidf-mtls-material.json.age
           python - <<'PY'
           import json
 
@@ -281,28 +300,25 @@ jobs:
           python scripts/materialize_oidf_plan_config.py \
             --template docs/conformance/oidf-plan-config-template.json \
             --secret-patch-file oidf-plan-config-secret-patch.merged.json \
+            --mtls-material-file oidf-mtls-material.json \
             --derive-dynamic-oidcc-config \
             --derive-fapi-ciba-matrix-configs \
-            --ciba-notification-base-url https://www.certification.openid.net \
+            --ciba-notification-base-url "$CONFORMANCE_SERVER" \
             --target-issuer "$OIDF_TARGET_ISSUER" \
             --output oidf-plan-configs.json
-          python scripts/export_oidf_public_plan_configs.py \
+          test -n "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON"
+          printf '%s' "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON" > oidf-delivered-client-material.json
+          chmod 600 oidf-delivered-client-material.json
+          python scripts/apply_oidf_delivered_client_material.py \
+            --material-json-file oidf-delivered-client-material.json \
             --config-json-file oidf-plan-configs.json \
-            --output-dir oidf-public-plan-configs \
-            --source-commit "$GITHUB_SHA"
-          python scripts/oidf_mtls_ca_bundle.py verify \
-            --artifact-directory oidf-public-plan-configs \
-            --expected-source-commit "$GITHUB_SHA"
+            --expected-target-issuer "$OIDF_TARGET_ISSUER" \
+            --expected-suite-base-url "$CONFORMANCE_SERVER"
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
+          OIDF_MTLS_MATERIAL_AGE_IDENTITY: ${{ secrets.OIDF_MTLS_MATERIAL_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
-
-      - name: Upload public OIDF seed configs
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          name: oidf-public-plan-configs
-          path: oidf-public-plan-configs
-          if-no-files-found: error
+          OIDF_DELIVERED_CLIENT_MATERIAL_JSON: ${{ secrets.OIDF_DELIVERED_CLIENT_MATERIAL_JSON }}
 
       - name: Run full OIDF matrix
         run: |
@@ -398,7 +414,7 @@ jobs:
           if-no-files-found: ignore
 
   oidf-conformance-browser-isolated:
-    if: ${{ inputs.runner_mode == 'parallel-isolated' }}
+    if: ${{ !inputs.onboarding_material_only && inputs.runner_mode == 'parallel-isolated' }}
     runs-on: ubuntu-latest
     timeout-minutes: 360
     strategy:
@@ -474,6 +490,11 @@ jobs:
             --identity oidf-plan-config.agekey \
             --output oidf-plan-config-ciba-secret-patch.json \
             docs/conformance/oidf-plan-config-ciba-secret-patch.json.age
+          printf '%s\n' "$OIDF_MTLS_MATERIAL_AGE_IDENTITY" > oidf-mtls-material.agekey
+          rage --decrypt \
+            --identity oidf-mtls-material.agekey \
+            --output oidf-mtls-material.json \
+            docs/conformance/oidf-mtls-material.json.age
           python - <<'PY'
           import json
 
@@ -494,14 +515,25 @@ jobs:
           python scripts/materialize_oidf_plan_config.py \
             --template docs/conformance/oidf-plan-config-template.json \
             --secret-patch-file oidf-plan-config-secret-patch.merged.json \
+            --mtls-material-file oidf-mtls-material.json \
             --derive-dynamic-oidcc-config \
             --derive-fapi-ciba-matrix-configs \
-            --ciba-notification-base-url https://www.certification.openid.net \
+            --ciba-notification-base-url "$CONFORMANCE_SERVER" \
             --target-issuer "$OIDF_TARGET_ISSUER" \
             --output oidf-plan-configs.json
+          test -n "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON"
+          printf '%s' "$OIDF_DELIVERED_CLIENT_MATERIAL_JSON" > oidf-delivered-client-material.json
+          chmod 600 oidf-delivered-client-material.json
+          python scripts/apply_oidf_delivered_client_material.py \
+            --material-json-file oidf-delivered-client-material.json \
+            --config-json-file oidf-plan-configs.json \
+            --expected-target-issuer "$OIDF_TARGET_ISSUER" \
+            --expected-suite-base-url "$CONFORMANCE_SERVER"
         env:
           OIDF_PLAN_CONFIG_AGE_IDENTITY: ${{ secrets.OIDF_PLAN_CONFIG_AGE_IDENTITY }}
+          OIDF_MTLS_MATERIAL_AGE_IDENTITY: ${{ secrets.OIDF_MTLS_MATERIAL_AGE_IDENTITY }}
           OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN: ${{ secrets.OIDF_DYNAMIC_REGISTRATION_INITIAL_ACCESS_TOKEN }}
+          OIDF_DELIVERED_CLIENT_MATERIAL_JSON: ${{ secrets.OIDF_DELIVERED_CLIENT_MATERIAL_JSON }}
 
       - name: Run isolated OIDF browser-sensitive plan
         run: |
