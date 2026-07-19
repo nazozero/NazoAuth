@@ -8,12 +8,6 @@ use yaml_serde::Value as YamlValue;
 
 const CONFIG_FILE: &str = ".env.yaml";
 const UNSUPPORTED_DOTENV_FILE: &str = ".env";
-const DEPRECATED_IGNORED_CONFIG_KEYS: &[&str] = &[
-    // Retained so existing deployments can remove the obsolete OpenID
-    // Federation gate on their own schedule. The incomplete endpoint was
-    // removed and this key intentionally has no runtime effect.
-    "ENABLE_OIDC_FEDERATION",
-];
 pub const DEFAULT_DATABASE_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/oauth";
 pub const DEFAULT_DATABASE_MAX_CONNECTIONS: usize = 32;
 const ENV_CONFIG_KEYS: &[&str] = &[
@@ -255,13 +249,6 @@ impl ConfigSource {
             let Some(key) = key.as_str().map(str::trim).filter(|key| !key.is_empty()) else {
                 bail!("{} contains a non-string or empty key", path.display());
             };
-            if DEPRECATED_IGNORED_CONFIG_KEYS.contains(&key) {
-                let value = yaml_value_to_string(key, &value)?;
-                if parse_bool(&value).is_none() {
-                    bail!("{key} must be a boolean value");
-                }
-                continue;
-            }
             if !ENV_CONFIG_KEYS.contains(&key) {
                 bail!("{} contains unknown config key {key}", path.display());
             }
@@ -322,5 +309,5 @@ pub fn database_max_connections(source: &ConfigSource) -> anyhow::Result<usize> 
 }
 
 #[cfg(test)]
-#[path = "../tests/in_source/src/config/tests/config.rs"]
+#[path = "../tests/source_mounted/src/config/tests/config.rs"]
 mod tests;

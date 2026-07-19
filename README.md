@@ -138,7 +138,7 @@ RUST_LOG: "info"
 | `JWK_KEYS_DIR` | `DATA_DIR + "/keys"` |
 | `AVATAR_STORAGE_DIR` | `DATA_DIR + "/avatars"` |
 
-Advanced settings still exist for compatibility and specialized deployments.
+Advanced settings cover specialized deployments.
 They are documented in [docs/operations/configuration.md](docs/operations/configuration.md).
 
 ## Default boundaries

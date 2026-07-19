@@ -862,7 +862,7 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
         "http/token/native_sso.rs",
         "http/token/refresh.rs",
         "http/token/token_exchange.rs",
-        "http/token/userinfo.rs",
+        "domain/userinfo.rs",
         "domain/client_policy.rs",
         "http/views.rs",
     ] {

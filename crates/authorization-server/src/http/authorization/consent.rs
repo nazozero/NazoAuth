@@ -137,5 +137,5 @@ async fn authorize_consent_with_context(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/authorization/tests/consent.rs"]
+#[path = "../../../tests/source_mounted/src/http/authorization/tests/consent.rs"]
 mod tests;

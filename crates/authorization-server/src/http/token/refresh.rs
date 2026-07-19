@@ -7,7 +7,7 @@ use crate::adapters::security::constant_time_eq;
 #[cfg(test)]
 use crate::adapters::security::decode_access_claims_with;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 use crate::domain::client_policy::audiences_allowed;
 use crate::domain::client_policy::is_subset;
 use crate::domain::client_policy::json_array_to_strings;
@@ -19,7 +19,6 @@ use crate::domain::tenancy::DEFAULT_REALM_ID;
 #[cfg(test)]
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue, TokenRow};
-use crate::http::client_ip::client_ip_with_context;
 use crate::http::dpop::DpopErrorContext;
 use crate::http::dpop::dpop_error_response;
 use crate::http::dpop::dpop_proof_present;
@@ -34,6 +33,7 @@ use actix_web::{HttpRequest, HttpResponse};
 #[cfg(test)]
 use chrono::Duration;
 use chrono::{DateTime, Utc};
+use nazo_http_actix::client_ip_with_context;
 use nazo_http_actix::oauth_token_error;
 #[cfg(test)]
 use serde_json::Value;
@@ -460,7 +460,7 @@ pub(crate) async fn token_refresh_with_service(
 
 #[cfg(test)]
 pub(crate) async fn token_refresh(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -490,5 +490,5 @@ pub(crate) async fn token_refresh(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/refresh.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/refresh.rs"]
 mod tests;

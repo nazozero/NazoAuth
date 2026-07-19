@@ -3,18 +3,16 @@
 use nazo_http_actix::{authorization_error_response, oauth_error};
 
 #[cfg(test)]
-use super::client_ip::client_ip;
-use super::client_ip::{ClientIpConfig, client_ip_with_config};
-#[cfg(test)]
-use super::{client_ip::ClientIpHeaderMode, client_ip::IpCidr, client_ip::client_ip_with_context};
-#[cfg(test)]
 use crate::adapters::security::blake3_hex;
 #[cfg(test)]
-use crate::{domain::TestAppState, settings::RateLimitSettings, settings::Settings};
+use crate::{domain::TestInfrastructure, settings::RateLimitSettings, settings::Settings};
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
 use actix_web::{HttpRequest, HttpResponse};
+use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
+#[cfg(test)]
+use nazo_http_actix::{ClientIpHeaderMode, IpCidr, client_ip_with_context};
 
 #[derive(Clone, Copy)]
 pub(crate) struct AuthRateLimitConfig {
@@ -152,7 +150,7 @@ impl RateLimitPolicy {
 
 #[cfg(test)]
 pub(crate) async fn enforce_rate_limit(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
     policy: RateLimitPolicy,
 ) -> Result<(), HttpResponse> {
@@ -231,7 +229,11 @@ pub(crate) async fn enforce_auth_rate_limit(
 
 #[cfg(test)]
 fn rate_limit_subject(req: &HttpRequest, settings: &Settings) -> String {
-    client_ip(req, settings)
+    client_ip_with_context(
+        req,
+        settings.endpoint.client_ip_header_mode,
+        &settings.endpoint.trusted_proxy_cidrs,
+    )
 }
 
 #[cfg(test)]
@@ -256,5 +258,5 @@ pub(crate) fn rate_limited_response(retry_after_seconds: u64) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/rate_limit.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/rate_limit.rs"]
 mod tests;

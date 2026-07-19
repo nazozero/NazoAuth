@@ -144,8 +144,8 @@ pub struct KeyRecord {
 ///
 /// Purpose-scoped signing keys are reported separately from rotation
 /// candidates so operators cannot mistake them for the next OIDC active key.
-/// Legacy auxiliary entries without explicit `purposes` retain their historical
-/// `Prepublished` presentation for backward compatibility.
+/// Entries without explicit `purposes` are rotation keys and are reported as
+/// `Prepublished` until selected through `active_kid`.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyRecordStatus {
     Prepublished,

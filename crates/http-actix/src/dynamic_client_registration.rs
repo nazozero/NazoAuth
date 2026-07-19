@@ -28,7 +28,6 @@ use crate::{
     json_response_status_no_store, oauth_bearer_error, oauth_error,
 };
 
-pub use nazo_auth::DynamicRegistrationSecretPort as DynamicRegistrationSecurity;
 pub use nazo_auth::{
     DynamicRegistrationClientStore, DynamicRegistrationDependencyError, DynamicRegistrationFuture,
 };
@@ -1131,7 +1130,7 @@ mod tests {
         }
     }
 
-    impl DynamicRegistrationSecurity for FakeSecurity {
+    impl DynamicRegistrationSecretPort for FakeSecurity {
         fn random_token(&self) -> String {
             "registration-token".to_owned()
         }

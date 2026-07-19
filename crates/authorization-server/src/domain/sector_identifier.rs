@@ -168,5 +168,5 @@ pub(crate) async fn fetch_sector_identifier_uris(
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/sector_identifier.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/sector_identifier.rs"]
 mod tests;

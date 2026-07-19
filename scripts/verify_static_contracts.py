@@ -401,7 +401,7 @@ def check_fapi_ciba_boundaries() -> None:
         / "crates"
         / "authorization-server"
         / "tests"
-        / "in_source"
+        / "source_mounted"
         / "src"
         / "domain"
         / "tests"

@@ -730,7 +730,7 @@ fn mdoc_holder_key(device_key: Option<&coset::CoseKey>) -> Result<Value, Credent
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/domain/tests/openid4vc.rs"]
+#[path = "../../tests/source_mounted/src/domain/tests/openid4vc.rs"]
 mod tests;
 
 #[derive(Deserialize)]

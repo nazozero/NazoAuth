@@ -325,5 +325,5 @@ mod tests {
 }
 
 #[cfg(test)]
-#[path = "tests/external_compat.rs"]
-mod compatibility_tests;
+#[path = "tests/external_signer.rs"]
+mod external_signer_tests;

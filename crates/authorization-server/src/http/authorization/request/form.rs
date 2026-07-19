@@ -86,5 +86,5 @@ fn parse_authorization_form_encoded(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/in_source/src/http/authorization/request/tests/form.rs"]
+#[path = "../../../../tests/source_mounted/src/http/authorization/request/tests/form.rs"]
 mod tests;

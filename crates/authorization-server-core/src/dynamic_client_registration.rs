@@ -406,8 +406,8 @@ pub fn prepare_dynamic_client_registration(
         tls_client_auth_subject_dn: request.tls_client_auth_subject_dn,
         // RFC 8705 defines each PKI subject selector as a single string and
         // requires exactly one selector for tls_client_auth. The internal
-        // client model retains vectors for schema compatibility, but dynamic
-        // registration never creates multi-valued selectors.
+        // client model stores selectors as vectors, but RFC 8705 dynamic
+        // registration accepts exactly one value for each selector.
         tls_client_auth_cert_sha256: None,
         tls_client_auth_san_dns: request.tls_client_auth_san_dns.into_iter().collect(),
         tls_client_auth_san_uri: request.tls_client_auth_san_uri.into_iter().collect(),
@@ -505,7 +505,7 @@ impl PreparedDynamicClientRegistration {
     pub fn into_create_client_request(self) -> CreateClientRequest {
         // OIDC Core section 9 defines the token endpoint URL as the audience for
         // private_key_jwt client assertions. FAPI clients are provisioned through the
-        // profile-aware admin/seed paths, which keep this compatibility policy disabled.
+        // profile-aware admin paths, which keep this baseline OIDC policy disabled.
         let allow_client_assertion_endpoint_audience =
             self.token_endpoint_auth_method == "private_key_jwt";
         CreateClientRequest {

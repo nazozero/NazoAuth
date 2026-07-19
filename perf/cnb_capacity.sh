@@ -31,9 +31,8 @@ export COMPOSE_PROJECT_NAME
 
 mkdir -p "$(dirname "${REPORT}")" perf/results
 
-LEGACY_CPUSET="${PERF_CPUSET:-}"
-APP_CPUSET="${PERF_APP_CPUSET:-${LEGACY_CPUSET}}"
-INFRA_CPUSET="${PERF_INFRA_CPUSET:-${LEGACY_CPUSET}}"
+APP_CPUSET="${PERF_APP_CPUSET:-}"
+INFRA_CPUSET="${PERF_INFRA_CPUSET:-}"
 APP_CPUS="${PERF_APP_CPUS:-}"
 APP_TASKSET="${PERF_APP_TASKSET:-}"
 
@@ -54,7 +53,7 @@ write_service_override() {
   fi
 }
 
-if [ -n "${LEGACY_CPUSET}" ] || [ -n "${APP_CPUSET}" ] || [ -n "${INFRA_CPUSET}" ] || [ -n "${APP_CPUS}" ] || [ -n "${APP_TASKSET}" ]; then
+if [ -n "${APP_CPUSET}" ] || [ -n "${INFRA_CPUSET}" ] || [ -n "${APP_CPUS}" ] || [ -n "${APP_TASKSET}" ]; then
   PERF_COMPOSE_OVERRIDE="perf/results/docker-compose.cpuset-${REPORT_SUFFIX}.yml"
   export PERF_COMPOSE_OVERRIDE
   {
@@ -91,14 +90,9 @@ print(count)
 PY
 }
 
-if [ -n "${LEGACY_CPUSET}" ]; then
-  CPUSET_VALUE="${LEGACY_CPUSET}"
-  CPUSET_CORES="$(cpuset_count "${LEGACY_CPUSET}")"
-else
-  CPUSET_VALUE="${APP_CPUSET:+app=${APP_CPUSET}; }${INFRA_CPUSET:+infra=${INFRA_CPUSET}}"
-  CPUSET_VALUE="${CPUSET_VALUE:-unrestricted}"
-  CPUSET_CORES="app=$(cpuset_count "${APP_CPUSET}"), infra=$(cpuset_count "${INFRA_CPUSET}")"
-fi
+CPUSET_VALUE="${APP_CPUSET:+app=${APP_CPUSET}; }${INFRA_CPUSET:+infra=${INFRA_CPUSET}}"
+CPUSET_VALUE="${CPUSET_VALUE:-unrestricted}"
+CPUSET_CORES="app=$(cpuset_count "${APP_CPUSET}"), infra=$(cpuset_count "${INFRA_CPUSET}")"
 
 APP_CPUSET_VALUE="${APP_CPUSET:-unrestricted}"
 APP_CPUSET_CORES="$(cpuset_count "${APP_CPUSET}")"
@@ -113,19 +107,12 @@ else
   COMPOSE_FILES_VALUE="docker-compose.perf.yml"
 fi
 
-LEGACY_PIN_TEXT="postgres, valkey, keyset, migrate, nazoauth, perf"
-if [ -n "${LEGACY_CPUSET}" ]; then
-  PIN_TEXT="${LEGACY_PIN_TEXT}"
-else
-  PIN_TEXT="nazoauth:${APP_CPUSET_VALUE} quota=${APP_CPUS_VALUE} taskset=${APP_TASKSET_VALUE}; postgres,valkey,keyset,migrate,perf:${INFRA_CPUSET_VALUE}"
-fi
+PIN_TEXT="nazoauth:${APP_CPUSET_VALUE} quota=${APP_CPUS_VALUE} taskset=${APP_TASKSET_VALUE}; postgres,valkey,keyset,migrate,perf:${INFRA_CPUSET_VALUE}"
 
 if [ -n "${APP_TASKSET}" ]; then
   CPU_MODEL_TEXT="NazoAuth is started through taskset on CPU ${APP_TASKSET}. Docker cpus/cpuset fields are still recorded, but process CPU affinity is the effective app CPU limiter in CNB nested Docker."
 elif [ -n "${APP_CPUS}" ]; then
   CPU_MODEL_TEXT="NazoAuth has a Docker CPU quota of ${APP_CPUS} CPU(s). PostgreSQL, Valkey, keyset, migrate, and perf use the infra CPU set and are not CPU-quota limited by this override."
-elif [ -n "${LEGACY_CPUSET}" ]; then
-  CPU_MODEL_TEXT="Docker cpuset isolation; no CPU quota. Each service container may run on the listed CPU set. NazoAuth is additionally scaled by the stage instance count."
 else
   CPU_MODEL_TEXT="Docker cpuset isolation where configured; no CPU quota unless App CPU quota is set. NazoAuth is additionally scaled by the stage instance count."
 fi

@@ -5,11 +5,7 @@ use super::{ServerTokenService, TokenForm};
 use crate::adapters::security::ValidatedClientAssertion;
 #[cfg(test)]
 use crate::adapters::security::blake3_hex;
-#[cfg(test)]
-use crate::adapters::security::jwt_decoding_key_from_jwk;
 use crate::adapters::security::random_urlsafe_token;
-#[cfg(test)]
-use crate::domain::TestAppState;
 use crate::domain::client_policy::is_subset;
 use crate::domain::client_policy::parse_scope;
 use crate::domain::{ClientRow, NativeSsoTokenBinding, RefreshTokenPolicy, TokenIssue};
@@ -97,25 +93,6 @@ fn native_sso_id_token_audience_contains(claims: &NativeSsoIdTokenClaims, client
         Value::Array(values) => values.iter().any(|value| value.as_str() == Some(client_id)),
         _ => false,
     }
-}
-
-#[cfg(test)]
-fn decode_native_sso_id_token(state: &TestAppState, token: &str) -> Option<NativeSsoIdTokenClaims> {
-    let header = jsonwebtoken::decode_header(token).ok()?;
-    let keyset = state.keyset.snapshot();
-    let verification_key = keyset.verification_key(header.kid.as_deref()?)?;
-    let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
-    let mut validation = jsonwebtoken::Validation::new(header.alg);
-    validation.validate_aud = false;
-    validation.validate_exp = false;
-    validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
-    let claims = jsonwebtoken::decode::<NativeSsoIdTokenClaims>(token, &decoding_key, &validation)
-        .ok()?
-        .claims;
-    if claims.iss != state.settings.endpoint.issuer {
-        return None;
-    }
-    Some(claims)
 }
 
 async fn decode_native_sso_id_token_with_service(
@@ -465,5 +442,5 @@ pub(crate) async fn token_native_sso_exchange(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/native_sso.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/native_sso.rs"]
 mod tests;

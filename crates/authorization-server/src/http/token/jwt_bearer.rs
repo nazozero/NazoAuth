@@ -10,7 +10,7 @@ use super::{
 use crate::adapters::security::ValidatedClientAssertion;
 use crate::adapters::security::client_jwt_decoding_key;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 #[cfg(test)]
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 #[cfg(test)]
@@ -196,7 +196,7 @@ fn jwt_bearer_grant_error_response(
 
 #[cfg(test)]
 async fn consume_jwt_bearer_assertion(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     client: &ClientRow,
     assertion: &ValidatedJwtBearerAssertion,
 ) -> Result<(), JwtBearerAssertionError> {
@@ -346,7 +346,7 @@ pub(crate) async fn token_jwt_bearer_with_service(
 
 #[cfg(test)]
 pub(crate) async fn token_jwt_bearer(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -377,5 +377,5 @@ pub(crate) async fn token_jwt_bearer(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/jwt_bearer.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/jwt_bearer.rs"]
 mod tests;

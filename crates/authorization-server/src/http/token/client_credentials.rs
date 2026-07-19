@@ -1,7 +1,7 @@
 //! client_credentials grant 处理。
 use crate::adapters::security::ValidatedClientAssertion;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 use crate::domain::client_policy::audiences_allowed;
 use crate::domain::client_policy::is_subset;
 use crate::domain::client_policy::parse_scope;
@@ -207,7 +207,7 @@ pub(crate) async fn token_client_credentials_with_service(
 
 #[cfg(test)]
 pub(crate) async fn token_client_credentials(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     req: &HttpRequest,
     client: &ClientRow,
     form: &TokenForm,
@@ -243,5 +243,5 @@ pub(crate) async fn token_client_credentials(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/client_credentials.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/client_credentials.rs"]
 mod tests;

@@ -1,10 +1,7 @@
 pub(crate) mod admin;
 pub(crate) mod auth;
 pub(crate) mod authorization;
-pub(crate) mod client_ip;
 pub(crate) mod dpop;
-#[cfg(test)]
-pub(crate) mod dynamic_client_registration;
 pub(crate) mod mtls;
 pub(crate) mod perf_metrics;
 pub(crate) mod profile;

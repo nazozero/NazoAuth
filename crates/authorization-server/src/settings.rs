@@ -14,9 +14,7 @@ use url::Url;
 
 use crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
 use crate::config::ConfigSource;
-use crate::http::client_ip::ClientIpHeaderMode;
-use crate::http::client_ip::IpCidr;
-use crate::http::client_ip::parse_trusted_proxy_cidrs;
+use nazo_http_actix::{ClientIpHeaderMode, IpCidr, parse_trusted_proxy_cidrs};
 
 mod email;
 mod federation;
@@ -782,5 +780,5 @@ fn default_protected_resource_identifier(issuer: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "../tests/in_source/src/settings/tests/settings.rs"]
+#[path = "../tests/source_mounted/src/settings/tests/settings.rs"]
 mod tests;

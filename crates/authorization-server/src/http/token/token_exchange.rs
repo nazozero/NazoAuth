@@ -526,5 +526,5 @@ pub(crate) async fn token_exchange(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/token_exchange.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/token_exchange.rs"]
 mod tests;

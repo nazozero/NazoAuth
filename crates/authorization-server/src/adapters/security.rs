@@ -3,7 +3,7 @@
 use super::audit::{audit_event, audit_fields};
 use crate::domain::ClientRow;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 #[cfg(test)]
 use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 use crate::http::mtls::request_mtls_client_certificate_from_headers;
@@ -331,7 +331,7 @@ pub(crate) fn extract_client_credentials(
 
 pub(crate) fn extract_client_credentials_with_trusted_proxies(
     req: &HttpRequest,
-    trusted_proxy_cidrs: &[crate::http::client_ip::IpCidr],
+    trusted_proxy_cidrs: &[nazo_http_actix::IpCidr],
     form_client_id: Option<&str>,
     form_secret: Option<&str>,
     form_assertion_type: Option<&str>,
@@ -358,7 +358,7 @@ pub(crate) fn extract_client_credentials_with_trusted_proxies(
     {
         form_client_id
             .filter(|_| {
-                crate::http::client_ip::request_from_trusted_proxy_cidrs(req, trusted_proxy_cidrs)
+                nazo_http_actix::request_from_trusted_proxy_cidrs(req, trusted_proxy_cidrs)
                     && request_mtls_client_certificate_from_headers(req.headers()).is_some()
             })
             .map(str::to_owned)
@@ -430,7 +430,7 @@ fn log_client_assertion_rejection(endpoint_path: &str, client: &ClientRow, reaso
 
 #[cfg(test)]
 pub(crate) async fn consume_private_key_jwt(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     client: &ClientRow,
     assertion: &ValidatedClientAssertion,
 ) -> Result<(), ClientAssertionError> {
@@ -617,5 +617,5 @@ fn supported_client_jwt_algorithm(
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/security.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/security.rs"]
 mod tests;

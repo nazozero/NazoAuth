@@ -53,7 +53,7 @@ limitation called out explicitly.
 
 ## Repository Evidence
 
-- `tests/in_source/src/http/tests/dynamic_client_registration.rs`
+- `tests/source_mounted/src/http/tests/dynamic_client_registration.rs`
 - `src/http/dynamic_client_registration.rs`
 - `migrations/20260702000100_rfc7592_registration_management`
 

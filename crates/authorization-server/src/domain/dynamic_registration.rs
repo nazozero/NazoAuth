@@ -1,26 +1,18 @@
-#[cfg(not(test))]
 use std::{future::Future, pin::Pin, sync::Arc};
 
-#[cfg(not(test))]
 use nazo_http_actix::{
     DynamicRegistrationEndpoint, DynamicRegistrationEndpointConfig,
     DynamicRegistrationRateLimitError, DynamicRegistrationRequestGuard,
 };
-#[cfg(not(test))]
 use serde_json::json;
 
-#[cfg(not(test))]
 use crate::adapters::audit::{audit_event, audit_fields};
-#[cfg(not(test))]
 use crate::adapters::security::{blake3_hex, constant_time_eq, random_urlsafe_token};
-#[cfg(not(test))]
 use crate::domain::remote_client_documents::RemoteClientDocumentResolver;
-#[cfg(not(test))]
 use crate::http::admin::clients::ServerSectorIdentifierResolver;
-use crate::http::client_ip::{ClientIpHeaderMode, IpCidr};
-#[cfg(not(test))]
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::Settings;
+use nazo_http_actix::{ClientIpHeaderMode, IpCidr};
 
 #[derive(Clone)]
 #[cfg_attr(test, allow(dead_code))]
@@ -62,30 +54,9 @@ impl From<&Settings> for DynamicRegistrationConfig {
     }
 }
 
-#[cfg(test)]
-#[derive(Clone)]
-pub(crate) struct DynamicRegistrationHandles {
-    pub(crate) enabled: bool,
-}
-
-#[cfg(test)]
-impl DynamicRegistrationHandles {
-    pub(crate) fn accepts_new_requests(&self) -> bool {
-        self.enabled
-    }
-
-    pub(crate) fn from_app_state(state: &super::TestAppState) -> Self {
-        Self {
-            enabled: state.settings.modules.enable_dynamic_client_registration,
-        }
-    }
-}
-
-#[cfg(not(test))]
 #[derive(Clone, Copy)]
 struct ServerDynamicRegistrationTokens;
 
-#[cfg(not(test))]
 impl nazo_auth::DynamicRegistrationSecretPort for ServerDynamicRegistrationTokens {
     fn random_token(&self) -> String {
         random_urlsafe_token()
@@ -100,7 +71,6 @@ impl nazo_auth::DynamicRegistrationSecretPort for ServerDynamicRegistrationToken
     }
 }
 
-#[cfg(not(test))]
 #[derive(Clone)]
 pub(crate) struct ServerDynamicRegistrationRequestGuard {
     rate_limits: nazo_valkey::RateLimitStore,
@@ -109,7 +79,6 @@ pub(crate) struct ServerDynamicRegistrationRequestGuard {
     runtime_modules: Arc<ServerRuntimeModuleRegistry>,
 }
 
-#[cfg(not(test))]
 impl ServerDynamicRegistrationRequestGuard {
     pub(crate) fn new(
         rate_limits: nazo_valkey::RateLimitStore,
@@ -125,7 +94,6 @@ impl ServerDynamicRegistrationRequestGuard {
     }
 }
 
-#[cfg(not(test))]
 impl DynamicRegistrationRequestGuard for ServerDynamicRegistrationRequestGuard {
     fn accepts_new_requests(&self) -> bool {
         nazo_auth::module_admissible(
@@ -179,7 +147,6 @@ impl DynamicRegistrationRequestGuard for ServerDynamicRegistrationRequestGuard {
     }
 }
 
-#[cfg(not(test))]
 pub(crate) fn dynamic_registration_endpoint(
     config: DynamicRegistrationConfig,
     clients: nazo_postgres::OAuthClientRepository,

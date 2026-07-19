@@ -17,12 +17,12 @@ use serde_json::Value;
 use serde_json::json;
 
 use crate::bootstrap::LocalFederationService;
-use crate::http::client_ip::{ClientIpConfig, client_ip_with_config};
 use crate::settings::{
     ExternalLoginProvider, ExternalLoginProviderAdapter, FederationProviderRegistry,
     OidcFederationSettings, SamlGatewaySettings, SocialProviderSettings,
 };
 use crate::{adapters::email::normalize_email_address, http::rate_limit::AuthRequestLimiter};
+use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
 
 mod oidc;
 mod saml;
@@ -609,5 +609,5 @@ fn federation_saml_replay_error(error: FederationError) -> HttpResponse {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/auth/tests/federation.rs"]
+#[path = "../../../tests/source_mounted/src/http/auth/tests/federation.rs"]
 mod tests;

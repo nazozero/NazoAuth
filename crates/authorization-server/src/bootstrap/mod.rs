@@ -35,20 +35,20 @@ use crate::adapters::security::{
     default_password_hash_queue_timeout_ms, dummy_password_hash, initialize_dummy_password_hash,
 };
 use crate::config::{ConfigSource, database_max_connections, database_url};
-#[cfg(test)]
-use crate::domain::DynamicRegistrationHandles;
 use crate::domain::tenancy::{DEFAULT_TENANT_ID, default_tenant_context};
 #[cfg(not(test))]
 use crate::domain::{
-    BackchannelLogoutWorker, CibaPingDeliveryWorker, DynamicRegistrationConfig,
-    ServerTokenManagementOperations, ServerTokenManagementRequestGuard, ServerUserinfoOperations,
-    dynamic_registration_endpoint, spawn_backchannel_logout_delivery_worker,
+    BackchannelLogoutWorker, CibaPingDeliveryWorker, ServerTokenManagementOperations,
+    ServerTokenManagementRequestGuard, spawn_backchannel_logout_delivery_worker,
     spawn_ciba_ping_delivery_worker,
 };
 use crate::domain::{
     CredentialDatasetAdminService, Openid4vcClientAttestationValidator, Openid4vcCredentialCrypto,
     Openid4vcProofValidator, PresentationVerifierConfig, ServerCredentialIssuerOperations,
     ServerPresentationOperations,
+};
+use crate::domain::{
+    DynamicRegistrationConfig, ServerUserinfoOperations, dynamic_registration_endpoint,
 };
 use crate::domain::{
     MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, MetadataConfig, OidcLogoutConfig,
@@ -78,7 +78,6 @@ use crate::http::auth::federation::{
 use crate::http::authorization::{
     AuthorizationEndpoint, AuthorizationHttpConfig, ServerAuthorizationService,
 };
-use crate::http::client_ip::ClientIpConfig;
 use crate::http::rate_limit::{AuthRequestLimiter, TokenManagementRequestLimiter};
 use crate::http::sessions::{AdminSessionHandles, SessionHttpConfig, SessionProfileHandles};
 #[cfg(not(test))]
@@ -92,6 +91,7 @@ use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
 #[cfg(test)]
 use actix_web::http::header;
+use nazo_http_actix::ClientIpConfig;
 use nazo_http_actix::{
     AuthorizationDecisionEndpoint, LocalRegistrationEndpoint, MfaProfileConfig, MfaProfileEndpoint,
     OidcLogoutConfig as OidcLogoutHttpConfig, OidcLogoutEndpoint, PasskeyLoginConfig,
@@ -137,6 +137,10 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_valkey::ValkeyConnection::connect(&valkey_url, valkey_command_timeout).await?;
     #[cfg(test)]
     let valkey = nazo_valkey::test_support::connect(&valkey_url, valkey_command_timeout).await?;
+    #[cfg(not(test))]
+    let valkey_connection = valkey;
+    #[cfg(test)]
+    let valkey_connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey);
 
     let settings = Arc::new(Settings::from_config(&config)?);
     let remote_client_documents = Arc::new(
@@ -159,11 +163,7 @@ pub async fn run() -> anyhow::Result<()> {
             runtime_modules.registry.clone(),
         )),
     ));
-    #[cfg(not(test))]
-    let resource_replay_connection = valkey.clone();
-    #[cfg(test)]
-    let resource_replay_connection =
-        nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
+    let resource_replay_connection = valkey_connection.clone();
     let resource_server_config = ResourceServerConfig::from(settings.as_ref());
     tracing::info!(
         dpop_nonce_policy = ?settings.protocol.dpop_nonce_policy,
@@ -197,23 +197,15 @@ pub async fn run() -> anyhow::Result<()> {
             signatures,
         ))
     };
-    #[cfg(not(test))]
-    let dynamic_registration_rate_limit_connection = valkey.clone();
-    #[cfg(not(test))]
     let dynamic_registration_config = DynamicRegistrationConfig::from(settings.as_ref());
-    #[cfg(not(test))]
     let dynamic_registration_handles = web::Data::new(dynamic_registration_endpoint(
         dynamic_registration_config,
         nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
-        nazo_valkey::RateLimitStore::new(&dynamic_registration_rate_limit_connection),
+        nazo_valkey::RateLimitStore::new(&valkey_connection),
         keyset.clone(),
         runtime_modules.registry.clone(),
         remote_client_documents.clone(),
     ));
-    #[cfg(test)]
-    let dynamic_registration_handles = web::Data::new(DynamicRegistrationHandles {
-        enabled: settings.modules.enable_dynamic_client_registration,
-    });
     let admin_client_config = web::Data::new(AdminClientConfig::from_settings(&settings));
     let admin_client_service = web::Data::new(ServerAdminClientService::new(
         nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
@@ -254,10 +246,6 @@ pub async fn run() -> anyhow::Result<()> {
             settings.endpoint.issuer.clone(),
         ))),
     );
-    #[cfg(not(test))]
-    let valkey_connection = valkey.clone();
-    #[cfg(test)]
-    let valkey_connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
     let authorization_service = web::Data::new(ServerAuthorizationService::new(
         nazo_postgres::AuthorizationFlowRepository::new(diesel_db.clone(), DEFAULT_TENANT_ID),
         nazo_valkey::AuthorizationStateAdapter::new(&valkey_connection),
@@ -294,9 +282,6 @@ pub async fn run() -> anyhow::Result<()> {
         keyset.clone(),
         UserinfoConfig::from(settings.as_ref()),
     );
-    #[cfg(test)]
-    let userinfo_handles = web::Data::new(userinfo_handles);
-    #[cfg(not(test))]
     let userinfo_endpoint = web::Data::new(nazo_http_actix::UserinfoEndpoint::new(Arc::new(
         ServerUserinfoOperations::new(token_service.clone().into_inner(), userinfo_handles),
     )));
@@ -869,9 +854,8 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(authorization_service.clone())
             .app_data(token_service.clone());
         #[cfg(not(test))]
-        let app = app
-            .app_data(token_management_endpoint.clone())
-            .app_data(userinfo_endpoint.clone());
+        let app = app.app_data(token_management_endpoint.clone());
+        let app = app.app_data(userinfo_endpoint.clone());
         let app = app
             .app_data(token_endpoint_handles.clone())
             .app_data(ciba_service.clone())
@@ -882,8 +866,6 @@ pub async fn run() -> anyhow::Result<()> {
             .app_data(device_grants.clone())
             .app_data(device_decision_handles.clone())
             .app_data(device_config.clone());
-        #[cfg(test)]
-        let app = app.app_data(userinfo_handles.clone());
         let app = app
             .app_data(authorization_config.clone())
             .app_data(authorization_runtime.clone())
@@ -950,5 +932,5 @@ pub async fn run() -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/bootstrap/tests/bootstrap.rs"]
+#[path = "../../tests/source_mounted/src/bootstrap/tests/bootstrap.rs"]
 mod tests;

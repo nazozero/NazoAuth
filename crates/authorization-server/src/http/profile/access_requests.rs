@@ -166,5 +166,5 @@ fn create_access_request_response(row: nazo_identity::AccessRequest) -> HttpResp
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/profile/tests/access_requests.rs"]
+#[path = "../../../tests/source_mounted/src/http/profile/tests/access_requests.rs"]
 mod tests;

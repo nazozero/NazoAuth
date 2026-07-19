@@ -4,7 +4,7 @@ use crate::adapters::audit::audit_fields;
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::random_urlsafe_token;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 use crate::domain::oidc_claims::oidc_id_token_user_claims;
 #[cfg(test)]
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
@@ -13,7 +13,6 @@ use crate::domain::tenancy::DEFAULT_REALM_ID;
 #[cfg(test)]
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
-use crate::http::client_ip::{ClientIpHeaderMode, IpCidr};
 use crate::http::dpop::DpopErrorContext;
 use crate::http::dpop::dpop_error_response;
 use crate::http::dpop::issue_dpop_nonce_with_authorization_service;
@@ -28,6 +27,7 @@ use nazo_auth::OidcClaimRequest;
 use nazo_auth::normalize_authorization_details;
 #[cfg(test)]
 use nazo_http_actix::OAuthJsonErrorFields;
+use nazo_http_actix::{ClientIpHeaderMode, IpCidr};
 use nazo_http_actix::{json_response_no_store, oauth_token_error};
 use nazo_key_management::signing_algorithm_name;
 #[cfg(test)]
@@ -230,15 +230,6 @@ async fn persist_access_token_subject_mapping(
         )
         .await?;
     Ok(())
-}
-
-#[cfg(test)]
-pub(crate) fn access_token_subject_key(tenant_id: Uuid, jti: &str) -> String {
-    format!(
-        "oauth:access_token:subject:{}:{}",
-        tenant_id,
-        blake3_hex(jti)
-    )
 }
 
 pub(crate) async fn issue_token_response_with_service(
@@ -695,7 +686,7 @@ pub(crate) async fn issue_token_response_with_service(
 
 #[cfg(test)]
 pub(crate) fn test_authorization_service(
-    state: &TestAppState,
+    state: &TestInfrastructure,
 ) -> crate::http::authorization::ServerAuthorizationService {
     let connection = state.valkey_connection();
     crate::http::authorization::ServerAuthorizationService::new(
@@ -707,7 +698,7 @@ pub(crate) fn test_authorization_service(
 
 #[cfg(test)]
 pub(crate) async fn issue_token_response(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     client: &ClientRow,
     issue: TokenIssue,
 ) -> HttpResponse {
@@ -733,5 +724,5 @@ pub(crate) async fn issue_token_response(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/token/tests/issue.rs"]
+#[path = "../../../tests/source_mounted/src/http/token/tests/issue.rs"]
 mod tests;

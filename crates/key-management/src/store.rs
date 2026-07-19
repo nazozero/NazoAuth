@@ -129,8 +129,8 @@ pub(crate) async fn maintain_keyset_lifecycle(
             return Ok(());
         };
         for algorithm in [OIDC_DEFAULT_ID_TOKEN_SIGNING_ALG, FAPI_ID_TOKEN_SIGNING_ALG] {
-            if algorithm != active_alg && !has_live_local_key_for_alg(keys, algorithm, now)? {
-                let entry = create_prepublished_local_key_entry(settings, algorithm, now).await?;
+            if algorithm != active_alg && !has_live_protocol_key_for_alg(keys, algorithm, now)? {
+                let entry = create_protocol_signing_key_entry(settings, algorithm, now).await?;
                 keys.push(entry);
                 changed = true;
             }
@@ -180,14 +180,16 @@ fn find_prepublished_candidate(
     Ok(candidate.map(|(index, _)| index))
 }
 
-fn has_live_local_key_for_alg(
+fn has_live_protocol_key_for_alg(
     keys: &[Value],
     alg: jsonwebtoken::Algorithm,
     now: DateTime<Utc>,
 ) -> anyhow::Result<bool> {
     for entry in keys {
-        if entry.get("purposes").is_some()
-            || key_entry_backend(entry) != "local-pem"
+        let purposes = key_entry_purposes(entry)?;
+        if !purposes.as_ref().is_some_and(|purposes| {
+            purposes.contains(&SigningPurpose::IdToken) && purposes.contains(&SigningPurpose::Jarm)
+        }) || key_entry_backend(entry) != "local-pem"
             || key_entry_algorithm(entry)? != alg
             || !entry
                 .get("file")
@@ -204,6 +206,19 @@ fn has_live_local_key_for_alg(
         }
     }
     Ok(false)
+}
+
+async fn create_protocol_signing_key_entry(
+    settings: &KeySettings,
+    alg: jsonwebtoken::Algorithm,
+    now: DateTime<Utc>,
+) -> anyhow::Result<Value> {
+    let mut entry = create_prepublished_local_key_entry(settings, alg, now).await?;
+    entry["purposes"] = json!([
+        SigningPurpose::IdToken.as_str(),
+        SigningPurpose::Jarm.as_str()
+    ]);
+    Ok(entry)
 }
 
 async fn create_prepublished_local_key_entry(
@@ -269,11 +284,6 @@ pub(crate) async fn try_load_keyset(
         .get("keys")
         .and_then(Value::as_array)
         .ok_or_else(|| anyhow!("keyset.json missing keys array"))?;
-    let declared_active_alg = keys
-        .iter()
-        .find(|entry| entry.get("kid").and_then(Value::as_str) == Some(active_kid))
-        .map(key_entry_algorithm)
-        .transpose()?;
     let mut active_signing_key = None;
     let mut active_alg = None;
     let mut seen_kids = std::collections::HashSet::new();
@@ -374,13 +384,6 @@ pub(crate) async fn try_load_keyset(
                     purposes.clone()
                 } else if is_active {
                     all_signing_purposes()
-                } else if retire_at.is_none()
-                    && declared_active_alg.is_some_and(|active_alg| alg != active_alg)
-                    && backend == "local-pem"
-                {
-                    [SigningPurpose::IdToken, SigningPurpose::Jarm]
-                        .into_iter()
-                        .collect()
                 } else {
                     BTreeSet::new()
                 },
@@ -388,10 +391,6 @@ pub(crate) async fn try_load_keyset(
                     KeyState::Active
                 } else if retire_at.is_some() {
                     KeyState::Grace
-                } else if declared_active_alg.is_some_and(|active_alg| alg != active_alg)
-                    && backend == "local-pem"
-                {
-                    KeyState::Active
                 } else {
                     KeyState::Prepublished
                 },
@@ -419,8 +418,7 @@ pub(crate) async fn create_new_keyset(settings: &KeySettings) -> anyhow::Result<
         .as_str()
         .ok_or_else(|| anyhow!("generated RS256 key missing kid"))?
         .to_owned();
-    let ps256 =
-        create_prepublished_local_key_entry(settings, FAPI_ID_TOKEN_SIGNING_ALG, now).await?;
+    let ps256 = create_protocol_signing_key_entry(settings, FAPI_ID_TOKEN_SIGNING_ALG, now).await?;
     let payload = json!({
         "active_kid": active_kid,
         "keys": [rs256, ps256]
@@ -1178,5 +1176,5 @@ pub(crate) fn pem_to_der(pem: &str) -> Option<Vec<u8>> {
 }
 
 #[cfg(test)]
-#[path = "tests/keyset_compat.rs"]
-mod compatibility_tests;
+#[path = "tests/keyset_store.rs"]
+mod keyset_store_tests;

@@ -118,7 +118,7 @@ mod tests {
 
     use super::*;
     use crate::config::ConfigSource;
-    use crate::http::client_ip::IpCidr;
+    use nazo_http_actix::IpCidr;
 
     fn settings() -> Settings {
         Settings::from_config(&ConfigSource::default()).expect("default settings")

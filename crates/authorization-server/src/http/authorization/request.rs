@@ -4,7 +4,7 @@ use crate::adapters::security::blake3_hex;
 use crate::adapters::security::pkce_s256;
 use crate::adapters::security::random_urlsafe_token;
 #[cfg(test)]
-use crate::domain::TestAppState;
+use crate::domain::TestInfrastructure;
 use crate::domain::client_jwe::JwePayloadKind;
 use crate::domain::client_jwe::client_jwe_key;
 use crate::domain::client_jwe::encrypt_compact_jwe;
@@ -702,7 +702,7 @@ pub(crate) async fn consume_pushed_authorization_request_with_context(
 
 #[cfg(test)]
 pub(crate) async fn consume_pushed_authorization_request(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     request_uri: &str,
 ) -> Result<(), PushedAuthorizationRequestConsumeError> {
     let dependencies = super::TestAuthorizationDependencies::new(state);
@@ -845,15 +845,6 @@ pub(crate) async fn authorization_response_redirect_with_context(
     ))
 }
 
-#[cfg(test)]
-pub(crate) async fn authorization_response_redirect(
-    state: &TestAppState,
-    input: AuthorizationResponseRedirect<'_>,
-) -> HttpResponse {
-    let dependencies = super::TestAuthorizationDependencies::new(state);
-    authorization_response_redirect_with_context(&dependencies.context(), input).await
-}
-
 #[derive(Clone, Copy, Default)]
 struct AuthorizationResponseProtection<'a> {
     signing_alg: Option<&'a str>,
@@ -884,7 +875,7 @@ async fn authorization_response_redirect_with_protection_context(
 
 #[cfg(test)]
 async fn authorization_response_redirect_with_protection(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     input: AuthorizationResponseRedirect<'_>,
     protection: AuthorizationResponseProtection<'_>,
 ) -> HttpResponse {
@@ -975,7 +966,7 @@ async fn consume_reauth_nonce_with_context(
 
 #[cfg(test)]
 async fn consume_reauth_nonce(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     q: &mut HashMap<String, String>,
 ) -> Option<i64> {
     let dependencies = super::TestAuthorizationDependencies::new(state);
@@ -1001,7 +992,7 @@ async fn authorization_login_url_with_context(
 
 #[cfg(test)]
 async fn authorization_login_url(
-    state: &TestAppState,
+    state: &TestInfrastructure,
     q: &HashMap<String, String>,
     reauthentication_required: bool,
 ) -> Result<String, HttpResponse> {
@@ -1031,5 +1022,5 @@ async fn issue_reauth_nonce(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/in_source/src/http/authorization/tests/request.rs"]
+#[path = "../../../tests/source_mounted/src/http/authorization/tests/request.rs"]
 mod tests;

@@ -260,5 +260,5 @@ fn parse_valkey_atomic_result(reply: &str) -> Result<ValkeyAtomicResult, ValkeyA
 }
 
 #[cfg(test)]
-#[path = "../../tests/in_source/src/support/tests/valkey.rs"]
+#[path = "../../tests/source_mounted/src/support/tests/valkey.rs"]
 mod tests;
