@@ -398,16 +398,16 @@ jobs:
               run_oidf_plan_set oidf-full-plan-set.json "${serial_args[@]}"
               ;;
             parallel-isolated)
-              run_oidf_plan_set 01-oidc-core.json --no-parallel
-              run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json --no-parallel
+              run_oidf_plan_set 01-oidc-core.json
+              run_oidf_plan_set 02-oidc-formpost-thirdparty-config.json
               run_oidf_plan_set 03a-fapi-ciba-private-key-jwt-poll.json --no-parallel
               run_oidf_plan_set 03b-fapi-ciba-mtls-poll.json --no-parallel
               run_oidf_plan_set 03c-fapi-ciba-private-key-jwt-ping.json --no-parallel
               run_oidf_plan_set 03d-fapi-ciba-mtls-ping.json --no-parallel
-              run_oidf_plan_set 04-fapi-message-and-mtls-dpop.json --no-parallel
-              run_oidf_plan_set 05-fapi-mtls-mtls.json --no-parallel
-              run_oidf_plan_set 06-fapi-private-dpop.json --no-parallel
-              run_oidf_plan_set 07-fapi-private-mtls.json --no-parallel
+              run_oidf_plan_set 04-fapi-message-and-mtls-dpop.json
+              run_oidf_plan_set 05-fapi-mtls-mtls.json
+              run_oidf_plan_set 06-fapi-private-dpop.json
+              run_oidf_plan_set 07-fapi-private-mtls.json
               ;;
             *)
               echo "Unsupported RUNNER_MODE: $RUNNER_MODE" >&2
@@ -429,14 +429,12 @@ jobs:
 
 
   oidf-conformance-browser-isolated:
-    needs: oidf-conformance-full
     if: ${{ !inputs.onboarding_material_only && inputs.runner_mode == 'parallel-isolated' }}
     runs-on: ubuntu-latest
     environment: oidf-conformance
     timeout-minutes: 360
     strategy:
       fail-fast: false
-      max-parallel: 1
       matrix:
         include:
           - name: frontchannel
