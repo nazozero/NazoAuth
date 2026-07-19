@@ -46,6 +46,7 @@ class RunOidfConformanceTests(unittest.TestCase):
                 0,
                 {},
                 {},
+                {},
             )
 
         terminate.assert_called_once_with(process)
@@ -468,6 +469,62 @@ class RunOidfConformanceTests(unittest.TestCase):
             ),
         )
 
+    def test_expected_skip_is_scoped_to_alias_test_and_optional_exact_variant(self):
+        module = load_runner_module()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "skips.json"
+            path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "configuration-filename": "dynamic.json",
+                            "test-name": "oidcc-idtoken-unsigned",
+                            "variant": "*",
+                        },
+                        {
+                            "configuration-filename": "static.json",
+                            "test-name": "exact-module",
+                            "variant": {"response_type": "code"},
+                        },
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            allowed = module.expected_skip_contexts_by_alias(
+                path,
+                {"dynamic.json": "dynamic-alias", "static.json": "static-alias"},
+            )
+
+        self.assertTrue(
+            module.is_allowed_expected_skip(
+                {
+                    "alias": "dynamic-alias",
+                    "testName": "oidcc-idtoken-unsigned[response_type=code]",
+                    "variant": {"response_type": "code"},
+                },
+                allowed,
+            )
+        )
+        self.assertTrue(
+            module.is_allowed_expected_skip(
+                {
+                    "alias": "static-alias",
+                    "testName": "exact-module",
+                    "variant": {"response_type": "code"},
+                },
+                allowed,
+            )
+        )
+        self.assertFalse(
+            module.is_allowed_expected_skip(
+                {
+                    "alias": "static-alias",
+                    "testName": "exact-module",
+                    "variant": {"response_type": "id_token"},
+                },
+                allowed,
+            )
+        )
     def test_expected_warning_accepts_oidf_start_block_log_marker(self):
         module = load_runner_module()
         info = {

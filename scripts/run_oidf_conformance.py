@@ -1341,6 +1341,77 @@ def expected_warning_contexts_by_alias(
     return {alias: frozenset(values) for alias, values in contexts.items()}
 
 
+def expected_skip_contexts_by_alias(
+    expected_skips_file: Path | None,
+    aliases_by_config: dict[str, str],
+) -> dict[str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]]:
+    if expected_skips_file is None:
+        return {}
+    try:
+        payload = json.loads(expected_skips_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        fail(f"could not read OIDF expected skips file: {exc}")
+    if not isinstance(payload, list):
+        fail("OIDF expected skips file must contain a JSON array")
+
+    contexts: dict[str, set[tuple[str, tuple[tuple[str, str], ...] | None]]] = {}
+    for item in payload:
+        if not isinstance(item, dict):
+            fail("OIDF expected skip entries must be JSON objects")
+        config_name = item.get("configuration-filename")
+        test_name = item.get("test-name")
+        variant = item.get("variant")
+        if (
+            not isinstance(config_name, str)
+            or not isinstance(test_name, str)
+            or "*" in config_name
+            or "*" in test_name
+            or not (
+                variant == "*"
+                or (
+                    isinstance(variant, dict)
+                    and all(
+                        isinstance(key, str) and isinstance(value, str)
+                        for key, value in variant.items()
+                    )
+                )
+            )
+        ):
+            fail(
+                "OIDF expected skips used by the early-stop monitor must use an exact "
+                "configuration and test name plus either an exact variant or the upstream '*' variant"
+            )
+        alias = aliases_by_config.get(config_name)
+        if alias is None:
+            continue
+        normalized_variant = None if variant == "*" else tuple(sorted(variant.items()))
+        contexts.setdefault(alias, set()).add((test_name, normalized_variant))
+    return {alias: frozenset(values) for alias, values in contexts.items()}
+
+
+def is_allowed_expected_skip(
+    info: object,
+    allowed_expected_skips_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
+    ],
+) -> bool:
+    if not isinstance(info, dict):
+        return False
+    alias = info.get("alias")
+    test_name_value = info.get("testName") or info.get("name")
+    variant = info.get("variant")
+    if (
+        not isinstance(alias, str)
+        or not isinstance(test_name_value, str)
+        or not isinstance(variant, dict)
+        or not all(isinstance(key, str) and isinstance(value, str) for key, value in variant.items())
+    ):
+        return False
+    test_name = module_name_without_variant(test_name_value)
+    contexts = allowed_expected_skips_by_alias.get(alias, frozenset())
+    return (test_name, None) in contexts or (test_name, tuple(sorted(variant.items()))) in contexts
+
+
 def is_allowed_expected_warning(
     info: object,
     log_entry: object,
@@ -1634,6 +1705,9 @@ def inspect_oidf_state(
     allowed_expected_warnings_by_alias: dict[
         str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
     ] | None = None,
+    allowed_expected_skips_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
+    ] | None = None,
 ) -> str | None:
     ignored = ignored_plan_ids or set()
     plans = [
@@ -1671,6 +1745,11 @@ def inspect_oidf_state(
         )
         if status_code == 200 and info is not None:
             result = value_as_upper(info.get("result")) if isinstance(info, dict) else ""
+            if result == "SKIPPED" and is_allowed_expected_skip(
+                info,
+                allowed_expected_skips_by_alias or {},
+            ):
+                continue
             if result == "REVIEW" and isinstance(info, dict):
                 alias = info.get("alias")
                 test_name_value = info.get("testName") or info.get("name") or "<unknown>"
@@ -1804,6 +1883,9 @@ class OidfEarlyStopMonitor:
         allowed_expected_warnings_by_alias: dict[
             str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
         ],
+        allowed_expected_skips_by_alias: dict[
+            str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
+        ],
     ) -> None:
         self.base_url = base_url
         self.token = token
@@ -1812,6 +1894,7 @@ class OidfEarlyStopMonitor:
         self.ignored_plan_ids = ignored_plan_ids
         self.allowed_reviews_by_alias = allowed_reviews_by_alias
         self.allowed_expected_warnings_by_alias = allowed_expected_warnings_by_alias
+        self.allowed_expected_skips_by_alias = allowed_expected_skips_by_alias
         self.stop_requested = threading.Event()
         self.failure_message: str | None = None
         self.consecutive_errors = 0
@@ -1830,6 +1913,7 @@ class OidfEarlyStopMonitor:
                     ignored_plan_ids=self.ignored_plan_ids,
                     allowed_reviews_by_alias=self.allowed_reviews_by_alias,
                     allowed_expected_warnings_by_alias=self.allowed_expected_warnings_by_alias,
+                    allowed_expected_skips_by_alias=self.allowed_expected_skips_by_alias,
                 )
                 self.consecutive_errors = 0
             except SystemExit as exc:
@@ -2166,6 +2250,9 @@ def run_official_runner(
     allowed_expected_warnings_by_alias: dict[
         str, frozenset[tuple[str, tuple[tuple[str, str], ...], str, str]]
     ],
+    allowed_expected_skips_by_alias: dict[
+        str, frozenset[tuple[str, tuple[tuple[str, str], ...] | None]]
+    ],
 ) -> int:
     if timeout_seconds <= 0:
         fail("--timeout-seconds must be greater than zero")
@@ -2198,6 +2285,7 @@ def run_official_runner(
             ignored_plan_ids,
             allowed_reviews_by_alias,
             allowed_expected_warnings_by_alias,
+            allowed_expected_skips_by_alias,
         )
         monitor_thread = threading.Thread(
             target=monitor.run,
@@ -2251,6 +2339,7 @@ def run_official_runner(
             ignored_plan_ids=ignored_plan_ids,
             allowed_reviews_by_alias=allowed_reviews_by_alias,
             allowed_expected_warnings_by_alias=allowed_expected_warnings_by_alias,
+            allowed_expected_skips_by_alias=allowed_expected_skips_by_alias,
         )
         if final_failure:
             print(f"OIDF final state check failed: {final_failure}", flush=True)
@@ -2451,6 +2540,7 @@ def main() -> int:
         monitor_interval_seconds,
         allowed_review_contexts_by_alias(aliases_by_config),
         expected_warning_contexts_by_alias(expected_failures_file, aliases_by_config),
+        expected_skip_contexts_by_alias(expected_skips_file, aliases_by_config),
     )
 
 
