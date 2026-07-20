@@ -516,6 +516,7 @@ fn escape_html_attribute(value: &str) -> String {
     value
         .replace('&', "&amp;")
         .replace('"', "&quot;")
+        .replace('\'', "&#39;")
         .replace('<', "&lt;")
         .replace('>', "&gt;")
 }
