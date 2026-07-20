@@ -88,7 +88,13 @@ impl BackchannelLogoutWorker {
     }
 
     async fn process_delivery(&self, delivery: BackchannelLogoutDelivery) -> anyhow::Result<()> {
-        match self.post(&delivery).await {
+        match post_logout_token(
+            &self.private_network_origins,
+            &delivery.logout_uri,
+            &delivery.logout_token,
+        )
+        .await
+        {
             Ok(BackchannelPostOutcome::Delivered) => self
                 .deliveries
                 .complete_backchannel_logout(delivery.id, delivery.attempts)
@@ -128,18 +134,6 @@ impl BackchannelLogoutWorker {
                     .context("failed to record back-channel logout delivery failure")
             }
         }
-    }
-
-    async fn post(
-        &self,
-        delivery: &BackchannelLogoutDelivery,
-    ) -> anyhow::Result<BackchannelPostOutcome> {
-        post_logout_token(
-            &self.private_network_origins,
-            &delivery.logout_uri,
-            &delivery.logout_token,
-        )
-        .await
     }
 }
 
@@ -276,7 +270,7 @@ mod tests {
             let (mut stream, _) = listener.accept().await.expect("request arrives");
             let mut request = Vec::new();
             loop {
-                let mut chunk = [0_u8; 1024];
+                let mut chunk = [0_u8; 16];
                 let size = stream.read(&mut chunk).await.expect("request is readable");
                 assert_ne!(size, 0, "request must contain its declared body");
                 request.extend_from_slice(&chunk[..size]);
