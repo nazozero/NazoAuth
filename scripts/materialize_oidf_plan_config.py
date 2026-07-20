@@ -245,17 +245,7 @@ def derive_logout_oidcc_configs(rendered: dict[str, Any]) -> None:
             "task": "Confirm an unbound logout request",
             "optional": True,
             "match": logout_entry["match"],
-            "commands": [
-                [
-                    "wait",
-                    "id",
-                    "nazo-logout-confirm",
-                    30,
-                    ".*",
-                    "update-image-placeholder-optional",
-                ],
-                ["click", "id", "nazo-logout-confirm"],
-            ],
+            "commands": [["click", "id", "nazo-logout-confirm", "optional"]],
         },
     )
     logout_entry["tasks"].insert(

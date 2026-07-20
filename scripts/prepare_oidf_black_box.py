@@ -852,7 +852,7 @@ def browser_automation() -> list[dict[str, object]]:
                 {
                     "task": "Reach post-logout redirect page",
                     "match": "*/test/*/post_logout_redirect*",
-                    "commands": [["wait", "contains", "/post_logout_redirect?state=", 10]],
+                    "commands": [["wait", "contains", "/post_logout_redirect", 10]],
                 },
             ],
         },
@@ -896,17 +896,7 @@ def rp_initiated_logout_browser_automation() -> list[dict[str, object]]:
             "task": "Confirm an unbound logout request",
             "optional": True,
             "match": f"{ISSUER}/logout*",
-            "commands": [
-                [
-                    "wait",
-                    "id",
-                    "nazo-logout-confirm",
-                    30,
-                    ".*",
-                    "update-image-placeholder-optional",
-                ],
-                ["click", "id", "nazo-logout-confirm"],
-            ],
+            "commands": [["click", "id", "nazo-logout-confirm", "optional"]],
         },
     )
     tasks.insert(

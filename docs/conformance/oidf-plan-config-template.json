@@ -19274,7 +19274,7 @@
                 [
                   "wait",
                   "contains",
-                  "/post_logout_redirect?state=",
+                  "/post_logout_redirect",
                   10
                 ]
               ]
@@ -19579,7 +19579,7 @@
                     [
                       "wait",
                       "contains",
-                      "/post_logout_redirect?state=",
+                      "/post_logout_redirect",
                       10
                     ]
                   ]
@@ -19779,7 +19779,7 @@
                 [
                   "wait",
                   "contains",
-                  "/post_logout_redirect?state=",
+                  "/post_logout_redirect",
                   10
                 ]
               ]
@@ -20082,7 +20082,7 @@
                 [
                   "wait",
                   "contains",
-                  "/post_logout_redirect?state=",
+                  "/post_logout_redirect",
                   10
                 ]
               ]

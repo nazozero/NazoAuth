@@ -39,9 +39,9 @@ class OidfPlanConfigTemplateTests(unittest.TestCase):
         data = json.loads(TEMPLATE.read_text(encoding="utf-8"))
         commands = list(browser_commands(data))
 
-        self.assertNotIn(["wait", "contains", "/post_logout_redirect", 10], commands)
+        self.assertNotIn(["wait", "contains", "/post_logout_redirect?state=", 10], commands)
         self.assertNotIn(["wait", "contains", "/session_verify", 10], commands)
-        self.assertIn(["wait", "contains", "/post_logout_redirect?state=", 10], commands)
+        self.assertIn(["wait", "contains", "/post_logout_redirect", 10], commands)
         self.assertIn(["wait", "contains", "/session_result?state=unchanged", 30], commands)
         self.assertIn(["wait", "contains", "/second_session_result?state=changed", 30], commands)
 

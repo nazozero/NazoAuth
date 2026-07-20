@@ -70,6 +70,10 @@ class MaterializeOidfPlanConfigTests(unittest.TestCase):
         logout_tasks = rp["browser"][0]["tasks"]
         self.assertEqual(logout_tasks[0]["task"], "Confirm an unbound logout request")
         self.assertTrue(logout_tasks[0]["optional"])
+        self.assertEqual(
+            logout_tasks[0]["commands"],
+            [["click", "id", "nazo-logout-confirm", "optional"]],
+        )
         self.assertEqual(logout_tasks[1]["task"], "Capture local logout result page")
         self.assertTrue(logout_tasks[1]["optional"])
         self.assertEqual(logout_tasks[2]["task"], "Reach post-logout redirect page")

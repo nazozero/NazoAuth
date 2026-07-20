@@ -199,6 +199,10 @@ class PrepareOidfBlackBoxTests(unittest.TestCase):
         front_tasks = logout_tasks(front)
         self.assertEqual(rp_tasks[0]["task"], "Confirm an unbound logout request")
         self.assertTrue(rp_tasks[0]["optional"])
+        self.assertEqual(
+            rp_tasks[0]["commands"],
+            [["click", "id", "nazo-logout-confirm", "optional"]],
+        )
         self.assertEqual(rp_tasks[1]["task"], "Capture local logout result page")
         self.assertTrue(rp_tasks[1]["optional"])
         self.assertEqual(rp_tasks[2]["task"], "Reach post-logout redirect page")
