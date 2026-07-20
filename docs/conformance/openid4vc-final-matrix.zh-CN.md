@@ -93,12 +93,13 @@ variant、`Second client: Verify token endpoint response` block 和
 
 最新长期证据：
 
-- [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
+- [2026-07-20 自动化 OIDF 最终结果](2026-07-20-final-automated-oidf-results.zh-CN.md)
+- [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)（历史）
 - official-suite 调试运行使用操作者提供的生产目标；公开仓库中脱敏为
   `https://issuer.example`。17 个 plan 执行全部完成，`0 failures`。它是调试证据，
   不是仓库用户的默认测试目标。
 - GitHub 官方运行
-  [#29530484889](https://github.com/nazozero/NazoAuth/actions/runs/29530484889)
+  [#29700527789](https://github.com/nazozero/NazoAuth/actions/runs/29700527789)
   针对同一生产 origin 成功完成。
 
 正式规范：

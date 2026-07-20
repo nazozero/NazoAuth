@@ -373,6 +373,7 @@ jobs:
               --conformance-server "$CONFORMANCE_SERVER"
               --config-json-file oidf-plan-configs.json
               --plan-set-json-file "$plan_set_file"
+              --export-dir "$RUNNER_TEMP/oidf-evidence/${plan_set_file%.json}"
               --expected-failures-file "$expected_warnings_file"
               --expected-skips-file "$expected_skips_file"
               --target-issuer "$OIDF_TARGET_ISSUER"
@@ -426,6 +427,19 @@ jobs:
             test "$(git -C oidf-conformance-suite rev-parse HEAD)" = "$OIDF_REF"
             test -z "$(git -C oidf-conformance-suite status --porcelain --untracked-files=no)"
           }
+
+      - name: Consolidate credential-free OIDF evidence
+        if: always()
+        run: python scripts/oidf_evidence.py "$RUNNER_TEMP/oidf-evidence"
+
+      - name: Upload credential-free OIDF evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oidf-conformance-${{ inputs.deployed_sha }}
+          path: ${{ runner.temp }}/oidf-evidence/evidence-manifest.json
+          if-no-files-found: error
+          retention-days: 30
 
 
   oidf-conformance-browser-isolated:
@@ -571,6 +585,7 @@ jobs:
             --conformance-server "$CONFORMANCE_SERVER"
             --config-json-file oidf-plan-configs.json
             --plan-set-json-file "${{ matrix.plan_set_file }}"
+            --export-dir "$RUNNER_TEMP/oidf-evidence"
             --target-issuer "$OIDF_TARGET_ISSUER"
             --timeout-seconds "$RUN_TIMEOUT_SECONDS"
             --monitor-interval-seconds "$MONITOR_INTERVAL_SECONDS"
@@ -595,3 +610,13 @@ jobs:
             test "$(git -C oidf-conformance-suite rev-parse HEAD)" = "$OIDF_REF"
             test -z "$(git -C oidf-conformance-suite status --porcelain --untracked-files=no)"
           }
+
+
+      - name: Upload credential-free browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oidf-conformance-${{ matrix.name }}-${{ inputs.deployed_sha }}
+          path: ${{ runner.temp }}/oidf-evidence/evidence-manifest.json
+          if-no-files-found: error
+          retention-days: 30

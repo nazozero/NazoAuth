@@ -23,7 +23,7 @@ Official listing pages:
 ## Current public black-box evidence
 
 Current conformance evidence is recorded in
-[2026-07-19 public black-box full OIDF results](2026-07-19-public-black-box-full-oidf-results.md).
+[2026-07-20 final automated OIDF results](2026-07-20-final-automated-oidf-results.md).
 The run used an operator-provided production HTTPS issuer. Public documentation
 uses `https://issuer.example` only as a sanitized placeholder. Repository
 workflows require operators to provide their own externally reachable
@@ -35,22 +35,25 @@ variables for private automation.
 | OIDC / FAPI / FAPI-CIBA | Success | 25 official public plans: 23 concurrent plans plus 2 browser-isolated plans |
 | OpenID4VC Final / HAIP | Success | 17 official-suite regression plans |
 
-Combined exported result:
+Combined credential-free operator manifest:
 
 | Metric | Value |
 | --- | ---: |
 | Plan executions | 42 |
 | Module instances | 1,178 |
-| Passed module results | 1,132 |
-| Condition successes | 97,029 |
-| Condition failures | 0 |
-| Bounded condition warnings | 30 |
+| Passed module results | 1,151 |
+| Exactly registered failed modules | 2 |
+| Condition successes | 96,805 |
+| Exactly registered condition failures | 2 |
+| Bounded condition warnings | 5 |
 | Expected skips | 15 |
 | Bounded review modules | 9 |
 
-The bounded warnings and expected skips are documented in the linked evidence
-record. They are not hidden: the OIDC/FAPI/FAPI-CIBA matrix is not zero-warning
-or zero-skipped evidence.
+The two failed modules are the documented OpenID4VCI pre-authorized-code
+one-time-use conflict in the upstream multiple-clients module. Bounded warnings,
+reviews, and skips are documented in the linked evidence record. They are not
+hidden and must not be described as zero-warning, zero-failure, or zero-skipped
+evidence.
 
 ## Matrix scope
 

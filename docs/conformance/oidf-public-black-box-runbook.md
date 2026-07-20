@@ -16,9 +16,10 @@ path is fixed and short:
 3. Apply the bundle through `apply_public_conformance_onboarding.py` using a
    normal applicant and a distinct approver. No database seed or private network
    access is permitted.
-4. Run the same workflow with `onboarding_material_only=false`. The workflow
-   checks out the deployed SHA, clones the exact official suite revision, and
-   refuses tracked modifications before running the public black-box matrix.
+4. Run the 25-plan OIDC/FAPI/FAPI-CIBA matrix with the same inputs and
+   `onboarding_material_only=false`, then run the 17-plan OpenID4VC Final/HAIP
+   matrix. The workflows check out the deployed SHA, clone the exact official
+   suite revision, and refuse tracked modifications before execution.
 
 The required repository Secret names and their rotation rules are listed in
 [`GitHub Actions secrets`](../operations/github-actions-secrets.md). Each fork
@@ -124,12 +125,18 @@ separate identities, atomically installs the approved trust bundle, verifies
 the suite API's `401/200` boundary, and runs all 25 plans in concurrent, CIBA,
 Front-Channel Logout, and Session Management groups. Success and failure both
 deactivate the run's clients, revoke trust through the public control plane,
-and restore the proxy configuration. Private inputs and failure evidence remain
-in unique run directories and are never overwritten by a later run.
+and restore the proxy configuration. Private inputs remain in unique work
+directories. Raw suite ZIPs are reduced to `evidence-manifest.json` and deleted,
+so credentials and log bodies are not retained as evidence.
 
 Approval remains a real, auditable authorization event. Automation removes file
 copying, path inference, command assembly, and recovery work; it does not
 collapse applicant and approver identities.
+
+Runtime `OIDF_USER_EMAIL` and `OIDF_USER_PASSWORD` values are authoritative for
+browser automation. Matching `nazo` fields in plan configuration are an
+explicit fallback for local operator runs only. GitHub Actions secrets override
+them so rotating a secret cannot silently leave stale plan credentials active.
 
 ## 1. Prepare immutable runner material
 
@@ -346,6 +353,28 @@ client credentials or trust records by replaying local runner material.
 Observe module status directly in the official suite. CI is useful delivery
 evidence but is not a substitute for the suite's terminal module results.
 
+After one onboarding cycle, the standard automation entry points are:
+
+```sh
+gh workflow run oidf-conformance-full.yml \
+  --ref main \
+  -f deployed_sha=<deployed-sha> \
+  -f target_issuer=https://issuer.example \
+  -f runner_mode=parallel-isolated \
+  -f onboarding_material_only=false
+
+gh workflow run openid4vc-conformance.yml \
+  --ref main \
+  -f deployed_sha=<deployed-sha> \
+  -f target_origin=https://issuer.example
+```
+
+Both workflows read rotated suite tokens, automation accounts, and delivered
+client material from the `oidf-conformance` environment. The workflow isolates
+the OIDC/FAPI concurrent groups, four CIBA groups, and two browser-sensitive
+plans. OpenID4VC runs its 17 plans in bounded groups. Operators do not manually
+split plans, copy configuration, or alter runner concurrency.
+
 ## 8. Cleanup and evidence
 
 Always run:
@@ -361,3 +390,11 @@ procedure confirms the previous trust configuration. Retain redacted results,
 the exact commit, plan manifest, bundle digest, approval/revocation audit IDs,
 and official run IDs. Never retain passwords, private keys, session cookies,
 CSRF tokens, client secrets, or one-time delivery tokens in documentation.
+
+Raw suite ZIPs are not redacted evidence. Their `testInfo.config` and log bodies
+can contain browser passwords, client secrets, tokens, or private keys. The
+repository runner generates a credential-free `evidence-manifest.json` on
+normal and handled-error exit paths. It retains only archive names and SHA-256 values, plan/module IDs,
+variants, terminal results, signature-file presence, and condition-result
+counts, then deletes the raw ZIPs. Workflow artifact paths must point to that
+manifest file exactly and must never upload the whole result directory.
