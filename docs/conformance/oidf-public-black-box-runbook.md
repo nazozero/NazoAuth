@@ -16,7 +16,7 @@ path is fixed and short:
 3. Apply the bundle through `apply_public_conformance_onboarding.py` using a
    normal applicant and a distinct approver. No database seed or private network
    access is permitted.
-4. Run the 25-plan OIDC/FAPI/FAPI-CIBA matrix with the same inputs and
+4. Run the 27-plan OIDC/FAPI/FAPI-CIBA/Logout matrix with the same inputs and
    `onboarding_material_only=false`, then run the 17-plan OpenID4VC Final/HAIP
    matrix. The workflows check out the deployed SHA, clone the exact official
    suite revision, and refuse tracked modifications before execution.
@@ -31,8 +31,10 @@ repository provides no shared deployment target.
 | Surface | Authority | Required boundary |
 |---|---|---|
 | OAuth client registration and management | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) | A conformance client follows the same application, approval, credential-delivery, registration, and management rules as any other client. |
+| RP-Initiated Logout | [OpenID Connect RP-Initiated Logout 1.0](https://openid.net/specs/openid-connect-rpinitiated-1_0.html) | GET and form POST are accepted; redirect URIs are exact registered values; requests without a hint bound to the current OP session require explicit End-User confirmation. Invalid RP data is never trusted for redirect. |
 | CIBA token lifecycle | [OpenID Connect CIBA Core 1.0](https://openid.net/specs/openid-client-initiated-backchannel-authentication-core-1_0.html) | A successful CIBA token response can include a refresh token. Client registration therefore permits `ciba + refresh_token` without inventing an authorization-code dependency; runtime issuance still requires the registered grant and `offline_access` policy. |
-| Logout client metadata | [OpenID Connect Front-Channel Logout 1.0](https://openid.net/specs/openid-connect-frontchannel-1_0.html), [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | Both `*_logout_session_required` values default to `false`. A client that needs `sid` explicitly registers the corresponding URI and opts in. |
+| Logout client metadata | [OpenID Connect Front-Channel Logout 1.0](https://openid.net/specs/openid-connect-frontchannel-1_0.html), [OpenID Connect Back-Channel Logout 1.0](https://openid.net/specs/openid-connect-backchannel-1_0.html) | Both `*_logout_session_required` values default to `false`. A client that needs `sid` explicitly registers the corresponding URI and opts in. Back-Channel delivery disables redirects, blocks unapproved private DNS results, accepts only `200`/`204`, and retries only recoverable transport or HTTP failures. |
+| Session Management | [OpenID Connect Session Management 1.0](https://openid.net/specs/openid-connect-session-1_0.html) | `session_state` is bound to the client and redirect origin. The OP iframe rejects malformed messages and any parent origin not represented by an active client's registered redirect URI. |
 | mTLS client authentication and certificate-bound access tokens | [RFC 8705](https://www.rfc-editor.org/rfc/rfc8705.html), [RFC 4514](https://www.rfc-editor.org/rfc/rfc4514.html), [RFC 4517](https://www.rfc-editor.org/rfc/rfc4517.html) | `tls_client_auth` and certificate-bound tokens remain independent capabilities. The authorization server requires one subject selector, canonical DN matching, and type-aware SAN matching. RFC 8705 Section 7.4's cross-CA spoofing boundary is enforced on the public CA-approval path by also requiring a narrowing leaf-certificate pin for `tls_client_auth`. |
 | X.509 validation | [RFC 5280](https://www.rfc-editor.org/rfc/rfc5280.html) | Only a current CA certificate with a supported public key, critical CA basic constraint, and critical `keyCertSign` use may enter a trust request. |
 | Trust-anchor administration | [RFC 6024](https://www.rfc-editor.org/rfc/rfc6024.html) | RFC 6024 supplies the trust-anchor-management security model: authenticate and authorize the source, protect integrity, detect replay, constrain trust purposes, and retain recovery. The product control plane additionally requires a distinct approver, bounded reasons, append-only audit, and revocation. |
@@ -122,8 +124,9 @@ The entry point verifies the deployed product commit, the explicitly selected
 official-suite commit, and clean tracked source trees. It then generates source-bound material,
 performs application, approval, one-time delivery, and trust approval under
 separate identities, atomically installs the approved trust bundle, verifies
-the suite API's `401/200` boundary, and runs all 25 plans in concurrent, CIBA,
-Front-Channel Logout, and Session Management groups. Success and failure both
+the suite API's `401/200` boundary, and runs all 27 plans in concurrent, CIBA,
+RP-Initiated Logout, Back-Channel Logout, Front-Channel Logout, and Session
+Management groups. Success and failure both
 deactivate the run's clients, revoke trust through the public control plane,
 and restore the proxy configuration. Private inputs remain in unique work
 directories. Raw suite ZIPs are reduced to `evidence-manifest.json` and deleted,
@@ -192,7 +195,7 @@ python scripts/prepare_official_oidf_public_onboarding.py \
 ```
 
 The converter verifies the artifact manifest and certificate bundle again,
-checks the applicant-email commitment, and emits exactly 53 unique applications
+checks the applicant-email commitment, and emits exactly 55 unique applications
 for the current full OIDC/FAPI/CIBA/OpenID4VC matrix. It does not contact the
 database or create a client.
 

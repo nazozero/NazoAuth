@@ -85,6 +85,7 @@ pub struct LogoutInput {
     pub id_token_hint_expired: bool,
     pub session: Option<LogoutSession>,
     pub csrf_authorized: bool,
+    pub user_confirmed: bool,
     pub frontchannel_enabled: bool,
     pub now: DateTime<Utc>,
 }
@@ -93,7 +94,7 @@ pub struct LogoutInput {
 pub enum LogoutServiceError {
     Policy(LogoutPolicyError),
     InvalidIdTokenHint,
-    UnauthorizedSession,
+    ConfirmationRequired,
     ClientNotFound,
     ClientUnavailable,
     SigningUnavailable,
@@ -192,8 +193,11 @@ impl LogoutService {
             return Err(LogoutServiceError::InvalidIdTokenHint);
         }
 
-        if input.session.is_some() && !input.csrf_authorized && !hint_matches_current_session {
-            return Err(LogoutServiceError::UnauthorizedSession);
+        if input.session.is_some()
+            && !hint_matches_current_session
+            && !(input.user_confirmed && input.csrf_authorized)
+        {
+            return Err(LogoutServiceError::ConfirmationRequired);
         }
 
         let mut active_clients = match input.session.as_ref() {

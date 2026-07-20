@@ -266,6 +266,7 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                         oidc_sid: session.oidc_sid.clone(),
                     }),
                     csrf_authorized: command.csrf_authorized,
+                    user_confirmed: command.user_confirmed,
                     frontchannel_enabled: self.permits_existing_frontchannel_transaction(),
                     now,
                 })
@@ -344,7 +345,7 @@ fn map_logout_service_error(error: LogoutServiceError) -> OidcLogoutError {
             }
         },
         LogoutServiceError::InvalidIdTokenHint => OidcLogoutError::InvalidIdTokenHint,
-        LogoutServiceError::UnauthorizedSession => OidcLogoutError::UnauthorizedSession,
+        LogoutServiceError::ConfirmationRequired => OidcLogoutError::ConfirmationRequired,
         LogoutServiceError::ClientNotFound => OidcLogoutError::ClientNotFound,
         LogoutServiceError::ClientUnavailable => OidcLogoutError::ClientLookupUnavailable,
         LogoutServiceError::SigningUnavailable => OidcLogoutError::SigningUnavailable,

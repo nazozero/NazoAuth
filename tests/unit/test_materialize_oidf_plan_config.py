@@ -14,6 +14,68 @@ def load_materializer_module():
 
 
 class MaterializeOidfPlanConfigTests(unittest.TestCase):
+    def test_repository_template_can_derive_both_new_logout_configs(self):
+        module = load_materializer_module()
+        template = (
+            Path(__file__).resolve().parents[2]
+            / "docs"
+            / "conformance"
+            / "oidf-plan-config-template.json"
+        )
+        rendered = json.loads(template.read_text(encoding="utf-8"))
+
+        module.derive_logout_oidcc_configs(rendered)
+
+        configs = rendered["configs"]
+        self.assertIn(module.OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE, configs)
+        self.assertIn(module.OIDCC_BACKCHANNEL_LOGOUT_CONFIG_FILE, configs)
+
+    def test_logout_derivation_creates_independent_rp_and_backchannel_profiles(self):
+        module = load_materializer_module()
+        frontchannel = {
+            "alias": "official-frontchannel-logout",
+            "description": "front-channel",
+            "client": {"client_id": "front-client"},
+            "browser": [
+                {
+                    "match": "https://issuer.example/logout*",
+                    "tasks": [
+                        {
+                            "task": "Reach post-logout redirect page",
+                            "commands": [["wait", "url", "https://suite.example/callback"]],
+                        }
+                    ],
+                }
+            ],
+            "override": {"front-only": True},
+        }
+        rendered = {
+            "configs": {module.OIDCC_FRONTCHANNEL_LOGOUT_CONFIG_FILE: frontchannel}
+        }
+
+        module.derive_logout_oidcc_configs(rendered)
+
+        configs = rendered["configs"]
+        rp = configs[module.OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE]
+        backchannel = configs[module.OIDCC_BACKCHANNEL_LOGOUT_CONFIG_FILE]
+        self.assertEqual(rp["alias"], "official-rp-initiated-logout")
+        self.assertEqual(rp["client"]["client_id"], "oidf-rp-initiated-logout-client")
+        self.assertNotIn("override", rp)
+        self.assertEqual(backchannel["alias"], "official-backchannel-logout")
+        self.assertEqual(
+            backchannel["client"]["client_id"],
+            "oidf-backchannel-logout-client",
+        )
+        self.assertNotIn("override", backchannel)
+        logout_tasks = rp["browser"][0]["tasks"]
+        self.assertEqual(logout_tasks[0]["task"], "Confirm an unbound logout request")
+        self.assertTrue(logout_tasks[0]["optional"])
+        self.assertEqual(logout_tasks[1]["task"], "Capture local logout result page")
+        self.assertTrue(logout_tasks[1]["optional"])
+        self.assertEqual(logout_tasks[2]["task"], "Reach post-logout redirect page")
+        self.assertTrue(logout_tasks[2]["optional"])
+        self.assertEqual(frontchannel["client"]["client_id"], "front-client")
+
     def test_mtls_material_replaces_every_identity_and_rejects_unused_clients(self):
         module = load_materializer_module()
         rendered = {

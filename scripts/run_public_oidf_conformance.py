@@ -219,6 +219,8 @@ def split_plan_groups(work_dir: Path) -> tuple[tuple[str, Path, bool], ...]:
     source_files = (
         "oidf-plan-set-concurrent.json",
         "oidf-plan-set-ciba.json",
+        "oidf-plan-set-rp-initiated.json",
+        "oidf-plan-set-backchannel.json",
         "oidf-plan-set-frontchannel.json",
         "oidf-plan-set-session.json",
     )
@@ -310,11 +312,21 @@ def split_plan_groups(work_dir: Path) -> tuple[tuple[str, Path, bool], ...]:
                 False,
             ),
             (
-                "08-frontchannel",
+                "08-rp-initiated",
+                source_plans["oidf-plan-set-rp-initiated.json"],
+                True,
+            ),
+            (
+                "09-backchannel",
+                source_plans["oidf-plan-set-backchannel.json"],
+                True,
+            ),
+            (
+                "10-frontchannel",
                 source_plans["oidf-plan-set-frontchannel.json"],
                 True,
             ),
-            ("09-session", source_plans["oidf-plan-set-session.json"], True),
+            ("11-session", source_plans["oidf-plan-set-session.json"], True),
         )
     )
 

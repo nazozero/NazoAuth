@@ -17,6 +17,9 @@ OIDCC_BASIC_CONFIG_FILE = "oidf-oidcc-basic-plan-config.json"
 OIDCC_DYNAMIC_CONFIG_FILE = "oidf-oidcc-dynamic-plan-config.json"
 OIDCC_FORMPOST_CONFIG_FILE = "oidf-oidcc-formpost-plan-config.json"
 OIDCC_THIRD_PARTY_INIT_CONFIG_FILE = "oidf-oidcc-third-party-init-plan-config.json"
+OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE = "oidf-oidcc-rp-initiated-logout-plan-config.json"
+OIDCC_BACKCHANNEL_LOGOUT_CONFIG_FILE = "oidf-oidcc-backchannel-logout-plan-config.json"
+OIDCC_FRONTCHANNEL_LOGOUT_CONFIG_FILE = "oidf-oidcc-frontchannel-logout-plan-config.json"
 FAPI_CIBA_SOURCE_CONFIG_FILE = (
     "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json"
 )
@@ -178,6 +181,103 @@ def derive_dynamic_oidcc_config(rendered: dict[str, Any], initial_access_token: 
     configs[OIDCC_THIRD_PARTY_INIT_CONFIG_FILE] = third_party
 
 
+def derive_logout_oidcc_configs(rendered: dict[str, Any]) -> None:
+    configs = rendered.get("configs")
+    if not isinstance(configs, dict):
+        raise SystemExit("OIDF config root must contain a configs object")
+    frontchannel = configs.get(OIDCC_FRONTCHANNEL_LOGOUT_CONFIG_FILE)
+    if not isinstance(frontchannel, dict):
+        raise SystemExit(
+            f"missing {OIDCC_FRONTCHANNEL_LOGOUT_CONFIG_FILE} config to derive logout profiles"
+        )
+
+    for filename, alias_suffix, client_id, description in (
+        (
+            OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE,
+            "rp-initiated-logout",
+            "oidf-rp-initiated-logout-client",
+            "OIDC RP-Initiated Logout OP: exact redirect validation, invalid hint handling, explicit End-User confirmation, and logout state continuity.",
+        ),
+        (
+            OIDCC_BACKCHANNEL_LOGOUT_CONFIG_FILE,
+            "backchannel-logout",
+            "oidf-backchannel-logout-client",
+            "OIDC Back-Channel Logout OP: signed explicitly typed Logout Token delivery with sid/sub, events, audience, expiry, and RP callback validation.",
+        ),
+    ):
+        if filename in configs:
+            raise SystemExit(f"{filename} already exists in rendered configs")
+        config = copy.deepcopy(frontchannel)
+        alias = config.get("alias")
+        if not isinstance(alias, str) or not alias.endswith("frontchannel-logout"):
+            raise SystemExit("front-channel config alias must end with frontchannel-logout")
+        config["alias"] = alias.removesuffix("frontchannel-logout") + alias_suffix
+        config["description"] = description
+        client = config.get("client")
+        if not isinstance(client, dict):
+            raise SystemExit(f"{OIDCC_FRONTCHANNEL_LOGOUT_CONFIG_FILE}.client is required")
+        client["client_id"] = client_id
+        config.pop("override", None)
+        configs[filename] = config
+
+    rp = configs[OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE]
+    browser = rp.get("browser")
+    if not isinstance(browser, list):
+        raise SystemExit(f"{OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE}.browser is required")
+    logout_entry = next(
+        (
+            entry
+            for entry in browser
+            if isinstance(entry, dict)
+            and isinstance(entry.get("match"), str)
+            and str(entry["match"]).endswith("/logout*")
+        ),
+        None,
+    )
+    if not isinstance(logout_entry, dict) or not isinstance(logout_entry.get("tasks"), list):
+        raise SystemExit("RP-Initiated Logout browser automation lacks a logout task")
+    for task in logout_entry["tasks"]:
+        if isinstance(task, dict) and task.get("task") == "Reach post-logout redirect page":
+            task["optional"] = True
+    logout_entry["tasks"].insert(
+        0,
+        {
+            "task": "Confirm an unbound logout request",
+            "optional": True,
+            "match": logout_entry["match"],
+            "commands": [
+                [
+                    "wait",
+                    "id",
+                    "nazo-logout-confirm",
+                    30,
+                    ".*",
+                    "update-image-placeholder-optional",
+                ],
+                ["click", "id", "nazo-logout-confirm"],
+            ],
+        },
+    )
+    logout_entry["tasks"].insert(
+        1,
+        {
+            "task": "Capture local logout result page",
+            "optional": True,
+            "match": logout_entry["match"],
+            "commands": [
+                [
+                    "wait",
+                    "id",
+                    "nazo-logout-success",
+                    30,
+                    ".*",
+                    "update-image-placeholder-optional",
+                ],
+            ],
+        },
+    )
+
+
 def _ciba_slug(client_auth_type: str, ciba_mode: str) -> str:
     auth_slug = "private-key-jwt" if client_auth_type == "private_key_jwt" else "mtls"
     return f"fapi-ciba-plain-{auth_slug}-{ciba_mode}"
@@ -329,12 +429,13 @@ def main() -> int:
         else secret_patch_from_env(args.secret_prefix)
     )
     rendered = materialize(template, patch)
+    if not isinstance(rendered, dict):
+        raise SystemExit("OIDF rendered config must be a JSON object")
+    derive_logout_oidcc_configs(rendered)
     if args.derive_dynamic_oidcc_config:
         initial_access_token = os.environ.get(args.dynamic_registration_token_env, "")
         if not initial_access_token:
             raise SystemExit(f"{args.dynamic_registration_token_env} is required")
-        if not isinstance(rendered, dict):
-            raise SystemExit("OIDF rendered config must be a JSON object")
         derive_dynamic_oidcc_config(rendered, initial_access_token)
     if args.derive_fapi_ciba_matrix_configs:
         if not isinstance(rendered, dict):

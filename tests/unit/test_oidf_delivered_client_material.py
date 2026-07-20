@@ -34,6 +34,14 @@ class OidfDeliveredClientMaterialTests(unittest.TestCase):
                 "alias": "formpost-alias",
                 **common,
             },
+            "oidf-oidcc-rp-initiated-logout-plan-config.json": {
+                "alias": "rp-alias",
+                "client": {"client_id": "rp", "scope": "openid"},
+            },
+            "oidf-oidcc-backchannel-logout-plan-config.json": {
+                "alias": "back-alias",
+                "client": {"client_id": "back", "scope": "openid"},
+            },
             "oidf-oidcc-frontchannel-logout-plan-config.json": {
                 "alias": "front-alias",
                 "client": {"client_id": "front", "scope": "openid"},
@@ -52,7 +60,7 @@ class OidfDeliveredClientMaterialTests(unittest.TestCase):
 
         self.assertEqual(
             {item["logical_client_id"] for item in clients},
-            {"basic", "basic-2", "post", "front", "session"},
+            {"basic", "basic-2", "post", "rp", "back", "front", "session"},
         )
         basic = next(item for item in clients if item["logical_client_id"] == "basic")
         self.assertEqual(
@@ -64,6 +72,17 @@ class OidfDeliveredClientMaterialTests(unittest.TestCase):
         )
         front = next(item for item in clients if item["logical_client_id"] == "front")
         self.assertTrue(front["request"]["frontchannel_logout_session_required"])
+        rp = next(item for item in clients if item["logical_client_id"] == "rp")
+        self.assertEqual(
+            rp["request"]["post_logout_redirect_uris"],
+            ["https://suite.example/test/a/rp-alias/post_logout_redirect"],
+        )
+        back = next(item for item in clients if item["logical_client_id"] == "back")
+        self.assertEqual(
+            back["request"]["backchannel_logout_uri"],
+            "https://suite.example/test/a/back-alias/backchannel_logout",
+        )
+        self.assertTrue(back["request"]["backchannel_logout_session_required"])
 
     def test_mapping_is_target_bound_and_updates_only_client_id_fields(self):
         module = load("apply_oidf_delivered_client_material.py")

@@ -855,7 +855,7 @@ def check_conformance_provisioning_boundaries() -> None:
         "prepare_oidc_clients",
         "prepare_openid4vc_clients",
         "applicant email does not match the official artifact commitment",
-        "53 unique clients",
+        "55 unique clients",
     ):
         if marker not in official_onboarding:
             raise SystemExit(

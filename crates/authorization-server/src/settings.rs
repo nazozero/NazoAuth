@@ -132,6 +132,7 @@ pub(crate) struct ModuleSettings {
     pub(crate) enable_openid4vp_verifier: bool,
     pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
     pub(crate) remote_client_document_private_origins: Vec<String>,
+    pub(crate) backchannel_logout_private_origins: Vec<String>,
 }
 
 #[derive(Clone)]
@@ -612,6 +613,17 @@ impl Settings {
                 dynamic_client_registration_initial_access_token,
                 remote_client_document_private_origins: config
                     .optional_string("REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS")
+                    .map(|value| {
+                        value
+                            .split(',')
+                            .map(str::trim)
+                            .filter(|value| !value.is_empty())
+                            .map(ToOwned::to_owned)
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+                backchannel_logout_private_origins: config
+                    .optional_string("BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS")
                     .map(|value| {
                         value
                             .split(',')

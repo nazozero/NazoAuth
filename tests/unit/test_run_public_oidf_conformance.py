@@ -74,6 +74,8 @@ class PublicOidfRunnerTests(unittest.TestCase):
             files = {
                 "oidf-plan-set-concurrent.json": concurrent,
                 "oidf-plan-set-ciba.json": ciba,
+                "oidf-plan-set-rp-initiated.json": ["rp-initiated plan-rp.json"],
+                "oidf-plan-set-backchannel.json": ["backchannel plan-back.json"],
                 "oidf-plan-set-frontchannel.json": ["frontchannel plan-front.json"],
                 "oidf-plan-set-session.json": ["session plan-session.json"],
             }
@@ -95,7 +97,7 @@ class PublicOidfRunnerTests(unittest.TestCase):
             ):
                 self.module.run_plan_groups(args, work, {})
 
-            self.assertEqual(command.call_count, 12)
+            self.assertEqual(command.call_count, 14)
             invocations = [call.args[0] for call in command.call_args_list]
             self.assertNotIn("--no-parallel", invocations[0])
             self.assertNotIn("--no-parallel", invocations[1])
@@ -103,7 +105,7 @@ class PublicOidfRunnerTests(unittest.TestCase):
                 self.assertIn("--no-parallel", invocation)
             for invocation in invocations[6:10]:
                 self.assertNotIn("--no-parallel", invocation)
-            for invocation in invocations[10:12]:
+            for invocation in invocations[10:14]:
                 self.assertIn("--no-parallel", invocation)
             self.assertTrue(all("--no-api-token" not in invocation for invocation in invocations))
             self.assertTrue(

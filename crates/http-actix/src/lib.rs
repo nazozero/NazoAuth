@@ -133,7 +133,8 @@ pub use session::{
 pub use session_management::{
     CheckSessionStatusQuery, SessionManagementAvailability, SessionManagementConfig,
     SessionManagementEndpoint, SessionManagementError, SessionManagementFuture,
-    SessionManagementOperations, check_session_iframe, check_session_status,
+    SessionManagementOperations, SessionManagementOriginFuture, check_session_iframe,
+    check_session_status,
 };
 pub use token_client_auth::{
     ClientCertificateFacts, TokenClientAuthForm, TokenClientAuthTransportFacts,

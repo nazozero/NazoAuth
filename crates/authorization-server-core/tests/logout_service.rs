@@ -202,6 +202,31 @@ fn expired_hint_is_accepted_only_when_bound_to_the_current_session() {
 }
 
 #[test]
+fn unbound_logout_requires_both_user_confirmation_and_csrf_authorization() {
+    let tenant_id = Uuid::now_v7();
+    let clients = Arc::new(Clients::default());
+    *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
+    let service = service(clients, Arc::new(Outbox::default()));
+    let mut request = input(tenant_id, None);
+
+    request.user_confirmed = false;
+    assert_eq!(
+        futures_executor::block_on(service.execute(request.clone())),
+        Err(LogoutServiceError::ConfirmationRequired)
+    );
+
+    request.user_confirmed = true;
+    request.csrf_authorized = false;
+    assert_eq!(
+        futures_executor::block_on(service.execute(request.clone())),
+        Err(LogoutServiceError::ConfirmationRequired)
+    );
+
+    request.csrf_authorized = true;
+    assert!(futures_executor::block_on(service.execute(request)).is_ok());
+}
+
+#[test]
 fn client_id_only_does_not_fan_out_to_an_ungranted_client() {
     let tenant_id = Uuid::now_v7();
     let clients = Arc::new(Clients::default());
@@ -235,6 +260,7 @@ fn valid_hint_makes_an_ungranted_client_a_bound_fanout_target() {
     let session = request.session.as_ref().unwrap().clone();
     request.request.id_token_hint_present = true;
     request.csrf_authorized = false;
+    request.user_confirmed = false;
     request.id_token_hint = Some(IdTokenHintClaims {
         sub: session.user_id.to_string(),
         aud: json!("client-a"),
@@ -296,6 +322,7 @@ fn input(tenant_id: Uuid, client_id: Option<&str>) -> LogoutInput {
             oidc_sid: "sid-1".to_owned(),
         }),
         csrf_authorized: true,
+        user_confirmed: true,
         frontchannel_enabled: true,
         now: Utc.timestamp_opt(2_000_000_000, 0).unwrap(),
     }

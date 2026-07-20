@@ -1,5 +1,5 @@
 #[cfg(not(test))]
-use std::time::Duration as StdDuration;
+use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration as StdDuration};
 
 #[cfg(not(test))]
 use anyhow::Context as _;
@@ -10,6 +10,10 @@ use futures_util::{StreamExt as _, stream};
 use nazo_auth::BackchannelLogoutDelivery;
 #[cfg(not(test))]
 use nazo_postgres::AuditRepository;
+use url::Url;
+
+#[cfg(not(test))]
+use super::sector_identifier::is_blocked_ip;
 
 #[cfg(not(test))]
 const DELIVERY_BATCH_SIZE: i64 = 20;
@@ -19,22 +23,49 @@ const DELIVERY_CONCURRENCY: usize = 8;
 const LOCK_TIMEOUT_SECONDS: i32 = 300;
 const ERROR_MAX_CHARS: usize = 512;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum BackchannelResponseAction {
+    Delivered,
+    Retry,
+    TerminalFailure,
+}
+
+#[cfg(not(test))]
+enum BackchannelPostOutcome {
+    Delivered,
+    TerminalFailure(u16),
+}
+
 #[cfg(not(test))]
 #[derive(Clone)]
 pub(crate) struct BackchannelLogoutWorker {
     deliveries: AuditRepository,
-    http: reqwest::Client,
+    private_network_origins: Arc<HashSet<String>>,
 }
 
 #[cfg(not(test))]
 impl BackchannelLogoutWorker {
-    pub(crate) fn new(deliveries: AuditRepository) -> anyhow::Result<Self> {
+    pub(crate) fn new(
+        deliveries: AuditRepository,
+        private_network_origins: &[String],
+    ) -> anyhow::Result<Self> {
+        let mut origins = HashSet::new();
+        for value in private_network_origins {
+            let endpoint = validate_backchannel_endpoint(value)
+                .map_err(anyhow::Error::msg)
+                .with_context(|| {
+                    format!("invalid BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS entry {value}")
+                })?;
+            if endpoint.path() != "/" || endpoint.query().is_some() {
+                anyhow::bail!(
+                    "BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS entries must be origins: {value}"
+                );
+            }
+            origins.insert(endpoint.origin().ascii_serialization());
+        }
         Ok(Self {
             deliveries,
-            http: reqwest::Client::builder()
-                .timeout(StdDuration::from_secs(3))
-                .build()
-                .context("failed to build back-channel logout HTTP client")?,
+            private_network_origins: Arc::new(origins),
         })
     }
 
@@ -58,18 +89,31 @@ impl BackchannelLogoutWorker {
 
     async fn process_delivery(&self, delivery: BackchannelLogoutDelivery) -> anyhow::Result<()> {
         match self.post(&delivery).await {
-            Ok(()) => self
+            Ok(BackchannelPostOutcome::Delivered) => self
                 .deliveries
                 .complete_backchannel_logout(delivery.id, delivery.attempts)
                 .await
                 .context("failed to complete back-channel logout delivery"),
-            Err(delivery_error) => {
+            outcome => {
                 let now = Utc::now();
-                let next_attempt_at =
-                    next_retry_at(delivery.attempts - 1, now, delivery.expires_at);
+                let (next_attempt_at, delivery_error) = match outcome {
+                    Ok(BackchannelPostOutcome::TerminalFailure(status)) => (
+                        None,
+                        anyhow::anyhow!(
+                            "back-channel logout endpoint returned terminal status {status}"
+                        ),
+                    ),
+                    Err(error) => (
+                        next_retry_at(delivery.attempts - 1, now, delivery.expires_at),
+                        error,
+                    ),
+                    Ok(BackchannelPostOutcome::Delivered) => unreachable!(),
+                };
                 let last_error = truncate_error(&delivery_error.to_string());
                 tracing::warn!(
                     error = %last_error,
+                    retry_scheduled = next_attempt_at.is_some(),
+                    failure_recorded_at = %now,
                     backchannel_logout_uri = %delivery.logout_uri,
                     "back-channel logout delivery failed"
                 );
@@ -86,12 +130,43 @@ impl BackchannelLogoutWorker {
         }
     }
 
-    async fn post(&self, delivery: &BackchannelLogoutDelivery) -> anyhow::Result<()> {
+    async fn post(
+        &self,
+        delivery: &BackchannelLogoutDelivery,
+    ) -> anyhow::Result<BackchannelPostOutcome> {
+        let endpoint = validate_backchannel_endpoint(&delivery.logout_uri)
+            .map_err(anyhow::Error::msg)
+            .context("invalid stored back-channel logout endpoint")?;
+        let host = endpoint
+            .host_str()
+            .ok_or_else(|| anyhow::anyhow!("back-channel logout endpoint has no host"))?;
+        let port = endpoint
+            .port_or_known_default()
+            .ok_or_else(|| anyhow::anyhow!("back-channel logout endpoint has no port"))?;
+        let addresses = tokio::net::lookup_host((host, port))
+            .await
+            .context("back-channel logout DNS resolution failed")?
+            .collect::<Vec<SocketAddr>>();
+        if addresses.is_empty() {
+            anyhow::bail!("back-channel logout DNS returned no addresses");
+        }
+        let allow_private = self
+            .private_network_origins
+            .contains(&endpoint.origin().ascii_serialization());
+        if !allow_private && addresses.iter().any(|address| is_blocked_ip(address.ip())) {
+            anyhow::bail!("back-channel logout endpoint resolved to a blocked network");
+        }
+        let http = reqwest::Client::builder()
+            .connect_timeout(StdDuration::from_secs(3))
+            .timeout(StdDuration::from_secs(3))
+            .redirect(reqwest::redirect::Policy::none())
+            .resolve_to_addrs(host, &addresses)
+            .build()
+            .context("failed to build back-channel logout HTTP client")?;
         let body = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("logout_token", &delivery.logout_token)
             .finish();
-        let response = self
-            .http
+        let response = http
             .post(&delivery.logout_uri)
             .header(
                 reqwest::header::CONTENT_TYPE,
@@ -101,13 +176,45 @@ impl BackchannelLogoutWorker {
             .send()
             .await
             .context("back-channel logout request failed")?;
-        if !response.status().is_success() {
-            anyhow::bail!(
-                "back-channel logout endpoint returned {}",
-                response.status()
-            );
+        let status = response.status().as_u16();
+        match classify_backchannel_status(status) {
+            BackchannelResponseAction::Delivered => Ok(BackchannelPostOutcome::Delivered),
+            BackchannelResponseAction::TerminalFailure => {
+                Ok(BackchannelPostOutcome::TerminalFailure(status))
+            }
+            BackchannelResponseAction::Retry => {
+                anyhow::bail!("back-channel logout endpoint returned retryable status {status}")
+            }
         }
-        Ok(())
+    }
+}
+
+fn validate_backchannel_endpoint(raw: &str) -> Result<Url, &'static str> {
+    let endpoint = Url::parse(raw).map_err(|_| "back-channel logout endpoint is not a URI")?;
+    let host = endpoint
+        .host_str()
+        .ok_or("back-channel logout endpoint has no host")?;
+    if !endpoint.username().is_empty()
+        || endpoint.password().is_some()
+        || endpoint.fragment().is_some()
+    {
+        return Err("back-channel logout endpoint contains forbidden URI components");
+    }
+    match endpoint.scheme() {
+        "https" => {}
+        "http"
+            if matches!(host, "localhost" | "127.0.0.1" | "::1")
+                || host.ends_with(".localhost") => {}
+        _ => return Err("back-channel logout endpoint must use HTTPS or loopback HTTP"),
+    }
+    Ok(endpoint)
+}
+
+fn classify_backchannel_status(status: u16) -> BackchannelResponseAction {
+    match status {
+        200 | 204 => BackchannelResponseAction::Delivered,
+        408 | 425 | 429 | 500..=599 => BackchannelResponseAction::Retry,
+        _ => BackchannelResponseAction::TerminalFailure,
     }
 }
 
@@ -171,5 +278,49 @@ mod tests {
         let truncated = truncate_error(&error);
         assert_eq!(truncated.chars().count(), ERROR_MAX_CHARS);
         assert!(truncated.is_char_boundary(truncated.len()));
+    }
+
+    #[test]
+    fn backchannel_response_classification_retries_only_recoverable_statuses() {
+        assert_eq!(
+            classify_backchannel_status(200),
+            BackchannelResponseAction::Delivered
+        );
+        assert_eq!(
+            classify_backchannel_status(204),
+            BackchannelResponseAction::Delivered
+        );
+        for status in [408, 425, 429, 500, 503, 599] {
+            assert_eq!(
+                classify_backchannel_status(status),
+                BackchannelResponseAction::Retry,
+                "status {status}"
+            );
+        }
+        for status in [201, 202, 206, 300, 400, 401, 404, 422] {
+            assert_eq!(
+                classify_backchannel_status(status),
+                BackchannelResponseAction::TerminalFailure,
+                "status {status}"
+            );
+        }
+    }
+
+    #[test]
+    fn backchannel_endpoint_validation_rejects_unsafe_transport_shapes() {
+        assert!(validate_backchannel_endpoint("https://rp.example/logout?tenant=a").is_ok());
+        assert!(validate_backchannel_endpoint("http://localhost:8080/logout").is_ok());
+        for endpoint in [
+            "http://rp.example/logout",
+            "file:///tmp/logout",
+            "https://user@rp.example/logout",
+            "https://rp.example/logout#fragment",
+            "not-a-uri",
+        ] {
+            assert!(
+                validate_backchannel_endpoint(endpoint).is_err(),
+                "endpoint {endpoint}"
+            );
+        }
     }
 }

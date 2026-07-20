@@ -3,8 +3,9 @@ use std::sync::Arc;
 use nazo_auth::{CapabilityAdmission, module_admissible};
 use nazo_http_actix::{
     SessionManagementAvailability, SessionManagementError, SessionManagementFuture,
-    SessionManagementOperations,
+    SessionManagementOperations, SessionManagementOriginFuture,
 };
+use nazo_postgres::OAuthClientRepository;
 use nazo_runtime_modules::ModuleId;
 
 use crate::http::sessions::SessionProfileHandles;
@@ -18,16 +19,19 @@ use crate::runtime_modules::ServerRuntimeModuleRegistry;
 #[derive(Clone)]
 pub(crate) struct ServerSessionManagementOperations {
     sessions: SessionProfileHandles,
+    clients: OAuthClientRepository,
     runtime_modules: Arc<ServerRuntimeModuleRegistry>,
 }
 
 impl ServerSessionManagementOperations {
     pub(crate) fn new(
         sessions: SessionProfileHandles,
+        clients: OAuthClientRepository,
         runtime_modules: Arc<ServerRuntimeModuleRegistry>,
     ) -> Self {
         Self {
             sessions,
+            clients,
             runtime_modules,
         }
     }
@@ -63,6 +67,29 @@ impl SessionManagementOperations for ServerSessionManagementOperations {
                     tracing::warn!(%error, "failed to resolve oidc session-management state");
                     SessionManagementError::SessionLookupUnavailable
                 })
+        })
+    }
+
+    fn is_origin_allowed<'a>(
+        &'a self,
+        client_id: &'a str,
+        origin: &'a str,
+    ) -> SessionManagementOriginFuture<'a> {
+        Box::pin(async move {
+            let client = self
+                .clients
+                .by_client_id(crate::domain::tenancy::DEFAULT_TENANT_ID, client_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "failed to resolve oidc session-management client");
+                    SessionManagementError::SessionLookupUnavailable
+                })?;
+            Ok(client.is_some_and(|client| {
+                client.is_active
+                    && client.redirect_uris.iter().any(|redirect_uri| {
+                        nazo_auth::oidc_redirect_uri_origin(redirect_uri).as_deref() == Some(origin)
+                    })
+            }))
         })
     }
 }
