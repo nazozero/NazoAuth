@@ -1,7 +1,8 @@
-#[cfg(not(test))]
-use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration as StdDuration};
+use std::{collections::HashSet, net::SocketAddr, time::Duration as StdDuration};
 
 #[cfg(not(test))]
+use std::sync::Arc;
+
 use anyhow::Context as _;
 use chrono::{DateTime, Duration, Utc};
 #[cfg(not(test))]
@@ -12,7 +13,6 @@ use nazo_auth::BackchannelLogoutDelivery;
 use nazo_postgres::AuditRepository;
 use url::Url;
 
-#[cfg(not(test))]
 use super::sector_identifier::is_blocked_ip;
 
 #[cfg(not(test))]
@@ -30,7 +30,7 @@ enum BackchannelResponseAction {
     TerminalFailure,
 }
 
-#[cfg(not(test))]
+#[derive(Debug, Eq, PartialEq)]
 enum BackchannelPostOutcome {
     Delivered,
     TerminalFailure(u16),
@@ -134,57 +134,68 @@ impl BackchannelLogoutWorker {
         &self,
         delivery: &BackchannelLogoutDelivery,
     ) -> anyhow::Result<BackchannelPostOutcome> {
-        let endpoint = validate_backchannel_endpoint(&delivery.logout_uri)
-            .map_err(anyhow::Error::msg)
-            .context("invalid stored back-channel logout endpoint")?;
-        let host = endpoint
-            .host_str()
-            .ok_or_else(|| anyhow::anyhow!("back-channel logout endpoint has no host"))?;
-        let port = endpoint
-            .port_or_known_default()
-            .ok_or_else(|| anyhow::anyhow!("back-channel logout endpoint has no port"))?;
-        let addresses = tokio::net::lookup_host((host, port))
-            .await
-            .context("back-channel logout DNS resolution failed")?
-            .collect::<Vec<SocketAddr>>();
-        if addresses.is_empty() {
-            anyhow::bail!("back-channel logout DNS returned no addresses");
+        post_logout_token(
+            &self.private_network_origins,
+            &delivery.logout_uri,
+            &delivery.logout_token,
+        )
+        .await
+    }
+}
+
+async fn post_logout_token(
+    private_network_origins: &HashSet<String>,
+    logout_uri: &str,
+    logout_token: &str,
+) -> anyhow::Result<BackchannelPostOutcome> {
+    let endpoint = validate_backchannel_endpoint(logout_uri)
+        .map_err(anyhow::Error::msg)
+        .context("invalid stored back-channel logout endpoint")?;
+    let host = endpoint
+        .host_str()
+        .ok_or_else(|| anyhow::anyhow!("back-channel logout endpoint has no host"))?;
+    let port = endpoint
+        .port_or_known_default()
+        .ok_or_else(|| anyhow::anyhow!("back-channel logout endpoint has no port"))?;
+    let addresses = tokio::net::lookup_host((host, port))
+        .await
+        .context("back-channel logout DNS resolution failed")?
+        .collect::<Vec<SocketAddr>>();
+    if addresses.is_empty() {
+        anyhow::bail!("back-channel logout DNS returned no addresses");
+    }
+    let allow_private = private_network_origins.contains(&endpoint.origin().ascii_serialization());
+    if !allow_private && addresses.iter().any(|address| is_blocked_ip(address.ip())) {
+        anyhow::bail!("back-channel logout endpoint resolved to a blocked network");
+    }
+    let http = reqwest::Client::builder()
+        .connect_timeout(StdDuration::from_secs(3))
+        .timeout(StdDuration::from_secs(3))
+        .redirect(reqwest::redirect::Policy::none())
+        .resolve_to_addrs(host, &addresses)
+        .build()
+        .context("failed to build back-channel logout HTTP client")?;
+    let body = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("logout_token", logout_token)
+        .finish();
+    let response = http
+        .post(logout_uri)
+        .header(
+            reqwest::header::CONTENT_TYPE,
+            "application/x-www-form-urlencoded",
+        )
+        .body(body)
+        .send()
+        .await
+        .context("back-channel logout request failed")?;
+    let status = response.status().as_u16();
+    match classify_backchannel_status(status) {
+        BackchannelResponseAction::Delivered => Ok(BackchannelPostOutcome::Delivered),
+        BackchannelResponseAction::TerminalFailure => {
+            Ok(BackchannelPostOutcome::TerminalFailure(status))
         }
-        let allow_private = self
-            .private_network_origins
-            .contains(&endpoint.origin().ascii_serialization());
-        if !allow_private && addresses.iter().any(|address| is_blocked_ip(address.ip())) {
-            anyhow::bail!("back-channel logout endpoint resolved to a blocked network");
-        }
-        let http = reqwest::Client::builder()
-            .connect_timeout(StdDuration::from_secs(3))
-            .timeout(StdDuration::from_secs(3))
-            .redirect(reqwest::redirect::Policy::none())
-            .resolve_to_addrs(host, &addresses)
-            .build()
-            .context("failed to build back-channel logout HTTP client")?;
-        let body = url::form_urlencoded::Serializer::new(String::new())
-            .append_pair("logout_token", &delivery.logout_token)
-            .finish();
-        let response = http
-            .post(&delivery.logout_uri)
-            .header(
-                reqwest::header::CONTENT_TYPE,
-                "application/x-www-form-urlencoded",
-            )
-            .body(body)
-            .send()
-            .await
-            .context("back-channel logout request failed")?;
-        let status = response.status().as_u16();
-        match classify_backchannel_status(status) {
-            BackchannelResponseAction::Delivered => Ok(BackchannelPostOutcome::Delivered),
-            BackchannelResponseAction::TerminalFailure => {
-                Ok(BackchannelPostOutcome::TerminalFailure(status))
-            }
-            BackchannelResponseAction::Retry => {
-                anyhow::bail!("back-channel logout endpoint returned retryable status {status}")
-            }
+        BackchannelResponseAction::Retry => {
+            anyhow::bail!("back-channel logout endpoint returned retryable status {status}")
         }
     }
 }
@@ -252,6 +263,72 @@ fn truncate_error(error: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+    async fn local_status_endpoint(status: u16) -> (String, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("loopback listener binds");
+        let address = listener
+            .local_addr()
+            .expect("loopback address is available");
+        let task = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.expect("request arrives");
+            let mut request = Vec::new();
+            loop {
+                let mut chunk = [0_u8; 1024];
+                let size = stream.read(&mut chunk).await.expect("request is readable");
+                assert_ne!(size, 0, "request must contain its declared body");
+                request.extend_from_slice(&chunk[..size]);
+                let Some(header_end) = request.windows(4).position(|value| value == b"\r\n\r\n")
+                else {
+                    continue;
+                };
+                let headers = String::from_utf8_lossy(&request[..header_end]);
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        line.to_ascii_lowercase()
+                            .strip_prefix("content-length: ")
+                            .map(str::to_owned)
+                    })
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .expect("request declares content length");
+                if request.len() >= header_end + 4 + content_length {
+                    break;
+                }
+            }
+            let request = String::from_utf8_lossy(&request);
+            assert!(request.starts_with("POST /logout HTTP/1.1"));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("content-type: application/x-www-form-urlencoded")
+            );
+            assert!(request.contains("logout_token=logout-token"));
+            stream
+                .write_all(
+                    format!(
+                        "HTTP/1.1 {status} Test\r\nContent-Length: 0\r\nLocation: /followed\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
+                )
+                .await
+                .expect("response is writable");
+        });
+        (format!("http://{address}/logout"), task)
+    }
+
+    async fn post_to_local_status(status: u16) -> anyhow::Result<BackchannelPostOutcome> {
+        let (logout_uri, server) = local_status_endpoint(status).await;
+        let origin = Url::parse(&logout_uri)
+            .expect("local endpoint is a URL")
+            .origin()
+            .ascii_serialization();
+        let result = post_logout_token(&HashSet::from([origin]), &logout_uri, "logout-token").await;
+        server.await.expect("local endpoint completes");
+        result
+    }
 
     #[test]
     fn retries_are_bounded_and_never_scheduled_after_expiry() {
@@ -322,5 +399,35 @@ mod tests {
                 "endpoint {endpoint}"
             );
         }
+    }
+
+    #[tokio::test]
+    async fn backchannel_post_enforces_network_and_response_policy() {
+        assert_eq!(
+            post_to_local_status(204).await.expect("204 is delivered"),
+            BackchannelPostOutcome::Delivered
+        );
+        assert_eq!(
+            post_to_local_status(400)
+                .await
+                .expect("400 is a terminal response"),
+            BackchannelPostOutcome::TerminalFailure(400)
+        );
+        assert_eq!(
+            post_to_local_status(302)
+                .await
+                .expect("redirects are terminal and are not followed"),
+            BackchannelPostOutcome::TerminalFailure(302)
+        );
+        let retry = post_to_local_status(503)
+            .await
+            .expect_err("503 remains retryable");
+        assert!(retry.to_string().contains("retryable status 503"));
+
+        let blocked =
+            post_logout_token(&HashSet::new(), "http://127.0.0.1:9/logout", "logout-token")
+                .await
+                .expect_err("private networks require an exact-origin allowlist");
+        assert!(blocked.to_string().contains("blocked network"));
     }
 }

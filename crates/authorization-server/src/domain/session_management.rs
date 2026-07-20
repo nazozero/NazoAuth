@@ -85,11 +85,50 @@ impl SessionManagementOperations for ServerSessionManagementOperations {
                     SessionManagementError::SessionLookupUnavailable
                 })?;
             Ok(client.is_some_and(|client| {
-                client.is_active
-                    && client.redirect_uris.iter().any(|redirect_uri| {
-                        nazo_auth::oidc_redirect_uri_origin(redirect_uri).as_deref() == Some(origin)
-                    })
+                client_allows_origin(client.is_active, &client.redirect_uris, origin)
             }))
         })
+    }
+}
+
+fn client_allows_origin(is_active: bool, redirect_uris: &[String], origin: &str) -> bool {
+    is_active
+        && redirect_uris.iter().any(|redirect_uri| {
+            nazo_auth::oidc_redirect_uri_origin(redirect_uri).as_deref() == Some(origin)
+        })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::client_allows_origin;
+
+    #[test]
+    fn client_origin_policy_requires_an_active_client_and_registered_redirect_origin() {
+        let redirect_uris = vec![
+            "https://client.example/callback".to_owned(),
+            "https://client.example:443/alternate".to_owned(),
+            "not a URI".to_owned(),
+        ];
+
+        assert!(client_allows_origin(
+            true,
+            &redirect_uris,
+            "https://client.example"
+        ));
+        assert!(!client_allows_origin(
+            false,
+            &redirect_uris,
+            "https://client.example"
+        ));
+        assert!(!client_allows_origin(
+            true,
+            &redirect_uris,
+            "https://other.example"
+        ));
+        assert!(!client_allows_origin(
+            true,
+            &["not a URI".to_owned()],
+            "https://client.example"
+        ));
     }
 }
