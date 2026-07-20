@@ -15,6 +15,7 @@ set can be scanned from one place.
 | Change history | [../CHANGELOG.md](../CHANGELOG.md) |
 | Current scope and roadmap | [project/roadmap.md](project/roadmap.md) |
 | Workspace and runtime-module architecture | [project/architecture.md](project/architecture.md) |
+| OpenAI Build Week 2026 engineering record | [project/openai-build-week-2026.md](project/openai-build-week-2026.md) |
 | Deployment | [operations/deployment.md](operations/deployment.md) |
 | Chinese deployment | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) |
 | Configuration | [operations/configuration.md](operations/configuration.md) |
@@ -156,6 +157,7 @@ set can be scanned from one place.
 | --- | --- |
 | [project/roadmap.md](project/roadmap.md) | Current scope, roadmap, and deferred capability record. |
 | [project/architecture.md](project/architecture.md) | Workspace boundaries, dependency direction, composition, and runtime-module lifecycle contract. |
+| [project/openai-build-week-2026.md](project/openai-build-week-2026.md) | English Build Week before/after boundary, Codex collaboration, evidence, and judge test path. |
 
 ### Examples
 
