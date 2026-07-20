@@ -1151,8 +1151,15 @@ def exercise_oidc_logout(public_client_id: str) -> None:
     )
     logout_response = expect_json(
         expect_status(
-            "GET /logout with CSRF clears OP session",
-            logout_user.get(f"{BASE_URL}/logout", headers=csrf_header(logout_user), timeout=10),
+            "POST /logout confirmation clears OP session",
+            logout_user.post(
+                f"{BASE_URL}/logout",
+                data={
+                    "_nazo_logout_confirm": "true",
+                    "_nazo_csrf": csrf_header(logout_user)["x-csrf-token"],
+                },
+                timeout=10,
+            ),
             200,
         )
     )
