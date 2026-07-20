@@ -211,7 +211,7 @@ and tested.
 | `draft-ietf-oauth-attestation-based-client-auth-10` | OAuth WG active draft | Supported/profile-scoped; final RFC audit pending | `attest_jwt_client_auth` is advertised only when the Client Attestation module and client policy require it. Re-audit after final RFC publication. |
 | `draft-ietf-oauth-spiffe-client-auth-02` | OAuth WG active draft | Not supported (planned) | Requires a workload identity deployment and SPIFFE trust-domain boundary. |
 | `draft-ietf-oauth-identity-assertion-authz-grant-04` | OAuth WG active draft | Not supported (planned) | Requires trusted third-party assertion issuers, subject mapping, revocation, replay, and audit policy. |
-| `draft-ietf-oauth-identity-chaining-16` | RFC Editor queue | Not supported (planned) | Requires cross-domain trust-chain, delegation, replay, and resource-server verification semantics. |
+| `draft-ietf-oauth-identity-chaining-17` | RFC Editor queue | Not supported (planned) | Requires cross-domain trust-chain, delegation, replay, and resource-server verification semantics. |
 | `draft-ietf-oauth-transaction-tokens-09` | OAuth WG active draft | Not supported (planned) | Requires a trusted-domain Transaction Token Service and workload call-chain model. |
 | `draft-ietf-oauth-status-list-21` | RFC Editor queue | Not supported (planned) | Add for OpenID4VC credential status only with privacy-preserving status, revocation, and verifier semantics. |
 | `draft-ietf-oauth-sd-jwt-vc-17` | AD Evaluation | Implemented/profile-scoped | Keep final-delta watch inside the OpenID4VC `dc+sd-jwt` issuer/verifier profiles only. |
