@@ -18,7 +18,7 @@ suites are not version authorities.
 | Security BCP Update | `draft-ietf-oauth-security-topics-update-03` |
 | Refresh Token and Authorization Expiration | `draft-ietf-oauth-refresh-token-expiration-03` |
 | First-Party Applications | `draft-ietf-oauth-first-party-apps-04` |
-| Identity and Authorization Chaining Across Domains | `draft-ietf-oauth-identity-chaining-16` |
+| Identity and Authorization Chaining Across Domains | `draft-ietf-oauth-identity-chaining-17` |
 | Token Status List | `draft-ietf-oauth-status-list-21` |
 | JWT Best Current Practices bis | `draft-ietf-oauth-rfc8725bis-07` |
 | SPIFFE Client Authentication | `draft-ietf-oauth-spiffe-client-auth-02` |
