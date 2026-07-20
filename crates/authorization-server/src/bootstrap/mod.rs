@@ -536,11 +536,11 @@ pub async fn run() -> anyhow::Result<()> {
         nazo_postgres::UserRepository::new(diesel_db.clone()),
         session_http_config,
     ));
-    let oauth_clients = nazo_postgres::OAuthClientRepository::new(diesel_db.clone());
+    let client_repository = nazo_postgres::OAuthClientRepository::new(diesel_db.clone());
     let session_management_endpoint = web::Data::new(SessionManagementEndpoint::new(
         Arc::new(ServerSessionManagementOperations::new(
             session_profiles.get_ref().clone(),
-            oauth_clients.clone(),
+            client_repository.clone(),
             runtime_modules.registry.clone(),
         )),
         SessionManagementConfig::new(
@@ -560,7 +560,7 @@ pub async fn run() -> anyhow::Result<()> {
     #[cfg(not(test))]
     let oidc_logout_operations = OidcLogoutHandles::new(
         session_profiles.get_ref().clone(),
-        oauth_clients,
+        client_repository,
         logout_deliveries.clone(),
         keyset.clone(),
         OidcLogoutConfig::from(settings.as_ref()),
