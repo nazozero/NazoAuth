@@ -40,6 +40,47 @@ class PublicOidfRunnerTests(unittest.TestCase):
             ):
                 self.module.required_environment("OIDF_CONFORMANCE_TOKEN")
 
+    def test_suite_runner_config_cleanup_removes_only_generated_untracked_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "suite"
+            scripts = suite / "scripts"
+            scripts.mkdir(parents=True)
+            work = root / "work"
+            work.mkdir()
+            generated = scripts / "oidf-generated-plan-config.json"
+            generated.write_text("secret\n", encoding="utf-8")
+            unrelated = scripts / "operator-note.txt"
+            unrelated.write_text("keep\n", encoding="utf-8")
+            (work / "oidf-plan-configs.json").write_text(
+                json.dumps({"configs": {generated.name: {}}}),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(self.module, "output", return_value=""):
+                self.module.cleanup_suite_runner_configs(suite, work)
+
+            self.assertFalse(generated.exists())
+            self.assertTrue(unrelated.exists())
+
+    def test_suite_runner_config_cleanup_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "suite"
+            (suite / "scripts").mkdir(parents=True)
+            work = root / "work"
+            work.mkdir()
+            (work / "oidf-plan-configs.json").write_text(
+                json.dumps({"configs": {"../oidf-escape-plan-config.json": {}}}),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(self.module, "output", return_value=""),
+                self.assertRaisesRegex(self.module.PublicRunError, "unsafe OIDF runner config filename"),
+            ):
+                self.module.cleanup_suite_runner_configs(suite, work)
+
     def test_plan_groups_use_explicit_inputs_and_isolate_browser_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
