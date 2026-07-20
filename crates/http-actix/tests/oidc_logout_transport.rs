@@ -280,6 +280,8 @@ async fn frontchannel_document_escapes_urls_and_redirect_and_clears_cookies() {
     assert_eq!(cookies, 2);
     assert!(body.contains("&quot;&lt;&amp;"));
     assert!(body.contains("\\'\\u003c/script\\u003e\\u0026"));
+    assert!(body.contains("id=\"nazo-frontchannel-logout-continue\""));
+    assert!(body.contains("href=\"https://client.example/after?x=&#39;&lt;/script&gt;&amp;\""));
     assert!(!body.contains("'</script>"));
 }
 

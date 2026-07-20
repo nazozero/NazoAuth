@@ -81,6 +81,53 @@ class PublicOidfRunnerTests(unittest.TestCase):
             ):
                 self.module.cleanup_suite_runner_configs(suite, work)
 
+    def test_failure_path_cleans_configs_from_the_resolved_work_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "suite"
+            suite.mkdir()
+            work = root / "work"
+            export = root / "export"
+            args = Namespace(
+                target_issuer="https://issuer.example",
+                conformance_server="https://suite.example",
+                work_dir=work,
+                export_dir=export,
+                suite_dir=suite,
+                deployed_sha="a" * 40,
+                suite_revision="b" * 40,
+                run_namespace="failure-cleanup",
+                proxy_trust_bundle=root / "trust.pem",
+                proxy_executable=root / "proxy",
+                token_env="OIDF_CONFORMANCE_TOKEN",
+                timeout_seconds=100,
+                monitor_interval_seconds=5,
+            )
+
+            with (
+                mock.patch.object(self.module, "verify_source"),
+                mock.patch.object(self.module, "verify_suite"),
+                mock.patch.object(
+                    self.module,
+                    "required_environment",
+                    return_value={"OIDF_CONFORMANCE_TOKEN": "token"},
+                ),
+                mock.patch.object(
+                    self.module, "command", side_effect=RuntimeError("prepare failed")
+                ),
+                mock.patch.object(self.module, "ProxyTrust") as proxy_trust,
+                mock.patch.object(
+                    self.module, "cleanup_suite_runner_configs"
+                ) as cleanup,
+                mock.patch.object(self.module, "sanitize_evidence_tree"),
+                mock.patch.object(self.module, "protect_directory"),
+                self.assertRaisesRegex(RuntimeError, "prepare failed"),
+            ):
+                self.module.run(args)
+
+            cleanup.assert_called_once_with(suite.resolve(), work.resolve())
+            proxy_trust.return_value.restore.assert_called_once_with()
+
     def test_plan_groups_use_explicit_inputs_and_isolate_browser_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

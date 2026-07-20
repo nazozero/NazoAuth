@@ -19268,6 +19268,17 @@
           "match": "https://issuer.example/logout*",
           "tasks": [
             {
+              "task": "Continue after front-channel iframe notification",
+              "match": "https://issuer.example/logout*",
+              "commands": [
+                [
+                  "click",
+                  "id",
+                  "nazo-frontchannel-logout-continue"
+                ]
+              ]
+            },
+            {
               "task": "Reach post-logout redirect page",
               "match": "*/test/*/post_logout_redirect*",
               "commands": [

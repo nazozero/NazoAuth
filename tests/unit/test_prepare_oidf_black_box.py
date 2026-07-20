@@ -209,9 +209,17 @@ class PrepareOidfBlackBoxTests(unittest.TestCase):
         self.assertTrue(rp_tasks[2]["optional"])
         self.assertEqual(
             [task["task"] for task in front_tasks],
-            ["Reach post-logout redirect page"],
+            [
+                "Continue after front-channel iframe notification",
+                "Reach post-logout redirect page",
+            ],
+        )
+        self.assertEqual(
+            front_tasks[0]["commands"],
+            [["click", "id", "nazo-frontchannel-logout-continue"]],
         )
         self.assertNotIn("optional", front_tasks[0])
+        self.assertNotIn("optional", front_tasks[1])
 
     def test_generator_does_not_materialize_a_private_product_environment(self):
         source = (Path(__file__).resolve().parents[2] / "scripts" / "prepare_oidf_black_box.py").read_text(

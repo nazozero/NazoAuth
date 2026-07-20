@@ -456,7 +456,7 @@ def run(args: argparse.Namespace) -> None:
     finally:
         cleanup_errors: list[BaseException] = []
         try:
-            cleanup_suite_runner_configs(args.suite_dir, work_dir)
+            cleanup_suite_runner_configs(args.suite_dir, args.work_dir)
             verify_suite(args.suite_dir, args.suite_revision)
         except BaseException as error:
             cleanup_errors.append(error)

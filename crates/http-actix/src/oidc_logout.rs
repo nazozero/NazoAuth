@@ -488,16 +488,27 @@ fn frontchannel_logout_document(frontchannel_urls: &[String], redirect: Option<&
             location = escape_js_string(location)
         )
     });
+    let redirect_fallback = redirect.map_or_else(String::new, |location| {
+        format!(
+            concat!(
+                "<p><a id=\"nazo-frontchannel-logout-continue\" href=\"{}\">",
+                "Continue after sign-out</a></p>"
+            ),
+            escape_html_attribute(location)
+        )
+    });
     format!(
         concat!(
             "<!doctype html><html><head><meta charset=\"utf-8\">",
             "<meta http-equiv=\"cache-control\" content=\"no-store\">",
             "<style>iframe{{display:none;width:0;height:0;border:0}}</style>",
             "</head><body><main id=\"nazo-logout-success\">",
-            "<h1>You are signed out.</h1></main>{redirect_script}{iframes}</body></html>"
+            "<h1>You are signed out.</h1>{redirect_fallback}</main>",
+            "{redirect_script}{iframes}</body></html>"
         ),
         iframes = iframes,
-        redirect_script = redirect_script
+        redirect_script = redirect_script,
+        redirect_fallback = redirect_fallback,
     )
 }
 

@@ -920,6 +920,22 @@ def rp_initiated_logout_browser_automation() -> list[dict[str, object]]:
     return browser
 
 
+def frontchannel_logout_browser_automation() -> list[dict[str, object]]:
+    browser = browser_automation()
+    logout_entry = next(
+        entry for entry in browser if str(entry.get("match", "")).endswith("/logout*")
+    )
+    logout_entry["tasks"].insert(
+        0,
+        {
+            "task": "Continue after front-channel iframe notification",
+            "match": f"{ISSUER}/logout*",
+            "commands": [["click", "id", "nazo-frontchannel-logout-continue"]],
+        },
+    )
+    return browser
+
+
 def redirect_error_browser_automation() -> list[dict[str, object]]:
     return [
         {
@@ -1187,7 +1203,7 @@ def write_oidcc_config_plan_config() -> dict[str, object]:
 
 
 def write_frontchannel_logout_plan_config() -> dict[str, object]:
-    browser = browser_automation()
+    browser = frontchannel_logout_browser_automation()
     config = {
         "alias": f"{BASIC_ALIAS}-frontchannel-logout",
         "description": "OIDC Front-Channel Logout OP: RP-initiated logout, frontchannel iframe notification, and post-logout redirect validation.",
