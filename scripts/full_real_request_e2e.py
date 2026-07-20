@@ -1124,20 +1124,28 @@ def exercise_oidc_logout(public_client_id: str) -> None:
 
     logout_user = requests.Session()
     login(logout_user, USER_EMAIL, USER_PASSWORD, "POST /auth/login OIDC logout no redirect")
-    unauthorized_logout = expect_json(
-        expect_status(
-            "GET /logout without CSRF or id_token_hint rejects session clear",
-            logout_user.get(f"{BASE_URL}/logout", timeout=10),
-            400,
-        )
+    cookies_before_confirmation = logout_user.cookies.get_dict()
+    confirmation = expect_status(
+        "GET /logout without CSRF or id_token_hint asks for confirmation",
+        logout_user.get(f"{BASE_URL}/logout", timeout=10),
+        200,
     )
     check(
-        "oidc_logout_rejects_unauthorized_session_clear",
-        unauthorized_logout.get("error") == "invalid_request",
-        unauthorized_logout,
+        "oidc_logout_confirmation_page",
+        'id="nazo-logout-confirmation"' in confirmation.text,
+        confirmation.text,
+    )
+    check(
+        "oidc_logout_confirmation_preserves_session_cookies",
+        logout_user.cookies.get_dict() == cookies_before_confirmation,
+        {
+            "before": cookies_before_confirmation,
+            "after": logout_user.cookies.get_dict(),
+            "set_cookie": confirmation.headers.get("Set-Cookie"),
+        },
     )
     expect_status(
-        "GET /auth/me after unauthorized OIDC logout",
+        "GET /auth/me before confirmed OIDC logout",
         logout_user.get(f"{BASE_URL}/auth/me", timeout=10),
         200,
     )
