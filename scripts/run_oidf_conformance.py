@@ -24,6 +24,9 @@ import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from oidf_evidence import sanitize_evidence_tree  # noqa: E402
+
 
 OIDCC_CONFIG_FILE = "oidf-oidcc-plan-config.json"
 FAPI_CONFIG_FILE = "oidf-fapi-plan-config.json"
@@ -2512,6 +2515,7 @@ def main() -> int:
     if args.expected_skips_file:
         expected_skips_file = Path(args.expected_skips_file).resolve()
         command.extend(["--expected-skips-file", str(expected_skips_file)])
+    export_dir = None
     if args.export_dir:
         export_dir = Path(args.export_dir).resolve()
         export_dir.mkdir(parents=True, exist_ok=True)
@@ -2540,20 +2544,24 @@ def main() -> int:
             flush=True,
         )
 
-    return run_official_runner(
-        command,
-        expressions,
-        suite_scripts,
-        env,
-        args.timeout_seconds,
-        args.conformance_server,
-        monitor_aliases,
-        token,
-        monitor_interval_seconds,
-        allowed_review_contexts_by_alias(aliases_by_config),
-        expected_problem_contexts_by_alias(expected_failures_file, aliases_by_config),
-        expected_skip_contexts_by_alias(expected_skips_file, aliases_by_config),
-    )
+    try:
+        return run_official_runner(
+            command,
+            expressions,
+            suite_scripts,
+            env,
+            args.timeout_seconds,
+            args.conformance_server,
+            monitor_aliases,
+            token,
+            monitor_interval_seconds,
+            allowed_review_contexts_by_alias(aliases_by_config),
+            expected_problem_contexts_by_alias(expected_failures_file, aliases_by_config),
+            expected_skip_contexts_by_alias(expected_skips_file, aliases_by_config),
+        )
+    finally:
+        if export_dir is not None:
+            sanitize_evidence_tree(export_dir)
 
 
 if __name__ == "__main__":

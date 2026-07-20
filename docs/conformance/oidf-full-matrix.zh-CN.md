@@ -6,8 +6,8 @@
 
 在 `parallel-isolated` 模式下，25 个 plan 按有界公网套件批次执行：OIDC core（`2`）、OIDC Form Post / Third-Party Initiated Login / Config（`3`）、FAPI-CIBA（`4`，`--no-parallel`）、FAPI message-signing 与 mTLS/DPoP（`5`）、其余三个 FAPI 分组（各 `3`）、Front-Channel Logout（`1`，独立浏览器 job）和 Session Management（`1`，独立浏览器 job）。这样保留完整矩阵覆盖，同时避免 suite runner 的回调状态和浏览器会话状态互相争用。
 
-最新的诊断与官方套件持久证据见
-[`2026-07-15-fapi-ciba-mtls-ping-oidf-results.md`](2026-07-15-fapi-ciba-mtls-ping-oidf-results.md)。
+最新的操作者与官方套件持久证据见
+[`2026-07-20-final-automated-oidf-results.zh-CN.md`](2026-07-20-final-automated-oidf-results.zh-CN.md)。
 
 ## Plan 目录
 

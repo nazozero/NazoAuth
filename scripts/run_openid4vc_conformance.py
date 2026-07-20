@@ -28,6 +28,7 @@ import uuid
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_oidf_conformance as oidf  # noqa: E402
 import materialize_openid4vc_oidf_config as materializer  # noqa: E402
+from oidf_evidence import sanitize_evidence_tree  # noqa: E402
 from apply_public_conformance_onboarding import (  # noqa: E402
     ControlPlaneSession,
     OnboardingError,
@@ -717,6 +718,7 @@ def main() -> int:
     driver = Openid4vcDriver(config, stop)
     thread = threading.Thread(target=driver.run, name="openid4vc-oidf-driver", daemon=True)
     thread.start()
+    export_dir = option_value(runner_args, "--export-dir")
     try:
         if args.plan_group_size:
             with tempfile.TemporaryDirectory(prefix="openid4vc-oidf-groups-") as directory:
@@ -726,7 +728,11 @@ def main() -> int:
     finally:
         stop.set()
         thread.join(timeout=5)
-        cleanup_credential_datasets(admin, installed_datasets)
+        try:
+            cleanup_credential_datasets(admin, installed_datasets)
+        finally:
+            if export_dir:
+                sanitize_evidence_tree(Path(export_dir))
 
 
 if __name__ == "__main__":
