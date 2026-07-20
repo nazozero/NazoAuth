@@ -26,24 +26,19 @@ in the repository.
 - Latest M8 official-suite source coverage scan: [2026-07-11 OIDF v5.2.0 coverage](2026-07-11-m8-oidf-v5.2.0-coverage.md)
 - Project-owned RFC 9967 regression scope: [RFC 9967 SCIM SET black-box matrix](rfc9967-scim-set-matrix.md)
 - Latest OpenID4VC Final / HAIP alpha regression: [2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
-- Current public black-box full evidence: [2026-07-19 public black-box full OIDF results](2026-07-19-public-black-box-full-oidf-results.md)
+- Current public black-box full evidence: [2026-07-20 final automated OIDF results](2026-07-20-final-automated-oidf-results.md)
 
-The latest recorded public black-box OIDF evidence is the 2026-07-19 run set
-against an operator-provided production issuer, sanitized in public documents as
-`https://issuer.example`, at production revision
-`1df7e6c2947833ae4faad15d1699526efa8bb8ec`. GitHub Actions runs
-[`29672914368`](https://github.com/nazozero/NazoAuth/actions/runs/29672914368)
-and
-[`29672915479`](https://github.com/nazozero/NazoAuth/actions/runs/29672915479)
-completed successfully, covering 42 plan executions across OIDC, FAPI,
-FAPI-CIBA, OpenID4VC Final, and HAIP. The combined exported results contain
-1,178 module instances, 97,029 condition successes, 0 condition failures, 30
-bounded condition warnings, 15 expected skips, and 9 bounded review modules. The evidence counts
-only public official-suite runs against an explicitly configured production
-origin; non-public endpoints, private DNS names, private trust roots, and suite-private
-hostnames are not accepted as conformance evidence. Public workflow users must
-provide their own target issuer values; repository-owned infrastructure is not a
-repository default.
+The latest recorded public black-box evidence is the 2026-07-20 final run set.
+The final production revision is
+`0a747b42228962e562af012638297c56e3af5505`; GitHub Actions runs
+[`29705159845`](https://github.com/nazozero/NazoAuth/actions/runs/29705159845)
+and [`29700527789`](https://github.com/nazozero/NazoAuth/actions/runs/29700527789)
+both succeeded. The operator public suite completed 25 OIDC/FAPI/FAPI-CIBA
+plans and 17 OpenID4VC Final/HAIP plans. Public documents sanitize the actual
+issuer as `https://issuer.example`. Raw suite ZIPs are not committable evidence;
+the current record accepts only credential-free manifests produced by the
+automation, pinned suite/source revisions, run/job URLs, and exact
+expected-result contracts.
 
 Archived diagnostic records remain useful for debugging regressions, but they
 are not current conformance evidence. Current conformance evidence is the public
@@ -75,9 +70,9 @@ The latest NI-006~NI-011 official full-matrix regression ran against
 plans in one job and isolated front-channel logout and session-management into
 separate browser-sensitive matrix jobs.
 
-The 2026-07-16 OpenID4VC Final / HAIP alpha record and the 2026-07-17 public
-black-box record remain historical evidence. The current production-equivalent
-evidence is the 2026-07-19 public black-box run above.
+The 2026-07-16 OpenID4VC Final / HAIP alpha record and the 2026-07-17 and
+2026-07-19 public black-box records remain historical evidence. The current
+production-equivalent evidence is the 2026-07-20 final run set above.
 
 ## Coverage Update Rule
 
@@ -103,6 +98,8 @@ security-boundary tests remain mandatory either way.
 - pass time and suite runtime
 - profiles and feature combinations
 - exported artifact name, digest, expiry, and zip filenames when applicable
+- credential-free evidence-manifest digest; raw suite ZIPs retain only filename
+  and SHA-256 metadata and are deleted after manifest generation
 - plan IDs and plan detail URLs
 - pass/failure/warning counts
 - skipped-module counts and whether a zero-SKIPPED acceptance gate was met
@@ -113,6 +110,10 @@ security-boundary tests remain mandatory either way.
 
 Official suite output is indexed here. The files are not OpenID Foundation
 certification statements.
+
+Raw suite ZIP `testInfo.config` values and log bodies can contain credentials,
+so they must not enter Git or general-purpose artifacts. Durable results must be
+reduced by `scripts/oidf_evidence.py` first.
 
 ## Request Object Policy
 

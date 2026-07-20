@@ -1,5 +1,9 @@
 # 2026-07-19 Public Black-Box Full OIDF Results
 
+> Historical record. See the
+> [2026-07-20 final automated OIDF results](2026-07-20-final-automated-oidf-results.md)
+> for current evidence.
+
 ## Summary
 
 This record covers the production protocol revision

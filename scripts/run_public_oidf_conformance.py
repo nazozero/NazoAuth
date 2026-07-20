@@ -16,6 +16,9 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from oidf_evidence import sanitize_evidence_tree  # noqa: E402
+
 
 ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_ENV = (
@@ -421,6 +424,10 @@ def run(args: argparse.Namespace) -> None:
                 cleanup_errors.append(error)
         try:
             proxy.restore()
+        except BaseException as error:
+            cleanup_errors.append(error)
+        try:
+            sanitize_evidence_tree(args.export_dir)
         except BaseException as error:
             cleanup_errors.append(error)
         protect_directory(args.work_dir)

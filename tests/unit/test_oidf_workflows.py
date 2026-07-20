@@ -335,8 +335,13 @@ class OidfWorkflowTests(unittest.TestCase):
             "OIDF expected warnings must remain exact, not wildcard based",
         )
 
-        self.assertNotIn("--export-dir", workflow)
-        self.assertNotIn("actions/upload-artifact", workflow)
+        self.assertIn('--export-dir "$RUNNER_TEMP/oidf-evidence/${plan_set_file%.json}"', workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
+        self.assertIn(
+            "path: ${{ runner.temp }}/oidf-evidence/evidence-manifest.json",
+            workflow,
+        )
+        self.assertNotIn("path: ${{ runner.temp }}/oidf-evidence\n", workflow)
 
     def test_parallel_isolated_mode_uses_separate_browser_sensitive_jobs(self):
         workflow = (
@@ -375,8 +380,8 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("plan_set_file: oidf-session-management-plan-set.json", workflow)
         self.assertIn('--plan-set-json-file "${{ matrix.plan_set_file }}"', workflow)
         self.assertIn("--no-parallel", workflow)
-        self.assertNotIn("--export-dir", workflow)
-        self.assertNotIn("actions/upload-artifact", workflow)
+        self.assertIn('--export-dir "$RUNNER_TEMP/oidf-evidence"', workflow)
+        self.assertIn("actions/upload-artifact@v4", workflow)
 
 
 if __name__ == "__main__":

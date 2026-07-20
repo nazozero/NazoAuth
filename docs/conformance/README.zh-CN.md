@@ -22,11 +22,11 @@
 - 最新 M8 新兴协议治理与覆盖检查：[2026-07-11 M8 watchlist governance](2026-07-11-m8-watchlist-governance.md)
 - 项目自有 RFC 9967 回归范围：[RFC 9967 SCIM SET 黑盒矩阵](rfc9967-scim-set-matrix.md)
 - 最新 OpenID4VC Final / HAIP alpha 回归：[2026-07-16 OpenID4VC Final / HAIP OIDF results](2026-07-16-openid4vc-final-oidf-results.md)
-- 当前公网黑盒完整证据：[2026-07-19 公网黑盒 OIDF 全矩阵结果](2026-07-19-public-black-box-full-oidf-results.zh-CN.md)
+- 当前公网黑盒完整证据：[2026-07-20 自动化 OIDF 最终结果](2026-07-20-final-automated-oidf-results.zh-CN.md)
 
 `2026-06-09` full matrix 是当前官方认证证据，针对 `https://issuer.example` 执行，覆盖 OIDC Basic、OIDC Config、FAPI2 Security Profile Final、FAPI2 Message Signing Final、mTLS、DPoP、`private_key_jwt`、client credentials 变体。结果为全计划完成，`0 failures`，`0 warnings`。
 
-最新记录的公网黑盒 OIDF 证据是 2026-07-19 针对操作者提供的生产 issuer 的运行组；公开文档将实际 issuer 脱敏为 `https://issuer.example`。生产 revision 为 `1df7e6c2947833ae4faad15d1699526efa8bb8ec`。GitHub Actions runs [`29672914368`](https://github.com/nazozero/NazoAuth/actions/runs/29672914368) 和 [`29672915479`](https://github.com/nazozero/NazoAuth/actions/runs/29672915479) 均成功完成，覆盖 OIDC、FAPI、FAPI-CIBA、OpenID4VC Final 与 HAIP 共 42 个 plan execution。合并导出结果包含 1,178 个模块实例、97,029 个成功条件、0 个失败条件、30 个有界 warning 条件、15 个预期 skip 和 9 个受限 review 模块。该证据只接受针对显式配置生产 origin 的官方套件运行；非公网 endpoint、私有 DNS、私有信任根和 suite-private 地址不计入一致性证据。公开 workflow 的用户必须提供自己的目标 issuer，仓库不得默认使用任何仓库自有基础设施。
+最新记录的公网黑盒 OIDF 证据是 2026-07-20 最终运行组。最终生产 revision 为 `0a747b42228962e562af012638297c56e3af5505`；GitHub Actions runs [`29705159845`](https://github.com/nazozero/NazoAuth/actions/runs/29705159845) 和 [`29700527789`](https://github.com/nazozero/NazoAuth/actions/runs/29700527789) 均成功。操作者公网套件完成 25 个 OIDC/FAPI/FAPI-CIBA plan 和 17 个 OpenID4VC Final/HAIP plan。公开文档将实际 issuer 脱敏为 `https://issuer.example`。原始套件 ZIP 不属于可提交证据；当前记录只接受由自动化生成的无凭据 manifest、固定 suite/source revision、run/job URL 和精确 expected-result 契约。
 
 已归档的诊断记录仍可用于调试回归，但不是当前一致性证据。当前一致性证据以上面的公网黑盒运行组为准。
 
@@ -52,7 +52,7 @@ module-level `SKIPPED` 结果。
 并将 front-channel logout 与 session-management 分拆到独立 browser-sensitive
 matrix job 中隔离执行。
 
-2026-07-16 OpenID4VC Final / HAIP alpha 记录和 2026-07-17 公网黑盒记录保留为历史证据。当前生产等价证据以 2026-07-19 公网黑盒运行组为准。
+2026-07-16 OpenID4VC Final / HAIP alpha、2026-07-17 和 2026-07-19 公网黑盒记录保留为历史证据。当前生产等价证据以 2026-07-20 最终运行组为准。
 
 所有 profile 的 Request Object 都必须使用非对称签名。baseline 与 FAPI metadata 均不声明 `none`，运行时对任何客户端都拒绝 unsigned Request Object；项目遵循 RFC 9101，不保留仅为一致性套件服务的兼容旁路。
 
@@ -73,6 +73,8 @@ matrix job 中隔离执行。
 - 通过时间和 suite 运行时间
 - profiles 和 feature combinations
 - artifact 名称、digest、过期时间、zip 文件名
+- credential-free evidence manifest 的 digest；原始套件 ZIP 只记录文件名和
+  SHA-256，生成 manifest 后立即删除
 - plan ID 和 plan detail URL
 - failure / warning 计数
 - skipped module 计数，以及是否满足 zero-SKIPPED 验收门槛
@@ -82,6 +84,9 @@ matrix job 中隔离执行。
 ## 边界
 
 本目录索引的是 suite 输出和工程证据。官方认证状态以 OpenID Foundation 公布页面为准。
+
+原始套件 ZIP 的 `testInfo.config` 与日志正文可能包含凭据，因此不得进入 Git 或
+通用 artifact。可持久留存的结果必须先由 `scripts/oidf_evidence.py` 归约。
 
 ## 兼容性跳过项
 

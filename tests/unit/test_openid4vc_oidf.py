@@ -491,6 +491,11 @@ class Openid4vcOidfTests(unittest.TestCase):
         )
 
         self.assertIn("--plan-group-size 4", workflow)
+        self.assertIn(
+            "path: runtime/openid4vc/results/evidence-manifest.json",
+            workflow,
+        )
+        self.assertNotIn("path: runtime/openid4vc/results\n", workflow)
 
     def test_driver_callback_get_uses_oidf_ssl_context(self):
         module = load("run_openid4vc_conformance.py")

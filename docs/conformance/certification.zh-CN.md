@@ -22,7 +22,7 @@ OpenID Foundation 认证页面列出了 `Nazo Auth Server 0.1.0`，日期为
 ## 当前公网黑盒证据
 
 当前一致性证据记录在
-[2026-07-19 公网黑盒 OIDF 全矩阵结果](2026-07-19-public-black-box-full-oidf-results.zh-CN.md)。
+[2026-07-20 自动化 OIDF 最终结果](2026-07-20-final-automated-oidf-results.zh-CN.md)。
 运行目标是操作者提供的生产 HTTPS issuer。公开文档中的
 `https://issuer.example` 只是脱敏占位符。仓库 workflow 要求操作者提供自己的公网可达
 `target_issuer` / `target_origin` workflow 输入，或在自己的仓库中配置私有自动化变量。
@@ -32,21 +32,23 @@ OpenID Foundation 认证页面列出了 `Nazo Auth Server 0.1.0`，日期为
 | OIDC / FAPI / FAPI-CIBA | 成功 | 25 个官方公网 plan：23 个并发 plan，加 2 个浏览器隔离 plan |
 | OpenID4VC Final / HAIP | 成功 | 17 个官方套件回归 plan |
 
-合并导出结果：
+合并后的操作者脱敏 manifest：
 
 | 指标 | 值 |
 | --- | ---: |
 | Plan executions | 42 |
 | 模块实例 | 1,178 |
-| Passed 模块结果 | 1,132 |
-| 成功条件 | 97,029 |
-| Condition failures | 0 |
-| 有界 warning 条件 | 30 |
+| Passed 模块结果 | 1,151 |
+| 精确预登记的 failed 模块 | 2 |
+| 成功条件 | 96,805 |
+| 精确预登记的 failure 条件 | 2 |
+| 有界 warning 条件 | 5 |
 | 预期 skips | 15 |
 | 受限 review 模块 | 9 |
 
-有界 warning 和预期 skip 记录在链接的证据文档中。它们不是隐藏项：
-OIDC/FAPI/FAPI-CIBA 矩阵不是 zero-warning 或 zero-skipped 证据。
+两个 failed 模块来自 OpenID4VCI pre-authorized code 一次性使用规范与上游
+multiple-clients 模块的冲突；有界 warning、review 和 skip 均记录在链接的证据文档中。
+它们不是隐藏项，不能描述为 zero-warning、zero-failure 或 zero-skipped 证据。
 
 ## 矩阵范围
 

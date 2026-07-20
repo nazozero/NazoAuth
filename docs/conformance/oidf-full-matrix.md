@@ -6,8 +6,8 @@ The execution entry point is `runtime/oidf/oidf-plan-set.json`. `scripts/prepare
 
 In `parallel-isolated` mode the 25 plans are executed as bounded public-suite batches: OIDC core (`2`), OIDC Form Post / Third-Party Initiated Login / Config (`3`), FAPI-CIBA (`4`, `--no-parallel`), FAPI message-signing plus mTLS/DPoP (`5`), three remaining FAPI groups (`3` each), Front-Channel Logout (`1`, isolated browser job), and Session Management (`1`, isolated browser job). This preserves full matrix coverage while avoiding suite-runner callback and browser-session contention.
 
-The latest durable local and official-suite evidence is
-[`2026-07-15-fapi-ciba-mtls-ping-oidf-results.md`](2026-07-15-fapi-ciba-mtls-ping-oidf-results.md).
+The latest durable operator and official-suite evidence is
+[`2026-07-20-final-automated-oidf-results.md`](2026-07-20-final-automated-oidf-results.md).
 
 ## Plan Index
 
