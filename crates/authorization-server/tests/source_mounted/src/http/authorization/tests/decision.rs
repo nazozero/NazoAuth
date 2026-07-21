@@ -843,8 +843,9 @@ async fn authorization_decision_issues_code_for_matching_user_and_client() {
     assert!(pairs.contains_key("iss"));
     assert!(!pairs.contains_key("error"));
 
-    let stored_session = nazo_valkey::SessionStore::new(&fixture.state.valkey_connection())
-        .load(session_id)
+    let session_id = nazo_identity::SessionId::new(session_id);
+    let session_store = nazo_valkey::SessionStore::new(&fixture.state.valkey_connection());
+    let stored_session = SessionStorePort::load(&session_store, &session_id)
         .await
         .expect("session lookup should succeed")
         .expect("session should remain active");
