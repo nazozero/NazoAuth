@@ -28,6 +28,7 @@ use chrono::{Duration, Utc};
 use nazo_http_actix::{
     AuthorizationDecisionEndpoint, AuthorizationDecisionForm, ClientIpConfig, SessionCookieConfig,
 };
+use nazo_identity::ports::SessionStorePort;
 use nazo_postgres::{create_pool, get_conn};
 use serde_json::{Value, json};
 use uuid::Uuid;
