@@ -28,6 +28,7 @@ use chrono::{Duration, Utc};
 use nazo_http_actix::{
     AuthorizationDecisionEndpoint, AuthorizationDecisionForm, ClientIpConfig, SessionCookieConfig,
 };
+use nazo_identity::ports::SessionStorePort;
 use nazo_postgres::{create_pool, get_conn};
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -389,7 +390,7 @@ impl DecisionLiveFixture {
             auth_time,
             amr: vec!["pwd".to_owned()],
             pending_mfa: false,
-            oidc_sid: Some(format!("oidc-{sid}")),
+            oidc_sid: Some("session-oidc".to_owned()),
         };
         valkey_set_ex(
             &self.state.valkey,
@@ -567,6 +568,44 @@ async fn authorization_decision_rejects_request_if_user_not_match() {
 
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(body["error"], "access_denied");
+}
+
+#[actix_web::test]
+async fn authorization_decision_rejects_consent_from_another_browser_session() {
+    let Some(fixture) = DecisionLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture
+        .create_user("browser-session-mismatch", "user", 0)
+        .await;
+    let session_id = "sid-browser-session-mismatch";
+    fixture
+        .store_session(&user, session_id, Utc::now().timestamp())
+        .await;
+    let payload = ConsentPayload {
+        oidc_sid: Some("another-browser-session".to_owned()),
+        ..consent_payload_for_user("client-1", user.id)
+    };
+    fixture.store_consent_payload(&payload).await;
+    let req = fixture.auth_request(session_id, Some("csrf-session-token"));
+    let form = AuthorizationDecisionForm {
+        request_id: payload.request_id.clone(),
+        decision: "approve".to_owned(),
+        csrf_token: None,
+    };
+
+    let (status, body) =
+        json_error(authorize_decision(fixture.state.clone(), req, Form(form)).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    let session_id = nazo_identity::SessionId::new(session_id);
+    let session_store = nazo_valkey::SessionStore::new(&fixture.state.valkey_connection());
+    let stored_session = SessionStorePort::load(&session_store, &session_id)
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should remain active");
+    assert!(stored_session.record().logged_in_client_ids().is_empty());
 }
 
 #[actix_web::test]
@@ -817,14 +856,15 @@ async fn authorization_decision_issues_code_for_matching_user_and_client() {
     let user = fixture.create_user("decision-approve", "user", 0).await;
     let client_id = format!("client-decision-approve-{}", Uuid::now_v7());
     fixture.insert_client(&client_id, true).await;
+    let session_id = "sid-decision-approve";
     fixture
-        .store_session(&user, "sid-decision-approve", Utc::now().timestamp())
+        .store_session(&user, session_id, Utc::now().timestamp())
         .await;
     let mut payload = consent_payload_for_user(&client_id, user.id);
     payload.resource_indicators = vec!["resource://default".to_owned()];
     fixture.store_consent_payload(&payload).await;
 
-    let req = fixture.auth_request("sid-decision-approve", Some("csrf-session-token"));
+    let req = fixture.auth_request(session_id, Some("csrf-session-token"));
     let form = AuthorizationDecisionForm {
         request_id: payload.request_id.clone(),
         decision: "approve".to_owned(),
@@ -840,6 +880,17 @@ async fn authorization_decision_issues_code_for_matching_user_and_client() {
     assert!(pairs.contains_key("code"));
     assert!(pairs.contains_key("iss"));
     assert!(!pairs.contains_key("error"));
+
+    let session_id = nazo_identity::SessionId::new(session_id);
+    let session_store = nazo_valkey::SessionStore::new(&fixture.state.valkey_connection());
+    let stored_session = SessionStorePort::load(&session_store, &session_id)
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should remain active");
+    assert_eq!(
+        stored_session.record().logged_in_client_ids(),
+        std::slice::from_ref(&client_id)
+    );
 
     let mut conn = get_conn(&fixture.state.diesel_db)
         .await

@@ -1,5 +1,19 @@
 use super::*;
 
+#[test]
+fn rotated_refresh_token_preserves_the_original_scope_authorization() {
+    let access_token_scopes = vec!["openid".to_owned()];
+    let original_refresh_token_scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
+
+    assert_eq!(
+        refresh_token_persistence_scopes(
+            &access_token_scopes,
+            Some(&original_refresh_token_scopes),
+        ),
+        original_refresh_token_scopes
+    );
+}
+
 fn client_with_grants(grant_types: &[&str]) -> ClientRow {
     crate::client_row! {
         id: Uuid::now_v7(),
@@ -51,39 +65,53 @@ fn client_with_grants(grant_types: &[&str]) -> ClientRow {
 fn should_issue_refresh_token_true_with_refresh_grant_and_offline_access() {
     let client = client_with_grants(&["authorization_code", "refresh_token"]);
     let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
-    assert!(should_issue_refresh_token(&client, &scopes));
+    assert!(should_issue_refresh_token(&client, &scopes, false));
 }
 
 #[test]
 fn should_issue_refresh_token_false_without_offline_access_scope() {
     let client = client_with_grants(&["authorization_code", "refresh_token"]);
     let scopes = vec!["openid".to_owned(), "profile".to_owned()];
-    assert!(!should_issue_refresh_token(&client, &scopes));
+    assert!(!should_issue_refresh_token(&client, &scopes, false));
+}
+
+#[test]
+fn should_issue_refresh_token_for_openid4vci_credential_authorization() {
+    let client = client_with_grants(&["authorization_code", "refresh_token"]);
+    let scopes = vec!["org.iso.18013.5.1.mDL".to_owned()];
+    assert!(should_issue_refresh_token(&client, &scopes, true));
+}
+
+#[test]
+fn openid4vci_credential_authorization_still_requires_refresh_grant() {
+    let client = client_with_grants(&["authorization_code"]);
+    let scopes = vec!["org.iso.18013.5.1.mDL".to_owned()];
+    assert!(!should_issue_refresh_token(&client, &scopes, true));
 }
 
 #[test]
 fn should_issue_refresh_token_false_without_refresh_grant() {
     let client = client_with_grants(&["authorization_code"]);
     let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
-    assert!(!should_issue_refresh_token(&client, &scopes));
+    assert!(!should_issue_refresh_token(&client, &scopes, false));
 }
 
 #[test]
 fn should_issue_refresh_token_exact_grant_match_required() {
     let client = client_with_grants(&["authorization_code", "refresh_token:legacy"]);
     let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
-    assert!(!should_issue_refresh_token(&client, &scopes));
+    assert!(!should_issue_refresh_token(&client, &scopes, false));
 }
 
 #[test]
 fn should_issue_refresh_token_scope_case_sensitive() {
     let client = client_with_grants(&["authorization_code", "refresh_token"]);
     let scopes = vec!["openid".to_owned(), "OFFLINE_ACCESS".to_owned()];
-    assert!(!should_issue_refresh_token(&client, &scopes));
+    assert!(!should_issue_refresh_token(&client, &scopes, false));
 
     let scopes = vec!["openid".to_owned(), "offline_access ".to_owned()];
-    assert!(!should_issue_refresh_token(&client, &scopes));
+    assert!(!should_issue_refresh_token(&client, &scopes, false));
 
     let scopes = vec!["openid".to_owned(), "offline".to_owned()];
-    assert!(!should_issue_refresh_token(&client, &scopes));
+    assert!(!should_issue_refresh_token(&client, &scopes, false));
 }

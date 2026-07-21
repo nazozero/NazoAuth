@@ -14,6 +14,7 @@ use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{AuthorizationCodeState, ClientRow};
 #[cfg(test)]
 use crate::domain::{CodePayload, TestInfrastructure};
+use crate::http::client_attestation::client_attestation_headers;
 use crate::http::dpop::dpop_proof_present;
 use crate::http::mtls::client_mtls_certificate_matches;
 use crate::http::mtls::request_mtls_client_certificate_from_trusted_proxy;
@@ -444,9 +445,16 @@ pub(crate) async fn token_with_service(
             false,
         );
     }
-    let attestation_headers = match client_attestation_headers(&req) {
+    let attestation_headers = match client_attestation_headers(req.headers()) {
         Ok(headers) => headers,
-        Err(response) => return response,
+        Err(()) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "Exactly one of each client attestation header is required.",
+                false,
+            );
+        }
     };
     if attestation_headers.is_some()
         && (client_auth_context.http_basic
@@ -571,6 +579,7 @@ pub(crate) async fn token_with_service(
         return response;
     }
     let auth_request = client_auth_request_facts(&req, issuance_config.trusted_proxy_cidrs());
+    let mut client_attestation_jkt = None;
     let client_assertion = if let Some((attestation, proof)) = attestation_headers {
         if client.token_endpoint_auth_method != "attest_jwt_client_auth" {
             return oauth_token_error(
@@ -613,6 +622,7 @@ pub(crate) async fn token_with_service(
                 false,
             );
         }
+        client_attestation_jkt = Some(validated.client_instance_key_thumbprint.clone());
         let replay_key = format!("client-attestation:{}", validated.client_id);
         match authorization_service
             .consume_private_key_jwt(
@@ -704,6 +714,7 @@ pub(crate) async fn token_with_service(
                 &client,
                 &form,
                 client_assertion.as_ref(),
+                client_attestation_jkt.as_deref(),
             )
             .await
         }
@@ -715,6 +726,7 @@ pub(crate) async fn token_with_service(
                 &client,
                 &form,
                 client_assertion.as_ref(),
+                client_attestation_jkt.as_deref(),
             )
             .await
         }
@@ -909,29 +921,6 @@ fn pre_authorized_token_error(
             .insert(header::HeaderName::from_static("dpop-nonce"), value);
     }
     response
-}
-
-fn client_attestation_headers(request: &HttpRequest) -> Result<Option<(&str, &str)>, HttpResponse> {
-    let attestation = request
-        .headers()
-        .get("OAuth-Client-Attestation")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| !value.is_empty());
-    let proof = request
-        .headers()
-        .get("OAuth-Client-Attestation-PoP")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| !value.is_empty());
-    match (attestation, proof) {
-        (None, None) => Ok(None),
-        (Some(attestation), Some(proof)) => Ok(Some((attestation, proof))),
-        _ => Err(oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "Both client attestation headers are required.",
-            false,
-        )),
-    }
 }
 
 fn attestation_client_id_matches_form_hint(

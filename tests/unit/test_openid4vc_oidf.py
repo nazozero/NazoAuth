@@ -240,6 +240,168 @@ class Openid4vcOidfTests(unittest.TestCase):
 
         self.assertEqual(calls, 1)
 
+    def test_issuer_driver_delivers_fresh_offer_for_each_waiting_cycle(self):
+        module = load("run_openid4vc_conformance.py")
+        driver = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://suite.example",
+                "conformance_token": "test-token",
+                "target_origin": "https://issuer.example",
+                "aliases": ["issuer-alias"],
+                "issuer": {
+                    "credential_configuration_ids": {"sd_jwt_vc": "pid"},
+                    "management_token": "management-token",
+                    "subject_id": "00000000-0000-0000-0000-000000000123",
+                    "tx_code": "123456",
+                },
+            },
+            module.threading.Event(),
+        )
+        offers = [
+            {"credential_offer_uri": "https://issuer.example/offers/one"},
+            {"credential_offer_uri": "https://issuer.example/offers/two"},
+        ]
+        with (
+            patch.object(module, "request_json", side_effect=offers) as create_offer,
+            patch.object(module, "get_url") as deliver_offer,
+            patch.object(
+                driver,
+                "waiting_credential_offer_endpoint",
+                side_effect=[
+                    "https://suite.example/test/a/issuer/credential_offer",
+                    None,
+                ],
+            ),
+        ):
+            driver.drive_issuer(
+                "module-id",
+                {
+                    "testName": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
+                    "exposed": {
+                        "credential_offer_endpoint": (
+                            "https://suite.example/test/a/issuer/credential_offer"
+                        )
+                    }
+                },
+                {
+                    "credential_format": "sd_jwt_vc",
+                    "vci_grant_type": "pre_authorization_code",
+                },
+            )
+
+        self.assertEqual(create_offer.call_count, 2)
+        self.assertEqual(
+            [call.args[0] for call in deliver_offer.call_args_list],
+            [
+                (
+                    "https://suite.example/test/a/issuer/credential_offer?"
+                    "credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffers%2Fone"
+                ),
+                (
+                    "https://suite.example/test/a/issuer/credential_offer?"
+                    "credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffers%2Ftwo"
+                ),
+            ],
+        )
+        self.assertEqual(driver.issuer_offer_deliveries, {"module-id": 2})
+        self.assertEqual(driver.triggered, {"module-id"})
+
+    def test_issuer_driver_bounds_multiple_client_offers(self):
+        module = load("run_openid4vc_conformance.py")
+        driver = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://suite.example",
+                "conformance_token": "test-token",
+                "target_origin": "https://issuer.example",
+                "aliases": ["issuer-alias"],
+                "issuer": {
+                    "credential_configuration_ids": {"sd_jwt_vc": "pid"},
+                    "management_token": "management-token",
+                    "subject_id": "00000000-0000-0000-0000-000000000123",
+                    "tx_code": "123456",
+                },
+            },
+            module.threading.Event(),
+        )
+        with (
+            patch.object(
+                module,
+                "request_json",
+                return_value={
+                    "credential_offer_uri": "https://issuer.example/offers/fresh"
+                },
+            ) as create_offer,
+            patch.object(module, "get_url"),
+            patch.object(
+                driver,
+                "waiting_credential_offer_endpoint",
+                return_value="https://suite.example/test/a/issuer/credential_offer",
+            ),
+        ):
+            driver.drive_issuer(
+                "module-id",
+                {
+                    "testName": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
+                    "exposed": {
+                        "credential_offer_endpoint": (
+                            "https://suite.example/test/a/issuer/credential_offer"
+                        )
+                    }
+                },
+                {
+                    "credential_format": "sd_jwt_vc",
+                    "vci_grant_type": "pre_authorization_code",
+                },
+            )
+
+        self.assertEqual(create_offer.call_count, 2)
+        self.assertIn("module-id", driver.triggered)
+
+    def test_issuer_driver_does_not_repeat_single_client_offer(self):
+        module = load("run_openid4vc_conformance.py")
+        driver = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://suite.example",
+                "conformance_token": "test-token",
+                "target_origin": "https://issuer.example",
+                "aliases": ["issuer-alias"],
+                "issuer": {
+                    "credential_configuration_ids": {"sd_jwt_vc": "pid"},
+                    "management_token": "management-token",
+                    "subject_id": "00000000-0000-0000-0000-000000000123",
+                },
+            },
+            module.threading.Event(),
+        )
+        with (
+            patch.object(
+                module,
+                "request_json",
+                return_value={"credential_offer_uri": "https://issuer.example/offers/one"},
+            ) as create_offer,
+            patch.object(module, "get_url"),
+            patch.object(
+                driver,
+                "waiting_credential_offer_endpoint",
+                return_value="https://suite.example/test/a/issuer/credential_offer",
+            ),
+        ):
+            driver.drive_issuer(
+                "module-id",
+                {
+                    "testName": "oid4vci-1_0-issuer-happy-flow",
+                    "exposed": {
+                        "credential_offer_endpoint": (
+                            "https://suite.example/test/a/issuer/credential_offer"
+                        )
+                    },
+                },
+                {"credential_format": "sd_jwt_vc"},
+            )
+
+        self.assertEqual(create_offer.call_count, 1)
+        self.assertIn("module-id", driver.triggered)
+
     def test_wrapper_rejects_tokenless_or_insecure_suite_modes(self):
         module = load("run_openid4vc_conformance.py")
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as config:
@@ -412,6 +574,37 @@ class Openid4vcOidfTests(unittest.TestCase):
                 },
                 arguments,
             )
+
+            warnings.write_text("[]", encoding="utf-8")
+            runner.validate_materialized_matrix(
+                {
+                    "aliases": list(reversed(aliases)),
+                    "issuer": {"tx_code": "123456"},
+                },
+                arguments,
+                require_no_expected_problems=True,
+            )
+            with self.assertRaisesRegex(SystemExit, "expected problems"):
+                runner.validate_materialized_matrix(
+                    {
+                        "aliases": list(reversed(aliases)),
+                        "issuer": {"tx_code": "123456"},
+                    },
+                    arguments,
+                )
+            warnings.write_text(
+                json.dumps(materializer.expected_problems_for_cases(cases)),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(SystemExit, "strict diagnostic"):
+                runner.validate_materialized_matrix(
+                    {
+                        "aliases": list(reversed(aliases)),
+                        "issuer": {"tx_code": "123456"},
+                    },
+                    arguments,
+                    require_no_expected_problems=True,
+                )
 
             with self.assertRaisesRegex(SystemExit, "driver aliases"):
                 runner.validate_materialized_matrix(
@@ -973,7 +1166,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(len(plans), 17)
             self.assertEqual(len(configs), 17)
             self.assertEqual(len(set(materialized_driver["aliases"])), 17)
-            self.assertEqual(len(expected_skips), 7)
+            self.assertEqual(len(expected_skips), 3)
             self.assertEqual(
                 [
                     item for item in expected_skips
@@ -1022,7 +1215,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                     for item in replay_failures
                 )
             )
-            self.assertEqual(len(expected_problems), 6)
+            self.assertEqual(len(expected_problems), 2)
             expected_warnings = [
                 item for item in expected_problems
                 if item["expected-result"] == "warning"
@@ -1035,99 +1228,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(
                     config["mtls2"]["cert"], material["mtls2"]["cert"]
                 )
-            self.assertEqual(
-                {item["configuration-filename"] for item in expected_warnings},
-                {
-                    "openid4vc-vci-haip-sd-wallet.json",
-                    "openid4vc-vci-haip-mdoc-wallet.json",
-                    "openid4vc-vci-haip-sd-issuer.json",
-                    "openid4vc-vci-haip-mdoc-issuer.json",
-                },
-            )
-            self.assertEqual(
-                {
-                    (
-                        item["expected-result"],
-                        item["test-name"],
-                        item["current-block"],
-                        item["condition"],
-                    )
-                    for item in expected_problems
-                    if item["expected-result"] == "warning"
-                },
-                {
-                    (
-                        "warning",
-                        module.VCI_REFRESH_TOKEN_MODULE,
-                        module.VCI_REFRESH_TOKEN_BLOCK,
-                        module.VCI_REFRESH_TOKEN_CONDITION,
-                    )
-                },
-            )
-            self.assertEqual(
-                {tuple(sorted(item["variant"].items())) for item in expected_warnings},
-                {
-                    tuple(
-                        sorted(
-                            module.full_vci_variant(
-                                module.VCI_HAIP,
-                                {
-                                    "vci_authorization_code_flow_variant": "wallet_initiated",
-                                    "credential_format": "sd_jwt_vc",
-                                },
-                            ).items()
-                        )
-                    ),
-                    tuple(
-                        sorted(
-                            module.full_vci_variant(
-                                module.VCI_HAIP,
-                                {
-                                    "vci_authorization_code_flow_variant": "wallet_initiated",
-                                    "credential_format": "mdoc",
-                                },
-                            ).items()
-                        )
-                    ),
-                    tuple(
-                        sorted(
-                            module.full_vci_variant(
-                                module.VCI_HAIP,
-                                {
-                                    "vci_authorization_code_flow_variant": "issuer_initiated",
-                                    "credential_format": "sd_jwt_vc",
-                                },
-                            ).items()
-                        )
-                    ),
-                    tuple(
-                        sorted(
-                            module.full_vci_variant(
-                                module.VCI_HAIP,
-                                {
-                                    "vci_authorization_code_flow_variant": "issuer_initiated",
-                                    "credential_format": "mdoc",
-                                },
-                            ).items()
-                        )
-                    ),
-                },
-            )
-            refresh_skips = [
-                item for item in expected_skips
-                if item["test-name"] == module.VCI_REFRESH_TOKEN_MODULE
-            ]
-            self.assertEqual(len(refresh_skips), 4)
-            self.assertEqual(
-                {
-                    (item["configuration-filename"], tuple(sorted(item["variant"].items())))
-                    for item in refresh_skips
-                },
-                {
-                    (item["configuration-filename"], tuple(sorted(item["variant"].items())))
-                    for item in expected_warnings
-                },
-            )
+            self.assertEqual(expected_warnings, [])
             self.assertEqual(materialized_driver["target_origin"], "https://issuer.example")
             self.assertEqual(
                 materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],

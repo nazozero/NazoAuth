@@ -33,6 +33,8 @@ pub(crate) struct RefreshTokenRow {
     pub(crate) dpop_jkt: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
     pub(crate) mtls_x5t_s256: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::VarChar>)]
+    pub(crate) client_attestation_jkt: Option<String>,
 }
 
 #[derive(Clone, Debug, diesel::QueryableByName)]

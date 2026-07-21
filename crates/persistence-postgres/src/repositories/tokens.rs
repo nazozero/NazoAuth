@@ -301,6 +301,7 @@ async fn insert_refresh_token(
             oauth_tokens::subject.eq(token.subject),
             oauth_tokens::dpop_jkt.eq(token.dpop_jkt),
             oauth_tokens::mtls_x5t_s256.eq(token.mtls_x5t_s256),
+            oauth_tokens::client_attestation_jkt.eq(token.client_attestation_jkt),
         ))
         .execute(connection)
         .await
@@ -426,6 +427,10 @@ async fn lost_response_successor(
         .filter(oauth_tokens::rotated_from_id.eq(token.id))
         .filter(oauth_tokens::dpop_jkt.is_not_distinct_from(token.dpop_jkt.as_deref()))
         .filter(oauth_tokens::mtls_x5t_s256.is_not_distinct_from(token.mtls_x5t_s256.as_deref()))
+        .filter(
+            oauth_tokens::client_attestation_jkt
+                .is_not_distinct_from(token.client_attestation_jkt.as_deref()),
+        )
         .filter(oauth_tokens::revoked_at.is_null())
         .filter(oauth_tokens::expires_at.gt(now))
         .select(RefreshTokenRow::as_select())
@@ -459,6 +464,7 @@ fn row_from_domain(token: &RefreshToken) -> RefreshTokenRow {
         subject: token.subject.clone(),
         dpop_jkt: token.dpop_jkt.clone(),
         mtls_x5t_s256: token.mtls_x5t_s256.clone(),
+        client_attestation_jkt: token.client_attestation_jkt.clone(),
     }
 }
 

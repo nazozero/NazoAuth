@@ -71,6 +71,6 @@ pub use registration::{
 };
 pub use session::{
     CurrentSession, SessionId, SessionResolution, SessionRotation, SessionRotationOutcome,
-    SessionService, SessionSnapshot, SessionVersion,
+    SessionService, SessionSnapshot, SessionUpdateOutcome, SessionVersion,
 };
 pub use tenancy::{OrganizationId, RealmId, TenantContext, TenantId, UserId};

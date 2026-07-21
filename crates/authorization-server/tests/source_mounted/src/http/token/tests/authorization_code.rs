@@ -659,6 +659,7 @@ fn authorization_code_token_issue_preserves_independent_oidc_sid() {
         code_hash: "code-hash".to_owned(),
         refresh_token_dpop_jkt: Some("refresh-dpop-jkt".to_owned()),
         refresh_token_mtls_x5t_s256: Some("refresh-mtls-thumbprint".to_owned()),
+        refresh_token_client_attestation_jkt: Some("client-attestation-jkt".to_owned()),
     });
 
     assert_eq!(issue.subject, "subject-1");
@@ -674,6 +675,10 @@ fn authorization_code_token_issue_preserves_independent_oidc_sid() {
     assert_eq!(
         issue.refresh_token_mtls_x5t_s256.as_deref(),
         Some("refresh-mtls-thumbprint")
+    );
+    assert_eq!(
+        issue.refresh_token_client_attestation_jkt.as_deref(),
+        Some("client-attestation-jkt")
     );
 }
 
@@ -695,6 +700,7 @@ fn authorization_code_token_issue_creates_native_sso_binding_for_device_sso_scop
         code_hash: "code-hash".to_owned(),
         refresh_token_dpop_jkt: None,
         refresh_token_mtls_x5t_s256: None,
+        refresh_token_client_attestation_jkt: None,
     });
 
     let binding = issue
@@ -736,6 +742,7 @@ fn authorization_code_token_issue_preserves_requested_oidc_claims_and_acr() {
         code_hash: "code-hash".to_owned(),
         refresh_token_dpop_jkt: None,
         refresh_token_mtls_x5t_s256: None,
+        refresh_token_client_attestation_jkt: None,
     });
 
     assert_eq!(

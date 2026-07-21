@@ -124,21 +124,70 @@ def validate_manifest(manifest: dict, root: Path = ROOT) -> None:
                 )
             managed[path.relative_to(resolved_root).as_posix()] = path
 
+    allowed_profile_pins_payload = manifest.get("allowed_profile_draft_pins", [])
+    if not isinstance(allowed_profile_pins_payload, list):
+        raise ValueError("allowed_profile_draft_pins must be a list")
+    allowed_profile_pins: set[tuple[str, str, str]] = set()
+    for item in allowed_profile_pins_payload:
+        if not isinstance(item, dict):
+            raise ValueError("every allowed profile draft pin must be an object")
+        relative = _required_text(item.get("path"), "path", "allowed profile draft pin")
+        document = _required_text(
+            item.get("document"), "document", "allowed profile draft pin"
+        )
+        revision = _required_text(
+            item.get("revision"), "revision", "allowed profile draft pin"
+        )
+        _required_text(item.get("basis"), "basis", "allowed profile draft pin")
+        if relative not in managed:
+            raise ValueError(
+                f"allowed profile draft pin path is not an active document: {relative}"
+            )
+        current_revision = current_drafts.get(document)
+        if current_revision is None:
+            raise ValueError(
+                f"allowed profile draft pin references an untracked draft: {document}"
+            )
+        if not re.fullmatch(r"\d{2}", revision) or int(revision) >= int(current_revision):
+            raise ValueError(
+                f"allowed profile draft pin must use an older two-digit revision: "
+                f"{document}-{revision}"
+            )
+        pin = (relative, document, revision)
+        if pin in allowed_profile_pins:
+            raise ValueError(
+                f"duplicate allowed profile draft pin: {relative}: {document}-{revision}"
+            )
+        allowed_profile_pins.add(pin)
+
     referenced_rfcs: set[int] = set()
+    used_allowed_profile_pins: set[tuple[str, str, str]] = set()
     for relative, path in sorted(managed.items()):
         text = path.read_text(encoding="utf-8")
         referenced_rfcs.update(int(number) for number in RFC_REFERENCE.findall(text))
         for document, revision in DRAFT_PIN.findall(text):
             expected = current_drafts.get(document)
             if expected is not None and revision != expected:
-                raise ValueError(
-                    f"{relative}: stale draft pin {document}-{revision}; expected {expected}"
-                )
+                pin = (relative, document, revision)
+                if pin in allowed_profile_pins:
+                    used_allowed_profile_pins.add(pin)
+                else:
+                    raise ValueError(
+                        f"{relative}: stale draft pin {document}-{revision}; "
+                        f"expected {expected}"
+                    )
         for marker, replacement in forbidden.items():
             if marker in text:
                 raise ValueError(
                     f"{relative}: stale active marker {marker!r}; use {replacement!r}"
                 )
+
+    unused_allowed_profile_pins = allowed_profile_pins - used_allowed_profile_pins
+    if unused_allowed_profile_pins:
+        relative, document, revision = sorted(unused_allowed_profile_pins)[0]
+        raise ValueError(
+            f"unused allowed profile draft pin: {relative}: {document}-{revision}"
+        )
 
     inventoried_rfcs = {
         entry["number"] for entry in sources if entry["kind"] == "rfc"

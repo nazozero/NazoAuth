@@ -535,7 +535,43 @@ pub(crate) async fn issue_token_response_with_service(
         body["id_token"] = json!(id_token);
     }
     let mut refresh_rotated = None;
-    if issue.include_refresh && should_issue_refresh_token(client, &issue.scopes) {
+    // OIDC uses `offline_access` to request a refresh token. OpenID4VCI instead
+    // authorizes credential issuance with a credential-type scope or an
+    // `openid_credential` authorization detail; HAIP 1.0 section 4.4 recommends
+    // refresh-token support for later credential refresh. Keep both paths behind
+    // the client's explicit `refresh_token` grant registration.
+    let refresh_authorization_scopes = issue
+        .refresh_token_scopes
+        .as_deref()
+        .unwrap_or(&issue.scopes);
+    let openid4vci_credential_authorization = context
+        .config
+        .openid4vci_audience(refresh_authorization_scopes, &issue.authorization_details)
+        .is_some();
+    if issue.include_refresh
+        && should_issue_refresh_token(
+            client,
+            refresh_authorization_scopes,
+            openid4vci_credential_authorization,
+        )
+    {
+        if client.token_endpoint_auth_method == "attest_jwt_client_auth"
+            && issue.refresh_token_client_attestation_jkt.is_none()
+        {
+            mark_failed_authorization_code_if_needed(
+                token_service,
+                issue.authorization_code_hash.as_deref(),
+                "client_attestation_binding_missing",
+                auth_code_ttl_seconds,
+            )
+            .await;
+            return oauth_token_error(
+                StatusCode::UNAUTHORIZED,
+                "invalid_client_attestation",
+                "Client attestation refresh-token binding is missing.",
+                false,
+            );
+        }
         let refresh_family = match issue.refresh_token_policy {
             RefreshTokenPolicy::IssueNew => Some((Uuid::now_v7(), None, None)),
             RefreshTokenPolicy::Rotate {

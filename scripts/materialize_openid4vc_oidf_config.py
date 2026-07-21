@@ -24,9 +24,6 @@ VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encrypt
 VCI_MULTIPLE_CLIENTS_MODULE = "oid4vci-1_0-issuer-happy-flow-multiple-clients"
 VCI_PREAUTH_REPLAY_BLOCK = "Second client: Verify token endpoint response"
 VCI_PREAUTH_REPLAY_CONDITION = "CheckTokenEndpointHttpStatus200"
-VCI_REFRESH_TOKEN_MODULE = "fapi2-security-profile-final-refresh-token"
-VCI_REFRESH_TOKEN_BLOCK = "Check for refresh token"
-VCI_REFRESH_TOKEN_CONDITION = "FAPIEnsureServerConfigurationDoesNotSupportRefreshToken"
 P256_P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
 P256_A = -3
 P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
@@ -132,16 +129,7 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
         for plan, slug, variants in cases
         if plan == VCI_STANDARD and variants.get("vci_credential_encryption") == "plain"
     ]
-    haip_refresh_token_policy = [
-        {
-            "test-name": VCI_REFRESH_TOKEN_MODULE,
-            "variant": full_vci_variant(plan, variants),
-            "configuration-filename": f"openid4vc-{slug}.json",
-        }
-        for plan, slug, variants in cases
-        if plan == VCI_HAIP
-    ]
-    return unsupported_encryption + haip_refresh_token_policy
+    return unsupported_encryption
 
 
 def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
@@ -163,18 +151,6 @@ def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
 
 
 def expected_problems_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
-    warnings = [
-        {
-            "expected-result": "warning",
-            "test-name": VCI_REFRESH_TOKEN_MODULE,
-            "variant": full_vci_variant(plan, variants),
-            "configuration-filename": f"openid4vc-{slug}.json",
-            "current-block": VCI_REFRESH_TOKEN_BLOCK,
-            "condition": VCI_REFRESH_TOKEN_CONDITION,
-        }
-        for plan, slug, variants in cases
-        if plan == VCI_HAIP
-    ]
     pre_authorized_code_replay = [
         {
             "expected-result": "failure",
@@ -188,7 +164,7 @@ def expected_problems_for_cases(cases: list[tuple[str, str, dict[str, str]]]) ->
         if plan == VCI_STANDARD
         and variants.get("vci_grant_type") == "pre_authorization_code"
     ]
-    return warnings + pre_authorized_code_replay
+    return pre_authorized_code_replay
 
 
 def b64url_decode(value: str) -> bytes:

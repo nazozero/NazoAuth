@@ -313,17 +313,12 @@ pub async fn client_configuration_get(
         Ok(source_ip) => source_ip,
         Err(response) => return response,
     };
-    let (current, authenticated_token_hash) =
+    let (current, authenticated_token_hash, registration_access_token) =
         match authenticate_registration_client(&endpoint, &request, &path).await {
             Ok(authenticated) => authenticated,
             Err(response) => return response,
         };
     let response_types = response_types_from_client(&current);
-    let registration_access_token = endpoint.security.registration_tokens.random_token();
-    let new_registration_access_token_hash = endpoint
-        .security
-        .registration_tokens
-        .token_hash(&registration_access_token);
     let (issued_secret, client_secret_hash) = issue_client_secret(&endpoint, &current);
     let client = match endpoint
         .clients
@@ -332,7 +327,7 @@ pub async fn client_configuration_get(
             current.id,
             client_secret_hash.as_deref(),
             &authenticated_token_hash,
-            &new_registration_access_token_hash,
+            &authenticated_token_hash,
         )
         .await
     {
@@ -378,7 +373,7 @@ pub async fn client_configuration_put(
         Ok(source_ip) => source_ip,
         Err(response) => return response,
     };
-    let (current, authenticated_token_hash) =
+    let (current, authenticated_token_hash, _) =
         match authenticate_registration_client(&endpoint, &request, &path).await {
             Ok(authenticated) => authenticated,
             Err(response) => return response,
@@ -480,7 +475,7 @@ pub async fn client_configuration_delete(
         Ok(source_ip) => source_ip,
         Err(response) => return response,
     };
-    let (current, authenticated_token_hash) =
+    let (current, authenticated_token_hash, _) =
         match authenticate_registration_client(&endpoint, &request, &path).await {
             Ok(authenticated) => authenticated,
             Err(response) => return response,
@@ -545,7 +540,7 @@ async fn authenticate_registration_client(
     endpoint: &DynamicRegistrationEndpoint,
     request: &HttpRequest,
     client_id: &str,
-) -> Result<(OAuthClient, String), HttpResponse> {
+) -> Result<(OAuthClient, String, String), HttpResponse> {
     let Some(token) = bearer_token(request) else {
         return Err(registration_access_denied());
     };
@@ -559,7 +554,7 @@ async fn authenticate_registration_client(
         )
         .await
     {
-        Ok(Some(client)) => Ok((client, token_hash)),
+        Ok(Some(client)) => Ok((client, token_hash, token.to_owned())),
         Ok(None) => Err(registration_access_denied()),
         Err(_error) => Err(lookup_failed()),
     }
@@ -1399,6 +1394,34 @@ mod tests {
         assert_eq!(
             deleted.headers().get(header::CACHE_CONTROL),
             Some(&header::HeaderValue::from_static("no-store"))
+        );
+    }
+
+    #[actix_web::test]
+    async fn client_configuration_read_preserves_authenticated_registration_token() {
+        let service = test::init_service(
+            App::new()
+                .app_data(Data::new(endpoint(true)))
+                .configure(configure),
+        )
+        .await;
+        let response = test::call_service(
+            &service,
+            test::TestRequest::get()
+                .uri("/register/client-test")
+                .insert_header((
+                    header::AUTHORIZATION,
+                    "Bearer authenticated-registration-token",
+                ))
+                .to_request(),
+        )
+        .await;
+
+        assert_eq!(response.status(), StatusCode::OK);
+        let body: Value = test::read_body_json(response).await;
+        assert_eq!(
+            body["registration_access_token"],
+            "authenticated-registration-token"
         );
     }
 

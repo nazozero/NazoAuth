@@ -47,6 +47,11 @@ pub(crate) struct TokenIssue {
     pub(crate) refresh_token_dpop_jkt: Option<String>,
     pub(crate) mtls_x5t_s256: Option<String>,
     pub(crate) refresh_token_mtls_x5t_s256: Option<String>,
+    pub(crate) refresh_token_client_attestation_jkt: Option<String>,
+    /// Original refresh-token authorization. A refresh request may narrow the
+    /// access-token scope, but RFC 6749 requires a rotated refresh token to
+    /// retain the scope of the token presented by the client.
+    pub(crate) refresh_token_scopes: Option<Vec<String>>,
     pub(crate) authorization_code_hash: Option<String>,
     pub(crate) actor: Option<Value>,
     pub(crate) issued_token_type: Option<String>,

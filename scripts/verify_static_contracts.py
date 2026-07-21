@@ -594,7 +594,6 @@ def check_openid4vc_boundaries() -> None:
             )
     for marker in (
         "VCI_UNSUPPORTED_ENCRYPTION_MODULE",
-        "VCI_REFRESH_TOKEN_MODULE",
         "expected_problems_for_cases",
         "expected_skips_for_cases",
         "vci_credential_encryption",

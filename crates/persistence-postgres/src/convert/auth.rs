@@ -22,6 +22,7 @@ impl TryFrom<RefreshTokenRow> for RefreshToken {
             subject: row.subject,
             dpop_jkt: row.dpop_jkt,
             mtls_x5t_s256: row.mtls_x5t_s256,
+            client_attestation_jkt: row.client_attestation_jkt,
         })
     }
 }

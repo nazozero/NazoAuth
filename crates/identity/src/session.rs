@@ -29,6 +29,7 @@ pub struct SessionRecord {
     amr: Vec<String>,
     pending_mfa: bool,
     oidc_sid: Option<String>,
+    logged_in_client_ids: Vec<String>,
 }
 
 /// Opaque identifier for a browser login session.
@@ -111,12 +112,20 @@ pub enum SessionRotationOutcome {
     Collision,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum SessionUpdateOutcome {
+    Applied,
+    Conflict,
+    Missing,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CurrentSession {
     user: PublicAccount,
     auth_time: i64,
     amr: Vec<String>,
     oidc_sid: String,
+    logged_in_client_ids: Vec<String>,
 }
 
 impl CurrentSession {
@@ -143,6 +152,11 @@ impl CurrentSession {
     #[must_use]
     pub fn oidc_sid(&self) -> &str {
         &self.oidc_sid
+    }
+
+    #[must_use]
+    pub fn logged_in_client_ids(&self) -> &[String] {
+        &self.logged_in_client_ids
     }
 }
 
@@ -195,6 +209,49 @@ impl SessionService {
 
     pub async fn delete(&self, session_id: &SessionId) -> Result<bool, RepositoryError> {
         self.sessions.delete(session_id).await
+    }
+
+    /// Remembers an RP as logged in within this exact OP browser session.
+    ///
+    /// The compare-and-set loop prevents concurrent authorization responses from
+    /// losing each other's RP membership updates.
+    pub async fn bind_client(
+        &self,
+        session_id: &SessionId,
+        client_id: &str,
+    ) -> Result<bool, RepositoryError> {
+        if client_id.trim().is_empty() {
+            return Err(RepositoryError::Consistency(
+                "logged-in client identifier is empty".to_owned(),
+            ));
+        }
+        for _ in 0..4 {
+            let Some(snapshot) = self.load_fail_closed(session_id).await? else {
+                return Ok(false);
+            };
+            if snapshot
+                .record()
+                .logged_in_client_ids()
+                .iter()
+                .any(|id| id == client_id)
+            {
+                return Ok(true);
+            }
+            let mut replacement = snapshot.record().clone();
+            replacement.add_logged_in_client(client_id);
+            match self
+                .sessions
+                .compare_and_set(session_id, &snapshot, &replacement)
+                .await?
+            {
+                SessionUpdateOutcome::Applied => return Ok(true),
+                SessionUpdateOutcome::Missing => return Ok(false),
+                SessionUpdateOutcome::Conflict => {}
+            }
+        }
+        Err(RepositoryError::Consistency(
+            "session changed repeatedly while binding logged-in client".to_owned(),
+        ))
     }
 
     pub async fn current(
@@ -297,6 +354,7 @@ impl SessionService {
                 .oidc_sid()
                 .expect("validated session has an OIDC sid")
                 .to_owned(),
+            logged_in_client_ids: record.logged_in_client_ids().to_vec(),
         })))
     }
 
@@ -335,6 +393,7 @@ impl SessionRecord {
             amr,
             pending_mfa,
             oidc_sid,
+            logged_in_client_ids: Vec::new(),
         }
     }
 
@@ -363,6 +422,17 @@ impl SessionRecord {
         self.oidc_sid.as_deref()
     }
 
+    #[must_use]
+    pub fn logged_in_client_ids(&self) -> &[String] {
+        &self.logged_in_client_ids
+    }
+
+    pub fn add_logged_in_client(&mut self, client_id: &str) {
+        if !self.logged_in_client_ids.iter().any(|id| id == client_id) {
+            self.logged_in_client_ids.push(client_id.to_owned());
+        }
+    }
+
     pub fn set_auth_time(&mut self, auth_time: i64) {
         self.auth_time = auth_time;
     }
@@ -381,6 +451,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::{
+        AccountIdentity, Principal, TenantContext, UserProfile, UserRole,
         ports::{RepositoryFuture, SessionAccountPort, SessionStorePort},
         session::{SessionRotationOutcome, SessionSnapshot, SessionVersion},
     };
@@ -398,6 +469,7 @@ mod tests {
     struct FakeStore {
         snapshot: Mutex<Option<SessionSnapshot>>,
         load_error: Mutex<Option<RepositoryError>>,
+        compare_outcomes: Mutex<Vec<SessionUpdateOutcome>>,
         deleted: Mutex<Vec<SessionId>>,
         rotations: Mutex<Vec<RotationCall>>,
         rotation_outcome: SessionRotationOutcome,
@@ -411,6 +483,7 @@ mod tests {
                     SessionVersion::from_storage(b"version-1".to_vec().into_boxed_slice()),
                 ))),
                 load_error: Mutex::new(None),
+                compare_outcomes: Mutex::new(Vec::new()),
                 deleted: Mutex::new(Vec::new()),
                 rotations: Mutex::new(Vec::new()),
                 rotation_outcome: SessionRotationOutcome::Applied,
@@ -456,6 +529,32 @@ mod tests {
                 Ok(self.rotation_outcome)
             })
         }
+
+        fn compare_and_set<'a>(
+            &'a self,
+            _session_id: &'a SessionId,
+            expected: &'a SessionSnapshot,
+            replacement: &'a SessionRecord,
+        ) -> RepositoryFuture<'a, SessionUpdateOutcome> {
+            Box::pin(async move {
+                let forced_outcome = {
+                    let mut outcomes = self.compare_outcomes.lock().unwrap();
+                    (!outcomes.is_empty()).then(|| outcomes.remove(0))
+                };
+                if let Some(outcome) = forced_outcome {
+                    return Ok(outcome);
+                }
+                let mut snapshot = self.snapshot.lock().unwrap();
+                if snapshot.as_ref() != Some(expected) {
+                    return Ok(SessionUpdateOutcome::Conflict);
+                }
+                *snapshot = Some(SessionSnapshot::new(
+                    replacement.clone(),
+                    SessionVersion::from_storage(b"version-2".to_vec().into_boxed_slice()),
+                ));
+                Ok(SessionUpdateOutcome::Applied)
+            })
+        }
     }
 
     struct MissingAccounts;
@@ -488,6 +587,39 @@ mod tests {
         )
     }
 
+    #[test]
+    fn current_session_exposes_exact_logged_in_clients() {
+        let now = chrono::Utc::now();
+        let session = CurrentSession {
+            user: PublicAccount {
+                principal: Principal {
+                    user_id: UserId::new(uuid::Uuid::from_u128(2)).unwrap(),
+                    tenant: TenantContext::default_system(),
+                    role: UserRole::User,
+                    active: true,
+                },
+                account: AccountIdentity {
+                    username: "user".to_owned(),
+                    email: "user@example.com".to_owned(),
+                    email_verified: true,
+                    mfa_enabled: false,
+                },
+                profile: UserProfile::default(),
+                created_at: now,
+                updated_at: now,
+            },
+            auth_time: 900,
+            amr: vec!["password".to_owned()],
+            oidc_sid: "oidc-sid".to_owned(),
+            logged_in_client_ids: vec!["client-a".to_owned(), "client-b".to_owned()],
+        };
+
+        assert_eq!(
+            session.logged_in_client_ids(),
+            &["client-a".to_owned(), "client-b".to_owned()]
+        );
+    }
+
     #[tokio::test]
     async fn corrupt_session_is_deleted_and_resolves_as_missing() {
         let store = Arc::new(FakeStore::with_record(record(false)));
@@ -504,6 +636,77 @@ mod tests {
         assert_eq!(
             store.deleted.lock().unwrap().as_slice(),
             std::slice::from_ref(&session_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn binding_clients_is_session_scoped_and_idempotent() {
+        let store = Arc::new(FakeStore::with_record(record(false)));
+        let session_id = SessionId::new("session-1");
+        let service = service(store.clone());
+
+        assert!(service.bind_client(&session_id, "client-a").await.unwrap());
+        assert!(service.bind_client(&session_id, "client-a").await.unwrap());
+        assert!(service.bind_client(&session_id, "client-b").await.unwrap());
+
+        assert_eq!(
+            store
+                .snapshot
+                .lock()
+                .unwrap()
+                .as_ref()
+                .unwrap()
+                .record()
+                .logged_in_client_ids(),
+            &["client-a".to_owned(), "client-b".to_owned()]
+        );
+    }
+
+    #[tokio::test]
+    async fn binding_client_fails_closed_for_invalid_or_missing_sessions() {
+        let store = Arc::new(FakeStore::with_record(record(false)));
+        let session_id = SessionId::new("session-1");
+        let service = service(store.clone());
+
+        assert_eq!(
+            service.bind_client(&session_id, "  ").await,
+            Err(RepositoryError::Consistency(
+                "logged-in client identifier is empty".to_owned()
+            ))
+        );
+
+        *store.snapshot.lock().unwrap() = None;
+        assert!(!service.bind_client(&session_id, "client-a").await.unwrap());
+
+        *store.snapshot.lock().unwrap() = Some(SessionSnapshot::new(
+            record(false),
+            SessionVersion::from_storage(b"version-1".to_vec().into_boxed_slice()),
+        ));
+        store
+            .compare_outcomes
+            .lock()
+            .unwrap()
+            .push(SessionUpdateOutcome::Missing);
+        assert!(!service.bind_client(&session_id, "client-a").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn binding_client_rejects_repeated_compare_and_set_conflicts() {
+        let store = Arc::new(FakeStore::with_record(record(false)));
+        store
+            .compare_outcomes
+            .lock()
+            .unwrap()
+            .extend(vec![SessionUpdateOutcome::Conflict; 4]);
+        let result = service(store)
+            .bind_client(&SessionId::new("session-1"), "client-a")
+            .await;
+
+        assert_eq!(
+            result,
+            Err(RepositoryError::Consistency(
+                "session changed repeatedly while binding logged-in client".to_owned()
+            ))
         );
     }
 

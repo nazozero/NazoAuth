@@ -103,13 +103,28 @@ fn refresh_token_scopes(
     if requested.is_empty() {
         return Ok(original_scopes.to_vec());
     }
-    if is_subset(&requested, original_scopes)
-        && requested.iter().any(|scope| scope == "offline_access")
-    {
+    if is_subset(&requested, original_scopes) {
         Ok(requested)
     } else {
         Err(())
     }
+}
+
+fn client_attestation_refresh_binding_matches(
+    token_endpoint_auth_method: &str,
+    expected: Option<&str>,
+    presented: Option<&str>,
+) -> bool {
+    // Attestation-Based Client Authentication draft-07 section 10.3 binds a
+    // refresh token to the Client Instance and the public key in cnf.jwk.
+    if token_endpoint_auth_method != "attest_jwt_client_auth" {
+        return expected.is_none() && presented.is_none();
+    }
+    matches!(
+        (expected, presented),
+        (Some(expected), Some(presented))
+            if constant_time_eq(expected.as_bytes(), presented.as_bytes())
+    )
 }
 
 #[cfg(test)]
@@ -170,6 +185,7 @@ pub(crate) async fn token_refresh_with_service(
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
+    client_attestation_jkt: Option<&str>,
 ) -> HttpResponse {
     let request_started_at = Utc::now();
     let Some(refresh_token) = &form.refresh_token else {
@@ -208,6 +224,18 @@ pub(crate) async fn token_refresh_with_service(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "refresh_token 无效或已撤销.",
+            false,
+        );
+    }
+    if !client_attestation_refresh_binding_matches(
+        &client.token_endpoint_auth_method,
+        token.client_attestation_jkt.as_deref(),
+        client_attestation_jkt,
+    ) {
+        return oauth_token_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client_attestation",
+            "Refresh token is not bound to this client instance key.",
             false,
         );
     }
@@ -369,11 +397,19 @@ pub(crate) async fn token_refresh_with_service(
     {
         return super::token_client_assertion_error(error);
     }
-    if !should_issue_refresh_token(client, &original_scopes) {
+    let openid4vci_credential_authorization = issuance
+        .config
+        .openid4vci_audience(&original_scopes, &token.authorization_details)
+        .is_some();
+    if !should_issue_refresh_token(
+        client,
+        &original_scopes,
+        openid4vci_credential_authorization,
+    ) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
-            "refresh_token 不具备离线访问授权.",
+            "refresh_token 不具备可续期授权.",
             false,
         );
     }
@@ -449,6 +485,8 @@ pub(crate) async fn token_refresh_with_service(
             refresh_token_dpop_jkt: token.dpop_jkt,
             mtls_x5t_s256: mtls_x5t_s256.clone(),
             refresh_token_mtls_x5t_s256: mtls_x5t_s256,
+            refresh_token_client_attestation_jkt: token.client_attestation_jkt,
+            refresh_token_scopes: Some(original_scopes),
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,
@@ -485,6 +523,7 @@ pub(crate) async fn token_refresh(
         client,
         form,
         client_assertion,
+        None,
     )
     .await
 }

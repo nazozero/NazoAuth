@@ -221,6 +221,48 @@ class SpecFreshnessTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "stale draft pin"):
                 self.module.validate_manifest(manifest, root)
 
+    def test_active_documents_allow_only_used_profile_draft_pins(self):
+        manifest = {
+            "schema_version": 1,
+            "active_document_paths": ["active.md"],
+            "allowed_profile_draft_pins": [
+                {
+                    "path": "active.md",
+                    "document": "draft-ietf-oauth-attestation-based-client-auth",
+                    "revision": "07",
+                    "basis": "A final profile normatively fixes this revision.",
+                }
+            ],
+            "sources": [
+                {
+                    "id": "attestation",
+                    "title": "Attestation-Based Client Authentication",
+                    "kind": "ietf_draft",
+                    "url": (
+                        "https://datatracker.ietf.org/doc/"
+                        "draft-ietf-oauth-attestation-based-client-auth/"
+                    ),
+                    "document": "draft-ietf-oauth-attestation-based-client-auth",
+                    "revision": "10",
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            active = root / "active.md"
+            active.write_text(
+                "draft-ietf-oauth-attestation-based-client-auth-07",
+                encoding="utf-8",
+            )
+            self.module.validate_manifest(manifest, root)
+
+            active.write_text(
+                "draft-ietf-oauth-attestation-based-client-auth-10",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(ValueError, "unused allowed profile draft pin"):
+                self.module.validate_manifest(manifest, root)
+
     def test_active_documents_require_every_referenced_rfc_in_inventory(self):
         manifest = {
             "schema_version": 1,
