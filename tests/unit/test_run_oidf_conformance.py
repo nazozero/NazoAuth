@@ -878,6 +878,29 @@ class RunOidfConformanceTests(unittest.TestCase):
             ),
         )
 
+    def test_rp_initiated_review_allowlist_matches_the_eight_screenshot_modules(self):
+        module = load_runner_module()
+
+        plan, modules = module.OIDF_ALLOWED_REVIEW_CONTEXTS_BY_CONFIG[
+            module.OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE
+        ]
+
+        self.assertEqual(plan, "oidcc-rp-initiated-logout-certification-test-plan")
+        self.assertEqual(len(modules), 8)
+        self.assertEqual(
+            modules,
+            {
+                "oidcc-rp-initiated-logout-bad-id-token-hint",
+                "oidcc-rp-initiated-logout-bad-post-logout-redirect-uri",
+                "oidcc-rp-initiated-logout-modified-id-token-hint",
+                "oidcc-rp-initiated-logout-no-id-token-hint",
+                "oidcc-rp-initiated-logout-no-params",
+                "oidcc-rp-initiated-logout-no-post-logout-redirect-uri",
+                "oidcc-rp-initiated-logout-only-state",
+                "oidcc-rp-initiated-logout-query-added-to-post-logout-redirect-uri",
+            },
+        )
+
     def test_unexpected_review_is_not_hidden_by_successful_completion_log(self):
         module = load_runner_module()
         info = {

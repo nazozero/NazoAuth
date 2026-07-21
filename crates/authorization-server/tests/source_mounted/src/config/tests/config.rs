@@ -186,6 +186,7 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "AUTHORIZATION_SERVER_PROFILE",
             "AVATAR_MAX_BYTES",
             "AVATAR_STORAGE_DIR",
+            "BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS",
             "BIND",
             "CLIENT_DELIVERY_TTL_SECONDS",
             "CLIENT_IP_HEADER_MODE",

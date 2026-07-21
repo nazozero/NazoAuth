@@ -175,6 +175,44 @@ def prepare_oidc_clients(
             ),
         )
 
+    rp_name = "oidf-oidcc-rp-initiated-logout-plan-config.json"
+    rp = require_object(configs, rp_name)
+    rp_alias = require_alias(rp, rp_name)
+    rp_client = require_client(rp, "client", rp_name)
+    add(
+        str(rp_client["client_id"]),
+        oauth_client_request(
+            target_origin=target_origin,
+            name="OIDF RP-Initiated Logout Client",
+            auth_method="client_secret_basic",
+            redirect_uris=[callback_url(suite_origin, rp_alias)],
+            post_logout_redirect_uris=[
+                callback_url(suite_origin, rp_alias, "post_logout_redirect")
+            ],
+            scopes=str(rp_client.get("scope", "")).split(),
+        ),
+    )
+
+    back_name = "oidf-oidcc-backchannel-logout-plan-config.json"
+    back = require_object(configs, back_name)
+    back_alias = require_alias(back, back_name)
+    back_client = require_client(back, "client", back_name)
+    back_request = oauth_client_request(
+        target_origin=target_origin,
+        name="OIDF Back-Channel Logout Client",
+        auth_method="client_secret_basic",
+        redirect_uris=[callback_url(suite_origin, back_alias)],
+        post_logout_redirect_uris=[
+            callback_url(suite_origin, back_alias, "post_logout_redirect")
+        ],
+        scopes=str(back_client.get("scope", "")).split(),
+    )
+    back_request["backchannel_logout_uri"] = callback_url(
+        suite_origin, back_alias, "backchannel_logout"
+    )
+    back_request["backchannel_logout_session_required"] = True
+    add(str(back_client["client_id"]), back_request)
+
     front_name = "oidf-oidcc-frontchannel-logout-plan-config.json"
     front = require_object(configs, front_name)
     front_alias = require_alias(front, front_name)
@@ -361,9 +399,9 @@ def main() -> int:
     )
     clients = oidc_clients + openid4vc_clients
     logical_ids = [str(item["logical_client_id"]) for item in clients]
-    if len(logical_ids) != 53 or len(set(logical_ids)) != 53:
+    if len(logical_ids) != 55 or len(set(logical_ids)) != 55:
         fail(
-            f"official full-matrix onboarding requires 53 unique clients, found {len(set(logical_ids))}"
+            f"official full-matrix onboarding requires 55 unique clients, found {len(set(logical_ids))}"
         )
     if args.output_dir.exists():
         fail(f"output directory already exists: {args.output_dir}")

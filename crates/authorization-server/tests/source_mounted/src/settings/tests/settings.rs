@@ -523,6 +523,10 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
             "CIBA_NOTIFICATION_PRIVATE_ORIGINS",
             "https://suite.example, https://callback.internal:9443",
         ),
+        (
+            "BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS",
+            "http://localhost:8080, https://logout.internal:9443",
+        ),
     ]);
     let settings = Settings::from_config(&config).unwrap();
 
@@ -556,6 +560,10 @@ fn feature_gate_settings_default_closed_and_accept_explicit_enablement() {
     assert_eq!(
         settings.ciba.ciba_notification_private_origins,
         ["https://suite.example", "https://callback.internal:9443"]
+    );
+    assert_eq!(
+        settings.modules.backchannel_logout_private_origins,
+        ["http://localhost:8080", "https://logout.internal:9443"]
     );
 }
 

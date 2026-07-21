@@ -181,6 +181,46 @@ class PrepareOidfBlackBoxTests(unittest.TestCase):
         self.assertEqual(len(authorize_entries), 1)
         self.assertNotIn("override", config)
 
+    def test_unbound_logout_confirmation_is_scoped_to_the_rp_initiated_plan(self):
+        module = load_setup_module()
+
+        rp = module.write_rp_initiated_logout_plan_config()
+        front = module.write_frontchannel_logout_plan_config()
+
+        def logout_tasks(config):
+            entry = next(
+                item
+                for item in config["browser"]
+                if item.get("match") == f"{module.ISSUER}/logout*"
+            )
+            return entry["tasks"]
+
+        rp_tasks = logout_tasks(rp)
+        front_tasks = logout_tasks(front)
+        self.assertEqual(rp_tasks[0]["task"], "Confirm an unbound logout request")
+        self.assertTrue(rp_tasks[0]["optional"])
+        self.assertEqual(
+            rp_tasks[0]["commands"],
+            [["click", "id", "nazo-logout-confirm", "optional"]],
+        )
+        self.assertEqual(rp_tasks[1]["task"], "Capture local logout result page")
+        self.assertTrue(rp_tasks[1]["optional"])
+        self.assertEqual(rp_tasks[2]["task"], "Reach post-logout redirect page")
+        self.assertTrue(rp_tasks[2]["optional"])
+        self.assertEqual(
+            [task["task"] for task in front_tasks],
+            [
+                "Continue after front-channel iframe notification",
+                "Reach post-logout redirect page",
+            ],
+        )
+        self.assertEqual(
+            front_tasks[0]["commands"],
+            [["click", "id", "nazo-frontchannel-logout-continue"]],
+        )
+        self.assertNotIn("optional", front_tasks[0])
+        self.assertNotIn("optional", front_tasks[1])
+
     def test_generator_does_not_materialize_a_private_product_environment(self):
         source = (Path(__file__).resolve().parents[2] / "scripts" / "prepare_oidf_black_box.py").read_text(
             encoding="utf-8"
@@ -344,17 +384,33 @@ class PrepareOidfBlackBoxTests(unittest.TestCase):
             "oidcc-frontchannel-rp-initiated-logout-certification-test-plan "
             "frontchannel.json"
         )
+        rp_initiated = (
+            "oidcc-rp-initiated-logout-certification-test-plan rp.json"
+        )
+        backchannel = (
+            "oidcc-backchannel-rp-initiated-logout-certification-test-plan "
+            "backchannel.json"
+        )
         session = (
             "oidcc-session-management-certification-test-plan session.json"
         )
         ciba = "fapi-ciba-id1-test-plan[client_auth_type=mtls] ciba.json"
 
-        concurrent, ciba_only, frontchannel_only, session_only = module.partition_plan_expressions(
-            [parallel, frontchannel, session, ciba]
+        (
+            concurrent,
+            ciba_only,
+            rp_initiated_only,
+            backchannel_only,
+            frontchannel_only,
+            session_only,
+        ) = module.partition_plan_expressions(
+            [parallel, rp_initiated, backchannel, frontchannel, session, ciba]
         )
 
         self.assertEqual(concurrent, [parallel])
         self.assertEqual(ciba_only, [ciba])
+        self.assertEqual(rp_initiated_only, [rp_initiated])
+        self.assertEqual(backchannel_only, [backchannel])
         self.assertEqual(frontchannel_only, [frontchannel])
         self.assertEqual(session_only, [session])
 
@@ -365,6 +421,8 @@ class PrepareOidfBlackBoxTests(unittest.TestCase):
             module.write_basic_plan_config(),
             module.write_dynamic_plan_config(),
             module.write_oidcc_config_plan_config(),
+            module.write_rp_initiated_logout_plan_config(),
+            module.write_backchannel_logout_plan_config(),
             module.write_frontchannel_logout_plan_config(),
             module.write_session_management_plan_config(),
         ]
@@ -372,7 +430,7 @@ class PrepareOidfBlackBoxTests(unittest.TestCase):
         configs.extend(module.write_fapi_ciba_plan_config().values())
         configs.extend(module.write_fapi_matrix_plan_configs().values())
 
-        self.assertGreaterEqual(len(configs), 21)
+        self.assertGreaterEqual(len(configs), 23)
         for config in configs:
             self.assertEqual(
                 config["server"]["allow_unexpected_metadata_fields"],
@@ -387,6 +445,8 @@ class PrepareOidfBlackBoxTests(unittest.TestCase):
             "oidf-oidcc-formpost-plan-config.json": module.write_formpost_plan_config(),
             "oidf-oidcc-third-party-init-plan-config.json": module.write_third_party_init_plan_config(),
             "oidf-oidcc-config-plan-config.json": module.write_oidcc_config_plan_config(),
+            "oidf-oidcc-rp-initiated-logout-plan-config.json": module.write_rp_initiated_logout_plan_config(),
+            "oidf-oidcc-backchannel-logout-plan-config.json": module.write_backchannel_logout_plan_config(),
             "oidf-oidcc-frontchannel-logout-plan-config.json": module.write_frontchannel_logout_plan_config(),
             "oidf-oidcc-session-management-plan-config.json": module.write_session_management_plan_config(),
         }
@@ -409,19 +469,23 @@ class PrepareOidfBlackBoxTests(unittest.TestCase):
                 "05-fapi-mtls-mtls.json",
                 "06-fapi-private-dpop.json",
                 "07-fapi-private-mtls.json",
-                "08-frontchannel.json",
-                "09-session.json",
+                "08-rp-initiated.json",
+                "09-backchannel.json",
+                "10-frontchannel.json",
+                "11-session.json",
             ],
         )
         flattened = [plan for group in groups.values() for plan in group]
-        self.assertEqual(len(flattened), 25)
+        self.assertEqual(len(flattened), 27)
         self.assertEqual(sorted(flattened), sorted(plan_set))
         self.assertEqual(len(groups["03a-fapi-ciba-private-key-jwt-poll.json"]), 1)
         self.assertEqual(len(groups["03b-fapi-ciba-mtls-poll.json"]), 1)
         self.assertEqual(len(groups["03c-fapi-ciba-private-key-jwt-ping.json"]), 1)
         self.assertEqual(len(groups["03d-fapi-ciba-mtls-ping.json"]), 1)
-        self.assertEqual(len(groups["08-frontchannel.json"]), 1)
-        self.assertEqual(len(groups["09-session.json"]), 1)
+        self.assertEqual(len(groups["08-rp-initiated.json"]), 1)
+        self.assertEqual(len(groups["09-backchannel.json"]), 1)
+        self.assertEqual(len(groups["10-frontchannel.json"]), 1)
+        self.assertEqual(len(groups["11-session.json"]), 1)
 
     def test_help_exits_before_generating_runtime_files(self):
         module = load_setup_module()

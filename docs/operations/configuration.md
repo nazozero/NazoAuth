@@ -149,7 +149,8 @@ deployment path. They are candidates for the administrator UI:
   `PROTECTED_RESOURCE_IDENTIFIER`, `DEVICE_AUTHORIZATION_TTL_SECONDS`,
   `DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS`,
   `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`,
-  `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS`
+  `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS`,
+  `BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS`
 - token and session lifetimes: `SESSION_TTL_SECONDS`, `AUTH_CODE_TTL_SECONDS`,
   `ACCESS_TOKEN_TTL_SECONDS`, `ID_TOKEN_TTL_SECONDS`,
   `REFRESH_TOKEN_TTL_SECONDS`
@@ -160,6 +161,14 @@ dynamic-client JWKS and Request Objects. Leave it empty in production unless a
 specific private client-document service is required. Public destinations are
 always DNS-resolved and blocked when any result is loopback, link-local,
 private, unspecified, or multicast; redirects are disabled.
+
+`BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS` is a comma-separated list of exact HTTP(S)
+origins that are explicitly permitted to resolve to private or loopback
+addresses for Back-Channel Logout delivery. Leave it empty in production unless
+a specific private RP is required. Each delivery is DNS-resolved before use,
+pinned to the resolved addresses, rejected if any address is private without an
+exact allowlist match, and sent with redirects disabled. HTTP remains limited to
+loopback endpoints.
 - rate limits: `RATE_LIMIT_WINDOW_SECONDS`, `AUTH_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_RATE_LIMIT_MAX_REQUESTS`,
   `TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS`,

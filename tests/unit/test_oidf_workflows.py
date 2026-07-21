@@ -214,6 +214,8 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertIn("03a-fapi-ciba-private-key-jwt-poll.json", workflow)
         self.assertIn("03d-fapi-ciba-mtls-ping.json", workflow)
         self.assertIn("07-fapi-private-mtls.json", workflow)
+        self.assertIn("oidf-rp-initiated-plan-set.json", workflow)
+        self.assertIn("oidf-backchannel-plan-set.json", workflow)
         self.assertIn("oidf-frontchannel-plan-set.json", workflow)
         self.assertIn("oidf-session-management-plan-set.json", workflow)
 
@@ -228,17 +230,23 @@ class OidfWorkflowTests(unittest.TestCase):
         )
         serial_plan_set = workflow_heredoc_json(
             workflow,
+            "oidf-rp-initiated-plan-set.json",
+        ) + workflow_heredoc_json(
+            workflow,
+            "oidf-backchannel-plan-set.json",
+        ) + workflow_heredoc_json(
+            workflow,
             "oidf-frontchannel-plan-set.json",
         ) + workflow_heredoc_json(
             workflow,
             "oidf-session-management-plan-set.json",
         )
 
-        self.assertEqual(len(full_plan_set), 25)
+        self.assertEqual(len(full_plan_set), 27)
         self.assertEqual(len(concurrent_plan_set), 19)
         self.assertEqual(len(ciba_plan_set), 4)
-        self.assertEqual(len(serial_plan_set), 2)
-        self.assertEqual(len(set(full_plan_set)), 25)
+        self.assertEqual(len(serial_plan_set), 4)
+        self.assertEqual(len(set(full_plan_set)), 27)
         self.assertEqual(
             sum("fapi-ciba-id1-test-plan" in plan for plan in ciba_plan_set),
             4,

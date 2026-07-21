@@ -35,6 +35,10 @@ OIDCC_DYNAMIC_CONFIG_FILE = "oidf-oidcc-dynamic-plan-config.json"
 OIDCC_FORMPOST_CONFIG_FILE = "oidf-oidcc-formpost-plan-config.json"
 OIDCC_THIRD_PARTY_INIT_CONFIG_FILE = "oidf-oidcc-third-party-init-plan-config.json"
 OIDCC_CONFIG_CONFIG_FILE = "oidf-oidcc-config-plan-config.json"
+OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE = "oidf-oidcc-rp-initiated-logout-plan-config.json"
+OIDCC_BACKCHANNEL_LOGOUT_CONFIG_FILE = "oidf-oidcc-backchannel-logout-plan-config.json"
+OIDCC_FRONTCHANNEL_LOGOUT_CONFIG_FILE = "oidf-oidcc-frontchannel-logout-plan-config.json"
+OIDCC_SESSION_MANAGEMENT_CONFIG_FILE = "oidf-oidcc-session-management-plan-config.json"
 FAPI_SECURITY_FINAL_CONFIG_FILE = "oidf-fapi-security-final-plan-config.json"
 FAPI_MESSAGE_FINAL_CONFIG_FILE = "oidf-fapi-message-final-plan-config.json"
 FAPI_SECURITY_ID2_CONFIG_FILE = "oidf-fapi-security-id2-plan-config.json"
@@ -122,6 +126,19 @@ OIDF_SENSITIVE_LOG_FIELDS = {
     "request_uri",
 }
 OIDF_ALLOWED_REVIEW_CONTEXTS_BY_CONFIG = {
+    OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE: (
+        "oidcc-rp-initiated-logout-certification-test-plan",
+        frozenset({
+            "oidcc-rp-initiated-logout-bad-id-token-hint",
+            "oidcc-rp-initiated-logout-bad-post-logout-redirect-uri",
+            "oidcc-rp-initiated-logout-modified-id-token-hint",
+            "oidcc-rp-initiated-logout-no-id-token-hint",
+            "oidcc-rp-initiated-logout-no-params",
+            "oidcc-rp-initiated-logout-no-post-logout-redirect-uri",
+            "oidcc-rp-initiated-logout-only-state",
+            "oidcc-rp-initiated-logout-query-added-to-post-logout-redirect-uri",
+        }),
+    ),
     OIDCC_BASIC_CONFIG_FILE: (
         "oidcc-basic-certification-test-plan",
         frozenset({
@@ -180,6 +197,10 @@ PER_PLAN_CONFIG_EXPRESSIONS = [
     f"oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] {OIDCC_FORMPOST_CONFIG_FILE}",
     f"oidcc-3rdparty-init-login-certification-test-plan[response_type=code] {OIDCC_THIRD_PARTY_INIT_CONFIG_FILE}",
     f"oidcc-config-certification-test-plan {OIDCC_CONFIG_CONFIG_FILE}",
+    f"oidcc-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] {OIDCC_RP_INITIATED_LOGOUT_CONFIG_FILE}",
+    f"oidcc-backchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] {OIDCC_BACKCHANNEL_LOGOUT_CONFIG_FILE}",
+    f"oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] {OIDCC_FRONTCHANNEL_LOGOUT_CONFIG_FILE}",
+    f"oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] {OIDCC_SESSION_MANAGEMENT_CONFIG_FILE}",
     f"fapi2-security-profile-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] {FAPI_SECURITY_FINAL_CONFIG_FILE}",
     f"fapi2-message-signing-final-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][fapi_request_method=signed_non_repudiation][fapi_response_mode=plain_response][sender_constrain=dpop][openid=openid_connect] {FAPI_MESSAGE_FINAL_CONFIG_FILE}",
     f"fapi2-security-profile-id2-test-plan[client_auth_type=private_key_jwt][fapi_profile=plain_fapi][sender_constrain=dpop][openid=openid_connect] {FAPI_SECURITY_ID2_CONFIG_FILE}",

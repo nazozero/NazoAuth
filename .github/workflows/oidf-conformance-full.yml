@@ -108,6 +108,8 @@ jobs:
             "oidcc-formpost-basic-certification-test-plan[server_metadata=discovery][client_registration=static_client] oidf-oidcc-formpost-plan-config.json",
             "oidcc-3rdparty-init-login-certification-test-plan[response_type=code] oidf-oidcc-third-party-init-plan-config.json",
             "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
+            "oidcc-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-rp-initiated-logout-plan-config.json",
+            "oidcc-backchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-backchannel-logout-plan-config.json",
             "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json",
             "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-session-management-plan-config.json",
             "fapi-ciba-id1-test-plan[client_auth_type=private_key_jwt][fapi_ciba_profile=plain_fapi][ciba_mode=poll][client_registration=static_client] oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
@@ -220,8 +222,10 @@ jobs:
                   "client_auth_type=private_key_jwt",
                   "sender_constrain=mtls",
               ),
-              "08-frontchannel.json": matches("frontchannel-rp-initiated-logout"),
-              "09-session.json": matches("session-management-certification-test-plan"),
+              "08-rp-initiated.json": matches("oidcc-rp-initiated-logout-certification-test-plan"),
+              "09-backchannel.json": matches("backchannel-rp-initiated-logout"),
+              "10-frontchannel.json": matches("frontchannel-rp-initiated-logout"),
+              "11-session.json": matches("session-management-certification-test-plan"),
           }
           flattened = [plan for group in groups.values() for plan in group]
           if sorted(flattened) != sorted(plans):
@@ -229,6 +233,16 @@ jobs:
           for name, group in groups.items():
               Path(name).write_text(json.dumps(group, indent=2) + "\n")
           PY
+          cat > oidf-rp-initiated-plan-set.json <<'JSON'
+          [
+            "oidcc-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-rp-initiated-logout-plan-config.json"
+          ]
+          JSON
+          cat > oidf-backchannel-plan-set.json <<'JSON'
+          [
+            "oidcc-backchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-backchannel-logout-plan-config.json"
+          ]
+          JSON
           cat > oidf-frontchannel-plan-set.json <<'JSON'
           [
             "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json"
@@ -451,6 +465,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          - name: rp-initiated
+            plan_set_file: oidf-rp-initiated-plan-set.json
+            plan_expression: "oidcc-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-rp-initiated-logout-plan-config.json"
+          - name: backchannel
+            plan_set_file: oidf-backchannel-plan-set.json
+            plan_expression: "oidcc-backchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-backchannel-logout-plan-config.json"
           - name: frontchannel
             plan_set_file: oidf-frontchannel-plan-set.json
             plan_expression: "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] oidf-oidcc-frontchannel-logout-plan-config.json"

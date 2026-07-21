@@ -504,26 +504,61 @@ fn client_metadata_rejects_frontchannel_logout_uri_with_fragment_or_insecure_hos
         "unexpected error: {error}"
     );
 
-    for uri in [
-        "https://client.example/logout",
-        "http://localhost/logout",
-        "http://127.0.0.1:8080/logout",
-        "http://app.localhost/logout",
+    for (redirect_uri, logout_uri) in [
+        (
+            "https://client.example:443/callback",
+            "https://client.example/logout",
+        ),
+        ("http://localhost/callback", "http://localhost/logout"),
+        (
+            "http://127.0.0.1:8080/callback",
+            "http://127.0.0.1:8080/logout",
+        ),
     ] {
+        let redirect_uris = [redirect_uri.to_owned()];
+        let is_loopback_http = redirect_uri.starts_with("http://");
         let mut loopback_metadata = metadata(
-            "confidential",
+            if is_loopback_http {
+                "public"
+            } else {
+                "confidential"
+            },
             &redirect_uris,
             &scopes,
             &audiences,
             &grants,
-            "client_secret_basic",
+            if is_loopback_http {
+                "none"
+            } else {
+                "client_secret_basic"
+            },
             None,
             None,
         );
-        loopback_metadata.frontchannel_logout_uri = Some(uri);
+        loopback_metadata.frontchannel_logout_uri = Some(logout_uri);
         validate_metadata_fixture(loopback_metadata)
-            .expect("OIDC front-channel logout may use HTTPS or loopback HTTP endpoints");
+            .expect("front-channel logout origin must match a registered redirect origin");
     }
+
+    let mut cross_origin_metadata = metadata(
+        "confidential",
+        &redirect_uris,
+        &scopes,
+        &audiences,
+        &grants,
+        "client_secret_basic",
+        None,
+        None,
+    );
+    cross_origin_metadata.frontchannel_logout_uri = Some("https://logout.client.example/logout");
+    let error = validate_metadata_fixture(cross_origin_metadata)
+        .expect_err("front-channel logout origin must match a redirect URI origin");
+    assert!(
+        error.to_string().contains(
+            "frontchannel_logout_uri 的 scheme、host 和有效端口必须与一个 redirect_uri 相同"
+        ),
+        "unexpected error: {error}"
+    );
 }
 
 #[test]

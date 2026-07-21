@@ -186,7 +186,8 @@ pub use sender_constraint::{
     SenderConstraintPolicy, is_valid_dpop_jkt, normalize_sha256_thumbprint,
 };
 pub use session_management::{
-    OidcSessionStatus, check_oidc_session_state, issue_oidc_session_state, oidc_session_state,
+    OidcSessionStatus, check_oidc_session_state, issue_oidc_session_state,
+    oidc_redirect_uri_origin, oidc_session_state,
 };
 pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{

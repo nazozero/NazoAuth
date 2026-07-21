@@ -426,6 +426,7 @@ pub(super) fn validate_client_metadata<C: AdminClientCryptoPort + ?Sized>(
     }
     if let Some(uri) = metadata.frontchannel_logout_uri {
         validate_logout_uri("frontchannel_logout_uri", uri)?;
+        validate_frontchannel_logout_origin(uri, metadata.redirect_uris)?;
     }
     Ok(())
 }
@@ -609,6 +610,9 @@ fn validate_logout_uri(field: &str, uri: &str) -> Result<(), AdminClientError> {
     if parsed.fragment().is_some() {
         return invalid(format!("{field} 不能包含 fragment"));
     }
+    if parsed.host_str().is_none() || !parsed.username().is_empty() || parsed.password().is_some() {
+        return invalid(format!("{field} 必须是无 userinfo 的绝对网络 URI"));
+    }
     match parsed.scheme() {
         "https" => Ok(()),
         "http"
@@ -620,6 +624,26 @@ fn validate_logout_uri(field: &str, uri: &str) -> Result<(), AdminClientError> {
         }
         _ => invalid(format!("{field} 必须使用 https 或 loopback http")),
     }
+}
+
+fn validate_frontchannel_logout_origin(
+    logout_uri: &str,
+    redirect_uris: &[String],
+) -> Result<(), AdminClientError> {
+    let logout = url::Url::parse(logout_uri)
+        .map_err(|error| AdminClientError::InvalidRequest(error.to_string()))?;
+    let logout_origin = logout.origin();
+    let matches_registered_redirect = redirect_uris.iter().any(|redirect_uri| {
+        url::Url::parse(redirect_uri).is_ok_and(|redirect| {
+            matches!(redirect.scheme(), "http" | "https") && redirect.origin() == logout_origin
+        })
+    });
+    if !matches_registered_redirect {
+        return invalid(
+            "frontchannel_logout_uri 的 scheme、host 和有效端口必须与一个 redirect_uri 相同",
+        );
+    }
+    Ok(())
 }
 
 fn validate_unique_non_empty(name: &str, values: &[String]) -> Result<(), AdminClientError> {
