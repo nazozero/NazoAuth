@@ -891,24 +891,6 @@ impl LogoutClientRepositoryPort for OAuthClientRepository {
         })
     }
 
-    fn active_for_user(
-        &self,
-        tenant_id: Uuid,
-        user_id: Uuid,
-    ) -> LogoutFuture<'_, Vec<RegisteredLogoutClient>> {
-        Box::pin(async move {
-            OAuthClientRepository::active_for_tenant_user(self, tenant_id, user_id)
-                .await
-                .map(|clients| {
-                    clients
-                        .into_iter()
-                        .filter(|client| client.is_active)
-                        .map(registered_logout_client)
-                        .collect()
-                })
-                .map_err(|_| LogoutDependencyError::Unavailable)
-        })
-    }
 }
 
 fn registered_logout_client(client: OAuthClient) -> RegisteredLogoutClient {

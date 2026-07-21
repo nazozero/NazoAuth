@@ -735,6 +735,15 @@ pub trait SessionStorePort: Send + Sync {
         replacement: &'a crate::session::SessionRecord,
         ttl_seconds: u64,
     ) -> RepositoryFuture<'a, crate::session::SessionRotationOutcome>;
+
+    /// Replaces a session only when its opaque storage revision still matches.
+    /// The implementation must preserve the existing expiry.
+    fn compare_and_set<'a>(
+        &'a self,
+        session_id: &'a crate::session::SessionId,
+        expected: &'a crate::session::SessionSnapshot,
+        replacement: &'a crate::session::SessionRecord,
+    ) -> RepositoryFuture<'a, crate::session::SessionUpdateOutcome>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

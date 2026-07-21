@@ -264,6 +264,7 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                     session: current_session.as_ref().map(|session| LogoutSession {
                         user_id: session.user.id(),
                         oidc_sid: session.oidc_sid.clone(),
+                        logged_in_client_ids: session.logged_in_client_ids.clone(),
                     }),
                     csrf_authorized: command.csrf_authorized,
                     user_confirmed: command.user_confirmed,

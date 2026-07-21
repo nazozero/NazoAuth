@@ -28,6 +28,18 @@ end
 return 'created'
 "#;
 
+const COMPARE_AND_SET_SESSION_SCRIPT: &str = r#"
+local current = redis.call('GET', KEYS[1])
+if not current then
+  return 'missing'
+end
+if current ~= ARGV[1] then
+  return 'conflict'
+end
+redis.call('SET', KEYS[1], ARGV[2], 'KEEPTTL')
+return 'ok'
+"#;
+
 #[derive(Deserialize, Serialize)]
 struct SessionWireRecord {
     user_id: Uuid,
@@ -37,6 +49,8 @@ struct SessionWireRecord {
     pending_mfa: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     oidc_sid: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    logged_in_client_ids: Vec<String>,
 }
 
 impl From<&SessionRecord> for SessionWireRecord {
@@ -47,6 +61,7 @@ impl From<&SessionRecord> for SessionWireRecord {
             amr: value.amr().to_vec(),
             pending_mfa: value.pending_mfa(),
             oidc_sid: value.oidc_sid().map(str::to_owned),
+            logged_in_client_ids: value.logged_in_client_ids().to_vec(),
         }
     }
 }
@@ -58,13 +73,17 @@ impl TryFrom<SessionWireRecord> for SessionRecord {
         let user_id = UserId::new(value.user_id).map_err(|error| {
             Error::corrupt_data(format!("invalid stored session user: {error}"))
         })?;
-        Ok(Self::new(
+        let mut record = Self::new(
             user_id,
             value.auth_time,
             value.amr,
             value.pending_mfa,
             value.oidc_sid,
-        ))
+        );
+        for client_id in value.logged_in_client_ids {
+            record.add_logged_in_client(&client_id);
+        }
+        Ok(record)
     }
 }
 
@@ -309,6 +328,44 @@ impl nazo_identity::ports::SessionStorePort for SessionStore {
                 "collision" => Ok(nazo_identity::SessionRotationOutcome::Collision),
                 other => Err(nazo_identity::ports::RepositoryError::Unexpected(format!(
                     "unexpected session rotation reply {other:?}"
+                ))),
+            }
+        })
+    }
+
+    fn compare_and_set<'a>(
+        &'a self,
+        session_id: &'a nazo_identity::SessionId,
+        expected: &'a nazo_identity::SessionSnapshot,
+        replacement: &'a SessionRecord,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, nazo_identity::SessionUpdateOutcome> {
+        Box::pin(async move {
+            let replacement = serde_json::to_string(&SessionWireRecord::from(replacement))
+                .map_err(|error| {
+                    nazo_identity::ports::RepositoryError::Unexpected(format!(
+                        "failed to serialize replacement session: {error}"
+                    ))
+                })?;
+            let expected =
+                std::str::from_utf8(expected.version().storage_bytes()).map_err(|error| {
+                    nazo_identity::ports::RepositoryError::Unexpected(format!(
+                        "session storage revision is not valid UTF-8: {error}"
+                    ))
+                })?;
+            let reply = command::eval_string(
+                &self.connection,
+                COMPARE_AND_SET_SESSION_SCRIPT,
+                vec![keys::session(session_id.as_str())],
+                vec![expected.to_owned(), replacement],
+            )
+            .await
+            .map_err(crate::identity_repository_error)?;
+            match reply.as_str() {
+                "ok" => Ok(nazo_identity::SessionUpdateOutcome::Applied),
+                "conflict" => Ok(nazo_identity::SessionUpdateOutcome::Conflict),
+                "missing" => Ok(nazo_identity::SessionUpdateOutcome::Missing),
+                other => Err(nazo_identity::ports::RepositoryError::Unexpected(format!(
+                    "unexpected session compare-and-set reply {other:?}"
                 ))),
             }
         })

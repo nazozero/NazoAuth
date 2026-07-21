@@ -102,6 +102,7 @@ class PublicOidfRunnerTests(unittest.TestCase):
                 token_env="OIDF_CONFORMANCE_TOKEN",
                 timeout_seconds=100,
                 monitor_interval_seconds=5,
+                final_stabilization_seconds=45,
             )
 
             with (
@@ -264,6 +265,86 @@ class PublicOidfRunnerTests(unittest.TestCase):
                 json.loads(destination.read_text(encoding="utf-8")),
                 [{"configuration-filename": "config-a.json", "condition": "A"}],
             )
+
+    def test_complete_matrix_is_rechecked_after_stabilization_window(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            work = root / "work"
+            contracts = root / "tests" / "contracts"
+            work.mkdir()
+            contracts.mkdir(parents=True)
+            (work / "oidf-plan-configs.json").write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            "a.json": {"alias": "run-a"},
+                            "b.json": {"alias": "run-b"},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (work / "oidf-plan-set.json").write_text(
+                json.dumps(["plan-a a.json", "plan-b b.json"]), encoding="utf-8"
+            )
+            (work / "oidf-expected-skips.json").write_text("[]\n", encoding="utf-8")
+            (contracts / "oidf-official-expected-warnings.json").write_text(
+                "[]\n", encoding="utf-8"
+            )
+            args = Namespace(
+                conformance_server="https://suite.example",
+                final_stabilization_seconds=45,
+            )
+
+            with (
+                mock.patch.object(self.module, "ROOT", root),
+                mock.patch.object(self.module, "inspect_oidf_state", return_value=None) as inspect,
+                mock.patch.object(self.module.time, "sleep") as sleep,
+            ):
+                self.module.inspect_complete_matrix(args, work, "token")
+
+            self.assertEqual(inspect.call_count, 2)
+            self.assertEqual(inspect.call_args_list[0].args[2], {"run-a", "run-b"})
+            self.assertTrue(inspect.call_args_list[0].kwargs["final"])
+            sleep.assert_called_once_with(45)
+
+    def test_complete_matrix_rejects_a_late_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            work = root / "work"
+            contracts = root / "tests" / "contracts"
+            work.mkdir()
+            contracts.mkdir(parents=True)
+            (work / "oidf-plan-configs.json").write_text(
+                json.dumps({"configs": {"a.json": {"alias": "run-a"}}}),
+                encoding="utf-8",
+            )
+            (work / "oidf-plan-set.json").write_text(
+                json.dumps(["plan-a a.json"]), encoding="utf-8"
+            )
+            (work / "oidf-expected-skips.json").write_text("[]\n", encoding="utf-8")
+            (contracts / "oidf-official-expected-warnings.json").write_text(
+                "[]\n", encoding="utf-8"
+            )
+            args = Namespace(
+                conformance_server="https://suite.example",
+                final_stabilization_seconds=1,
+            )
+
+            with (
+                mock.patch.object(self.module, "ROOT", root),
+                mock.patch.object(
+                    self.module,
+                    "inspect_oidf_state",
+                    side_effect=(None, "module result FAILED"),
+                ),
+                mock.patch.object(self.module.time, "sleep"),
+                self.assertRaisesRegex(
+                    self.module.PublicRunError,
+                    "stabilized check failed.*FAILED",
+                ),
+            ):
+                self.module.inspect_complete_matrix(args, work, "token")
 
     def test_proxy_trust_install_and_restore_are_atomic(self):
         with tempfile.TemporaryDirectory() as directory:

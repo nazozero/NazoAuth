@@ -49,6 +49,7 @@ pub(crate) struct CurrentSession {
     pub(crate) auth_time: i64,
     pub(crate) amr: Vec<String>,
     pub(crate) oidc_sid: String,
+    pub(crate) logged_in_client_ids: Vec<String>,
 }
 
 /// Runtime-admin authentication dependencies, assembled once at the composition root.
@@ -344,6 +345,7 @@ async fn current_session_by_id_from_handles(
         return Ok(None);
     };
     let now = Utc::now().timestamp();
+    let logged_in_client_ids = stored.value().logged_in_client_ids().to_vec();
     let payload = SessionPayload::from_record(stored.value());
     let payload = if valid_session_payload(&payload, now) {
         payload
@@ -355,7 +357,14 @@ async fn current_session_by_id_from_handles(
     if payload.pending_mfa {
         return Ok(None);
     }
-    session_from_payload(sessions, users, session_id, payload).await
+    session_from_payload(
+        sessions,
+        users,
+        session_id,
+        payload,
+        logged_in_client_ids,
+    )
+    .await
 }
 
 #[cfg(test)]
@@ -397,6 +406,7 @@ async fn current_pending_mfa_session_from_handles(
         return Ok(None);
     };
     let now = Utc::now().timestamp();
+    let logged_in_client_ids = stored.value().logged_in_client_ids().to_vec();
     let payload = SessionPayload::from_record(stored.value());
     let payload = if valid_session_payload(&payload, now) {
         payload
@@ -408,7 +418,7 @@ async fn current_pending_mfa_session_from_handles(
     if !payload.pending_mfa {
         return Ok(None);
     }
-    session_from_payload(store, users, &sid, payload).await
+    session_from_payload(store, users, &sid, payload, logged_in_client_ids).await
 }
 
 #[cfg(test)]
@@ -508,6 +518,7 @@ async fn session_from_payload(
     users: &UserRepository,
     session_id: &str,
     payload: SessionPayload,
+    logged_in_client_ids: Vec<String>,
 ) -> anyhow::Result<Option<CurrentSession>> {
     let tenant_id = nazo_identity::TenantId::new(DEFAULT_TENANT_ID)?;
     let user_id = nazo_identity::UserId::new(payload.user_id)?;
@@ -524,6 +535,7 @@ async fn session_from_payload(
         auth_time: payload.auth_time,
         amr: payload.amr,
         oidc_sid: payload.oidc_sid.expect("valid session payload has sid"),
+        logged_in_client_ids,
     }))
 }
 

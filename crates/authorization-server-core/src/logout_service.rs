@@ -32,6 +32,8 @@ pub struct RpLogoutRequest {
 pub struct LogoutSession {
     pub user_id: Uuid,
     pub oidc_sid: String,
+    /// Client identifiers that completed login in this exact OP session.
+    pub logged_in_client_ids: Vec<String>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -108,11 +110,6 @@ pub trait LogoutClientRepositoryPort: Send + Sync {
         client_id: &'a str,
     ) -> LogoutFuture<'a, Option<RegisteredLogoutClient>>;
 
-    fn active_for_user(
-        &self,
-        tenant_id: Uuid,
-        user_id: Uuid,
-    ) -> LogoutFuture<'_, Vec<RegisteredLogoutClient>>;
 }
 
 pub trait BackchannelLogoutOutboxPort: Send + Sync {
@@ -200,19 +197,17 @@ impl LogoutService {
             return Err(LogoutServiceError::ConfirmationRequired);
         }
 
-        let mut active_clients = match input.session.as_ref() {
-            Some(session) => self
-                .clients
-                .active_for_user(input.tenant_id, session.user_id)
-                .await
-                .map_err(|_| LogoutServiceError::ClientUnavailable)?,
-            None => Vec::new(),
-        };
+        let mut active_clients = self
+            .logged_in_clients(input.tenant_id, input.session.as_ref())
+            .await?;
         let hinted_client_is_bound = hinted_client.as_ref().is_some_and(|client| {
             hint_matches_current_session
-                || active_clients
-                    .iter()
-                    .any(|candidate| candidate.client_id == client.client_id)
+                || input.session.as_ref().is_some_and(|session| {
+                    session
+                        .logged_in_client_ids
+                        .iter()
+                        .any(|client_id| client_id == &client.client_id)
+                })
         });
         if hinted_client_is_bound
             && let Some(client) = hinted_client.as_ref()
@@ -261,6 +256,32 @@ impl LogoutService {
             .map_err(|_| LogoutServiceError::ClientUnavailable)?
             .filter(|client| client.active)
             .ok_or(LogoutServiceError::ClientNotFound)
+    }
+
+    async fn logged_in_clients(
+        &self,
+        tenant_id: Uuid,
+        session: Option<&LogoutSession>,
+    ) -> Result<Vec<RegisteredLogoutClient>, LogoutServiceError> {
+        let Some(session) = session else {
+            return Ok(Vec::new());
+        };
+        let mut clients = Vec::with_capacity(session.logged_in_client_ids.len());
+        for client_id in &session.logged_in_client_ids {
+            let client = self
+                .clients
+                .by_client_id(tenant_id, client_id)
+                .await
+                .map_err(|_| LogoutServiceError::ClientUnavailable)?;
+            if let Some(client) = client.filter(|client| client.active)
+                && !clients
+                    .iter()
+                    .any(|candidate: &RegisteredLogoutClient| candidate.id == client.id)
+            {
+                clients.push(client);
+            }
+        }
+        Ok(clients)
     }
 
     fn hint_matches_session(

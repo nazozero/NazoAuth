@@ -3,7 +3,8 @@ use std::time::Duration;
 use fred::interfaces::{ClientLike, KeysInterface};
 use fred::prelude::{Builder, Config};
 use nazo_identity::{
-    SessionId, SessionRotationOutcome, UserId, ports::SessionStorePort, session::SessionRecord,
+    SessionId, SessionRotationOutcome, SessionUpdateOutcome, UserId, ports::SessionStorePort,
+    session::SessionRecord,
 };
 use nazo_valkey::{SessionStore, ValkeyConnection};
 
@@ -49,6 +50,43 @@ async fn session_store_preserves_exact_key_payload_and_ttl() {
     );
     assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
     assert_eq!(store.load(&sid).await.unwrap().unwrap().value(), &value);
+}
+
+#[tokio::test]
+async fn session_compare_and_set_preserves_ttl_and_logged_in_rps() {
+    let Some((store, inspector)) = setup().await else {
+        return;
+    };
+    let sid = format!("bind-{}", uuid::Uuid::now_v7());
+    let session_id = SessionId::new(sid.clone());
+    let key = format!("oauth:session:{sid}");
+    store.store(&sid, &payload(), 30).await.unwrap();
+    let before_ttl = inspector.ttl::<i64, _>(&key).await.unwrap();
+    let snapshot = SessionStorePort::load(&store, &session_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let mut replacement = snapshot.record().clone();
+    replacement.add_logged_in_client("rp-a");
+    replacement.add_logged_in_client("rp-a");
+    replacement.add_logged_in_client("rp-b");
+
+    assert_eq!(
+        SessionStorePort::compare_and_set(&store, &session_id, &snapshot, &replacement)
+            .await
+            .unwrap(),
+        SessionUpdateOutcome::Applied
+    );
+    let after = SessionStorePort::load(&store, &session_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        after.record().logged_in_client_ids(),
+        &["rp-a".to_owned(), "rp-b".to_owned()]
+    );
+    let after_ttl = inspector.ttl::<i64, _>(&key).await.unwrap();
+    assert!(after_ttl > 0 && after_ttl <= before_ttl);
 }
 
 #[tokio::test]
