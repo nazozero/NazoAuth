@@ -547,6 +547,14 @@ def parse_args() -> argparse.Namespace:
             "0 preserves the upstream runner's default parallel scheduling"
         ),
     )
+    parser.add_argument(
+        "--require-no-expected-problems",
+        action="store_true",
+        help=(
+            "require the expected-problems file to be empty; intended for "
+            "strict diagnostic runs against a patched conformance suite"
+        ),
+    )
     parser.add_argument("runner_args", nargs=argparse.REMAINDER)
     return parser.parse_args()
 
@@ -597,7 +605,10 @@ def filter_records_for_configs(source: Path | None, selected_configs: set[str], 
 
 
 def validate_materialized_matrix(
-    driver_config: dict[str, object], runner_args: list[str]
+    driver_config: dict[str, object],
+    runner_args: list[str],
+    *,
+    require_no_expected_problems: bool = False,
 ) -> None:
     required_options = {
         "--config-json-file": "plan configurations",
@@ -669,7 +680,12 @@ def validate_materialized_matrix(
             )
 
     warnings = json.loads(paths["--expected-failures-file"].read_text(encoding="utf-8"))
-    if warnings != materializer.expected_problems_for_cases(cases):
+    if require_no_expected_problems and warnings != []:
+        fail("OpenID4VC strict diagnostic runs require an empty expected-problems file")
+    if (
+        not require_no_expected_problems
+        and warnings != materializer.expected_problems_for_cases(cases)
+    ):
         fail("OpenID4VC expected problems do not match the current matrix registry")
     skips = json.loads(paths["--expected-skips-file"].read_text(encoding="utf-8"))
     if skips != materializer.expected_skips_for_cases(cases):
@@ -782,7 +798,11 @@ def main() -> int:
     config = json.loads(Path(args.driver_config_json_file).read_text(encoding="utf-8"))
     if "--no-api-token" in runner_args or "--disable-ssl-verify" in runner_args:
         fail("public black-box OpenID4VC runs require API authentication and TLS verification")
-    validate_materialized_matrix(config, runner_args)
+    validate_materialized_matrix(
+        config,
+        runner_args,
+        require_no_expected_problems=args.require_no_expected_problems,
+    )
     admin, installed_datasets = install_credential_datasets(config)
     stop = threading.Event()
     driver = Openid4vcDriver(config, stop)

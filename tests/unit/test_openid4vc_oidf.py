@@ -575,6 +575,37 @@ class Openid4vcOidfTests(unittest.TestCase):
                 arguments,
             )
 
+            warnings.write_text("[]", encoding="utf-8")
+            runner.validate_materialized_matrix(
+                {
+                    "aliases": list(reversed(aliases)),
+                    "issuer": {"tx_code": "123456"},
+                },
+                arguments,
+                require_no_expected_problems=True,
+            )
+            with self.assertRaisesRegex(SystemExit, "expected problems"):
+                runner.validate_materialized_matrix(
+                    {
+                        "aliases": list(reversed(aliases)),
+                        "issuer": {"tx_code": "123456"},
+                    },
+                    arguments,
+                )
+            warnings.write_text(
+                json.dumps(materializer.expected_problems_for_cases(cases)),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(SystemExit, "strict diagnostic"):
+                runner.validate_materialized_matrix(
+                    {
+                        "aliases": list(reversed(aliases)),
+                        "issuer": {"tx_code": "123456"},
+                    },
+                    arguments,
+                    require_no_expected_problems=True,
+                )
+
             with self.assertRaisesRegex(SystemExit, "driver aliases"):
                 runner.validate_materialized_matrix(
                     {
