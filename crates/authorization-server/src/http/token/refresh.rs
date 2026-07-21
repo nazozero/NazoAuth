@@ -96,7 +96,6 @@ fn refresh_token_policy_for_profile_value(
 fn refresh_token_scopes(
     original_scopes: &[String],
     requested_scope: Option<&str>,
-    openid4vci_credential_authorization: bool,
 ) -> Result<Vec<String>, ()> {
     let Some(requested) = requested_scope.map(parse_scope) else {
         return Ok(original_scopes.to_vec());
@@ -104,14 +103,28 @@ fn refresh_token_scopes(
     if requested.is_empty() {
         return Ok(original_scopes.to_vec());
     }
-    if is_subset(&requested, original_scopes)
-        && (requested.iter().any(|scope| scope == "offline_access")
-            || openid4vci_credential_authorization)
-    {
+    if is_subset(&requested, original_scopes) {
         Ok(requested)
     } else {
         Err(())
     }
+}
+
+fn client_attestation_refresh_binding_matches(
+    token_endpoint_auth_method: &str,
+    expected: Option<&str>,
+    presented: Option<&str>,
+) -> bool {
+    // Attestation-Based Client Authentication draft-07 section 10.3 binds a
+    // refresh token to the Client Instance and the public key in cnf.jwk.
+    if token_endpoint_auth_method != "attest_jwt_client_auth" {
+        return expected.is_none() && presented.is_none();
+    }
+    matches!(
+        (expected, presented),
+        (Some(expected), Some(presented))
+            if constant_time_eq(expected.as_bytes(), presented.as_bytes())
+    )
 }
 
 #[cfg(test)]
@@ -172,6 +185,7 @@ pub(crate) async fn token_refresh_with_service(
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
+    client_attestation_jkt: Option<&str>,
 ) -> HttpResponse {
     let request_started_at = Utc::now();
     let Some(refresh_token) = &form.refresh_token else {
@@ -210,6 +224,18 @@ pub(crate) async fn token_refresh_with_service(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "refresh_token 无效或已撤销.",
+            false,
+        );
+    }
+    if !client_attestation_refresh_binding_matches(
+        &client.token_endpoint_auth_method,
+        token.client_attestation_jkt.as_deref(),
+        client_attestation_jkt,
+    ) {
+        return oauth_token_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_client_attestation",
+            "Refresh token is not bound to this client instance key.",
             false,
         );
     }
@@ -387,11 +413,7 @@ pub(crate) async fn token_refresh_with_service(
             false,
         );
     }
-    let scopes = match refresh_token_scopes(
-        &original_scopes,
-        form.scope.as_deref(),
-        openid4vci_credential_authorization,
-    ) {
+    let scopes = match refresh_token_scopes(&original_scopes, form.scope.as_deref()) {
         Ok(scopes) => scopes,
         Err(()) => {
             return oauth_token_error(
@@ -463,6 +485,8 @@ pub(crate) async fn token_refresh_with_service(
             refresh_token_dpop_jkt: token.dpop_jkt,
             mtls_x5t_s256: mtls_x5t_s256.clone(),
             refresh_token_mtls_x5t_s256: mtls_x5t_s256,
+            refresh_token_client_attestation_jkt: token.client_attestation_jkt,
+            refresh_token_scopes: Some(original_scopes),
             authorization_code_hash: None,
             actor: None,
             issued_token_type: None,
@@ -499,6 +523,7 @@ pub(crate) async fn token_refresh(
         client,
         form,
         client_assertion,
+        None,
     )
     .await
 }

@@ -983,8 +983,24 @@ pub(crate) struct Openid4vcClientAttestationValidator {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ValidatedClientAttestation {
     pub(crate) client_id: String,
+    pub(crate) client_instance_key_thumbprint: String,
     pub(crate) replay_id: String,
     pub(crate) replay_ttl_seconds: u64,
+}
+
+const CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS: i64 = 60;
+const CLIENT_ATTESTATION_POP_MAX_AGE_SECONDS: i64 = 300;
+const CLIENT_ATTESTATION_POP_MAX_JTI_BYTES: usize = 128;
+
+fn client_instance_key_thumbprint(instance_key: &Value) -> anyhow::Result<String> {
+    if instance_key.get("d").is_some()
+        || instance_key.get("kty").and_then(Value::as_str) != Some("EC")
+        || instance_key.get("crv").and_then(Value::as_str) != Some("P-256")
+    {
+        anyhow::bail!("client instance key must be a public P-256 key");
+    }
+    nazo_auth::jwk_thumbprint(instance_key)
+        .map_err(|_| anyhow::anyhow!("invalid client instance key"))
 }
 
 impl Openid4vcClientAttestationValidator {
@@ -1037,9 +1053,12 @@ impl Openid4vcClientAttestationValidator {
         )?;
         let mut attestation_validation = Validation::new(Algorithm::ES256);
         attestation_validation.set_issuer(&[self.attester_issuer.as_ref()]);
-        attestation_validation.set_required_spec_claims(&["iss", "sub", "iat", "nbf", "exp"]);
+        // OpenID4VCI 1.0 fixes Attestation-Based Client Authentication at
+        // draft-07: iat and nbf are optional in the Client Attestation JWT.
+        attestation_validation.set_required_spec_claims(&["iss", "sub", "exp"]);
         attestation_validation.validate_aud = false;
-        attestation_validation.leeway = 60;
+        attestation_validation.validate_nbf = true;
+        attestation_validation.leeway = CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS as u64;
         let claims = decode::<Value>(
             attestation,
             &decoding_key(trust_key, Algorithm::ES256)
@@ -1055,6 +1074,13 @@ impl Openid4vcClientAttestationValidator {
         let instance_key = claims
             .pointer("/cnf/jwk")
             .ok_or_else(|| anyhow::anyhow!("client attestation cnf.jwk is missing"))?;
+        let client_instance_key_thumbprint = client_instance_key_thumbprint(instance_key)?;
+        if claims.get("iat").is_some_and(|iat| {
+            iat.as_i64()
+                .is_none_or(|iat| iat > now.saturating_add(CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS))
+        }) {
+            anyhow::bail!("client attestation iat is invalid");
+        }
 
         let parsed_proof = decode_compact_jwt(proof)?;
         if parsed_proof.header.typ.as_deref() != Some("oauth-client-attestation-pop+jwt")
@@ -1064,8 +1090,10 @@ impl Openid4vcClientAttestationValidator {
         }
         let mut proof_validation = Validation::new(Algorithm::ES256);
         proof_validation.set_audience(&[audience]);
-        proof_validation.set_required_spec_claims(&["iss", "aud", "iat", "nbf", "exp", "jti"]);
-        proof_validation.leeway = 60;
+        // draft-07 requires iat but does not define exp for the PoP JWT.
+        proof_validation.set_required_spec_claims(&["iss", "aud", "iat", "jti"]);
+        proof_validation.validate_nbf = true;
+        proof_validation.leeway = CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS as u64;
         let proof_claims = decode::<Value>(
             proof,
             &decoding_key(instance_key, Algorithm::ES256)
@@ -1079,19 +1107,27 @@ impl Openid4vcClientAttestationValidator {
         let replay_id = proof_claims
             .get("jti")
             .and_then(Value::as_str)
-            .filter(|value| !value.is_empty())
+            .filter(|value| {
+                !value.is_empty() && value.len() <= CLIENT_ATTESTATION_POP_MAX_JTI_BYTES
+            })
             .ok_or_else(|| anyhow::anyhow!("client attestation proof jti is missing"))?;
-        let exp = proof_claims
-            .get("exp")
+        let iat = proof_claims
+            .get("iat")
             .and_then(Value::as_i64)
-            .ok_or_else(|| anyhow::anyhow!("client attestation proof exp is missing"))?;
-        if exp <= now || exp - now > 300 {
-            anyhow::bail!("client attestation proof lifetime is invalid");
+            .ok_or_else(|| anyhow::anyhow!("client attestation proof iat is missing"))?;
+        let age = now.saturating_sub(iat);
+        if iat > now.saturating_add(CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS)
+            || age > CLIENT_ATTESTATION_POP_MAX_AGE_SECONDS
+        {
+            anyhow::bail!("client attestation proof iat is outside the replay window");
         }
         Ok(ValidatedClientAttestation {
             client_id: client_id.to_owned(),
+            client_instance_key_thumbprint,
             replay_id: replay_id.to_owned(),
-            replay_ttl_seconds: (exp - now).max(1) as u64,
+            replay_ttl_seconds: CLIENT_ATTESTATION_POP_MAX_AGE_SECONDS
+                .saturating_sub(age.max(0))
+                .max(1) as u64,
         })
     }
 }

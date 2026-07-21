@@ -1,5 +1,81 @@
 use super::*;
+use jsonwebtoken::{EncodingKey, Header, encode};
 use p256::ecdsa::{Signature, SigningKey, signature::Signer as _};
+use p256::pkcs8::EncodePrivateKey;
+
+fn es256_test_key(seed: u8) -> (Value, EncodingKey) {
+    let signing_key = SigningKey::from_slice(&[seed; 32]).expect("valid P-256 test key");
+    let point = signing_key.verifying_key().to_sec1_point(false);
+    let jwk = json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "x": URL_SAFE_NO_PAD.encode(point.x().expect("P-256 x coordinate")),
+        "y": URL_SAFE_NO_PAD.encode(point.y().expect("P-256 y coordinate")),
+    });
+    let document = signing_key.to_pkcs8_der().expect("P-256 PKCS#8 key");
+    (jwk, EncodingKey::from_ec_der(document.as_bytes()))
+}
+
+#[test]
+fn client_attestation_draft_07_accepts_optional_time_claims_and_binds_instance_key() {
+    let now = Utc::now().timestamp();
+    let (mut attester_jwk, attester_key) = es256_test_key(5);
+    let (instance_jwk, instance_key) = es256_test_key(7);
+    let mut attestation_header = Header::new(Algorithm::ES256);
+    attestation_header.typ = Some("oauth-client-attestation+jwt".to_owned());
+    attestation_header.kid = Some("attester-key".to_owned());
+    let attestation = encode(
+        &attestation_header,
+        &json!({
+            "iss": "https://attester.example",
+            "sub": "wallet-client",
+            "exp": now + 600,
+            "cnf": {"jwk": instance_jwk.clone()},
+        }),
+        &attester_key,
+    )
+    .expect("client attestation JWT");
+    let mut proof_header = Header::new(Algorithm::ES256);
+    proof_header.typ = Some("oauth-client-attestation-pop+jwt".to_owned());
+    let proof = encode(
+        &proof_header,
+        &json!({
+            "iss": "wallet-client",
+            "aud": "https://issuer.example",
+            "iat": now,
+            "jti": "fresh-proof",
+        }),
+        &instance_key,
+    )
+    .expect("client attestation PoP JWT");
+    attester_jwk["kid"] = json!("attester-key");
+    attester_jwk["alg"] = json!("ES256");
+    let validator = Openid4vcClientAttestationValidator::new(
+        "https://attester.example",
+        json!({"keys": [attester_jwk]}),
+    )
+    .expect("client attestation validator");
+
+    let validated = validator
+        .validate(&attestation, &proof, "https://issuer.example", now)
+        .expect("draft-07 optional claims must remain optional");
+
+    assert_eq!(validated.client_id, "wallet-client");
+    assert_eq!(
+        validated.client_instance_key_thumbprint,
+        client_instance_key_thumbprint(&instance_jwk).expect("instance JWK thumbprint")
+    );
+    assert_eq!(validated.replay_id, "fresh-proof");
+    assert_eq!(validated.replay_ttl_seconds, 300);
+}
+
+#[test]
+fn client_attestation_rejects_private_instance_key_material() {
+    let (mut instance_jwk, _) = es256_test_key(11);
+    instance_jwk["d"] = json!("private-material");
+
+    assert!(client_instance_key_thumbprint(&instance_jwk).is_err());
+}
 
 #[test]
 fn verified_mdoc_holder_binding_preserves_the_device_cose_key() {

@@ -191,6 +191,7 @@ struct AuthorizationCodeIssueInput {
     code_hash: String,
     refresh_token_dpop_jkt: Option<String>,
     refresh_token_mtls_x5t_s256: Option<String>,
+    refresh_token_client_attestation_jkt: Option<String>,
 }
 
 fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> TokenIssue {
@@ -218,6 +219,8 @@ fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -> To
         refresh_token_dpop_jkt: input.refresh_token_dpop_jkt,
         mtls_x5t_s256: input.mtls_x5t_s256,
         refresh_token_mtls_x5t_s256: input.refresh_token_mtls_x5t_s256,
+        refresh_token_client_attestation_jkt: input.refresh_token_client_attestation_jkt,
+        refresh_token_scopes: None,
         authorization_code_hash: Some(input.code_hash),
         actor: None,
         issued_token_type: None,
@@ -356,6 +359,7 @@ pub(crate) async fn token_authorization_code_with_service(
     client: &ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
+    client_attestation_jkt: Option<&str>,
 ) -> HttpResponse {
     let Some(code) = &form.code else {
         return oauth_token_error(
@@ -652,6 +656,7 @@ pub(crate) async fn token_authorization_code_with_service(
             code_hash,
             refresh_token_dpop_jkt,
             refresh_token_mtls_x5t_s256,
+            refresh_token_client_attestation_jkt: client_attestation_jkt.map(ToOwned::to_owned),
         }),
     )
     .await
@@ -706,6 +711,7 @@ pub(crate) async fn token_authorization_code(
         client,
         form,
         client_assertion,
+        None,
     )
     .await
 }

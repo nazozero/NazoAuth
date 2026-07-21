@@ -81,6 +81,7 @@ diesel::table! {
         subject -> Varchar,
         dpop_jkt -> Nullable<Varchar>,
         mtls_x5t_s256 -> Nullable<Varchar>,
+        client_attestation_jkt -> Nullable<Varchar>,
     }
 }
 

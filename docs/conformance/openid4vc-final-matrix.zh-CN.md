@@ -64,19 +64,17 @@ OIDF Conformance Suite 固定到 v5.2.0 commit
 
 官方套件执行按 4 个 plan 一批有界运行。这是 runner 调度边界，不是协议豁免：
 17 个生成的 plan expression 仍全部针对操作者提供的同一个公网 issuer 执行；
-每批只接收与本批配置文件匹配的 expected skip/warning 记录。这样可以避免
+每批只接收与本批配置文件匹配的有界 expected-result 记录。这样可以避免
 Issuer/Verifier 驱动型 `WAITING` 模块一次性压垮官方控制面 API，同时保留黑盒协议覆盖。
 
 上游 v5.2.0 套件没有覆盖 `mso_mdoc` + `redirect_uri` client identifier prefix +
 签名 request URI + `direct_post.jwt` 的模块；`mso_mdoc` 加密响应覆盖因此通过上游
 支持的 x509 前缀签名请求变体执行。
 
-HAIP issuer plan 可能在 `Check for refresh token` 块中产生上游
-`FAPIEnsureServerConfigurationDoesNotSupportRefreshToken` advisory。套件文本明确说明：
-如果授权服务器整体声明支持 refresh token，但按策略只向部分客户端签发 refresh token，
-该情况可以接受。因此矩阵只允许 4 条精确 warning：4 个 HAIP issuer 执行组合、
-该模块、该 block、该 condition。由于官方 runner 在该可接受 warning 后会把模块
-终态标记为 `SKIPPED`，同样的 4 个上下文也登记为 expected skip。
+HAIP issuer 配置会针对已授权的 Credential Type 签发 refresh token，且不会虚构
+OIDC 专用的 `offline_access` scope。使用 Wallet Attestation 时，refresh token 必须绑定
+attestation `cnf.jwk` 中的 Client Instance 公钥；刷新请求必须使用同一密钥完成客户端
+认证。矩阵不接受任何 HAIP refresh-token warning 或 skip。
 
 标准 VCI 的两个预授权码组合还登记了一项精确 expected failure：
 `oid4vci-1_0-issuer-happy-flow-multiple-clients`。该上游模块只接收一份 Credential

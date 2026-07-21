@@ -1,5 +1,19 @@
 use super::*;
 
+#[test]
+fn rotated_refresh_token_preserves_the_original_scope_authorization() {
+    let access_token_scopes = vec!["openid".to_owned()];
+    let original_refresh_token_scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
+
+    assert_eq!(
+        refresh_token_persistence_scopes(
+            &access_token_scopes,
+            Some(&original_refresh_token_scopes),
+        ),
+        original_refresh_token_scopes
+    );
+}
+
 fn client_with_grants(grant_types: &[&str]) -> ClientRow {
     crate::client_row! {
         id: Uuid::now_v7(),

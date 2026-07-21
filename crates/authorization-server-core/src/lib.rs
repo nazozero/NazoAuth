@@ -132,7 +132,7 @@ pub use device::{
 pub use dpop::{
     DPOP_CLOCK_SKEW_SECONDS, DPOP_REPLAY_TTL_SECONDS, DpopError, DpopNoncePolicy, DpopProofRequest,
     DpopProofVerifier, DpopReplayAudit, DpopStateFuture, DpopStateStoreError, DpopStateStorePort,
-    VerifiedDpopProof, issue_authorization_server_dpop_nonce, new_dpop_nonce,
+    VerifiedDpopProof, issue_authorization_server_dpop_nonce, jwk_thumbprint, new_dpop_nonce,
     validate_authorization_server_dpop, validate_authorization_server_dpop_at,
 };
 pub use dynamic_client_registration::{

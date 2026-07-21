@@ -1705,6 +1705,8 @@ fn ciba_token_issue(
         refresh_token_dpop_jkt: dpop_jkt,
         mtls_x5t_s256: mtls_x5t_s256.clone(),
         refresh_token_mtls_x5t_s256: mtls_x5t_s256,
+        refresh_token_client_attestation_jkt: None,
+        refresh_token_scopes: None,
         authorization_code_hash: None,
         actor: None,
         issued_token_type: None,

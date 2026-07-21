@@ -84,7 +84,7 @@ so results are black-box evidence.
 Official-suite execution uses bounded 4-plan groups. This is a runner
 scheduling boundary, not a protocol exemption: every one of the 17 generated
 plan expressions is still executed against the same operator-supplied public
-issuer, and each group receives only the expected skip/warning records that
+issuer, and each group receives only bounded expected-result records that
 match that group's configuration files. The grouping prevents issuer/verifier
 driver-triggered `WAITING` modules from overloading the official control-plane
 API while preserving black-box protocol coverage.
@@ -94,15 +94,11 @@ The upstream v5.2.0 suite has no modules for the unsupported combination
 `direct_post.jwt`; `mso_mdoc` encrypted-response coverage is therefore exercised
 through the supported x509-prefixed signed-request variants instead.
 
-The HAIP issuer plan can emit the upstream
-`FAPIEnsureServerConfigurationDoesNotSupportRefreshToken` advisory in the
-`Check for refresh token` block. The suite text marks this as acceptable when an
-authorization server advertises refresh-token support generally but has a
-policy of issuing refresh tokens only to some clients. The matrix therefore
-allows exactly four warning records: the four HAIP issuer executions, this
-module, this block, and this condition. The same four contexts are also
-registered as expected skips because the official runner marks the advisory
-module `SKIPPED` after the acceptable warning.
+The HAIP issuer configurations issue refresh tokens for authorized Credential
+Types without adding the OIDC-only `offline_access` scope. When Wallet
+Attestation is used, each refresh token is bound to the Client Instance public
+key from the attestation `cnf.jwk`; refresh requests must authenticate with the
+same key. No HAIP refresh-token warning or skip is accepted by the matrix.
 
 The two standard VCI pre-authorized-code configurations also register one exact
 expected failure for

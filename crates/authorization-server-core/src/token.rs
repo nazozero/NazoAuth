@@ -18,6 +18,7 @@ pub struct RefreshToken {
     pub subject: String,
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
+    pub client_attestation_jkt: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,6 +44,7 @@ pub struct NewRefreshToken {
     pub subject: String,
     pub dpop_jkt: Option<String>,
     pub mtls_x5t_s256: Option<String>,
+    pub client_attestation_jkt: Option<String>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

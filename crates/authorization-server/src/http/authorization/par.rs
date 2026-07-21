@@ -21,6 +21,7 @@ use crate::domain::tenancy::DEFAULT_TENANT_ID;
 #[cfg(test)]
 use crate::http::authorization::AuthorizationHttpConfig;
 use crate::http::authorization::{AuthorizationEndpoint, AuthorizationRequestContext};
+use crate::http::client_attestation::client_attestation_headers;
 use crate::http::dpop::DpopError;
 use crate::http::dpop::DpopErrorContext;
 use crate::http::dpop::dpop_error_response;
@@ -77,28 +78,6 @@ const PAR_AUTHORIZATION_PARAMETERS: &[&str] = &[
     "response_mode",
     "request",
 ];
-
-fn client_attestation_headers(request: &HttpRequest) -> Result<Option<(&str, &str)>, HttpResponse> {
-    let attestation = request
-        .headers()
-        .get("OAuth-Client-Attestation")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| !value.is_empty());
-    let proof = request
-        .headers()
-        .get("OAuth-Client-Attestation-PoP")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| !value.is_empty());
-    match (attestation, proof) {
-        (None, None) => Ok(None),
-        (Some(attestation), Some(proof)) => Ok(Some((attestation, proof))),
-        _ => Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "Both client attestation headers are required.",
-        )),
-    }
-}
 
 async fn enforce_par_rate_limit(
     context: &AuthorizationRequestContext<'_>,
@@ -223,9 +202,15 @@ async fn par_after_rate_limit_inner(
     let has_basic = has_basic_authorization_scheme(req.headers());
     let has_assertion =
         params.contains_key("client_assertion_type") || params.contains_key("client_assertion");
-    let attestation_headers = match client_attestation_headers(&req) {
+    let attestation_headers = match client_attestation_headers(req.headers()) {
         Ok(headers) => headers,
-        Err(response) => return response,
+        Err(()) => {
+            return oauth_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "Exactly one of each client attestation header is required.",
+            );
+        }
     };
     if has_basic && (params.contains_key("client_secret") || has_assertion)
         || has_assertion && params.contains_key("client_secret")

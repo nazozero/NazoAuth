@@ -490,7 +490,7 @@ fn verify_signature(
     }
 }
 
-fn jwk_thumbprint(key: &Value) -> Result<String, DpopError> {
+pub fn jwk_thumbprint(key: &Value) -> Result<String, DpopError> {
     let mut members = BTreeMap::new();
     match key.get("kty").and_then(Value::as_str) {
         Some("OKP") => {
