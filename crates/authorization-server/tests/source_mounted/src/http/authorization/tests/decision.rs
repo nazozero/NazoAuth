@@ -571,6 +571,44 @@ async fn authorization_decision_rejects_request_if_user_not_match() {
 }
 
 #[actix_web::test]
+async fn authorization_decision_rejects_consent_from_another_browser_session() {
+    let Some(fixture) = DecisionLiveFixture::new().await else {
+        return;
+    };
+    let user = fixture
+        .create_user("browser-session-mismatch", "user", 0)
+        .await;
+    let session_id = "sid-browser-session-mismatch";
+    fixture
+        .store_session(&user, session_id, Utc::now().timestamp())
+        .await;
+    let payload = ConsentPayload {
+        oidc_sid: Some("another-browser-session".to_owned()),
+        ..consent_payload_for_user("client-1", user.id)
+    };
+    fixture.store_consent_payload(&payload).await;
+    let req = fixture.auth_request(session_id, Some("csrf-session-token"));
+    let form = AuthorizationDecisionForm {
+        request_id: payload.request_id.clone(),
+        decision: "approve".to_owned(),
+        csrf_token: None,
+    };
+
+    let (status, body) =
+        json_error(authorize_decision(fixture.state.clone(), req, Form(form)).await).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    let session_id = nazo_identity::SessionId::new(session_id);
+    let session_store = nazo_valkey::SessionStore::new(&fixture.state.valkey_connection());
+    let stored_session = SessionStorePort::load(&session_store, &session_id)
+        .await
+        .expect("session lookup should succeed")
+        .expect("session should remain active");
+    assert!(stored_session.record().logged_in_client_ids().is_empty());
+}
+
+#[actix_web::test]
 async fn authorization_decision_fails_closed_when_consent_state_read_fails() {
     let Some(fixture) = DecisionLiveFixture::new().await else {
         return;
