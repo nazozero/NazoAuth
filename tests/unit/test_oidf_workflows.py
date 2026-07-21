@@ -316,7 +316,7 @@ class OidfWorkflowTests(unittest.TestCase):
         self.assertEqual(len(expected_warnings), 26)
         self.assertEqual(
             {item["condition"] for item in expected_warnings},
-            {"EnsureIncomingTls13", "UnregisterDynamicallyRegisteredClient"},
+            {"EnsureIncomingTls13"},
         )
         self.assertEqual(
             {item["expected-result"] for item in expected_warnings},
