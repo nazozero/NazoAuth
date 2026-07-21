@@ -12,7 +12,7 @@ Implemented management behavior:
 - `registration_client_uri` points to `/register/{client_id}`.
 - `registration_access_token` is returned only in management responses and is
   stored server-side only as a BLAKE3 hash.
-- GET reads current client metadata and rotates the registration access token.
+- GET reads current client metadata and preserves the authenticated registration access token.
 - PUT performs full replacement, requires matching `client_id`, rejects
   client-controlled server-managed fields, and rotates credentials.
 - DELETE deactivates the client, clears the registration token hash, revokes

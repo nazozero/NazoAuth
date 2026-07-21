@@ -11,6 +11,7 @@ import ssl
 import subprocess
 import sys
 import tempfile
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -18,6 +19,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from oidf_evidence import sanitize_evidence_tree  # noqa: E402
+from run_oidf_conformance import (  # noqa: E402
+    allowed_review_contexts_by_alias,
+    expected_problem_contexts_by_alias,
+    expected_skip_contexts_by_alias,
+    inspect_oidf_state,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -418,7 +425,69 @@ def run_plan_groups(args: argparse.Namespace, work_dir: Path, env: dict[str, str
         command(invocation, env=env)
 
 
+def aliases_from_config_bundle(work_dir: Path) -> dict[str, str]:
+    path = work_dir / "oidf-plan-configs.json"
+    document = json.loads(path.read_text(encoding="utf-8"))
+    configs = document.get("configs") if isinstance(document, dict) else None
+    if not isinstance(configs, dict):
+        raise PublicRunError(f"{path} must contain a configs object")
+    aliases: dict[str, str] = {}
+    for name, config in configs.items():
+        alias = config.get("alias") if isinstance(config, dict) else None
+        if not isinstance(name, str) or not isinstance(alias, str) or not alias.strip():
+            raise PublicRunError(f"{path} contains a config without an alias")
+        aliases[name] = alias
+    return aliases
+
+
+def inspect_complete_matrix(
+    args: argparse.Namespace,
+    work_dir: Path,
+    token: str,
+) -> None:
+    aliases_by_config = aliases_from_config_bundle(work_dir)
+    expected_warnings = work_dir / "oidf-expected-warnings-final.json"
+    filter_problem_records(
+        ROOT / "tests" / "contracts" / "oidf-official-expected-warnings.json",
+        work_dir / "oidf-plan-set.json",
+        expected_warnings,
+        excluded_conditions=OFFICIAL_INGRESS_ONLY_WARNING_CONDITIONS,
+    )
+    inspection = {
+        "allowed_reviews_by_alias": allowed_review_contexts_by_alias(aliases_by_config),
+        "allowed_expected_problems_by_alias": expected_problem_contexts_by_alias(
+            expected_warnings, aliases_by_config
+        ),
+        "allowed_expected_skips_by_alias": expected_skip_contexts_by_alias(
+            work_dir / "oidf-expected-skips.json", aliases_by_config
+        ),
+    }
+
+    def inspect(stage: str) -> None:
+        failure = inspect_oidf_state(
+            args.conformance_server,
+            token,
+            set(aliases_by_config.values()),
+            final=True,
+            **inspection,
+        )
+        if failure:
+            raise PublicRunError(f"OIDF complete-matrix {stage} check failed: {failure}")
+
+    inspect("immediate")
+    if args.final_stabilization_seconds > 0:
+        print(
+            "OIDF complete-matrix stabilization window: "
+            f"{args.final_stabilization_seconds} seconds",
+            flush=True,
+        )
+        time.sleep(args.final_stabilization_seconds)
+    inspect("stabilized")
+
+
 def run(args: argparse.Namespace) -> None:
+    if args.final_stabilization_seconds < 0:
+        raise PublicRunError("--final-stabilization-seconds must be zero or greater")
     args.target_issuer = origin(args.target_issuer, "--target-issuer")
     args.conformance_server = origin(args.conformance_server, "--conformance-server")
     args.work_dir = args.work_dir.resolve()
@@ -451,6 +520,7 @@ def run(args: argparse.Namespace) -> None:
         proxy.install(args.work_dir / "approved-mtls-trust-anchors.pem")
         verify_suite_boundary(args.conformance_server, env[args.token_env])
         run_plan_groups(args, args.work_dir, env)
+        inspect_complete_matrix(args, args.work_dir, env[args.token_env])
     except BaseException as error:
         failure = error
     finally:
@@ -496,6 +566,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--token-env", default="OIDF_CONFORMANCE_TOKEN")
     parser.add_argument("--timeout-seconds", type=int, default=14400)
     parser.add_argument("--monitor-interval-seconds", type=int, default=30)
+    parser.add_argument(
+        "--final-stabilization-seconds",
+        type=int,
+        default=45,
+        help="quiet window before the second complete-matrix state inspection",
+    )
     return parser.parse_args(argv)
 
 

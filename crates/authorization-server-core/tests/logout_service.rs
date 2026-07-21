@@ -17,8 +17,6 @@ use uuid::Uuid;
 struct Clients {
     expected_tenant: Mutex<Option<Uuid>>,
     clients: Mutex<Vec<RegisteredLogoutClient>>,
-    granted_client_ids: Mutex<HashSet<String>>,
-    active_reads: Mutex<usize>,
 }
 
 impl LogoutClientRepositoryPort for Clients {
@@ -36,30 +34,6 @@ impl LogoutClientRepositoryPort for Clients {
                 .iter()
                 .find(|client| client.tenant_id == tenant_id && client.client_id == client_id)
                 .cloned())
-        })
-    }
-
-    fn active_for_user(
-        &self,
-        tenant_id: Uuid,
-        _user_id: Uuid,
-    ) -> LogoutFuture<'_, Vec<RegisteredLogoutClient>> {
-        Box::pin(async move {
-            assert_eq!(*self.expected_tenant.lock().unwrap(), Some(tenant_id));
-            *self.active_reads.lock().unwrap() += 1;
-            let granted_client_ids = self.granted_client_ids.lock().unwrap();
-            Ok(self
-                .clients
-                .lock()
-                .unwrap()
-                .iter()
-                .filter(|client| {
-                    client.tenant_id == tenant_id
-                        && client.active
-                        && granted_client_ids.contains(&client.client_id)
-                })
-                .cloned()
-                .collect())
         })
     }
 }
@@ -118,11 +92,6 @@ fn no_hint_frontchannel_fans_out_once_and_retry_deduplicates_backchannel() {
         client(Uuid::now_v7(), "foreign-client", true),
         client(tenant_id, "inactive-client", false),
     ]);
-    clients
-        .granted_client_ids
-        .lock()
-        .unwrap()
-        .extend(["client-a".to_owned(), "client-b".to_owned()]);
     let outbox = Arc::new(Outbox::default());
     let service = service(clients.clone(), outbox.clone());
 
@@ -135,7 +104,6 @@ fn no_hint_frontchannel_fans_out_once_and_retry_deduplicates_backchannel() {
         second.frontchannel_logout_urls,
         first.frontchannel_logout_urls
     );
-    assert_eq!(*clients.active_reads.lock().unwrap(), 2);
     let deliveries = outbox.deliveries.lock().unwrap();
     assert_eq!(deliveries.len(), 2);
     assert!(
@@ -155,11 +123,6 @@ fn hinted_frontchannel_preserves_only_hinted_client_compatibility() {
         client(tenant_id, "client-a", true),
         client(tenant_id, "client-b", true),
     ]);
-    clients
-        .granted_client_ids
-        .lock()
-        .unwrap()
-        .extend(["client-a".to_owned(), "client-b".to_owned()]);
     let outbox = Arc::new(Outbox::default());
     let service = service(clients, outbox);
     let result =
@@ -237,10 +200,15 @@ fn client_id_only_does_not_fan_out_to_an_ungranted_client() {
         .unwrap()
         .push(client(tenant_id, "client-a", true));
     let outbox = Arc::new(Outbox::default());
-    let result = futures_executor::block_on(
-        service(clients, outbox.clone()).execute(input(tenant_id, Some("client-a"))),
-    )
-    .unwrap();
+    let mut request = input(tenant_id, Some("client-a"));
+    request
+        .session
+        .as_mut()
+        .unwrap()
+        .logged_in_client_ids
+        .clear();
+    let result =
+        futures_executor::block_on(service(clients, outbox.clone()).execute(request)).unwrap();
     assert!(result.frontchannel_logout_urls.is_empty());
     assert!(outbox.deliveries.lock().unwrap().is_empty());
 }
@@ -273,7 +241,7 @@ fn valid_hint_makes_an_ungranted_client_a_bound_fanout_target() {
 }
 
 #[test]
-fn active_grant_allows_client_id_only_fanout() {
+fn current_session_membership_allows_client_id_only_fanout() {
     let tenant_id = Uuid::now_v7();
     let clients = Arc::new(Clients::default());
     *clients.expected_tenant.lock().unwrap() = Some(tenant_id);
@@ -282,11 +250,6 @@ fn active_grant_allows_client_id_only_fanout() {
         .lock()
         .unwrap()
         .push(client(tenant_id, "client-a", true));
-    clients
-        .granted_client_ids
-        .lock()
-        .unwrap()
-        .insert("client-a".to_owned());
     let outbox = Arc::new(Outbox::default());
     let result = futures_executor::block_on(
         service(clients, outbox.clone()).execute(input(tenant_id, Some("client-a"))),
@@ -320,6 +283,7 @@ fn input(tenant_id: Uuid, client_id: Option<&str>) -> LogoutInput {
         session: Some(LogoutSession {
             user_id: Uuid::now_v7(),
             oidc_sid: "sid-1".to_owned(),
+            logged_in_client_ids: vec!["client-a".to_owned(), "client-b".to_owned()],
         }),
         csrf_authorized: true,
         user_confirmed: true,

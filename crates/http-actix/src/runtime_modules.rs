@@ -542,6 +542,15 @@ mod tests {
         ) -> RepositoryFuture<'a, SessionRotationOutcome> {
             Box::pin(async { Ok(SessionRotationOutcome::Conflict) })
         }
+
+        fn compare_and_set<'a>(
+            &'a self,
+            _session_id: &'a SessionId,
+            _expected: &'a SessionSnapshot,
+            _replacement: &'a SessionRecord,
+        ) -> RepositoryFuture<'a, nazo_identity::SessionUpdateOutcome> {
+            Box::pin(async { Ok(nazo_identity::SessionUpdateOutcome::Conflict) })
+        }
     }
 
     #[derive(Clone)]

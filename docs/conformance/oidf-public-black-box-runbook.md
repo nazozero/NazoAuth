@@ -132,6 +132,12 @@ and restore the proxy configuration. Private inputs remain in unique work
 directories. Raw suite ZIPs are reduced to `evidence-manifest.json` and deleted,
 so credentials and log bodies are not retained as evidence.
 
+After the last group completes, the driver re-inspects every module from every
+alias in the complete run, waits 45 seconds for asynchronous callbacks and
+delivery workers to settle, and then re-inspects the complete matrix again. A
+late state change in an earlier group fails the whole run; per-group exports are
+never sufficient evidence of overall success by themselves.
+
 Approval remains a real, auditable authorization event. Automation removes file
 copying, path inference, command assembly, and recovery work; it does not
 collapse applicant and approver identities.

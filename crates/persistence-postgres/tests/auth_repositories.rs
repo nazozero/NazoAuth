@@ -162,6 +162,7 @@ fn refresh_token_fixture(
         subject: fixture.user_id.to_string(),
         dpop_jkt: None,
         mtls_x5t_s256: None,
+        client_attestation_jkt: None,
     }
 }
 
@@ -199,6 +200,38 @@ async fn fixture(database_url: &str) -> FixtureIds {
     .get_result::<FixtureIds>(&mut connection)
     .await
     .expect("auth repository fixture should insert")
+}
+
+#[tokio::test]
+async fn refresh_token_client_attestation_binding_round_trips() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let raw_token = format!("attested-refresh-{}", Uuid::now_v7());
+    let mut token =
+        refresh_token_fixture(&fixture, tenant_id, Uuid::now_v7(), raw_token.clone(), None);
+    token.client_attestation_jkt = Some("client-instance-jkt-thumbprint".to_owned());
+    let repository = TokenRepository::new(create_pool(&database_url, 2).unwrap());
+
+    assert_eq!(
+        repository
+            .persist_refresh_token(token)
+            .await
+            .expect("attested refresh token should persist"),
+        RefreshTokenPersistResult::Inserted
+    );
+    let loaded = repository
+        .by_raw_refresh_token(tenant_id, &raw_token)
+        .await
+        .expect("attested refresh token should load")
+        .expect("attested refresh token should exist");
+
+    assert_eq!(
+        loaded.client_attestation_jkt.as_deref(),
+        Some("client-instance-jkt-thumbprint")
+    );
 }
 
 #[tokio::test]
@@ -409,6 +442,7 @@ async fn refresh_rotation_reuse_compromises_the_whole_family() {
         subject: fixture.user_id.to_string(),
         dpop_jkt: None,
         mtls_x5t_s256: None,
+        client_attestation_jkt: None,
     };
     assert_eq!(
         repository

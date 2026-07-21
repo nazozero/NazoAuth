@@ -516,6 +516,8 @@ pub(crate) async fn token_exchange(
             refresh_token_dpop_jkt: None,
             mtls_x5t_s256,
             refresh_token_mtls_x5t_s256: None,
+            refresh_token_client_attestation_jkt: None,
+            refresh_token_scopes: None,
             authorization_code_hash: None,
             actor,
             issued_token_type: Some(admission.issued_token_type),

@@ -117,6 +117,12 @@ impl ServerAuthorizationDecisionOperations {
                 .await;
         }
 
+        let establishes_oidc_login = payload.scopes.iter().any(|scope| scope == "openid");
+        if establishes_oidc_login && payload.oidc_sid.as_deref() != Some(session.oidc_sid()) {
+            tracing::warn!("authorization consent is not bound to the current OP browser session");
+            return Err(AuthorizationDecisionError::ConsentInvalid);
+        }
+
         let now = Utc::now();
         let code = random_urlsafe_token();
         let code_id = Uuid::now_v7().to_string();
@@ -135,6 +141,20 @@ impl ServerAuthorizationDecisionOperations {
         {
             tracing::warn!(%error, "failed to persist user client grant");
             return Err(AuthorizationDecisionError::ApprovalUnavailable);
+        }
+
+        if establishes_oidc_login
+            && !self
+                .sessions
+                .bind_client(&command.session_id, &payload.client_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "failed to bind logged-in RP to OP browser session");
+                    AuthorizationDecisionError::SessionLookupUnavailable
+                })?
+        {
+            tracing::warn!("OP browser session disappeared while binding logged-in RP");
+            return Err(AuthorizationDecisionError::LoginRequired);
         }
 
         record_decision_audit("authorization_approved", &payload, &command.source_ip);

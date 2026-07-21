@@ -31,7 +31,14 @@ The retry continues from the active successor and rotates again. Any ambiguous o
 
 ## Sender Constraints
 
-DPoP-bound refresh tokens require a valid DPoP proof for refresh. mTLS-bound refresh tokens require a verified forwarded certificate thumbprint from a trusted proxy and constant-time match against the stored certificate thumbprint.
+DPoP-bound refresh tokens require a valid DPoP proof for refresh. mTLS-bound
+refresh tokens require a verified forwarded certificate thumbprint from a
+trusted proxy and constant-time match against the stored certificate
+thumbprint. A refresh token issued through `attest_jwt_client_auth` is bound to
+the RFC 7638 thumbprint of the Client Instance public key in the attestation
+`cnf.jwk`. Every refresh request must use Client Attestation with that same key;
+the binding is retained by every rotated successor and by lost-response
+recovery.
 
 ## Tests
 
@@ -41,7 +48,15 @@ Unit coverage:
 - rejection of `revoked_at` timestamps later than the current clock
 - DPoP-bound refresh proof requirements
 - mTLS-bound refresh proof requirements
-- refresh issuance requiring both `offline_access` and the client `refresh_token` grant
+- OIDC refresh issuance requiring both `offline_access` and the client `refresh_token` grant
+- OpenID4VCI credential refresh issuance requiring a configured credential authorization
+  and the client `refresh_token` grant, without inventing an OIDC `offline_access` scope
+- OpenID4VCI refresh scope narrowing using the original credential authorization as the
+  rotation signal while rejecting any scope expansion
+- RFC 6749 scope narrowing for the newly issued access token while preserving
+  the original authorization scope on a rotated refresh token
+- Client Attestation refresh-token issuance, persistence, same-instance-key
+  enforcement, and binding preservation across rotation
 
 Deployments that advertise lost-response recovery as a production guarantee
 need database integration coverage for full Active -> Rotated -> Reused family
