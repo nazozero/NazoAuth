@@ -890,7 +890,6 @@ impl LogoutClientRepositoryPort for OAuthClientRepository {
                 .map_err(|_| LogoutDependencyError::Unavailable)
         })
     }
-
 }
 
 fn registered_logout_client(client: OAuthClient) -> RegisteredLogoutClient {

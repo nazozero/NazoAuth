@@ -207,10 +207,8 @@ fn client_id_only_does_not_fan_out_to_an_ungranted_client() {
         .unwrap()
         .logged_in_client_ids
         .clear();
-    let result = futures_executor::block_on(
-        service(clients, outbox.clone()).execute(request),
-    )
-    .unwrap();
+    let result =
+        futures_executor::block_on(service(clients, outbox.clone()).execute(request)).unwrap();
     assert!(result.frontchannel_logout_urls.is_empty());
     assert!(outbox.deliveries.lock().unwrap().is_empty());
 }

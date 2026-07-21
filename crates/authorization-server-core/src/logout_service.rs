@@ -109,7 +109,6 @@ pub trait LogoutClientRepositoryPort: Send + Sync {
         tenant_id: Uuid,
         client_id: &'a str,
     ) -> LogoutFuture<'a, Option<RegisteredLogoutClient>>;
-
 }
 
 pub trait BackchannelLogoutOutboxPort: Send + Sync {

@@ -229,7 +229,12 @@ impl SessionService {
             let Some(snapshot) = self.load_fail_closed(session_id).await? else {
                 return Ok(false);
             };
-            if snapshot.record().logged_in_client_ids().iter().any(|id| id == client_id) {
+            if snapshot
+                .record()
+                .logged_in_client_ids()
+                .iter()
+                .any(|id| id == client_id)
+            {
                 return Ok(true);
             }
             let mut replacement = snapshot.record().clone();

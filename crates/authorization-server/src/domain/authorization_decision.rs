@@ -118,12 +118,8 @@ impl ServerAuthorizationDecisionOperations {
         }
 
         let establishes_oidc_login = payload.scopes.iter().any(|scope| scope == "openid");
-        if establishes_oidc_login
-            && payload.oidc_sid.as_deref() != Some(session.oidc_sid())
-        {
-            tracing::warn!(
-                "authorization consent is not bound to the current OP browser session"
-            );
+        if establishes_oidc_login && payload.oidc_sid.as_deref() != Some(session.oidc_sid()) {
+            tracing::warn!("authorization consent is not bound to the current OP browser session");
             return Err(AuthorizationDecisionError::ConsentInvalid);
         }
 

@@ -357,14 +357,7 @@ async fn current_session_by_id_from_handles(
     if payload.pending_mfa {
         return Ok(None);
     }
-    session_from_payload(
-        sessions,
-        users,
-        session_id,
-        payload,
-        logged_in_client_ids,
-    )
-    .await
+    session_from_payload(sessions, users, session_id, payload, logged_in_client_ids).await
 }
 
 #[cfg(test)]
