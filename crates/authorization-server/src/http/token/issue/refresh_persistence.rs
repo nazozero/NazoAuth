@@ -13,9 +13,14 @@ pub(super) struct PendingRefreshToken {
     pub(super) expires_at: DateTime<Utc>,
 }
 
-pub(crate) fn should_issue_refresh_token(client: &ClientRow, scopes: &[String]) -> bool {
+pub(crate) fn should_issue_refresh_token(
+    client: &ClientRow,
+    scopes: &[String],
+    openid4vci_credential_authorization: bool,
+) -> bool {
     client_supports_grant(client, "refresh_token")
-        && scopes.iter().any(|scope| scope == "offline_access")
+        && (scopes.iter().any(|scope| scope == "offline_access")
+            || openid4vci_credential_authorization)
 }
 
 pub(super) async fn persist_refresh_token(

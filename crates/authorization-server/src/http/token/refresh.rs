@@ -369,11 +369,19 @@ pub(crate) async fn token_refresh_with_service(
     {
         return super::token_client_assertion_error(error);
     }
-    if !should_issue_refresh_token(client, &original_scopes) {
+    let openid4vci_credential_authorization = issuance
+        .config
+        .openid4vci_audience(&original_scopes, &token.authorization_details)
+        .is_some();
+    if !should_issue_refresh_token(
+        client,
+        &original_scopes,
+        openid4vci_credential_authorization,
+    ) {
         return oauth_token_error(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
-            "refresh_token 不具备离线访问授权.",
+            "refresh_token 不具备可续期授权.",
             false,
         );
     }

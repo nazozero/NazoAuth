@@ -535,7 +535,22 @@ pub(crate) async fn issue_token_response_with_service(
         body["id_token"] = json!(id_token);
     }
     let mut refresh_rotated = None;
-    if issue.include_refresh && should_issue_refresh_token(client, &issue.scopes) {
+    // OIDC uses `offline_access` to request a refresh token. OpenID4VCI instead
+    // authorizes credential issuance with a credential-type scope or an
+    // `openid_credential` authorization detail; HAIP 1.0 section 4.4 recommends
+    // refresh-token support for later credential refresh. Keep both paths behind
+    // the client's explicit `refresh_token` grant registration.
+    let openid4vci_credential_authorization = context
+        .config
+        .openid4vci_audience(&issue.scopes, &issue.authorization_details)
+        .is_some();
+    if issue.include_refresh
+        && should_issue_refresh_token(
+            client,
+            &issue.scopes,
+            openid4vci_credential_authorization,
+        )
+    {
         let refresh_family = match issue.refresh_token_policy {
             RefreshTokenPolicy::IssueNew => Some((Uuid::now_v7(), None, None)),
             RefreshTokenPolicy::Rotate {

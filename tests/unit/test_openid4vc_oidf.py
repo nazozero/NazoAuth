@@ -973,7 +973,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(len(plans), 17)
             self.assertEqual(len(configs), 17)
             self.assertEqual(len(set(materialized_driver["aliases"])), 17)
-            self.assertEqual(len(expected_skips), 7)
+            self.assertEqual(len(expected_skips), 3)
             self.assertEqual(
                 [
                     item for item in expected_skips
@@ -1022,7 +1022,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                     for item in replay_failures
                 )
             )
-            self.assertEqual(len(expected_problems), 6)
+            self.assertEqual(len(expected_problems), 2)
             expected_warnings = [
                 item for item in expected_problems
                 if item["expected-result"] == "warning"
@@ -1035,99 +1035,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(
                     config["mtls2"]["cert"], material["mtls2"]["cert"]
                 )
-            self.assertEqual(
-                {item["configuration-filename"] for item in expected_warnings},
-                {
-                    "openid4vc-vci-haip-sd-wallet.json",
-                    "openid4vc-vci-haip-mdoc-wallet.json",
-                    "openid4vc-vci-haip-sd-issuer.json",
-                    "openid4vc-vci-haip-mdoc-issuer.json",
-                },
-            )
-            self.assertEqual(
-                {
-                    (
-                        item["expected-result"],
-                        item["test-name"],
-                        item["current-block"],
-                        item["condition"],
-                    )
-                    for item in expected_problems
-                    if item["expected-result"] == "warning"
-                },
-                {
-                    (
-                        "warning",
-                        module.VCI_REFRESH_TOKEN_MODULE,
-                        module.VCI_REFRESH_TOKEN_BLOCK,
-                        module.VCI_REFRESH_TOKEN_CONDITION,
-                    )
-                },
-            )
-            self.assertEqual(
-                {tuple(sorted(item["variant"].items())) for item in expected_warnings},
-                {
-                    tuple(
-                        sorted(
-                            module.full_vci_variant(
-                                module.VCI_HAIP,
-                                {
-                                    "vci_authorization_code_flow_variant": "wallet_initiated",
-                                    "credential_format": "sd_jwt_vc",
-                                },
-                            ).items()
-                        )
-                    ),
-                    tuple(
-                        sorted(
-                            module.full_vci_variant(
-                                module.VCI_HAIP,
-                                {
-                                    "vci_authorization_code_flow_variant": "wallet_initiated",
-                                    "credential_format": "mdoc",
-                                },
-                            ).items()
-                        )
-                    ),
-                    tuple(
-                        sorted(
-                            module.full_vci_variant(
-                                module.VCI_HAIP,
-                                {
-                                    "vci_authorization_code_flow_variant": "issuer_initiated",
-                                    "credential_format": "sd_jwt_vc",
-                                },
-                            ).items()
-                        )
-                    ),
-                    tuple(
-                        sorted(
-                            module.full_vci_variant(
-                                module.VCI_HAIP,
-                                {
-                                    "vci_authorization_code_flow_variant": "issuer_initiated",
-                                    "credential_format": "mdoc",
-                                },
-                            ).items()
-                        )
-                    ),
-                },
-            )
-            refresh_skips = [
-                item for item in expected_skips
-                if item["test-name"] == module.VCI_REFRESH_TOKEN_MODULE
-            ]
-            self.assertEqual(len(refresh_skips), 4)
-            self.assertEqual(
-                {
-                    (item["configuration-filename"], tuple(sorted(item["variant"].items())))
-                    for item in refresh_skips
-                },
-                {
-                    (item["configuration-filename"], tuple(sorted(item["variant"].items())))
-                    for item in expected_warnings
-                },
-            )
+            self.assertEqual(expected_warnings, [])
             self.assertEqual(materialized_driver["target_origin"], "https://issuer.example")
             self.assertEqual(
                 materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],

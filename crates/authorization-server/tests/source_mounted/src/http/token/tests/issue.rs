@@ -147,16 +147,19 @@ fn issue_state_with_live_database() -> Option<TestInfrastructure> {
 }
 
 #[test]
-fn refresh_token_requires_offline_access_scope_and_client_grant() {
+fn refresh_token_requires_authorized_use_case_and_client_grant() {
     let client = client_with_grants(&["authorization_code", "refresh_token"]);
     let scopes = vec!["openid".to_owned(), "profile".to_owned()];
-    assert!(!should_issue_refresh_token(&client, &scopes));
+    assert!(!should_issue_refresh_token(&client, &scopes, false));
 
     let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
-    assert!(should_issue_refresh_token(&client, &scopes));
+    assert!(should_issue_refresh_token(&client, &scopes, false));
+
+    let scopes = vec!["org.iso.18013.5.1.mDL".to_owned()];
+    assert!(should_issue_refresh_token(&client, &scopes, true));
 
     let client = client_with_grants(&["authorization_code"]);
-    assert!(!should_issue_refresh_token(&client, &scopes));
+    assert!(!should_issue_refresh_token(&client, &scopes, true));
 }
 
 #[test]
@@ -164,7 +167,7 @@ fn refresh_token_grant_matching_is_exact_and_scope_case_sensitive() {
     let client = client_with_grants(&["authorization_code", "refresh_token:legacy"]);
     let scopes = vec!["openid".to_owned(), "offline_access".to_owned()];
     assert!(
-        !should_issue_refresh_token(&client, &scopes),
+        !should_issue_refresh_token(&client, &scopes, false),
         "refresh issuance must require the exact refresh_token grant"
     );
 
@@ -175,7 +178,7 @@ fn refresh_token_grant_matching_is_exact_and_scope_case_sensitive() {
         vec!["openid".to_owned(), "offline".to_owned()],
     ] {
         assert!(
-            !should_issue_refresh_token(&client, &scopes),
+            !should_issue_refresh_token(&client, &scopes, false),
             "refresh issuance must require exact offline_access authorization scope: {scopes:?}"
         );
     }

@@ -41,7 +41,9 @@ Unit coverage:
 - rejection of `revoked_at` timestamps later than the current clock
 - DPoP-bound refresh proof requirements
 - mTLS-bound refresh proof requirements
-- refresh issuance requiring both `offline_access` and the client `refresh_token` grant
+- OIDC refresh issuance requiring both `offline_access` and the client `refresh_token` grant
+- OpenID4VCI credential refresh issuance requiring a configured credential authorization
+  and the client `refresh_token` grant, without inventing an OIDC `offline_access` scope
 
 Deployments that advertise lost-response recovery as a production guarantee
 need database integration coverage for full Active -> Rotated -> Reused family
