@@ -454,6 +454,7 @@ fn token_row() -> TokenRow {
         subject: "subject-1".to_owned(),
         dpop_jkt: Some("dpop-jkt".to_owned()),
         mtls_x5t_s256: None,
+        client_attestation_jkt: None,
     }
 }
 
