@@ -44,6 +44,8 @@ Unit coverage:
 - OIDC refresh issuance requiring both `offline_access` and the client `refresh_token` grant
 - OpenID4VCI credential refresh issuance requiring a configured credential authorization
   and the client `refresh_token` grant, without inventing an OIDC `offline_access` scope
+- OpenID4VCI refresh scope narrowing using the original credential authorization as the
+  rotation signal while rejecting any scope expansion
 
 Deployments that advertise lost-response recovery as a production guarantee
 need database integration coverage for full Active -> Rotated -> Reused family

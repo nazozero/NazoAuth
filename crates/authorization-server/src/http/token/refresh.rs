@@ -96,6 +96,7 @@ fn refresh_token_policy_for_profile_value(
 fn refresh_token_scopes(
     original_scopes: &[String],
     requested_scope: Option<&str>,
+    openid4vci_credential_authorization: bool,
 ) -> Result<Vec<String>, ()> {
     let Some(requested) = requested_scope.map(parse_scope) else {
         return Ok(original_scopes.to_vec());
@@ -104,7 +105,8 @@ fn refresh_token_scopes(
         return Ok(original_scopes.to_vec());
     }
     if is_subset(&requested, original_scopes)
-        && requested.iter().any(|scope| scope == "offline_access")
+        && (requested.iter().any(|scope| scope == "offline_access")
+            || openid4vci_credential_authorization)
     {
         Ok(requested)
     } else {
@@ -385,7 +387,11 @@ pub(crate) async fn token_refresh_with_service(
             false,
         );
     }
-    let scopes = match refresh_token_scopes(&original_scopes, form.scope.as_deref()) {
+    let scopes = match refresh_token_scopes(
+        &original_scopes,
+        form.scope.as_deref(),
+        openid4vci_credential_authorization,
+    ) {
         Ok(scopes) => scopes,
         Err(()) => {
             return oauth_token_error(
