@@ -451,6 +451,7 @@ mod tests {
     use std::sync::Mutex;
 
     use crate::{
+        AccountIdentity, Principal, TenantContext, UserProfile, UserRole,
         ports::{RepositoryFuture, SessionAccountPort, SessionStorePort},
         session::{SessionRotationOutcome, SessionSnapshot, SessionVersion},
     };
@@ -584,6 +585,39 @@ mod tests {
             Arc::new(MissingAccounts),
             TenantId::new(uuid::Uuid::from_u128(1)).unwrap(),
         )
+    }
+
+    #[test]
+    fn current_session_exposes_exact_logged_in_clients() {
+        let now = chrono::Utc::now();
+        let session = CurrentSession {
+            user: PublicAccount {
+                principal: Principal {
+                    user_id: UserId::new(uuid::Uuid::from_u128(2)).unwrap(),
+                    tenant: TenantContext::default_system(),
+                    role: UserRole::User,
+                    active: true,
+                },
+                account: AccountIdentity {
+                    username: "user".to_owned(),
+                    email: "user@example.com".to_owned(),
+                    email_verified: true,
+                    mfa_enabled: false,
+                },
+                profile: UserProfile::default(),
+                created_at: now,
+                updated_at: now,
+            },
+            auth_time: 900,
+            amr: vec!["password".to_owned()],
+            oidc_sid: "oidc-sid".to_owned(),
+            logged_in_client_ids: vec!["client-a".to_owned(), "client-b".to_owned()],
+        };
+
+        assert_eq!(
+            session.logged_in_client_ids(),
+            &["client-a".to_owned(), "client-b".to_owned()]
+        );
     }
 
     #[tokio::test]
