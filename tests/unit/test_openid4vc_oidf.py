@@ -240,6 +240,118 @@ class Openid4vcOidfTests(unittest.TestCase):
 
         self.assertEqual(calls, 1)
 
+    def test_issuer_driver_delivers_fresh_offer_for_each_waiting_cycle(self):
+        module = load("run_openid4vc_conformance.py")
+        driver = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://suite.example",
+                "conformance_token": "test-token",
+                "target_origin": "https://issuer.example",
+                "aliases": ["issuer-alias"],
+                "issuer": {
+                    "credential_configuration_ids": {"sd_jwt_vc": "pid"},
+                    "management_token": "management-token",
+                    "subject_id": "00000000-0000-0000-0000-000000000123",
+                    "tx_code": "123456",
+                },
+            },
+            module.threading.Event(),
+        )
+        offers = [
+            {"credential_offer_uri": "https://issuer.example/offers/one"},
+            {"credential_offer_uri": "https://issuer.example/offers/two"},
+        ]
+        with (
+            patch.object(module, "request_json", side_effect=offers) as create_offer,
+            patch.object(module, "get_url") as deliver_offer,
+            patch.object(
+                driver,
+                "waiting_credential_offer_endpoint",
+                side_effect=[
+                    "https://suite.example/test/a/issuer/credential_offer",
+                    None,
+                ],
+            ),
+        ):
+            driver.drive_issuer(
+                "module-id",
+                {
+                    "exposed": {
+                        "credential_offer_endpoint": (
+                            "https://suite.example/test/a/issuer/credential_offer"
+                        )
+                    }
+                },
+                {
+                    "credential_format": "sd_jwt_vc",
+                    "vci_grant_type": "pre_authorization_code",
+                },
+            )
+
+        self.assertEqual(create_offer.call_count, 2)
+        self.assertEqual(
+            [call.args[0] for call in deliver_offer.call_args_list],
+            [
+                (
+                    "https://suite.example/test/a/issuer/credential_offer?"
+                    "credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffers%2Fone"
+                ),
+                (
+                    "https://suite.example/test/a/issuer/credential_offer?"
+                    "credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffers%2Ftwo"
+                ),
+            ],
+        )
+        self.assertEqual(driver.issuer_offer_deliveries, {"module-id": 2})
+        self.assertEqual(driver.triggered, {"module-id"})
+
+    def test_issuer_driver_bounds_repeated_waiting_cycles(self):
+        module = load("run_openid4vc_conformance.py")
+        driver = module.Openid4vcDriver(
+            {
+                "conformance_server": "https://suite.example",
+                "conformance_token": "test-token",
+                "target_origin": "https://issuer.example",
+                "aliases": ["issuer-alias"],
+                "issuer": {
+                    "credential_configuration_ids": {"sd_jwt_vc": "pid"},
+                    "management_token": "management-token",
+                    "subject_id": "00000000-0000-0000-0000-000000000123",
+                },
+            },
+            module.threading.Event(),
+        )
+        with (
+            patch.object(
+                module,
+                "request_json",
+                return_value={
+                    "credential_offer_uri": "https://issuer.example/offers/fresh"
+                },
+            ) as create_offer,
+            patch.object(module, "get_url"),
+            patch.object(
+                driver,
+                "waiting_credential_offer_endpoint",
+                return_value="https://suite.example/test/a/issuer/credential_offer",
+            ),
+            self.assertRaisesRegex(RuntimeError, "more than 2 consecutive"),
+        ):
+            driver.drive_issuer(
+                "module-id",
+                {
+                    "exposed": {
+                        "credential_offer_endpoint": (
+                            "https://suite.example/test/a/issuer/credential_offer"
+                        )
+                    }
+                },
+                {"credential_format": "sd_jwt_vc"},
+            )
+
+        self.assertEqual(create_offer.call_count, 2)
+        self.assertNotIn("module-id", driver.triggered)
+
     def test_wrapper_rejects_tokenless_or_insecure_suite_modes(self):
         module = load("run_openid4vc_conformance.py")
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", delete=False) as config:
