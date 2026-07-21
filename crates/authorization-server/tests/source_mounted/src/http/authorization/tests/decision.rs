@@ -850,7 +850,7 @@ async fn authorization_decision_issues_code_for_matching_user_and_client() {
         .expect("session lookup should succeed")
         .expect("session should remain active");
     assert_eq!(
-        stored_session.value().logged_in_client_ids(),
+        stored_session.record().logged_in_client_ids(),
         std::slice::from_ref(&client_id)
     );
 
