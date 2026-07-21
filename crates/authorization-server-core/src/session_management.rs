@@ -32,11 +32,7 @@ pub fn issue_oidc_session_state(
     redirect_uri: &str,
     op_browser_state: &str,
 ) -> Option<String> {
-    let url = url::Url::parse(redirect_uri).ok()?;
-    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
-        return None;
-    }
-    let origin = url.origin().ascii_serialization();
+    let origin = oidc_redirect_uri_origin(redirect_uri)?;
     let salt = URL_SAFE_NO_PAD.encode(rand::random::<[u8; 32]>());
     Some(oidc_session_state(
         client_id,
@@ -44,6 +40,16 @@ pub fn issue_oidc_session_state(
         op_browser_state,
         &salt,
     ))
+}
+
+/// Returns the browser-origin serialization for an HTTP(S) redirect URI.
+#[must_use]
+pub fn oidc_redirect_uri_origin(redirect_uri: &str) -> Option<String> {
+    let url = url::Url::parse(redirect_uri).ok()?;
+    if !matches!(url.scheme(), "http" | "https") || url.host_str().is_none() {
+        return None;
+    }
+    Some(url.origin().ascii_serialization())
 }
 
 /// Compares an RP-provided session state without exposing digest timing.

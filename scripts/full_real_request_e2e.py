@@ -1124,31 +1124,48 @@ def exercise_oidc_logout(public_client_id: str) -> None:
 
     logout_user = requests.Session()
     login(logout_user, USER_EMAIL, USER_PASSWORD, "POST /auth/login OIDC logout no redirect")
-    unauthorized_logout = expect_json(
-        expect_status(
-            "GET /logout without CSRF or id_token_hint rejects session clear",
-            logout_user.get(f"{BASE_URL}/logout", timeout=10),
-            400,
-        )
+    cookies_before_confirmation = logout_user.cookies.get_dict()
+    confirmation = expect_status(
+        "GET /logout without CSRF or id_token_hint asks for confirmation",
+        logout_user.get(f"{BASE_URL}/logout", timeout=10),
+        200,
     )
     check(
-        "oidc_logout_rejects_unauthorized_session_clear",
-        unauthorized_logout.get("error") == "invalid_request",
-        unauthorized_logout,
+        "oidc_logout_confirmation_page",
+        'id="nazo-logout-confirmation"' in confirmation.text,
+        confirmation.text,
+    )
+    check(
+        "oidc_logout_confirmation_preserves_session_cookies",
+        logout_user.cookies.get_dict() == cookies_before_confirmation,
+        {
+            "before": cookies_before_confirmation,
+            "after": logout_user.cookies.get_dict(),
+            "set_cookie": confirmation.headers.get("Set-Cookie"),
+        },
     )
     expect_status(
-        "GET /auth/me after unauthorized OIDC logout",
+        "GET /auth/me before confirmed OIDC logout",
         logout_user.get(f"{BASE_URL}/auth/me", timeout=10),
         200,
     )
-    logout_response = expect_json(
-        expect_status(
-            "GET /logout with CSRF clears OP session",
-            logout_user.get(f"{BASE_URL}/logout", headers=csrf_header(logout_user), timeout=10),
-            200,
-        )
+    logout_response = expect_status(
+        "POST /logout confirmation clears OP session",
+        logout_user.post(
+            f"{BASE_URL}/logout",
+            data={
+                "_nazo_logout_confirm": "true",
+                "_nazo_csrf": csrf_header(logout_user)["x-csrf-token"],
+            },
+            timeout=10,
+        ),
+        200,
     )
-    check("oidc_logout_success_body", logout_response.get("success") is True, logout_response)
+    check(
+        "oidc_logout_success_body",
+        'id="nazo-logout-success"' in logout_response.text,
+        logout_response.text,
+    )
     expect_status(
         "GET /auth/me after OIDC logout",
         logout_user.get(f"{BASE_URL}/auth/me", timeout=10),
@@ -1157,8 +1174,8 @@ def exercise_oidc_logout(public_client_id: str) -> None:
 
     redirect_user = requests.Session()
     login(redirect_user, USER_EMAIL, USER_PASSWORD, "POST /auth/login OIDC logout redirect")
-    redirect = expect_status(
-        "GET /logout registered post_logout_redirect_uri",
+    redirect_confirmation = expect_status(
+        "GET /logout with registered post_logout_redirect_uri asks for confirmation",
         redirect_user.get(
             f"{BASE_URL}/logout",
             params={
@@ -1166,7 +1183,27 @@ def exercise_oidc_logout(public_client_id: str) -> None:
                 "post_logout_redirect_uri": "https://client.example/logout/callback?flow=rp",
                 "state": "logout-state",
             },
-            headers=csrf_header(redirect_user),
+            allow_redirects=False,
+            timeout=10,
+        ),
+        200,
+    )
+    check(
+        "oidc_logout_redirect_confirmation_page",
+        'id="nazo-logout-confirmation"' in redirect_confirmation.text,
+        redirect_confirmation.text,
+    )
+    redirect = expect_status(
+        "POST /logout confirmation redirects to registered post_logout_redirect_uri",
+        redirect_user.post(
+            f"{BASE_URL}/logout",
+            data={
+                "_nazo_logout_confirm": "true",
+                "_nazo_csrf": csrf_header(redirect_user)["x-csrf-token"],
+                "client_id": public_client_id,
+                "post_logout_redirect_uri": "https://client.example/logout/callback?flow=rp",
+                "state": "logout-state",
+            },
             allow_redirects=False,
             timeout=10,
         ),

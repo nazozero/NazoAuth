@@ -13,6 +13,8 @@ use crate::{cookie_value, empty_response, json_response_no_store};
 
 pub type SessionManagementFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Option<String>, SessionManagementError>> + Send + 'a>>;
+pub type SessionManagementOriginFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<bool, SessionManagementError>> + Send + 'a>>;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SessionManagementAvailability {
@@ -35,6 +37,12 @@ pub enum SessionManagementError {
 /// Storage and runtime-module boundary required by the session-management transport.
 pub trait SessionManagementOperations: Send + Sync {
     fn availability(&self) -> SessionManagementAvailability;
+
+    fn is_origin_allowed<'a>(
+        &'a self,
+        client_id: &'a str,
+        origin: &'a str,
+    ) -> SessionManagementOriginFuture<'a>;
 
     fn op_browser_state<'a>(&'a self, session_id: &'a str) -> SessionManagementFuture<'a>;
 }
@@ -115,6 +123,17 @@ pub async fn check_session_status(
         return status_response(OidcSessionStatus::Error);
     }
 
+    match endpoint
+        .operations
+        .is_origin_allowed(&query.client_id, &query.origin)
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) | Err(SessionManagementError::SessionLookupUnavailable) => {
+            return status_response(OidcSessionStatus::Error);
+        }
+    }
+
     let Some(session_id) = cookie_value(&request, &endpoint.config.session_cookie_name) else {
         return status_response(OidcSessionStatus::Changed);
     };
@@ -182,12 +201,22 @@ mod tests {
     #[derive(Clone)]
     struct TestOperations {
         availability: SessionManagementAvailability,
+        origin_allowed: bool,
         op_browser_state: Result<Option<String>, SessionManagementError>,
     }
 
     impl SessionManagementOperations for TestOperations {
         fn availability(&self) -> SessionManagementAvailability {
             self.availability
+        }
+
+        fn is_origin_allowed<'a>(
+            &'a self,
+            _client_id: &'a str,
+            _origin: &'a str,
+        ) -> SessionManagementOriginFuture<'a> {
+            let allowed = self.origin_allowed;
+            Box::pin(async move { Ok(allowed) })
         }
 
         fn op_browser_state<'a>(&'a self, _session_id: &'a str) -> SessionManagementFuture<'a> {
@@ -200,6 +229,7 @@ mod tests {
         Data::new(SessionManagementEndpoint::new(
             Arc::new(TestOperations {
                 availability,
+                origin_allowed: true,
                 op_browser_state: Ok(Some("opbs-1".to_owned())),
             }),
             SessionManagementConfig::new("https://issuer.example", "sid"),
@@ -328,6 +358,46 @@ mod tests {
         assert_eq!(
             actix_test::read_body(response).await,
             r#"{"status":"unchanged"}"#.as_bytes()
+        );
+    }
+
+    #[actix_web::test]
+    async fn status_rejects_an_origin_not_registered_for_the_client() {
+        let state = nazo_auth::issue_oidc_session_state(
+            "client-1",
+            "https://client.example/callback",
+            "opbs-1",
+        )
+        .expect("HTTPS callback has a browser origin");
+        let operations = Arc::new(TestOperations {
+            availability: SessionManagementAvailability::Enabled,
+            origin_allowed: false,
+            op_browser_state: Ok(Some("opbs-1".to_owned())),
+        });
+        let endpoint = Data::new(SessionManagementEndpoint::new(
+            operations,
+            SessionManagementConfig::new("https://issuer.example", "sid"),
+        ));
+        let app = actix_test::init_service(
+            App::new()
+                .app_data(endpoint)
+                .route("/check_session/status", web::get().to(check_session_status)),
+        )
+        .await;
+        let uri = format!(
+            "/check_session/status?client_id=client-1&origin=https%3A%2F%2Fclient.example&session_state={state}"
+        );
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri(&uri)
+                .cookie(Cookie::new("sid", "session-1"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(
+            actix_test::read_body(response).await,
+            r#"{"status":"error"}"#.as_bytes()
         );
     }
 }

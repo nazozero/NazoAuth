@@ -84,6 +84,8 @@ OIDF_CLIENT_PREFIX = f"oidf-{RUN_NAMESPACE}"
 BASIC_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-basic-client"
 BASIC_CLIENT2_ID = f"{OIDF_CLIENT_PREFIX}-basic-client-2"
 FORMPOST_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-post-client"
+RP_INITIATED_LOGOUT_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-rp-initiated-logout-client"
+BACKCHANNEL_LOGOUT_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-backchannel-logout-client"
 FRONTCHANNEL_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-frontchannel-client"
 SESSION_CLIENT_ID = f"{OIDF_CLIENT_PREFIX}-session-client"
 BASIC_ALIAS = os.environ.get(
@@ -144,6 +146,8 @@ PLAN_CONFIG_FILES = (
     "oidf-oidcc-formpost-plan-config.json",
     "oidf-oidcc-third-party-init-plan-config.json",
     "oidf-oidcc-config-plan-config.json",
+    "oidf-oidcc-rp-initiated-logout-plan-config.json",
+    "oidf-oidcc-backchannel-logout-plan-config.json",
     "oidf-oidcc-frontchannel-logout-plan-config.json",
     "oidf-oidcc-session-management-plan-config.json",
     "oidf-fapi-ciba-plain-private-key-jwt-poll-plan-config.json",
@@ -532,6 +536,34 @@ def onboarding_clients(configs: dict[str, dict[str, object]]) -> list[dict[str, 
         ),
     )
 
+    rp_initiated_alias = f"{BASIC_ALIAS}-rp-initiated-logout"
+    add(
+        RP_INITIATED_LOGOUT_CLIENT_ID,
+        base_client_request(
+            name="OIDF RP-Initiated Logout Client",
+            auth_method="client_secret_basic",
+            redirect_uris=[callback_for(rp_initiated_alias)],
+            post_logout_redirect_uris=[
+                test_endpoint_for(rp_initiated_alias, "post_logout_redirect")
+            ],
+        ),
+    )
+
+    backchannel_alias = f"{BASIC_ALIAS}-backchannel-logout"
+    backchannel_request = base_client_request(
+        name="OIDF Back-Channel Logout Client",
+        auth_method="client_secret_basic",
+        redirect_uris=[callback_for(backchannel_alias)],
+        post_logout_redirect_uris=[
+            test_endpoint_for(backchannel_alias, "post_logout_redirect")
+        ],
+    )
+    backchannel_request["backchannel_logout_uri"] = test_endpoint_for(
+        backchannel_alias, "backchannel_logout"
+    )
+    backchannel_request["backchannel_logout_session_required"] = True
+    add(BACKCHANNEL_LOGOUT_CLIENT_ID, backchannel_request)
+
     frontchannel_alias = f"{BASIC_ALIAS}-frontchannel-logout"
     frontchannel_request = base_client_request(
         name="OIDF Front-Channel Logout Client",
@@ -820,7 +852,7 @@ def browser_automation() -> list[dict[str, object]]:
                 {
                     "task": "Reach post-logout redirect page",
                     "match": "*/test/*/post_logout_redirect*",
-                    "commands": [["wait", "contains", "/post_logout_redirect?state=", 10]],
+                    "commands": [["wait", "contains", "/post_logout_redirect", 10]],
                 },
             ],
         },
@@ -847,6 +879,61 @@ def browser_automation() -> list[dict[str, object]]:
             ],
         },
     ]
+
+
+def rp_initiated_logout_browser_automation() -> list[dict[str, object]]:
+    browser = browser_automation()
+    logout_entry = next(
+        entry for entry in browser if str(entry.get("match", "")).endswith("/logout*")
+    )
+    tasks = logout_entry["tasks"]
+    for task in tasks:
+        if task.get("task") == "Reach post-logout redirect page":
+            task["optional"] = True
+    tasks.insert(
+        0,
+        {
+            "task": "Confirm an unbound logout request",
+            "optional": True,
+            "match": f"{ISSUER}/logout*",
+            "commands": [["click", "id", "nazo-logout-confirm", "optional"]],
+        },
+    )
+    tasks.insert(
+        1,
+        {
+            "task": "Capture local logout result page",
+            "optional": True,
+            "match": f"{ISSUER}/logout*",
+            "commands": [
+                [
+                    "wait",
+                    "id",
+                    "nazo-logout-success",
+                    30,
+                    ".*",
+                    "update-image-placeholder-optional",
+                ],
+            ],
+        },
+    )
+    return browser
+
+
+def frontchannel_logout_browser_automation() -> list[dict[str, object]]:
+    browser = browser_automation()
+    logout_entry = next(
+        entry for entry in browser if str(entry.get("match", "")).endswith("/logout*")
+    )
+    logout_entry["tasks"].insert(
+        0,
+        {
+            "task": "Continue after front-channel iframe notification",
+            "match": f"{ISSUER}/logout*",
+            "commands": [["click", "id", "nazo-frontchannel-logout-continue"]],
+        },
+    )
+    return browser
 
 
 def redirect_error_browser_automation() -> list[dict[str, object]]:
@@ -1116,7 +1203,7 @@ def write_oidcc_config_plan_config() -> dict[str, object]:
 
 
 def write_frontchannel_logout_plan_config() -> dict[str, object]:
-    browser = browser_automation()
+    browser = frontchannel_logout_browser_automation()
     config = {
         "alias": f"{BASIC_ALIAS}-frontchannel-logout",
         "description": "OIDC Front-Channel Logout OP: RP-initiated logout, frontchannel iframe notification, and post-logout redirect validation.",
@@ -1130,6 +1217,40 @@ def write_frontchannel_logout_plan_config() -> dict[str, object]:
         "browser": browser,
     }
     write_plan_config("oidf-oidcc-frontchannel-logout-plan-config.json", config)
+    return config
+
+
+def write_rp_initiated_logout_plan_config() -> dict[str, object]:
+    config = {
+        "alias": f"{BASIC_ALIAS}-rp-initiated-logout",
+        "description": "OIDC RP-Initiated Logout OP: exact redirect validation, invalid hint handling, explicit End-User confirmation, and logout state continuity.",
+        "server": oidf_server_config(),
+        "client": {
+            "client_id": RP_INITIATED_LOGOUT_CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "scope": "openid profile email",
+        },
+        "nazo": nazo_login_metadata(),
+        "browser": rp_initiated_logout_browser_automation(),
+    }
+    write_plan_config("oidf-oidcc-rp-initiated-logout-plan-config.json", config)
+    return config
+
+
+def write_backchannel_logout_plan_config() -> dict[str, object]:
+    config = {
+        "alias": f"{BASIC_ALIAS}-backchannel-logout",
+        "description": "OIDC Back-Channel Logout OP: signed explicitly typed Logout Token delivery with sid/sub, events, audience, expiry, and RP callback validation.",
+        "server": oidf_server_config(),
+        "client": {
+            "client_id": BACKCHANNEL_LOGOUT_CLIENT_ID,
+            "client_secret": CLIENT_SECRET,
+            "scope": "openid profile email",
+        },
+        "nazo": nazo_login_metadata(),
+        "browser": browser_automation(),
+    }
+    write_plan_config("oidf-oidcc-backchannel-logout-plan-config.json", config)
     return config
 
 
@@ -1438,6 +1559,8 @@ def write_all_plan_configs() -> None:
         "oidf-oidcc-formpost-plan-config.json": write_formpost_plan_config(),
         "oidf-oidcc-third-party-init-plan-config.json": write_third_party_init_plan_config(),
         "oidf-oidcc-config-plan-config.json": write_oidcc_config_plan_config(),
+        "oidf-oidcc-rp-initiated-logout-plan-config.json": write_rp_initiated_logout_plan_config(),
+        "oidf-oidcc-backchannel-logout-plan-config.json": write_backchannel_logout_plan_config(),
         "oidf-oidcc-frontchannel-logout-plan-config.json": write_frontchannel_logout_plan_config(),
         "oidf-oidcc-session-management-plan-config.json": write_session_management_plan_config(),
     }
@@ -1445,10 +1568,12 @@ def write_all_plan_configs() -> None:
     configs.update(write_fapi_ciba_plan_config())
     configs.update(write_fapi_matrix_plan_configs())
     plan_set = plan_expressions_for_configs(configs)
-    concurrent, ciba, frontchannel, session = partition_plan_expressions(plan_set)
-    if len(frontchannel) != 1 or len(session) != 1:
+    concurrent, ciba, rp_initiated, backchannel, frontchannel, session = partition_plan_expressions(
+        plan_set
+    )
+    if any(len(group) != 1 for group in (rp_initiated, backchannel, frontchannel, session)):
         raise RuntimeError(
-            "OIDF full matrix must contain exactly one front-channel and one session-management plan"
+            "OIDF full matrix must contain exactly one plan for each OIDC logout profile"
         )
     if len(ciba) != 4:
         raise RuntimeError("OIDF full matrix must contain exactly four FAPI-CIBA plans")
@@ -1463,6 +1588,16 @@ def write_all_plan_configs() -> None:
     write_text(
         RUNTIME / "oidf-plan-set-ciba.json",
         json.dumps(ciba, indent=2) + "\n",
+        0o600,
+    )
+    write_text(
+        RUNTIME / "oidf-plan-set-rp-initiated.json",
+        json.dumps(rp_initiated, indent=2) + "\n",
+        0o600,
+    )
+    write_text(
+        RUNTIME / "oidf-plan-set-backchannel.json",
+        json.dumps(backchannel, indent=2) + "\n",
         0o600,
     )
     write_text(
@@ -1599,6 +1734,10 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
         "oidcc-3rdparty-init-login-certification-test-plan[response_type=code] "
         "oidf-oidcc-third-party-init-plan-config.json",
         "oidcc-config-certification-test-plan oidf-oidcc-config-plan-config.json",
+        "oidcc-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] "
+        "oidf-oidcc-rp-initiated-logout-plan-config.json",
+        "oidcc-backchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] "
+        "oidf-oidcc-backchannel-logout-plan-config.json",
         "oidcc-frontchannel-rp-initiated-logout-certification-test-plan[client_registration=static_client][response_type=code] "
         "oidf-oidcc-frontchannel-logout-plan-config.json",
         "oidcc-session-management-certification-test-plan[client_registration=static_client][response_type=code] "
@@ -1638,7 +1777,7 @@ def plan_expressions_for_configs(configs: dict[str, dict[str, object]]) -> list[
 
 def partition_plan_expressions(
     expressions: list[str],
-) -> tuple[list[str], list[str], list[str], list[str]]:
+) -> tuple[list[str], list[str], list[str], list[str], list[str], list[str]]:
     ciba = [
         expression for expression in expressions if "fapi-ciba-id1-test-plan" in expression
     ]
@@ -1647,16 +1786,26 @@ def partition_plan_expressions(
         for expression in expressions
         if "frontchannel-rp-initiated-logout" in expression
     ]
+    rp_initiated = [
+        expression
+        for expression in expressions
+        if "oidcc-rp-initiated-logout-certification-test-plan" in expression
+    ]
+    backchannel = [
+        expression
+        for expression in expressions
+        if "backchannel-rp-initiated-logout" in expression
+    ]
     session = [
         expression
         for expression in expressions
         if "session-management-certification-test-plan" in expression
     ]
-    isolated = set(ciba + frontchannel + session)
+    isolated = set(ciba + rp_initiated + backchannel + frontchannel + session)
     concurrent = [
         expression for expression in expressions if expression not in isolated
     ]
-    return concurrent, ciba, frontchannel, session
+    return concurrent, ciba, rp_initiated, backchannel, frontchannel, session
 
 
 def bounded_parallel_plan_groups(expressions: list[str]) -> dict[str, list[str]]:
@@ -1713,8 +1862,12 @@ def bounded_parallel_plan_groups(expressions: list[str]) -> dict[str, list[str]]
             "client_auth_type=private_key_jwt",
             "sender_constrain=mtls",
         ),
-        "08-frontchannel.json": matches("frontchannel-rp-initiated-logout"),
-        "09-session.json": matches("session-management-certification-test-plan"),
+        "08-rp-initiated.json": matches(
+            "oidcc-rp-initiated-logout-certification-test-plan"
+        ),
+        "09-backchannel.json": matches("backchannel-rp-initiated-logout"),
+        "10-frontchannel.json": matches("frontchannel-rp-initiated-logout"),
+        "11-session.json": matches("session-management-certification-test-plan"),
     }
 
 
@@ -1728,6 +1881,8 @@ def plan_manifest_for_expressions(
         "oidf-oidcc-formpost-plan-config.json": "OIDC Form Post OP",
         "oidf-oidcc-third-party-init-plan-config.json": "OIDC Third-Party Initiated Login OP",
         "oidf-oidcc-config-plan-config.json": "OIDC Config OP",
+        "oidf-oidcc-rp-initiated-logout-plan-config.json": "OIDC RP-Initiated Logout OP",
+        "oidf-oidcc-backchannel-logout-plan-config.json": "OIDC Back-Channel Logout OP",
         "oidf-oidcc-frontchannel-logout-plan-config.json": "OIDC Front-Channel Logout OP",
         "oidf-oidcc-session-management-plan-config.json": "OIDC Session Management OP",
     }
@@ -1758,6 +1913,19 @@ def plan_manifest_for_expressions(
             "provider metadata accuracy",
             "endpoint advertisement",
             "supported algorithms and response metadata",
+        ],
+        "oidf-oidcc-rp-initiated-logout-plan-config.json": [
+            "end_session_endpoint metadata",
+            "GET and form POST logout requests",
+            "id_token_hint and client_id binding",
+            "exact post_logout_redirect_uri validation",
+            "End-User confirmation for unbound requests",
+        ],
+        "oidf-oidcc-backchannel-logout-plan-config.json": [
+            "backchannel logout discovery metadata",
+            "signed and explicitly typed Logout Token",
+            "iss, aud, iat, exp, jti, events, sid, and sub claims",
+            "form-encoded RP callback delivery",
         ],
         "oidf-oidcc-frontchannel-logout-plan-config.json": [
             "frontchannel_logout_supported metadata",

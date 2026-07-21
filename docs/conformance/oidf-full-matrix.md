@@ -1,13 +1,14 @@
 # OIDF Full Matrix
 
-This document describes the repository-owned OpenID Foundation Conformance Suite matrix. The matrix is a 25-plan suite. New TP/PS and NI checks are mapped onto these plans instead of being added as a separate temporary matrix.
+This document describes the repository-owned OpenID Foundation Conformance Suite matrix. The matrix is a 27-plan suite. New TP/PS and NI checks are mapped onto these plans instead of being added as a separate temporary matrix.
 
 The execution entry point is `runtime/oidf/oidf-plan-set.json`. `scripts/prepare_oidf_black_box.py` also writes `runtime/oidf/oidf-plan-set-manifest.json` with a title, description, and coverage focus for every plan.
 
-In `parallel-isolated` mode the 25 plans are executed as bounded public-suite batches: OIDC core (`2`), OIDC Form Post / Third-Party Initiated Login / Config (`3`), FAPI-CIBA (`4`, `--no-parallel`), FAPI message-signing plus mTLS/DPoP (`5`), three remaining FAPI groups (`3` each), Front-Channel Logout (`1`, isolated browser job), and Session Management (`1`, isolated browser job). This preserves full matrix coverage while avoiding suite-runner callback and browser-session contention.
+In `parallel-isolated` mode the 27 plans are executed as bounded public-suite batches: OIDC core (`2`), OIDC Form Post / Third-Party Initiated Login / Config (`3`), FAPI-CIBA (`4`, `--no-parallel`), FAPI message-signing plus mTLS/DPoP (`5`), three remaining FAPI groups (`3` each), and four isolated browser jobs for RP-Initiated Logout, Back-Channel Logout, Front-Channel Logout, and Session Management. This preserves full matrix coverage while avoiding suite-runner callback and browser-session contention.
 
-The latest durable operator and official-suite evidence is
+The latest durable operator and official-suite evidence is the preceding 25-plan baseline in
 [`2026-07-20-final-automated-oidf-results.md`](2026-07-20-final-automated-oidf-results.md).
+It predates the independent RP-Initiated and Back-Channel Logout jobs and is not evidence that the 27-plan matrix has passed.
 
 ## Plan Index
 
@@ -30,14 +31,16 @@ The latest durable operator and official-suite evidence is
 | 15 | FAPI2 Security / private_key_jwt / mTLS sender / OpenID Connect / authorization code | Uses `private_key_jwt` client authentication and mTLS sender-constrained tokens for OIDC authorization code and certificate-bound resource access. |
 | 16 | FAPI2 Security / private_key_jwt / mTLS sender / plain OAuth / client credentials | Uses `private_key_jwt` client authentication and mTLS sender constraint for client credentials token issuance and certificate-bound resource access. |
 | 17 | FAPI2 Security / private_key_jwt / mTLS sender / plain OAuth / authorization code | Uses `private_key_jwt` client authentication and mTLS sender constraint for non-OIDC authorization-code, PAR, PKCE, code replay, and resource-access checks. |
-| 18 | OIDC Front-Channel Logout OP | Validates front-channel logout metadata, RP-initiated logout, iframe logout notification, `iss`/`sid` parameters, and `post_logout_redirect_uri`. |
-| 19 | OIDC Session Management OP | Validates `check_session_iframe` metadata, authorization response `session_state`, and the session-state transition after RP-initiated logout. |
-| 20 | FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI | Validates FAPI-CIBA AS discovery, the backchannel authentication endpoint, `private_key_jwt` client authentication, poll-mode token exchange, error handling, refresh tokens, and resource access. |
-| 21 | FAPI-CIBA ID1 / mTLS / poll / plain FAPI | Validates mTLS client authentication and certificate-bound poll-mode token issuance. |
-| 22 | FAPI-CIBA ID1 / private_key_jwt / ping / plain FAPI | Validates authenticated ping notification with the TLS 1.2 FAPI baseline and TLS 1.3 client support, token-endpoint retrieval, redirect rejection, and terminal 401 handling. |
-| 23 | FAPI-CIBA ID1 / mTLS / ping / plain FAPI | Validates the same TLS 1.2-minimum/TLS 1.3-capable ping lifecycle with mTLS client authentication and holder-of-key tokens. |
-| 24 | OIDC Form Post OP | Validates `response_mode=form_post` for successful and error authorization responses through the browser flow. |
-| 25 | OIDC Third-Party Initiated Login OP | Validates dynamic registration round-trip of `initiate_login_uri` and rejection of non-HTTPS metadata. |
+| 18 | OIDC RP-Initiated Logout OP | Validates GET and form POST logout, `id_token_hint` and `client_id` binding, exact post-logout redirect matching, state continuity, invalid inputs, and explicit End-User confirmation when the request is not bound to the current OP session. |
+| 19 | OIDC Back-Channel Logout OP | Validates signed, explicitly typed Logout Tokens, required claims, `sid`/`sub` session binding, form-encoded RP callback delivery, and RP response handling. |
+| 20 | OIDC Front-Channel Logout OP | Validates front-channel logout metadata, RP-initiated logout, iframe logout notification, `iss`/`sid` parameters, and `post_logout_redirect_uri`. |
+| 21 | OIDC Session Management OP | Validates `check_session_iframe` metadata, authorization response `session_state`, registered parent-origin enforcement, and the session-state transition after RP-initiated logout. |
+| 22 | FAPI-CIBA ID1 / private_key_jwt / poll / plain FAPI | Validates FAPI-CIBA AS discovery, the backchannel authentication endpoint, `private_key_jwt` client authentication, poll-mode token exchange, error handling, refresh tokens, and resource access. |
+| 23 | FAPI-CIBA ID1 / mTLS / poll / plain FAPI | Validates mTLS client authentication and certificate-bound poll-mode token issuance. |
+| 24 | FAPI-CIBA ID1 / private_key_jwt / ping / plain FAPI | Validates authenticated ping notification with the TLS 1.2 FAPI baseline and TLS 1.3 client support, token-endpoint retrieval, redirect rejection, and terminal 401 handling. |
+| 25 | FAPI-CIBA ID1 / mTLS / ping / plain FAPI | Validates the same TLS 1.2-minimum/TLS 1.3-capable ping lifecycle with mTLS client authentication and holder-of-key tokens. |
+| 26 | OIDC Form Post OP | Validates `response_mode=form_post` for successful and error authorization responses through the browser flow. |
+| 27 | OIDC Third-Party Initiated Login OP | Validates dynamic registration round-trip of `initiate_login_uri` and rejection of non-HTTPS metadata. |
 
 ## TP/PS Coverage Boundary
 
@@ -49,7 +52,8 @@ The matrix covers the current TP/PS work through these paths:
 - `OIDC Third-Party Initiated Login OP` covers `initiate_login_uri` metadata. This OP-side profile is registration metadata; it does not add an OP initiation endpoint.
 - `OIDC Config OP` covers metadata truth and prevents discovery from advertising unsupported capabilities.
 - FAPI2 Security and Message Signing plans cover PAR enforcement, `request_uri` expiry, `request_uri` replay, cross-client `request_uri` use, outer authorization request parameters, PKCE, redirect URI, audience, and client assertions.
-- `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 25-plan matrix.
+- `private_key_jwt / DPoP / OpenID Connect / authorization code` is the closest single-plan regression for TP/PS change sets; full evidence comes from the 27-plan matrix.
+- `OIDC RP-Initiated Logout OP` and `OIDC Back-Channel Logout OP` provide independent certification evidence rather than inferring their behavior from the other logout profiles.
 - `OIDC Front-Channel Logout OP` covers NI-008.
 - `OIDC Session Management OP` covers NI-009.
 - Four FAPI-CIBA plans cover the orthogonal `private_key_jwt / mTLS` × `poll / ping` combinations. The [FAPI-CIBA profile](https://openid.net/specs/openid-financial-api-ciba.html) only supports poll and ping modes, so push mode is outside the supported FAPI-CIBA profile and is never supported.
@@ -57,7 +61,7 @@ The matrix covers the current TP/PS work through these paths:
 - NI-010 tracks [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html) and [OpenID Federation for OpenID Connect 1.1](https://openid.net/specs/openid-federation-connect-1_1.html). Those specifications define a federation trust-chain ecosystem with Entity Statements, Trust Anchors, metadata policy, Trust Marks, and Federation endpoints. Federation is **not supported (planned)**: it is not advertised, `/.well-known/openid-federation` is absent, and Federation plans are not must-pass matrix entries until a separate trust-chain implementation exists.
 - No official OP plan was found for NI-011 Native SSO / `device_secret`; local tests cover device-secret lifecycle, `ds_hash` binding, token exchange, and refresh-family activity.
 
-Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 25-plan matrix.
+Targeted plan-sets are useful for development triage. Durable regression evidence should cite the full 27-plan matrix.
 
 ## Explicit NEVER SUPPORTED Boundary
 
@@ -96,6 +100,16 @@ when `none` is absent from `request_object_signing_alg_values_supported`.
 Signed Request Objects with `redirect_uri` remain implemented and tested in the
 FAPI/JAR plans. A workflow run with those expected skips can be evidence for `0
 failures` and `0 warnings`, but it is not zero-SKIPPED evidence.
+
+## Expected Review Policy
+
+The RP-Initiated Logout OP plan has exactly eight modules whose official-suite
+result is `REVIEW` because certification requires a screenshot of the OP's
+error or End-User confirmation page. The runner allowlist is bound to the
+RP-Initiated configuration, exact plan name, and exact module names, with at
+most one instance of each. These results are not skips: the captured evidence
+must still be reviewed and included in a formal submission. Any additional
+`REVIEW` result fails the run.
 
 ## Expected Warning Policy
 

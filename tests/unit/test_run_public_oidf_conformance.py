@@ -40,6 +40,94 @@ class PublicOidfRunnerTests(unittest.TestCase):
             ):
                 self.module.required_environment("OIDF_CONFORMANCE_TOKEN")
 
+    def test_suite_runner_config_cleanup_removes_only_generated_untracked_files(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "suite"
+            scripts = suite / "scripts"
+            scripts.mkdir(parents=True)
+            work = root / "work"
+            work.mkdir()
+            generated = scripts / "oidf-generated-plan-config.json"
+            generated.write_text("secret\n", encoding="utf-8")
+            unrelated = scripts / "operator-note.txt"
+            unrelated.write_text("keep\n", encoding="utf-8")
+            (work / "oidf-plan-configs.json").write_text(
+                json.dumps({"configs": {generated.name: {}}}),
+                encoding="utf-8",
+            )
+
+            with mock.patch.object(self.module, "output", return_value=""):
+                self.module.cleanup_suite_runner_configs(suite, work)
+
+            self.assertFalse(generated.exists())
+            self.assertTrue(unrelated.exists())
+
+    def test_suite_runner_config_cleanup_rejects_path_traversal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "suite"
+            (suite / "scripts").mkdir(parents=True)
+            work = root / "work"
+            work.mkdir()
+            (work / "oidf-plan-configs.json").write_text(
+                json.dumps({"configs": {"../oidf-escape-plan-config.json": {}}}),
+                encoding="utf-8",
+            )
+
+            with (
+                mock.patch.object(self.module, "output", return_value=""),
+                self.assertRaisesRegex(self.module.PublicRunError, "unsafe OIDF runner config filename"),
+            ):
+                self.module.cleanup_suite_runner_configs(suite, work)
+
+    def test_failure_path_cleans_configs_from_the_resolved_work_directory(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "suite"
+            suite.mkdir()
+            work = root / "work"
+            export = root / "export"
+            args = Namespace(
+                target_issuer="https://issuer.example",
+                conformance_server="https://suite.example",
+                work_dir=work,
+                export_dir=export,
+                suite_dir=suite,
+                deployed_sha="a" * 40,
+                suite_revision="b" * 40,
+                run_namespace="failure-cleanup",
+                proxy_trust_bundle=root / "trust.pem",
+                proxy_executable=root / "proxy",
+                token_env="OIDF_CONFORMANCE_TOKEN",
+                timeout_seconds=100,
+                monitor_interval_seconds=5,
+            )
+
+            with (
+                mock.patch.object(self.module, "verify_source"),
+                mock.patch.object(self.module, "verify_suite"),
+                mock.patch.object(
+                    self.module,
+                    "required_environment",
+                    return_value={"OIDF_CONFORMANCE_TOKEN": "token"},
+                ),
+                mock.patch.object(
+                    self.module, "command", side_effect=RuntimeError("prepare failed")
+                ),
+                mock.patch.object(self.module, "ProxyTrust") as proxy_trust,
+                mock.patch.object(
+                    self.module, "cleanup_suite_runner_configs"
+                ) as cleanup,
+                mock.patch.object(self.module, "sanitize_evidence_tree"),
+                mock.patch.object(self.module, "protect_directory"),
+                self.assertRaisesRegex(RuntimeError, "prepare failed"),
+            ):
+                self.module.run(args)
+
+            cleanup.assert_called_once_with(suite.resolve(), work.resolve())
+            proxy_trust.return_value.restore.assert_called_once_with()
+
     def test_plan_groups_use_explicit_inputs_and_isolate_browser_state(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -74,6 +162,8 @@ class PublicOidfRunnerTests(unittest.TestCase):
             files = {
                 "oidf-plan-set-concurrent.json": concurrent,
                 "oidf-plan-set-ciba.json": ciba,
+                "oidf-plan-set-rp-initiated.json": ["rp-initiated plan-rp.json"],
+                "oidf-plan-set-backchannel.json": ["backchannel plan-back.json"],
                 "oidf-plan-set-frontchannel.json": ["frontchannel plan-front.json"],
                 "oidf-plan-set-session.json": ["session plan-session.json"],
             }
@@ -95,7 +185,7 @@ class PublicOidfRunnerTests(unittest.TestCase):
             ):
                 self.module.run_plan_groups(args, work, {})
 
-            self.assertEqual(command.call_count, 12)
+            self.assertEqual(command.call_count, 14)
             invocations = [call.args[0] for call in command.call_args_list]
             self.assertNotIn("--no-parallel", invocations[0])
             self.assertNotIn("--no-parallel", invocations[1])
@@ -103,7 +193,7 @@ class PublicOidfRunnerTests(unittest.TestCase):
                 self.assertIn("--no-parallel", invocation)
             for invocation in invocations[6:10]:
                 self.assertNotIn("--no-parallel", invocation)
-            for invocation in invocations[10:12]:
+            for invocation in invocations[10:14]:
                 self.assertIn("--no-parallel", invocation)
             self.assertTrue(all("--no-api-token" not in invocation for invocation in invocations))
             self.assertTrue(

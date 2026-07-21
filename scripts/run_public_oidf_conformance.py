@@ -70,6 +70,32 @@ def verify_suite(suite_dir: Path, suite_revision: str) -> None:
         raise PublicRunError("official conformance-suite source tree must be clean")
 
 
+def cleanup_suite_runner_configs(suite_dir: Path, work_dir: Path) -> None:
+    plan_configs = work_dir / "oidf-plan-configs.json"
+    if not plan_configs.is_file():
+        return
+    document = json.loads(plan_configs.read_text(encoding="utf-8"))
+    configs = document.get("configs") if isinstance(document, dict) else None
+    if not isinstance(configs, dict):
+        raise PublicRunError("OIDF plan config bundle must contain a configs object")
+    tracked = set(output(["git", "ls-files", "--", "scripts"], cwd=suite_dir).splitlines())
+    for name in configs:
+        if (
+            not isinstance(name, str)
+            or Path(name).name != name
+            or not name.startswith("oidf-")
+            or not name.endswith("-plan-config.json")
+        ):
+            raise PublicRunError(f"unsafe OIDF runner config filename: {name!r}")
+        relative = f"scripts/{name}"
+        if relative in tracked:
+            continue
+        target = suite_dir / relative
+        if target.is_symlink() or (target.exists() and not target.is_file()):
+            raise PublicRunError(f"unsafe OIDF runner config cleanup target: {target}")
+        target.unlink(missing_ok=True)
+
+
 def required_environment(token_env: str) -> dict[str, str]:
     names = (*REQUIRED_ENV, token_env)
     missing = [name for name in names if not os.environ.get(name, "").strip()]
@@ -219,6 +245,8 @@ def split_plan_groups(work_dir: Path) -> tuple[tuple[str, Path, bool], ...]:
     source_files = (
         "oidf-plan-set-concurrent.json",
         "oidf-plan-set-ciba.json",
+        "oidf-plan-set-rp-initiated.json",
+        "oidf-plan-set-backchannel.json",
         "oidf-plan-set-frontchannel.json",
         "oidf-plan-set-session.json",
     )
@@ -310,11 +338,21 @@ def split_plan_groups(work_dir: Path) -> tuple[tuple[str, Path, bool], ...]:
                 False,
             ),
             (
-                "08-frontchannel",
+                "08-rp-initiated",
+                source_plans["oidf-plan-set-rp-initiated.json"],
+                True,
+            ),
+            (
+                "09-backchannel",
+                source_plans["oidf-plan-set-backchannel.json"],
+                True,
+            ),
+            (
+                "10-frontchannel",
                 source_plans["oidf-plan-set-frontchannel.json"],
                 True,
             ),
-            ("09-session", source_plans["oidf-plan-set-session.json"], True),
+            ("11-session", source_plans["oidf-plan-set-session.json"], True),
         )
     )
 
@@ -417,6 +455,11 @@ def run(args: argparse.Namespace) -> None:
         failure = error
     finally:
         cleanup_errors: list[BaseException] = []
+        try:
+            cleanup_suite_runner_configs(args.suite_dir, args.work_dir)
+            verify_suite(args.suite_dir, args.suite_revision)
+        except BaseException as error:
+            cleanup_errors.append(error)
         if state_file.exists():
             try:
                 command(onboarding_args("cleanup", args.work_dir, args.target_issuer), env=env)
