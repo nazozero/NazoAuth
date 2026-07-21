@@ -49,23 +49,11 @@ impl BackchannelLogoutWorker {
         deliveries: AuditRepository,
         private_network_origins: &[String],
     ) -> anyhow::Result<Self> {
-        let mut origins = HashSet::new();
-        for value in private_network_origins {
-            let endpoint = validate_backchannel_endpoint(value)
-                .map_err(anyhow::Error::msg)
-                .with_context(|| {
-                    format!("invalid BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS entry {value}")
-                })?;
-            if endpoint.path() != "/" || endpoint.query().is_some() {
-                anyhow::bail!(
-                    "BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS entries must be origins: {value}"
-                );
-            }
-            origins.insert(endpoint.origin().ascii_serialization());
-        }
         Ok(Self {
             deliveries,
-            private_network_origins: Arc::new(origins),
+            private_network_origins: Arc::new(parse_private_network_origins(
+                private_network_origins,
+            )?),
         })
     }
 
@@ -102,19 +90,8 @@ impl BackchannelLogoutWorker {
                 .context("failed to complete back-channel logout delivery"),
             outcome => {
                 let now = Utc::now();
-                let (next_attempt_at, delivery_error) = match outcome {
-                    Ok(BackchannelPostOutcome::TerminalFailure(status)) => (
-                        None,
-                        anyhow::anyhow!(
-                            "back-channel logout endpoint returned terminal status {status}"
-                        ),
-                    ),
-                    Err(error) => (
-                        next_retry_at(delivery.attempts - 1, now, delivery.expires_at),
-                        error,
-                    ),
-                    Ok(BackchannelPostOutcome::Delivered) => unreachable!(),
-                };
+                let (next_attempt_at, delivery_error) =
+                    delivery_failure_state(outcome, delivery.attempts, now, delivery.expires_at);
                 let last_error = truncate_error(&delivery_error.to_string());
                 tracing::warn!(
                     error = %last_error,
@@ -134,6 +111,36 @@ impl BackchannelLogoutWorker {
                     .context("failed to record back-channel logout delivery failure")
             }
         }
+    }
+}
+
+fn parse_private_network_origins(values: &[String]) -> anyhow::Result<HashSet<String>> {
+    let mut origins = HashSet::new();
+    for value in values {
+        let endpoint = validate_backchannel_endpoint(value)
+            .map_err(anyhow::Error::msg)
+            .with_context(|| format!("invalid BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS entry {value}"))?;
+        if endpoint.path() != "/" || endpoint.query().is_some() {
+            anyhow::bail!("BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS entries must be origins: {value}");
+        }
+        origins.insert(endpoint.origin().ascii_serialization());
+    }
+    Ok(origins)
+}
+
+fn delivery_failure_state(
+    outcome: anyhow::Result<BackchannelPostOutcome>,
+    attempts: i32,
+    now: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+) -> (Option<DateTime<Utc>>, anyhow::Error) {
+    match outcome {
+        Ok(BackchannelPostOutcome::TerminalFailure(status)) => (
+            None,
+            anyhow::anyhow!("back-channel logout endpoint returned terminal status {status}"),
+        ),
+        Err(error) => (next_retry_at(attempts - 1, now, expires_at), error),
+        Ok(BackchannelPostOutcome::Delivered) => unreachable!(),
     }
 }
 
@@ -393,6 +400,59 @@ mod tests {
                 "endpoint {endpoint}"
             );
         }
+    }
+
+    #[test]
+    fn private_network_origin_configuration_is_exact_and_normalized() {
+        let origins = parse_private_network_origins(&[
+            "https://rp.example".to_owned(),
+            "http://localhost:8080".to_owned(),
+        ])
+        .expect("valid origins are accepted");
+        assert_eq!(
+            origins,
+            HashSet::from([
+                "https://rp.example".to_owned(),
+                "http://localhost:8080".to_owned(),
+            ])
+        );
+
+        for invalid in [
+            "https://rp.example/logout",
+            "https://rp.example?tenant=a",
+            "http://rp.example",
+        ] {
+            let error = parse_private_network_origins(&[invalid.to_owned()])
+                .expect_err("non-origin or unsafe entries are rejected");
+            assert!(
+                error
+                    .to_string()
+                    .contains("BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS")
+            );
+        }
+    }
+
+    #[test]
+    fn delivery_failure_state_distinguishes_terminal_and_retryable_outcomes() {
+        let now = Utc::now();
+        let expires_at = now + Duration::seconds(60);
+        let (next_attempt_at, terminal) = delivery_failure_state(
+            Ok(BackchannelPostOutcome::TerminalFailure(400)),
+            1,
+            now,
+            expires_at,
+        );
+        assert_eq!(next_attempt_at, None);
+        assert!(terminal.to_string().contains("terminal status 400"));
+
+        let (next_attempt_at, retryable) = delivery_failure_state(
+            Err(anyhow::anyhow!("network unavailable")),
+            2,
+            now,
+            expires_at,
+        );
+        assert_eq!(next_attempt_at, Some(now + Duration::seconds(15)));
+        assert_eq!(retryable.to_string(), "network unavailable");
     }
 
     #[tokio::test]

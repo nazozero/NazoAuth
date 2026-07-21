@@ -468,6 +468,7 @@ mod tests {
     struct FakeStore {
         snapshot: Mutex<Option<SessionSnapshot>>,
         load_error: Mutex<Option<RepositoryError>>,
+        compare_outcomes: Mutex<Vec<SessionUpdateOutcome>>,
         deleted: Mutex<Vec<SessionId>>,
         rotations: Mutex<Vec<RotationCall>>,
         rotation_outcome: SessionRotationOutcome,
@@ -481,6 +482,7 @@ mod tests {
                     SessionVersion::from_storage(b"version-1".to_vec().into_boxed_slice()),
                 ))),
                 load_error: Mutex::new(None),
+                compare_outcomes: Mutex::new(Vec::new()),
                 deleted: Mutex::new(Vec::new()),
                 rotations: Mutex::new(Vec::new()),
                 rotation_outcome: SessionRotationOutcome::Applied,
@@ -534,6 +536,13 @@ mod tests {
             replacement: &'a SessionRecord,
         ) -> RepositoryFuture<'a, SessionUpdateOutcome> {
             Box::pin(async move {
+                let forced_outcome = {
+                    let mut outcomes = self.compare_outcomes.lock().unwrap();
+                    (!outcomes.is_empty()).then(|| outcomes.remove(0))
+                };
+                if let Some(outcome) = forced_outcome {
+                    return Ok(outcome);
+                }
                 let mut snapshot = self.snapshot.lock().unwrap();
                 if snapshot.as_ref() != Some(expected) {
                     return Ok(SessionUpdateOutcome::Conflict);
@@ -616,6 +625,54 @@ mod tests {
                 .record()
                 .logged_in_client_ids(),
             &["client-a".to_owned(), "client-b".to_owned()]
+        );
+    }
+
+    #[tokio::test]
+    async fn binding_client_fails_closed_for_invalid_or_missing_sessions() {
+        let store = Arc::new(FakeStore::with_record(record(false)));
+        let session_id = SessionId::new("session-1");
+        let service = service(store.clone());
+
+        assert_eq!(
+            service.bind_client(&session_id, "  ").await,
+            Err(RepositoryError::Consistency(
+                "logged-in client identifier is empty".to_owned()
+            ))
+        );
+
+        *store.snapshot.lock().unwrap() = None;
+        assert!(!service.bind_client(&session_id, "client-a").await.unwrap());
+
+        *store.snapshot.lock().unwrap() = Some(SessionSnapshot::new(
+            record(false),
+            SessionVersion::from_storage(b"version-1".to_vec().into_boxed_slice()),
+        ));
+        store
+            .compare_outcomes
+            .lock()
+            .unwrap()
+            .push(SessionUpdateOutcome::Missing);
+        assert!(!service.bind_client(&session_id, "client-a").await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn binding_client_rejects_repeated_compare_and_set_conflicts() {
+        let store = Arc::new(FakeStore::with_record(record(false)));
+        store
+            .compare_outcomes
+            .lock()
+            .unwrap()
+            .extend(vec![SessionUpdateOutcome::Conflict; 4]);
+        let result = service(store)
+            .bind_client(&SessionId::new("session-1"), "client-a")
+            .await;
+
+        assert_eq!(
+            result,
+            Err(RepositoryError::Consistency(
+                "session changed repeatedly while binding logged-in client".to_owned()
+            ))
         );
     }
 

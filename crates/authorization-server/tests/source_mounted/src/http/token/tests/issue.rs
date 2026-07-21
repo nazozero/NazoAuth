@@ -571,6 +571,40 @@ async fn missing_id_token_subject_fails_closed_without_returning_credentials() {
 }
 
 #[actix_web::test]
+async fn attested_client_refresh_token_requires_client_instance_binding() {
+    let mut state = issue_state_with_valid_signing_key();
+    Arc::get_mut(&mut state.settings)
+        .expect("test state owns its settings")
+        .modules
+        .enable_openid4vci_issuer = true;
+    let mut client = client_with_grants(&["authorization_code", "refresh_token"]);
+    client.token_endpoint_auth_method = "attest_jwt_client_auth".to_owned();
+    let mut issue = token_issue_without_openid();
+    issue.authorization_details = json!([{
+        "type": "openid_credential",
+        "credential_configuration_id": "org.iso.18013.5.1.mDL"
+    }]);
+    issue.include_refresh = true;
+    issue.refresh_token_client_attestation_jkt = None;
+
+    let response = issue_token_response(&state, &client, issue).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(oauth_error_code(&response), "invalid_client_attestation");
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("OAuth error body should be JSON");
+    assert_eq!(
+        value.get("error"),
+        Some(&json!("invalid_client_attestation"))
+    );
+    assert!(value.get("access_token").is_none());
+    assert!(value.get("refresh_token").is_none());
+    assert!(value.get("id_token").is_none());
+}
+
+#[actix_web::test]
 async fn refresh_token_persistence_failure_does_not_return_partial_refresh_token() {
     let state = issue_state_with_valid_signing_key();
     let client = client_with_grants(&["client_credentials", "refresh_token"]);
