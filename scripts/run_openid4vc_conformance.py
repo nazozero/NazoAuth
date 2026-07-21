@@ -37,7 +37,7 @@ from apply_public_conformance_onboarding import (  # noqa: E402
 
 PRE_AUTHORIZED_CODE_GRANT = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 OIDF_TERMINAL_MODULE_STATUSES = {"FINISHED", "FAILED", "INTERRUPTED"}
-MAX_CONSECUTIVE_CREDENTIAL_OFFERS = 2
+PRE_AUTHORIZED_MULTIPLE_CLIENTS_TEST = "oid4vci-1_0-issuer-happy-flow-multiple-clients"
 
 
 def fail(message: str) -> None:
@@ -416,13 +416,18 @@ class Openid4vcDriver:
         grant = str(variant.get("vci_grant_type", "authorization_code"))
         grant_type = PRE_AUTHORIZED_CODE_GRANT if grant == "pre_authorization_code" else "authorization_code"
         tx_code = issuer.get("tx_code") if grant == "pre_authorization_code" else None
-        while endpoint is not None:
+        test_name = str(info.get("testName") or info.get("name") or "")
+        expected_offers = (
+            2
+            if grant == "pre_authorization_code"
+            and test_name == PRE_AUTHORIZED_MULTIPLE_CLIENTS_TEST
+            else 1
+        )
+        while (
+            endpoint is not None
+            and self.issuer_offer_deliveries.get(module_id, 0) < expected_offers
+        ):
             delivered = self.issuer_offer_deliveries.get(module_id, 0)
-            if delivered >= MAX_CONSECUTIVE_CREDENTIAL_OFFERS:
-                raise RuntimeError(
-                    f"OpenID4VC module {module_id} requested more than "
-                    f"{MAX_CONSECUTIVE_CREDENTIAL_OFFERS} consecutive credential offers"
-                )
             offer = request_json(
                 "POST",
                 urllib.parse.urljoin(
