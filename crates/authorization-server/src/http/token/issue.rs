@@ -545,11 +545,7 @@ pub(crate) async fn issue_token_response_with_service(
         .openid4vci_audience(&issue.scopes, &issue.authorization_details)
         .is_some();
     if issue.include_refresh
-        && should_issue_refresh_token(
-            client,
-            &issue.scopes,
-            openid4vci_credential_authorization,
-        )
+        && should_issue_refresh_token(client, &issue.scopes, openid4vci_credential_authorization)
     {
         let refresh_family = match issue.refresh_token_policy {
             RefreshTokenPolicy::IssueNew => Some((Uuid::now_v7(), None, None)),
