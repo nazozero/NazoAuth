@@ -17,7 +17,7 @@ fn exactly_one_header<'a>(
     headers: &'a HeaderMap,
     name: &'static str,
 ) -> Result<Option<&'a str>, ()> {
-    let mut values = headers.get_all(name).iter();
+    let mut values = headers.get_all(name);
     let Some(value) = values.next() else {
         return Ok(None);
     };
