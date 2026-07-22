@@ -32,7 +32,14 @@ fn production_token_dispatch_and_grants_do_not_receive_app_state() {
     let dispatch = function_body(
         dispatch,
         "pub(crate) async fn token_with_service(",
-        "#[cfg(not(test))]",
+        "pub(crate) use token_with_service as token;",
+    );
+    assert_eq!(
+        include_str!("../../../../src/http/token/dispatch.rs")
+            .matches("pub(crate) use token_with_service as token;")
+            .count(),
+        1,
+        "token dispatch must expose exactly one production entry point"
     );
     for forbidden in [
         "Data<TestInfrastructure>",

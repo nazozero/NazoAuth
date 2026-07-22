@@ -6,8 +6,6 @@
 
 use crate::adapters::security::constant_time_eq;
 use crate::domain::ClientRow;
-#[cfg(test)]
-include!("../../tests/support/seams/http/mtls.rs");
 
 use actix_web::HttpRequest;
 

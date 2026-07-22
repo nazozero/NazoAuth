@@ -1,5 +1,7 @@
+use super::*;
+
 fn test_operations(
-    state: &crate::domain::TestInfrastructure,
+    state: &crate::test_support::TestInfrastructure,
 ) -> std::sync::Arc<PasskeyOperationsProvider> {
     std::sync::Arc::new(PasskeyOperationsProvider::new(
         crate::test_support::passkey_service(state)
@@ -14,8 +16,8 @@ fn test_operations(
     ))
 }
 
-fn test_login_endpoint(
-    state: &crate::domain::TestInfrastructure,
+pub(crate) fn test_login_endpoint(
+    state: &crate::test_support::TestInfrastructure,
 ) -> actix_web::web::Data<nazo_http_actix::PasskeyLoginEndpoint> {
     let identity = &state.settings.identity;
     let session = &state.settings.session;
@@ -41,8 +43,8 @@ fn test_login_endpoint(
     ))
 }
 
-fn test_profile_endpoint(
-    state: &crate::domain::TestInfrastructure,
+pub(crate) fn test_profile_endpoint(
+    state: &crate::test_support::TestInfrastructure,
 ) -> actix_web::web::Data<nazo_http_actix::PasskeyProfileEndpoint> {
     let session = &state.settings.session;
     actix_web::web::Data::new(nazo_http_actix::PasskeyProfileEndpoint::new(

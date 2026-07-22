@@ -3,8 +3,6 @@ use nazo_http_actix::oauth_token_error;
 
 use super::{ServerTokenService, TokenForm};
 use crate::adapters::security::ValidatedClientAssertion;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/native_sso.rs");
 use crate::adapters::security::random_urlsafe_token;
 use crate::domain::client_policy::is_subset;
 use crate::domain::client_policy::parse_scope;

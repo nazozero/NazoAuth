@@ -88,8 +88,5 @@ fn delivery_value_response(mut value: Value) -> HttpResponse {
 }
 
 #[cfg(test)]
-include!("../../../tests/support/seams/http/profile/delivery.rs");
-
-#[cfg(test)]
 #[path = "../../../tests/unit/http/profile/delivery.rs"]
 mod tests;

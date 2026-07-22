@@ -1,6 +1,4 @@
 //! 当前用户客户端接入申请接口。
-#[cfg(test)]
-include!("../../../tests/support/seams/http/profile/access_requests.rs");
 
 use crate::http::sessions::SessionProfileHandles;
 

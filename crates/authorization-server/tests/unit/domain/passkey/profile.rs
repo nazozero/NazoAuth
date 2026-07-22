@@ -5,10 +5,10 @@ use crate::bootstrap::PASSKEY_CEREMONY_TTL_SECONDS;
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 use crate::domain::tenancy::DEFAULT_REALM_ID;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
-use crate::domain::{DatabasePasskeyFixture, DatabaseUserFixture, TestInfrastructure};
 use crate::http::sessions::SessionPayload;
 use crate::settings::Settings;
 use crate::test_support::valkey::valkey_set_ex;
+use crate::test_support::{DatabasePasskeyFixture, DatabaseUserFixture, TestInfrastructure};
 use actix_web::{
     HttpRequest, HttpResponse,
     cookie::Cookie,
@@ -93,7 +93,7 @@ async fn passkey_registration_begin(
     payload: Json<PasskeyBeginRequest>,
 ) -> HttpResponse {
     nazo_http_actix::passkey_registration_begin(
-        super::test_profile_endpoint(&state),
+        super::test_support::test_profile_endpoint(&state),
         req,
         Ok(payload),
     )
@@ -106,7 +106,7 @@ async fn passkey_registration_finish(
     payload: Json<PasskeyFinishRequest>,
 ) -> HttpResponse {
     nazo_http_actix::passkey_registration_finish(
-        super::test_profile_endpoint(&state),
+        super::test_support::test_profile_endpoint(&state),
         req,
         Ok(payload),
     )
@@ -114,7 +114,7 @@ async fn passkey_registration_finish(
 }
 
 async fn passkey_list(state: Data<TestInfrastructure>, req: HttpRequest) -> HttpResponse {
-    nazo_http_actix::passkey_list(super::test_profile_endpoint(&state), req).await
+    nazo_http_actix::passkey_list(super::test_support::test_profile_endpoint(&state), req).await
 }
 
 async fn passkey_delete(
@@ -122,7 +122,12 @@ async fn passkey_delete(
     req: HttpRequest,
     path: Path<Uuid>,
 ) -> HttpResponse {
-    nazo_http_actix::passkey_delete(super::test_profile_endpoint(&state), req, path).await
+    nazo_http_actix::passkey_delete(
+        super::test_support::test_profile_endpoint(&state),
+        req,
+        path,
+    )
+    .await
 }
 
 async fn load_user_passkeys(

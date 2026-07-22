@@ -1,6 +1,4 @@
 //! RFC 7523 JWT bearer authorization grant.
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/jwt_bearer.rs");
 use nazo_http_actix::oauth_token_error;
 
 use super::issue::{TokenIssuanceContext, issue_token_response_with_service};

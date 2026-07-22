@@ -2,9 +2,8 @@ use super::*;
 use crate::config::ConfigSource;
 use crate::domain::ClientRow;
 use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-use crate::http::authorization::{
-    AuthorizationHttpConfig, AuthorizationTestFixture, ServerAuthorizationService,
-};
+use crate::http::authorization::test_support::AuthorizationTestFixture;
+use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
 use crate::http::sessions::AdminSessionHandles;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_postgres::{DbPool, create_pool, get_conn};

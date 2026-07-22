@@ -1,4 +1,9 @@
 use super::*;
+use crate::test_support::DatabaseUserFixture;
+use actix_web::http::header;
+use actix_web::http::header::HeaderValue;
+use chrono::Utc;
+use uuid::Uuid;
 
 #[test]
 fn cross_site_fetch_detection_is_case_insensitive_and_fail_closed() {

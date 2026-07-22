@@ -1,8 +1,6 @@
 //! CSRF token 刷新端点。
 use crate::adapters::security::random_urlsafe_token;
 use crate::http::sessions::SessionProfileHandles;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/auth/csrf.rs");
 use actix_web::web::Data;
 use actix_web::{HttpRequest, HttpResponse};
 use nazo_http_actix::json_response;

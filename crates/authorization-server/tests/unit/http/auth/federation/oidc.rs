@@ -4,6 +4,7 @@ use crate::settings::OidcFederationSettings;
 use crate::test_support::ClientSigningFixture;
 use crate::test_support::client_signing_fixture;
 use jsonwebtoken::{Algorithm, Header};
+use serde_json::json;
 use std::net::SocketAddr;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -65,19 +66,6 @@ fn oidc_authorization_url_includes_all_required_params() {
         params.get("code_challenge").map(|v| v.as_ref()),
         Some(pkce_s256("verifier-1").as_str())
     );
-}
-
-#[test]
-fn oidc_state_key_includes_blake3_hash() {
-    let key = oidc_state_key("state-value");
-    assert!(key.starts_with("oauth:federation:oidc:state:"));
-    assert_eq!(key.len(), 28 + 64);
-}
-
-#[test]
-fn oidc_state_key_is_deterministic() {
-    assert_eq!(oidc_state_key("same"), oidc_state_key("same"));
-    assert_ne!(oidc_state_key("one"), oidc_state_key("two"));
 }
 
 #[test]

@@ -1,5 +1,3 @@
-#[cfg(test)]
-include!("../../tests/support/seams/admin_clients/validation.rs");
 use super::{AdminClientCryptoPort, AdminClientError, CreateClientRequest};
 use crate::{
     OAuthClient, SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,

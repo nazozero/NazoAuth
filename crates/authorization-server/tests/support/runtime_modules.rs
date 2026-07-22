@@ -1,3 +1,5 @@
+use super::*;
+
 pub(crate) fn runtime_module_registry_for_test(
     pool: DbPool,
     settings: &Settings,

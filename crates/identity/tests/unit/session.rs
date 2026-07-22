@@ -138,6 +138,17 @@ fn service(store: Arc<FakeStore>) -> SessionService {
 }
 
 #[test]
+fn add_amr_deduplicates_methods_and_preserves_claim_order() {
+    let mut amr = vec!["pwd".to_owned(), "otp".to_owned()];
+
+    add_amr(&mut amr, "mfa");
+    add_amr(&mut amr, "pwd");
+    add_amr(&mut amr, "mfa");
+
+    assert_eq!(amr, vec!["pwd", "otp", "mfa"]);
+}
+
+#[test]
 fn current_session_exposes_exact_logged_in_clients() {
     let now = chrono::Utc::now();
     let session = CurrentSession {

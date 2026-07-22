@@ -4,8 +4,6 @@ use crate::adapters::audit::audit_fields;
 use crate::adapters::security::ValidatedClientAssertion;
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::constant_time_eq;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/refresh.rs");
 
 use crate::domain::client_policy::audiences_allowed;
 use crate::domain::client_policy::is_subset;

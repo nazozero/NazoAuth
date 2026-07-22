@@ -1,3 +1,4 @@
+use super::super::{authorization_duplicate_parameters, oauth_json_error};
 use super::*;
 use actix_web::test::TestRequest;
 use nazo_auth::parse_resource_indicator_parameter;

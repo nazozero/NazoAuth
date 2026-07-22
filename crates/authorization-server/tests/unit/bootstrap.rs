@@ -1,4 +1,5 @@
 use super::*;
+use actix_web::http::header;
 use actix_web::{HttpResponse, test as actix_test};
 
 #[test]

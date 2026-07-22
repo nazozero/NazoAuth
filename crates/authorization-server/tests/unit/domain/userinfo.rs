@@ -1,12 +1,25 @@
+impl UserinfoHandles {
+    pub(crate) fn from_test_infrastructure(
+        state: &crate::test_support::TestInfrastructure,
+    ) -> Self {
+        Self::new(
+            nazo_valkey::ReplayStore::new(&state.valkey_connection()),
+            state.keyset.clone(),
+            UserinfoConfig::from(state.settings.as_ref()),
+        )
+    }
+}
+
 use super::*;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::domain::UserinfoConfig;
 use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-use crate::domain::{DatabaseUserFixture, TestInfrastructure, UserinfoConfig};
 use crate::http::token::ServerTokenService;
 use crate::settings::Settings;
+use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use actix_web::{
     HttpRequest, HttpResponse,
     http::{StatusCode, header},

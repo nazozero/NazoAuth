@@ -3,8 +3,6 @@
 use nazo_http_actix::{empty_response_no_store, json_response_no_store, oauth_error};
 
 use crate::adapters::audit::{audit_event, audit_fields};
-#[cfg(test)]
-include!("../../../tests/support/seams/http/profile/federation_links.rs");
 
 use crate::http::sessions::SessionProfileHandles;
 use actix_web::http::StatusCode;

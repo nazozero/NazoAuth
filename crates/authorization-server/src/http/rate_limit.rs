@@ -2,9 +2,6 @@
 //! 限流主体默认取连接来源地址，不信任可伪造的转发头。
 use nazo_http_actix::{authorization_error_response, oauth_error};
 
-#[cfg(test)]
-include!("../../tests/support/seams/http/rate_limit.rs");
-
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;

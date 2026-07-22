@@ -1,6 +1,4 @@
 //! OpenID Connect CIBA poll/ping grant.
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/ciba.rs");
 use nazo_http_actix::{
     empty_response, json_response_no_store, oauth_error, oauth_token_error,
     request_uses_form_urlencoded,

@@ -7,8 +7,6 @@ use actix_web::{
     web::Bytes,
 };
 
-#[cfg(test)]
-include!("../../../../tests/support/seams/http/authorization/request/form.rs");
 use nazo_auth::{encode_resource_indicators, has_duplicate_oauth_parameter};
 
 pub(super) fn parse_authorization_post_form(

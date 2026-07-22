@@ -89,8 +89,6 @@ use crate::http::token::dispatch::{Openid4vcTokenHandles, TokenCoreHandles, Toke
 use crate::http::token::issue::TokenIssuanceConfig;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
-#[cfg(test)]
-include!("../../tests/support/seams/bootstrap/module.rs");
 use nazo_http_actix::ClientIpConfig;
 use nazo_http_actix::{
     AuthorizationDecisionEndpoint, LocalRegistrationEndpoint, MfaProfileConfig, MfaProfileEndpoint,

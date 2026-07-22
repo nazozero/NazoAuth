@@ -1,7 +1,5 @@
 //! JSON view 组装函数。
 use crate::domain::ClientRow;
-#[cfg(test)]
-include!("../../tests/support/seams/http/views.rs");
 
 use actix_web::http::header::HeaderMap;
 

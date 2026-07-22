@@ -3,8 +3,6 @@ use crate::adapters::security::ValidatedClientAssertion;
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::constant_time_eq;
 use crate::adapters::security::pkce_s256;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/authorization_code.rs");
 use crate::domain::client_policy::audiences_allowed;
 
 use crate::domain::client_policy::is_subset;

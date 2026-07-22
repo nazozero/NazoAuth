@@ -1,7 +1,5 @@
 //! client_credentials grant 处理。
 use crate::adapters::security::ValidatedClientAssertion;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/client_credentials.rs");
 use crate::domain::client_policy::audiences_allowed;
 use crate::domain::client_policy::is_subset;
 use crate::domain::client_policy::parse_scope;

@@ -1,4 +1,5 @@
 use super::*;
+use actix_web::http::header;
 use actix_web::{App, HttpResponse, http::StatusCode, test, web};
 use chrono::{TimeZone, Utc};
 use nazo_http_actix::{
@@ -241,9 +242,11 @@ async fn disabled_dynamic_client_registration_keeps_the_static_route_contract() 
         .build()
         .expect("test Valkey client construction should not connect");
     let valkey = nazo_valkey::ValkeyConnection::from_existing_client(valkey);
-    let runtime_modules =
-        crate::runtime_modules::runtime_module_registry_for_test(pool.clone(), settings.as_ref())
-            .expect("test runtime module registry should be valid");
+    let runtime_modules = crate::runtime_modules::test_support::runtime_module_registry_for_test(
+        pool.clone(),
+        settings.as_ref(),
+    )
+    .expect("test runtime module registry should be valid");
     let remote_documents = Arc::new(
         crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
             .expect("empty private-origin policy should be valid"),

@@ -272,10 +272,7 @@ def check_rust_test_structure() -> None:
     top_level_hook = re.compile(
         r"(?m)^#\[cfg\(test\)\]\r?\n"
         r"(?:(?:#\[[^\r\n]+\]\r?\n)*)"
-        r"(?:"
-        r"include!\(\"[^\"]*tests/support/seams/[^\"]+\"\);"
-        r"|(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*;"
-        r")"
+        r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*;"
     )
     nested_cfg = re.compile(
         r"(?m)^(?P<indent>[ \t]+)#\[cfg\(test\)\]\r?\n"
@@ -295,8 +292,6 @@ def check_rust_test_structure() -> None:
         ),
     }
 
-    seam_files = set()
-    referenced_seams = set()
     violations = []
     for crate in (ROOT / "crates").iterdir():
         source_root = crate / "src"
@@ -317,6 +312,8 @@ def check_rust_test_structure() -> None:
             relative = source_file.relative_to(ROOT).as_posix()
             if inline_test_module.search(source) or test_attribute.search(source):
                 violations.append(f"{relative} embeds executable tests in production source")
+            if "include!(" in source:
+                violations.append(f"{relative} includes another source file")
 
             hook_matches = list(top_level_hook.finditer(source))
             for cfg_match in top_level_cfg.finditer(source):
@@ -340,22 +337,22 @@ def check_rust_test_structure() -> None:
             for hook in hook_matches:
                 hook_source = hook.group(0)
                 path_match = re.search(r'#\[path\s*=\s*"([^"]+)"\]', hook_source)
-                include_match = re.search(r'include!\("([^"]+)"\)', hook_source)
-                literal = (path_match or include_match)
-                if literal is None:
+                if path_match is None:
                     violations.append(f"{relative} has a test module without an explicit path")
                     continue
-                target = (source_file.parent / literal.group(1)).resolve()
+                target = (source_file.parent / path_match.group(1)).resolve()
                 if not target.is_file():
                     violations.append(
-                        f"{relative} mounts a missing test file: {literal.group(1)}"
+                        f"{relative} mounts a missing test file: {path_match.group(1)}"
                     )
-                if include_match:
-                    referenced_seams.add(target)
 
         seam_root = crate / "tests" / "support" / "seams"
-        if seam_root.is_dir():
-            seam_files.update(path.resolve() for path in seam_root.rglob("*.rs"))
+        seam_files = list(seam_root.rglob("*.rs")) if seam_root.is_dir() else []
+        if seam_files:
+            violations.append(
+                f"{crate.relative_to(ROOT).as_posix()} retains forbidden tests/support/seams: "
+                f"{[path.relative_to(ROOT).as_posix() for path in seam_files]}"
+            )
         if (crate / "tests" / "source_mounted").exists():
             violations.append(
                 f"{crate.relative_to(ROOT).as_posix()} retains tests/source_mounted"
@@ -370,6 +367,10 @@ def check_rust_test_structure() -> None:
                         f"{test_file.relative_to(ROOT).as_posix()} repeats production/test layout"
                     )
                 source = test_file.read_text(encoding="utf-8")
+                if "include!(" in source:
+                    violations.append(
+                        f"{test_file.relative_to(ROOT).as_posix()} includes another source file"
+                    )
                 for literal in re.finditer(
                     r'#\[path\s*=\s*"([^"]+)"\]|include!\("([^"]+)"\)', source
                 ):
@@ -384,12 +385,6 @@ def check_rust_test_structure() -> None:
                         f"through {raw_target}"
                     )
 
-    orphaned_seams = sorted(seam_files - referenced_seams)
-    if orphaned_seams:
-        violations.append(
-            "unmounted test seams: "
-            + str([path.relative_to(ROOT).as_posix() for path in orphaned_seams])
-        )
     if violations:
         raise SystemExit("Rust test structure violations:\n- " + "\n- ".join(violations))
 

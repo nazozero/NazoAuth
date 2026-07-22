@@ -1,6 +1,3 @@
-#[cfg(test)]
-include!("../../tests/support/seams/domain/tenancy.rs");
-
 use uuid::Uuid;
 
 pub(crate) const DEFAULT_TENANT_ID: Uuid = Uuid::from_u128(1);

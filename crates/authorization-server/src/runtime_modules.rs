@@ -265,9 +265,6 @@ fn module_catalog(
     Ok(catalog)
 }
 
-#[cfg(test)]
-include!("../tests/support/seams/runtime_modules.rs");
-
 async fn seed_desired_states(
     repository: &RuntimeModuleRepository,
     registry: &ServerRuntimeModuleRegistry,
@@ -397,6 +394,10 @@ fn runtime_instance_id() -> anyhow::Result<String> {
     }
     Ok(configured)
 }
+
+#[cfg(test)]
+#[path = "../tests/support/runtime_modules.rs"]
+pub(crate) mod test_support;
 
 #[cfg(test)]
 #[path = "../tests/unit/runtime_modules.rs"]

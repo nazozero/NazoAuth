@@ -53,10 +53,11 @@ crate's test-support module. If a test can use the public API, make it an
 integration test instead. If a behavior cannot be tested without duplicating
 it, first move that behavior behind an owned production API.
 
-`tests/support/seams` is a migration-only legacy area. Every remaining file is
-debt: it must be reduced to composition that delegates to production and then
-moved to ordinary test support. New seams and new business logic in an existing
-seam are prohibited.
+`tests/support/seams` is forbidden. Test-only dependency composition belongs in
+an explicitly named `tests/support` module mounted with `#[path]`; it must not
+reimplement policy, parsing, key derivation, cryptography, or state
+transitions. Tests that need raw persistence keys use the owning storage
+crate's test harness so the derivation still has one implementation.
 
 Conditional runtime behavior under `cfg(test)` is exceptional. It is allowed
 only when the production action is unsafe or nondeterministic in a test process
@@ -74,8 +75,8 @@ review and a concrete explanation.
 - top-level `cfg(test)` items that are not explicit unit/support mounts;
 - unreviewed nested test seams;
 - a test that reaches into `src` with `#[path]` or `include!`;
-- missing mount targets, orphaned seam files, and the legacy
-  `tests/source_mounted` directory.
+- missing mount targets, any `tests/support/seams` file, test-side `include!`,
+  and the legacy `tests/source_mounted` directory.
 
 Run the structure check before the normal Rust quality gate documented in
 [architecture.md](architecture.md#compatibility-and-verification).

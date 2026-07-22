@@ -1,3 +1,41 @@
+use crate::test_support::TestInfrastructure;
+
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+
+use nazo_auth::OidcClaimRequest;
+
+use nazo_http_actix::OAuthJsonErrorFields;
+
+pub(crate) async fn issue_token_response(
+    state: &TestInfrastructure,
+    client: &ClientRow,
+    issue: TokenIssue,
+) -> HttpResponse {
+    let service = ServerTokenService::new(
+        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
+        nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
+        state.keyset.clone(),
+    );
+    let config = TokenIssuanceConfig::from(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
+    let authorization = test_support::test_authorization_service(state);
+    issue_token_response_with_service(
+        &TokenIssuanceContext {
+            config: &config,
+            modules: &modules,
+            authorization: &authorization,
+        },
+        &service,
+        client,
+        issue,
+    )
+    .await
+}
+
 use super::*;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
@@ -180,27 +218,6 @@ fn refresh_token_grant_matching_is_exact_and_scope_case_sensitive() {
         assert!(
             !should_issue_refresh_token(&client, &scopes, false),
             "refresh issuance must require exact offline_access authorization scope: {scopes:?}"
-        );
-    }
-}
-
-#[test]
-fn consumed_authorization_code_transition_requires_active_consuming_state() {
-    assert!(authorization_code_state::consumed_authorization_code_transition_result("ok").is_ok());
-
-    for state in [
-        "missing",
-        "pending",
-        "consumed",
-        "failed",
-        "busy",
-        "malformed",
-    ] {
-        let error = authorization_code_state::consumed_authorization_code_transition_result(state)
-            .expect_err("non-consuming authorization code state must fail consumed marker write");
-        assert!(
-            error.to_string().contains(state),
-            "error should preserve the unexpected state for diagnostics"
         );
     }
 }

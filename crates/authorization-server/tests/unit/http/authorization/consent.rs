@@ -1,3 +1,21 @@
+use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
+
+use crate::domain::tenancy::DEFAULT_REALM_ID;
+
+use crate::domain::tenancy::DEFAULT_TENANT_ID;
+
+use crate::settings::Settings;
+
+use crate::test_support::valkey::valkey_set_ex;
+
+use chrono::{Duration, Utc};
+
+use serde_json::Value;
+
+fn parse_consent_payload(raw: Option<String>) -> Option<ConsentPayload> {
+    raw.and_then(|value| serde_json::from_str::<ConsentPayload>(&value).ok())
+}
+
 use super::*;
 use actix_web::cookie::Cookie;
 use actix_web::test::TestRequest;
@@ -12,8 +30,8 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
-use crate::domain::{DatabaseUserFixture, TestInfrastructure};
 use crate::http::sessions::SessionPayload;
+use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use nazo_postgres::{create_pool, get_conn};
 
 async fn authorize_consent(
@@ -21,7 +39,8 @@ async fn authorize_consent(
     req: HttpRequest,
     Query(q): Query<HashMap<String, String>>,
 ) -> HttpResponse {
-    let dependencies = crate::http::authorization::TestAuthorizationDependencies::new(&state);
+    let dependencies =
+        crate::http::authorization::test_support::TestAuthorizationDependencies::new(&state);
     authorize_consent_with_context(&dependencies.context(), req, q).await
 }
 

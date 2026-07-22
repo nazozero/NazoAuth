@@ -84,9 +84,6 @@ pub(crate) fn is_blocked_ip(ip: IpAddr) -> bool {
     }
 }
 
-#[cfg(test)]
-include!("../../tests/support/seams/domain/sector_identifier.rs");
-
 pub(crate) fn parse_sector_identifier_document(
     content_type: &str,
     body: &[u8],

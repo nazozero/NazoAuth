@@ -101,7 +101,8 @@ pub(crate) fn permits_existing_module_transaction(
 }
 
 #[cfg(test)]
-include!("../../../tests/support/seams/http/authorization/module.rs");
+#[path = "../../../tests/support/http/authorization.rs"]
+pub(crate) mod test_support;
 
 pub(crate) use jar::{
     apply_request_object_with_context, unverified_signed_request_object_client_id,
