@@ -8,7 +8,7 @@ use actix_web::{
 };
 
 #[cfg(test)]
-use super::{authorization_duplicate_parameters, oauth_json_error};
+include!("../../../../tests/support/seams/http/authorization/request/form.rs");
 use nazo_auth::{encode_resource_indicators, has_duplicate_oauth_parameter};
 
 pub(super) fn parse_authorization_post_form(
@@ -86,5 +86,5 @@ fn parse_authorization_form_encoded(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/source_mounted/src/http/authorization/request/tests/form.rs"]
+#[path = "../../../../tests/unit/http/authorization/request/form.rs"]
 mod tests;

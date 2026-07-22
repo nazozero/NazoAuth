@@ -3,7 +3,7 @@
 
 use actix_cors::Cors;
 #[cfg(test)]
-use actix_web::http::header;
+include!("../../tests/support/seams/bootstrap/cors.rs");
 
 use crate::settings::Settings;
 
@@ -32,5 +32,5 @@ pub(crate) fn cors_scim(settings: &Settings) -> Cors {
 }
 
 #[cfg(test)]
-#[path = "../../tests/source_mounted/src/bootstrap/tests/cors.rs"]
+#[path = "../../tests/unit/bootstrap/cors.rs"]
 mod tests;

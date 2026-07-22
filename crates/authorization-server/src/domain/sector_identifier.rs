@@ -85,13 +85,7 @@ pub(crate) fn is_blocked_ip(ip: IpAddr) -> bool {
 }
 
 #[cfg(test)]
-pub(crate) fn sector_identifier_hostname(uri: &str) -> Result<String, SectorIdentifierError> {
-    let parsed = url::Url::parse(uri).map_err(|_| SectorIdentifierError::InvalidUri)?;
-    parsed
-        .host_str()
-        .map(ToOwned::to_owned)
-        .ok_or(SectorIdentifierError::InvalidUri)
-}
+include!("../../tests/support/seams/domain/sector_identifier.rs");
 
 pub(crate) fn parse_sector_identifier_document(
     content_type: &str,
@@ -168,5 +162,5 @@ pub(crate) async fn fetch_sector_identifier_uris(
 }
 
 #[cfg(test)]
-#[path = "../../tests/source_mounted/src/support/tests/sector_identifier.rs"]
+#[path = "../../tests/unit/domain/sector_identifier.rs"]
 mod tests;

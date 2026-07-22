@@ -116,5 +116,5 @@ fn audit_event_name_valid(event: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../../tests/source_mounted/src/support/tests/audit.rs"]
+#[path = "../../tests/unit/adapters/audit.rs"]
 mod tests;

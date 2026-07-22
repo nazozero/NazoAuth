@@ -792,5 +792,5 @@ fn default_protected_resource_identifier(issuer: &str) -> String {
 }
 
 #[cfg(test)]
-#[path = "../tests/source_mounted/src/settings/tests/settings.rs"]
+#[path = "../tests/unit/settings.rs"]
 mod tests;
