@@ -66,7 +66,10 @@ mod production {
         service: Arc<ServerResourceAuthorizationService>,
     }
 
-    fn same_key_generation(cached: &Arc<KeySnapshot>, current: &Arc<KeySnapshot>) -> bool {
+    pub(super) fn same_key_generation(
+        cached: &Arc<KeySnapshot>,
+        current: &Arc<KeySnapshot>,
+    ) -> bool {
         // The cache entry strongly owns `cached`, so its allocation cannot be
         // freed or have its address reused while this comparison executes.
         Arc::ptr_eq(cached, current)
@@ -310,11 +313,11 @@ mod production {
             })
         }
     }
-
-    #[cfg(test)]
-    #[path = "../../../../tests/unit/domain/resource_server.rs"]
-    mod tests;
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/domain/resource_server.rs"]
+mod tests;
 
 pub(crate) use production::{
     ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,

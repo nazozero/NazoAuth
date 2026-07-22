@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::same_key_generation;
+use super::production::same_key_generation;
 
 #[test]
 fn verifier_cache_hits_only_the_same_live_snapshot_generation() {
