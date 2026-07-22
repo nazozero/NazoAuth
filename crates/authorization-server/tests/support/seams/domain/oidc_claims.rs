@@ -36,10 +36,3 @@ pub(crate) fn compute_subject_for_client(
     )
     .map_err(Into::into)
 }
-
-pub(crate) fn supported_user_claim(name: &str) -> bool {
-    PROFILE_CLAIMS.contains(&name)
-        || EMAIL_CLAIMS.contains(&name)
-        || ADDRESS_CLAIMS.contains(&name)
-        || PHONE_CLAIMS.contains(&name)
-}

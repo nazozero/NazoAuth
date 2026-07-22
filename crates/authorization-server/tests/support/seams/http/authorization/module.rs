@@ -93,8 +93,6 @@ impl TestAuthorizationDependencies {
     }
 }
 
-pub(crate) const BASELINE_ACR_VALUE: &str = "1";
-
 impl<'a> AuthorizationRequestContext<'a> {
     pub(crate) fn for_test(
         service: &'a ServerAuthorizationService,
