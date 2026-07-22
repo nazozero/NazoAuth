@@ -1,11 +1,9 @@
 #[cfg(test)]
-use crate::adapters::security::blake3_hex;
+include!("../../../../tests/support/seams/http/auth/federation/oidc.rs");
 use crate::adapters::security::{jwt_decoding_key_from_jwk, pkce_s256};
 use chrono::Utc;
 use serde::Deserialize;
 use serde_json::Value;
-#[cfg(test)]
-use serde_json::json;
 
 use crate::settings::OidcFederationSettings;
 
@@ -58,11 +56,6 @@ pub(super) fn oidc_authorization_url(
         provider.authorization_endpoint,
         serializer.finish()
     )
-}
-
-#[cfg(test)]
-pub(super) fn oidc_state_key(state: &str) -> String {
-    format!("oauth:federation:oidc:state:{}", blake3_hex(state))
 }
 
 pub(super) async fn exchange_oidc_code(
@@ -158,5 +151,5 @@ fn audience_contains(aud: &Value, client_id: &str) -> bool {
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/source_mounted/src/http/auth/tests/federation_oidc.rs"]
+#[path = "../../../../tests/unit/http/auth/federation/oidc.rs"]
 mod tests;

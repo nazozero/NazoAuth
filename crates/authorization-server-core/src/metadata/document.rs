@@ -387,5 +387,5 @@ fn id_token_signing_alg_values_supported<'a>(active: &'a [&'a str]) -> Vec<&'a s
 }
 
 #[cfg(test)]
-#[path = "document_tests.rs"]
+#[path = "../../tests/unit/metadata/document.rs"]
 mod tests;

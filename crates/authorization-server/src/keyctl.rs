@@ -200,5 +200,5 @@ fn parse_generate_local_args(args: Vec<String>) -> anyhow::Result<GenerateLocalK
 }
 
 #[cfg(test)]
-#[path = "../tests/source_mounted/src/keyctl/tests/keyctl.rs"]
+#[path = "../tests/unit/keyctl.rs"]
 mod tests;

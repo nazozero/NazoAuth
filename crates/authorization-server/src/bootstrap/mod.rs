@@ -90,7 +90,7 @@ use crate::http::token::issue::TokenIssuanceConfig;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::Settings;
 #[cfg(test)]
-use actix_web::http::header;
+include!("../../tests/support/seams/bootstrap/module.rs");
 use nazo_http_actix::ClientIpConfig;
 use nazo_http_actix::{
     AuthorizationDecisionEndpoint, LocalRegistrationEndpoint, MfaProfileConfig, MfaProfileEndpoint,
@@ -557,7 +557,6 @@ pub async fn run() -> anyhow::Result<()> {
         authorization_runtime.clone(),
     ));
     let logout_deliveries = nazo_postgres::AuditRepository::new(diesel_db.clone());
-    #[cfg(not(test))]
     let oidc_logout_operations = OidcLogoutHandles::new(
         session_profiles.get_ref().clone(),
         client_repository,
@@ -565,15 +564,6 @@ pub async fn run() -> anyhow::Result<()> {
         keyset.clone(),
         OidcLogoutConfig::from(settings.as_ref()),
         runtime_modules.registry.clone(),
-    );
-    #[cfg(test)]
-    let oidc_logout_operations = OidcLogoutHandles::new(
-        session_profiles.get_ref().clone(),
-        nazo_postgres::OAuthClientRepository::new(diesel_db.clone()),
-        logout_deliveries.clone(),
-        keyset.clone(),
-        OidcLogoutConfig::from(settings.as_ref()),
-        settings.modules.enable_frontchannel_logout,
     );
     let oidc_logout = web::Data::new(OidcLogoutEndpoint::new(
         Arc::new(oidc_logout_operations),
@@ -937,5 +927,5 @@ pub async fn run() -> anyhow::Result<()> {
 }
 
 #[cfg(test)]
-#[path = "../../tests/source_mounted/src/bootstrap/tests/bootstrap.rs"]
+#[path = "../../tests/unit/bootstrap.rs"]
 mod tests;

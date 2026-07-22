@@ -5,13 +5,13 @@ mod backchannel_logout_worker;
 #[cfg(not(test))]
 mod ciba_ping_delivery;
 #[cfg(test)]
-#[path = "../../tests/source_mounted/src/domain/tests/ciba_ping_delivery.rs"]
+#[path = "../../tests/unit/domain/ciba_ping_delivery.rs"]
 mod ciba_ping_delivery_tests;
 mod ciba_ping_tls;
 pub(crate) mod client_jwe;
 pub(crate) mod client_policy;
 #[cfg(test)]
-#[path = "../../tests/source_mounted/src/domain/database_user_fixture.rs"]
+#[path = "../../tests/support/domain/database_user_fixture.rs"]
 mod database_user_fixture;
 mod dynamic_registration;
 mod local_registration;
@@ -37,7 +37,7 @@ mod token_management;
 mod userinfo;
 
 #[cfg(test)]
-pub(crate) use crate::test_support::TestInfrastructure;
+include!("../../tests/support/seams/domain/module.rs");
 pub(crate) use authorization_decision::ServerAuthorizationDecisionOperations;
 #[cfg(not(test))]
 pub(crate) use backchannel_logout_worker::{
@@ -45,10 +45,7 @@ pub(crate) use backchannel_logout_worker::{
 };
 #[cfg(not(test))]
 pub(crate) use ciba_ping_delivery::{CibaPingDeliveryWorker, spawn_ciba_ping_delivery_worker};
-#[cfg(test)]
-pub(crate) use database_user_fixture::{
-    DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
-};
+
 pub(crate) use dynamic_registration::DynamicRegistrationConfig;
 pub(crate) use dynamic_registration::dynamic_registration_endpoint;
 pub(crate) use local_registration::{

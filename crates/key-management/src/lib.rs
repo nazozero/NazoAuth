@@ -10,7 +10,7 @@ mod store;
 mod token;
 
 pub use client_registration::{
-    ClientRegistrationCrypto, client_jwks_contains_signing_key,
+    ClientRegistrationCrypto, SUPPORTED_CLIENT_JWT_SIGNING_ALGS, client_jwks_contains_signing_key,
     client_jwks_matching_encryption_key_count, rfc4514_dn_matches, validate_client_jwks,
     validate_rfc4514_dn, validate_self_signed_mtls_jwks,
 };

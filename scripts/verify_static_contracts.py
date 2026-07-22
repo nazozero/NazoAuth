@@ -261,6 +261,142 @@ def check_workspace_package_metadata() -> None:
                 )
 
 
+def check_rust_test_structure() -> None:
+    inline_test_module = re.compile(
+        r"(?m)^\s*#\[cfg\(test\)\]\s*"
+        r"(?:#\[[^\]]+\]\s*)*"
+        r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{"
+    )
+    test_attribute = re.compile(r"(?m)^\s*#\[(?:tokio::)?test(?:\([^\]]*\))?\]")
+    top_level_cfg = re.compile(r"(?m)^#\[cfg\(test\)\]$")
+    top_level_hook = re.compile(
+        r"(?m)^#\[cfg\(test\)\]\r?\n"
+        r"(?:(?:#\[[^\r\n]+\]\r?\n)*)"
+        r"(?:"
+        r"include!\(\"[^\"]*tests/support/seams/[^\"]+\"\);"
+        r"|(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*;"
+        r")"
+    )
+    nested_cfg = re.compile(
+        r"(?m)^(?P<indent>[ \t]+)#\[cfg\(test\)\]\r?\n"
+        r"(?P=indent)(?P<item>[^\r\n]+)"
+    )
+    allowed_nested_seams = {
+        "crates/authorization-server/src/bootstrap/mod.rs": (
+            "let valkey = nazo_valkey::test_support::connect(",
+            "let valkey_connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey);",
+            "let session_profiles = web::Data::new(SessionProfileHandles::new(",
+        ),
+        "crates/authorization-server/src/domain/resource_server.rs": (
+            '#[path = "../../../../tests/unit/domain/resource_server.rs"]',
+        ),
+        "crates/authorization-server/src/http/auth/federation.rs": (
+            "let builder = builder.no_proxy();",
+        ),
+        "crates/key-management/src/lifecycle.rs": (
+            'panic!("signing key lifecycle refresh failed: {error:#}");',
+        ),
+    }
+
+    seam_files = set()
+    referenced_seams = set()
+    violations = []
+    for crate in (ROOT / "crates").iterdir():
+        source_root = crate / "src"
+        if not source_root.is_dir():
+            continue
+        legacy_files = [
+            *source_root.rglob("tests.rs"),
+            *source_root.rglob("*_tests.rs"),
+        ]
+        if legacy_files:
+            violations.append(
+                f"{crate.relative_to(ROOT).as_posix()} keeps test files under src: "
+                f"{[path.relative_to(ROOT).as_posix() for path in legacy_files]}"
+            )
+
+        for source_file in source_root.rglob("*.rs"):
+            source = source_file.read_text(encoding="utf-8")
+            relative = source_file.relative_to(ROOT).as_posix()
+            if inline_test_module.search(source) or test_attribute.search(source):
+                violations.append(f"{relative} embeds executable tests in production source")
+
+            hook_matches = list(top_level_hook.finditer(source))
+            for cfg_match in top_level_cfg.finditer(source):
+                if not any(
+                    hook.start() == cfg_match.start() for hook in hook_matches
+                ):
+                    violations.append(f"{relative} has a non-mount top-level cfg(test) item")
+
+            actual_nested = tuple(
+                match.group("item").strip() for match in nested_cfg.finditer(source)
+            )
+            expected_nested = allowed_nested_seams.get(relative, ())
+            if len(actual_nested) != len(expected_nested) or any(
+                not actual.startswith(expected)
+                for actual, expected in zip(actual_nested, expected_nested, strict=True)
+            ):
+                violations.append(
+                    f"{relative} has unreviewed nested test seams: {actual_nested}"
+                )
+
+            for hook in hook_matches:
+                hook_source = hook.group(0)
+                path_match = re.search(r'#\[path\s*=\s*"([^"]+)"\]', hook_source)
+                include_match = re.search(r'include!\("([^"]+)"\)', hook_source)
+                literal = (path_match or include_match)
+                if literal is None:
+                    violations.append(f"{relative} has a test module without an explicit path")
+                    continue
+                target = (source_file.parent / literal.group(1)).resolve()
+                if not target.is_file():
+                    violations.append(
+                        f"{relative} mounts a missing test file: {literal.group(1)}"
+                    )
+                if include_match:
+                    referenced_seams.add(target)
+
+        seam_root = crate / "tests" / "support" / "seams"
+        if seam_root.is_dir():
+            seam_files.update(path.resolve() for path in seam_root.rglob("*.rs"))
+        if (crate / "tests" / "source_mounted").exists():
+            violations.append(
+                f"{crate.relative_to(ROOT).as_posix()} retains tests/source_mounted"
+            )
+
+        test_root = crate / "tests"
+        if test_root.is_dir():
+            for test_file in test_root.rglob("*.rs"):
+                relative_parts = test_file.relative_to(test_root).parts
+                if "src" in relative_parts or relative_parts.count("tests") > 0:
+                    violations.append(
+                        f"{test_file.relative_to(ROOT).as_posix()} repeats production/test layout"
+                    )
+                source = test_file.read_text(encoding="utf-8")
+                for literal in re.finditer(
+                    r'#\[path\s*=\s*"([^"]+)"\]|include!\("([^"]+)"\)', source
+                ):
+                    raw_target = literal.group(1) or literal.group(2)
+                    target = (test_file.parent / raw_target).resolve()
+                    try:
+                        target.relative_to(source_root.resolve())
+                    except ValueError:
+                        continue
+                    violations.append(
+                        f"{test_file.relative_to(ROOT).as_posix()} recompiles production source "
+                        f"through {raw_target}"
+                    )
+
+    orphaned_seams = sorted(seam_files - referenced_seams)
+    if orphaned_seams:
+        violations.append(
+            "unmounted test seams: "
+            + str([path.relative_to(ROOT).as_posix() for path in orphaned_seams])
+        )
+    if violations:
+        raise SystemExit("Rust test structure violations:\n- " + "\n- ".join(violations))
+
+
 def check_rfc9967_test_boundaries() -> None:
     production_sources = [
         *(ROOT / "crates" / "scim-events" / "src").rglob("*.rs"),
@@ -401,10 +537,8 @@ def check_fapi_ciba_boundaries() -> None:
         / "crates"
         / "authorization-server"
         / "tests"
-        / "source_mounted"
-        / "src"
+        / "unit"
         / "domain"
-        / "tests"
         / "ciba_ping_delivery.rs"
     )
     if not tls_policy_test.is_file():
@@ -1081,6 +1215,7 @@ def main() -> None:
         check_toolchain_pins()
         check_crate_dependency_boundaries()
         check_workspace_package_metadata()
+        check_rust_test_structure()
         check_rfc9967_test_boundaries()
         check_removed_security_capabilities()
         check_fapi_ciba_boundaries()

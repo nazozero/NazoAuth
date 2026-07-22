@@ -2,24 +2,12 @@
 use nazo_http_actix::{OAuthJsonErrorFields, json_response_status, oauth_error};
 
 use super::jar::{apply_request_object_with_context, unverified_signed_request_object_client_id};
-#[cfg(test)]
-use crate::adapters::security::blake3_hex;
 use crate::adapters::security::extract_client_credentials_with_trusted_proxies;
 use crate::adapters::security::has_basic_authorization_scheme;
 use crate::adapters::security::random_urlsafe_token;
-#[cfg(test)]
-use crate::domain::ClientRow;
+
 use crate::domain::PushedAuthorizationRequest;
-#[cfg(test)]
-use crate::domain::client_policy::{RedirectUriError, audiences_allowed, registered_redirect_uri};
-#[cfg(test)]
-use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
-#[cfg(test)]
-use crate::domain::tenancy::DEFAULT_REALM_ID;
-#[cfg(test)]
-use crate::domain::tenancy::DEFAULT_TENANT_ID;
-#[cfg(test)]
-use crate::http::authorization::AuthorizationHttpConfig;
+
 use crate::http::authorization::{AuthorizationEndpoint, AuthorizationRequestContext};
 use crate::http::client_attestation::client_attestation_headers;
 use crate::http::dpop::DpopError;
@@ -27,28 +15,21 @@ use crate::http::dpop::DpopErrorContext;
 use crate::http::dpop::dpop_error_response;
 use crate::http::mtls::request_mtls_thumbprint_from_trusted_proxy;
 use crate::http::rate_limit::rate_limited_response;
-#[cfg(test)]
-use crate::settings::Settings;
-#[cfg(test)]
-use crate::test_support::valkey::valkey_get;
+
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
-#[cfg(test)]
-use nazo_auth::parse_resource_indicator_parameter;
+
 use nazo_auth::{
     ExpandedParAdmissionPolicy, ParAdmissionError, RawParAdmissionPolicy,
     encode_resource_indicators, is_valid_dpop_jkt, unverified_client_assertion_client_id,
     validate_expanded_par_admission, validate_raw_par_admission,
 };
-#[cfg(test)]
-use serde_json::Value;
+
 use serde_json::json;
 use std::collections::HashMap;
-#[cfg(test)]
-use uuid::Uuid;
 
 pub(crate) const PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX: &str =
     "urn:ietf:params:oauth:request_uri:";
@@ -444,9 +425,6 @@ async fn par_after_rate_limit_inner(
             redirect_uris: &client.redirect_uris,
             allowed_audiences: &client.allowed_audiences,
             fapi2_requires_explicit_redirect_uri: context.config.profile.requires_fapi2_security(),
-            pkce_required: context.config.profile.requires_fapi2_security()
-                || client.require_dpop_bound_tokens
-                || client.require_mtls_bound_tokens,
         },
     ) {
         return par_admission_error(error);
@@ -555,9 +533,7 @@ fn par_admission_error(error: ParAdmissionError) -> HttpResponse {
             StatusCode::BAD_REQUEST,
             "FAPI2 profiles require sender-constrained access tokens.",
         ),
-        ParAdmissionError::PkceRequired => {
-            (StatusCode::BAD_REQUEST, "FAPI2 PAR requests require PKCE.")
-        }
+        ParAdmissionError::PkceRequired => (StatusCode::BAD_REQUEST, "PAR requests require PKCE."),
         ParAdmissionError::InvalidPkce => (
             StatusCode::BAD_REQUEST,
             "PAR code_challenge must use a valid S256 value.",
@@ -609,174 +585,10 @@ fn par_error_log_fields(response: &HttpResponse) -> Option<(u16, Option<String>)
     ))
 }
 
-#[cfg(test)]
-pub(crate) fn pushed_authorization_request_key(request_uri: &str) -> String {
-    format!("oauth:par:{}", blake3_hex(request_uri))
-}
-
 pub(crate) fn is_pushed_authorization_request_uri(request_uri: &str) -> bool {
     request_uri.starts_with(PUSHED_AUTHORIZATION_REQUEST_URI_PREFIX)
 }
 
 #[cfg(test)]
-fn validate_pushed_authorization_request(
-    client: &ClientRow,
-    params: &HashMap<String, String>,
-) -> Result<(), HttpResponse> {
-    if pushed_authorization_request_has_unsupported_response_type(params) {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "unsupported_response_type",
-            "PAR response_type is not supported.",
-        ));
-    }
-    registered_redirect_uri(client, params.get("redirect_uri").map(String::as_str))
-        .map(|_| ())
-        .map_err(|error| match error {
-            RedirectUriError::Missing => oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "PAR 请求缺少 redirect_uri.",
-            ),
-            RedirectUriError::Invalid => oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "PAR 请求 redirect_uri 未注册.",
-            ),
-        })
-}
-
-#[cfg(test)]
-fn pushed_authorization_request_has_unsupported_response_type(
-    params: &HashMap<String, String>,
-) -> bool {
-    params
-        .get("response_type")
-        .is_some_and(|response_type| response_type != "code")
-}
-
-#[cfg(test)]
-fn pushed_authorization_request_contains_request_uri(params: &HashMap<String, String>) -> bool {
-    params.contains_key("request_uri")
-}
-
-#[cfg(test)]
-fn validate_pushed_authorization_request_resources(
-    client: &ClientRow,
-    params: &HashMap<String, String>,
-) -> Result<(), HttpResponse> {
-    let resources = parse_resource_indicator_parameter(params.get("resource").map(String::as_str))
-        .map_err(|_| {
-            oauth_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_target",
-                "resource must be an absolute URI without a fragment.",
-            )
-        })?;
-    if !resources.is_empty() && !audiences_allowed(client, &resources) {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_target",
-            "请求的 resource 不在客户端允许范围内.",
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-fn pushed_authorization_request_requires_request_object(
-    settings: &Settings,
-    client: &ClientRow,
-) -> bool {
-    pushed_authorization_request_requires_request_object_with_config(
-        &AuthorizationHttpConfig::from(settings),
-        client,
-    )
-}
-
-#[cfg(test)]
-fn pushed_authorization_request_requires_request_object_with_config(
-    config: &AuthorizationHttpConfig,
-    client: &ClientRow,
-) -> bool {
-    client.require_par_request_object || config.profile.requires_signed_authorization_request()
-}
-
-#[cfg(test)]
-fn validate_pushed_authorization_request_profile(
-    settings: &Settings,
-    client: &ClientRow,
-    auth_method: &str,
-) -> Result<(), HttpResponse> {
-    validate_pushed_authorization_request_profile_with_config(
-        &AuthorizationHttpConfig::from(settings),
-        client,
-        auth_method,
-    )
-}
-
-#[cfg(test)]
-fn validate_pushed_authorization_request_profile_with_config(
-    config: &AuthorizationHttpConfig,
-    client: &ClientRow,
-    auth_method: &str,
-) -> Result<(), HttpResponse> {
-    if !config.profile.requires_fapi2_security() {
-        return Ok(());
-    }
-    if client.client_type != "confidential" {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "unauthorized_client",
-            "FAPI2 profiles require confidential clients.",
-        ));
-    }
-    if !matches!(
-        auth_method,
-        "private_key_jwt" | "tls_client_auth" | "self_signed_tls_client_auth"
-    ) {
-        return Err(oauth_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "FAPI2 profiles require private_key_jwt or mTLS client authentication.",
-        ));
-    }
-    if !(client.require_dpop_bound_tokens || client.require_mtls_bound_tokens) {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "FAPI2 profiles require sender-constrained access tokens.",
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-fn validate_pushed_authorization_request_profile_parameters(
-    settings: &Settings,
-    params: &HashMap<String, String>,
-) -> Result<(), HttpResponse> {
-    validate_pushed_authorization_request_profile_parameters_with_config(
-        &AuthorizationHttpConfig::from(settings),
-        params,
-    )
-}
-
-#[cfg(test)]
-fn validate_pushed_authorization_request_profile_parameters_with_config(
-    config: &AuthorizationHttpConfig,
-    params: &HashMap<String, String>,
-) -> Result<(), HttpResponse> {
-    if config.profile.requires_fapi2_security() && !params.contains_key("redirect_uri") {
-        return Err(oauth_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "FAPI2 PAR 请求必须显式包含 redirect_uri.",
-        ));
-    }
-    Ok(())
-}
-
-#[cfg(test)]
-#[path = "../../../tests/source_mounted/src/http/authorization/tests/par.rs"]
+#[path = "../../../tests/unit/http/authorization/par.rs"]
 mod tests;

@@ -169,6 +169,10 @@ history, PostgreSQL data, Valkey keys/payloads/TTL, token claims, OAuth/OIDC
 errors, discovery, and OIDC/FAPI/CIBA behavior. Contract tests must be in place
 before moving an implementation across a boundary.
 
+Production/test source boundaries, private-unit mounts, support seams, and
+integration-test placement are normative in [testing.md](testing.md). The
+static-contract gate enforces that structure across every workspace crate.
+
 The final local gate is:
 
 ```sh

@@ -69,9 +69,7 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
 }
 
 #[cfg(test)]
-pub(super) fn algorithm_name(alg: Algorithm) -> Option<&'static str> {
-    supported_algorithm(alg).map(|(name, _)| name)
-}
+include!("../tests/support/seams/jwk.rs");
 
 fn supported_algorithm(alg: Algorithm) -> Option<(&'static str, SupportedJwkAlgorithm)> {
     match alg {
@@ -84,5 +82,5 @@ fn supported_algorithm(alg: Algorithm) -> Option<(&'static str, SupportedJwkAlgo
 }
 
 #[cfg(test)]
-#[path = "../tests/source_mounted/jwk.rs"]
+#[path = "../tests/unit/jwk.rs"]
 mod tests;

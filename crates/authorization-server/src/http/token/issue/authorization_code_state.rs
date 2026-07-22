@@ -2,13 +2,7 @@ use super::*;
 use chrono::DateTime;
 
 #[cfg(test)]
-pub(super) fn consumed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
-    if result == "ok" {
-        Ok(())
-    } else {
-        anyhow::bail!("authorization code state is {result}, expected consuming")
-    }
-}
+include!("../../../../tests/support/seams/http/token/issue/authorization_code_state.rs");
 
 pub(super) fn failed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
     if matches!(result, "ok" | "missing" | "failed" | "consumed") {
@@ -102,5 +96,5 @@ pub(crate) async fn revoke_issued_authorization_code_tokens(
 }
 
 #[cfg(test)]
-#[path = "../../../../tests/source_mounted/src/http/token/tests/authorization_code_state.rs"]
+#[path = "../../../../tests/unit/http/token/issue/authorization_code_state.rs"]
 mod tests;
