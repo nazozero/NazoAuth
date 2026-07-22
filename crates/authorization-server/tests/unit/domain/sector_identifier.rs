@@ -1,6 +1,6 @@
 use super::{
-    SectorIdentifierError, fetch_sector_identifier_uris, is_blocked_host, is_blocked_ip,
-    parse_sector_identifier_document,
+    MAX_RESPONSE_BYTES, SectorIdentifierError, append_response_chunk, fetch_sector_identifier_uris,
+    is_blocked_host, is_blocked_ip, parse_sector_identifier_document,
 };
 use std::net::IpAddr;
 
@@ -36,6 +36,33 @@ fn allow_public_ipv4() {
 }
 
 #[test]
+fn block_non_global_ipv4_destinations() {
+    for address in [
+        "100.64.0.1",
+        "100.127.255.254",
+        "198.18.0.1",
+        "198.19.255.254",
+        "192.0.2.1",
+        "255.255.255.255",
+    ] {
+        assert!(
+            is_blocked_ip(address.parse::<IpAddr>().unwrap()),
+            "{address} must not be an outbound destination"
+        );
+    }
+}
+
+#[test]
+fn allow_globally_reachable_special_purpose_ipv4_destinations() {
+    for address in ["192.0.0.9", "192.0.0.10"] {
+        assert!(
+            !is_blocked_ip(address.parse::<IpAddr>().unwrap()),
+            "{address} is designated globally reachable"
+        );
+    }
+}
+
+#[test]
 fn block_loopback_ipv6() {
     assert!(is_blocked_ip("::1".parse::<IpAddr>().unwrap()));
 }
@@ -49,6 +76,46 @@ fn block_link_local_ipv6() {
 fn block_unique_local_ipv6() {
     assert!(is_blocked_ip("fc00::1".parse::<IpAddr>().unwrap()));
     assert!(is_blocked_ip("fd00::1".parse::<IpAddr>().unwrap()));
+}
+
+#[test]
+fn block_non_global_ipv6_destinations() {
+    for address in ["100::1", "2001:db8::1"] {
+        assert!(
+            is_blocked_ip(address.parse::<IpAddr>().unwrap()),
+            "{address} must not be an outbound destination"
+        );
+    }
+}
+
+#[test]
+fn allow_globally_reachable_special_purpose_ipv6_destinations() {
+    for address in [
+        "64:ff9b::808:808",
+        "2001:1::1",
+        "2001:1::2",
+        "2001:1::3",
+        "2001:3::1",
+        "2001:4:112::1",
+        "2001:20::1",
+        "2001:30::1",
+    ] {
+        assert!(
+            !is_blocked_ip(address.parse::<IpAddr>().unwrap()),
+            "{address} is designated globally reachable"
+        );
+    }
+}
+
+#[test]
+fn response_limit_is_enforced_before_appending_an_oversized_chunk() {
+    let mut body = vec![0; MAX_RESPONSE_BYTES as usize];
+
+    let err = append_response_chunk(&mut body, &[1])
+        .expect_err("a chunk beyond the response limit must be rejected");
+
+    assert!(matches!(err, SectorIdentifierError::ResponseTooLarge));
+    assert_eq!(body.len(), MAX_RESPONSE_BYTES as usize);
 }
 
 #[test]
