@@ -22,8 +22,6 @@ use client_auth::{
 use client_credentials::token_client_credentials_with_service;
 use device::DEVICE_CODE_GRANT_TYPE;
 use device_issuance::token_device_code_with_service;
-#[cfg(test)]
-include!("../../tests/support/seams/http/token.rs");
 use issue::{
     mark_failed_authorization_code, revoke_issued_authorization_code_tokens,
     should_issue_refresh_token,

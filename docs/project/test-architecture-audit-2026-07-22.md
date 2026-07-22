@@ -50,6 +50,14 @@ thresholds and string copies of production source are specifically rejected.
 - Made service-backed PostgreSQL targets skip cleanly when their declared test
   database is absent instead of reporting infrastructure absence as a product
   failure.
+- Removed all 42 `tests/support/seams` injections. Shared dependency assembly
+  now uses explicit `tests/support` modules; production modules no longer gain
+  test-only functions through `include!`.
+- Deleted tests that exercised copied authorization-code, CIBA, OIDC subject,
+  sector-hostname, and legacy MFA/session-transition implementations. Raw-state
+  tests now ask the owning Valkey crate for real storage keys, OIDC subject tests
+  live with the owning authorization core, and MFA rotation remains covered by
+  the production `SessionService` tests.
 
 The PKCE decisions are aligned with the project-wide stronger policy and the
 security direction in RFC 9700. The FAPI-specific PAR assertions additionally
@@ -75,25 +83,28 @@ Primary specifications:
 
 `scripts/verify_static_contracts.py --check` now rejects executable tests under
 `src`, legacy or repeated test/source layouts, missing mounts, and a test that
-uses `#[path]` or `include!` to recompile a production source file.
+uses `#[path]` to recompile a production source file. It also rejects every
+`include!` in Rust source or tests and any reintroduced `tests/support/seams`
+file.
 `docs/project/testing.md` defines the ownership and method rules.
 
-## Remaining migration debt
+## Migration debt closure
 
-Forty-two `tests/support/seams` includes remain. They are not the target
-architecture and are not treated as completed work. Thin composition adapters
-are lower risk, but copied session, rate-limit, token-dispatch, CIBA, and state
-key behavior must still be replaced by calls to owned production APIs and then
-removed. The structure verifier prevents a return to `source_mounted` and
-source recompilation now; the seam count should only decrease.
+The 42 previously recorded seam includes are now zero. Composition-only helpers
+were moved to explicit support modules; import-only seams moved into their
+owning tests; copied logic was either removed or replaced with calls to the
+production owner. This closes the recorded seam debt rather than renaming or
+allowlisting it. The structure verifier makes the zero-seam state an invariant.
 
 ## Verification snapshot
 
 - `cargo fmt --all -- --check`: passed.
 - `python scripts/verify_static_contracts.py --check`: passed.
-- `cargo test --workspace`: 1,946 passed across 100 suites.
+- `cargo test --workspace --all-features --locked`: 1,926 passed across 100
+  suites. The lower count is the intentional removal of tests that executed
+  copied seam implementations rather than production behavior.
 - Explicit Python `unittest` module run: 222 passed. The deploy contract module
-  accounts for about 213 seconds and needs its own CI timeout budget.
+  remains long-running and needs its own CI timeout budget.
 - Live PostgreSQL/Valkey behavior remains environment-dependent; absence is now
   reported as an unexecuted service-backed case rather than a false product
   failure.

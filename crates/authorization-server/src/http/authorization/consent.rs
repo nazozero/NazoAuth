@@ -1,7 +1,5 @@
 //! 授权确认页数据端点。
 use crate::domain::ConsentPayload;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/authorization/consent.rs");
 
 use crate::http::authorization::{AuthorizationEndpoint, AuthorizationRequestContext};
 

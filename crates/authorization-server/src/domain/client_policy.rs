@@ -4,9 +4,6 @@ pub(crate) use nazo_auth::{
     RedirectUriError, is_subset, is_valid_pkce_value, parse_resource_indicators, parse_scope,
     string_array_values as json_array_to_strings,
 };
-#[cfg(test)]
-include!("../../tests/support/seams/domain/client_policy.rs");
-
 pub(crate) fn client_supports_grant(client: &ClientRow, grant_type: &str) -> bool {
     client.grant_types.iter().any(|grant| grant == grant_type)
 }

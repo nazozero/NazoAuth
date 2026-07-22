@@ -1,9 +1,6 @@
 //! OIDC 标准 claims 构造。
 //! 只从已授权 scope、显式授权的 claims 请求和本地用户事实源生成声明，不为缺失字段写入 null。
 
-#[cfg(test)]
-include!("../../tests/support/seams/domain/oidc_claims.rs");
-
 use serde_json::{Value, json};
 
 use nazo_auth::OidcClaimRequest;

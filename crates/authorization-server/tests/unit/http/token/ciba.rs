@@ -1,3 +1,43 @@
+use nazo_http_actix::OAuthJsonErrorFields;
+
+use crate::test_support::TestInfrastructure;
+
+use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
+
+use super::super::dispatch::validate_token_request_profile_with_profile;
+
+fn validate_and_apply_ciba_request_object_claims(
+    state: &TestInfrastructure,
+    client: &ClientRow,
+    form: &mut BackchannelAuthenticationForm,
+) -> Result<Option<CibaRequestObjectReplay>, HttpResponse> {
+    validate_and_apply_ciba_request_object_claims_with_config(
+        &CibaHttpConfig::from(state.settings.as_ref()),
+        client,
+        form,
+    )
+}
+
+fn validate_ciba_security_profile_client(
+    settings: &Settings,
+    client: &ClientRow,
+    auth_method: &str,
+) -> Result<(), HttpResponse> {
+    validate_ciba_security_profile_client_with_config(
+        &CibaHttpConfig::from(settings),
+        client,
+        auth_method,
+    )
+}
+
+fn validate_ciba_request_object_presence(
+    settings: &Settings,
+    client: &ClientRow,
+    form: &BackchannelAuthenticationForm,
+) -> Result<(), HttpResponse> {
+    validate_ciba_request_object_presence_with_config(&CibaHttpConfig::from(settings), client, form)
+}
+
 use super::*;
 use crate::config::ConfigSource;
 use nazo_postgres::create_pool;
@@ -147,7 +187,7 @@ async fn call_ciba_token_for_test(
     let issuance_config = TokenIssuanceConfig::from(state.settings.as_ref());
     let ciba_config = CibaHttpConfig::from(state.settings.as_ref());
     let modules = state.active_module_snapshot();
-    let authorization = super::super::issue::test_authorization_service(state);
+    let authorization = super::super::issue::test_support::test_authorization_service(state);
     let issuance = TokenIssuanceContext {
         config: &issuance_config,
         modules: &modules,
@@ -277,16 +317,6 @@ fn unsigned_ciba_request_object(client_id: &str) -> String {
         .expect("payload should serialize"),
     );
     format!("{header}.{payload}.")
-}
-
-#[test]
-fn ciba_request_key_hashes_auth_req_id() {
-    let key = ciba_request_key("auth-req-id");
-
-    assert!(key.starts_with("oauth:ciba:"));
-    assert!(!key.contains("auth-req-id"));
-    assert_eq!(key, ciba_request_key("auth-req-id"));
-    assert_ne!(key, ciba_request_key("other"));
 }
 
 #[test]
@@ -468,7 +498,7 @@ async fn ciba_automated_decision_route_accepts_empty_post_without_json_content_t
             Some("test-ciba-automated-decision-token-32".to_owned());
     });
     let settings = Arc::clone(&state.settings);
-    let runtime = crate::runtime_modules::runtime_module_registry_for_test(
+    let runtime = crate::runtime_modules::test_support::runtime_module_registry_for_test(
         state.diesel_db.clone(),
         &settings,
     )
@@ -503,7 +533,7 @@ async fn ciba_verification_page_preserves_redirect_and_non_cacheable_headers() {
         settings.endpoint.frontend_base_url = "https://frontend.example/".to_owned();
     });
     let settings = Arc::clone(&state.settings);
-    let runtime = crate::runtime_modules::runtime_module_registry_for_test(
+    let runtime = crate::runtime_modules::test_support::runtime_module_registry_for_test(
         state.diesel_db.clone(),
         &settings,
     )
@@ -693,8 +723,12 @@ fn ciba_profile_does_not_apply_authorization_code_only_controls() {
         ..BackchannelAuthenticationForm::default()
     };
 
-    validate_token_request_profile(&settings, &client, "private_key_jwt")
-        .expect("CIBA-compatible client authentication should pass the server profile");
+    validate_token_request_profile_with_profile(
+        settings.protocol.authorization_server_profile,
+        &client,
+        "private_key_jwt",
+    )
+    .expect("CIBA-compatible client authentication should pass the server profile");
     validate_ciba_security_profile_client(&settings, &client, "private_key_jwt")
         .expect("official FAPI-CIBA compatibility policy should remain separate");
     validate_ciba_request_object_presence(&settings, &client, &form)

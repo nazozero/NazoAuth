@@ -1,8 +1,8 @@
 use super::admin_patch_client;
+use crate::domain::ClientRow;
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 use crate::domain::tenancy::DEFAULT_REALM_ID;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
-use crate::domain::{ClientRow, DatabaseUserFixture, TestInfrastructure};
 use crate::http::admin::clients::test_support::{
     CreateClientRequest, InsertClientError, PreparedClientRegistration, admin_client_config,
     admin_client_service, admin_session_handles, insert_prepared_client,
@@ -11,6 +11,7 @@ use crate::http::admin::clients::test_support::{
 use crate::http::sessions::SessionPayload;
 use crate::settings::Settings;
 use crate::test_support::valkey::valkey_set_ex;
+use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use actix_web::cookie::Cookie;
 use actix_web::http::StatusCode;
 use actix_web::web::{Data, Json};

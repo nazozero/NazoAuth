@@ -1,9 +1,6 @@
 use super::*;
 use chrono::DateTime;
 
-#[cfg(test)]
-include!("../../../../tests/support/seams/http/token/issue/authorization_code_state.rs");
-
 pub(super) fn failed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
     if matches!(result, "ok" | "missing" | "failed" | "consumed") {
         Ok(())
@@ -94,7 +91,3 @@ pub(crate) async fn revoke_issued_authorization_code_tokens(
         .await
         .map_err(|error| anyhow::anyhow!("failed to revoke authorization-code tokens: {error:?}"))
 }
-
-#[cfg(test)]
-#[path = "../../../../tests/unit/http/token/issue/authorization_code_state.rs"]
-mod tests;

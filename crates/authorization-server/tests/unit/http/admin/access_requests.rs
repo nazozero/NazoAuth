@@ -14,10 +14,10 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::domain::ClientRow;
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 use crate::domain::tenancy::DEFAULT_REALM_ID;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
-use crate::domain::{ClientRow, DatabaseUserFixture, TestInfrastructure};
 use crate::http::admin::clients::{
     ServerAdminClientCrypto, ServerSectorIdentifierResolver, admin_client_policy,
 };
@@ -26,6 +26,7 @@ use crate::http::sessions::SessionPayload;
 use crate::schema::oauth_clients;
 use crate::settings::Settings;
 use crate::test_support::valkey::valkey_set_ex;
+use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use chrono::Utc;
 use diesel::prelude::*;
 use nazo_identity::AccessRequestStatus;

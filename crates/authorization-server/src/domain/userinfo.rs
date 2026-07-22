@@ -371,8 +371,5 @@ impl UserinfoHandles {
 }
 
 #[cfg(test)]
-include!("../../tests/support/seams/domain/userinfo.rs");
-
-#[cfg(test)]
 #[path = "../../tests/unit/domain/userinfo.rs"]
 mod tests;

@@ -1,5 +1,3 @@
-#[cfg(test)]
-include!("../../../../tests/support/seams/http/auth/federation/oidc.rs");
 use crate::adapters::security::{jwt_decoding_key_from_jwk, pkce_s256};
 use chrono::Utc;
 use serde::Deserialize;

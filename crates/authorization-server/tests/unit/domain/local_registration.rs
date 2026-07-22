@@ -22,8 +22,8 @@ use crate::{
         security::{blake3_hex, hash_password, random_urlsafe_token},
     },
     config::ConfigSource,
-    domain::TestInfrastructure,
     settings::{EmailDelivery, Settings, SmtpEmailSettings, SmtpTlsMode},
+    test_support::TestInfrastructure,
     test_support::{
         registration_service,
         valkey::{valkey_get, valkey_set_ex},

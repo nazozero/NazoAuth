@@ -1,3 +1,4 @@
+use super::dpop::{access_token_hash, dpop_jwk_thumbprint};
 use super::*;
 
 #[path = "lib/dpop.rs"]

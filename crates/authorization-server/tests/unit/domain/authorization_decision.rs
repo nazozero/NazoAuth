@@ -19,11 +19,12 @@ use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
+use crate::domain::ConsentPayload;
 use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-use crate::domain::{ConsentPayload, DatabaseUserFixture, TestInfrastructure};
 use crate::http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService};
 use crate::settings::Settings;
 use crate::test_support::valkey::valkey_set_ex;
+use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 use chrono::{Duration, Utc};
 use nazo_http_actix::{
     AuthorizationDecisionEndpoint, AuthorizationDecisionForm, ClientIpConfig, SessionCookieConfig,
@@ -57,7 +58,7 @@ fn authorization_decision_endpoint(
         Arc::new(nazo_postgres::UserRepository::new(state.diesel_db.clone())),
         nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is valid"),
     );
-    let runtime_modules = crate::runtime_modules::runtime_module_registry_for_test(
+    let runtime_modules = crate::runtime_modules::test_support::runtime_module_registry_for_test(
         state.diesel_db.clone(),
         state.settings.as_ref(),
     )

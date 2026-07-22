@@ -1,7 +1,4 @@
 //! 会话用户与权限解析。
-#[cfg(test)]
-include!("../../tests/support/seams/http/sessions.rs");
-
 use actix_web::http::StatusCode;
 
 use actix_web::{HttpRequest, HttpResponse};
@@ -371,6 +368,10 @@ fn session_lookup_error_response(error: anyhow::Error) -> HttpResponse {
         "会话查询失败.",
     )
 }
+
+#[cfg(test)]
+#[path = "../../tests/support/http/sessions.rs"]
+pub(crate) mod test_support;
 
 #[cfg(test)]
 #[path = "../../tests/unit/http/sessions.rs"]

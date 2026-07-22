@@ -133,9 +133,6 @@ pub struct ConfigSource {
     env_values: HashMap<String, String>,
 }
 
-#[cfg(test)]
-include!("../tests/support/seams/config.rs");
-
 impl ConfigSource {
     pub fn load() -> anyhow::Result<Self> {
         Self::load_from_dir_with_env(".", std::env::vars())

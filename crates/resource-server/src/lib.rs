@@ -14,8 +14,6 @@ mod jwk;
 mod presentation;
 mod service;
 pub use dpop::{DpopProofVerifier, DpopProofVerifierConfig, DpopProofVerifierError};
-#[cfg(test)]
-include!("../tests/support/seams/lib.rs");
 use presentation::{
     PresentedAccessTokenScheme, http_authorization_headers, http_dpop_headers,
     presented_authorization_token, query_has_access_token, single_dpop_header,

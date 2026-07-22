@@ -1,4 +1,5 @@
-use super::{AdminClientError, sector_identifier_host_for_redirects};
+use super::super::sector_identifier_host_for_redirects;
+use super::AdminClientError;
 
 #[test]
 fn policy_debug_output_redacts_server_secrets() {

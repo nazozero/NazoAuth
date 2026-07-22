@@ -143,7 +143,8 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
 }
 
 #[cfg(test)]
-include!("../../tests/support/seams/domain/passkey.rs");
+#[path = "../../tests/support/domain/passkey.rs"]
+pub(crate) mod test_support;
 
 #[cfg(test)]
 #[path = "../../tests/unit/domain/passkey/login.rs"]

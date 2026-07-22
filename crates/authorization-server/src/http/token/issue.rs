@@ -5,8 +5,6 @@ use crate::adapters::audit::audit_event;
 use crate::adapters::audit::audit_fields;
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::random_urlsafe_token;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/issue.rs");
 use crate::domain::oidc_claims::oidc_id_token_user_claims;
 
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
@@ -743,6 +741,10 @@ pub(crate) async fn issue_token_response_with_service(
     }
     response
 }
+
+#[cfg(test)]
+#[path = "../../../tests/support/http/token/issue.rs"]
+pub(crate) mod test_support;
 
 #[cfg(test)]
 #[path = "../../../tests/unit/http/token/issue.rs"]

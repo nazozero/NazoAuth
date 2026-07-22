@@ -7,11 +7,12 @@ use serde_json::{Value, json};
 
 #[test]
 fn algorithm_name_allows_only_asymmetric_jwt_signing_algorithms() {
-    assert_eq!(algorithm_name(Algorithm::EdDSA), Some("EdDSA"));
-    assert_eq!(algorithm_name(Algorithm::RS256), Some("RS256"));
-    assert_eq!(algorithm_name(Algorithm::ES256), Some("ES256"));
-    assert_eq!(algorithm_name(Algorithm::PS256), Some("PS256"));
-    assert_eq!(algorithm_name(Algorithm::HS256), None);
+    let name = |algorithm| supported_algorithm(algorithm).map(|(name, _)| name);
+    assert_eq!(name(Algorithm::EdDSA), Some("EdDSA"));
+    assert_eq!(name(Algorithm::RS256), Some("RS256"));
+    assert_eq!(name(Algorithm::ES256), Some("ES256"));
+    assert_eq!(name(Algorithm::PS256), Some("PS256"));
+    assert_eq!(name(Algorithm::HS256), None);
 }
 
 #[test]

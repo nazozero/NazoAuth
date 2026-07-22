@@ -1,4 +1,6 @@
 use super::*;
+use chrono::Utc;
+use uuid::Uuid;
 
 #[test]
 fn prompt_none_claims_require_their_authorizing_scope() {
@@ -30,8 +32,6 @@ fn prompt_none_claims_require_their_authorizing_scope() {
         ]
     ));
 }
-use crate::settings::DpopNoncePolicy;
-
 fn user() -> nazo_identity::SubjectClaims {
     nazo_identity::SubjectClaims {
         subject: nazo_identity::UserId::new(Uuid::now_v7()).unwrap(),
@@ -62,21 +62,6 @@ fn user() -> nazo_identity::SubjectClaims {
         email_verified: true,
         updated_at: Utc::now().timestamp(),
     }
-}
-
-fn settings() -> Settings {
-    let mut settings =
-        Settings::from_config(&crate::config::ConfigSource::default()).expect("settings");
-    settings.endpoint.issuer = "https://issuer.example".to_owned();
-    settings.endpoint.mtls_endpoint_base_url = "https://issuer.example".to_owned();
-    settings.endpoint.frontend_base_url = "https://frontend.example".to_owned();
-    settings.endpoint.cors_allowed_origins = vec!["https://frontend.example".to_owned()];
-    settings.protocol.protected_resource_identifier =
-        "https://issuer.example/fapi/resource".to_owned();
-    settings.protocol.dpop_nonce_policy = DpopNoncePolicy::Required;
-    settings.storage.avatar_storage_dir = std::env::temp_dir().join("unused-avatars");
-    settings.keys.jwk_keys_dir = std::env::temp_dir().join("unused-keys");
-    settings
 }
 
 #[test]
@@ -300,127 +285,4 @@ fn id_token_claim_values_filter_output_and_allow_matching_contact_claims() {
     assert_eq!(claims["email"], "alice@example.com");
     assert!(claims.get("email_verified").is_none());
     assert_eq!(claims["phone_number"], "+15555550000");
-}
-
-#[test]
-fn pairwise_subject_is_stable_within_sector_and_distinct_across_sectors() {
-    let user_id = Uuid::now_v7();
-    let settings = settings();
-    let secret = b"this-is-a-long-enough-secret-key-for-hmac-sha256!!";
-
-    let first = oidc_subject(secret, &settings.endpoint.issuer, "client.example", user_id);
-    let second = oidc_subject(secret, &settings.endpoint.issuer, "client.example", user_id);
-    let third = oidc_subject(secret, &settings.endpoint.issuer, "other.example", user_id);
-
-    assert_eq!(first, second);
-    assert_ne!(first, third);
-    assert_ne!(first, user_id.to_string());
-}
-
-#[test]
-fn compute_subject_for_client_public_returns_uuid() {
-    let user_id = Uuid::now_v7();
-    let mut settings = settings();
-    settings.protocol.pairwise_subject_secret =
-        Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
-    let subject = compute_subject_for_client(
-        &settings,
-        user_id,
-        "public",
-        Some("example.com"),
-        "https://example.com/callback",
-    )
-    .expect("public client subject should compute");
-    assert_eq!(subject, user_id.to_string());
-}
-
-#[test]
-fn compute_subject_for_client_pairwise_uses_sector_host() {
-    let user_id = Uuid::now_v7();
-    let mut settings = settings();
-    settings.protocol.pairwise_subject_secret =
-        Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
-    let subject = compute_subject_for_client(
-        &settings,
-        user_id,
-        "pairwise",
-        Some("pairwise.example"),
-        "https://client.example/callback",
-    )
-    .expect("pairwise client subject should compute");
-    assert_ne!(subject, user_id.to_string());
-    assert_eq!(
-        subject,
-        oidc_subject(
-            settings
-                .protocol
-                .pairwise_subject_secret
-                .as_ref()
-                .unwrap()
-                .as_bytes(),
-            &settings.endpoint.issuer,
-            "pairwise.example",
-            user_id
-        )
-    );
-}
-
-#[test]
-fn compute_subject_for_client_pairwise_falls_back_to_redirect_uri_host() {
-    let user_id = Uuid::now_v7();
-    let mut settings = settings();
-    settings.protocol.pairwise_subject_secret =
-        Some("this-is-a-long-enough-secret-key-for-hmac-sha256!!".to_owned());
-    let subject = compute_subject_for_client(
-        &settings,
-        user_id,
-        "pairwise",
-        None,
-        "https://fallback.example/callback",
-    )
-    .expect("pairwise client subject should compute");
-    assert_ne!(subject, user_id.to_string());
-    let same_subject = compute_subject_for_client(
-        &settings,
-        user_id,
-        "pairwise",
-        None,
-        "https://fallback.example/other",
-    )
-    .expect("pairwise subject should be stable for the same redirect host");
-    assert_eq!(subject, same_subject);
-}
-
-#[test]
-fn compute_subject_for_client_rejects_pairwise_without_server_secret() {
-    let err = compute_subject_for_client(
-        &settings(),
-        Uuid::now_v7(),
-        "pairwise",
-        Some("pairwise.example"),
-        "https://client.example/callback",
-    )
-    .expect_err("pairwise clients must fail closed when the server secret is missing");
-
-    assert!(
-        err.to_string().contains("PAIRWISE_SUBJECT_SECRET"),
-        "error should identify the missing pairwise secret: {err}"
-    );
-}
-
-#[test]
-fn compute_subject_for_client_rejects_unsupported_subject_type() {
-    let err = compute_subject_for_client(
-        &settings(),
-        Uuid::now_v7(),
-        "transient",
-        Some("client.example"),
-        "https://client.example/callback",
-    )
-    .expect_err("unsupported client subject_type must fail closed");
-
-    assert!(
-        err.to_string().contains("unsupported client subject_type"),
-        "error should identify the invalid client subject_type: {err}"
-    );
 }

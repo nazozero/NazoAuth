@@ -10,9 +10,6 @@ mod ciba_ping_delivery_tests;
 mod ciba_ping_tls;
 pub(crate) mod client_jwe;
 pub(crate) mod client_policy;
-#[cfg(test)]
-#[path = "../../tests/support/domain/database_user_fixture.rs"]
-mod database_user_fixture;
 mod dynamic_registration;
 mod local_registration;
 mod metadata;
@@ -36,8 +33,6 @@ pub(crate) mod tenancy;
 mod token_management;
 mod userinfo;
 
-#[cfg(test)]
-include!("../../tests/support/seams/domain/module.rs");
 pub(crate) use authorization_decision::ServerAuthorizationDecisionOperations;
 #[cfg(not(test))]
 pub(crate) use backchannel_logout_worker::{

@@ -1,5 +1,11 @@
 pub(crate) mod valkey;
 
+#[path = "domain/database_user_fixture.rs"]
+mod database_user_fixture;
+pub(crate) use database_user_fixture::{
+    DatabaseExternalIdentityFixture, DatabasePasskeyFixture, DatabaseUserFixture,
+};
+
 use std::sync::Arc;
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -43,15 +49,13 @@ impl TestInfrastructure {
 }
 
 pub(crate) fn profile_sessions(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<crate::http::sessions::SessionProfileHandles> {
-    actix_web::web::Data::new(
-        crate::http::sessions::SessionProfileHandles::from_test_infrastructure(state),
-    )
+    actix_web::web::Data::new(crate::http::sessions::test_support::profile_session_handles(state))
 }
 
 pub(crate) fn avatar_profiles(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<crate::bootstrap::AvatarProfileService> {
     actix_web::web::Data::new(crate::bootstrap::AvatarProfileService::new(
         nazo_postgres::UserRepository::new(state.diesel_db.clone()),
@@ -64,7 +68,7 @@ pub(crate) fn avatar_profiles(
 }
 
 pub(crate) fn access_request_profiles(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<crate::bootstrap::ClientAccessProfileService> {
     actix_web::web::Data::new(crate::bootstrap::ClientAccessProfileService::new(
         nazo_postgres::AccessRequestRepository::new(state.diesel_db.clone()),
@@ -74,13 +78,13 @@ pub(crate) fn access_request_profiles(
 }
 
 pub(crate) fn delivery_profiles(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<crate::bootstrap::ClientAccessProfileService> {
     access_request_profiles(state)
 }
 
 pub(crate) fn registration_service(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<crate::bootstrap::LocalRegistrationService> {
     let identity = &state.settings.identity;
     actix_web::web::Data::new(crate::bootstrap::LocalRegistrationService::new(
@@ -103,7 +107,7 @@ pub(crate) fn registration_service(
 }
 
 pub(crate) fn passkey_service(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<crate::bootstrap::LocalPasskeyService> {
     let passkey = &state.settings.identity.passkey;
     let session = &state.settings.session;
@@ -130,7 +134,7 @@ pub(crate) fn passkey_service(
 }
 
 pub(crate) fn federation_service(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<crate::bootstrap::LocalFederationService> {
     actix_web::web::Data::new(crate::bootstrap::LocalFederationService::new(
         nazo_postgres::FederationRepository::new(state.diesel_db.clone()),
@@ -150,7 +154,7 @@ pub(crate) fn federation_service(
 }
 
 pub(crate) fn federation_http_config(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<crate::http::auth::federation::FederationHttpConfig> {
     let session = &state.settings.session;
     let federation = &state.settings.identity.federation;
@@ -165,7 +169,7 @@ pub(crate) fn federation_http_config(
 }
 
 pub(crate) fn auth_request_limiter(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<crate::http::rate_limit::AuthRequestLimiter> {
     let rate_limit = &state.settings.identity.rate_limit;
     actix_web::web::Data::new(crate::http::rate_limit::AuthRequestLimiter::new(
@@ -177,7 +181,7 @@ pub(crate) fn auth_request_limiter(
 }
 
 pub(crate) fn client_ip_config(
-    state: &crate::domain::TestInfrastructure,
+    state: &TestInfrastructure,
 ) -> actix_web::web::Data<nazo_http_actix::ClientIpConfig> {
     let endpoint = &state.settings.endpoint;
     actix_web::web::Data::new(nazo_http_actix::ClientIpConfig::new(

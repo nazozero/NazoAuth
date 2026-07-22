@@ -3,13 +3,13 @@ use super::{
     ServerSectorIdentifierResolver, admin_client_policy,
 };
 use crate::adapters::security::random_urlsafe_token;
-use crate::domain::client_policy::{
-    client_jwks_contains_signing_key, client_jwks_matching_encryption_key_count,
-    validate_client_jwks, validate_self_signed_mtls_jwks,
-};
 use crate::settings::Settings;
 use crate::test_support::hash_client_secret_fixture as hash_client_secret;
 use nazo_auth::AdminClientCryptoPort;
+use nazo_key_management::{
+    client_jwks_contains_signing_key, client_jwks_matching_encryption_key_count,
+    validate_client_jwks, validate_self_signed_mtls_jwks,
+};
 use serde_json::Value;
 
 pub(crate) use nazo_auth::{

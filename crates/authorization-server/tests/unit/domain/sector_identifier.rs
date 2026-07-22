@@ -1,6 +1,6 @@
 use super::{
     SectorIdentifierError, fetch_sector_identifier_uris, is_blocked_host, is_blocked_ip,
-    parse_sector_identifier_document, sector_identifier_hostname,
+    parse_sector_identifier_document,
 };
 use std::net::IpAddr;
 
@@ -65,24 +65,6 @@ fn block_127_domain() {
 fn allow_public_domain() {
     assert!(!is_blocked_host("example.com"));
     assert!(!is_blocked_host("2001:4860:4860::8888"));
-}
-
-#[test]
-fn hostname_from_uri() {
-    assert_eq!(
-        sector_identifier_hostname("https://example.com/.well-known/sector").unwrap(),
-        "example.com"
-    );
-}
-
-#[test]
-fn hostname_rejects_invalid_uri() {
-    assert!(sector_identifier_hostname("not-a-uri").is_err());
-}
-
-#[test]
-fn hostname_from_uri_with_empty_authority() {
-    assert_eq!(sector_identifier_hostname("https:///path").unwrap(), "path");
 }
 
 #[test]

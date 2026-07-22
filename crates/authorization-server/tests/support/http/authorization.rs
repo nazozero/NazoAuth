@@ -1,3 +1,5 @@
+use super::*;
+
 pub(crate) struct AuthorizationTestFixture {
     service: ServerAuthorizationService,
     config: AuthorizationHttpConfig,
@@ -60,7 +62,7 @@ pub(crate) struct TestAuthorizationDependencies {
 }
 
 impl TestAuthorizationDependencies {
-    pub(crate) fn new(state: &crate::domain::TestInfrastructure) -> Self {
+    pub(crate) fn new(state: &crate::test_support::TestInfrastructure) -> Self {
         let connection = state.valkey_connection();
         let session = &state.settings.session;
         Self {

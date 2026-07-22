@@ -3,8 +3,6 @@ use std::sync::Arc;
 
 use crate::adapters::security::ClientCredentials;
 use crate::adapters::security::blake3_hex;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/dispatch.rs");
 
 use crate::domain::{AuthorizationCodeState, ClientRow};
 
@@ -907,7 +905,6 @@ fn attestation_client_id_matches_form_hint(
     form_client_id.is_none_or(|client_id| client_id == attested_client_id)
 }
 
-#[cfg(not(test))]
 pub(crate) use token_with_service as token;
 
 fn validate_token_client_enabled(client: &ClientRow, grant_type: &str) -> Result<(), HttpResponse> {
@@ -922,7 +919,7 @@ fn validate_token_client_enabled(client: &ClientRow, grant_type: &str) -> Result
     Ok(())
 }
 
-fn validate_token_request_profile_with_profile(
+pub(crate) fn validate_token_request_profile_with_profile(
     server_profile: crate::settings::AuthorizationServerProfile,
     client: &ClientRow,
     auth_method: &str,

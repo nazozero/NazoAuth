@@ -5,13 +5,13 @@ use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 use crate::domain::tenancy::DEFAULT_REALM_ID;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::domain::{
-    DatabasePasskeyFixture, DatabaseUserFixture, MFA_REMEMBERED_COOKIE_NAME,
-    MFA_REMEMBERED_TTL_SECONDS, ServerMfaSecretHasher, TestInfrastructure,
+    MFA_REMEMBERED_COOKIE_NAME, MFA_REMEMBERED_TTL_SECONDS, ServerMfaSecretHasher,
 };
 use crate::http::sessions::SessionPayload;
 use crate::schema::{user_passkey_credentials, users};
 use crate::settings::Settings;
 use crate::test_support::valkey::valkey_get;
+use crate::test_support::{DatabasePasskeyFixture, DatabaseUserFixture, TestInfrastructure};
 use actix_web::http::{StatusCode, header};
 use actix_web::web::{Data, Json};
 use actix_web::{HttpRequest, HttpResponse};
@@ -93,7 +93,12 @@ async fn passkey_login_begin(
     req: HttpRequest,
     payload: Json<PasskeyLoginBeginRequest>,
 ) -> HttpResponse {
-    nazo_http_actix::passkey_login_begin(super::test_login_endpoint(&state), req, Ok(payload)).await
+    nazo_http_actix::passkey_login_begin(
+        super::test_support::test_login_endpoint(&state),
+        req,
+        Ok(payload),
+    )
+    .await
 }
 
 async fn passkey_login_finish(
@@ -101,8 +106,12 @@ async fn passkey_login_finish(
     req: HttpRequest,
     payload: Json<PasskeyLoginFinishRequest>,
 ) -> HttpResponse {
-    nazo_http_actix::passkey_login_finish(super::test_login_endpoint(&state), req, Ok(payload))
-        .await
+    nazo_http_actix::passkey_login_finish(
+        super::test_support::test_login_endpoint(&state),
+        req,
+        Ok(payload),
+    )
+    .await
 }
 
 async fn load_user_passkeys(

@@ -1,6 +1,5 @@
 use super::*;
 use crate::config::ConfigSource;
-use crate::domain::TestInfrastructure;
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 use crate::domain::tenancy::DEFAULT_REALM_ID;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
@@ -8,6 +7,7 @@ use crate::http::rate_limit::TokenManagementRequestLimiter;
 use crate::http::token::device_issuance::required_device_code;
 use crate::http::token::{TokenForm, device_config::DeviceHttpConfig};
 use crate::settings::Settings;
+use crate::test_support::TestInfrastructure;
 use actix_web::test::TestRequest;
 use chrono::Duration;
 use nazo_auth::{DeviceAuthorizationState, DevicePollTransition, evaluate_device_poll};

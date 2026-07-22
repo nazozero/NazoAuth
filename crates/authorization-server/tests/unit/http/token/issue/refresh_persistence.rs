@@ -1,4 +1,5 @@
 use super::*;
+use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
 
 #[test]
 fn rotated_refresh_token_preserves_the_original_scope_authorization() {

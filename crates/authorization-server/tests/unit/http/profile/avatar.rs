@@ -8,11 +8,11 @@ use crate::adapters::avatar_files::{
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 use crate::domain::tenancy::DEFAULT_REALM_ID;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
-use crate::domain::{DatabaseUserFixture, TestInfrastructure};
 use crate::http::sessions::SessionPayload;
 use crate::schema::users;
 use crate::settings::Settings;
 use crate::test_support::valkey::valkey_set_ex;
+use crate::test_support::{DatabaseUserFixture, TestInfrastructure};
 
 use actix_web::error::PayloadError;
 use actix_web::{

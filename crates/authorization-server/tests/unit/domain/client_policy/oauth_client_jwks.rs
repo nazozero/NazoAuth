@@ -1,7 +1,7 @@
-use super::{validate_client_jwks, validate_self_signed_mtls_jwks};
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use chrono::Utc;
+use nazo_key_management::{validate_client_jwks, validate_self_signed_mtls_jwks};
 use openssl::asn1::Asn1Time;
 use openssl::hash::MessageDigest;
 use openssl::nid::Nid;

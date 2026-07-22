@@ -4,8 +4,6 @@ use crate::adapters::security::ClientCredentials;
 use crate::adapters::security::ValidatedClientAssertion;
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::client_secret_digest;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/client_auth.rs");
 use crate::adapters::security::verify_private_key_jwt_claims_for_issuer;
 use crate::domain::ClientRow;
 

@@ -48,9 +48,6 @@ pub(super) async fn user_grant_covers_requested_scopes_with_context(
     }
 }
 
-#[cfg(test)]
-include!("../../../../tests/support/seams/http/authorization/request/prompt_none.rs");
-
 pub(super) async fn issue_authorization_code_without_interaction_with_context(
     context: &AuthorizationRequestContext<'_>,
     req: &HttpRequest,

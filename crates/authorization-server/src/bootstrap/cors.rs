@@ -2,8 +2,6 @@
 // 为路由组提供独立的 CORS 策略，避免统一宽泛的跨域配置。
 
 use actix_cors::Cors;
-#[cfg(test)]
-include!("../../tests/support/seams/bootstrap/cors.rs");
 
 use crate::settings::Settings;
 

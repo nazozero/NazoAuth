@@ -68,9 +68,6 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
     }
 }
 
-#[cfg(test)]
-include!("../tests/support/seams/jwk.rs");
-
 fn supported_algorithm(alg: Algorithm) -> Option<(&'static str, SupportedJwkAlgorithm)> {
     match alg {
         Algorithm::EdDSA => Some(("EdDSA", SupportedJwkAlgorithm::EdDsa)),

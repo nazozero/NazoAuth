@@ -1,7 +1,5 @@
 //! 授权请求入口端点。
 use crate::adapters::security::blake3_hex;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/authorization/request.rs");
 use crate::adapters::security::random_urlsafe_token;
 
 use crate::domain::client_jwe::JwePayloadKind;

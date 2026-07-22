@@ -1,4 +1,6 @@
 use super::*;
+use nazo_identity::PublicAccount;
+use serde_json::Value;
 use std::{sync::Arc, time::Duration};
 
 use crate::adapters::security::pkce_s256;
@@ -6,16 +8,19 @@ use crate::config::ConfigSource;
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 use crate::domain::tenancy::DEFAULT_REALM_ID;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
-use crate::domain::{DatabaseExternalIdentityFixture, DatabaseUserFixture, TestInfrastructure};
 use crate::http::sessions::SessionPayload;
 use crate::schema::external_identity_links;
 use crate::settings::Settings;
 use crate::test_support::valkey::valkey_get;
 use crate::test_support::valkey::valkey_set_ex;
+use crate::test_support::{
+    DatabaseExternalIdentityFixture, DatabaseUserFixture, TestInfrastructure,
+};
 use diesel::prelude::*;
 use diesel_async::RunQueryDsl;
 use nazo_postgres::create_pool;
 use nazo_postgres::get_conn;
+use nazo_valkey::test_support::oidc_federation_storage_key as oidc_state_key;
 
 use crate::adapters::security::random_urlsafe_token;
 use crate::settings::{OidcFederationSettings, SamlGatewaySettings};

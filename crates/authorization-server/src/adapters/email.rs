@@ -16,9 +16,6 @@ use crate::settings::{EmailDelivery, Settings, SmtpEmailSettings, SmtpTlsMode};
 
 use super::email_templates::VerificationEmail;
 
-#[cfg(test)]
-include!("../../tests/support/seams/adapters/email.rs");
-
 pub(crate) fn normalize_email_address(raw: &str) -> anyhow::Result<String> {
     Ok(nazo_identity::email::normalize_email_address(raw)?)
 }

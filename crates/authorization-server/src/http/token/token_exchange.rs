@@ -12,8 +12,6 @@ use super::{
 use super::{native_sso_profile_requested, token_native_sso_exchange};
 use crate::adapters::security::ValidatedClientAssertion;
 use crate::adapters::security::constant_time_eq;
-#[cfg(test)]
-include!("../../../tests/support/seams/http/token/token_exchange.rs");
 
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::http::dpop::DpopError;

@@ -8,8 +8,6 @@ use nazo_http_actix::{
     json_response, json_response_no_store, make_cookie, oauth_error, redirect_found,
     with_cookie_headers,
 };
-#[cfg(test)]
-include!("../../../tests/support/seams/http/auth/federation.rs");
 use nazo_identity::{FederationError, LoginSuccess, VerifiedExternalIdentity};
 use serde::{Serialize, de::DeserializeOwned};
 

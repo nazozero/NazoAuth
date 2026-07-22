@@ -10,6 +10,7 @@ use nazo_auth::{
     CibaDecisionEvaluation, CibaPollTransition, evaluate_ciba_decision, evaluate_ciba_poll,
 };
 use nazo_valkey::AtomicResult as ValkeyAtomicResult;
+use nazo_valkey::test_support::ciba_request_storage_key;
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration as StdDuration;
@@ -172,7 +173,7 @@ async fn legacy_ciba_state_migrates_from_actual_expiretime() {
     };
     let connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
     let auth_req_id = format!("legacy-{}", Uuid::now_v7());
-    let key = ciba_request_key(&auth_req_id);
+    let key = ciba_request_storage_key(&auth_req_id);
     let now = valkey_server_time(&valkey).await;
     let deadline = now + 180;
     let raw = serde_json::json!({
@@ -211,7 +212,7 @@ async fn ciba_state_rejects_deadline_that_disagrees_with_expiretime() {
     };
     let connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
     let auth_req_id = format!("mismatch-{}", Uuid::now_v7());
-    let key = ciba_request_key(&auth_req_id);
+    let key = ciba_request_storage_key(&auth_req_id);
     let now = valkey_server_time(&valkey).await;
     let deadline = now + 180;
     let mut state = pending_state(now);
@@ -239,7 +240,7 @@ async fn ciba_compare_set_persists_legacy_deadline_without_refreshing_it() {
     };
     let connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey.clone());
     let auth_req_id = format!("replace-{}", Uuid::now_v7());
-    let key = ciba_request_key(&auth_req_id);
+    let key = ciba_request_storage_key(&auth_req_id);
     let now = valkey_server_time(&valkey).await;
     let state = pending_state(now);
 
@@ -297,7 +298,7 @@ async fn ciba_creation_retries_collision_without_overwriting_existing_state() {
             .unwrap(),
         ValkeyAtomicResult::Applied
     );
-    let occupied_raw = valkey_atomic_snapshot(&valkey, &ciba_request_key(&occupied_id))
+    let occupied_raw = valkey_atomic_snapshot(&valkey, &ciba_request_storage_key(&occupied_id))
         .await
         .unwrap()
         .unwrap()
@@ -313,7 +314,7 @@ async fn ciba_creation_retries_collision_without_overwriting_existing_state() {
 
     assert_eq!(actual, created_id);
     assert_eq!(
-        valkey_atomic_snapshot(&valkey, &ciba_request_key(&occupied_id))
+        valkey_atomic_snapshot(&valkey, &ciba_request_storage_key(&occupied_id))
             .await
             .unwrap()
             .unwrap()
