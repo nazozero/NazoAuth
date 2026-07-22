@@ -105,13 +105,6 @@ fn baseline_settings() -> Settings {
     settings
 }
 
-fn oauth_error_code(response: &HttpResponse) -> Option<String> {
-    response
-        .extensions()
-        .get::<OAuthJsonErrorFields>()
-        .map(|fields| fields.error.clone())
-}
-
 fn valid_par_parameters() -> HashMap<String, String> {
     HashMap::from([
         ("response_type".to_owned(), "code".to_owned()),
@@ -293,7 +286,6 @@ fn unavailable_valkey_client(timeout_ms: u64) -> fred::prelude::Client {
 struct ParTestFixture {
     authorization: AuthorizationTestFixture,
     database: DbPool,
-    valkey: fred::prelude::Client,
     keyset: nazo_key_management::KeyManager,
 }
 
@@ -330,7 +322,6 @@ impl ParTestFixture {
         Self {
             authorization,
             database,
-            valkey,
             keyset,
         }
     }
@@ -344,7 +335,6 @@ impl ParTestFixture {
                 self.keyset.clone(),
             ),
             database: self.database.clone(),
-            valkey,
             keyset: self.keyset.clone(),
         }
     }
