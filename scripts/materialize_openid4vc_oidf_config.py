@@ -24,8 +24,6 @@ VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encrypt
 VCI_MULTIPLE_CLIENTS_MODULE = "oid4vci-1_0-issuer-happy-flow-multiple-clients"
 VCI_PREAUTH_REPLAY_BLOCK = "Second client: Verify token endpoint response"
 VCI_PREAUTH_REPLAY_CONDITION = "CheckTokenEndpointHttpStatus200"
-VCI_PREAUTH_CASCADE_BLOCK = "Second client:  Validate Notification Response from Issuer"
-VCI_PREAUTH_CASCADE_CONDITION = VCI_MULTIPLE_CLIENTS_MODULE
 P256_P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
 P256_A = -3
 P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
@@ -153,32 +151,19 @@ def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
 
 
 def expected_problems_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
-    pre_authorized_code_replay: list[dict[str, object]] = []
-    for plan, slug, variants in cases:
-        if plan != VCI_STANDARD or variants.get("vci_grant_type") != "pre_authorization_code":
-            continue
-        base = {
+    pre_authorized_code_replay = [
+        {
             "expected-result": "failure",
             "test-name": VCI_MULTIPLE_CLIENTS_MODULE,
             "variant": dict(variants),
             "configuration-filename": f"openid4vc-{slug}.json",
+            "current-block": VCI_PREAUTH_REPLAY_BLOCK,
+            "condition": VCI_PREAUTH_REPLAY_CONDITION,
         }
-        pre_authorized_code_replay.extend(
-            [
-                {
-                    **base,
-                    "current-block": VCI_PREAUTH_REPLAY_BLOCK,
-                    "condition": VCI_PREAUTH_REPLAY_CONDITION,
-                },
-                {
-                    # The upstream module continues into notification validation after
-                    # the expected single-use rejection and emits this cascading failure.
-                    **base,
-                    "current-block": VCI_PREAUTH_CASCADE_BLOCK,
-                    "condition": VCI_PREAUTH_CASCADE_CONDITION,
-                },
-            ]
-        )
+        for plan, slug, variants in cases
+        if plan == VCI_STANDARD
+        and variants.get("vci_grant_type") == "pre_authorization_code"
+    ]
     return pre_authorized_code_replay
 
 
