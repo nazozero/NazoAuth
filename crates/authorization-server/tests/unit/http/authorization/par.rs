@@ -105,10 +105,14 @@ fn baseline_settings() -> Settings {
     settings
 }
 
+fn valid_par_code_challenge() -> String {
+    "A".repeat(43)
+}
+
 fn valid_par_parameters() -> HashMap<String, String> {
     HashMap::from([
         ("response_type".to_owned(), "code".to_owned()),
-        ("code_challenge".to_owned(), "A".repeat(43)),
+        ("code_challenge".to_owned(), valid_par_code_challenge()),
         ("code_challenge_method".to_owned(), "S256".to_owned()),
     ])
 }
@@ -1319,9 +1323,10 @@ async fn par_fails_closed_when_request_uri_persistence_fails() {
         .insert_client_secret_post_client(&client_id, &secret)
         .await;
     let body = Bytes::from(format!(
-        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback",
+        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&code_challenge={}&code_challenge_method=S256",
         urlencoding::encode(&client_id),
-        urlencoding::encode(&secret)
+        urlencoding::encode(&secret),
+        valid_par_code_challenge()
     ));
 
     let response = par_after_rate_limit(
@@ -1348,9 +1353,10 @@ async fn par_success_persists_request_uri_without_client_secret_material() {
         .insert_client_secret_post_client(&client_id, &secret)
         .await;
     let body = Bytes::from(format!(
-        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid+email&state=par-state&dpop_jkt=w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ&unknown-extension=first&unknown-extension=second",
+        "client_id={}&client_secret={}&response_type=code&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&scope=openid+email&state=par-state&code_challenge={}&code_challenge_method=S256&dpop_jkt=w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ&unknown-extension=first&unknown-extension=second",
         urlencoding::encode(&client_id),
-        urlencoding::encode(&secret)
+        urlencoding::encode(&secret),
+        valid_par_code_challenge()
     ));
 
     let response = par_after_rate_limit(&fixture.par, par_form_request(), body).await;
