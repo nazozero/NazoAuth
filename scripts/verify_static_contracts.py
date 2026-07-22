@@ -287,9 +287,6 @@ def check_rust_test_structure() -> None:
             "let valkey_connection = nazo_valkey::ValkeyConnection::from_existing_client(valkey);",
             "let session_profiles = web::Data::new(SessionProfileHandles::new(",
         ),
-        "crates/authorization-server/src/domain/resource_server.rs": (
-            '#[path = "../../../../tests/unit/domain/resource_server.rs"]',
-        ),
         "crates/authorization-server/src/http/auth/federation.rs": (
             "let builder = builder.no_proxy();",
         ),
