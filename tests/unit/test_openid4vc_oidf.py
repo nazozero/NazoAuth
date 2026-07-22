@@ -1198,6 +1198,8 @@ class Openid4vcOidfTests(unittest.TestCase):
                 [item["configuration-filename"] for item in replay_failures],
                 [
                     "openid4vc-vci-sd-preauth.json",
+                    "openid4vc-vci-sd-preauth.json",
+                    "openid4vc-vci-mdoc-preauth.json",
                     "openid4vc-vci-mdoc-preauth.json",
                 ],
             )
@@ -1207,15 +1209,20 @@ class Openid4vcOidfTests(unittest.TestCase):
                     for item in replay_failures
                 )
             )
-            self.assertTrue(
-                all(
-                    item["expected-result"] == "failure"
-                    and item["current-block"] == module.VCI_PREAUTH_REPLAY_BLOCK
-                    and item["condition"] == module.VCI_PREAUTH_REPLAY_CONDITION
+            self.assertEqual(
+                [
+                    (item["current-block"], item["condition"])
                     for item in replay_failures
-                )
+                ],
+                [
+                    (module.VCI_PREAUTH_REPLAY_BLOCK, module.VCI_PREAUTH_REPLAY_CONDITION),
+                    (module.VCI_PREAUTH_CASCADE_BLOCK, module.VCI_PREAUTH_CASCADE_CONDITION),
+                    (module.VCI_PREAUTH_REPLAY_BLOCK, module.VCI_PREAUTH_REPLAY_CONDITION),
+                    (module.VCI_PREAUTH_CASCADE_BLOCK, module.VCI_PREAUTH_CASCADE_CONDITION),
+                ],
             )
-            self.assertEqual(len(expected_problems), 2)
+            self.assertTrue(all(item["expected-result"] == "failure" for item in replay_failures))
+            self.assertEqual(len(expected_problems), 4)
             expected_warnings = [
                 item for item in expected_problems
                 if item["expected-result"] == "warning"
