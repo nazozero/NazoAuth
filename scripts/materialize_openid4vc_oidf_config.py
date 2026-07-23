@@ -134,7 +134,7 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
     pre_authorized_multiple_clients = [
         {
             "test-name": VCI_MULTIPLE_CLIENTS_MODULE,
-            "variant": dict(variants),
+            "variant": "*",
             "configuration-filename": f"openid4vc-{slug}.json",
         }
         for plan, slug, variants in cases

@@ -1137,8 +1137,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             )
             self.assertTrue(
                 all(
-                    item["variant"]["vci_grant_type"]
-                    == "pre_authorization_code"
+                    item["variant"] == "*"
                     for item in expected_skips
                     if item["test-name"] == module.VCI_MULTIPLE_CLIENTS_MODULE
                 )
