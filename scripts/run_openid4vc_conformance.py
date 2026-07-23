@@ -363,46 +363,6 @@ class Openid4vcDriver:
                 flush=True,
             )
 
-    def waiting_credential_offer_endpoint(self, module_id: str) -> str | None:
-        server = str(self.config["conformance_server"])
-        token = str(
-            self.config.get("conformance_token")
-            or os.environ.get("OIDF_CONFORMANCE_TOKEN", "")
-        )
-        status, info = oidf.oidf_api_request(
-            "GET",
-            server,
-            f"api/info/{module_id}",
-            token,
-            expected_statuses={200, 404},
-        )
-        if (
-            status != 200
-            or not isinstance(info, dict)
-            or str(info.get("status", "")).upper() != "WAITING"
-        ):
-            return None
-        runner_status, runner_info = oidf.oidf_api_request(
-            "GET",
-            server,
-            f"api/runner/{module_id}",
-            token,
-            expected_statuses={200, 404},
-        )
-        exposed = (
-            runner_info.get("exposed")
-            if runner_status == 200 and isinstance(runner_info, dict)
-            else None
-        )
-        endpoint = (
-            exposed.get("credential_offer_endpoint")
-            if isinstance(exposed, dict)
-            else None
-        )
-        if not isinstance(endpoint, str):
-            return None
-        return suite_callback_url(server, endpoint)
-
     def drive_issuer(self, module_id: str, info: dict[str, object], variant: dict[str, object]) -> None:
         exposed = info.get("exposed")
         endpoint = exposed.get("credential_offer_endpoint") if isinstance(exposed, dict) else None
@@ -423,46 +383,49 @@ class Openid4vcDriver:
             and test_name == PRE_AUTHORIZED_MULTIPLE_CLIENTS_TEST
             else 1
         )
-        while (
-            endpoint is not None
-            and self.issuer_offer_deliveries.get(module_id, 0) < expected_offers
-        ):
-            delivered = self.issuer_offer_deliveries.get(module_id, 0)
-            offer = request_json(
-                "POST",
-                urllib.parse.urljoin(
-                    str(self.config["target_origin"]), "/openid4vci/offers"
-                ),
-                str(issuer["management_token"]),
-                {
-                    "subject_id": issuer["subject_id"],
-                    "credential_configuration_ids": [configuration_id],
-                    "grant_types": [grant_type],
-                    **({"tx_code": tx_code} if tx_code else {}),
-                    "expires_in": 300,
-                },
+        delivered = self.issuer_offer_deliveries.get(module_id, 0)
+        if delivered >= expected_offers:
+            self.triggered.add(module_id)
+            return
+        offer = request_json(
+            "POST",
+            urllib.parse.urljoin(
+                str(self.config["target_origin"]), "/openid4vci/offers"
+            ),
+            str(issuer["management_token"]),
+            {
+                "subject_id": issuer["subject_id"],
+                "credential_configuration_ids": [configuration_id],
+                "grant_types": [grant_type],
+                **({"tx_code": tx_code} if tx_code else {}),
+                "expires_in": 300,
+            },
+        )
+        if issuer.get("offer_delivery", "uri") == "value":
+            value = json.dumps(offer["credential_offer"], separators=(",", ":"))
+            callback = (
+                f"{endpoint}?"
+                f"{urllib.parse.urlencode({'credential_offer': value})}"
             )
-            if issuer.get("offer_delivery", "uri") == "value":
-                value = json.dumps(offer["credential_offer"], separators=(",", ":"))
-                callback = (
-                    f"{endpoint}?"
-                    f"{urllib.parse.urlencode({'credential_offer': value})}"
-                )
-            else:
-                callback = (
-                    f"{endpoint}?"
-                    f"{urllib.parse.urlencode({'credential_offer_uri': offer['credential_offer_uri']})}"
-                )
-            get_url(callback)
-            delivered += 1
-            self.issuer_offer_deliveries[module_id] = delivered
-            print(
-                f"OpenID4VC driver delivered credential offer {delivered} "
-                f"to {module_id}",
-                flush=True,
+        else:
+            callback = (
+                f"{endpoint}?"
+                f"{urllib.parse.urlencode({'credential_offer_uri': offer['credential_offer_uri']})}"
             )
-            endpoint = self.waiting_credential_offer_endpoint(module_id)
-        self.triggered.add(module_id)
+        get_url(callback)
+        delivered += 1
+        self.issuer_offer_deliveries[module_id] = delivered
+        print(
+            f"OpenID4VC driver delivered credential offer {delivered} "
+            f"to {module_id}",
+            flush=True,
+        )
+        # A multiple-client pre-authorized flow exposes the same callback path twice.
+        # Return to the outer poll after each delivery so the suite can consume the
+        # first callback and enter the second client's WAITING state before another
+        # fresh, single-use offer is delivered.
+        if delivered >= expected_offers:
+            self.triggered.add(module_id)
 
     def drive_verifier(self, module_id: str, info: dict[str, object], variant: dict[str, object], haip: bool) -> None:
         verifier = self.config["verifier"]

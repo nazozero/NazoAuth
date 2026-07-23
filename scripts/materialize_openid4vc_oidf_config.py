@@ -21,9 +21,6 @@ OIDF_VP_SD_JWT_VCT = "urn:eudi:pid:1"
 OFFICIAL_VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
 OFFICIAL_VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
 VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm"
-VCI_MULTIPLE_CLIENTS_MODULE = "oid4vci-1_0-issuer-happy-flow-multiple-clients"
-VCI_PREAUTH_REPLAY_BLOCK = "Second client: Verify token endpoint response"
-VCI_PREAUTH_REPLAY_CONDITION = "CheckTokenEndpointHttpStatus200"
 P256_P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
 P256_A = -3
 P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
@@ -151,20 +148,7 @@ def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
 
 
 def expected_problems_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> list[dict[str, object]]:
-    pre_authorized_code_replay = [
-        {
-            "expected-result": "failure",
-            "test-name": VCI_MULTIPLE_CLIENTS_MODULE,
-            "variant": dict(variants),
-            "configuration-filename": f"openid4vc-{slug}.json",
-            "current-block": VCI_PREAUTH_REPLAY_BLOCK,
-            "condition": VCI_PREAUTH_REPLAY_CONDITION,
-        }
-        for plan, slug, variants in cases
-        if plan == VCI_STANDARD
-        and variants.get("vci_grant_type") == "pre_authorization_code"
-    ]
-    return pre_authorized_code_replay
+    return []
 
 
 def b64url_decode(value: str) -> bytes:

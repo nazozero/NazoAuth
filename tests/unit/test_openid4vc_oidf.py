@@ -240,7 +240,7 @@ class Openid4vcOidfTests(unittest.TestCase):
 
         self.assertEqual(calls, 1)
 
-    def test_issuer_driver_delivers_fresh_offer_for_each_waiting_cycle(self):
+    def test_issuer_driver_delivers_fresh_offer_across_distinct_waiting_cycles(self):
         module = load("run_openid4vc_conformance.py")
         driver = module.Openid4vcDriver(
             {
@@ -264,30 +264,23 @@ class Openid4vcOidfTests(unittest.TestCase):
         with (
             patch.object(module, "request_json", side_effect=offers) as create_offer,
             patch.object(module, "get_url") as deliver_offer,
-            patch.object(
-                driver,
-                "waiting_credential_offer_endpoint",
-                side_effect=[
-                    "https://suite.example/test/a/issuer/credential_offer",
-                    None,
-                ],
-            ),
         ):
-            driver.drive_issuer(
-                "module-id",
-                {
-                    "testName": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
-                    "exposed": {
-                        "credential_offer_endpoint": (
-                            "https://suite.example/test/a/issuer/credential_offer"
-                        )
-                    }
+            info = {
+                "testName": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
+                "exposed": {
+                    "credential_offer_endpoint": (
+                        "https://suite.example/test/a/issuer/credential_offer"
+                    )
                 },
-                {
-                    "credential_format": "sd_jwt_vc",
-                    "vci_grant_type": "pre_authorization_code",
-                },
-            )
+            }
+            variant = {
+                "credential_format": "sd_jwt_vc",
+                "vci_grant_type": "pre_authorization_code",
+            }
+            driver.drive_issuer("module-id", info, variant)
+            self.assertEqual(create_offer.call_count, 1)
+            self.assertNotIn("module-id", driver.triggered)
+            driver.drive_issuer("module-id", info, variant)
 
         self.assertEqual(create_offer.call_count, 2)
         self.assertEqual(
@@ -332,27 +325,22 @@ class Openid4vcOidfTests(unittest.TestCase):
                 },
             ) as create_offer,
             patch.object(module, "get_url"),
-            patch.object(
-                driver,
-                "waiting_credential_offer_endpoint",
-                return_value="https://suite.example/test/a/issuer/credential_offer",
-            ),
         ):
-            driver.drive_issuer(
-                "module-id",
-                {
-                    "testName": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
-                    "exposed": {
-                        "credential_offer_endpoint": (
-                            "https://suite.example/test/a/issuer/credential_offer"
-                        )
-                    }
+            info = {
+                "testName": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
+                "exposed": {
+                    "credential_offer_endpoint": (
+                        "https://suite.example/test/a/issuer/credential_offer"
+                    )
                 },
-                {
-                    "credential_format": "sd_jwt_vc",
-                    "vci_grant_type": "pre_authorization_code",
-                },
-            )
+            }
+            variant = {
+                "credential_format": "sd_jwt_vc",
+                "vci_grant_type": "pre_authorization_code",
+            }
+            driver.drive_issuer("module-id", info, variant)
+            driver.drive_issuer("module-id", info, variant)
+            driver.drive_issuer("module-id", info, variant)
 
         self.assertEqual(create_offer.call_count, 2)
         self.assertIn("module-id", driver.triggered)
@@ -380,11 +368,6 @@ class Openid4vcOidfTests(unittest.TestCase):
                 return_value={"credential_offer_uri": "https://issuer.example/offers/one"},
             ) as create_offer,
             patch.object(module, "get_url"),
-            patch.object(
-                driver,
-                "waiting_credential_offer_endpoint",
-                return_value="https://suite.example/test/a/issuer/credential_offer",
-            ),
         ):
             driver.drive_issuer(
                 "module-id",
@@ -584,6 +567,13 @@ class Openid4vcOidfTests(unittest.TestCase):
                 arguments,
                 require_no_expected_problems=True,
             )
+            stale_warning = [
+                {
+                    "configuration-filename": names[0],
+                    "condition": "stale-condition",
+                }
+            ]
+            warnings.write_text(json.dumps(stale_warning), encoding="utf-8")
             with self.assertRaisesRegex(SystemExit, "expected problems"):
                 runner.validate_materialized_matrix(
                     {
@@ -592,10 +582,6 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                     arguments,
                 )
-            warnings.write_text(
-                json.dumps(materializer.expected_problems_for_cases(cases)),
-                encoding="utf-8",
-            )
             with self.assertRaisesRegex(SystemExit, "strict diagnostic"):
                 runner.validate_materialized_matrix(
                     {
@@ -1190,36 +1176,7 @@ class Openid4vcOidfTests(unittest.TestCase):
                     },
                 ],
             )
-            replay_failures = [
-                item for item in expected_problems
-                if item["test-name"] == module.VCI_MULTIPLE_CLIENTS_MODULE
-            ]
-            self.assertEqual(
-                [item["configuration-filename"] for item in replay_failures],
-                [
-                    "openid4vc-vci-sd-preauth.json",
-                    "openid4vc-vci-mdoc-preauth.json",
-                ],
-            )
-            self.assertTrue(
-                all(
-                    item["variant"]["vci_grant_type"] == "pre_authorization_code"
-                    for item in replay_failures
-                )
-            )
-            self.assertTrue(
-                all(
-                    item["expected-result"] == "failure"
-                    and item["current-block"] == module.VCI_PREAUTH_REPLAY_BLOCK
-                    and item["condition"] == module.VCI_PREAUTH_REPLAY_CONDITION
-                    for item in replay_failures
-                )
-            )
-            self.assertEqual(len(expected_problems), 2)
-            expected_warnings = [
-                item for item in expected_problems
-                if item["expected-result"] == "warning"
-            ]
+            self.assertEqual(expected_problems, [])
             for config in configs.values():
                 if "vci-" not in config["alias"]:
                     continue
@@ -1228,7 +1185,6 @@ class Openid4vcOidfTests(unittest.TestCase):
                 self.assertEqual(
                     config["mtls2"]["cert"], material["mtls2"]["cert"]
                 )
-            self.assertEqual(expected_warnings, [])
             self.assertEqual(materialized_driver["target_origin"], "https://issuer.example")
             self.assertEqual(
                 materialized_driver["verifier"]["credential_type_values"]["sd_jwt_vc"],
