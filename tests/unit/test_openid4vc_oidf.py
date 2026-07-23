@@ -1238,6 +1238,76 @@ class Openid4vcOidfTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "valid client namespace"):
             module.vci_client_ids("operator-black-box", "official")
 
+    def test_operator_subject_id_is_explicitly_bound_to_current_user(self):
+        module = load("materialize_openid4vc_oidf_config.py")
+        issuer = {"subject_id": "00000000-0000-0000-0000-000000000001"}
+
+        module.bind_subject_id(
+            issuer,
+            "operator-black-box",
+            "00000000-0000-0000-0000-000000000123",
+        )
+
+        self.assertEqual(
+            issuer["subject_id"],
+            "00000000-0000-0000-0000-000000000123",
+        )
+        with self.assertRaisesRegex(SystemExit, "requires --subject-id"):
+            module.bind_subject_id({}, "operator-black-box", None)
+        with self.assertRaisesRegex(SystemExit, "must be a UUID"):
+            module.bind_subject_id({}, "operator-black-box", "not-a-uuid")
+
+    def test_openid4vc_suite_plan_configs_are_bounded_and_cleaned(self):
+        module = load("run_openid4vc_conformance.py")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            suite = root / "suite"
+            scripts = suite / "scripts"
+            scripts.mkdir(parents=True)
+            configs = root / "configs.json"
+            configs.write_text(
+                json.dumps(
+                    {
+                        "configs": {
+                            "openid4vc-vci.json": {},
+                            "openid4vc-vp.json": {},
+                        }
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            paths = module.suite_plan_config_paths(
+                [
+                    "--suite-dir",
+                    str(suite),
+                    "--config-json-file",
+                    str(configs),
+                ]
+            )
+            self.assertEqual(
+                [path.name for path in paths],
+                ["openid4vc-vci.json", "openid4vc-vp.json"],
+            )
+            for path in paths:
+                path.write_text("{}", encoding="utf-8")
+            module.cleanup_suite_plan_configs(paths)
+            self.assertTrue(all(not path.exists() for path in paths))
+
+            configs.write_text(
+                json.dumps({"configs": {"../outside.json": {}}}),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeError, "invalid OpenID4VC"):
+                module.suite_plan_config_paths(
+                    [
+                        "--suite-dir",
+                        str(suite),
+                        "--config-json-file",
+                        str(configs),
+                    ]
+                )
+
 
 if __name__ == "__main__":
     unittest.main()

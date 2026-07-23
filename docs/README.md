@@ -64,6 +64,7 @@ set can be scanned from one place.
 | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) | Chinese deployment guide. |
 | [operations/fresh-production-activation.md](operations/fresh-production-activation.md) | Clean-data deployment and OIDF-gated production activation. |
 | [operations/fresh-production-activation.zh-CN.md](operations/fresh-production-activation.zh-CN.md) | Chinese clean-data deployment and OIDF-gated production activation. |
+| [operations/2026-07-23-fresh-production-activation.zh-CN.md](operations/2026-07-23-fresh-production-activation.zh-CN.md) | Evidence record for the 2026-07-23 clean-data production activation. |
 | [operations/ha-operations.md](operations/ha-operations.md) | PostgreSQL and Valkey operational guidance. |
 | [operations/release-security.md](operations/release-security.md) | Release security checks, provenance, and supply-chain controls. |
 | [operations/release-boundary.md](operations/release-boundary.md) | Production artifact and conformance-tool separation boundary. |

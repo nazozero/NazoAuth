@@ -33,15 +33,18 @@ PostgreSQL 数据目录部署一个可审计的生产版本。它不是日常滚
 | B2 | 删除 `/home/nazoAuth` | 在 B1 后串行 | 避免运行器仍引用即将删除的源码 |
 | B3 | 创建新 PostgreSQL/Valkey 卷和新数据库，修改配置 | 在 B2 后串行 | 数据库地址必须与新实例一致 |
 | B4 | 迁移、启动候选服务、切换 UI | 在 B3 后串行 | 迁移必须先于服务接收请求 |
-| C1 | 生产冒烟和外部接口检查 | 串行闸门 | 失败时不进入一致性验收 |
+| B5 | 通过公开接口创建两名全新测试用户并完成资料 | 在 B4 后；两名用户可并行 | 每名用户使用独立验证码、Cookie 和文件 |
+| 闸门 B | 两名用户均可登录，申请人资料完整，管理员已受控提升 | 串行汇合 | OIDC profile/address 和 OpenID4VC subject 均依赖它 |
+| C1 | 生产冒烟和外部接口检查 | 在闸门 B 后 | 失败时不进入一致性验收 |
 | C2 | OIDC/FAPI 矩阵 | 在 C1 后 | 共享浏览器、动态客户端和代理状态 |
 | C3 | OpenID4VC 矩阵 | 在 C2 后 | 与 C2 串行，避免共享状态相互污染 |
 | 闸门 C | C1、C2、C3 全部成功 | 串行汇合 | 通过后才记录“正式启用” |
 
 A1 内部可以并行运行互不写同一输出目录的检查；镜像构建只能在所有生成源文件
 的检查完成后开始。A2 的数据库备份和源码归档可以并行，但不得写同名临时文件。
-OIDF 计划本身使用 `--plan-group-size 1`，因为这些计划会共享浏览器会话、动态
-客户端及反向代理配置。
+B5 的两条用户旅程可以并行，但同一用户的注册、登录、资料更新和头像上传必须
+保持顺序。OIDF 计划本身使用 `--plan-group-size 1`，因为这些计划会共享浏览器
+会话、动态客户端及反向代理配置。
 
 ## 运行变量和精确目标
 
@@ -129,9 +132,11 @@ chmod 0600 "$backup_root"/*
 ### A3：只读预检
 
 确认磁盘至少有 1 GiB 可用、`nazo_oauth_net` 为
-`10.101.0.0/24`/`10.101.0.1`、Angie 上游指向 `10.101.0.20:8000`，并记录
-PostgreSQL、Valkey、OIDF compose 项目的精确容器名。确认 OIDF operator suite
-提交和运行器虚拟环境存在且工作区干净。
+`10.101.0.0/24`/`10.101.0.1`、实际 Angie 配置文件（当前生产路径为
+`/usr/local/angie/conf/conf.d/auth.nazo.run.conf`）的上游指向
+`10.101.0.20:8000`，并记录 PostgreSQL、Valkey、OIDF compose 项目的精确
+容器名。确认 OIDF operator suite 提交和运行器虚拟环境存在，并以
+`git status --porcelain` 检查包括未跟踪文件在内的完整洁净度。
 
 ## B：维护窗口和全新数据面
 
@@ -179,13 +184,13 @@ podman volume create "$valkey_volume"
 
 ```bash
 podman run -d --name nazo-oauth-postgres --restart=unless-stopped \
-  --network nazo_oauth_net --ip 10.101.0.10 \
+  --network nazo_oauth_net --network-alias postgres --ip 10.101.0.10 \
   -e POSTGRES_USER=postgres -e POSTGRES_DB="$new_database" \
   -e POSTGRES_PASSWORD="$db_password" \
   -v "$pg_volume:/var/lib/postgresql" docker.io/library/postgres:18
 
 podman run -d --name nazo-oauth-valkey --restart=unless-stopped \
-  --network nazo_oauth_net --ip 10.101.0.11 \
+  --network nazo_oauth_net --network-alias valkey --ip 10.101.0.11 \
   -v "$valkey_volume:/data" docker.io/valkey/valkey:8-alpine \
   valkey-server --save 60 1 --loglevel warning
 ```
@@ -195,10 +200,24 @@ podman run -d --name nazo-oauth-valkey --restart=unless-stopped \
 
 ### B4：部署和迁移
 
-此时执行 A1 中的 `deploy_live.ps1`。脚本依次完成迁移、候选容器启动、内部健康
-检查、发现文档检查、Angie 上游验证、UI 原子切换和公开静态资源验证。任一检查
-失败时保留事务证据并回滚应用/UI；数据库恢复必须人工使用 A2 的恢复点，不由
-脚本隐式覆盖新数据库。
+此时执行 A1 中的 `deploy_live.ps1`，并传入实际路径
+`-RemoteAngieConfigPath /usr/local/angie/conf/conf.d/auth.nazo.run.conf`。
+脚本依次完成迁移、候选容器启动、内部健康检查、发现文档检查、Angie 上游验证、
+UI 原子切换和公开静态资源验证。任一检查失败时保留事务证据并回滚应用/UI；
+数据库恢复必须人工使用 A2 的恢复点，不由脚本隐式覆盖新数据库。
+
+### B5：完成全新用户旅程
+
+不能复用旧库中的用户 ID、会话或 OIDF 模板。为申请人和管理员分别生成一次性
+验证码，通过公开 `/auth/register` 注册，再通过公开登录、`PATCH /auth/me`
+和 `POST /auth/me/avatar` 完成独立用户旅程。两名用户可以并行，但验证码键、
+Cookie jar、邮箱和上传文件必须互不共享。
+
+项目当前没有公开的首位管理员引导接口。两名用户完成公开注册后，只对本次新建
+的管理员用户执行一次受控 SQL 角色提升；不得直接插入用户或复制旧数据库记录。
+提升后重新通过公开接口登录，并记录两名用户的 ID。申请人必须包含 OIDC
+`profile`、`address` 和 `phone` 范围所需的完整资料，否则全新数据库上的一致性
+测试会在声明校验阶段失败。
 
 ## C：生产验收与 OIDF
 
@@ -213,12 +232,21 @@ curl -fsS https://auth.nazo.run/ui/auth
 然后重新创建经锁定 revision 的远端本地 OIDF compose 项目。OIDF 容器属于测试
 基础设施，不加入 `nazo_oauth_net`，也不装入生产镜像。
 
+把精确后端提交解压到 `$source_root`，运行器必须从该路径导入脚本，不能硬编码
+已删除的 `/home/nazoAuth`。开始和清理时都以 `git status --porcelain` 检查
+product source 与 operator suite，包括未跟踪文件。
+
 从 `$source_root` 依次运行：
 
 1. OIDC/FAPI 全矩阵，`--plan-group-size 1`；
 2. 清理动态客户端、浏览器会话和临时代理状态；
 3. OpenID4VC 全矩阵，`--plan-group-size 1`；
 4. 清理 onboarding 和临时私钥。
+
+物化 operator-black-box OpenID4VC 配置时，必须传入本次公开注册得到的
+`--subject-id "$applicant_user_id"`，禁止沿用模板中的旧用户 ID。onboarding
+只有在本次客户端实际请求 mTLS trust anchor 时才要求返回的信任包非空；所有
+客户端的 anchor 均为空时，空的受信任 CA 包是合法状态。
 
 每次运行使用唯一 `run_id`，结果写入
 `/opt/nazo-oauth/conformance/results/<run_id>`。必须记录套件 revision、生产

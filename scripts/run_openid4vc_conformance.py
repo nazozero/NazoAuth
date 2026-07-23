@@ -510,6 +510,34 @@ def option_value(arguments: list[str], option: str) -> str | None:
     return arguments[index + 1]
 
 
+def suite_plan_config_paths(arguments: list[str]) -> list[Path]:
+    suite_dir = option_value(arguments, "--suite-dir")
+    config_json_file = option_value(arguments, "--config-json-file")
+    if not suite_dir or not config_json_file:
+        raise RuntimeError(
+            "OpenID4VC runner requires --suite-dir and --config-json-file"
+        )
+    document = json.loads(Path(config_json_file).read_text(encoding="utf-8"))
+    configs = document.get("configs") if isinstance(document, dict) else None
+    if not isinstance(configs, dict) or not configs:
+        raise RuntimeError("OpenID4VC plan configs must contain a non-empty configs object")
+    scripts = Path(suite_dir).resolve() / "scripts"
+    paths: list[Path] = []
+    for name in configs:
+        if not isinstance(name, str) or not name:
+            raise RuntimeError(f"invalid OpenID4VC suite config file name: {name!r}")
+        candidate = Path(name)
+        if candidate.name != name or candidate.suffix != ".json":
+            raise RuntimeError(f"invalid OpenID4VC suite config file name: {name!r}")
+        paths.append(scripts / name)
+    return paths
+
+
+def cleanup_suite_plan_configs(paths: list[Path]) -> None:
+    for path in paths:
+        path.unlink(missing_ok=True)
+
+
 def replace_option(arguments: list[str], option: str, value: str) -> list[str]:
     updated = list(arguments)
     try:
@@ -744,6 +772,13 @@ def main() -> int:
         runner_args,
         require_no_expected_problems=args.require_no_expected_problems,
     )
+    plan_config_paths = suite_plan_config_paths(runner_args)
+    existing_plan_configs = [path for path in plan_config_paths if path.exists()]
+    if existing_plan_configs:
+        raise RuntimeError(
+            "OpenID4VC suite contains stale generated plan configs: "
+            + ", ".join(path.name for path in existing_plan_configs)
+        )
     admin, installed_datasets = install_credential_datasets(config)
     stop = threading.Event()
     driver = Openid4vcDriver(config, stop)
@@ -762,8 +797,11 @@ def main() -> int:
         try:
             cleanup_credential_datasets(admin, installed_datasets)
         finally:
-            if export_dir:
-                sanitize_evidence_tree(Path(export_dir))
+            try:
+                cleanup_suite_plan_configs(plan_config_paths)
+            finally:
+                if export_dir:
+                    sanitize_evidence_tree(Path(export_dir))
 
 
 if __name__ == "__main__":

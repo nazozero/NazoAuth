@@ -23,6 +23,16 @@ def load_module():
 
 
 class ApplyPublicConformanceOnboardingTests(unittest.TestCase):
+    def test_empty_trust_bundle_is_allowed_without_a_requested_anchor(self):
+        module = load_module()
+
+        self.assertEqual(module.validate_trust_bundle(b"", required=False), "")
+        with self.assertRaisesRegex(
+            module.OnboardingError,
+            "approved mTLS trust bundle contains no certificate",
+        ):
+            module.validate_trust_bundle(b"", required=True)
+
     def test_login_retries_transport_failure_but_not_http_failure(self):
         module = load_module()
 

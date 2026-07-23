@@ -60,6 +60,13 @@ def access_request_site_name(logical_client_id: str) -> str:
     return f"OIDF conformance client {digest}"
 
 
+def validate_trust_bundle(bundle: bytes, *, required: bool) -> str:
+    bundle_text = bundle.decode("ascii")
+    if required and "-----BEGIN CERTIFICATE-----" not in bundle_text:
+        raise OnboardingError("approved mTLS trust bundle contains no certificate")
+    return bundle_text
+
+
 def read_json(path: Path) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -361,6 +368,7 @@ def apply_onboarding(args: argparse.Namespace) -> int:
         "clients": [],
     }
     delivered_clients: list[dict[str, Any]] = []
+    requested_trust_anchor = False
     persist_onboarding_state(args.state_file, state)
     for item in manifest["clients"]:
         logical_id = item["logical_client_id"]
@@ -415,6 +423,7 @@ def apply_onboarding(args: argparse.Namespace) -> int:
         trust_request_id = None
         certificate_pem = item.get("mtls_trust_anchor_pem")
         if certificate_pem is not None:
+            requested_trust_anchor = True
             if not isinstance(certificate_pem, str) or not certificate_pem.startswith("-----BEGIN CERTIFICATE-----"):
                 raise OnboardingError(f"logical client {logical_id} has an invalid trust anchor")
             trust_request = applicant.request_json(
@@ -440,9 +449,7 @@ def apply_onboarding(args: argparse.Namespace) -> int:
             persist_onboarding_state(args.state_file, state)
 
     bundle, _ = admin.request("GET", "/admin/mtls-trust-anchors.pem", expected_status=200)
-    bundle_text = bundle.decode("ascii")
-    if "-----BEGIN CERTIFICATE-----" not in bundle_text:
-        raise OnboardingError("approved mTLS trust bundle contains no certificate")
+    bundle_text = validate_trust_bundle(bundle, required=requested_trust_anchor)
     state["trust_bundle_sha256"] = hashlib.sha256(bundle).hexdigest()
     write_private_json(args.plan_configs, plan_document)
     if not args.no_runner_env:
