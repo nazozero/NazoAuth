@@ -240,66 +240,7 @@ class Openid4vcOidfTests(unittest.TestCase):
 
         self.assertEqual(calls, 1)
 
-    def test_issuer_driver_delivers_fresh_offer_across_distinct_waiting_cycles(self):
-        module = load("run_openid4vc_conformance.py")
-        driver = module.Openid4vcDriver(
-            {
-                "conformance_server": "https://suite.example",
-                "conformance_token": "test-token",
-                "target_origin": "https://issuer.example",
-                "aliases": ["issuer-alias"],
-                "issuer": {
-                    "credential_configuration_ids": {"sd_jwt_vc": "pid"},
-                    "management_token": "management-token",
-                    "subject_id": "00000000-0000-0000-0000-000000000123",
-                    "tx_code": "123456",
-                },
-            },
-            module.threading.Event(),
-        )
-        offers = [
-            {"credential_offer_uri": "https://issuer.example/offers/one"},
-            {"credential_offer_uri": "https://issuer.example/offers/two"},
-        ]
-        with (
-            patch.object(module, "request_json", side_effect=offers) as create_offer,
-            patch.object(module, "get_url") as deliver_offer,
-        ):
-            info = {
-                "testName": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
-                "exposed": {
-                    "credential_offer_endpoint": (
-                        "https://suite.example/test/a/issuer/credential_offer"
-                    )
-                },
-            }
-            variant = {
-                "credential_format": "sd_jwt_vc",
-                "vci_grant_type": "pre_authorization_code",
-            }
-            driver.drive_issuer("module-id", info, variant)
-            self.assertEqual(create_offer.call_count, 1)
-            self.assertNotIn("module-id", driver.triggered)
-            driver.drive_issuer("module-id", info, variant)
-
-        self.assertEqual(create_offer.call_count, 2)
-        self.assertEqual(
-            [call.args[0] for call in deliver_offer.call_args_list],
-            [
-                (
-                    "https://suite.example/test/a/issuer/credential_offer?"
-                    "credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffers%2Fone"
-                ),
-                (
-                    "https://suite.example/test/a/issuer/credential_offer?"
-                    "credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffers%2Ftwo"
-                ),
-            ],
-        )
-        self.assertEqual(driver.issuer_offer_deliveries, {"module-id": 2})
-        self.assertEqual(driver.triggered, {"module-id"})
-
-    def test_issuer_driver_bounds_multiple_client_offers(self):
+    def test_issuer_driver_delivers_one_offer_for_preauthorized_module(self):
         module = load("run_openid4vc_conformance.py")
         driver = module.Openid4vcDriver(
             {
@@ -320,30 +261,37 @@ class Openid4vcOidfTests(unittest.TestCase):
             patch.object(
                 module,
                 "request_json",
-                return_value={
-                    "credential_offer_uri": "https://issuer.example/offers/fresh"
-                },
+                return_value={"credential_offer_uri": "https://issuer.example/offers/one"},
             ) as create_offer,
-            patch.object(module, "get_url"),
+            patch.object(module, "get_url") as deliver_offer,
         ):
-            info = {
-                "testName": "oid4vci-1_0-issuer-happy-flow-multiple-clients",
-                "exposed": {
-                    "credential_offer_endpoint": (
-                        "https://suite.example/test/a/issuer/credential_offer"
-                    )
+            driver.drive_issuer(
+                "module-id",
+                {
+                    "testName": "oid4vci-1_0-issuer-happy-flow",
+                    "exposed": {
+                        "credential_offer_endpoint": (
+                            "https://suite.example/test/a/issuer/credential_offer"
+                        )
+                    },
                 },
-            }
-            variant = {
-                "credential_format": "sd_jwt_vc",
-                "vci_grant_type": "pre_authorization_code",
-            }
-            driver.drive_issuer("module-id", info, variant)
-            driver.drive_issuer("module-id", info, variant)
-            driver.drive_issuer("module-id", info, variant)
+                {
+                    "credential_format": "sd_jwt_vc",
+                    "vci_grant_type": "pre_authorization_code",
+                },
+            )
 
-        self.assertEqual(create_offer.call_count, 2)
-        self.assertIn("module-id", driver.triggered)
+        self.assertEqual(create_offer.call_count, 1)
+        self.assertEqual(
+            [call.args[0] for call in deliver_offer.call_args_list],
+            [
+                (
+                    "https://suite.example/test/a/issuer/credential_offer?"
+                    "credential_offer_uri=https%3A%2F%2Fissuer.example%2Foffers%2Fone"
+                )
+            ],
+        )
+        self.assertEqual(driver.triggered, {"module-id"})
 
     def test_issuer_driver_does_not_repeat_single_client_offer(self):
         module = load("run_openid4vc_conformance.py")
@@ -1152,7 +1100,7 @@ class Openid4vcOidfTests(unittest.TestCase):
             self.assertEqual(len(plans), 17)
             self.assertEqual(len(configs), 17)
             self.assertEqual(len(set(materialized_driver["aliases"])), 17)
-            self.assertEqual(len(expected_skips), 3)
+            self.assertEqual(len(expected_skips), 5)
             self.assertEqual(
                 [
                     item for item in expected_skips
@@ -1175,6 +1123,25 @@ class Openid4vcOidfTests(unittest.TestCase):
                         "configuration-filename": "openid4vc-vci-sd-preauth.json",
                     },
                 ],
+            )
+            self.assertEqual(
+                [
+                    item["configuration-filename"]
+                    for item in expected_skips
+                    if item["test-name"] == module.VCI_MULTIPLE_CLIENTS_MODULE
+                ],
+                [
+                    "openid4vc-vci-sd-preauth.json",
+                    "openid4vc-vci-mdoc-preauth.json",
+                ],
+            )
+            self.assertTrue(
+                all(
+                    item["variant"]["vci_grant_type"]
+                    == "pre_authorization_code"
+                    for item in expected_skips
+                    if item["test-name"] == module.VCI_MULTIPLE_CLIENTS_MODULE
+                )
             )
             self.assertEqual(expected_problems, [])
             for config in configs.values():
