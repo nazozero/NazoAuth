@@ -9,6 +9,7 @@ param(
     [string]$ExpectedFrontendBranch = "main",
     [string]$LocalFrontendWorktree = "",
     [string]$LocalBackendWorktree = ".",
+    [string]$LocalImageArchive = "",
     [string]$ImageRepository = "localhost/nazo-oauth-server",
     [string]$ImageTag = "",
     [string]$ContainerName = "nazo-oauth-server",
@@ -400,6 +401,15 @@ if (-not $RenderRemoteScriptPath -and $SkipBuild) {
 if (-not $RenderRemoteScriptPath -and $SkipFrontendBuild) {
     throw "SkipFrontendBuild is only allowed when rendering the remote script for tests"
 }
+if ($LocalImageArchive) {
+    if ($NoCacheBuild) {
+        throw "LocalImageArchive and NoCacheBuild are mutually exclusive"
+    }
+    $LocalImageArchive = [System.IO.Path]::GetFullPath($LocalImageArchive)
+    if (-not (Test-Path -LiteralPath $LocalImageArchive -PathType Leaf)) {
+        throw "LocalImageArchive does not exist: $LocalImageArchive"
+    }
+}
 if (-not $ImageTag) {
     $ImageTag = "modular-$($BackendCommit.Substring(0, 7))-web-$($FrontendCommit.Substring(0, 7))"
 }
@@ -473,27 +483,39 @@ if ($RenderRemoteScriptPath) {
     $remoteTempDir = $RenderRemoteTempDir
 }
 else {
-    $backendBuildContext = Export-GitCommit -Worktree $LocalBackendWorktree -Commit $BackendCommit -Label "backend-source"
-    try {
-        $dockerBuildArgs = @(
-            "build", "-f", (Join-Path $backendBuildContext "Containerfile"),
-            "--target", "runtime",
-            "--label", "org.opencontainers.image.revision=$BackendCommit",
-            "-t", $image
-        )
-        if ($NoCacheBuild) {
-            $dockerBuildArgs += "--no-cache"
-        }
-        $dockerBuildArgs += $backendBuildContext
-        Invoke-Checked docker $dockerBuildArgs
+    if ($LocalImageArchive) {
+        Invoke-Checked docker @("load", "-i", $LocalImageArchive)
     }
-    finally {
-        Remove-Item -LiteralPath $backendBuildContext -Recurse -Force -ErrorAction SilentlyContinue
+    else {
+        $backendBuildContext = Export-GitCommit -Worktree $LocalBackendWorktree -Commit $BackendCommit -Label "backend-source"
+        try {
+            $dockerBuildArgs = @(
+                "build", "-f", (Join-Path $backendBuildContext "Containerfile"),
+                "--target", "runtime",
+                "--label", "org.opencontainers.image.revision=$BackendCommit",
+                "-t", $image
+            )
+            if ($NoCacheBuild) {
+                $dockerBuildArgs += "--no-cache"
+            }
+            $dockerBuildArgs += $backendBuildContext
+            Invoke-Checked docker $dockerBuildArgs
+        }
+        finally {
+            Remove-Item -LiteralPath $backendBuildContext -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
     $LocalBackendWorktree = Assert-CleanGitCommit -Worktree $LocalBackendWorktree -ExpectedCommit $BackendCommit -Label "Backend after build"
     $localDescriptorId = Get-CommandOutput docker @("image", "inspect", $image, "--format", "{{.Id}}")
     if ($localDescriptorId -notmatch '^sha256:[0-9a-f]{64}$') {
         throw "Docker returned an invalid immutable image descriptor: $localDescriptorId"
+    }
+    $localRevision = Get-CommandOutput docker @(
+        "image", "inspect", $image,
+        "--format", '{{index .Config.Labels "org.opencontainers.image.revision"}}'
+    )
+    if ($localRevision -cne $BackendCommit) {
+        throw "Image revision $localRevision does not match backend commit $BackendCommit"
     }
     Remove-Item -LiteralPath $archive, $uiArchive -Force -ErrorAction SilentlyContinue
     Invoke-Checked docker @("save", $image, "-o", $archive)

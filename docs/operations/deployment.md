@@ -179,9 +179,13 @@ accepts a same-named non-repository directory. The frontend package manager is
 selected from its committed lockfile, and validation uses the scripts that are
 actually declared in `package.json`. Do not assume an `npm test` script exists;
 if a required lint, unit, browser-security, delivery, or build gate is absent,
-add a real gate to the frontend repository before deployment. Production deployment
-does not accept `-SkipBuild` or `-SkipFrontendBuild`; those switches exist only
-for rendering the remote script in tests.
+add a real gate to the frontend repository before deployment. Production
+deployment does not accept `-SkipBuild` or `-SkipFrontendBuild`; those switches
+exist only for rendering the remote script in tests. A trusted isolated builder
+may supply `-LocalImageArchive`; the script loads the expected tag and verifies
+its immutable image ID and `org.opencontainers.image.revision` against
+`BackendCommit`. This option cannot be combined with `-NoCacheBuild` and does
+not bypass frontend verification.
 
 Do not delete the previous image or UI release until local OIDF, official OIDF,
 and PR acceptance are complete. Each run writes a preflight record before the

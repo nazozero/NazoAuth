@@ -93,6 +93,10 @@ pwsh -NoLogo -NoProfile -NonInteractive -File .\scripts\deploy_live.ps1 `
 ```
 
 在全新基础设施尚未就绪时只完成本地验证和制品准备，不执行脚本的远端事务。
+如果受控构建机已经从同一精确提交生成了 Docker archive，可传入
+`-LocalImageArchive <path>`；部署脚本会加载预期 tag，并再次校验不可变 image ID
+和 `org.opencontainers.image.revision`。该参数不能与 `-NoCacheBuild` 同时使用，
+也不允许跳过前端验证。
 
 ### A2：远端备份
 
