@@ -10,7 +10,7 @@ RUN mkdir -p /usr/local/cargo \
     && apt-get install -y --no-install-recommends pkg-config libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY Cargo.toml Cargo.lock rust-toolchain.toml ./
+COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./
 COPY crates ./crates
 COPY migrations ./migrations
 

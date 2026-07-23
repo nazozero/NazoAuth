@@ -184,6 +184,11 @@ def check_toolchain_pins() -> None:
         raise SystemExit("Containerfile runtime base image must be pinned by digest")
     if "RUN cargo build --release --locked" not in containerfile:
         raise SystemExit("Containerfile release build must use Cargo.lock")
+    if (
+        "COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./"
+        not in containerfile
+    ):
+        raise SystemExit("Containerfile builder must include the embedded initial config template")
 
     workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
     rust_actions = []
