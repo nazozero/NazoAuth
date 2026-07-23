@@ -173,6 +173,10 @@ def check_toolchain_pins() -> None:
     )
     if rust_builder is None or rust_builder.group(1) != version:
         raise SystemExit("Containerfile Rust builder pin differs from rust-toolchain.toml")
+    if f"ENV RUSTUP_TOOLCHAIN={version}" not in containerfile:
+        raise SystemExit(
+            "Containerfile must select the preinstalled Rust toolchain without network sync"
+        )
     if not re.search(
         r"FROM docker\.io/library/debian:[^\s@]+@sha256:[0-9a-f]{64} AS runtime-base",
         containerfile,

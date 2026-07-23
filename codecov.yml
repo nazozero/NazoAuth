@@ -61,11 +61,7 @@ ignore:
   - "crates/authorization-server/src/support/mod.rs"
   # Thin binary/bootstrap wrappers with no protocol or security decisions.
   - "main.rs"
-  - "bin/nazo_oauth_keyctl.rs"
-  - "bin/nazo_oauth_migrate.rs"
   - "crates/authorization-server/src/main.rs"
-  - "crates/authorization-server/src/bin/nazo_oauth_keyctl.rs"
-  - "crates/authorization-server/src/bin/nazo_oauth_migrate.rs"
   # Test implementation files are excluded so coverage measures production code.
   - "tests/**"
   - "crates/authorization-server/tests/**"

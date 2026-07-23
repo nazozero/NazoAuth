@@ -1,5 +1,9 @@
 # Deployment Guide
 
+For an intentional clean-data replacement that removes the remote source tree
+and requires host-local OIDF conformance before activation, use
+[Fresh Deployment and Production Activation](fresh-production-activation.md).
+
 ## Scope
 
 Production deployments run Nazo Auth Server behind a TLS-terminating reverse
@@ -9,8 +13,8 @@ proxy. PostgreSQL stores durable state. Valkey stores transient protocol state.
 
 Required components:
 
-- `nazo-oauth-server` HTTP process
-- `nazo-oauth-migrate` migration command
+- `nazoauth server` HTTP process
+- `nazoauth migrate` migration command
 - PostgreSQL database
 - Valkey instance
 - persistent JWT key directory
@@ -92,7 +96,7 @@ docker run --rm \
   -v /opt/nazo-oauth/runtime/keys:/var/lib/nazo_oauth/keys:rw \
   -v /opt/nazo-oauth/runtime/avatars:/var/lib/nazo_oauth/avatars:rw \
   nazo-oauth-server:<tag> \
-  nazo-oauth-migrate
+  nazoauth migrate
 ```
 
 Run the server:
@@ -104,7 +108,7 @@ docker run -d --name nazo-oauth-server \
   -v /opt/nazo-oauth/runtime/keys:/var/lib/nazo_oauth/keys:rw \
   -v /opt/nazo-oauth/runtime/avatars:/var/lib/nazo_oauth/avatars:rw \
   nazo-oauth-server:<tag> \
-  nazo-oauth-server
+  nazoauth server
 ```
 
 `compose.yml` is for local integration. It is not a complete production
@@ -264,7 +268,7 @@ window and capped at one hour. Validate the keyset after deployment or backup
 restoration:
 
 ```sh
-nazo-oauth-keyctl validate
+nazoauth keyctl validate
 ```
 
 Validation rejects malformed `retire_at` values and any active key that carries
@@ -278,12 +282,12 @@ external key whose public JWK is stored in `keyset.json` while signing is
 delegated to a trusted command or sidecar:
 
 ```sh
-nazo-oauth-keyctl register-external \
+nazoauth keyctl register-external \
   --kid rs256-kms-2026-06 \
   --alg RS256 \
   --key-ref kms://prod/oauth/rs256-kms-2026-06 \
   --public-jwk /secure/exported-public-jwk.json
-nazo-oauth-keyctl validate
+nazoauth keyctl validate
 ```
 
 Configure `SIGNING_EXTERNAL_COMMAND` as a comma-separated argv list, for example
@@ -327,7 +331,7 @@ must migrate or explicitly remove those links before rollback so rollback cannot
 silently discard federated identities. The `20260712000100` timestamp remains
 reserved for the runtime desired-state migration.
 
-`nazo_oauth_migrate` runs `nazo_oauth_cleanup_expired_security_state()` after
+`nazoauth migrate` runs `nazo_oauth_cleanup_expired_security_state()` after
 pending migrations. The cleanup removes expired access-token revocation markers,
 expired refresh-token rows from leaf tokens upward, and SCIM audit events older
 than 180 days. It also removes expired back-channel logout delivery rows so the

@@ -63,7 +63,7 @@ services:
       PERF_METRICS_ENABLED: "true"
     volumes:
       - perf_runtime:/var/lib/nazo_oauth
-    command: ["nazo-oauth-server"]
+    command: ["nazoauth", "server"]
     depends_on:
       migrate:
         condition: service_healthy
@@ -77,7 +77,7 @@ services:
       target: perf-runtime
     volumes:
       - perf_runtime:/var/lib/nazo_oauth
-    command: ["sh", "-c", "nazo-oauth-migrate && touch /tmp/migrate-ready && tail -f /dev/null"]
+    command: ["sh", "-c", "nazoauth migrate && touch /tmp/migrate-ready && tail -f /dev/null"]
     healthcheck:
       test: ["CMD-SHELL", "test -f /tmp/migrate-ready"]
       interval: 2s

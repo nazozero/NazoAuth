@@ -123,12 +123,15 @@ curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/.well-known/openid-configuration
 ```
 
-Run directly on the host after pointing `.env.yaml` at reachable PostgreSQL and
-Valkey services:
+On the first direct server run, NazoAuth creates `.env.yaml` and exits. Review
+the generated file, point it at reachable PostgreSQL and Valkey services, then
+run migrations and start the server:
 
 ```sh
-cargo run --bin nazo-oauth-migrate
-cargo run --bin nazo-oauth-server
+cargo run --bin nazoauth -- server
+# Edit .env.yaml before continuing.
+cargo run --bin nazoauth -- migrate
+cargo run --bin nazoauth -- server
 ```
 
 ## Configuration

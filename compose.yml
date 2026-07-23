@@ -8,7 +8,7 @@ services:
     container_name: nazo-oauth-migrate
     volumes:
       - ./.env.yaml:/app/.env.yaml:ro
-    command: ["nazo-oauth-migrate"]
+    command: ["nazoauth", "migrate"]
     depends_on:
       postgres:
         condition: service_healthy
@@ -32,6 +32,7 @@ services:
     networks:
       nazo_oauth_net:
         ipv4_address: 10.101.0.20
+    command: ["nazoauth", "server"]
 
   postgres:
     image: docker.io/library/postgres:18

@@ -1,0 +1,90 @@
+//! Unified NazoAuth command-line entry point.
+
+use anyhow::bail;
+
+use crate::config::{ConfigSource, ServerConfigPreparation, database_url};
+
+const USAGE: &str = "usage: nazoauth <server|migrate|keyctl> [options]";
+
+pub async fn run(args: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
+    match Command::parse(args)? {
+        Command::Help => {
+            println!("{USAGE}");
+            Ok(())
+        }
+        Command::Server => run_server().await,
+        Command::Migrate => run_migrations().await,
+        Command::Keyctl(args) => {
+            crate::keyctl::run(std::iter::once("nazoauth keyctl".to_owned()).chain(args)).await
+        }
+    }
+}
+
+async fn run_server() -> anyhow::Result<()> {
+    match crate::config::prepare_server_config()? {
+        ServerConfigPreparation::Ready => crate::bootstrap::run().await,
+        ServerConfigPreparation::Created(path) => {
+            eprintln!(
+                "Created initial configuration at {}.\nReview and edit it, then run `nazoauth server` again.",
+                path.display()
+            );
+            Ok(())
+        }
+    }
+}
+
+async fn run_migrations() -> anyhow::Result<()> {
+    let config = ConfigSource::load()?;
+    let database_url = database_url(&config);
+    nazo_postgres::run_pending_migrations(&database_url).await?;
+    nazo_postgres::cleanup_expired_security_state(&database_url).await?;
+    Ok(())
+}
+
+#[derive(Debug, Eq, PartialEq)]
+enum Command {
+    Help,
+    Server,
+    Migrate,
+    Keyctl(Vec<String>),
+}
+
+impl Command {
+    fn parse(args: impl IntoIterator<Item = String>) -> anyhow::Result<Self> {
+        let mut args = args.into_iter();
+        let _program = args.next();
+        let Some(command) = args.next() else {
+            bail!("{USAGE}");
+        };
+        match command.as_str() {
+            "-h" | "--help" | "help" => {
+                ensure_no_extra_args(args, command.as_str())?;
+                Ok(Self::Help)
+            }
+            "server" => {
+                ensure_no_extra_args(args, "server")?;
+                Ok(Self::Server)
+            }
+            "migrate" => {
+                ensure_no_extra_args(args, "migrate")?;
+                Ok(Self::Migrate)
+            }
+            "keyctl" => Ok(Self::Keyctl(args.collect())),
+            _ => bail!("unknown command {command}\n{USAGE}"),
+        }
+    }
+}
+
+fn ensure_no_extra_args(
+    mut args: impl Iterator<Item = String>,
+    command: &str,
+) -> anyhow::Result<()> {
+    if let Some(argument) = args.next() {
+        bail!("{command} does not accept argument {argument}");
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[path = "../tests/unit/cli.rs"]
+mod tests;

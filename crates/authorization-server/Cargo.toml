@@ -6,18 +6,8 @@ license.workspace = true
 repository.workspace = true
 
 [[bin]]
-name = "nazo-oauth-server"
+name = "nazoauth"
 path = "src/main.rs"
-test = false
-
-[[bin]]
-name = "nazo-oauth-migrate"
-path = "src/bin/nazo_oauth_migrate.rs"
-test = false
-
-[[bin]]
-name = "nazo-oauth-keyctl"
-path = "src/bin/nazo_oauth_keyctl.rs"
 test = false
 
 [dependencies]

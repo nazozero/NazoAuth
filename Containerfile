@@ -1,5 +1,7 @@
 FROM docker.io/library/rust:1.97.0-slim@sha256:686a437ead83701e8f871e66e838c3ec55f46b5fc235b025756396ac823bdc51 AS build-base
 
+ENV RUSTUP_TOOLCHAIN=1.97.0
+
 WORKDIR /app
 
 RUN mkdir -p /usr/local/cargo \
@@ -14,7 +16,7 @@ COPY migrations ./migrations
 
 FROM build-base AS product-builder
 
-RUN cargo build --release --locked --package nazo-oauth-server --bins
+RUN cargo build --release --locked --package nazo-oauth-server --bin nazoauth
 
 FROM docker.io/library/debian:trixie-slim@sha256:020c0d20b9880058cbe785a9db107156c3c75c2ac944a6aa7ab59f2add76a7bd AS runtime-base
 
@@ -26,13 +28,11 @@ WORKDIR /app
 
 FROM runtime-base AS runtime
 
-COPY --from=product-builder /app/target/release/nazo-oauth-server /usr/local/bin/nazo-oauth-server
-COPY --from=product-builder /app/target/release/nazo-oauth-migrate /usr/local/bin/nazo-oauth-migrate
-COPY --from=product-builder /app/target/release/nazo-oauth-keyctl /usr/local/bin/nazo-oauth-keyctl
+COPY --from=product-builder /app/target/release/nazoauth /usr/local/bin/nazoauth
 
 EXPOSE 8000
 
-CMD ["nazo-oauth-server"]
+CMD ["nazoauth", "server"]
 
 FROM runtime AS perf-runtime
 

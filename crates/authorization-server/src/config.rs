@@ -1,13 +1,19 @@
 //! Runtime configuration loading.
 // Configuration is read once at startup from defaults, .env.yaml, and whitelisted environment variables.
 
-use std::{collections::HashMap, fs::File, path::Path};
+use std::{
+    collections::HashMap,
+    fs::{File, OpenOptions},
+    io::Write,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, bail};
 use yaml_serde::Value as YamlValue;
 
 const CONFIG_FILE: &str = ".env.yaml";
 const UNSUPPORTED_DOTENV_FILE: &str = ".env";
+const INITIAL_CONFIG: &str = include_str!("../../../.env.yaml.example");
 pub const DEFAULT_DATABASE_URL: &str = "postgresql://postgres:postgres@127.0.0.1:5432/oauth";
 pub const DEFAULT_DATABASE_MAX_CONNECTIONS: usize = 32;
 const ENV_CONFIG_KEYS: &[&str] = &[
@@ -131,6 +137,44 @@ const ENV_CONFIG_KEYS: &[&str] = &[
 pub struct ConfigSource {
     file_values: HashMap<String, String>,
     env_values: HashMap<String, String>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
+pub enum ServerConfigPreparation {
+    Ready,
+    Created(PathBuf),
+}
+
+pub fn prepare_server_config() -> anyhow::Result<ServerConfigPreparation> {
+    prepare_server_config_in(".")
+}
+
+fn prepare_server_config_in(path: impl AsRef<Path>) -> anyhow::Result<ServerConfigPreparation> {
+    let config_path = path.as_ref().join(CONFIG_FILE);
+    if config_path.exists() {
+        return Ok(ServerConfigPreparation::Ready);
+    }
+
+    let mut file = match OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&config_path)
+    {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            return Ok(ServerConfigPreparation::Ready);
+        }
+        Err(error) => {
+            return Err(error)
+                .with_context(|| format!("failed to create initial {}", config_path.display()));
+        }
+    };
+    file.write_all(INITIAL_CONFIG.as_bytes())
+        .with_context(|| format!("failed to write initial {}", config_path.display()))?;
+    file.sync_all()
+        .with_context(|| format!("failed to persist initial {}", config_path.display()))?;
+
+    Ok(ServerConfigPreparation::Created(config_path))
 }
 
 impl ConfigSource {

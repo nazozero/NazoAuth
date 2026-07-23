@@ -137,28 +137,28 @@ fn register_external_parser_requires_complete_metadata() {
 
 #[tokio::test]
 async fn run_without_command_reports_usage_before_loading_configuration() {
-    let err = run(["nazo-oauth-keyctl".to_owned()]).await.unwrap_err();
+    let err = run(["nazoauth keyctl".to_owned()]).await.unwrap_err();
 
     assert_error_contains(
         err,
-        "usage: nazo-oauth-keyctl <list|generate-local|register-external|validate>",
+        "usage: nazoauth keyctl <list|generate-local|register-external|validate>",
     );
 }
 
 #[tokio::test]
 async fn run_dispatch_rejects_unknown_and_malformed_cli_subcommands_fail_closed() {
-    let err = run(["nazo-oauth-keyctl".to_owned(), "unknown".to_owned()])
+    let err = run(["nazoauth keyctl".to_owned(), "unknown".to_owned()])
         .await
         .unwrap_err();
     assert_error_contains(err, "unknown keyctl command unknown");
 
-    let err = run(["nazo-oauth-keyctl".to_owned(), "activate".to_owned()])
+    let err = run(["nazoauth keyctl".to_owned(), "activate".to_owned()])
         .await
         .unwrap_err();
     assert_error_contains(err, "unknown keyctl command activate");
 
     let err = run([
-        "nazo-oauth-keyctl".to_owned(),
+        "nazoauth keyctl".to_owned(),
         "retire".to_owned(),
         "active".to_owned(),
     ])
@@ -167,7 +167,7 @@ async fn run_dispatch_rejects_unknown_and_malformed_cli_subcommands_fail_closed(
     assert_error_contains(err, "unknown keyctl command retire");
 
     let err = run([
-        "nazo-oauth-keyctl".to_owned(),
+        "nazoauth keyctl".to_owned(),
         "retire".to_owned(),
         "active".to_owned(),
         "--when".to_owned(),
@@ -178,7 +178,7 @@ async fn run_dispatch_rejects_unknown_and_malformed_cli_subcommands_fail_closed(
     assert_error_contains(err, "unknown keyctl command retire");
 
     let err = run([
-        "nazo-oauth-keyctl".to_owned(),
+        "nazoauth keyctl".to_owned(),
         "generate".to_owned(),
         "--alg".to_owned(),
         "HS256".to_owned(),
@@ -188,7 +188,7 @@ async fn run_dispatch_rejects_unknown_and_malformed_cli_subcommands_fail_closed(
     assert_error_contains(err, "unknown keyctl command generate");
 
     let err = run([
-        "nazo-oauth-keyctl".to_owned(),
+        "nazoauth keyctl".to_owned(),
         "register-external".to_owned(),
         "--kid".to_owned(),
         "external".to_owned(),
@@ -204,12 +204,12 @@ fn run_list_and_validate_fail_closed_without_keyset_in_isolated_workspace() {
         let runtime = tokio::runtime::Runtime::new().expect("tokio runtime should build");
 
         let err = runtime
-            .block_on(run(["nazo-oauth-keyctl".to_owned(), "list".to_owned()]))
+            .block_on(run(["nazoauth keyctl".to_owned(), "list".to_owned()]))
             .unwrap_err();
         assert_missing_keyset_error(err);
 
         let err = runtime
-            .block_on(run(["nazo-oauth-keyctl".to_owned(), "validate".to_owned()]))
+            .block_on(run(["nazoauth keyctl".to_owned(), "validate".to_owned()]))
             .unwrap_err();
         assert_missing_keyset_error(err);
     });

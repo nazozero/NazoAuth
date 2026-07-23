@@ -311,12 +311,16 @@ case "${1:-}" in
   rm) rm -f "$state/container-image" "$state/container-id" ;;
   run)
     args=("$@")
-    if [[ " $* " == *" nazo-oauth-migrate "* ]]; then
+    if [[ " $* " == *" nazoauth migrate "* ]]; then
       count=0; [ ! -f "$state/migrations" ] || count="$(cat "$state/migrations")"
       printf '%s\n' "$((count + 1))" >"$state/migrations"; exit 0
     fi
     if [[ " $* " == *" pg_isready "* ]]; then exit 0; fi
-    selected="${args[$((${#args[@]} - 2))]}"
+    if [[ " $* " == *" nazoauth server "* ]]; then
+      selected="${args[$((${#args[@]} - 3))]}"
+    else
+      selected="${args[$((${#args[@]} - 2))]}"
+    fi
     [ -n "$selected" ] || exit 0
     printf 'selected=%q old=%q\n' "$selected" "$FAKE_OLD_IMAGE" >>"$state/podman.log"
     if [ "$selected" = "$FAKE_OLD_IMAGE" ] && [ "${FAIL_OLD_IMAGE_RUN:-0}" = 1 ]; then exit 1; fi

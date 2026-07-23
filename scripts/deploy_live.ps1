@@ -578,7 +578,7 @@ run_server() {
     -v "`$CONFIG_PATH:/app/.env.yaml:ro" \
     -v "`$KEYS_PATH:/var/lib/nazo_oauth/keys:rw" \
     -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
-    "`$selected_image" nazo-oauth-server >/dev/null
+    "`$selected_image" nazoauth server >/dev/null
 }
 
 fsync_parent() {
@@ -1075,7 +1075,7 @@ PY
       -v "`$CONFIG_PATH:/app/.env.yaml:ro" \
       -v "`$KEYS_PATH:/var/lib/nazo_oauth/keys:rw" \
       -v "`$AVATARS_PATH:/var/lib/nazo_oauth/avatars:rw" \
-      "`$IMAGE" nazo-oauth-migrate
+      "`$IMAGE" nazoauth migrate
   fi
   assert_pending_lease
 

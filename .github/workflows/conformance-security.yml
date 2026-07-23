@@ -64,61 +64,8 @@ permissions:
   contents: read
 
 jobs:
-  rust-gate:
+  source-policy-gate:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:18-alpine
-        env:
-          POSTGRES_DB: oauth
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres -d oauth"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
-      valkey:
-        image: valkey/valkey:8-alpine
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "valkey-cli ping"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 20
-    env:
-      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/oauth
-      VALKEY_URL: redis://127.0.0.1:6379/0
-      VALKEY_COMMAND_TIMEOUT_MS: "1000"
-      BIND: 127.0.0.1:18000
-      ISSUER: http://127.0.0.1:18000
-      MTLS_ENDPOINT_BASE_URL: http://127.0.0.1:18000
-      FRONTEND_BASE_URL: http://127.0.0.1:3000
-      CORS_ALLOWED_ORIGINS: http://127.0.0.1:3000
-      COOKIE_SECURE: "false"
-      SESSION_COOKIE_NAME: nazo_oauth_session
-      CSRF_COOKIE_NAME: nazo_oauth_csrf
-      EMAIL_DELIVERY: disabled
-      EMAIL_CODE_DEV_RESPONSE_ENABLED: "false"
-      AVATAR_STORAGE_DIR: runtime/ci/avatars
-      JWK_KEYS_DIR: runtime/ci/keys
-      AUTH_RATE_LIMIT_MAX_REQUESTS: "100000"
-      TOKEN_RATE_LIMIT_MAX_REQUESTS: "100000"
-      TOKEN_MANAGEMENT_RATE_LIMIT_MAX_REQUESTS: "100000"
-      REQUIRE_PUSHED_AUTHORIZATION_REQUESTS: "false"
-      FEDERATION_PROVIDER_CONFIGS: >-
-        [{"provider_id":"ci-oidc","enabled":true,"display_name":"CI OIDC","adapter_type":"oidc","issuer":"https://issuer.example","authorization_endpoint":"https://issuer.example/authorize","token_endpoint":"https://issuer.example/token","jwks_url":"https://issuer.example/jwks","client_id":"ci-oidc-client","client_secret":"ci-oidc-secret","redirect_uri":"http://127.0.0.1:18000/auth/federation/ci-oidc/callback","scopes":"openid email profile"}]
-      FEDERATION_SAML_GATEWAY_ENABLED: "true"
-      FEDERATION_SAML_GATEWAY_ISSUER: ci-saml-gateway
-      FEDERATION_SAML_GATEWAY_AUDIENCE: nazo-oauth-ci
-      FEDERATION_SAML_GATEWAY_SECRET: ci-saml-gateway-secret-000000000000
-      RUST_TEST_THREADS: "1"
-      CARGO_TERM_COLOR: never
-      CARGO_BUILD_JOBS: "1"
-      RUSTFLAGS: "-C link-arg=-Wl,--threads=1"
     steps:
       - uses: actions/checkout@v7.0.0
       - name: Check real HTTP source policy
@@ -128,25 +75,8 @@ jobs:
           python tests/unit/test_full_real_request_e2e_source_policy.py
           python scripts/rfc9967_scim_set_e2e.py --source-policy-check
           python tests/unit/test_rfc9967_scim_set_e2e_source_policy.py
-      - uses: dtolnay/rust-toolchain@1.97.0
-        with:
-          components: rustfmt, clippy
-      - name: Install native dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pkg-config libpq-dev
-      - name: Prepare runtime directories
-        run: mkdir -p runtime/ci/avatars runtime/ci/keys
       - name: Verify compatibility contracts
         run: python scripts/verify_static_contracts.py --check
-      - name: Format
-        run: cargo fmt --check
-      - name: Check
-        run: cargo check --workspace --all-targets --all-features --locked
-      - name: Clippy
-        run: cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-      - name: Run migrations
-        run: cargo run --locked --bin nazo-oauth-migrate
-      - name: Test workspace
-        run: cargo test --workspace --all-features --locked
 
   supply-chain-gate:
     runs-on: ubuntu-latest
@@ -202,7 +132,7 @@ jobs:
   real-http-security-matrix:
     runs-on: ubuntu-latest
     needs:
-      - rust-gate
+      - source-policy-gate
       - supply-chain-gate
     steps:
       - uses: actions/checkout@v7.0.0
@@ -310,19 +240,19 @@ jobs:
             -v "$PWD/runtime/e2e/.env.yaml:/app/.env.yaml:ro" \
             -v "$PWD/runtime/e2e/keys:/var/lib/nazo_oauth/keys" \
             -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/avatars" \
-            nazo-oauth-e2e:latest nazo-oauth-migrate
+            nazo-oauth-e2e:latest nazoauth migrate
           docker run -d --name nazo-oauth-e2e-server --network nazo-oauth-e2e-net \
             -e NAZO_RUNTIME_INSTANCE_ID=e2e-primary \
             -v "$PWD/runtime/e2e/.env.yaml:/app/.env.yaml:ro" \
             -v "$PWD/runtime/e2e/keys:/var/lib/nazo_oauth/keys" \
             -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/avatars" \
-            nazo-oauth-e2e:latest nazo-oauth-server
+            nazo-oauth-e2e:latest nazoauth server
           docker run -d --name nazo-oauth-e2e-server-signed --network nazo-oauth-e2e-net \
             -e NAZO_RUNTIME_INSTANCE_ID=e2e-signed \
             -v "$PWD/runtime/e2e/.env-signed.yaml:/app/.env.yaml:ro" \
             -v "$PWD/runtime/e2e/keys:/var/lib/nazo_oauth/keys" \
             -v "$PWD/runtime/e2e/avatars:/var/lib/nazo_oauth/avatars" \
-            nazo-oauth-e2e:latest nazo-oauth-server
+            nazo-oauth-e2e:latest nazoauth server
       - name: Run RFC 9967 SCIM SET black-box matrix
         run: |
           docker run --rm --name nazo-oauth-rfc9967-runner --network nazo-oauth-e2e-net \

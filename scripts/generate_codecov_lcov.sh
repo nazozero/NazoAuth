@@ -254,16 +254,16 @@ keyset_path.write_text(json.dumps(keyset, indent=2) + "\n", encoding="utf-8")
 os.chmod(keyset_path, 0o600)
 PY
 export LLVM_PROFILE_FILE="$(profile_path 'cargo-%p-%m.profraw')"
-cargo build --locked --workspace --all-features --bins
+cargo build --locked --workspace --all-features --bin nazoauth
 
-LLVM_PROFILE_FILE="$(profile_path 'migrate-%p.profraw')" "$BIN_DIR/nazo-oauth-migrate"
-LLVM_PROFILE_FILE="$(profile_path 'server-%p.profraw')" "$BIN_DIR/nazo-oauth-server" &
+LLVM_PROFILE_FILE="$(profile_path 'migrate-%p.profraw')" "$BIN_DIR/nazoauth" migrate
+LLVM_PROFILE_FILE="$(profile_path 'server-%p.profraw')" "$BIN_DIR/nazoauth" server &
 SERVER_PID=$!
 ENABLE_FAPI_HTTP_SIGNATURES='true' \
   NAZO_RUNTIME_INSTANCE_ID='codecov-signed' \
   BIND='127.0.0.1:18001' \
   LLVM_PROFILE_FILE="$(profile_path 'signed-server-%p.profraw')" \
-  "$BIN_DIR/nazo-oauth-server" &
+  "$BIN_DIR/nazoauth" server &
 SIGNED_SERVER_PID=$!
 
 for _ in $(seq 1 60); do
@@ -311,7 +311,7 @@ if [[ "${#PROFRAWS[@]}" -eq 0 ]]; then
 fi
 "$LLVM_TOOLS_DIR/llvm-profdata" merge -sparse "${PROFRAWS[@]}" -o "$COVERAGE_DIR/codecov.profdata"
 
-objects=("$BIN_DIR/nazo-oauth-server")
+objects=("$BIN_DIR/nazoauth")
 while IFS= read -r object; do
   objects+=("$object")
 done < <(

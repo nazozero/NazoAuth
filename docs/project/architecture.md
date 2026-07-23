@@ -8,10 +8,10 @@ they are not divided one crate per RFC. Calls between crates remain ordinary
 in-process Rust calls. The design does not use a dynamic-library plugin ABI,
 RPC, an event bus, a command bus, or layers whose only job is forwarding.
 
-The root manifest is a virtual workspace with resolver 3. The default deployed
-binary remains `nazo-oauth-server`; operational binaries remain in the
-`authorization-server` package unless their dependencies create a demonstrated
-build or security boundary.
+The root manifest is a virtual workspace with resolver 3. The deployed
+executable is `nazoauth`; the `server`, `migrate`, and `keyctl` subcommands share
+one composition-root binary so releases, containers, signatures, and
+attestations have one executable boundary.
 
 Every direct child of `crates/` is named for its bounded responsibility.
 Technology names appear only where the crate is a concrete adapter. Cargo
