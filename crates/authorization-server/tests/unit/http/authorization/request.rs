@@ -181,6 +181,7 @@ fn normalize_for_test(
         },
         AuthorizationProfilePolicy {
             signed_authorization_response_required: false,
+            pkce_required: false,
         },
         false,
     )
@@ -252,6 +253,7 @@ fn normalize_pkce_case(
         },
         AuthorizationProfilePolicy {
             signed_authorization_response_required: false,
+            pkce_required: false,
         },
         false,
     )
@@ -848,8 +850,8 @@ fn prompt_parsing_accepts_oidc_values_and_rejects_invalid_combinations() {
 }
 
 #[test]
-fn authorization_pkce_requires_complete_s256_parameters() {
-    assert!(authorization_pkce(&query(&[])).is_err());
+fn authorization_pkce_allows_absent_value_for_baseline_confidential_oidc() {
+    assert_eq!(authorization_pkce(&query(&[])).unwrap(), (None, None));
     let valid_challenge = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQ";
 
     assert!(
@@ -870,12 +872,10 @@ fn authorization_pkce_requires_complete_s256_parameters() {
 }
 
 #[test]
-fn authorization_request_pkce_policy_has_no_client_profile_bypass() {
-    for client_type in ["confidential", "public"] {
-        assert_eq!(
-            normalize_pkce_case(&HashMap::new(), client_type),
-            Err(AuthorizationPolicyError::InvalidRequest),
-            "{client_type} client unexpectedly bypassed PKCE",
-        );
-    }
+fn authorization_request_pkce_policy_preserves_client_profile_boundary() {
+    assert!(normalize_pkce_case(&HashMap::new(), "confidential").is_ok());
+    assert_eq!(
+        normalize_pkce_case(&HashMap::new(), "public"),
+        Err(AuthorizationPolicyError::InvalidRequest),
+    );
 }
