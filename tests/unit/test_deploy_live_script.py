@@ -616,9 +616,13 @@ class DeployLiveContractTests(unittest.TestCase):
         self.assertIn("& ssh @SshOptions $RemoteHost $rollbackCommand", self.source)
         self.assertNotIn('& ssh $RemoteHost bash -lc', self.source)
 
-    def test_prebuilt_artifacts_are_not_accepted_for_a_real_deployment(self) -> None:
+    def test_prebuilt_image_requires_a_verified_archive_for_a_real_deployment(self) -> None:
         self.assertIn("SkipBuild is only allowed when rendering", self.source)
         self.assertIn("SkipFrontendBuild is only allowed when rendering", self.source)
+        self.assertIn("[string]$LocalImageArchive", self.source)
+        self.assertIn('Invoke-Checked docker @("load", "-i", $LocalImageArchive)', self.source)
+        self.assertIn("LocalImageArchive and NoCacheBuild are mutually exclusive", self.source)
+        self.assertIn("Image revision $localRevision does not match backend commit", self.source)
         self.assertIn("EXPECTED_IMAGE_ID", self.source)
         self.assertIn('test "`$actual_image_id" = "`$EXPECTED_IMAGE_ID"', self.source)
         self.assertIn('tar -xOf $Archive "manifest.json"', self.source)

@@ -100,6 +100,12 @@ runs `nazoauth migrate`, starts `nazoauth server`, verifies the internal
 candidate and Angie upstream, atomically switches the UI, and verifies public
 assets.
 
+An isolated trusted builder may supply a Docker archive through
+`-LocalImageArchive`. The script loads only the expected tag and revalidates the
+immutable image ID and `org.opencontainers.image.revision` against
+`BackendCommit`; the option is mutually exclusive with `-NoCacheBuild` and does
+not bypass frontend verification.
+
 Export the exact backend commit with `git archive` to
 `/opt/nazo-oauth/conformance/sources/<backend-sha>` for conformance. The
 production image must not contain the OIDF runner or suite.
