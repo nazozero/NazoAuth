@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 import re
 import urllib.parse
+import uuid
 
 
 VCI_STANDARD = "oid4vci-1_0-issuer-test-plan"
@@ -105,6 +106,23 @@ def vci_client_ids(onboarding_profile: str, run_namespace: str | None) -> dict[s
         "private_key2": f"{private_key}-2",
         "attested2": f"{attested}-2",
     }
+
+
+def bind_subject_id(
+    issuer_settings: dict[str, object],
+    onboarding_profile: str,
+    subject_id: str | None,
+) -> None:
+    if subject_id:
+        try:
+            issuer_settings["subject_id"] = str(uuid.UUID(subject_id))
+        except (ValueError, TypeError, AttributeError) as error:
+            raise SystemExit("--subject-id must be a UUID") from error
+    elif onboarding_profile == "operator-black-box":
+        raise SystemExit(
+            "operator-black-box OpenID4VC material requires --subject-id "
+            "for the current dedicated conformance user"
+        )
 
 
 def matrix_cases() -> list[tuple[str, str, dict[str, str]]]:
@@ -299,6 +317,7 @@ def main() -> int:
         required=True,
     )
     parser.add_argument("--run-namespace")
+    parser.add_argument("--subject-id")
     args = parser.parse_args()
     base = json.loads(Path(args.base_config_json_file).read_text(encoding="utf-8"))
     if args.onboarding_profile == "official":
@@ -347,6 +366,7 @@ def main() -> int:
         raise SystemExit(
             "driver issuer must explicitly mark its subject as a dedicated conformance identity"
         )
+    bind_subject_id(issuer_settings, args.onboarding_profile, args.subject_id)
     issuer_settings["credential_datasets"] = {
         configuration_ids[format_name]: copy.deepcopy(dataset)
         for format_name, dataset in credential_datasets.items()

@@ -36,13 +36,17 @@ The workflow is a gated DAG:
 | B2 | verify the archive, then remove `/home/nazoAuth` | after B1 |
 | B3 | create new PostgreSQL/Valkey volumes and the new database | after B2 |
 | B4 | migrate, start the candidate, verify it, switch the UI | after B3 |
-| C1 | production smoke tests | serial activation gate |
+| B5 | register and complete two fresh users through public APIs | after B4; users may run in parallel |
+| Gate B | both users log in, applicant profile is complete, admin is promoted | serial join |
+| C1 | production smoke tests | after Gate B |
 | C2 | host-local OIDC/FAPI matrix | after C1 |
 | C3 | host-local OpenID4VC matrix | after C2 |
 | Gate C | C1, C2, and C3 all succeed | production activation |
 
 Independent A-stage jobs may run concurrently because they do not mutate the
-same state. OIDC/FAPI and OpenID4VC remain serial with
+same state. The two B5 user journeys may run concurrently with separate codes,
+cookie jars, identities, and files, while each user's register/login/profile/
+avatar steps stay ordered. OIDC/FAPI and OpenID4VC remain serial with
 `--plan-group-size 1`: they share browser sessions, dynamic clients, and proxy
 state. Result summarization, log hashing, and read-only production monitoring
 may run in parallel after each matrix ends.
@@ -82,9 +86,10 @@ the root-only config, update only the database path in `DATABASE_URL`, and never
 print the credential. Start:
 
 - PostgreSQL 18 as `nazo-oauth-postgres` on `nazo_oauth_net`,
-  `10.101.0.10`, with the new database and new volume;
+  network alias `postgres`, `10.101.0.10`, with the new database and new
+  volume;
 - Valkey 8 as `nazo-oauth-valkey` on `10.101.0.11`, with a new volume and the
-  existing persistence command.
+  network alias `valkey` and the existing persistence command.
 
 Require `pg_isready`, `valkey-cli ping`, and a database inventory showing only
 the new application database plus PostgreSQL system databases. Do not restore
@@ -98,7 +103,8 @@ Pre-merge deployments must name their review branches and must not claim
 `main`. The script rechecks sources and provenance, loads the immutable image,
 runs `nazoauth migrate`, starts `nazoauth server`, verifies the internal
 candidate and Angie upstream, atomically switches the UI, and verifies public
-assets.
+assets. Pass the actual production Angie file explicitly:
+`-RemoteAngieConfigPath /usr/local/angie/conf/conf.d/auth.nazo.run.conf`.
 
 An isolated trusted builder may supply a Docker archive through
 `-LocalImageArchive`. The script loads only the expected tag and revalidates the
@@ -108,7 +114,24 @@ not bypass frontend verification.
 
 Export the exact backend commit with `git archive` to
 `/opt/nazo-oauth/conformance/sources/<backend-sha>` for conformance. The
-production image must not contain the OIDF runner or suite.
+production image must not contain the OIDF runner or suite. The host-local
+runner must import from that source root, never from the deleted
+`/home/nazoAuth`, and both the source and operator-suite checks must include
+untracked files (`git status --porcelain`).
+
+## Fresh-user gate
+
+Do not reuse users, sessions, or subject IDs from the previous database.
+Register the applicant and administrator through `/auth/register` with
+independent one-time codes, then log in and complete `PATCH /auth/me` and
+`POST /auth/me/avatar` through the public API. The two users may be prepared in
+parallel when all identity and session material is isolated.
+
+There is currently no public first-administrator bootstrap. After both public
+registrations, promote only the new administrator with one controlled SQL
+update; never insert users directly or copy old records. Log in again through
+the public API and record both IDs. The applicant profile must contain all
+claims required by the OIDC `profile`, `address`, and `phone` scopes.
 
 ## Production and OIDF gates
 
@@ -118,6 +141,12 @@ project on its own network. Run the OIDC/FAPI full matrix, clean its dynamic
 state, then run the OpenID4VC full matrix and clean its onboarding/private
 material. Use unique result directories under
 `/opt/nazo-oauth/conformance/results`.
+
+Materializing the operator-black-box OpenID4VC matrix must pass the current
+fresh applicant as `--subject-id <applicant-user-id>`; a subject ID embedded in
+an old template is not portable. Require a non-empty mTLS trust bundle only
+when at least one client in the current onboarding run requested a trust
+anchor. An empty bundle is valid when every client omitted one.
 
 Record:
 
