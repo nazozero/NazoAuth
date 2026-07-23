@@ -323,6 +323,48 @@ fn signed_request_object_rejects_conflicts_and_reserved_request_uri() {
 }
 
 #[test]
+fn oidc_signed_request_object_parameters_supersede_outer_duplicates() {
+    let now = 1_700_000_000;
+    let outer = HashMap::from([
+        ("client_id".to_owned(), "client".to_owned()),
+        ("request".to_owned(), "signed.jwt".to_owned()),
+        (
+            "redirect_uri".to_owned(),
+            "https://attacker.example/callback".to_owned(),
+        ),
+        ("scope".to_owned(), "email".to_owned()),
+        ("state".to_owned(), "outer-state".to_owned()),
+    ]);
+    let policy = RequestObjectPolicy {
+        require_integrity_protected_parameters: false,
+        ..signed_policy(now)
+    };
+
+    let normalized = normalize_request_object(&outer, &signed_claims(now), policy)
+        .expect("baseline OIDC should accept a valid signed Request Object");
+
+    assert_eq!(
+        normalized
+            .parameters
+            .get("redirect_uri")
+            .map(String::as_str),
+        Some("https://client.example/cb")
+    );
+    assert_eq!(
+        normalized.parameters.get("scope").map(String::as_str),
+        Some("openid")
+    );
+    assert_eq!(
+        normalized.parameters.get("state").map(String::as_str),
+        Some("outer-state")
+    );
+    assert_eq!(
+        normalized.parameters.get("request").map(String::as_str),
+        Some("signed.jwt")
+    );
+}
+
+#[test]
 fn replay_and_dependency_failures_are_fail_closed_and_keep_error_categories() {
     assert_eq!(classify_request_object_replay(Ok(true)), Ok(()));
     assert_eq!(

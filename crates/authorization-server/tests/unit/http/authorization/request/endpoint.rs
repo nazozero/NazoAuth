@@ -21,6 +21,7 @@ use crate::adapters::security::jwt_decoding_key_from_jwk;
 use crate::config::ConfigSource;
 use crate::domain::{ConsentPayload, PushedAuthorizationRequest};
 use crate::settings::AuthorizationServerProfile;
+use crate::test_support::{ClientSigningFixture, client_signing_fixture};
 use nazo_postgres::{create_pool, get_conn};
 
 const VALID_CODE_CHALLENGE: &str = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
@@ -83,6 +84,27 @@ fn unsigned_request_object(claims: Value) -> String {
     let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"none"}"#);
     let payload = URL_SAFE_NO_PAD.encode(claims.to_string());
     format!("{header}.{payload}.")
+}
+
+fn signed_request_object(client_id: &str, fixture: &ClientSigningFixture) -> String {
+    let now = Utc::now().timestamp();
+    let claims = json!({
+        "client_id": client_id,
+        "iss": client_id,
+        "sub": client_id,
+        "aud": "https://issuer.example",
+        "iat": now,
+        "nbf": now,
+        "exp": now + 120,
+        "jti": format!("authorize-jar-jti-{}", Uuid::now_v7()),
+        "response_type": "code",
+        "redirect_uri": "https://client.example/callback",
+        "scope": "openid",
+        "state": "signed-inner-state",
+    });
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    header.kid = Some("authorize-request-object-kid".to_owned());
+    fixture.encode_jwt(&header, &claims)
 }
 
 struct LiveAuthorizationFixture {
@@ -236,6 +258,19 @@ impl LiveAuthorizationFixture {
         .execute(&mut conn)
         .await
         .expect("test client insert should succeed");
+    }
+
+    async fn set_client_jwks(&self, client_id: &str, jwks: Value) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query("UPDATE oauth_clients SET jwks = $1 WHERE tenant_id = $2 AND client_id = $3")
+            .bind::<Jsonb, _>(jwks)
+            .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+            .bind::<Text, _>(client_id)
+            .execute(&mut conn)
+            .await
+            .expect("test client JWK update should succeed");
     }
 
     async fn mark_client_sender_constrained(
@@ -1803,6 +1838,71 @@ async fn authorization_request_persists_consent_payload_for_authenticated_intera
     assert_eq!(payload.client_id, client_id);
     assert_eq!(payload.redirect_uri, "https://client.example/callback");
     assert_eq!(payload.state.as_deref(), Some("interactive"));
+    assert_eq!(payload.scopes, vec!["openid"]);
+}
+
+#[actix_web::test]
+async fn signed_request_object_redirect_uri_supersedes_invalid_outer_redirect_uri() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().simple().to_string();
+    let client_id = format!("authorize-jar-precedence-{suffix}");
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+        )
+        .await;
+    let signing_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    fixture
+        .set_client_jwks(
+            &client_id,
+            json!({"keys": [signing_key.public_jwk("authorize-request-object-kid")]}),
+        )
+        .await;
+    let request_object = signed_request_object(&client_id, &signing_key);
+    let user = fixture.create_user(&suffix, "user", 0).await;
+    let sid = format!("sid-{suffix}");
+    fixture
+        .store_session(&user, &sid, Utc::now().timestamp())
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fattacker.example%2Fcallback&response_type=code&scope=profile&state=outer-state&code_challenge={VALID_CODE_CHALLENGE}&code_challenge_method=S256&request={}",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&request_object),
+    );
+    let req = fixture.session_request(&sid, &uri);
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://attacker.example/callback"),
+        ("response_type", "code"),
+        ("scope", "profile"),
+        ("state", "outer-state"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
+        ("request", request_object.as_str()),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    let location = authorization_location(&response);
+
+    assert_eq!(
+        location.origin().ascii_serialization(),
+        "https://app.example"
+    );
+    assert_eq!(location.path(), "/consent");
+    let request_id = location
+        .query_pairs()
+        .find_map(|(key, value)| (key == "request_id").then_some(value.into_owned()))
+        .expect("signed authorization should persist a consent request");
+    let payload = fixture.stored_consent_payload(&request_id).await;
+    assert_eq!(payload.user_id, user.id);
+    assert_eq!(payload.client_id, client_id);
+    assert_eq!(payload.redirect_uri, "https://client.example/callback");
+    assert_eq!(payload.state.as_deref(), Some("signed-inner-state"));
     assert_eq!(payload.scopes, vec!["openid"]);
 }
 
