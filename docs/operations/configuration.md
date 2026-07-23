@@ -8,6 +8,11 @@ Nazo Auth Server is configured in two layers:
 - runtime/application configuration: feature and integration settings that can
   move to the administrator UI over time
 
+`nazoauth server` requires `.env.yaml` in its working directory. If the file is
+absent, the command copies the minimal example to `.env.yaml`, prints an
+instruction to review it, and exits successfully without opening network or
+database connections. Edit the file before running the command again.
+
 The default deployment is same-origin. The public URL is configured once and
 the server derives the related URLs from it:
 

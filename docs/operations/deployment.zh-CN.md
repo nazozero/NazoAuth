@@ -1,5 +1,8 @@
 # 部署指南
 
+如需有意清空数据面、删除远端源码目录，并以远端本机 OIDF 一致性测试作为正式
+启用闸门，请使用[全新环境部署与生产启用](fresh-production-activation.zh-CN.md)。
+
 ## 范围
 
 生产部署中，Nazo Auth Server 运行在 TLS 终止反向代理之后。PostgreSQL 保存持久状态，Valkey 保存短生命周期协议状态。公开 issuer 必须是 HTTPS origin，并与 Discovery metadata、README、OIDF 测试配置保持一致。
@@ -17,8 +20,8 @@
 
 必要组件：
 
-- `nazo-oauth-server` HTTP 进程
-- `nazo-oauth-migrate` 数据库迁移命令
+- `nazoauth server` HTTP 进程
+- `nazoauth migrate` 数据库迁移命令
 - PostgreSQL 数据库
 - Valkey 实例
 - 持久化 JWT key 目录
@@ -91,7 +94,7 @@ docker run --rm \
   -v /opt/nazo-oauth/runtime/keys:/var/lib/nazo_oauth/keys:rw \
   -v /opt/nazo-oauth/runtime/avatars:/var/lib/nazo_oauth/avatars:rw \
   nazo-oauth-server:<tag> \
-  nazo-oauth-migrate
+  nazoauth migrate
 ```
 
 启动服务：
@@ -103,7 +106,7 @@ docker run -d --name nazo-oauth-server \
   -v /opt/nazo-oauth/runtime/keys:/var/lib/nazo_oauth/keys:rw \
   -v /opt/nazo-oauth/runtime/avatars:/var/lib/nazo_oauth/avatars:rw \
   nazo-oauth-server:<tag> \
-  nazo-oauth-server
+  nazoauth server
 ```
 
 `compose.yml` 面向本地集成，不是完整生产拓扑。
@@ -223,7 +226,7 @@ keyset 在服务启动和 keyset 加载时自动维护生命周期：active key 
 不超过一小时。部署或恢复备份后可校验 keyset：
 
 ```sh
-nazo-oauth-keyctl validate
+nazoauth keyctl validate
 ```
 
 `validate` 会拒绝格式错误的 `retire_at`，也会拒绝 active key 携带

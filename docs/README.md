@@ -18,6 +18,8 @@ set can be scanned from one place.
 | OpenAI Build Week 2026 engineering record | [project/openai-build-week-2026.md](project/openai-build-week-2026.md) |
 | Deployment | [operations/deployment.md](operations/deployment.md) |
 | Chinese deployment | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) |
+| Fresh production activation | [operations/fresh-production-activation.md](operations/fresh-production-activation.md) |
+| Chinese fresh production activation | [operations/fresh-production-activation.zh-CN.md](operations/fresh-production-activation.zh-CN.md) |
 | Configuration | [operations/configuration.md](operations/configuration.md) |
 | OpenID Connect integration | [integration/openid-connect.md](integration/openid-connect.md) |
 | Chinese OpenID Connect integration | [integration/openid-connect.zh-CN.md](integration/openid-connect.zh-CN.md) |
@@ -60,6 +62,8 @@ set can be scanned from one place.
 | [operations/configuration.md](operations/configuration.md) | Runtime configuration model and environment settings. |
 | [operations/deployment.md](operations/deployment.md) | English deployment guide. |
 | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) | Chinese deployment guide. |
+| [operations/fresh-production-activation.md](operations/fresh-production-activation.md) | Clean-data deployment and OIDF-gated production activation. |
+| [operations/fresh-production-activation.zh-CN.md](operations/fresh-production-activation.zh-CN.md) | Chinese clean-data deployment and OIDF-gated production activation. |
 | [operations/ha-operations.md](operations/ha-operations.md) | PostgreSQL and Valkey operational guidance. |
 | [operations/release-security.md](operations/release-security.md) | Release security checks, provenance, and supply-chain controls. |
 | [operations/release-boundary.md](operations/release-boundary.md) | Production artifact and conformance-tool separation boundary. |

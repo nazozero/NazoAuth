@@ -13,7 +13,7 @@ pub async fn run(args: impl IntoIterator<Item = String>) -> anyhow::Result<()> {
     let mut args = args.into_iter();
     let _program = args.next();
     let Some(command) = args.next() else {
-        bail!("usage: nazo-oauth-keyctl <list|generate-local|register-external|validate>");
+        bail!("usage: nazoauth keyctl <list|generate-local|register-external|validate>");
     };
     match command.as_str() {
         "list" => {

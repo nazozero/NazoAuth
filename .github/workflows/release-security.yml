@@ -28,19 +28,28 @@ jobs:
         run: cargo audit
       - name: Check dependency policy
         run: cargo deny check advisories bans licenses sources
-      - name: Build release binaries
-        run: |
-          cargo build --release --locked --package nazo-oauth-server --bins
       - name: Generate Rust SBOM
         run: |
-          cargo cyclonedx --manifest-path crates/authorization-server/Cargo.toml --format json --override-filename nazo-oauth-server.cdx
+          cargo cyclonedx --manifest-path crates/authorization-server/Cargo.toml --format json --override-filename nazoauth.cdx
           mkdir -p target
-          mv crates/authorization-server/nazo-oauth-server.cdx.json target/nazo-oauth-server.cdx.json
+          mv crates/authorization-server/nazoauth.cdx.json target/nazoauth.cdx.json
+      - uses: docker/setup-buildx-action@v4.2.0
       - name: Build release image
+        uses: docker/build-push-action@v7.3.0
+        with:
+          context: .
+          file: Containerfile
+          target: runtime
+          tags: nazo-oauth-server:${{ github.sha }}
+          load: true
+          cache-from: type=gha,scope=nazo-oauth-service
+          cache-to: type=gha,mode=max,scope=nazo-oauth-service
+      - name: Export release binary and image
         run: |
-          docker build --target runtime -f Containerfile -t nazo-oauth-server:${{ github.sha }} .
-      - name: Export release images
-        run: |
+          mkdir -p target/release
+          container_id="$(docker create nazo-oauth-server:${{ github.sha }})"
+          docker cp "$container_id:/usr/local/bin/nazoauth" target/release/nazoauth
+          docker rm "$container_id"
           docker save nazo-oauth-server:${{ github.sha }} -o target/nazo-oauth-server-image.tar
       - name: Scan release images
         run: |
@@ -59,10 +68,8 @@ jobs:
         with:
           name: nazo-oauth-release-unsigned
           path: |
-            target/release/nazo-oauth-server
-            target/release/nazo-oauth-migrate
-            target/release/nazo-oauth-keyctl
-            target/nazo-oauth-server.cdx.json
+            target/release/nazoauth
+            target/nazoauth.cdx.json
             target/nazo-oauth-server-image.tar
           if-no-files-found: error
           retention-days: 1
@@ -84,19 +91,15 @@ jobs:
         uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
       - name: Sign release artifacts
         run: |
-          cosign sign-blob --yes --bundle target/release/nazo-oauth-server.bundle target/release/nazo-oauth-server
-          cosign sign-blob --yes --bundle target/release/nazo-oauth-migrate.bundle target/release/nazo-oauth-migrate
-          cosign sign-blob --yes --bundle target/release/nazo-oauth-keyctl.bundle target/release/nazo-oauth-keyctl
-          cosign sign-blob --yes --bundle target/nazo-oauth-server.cdx.json.bundle target/nazo-oauth-server.cdx.json
+          cosign sign-blob --yes --bundle target/release/nazoauth.bundle target/release/nazoauth
+          cosign sign-blob --yes --bundle target/nazoauth.cdx.json.bundle target/nazoauth.cdx.json
           cosign sign-blob --yes --bundle target/nazo-oauth-server-image.tar.bundle target/nazo-oauth-server-image.tar
       - name: Attest release binaries and SBOM
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
           subject-path: |
-            target/release/nazo-oauth-server
-            target/release/nazo-oauth-migrate
-            target/release/nazo-oauth-keyctl
-            target/nazo-oauth-server.cdx.json
+            target/release/nazoauth
+            target/nazoauth.cdx.json
       - name: Attest release image archive
         uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
         with:
@@ -107,10 +110,8 @@ jobs:
         with:
           name: nazo-oauth-release-artifacts
           path: |
-            target/release/nazo-oauth-server
-            target/release/nazo-oauth-migrate
-            target/release/nazo-oauth-keyctl
-            target/nazo-oauth-server.cdx.json
+            target/release/nazoauth
+            target/nazoauth.cdx.json
             target/nazo-oauth-server-image.tar
             target/release/*.bundle
             target/*.bundle

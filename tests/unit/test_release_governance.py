@@ -24,7 +24,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
             "production Rust sources must implement standards, not OIDF plan-specific behavior",
         )
 
-    def test_runtime_container_copies_only_product_binaries(self) -> None:
+    def test_runtime_container_copies_only_the_unified_product_binary(self) -> None:
         source = (ROOT / "Containerfile").read_text(encoding="utf-8")
         final_stage = source.split("FROM runtime-base AS runtime", 1)[1].split(
             "FROM runtime AS perf-runtime", 1
@@ -33,8 +33,49 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertNotIn("tests/", final_stage)
         self.assertNotIn("docs/", final_stage)
         self.assertNotIn("oidf", final_stage.lower())
-        for binary in ("nazo-oauth-server", "nazo-oauth-migrate", "nazo-oauth-keyctl"):
-            self.assertIn(binary, final_stage)
+        self.assertEqual(final_stage.count("/usr/local/bin/nazoauth"), 1)
+        for retired_binary in (
+            "nazo-oauth-server",
+            "nazo-oauth-migrate",
+            "nazo-oauth-keyctl",
+        ):
+            self.assertNotIn(retired_binary, final_stage)
+
+    def test_release_builds_once_and_publishes_one_executable(self) -> None:
+        manifest = (
+            ROOT / "crates" / "authorization-server" / "Cargo.toml"
+        ).read_text(encoding="utf-8")
+        self.assertEqual(manifest.count("[[bin]]"), 1)
+        self.assertIn('name = "nazoauth"', manifest)
+
+        release = (
+            ROOT / ".github" / "workflows" / "release-security.yml"
+        ).read_text(encoding="utf-8")
+        self.assertNotIn("cargo build --release", release)
+        self.assertIn(
+            'docker cp "$container_id:/usr/local/bin/nazoauth" target/release/nazoauth',
+            release,
+        )
+        self.assertNotRegex(
+            release,
+            r"target/release/nazo-oauth-(?:server|migrate|keyctl)",
+        )
+
+    def test_conformance_workflow_does_not_repeat_the_rust_quality_gate(self) -> None:
+        quality = (
+            ROOT / ".github" / "workflows" / "code-quality.yml"
+        ).read_text(encoding="utf-8")
+        conformance = (
+            ROOT / ".github" / "workflows" / "conformance-security.yml"
+        ).read_text(encoding="utf-8")
+
+        self.assertIn("Swatinem/rust-cache@v2.9.1", quality)
+        self.assertIn("cargo clippy --workspace --all-targets", quality)
+        self.assertIn("cargo test --workspace --all-features", quality)
+        self.assertNotIn("cargo check --workspace", quality)
+        self.assertNotIn("cargo check --workspace", conformance)
+        self.assertNotIn("cargo clippy --workspace", conformance)
+        self.assertNotIn("cargo test --workspace", conformance)
 
     def test_official_suite_is_never_patched(self) -> None:
         tracked = [

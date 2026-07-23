@@ -7,6 +7,7 @@ mod test_macros;
 
 mod adapters;
 pub mod bootstrap;
+pub mod cli;
 pub mod config;
 mod domain;
 mod http;

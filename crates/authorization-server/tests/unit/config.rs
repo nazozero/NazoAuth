@@ -112,6 +112,44 @@ fn dotenv_file_is_rejected() {
 }
 
 #[test]
+fn first_server_run_creates_the_reviewable_example_and_stops() {
+    let path = temp_config_dir("first_server_run");
+
+    let result = prepare_server_config_in(&path).unwrap();
+    let config_path = path.join(CONFIG_FILE);
+
+    assert_eq!(
+        result,
+        ServerConfigPreparation::Created(config_path.clone())
+    );
+    assert_eq!(
+        std::fs::read_to_string(&config_path).unwrap(),
+        INITIAL_CONFIG
+    );
+    assert_eq!(
+        prepare_server_config_in(&path).unwrap(),
+        ServerConfigPreparation::Ready
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
+fn existing_server_config_is_never_overwritten() {
+    let path = temp_config_dir("existing_server_config");
+    let config_path = path.join(CONFIG_FILE);
+    std::fs::write(&config_path, "PUBLIC_BASE_URL: https://auth.example\n").unwrap();
+
+    let result = prepare_server_config_in(&path).unwrap();
+
+    assert_eq!(result, ServerConfigPreparation::Ready);
+    assert_eq!(
+        std::fs::read_to_string(&config_path).unwrap(),
+        "PUBLIC_BASE_URL: https://auth.example\n"
+    );
+    let _ = std::fs::remove_dir_all(&path);
+}
+
+#[test]
 fn unknown_yaml_key_is_rejected_with_the_key_name() {
     let path = temp_config_dir("unknown_yaml_key");
     std::fs::write(path.join(".env.yaml"), "COOKIE_SECUR: true\n").unwrap();

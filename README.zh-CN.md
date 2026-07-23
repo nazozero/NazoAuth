@@ -79,11 +79,14 @@ curl -fsS http://127.0.0.1:8000/health
 curl -fsS http://127.0.0.1:8000/.well-known/openid-configuration
 ```
 
-如果直接在宿主机运行，先把 `.env.yaml` 里的 PostgreSQL 和 Valkey 地址改成可访问的服务：
+首次直接启动服务时，NazoAuth 会创建 `.env.yaml` 后退出。检查生成的文件，将
+PostgreSQL 和 Valkey 地址改成可访问的服务，再执行迁移并启动：
 
 ```sh
-cargo run --bin nazo-oauth-migrate
-cargo run --bin nazo-oauth-server
+cargo run --bin nazoauth -- server
+# 修改 .env.yaml 后再继续。
+cargo run --bin nazoauth -- migrate
+cargo run --bin nazoauth -- server
 ```
 
 ## 配置
