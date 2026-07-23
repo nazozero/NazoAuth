@@ -56,6 +56,7 @@ fn authorization_policy_normalizes_oidc_claims_rar_and_jarm() {
         capabilities(),
         AuthorizationProfilePolicy {
             signed_authorization_response_required: false,
+            pkce_required: false,
         },
         false,
     )
@@ -92,6 +93,7 @@ fn module_and_profile_failures_preserve_protocol_error_categories() {
             },
             AuthorizationProfilePolicy {
                 signed_authorization_response_required: false,
+                pkce_required: false,
             },
             false,
         ),
@@ -109,6 +111,7 @@ fn module_and_profile_failures_preserve_protocol_error_categories() {
             },
             AuthorizationProfilePolicy {
                 signed_authorization_response_required: false,
+                pkce_required: false,
             },
             false,
         ),

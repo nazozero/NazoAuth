@@ -47,6 +47,7 @@ pub struct AuthorizationCapabilityPolicy {
 #[derive(Clone, Copy, Debug)]
 pub struct AuthorizationProfilePolicy {
     pub signed_authorization_response_required: bool,
+    pub pkce_required: bool,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -136,7 +137,9 @@ pub fn normalize_authorization_request(
         }
         _ => return Err(AuthorizationPolicyError::InvalidRequest),
     };
-    if code_challenge.is_none() {
+    let confidential_oidc =
+        client.client_type == "confidential" && scopes.iter().any(|scope| scope == "openid");
+    if code_challenge.is_none() && (profile.pkce_required || !confidential_oidc) {
         return Err(AuthorizationPolicyError::InvalidRequest);
     }
 
