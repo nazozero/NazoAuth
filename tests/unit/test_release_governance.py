@@ -26,6 +26,10 @@ class ReleaseGovernanceTests(unittest.TestCase):
 
     def test_runtime_container_copies_only_the_unified_product_binary(self) -> None:
         source = (ROOT / "Containerfile").read_text(encoding="utf-8")
+        self.assertIn(
+            "COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./",
+            source,
+        )
         final_stage = source.split("FROM runtime-base AS runtime", 1)[1].split(
             "FROM runtime AS perf-runtime", 1
         )[0]
