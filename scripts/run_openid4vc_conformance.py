@@ -37,7 +37,6 @@ from apply_public_conformance_onboarding import (  # noqa: E402
 
 PRE_AUTHORIZED_CODE_GRANT = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 OIDF_TERMINAL_MODULE_STATUSES = {"FINISHED", "FAILED", "INTERRUPTED"}
-PRE_AUTHORIZED_MULTIPLE_CLIENTS_TEST = "oid4vci-1_0-issuer-happy-flow-multiple-clients"
 
 
 def fail(message: str) -> None:
@@ -306,7 +305,6 @@ class Openid4vcDriver:
         self.stop = stop
         self.triggered: set[str] = set()
         self.terminal_modules: set[str] = set()
-        self.issuer_offer_deliveries: dict[str, int] = {}
 
     def run(self) -> None:
         interval = max(1, int(self.config.get("poll_interval_seconds", 2)))
@@ -342,7 +340,6 @@ class Openid4vcDriver:
             status = str(info.get("status", "")).upper()
             if status in OIDF_TERMINAL_MODULE_STATUSES:
                 self.terminal_modules.add(module_id)
-                self.issuer_offer_deliveries.pop(module_id, None)
                 continue
             if module_id in self.triggered or status != "WAITING":
                 continue
@@ -376,17 +373,6 @@ class Openid4vcDriver:
         grant = str(variant.get("vci_grant_type", "authorization_code"))
         grant_type = PRE_AUTHORIZED_CODE_GRANT if grant == "pre_authorization_code" else "authorization_code"
         tx_code = issuer.get("tx_code") if grant == "pre_authorization_code" else None
-        test_name = str(info.get("testName") or info.get("name") or "")
-        expected_offers = (
-            2
-            if grant == "pre_authorization_code"
-            and test_name == PRE_AUTHORIZED_MULTIPLE_CLIENTS_TEST
-            else 1
-        )
-        delivered = self.issuer_offer_deliveries.get(module_id, 0)
-        if delivered >= expected_offers:
-            self.triggered.add(module_id)
-            return
         offer = request_json(
             "POST",
             urllib.parse.urljoin(
@@ -413,19 +399,11 @@ class Openid4vcDriver:
                 f"{urllib.parse.urlencode({'credential_offer_uri': offer['credential_offer_uri']})}"
             )
         get_url(callback)
-        delivered += 1
-        self.issuer_offer_deliveries[module_id] = delivered
         print(
-            f"OpenID4VC driver delivered credential offer {delivered} "
-            f"to {module_id}",
+            f"OpenID4VC driver delivered credential offer to {module_id}",
             flush=True,
         )
-        # A multiple-client pre-authorized flow exposes the same callback path twice.
-        # Return to the outer poll after each delivery so the suite can consume the
-        # first callback and enter the second client's WAITING state before another
-        # fresh, single-use offer is delivered.
-        if delivered >= expected_offers:
-            self.triggered.add(module_id)
+        self.triggered.add(module_id)
 
     def drive_verifier(self, module_id: str, info: dict[str, object], variant: dict[str, object], haip: bool) -> None:
         verifier = self.config["verifier"]

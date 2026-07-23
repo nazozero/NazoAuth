@@ -21,6 +21,7 @@ OIDF_VP_SD_JWT_VCT = "urn:eudi:pid:1"
 OFFICIAL_VCI_PRIVATE_KEY_CLIENT_ID = "nazo-openid4vc-oidf-private-key-jwt"
 OFFICIAL_VCI_ATTESTED_CLIENT_ID = "nazo-openid4vc-oidf-client-attestation"
 VCI_UNSUPPORTED_ENCRYPTION_MODULE = "oid4vci-1_0-issuer-fail-unsupported-encryption-algorithm"
+VCI_MULTIPLE_CLIENTS_MODULE = "oid4vci-1_0-issuer-happy-flow-multiple-clients"
 P256_P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
 P256_A = -3
 P256_N = 0xFFFFFFFF00000000FFFFFFFFFFFFFFFFBCE6FAADA7179E84F3B9CAC2FC632551
@@ -126,7 +127,21 @@ def expected_skips_for_cases(cases: list[tuple[str, str, dict[str, str]]]) -> li
         for plan, slug, variants in cases
         if plan == VCI_STANDARD and variants.get("vci_credential_encryption") == "plain"
     ]
-    return unsupported_encryption
+    # The official multiple-client module starts its second client without
+    # requesting a second Credential Offer. That is valid for authorization-code
+    # variants, but a pre-authorized code is single use (OID4VCI 1.0 Final 4.1.1),
+    # so those two plan variants cannot execute this module as written.
+    pre_authorized_multiple_clients = [
+        {
+            "test-name": VCI_MULTIPLE_CLIENTS_MODULE,
+            "variant": dict(variants),
+            "configuration-filename": f"openid4vc-{slug}.json",
+        }
+        for plan, slug, variants in cases
+        if plan == VCI_STANDARD
+        and variants.get("vci_grant_type") == "pre_authorization_code"
+    ]
+    return [*unsupported_encryption, *pre_authorized_multiple_clients]
 
 
 def full_vci_variant(plan: str, variants: dict[str, str]) -> dict[str, str]:
