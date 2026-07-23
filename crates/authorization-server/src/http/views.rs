@@ -1,19 +1,12 @@
 //! JSON view 组装函数。
 use crate::domain::ClientRow;
-#[cfg(test)]
-use crate::domain::DatabaseUserFixture;
-#[cfg(test)]
-use actix_web::http::header;
+
 use actix_web::http::header::HeaderMap;
-#[cfg(test)]
-use actix_web::http::header::HeaderValue;
-#[cfg(test)]
-use chrono::Utc;
+
 use nazo_identity::PublicAccount;
 use serde_json::{Value, json};
 use std::collections::HashMap;
-#[cfg(test)]
-use uuid::Uuid;
+
 // 将数据库行转换为前端和管理端直接消费的 JSON 形状。
 
 pub(crate) fn auth_me_json_with_count(user: &PublicAccount, count: i64) -> Value {
@@ -190,5 +183,5 @@ pub(crate) fn append_query(base: &str, pairs: &[(&str, &str)]) -> String {
 }
 
 #[cfg(test)]
-#[path = "../../tests/source_mounted/src/support/tests/views.rs"]
+#[path = "../../tests/unit/http/views.rs"]
 mod tests;

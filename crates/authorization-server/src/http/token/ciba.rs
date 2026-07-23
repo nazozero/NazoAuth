@@ -1,6 +1,4 @@
 //! OpenID Connect CIBA poll/ping grant.
-#[cfg(test)]
-use nazo_http_actix::OAuthJsonErrorFields;
 use nazo_http_actix::{
     empty_response, json_response_no_store, oauth_error, oauth_token_error,
     request_uses_form_urlencoded,
@@ -15,14 +13,12 @@ use crate::adapters::security::constant_time_eq;
 use crate::adapters::security::extract_client_credentials_with_trusted_proxies;
 use crate::adapters::security::has_basic_authorization_scheme;
 use crate::adapters::security::random_urlsafe_token;
-#[cfg(test)]
-use crate::domain::TestInfrastructure;
+
 use crate::domain::client_policy::client_supports_grant;
 use crate::domain::client_policy::is_subset;
 use crate::domain::client_policy::parse_scope;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
-#[cfg(test)]
-use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID};
+
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::http::dpop::DpopError;
 use crate::http::dpop::DpopErrorContext;
@@ -58,8 +54,7 @@ use super::client_auth::{
 };
 use super::issue::TokenIssuanceConfig;
 use super::issue::{TokenIssuanceContext, issue_token_response_with_service};
-#[cfg(test)]
-use super::validate_token_request_profile;
+
 use super::{
     ServerTokenService, TokenForm, TokenManagementClientAuthError, client_auth_request_facts,
     token_management_auth_error,
@@ -721,19 +716,6 @@ fn validate_and_apply_ciba_request_object_claims_with_config(
     Ok(Some(replay))
 }
 
-#[cfg(test)]
-fn validate_and_apply_ciba_request_object_claims(
-    state: &TestInfrastructure,
-    client: &ClientRow,
-    form: &mut BackchannelAuthenticationForm,
-) -> Result<Option<CibaRequestObjectReplay>, HttpResponse> {
-    validate_and_apply_ciba_request_object_claims_with_config(
-        &CibaHttpConfig::from(state.settings.as_ref()),
-        client,
-        form,
-    )
-}
-
 fn signed_ciba_request_object_claims(
     request_object: &str,
     client: &ClientRow,
@@ -1105,19 +1087,6 @@ fn validate_ciba_security_profile_client_with_config(
     Ok(())
 }
 
-#[cfg(test)]
-fn validate_ciba_security_profile_client(
-    settings: &Settings,
-    client: &ClientRow,
-    auth_method: &str,
-) -> Result<(), HttpResponse> {
-    validate_ciba_security_profile_client_with_config(
-        &CibaHttpConfig::from(settings),
-        client,
-        auth_method,
-    )
-}
-
 fn validate_ciba_token_request_profile(
     config: &CibaHttpConfig,
     client: &ClientRow,
@@ -1164,15 +1133,6 @@ fn validate_ciba_request_object_presence_with_config(
         return Err(ciba_invalid_request("CIBA request object is required."));
     }
     Ok(())
-}
-
-#[cfg(test)]
-fn validate_ciba_request_object_presence(
-    settings: &Settings,
-    client: &ClientRow,
-    form: &BackchannelAuthenticationForm,
-) -> Result<(), HttpResponse> {
-    validate_ciba_request_object_presence_with_config(&CibaHttpConfig::from(settings), client, form)
 }
 
 fn non_empty(value: String) -> Option<String> {
@@ -1803,14 +1763,9 @@ fn ciba_error_no_store(status: StatusCode, error: &str, description: &str) -> Ht
 }
 
 #[cfg(test)]
-fn ciba_request_key(auth_req_id: &str) -> String {
-    format!("oauth:ciba:{}", blake3_hex(auth_req_id))
-}
-
-#[cfg(test)]
-#[path = "../../../tests/source_mounted/src/http/token/tests/ciba.rs"]
+#[path = "../../../tests/unit/http/token/ciba.rs"]
 mod tests;
 
 #[cfg(test)]
-#[path = "../../../tests/source_mounted/src/http/token/tests/ciba_state.rs"]
+#[path = "../../../tests/unit/http/token/ciba/state.rs"]
 mod state_tests;

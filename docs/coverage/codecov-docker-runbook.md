@@ -71,13 +71,15 @@ docker run --rm --name nazo-oauth-codecov-runner `
 - Debian-based runner images usually provide `python3`, not `python`. The script
   now auto-detects `python3`, and the Docker command still sets `PYTHON=python3`
   for explicitness.
-- Source-mounted tests live under `tests/source_mounted`. They are compiled through
-  `#[cfg(test)] #[path = "..."]` from the owning `src/**` modules. Coverage runs
-  both library and existing integration tests with
+- Private-unit tests live under `tests/unit`. They are compiled through a minimal
+  `#[cfg(test)] #[path = "..."]` mount from the owning `src/**` module. Reusable
+  dependency composition lives under `tests/support` and is also mounted by
+  explicit path; `include!` and `tests/support/seams` are forbidden. Coverage
+  runs both library and existing integration tests with
   `cargo test --locked --workspace --all-features --lib --tests`, then derives
   the exact instrumented test-object list from Cargo's JSON artifact stream.
   Do not add duplicate top-level integration tests for behavior already covered
-  by the source-mounted suite.
+  by the owning private-unit or integration suite.
 - Avoid unconditional `cargo clean` during the coverage loop. The script uses a
   dedicated `CARGO_TARGET_DIR`, and Cargo fingerprints the llvm-cov
   instrumentation flags. Use `CODECOV_FORCE_CARGO_CLEAN=1` only when changing the

@@ -1,44 +1,25 @@
 //! 授权请求入口端点。
 use crate::adapters::security::blake3_hex;
-#[cfg(test)]
-use crate::adapters::security::pkce_s256;
 use crate::adapters::security::random_urlsafe_token;
-#[cfg(test)]
-use crate::domain::TestInfrastructure;
+
 use crate::domain::client_jwe::JwePayloadKind;
 use crate::domain::client_jwe::client_jwe_key;
 use crate::domain::client_jwe::encrypt_compact_jwe;
 use crate::domain::client_policy::RedirectUriError;
-#[cfg(test)]
-use crate::domain::client_policy::authorization_code_key;
+
 use crate::domain::client_policy::client_supports_grant;
 use crate::domain::client_policy::registered_redirect_uri;
-#[cfg(test)]
-use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
-#[cfg(test)]
-use crate::domain::tenancy::DEFAULT_REALM_ID;
-#[cfg(test)]
-use crate::domain::tenancy::DEFAULT_TENANT_ID;
-#[cfg(test)]
-use crate::domain::{AuthorizationCodeState, DatabaseUserFixture, PushedAuthorizationRequest};
+
 use crate::domain::{ClientRow, ConsentPayload};
-#[cfg(test)]
-use crate::http::sessions::SessionPayload;
+
 use crate::http::views::append_query;
-#[cfg(test)]
-use crate::settings::Settings;
-#[cfg(test)]
-use crate::test_support::valkey::valkey_get;
-#[cfg(test)]
-use crate::test_support::valkey::valkey_set_ex;
+
 use actix_web::http::StatusCode;
-#[cfg(test)]
-use actix_web::http::header;
+
 use actix_web::web::{Bytes, Data};
 use actix_web::{HttpRequest, HttpResponse};
 use chrono::{Duration, Utc};
-#[cfg(test)]
-use nazo_auth::OidcClaimRequest;
+
 use nazo_auth::{
     AuthorizationCapabilityPolicy, AuthorizationClientPolicy, AuthorizationProfilePolicy,
     AuthorizationResponsePlan, AuthorizationResponsePolicyError, AuthorizationResponsePolicyInput,
@@ -50,8 +31,7 @@ use nazo_http_actix::{
     oauth_error, redirect_found,
 };
 use serde_json::Value;
-#[cfg(test)]
-use serde_json::json;
+
 use std::collections::HashMap;
 use uuid::Uuid;
 // 该端点只创建 consent 临时状态，不签发授权码。
@@ -347,7 +327,9 @@ async fn authorize_request_with_context(
                 .requires_signed_authorization_response(),
             pkce_required: context.config.profile.requires_fapi2_security()
                 || client.require_dpop_bound_tokens
-                || client.require_mtls_bound_tokens,
+                || client.require_mtls_bound_tokens
+                || dpop_jkt.is_some()
+                || mtls_x5t_s256.is_some(),
         },
         used_pushed_authorization_request,
     ) {
@@ -700,15 +682,6 @@ pub(crate) async fn consume_pushed_authorization_request_with_context(
     }
 }
 
-#[cfg(test)]
-pub(crate) async fn consume_pushed_authorization_request(
-    state: &TestInfrastructure,
-    request_uri: &str,
-) -> Result<(), PushedAuthorizationRequestConsumeError> {
-    let dependencies = super::TestAuthorizationDependencies::new(state);
-    consume_pushed_authorization_request_with_context(&dependencies.context(), request_uri).await
-}
-
 pub(crate) async fn authorization_oauth_error_redirect(
     context: &AuthorizationRequestContext<'_>,
     redirect_uri: &str,
@@ -873,21 +846,6 @@ async fn authorization_response_redirect_with_protection_context(
     authorization_response_jwt_result(input.redirect_uri, result)
 }
 
-#[cfg(test)]
-async fn authorization_response_redirect_with_protection(
-    state: &TestInfrastructure,
-    input: AuthorizationResponseRedirect<'_>,
-    protection: AuthorizationResponseProtection<'_>,
-) -> HttpResponse {
-    let dependencies = super::TestAuthorizationDependencies::new(state);
-    authorization_response_redirect_with_protection_context(
-        &dependencies.context(),
-        input,
-        protection,
-    )
-    .await
-}
-
 async fn protected_authorization_response_jwt(
     context: &AuthorizationRequestContext<'_>,
     input: &AuthorizationResponseRedirect<'_>,
@@ -964,15 +922,6 @@ async fn consume_reauth_nonce_with_context(
     }
 }
 
-#[cfg(test)]
-async fn consume_reauth_nonce(
-    state: &TestInfrastructure,
-    q: &mut HashMap<String, String>,
-) -> Option<i64> {
-    let dependencies = super::TestAuthorizationDependencies::new(state);
-    consume_reauth_nonce_with_context(&dependencies.context(), q).await
-}
-
 async fn authorization_login_url_with_context(
     context: &AuthorizationRequestContext<'_>,
     q: &HashMap<String, String>,
@@ -988,17 +937,6 @@ async fn authorization_login_url_with_context(
         q,
         reauth_nonce.as_deref(),
     ))
-}
-
-#[cfg(test)]
-async fn authorization_login_url(
-    state: &TestInfrastructure,
-    q: &HashMap<String, String>,
-    reauthentication_required: bool,
-) -> Result<String, HttpResponse> {
-    let dependencies = super::TestAuthorizationDependencies::new(state);
-    authorization_login_url_with_context(&dependencies.context(), q, reauthentication_required)
-        .await
 }
 
 async fn issue_reauth_nonce(
@@ -1022,5 +960,5 @@ async fn issue_reauth_nonce(
 }
 
 #[cfg(test)]
-#[path = "../../../tests/source_mounted/src/http/authorization/tests/request.rs"]
+#[path = "../../../tests/unit/http/authorization/request.rs"]
 mod tests;

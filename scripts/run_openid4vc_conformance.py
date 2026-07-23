@@ -37,7 +37,6 @@ from apply_public_conformance_onboarding import (  # noqa: E402
 
 PRE_AUTHORIZED_CODE_GRANT = "urn:ietf:params:oauth:grant-type:pre-authorized_code"
 OIDF_TERMINAL_MODULE_STATUSES = {"FINISHED", "FAILED", "INTERRUPTED"}
-PRE_AUTHORIZED_MULTIPLE_CLIENTS_TEST = "oid4vci-1_0-issuer-happy-flow-multiple-clients"
 
 
 def fail(message: str) -> None:
@@ -306,7 +305,6 @@ class Openid4vcDriver:
         self.stop = stop
         self.triggered: set[str] = set()
         self.terminal_modules: set[str] = set()
-        self.issuer_offer_deliveries: dict[str, int] = {}
 
     def run(self) -> None:
         interval = max(1, int(self.config.get("poll_interval_seconds", 2)))
@@ -342,7 +340,6 @@ class Openid4vcDriver:
             status = str(info.get("status", "")).upper()
             if status in OIDF_TERMINAL_MODULE_STATUSES:
                 self.terminal_modules.add(module_id)
-                self.issuer_offer_deliveries.pop(module_id, None)
                 continue
             if module_id in self.triggered or status != "WAITING":
                 continue
@@ -363,46 +360,6 @@ class Openid4vcDriver:
                 flush=True,
             )
 
-    def waiting_credential_offer_endpoint(self, module_id: str) -> str | None:
-        server = str(self.config["conformance_server"])
-        token = str(
-            self.config.get("conformance_token")
-            or os.environ.get("OIDF_CONFORMANCE_TOKEN", "")
-        )
-        status, info = oidf.oidf_api_request(
-            "GET",
-            server,
-            f"api/info/{module_id}",
-            token,
-            expected_statuses={200, 404},
-        )
-        if (
-            status != 200
-            or not isinstance(info, dict)
-            or str(info.get("status", "")).upper() != "WAITING"
-        ):
-            return None
-        runner_status, runner_info = oidf.oidf_api_request(
-            "GET",
-            server,
-            f"api/runner/{module_id}",
-            token,
-            expected_statuses={200, 404},
-        )
-        exposed = (
-            runner_info.get("exposed")
-            if runner_status == 200 and isinstance(runner_info, dict)
-            else None
-        )
-        endpoint = (
-            exposed.get("credential_offer_endpoint")
-            if isinstance(exposed, dict)
-            else None
-        )
-        if not isinstance(endpoint, str):
-            return None
-        return suite_callback_url(server, endpoint)
-
     def drive_issuer(self, module_id: str, info: dict[str, object], variant: dict[str, object]) -> None:
         exposed = info.get("exposed")
         endpoint = exposed.get("credential_offer_endpoint") if isinstance(exposed, dict) else None
@@ -416,52 +373,36 @@ class Openid4vcDriver:
         grant = str(variant.get("vci_grant_type", "authorization_code"))
         grant_type = PRE_AUTHORIZED_CODE_GRANT if grant == "pre_authorization_code" else "authorization_code"
         tx_code = issuer.get("tx_code") if grant == "pre_authorization_code" else None
-        test_name = str(info.get("testName") or info.get("name") or "")
-        expected_offers = (
-            2
-            if grant == "pre_authorization_code"
-            and test_name == PRE_AUTHORIZED_MULTIPLE_CLIENTS_TEST
-            else 1
+        offer = request_json(
+            "POST",
+            urllib.parse.urljoin(
+                str(self.config["target_origin"]), "/openid4vci/offers"
+            ),
+            str(issuer["management_token"]),
+            {
+                "subject_id": issuer["subject_id"],
+                "credential_configuration_ids": [configuration_id],
+                "grant_types": [grant_type],
+                **({"tx_code": tx_code} if tx_code else {}),
+                "expires_in": 300,
+            },
         )
-        while (
-            endpoint is not None
-            and self.issuer_offer_deliveries.get(module_id, 0) < expected_offers
-        ):
-            delivered = self.issuer_offer_deliveries.get(module_id, 0)
-            offer = request_json(
-                "POST",
-                urllib.parse.urljoin(
-                    str(self.config["target_origin"]), "/openid4vci/offers"
-                ),
-                str(issuer["management_token"]),
-                {
-                    "subject_id": issuer["subject_id"],
-                    "credential_configuration_ids": [configuration_id],
-                    "grant_types": [grant_type],
-                    **({"tx_code": tx_code} if tx_code else {}),
-                    "expires_in": 300,
-                },
+        if issuer.get("offer_delivery", "uri") == "value":
+            value = json.dumps(offer["credential_offer"], separators=(",", ":"))
+            callback = (
+                f"{endpoint}?"
+                f"{urllib.parse.urlencode({'credential_offer': value})}"
             )
-            if issuer.get("offer_delivery", "uri") == "value":
-                value = json.dumps(offer["credential_offer"], separators=(",", ":"))
-                callback = (
-                    f"{endpoint}?"
-                    f"{urllib.parse.urlencode({'credential_offer': value})}"
-                )
-            else:
-                callback = (
-                    f"{endpoint}?"
-                    f"{urllib.parse.urlencode({'credential_offer_uri': offer['credential_offer_uri']})}"
-                )
-            get_url(callback)
-            delivered += 1
-            self.issuer_offer_deliveries[module_id] = delivered
-            print(
-                f"OpenID4VC driver delivered credential offer {delivered} "
-                f"to {module_id}",
-                flush=True,
+        else:
+            callback = (
+                f"{endpoint}?"
+                f"{urllib.parse.urlencode({'credential_offer_uri': offer['credential_offer_uri']})}"
             )
-            endpoint = self.waiting_credential_offer_endpoint(module_id)
+        get_url(callback)
+        print(
+            f"OpenID4VC driver delivered credential offer to {module_id}",
+            flush=True,
+        )
         self.triggered.add(module_id)
 
     def drive_verifier(self, module_id: str, info: dict[str, object], variant: dict[str, object], haip: bool) -> None:

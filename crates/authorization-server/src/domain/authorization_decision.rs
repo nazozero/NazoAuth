@@ -324,5 +324,5 @@ fn record_decision_audit(event: &str, payload: &nazo_auth::ConsentPayload, sourc
 }
 
 #[cfg(test)]
-#[path = "../../tests/source_mounted/src/http/authorization/tests/decision.rs"]
+#[path = "../../tests/unit/domain/authorization_decision.rs"]
 mod tests;

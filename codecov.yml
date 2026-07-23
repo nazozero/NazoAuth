@@ -22,7 +22,7 @@ coverage:
 ignore:
   # Generated Diesel table declarations. Protocol and persistence behavior is
   # tested through repository/handler code, not by executing generated macros.
-  - "crates/authorization-server/src/schema.rs"
+  - "crates/authorization-server/tests/support/schema.rs"
   # Third-party macro expansions can appear in local llvm-cov LCOV output when
   # generic derive/test code is instantiated by this crate. They are dependency
   # implementation details, not project behavior.

@@ -711,5 +711,5 @@ fn non_empty(value: String) -> Option<String> {
 }
 
 #[cfg(test)]
-#[path = "../../../tests/source_mounted/src/http/token/tests/device.rs"]
+#[path = "../../../tests/unit/http/token/device.rs"]
 mod tests;

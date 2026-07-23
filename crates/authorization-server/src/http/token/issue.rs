@@ -5,15 +5,8 @@ use crate::adapters::audit::audit_event;
 use crate::adapters::audit::audit_fields;
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::random_urlsafe_token;
-#[cfg(test)]
-use crate::domain::TestInfrastructure;
 use crate::domain::oidc_claims::oidc_id_token_user_claims;
-#[cfg(test)]
-use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
-#[cfg(test)]
-use crate::domain::tenancy::DEFAULT_REALM_ID;
-#[cfg(test)]
-use crate::domain::tenancy::DEFAULT_TENANT_ID;
+
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::http::dpop::DpopErrorContext;
 use crate::http::dpop::dpop_error_response;
@@ -24,11 +17,9 @@ use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
 use chrono::{Duration, Utc};
-#[cfg(test)]
-use nazo_auth::OidcClaimRequest;
+
 use nazo_auth::normalize_authorization_details;
-#[cfg(test)]
-use nazo_http_actix::OAuthJsonErrorFields;
+
 use nazo_http_actix::{ClientIpHeaderMode, IpCidr};
 use nazo_http_actix::{json_response_no_store, oauth_token_error};
 use nazo_key_management::signing_algorithm_name;
@@ -752,44 +743,9 @@ pub(crate) async fn issue_token_response_with_service(
 }
 
 #[cfg(test)]
-pub(crate) fn test_authorization_service(
-    state: &TestInfrastructure,
-) -> crate::http::authorization::ServerAuthorizationService {
-    let connection = state.valkey_connection();
-    crate::http::authorization::ServerAuthorizationService::new(
-        nazo_postgres::AuthorizationFlowRepository::new(state.diesel_db.clone(), DEFAULT_TENANT_ID),
-        nazo_valkey::AuthorizationStateAdapter::new(&connection),
-        state.keyset.clone(),
-    )
-}
+#[path = "../../../tests/support/http/token/issue.rs"]
+pub(crate) mod test_support;
 
 #[cfg(test)]
-pub(crate) async fn issue_token_response(
-    state: &TestInfrastructure,
-    client: &ClientRow,
-    issue: TokenIssue,
-) -> HttpResponse {
-    let service = ServerTokenService::new(
-        nazo_postgres::TokenIssuanceRepository::new(state.diesel_db.clone()),
-        nazo_valkey::TokenIssuanceStateAdapter::new(&state.valkey_connection()),
-        state.keyset.clone(),
-    );
-    let config = TokenIssuanceConfig::from(state.settings.as_ref());
-    let modules = state.active_module_snapshot();
-    let authorization = test_authorization_service(state);
-    issue_token_response_with_service(
-        &TokenIssuanceContext {
-            config: &config,
-            modules: &modules,
-            authorization: &authorization,
-        },
-        &service,
-        client,
-        issue,
-    )
-    .await
-}
-
-#[cfg(test)]
-#[path = "../../../tests/source_mounted/src/http/token/tests/issue.rs"]
+#[path = "../../../tests/unit/http/token/issue.rs"]
 mod tests;

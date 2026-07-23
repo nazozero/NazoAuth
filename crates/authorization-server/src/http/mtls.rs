@@ -6,16 +6,11 @@
 
 use crate::adapters::security::constant_time_eq;
 use crate::domain::ClientRow;
-#[cfg(test)]
-use crate::domain::tenancy::{DEFAULT_ORGANIZATION_ID, DEFAULT_REALM_ID, DEFAULT_TENANT_ID};
-#[cfg(test)]
-use crate::settings::Settings;
+
 use actix_web::HttpRequest;
-#[cfg(test)]
-use actix_web::http::header;
+
 use actix_web::http::header::HeaderMap;
-#[cfg(test)]
-use actix_web::http::header::HeaderValue;
+
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use chrono::Utc;
@@ -26,14 +21,11 @@ use openssl::asn1::Asn1Time;
 use openssl::nid::Nid;
 use openssl::x509::{X509, X509NameRef};
 use serde_json::Value;
-#[cfg(test)]
-use serde_json::json;
+
 use sha2::Digest;
 use sha2::Sha256;
 use std::cmp::Ordering;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
-#[cfg(test)]
-use uuid::Uuid;
 
 const VERIFY_HEADER: &str = "x-ssl-client-verify";
 const DIRECT_THUMBPRINT_HEADERS: &[&str] = &[
@@ -62,22 +54,6 @@ const SAN_EMAIL_HEADERS: &[&str] = &[
 ];
 
 pub(crate) use nazo_http_actix::ClientCertificateFacts as MtlsClientCertificate;
-
-#[cfg(test)]
-pub(crate) fn request_mtls_thumbprint(req: &HttpRequest, settings: &Settings) -> Option<String> {
-    request_mtls_client_certificate(req, settings)?.thumbprint
-}
-
-#[cfg(test)]
-pub(crate) fn request_mtls_client_certificate(
-    req: &HttpRequest,
-    settings: &Settings,
-) -> Option<MtlsClientCertificate> {
-    if !request_from_trusted_proxy_cidrs(req, &settings.endpoint.trusted_proxy_cidrs) {
-        return None;
-    }
-    request_mtls_client_certificate_from_headers(req.headers())
-}
 
 pub(crate) fn request_mtls_thumbprint_from_trusted_proxy(
     req: &HttpRequest,
@@ -376,13 +352,6 @@ fn string_slices_match(left: &[String], right: &[String]) -> bool {
             .all(|(left, right)| constant_time_eq(left.as_bytes(), right.as_bytes()))
 }
 
-#[cfg(test)]
-fn merge_sorted_unique(target: &mut Vec<String>, incoming: Vec<String>) {
-    target.extend(incoming);
-    target.sort();
-    target.dedup();
-}
-
 fn decode_forwarded_pem(value: &str) -> String {
     let decoded = if value.contains('%') {
         urlencoding::decode(value)
@@ -493,5 +462,5 @@ fn registered_email_values_match(registered: &[String], actual: &[String]) -> bo
 }
 
 #[cfg(test)]
-#[path = "../../tests/source_mounted/src/support/tests/mtls.rs"]
+#[path = "../../tests/unit/http/mtls.rs"]
 mod tests;
