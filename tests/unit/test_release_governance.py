@@ -30,6 +30,9 @@ class ReleaseGovernanceTests(unittest.TestCase):
             "COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./",
             source,
         )
+        dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
+        self.assertIn(".env.*", dockerignore)
+        self.assertIn("!.env.yaml.example", dockerignore)
         final_stage = source.split("FROM runtime-base AS runtime", 1)[1].split(
             "FROM runtime AS perf-runtime", 1
         )[0]

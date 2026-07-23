@@ -189,6 +189,11 @@ def check_toolchain_pins() -> None:
         not in containerfile
     ):
         raise SystemExit("Containerfile builder must include the embedded initial config template")
+    dockerignore = (ROOT / ".dockerignore").read_text(encoding="utf-8")
+    if ".env.*" not in dockerignore or "!.env.yaml.example" not in dockerignore:
+        raise SystemExit(
+            ".dockerignore must exclude local environment files but include the initial template"
+        )
 
     workflows = sorted((ROOT / ".github" / "workflows").glob("*.yml"))
     rust_actions = []
