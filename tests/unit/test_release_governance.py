@@ -26,6 +26,8 @@ class ReleaseGovernanceTests(unittest.TestCase):
 
     def test_runtime_container_copies_only_the_unified_product_binary(self) -> None:
         source = (ROOT / "Containerfile").read_text(encoding="utf-8")
+        self.assertIn("target=/usr/local/cargo/registry,sharing=locked", source)
+        self.assertIn("target=/app/target,sharing=locked", source)
         self.assertIn(
             "COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./",
             source,
@@ -47,6 +49,41 @@ class ReleaseGovernanceTests(unittest.TestCase):
             "nazo-oauth-keyctl",
         ):
             self.assertNotIn(retired_binary, final_stage)
+
+    def test_public_quick_start_is_platform_neutral_compose(self) -> None:
+        public_guides = [
+            ROOT / "README.md",
+            ROOT / "README.zh-CN.md",
+            ROOT / "docs" / "operations" / "deployment.md",
+            ROOT / "docs" / "operations" / "deployment.zh-CN.md",
+            ROOT / "docs" / "operations" / "fresh-production-activation.md",
+            ROOT / "docs" / "operations" / "fresh-production-activation.zh-CN.md",
+        ]
+        forbidden = re.compile(
+            r"(?i)(?:\.ps1\b|\bpwsh\b|\bpowershell\b|[a-z]:\\|/home/nazoauth\b)"
+        )
+        for path in public_guides:
+            source = path.read_text(encoding="utf-8")
+            self.assertIsNone(
+                forbidden.search(source),
+                f"{path.relative_to(ROOT)} exposes a host-specific deployment path",
+            )
+
+        for path in (ROOT / "README.md", ROOT / "README.zh-CN.md"):
+            source = path.read_text(encoding="utf-8")
+            self.assertIn("docker compose up -d --build", source)
+            self.assertIn("docker compose ps", source)
+
+    def test_compose_quick_start_is_self_contained_and_project_scoped(self) -> None:
+        source = (ROOT / "compose.yml").read_text(encoding="utf-8")
+        self.assertIn("${NAZOAUTH_CONFIG:-./.env.yaml.example}", source)
+        self.assertIn('"127.0.0.1:${NAZOAUTH_PORT:-8000}:8000"', source)
+        self.assertIn("condition: service_completed_successfully", source)
+        self.assertIn("keys_data:/var/lib/nazo_oauth/keys", source)
+        self.assertIn("avatars_data:/var/lib/nazo_oauth/avatars", source)
+        self.assertNotIn("container_name:", source)
+        self.assertNotIn("ipv4_address:", source)
+        self.assertNotIn("name: nazo_oauth_net", source)
 
     def test_release_builds_once_and_publishes_one_executable(self) -> None:
         manifest = (

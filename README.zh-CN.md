@@ -61,33 +61,33 @@ Nazo Auth Server 是一个用 Rust 写的自托管 OAuth 2.x / OAuth 2.1-aligned
   HTTP 集成；不再提供历史 Axum/Tower 和 tonic adapter。
 - 发布安全 workflow：CodeQL、dependency review、cargo audit、cargo deny、SBOM、Trivy image scanning、keyless signing、provenance attestation。
 
-## 快速启动
+## 快速开始
 
-需要：
-
-- `rust-toolchain.toml` 精确锁定的 Rust stable 版本
-- PostgreSQL 18 或兼容版本
-- Valkey 8 或兼容 Redis protocol 的服务
-- 可选集成栈所需的容器运行时
-
-用 Docker Compose 启动：
+最快的方式只需要 Docker Compose：
 
 ```sh
-cp .env.yaml.example .env.yaml
-docker compose up -d nazo_oauth_server
-curl -fsS http://127.0.0.1:8000/health
-curl -fsS http://127.0.0.1:8000/.well-known/openid-configuration
+docker compose up -d --build
+docker compose ps
 ```
 
-首次直接启动服务时，NazoAuth 会创建 `.env.yaml` 后退出。检查生成的文件，将
-PostgreSQL 和 Valkey 地址改成可访问的服务，再执行迁移并启动：
+Compose 会启动 PostgreSQL、Valkey，执行数据库迁移，然后启动 NazoAuth。可打开
+`http://127.0.0.1:8000/health` 或
+`http://127.0.0.1:8000/.well-known/openid-configuration`。数据、签名密钥和头像
+使用命名卷，执行 `docker compose down` 后仍会保留。
+首次源码构建需要下载 Rust 依赖；后续构建会复用本地容器缓存。
+
+默认配置仅用于 loopback 本地体验。公开部署时，以 `.env.yaml.example` 为基础
+创建私有配置，并通过 Compose 变量 `NAZOAUTH_CONFIG` 选择它；完整流程见
+[部署指南](docs/operations/deployment.zh-CN.md)。
+
+直接运行二进制时，首次启动保护保持不变：
 
 ```sh
-cargo run --bin nazoauth -- server
-# 修改 .env.yaml 后再继续。
-cargo run --bin nazoauth -- migrate
-cargo run --bin nazoauth -- server
+nazoauth server
 ```
+
+如果当前目录没有 `.env.yaml`，该命令只创建模板并退出。修改配置后再执行
+`nazoauth migrate` 和 `nazoauth server`，避免以示例秘密或错误 issuer 意外启动。
 
 ## 配置
 

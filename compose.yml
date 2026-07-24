@@ -5,9 +5,8 @@ services:
     build:
       context: .
       dockerfile: Containerfile
-    container_name: nazo-oauth-migrate
     volumes:
-      - ./.env.yaml:/app/.env.yaml:ro
+      - ${NAZOAUTH_CONFIG:-./.env.yaml.example}:/app/.env.yaml:ro
     command: ["nazoauth", "migrate"]
     depends_on:
       postgres:
@@ -15,15 +14,19 @@ services:
     networks:
       nazo_oauth_net:
 
-  nazo_oauth_server:
+  server:
     build:
       context: .
       dockerfile: Containerfile
-    container_name: nazo-oauth-server
+    restart: unless-stopped
+    environment:
+      DATA_DIR: /var/lib/nazo_oauth
     volumes:
-      - ./.env.yaml:/app/.env.yaml:ro
-      - ./runtime/keys:/var/lib/nazo_oauth/keys
-      - ./runtime/avatars:/var/lib/nazo_oauth/avatars
+      - ${NAZOAUTH_CONFIG:-./.env.yaml.example}:/app/.env.yaml:ro
+      - keys_data:/var/lib/nazo_oauth/keys
+      - avatars_data:/var/lib/nazo_oauth/avatars
+    ports:
+      - "127.0.0.1:${NAZOAUTH_PORT:-8000}:8000"
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -31,30 +34,28 @@ services:
         condition: service_healthy
     networks:
       nazo_oauth_net:
-        ipv4_address: 10.101.0.20
     command: ["nazoauth", "server"]
 
   postgres:
     image: docker.io/library/postgres:18
-    container_name: nazo-oauth-postgres
+    restart: unless-stopped
     environment:
-      POSTGRES_DB: oauth
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-oauth}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d oauth"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
     networks:
       nazo_oauth_net:
-        ipv4_address: 10.101.0.10
 
   valkey:
     image: docker.io/valkey/valkey:8-alpine
-    container_name: nazo-oauth-valkey
+    restart: unless-stopped
     command: ["valkey-server", "--save", "60", "1", "--loglevel", "warning"]
     volumes:
       - valkey_data:/data
@@ -65,17 +66,13 @@ services:
       retries: 10
     networks:
       nazo_oauth_net:
-        ipv4_address: 10.101.0.11
 
 volumes:
   postgres_data:
   valkey_data:
+  keys_data:
+  avatars_data:
 
 networks:
   nazo_oauth_net:
-    name: nazo_oauth_net
     driver: bridge
-    ipam:
-      config:
-        - subnet: 10.101.0.0/24
-          gateway: 10.101.0.1

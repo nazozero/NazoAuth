@@ -107,32 +107,34 @@ composite score:
 
 ## Quick start
 
-Requirements:
-
-- The exact Rust stable version pinned by `rust-toolchain.toml`
-- PostgreSQL 18 or a compatible PostgreSQL server
-- Valkey 8 or a compatible Redis protocol server
-- Container runtime for the optional integration stack
-
-Run with Docker Compose:
+The fastest path requires only Docker Compose:
 
 ```sh
-cp .env.yaml.example .env.yaml
-docker compose up -d nazo_oauth_server
-curl -fsS http://127.0.0.1:8000/health
-curl -fsS http://127.0.0.1:8000/.well-known/openid-configuration
+docker compose up -d --build
+docker compose ps
 ```
 
-On the first direct server run, NazoAuth creates `.env.yaml` and exits. Review
-the generated file, point it at reachable PostgreSQL and Valkey services, then
-run migrations and start the server:
+Compose starts PostgreSQL, Valkey, runs migrations once, and starts NazoAuth.
+Open `http://127.0.0.1:8000/health` or
+`http://127.0.0.1:8000/.well-known/openid-configuration`. Data, signing keys,
+and avatars use named volumes and survive `docker compose down`.
+The first source build downloads Rust dependencies; later builds reuse the
+local container cache.
+
+For a custom or public issuer, create a private `.env.yaml` from the example
+and set `NAZOAUTH_CONFIG` to that file before starting Compose. See the
+[deployment guide](docs/operations/deployment.md) for TLS and production
+requirements.
+
+For a direct binary run, the first `server` invocation creates `.env.yaml` and
+exits so the generated configuration can be reviewed:
 
 ```sh
-cargo run --bin nazoauth -- server
-# Edit .env.yaml before continuing.
-cargo run --bin nazoauth -- migrate
-cargo run --bin nazoauth -- server
+nazoauth server
 ```
+
+Edit the configuration, then run `nazoauth migrate` and `nazoauth server`.
+This prevents an accidental start with example secrets or the wrong issuer.
 
 ## Configuration
 
