@@ -35,12 +35,29 @@
 | B4 | 迁移、启动、切流 | 在 B3 后 |
 | B5 | 创建两条隔离的全新用户旅程 | 用户之间可并行，单个用户内部有序 |
 | 闸门 B | 用户、资料、管理员和冒烟检查通过 | 串行汇合 |
-| C1 | OIDC/FAPI 矩阵 | 在闸门 B 后 |
-| C2 | OpenID4VC 矩阵 | 在 C1 后 |
-| 闸门 C | 证据和清理通过 | 正式启用 |
+| C1 | OIDC/FAPI 矩阵 | 在闸门 B 后；内部按阶段调度 |
+| C2 | OpenID4VC 矩阵 | 在闸门 B 后；C1 worktree 建立后可与 C1 重叠 |
+| 闸门 C | 两套矩阵、证据和清理通过 | 正式启用 |
 
-OIDF 计划使用 `--plan-group-size 1`，因为它们共享浏览器会话、动态客户端和代理
-状态。只读健康监控、日志哈希和已完成结果汇总可以并行。
+不要把全串行或无限并发作为默认方案，应使用有界 DAG：
+
+| 通道 | 当前 8 vCPU 主机配置 | 必须满足的隔离 |
+| --- | --- | --- |
+| OIDC/FAPI `01`、`02`、`04`-`07` | 2 个组 worker | 每个 worker 使用独立、干净的 suite worktree；别名和导出目录互不重叠 |
+| FAPI-CIBA `03a`-`03d` | 串行 | 共享申请人和 CIBA 时序状态；每组内部同时使用 `--no-parallel` |
+| Logout/session `08`-`11` | 2 个组 worker | 每个 worker 使用独立 suite worktree；每组内部使用 `--no-parallel` |
+| OpenID4VC | 17 个计划作为一个有界批次 | 独立 run namespace、别名、onboarding state 和基础 suite 配置 |
+
+先启动 OIDC/FAPI。等它完成基础 suite 干净检查、创建 worker worktree，并已启动
+`01` 组后，再启动 OpenID4VC。顺序反过来时，OpenID4VC 的临时配置会被 OIDC
+干净预检正确拒绝。之后两套矩阵并行执行，在闸门 C 汇合。
+
+该配置有意不采用单独运行 OIDC 时的最快档。4 个 OIDC 安全组 worker 只带来
+有限墙钟收益，却使 suite CPU 和内存约翻倍，并令主机接近 CPU 上限。联合生产
+闸门使用 `--safe-group-workers 2 --browser-group-workers 2`。可移植的保守回退
+是两个 OIDC 通道各 1 个 worker，OpenID4VC 使用 `--plan-group-size 1`。只读
+监控、日志哈希和结果汇总仍可并行。该决策的实测数据及失败启动顺序记录见
+[2026-07-24 OIDF 并发调优记录](2026-07-24-oidf-concurrency-tuning.zh-CN.md)。
 
 ## A：不停机准备
 
@@ -119,12 +136,21 @@ Compose 部署已经把候选服务发布到 loopback，不需要绑定某一种
 - `/.well-known/openid-configuration`；
 - `/ui/auth` 及其引用的至少一个静态资源。
 
-从精确、干净的源码导出依次执行：
+从精确、干净的源码导出执行：
 
-1. OIDC/FAPI 全矩阵，`--plan-group-size 1`；
-2. 清理动态客户端、浏览器会话和临时代理状态；
-3. OpenID4VC 全矩阵，`--plan-group-size 1`；
-4. 清理 onboarding state、生成的计划配置和临时私钥。
+1. 使用 `--safe-group-workers 2 --browser-group-workers 2` 启动
+   OIDC/FAPI；
+2. 等隔离 suite worktree 建立后，使用 `--plan-group-size 17` 启动
+   OpenID4VC；
+3. 由 OIDC runner 串行完成四个 CIBA 组，并等待两套矩阵汇合；
+4. 两套矩阵都必须通过即时检查和 45 秒稳定检查；
+5. 清理动态客户端、浏览器会话、临时代理状态、onboarding state、生成的 suite
+   配置、临时私钥和 suite worktree。
+
+验证运维 runner 时，runner revision 可以暂时与已部署应用 revision 不同，但
+边界必须明确：单独传入精确 runner revision，并让
+`--deployed-source-dir` 指向与 `--deployed-sha` 一致的干净源码。不得把 runner
+revision 写成已部署应用 revision。
 
 OpenID4VC operator 物化必须通过 `--subject-id` 绑定本次新申请人。只有本次确实
 请求至少一个 trust anchor 时，才要求 mTLS trust bundle 非空。
