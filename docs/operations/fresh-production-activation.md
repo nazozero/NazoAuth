@@ -37,13 +37,35 @@ gate.
 | B4 | migrate, start, and switch traffic | after B3 |
 | B5 | create two isolated fresh-user journeys | parallel per user, ordered within each user |
 | Gate B | users, profile, administrator, and smoke checks pass | serial join |
-| C1 | OIDC/FAPI matrix | after Gate B |
-| C2 | OpenID4VC matrix | after C1 |
-| Gate C | evidence and cleanup pass | production activation |
+| C1 | OIDC/FAPI matrix | after Gate B; phased internally |
+| C2 | OpenID4VC matrix | after Gate B; may overlap C1 after the C1 worktrees exist |
+| Gate C | both matrices, evidence, and cleanup pass | production activation |
 
-OIDF plans use `--plan-group-size 1` because they share browser sessions,
-dynamic clients, and proxy state. Read-only health monitoring, log hashing, and
-result summarization may run concurrently.
+Use a bounded DAG instead of either full serialization or unbounded
+parallelism:
+
+| Lane | Current 8-vCPU host profile | Required isolation |
+| --- | --- | --- |
+| OIDC/FAPI groups `01`, `02`, `04`-`07` | 2 group workers | one clean suite worktree per worker; group aliases and exports remain disjoint |
+| FAPI-CIBA groups `03a`-`03d` | serial | shared applicant and CIBA timing state; each group also uses `--no-parallel` |
+| Logout/session groups `08`-`11` | 2 group workers | one suite worktree per worker; each group uses `--no-parallel` internally |
+| OpenID4VC | all 17 plans in one bounded group | its own run namespace, aliases, onboarding state, and base-suite configs |
+
+Start OIDC/FAPI first. Wait until it has verified the pristine base suite,
+created its worker worktrees, and started group `01`; only then start
+OpenID4VC. Reversing that order makes the OIDC pristine-suite preflight reject
+the temporary OpenID4VC configs. The two matrices then run concurrently and
+join at Gate C.
+
+This profile is deliberately below the fastest standalone OIDC setting.
+Four OIDC safe-group workers reduced wall time only modestly while roughly
+doubling suite CPU and memory and taking the host close to its CPU limit.
+Use `--safe-group-workers 2 --browser-group-workers 2` for the joint production
+gate. The portable fallback is one worker for both OIDC lanes and
+`--plan-group-size 1` for OpenID4VC. Read-only monitoring, log hashing, and
+result summarization may run concurrently with either profile. The measurements
+and failed-order preflight that produced this decision are recorded in the
+[2026-07-24 concurrency tuning record](2026-07-24-oidf-concurrency-tuning.zh-CN.md).
 
 ## A. Prepare without downtime
 
@@ -129,12 +151,22 @@ Verify the public HTTPS origin:
 - `/.well-known/openid-configuration`;
 - `/ui/auth` and at least one referenced asset.
 
-Run conformance from an exact, clean source export:
+Run conformance from exact, clean source exports:
 
-1. OIDC/FAPI full matrix with `--plan-group-size 1`;
-2. clean dynamic clients, browser sessions, and temporary proxy state;
-3. OpenID4VC full matrix with `--plan-group-size 1`;
-4. clean onboarding state, generated plan configs, and temporary private keys.
+1. start OIDC/FAPI with `--safe-group-workers 2` and
+   `--browser-group-workers 2`;
+2. after its isolated suite worktrees exist, start OpenID4VC with
+   `--plan-group-size 17`;
+3. let the OIDC runner serialize all four CIBA groups and join both matrices;
+4. require both immediate and 45-second stabilized complete-matrix checks;
+5. clean dynamic clients, browser sessions, temporary proxy state, onboarding
+   state, generated suite configs, private keys, and suite worktrees.
+
+Runner and deployment revisions may differ while operational tooling is being
+validated, but that boundary must be explicit. In that case pass the exact
+runner revision separately and point `--deployed-source-dir` at a clean
+checkout matching `--deployed-sha`; never describe the runner revision as the
+deployed application revision.
 
 The OpenID4VC operator material must bind the current fresh applicant through
 `--subject-id`. Require a non-empty mTLS trust bundle only when the current run
