@@ -8,11 +8,11 @@ use nazo_http_actix::{
 };
 use nazo_postgres::{DbPool, RuntimeModuleRepository};
 use nazo_runtime_modules::{
-    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredStateUpdate,
-    DesiredStateUpdateOutcome, ModuleCatalog, ModuleEventPage, ModuleId, ModuleLifecycle,
-    ModuleRevision, ModuleState, ModuleStateRepository, ReconcileOutcome, RegistryError,
-    RuntimeModuleManagement, RuntimeModuleManagementError, RuntimeModuleRegistry,
-    RuntimeModuleView,
+    ActiveModuleSnapshot, CasOutcome, CatalogDurations, DesiredMode, DesiredStateChange,
+    DesiredStateRecord, DesiredStateUpdate, DesiredStateUpdateOutcome, ModuleCatalog,
+    ModuleEventPage, ModuleId, ModuleLifecycle, ModuleRevision, ModuleState, ModuleStateRepository,
+    ReconcileOutcome, RegistryError, RuntimeModuleManagement, RuntimeModuleManagementError,
+    RuntimeModuleRegistry, RuntimeModuleView,
 };
 
 use crate::settings::Settings;
@@ -92,19 +92,8 @@ impl RuntimeModules {
             repository: repository.clone(),
         });
         let instance_id = runtime_instance_id()?;
-        let seed_registry = Arc::new(RuntimeModuleRegistry::new(
-            repository.clone(),
-            lifecycle.clone(),
-            catalog.clone(),
-            instance_id.clone(),
-            ActiveModuleSnapshot {
-                revision: ModuleRevision::new(0),
-                accepting: inherited_enabled,
-                draining: BTreeSet::new(),
-            },
-        ));
         let (accepting, draining) =
-            seed_desired_states(&repository, &seed_registry, &catalog, &instance_id).await?;
+            seed_desired_states(&repository, &catalog, &instance_id).await?;
         let registry = Arc::new(RuntimeModuleRegistry::new(
             repository.clone(),
             lifecycle,
@@ -267,29 +256,38 @@ fn module_catalog(
 
 async fn seed_desired_states(
     repository: &RuntimeModuleRepository,
-    registry: &ServerRuntimeModuleRegistry,
     catalog: &ModuleCatalog,
     instance_id: &str,
 ) -> anyhow::Result<(BTreeSet<ModuleId>, BTreeSet<ModuleId>)> {
-    let mut accepting = BTreeSet::new();
-    let mut draining = BTreeSet::new();
+    // Bootstrap every record before applying dependency policy. The runtime
+    // administration path assumes that the complete closed catalog already
+    // exists, so using it to insert records one at a time makes first startup
+    // depend on enum order. CAS keeps concurrent first starts idempotent.
     for module_id in ModuleId::ALL {
         if repository.read_desired(module_id).await?.is_none() {
-            match registry
-                .set_desired_mode(
-                    module_id,
-                    DesiredMode::Inherit,
-                    None,
-                    None,
-                    Some("initial configuration inheritance".to_owned()),
-                    SystemTime::now(),
-                )
+            match repository
+                .compare_and_set_desired(DesiredStateChange {
+                    expected_revision: None,
+                    next: DesiredStateRecord {
+                        module_id,
+                        mode: DesiredMode::Inherit,
+                        revision: ModuleRevision::new(1),
+                        actor_id: None,
+                        reason: Some("initial configuration inheritance".to_owned()),
+                        updated_at: SystemTime::now(),
+                    },
+                })
                 .await
                 .map_err(|error| anyhow::anyhow!("runtime desired-state seed failed: {error:?}"))?
             {
                 CasOutcome::Applied(_) | CasOutcome::Stale { .. } => {}
             }
         }
+    }
+
+    let mut accepting = BTreeSet::new();
+    let mut draining = BTreeSet::new();
+    for module_id in ModuleId::ALL {
         let desired = repository
             .read_desired(module_id)
             .await?

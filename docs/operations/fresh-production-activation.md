@@ -1,163 +1,164 @@
 # Fresh Deployment and Production Activation
 
-This runbook replaces the NazoAuth runtime containers and the old remote source
-tree, starts PostgreSQL on a new database and new volume, deploys immutable
-backend/frontend commits, and promotes the candidate only after host-local OIDF
-conformance passes. For normal data-preserving releases, use
-[deployment.md](deployment.md).
+This runbook intentionally replaces the current NazoAuth data plane and gates
+activation on host-local OIDF conformance. It is not the quick-start path. For
+a normal first deployment or upgrade, use [Deployment Guide](deployment.md).
+
+The procedure uses Docker Compose as its platform-neutral control interface.
+An operator may use another orchestrator if it preserves the same ordering,
+isolation, persistence, and verification boundaries.
 
 ## Completion boundary
 
-Production activation requires all of the following:
+Production is active only when all of these are true:
 
-1. clean, pushed, exact backend and frontend commits;
-2. an application image containing only the `nazoauth` application binary;
-3. a newly created PostgreSQL database on a newly created volume;
-4. successful migration, health, discovery, UI, and public asset checks;
-5. passing host-local OIDC/FAPI and OpenID4VC OIDF matrices;
-6. a record of commits, image ID, database and volume names, backup path, suite
-   revision, result directories, counts, and activation time.
+1. backend and frontend artifacts come from clean, exact, reviewed commits;
+2. the application image contains the single `nazoauth` binary;
+3. PostgreSQL and Valkey use newly created storage;
+4. migrations, health, discovery, and public UI checks pass;
+5. fresh applicant and administrator journeys pass through public APIs;
+6. host-local OIDC/FAPI and OpenID4VC matrices finish successfully;
+7. the activation record contains artifact, data, backup, and test evidence.
 
-Treat every conformance failure first as evidence of an incomplete deployment,
-configuration, or runtime transition. Do not convert failures into skips or
-expected failures to satisfy the activation gate.
+Do not turn a failure into an expected failure or skip merely to pass this
+gate.
 
-## Parallel/serial execution graph
-
-The workflow is a gated DAG:
+## Parallel and serial work
 
 | Stage | Work | Scheduling |
 | --- | --- | --- |
-| A1 | source verification, tests, exact-commit frontend build, image build | parallel with A2/A3 |
-| A2 | database dump, config/key manifest, old-source archive | parallel with A1/A3 |
-| A3 | capacity, network, proxy, and OIDF runner preflight | parallel with A1/A2 |
-| Gate A | A1, A2, and A3 all succeed | serial join before downtime |
-| B1 | stop writes and remove only inventoried NazoAuth/OIDF containers | serial |
-| B2 | verify the archive, then remove `/home/nazoAuth` | after B1 |
-| B3 | create new PostgreSQL/Valkey volumes and the new database | after B2 |
-| B4 | migrate, start the candidate, verify it, switch the UI | after B3 |
-| B5 | register and complete two fresh users through public APIs | after B4; users may run in parallel |
-| Gate B | both users log in, applicant profile is complete, admin is promoted | serial join |
-| C1 | production smoke tests | after Gate B |
-| C2 | host-local OIDC/FAPI matrix | after C1 |
-| C3 | host-local OpenID4VC matrix | after C2 |
-| Gate C | C1, C2, and C3 all succeed | production activation |
+| A1 | verify commits, test, build immutable artifacts | parallel with A2/A3 |
+| A2 | database backup, config/key manifest, source archive | parallel with A1/A3 |
+| A3 | capacity, network, proxy, and OIDF preflight | parallel with A1/A2 |
+| Gate A | A1, A2, and A3 succeed | serial join before downtime |
+| B1 | stop writes and remove only inventoried containers | serial |
+| B2 | remove the verified old source directory | after B1 |
+| B3 | create new storage and an empty database | after B2 |
+| B4 | migrate, start, and switch traffic | after B3 |
+| B5 | create two isolated fresh-user journeys | parallel per user, ordered within each user |
+| Gate B | users, profile, administrator, and smoke checks pass | serial join |
+| C1 | OIDC/FAPI matrix | after Gate B |
+| C2 | OpenID4VC matrix | after C1 |
+| Gate C | evidence and cleanup pass | production activation |
 
-Independent A-stage jobs may run concurrently because they do not mutate the
-same state. The two B5 user journeys may run concurrently with separate codes,
-cookie jars, identities, and files, while each user's register/login/profile/
-avatar steps stay ordered. OIDC/FAPI and OpenID4VC remain serial with
-`--plan-group-size 1`: they share browser sessions, dynamic clients, and proxy
-state. Result summarization, log hashing, and read-only production monitoring
-may run in parallel after each matrix ends.
+OIDF plans use `--plan-group-size 1` because they share browser sessions,
+dynamic clients, and proxy state. Read-only health monitoring, log hashing, and
+result summarization may run concurrently.
 
-## Destructive-action boundary
+## A. Prepare without downtime
 
-Create a root-only backup directory and record exact container and volume
-inventories before removal. Back up the current database with `pg_dump -Fc`,
-copy the root-only runtime configuration, hash the runtime key files, require a
-clean `/home/nazoAuth` worktree, and archive its exact commit with
-`git archive`. Validate the dump list through
-`podman run --rm -i postgres:18 pg_restore --list <oauth.dump` rather than
-assuming the host has `pg_restore`; also validate the tar listing and hashes
-before entering downtime. Record the size of `target` but do not archive that
-reproducible build cache.
+### A1. Build the exact artifact
 
-Remove only names reviewed in the inventory, such as:
+Require clean, pushed source commits and run the repository quality gates.
+Build once and record the image ID and source revision:
 
-```text
-nazo-oauth-server
-nazo-oauth-server-rollback-*
-nazo-oauth-postgres
-nazo-oauth-valkey
-the explicitly inventoried OIDF compose containers
+```sh
+docker compose build
+docker compose images
 ```
 
-Never use a broad image/label match to delete containers. Preserve the old
-PostgreSQL and Valkey volumes as recovery points. Verify
-`realpath /home/nazoAuth` and the source archive before deleting that exact
-directory. Do not recreate it.
+If a registry or isolated builder supplies the image, pin its digest and verify
+the embedded source revision. Do not rebuild the same commit independently in
+each later stage.
 
-## Fresh data plane
+### A2. Create a recovery point
 
-Use a unique UTC run ID. Create new volumes named with that run ID and a new
-database such as `oauth_fresh_<run-id>`. Preserve the database credential from
-the root-only config, update only the database path in `DATABASE_URL`, and never
-print the credential. Start:
+Use a new, access-restricted backup directory. In parallel, capture:
 
-- PostgreSQL 18 as `nazo-oauth-postgres` on `nazo_oauth_net`,
-  network alias `postgres`, `10.101.0.10`, with the new database and new
-  volume;
-- Valkey 8 as `nazo-oauth-valkey` on `10.101.0.11`, with a new volume and the
-  network alias `valkey` and the existing persistence command.
+- exact container and volume inventory;
+- PostgreSQL custom-format dump;
+- runtime configuration and a key-file checksum manifest;
+- exact source commit archive;
+- current image ID and public UI revision.
 
-Require `pg_isready`, `valkey-cli ping`, and a database inventory showing only
-the new application database plus PostgreSQL system databases. Do not restore
-the old dump into the fresh database.
+Validate the database dump with a matching PostgreSQL image, validate the
+source archive listing, and verify every checksum. Do not enter downtime until
+all recovery evidence passes.
 
-## Immutable deployment
+### A3. Preflight
 
-Run [scripts/deploy_live.ps1](../../scripts/deploy_live.ps1) with exact pushed
-backend/frontend commits, explicit worktrees, issuer, and expected branches.
-Pre-merge deployments must name their review branches and must not claim
-`main`. The script rechecks sources and provenance, loads the immutable image,
-runs `nazoauth migrate`, starts `nazoauth server`, verifies the internal
-candidate and Angie upstream, atomically switches the UI, and verifies public
-assets. Pass the actual production Angie file explicitly:
-`-RemoteAngieConfigPath /usr/local/angie/conf/conf.d/auth.nazo.run.conf`.
+Confirm:
 
-An isolated trusted builder may supply a Docker archive through
-`-LocalImageArchive`. The script loads only the expected tag and revalidates the
-immutable image ID and `org.opencontainers.image.revision` against
-`BackendCommit`; the option is mutually exclusive with `-NoCacheBuild` and does
-not bypass frontend verification.
+- enough disk space for the new image, database, results, and rollback copy;
+- the intended reverse-proxy upstream and public HTTPS issuer;
+- the pinned OIDF suite revision and clean runner workspace;
+- unique names for the new database, storage, and result directories;
+- a tested rollback path that does not overwrite the backup.
 
-Export the exact backend commit with `git archive` to
-`/opt/nazo-oauth/conformance/sources/<backend-sha>` for conformance. The
-production image must not contain the OIDF runner or suite. The host-local
-runner must import from that source root, never from the deleted
-`/home/nazoAuth`, and both the source and operator-suite checks must include
-untracked files (`git status --porcelain`).
+## B. Replace the data plane
+
+1. Stop external writes.
+2. Remove only the application, PostgreSQL, Valkey, and OIDF containers listed
+   in the reviewed inventory. Preserve old volumes as rollback evidence.
+3. Verify the source archive again, resolve the exact old source path, then
+   remove only that directory.
+4. Create new PostgreSQL, Valkey, key, and avatar storage. Start an empty
+   database; do not restore the old dump.
+5. Select the new private configuration through `NAZOAUTH_CONFIG`.
+6. Run migration and start the server:
+
+```sh
+docker compose up -d
+docker compose ps
+```
+
+Keep the reverse proxy on the old target until health and discovery pass, then
+switch it atomically to the candidate. A Compose-only single-node deployment
+already exposes the candidate on loopback and does not need a proxy-specific
+release script.
 
 ## Fresh-user gate
 
-Do not reuse users, sessions, or subject IDs from the previous database.
-Register the applicant and administrator through `/auth/register` with
-independent one-time codes, then log in and complete `PATCH /auth/me` and
-`POST /auth/me/avatar` through the public API. The two users may be prepared in
-parallel when all identity and session material is isolated.
+Do not reuse users, sessions, or subject IDs from the old database.
 
-There is currently no public first-administrator bootstrap. After both public
-registrations, promote only the new administrator with one controlled SQL
-update; never insert users directly or copy old records. Log in again through
-the public API and record both IDs. The applicant profile must contain all
-claims required by the OIDC `profile`, `address`, and `phone` scopes.
+Create an applicant and administrator through `/auth/register` using separate
+verification codes and cookie jars. For each user, keep registration, login,
+profile update, and avatar upload ordered. The two user journeys may run in
+parallel when their identity and session material is isolated.
 
-## Production and OIDF gates
+If no public first-administrator bootstrap exists, promote only the freshly
+registered administrator through one controlled database update. Never insert
+users directly or copy old records. Complete every applicant claim required by
+the OIDC `profile`, `address`, and `phone` scopes.
 
-Require public health, discovery, login UI, and referenced asset checks before
-starting conformance. Recreate the pinned-revision host-local OIDF compose
-project on its own network. Run the OIDC/FAPI full matrix, clean its dynamic
-state, then run the OpenID4VC full matrix and clean its onboarding/private
-material. Use unique result directories under
-`/opt/nazo-oauth/conformance/results`.
+## C. Production and OIDF gates
 
-Materializing the operator-black-box OpenID4VC matrix must pass the current
-fresh applicant as `--subject-id <applicant-user-id>`; a subject ID embedded in
-an old template is not portable. Require a non-empty mTLS trust bundle only
-when at least one client in the current onboarding run requested a trust
-anchor. An empty bundle is valid when every client omitted one.
+Verify the public HTTPS origin:
+
+- `/health`;
+- `/.well-known/openid-configuration`;
+- `/ui/auth` and at least one referenced asset.
+
+Run conformance from an exact, clean source export:
+
+1. OIDC/FAPI full matrix with `--plan-group-size 1`;
+2. clean dynamic clients, browser sessions, and temporary proxy state;
+3. OpenID4VC full matrix with `--plan-group-size 1`;
+4. clean onboarding state, generated plan configs, and temporary private keys.
+
+The OpenID4VC operator material must bind the current fresh applicant through
+`--subject-id`. Require a non-empty mTLS trust bundle only when the current run
+requested at least one trust anchor.
+
+Both the product source and OIDF suite must finish with
+`git status --porcelain` empty, including untracked files.
+
+## Activation record
 
 Record:
 
 ```text
-run_id, backend_sha, frontend_sha, image_id
-database_name, postgres_volume, valkey_volume, backup_root
-deployment_record, oidf_suite_revision
-OIDC result directory and passed/total
-OpenID4VC result directory and passed/total
-activation timestamp (UTC)
+activation status and UTC time
+backend/frontend commits
+image name, digest, and source revision
+new database and storage identifiers
+backup identifier and verification status
+deployment/orchestrator revision
+OIDF suite revision
+OIDC/FAPI result directory, counts, and exit code
+OpenID4VC result directory, counts, and exit code
+source, suite, onboarding, and private-material cleanup status
 ```
 
-Until both matrices are fully passing, the state is “candidate deployed,” not
-“production activated.”
+Until both matrices and cleanup gates pass, the state is “candidate deployed,”
+not “production activated.”
