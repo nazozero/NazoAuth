@@ -91,6 +91,7 @@ fn oauth_error_name(response: &HttpResponse) -> Option<String> {
 
 fn create_client_request(client_name: &str) -> CreateClientRequest {
     CreateClientRequest {
+        conformance_lease_id: None,
         client_name: client_name.to_owned(),
         client_type: "confidential".to_owned(),
         redirect_uris: vec!["https://client.example/callback".to_owned()],
@@ -186,9 +187,11 @@ impl LiveAdminClientUpdateFixture {
         });
         let valkey = valkey_builder.build().expect("valkey client should build");
         valkey.init().await.expect("valkey should connect");
+        let diesel_db = create_pool(database_url, 4).expect("database pool should build");
+        crate::test_support::initialize_audit_dependencies(&diesel_db);
         let fixture = Self {
             state: Data::new(TestInfrastructure {
-                diesel_db: create_pool(database_url, 4).expect("database pool should build"),
+                diesel_db,
                 valkey,
                 settings: Arc::new(settings),
                 keyset: crate::test_support::test_key_manager(),
@@ -271,7 +274,7 @@ impl LiveAdminClientUpdateFixture {
         let payload = SessionPayload {
             user_id: user.id,
             auth_time: Utc::now().timestamp(),
-            amr: vec!["pwd".to_owned()],
+            amr: vec!["pwd".to_owned(), "otp".to_owned(), "mfa".to_owned()],
             pending_mfa: false,
             oidc_sid: Some(format!("oidc-{sid}")),
         };

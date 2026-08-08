@@ -42,6 +42,219 @@ fn task() -> TaskEnvelope {
     }
 }
 
+fn discovery_statement() -> DiscoveryStatement {
+    DiscoveryStatement {
+        schema: CONTROL_DISCOVERY_SCHEMA,
+        product: CONTROL_DISCOVERY_PRODUCT.to_owned(),
+        deployment_id: "deployment-1".to_owned(),
+        runtime_instance_id: "runtime-1".to_owned(),
+        issuer: "https://auth.example".to_owned(),
+        release: "v0.1.19".to_owned(),
+        revision: "a".repeat(40),
+        build_id: "github:123".to_owned(),
+        control_protocol_versions: vec![CONTROL_DISCOVERY_SCHEMA],
+        operator_protocol_versions: vec![PROTOCOL_VERSION],
+        instance_key_id: "instance-1".to_owned(),
+        nonce: "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8".to_owned(),
+        issued_at: 1_000,
+        expires_at: 1_060,
+    }
+}
+
+fn deployment_statement() -> DeploymentStatement {
+    let online = discovery_statement();
+    DeploymentStatement {
+        schema: online.schema,
+        product: online.product,
+        deployment_id: online.deployment_id,
+        runtime_instance_id: online.runtime_instance_id,
+        issuer: online.issuer,
+        release: online.release,
+        revision: online.revision,
+        build_id: online.build_id,
+        control_protocol_versions: online.control_protocol_versions,
+        operator_protocol_versions: online.operator_protocol_versions,
+        instance_key_id: online.instance_key_id,
+        issued_at: online.issued_at,
+    }
+}
+
+fn adoption_receipt() -> AdoptionReceipt {
+    AdoptionReceipt {
+        schema: CONTROL_DISCOVERY_SCHEMA,
+        deployment_id: "deployment-1".to_owned(),
+        issuer: "https://auth.example".to_owned(),
+        runtime_instances: vec![AdoptedRuntimeIdentity {
+            runtime_instance_id: "runtime-1".to_owned(),
+            backend: "podman".to_owned(),
+            object_reference: "container/nazoauth-manual".to_owned(),
+            artifact_identity: format!("sha256:{}", "a".repeat(64)),
+        }],
+        verified_release: "v0.1.19".to_owned(),
+        release_manifest_sha256: "b".repeat(64),
+        instance_key_ids: vec!["instance-1".to_owned()],
+        resource_references: BTreeMap::from([
+            (
+                "database".to_owned(),
+                "provider/postgresql-primary".to_owned(),
+            ),
+            ("runtime".to_owned(), "container/nazoauth-manual".to_owned()),
+        ]),
+        capabilities: BTreeMap::from([
+            ("database".to_owned(), "external:shared".to_owned()),
+            ("runtime".to_owned(), "managed:deployment".to_owned()),
+        ]),
+        recovery_proven: true,
+        recovery_evidence: vec!["snapshot/backup-1".to_owned()],
+        plan_sha256: "c".repeat(64),
+        adopted_at: 1_000,
+    }
+}
+
+#[test]
+fn golden_control_discovery_vector_is_stable_and_nonce_bound() {
+    let key = SigningKey::from_bytes(&[17; 32]);
+    let compact = sign_discovery_statement(&discovery_statement(), "instance-1", &key).unwrap();
+    assert_eq!(
+        compact,
+        "eyJhbGciOiJFZERTQSIsImtpZCI6Imluc3RhbmNlLTEiLCJ0eXAiOiJuYXpvYXV0aC1jb250cm9sLWRpc2NvdmVyeStqd3QifQ.eyJzY2hlbWEiOjEsInByb2R1Y3QiOiJuYXpvYXV0aCIsImRlcGxveW1lbnRfaWQiOiJkZXBsb3ltZW50LTEiLCJydW50aW1lX2luc3RhbmNlX2lkIjoicnVudGltZS0xIiwiaXNzdWVyIjoiaHR0cHM6Ly9hdXRoLmV4YW1wbGUiLCJyZWxlYXNlIjoidjAuMS4xOSIsInJldmlzaW9uIjoiYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYSIsImJ1aWxkX2lkIjoiZ2l0aHViOjEyMyIsImNvbnRyb2xfcHJvdG9jb2xfdmVyc2lvbnMiOlsxXSwib3BlcmF0b3JfcHJvdG9jb2xfdmVyc2lvbnMiOlsxXSwiaW5zdGFuY2Vfa2V5X2lkIjoiaW5zdGFuY2UtMSIsIm5vbmNlIjoiQUFFQ0F3UUZCZ2NJQ1FvTERBME9EeEFSRWhNVUZSWVhHQmthR3h3ZEhoOCIsImlzc3VlZF9hdCI6MTAwMCwiZXhwaXJlc19hdCI6MTA2MH0.vhgW-rjLNlNkKqGvmGtvTOSyMgmrLTHbFo6m3ZMP_Hho7V5ME41CVgzz9S3HRB6WEDPVizGSWTP7nIODBkhQBg"
+    );
+    assert_eq!(
+        verify_discovery_statement(
+            &compact,
+            "instance-1",
+            &key.verifying_key(),
+            &discovery_statement().nonce,
+            1_030,
+        )
+        .unwrap(),
+        discovery_statement()
+    );
+    assert!(
+        verify_discovery_statement(
+            &compact,
+            "instance-1",
+            &key.verifying_key(),
+            "AQECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+            1_030,
+        )
+        .is_err()
+    );
+}
+
+#[test]
+fn offline_deployment_statement_is_identity_evidence_not_artifact_trust() {
+    let key = SigningKey::from_bytes(&[17; 32]);
+    let offline = deployment_statement();
+    let compact = sign_deployment_statement(&offline, "instance-1", &key).unwrap();
+    assert_eq!(
+        verify_deployment_statement(&compact, "instance-1", &key.verifying_key()).unwrap(),
+        offline
+    );
+    assert_eq!(
+        protected_header(&compact).unwrap().typ,
+        DEPLOYMENT_STATEMENT_JWS_TYPE
+    );
+}
+
+#[test]
+fn adoption_receipt_roundtrips_and_enforces_bounded_recovery_evidence() {
+    let key = SigningKey::from_bytes(&[19; 32]);
+    let receipt = adoption_receipt();
+    let compact = sign_adoption_receipt(&receipt, "receipt-1", &key).unwrap();
+    assert_eq!(
+        verify_adoption_receipt(&compact, "receipt-1", &key.verifying_key()).unwrap(),
+        receipt
+    );
+    assert_eq!(
+        protected_header(&compact).unwrap().typ,
+        ADOPTION_RECEIPT_JWS_TYPE
+    );
+
+    let mut invalid = adoption_receipt();
+    invalid.schema += 1;
+    assert!(sign_adoption_receipt(&invalid, "receipt-1", &key).is_err());
+
+    let mut invalid = adoption_receipt();
+    invalid.runtime_instances.clear();
+    assert!(sign_adoption_receipt(&invalid, "receipt-1", &key).is_err());
+
+    let mut invalid = adoption_receipt();
+    invalid.runtime_instances = vec![invalid.runtime_instances[0].clone(); 129];
+    assert!(sign_adoption_receipt(&invalid, "receipt-1", &key).is_err());
+
+    let mut invalid = adoption_receipt();
+    invalid.resource_references = (0..65)
+        .map(|index| (format!("resource-{index}"), "external/shared".to_owned()))
+        .collect();
+    assert!(sign_adoption_receipt(&invalid, "receipt-1", &key).is_err());
+
+    let mut invalid = adoption_receipt();
+    invalid.recovery_evidence = vec!["snapshot/evidence".to_owned(); 65];
+    assert!(sign_adoption_receipt(&invalid, "receipt-1", &key).is_err());
+
+    let mut invalid = adoption_receipt();
+    invalid.runtime_instances[0].object_reference = "secret={must-not-be-recorded}".to_owned();
+    assert!(sign_adoption_receipt(&invalid, "receipt-1", &key).is_err());
+}
+
+#[test]
+fn discovery_and_offline_identity_fail_closed_on_invalid_claims() {
+    let key = SigningKey::from_bytes(&[17; 32]);
+    let nonce = discovery_statement().nonce;
+    assert!(
+        validate_discovery_request(&DiscoveryRequest {
+            schema: CONTROL_DISCOVERY_SCHEMA + 1,
+            nonce: nonce.clone(),
+        })
+        .is_err()
+    );
+    for invalid_nonce in ["short".to_owned(), "!".repeat(43)] {
+        assert!(
+            validate_discovery_request(&DiscoveryRequest {
+                schema: CONTROL_DISCOVERY_SCHEMA,
+                nonce: invalid_nonce,
+            })
+            .is_err()
+        );
+    }
+    assert!(decode_instance_public_key("AA").is_err());
+
+    let mut online = discovery_statement();
+    online.instance_key_id = "instance-other".to_owned();
+    assert!(sign_discovery_statement(&online, "instance-1", &key).is_err());
+    let forged = sign_compact(&online, "instance-1", CONTROL_DISCOVERY_JWS_TYPE, &key).unwrap();
+    assert!(
+        verify_discovery_statement(&forged, "instance-1", &key.verifying_key(), &nonce, 1_030,)
+            .is_err()
+    );
+
+    let mutations: [fn(&mut DiscoveryStatement); 5] = [
+        |statement: &mut DiscoveryStatement| statement.schema += 1,
+        |statement: &mut DiscoveryStatement| statement.product = "other".to_owned(),
+        |statement: &mut DiscoveryStatement| statement.control_protocol_versions.clear(),
+        |statement: &mut DiscoveryStatement| {
+            statement.operator_protocol_versions = vec![PROTOCOL_VERSION, PROTOCOL_VERSION]
+        },
+        |statement: &mut DiscoveryStatement| statement.expires_at = statement.issued_at + 61,
+    ];
+    for mutate in mutations {
+        let mut invalid = discovery_statement();
+        mutate(&mut invalid);
+        assert!(sign_discovery_statement(&invalid, "instance-1", &key).is_err());
+    }
+
+    let mut offline = deployment_statement();
+    offline.instance_key_id = "instance-other".to_owned();
+    assert!(sign_deployment_statement(&offline, "instance-1", &key).is_err());
+    let forged = sign_compact(&offline, "instance-1", DEPLOYMENT_STATEMENT_JWS_TYPE, &key).unwrap();
+    assert!(verify_deployment_statement(&forged, "instance-1", &key.verifying_key()).is_err());
+
+    let mut offline = deployment_statement();
+    offline.issued_at = 0;
+    assert!(sign_deployment_statement(&offline, "instance-1", &key).is_err());
+}
+
 #[test]
 fn golden_task_vector_is_stable_and_verifies() {
     let key = SigningKey::from_bytes(&[7; 32]);
@@ -55,6 +268,86 @@ fn golden_task_vector_is_stable_and_verifies() {
         task()
     );
     assert_eq!(compact_sha256(&compact).len(), 64);
+    assert_eq!(
+        protected_header(&compact).unwrap(),
+        ProtectedHeader {
+            alg: FixedAlgorithm::EdDSA,
+            kid: "controller-1".to_owned(),
+            typ: TASK_JWS_TYPE.to_owned(),
+        }
+    );
+}
+
+#[test]
+fn task_deployment_binding_requires_local_identity_and_exact_claims() {
+    let valid = task();
+    validate_task_deployment_binding(&valid, "deployment-1").unwrap();
+
+    for (mut invalid, expected) in [
+        (
+            {
+                let mut value = valid.clone();
+                value.deployment_id = "deployment-2".to_owned();
+                value
+            },
+            "deployment-1",
+        ),
+        (
+            {
+                let mut value = valid.clone();
+                value.iss = "controller:deployment-2".to_owned();
+                value
+            },
+            "deployment-1",
+        ),
+        (
+            {
+                let mut value = valid.clone();
+                value.aud = "runtime:deployment-2".to_owned();
+                value
+            },
+            "deployment-1",
+        ),
+    ] {
+        assert!(validate_task_deployment_binding(&invalid, expected).is_err());
+        invalid.deployment_id = expected.to_owned();
+        invalid.iss = format!("controller:{expected}");
+        invalid.aud = format!("runtime:{expected}");
+        validate_task_deployment_binding(&invalid, expected).unwrap();
+    }
+
+    assert!(validate_task_deployment_binding(&valid, "").is_err());
+}
+
+#[test]
+fn protected_header_rejects_untrusted_key_lookup_inputs() {
+    for header in [
+        serde_json::json!({
+            "alg": "EdDSA",
+            "kid": "../../controller",
+            "typ": TASK_JWS_TYPE,
+        }),
+        serde_json::json!({
+            "alg": "EdDSA",
+            "kid": "controller-1",
+            "typ": TASK_JWS_TYPE,
+            "jku": "https://attacker.example/jwks.json",
+        }),
+        serde_json::json!({
+            "alg": "none",
+            "kid": "controller-1",
+            "typ": TASK_JWS_TYPE,
+        }),
+    ] {
+        let compact = format!(
+            "{}.e30.AA",
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap())
+        );
+        assert!(matches!(
+            protected_header(&compact),
+            Err(ProtocolError::Header)
+        ));
+    }
 }
 
 #[test]
@@ -125,6 +418,198 @@ fn canonical_config_digest_is_order_independent() {
 }
 
 #[test]
+fn conformance_lease_task_is_public_material_only_and_time_bounded() {
+    let operation = TaskOperation::ConformanceLeaseCreate {
+        profile: "oidf-full".to_owned(),
+        material_sha256: "a".repeat(64),
+        dynamic_registration_initial_access_token_sha256: None,
+        ciba_automated_decision_token_sha256: None,
+        public_material: None,
+        ttl_seconds: 28_800,
+    };
+    validate_operation(&operation).unwrap();
+
+    for ttl_seconds in [0, 59, 86_401] {
+        assert!(
+            validate_operation(&TaskOperation::ConformanceLeaseCreate {
+                profile: "oidf-full".to_owned(),
+                material_sha256: "a".repeat(64),
+                dynamic_registration_initial_access_token_sha256: None,
+                ciba_automated_decision_token_sha256: None,
+                public_material: None,
+                ttl_seconds,
+            })
+            .is_err()
+        );
+    }
+    assert!(
+        validate_operation(&TaskOperation::ConformanceLeaseCreate {
+            profile: "oidf-full".to_owned(),
+            material_sha256: "A".repeat(64),
+            dynamic_registration_initial_access_token_sha256: None,
+            ciba_automated_decision_token_sha256: None,
+            public_material: None,
+            ttl_seconds: 60,
+        })
+        .is_err()
+    );
+}
+
+#[test]
+fn dynamic_registration_initial_access_token_binding_is_lowercase_and_profile_scoped() {
+    let digest = "b".repeat(64);
+    let operation = TaskOperation::ConformanceLeaseCreate {
+        profile: "oidc-fapi-ciba".to_owned(),
+        material_sha256: "a".repeat(64),
+        dynamic_registration_initial_access_token_sha256: Some(digest.clone()),
+        ciba_automated_decision_token_sha256: None,
+        public_material: None,
+        ttl_seconds: 300,
+    };
+    validate_operation(&operation).unwrap();
+
+    let mut uppercase = digest.clone();
+    uppercase.replace_range(..1, "B");
+    assert!(
+        validate_operation(&TaskOperation::ConformanceLeaseCreate {
+            profile: "oidc-fapi-ciba".to_owned(),
+            material_sha256: "a".repeat(64),
+            dynamic_registration_initial_access_token_sha256: Some(uppercase),
+            ciba_automated_decision_token_sha256: None,
+            public_material: None,
+            ttl_seconds: 300,
+        })
+        .is_err()
+    );
+    assert!(
+        validate_operation(&TaskOperation::ConformanceLeaseCreate {
+            profile: "oidf-full".to_owned(),
+            material_sha256: "a".repeat(64),
+            dynamic_registration_initial_access_token_sha256: Some(digest),
+            ciba_automated_decision_token_sha256: None,
+            public_material: None,
+            ttl_seconds: 300,
+        })
+        .is_err()
+    );
+}
+
+#[test]
+fn ciba_automated_decision_token_binding_is_lowercase_and_profile_scoped() {
+    let digest = "c".repeat(64);
+    validate_operation(&TaskOperation::ConformanceLeaseCreate {
+        profile: "oidc-fapi-ciba".to_owned(),
+        material_sha256: "a".repeat(64),
+        dynamic_registration_initial_access_token_sha256: None,
+        ciba_automated_decision_token_sha256: Some(digest.clone()),
+        public_material: None,
+        ttl_seconds: 300,
+    })
+    .unwrap();
+
+    assert!(
+        validate_operation(&TaskOperation::ConformanceLeaseCreate {
+            profile: "oidc-fapi-ciba".to_owned(),
+            material_sha256: "a".repeat(64),
+            dynamic_registration_initial_access_token_sha256: None,
+            ciba_automated_decision_token_sha256: Some("C".repeat(64)),
+            public_material: None,
+            ttl_seconds: 300,
+        })
+        .is_err()
+    );
+    assert!(
+        validate_operation(&TaskOperation::ConformanceLeaseCreate {
+            profile: "oidf-full".to_owned(),
+            material_sha256: "a".repeat(64),
+            dynamic_registration_initial_access_token_sha256: None,
+            ciba_automated_decision_token_sha256: Some(digest),
+            public_material: None,
+            ttl_seconds: 300,
+        })
+        .is_err()
+    );
+}
+
+#[test]
+fn conformance_lease_protocol_keeps_legacy_create_tasks_compatible() {
+    let operation: TaskOperation = serde_json::from_value(serde_json::json!({
+        "name": "conformance-lease-create",
+        "profile": "oidf-full",
+        "material_sha256": "a".repeat(64),
+        "ttl_seconds": 300,
+    }))
+    .unwrap();
+    assert!(matches!(
+        operation,
+        TaskOperation::ConformanceLeaseCreate {
+            dynamic_registration_initial_access_token_sha256: None,
+            ciba_automated_decision_token_sha256: None,
+            ..
+        }
+    ));
+    validate_operation(&operation).unwrap();
+}
+
+#[test]
+fn conformance_lease_receipts_do_not_echo_token_digests() {
+    let digest = "b".repeat(64);
+    let result = TaskResult::ConformanceLeaseCreated {
+        lease: ConformanceLeaseSummary {
+            lease_id: "018f3f2a-7b55-7a25-8f20-6d526f8f44e1".to_owned(),
+            profile: "oidc-fapi-ciba".to_owned(),
+            material_sha256: "a".repeat(64),
+            created_at: 1,
+            expires_at: 301,
+            revoked_at: None,
+            cleaned_at: None,
+        },
+    };
+    let encoded = serde_json::to_string(&result).unwrap();
+    assert!(!encoded.contains(&digest));
+    assert!(!encoded.contains("dynamic_registration_initial_access_token_sha256"));
+    assert!(!encoded.contains("ciba_automated_decision_token_sha256"));
+}
+
+#[test]
+fn openid4vc_lease_accepts_only_closed_public_trust_material() {
+    let material = Openid4vcConformanceTrust {
+        schema: 1,
+        client_attestation_issuer: "https://suite.example/".to_owned(),
+        client_attestation_jwks: serde_json::json!({"keys": [{"kty": "EC", "kid": "client"}]}),
+        key_attestation_jwks: serde_json::json!({"keys": [{"kty": "EC", "kid": "holder"}]}),
+        credential_trust_anchor_pem:
+            "-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----\n".to_owned(),
+    };
+    let operation = |material| TaskOperation::ConformanceLeaseCreate {
+        profile: "openid4vc".to_owned(),
+        material_sha256: "a".repeat(64),
+        dynamic_registration_initial_access_token_sha256: None,
+        ciba_automated_decision_token_sha256: None,
+        public_material: material,
+        ttl_seconds: 28_800,
+    };
+    validate_operation(&operation(Some(material.clone()))).unwrap();
+    assert!(validate_operation(&operation(None)).is_err());
+
+    let mut private = material;
+    private.client_attestation_jwks["keys"][0]["d"] = serde_json::json!("secret");
+    assert!(validate_operation(&operation(Some(private))).is_err());
+
+    let mut private_anchor = Openid4vcConformanceTrust {
+        schema: 1,
+        client_attestation_issuer: "https://suite.example/".to_owned(),
+        client_attestation_jwks: serde_json::json!({"keys": [{"kty": "EC", "kid": "client"}]}),
+        key_attestation_jwks: serde_json::json!({"keys": [{"kty": "EC", "kid": "holder"}]}),
+        credential_trust_anchor_pem:
+            "-----BEGIN CERTIFICATE-----\npublic\n-----END CERTIFICATE-----\n".to_owned(),
+    };
+    private_anchor.credential_trust_anchor_pem =
+        "-----BEGIN PRIVATE KEY-----\nsecret\n-----END PRIVATE KEY-----\n".to_owned();
+    assert!(validate_operation(&operation(Some(private_anchor))).is_err());
+}
+
+#[test]
 fn every_signed_message_type_roundtrips_and_rejects_a_wrong_key() {
     let runtime_key = SigningKey::from_bytes(&[11; 32]);
     let controller_key = SigningKey::from_bytes(&[12; 32]);
@@ -154,6 +639,11 @@ fn every_signed_message_type_roundtrips_and_rejects_a_wrong_key() {
             .unwrap(),
         runtime
     );
+    validate_runtime_receipt_deployment_binding(&runtime, "deployment-1").unwrap();
+    assert!(validate_runtime_receipt_deployment_binding(&runtime, "deployment-2").is_err());
+    let mut wrong_runtime = runtime.clone();
+    wrong_runtime.aud = "controller:deployment-2".to_owned();
+    assert!(validate_runtime_receipt_deployment_binding(&wrong_runtime, "deployment-1").is_err());
     assert!(
         verify_runtime_receipt(&compact_runtime, "receipt-1", &wrong_key.verifying_key()).is_err()
     );
@@ -239,8 +729,17 @@ fn every_signed_message_type_roundtrips_and_rejects_a_wrong_key() {
             &controller_key.verifying_key()
         )
         .unwrap(),
-        event
+        event.clone()
     );
+
+    let mut encoded_evidence = event.clone();
+    encoded_evidence.recovery_boundary = format!("evidence-v1.{}", "_".repeat(300));
+    assert!(sign_management_event(&encoded_evidence, "controller-1", &controller_key).is_ok());
+    encoded_evidence.recovery_boundary = "{raw-json-is-not-an-audit-boundary}".to_owned();
+    assert!(matches!(
+        sign_management_event(&encoded_evidence, "controller-1", &controller_key),
+        Err(ProtocolError::Policy(_))
+    ));
 }
 
 proptest! {

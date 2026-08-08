@@ -18,11 +18,38 @@ docker compose up -d --build
 docker compose ps
 ```
 
+Compose bakes the secret initializer and safe default configuration into images
+through the build context, so the Docker daemon does not need direct access to
+the CLI host's absolute source paths. Do not add a manual secret initialization
+step when using a remote Docker context or a containerized Web IDE. To change
+both the host port and the public origin seen by browsers, run:
+
+```sh
+NAZOAUTH_PORT=443 \
+NAZOAUTH_BIND_ADDRESS=0.0.0.0 \
+NAZOAUTH_PUBLIC_BASE_URL=https://auth.example.com \
+NAZOAUTH_BUILD_REVISION="$(git rev-parse HEAD)" \
+NAZOAUTH_BUILD_ID="source:$(git rev-parse HEAD)" \
+docker compose up -d --build
+```
+
+This remains a source development sandbox, not a signed, attested Release
+installation.
+
+`NAZOAUTH_BIND_ADDRESS=0.0.0.0` is required when a containerized Web IDE or
+platform port mapper reaches the published host port through a non-loopback
+interface. Keep the default `127.0.0.1` when a reverse proxy on the same host
+terminates TLS. Do not bind all interfaces unless the platform or firewall
+controls direct access to the plaintext port.
+
 Compose generates private PostgreSQL and Valkey credentials in a named volume,
 starts both services, and uses a short-lived development operator identity to
 run the same signed `nazoauth operator-task` migration entry point before the
 server accepts traffic. This identity is deliberately not a production trust
-root. Open:
+root. The task identifies its local automation actor as `docker-compose` and
+binds the expected embedded release, revision, and build ID to the same values
+used to compile the image; it does not contact or impersonate GitHub Actions.
+Open:
 
 - `http://127.0.0.1:8000/ready` for dependency readiness
 - `http://127.0.0.1:8000/live` for process liveness
@@ -31,14 +58,17 @@ root. Open:
 The first source build requires network access to download Rust dependencies.
 Later builds reuse the local container cache.
 
-The default is a loopback-only evaluation deployment. PostgreSQL, Valkey,
-signing keys, and avatars use named volumes and survive
+The default is a loopback-only evaluation deployment. PostgreSQL, Valkey, and
+application state—including signing keys, avatars, generated secrets,
+bootstrap state, and the UI release cache—use named volumes and survive
 `docker compose down`. Do not use `docker compose down -v` unless deleting all
 local data is intentional.
 
-When the database has no administrator, the server log reports a time-bounded,
-single-use setup URL. Treat it as a password; it creates the first administrator
-without requiring SMTP.
+When the database has no administrator, the server creates a time-bounded,
+single-use token in its private bootstrap state. It never prints the token or a
+token-bearing URL. The formal managed flow reads that private runtime-owned state through
+`nazoauthctl bootstrap-admin`; the authorization server exposes only the JSON
+`POST /auth/bootstrap-admin` API and does not serve an embedded setup page.
 
 ## Public deployment
 
@@ -48,6 +78,7 @@ For a formal release, prefer the lifecycle entry point:
 sudo nazoauthctl install \
   --runtime auto \
   --public-url https://auth.example.com
+sudo nazoauthctl bootstrap-admin
 ```
 
 `auto` selects Podman first and Docker second. Existing PostgreSQL/Valkey,
