@@ -1,7 +1,7 @@
 //! RFC 7523 JWT bearer authorization grant.
 use nazo_http_actix::oauth_token_error;
 
-use super::issue::{TokenIssuanceContext, issue_token_response_with_service_and_grant};
+use super::issue::{TokenIssuanceContext, issue_token_response};
 use super::{
     SenderConstraintValidationError, ServerTokenService, TokenForm,
     consume_token_client_assertion_with_authorization_service, sender_constraint_multiple_error,
@@ -11,6 +11,7 @@ use crate::adapters::security::ValidatedClientAssertion;
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::client_jwt_decoding_key;
 
+use crate::domain::client_policy::refresh_client_jwks;
 use crate::domain::{ClientRow, RefreshTokenPolicy, TokenIssue};
 use crate::http::dpop::DpopErrorContext;
 use crate::http::dpop::dpop_error_response;
@@ -20,7 +21,7 @@ use actix_web::{HttpRequest, HttpResponse};
 
 use chrono::Utc;
 use nazo_auth::{
-    JwtBearerAssertionClaims, JwtBearerGrantError, JwtBearerGrantPolicy,
+    JwtBearerAssertionClaims, JwtBearerGrantError, JwtBearerGrantPolicy, TokenIssuanceMode,
     ValidatedJwtBearerAssertion, admit_jwt_bearer_grant, is_subset, parse_scope,
     validate_jwt_bearer_assertion_claims, validate_jwt_bearer_grant_prerequisites,
 };
@@ -187,7 +188,7 @@ pub(crate) async fn token_jwt_bearer_with_service(
     token_service: &ServerTokenService,
     issuance: &TokenIssuanceContext<'_>,
     req: &HttpRequest,
-    client: &ClientRow,
+    client: &mut ClientRow,
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
@@ -199,6 +200,23 @@ pub(crate) async fn token_jwt_bearer_with_service(
         .assertion
         .as_deref()
         .expect("validated JWT bearer grant must contain assertion");
+    if let Ok(header) = jsonwebtoken::decode_header(assertion)
+        && header.kid.is_some()
+        && let Err(error) = refresh_client_jwks(
+            client,
+            issuance.remote_client_documents,
+            header.kid.as_deref(),
+        )
+        .await
+    {
+        tracing::warn!(%error, "JWT bearer assertion jwks_uri could not be refreshed");
+        return oauth_token_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "JWT bearer assertion key source is unavailable.",
+            false,
+        );
+    }
     let sender =
         match validate_token_sender_constraints(issuance, req, client, None, None, None).await {
             Ok(value) => value,
@@ -217,6 +235,7 @@ pub(crate) async fn token_jwt_bearer_with_service(
                 return sender_constraint_multiple_error();
             }
         };
+    let policy = jwt_bearer_policy(issuance, client, Utc::now().timestamp());
     let assertion = match validate_jwt_bearer_assertion_with_issuer(
         issuance.config.issuer(),
         client,
@@ -279,11 +298,13 @@ pub(crate) async fn token_jwt_bearer_with_service(
         Ok(admission) => admission,
         Err(error) => return jwt_bearer_grant_error_response(error, client, form),
     };
-    issue_token_response_with_service_and_grant(
+    issue_token_response(
         issuance,
         token_service,
         client,
-        Some(&jwt_bearer_grant_key),
+        TokenIssuanceMode::SingleUse {
+            grant_key: jwt_bearer_grant_key.clone(),
+        },
         TokenIssue {
             user_id: None,
             subject: assertion.subject,

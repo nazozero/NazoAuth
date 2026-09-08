@@ -164,6 +164,7 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
         transient_state.dpop_state(),
         keyset.clone(),
         UserinfoConfig::from(settings),
+        remote_client_documents.clone(),
     );
     let userinfo_endpoint = web::Data::new(nazo_http_actix::UserinfoEndpoint::new(Arc::new(
         ServerUserinfoOperations::new(token_service.clone().into_inner(), userinfo_handles),
@@ -182,6 +183,7 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
             token_service.clone().into_inner(),
             authorization_service.clone().into_inner(),
             authorization_config.clone().into_inner(),
+            remote_client_documents.clone(),
         )),
     ));
     let authorization_runtime: web::Data<ServerRuntimeModuleRegistry> =

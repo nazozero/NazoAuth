@@ -165,6 +165,7 @@ async fn native_sso_issue_binding_enforces_client_sender_policy() {
         config: &config,
         modules: &modules,
         authorization: &authorization,
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
     };
     let request = actix_web::test::TestRequest::post()
         .uri("/token")

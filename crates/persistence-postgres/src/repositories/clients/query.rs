@@ -51,30 +51,6 @@ impl OAuthClientRepository {
             .transpose()
     }
 
-    pub async fn active_mtls_candidates(
-        &self,
-        tenant_id: Uuid,
-        limit: i64,
-    ) -> Result<Vec<OAuthClient>, RepositoryError> {
-        let mut connection = self.connection().await?;
-        oauth_clients::table
-            .filter(oauth_clients::tenant_id.eq(tenant_id))
-            .filter(
-                oauth_clients::token_endpoint_auth_method
-                    .eq_any(["tls_client_auth", "self_signed_tls_client_auth"]),
-            )
-            .filter(oauth_clients::client_type.eq("confidential"))
-            .filter(oauth_clients::is_active.eq(true))
-            .select(OAuthClientRecord::as_select())
-            .limit(limit)
-            .load::<OAuthClientRecord>(&mut connection)
-            .await
-            .map_err(map_error)?
-            .into_iter()
-            .map(OAuthClientRecord::into_domain)
-            .collect()
-    }
-
     pub async fn page(
         &self,
         tenant_id: Uuid,

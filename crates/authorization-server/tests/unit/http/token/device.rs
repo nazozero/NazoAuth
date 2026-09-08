@@ -1,4 +1,47 @@
 use super::*;
+
+#[actix_web::test]
+async fn device_client_authentication_accepts_registered_public_none_and_rejects_secret() {
+    let state = Data::new(disabled_state());
+    let service = device_authorization_service(&state);
+    let config = DeviceHttpConfig::from(state.settings.as_ref());
+    let resolver =
+        crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[]).unwrap();
+    let mut client = device_client();
+    let credentials = ClientCredentials {
+        client_id: Some(client.client_id.clone()),
+        method: "none".into(),
+        ..Default::default()
+    };
+    assert!(
+        authenticate_device_authorization_client(
+            &service,
+            &config,
+            &form_request(),
+            &mut client,
+            &credentials,
+            &resolver
+        )
+        .await
+        .is_ok()
+    );
+    let credentials = ClientCredentials {
+        client_secret: Some(Uuid::now_v7().to_string()),
+        method: "client_secret_post".into(),
+        ..credentials
+    };
+    let response = authenticate_device_authorization_client(
+        &service,
+        &config,
+        &form_request(),
+        &mut client,
+        &credentials,
+        &resolver,
+    )
+    .await
+    .expect_err("public clients cannot present a secret");
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+}
 use crate::config::ConfigSource;
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 use crate::domain::tenancy::DEFAULT_REALM_ID;
@@ -270,6 +313,7 @@ async fn call_device_token_for_test(
         config: &issuance_config,
         modules: &modules,
         authorization: &authorization,
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
     };
     let device_service = ServerDeviceGrantService::new(std::sync::Arc::new(
         nazo_valkey::DeviceStore::new(&connection),
@@ -498,12 +542,23 @@ async fn device_authorization_endpoint_disabled_fails_before_client_lookup() {
     let state = Data::new(disabled_state());
     let req = form_request();
 
-    let response = device_authorization_with_admission(
+    let runtime =
+        crate::runtime_modules::test_support::runtime_module_registry_with_modules_for_test(
+            state.diesel_db.clone(),
+            state.settings.as_ref(),
+            Default::default(),
+        )
+        .expect("disabled runtime should build");
+    let response = device_authorization(
         device_authorization_service(&state),
         device_grant_service(&state),
         token_management_limiter(&state),
         Data::new(DeviceHttpConfig::from(state.settings.as_ref())),
-        false,
+        Data::from(runtime),
+        Data::new(
+            crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                .expect("empty resolver should build"),
+        ),
         req,
         Bytes::from_static(b"client_id=device-client&scope=openid"),
     )
@@ -621,6 +676,7 @@ async fn device_token_rejects_client_policy_before_polling_state() {
         config: &issuance_config,
         modules: &modules,
         authorization: &authorization,
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
     };
     let form = device_token_form(Some("not-stored"));
     let request = TestRequest::post().uri("/token").to_http_request();

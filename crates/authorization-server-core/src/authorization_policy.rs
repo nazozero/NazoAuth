@@ -32,8 +32,6 @@ pub struct AuthorizationClientPolicy<'a> {
     pub client_type: &'a str,
     pub allowed_scopes: &'a [String],
     pub allowed_audiences: &'a [String],
-    pub require_dpop_bound_tokens: bool,
-    pub require_mtls_bound_tokens: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -94,7 +92,6 @@ pub fn normalize_authorization_request(
     client: AuthorizationClientPolicy<'_>,
     capabilities: AuthorizationCapabilityPolicy,
     profile: AuthorizationProfilePolicy,
-    used_pushed_authorization_request: bool,
 ) -> Result<NormalizedAuthorizationRequest, AuthorizationPolicyError> {
     if parameters.get("response_type").map(String::as_str) != Some("code") {
         return Err(AuthorizationPolicyError::UnsupportedResponseType);
@@ -102,12 +99,6 @@ pub fn normalize_authorization_request(
     if parameters
         .get("nonce")
         .is_some_and(|nonce| nonce.chars().count() > AUTHORIZATION_NONCE_MAX_CHARS)
-    {
-        return Err(AuthorizationPolicyError::InvalidRequest);
-    }
-    if (client.require_dpop_bound_tokens || client.require_mtls_bound_tokens)
-        && !used_pushed_authorization_request
-        && !parameters.contains_key("request")
     {
         return Err(AuthorizationPolicyError::InvalidRequest);
     }

@@ -92,6 +92,13 @@ satisfied. For example, FAPI2 without DPoP or mTLS is rejected, and mandatory
 signed authorization requests require a registered signing-key source.
 Unknown policy versions and fields are rejected.
 
+Sender constraints are independent of the authorization request channel.
+`require_dpop_bound_tokens` and `require_mtls_bound_tokens` constrain token
+issuance and PKCE strength at the authorization endpoint; they never force a
+baseline client into PAR or JAR. Only the explicit FAPI2 assurance profile and
+the explicit `require_signed_authorization_request` flag select the
+signed/pushed request channel.
+
 ## Upgrade behavior
 
 Runtime desired state and client policy are explicit persisted authorities.

@@ -23,7 +23,7 @@ mod rate_limit;
 pub(crate) use self::client_auth::validate_token_request_profile;
 use self::client_auth::{
     attestation_client_id_matches_form_hint, missing_client_authorization_code_holder_error,
-    mtls_client_credentials_without_client_id, validate_token_client_enabled,
+    validate_token_client_enabled,
 };
 use self::errors::{client_credentials_holder_missing_client_error, pre_authorized_token_error};
 use self::pre_authorized::pre_authorized_parameters;
@@ -45,6 +45,7 @@ use super::{
     token_device_code_with_service, token_exchange, token_jwt_bearer_with_service,
     token_refresh_with_service,
 };
+use crate::domain::client_policy::refresh_client_jwks;
 use crate::http::authorization::ServerAuthorizationService;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use nazo_auth::{
@@ -312,23 +313,6 @@ pub(crate) async fn token_with_service(
             method: "attest_jwt_client_auth".to_owned(),
         };
     }
-    if credentials.client_id.is_none()
-        && !has_basic
-        && form.client_secret.is_none()
-        && !client_auth_context.has_assertion
-    {
-        match mtls_client_credentials_without_client_id(
-            authorization_service,
-            issuance_config.trusted_proxy_cidrs(),
-            &req,
-        )
-        .await
-        {
-            Ok(Some(mtls_credentials)) => credentials = mtls_credentials,
-            Ok(None) => {}
-            Err(response) => return response,
-        }
-    }
     let Some(client_id) = credentials.client_id.as_deref() else {
         if !has_client_auth_material {
             if let Some(response) =
@@ -353,7 +337,7 @@ pub(crate) async fn token_with_service(
             has_basic,
         );
     };
-    let client = match authorization_service.client_by_id(client_id).await {
+    let mut client = match authorization_service.client_by_id(client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
             perform_dummy_client_secret_verification(
@@ -470,13 +454,13 @@ pub(crate) async fn token_with_service(
             ClientAuthConfig::new(
                 issuance_config.issuer(),
                 issuance_config.client_secret_pepper(),
+                handles.remote_client_documents.as_ref(),
             )
             .with_endpoint_audience_aliases(std::slice::from_ref(
                 &issuance_config.mtls_endpoint_base_url(),
-            ))
-            .with_remote_jwks(&handles.remote_client_documents),
+            )),
             &auth_request,
-            &client,
+            &mut client,
             &credentials,
             ClientAuthenticationContext::AllowPublicNone,
         )
@@ -514,11 +498,28 @@ pub(crate) async fn token_with_service(
     {
         return response;
     }
+    if matches!(
+        form.grant_type.as_str(),
+        "authorization_code" | "refresh_token"
+    ) && (client.id_token_encrypted_response_alg.is_some()
+        || client.id_token_encrypted_response_enc.is_some())
+        && let Err(error) =
+            refresh_client_jwks(&mut client, handles.remote_client_documents.as_ref(), None).await
+    {
+        tracing::warn!(%error, "id_token encryption jwks_uri could not be refreshed");
+        return oauth_token_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "客户端加密密钥不可用.",
+            false,
+        );
+    }
     let modules = runtime_modules.snapshot();
     let issuance = TokenIssuanceContext {
         config: issuance_config,
         modules: &modules,
         authorization: authorization_service,
+        remote_client_documents: handles.remote_client_documents.as_ref(),
     };
     match form.grant_type.as_str() {
         "authorization_code" => {
@@ -562,7 +563,7 @@ pub(crate) async fn token_with_service(
                 token_service,
                 &issuance,
                 &req,
-                &client,
+                &mut client,
                 &form,
                 client_assertion.as_ref(),
             )
@@ -675,8 +676,6 @@ pub(crate) async fn token_with_service(
 
 pub(crate) use token_with_service as token;
 
-#[cfg(test)]
-use self::client_auth::mtls_client_credentials;
 #[cfg(test)]
 use self::errors::authorization_code_holder_missing_client_error;
 #[cfg(test)]

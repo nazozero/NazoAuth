@@ -162,7 +162,7 @@ pub(super) async fn authorize_request_with_context(
         );
     };
 
-    let client = match context.service.client_by_id(client_id).await {
+    let mut client = match context.service.client_by_id(client_id).await {
         Ok(Some(client)) => client,
         Ok(None) => {
             return oauth_error(
@@ -194,14 +194,14 @@ pub(super) async fn authorize_request_with_context(
             "该客户端未启用 authorization_code 授权类型.",
         );
     }
-    let client_policy = &client.security_policy;
-    let fapi2_security = context.config.requires_fapi2_security(client_policy);
+    let client_policy = client.security_policy.clone();
+    let fapi2_security = context.config.requires_fapi2_security(&client_policy);
     let signed_request_required = context
         .config
-        .requires_signed_authorization_request(client_policy);
+        .requires_signed_authorization_request(&client_policy);
     let signed_response_required = context
         .config
-        .requires_signed_authorization_response(client_policy);
+        .requires_signed_authorization_response(&client_policy);
     if fapi2_security && pending_external_request_uri.is_some() {
         consumed_request_uri_error = Some("request_uri_not_supported");
         pending_external_request_uri = None;
@@ -209,8 +209,12 @@ pub(super) async fn authorize_request_with_context(
     if let Some(request_uri) = pending_external_request_uri.as_deref() {
         if q.contains_key("request") || !client.request_uris.iter().any(|uri| uri == request_uri) {
             consumed_request_uri_error = Some("invalid_request_uri");
-        } else if let Some(resolver) = context.remote_client_documents {
-            match resolver.request_object(request_uri).await {
+        } else {
+            match context
+                .remote_client_documents
+                .request_object(request_uri)
+                .await
+            {
                 Ok(request_object) => {
                     q.remove("request_uri");
                     q.insert("request".to_owned(), request_object);
@@ -220,12 +224,10 @@ pub(super) async fn authorize_request_with_context(
                     consumed_request_uri_error = Some("invalid_request_uri");
                 }
             }
-        } else {
-            consumed_request_uri_error = Some("request_uri_not_supported");
         }
     }
     let direct_request_object_present = q.contains_key("request");
-    let request_object_error = apply_request_object_with_context(context, q, &client)
+    let request_object_error = apply_request_object_with_context(context, q, &mut client)
         .await
         .err();
     if let Some(response) = runtime_authorization_capability_error(context, q) {
@@ -296,8 +298,6 @@ pub(super) async fn authorize_request_with_context(
             client_type: &client.client_type,
             allowed_scopes: &client.scopes,
             allowed_audiences: &client.allowed_audiences,
-            require_dpop_bound_tokens: client.require_dpop_bound_tokens,
-            require_mtls_bound_tokens: client.require_mtls_bound_tokens,
         },
         AuthorizationCapabilityPolicy {
             authorization_details: crate::http::authorization::accepts_module(
@@ -323,7 +323,6 @@ pub(super) async fn authorize_request_with_context(
                 || dpop_jkt.is_some()
                 || mtls_x5t_s256.is_some(),
         },
-        used_pushed_authorization_request,
     ) {
         Ok(normalized) => normalized,
         Err(error) => {

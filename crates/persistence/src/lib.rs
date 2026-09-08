@@ -16,6 +16,11 @@ pub use control_plane::*;
 pub use openid4vc::*;
 pub use operator::*;
 
+/// Canonical schema identifier embedded in every security-audit payload.
+/// Keeping it in the database-independent persistence contract prevents
+/// adapters from silently diverging on the audit wire format.
+pub const SECURITY_AUDIT_SCHEMA_VERSION: &str = "nazo.audit.v1";
+
 use std::fmt;
 
 use futures_util::future::BoxFuture;

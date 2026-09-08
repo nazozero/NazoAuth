@@ -1,5 +1,10 @@
 pub(crate) mod valkey;
 
+#[path = "client_auth_keys.rs"]
+pub(crate) mod client_auth_keys;
+#[allow(unused_imports)]
+pub(crate) use client_auth_keys::CountingJwksResolver;
+
 #[path = "domain/database_user_fixture.rs"]
 mod database_user_fixture;
 pub(crate) use database_user_fixture::{
@@ -41,6 +46,29 @@ pub(crate) fn persisted_runtime_modules_fixture() -> BTreeSet<nazo_runtime_modul
         ModuleId::FrontchannelLogout,
         ModuleId::SessionManagement,
     ])
+}
+
+/// A process-lifetime empty resolver for unit contexts that do not exercise
+/// remote client documents.  Production handlers always inject the
+/// tenant-scoped resolver; tests use this concrete value instead of creating
+/// a temporary reference in each `TokenIssuanceContext`.
+pub(crate) fn test_remote_client_documents()
+-> &'static crate::domain::remote_client_documents::RemoteClientDocumentResolver {
+    static RESOLVER: OnceLock<
+        crate::domain::remote_client_documents::RemoteClientDocumentResolver,
+    > = OnceLock::new();
+    RESOLVER.get_or_init(|| {
+        crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+            .expect("empty remote client document resolver should build")
+    })
+}
+
+pub(crate) fn test_remote_client_documents_data()
+-> actix_web::web::Data<dyn nazo_http_actix::RemoteJwksResolverPort> {
+    actix_web::web::Data::from(Arc::new(
+        crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+            .expect("empty remote client document resolver should build"),
+    ) as Arc<dyn nazo_http_actix::RemoteJwksResolverPort>)
 }
 
 pub(crate) struct Rfc9440CertificateFixture {

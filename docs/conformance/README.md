@@ -8,6 +8,9 @@ evidence formats.
 
 The RFC 9967 SCIM SET matrix is a project-owned executable black-box contract.
 
+Third-party validators are ordinary external clients; they do not create a
+server-side protocol or evidence exception.
+
 ## External OIDF evidence
 
 - [2026-09-06 Direct TLS and trusted proxy candidate acceptance](oidf-2026-09-06-dual-mode-candidate.md)

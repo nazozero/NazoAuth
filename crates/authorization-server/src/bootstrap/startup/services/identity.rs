@@ -248,6 +248,7 @@ pub(super) async fn build(
             settings.tenant.context.tenant_id,
             core.authorization_config.clone().into_inner(),
             runtime_registry.clone(),
+            startup.remote_client_documents.clone(),
         )),
         session_cookie_config.clone(),
         client_ip_config.get_ref().clone(),

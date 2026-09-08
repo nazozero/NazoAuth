@@ -27,6 +27,7 @@ futures-util.workspace = true
 hmac.workspace = true
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
 mdoc-rs.workspace = true
+moka.workspace = true
 coset.workspace = true
 ciborium.workspace = true
 lettre = { workspace = true, features = ["aws-lc-rs", "builder", "rustls-platform-verifier", "smtp-transport", "tokio1-rustls"] }

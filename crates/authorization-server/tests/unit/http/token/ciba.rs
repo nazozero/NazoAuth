@@ -374,6 +374,7 @@ async fn call_ciba_token_with_modules_for_test(
         config: &issuance_config,
         modules: &modules,
         authorization: &authorization,
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
     };
     let handles = CibaTokenHandles::new(
         Data::new(ciba_service),
@@ -512,6 +513,7 @@ async fn ciba_backchannel_fails_closed_before_client_state_access() {
     .expect("CIBA runtime registry should initialize");
     let app = actix_web::test::init_service(
         actix_web::App::new()
+            .app_data(crate::test_support::test_remote_client_documents_data())
             .app_data(actix_web::web::Data::new(
                 super::super::issue::test_support::test_authorization_service(&state),
             ))
@@ -595,6 +597,7 @@ async fn ciba_backchannel_validates_request_object_and_creates_bound_state() {
     )));
     let app = actix_web::test::init_service(
         actix_web::App::new()
+            .app_data(crate::test_support::test_remote_client_documents_data())
             .app_data(actix_web::web::Data::new(
                 super::super::issue::test_support::test_authorization_service(&state),
             ))
@@ -683,6 +686,7 @@ async fn ciba_backchannel_rejects_invalid_request_object_claims_before_user_look
     .expect("CIBA runtime registry should initialize");
     let app = actix_web::test::init_service(
         actix_web::App::new()
+            .app_data(crate::test_support::test_remote_client_documents_data())
             .app_data(actix_web::web::Data::new(
                 super::super::issue::test_support::test_authorization_service(&state),
             ))

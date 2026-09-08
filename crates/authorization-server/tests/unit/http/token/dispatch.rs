@@ -1,5 +1,116 @@
 use nazo_valkey::test_support::authorization_code_storage_key as authorization_code_key;
 
+#[actix_web::test]
+async fn token_management_refreshes_only_requested_encryption_keys() {
+    use nazo_http_actix::{
+        TokenClientAuthForm, TokenIntrospectionRepresentation, TokenManagementError,
+        TokenManagementOperations, TokenManagementRequestFacts, TokenOnlyForm,
+        token_client_auth_transport_facts,
+    };
+    let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
+        return;
+    };
+    let client_id = format!("management-jwks-{}", Uuid::now_v7());
+    let secret = Uuid::now_v7().to_string();
+    insert_token_client(
+        &state,
+        &client_id,
+        "confidential",
+        "client_secret_post",
+        Some(hash_client_secret(
+            &secret,
+            &state.settings.protocol.client_secret_pepper,
+        )),
+        vec!["client_credentials"],
+        false,
+        false,
+        true,
+    )
+    .await;
+    let operations = crate::domain::ServerTokenManagementOperations::new(
+        token_service(&state).into_inner(),
+        authorization_service(&state).into_inner(),
+        Arc::new(crate::http::authorization::AuthorizationHttpConfig::from(
+            state.settings.as_ref(),
+        )),
+        Arc::new(
+            crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[]).unwrap(),
+        ),
+    );
+    let mut connection = get_conn(&state.diesel_db).await.unwrap();
+    sql_query("UPDATE oauth_clients SET jwks_uri = 'https://invalid.example/jwks.json', jwks = '{\"keys\":[]}'::jsonb, introspection_encrypted_response_alg = 'RSA-OAEP-256', introspection_encrypted_response_enc = 'A256GCM' WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID).bind::<Text, _>(&client_id)
+        .execute(&mut connection).await.unwrap();
+    drop(connection);
+    for signed in [false, true] {
+        let request = actix_web::test::TestRequest::default().to_http_request();
+        let auth = token_client_auth_transport_facts(
+            &request,
+            TokenClientAuthForm {
+                client_id: Some(&client_id),
+                client_secret: Some(&secret),
+                ..Default::default()
+            },
+        );
+        let facts = TokenManagementRequestFacts {
+            source_ip: "127.0.0.1".into(),
+            endpoint_path: "/oauth/introspect".into(),
+            client_certificate: None,
+        };
+        let form = TokenOnlyForm {
+            token: Uuid::now_v7().to_string(),
+            token_type_hint: None,
+            client_id: Some(client_id.clone()),
+            client_secret: Some(secret.clone()),
+            client_assertion_type: None,
+            client_assertion: None,
+        };
+        let result = operations.introspect(facts, auth, form, signed).await;
+        if signed {
+            assert!(matches!(
+                result,
+                Err(TokenManagementError::ResponseProtectionFailed)
+            ));
+        } else {
+            assert!(matches!(
+                result,
+                Ok(TokenIntrospectionRepresentation::Inspection(_))
+            ));
+        }
+    }
+    let request = actix_web::test::TestRequest::default().to_http_request();
+    let auth = token_client_auth_transport_facts(
+        &request,
+        TokenClientAuthForm {
+            client_id: Some(&client_id),
+            client_secret: Some(&secret),
+            ..Default::default()
+        },
+    );
+    assert!(
+        operations
+            .revoke(
+                TokenManagementRequestFacts {
+                    source_ip: "127.0.0.1".into(),
+                    endpoint_path: "/oauth/revoke".into(),
+                    client_certificate: None,
+                },
+                auth,
+                TokenOnlyForm {
+                    token: Uuid::now_v7().to_string(),
+                    token_type_hint: None,
+                    client_id: Some(client_id),
+                    client_secret: Some(secret),
+                    client_assertion_type: None,
+                    client_assertion: None,
+                }
+            )
+            .await
+            .is_ok(),
+        "revocation must not depend on response encryption keys"
+    );
+}
+
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 
 use crate::domain::tenancy::DEFAULT_REALM_ID;
@@ -32,6 +143,24 @@ pub(crate) async fn token(
     state: Data<TestInfrastructure>,
     req: HttpRequest,
     body: Bytes,
+) -> HttpResponse {
+    token_with_remote_documents(
+        state,
+        req,
+        body,
+        Arc::new(
+            crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                .expect("empty remote document policy is valid"),
+        ),
+    )
+    .await
+}
+
+async fn token_with_remote_documents(
+    state: Data<TestInfrastructure>,
+    req: HttpRequest,
+    body: Bytes,
+    resolver: Arc<crate::domain::remote_client_documents::RemoteClientDocumentResolver>,
 ) -> HttpResponse {
     let service = Data::new(ServerTokenService::new(
         crate::test_support::token_issuance_repository(state.diesel_db.clone()),
@@ -77,10 +206,7 @@ pub(crate) async fn token(
             CibaTokenHandles::new(ciba_service, ciba_users, ciba_config),
             issuance_config,
             runtime_modules,
-            Arc::new(
-                crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
-                    .expect("empty remote document policy is valid"),
-            ),
+            resolver,
             Openid4vcTokenHandles::default(),
         )),
         req,
@@ -1424,90 +1550,6 @@ async fn token_endpoint_returns_unsupported_grant_only_after_client_authenticati
 }
 
 #[actix_web::test]
-async fn token_endpoint_identifies_registered_self_signed_client_without_client_id() {
-    let Some(state) = live_rfc9440_token_state(AuthorizationServerProfile::Oauth2Baseline).await
-    else {
-        return;
-    };
-    let client_id = format!("mtls-cert-only-{}", Uuid::now_v7());
-    let certificate = crate::test_support::rfc9440_certificate_fixture(&client_id);
-    insert_token_client(
-        &state,
-        &client_id,
-        "confidential",
-        "self_signed_tls_client_auth",
-        None,
-        vec!["urn:example:unsupported"],
-        false,
-        false,
-        true,
-    )
-    .await;
-    set_client_mtls_thumbprint(&state, &client_id, &certificate.thumbprint).await;
-    let mut connection = get_conn(&state.diesel_db).await.unwrap();
-    sql_query("UPDATE oauth_clients SET jwks = $1 WHERE tenant_id = $2 AND client_id = $3")
-        .bind::<Jsonb, _>(json!({"keys": [{
-            "kid": "registered-client-cert",
-            "x5c": [certificate.header.trim_matches(':')]
-        }]}))
-        .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
-        .bind::<Text, _>(&client_id)
-        .execute(&mut connection)
-        .await
-        .unwrap();
-    drop(connection);
-
-    let req = actix_web::test::TestRequest::post()
-        .uri("/token")
-        .app_data(Data::new(crate::http::mtls::MtlsCertificateSource::new(
-            crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
-        )))
-        .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
-        .insert_header(("client-cert", certificate.header.as_str()))
-        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
-        .to_http_request();
-    let body = Bytes::from_static(b"grant_type=urn%3Aexample%3Aunsupported");
-
-    assert_token_error(
-        token(state, req, body).await,
-        StatusCode::BAD_REQUEST,
-        "unsupported_grant_type",
-        false,
-    )
-    .await;
-}
-
-#[actix_web::test]
-async fn mtls_client_credentials_without_client_id_returns_none_when_client_not_active() {
-    let Some(state) = live_rfc9440_token_state(AuthorizationServerProfile::Oauth2Baseline).await
-    else {
-        return;
-    };
-    let presented_certificate =
-        crate::test_support::rfc9440_certificate_fixture("dispatch-mtls-unknown");
-    let req = actix_web::test::TestRequest::post()
-        .uri("/token")
-        .app_data(Data::new(crate::http::mtls::MtlsCertificateSource::new(
-            crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
-        )))
-        .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
-        .insert_header(("client-cert", presented_certificate.header.as_str()))
-        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
-        .to_http_request();
-
-    assert!(
-        mtls_client_credentials_without_client_id(
-            authorization_service(&state).get_ref(),
-            &state.settings.endpoint.trusted_proxy_cidrs,
-            &req,
-        )
-        .await
-        .expect("query should succeed when client certificate is unknown")
-        .is_none()
-    );
-}
-
-#[actix_web::test]
 async fn missing_client_authorization_code_holder_error_returns_none_when_code_missing() {
     let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
         return;
@@ -1608,6 +1650,157 @@ async fn missing_client_authorization_code_holder_error_returns_none_when_client
         )
         .await
         .is_none()
+    );
+}
+
+#[actix_web::test]
+async fn token_endpoint_private_key_jwt_without_kid_obeys_jwks_uri() {
+    use crate::domain::remote_client_documents::tests::{resolver_for, tls_server_sequence};
+    use crate::test_support::{ClientSigningFixture, client_signing_fixture};
+
+    let state = live_token_state(AuthorizationServerProfile::Oauth2Baseline)
+        .await
+        .expect("key-source regression requires PostgreSQL and Valkey");
+    nazo_postgres::run_pending_migrations(
+        &std::env::var("DATABASE_URL").expect("PostgreSQL test URL"),
+    )
+    .await
+    .expect("token test migrations should apply");
+    let old = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let current = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let old_document = json!({"keys": [old.public_jwk("A")]});
+    let current_document = json!({"keys": [current.public_jwk("B")]});
+    let (address, server, certificate) = tls_server_sequence(vec![
+        (
+            200,
+            "application/json".to_owned(),
+            serde_json::to_vec(&old_document).unwrap(),
+            true,
+        ),
+        (
+            200,
+            "application/json".to_owned(),
+            serde_json::to_vec(&current_document).unwrap(),
+            true,
+        ),
+        (503, "application/json".to_owned(), b"{}".to_vec(), true),
+    ]);
+    let uri = format!("https://localhost:{}/jwks", address.port());
+    let resolver = Arc::new(resolver_for(address, &certificate));
+    assert_eq!(
+        resolver.jwks_for_kid(&uri, None).await.unwrap(),
+        old_document
+    );
+    let client_id = format!("kidless-{}", Uuid::now_v7());
+    insert_token_client(
+        &state,
+        &client_id,
+        "confidential",
+        "private_key_jwt",
+        None,
+        vec!["client_credentials"],
+        false,
+        false,
+        true,
+    )
+    .await;
+    let mut connection = get_conn(&state.diesel_db).await.unwrap();
+    sql_query(
+        "UPDATE oauth_clients SET jwks_uri = $1, jwks = $2 WHERE tenant_id = $3 AND client_id = $4",
+    )
+    .bind::<Text, _>(&uri)
+    .bind::<Jsonb, _>(&old_document)
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<Text, _>(&client_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    let body = |key: &ClientSigningFixture, kid: Option<&str>| {
+        let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+        header.kid = kid.map(str::to_owned);
+        let now = Utc::now().timestamp();
+        let assertion = key.encode_jwt(
+            &header,
+            &json!({
+                "iss": client_id, "sub": client_id, "aud": state.settings.endpoint.issuer,
+                "iat": now, "exp": now + 120, "jti": Uuid::now_v7().to_string(),
+            }),
+        );
+        Bytes::from(format!(
+            "grant_type=client_credentials&scope=accounts&resource=resource%3A%2F%2Fdefault&client_id={}&client_assertion_type={}&client_assertion={}",
+            urlencoding::encode(&client_id),
+            urlencoding::encode(CLIENT_ASSERTION_TYPE_JWT_BEARER),
+            urlencoding::encode(&assertion)
+        ))
+    };
+    // The actual token endpoint must acquire B on rotation, then continue to
+    // use B for kidless assertions despite every database read returning A.
+    for (key, kid, accepted) in [
+        (&current, Some("B"), true),
+        (&old, None, false),
+        (&current, None, true),
+    ] {
+        let response = token_with_remote_documents(
+            state.clone(),
+            token_request("application/x-www-form-urlencoded"),
+            body(key, kid),
+            resolver.clone(),
+        )
+        .await;
+        if accepted {
+            assert_eq!(response.status(), StatusCode::OK);
+            let value: serde_json::Value = serde_json::from_slice(
+                &actix_web::body::to_bytes(response.into_body())
+                    .await
+                    .unwrap(),
+            )
+            .unwrap();
+            assert!(value["access_token"].as_str().is_some());
+        } else {
+            assert_token_error(response, StatusCode::UNAUTHORIZED, "invalid_client", false).await;
+        }
+    }
+    // A cold cache forces a real failing fetch; stale registration A is not
+    // an alternate trust source when the registered URI is unavailable.
+    let cold = Arc::new(resolver_for(address, &certificate));
+    let unavailable = token_with_remote_documents(
+        state.clone(),
+        token_request("application/x-www-form-urlencoded"),
+        body(&old, None),
+        cold.clone(),
+    )
+    .await;
+    assert_token_error(
+        unavailable,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "server_error",
+        false,
+    )
+    .await;
+    server
+        .join()
+        .expect("all three HTTPS fetches should complete");
+
+    let mut connection = get_conn(&state.diesel_db).await.unwrap();
+    sql_query("UPDATE oauth_clients SET jwks_uri = NULL WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<Text, _>(&client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let static_response = token_with_remote_documents(
+        state.clone(),
+        token_request("application/x-www-form-urlencoded"),
+        body(&old, None),
+        cold,
+    )
+    .await;
+    assert_eq!(
+        static_response.status(),
+        StatusCode::OK,
+        "static single-key clients must not fetch the now-closed remote service"
     );
 }
 
@@ -1742,7 +1935,7 @@ async fn token_endpoint_rejects_client_lookup_db_failure_with_server_error() {
 }
 
 #[actix_web::test]
-async fn token_endpoint_fails_closed_when_certificate_only_mtls_client_lookup_errors() {
+async fn token_endpoint_rejects_mtls_without_client_id_without_client_lookup() {
     let Some(state) =
         live_rfc9440_invalid_db_token_state(AuthorizationServerProfile::Oauth2Baseline).await
     else {
@@ -1759,6 +1952,58 @@ async fn token_endpoint_fails_closed_when_certificate_only_mtls_client_lookup_er
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
         .to_http_request();
     let body = Bytes::from_static(b"grant_type=urn%3Aexample%3Aunsupported");
+
+    assert_token_error(
+        token(state, req, body).await,
+        StatusCode::UNAUTHORIZED,
+        "invalid_client",
+        false,
+    )
+    .await;
+}
+
+#[actix_web::test]
+async fn token_endpoint_rejects_encrypted_id_token_when_client_jwks_cannot_refresh() {
+    let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
+        return;
+    };
+    let client_id = format!("encrypted-id-token-refresh-{}", Uuid::now_v7());
+    let client_secret = fixture_secret("encrypted-id-token-refresh");
+    insert_token_client(
+        &state,
+        &client_id,
+        "confidential",
+        "client_secret_post",
+        Some(fixture_secret_hash(&state, &client_secret)),
+        vec!["authorization_code"],
+        false,
+        false,
+        true,
+    )
+    .await;
+
+    let mut connection = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        "UPDATE oauth_clients SET jwks_uri = $1, jwks = '{\"keys\":[]}'::jsonb, id_token_encrypted_response_alg = $2, id_token_encrypted_response_enc = $3 WHERE tenant_id = $4 AND client_id = $5",
+    )
+    .bind::<Text, _>("https://invalid.example/jwks.json")
+    .bind::<Text, _>("RSA-OAEP-256")
+    .bind::<Text, _>("A256GCM")
+    .bind::<diesel::sql_types::Uuid, _>(DEFAULT_TENANT_ID)
+    .bind::<Text, _>(&client_id)
+    .execute(&mut connection)
+    .await
+    .expect("encrypted response metadata should be updated");
+    drop(connection);
+
+    let req = token_request("application/x-www-form-urlencoded");
+    let body = Bytes::from(format!(
+        "grant_type=authorization_code&code=unused&client_id={}&client_secret={}",
+        urlencoding::encode(&client_id),
+        urlencoding::encode(&client_secret),
+    ));
 
     assert_token_error(
         token(state, req, body).await,
@@ -2058,16 +2303,6 @@ fn missing_client_mtls_client_credentials_uses_invalid_request() {
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(&response), "invalid_request");
-}
-
-#[test]
-fn mtls_client_credentials_uses_tls_auth_method() {
-    let credentials = mtls_client_credentials("client-1".to_owned());
-
-    assert_eq!(credentials.client_id.as_deref(), Some("client-1"));
-    assert_eq!(credentials.method, "tls_client_auth");
-    assert!(credentials.client_secret.is_none());
-    assert!(credentials.client_assertion.is_none());
 }
 
 #[test]

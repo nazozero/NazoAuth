@@ -1,5 +1,5 @@
 use super::*;
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 
 pub(super) fn failed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
     if matches!(result, "ok" | "missing" | "failed" | "consumed") {
@@ -20,16 +20,6 @@ pub(super) fn consumed_authorization_code_ttl_seconds(
         access_token_ttl_seconds
     };
     ttl_seconds.max(1) as u64
-}
-
-pub(super) async fn persist_consumed_authorization_code(
-    service: &ServerTokenService,
-    issued: nazo_auth::IssuedAuthorizationCodeTokens<'_>,
-) -> anyhow::Result<()> {
-    service
-        .finalize_authorization_code(issued)
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to finalize authorization code: {error:?}"))
 }
 
 pub(crate) async fn mark_failed_authorization_code(

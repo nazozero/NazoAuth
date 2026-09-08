@@ -156,136 +156,19 @@ impl TokenRepository {
             .transpose()
     }
 
-    pub async fn persist_refresh_token(
-        &self,
+    /// Apply a refresh-token mutation inside a caller-owned transaction.
+    ///
+    /// This helper deliberately performs no pool acquisition and never starts
+    /// a nested transaction. The caller's transaction therefore owns the
+    /// refresh-family locks, rotation, and any resulting compromise decision.
+    pub(crate) async fn persist_refresh_token_on_connection(
+        connection: &mut AsyncPgConnection,
         token: NewRefreshToken,
     ) -> Result<RefreshTokenPersistResult, RepositoryError> {
-        if !token.authentication_context.is_well_formed()
-            || token.audiences.is_empty()
-            || token
-                .audiences
-                .iter()
-                .any(|audience| audience.trim().is_empty())
-            || token.authentication_context.auth_time > token.issued_at.timestamp()
-        {
-            return Err(RepositoryError::Consistency(
-                "refresh token requires a complete current authentication contract".to_owned(),
-            ));
-        }
-        let authentication_context =
-            serde_json::to_value(&token.authentication_context).map_err(|error| {
-                RepositoryError::Consistency(format!(
-                    "refresh token authentication context could not be serialized: {error}"
-                ))
-            })?;
-        let mut connection = self.connection().await?;
-        connection
-            .transaction::<RefreshTokenPersistResult, diesel::result::Error, _>(
-                async |connection| {
-                    lock_refresh_grant_scope(
-                        connection,
-                        token.tenant_id,
-                        token.user_id,
-                        token.client_id,
-                    )
-                    .await?;
-                    lock_refresh_family(connection, token.family_id).await?;
-                    if refresh_family_has_different_context(
-                        connection,
-                        token.tenant_id,
-                        token.family_id,
-                        &authentication_context,
-                    )
-                    .await?
-                    {
-                        compromise_family(connection, token.tenant_id, token.family_id).await?;
-                        return Ok(RefreshTokenPersistResult::RotationConflict);
-                    }
-                    if let Some(rotated_from_id) = token.rotated_from_id {
-                        if let Some(retry) = token.lost_response_retry {
-                            let original = load_family_token(
-                                connection,
-                                token.tenant_id,
-                                token.family_id,
-                                token.client_id,
-                                retry.original_id,
-                            )
-                            .await?;
-                            let successor = match original {
-                                Some(original) => {
-                                    lost_response_successor(
-                                        connection,
-                                        &original,
-                                        token.client_id,
-                                        retry.retry_started_at,
-                                    )
-                                    .await?
-                                }
-                                None => None,
-                            };
-                            if successor.as_ref().map(|row| row.id) != Some(rotated_from_id) {
-                                compromise_family(connection, token.tenant_id, token.family_id)
-                                    .await?;
-                                return Ok(RefreshTokenPersistResult::RotationConflict);
-                            }
-                        }
-                        let rotated = diesel::update(
-                            oauth_tokens::table
-                                .filter(oauth_tokens::tenant_id.eq(token.tenant_id))
-                                .filter(oauth_tokens::token_family_id.eq(token.family_id))
-                                .filter(oauth_tokens::client_id.eq(token.client_id))
-                                .filter(oauth_tokens::id.eq(rotated_from_id))
-                                .filter(oauth_tokens::revoked_at.is_null()),
-                        )
-                        .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
-                        .execute(connection)
-                        .await?;
-                        if rotated == 0 {
-                            compromise_family(connection, token.tenant_id, token.family_id).await?;
-                            return Ok(RefreshTokenPersistResult::RotationConflict);
-                        }
-                    }
-                    insert_refresh_token(connection, token, authentication_context).await?;
-                    Ok(RefreshTokenPersistResult::Inserted)
-                },
-            )
+        let authentication_context = validate_new_refresh_token(&token)?;
+        persist_refresh_token_inner(connection, &token, authentication_context)
             .await
             .map_err(map_error)
-    }
-
-    pub async fn lost_response_successor_or_compromise(
-        &self,
-        token: &RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> Result<Option<RefreshToken>, RepositoryError> {
-        let mut connection = self.connection().await?;
-        let row = connection
-            .transaction::<Option<RefreshTokenRow>, diesel::result::Error, _>(async |connection| {
-                lock_refresh_family(connection, token.token_family_id).await?;
-                let original = load_family_token(
-                    connection,
-                    token.tenant_id,
-                    token.token_family_id,
-                    client_id,
-                    token.id,
-                )
-                .await?;
-                let successor = match original {
-                    Some(original) => {
-                        lost_response_successor(connection, &original, client_id, retry_started_at)
-                            .await?
-                    }
-                    None => None,
-                };
-                if successor.is_none() {
-                    compromise_family(connection, token.tenant_id, token.token_family_id).await?;
-                }
-                Ok(successor)
-            })
-            .await
-            .map_err(map_error)?;
-        row.map(RefreshToken::try_from).transpose()
     }
 
     pub async fn inspect_lost_response_successor(
@@ -451,9 +334,96 @@ impl AccessTokenRevocationLookup for TokenRepository {
     }
 }
 
+fn validate_new_refresh_token(
+    token: &NewRefreshToken,
+) -> Result<serde_json::Value, RepositoryError> {
+    if !token.authentication_context.is_well_formed()
+        || token.audiences.is_empty()
+        || token
+            .audiences
+            .iter()
+            .any(|audience| audience.trim().is_empty())
+        || token.authentication_context.auth_time > token.issued_at.timestamp()
+    {
+        return Err(RepositoryError::Consistency(
+            "refresh token requires a complete current authentication contract".to_owned(),
+        ));
+    }
+    serde_json::to_value(&token.authentication_context).map_err(|error| {
+        RepositoryError::Consistency(format!(
+            "refresh token authentication context could not be serialized: {error}"
+        ))
+    })
+}
+
+async fn persist_refresh_token_inner(
+    connection: &mut AsyncPgConnection,
+    token: &NewRefreshToken,
+    authentication_context: serde_json::Value,
+) -> diesel::QueryResult<RefreshTokenPersistResult> {
+    lock_refresh_grant_scope(connection, token.tenant_id, token.user_id, token.client_id).await?;
+    lock_refresh_family(connection, token.family_id).await?;
+    if refresh_family_has_different_context(
+        connection,
+        token.tenant_id,
+        token.family_id,
+        &authentication_context,
+    )
+    .await?
+    {
+        compromise_family(connection, token.tenant_id, token.family_id).await?;
+        return Ok(RefreshTokenPersistResult::RotationConflict);
+    }
+    if let Some(rotated_from_id) = token.rotated_from_id {
+        if let Some(retry) = token.lost_response_retry {
+            let original = load_family_token(
+                connection,
+                token.tenant_id,
+                token.family_id,
+                token.client_id,
+                retry.original_id,
+            )
+            .await?;
+            let successor = match original {
+                Some(original) => {
+                    lost_response_successor(
+                        connection,
+                        &original,
+                        token.client_id,
+                        retry.retry_started_at,
+                    )
+                    .await?
+                }
+                None => None,
+            };
+            if successor.as_ref().map(|row| row.id) != Some(rotated_from_id) {
+                compromise_family(connection, token.tenant_id, token.family_id).await?;
+                return Ok(RefreshTokenPersistResult::RotationConflict);
+            }
+        }
+        let rotated = diesel::update(
+            oauth_tokens::table
+                .filter(oauth_tokens::tenant_id.eq(token.tenant_id))
+                .filter(oauth_tokens::token_family_id.eq(token.family_id))
+                .filter(oauth_tokens::client_id.eq(token.client_id))
+                .filter(oauth_tokens::id.eq(rotated_from_id))
+                .filter(oauth_tokens::revoked_at.is_null()),
+        )
+        .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
+        .execute(connection)
+        .await?;
+        if rotated == 0 {
+            compromise_family(connection, token.tenant_id, token.family_id).await?;
+            return Ok(RefreshTokenPersistResult::RotationConflict);
+        }
+    }
+    insert_refresh_token(connection, token, authentication_context).await?;
+    Ok(RefreshTokenPersistResult::Inserted)
+}
+
 async fn insert_refresh_token(
     connection: &mut AsyncPgConnection,
-    token: NewRefreshToken,
+    token: &NewRefreshToken,
     authentication_context: serde_json::Value,
 ) -> diesel::QueryResult<usize> {
     diesel::insert_into(oauth_tokens::table)
@@ -466,13 +436,13 @@ async fn insert_refresh_token(
             oauth_tokens::user_id.eq(token.user_id),
             oauth_tokens::scopes.eq(serde_json::json!(token.scopes)),
             oauth_tokens::audience.eq(serde_json::json!(token.audiences)),
-            oauth_tokens::authorization_details.eq(token.authorization_details),
+            oauth_tokens::authorization_details.eq(token.authorization_details.clone()),
             oauth_tokens::issued_at.eq(token.issued_at),
             oauth_tokens::expires_at.eq(token.expires_at),
-            oauth_tokens::subject.eq(token.subject),
-            oauth_tokens::dpop_jkt.eq(token.dpop_jkt),
-            oauth_tokens::mtls_x5t_s256.eq(token.mtls_x5t_s256),
-            oauth_tokens::client_attestation_jkt.eq(token.client_attestation_jkt),
+            oauth_tokens::subject.eq(token.subject.clone()),
+            oauth_tokens::dpop_jkt.eq(token.dpop_jkt.clone()),
+            oauth_tokens::mtls_x5t_s256.eq(token.mtls_x5t_s256.clone()),
+            oauth_tokens::client_attestation_jkt.eq(token.client_attestation_jkt.clone()),
             oauth_tokens::oidc_auth_context.eq(authentication_context),
         ))
         .execute(connection)
@@ -681,3 +651,7 @@ fn row_from_domain(token: &RefreshToken) -> Result<RefreshTokenRow, RepositoryEr
 fn map_error(error: diesel::result::Error) -> RepositoryError {
     RepositoryError::Unexpected(error.to_string())
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/repositories/tokens.rs"]
+mod tests;

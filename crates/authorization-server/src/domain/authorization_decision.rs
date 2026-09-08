@@ -23,6 +23,7 @@ use crate::{
         security::{blake3_hex, random_urlsafe_token},
     },
     domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
+    domain::client_policy::refresh_client_jwks_for_encryption,
     http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService},
     runtime_modules::ServerRuntimeModuleRegistry,
 };
@@ -34,6 +35,7 @@ pub(crate) struct ServerAuthorizationDecisionOperations {
     tenant_id: nazo_identity::TenantId,
     config: Arc<AuthorizationHttpConfig>,
     runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+    remote_client_documents: Arc<dyn nazo_http_actix::RemoteJwksResolverPort>,
 }
 
 impl ServerAuthorizationDecisionOperations {
@@ -43,6 +45,7 @@ impl ServerAuthorizationDecisionOperations {
         tenant_id: nazo_identity::TenantId,
         config: Arc<AuthorizationHttpConfig>,
         runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+        remote_client_documents: Arc<dyn nazo_http_actix::RemoteJwksResolverPort>,
     ) -> Self {
         Self {
             service,
@@ -50,6 +53,7 @@ impl ServerAuthorizationDecisionOperations {
             tenant_id,
             config,
             runtime_modules,
+            remote_client_documents,
         }
     }
 
@@ -263,7 +267,7 @@ impl ServerAuthorizationDecisionOperations {
                 }
             }
             AuthorizationResponsePlan::Jarm(jarm) => {
-                let client = self
+                let mut client = self
                     .service
                     .client_by_id(&payload.client_id)
                     .await
@@ -276,6 +280,19 @@ impl ServerAuthorizationDecisionOperations {
                         tracing::warn!(client_id_hash = %blake3_hex(&payload.client_id), "JARM client is missing or inactive");
                         AuthorizationDecisionError::ResponseProtectionUnavailable
                     })?;
+                let response_encryption_configured =
+                    client.authorization_encrypted_response_alg.is_some()
+                        || client.authorization_encrypted_response_enc.is_some();
+                refresh_client_jwks_for_encryption(
+                    &mut client,
+                    self.remote_client_documents.as_ref(),
+                    response_encryption_configured,
+                )
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "JARM encryption jwks_uri could not be refreshed");
+                    AuthorizationDecisionError::ResponseProtectionUnavailable
+                })?;
                 let signed = self
                     .service
                     .sign_authorization_response(

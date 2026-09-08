@@ -8,6 +8,7 @@ pub(crate) struct AuthorizationTestFixture {
     enabled_modules: std::collections::BTreeSet<ModuleId>,
     request_object_keys: nazo_key_management::KeyManager,
     tenant_id: uuid::Uuid,
+    remote_client_documents: crate::domain::remote_client_documents::RemoteClientDocumentResolver,
 }
 
 impl AuthorizationTestFixture {
@@ -26,6 +27,9 @@ impl AuthorizationTestFixture {
             enabled_modules,
             request_object_keys,
             tenant_id,
+            remote_client_documents:
+                crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                    .expect("empty remote client document resolver should build"),
         }
     }
 
@@ -37,6 +41,7 @@ impl AuthorizationTestFixture {
             self.enabled_modules.clone(),
             &self.request_object_keys,
             self.tenant_id,
+            &self.remote_client_documents,
         )
     }
 
@@ -120,6 +125,7 @@ impl<'a> AuthorizationRequestContext<'a> {
         enabled_modules: std::collections::BTreeSet<ModuleId>,
         request_object_keys: &'a nazo_key_management::KeyManager,
         tenant_id: uuid::Uuid,
+        remote_client_documents: &'a crate::domain::remote_client_documents::RemoteClientDocumentResolver,
     ) -> Self {
         Self {
             service,
@@ -130,7 +136,7 @@ impl<'a> AuthorizationRequestContext<'a> {
                 accepting: enabled_modules,
                 draining: std::collections::BTreeSet::new(),
             },
-            remote_client_documents: None,
+            remote_client_documents,
             request_object_keys,
             tenant_id,
             credential_authorization_offers: None,

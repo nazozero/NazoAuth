@@ -61,6 +61,26 @@ fn public_jwk_for(private_key: &[u8; 32]) -> Value {
     json!({"kty": "OKP", "crv": "Ed25519", "x": x})
 }
 
+fn proof_with_header(header: Value, claim_overrides: Value) -> String {
+    let mut claims = json!({
+        "htm": "POST",
+        "htu": "https://issuer.example/token",
+        "iat": NOW,
+        "jti": "proof-jti"
+    });
+    for (key, value) in claim_overrides.as_object().expect("claim overrides object") {
+        claims[key] = value.clone();
+    }
+    let encoded_header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).expect("header"));
+    let encoded_claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).expect("claims"));
+    let signing_input = format!("{encoded_header}.{encoded_claims}");
+    let signature = SigningKey::from_bytes(&PRIVATE_KEY).sign(signing_input.as_bytes());
+    format!(
+        "{signing_input}.{}",
+        URL_SAFE_NO_PAD.encode(signature.to_bytes())
+    )
+}
+
 fn request<'a>(proof: Option<&'a str>, expected_jkt: Option<&'a str>) -> DpopProofRequest<'a> {
     DpopProofRequest {
         proof,
@@ -487,4 +507,185 @@ async fn state_failures_are_fail_closed_with_compatible_error_categories_async()
         .await,
         Err(DpopError::InvalidProof)
     );
+}
+
+#[test]
+fn dpop_future_iat_replay_marker_outlives_acceptance() {
+    futures_executor::block_on(dpop_future_iat_replay_marker_outlives_acceptance_async());
+}
+
+async fn dpop_future_iat_replay_marker_outlives_acceptance_async() {
+    let state = AtomicDpopState::default();
+    let t0 = NOW;
+    let future_proof = proof(public_jwk(), json!({"iat": t0 + 30}));
+
+    validate_authorization_server_dpop_at(
+        &state,
+        request(Some(&future_proof), None),
+        DpopNoncePolicy::Optional,
+        t0,
+    )
+    .await
+    .expect("iat inside the future skew is accepted at t0");
+
+    for replay_at in [t0 + 301, t0 + 330] {
+        assert!(
+            matches!(
+                validate_authorization_server_dpop_at(
+                    &state,
+                    request(Some(&future_proof), None),
+                    DpopNoncePolicy::Optional,
+                    replay_at,
+                )
+                .await,
+                Err(DpopError::ReplayDetected(_))
+            ),
+            "replay marker must outlive acceptance at {replay_at}"
+        );
+    }
+
+    assert_eq!(
+        verify_dpop_proof_at(request(Some(&future_proof), None), t0 + 331),
+        Err(DpopError::InvalidProof),
+        "at +331 the proof age leaves the acceptance window"
+    );
+}
+
+#[derive(Default)]
+struct RecordingDpopState {
+    issued_nonce_ttls: Mutex<Vec<u64>>,
+}
+
+impl DpopStateStorePort for RecordingDpopState {
+    fn consume_replay<'a>(
+        &'a self,
+        _jkt: &'a str,
+        _jti: &'a str,
+        _ttl_seconds: u64,
+    ) -> DpopStateFuture<'a, bool> {
+        Box::pin(async { Ok(true) })
+    }
+
+    fn issue_nonce<'a>(&'a self, _nonce: &'a str, ttl_seconds: u64) -> DpopStateFuture<'a, ()> {
+        Box::pin(async move {
+            self.issued_nonce_ttls
+                .lock()
+                .expect("nonce ttl lock")
+                .push(ttl_seconds);
+            Ok(())
+        })
+    }
+
+    fn validate_nonce<'a>(&'a self, _nonce: &'a str) -> DpopStateFuture<'a, bool> {
+        Box::pin(async { Ok(true) })
+    }
+}
+
+#[test]
+fn dpop_nonce_ttl_does_not_follow_replay_ttl() {
+    let state = RecordingDpopState::default();
+    futures_executor::block_on(issue_authorization_server_dpop_nonce(&state))
+        .expect("nonce issue succeeds");
+    assert_eq!(
+        state
+            .issued_nonce_ttls
+            .lock()
+            .expect("nonce ttl lock")
+            .as_slice(),
+        &[300],
+        "nonce TTL stays 300 seconds and must not follow the 331 second replay TTL"
+    );
+}
+
+#[test]
+fn dpop_unknown_critical_header_is_rejected() {
+    let header =
+        json!({"typ": "dpop+jwt", "alg": "EdDSA", "jwk": public_jwk(), "crit": ["x"], "x": true});
+    let critical_proof = proof_with_header(header, json!({}));
+
+    let state = AtomicDpopState::default();
+    assert_eq!(
+        verify_dpop_proof_at(request(Some(&critical_proof), None), NOW),
+        Err(DpopError::InvalidProof)
+    );
+    assert!(
+        state.replay.lock().expect("replay lock").is_empty(),
+        "crit rejection must not consume replay state"
+    );
+}
+
+#[test]
+fn dpop_explicit_null_or_empty_crit_is_rejected() {
+    let jwk = public_jwk();
+    let cases = [
+        json!({"typ": "dpop+jwt", "alg": "EdDSA", "jwk": jwk, "crit": null}),
+        json!({"typ": "dpop+jwt", "alg": "EdDSA", "jwk": jwk, "crit": []}),
+        json!({"typ": "dpop+jwt", "alg": "EdDSA", "jwk": jwk, "crit": "x"}),
+    ];
+
+    for header in cases {
+        let critical_proof = proof_with_header(header, json!({}));
+        assert_eq!(
+            verify_dpop_proof_at(request(Some(&critical_proof), None), NOW),
+            Err(DpopError::InvalidProof),
+            "any explicit crit member must be rejected"
+        );
+    }
+
+    let duplicated =
+        r#"eyJ0eXAiOiJkcG9wK2p3dCIsImFsZyI6IkVkRFNBIiwiY3JpdCI6W10sImNyaXQiOltdfQ.e30.invalid"#;
+    assert_eq!(
+        verify_dpop_proof_at(request(Some(duplicated), None), NOW),
+        Err(DpopError::MalformedProof),
+        "duplicate crit members keep the malformed proof category"
+    );
+}
+
+#[test]
+fn dpop_noncritical_extension_remains_accepted() {
+    let header = json!({"typ": "dpop+jwt", "alg": "EdDSA", "jwk": public_jwk(), "x": "extension"});
+    let extended_proof = proof_with_header(header, json!({}));
+    assert!(
+        verify_dpop_proof_at(request(Some(&extended_proof), None), NOW)
+            .expect("non-critical extensions stay ignorable")
+            .is_some()
+    );
+}
+
+#[test]
+fn dpop_http_method_is_case_sensitive() {
+    let lowercase_proof = proof(public_jwk(), json!({"htm": "post"}));
+    assert_eq!(
+        verify_dpop_proof_at(request(Some(&lowercase_proof), None), NOW),
+        Err(DpopError::InvalidProof)
+    );
+
+    let exact_proof = proof(public_jwk(), json!({"htm": "POST"}));
+    assert!(verify_dpop_proof_at(request(Some(&exact_proof), None), NOW).is_ok());
+}
+
+#[test]
+fn dpop_replay_scope_preserves_exact_method() {
+    let verified = VerifiedDpopProof {
+        jkt: "jkt".to_owned(),
+        jti: "proof-jti".to_owned(),
+        nonce: None,
+        audit: DpopReplayAudit {
+            jti_hash: "hash".to_owned(),
+            key_id: None,
+        },
+    };
+    let scope_for = |method: &'static str| {
+        let req = DpopProofRequest {
+            proof: None,
+            method,
+            target_uris: &["https://issuer.example/token"],
+            access_token: Some("access-token"),
+            expected_jkt: None,
+        };
+        replay_scope(&req, &verified).expect("replay scope")
+    };
+
+    assert_ne!(scope_for("post"), scope_for("POST"));
+    assert_eq!(scope_for("POST"), scope_for("POST"));
 }

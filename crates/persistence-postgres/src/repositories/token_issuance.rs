@@ -7,19 +7,16 @@ use diesel::{
     BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, QueryableByName,
     SelectableHelper, sql_query, sql_types,
 };
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{
-    NewRefreshToken, OAuthClient, RefreshToken, RefreshTokenPersistResult, TokenFuture,
-    TokenIssuanceClaimResult, TokenPortError, TokenRepositoryPort, TokenRevocation,
-};
-use nazo_auth::{
-    PrepareTokenIssuance, PrepareTokenIssuanceResult, TokenIssuancePhase, TokenIssuanceRecord,
-    TokenIssuanceTransitionResult,
+    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, OAuthClient, RefreshToken,
+    RefreshTokenPersistResult, TokenFuture, TokenIssuanceMode, TokenIssuanceRecord, TokenPortError,
+    TokenRepositoryPort, TokenRevocation,
 };
 use nazo_identity::{SubjectClaims, TenantId, UserId, ports::RepositoryError};
 #[cfg(test)]
 use nazo_persistence::TokenIssuanceResponseKeyError;
-use nazo_persistence::TokenIssuanceResponseKeyRing;
+use nazo_persistence::{SecurityAuditEvent, TokenIssuanceResponseKeyRing};
 use rand::Rng;
 use uuid::Uuid;
 
@@ -28,7 +25,10 @@ use crate::{
     schema::{access_token_revocations, oauth_token_issuances},
 };
 
-use super::{AuthorizationRepository, OAuthClientRepository, TokenRepository, UserRepository};
+use super::{
+    AuthorizationRepository, OAuthClientRepository, TokenRepository, UserRepository,
+    audit_ledger::append_fresh_security_audit_on_connection,
+};
 
 /// The persisted envelope format is deliberately independent from the key id.
 /// A format migration can therefore be introduced without pretending that a
@@ -234,10 +234,7 @@ impl TokenIssuanceRepository {
         repository
     }
 
-    /// Verifies that every non-expired persisted response can still be
-    /// decrypted by the configured current/previous key ring. This runs
-    /// before the HTTP server starts so retiring a previous key cannot leave
-    /// only a request-time failure for a still-recoverable issuance.
+    /// Verify only response metadata before admitting token traffic.
     pub async fn validate_response_key_ring(&self) -> Result<(), RepositoryError> {
         let Some(response_keys) = self.response_keys.as_ref() else {
             return Err(RepositoryError::Consistency(
@@ -245,49 +242,23 @@ impl TokenIssuanceRepository {
             ));
         };
         let mut connection = self.connection().await?;
-        let key_ids = oauth_token_issuances::table
+        let response_metadata = oauth_token_issuances::table
             .filter(oauth_token_issuances::expires_at.gt(Utc::now()))
+            .filter(oauth_token_issuances::access_token_expires_at.gt(Utc::now()))
             .filter(oauth_token_issuances::response_ciphertext.is_not_null())
-            .select(oauth_token_issuances::response_key_id)
+            .select((
+                oauth_token_issuances::response_key_id,
+                oauth_token_issuances::response_envelope_version,
+            ))
             .distinct()
-            .load::<Option<String>>(&mut connection)
+            .load::<(Option<String>, Option<String>)>(&mut connection)
             .await
             .map_err(|error| {
                 RepositoryError::Unexpected(format!(
-                    "failed to inspect token issuance response key ids: {error}"
+                    "failed to inspect token issuance response key metadata: {error}"
                 ))
             })?;
-        validate_response_key_ids(response_keys, key_ids)?;
-
-        const PREFLIGHT_BATCH_SIZE: i64 = 512;
-        let mut after_issuance_id = None;
-        loop {
-            let mut query = oauth_token_issuances::table
-                .filter(oauth_token_issuances::expires_at.gt(Utc::now()))
-                .into_boxed();
-            if let Some(after) = after_issuance_id {
-                query = query.filter(oauth_token_issuances::issuance_id.gt(after));
-            }
-            let rows = query
-                .order(oauth_token_issuances::issuance_id.asc())
-                .limit(PREFLIGHT_BATCH_SIZE)
-                .select(TokenIssuanceRow::as_select())
-                .load::<TokenIssuanceRow>(&mut connection)
-                .await
-                .map_err(|error| {
-                    RepositoryError::Unexpected(format!(
-                        "failed to authenticate token issuance response envelopes: {error}"
-                    ))
-                })?;
-            if rows.is_empty() {
-                break;
-            }
-            for row in rows {
-                after_issuance_id = Some(row.issuance_id);
-                let _ = row.into_record(Some(response_keys))?;
-            }
-        }
-        Ok(())
+        validate_response_key_metadata(response_keys, response_metadata)
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
@@ -308,10 +279,6 @@ struct TokenIssuanceRow {
     user_id: Option<Uuid>,
     grant_key_blake3: String,
     request_digest: String,
-    phase: String,
-    claim_owner_id: Option<Uuid>,
-    #[allow(dead_code)]
-    claim_started_at: Option<DateTime<Utc>>,
     access_token_jti: Option<String>,
     access_token_expires_at: Option<DateTime<Utc>>,
     response_ciphertext: Option<Vec<u8>>,
@@ -331,17 +298,11 @@ impl TokenIssuanceRow {
         self,
         response_keys: Option<&TokenIssuanceResponseKeyRing>,
     ) -> Result<TokenIssuanceRecord, RepositoryError> {
-        let phase = match self.phase.as_str() {
-            "prepared" => TokenIssuancePhase::Prepared,
-            "signed" => TokenIssuancePhase::Signed,
-            "persisted" => TokenIssuancePhase::Persisted,
-            "delivered" => TokenIssuancePhase::Delivered,
-            _ => {
-                return Err(RepositoryError::Consistency(
-                    "token issuance contains an unknown phase".to_owned(),
-                ));
-            }
-        };
+        if (self.access_token_jti.is_some()) != self.access_token_expires_at.is_some() {
+            return Err(RepositoryError::Consistency(
+                "token issuance access-token JTI and expiry are inconsistent".to_owned(),
+            ));
+        }
         let response_body = match (
             &self.response_ciphertext,
             &self.response_digest,
@@ -350,26 +311,36 @@ impl TokenIssuanceRow {
         ) {
             (None, None, None, None) => None,
             (Some(ciphertext), Some(digest), Some(envelope_version), Some(key_id))
-                if envelope_version == TOKEN_ISSUANCE_RESPONSE_ENVELOPE_VERSION =>
+                if envelope_version == TOKEN_ISSUANCE_RESPONSE_ENVELOPE_VERSION
+                    && self.access_token_jti.is_some() =>
             {
-                let Some(response_keys) = response_keys else {
-                    return Err(RepositoryError::Consistency(
-                        "token issuance response encryption keys are not configured".to_owned(),
-                    ));
-                };
-                Some(unseal_response(
-                    response_keys,
-                    &ResponseEnvelopeContext {
-                        issuance_id: self.issuance_id,
-                        tenant_id: self.tenant_id,
-                        client_id: self.client_id,
-                        grant_key_hash: &self.grant_key_blake3,
-                        response_digest: digest,
-                        envelope_version,
-                        key_id,
-                    },
-                    ciphertext,
-                )?)
+                // Retention can extend through the refresh token lifetime.
+                // Expired responses no longer need their decryption key.
+                if self
+                    .access_token_expires_at
+                    .is_some_and(|expiry| expiry > Utc::now())
+                {
+                    let Some(response_keys) = response_keys else {
+                        return Err(RepositoryError::Consistency(
+                            "token issuance response encryption keys are not configured".to_owned(),
+                        ));
+                    };
+                    Some(unseal_response(
+                        response_keys,
+                        &ResponseEnvelopeContext {
+                            issuance_id: self.issuance_id,
+                            tenant_id: self.tenant_id,
+                            client_id: self.client_id,
+                            grant_key_hash: &self.grant_key_blake3,
+                            response_digest: digest,
+                            envelope_version,
+                            key_id,
+                        },
+                        ciphertext,
+                    )?)
+                } else {
+                    None
+                }
             }
             (Some(_), Some(_), Some(_), Some(_)) => {
                 return Err(RepositoryError::Consistency(
@@ -382,11 +353,6 @@ impl TokenIssuanceRow {
                 ));
             }
         };
-        if matches!(phase, TokenIssuancePhase::Prepared) != response_body.is_none() {
-            return Err(RepositoryError::Consistency(
-                "token issuance phase and response envelope are inconsistent".to_owned(),
-            ));
-        }
         Ok(TokenIssuanceRecord {
             issuance_id: self.issuance_id,
             tenant_id: self.tenant_id,
@@ -394,25 +360,30 @@ impl TokenIssuanceRow {
             user_id: self.user_id,
             grant_key: self.grant_key_blake3,
             request_digest: self.request_digest,
-            phase,
-            claim_owner_id: self.claim_owner_id,
             access_token_jti: self.access_token_jti,
             access_token_expires_at: self.access_token_expires_at.map(|value| value.timestamp()),
             response_body,
             response_digest: self.response_digest,
-            // The core record predates key rotation and calls this field a
-            // version. Keep it as the envelope format version; key identity is
-            // an at-rest concern and is never exposed to token handlers.
             response_key_version: self.response_envelope_version,
         })
     }
 }
 
-fn validate_response_key_ids(
+fn validate_response_key_metadata(
     response_keys: &TokenIssuanceResponseKeyRing,
-    key_ids: impl IntoIterator<Item = Option<String>>,
+    metadata: impl IntoIterator<Item = (Option<String>, Option<String>)>,
 ) -> Result<(), RepositoryError> {
-    for key_id in key_ids {
+    for (key_id, envelope_version) in metadata {
+        let Some(envelope_version) = envelope_version else {
+            return Err(RepositoryError::Consistency(
+                "token issuance response envelope format is missing".to_owned(),
+            ));
+        };
+        if envelope_version != TOKEN_ISSUANCE_RESPONSE_ENVELOPE_VERSION {
+            return Err(RepositoryError::Consistency(
+                "token issuance response envelope format is unsupported".to_owned(),
+            ));
+        }
         let Some(key_id) = key_id else {
             return Err(RepositoryError::Consistency(
                 "token issuance response is missing its encryption key id".to_owned(),
@@ -524,6 +495,186 @@ fn unseal_response(
     Ok(plaintext)
 }
 
+struct DiscardOnDrop(Option<crate::DbConnection>);
+
+impl DiscardOnDrop {
+    fn connection(&mut self) -> &mut crate::DbConnection {
+        self.0
+            .as_mut()
+            .expect("token issuance connection guard is armed")
+    }
+    fn return_to_pool(mut self) {
+        let _ = self.0.take();
+    }
+}
+
+impl Drop for DiscardOnDrop {
+    fn drop(&mut self) {
+        if let Some(connection) = self.0.take() {
+            drop(crate::DbConnection::take(connection));
+        }
+    }
+}
+
+enum CommitTransactionError {
+    Diesel(diesel::result::Error),
+    Repository(RepositoryError),
+}
+impl From<diesel::result::Error> for CommitTransactionError {
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Diesel(error)
+    }
+}
+
+#[allow(clippy::type_complexity)]
+fn response_material(
+    response_keys: Option<&TokenIssuanceResponseKeyRing>,
+    input: &CommitTokenIssuance,
+    grant_hash: &str,
+) -> Result<
+    (
+        Option<Vec<u8>>,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ),
+    RepositoryError,
+> {
+    let Some(response_body) = input.response_body.as_deref() else {
+        return Ok((None, None, None, None));
+    };
+    let response_digest = blake3::hash(response_body).to_hex().to_string();
+    let Some(response_keys) = response_keys else {
+        return Err(RepositoryError::Unavailable);
+    };
+    let key_id = response_keys.current_id().to_owned();
+    let ciphertext = seal_response(
+        Some(response_keys),
+        &ResponseEnvelopeContext {
+            issuance_id: input.issuance_id,
+            tenant_id: input.tenant_id,
+            client_id: input.client_id,
+            grant_key_hash: grant_hash,
+            response_digest: &response_digest,
+            envelope_version: TOKEN_ISSUANCE_RESPONSE_ENVELOPE_VERSION,
+            key_id: &key_id,
+        },
+        response_body,
+    )?;
+    Ok((
+        Some(ciphertext),
+        Some(response_digest),
+        Some(TOKEN_ISSUANCE_RESPONSE_ENVELOPE_VERSION.to_owned()),
+        Some(key_id),
+    ))
+}
+
+fn validate_commit_input(
+    input: &CommitTokenIssuance,
+    grant_key: &str,
+) -> Result<(), RepositoryError> {
+    if input.issuance_id.is_nil()
+        || input.tenant_id.is_nil()
+        || input.client_id.is_nil()
+        || grant_key.trim().is_empty()
+        || !is_lower_hex_64(&input.request_digest)
+        || input.access_token_jti.trim().is_empty()
+    {
+        return Err(RepositoryError::Consistency(
+            "token issuance commit input is malformed".to_owned(),
+        ));
+    }
+    match (&input.mode, input.response_body.is_some()) {
+        (TokenIssuanceMode::Idempotent { grant_key }, true) if !grant_key.trim().is_empty() => {}
+        (TokenIssuanceMode::Idempotent { .. }, false) => {
+            return Err(RepositoryError::Consistency(
+                "idempotent token issuance requires a response body".to_owned(),
+            ));
+        }
+        (TokenIssuanceMode::Idempotent { .. }, true) => {
+            return Err(RepositoryError::Consistency(
+                "idempotent token issuance grant key is empty".to_owned(),
+            ));
+        }
+        (TokenIssuanceMode::Fresh | TokenIssuanceMode::SingleUse { .. }, false) => {}
+        (TokenIssuanceMode::Fresh | TokenIssuanceMode::SingleUse { .. }, true) => {
+            return Err(RepositoryError::Consistency(
+                "non-idempotent token issuance cannot persist a response body".to_owned(),
+            ));
+        }
+    }
+    if let Some(refresh) = input.refresh_token.as_ref()
+        && (refresh.tenant_id != input.tenant_id
+            || refresh.client_id != input.client_id
+            || refresh.user_id != input.user_id)
+    {
+        return Err(RepositoryError::Consistency(
+            "refresh token owner does not match token issuance owner".to_owned(),
+        ));
+    }
+    DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0).ok_or_else(|| {
+        RepositoryError::Consistency("token issuance access-token expiry is invalid".to_owned())
+    })?;
+    Ok(())
+}
+fn is_lower_hex_64(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn token_issued_audit_event(
+    input: &CommitTokenIssuance,
+    refresh_family_id: Option<Uuid>,
+) -> SecurityAuditEvent {
+    SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: "token_issued".to_owned(),
+        event_category: "token_lifecycle".to_owned(),
+        payload: serde_json::json!({
+            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION, "tenant_id": input.tenant_id, "issuance_id": input.issuance_id,
+            "event_category": "token_lifecycle", "user_id": input.user_id,
+            "client_id": input.audit_fields.client_id, "subject_hash": input.audit_fields.subject_hash, "scope": input.audit_fields.scope,
+            "audience": input.audit_fields.audience, "access_token_jti": input.access_token_jti, "refresh_token_family_id": refresh_family_id,
+        }),
+        occurred_at: Utc::now(),
+    }
+}
+fn refresh_rotated_audit_event(
+    input: &CommitTokenIssuance,
+    refresh: &NewRefreshToken,
+) -> SecurityAuditEvent {
+    SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: "refresh_rotated".to_owned(),
+        event_category: "token_lifecycle".to_owned(),
+        payload: serde_json::json!({
+            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION, "tenant_id": input.tenant_id, "issuance_id": input.issuance_id,
+            "event_category": "token_lifecycle",
+            "client_id": input.audit_fields.client_id, "token_family_id": refresh.family_id, "rotated_from_id": refresh.rotated_from_id,
+        }),
+        occurred_at: Utc::now(),
+    }
+}
+fn refresh_reuse_audit_event(
+    input: &CommitTokenIssuance,
+    refresh: &NewRefreshToken,
+) -> SecurityAuditEvent {
+    SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: "refresh_reuse_detected".to_owned(),
+        event_category: "token_replay".to_owned(),
+        payload: serde_json::json!({
+            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION, "tenant_id": input.tenant_id, "issuance_id": input.issuance_id,
+            "event_category": "token_replay",
+            "client_id": input.audit_fields.client_id, "token_family_id": refresh.family_id, "rotated_from_id": refresh.rotated_from_id,
+            "source_token_id": refresh.lost_response_retry.map(|retry| retry.original_id),
+        }),
+        occurred_at: Utc::now(),
+    }
+}
+
 impl TokenRepositoryPort for TokenIssuanceRepository {
     fn validate_response_key_ring(&self) -> TokenFuture<'_, ()> {
         Box::pin(async move {
@@ -532,240 +683,173 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-
-    fn prepare_token_issuance<'a>(
+    fn commit_token_issuance<'a>(
         &'a self,
-        input: PrepareTokenIssuance,
-    ) -> TokenFuture<'a, PrepareTokenIssuanceResult> {
+        input: CommitTokenIssuance,
+    ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
         Box::pin(async move {
-            let mut connection = self.connection().await.map_err(map_repository_error)?;
-            let grant_hash = grant_key_hash(&input.grant_key);
-            diesel::delete(
-                oauth_token_issuances::table
-                    .filter(oauth_token_issuances::tenant_id.eq(input.tenant_id))
-                    .filter(oauth_token_issuances::client_id.eq(input.client_id))
-                    .filter(oauth_token_issuances::grant_key_blake3.eq(&grant_hash))
-                    .filter(oauth_token_issuances::expires_at.le(Utc::now()))
-                    .filter(oauth_token_issuances::claim_owner_id.is_null().or(
-                        oauth_token_issuances::phase.ne(TokenIssuancePhase::Prepared.as_str()),
-                    )),
-            )
-            .execute(&mut connection)
-            .await
-            .map_err(map_diesel_error)?;
-            let inserted = diesel::insert_into(oauth_token_issuances::table)
-                .values((
-                    oauth_token_issuances::issuance_id.eq(input.issuance_id),
-                    oauth_token_issuances::tenant_id.eq(input.tenant_id),
-                    oauth_token_issuances::client_id.eq(input.client_id),
-                    oauth_token_issuances::user_id.eq(input.user_id),
-                    oauth_token_issuances::grant_key_blake3.eq(&grant_hash),
-                    oauth_token_issuances::request_digest.eq(&input.request_digest),
-                    oauth_token_issuances::phase.eq(TokenIssuancePhase::Prepared.as_str()),
-                    oauth_token_issuances::expires_at.eq(input.expires_at),
-                    oauth_token_issuances::updated_at.eq(Utc::now()),
-                ))
-                .on_conflict((
-                    oauth_token_issuances::tenant_id,
-                    oauth_token_issuances::client_id,
-                    oauth_token_issuances::grant_key_blake3,
-                ))
-                .do_nothing()
-                .execute(&mut connection)
-                .await
-                .map_err(map_diesel_error)?;
-            let row = oauth_token_issuances::table
-                .filter(oauth_token_issuances::tenant_id.eq(input.tenant_id))
-                .filter(oauth_token_issuances::client_id.eq(input.client_id))
-                .filter(oauth_token_issuances::grant_key_blake3.eq(&grant_hash))
-                .select(TokenIssuanceRow::as_select())
-                .first::<TokenIssuanceRow>(&mut connection)
-                .await
-                .map_err(map_diesel_error)?;
-            let record = row
-                .into_record(self.response_keys.as_ref())
-                .map_err(map_repository_error)?;
-            if inserted == 1 {
-                Ok(PrepareTokenIssuanceResult::Created(record))
-            } else if record.request_digest == input.request_digest {
-                Ok(PrepareTokenIssuanceResult::Existing(record))
-            } else {
-                Ok(PrepareTokenIssuanceResult::Conflict)
-            }
-        })
-    }
-
-    fn claim_token_issuance<'a>(
-        &'a self,
-        issuance_id: Uuid,
-        request_digest: &'a str,
-        claim_owner_id: Uuid,
-    ) -> TokenFuture<'a, TokenIssuanceClaimResult> {
-        Box::pin(async move {
-            // The NULL-owner predicate is the concurrency boundary. There is
-            // intentionally no lease takeover path: a crashed owner leaves
-            // the row blocked until an operator repairs the durable record.
-            let mut connection = self.connection().await.map_err(map_repository_error)?;
-            let affected = diesel::update(
-                oauth_token_issuances::table
-                    .filter(oauth_token_issuances::issuance_id.eq(issuance_id))
-                    .filter(oauth_token_issuances::request_digest.eq(request_digest))
-                    .filter(oauth_token_issuances::phase.eq(TokenIssuancePhase::Prepared.as_str()))
-                    .filter(oauth_token_issuances::claim_owner_id.is_null()),
-            )
-            .set((
-                oauth_token_issuances::claim_owner_id.eq(claim_owner_id),
-                oauth_token_issuances::claim_started_at.eq(Utc::now()),
-                oauth_token_issuances::updated_at.eq(Utc::now()),
-            ))
-            .execute(&mut connection)
-            .await
-            .map_err(map_diesel_error)?;
-            if affected == 1 {
-                return Ok(TokenIssuanceClaimResult::Applied);
-            }
-
-            let current = oauth_token_issuances::table
-                .filter(oauth_token_issuances::issuance_id.eq(issuance_id))
-                .select((
-                    oauth_token_issuances::request_digest,
-                    oauth_token_issuances::phase,
-                    oauth_token_issuances::claim_owner_id,
-                ))
-                .first::<(String, String, Option<Uuid>)>(&mut connection)
-                .await
-                .optional()
-                .map_err(map_diesel_error)?;
-            Ok(match current {
-                None => TokenIssuanceClaimResult::Missing,
-                Some((digest, _phase, _)) if digest != request_digest => {
-                    TokenIssuanceClaimResult::Conflict
+            let grant_key = input.mode.grant_key(input.issuance_id);
+            validate_commit_input(&input, &grant_key).map_err(map_repository_error)?;
+            let grant_hash = grant_key_hash(&grant_key);
+            let (response_ciphertext, response_digest, response_envelope_version, response_key_id) =
+                response_material(self.response_keys.as_ref(), &input, &grant_hash)
+                    .map_err(map_repository_error)?;
+            let access_token_expires_at =
+                DateTime::<Utc>::from_timestamp(input.access_token_expires_at, 0)
+                    .ok_or(TokenPortError::CorruptData)?;
+            let expires_at = input
+                .refresh_token
+                .as_ref()
+                .map_or(access_token_expires_at, |refresh| {
+                    std::cmp::max(access_token_expires_at, refresh.expires_at)
+                });
+            let mut guard =
+                DiscardOnDrop(Some(self.connection().await.map_err(map_repository_error)?));
+            let transaction = guard
+                .connection()
+                .transaction::<CommitTokenIssuanceResult, CommitTransactionError, _>(
+                    async |connection| {
+                        diesel::sql_query("SET LOCAL lock_timeout = '2s'")
+                            .execute(connection)
+                            .await?;
+                        let now = Utc::now();
+                        if matches!(input.mode, TokenIssuanceMode::Idempotent { .. }) {
+                            let jti_expired = oauth_token_issuances::access_token_expires_at
+                                .is_null()
+                                .or(oauth_token_issuances::access_token_expires_at.le(now));
+                            diesel::delete(
+                                oauth_token_issuances::table
+                                    .filter(oauth_token_issuances::tenant_id.eq(input.tenant_id))
+                                    .filter(oauth_token_issuances::client_id.eq(input.client_id))
+                                    .filter(oauth_token_issuances::grant_key_blake3.eq(&grant_hash))
+                                    .filter(oauth_token_issuances::expires_at.le(now))
+                                    .filter(jti_expired),
+                            )
+                            .execute(connection)
+                            .await?;
+                        }
+                        let inserted = diesel::insert_into(oauth_token_issuances::table)
+                            .values((
+                                oauth_token_issuances::issuance_id.eq(input.issuance_id),
+                                oauth_token_issuances::tenant_id.eq(input.tenant_id),
+                                oauth_token_issuances::client_id.eq(input.client_id),
+                                oauth_token_issuances::user_id.eq(input.user_id),
+                                oauth_token_issuances::grant_key_blake3.eq(&grant_hash),
+                                oauth_token_issuances::request_digest.eq(&input.request_digest),
+                                oauth_token_issuances::access_token_jti
+                                    .eq(Some(input.access_token_jti.clone())),
+                                oauth_token_issuances::access_token_expires_at
+                                    .eq(Some(access_token_expires_at)),
+                                oauth_token_issuances::response_ciphertext
+                                    .eq(response_ciphertext.clone()),
+                                oauth_token_issuances::response_digest.eq(response_digest.clone()),
+                                oauth_token_issuances::response_envelope_version
+                                    .eq(response_envelope_version.clone()),
+                                oauth_token_issuances::response_key_id.eq(response_key_id.clone()),
+                                oauth_token_issuances::expires_at.eq(expires_at),
+                                oauth_token_issuances::updated_at.eq(now),
+                            ))
+                            .on_conflict((
+                                oauth_token_issuances::tenant_id,
+                                oauth_token_issuances::client_id,
+                                oauth_token_issuances::grant_key_blake3,
+                            ))
+                            .do_nothing()
+                            .execute(connection)
+                            .await?;
+                        if inserted == 0 {
+                            let row = oauth_token_issuances::table
+                                .filter(oauth_token_issuances::tenant_id.eq(input.tenant_id))
+                                .filter(oauth_token_issuances::client_id.eq(input.client_id))
+                                .filter(oauth_token_issuances::grant_key_blake3.eq(&grant_hash))
+                                .select(TokenIssuanceRow::as_select())
+                                .first::<TokenIssuanceRow>(connection)
+                                .await
+                                .optional()?;
+                            let Some(row) = row else {
+                                return Err(CommitTransactionError::Repository(
+                                    RepositoryError::Consistency(
+                                        "token issuance conflict row disappeared".to_owned(),
+                                    ),
+                                ));
+                            };
+                            let record = row
+                                .into_record(self.response_keys.as_ref())
+                                .map_err(CommitTransactionError::Repository)?;
+                            return Ok(classify_existing_issuance(&input, record));
+                        }
+                        if let Some(refresh) = input.refresh_token.as_ref() {
+                            match TokenRepository::persist_refresh_token_on_connection(
+                                connection,
+                                refresh.clone(),
+                            )
+                            .await
+                            .map_err(CommitTransactionError::Repository)?
+                            {
+                                RefreshTokenPersistResult::Inserted => {}
+                                RefreshTokenPersistResult::RotationConflict => {
+                                    diesel::update(oauth_token_issuances::table.filter(
+                                        oauth_token_issuances::issuance_id.eq(input.issuance_id),
+                                    ))
+                                    .set((
+                                        oauth_token_issuances::access_token_jti.eq(None::<String>),
+                                        oauth_token_issuances::access_token_expires_at
+                                            .eq(None::<DateTime<Utc>>),
+                                        oauth_token_issuances::response_ciphertext
+                                            .eq(None::<Vec<u8>>),
+                                        oauth_token_issuances::response_digest.eq(None::<String>),
+                                        oauth_token_issuances::response_envelope_version
+                                            .eq(None::<String>),
+                                        oauth_token_issuances::response_key_id.eq(None::<String>),
+                                        oauth_token_issuances::updated_at.eq(Utc::now()),
+                                    ))
+                                    .execute(connection)
+                                    .await?;
+                                    append_fresh_security_audit_on_connection(
+                                        connection,
+                                        &refresh_reuse_audit_event(&input, refresh),
+                                    )
+                                    .await?;
+                                    return Ok(CommitTokenIssuanceResult::RotationConflict);
+                                }
+                            }
+                        }
+                        append_fresh_security_audit_on_connection(
+                            connection,
+                            &token_issued_audit_event(
+                                &input,
+                                input
+                                    .refresh_token
+                                    .as_ref()
+                                    .map(|refresh| refresh.family_id),
+                            ),
+                        )
+                        .await?;
+                        if let Some(refresh) = input
+                            .refresh_token
+                            .as_ref()
+                            .filter(|refresh| refresh.rotated_from_id.is_some())
+                        {
+                            append_fresh_security_audit_on_connection(
+                                connection,
+                                &refresh_rotated_audit_event(&input, refresh),
+                            )
+                            .await?;
+                        }
+                        Ok(CommitTokenIssuanceResult::Committed)
+                    },
+                )
+                .await;
+            match transaction {
+                Ok(result) => {
+                    guard.return_to_pool();
+                    Ok(result)
                 }
-                Some((_, _, Some(_))) => TokenIssuanceClaimResult::Busy,
-                Some(_) => TokenIssuanceClaimResult::Conflict,
-            })
-        })
-    }
-
-    fn record_token_issuance_signed<'a>(
-        &'a self,
-        input: nazo_auth::RecordTokenIssuanceSigned<'a>,
-    ) -> TokenFuture<'a, TokenIssuanceTransitionResult> {
-        Box::pin(async move {
-            let nazo_auth::RecordTokenIssuanceSigned {
-                issuance_id,
-                request_digest,
-                claim_owner_id,
-                access_token_jti,
-                access_token_expires_at,
-                response_body,
-                response_digest,
-            } = input;
-            let mut connection = self.connection().await.map_err(map_repository_error)?;
-            let row = oauth_token_issuances::table
-                .filter(oauth_token_issuances::issuance_id.eq(issuance_id))
-                .filter(oauth_token_issuances::request_digest.eq(request_digest))
-                .filter(oauth_token_issuances::claim_owner_id.eq(claim_owner_id))
-                .select(TokenIssuanceRow::as_select())
-                .first::<TokenIssuanceRow>(&mut connection)
-                .await
-                .optional()
-                .map_err(map_diesel_error)?;
-            let Some(row) = row else {
-                return Ok(TokenIssuanceTransitionResult::Missing);
-            };
-            if row.phase != TokenIssuancePhase::Prepared.as_str() {
-                return Ok(TokenIssuanceTransitionResult::Conflict);
+                Err(CommitTransactionError::Repository(error)) => Err(map_repository_error(error)),
+                Err(CommitTransactionError::Diesel(error)) => Err(map_diesel_error(error)),
             }
-            let ciphertext = seal_response(
-                self.response_keys.as_ref(),
-                &ResponseEnvelopeContext {
-                    issuance_id,
-                    tenant_id: row.tenant_id,
-                    client_id: row.client_id,
-                    grant_key_hash: &row.grant_key_blake3,
-                    response_digest,
-                    envelope_version: TOKEN_ISSUANCE_RESPONSE_ENVELOPE_VERSION,
-                    key_id: self
-                        .response_keys
-                        .as_ref()
-                        .ok_or(TokenPortError::Unavailable)?
-                        .current_id(),
-                },
-                response_body,
-            )
-            .map_err(map_repository_error)?;
-            let Some(expires_at) = DateTime::<Utc>::from_timestamp(access_token_expires_at, 0)
-            else {
-                return Err(TokenPortError::CorruptData);
-            };
-            let affected = diesel::update(
-                oauth_token_issuances::table
-                    .filter(oauth_token_issuances::issuance_id.eq(issuance_id))
-                    .filter(oauth_token_issuances::request_digest.eq(request_digest))
-                    .filter(oauth_token_issuances::claim_owner_id.eq(claim_owner_id))
-                    .filter(oauth_token_issuances::phase.eq(TokenIssuancePhase::Prepared.as_str())),
-            )
-            .set((
-                oauth_token_issuances::phase.eq(TokenIssuancePhase::Signed.as_str()),
-                oauth_token_issuances::access_token_jti.eq(access_token_jti),
-                oauth_token_issuances::access_token_expires_at.eq(expires_at),
-                oauth_token_issuances::response_ciphertext.eq(ciphertext),
-                oauth_token_issuances::response_digest.eq(response_digest),
-                oauth_token_issuances::response_envelope_version
-                    .eq(TOKEN_ISSUANCE_RESPONSE_ENVELOPE_VERSION),
-                oauth_token_issuances::response_key_id.eq(self
-                    .response_keys
-                    .as_ref()
-                    .ok_or(TokenPortError::Unavailable)?
-                    .current_id()),
-                oauth_token_issuances::updated_at.eq(Utc::now()),
-            ))
-            .execute(&mut connection)
-            .await
-            .map_err(map_diesel_error)?;
-            Ok(if affected == 1 {
-                TokenIssuanceTransitionResult::Applied
-            } else {
-                TokenIssuanceTransitionResult::Conflict
-            })
         })
     }
-
-    fn mark_token_issuance_persisted<'a>(
-        &'a self,
-        issuance_id: Uuid,
-        request_digest: &'a str,
-    ) -> TokenFuture<'a, TokenIssuanceTransitionResult> {
-        Box::pin(async move {
-            transition_token_issuance(
-                &self.pool,
-                issuance_id,
-                request_digest,
-                TokenIssuancePhase::Signed,
-                TokenIssuancePhase::Persisted,
-            )
-            .await
-        })
-    }
-
-    fn mark_token_issuance_delivered<'a>(
-        &'a self,
-        issuance_id: Uuid,
-        request_digest: &'a str,
-    ) -> TokenFuture<'a, TokenIssuanceTransitionResult> {
-        Box::pin(async move {
-            transition_token_issuance(
-                &self.pool,
-                issuance_id,
-                request_digest,
-                TokenIssuancePhase::Persisted,
-                TokenIssuancePhase::Delivered,
-            )
-            .await
-        })
-    }
-
     fn token_issuance_by_grant<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -774,11 +858,10 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
     ) -> TokenFuture<'a, Option<TokenIssuanceRecord>> {
         Box::pin(async move {
             let mut connection = self.connection().await.map_err(map_repository_error)?;
-            let grant_hash = grant_key_hash(grant_key);
             let row = oauth_token_issuances::table
                 .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
                 .filter(oauth_token_issuances::client_id.eq(client_id))
-                .filter(oauth_token_issuances::grant_key_blake3.eq(grant_hash))
+                .filter(oauth_token_issuances::grant_key_blake3.eq(grant_key_hash(grant_key)))
                 .filter(oauth_token_issuances::expires_at.gt(Utc::now()))
                 .select(TokenIssuanceRow::as_select())
                 .first::<TokenIssuanceRow>(&mut connection)
@@ -790,7 +873,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-
     fn client_by_protocol_id<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -803,7 +885,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-
     fn refresh_token<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -816,8 +897,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-
-    fn lost_response_successor_or_compromise<'a>(
+    fn inspect_lost_response_successor<'a>(
         &'a self,
         token: &'a RefreshToken,
         client_id: Uuid,
@@ -825,24 +905,11 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
     ) -> TokenFuture<'a, Option<RefreshToken>> {
         Box::pin(async move {
             self.tokens
-                .lost_response_successor_or_compromise(token, client_id, retry_started_at)
+                .inspect_lost_response_successor(token, client_id, retry_started_at)
                 .await
                 .map_err(map_repository_error)
         })
     }
-
-    fn persist_refresh_token<'a>(
-        &'a self,
-        token: NewRefreshToken,
-    ) -> TokenFuture<'a, RefreshTokenPersistResult> {
-        Box::pin(async move {
-            self.tokens
-                .persist_refresh_token(token)
-                .await
-                .map_err(map_repository_error)
-        })
-    }
-
     fn active_subject_claims(
         &self,
         tenant_id: Uuid,
@@ -857,7 +924,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-
     fn revoke_issued_tokens<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -879,7 +945,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-
     fn access_token_revoked<'a>(&'a self, tenant_id: Uuid, jti: &'a str) -> TokenFuture<'a, bool> {
         Box::pin(async move {
             self.tokens
@@ -888,7 +953,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-
     fn refresh_family_active(
         &self,
         tenant_id: Uuid,
@@ -902,7 +966,6 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-
     fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> TokenFuture<'a, usize> {
         Box::pin(async move {
             self.tokens
@@ -918,43 +981,22 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
     }
 }
 
-async fn transition_token_issuance(
-    pool: &DbPool,
-    issuance_id: Uuid,
-    request_digest: &str,
-    from: TokenIssuancePhase,
-    to: TokenIssuancePhase,
-) -> Result<TokenIssuanceTransitionResult, TokenPortError> {
-    let mut connection = pool.get().await.map_err(|_| TokenPortError::Unavailable)?;
-    let affected = diesel::update(
-        oauth_token_issuances::table
-            .filter(oauth_token_issuances::issuance_id.eq(issuance_id))
-            .filter(oauth_token_issuances::request_digest.eq(request_digest))
-            .filter(oauth_token_issuances::phase.eq(from.as_str())),
-    )
-    .set((
-        oauth_token_issuances::phase.eq(to.as_str()),
-        oauth_token_issuances::updated_at.eq(Utc::now()),
-    ))
-    .execute(&mut connection)
-    .await
-    .map_err(map_diesel_error)?;
-    if affected == 1 {
-        return Ok(TokenIssuanceTransitionResult::Applied);
+fn classify_existing_issuance(
+    input: &CommitTokenIssuance,
+    record: TokenIssuanceRecord,
+) -> CommitTokenIssuanceResult {
+    if record.request_digest != input.request_digest {
+        return CommitTokenIssuanceResult::Conflict;
     }
-    let exists = oauth_token_issuances::table
-        .filter(oauth_token_issuances::issuance_id.eq(issuance_id))
-        .filter(oauth_token_issuances::request_digest.eq(request_digest))
-        .select(oauth_token_issuances::phase)
-        .first::<String>(&mut connection)
-        .await
-        .optional()
-        .map_err(map_diesel_error)?;
-    Ok(match exists.as_deref() {
-        None => TokenIssuanceTransitionResult::Missing,
-        Some(current) if current == to.as_str() => TokenIssuanceTransitionResult::Applied,
-        Some(_) => TokenIssuanceTransitionResult::Conflict,
-    })
+    match &input.mode {
+        TokenIssuanceMode::Idempotent { .. } if record.response_body.is_some() => {
+            CommitTokenIssuanceResult::Existing(Box::new(record))
+        }
+        TokenIssuanceMode::Fresh | TokenIssuanceMode::SingleUse { .. } => {
+            CommitTokenIssuanceResult::AlreadyUsed
+        }
+        TokenIssuanceMode::Idempotent { .. } => CommitTokenIssuanceResult::Conflict,
+    }
 }
 
 fn map_repository_error(error: RepositoryError) -> TokenPortError {

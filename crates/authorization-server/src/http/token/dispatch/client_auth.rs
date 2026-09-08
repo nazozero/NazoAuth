@@ -1,10 +1,9 @@
 use super::super::{ServerTokenService, TokenForm};
-use crate::adapters::security::{ClientCredentials, blake3_hex};
+use crate::adapters::security::blake3_hex;
 use crate::domain::{AuthorizationCodeState, ClientRow};
 use crate::http::authorization::ServerAuthorizationService;
-use crate::http::mtls::{client_mtls_certificate_matches, request_mtls_client_certificate};
+use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
-use actix_web::{HttpRequest, HttpResponse};
 use nazo_auth::{
     ClientProfile, ProtocolErrorCode, SecurityProfile, SenderConstraintPolicy,
     validate_token_request_profile as validate_auth_token_request_profile,
@@ -12,47 +11,6 @@ use nazo_auth::{
 use nazo_http_actix::oauth_token_error;
 
 use super::errors::authorization_code_holder_missing_client_error;
-
-pub(super) fn mtls_client_credentials(client_id: String) -> ClientCredentials {
-    ClientCredentials {
-        client_id: Some(client_id),
-        client_secret: None,
-        client_assertion: None,
-        method: "tls_client_auth".to_owned(),
-    }
-}
-
-pub(super) async fn mtls_client_credentials_without_client_id(
-    service: &ServerAuthorizationService,
-    trusted_proxy_cidrs: &[nazo_http_actix::IpCidr],
-    req: &HttpRequest,
-) -> Result<Option<ClientCredentials>, HttpResponse> {
-    let Some(certificate) = request_mtls_client_certificate(req, trusted_proxy_cidrs) else {
-        return Ok(None);
-    };
-    match service.active_mtls_candidates(1000).await {
-        Ok(candidates) => {
-            let clients = candidates
-                .into_iter()
-                .filter(|client| client_mtls_certificate_matches(client, &certificate))
-                .take(2)
-                .collect::<Vec<_>>();
-            Ok(match clients.as_slice() {
-                [client] => Some(mtls_client_credentials(client.client_id.clone())),
-                _ => None,
-            })
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to query mTLS client by certificate identity");
-            Err(oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "客户端查询失败.",
-                false,
-            ))
-        }
-    }
-}
 
 pub(super) async fn missing_client_authorization_code_holder_error(
     token_service: &ServerTokenService,

@@ -12,7 +12,7 @@ pub type RemoteJwksFuture<'a> = Pin<Box<dyn Future<Output = Result<Value, String
 
 /// Resolves a remote JWKS under the embedding server's outbound-document policy.
 pub trait RemoteJwksResolverPort: Send + Sync {
-    fn resolve<'a>(&'a self, uri: &'a str) -> RemoteJwksFuture<'a>;
+    fn resolve<'a>(&'a self, uri: &'a str, expected_kid: Option<&'a str>) -> RemoteJwksFuture<'a>;
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

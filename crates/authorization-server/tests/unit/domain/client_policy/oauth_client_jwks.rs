@@ -1,8 +1,13 @@
+use crate::domain::client_policy::{refresh_client_jwks, refresh_client_jwks_for_encryption};
 use base64::Engine;
 use base64::engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD};
 use nazo_key_management::{validate_client_jwks, validate_self_signed_mtls_jwks};
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ECDSA_P256_SHA256};
 use serde_json::json;
+use std::sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+};
 
 fn test_x5c(common_name: &str, not_before_offset: i64, not_after_offset: i64) -> String {
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("test P-256 key");
@@ -266,5 +271,183 @@ fn client_jwks_rejects_algorithm_key_type_mismatch() {
     assert!(
         error.to_string().contains("jwks 公钥材料与 alg 不匹配"),
         "unexpected error: {error}"
+    );
+}
+
+struct StubRemoteJwks;
+
+impl nazo_http_actix::RemoteJwksResolverPort for StubRemoteJwks {
+    fn resolve<'a>(
+        &'a self,
+        _uri: &'a str,
+        _expected_kid: Option<&'a str>,
+    ) -> nazo_http_actix::RemoteJwksFuture<'a> {
+        Box::pin(async {
+            Ok(json!({
+                "keys": [{
+                    "kty": "OKP",
+                    "crv": "Ed25519",
+                    "x": URL_SAFE_NO_PAD.encode([9u8; 32]),
+                    "alg": "EdDSA",
+                    "use": "sig",
+                    "kid": "remote"
+                }]
+            }))
+        })
+    }
+}
+
+struct CountingRemoteJwks {
+    calls: Arc<AtomicUsize>,
+}
+
+impl nazo_http_actix::RemoteJwksResolverPort for CountingRemoteJwks {
+    fn resolve<'a>(
+        &'a self,
+        _uri: &'a str,
+        _expected_kid: Option<&'a str>,
+    ) -> nazo_http_actix::RemoteJwksFuture<'a> {
+        self.calls.fetch_add(1, Ordering::Relaxed);
+        Box::pin(async { Err("unexpected remote key resolution".to_owned()) })
+    }
+}
+
+fn client_for_jwks_refresh() -> crate::domain::ClientRow {
+    client_row! {
+        id: uuid::Uuid::now_v7(),
+        tenant_id: uuid::Uuid::now_v7(),
+        realm_id: uuid::Uuid::now_v7(),
+        organization_id: uuid::Uuid::now_v7(),
+        client_id: "refresh-client".to_owned(),
+        client_name: "Refresh Client".to_owned(),
+        client_type: "confidential".to_owned(),
+        client_secret_hash: None,
+        redirect_uris: json!(["https://client.example/cb"]),
+        scopes: json!(["openid"]),
+        allowed_audiences: json!(["resource"]),
+        grant_types: json!(["authorization_code"]),
+        token_endpoint_auth_method: "private_key_jwt".to_owned(),
+        require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: json!([]),
+        tls_client_auth_san_uri: json!([]),
+        tls_client_auth_san_ip: json!([]),
+        tls_client_auth_san_email: json!([]),
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: false,
+        is_active: true, jwks: Some(json!({"keys": []})),
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
+        userinfo_signed_response_alg: None,
+        userinfo_encrypted_response_alg: None,
+        userinfo_encrypted_response_enc: None,
+        authorization_signed_response_alg: None,
+        authorization_encrypted_response_alg: None,
+        authorization_encrypted_response_enc: None,
+        post_logout_redirect_uris: json!([]),
+        backchannel_logout_uri: None,
+        backchannel_logout_session_required: false,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: false,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
+    }
+}
+
+#[tokio::test]
+async fn refresh_client_jwks_uses_registered_uri_and_preserves_snapshot_without_one() {
+    let resolver = StubRemoteJwks;
+    let mut client = client_for_jwks_refresh();
+    client.jwks_uri = Some("https://client.example/jwks".to_owned());
+    assert!(
+        refresh_client_jwks(&mut client, &resolver, Some("remote"))
+            .await
+            .is_ok()
+    );
+    assert_eq!(
+        client.jwks.as_ref().expect("remote JWKS")["keys"][0]["kid"],
+        "remote"
+    );
+
+    client.jwks_uri = None;
+    client.jwks = Some(json!({"keys": [{"kid": "persisted"}]}));
+    refresh_client_jwks(&mut client, &resolver, Some("remote"))
+        .await
+        .expect("clients without jwks_uri keep their persisted snapshot");
+    assert_eq!(
+        client.jwks.as_ref().expect("persisted JWKS")["keys"][0]["kid"],
+        "persisted"
+    );
+}
+
+#[tokio::test]
+async fn refresh_client_jwks_does_not_replace_snapshot_when_resolution_fails() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let resolver = CountingRemoteJwks {
+        calls: calls.clone(),
+    };
+    let mut client = client_for_jwks_refresh();
+    client.jwks_uri = Some("https://client.example/jwks".to_owned());
+    client.jwks = Some(json!({"keys": [{"kid": "persisted"}]}));
+
+    let error = refresh_client_jwks(&mut client, &resolver, Some("remote"))
+        .await
+        .expect_err("remote resolver failure must propagate");
+    assert_eq!(error, "unexpected remote key resolution");
+    assert_eq!(calls.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        client.jwks.as_ref().expect("persisted JWKS")["keys"][0]["kid"],
+        "persisted",
+        "failed resolution must preserve the prior snapshot"
+    );
+}
+
+#[tokio::test]
+async fn encrypted_response_refresh_is_noop_without_policy_and_uses_remote_keys_with_policy() {
+    let resolver = StubRemoteJwks;
+    let mut client = client_for_jwks_refresh();
+    client.jwks_uri = Some("https://client.example/jwks".to_owned());
+    refresh_client_jwks_for_encryption(&mut client, &resolver, false)
+        .await
+        .expect("no response encryption policy should not resolve keys");
+    assert_eq!(
+        client.jwks.as_ref().expect("initial JWKS")["keys"]
+            .as_array()
+            .expect("keys array")
+            .len(),
+        0
+    );
+
+    client.introspection_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
+    refresh_client_jwks_for_encryption(&mut client, &resolver, true)
+        .await
+        .expect("encrypted response policy should resolve keys");
+    assert_eq!(
+        client.jwks.as_ref().expect("remote JWKS")["keys"][0]["kid"],
+        "remote"
+    );
+}
+
+#[tokio::test]
+async fn response_encryption_refresh_does_not_fetch_when_the_selected_response_is_plain() {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let resolver = CountingRemoteJwks {
+        calls: calls.clone(),
+    };
+    let mut client = client_for_jwks_refresh();
+    client.jwks_uri = Some("https://client.example/jwks".to_owned());
+    client.userinfo_encrypted_response_alg = Some("RSA-OAEP-256".to_owned());
+
+    refresh_client_jwks_for_encryption(&mut client, &resolver, false)
+        .await
+        .expect("plain selected response must not resolve a remote key");
+    assert_eq!(calls.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        client.jwks.as_ref().expect("initial JWKS")["keys"],
+        json!([])
     );
 }

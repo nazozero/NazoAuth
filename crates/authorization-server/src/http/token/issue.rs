@@ -1,7 +1,7 @@
 //! 令牌签发响应构造。
 use std::collections::BTreeSet;
 
-use crate::adapters::audit::{audit_event_required, audit_fields, ensure_audit_storage};
+use crate::adapters::audit::ensure_audit_storage;
 use crate::adapters::security::blake3_hex;
 use crate::adapters::security::random_urlsafe_token;
 use crate::domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
@@ -16,12 +16,7 @@ use actix_web::HttpResponse;
 use actix_web::http::StatusCode;
 use actix_web::http::header;
 use actix_web::http::header::HeaderValue;
-use chrono::{DateTime, Duration, Utc};
-
-use nazo_auth::{
-    PrepareTokenIssuance, PrepareTokenIssuanceResult, TokenIssuancePhase, TokenIssuanceRecord,
-    TokenIssuanceTransitionResult, normalize_authorization_details,
-};
+use nazo_auth::{TokenIssuanceRecord, normalize_authorization_details};
 
 use nazo_http_actix::{ClientIpHeaderMode, IpCidr};
 use nazo_http_actix::{json_response_no_store, oauth_token_error};
@@ -161,6 +156,7 @@ pub(crate) struct TokenIssuanceContext<'a> {
     pub(crate) config: &'a TokenIssuanceConfig,
     pub(crate) modules: &'a nazo_runtime_modules::ActiveModuleSnapshot,
     pub(crate) authorization: &'a crate::http::authorization::ServerAuthorizationService,
+    pub(crate) remote_client_documents: &'a dyn nazo_http_actix::RemoteJwksResolverPort,
 }
 
 impl TokenIssuanceContext<'_> {
@@ -183,15 +179,13 @@ impl TokenIssuanceContext<'_> {
 
 use authorization_code_state::{
     consumed_authorization_code_ttl_seconds, mark_failed_authorization_code_if_needed,
-    persist_consumed_authorization_code,
 };
 pub(super) use authorization_code_state::{
     mark_failed_authorization_code, revoke_issued_authorization_code_tokens,
 };
 pub(crate) use refresh_persistence::should_issue_refresh_token;
 use refresh_persistence::{
-    PendingRefreshToken, RefreshPersistResult, persist_refresh_token,
-    refresh_authentication_context,
+    PendingRefreshToken, prepare_refresh_token, refresh_authentication_context,
 };
 
 fn client_session_sid_enabled(frontchannel_logout: bool, client: &ClientRow) -> bool {
@@ -384,96 +378,14 @@ fn issuance_request_digest(client: &ClientRow, issue: &TokenIssue, grant_key: &s
     )
 }
 
-fn stable_grant_key(grant_key: Option<&str>) -> String {
-    grant_key
-        .filter(|value| !value.trim().is_empty())
-        .map(ToOwned::to_owned)
-        .unwrap_or_else(|| format!("ephemeral:{}", Uuid::now_v7()))
-}
-
 fn response_from_token_issuance(record: &TokenIssuanceRecord) -> Option<HttpResponse> {
     let body = record.response_body.as_ref()?.clone();
-    if !matches!(
-        record.phase,
-        TokenIssuancePhase::Signed | TokenIssuancePhase::Persisted | TokenIssuancePhase::Delivered
-    ) {
-        return None;
-    }
     Some(
         HttpResponse::Ok()
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .content_type("application/json")
             .body(body),
     )
-}
-
-fn matching_response_from_token_issuance(
-    record: &TokenIssuanceRecord,
-    request_digest: &str,
-) -> Option<HttpResponse> {
-    if record.request_digest != request_digest {
-        return None;
-    }
-    response_from_token_issuance(record)
-}
-
-/// Recover only after this request lost the signed-response CAS to the same
-/// issuance transaction. This is intentionally private: one-time grant
-/// handlers must consume their grant before reaching issuance and must never
-/// turn a later replay into a successful response recovery.
-async fn recover_conflicting_token_issuance_response(
-    token_service: &ServerTokenService,
-    client: &ClientRow,
-    grant_key: &str,
-    request_digest: &str,
-) -> Option<HttpResponse> {
-    match token_service
-        .token_issuance_by_grant(client.tenant_id, client.id, grant_key)
-        .await
-    {
-        Ok(Some(record)) => matching_response_from_token_issuance(&record, request_digest),
-        Ok(None) => None,
-        Err(error) => {
-            tracing::warn!(%error, "failed to recover token issuance response");
-            None
-        }
-    }
-}
-
-async fn wait_for_token_issuance_response(
-    token_service: &ServerTokenService,
-    client: &ClientRow,
-    grant_key: &str,
-    request_digest: &str,
-) -> Option<HttpResponse> {
-    // A claimed Prepared row is never taken over. Waiting is bounded so a
-    // crashed owner fails closed instead of allowing a second mint.
-    const ATTEMPTS: usize = 80;
-    const DELAY: std::time::Duration = std::time::Duration::from_millis(25);
-
-    for attempt in 0..ATTEMPTS {
-        match token_service
-            .token_issuance_by_grant(client.tenant_id, client.id, grant_key)
-            .await
-        {
-            Ok(Some(record)) => {
-                if let Some(response) =
-                    matching_response_from_token_issuance(&record, request_digest)
-                {
-                    return Some(response);
-                }
-            }
-            Ok(None) => {}
-            Err(error) => {
-                tracing::warn!(%error, "failed to wait for token issuance response");
-                return None;
-            }
-        }
-        if attempt + 1 < ATTEMPTS {
-            tokio::time::sleep(DELAY).await;
-        }
-    }
-    None
 }
 
 pub(crate) fn request_idempotency_key(req: &actix_web::HttpRequest) -> Option<String> {
@@ -484,31 +396,7 @@ pub(crate) fn request_idempotency_key(req: &actix_web::HttpRequest) -> Option<St
     Some(format!("idempotency:{}", blake3_hex(value)))
 }
 
-pub(crate) async fn issue_token_response_with_service(
-    context: &TokenIssuanceContext<'_>,
-    token_service: &ServerTokenService,
-    client: &ClientRow,
-    issue: TokenIssue,
-) -> HttpResponse {
-    issue_token_response_with_service_and_grant(context, token_service, client, None, issue).await
-}
-
-pub(crate) async fn issue_token_response_with_service_and_grant(
-    context: &TokenIssuanceContext<'_>,
-    token_service: &ServerTokenService,
-    client: &ClientRow,
-    grant_key: Option<&str>,
-    issue: TokenIssue,
-) -> HttpResponse {
-    issue_grant::issue_token_response_with_service_and_grant(
-        context,
-        token_service,
-        client,
-        grant_key,
-        issue,
-    )
-    .await
-}
+pub(crate) use issue_grant::issue_token_response;
 #[cfg(test)]
 #[path = "../../../tests/support/http/token/issue.rs"]
 pub(crate) mod test_support;

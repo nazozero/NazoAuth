@@ -18,6 +18,7 @@ use crate::{
         security::blake3_hex,
     },
     domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
+    domain::client_policy::refresh_client_jwks_for_encryption,
     http::{
         authorization::{AuthorizationHttpConfig, ServerAuthorizationService},
         token::{
@@ -31,6 +32,7 @@ use crate::{
         },
     },
 };
+use nazo_http_actix::RemoteJwksResolverPort;
 
 #[derive(Clone)]
 pub(crate) struct ServerTokenManagementRequestGuard {
@@ -80,6 +82,7 @@ pub(crate) struct ServerTokenManagementOperations {
     token_service: Arc<ServerTokenService>,
     authorization_service: Arc<ServerAuthorizationService>,
     config: Arc<AuthorizationHttpConfig>,
+    remote_client_documents: Arc<dyn RemoteJwksResolverPort>,
 }
 
 impl ServerTokenManagementOperations {
@@ -87,11 +90,13 @@ impl ServerTokenManagementOperations {
         token_service: Arc<ServerTokenService>,
         authorization_service: Arc<ServerAuthorizationService>,
         config: Arc<AuthorizationHttpConfig>,
+        remote_client_documents: Arc<dyn RemoteJwksResolverPort>,
     ) -> Self {
         Self {
             token_service,
             authorization_service,
             config,
+            remote_client_documents,
         }
     }
 
@@ -126,7 +131,7 @@ impl ServerTokenManagementOperations {
                 basic_challenge: has_basic,
             });
         };
-        let client = match self.authorization_service.client_by_id(client_id).await {
+        let mut client = match self.authorization_service.client_by_id(client_id).await {
             Ok(Some(client)) => client,
             Ok(None) => {
                 perform_dummy_client_secret_verification(
@@ -142,7 +147,11 @@ impl ServerTokenManagementOperations {
                 return Err(TokenManagementError::ClientLookupUnavailable);
             }
         };
-        let config = ClientAuthConfig::new(&self.config.issuer, &self.config.client_secret_pepper);
+        let config = ClientAuthConfig::new(
+            &self.config.issuer,
+            &self.config.client_secret_pepper,
+            self.remote_client_documents.as_ref(),
+        );
         let auth_request =
             ClientAuthRequestFacts::new(&request.endpoint_path, request.client_certificate.clone());
         let result = match context {
@@ -151,7 +160,7 @@ impl ServerTokenManagementOperations {
                     &self.authorization_service,
                     config,
                     &auth_request,
-                    &client,
+                    &mut client,
                     &credentials,
                 )
                 .await
@@ -161,7 +170,7 @@ impl ServerTokenManagementOperations {
                     &self.authorization_service,
                     config,
                     &auth_request,
-                    &client,
+                    &mut client,
                     &credentials,
                 )
                 .await
@@ -220,7 +229,7 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
         signed_response_requested: bool,
     ) -> TokenManagementFuture<'a, TokenIntrospectionRepresentation> {
         Box::pin(async move {
-            let client = self
+            let mut client = self
                 .authenticate(
                     &request,
                     &client_auth,
@@ -236,8 +245,22 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                     tracing::warn!(%error, "failed to inspect token state");
                     TokenManagementError::InspectionUnavailable
                 })?;
-            let client_policy = &client.security_policy;
-            if signed_response_requested || client_policy.require_signed_introspection_response {
+            let response_requires_signature = signed_response_requested
+                || client.security_policy.require_signed_introspection_response;
+            if response_requires_signature {
+                let response_encryption_configured =
+                    client.introspection_encrypted_response_alg.is_some()
+                        || client.introspection_encrypted_response_enc.is_some();
+                refresh_client_jwks_for_encryption(
+                    &mut client,
+                    self.remote_client_documents.as_ref(),
+                    response_encryption_configured,
+                )
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "introspection encryption jwks_uri could not be refreshed");
+                    TokenManagementError::ResponseProtectionFailed
+                })?;
                 return self
                     .protected_introspection(&client, &inspection)
                     .await
@@ -298,3 +321,7 @@ fn map_auth_error(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/domain/token_management.rs"]
+mod tests;

@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use actix_web::HttpRequest;
 use nazo_auth::{Claims, DpopStateStorePort, OAuthClient, token_audience_contains};
+use nazo_http_actix::RemoteJwksResolverPort;
 use nazo_http_actix::{
     AccessTokenAuthScheme, UserinfoDpopError, UserinfoError, UserinfoFuture, UserinfoOperations,
     UserinfoRepresentation, UserinfoSuccess,
@@ -12,7 +13,7 @@ use uuid::Uuid;
 
 use crate::adapters::security::{access_token_tenant_id, blake3_hex, constant_time_eq};
 use crate::domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
-use crate::domain::client_policy::parse_scope;
+use crate::domain::client_policy::{parse_scope, refresh_client_jwks_for_encryption};
 use crate::domain::oidc_claims::oidc_user_claims;
 use crate::http::dpop::{DpopError, validate_dpop_proof_with_store};
 use crate::http::mtls::request_mtls_thumbprint;
@@ -59,6 +60,7 @@ pub(crate) struct UserinfoHandles {
     dpop_state: Arc<dyn DpopStateStorePort>,
     keys: KeyManager,
     config: UserinfoConfig,
+    remote_client_documents: Arc<dyn RemoteJwksResolverPort>,
 }
 
 #[derive(Clone)]
@@ -135,7 +137,7 @@ impl ServerUserinfoOperations {
                 UserinfoError::QueryUnavailable
             })?
             .ok_or(UserinfoError::InactiveSubject)?;
-        let client = match self
+        let mut client = match self
             .token_service
             .client_by_protocol_id(tenant_id, &claims.client_id)
             .await
@@ -155,6 +157,18 @@ impl ServerUserinfoOperations {
             &claims.userinfo_claim_requests,
             None,
         );
+        let response_encryption_configured = client.userinfo_encrypted_response_alg.is_some()
+            || client.userinfo_encrypted_response_enc.is_some();
+        refresh_client_jwks_for_encryption(
+            &mut client,
+            self.handles.remote_client_documents.as_ref(),
+            response_encryption_configured,
+        )
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "userinfo encryption jwks_uri could not be refreshed");
+            UserinfoError::ResponseProtectionFailed
+        })?;
         let representation = self
             .protect_response(&client, response_claims)
             .await
@@ -315,11 +329,13 @@ impl UserinfoHandles {
         dpop_state: Arc<dyn DpopStateStorePort>,
         keys: KeyManager,
         config: UserinfoConfig,
+        remote_client_documents: Arc<dyn RemoteJwksResolverPort>,
     ) -> Self {
         Self {
             dpop_state,
             keys,
             config,
+            remote_client_documents,
         }
     }
 

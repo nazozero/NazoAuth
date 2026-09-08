@@ -13,11 +13,15 @@ use crate::settings::{AuthorizationServerProfile, Settings};
 use actix_web::http::header;
 
 use chrono::Duration;
+use chrono::{DateTime, Utc};
 
 use serde_json::Value;
+use serde_json::json;
 
 use nazo_auth::RefreshTokenAuthenticationContext;
+use uuid::Uuid;
 
+use crate::adapters::security::blake3_hex;
 use crate::http::token::issue::TokenIssuanceConfig;
 
 pub(crate) async fn token_refresh(
@@ -43,6 +47,7 @@ pub(crate) async fn token_refresh(
             config: &config,
             modules: &modules,
             authorization: &authorization,
+            remote_client_documents: crate::test_support::test_remote_client_documents(),
         },
         req,
         client,
@@ -1446,7 +1451,8 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
 }
 
 #[actix_web::test]
-async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_successor() {
+async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_successor_without_compromising_family()
+ {
     let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
         return;
     };
@@ -1508,13 +1514,16 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
         );
         assert_eq!(body["error"], "invalid_grant");
         let family = load_family_rows(&state, family_id).await;
-        assert!(family.iter().all(|row| row.reuse_detected_at.is_some()));
-        assert!(family.iter().all(|row| row.revoked_at.is_some()));
+        assert!(
+            family.iter().all(|row| row.reuse_detected_at.is_none()),
+            "missing sender proof must not compromise the refresh-token family"
+        );
     }
 }
 
 #[actix_web::test]
-async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_successors() {
+async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_successors_without_compromising_family()
+ {
     let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
         return;
     };
@@ -1604,8 +1613,10 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
     );
     assert_eq!(body["error"], "invalid_grant");
     let family = load_family_rows(&state, family_id).await;
-    assert!(family.iter().all(|row| row.reuse_detected_at.is_some()));
-    assert!(family.iter().all(|row| row.revoked_at.is_some()));
+    assert!(
+        family.iter().all(|row| row.reuse_detected_at.is_none()),
+        "missing sender proof must not compromise the refresh-token family"
+    );
     let unrelated_family = load_family_rows(&state, wrong_family_id).await;
     assert!(
         unrelated_family
@@ -1775,7 +1786,8 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
 }
 
 #[actix_web::test]
-async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_family() {
+async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_family_without_new_compromise()
+ {
     let Some(state) = live_refresh_state(AuthorizationServerProfile::Oauth2Baseline) else {
         return;
     };
@@ -1830,8 +1842,14 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
         assert_eq!(status, StatusCode::BAD_REQUEST, "{label}: {body}");
         assert_eq!(body["error"], "invalid_grant");
         let family = load_family_rows(&state, family_id).await;
-        assert!(family.iter().all(|row| row.reuse_detected_at.is_some()));
-        assert!(family.iter().all(|row| row.revoked_at.is_some()));
+        assert_eq!(
+            family
+                .iter()
+                .filter(|row| row.reuse_detected_at.is_some())
+                .count(),
+            usize::from(reuse_detected_at.is_some()),
+            "sender validation failure must not add a reuse marker"
+        );
     }
 }
 

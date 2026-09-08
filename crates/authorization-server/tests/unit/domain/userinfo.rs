@@ -6,6 +6,10 @@ impl UserinfoHandles {
             std::sync::Arc::new(nazo_valkey::ReplayStore::new(&state.valkey_connection())),
             state.keyset.clone(),
             UserinfoConfig::from(state.settings.as_ref()),
+            std::sync::Arc::new(
+                crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                    .expect("empty resolver should build"),
+            ),
         )
     }
 }

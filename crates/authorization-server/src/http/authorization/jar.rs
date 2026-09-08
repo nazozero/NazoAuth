@@ -12,7 +12,12 @@ use nazo_auth::{
 use super::AuthorizationRequestContext;
 use crate::{domain::ClientRow, settings::RequestObjectJtiPolicy as ServerRequestObjectJtiPolicy};
 
-pub(crate) use nazo_auth::unverified_signed_request_object_client_id;
+use crate::domain::client_policy::refresh_client_jwks;
+use actix_web::http::StatusCode;
+pub(crate) use nazo_auth::{
+    unverified_signed_request_object_client_id, unverified_signed_request_object_kid,
+};
+use nazo_http_actix::oauth_error;
 use nazo_http_actix::{request_object_policy_error, request_object_verification_error};
 
 pub(crate) fn unverified_request_object_client_id(
@@ -29,7 +34,7 @@ pub(crate) fn unverified_request_object_client_id(
 pub(crate) async fn apply_request_object_with_context(
     context: &AuthorizationRequestContext<'_>,
     outer: &mut HashMap<String, String>,
-    client: &ClientRow,
+    client: &mut ClientRow,
 ) -> Result<(), HttpResponse> {
     let Some(request_object) = outer.get("request") else {
         return Ok(());
@@ -56,6 +61,17 @@ pub(crate) async fn apply_request_object_with_context(
     } else {
         request_object.as_str()
     };
+    if let Some(kid) = unverified_signed_request_object_kid(request_object)
+        && let Err(error) =
+            refresh_client_jwks(client, context.remote_client_documents, Some(&kid)).await
+    {
+        tracing::warn!(%error, "request object client jwks_uri could not be refreshed");
+        return Err(oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "request object key source is unavailable.",
+        ));
+    }
     let verified = verify_request_object(RequestObjectVerificationInput {
         request_object,
         client,

@@ -437,6 +437,7 @@ async fn token_exchange_subject_binding_requires_the_presented_sender_proof() {
         config: &config,
         modules: &modules,
         authorization: &authorization,
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
     };
     let request = actix_web::test::TestRequest::post()
         .uri("/token")
@@ -845,6 +846,7 @@ fn token_exchange_request_policy_and_admission_wrappers_preserve_boundaries() {
         config: &config,
         modules: &modules,
         authorization: &authorization,
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
     };
     let mut constrained = client();
     constrained.require_dpop_bound_tokens = true;

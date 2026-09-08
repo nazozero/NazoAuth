@@ -115,6 +115,55 @@ fn signed_request_object(client_id: &str, fixture: &ClientSigningFixture) -> Str
     fixture.encode_jwt(&header, &claims)
 }
 
+fn request_object_client_with_remote_jwks() -> crate::domain::ClientRow {
+    let mut client = client_row! {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
+        realm_id: DEFAULT_REALM_ID,
+        organization_id: DEFAULT_ORGANIZATION_ID,
+        client_id: "remote-jar-client".to_owned(),
+        client_name: "Remote JAR Client".to_owned(),
+        client_type: "confidential".to_owned(),
+        client_secret_hash: None,
+        redirect_uris: json!(["https://client.example/callback"]),
+        scopes: json!(["openid"]),
+        allowed_audiences: json!([]),
+        grant_types: json!(["authorization_code"]),
+        token_endpoint_auth_method: "private_key_jwt".to_owned(),
+        require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: json!([]),
+        tls_client_auth_san_uri: json!([]),
+        tls_client_auth_san_ip: json!([]),
+        tls_client_auth_san_email: json!([]),
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: false,
+        is_active: true,
+        jwks: Some(json!({"keys": [{"kid": "persisted"}]})),
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
+        userinfo_signed_response_alg: None,
+        userinfo_encrypted_response_alg: None,
+        userinfo_encrypted_response_enc: None,
+        authorization_signed_response_alg: None,
+        authorization_encrypted_response_alg: None,
+        authorization_encrypted_response_enc: None,
+        post_logout_redirect_uris: json!([]),
+        backchannel_logout_uri: None,
+        backchannel_logout_session_required: false,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: false,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
+    };
+    client.jwks_uri = Some("https://localhost:1/jwks".to_owned());
+    client
+}
+
 struct LiveAuthorizationFixture {
     state: Data<TestInfrastructure>,
 }
@@ -576,6 +625,32 @@ async fn authorization_request_rejects_external_request_uri_before_client_lookup
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["error"], "invalid_request");
     assert!(body.get("code").is_none());
+}
+
+#[actix_web::test]
+async fn request_object_jwks_failure_is_server_error_without_using_persisted_fallback() {
+    let state = endpoint_state(false);
+    let dependencies =
+        crate::http::authorization::test_support::TestAuthorizationDependencies::new(&state);
+    let context = dependencies.context();
+    let signing_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let request_object = signed_request_object("remote-jar-client", &signing_key);
+    let mut outer = query(&[("request", request_object.as_str())]);
+    let mut client = request_object_client_with_remote_jwks();
+
+    let response = apply_request_object_with_context(&context, &mut outer, &mut client)
+        .await
+        .expect_err("unavailable remote JWK source must reject the request object");
+
+    let (status, body) = json_body(response).await;
+    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(body["error"], "server_error");
+    assert_eq!(
+        client.jwks.as_ref().expect("persisted JWKS")["keys"][0]["kid"],
+        "persisted",
+        "failed remote resolution must not fall back to persisted keys"
+    );
+    assert_eq!(outer["request"], request_object);
 }
 
 #[actix_web::test]
@@ -2566,4 +2641,95 @@ async fn authorization_response_crypto_failure_never_falls_back_to_plain_query()
             "crypto failure must not emit any redirect containing code or state"
         );
     }
+}
+
+#[actix_web::test]
+async fn baseline_dpop_authorization_does_not_require_par() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-baseline-dpop-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+        )
+        .await;
+    fixture
+        .mark_client_sender_constrained(&client_id, true, false)
+        .await;
+    let dpop_jkt = "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM";
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&scope=openid&code_challenge={}&code_challenge_method=S256&dpop_jkt={}",
+        urlencoding::encode(&client_id),
+        VALID_CODE_CHALLENGE,
+        dpop_jkt
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("scope", "openid"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
+        ("dpop_jkt", dpop_jkt),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    let location = authorization_location(&response);
+    assert_eq!(
+        location.origin().ascii_serialization(),
+        "https://app.example",
+        "baseline sender-bound clients must reach the user confirmation flow without PAR/JAR"
+    );
+    assert_eq!(location.path(), "/auth");
+}
+
+#[actix_web::test]
+async fn baseline_mtls_authorization_does_not_require_par() {
+    let Some(fixture) = LiveAuthorizationFixture::new().await else {
+        return;
+    };
+    let client_id = format!("authorize-baseline-mtls-{}", Uuid::now_v7());
+    fixture
+        .insert_client(
+            &client_id,
+            vec!["https://client.example/callback"],
+            vec!["authorization_code"],
+            true,
+        )
+        .await;
+    fixture
+        .mark_client_sender_constrained(&client_id, false, true)
+        .await;
+    let uri = format!(
+        "/authorize?client_id={}&redirect_uri=https%3A%2F%2Fclient.example%2Fcallback&response_type=code&scope=openid&code_challenge={}&code_challenge_method=S256",
+        urlencoding::encode(&client_id),
+        VALID_CODE_CHALLENGE
+    );
+    let req = actix_web::test::TestRequest::get()
+        .uri(&uri)
+        .to_http_request();
+    let mut q = query(&[
+        ("client_id", client_id.as_str()),
+        ("redirect_uri", "https://client.example/callback"),
+        ("response_type", "code"),
+        ("scope", "openid"),
+        ("code_challenge", VALID_CODE_CHALLENGE),
+        ("code_challenge_method", "S256"),
+    ]);
+
+    let response = authorize_request(fixture.state.clone(), req, &mut q).await;
+    let location = authorization_location(&response);
+    assert_eq!(
+        location.origin().ascii_serialization(),
+        "https://app.example",
+        "baseline mTLS-bound clients must reach the user confirmation flow without PAR/JAR"
+    );
+    assert_eq!(location.path(), "/auth");
 }

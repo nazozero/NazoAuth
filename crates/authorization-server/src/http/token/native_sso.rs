@@ -11,7 +11,7 @@ use crate::http::dpop::DpopErrorContext;
 use crate::http::dpop::dpop_error_response;
 use crate::http::token::client_auth::consume_token_client_assertion_with_authorization_service;
 use crate::http::token::issue::{
-    TokenIssuanceContext, issue_token_response_with_service_and_grant, request_idempotency_key,
+    TokenIssuanceContext, issue_token_response, request_idempotency_key,
 };
 use crate::http::token::{
     SenderConstraintValidationError, sender_constraint_multiple_error,
@@ -21,6 +21,7 @@ use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Duration, Utc};
+use nazo_auth::TokenIssuanceMode;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -384,11 +385,14 @@ pub(crate) async fn token_native_sso_exchange(
         Err(response) => return response,
     };
     let idempotency_key = request_idempotency_key(req);
-    issue_token_response_with_service_and_grant(
+    let mode = idempotency_key.map_or(TokenIssuanceMode::Fresh, |grant_key| {
+        TokenIssuanceMode::Idempotent { grant_key }
+    });
+    issue_token_response(
         issuance,
         token_service,
         client,
-        idempotency_key.as_deref(),
+        mode,
         TokenIssue {
             user_id: Some(secret.user_id),
             subject,

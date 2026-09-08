@@ -12,14 +12,14 @@ use crate::http::dpop::DpopErrorContext;
 use crate::http::dpop::dpop_error_response;
 use actix_web::{HttpRequest, HttpResponse, http::StatusCode};
 use chrono::Utc;
-use nazo_auth::{DevicePollCommit, DevicePollFailure};
+use nazo_auth::{DevicePollCommit, DevicePollFailure, TokenIssuanceMode};
 use nazo_http_actix::oauth_token_error;
 
 use super::client_auth::consume_token_client_assertion_with_authorization_service;
 use super::{
     SenderConstraintValidationError, ServerTokenService, TokenForm,
     device::ServerDeviceGrantService,
-    issue::{TokenIssuanceContext, issue_token_response_with_service_and_grant},
+    issue::{TokenIssuanceContext, issue_token_response},
     sender_constraint_multiple_error, validate_token_sender_constraints,
 };
 
@@ -131,11 +131,13 @@ pub(crate) async fn token_device_code_with_service(
         ),
         Ok(DevicePollCommit::Approved(approved)) => {
             let nazo_auth::ApprovedDeviceAuthorization { payload, approval } = *approved;
-            issue_token_response_with_service_and_grant(
+            issue_token_response(
                 issuance,
                 token_service,
                 client,
-                Some(&device_grant_key),
+                TokenIssuanceMode::SingleUse {
+                    grant_key: device_grant_key.clone(),
+                },
                 TokenIssue {
                     user_id: Some(approval.user_id),
                     subject: approval.subject,

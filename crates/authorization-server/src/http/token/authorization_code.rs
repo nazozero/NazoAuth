@@ -21,6 +21,7 @@ use actix_web::http::StatusCode;
 use actix_web::{HttpRequest, HttpResponse};
 
 use chrono::Utc;
+use nazo_auth::TokenIssuanceMode;
 
 use nazo_http_actix::oauth_token_error;
 use serde_json::json;
@@ -30,7 +31,7 @@ use super::issue::TokenIssuanceConfig;
 use super::{
     SenderConstraintValidationError, ServerTokenService, TokenForm,
     consume_token_client_assertion_with_authorization_service,
-    issue::{TokenIssuanceContext, issue_token_response_with_service_and_grant},
+    issue::{TokenIssuanceContext, issue_token_response},
     native_sso_requested, new_native_sso_token_binding, revoke_issued_authorization_code_tokens,
     sender_constraint_multiple_error, validate_token_sender_constraints,
 };
@@ -334,6 +335,18 @@ pub(crate) async fn token_authorization_code_with_service(
     {
         return authorization_code_client_mismatch_response();
     }
+    // Pure parameter validation runs before any sender proof, client
+    // assertion, or state transition so that an erroneous redemption never
+    // consumes a Pending authorization code.
+    let pending_audiences = match expected_payload.as_deref() {
+        Some(payload) => {
+            match validate_pending_authorization_code_request(issuance, client, form, payload) {
+                Ok(audiences) => Some(audiences),
+                Err(response) => return response,
+            }
+        }
+        None => None,
+    };
     let expected_dpop_jkt = expected_payload
         .as_ref()
         .and_then(|payload| payload.dpop_jkt.clone());
@@ -378,6 +391,19 @@ pub(crate) async fn token_authorization_code_with_service(
     .await
     {
         return super::token_client_assertion_error(error);
+    }
+    // A code that expired while the sender proof was being validated must
+    // not be consumed at all: no begin, no Failed transition.
+    if expected_payload
+        .as_ref()
+        .is_some_and(|payload| payload.expires_at <= Utc::now())
+    {
+        return oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "授权码无效或已过期.",
+            false,
+        );
     }
     let payload =
         match begin_authorization_code_consumption_with_service(token_service, &code_hash).await {
@@ -469,142 +495,14 @@ pub(crate) async fn token_authorization_code_with_service(
             false,
         );
     }
-    if payload.client_id != client.client_id
-        || !redirect_uri_matches_authorization_request(&payload, form.redirect_uri.as_deref())
-    {
-        mark_failed_authorization_code(
-            token_service,
-            issuance.config.auth_code_ttl_seconds(),
-            &code_hash,
-            "client_or_redirect_uri_mismatch",
-        )
-        .await;
-        return authorization_code_client_mismatch_response();
-    }
-    match (&payload.code_challenge, &payload.code_challenge_method) {
-        (Some(code_challenge), Some(method)) if method == "S256" => {
-            let Some(verifier) = &form.code_verifier else {
-                mark_failed_authorization_code(
-                    token_service,
-                    issuance.config.auth_code_ttl_seconds(),
-                    &code_hash,
-                    "missing_code_verifier",
-                )
-                .await;
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "缺少 code_verifier.",
-                    false,
-                );
-            };
-            if !is_valid_pkce_value(verifier) || pkce_s256(verifier) != *code_challenge {
-                mark_failed_authorization_code(
-                    token_service,
-                    issuance.config.auth_code_ttl_seconds(),
-                    &code_hash,
-                    "pkce_failed",
-                )
-                .await;
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "PKCE 校验失败.",
-                    false,
-                );
-            }
-        }
-        (None, None) if !authorization_code_requires_pkce(client, &payload) => {}
-        _ => {
-            mark_failed_authorization_code(
-                token_service,
-                issuance.config.auth_code_ttl_seconds(),
-                &code_hash,
-                "pkce_state_invalid",
-            )
-            .await;
-            return oauth_token_error(
-                StatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "授权码 PKCE 状态无效.",
-                false,
-            );
-        }
-    }
-    let audiences = match authorization_code_audiences_with_default(
-        issuance.config.default_audience(),
-        issuance
-            .config
-            .openid4vci_audience(&payload.scopes, &payload.authorization_details),
-        &payload,
-        form,
-    ) {
-        Ok(audiences) => audiences,
-        Err(()) => {
-            mark_failed_authorization_code(
-                token_service,
-                issuance.config.auth_code_ttl_seconds(),
-                &code_hash,
-                "audience_exceeds_authorization",
-            )
-            .await;
-            return oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_target",
-                "请求的 resource 超出授权请求范围.",
-                false,
-            );
-        }
-    };
-    if !audiences_allowed(client, &audiences) {
-        mark_failed_authorization_code(
-            token_service,
-            issuance.config.auth_code_ttl_seconds(),
-            &code_hash,
-            "audience_not_allowed",
-        )
-        .await;
-        return oauth_token_error(
-            StatusCode::BAD_REQUEST,
-            "invalid_target",
-            "请求的 audience 不在客户端允许范围内.",
-            false,
-        );
-    }
-    if native_sso_requested(&payload.scopes) {
-        if !issuance.permits(nazo_runtime_modules::ModuleId::NativeSso) {
-            mark_failed_authorization_code(
-                token_service,
-                issuance.config.auth_code_ttl_seconds(),
-                &code_hash,
-                "native_sso_disabled",
-            )
-            .await;
-            return oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_scope",
-                "Native SSO is not enabled.",
-                false,
-            );
-        }
-        if !payload.scopes.iter().any(|scope| scope == "openid") {
-            mark_failed_authorization_code(
-                token_service,
-                issuance.config.auth_code_ttl_seconds(),
-                &code_hash,
-                "native_sso_without_openid",
-            )
-            .await;
-            return oauth_token_error(
-                StatusCode::BAD_REQUEST,
-                "invalid_scope",
-                "Native SSO requires openid.",
-                false,
-            );
-        }
-    }
     let refresh_token_dpop_jkt = refresh_token_dpop_binding(client, &payload, dpop_jkt.clone());
     let refresh_token_mtls_x5t_s256 = mtls_x5t_s256.clone();
+    // begin only yields Consuming from a Pending state, so the pure audience
+    // facts computed before the sender proof must exist here.  Subject
+    // derivation is intentionally performed after begin: a missing pairwise
+    // secret is a server-side policy failure, not a client parameter error,
+    // and must terminally fail the one-time grant.
+    let audiences = pending_audiences.expect("Consuming requires pre-computed pending facts");
     let subject = match authorization_code_subject(issuance.config, &payload, client) {
         Ok(subject) => subject,
         Err(_) => {
@@ -615,17 +513,21 @@ pub(crate) async fn token_authorization_code_with_service(
                 "subject_policy_invalid",
             )
             .await;
-            let status = StatusCode::SERVICE_UNAVAILABLE;
-            let error = "server_error";
-            let description = "subject invalid";
-            return oauth_token_error(status, error, description, false);
+            return oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "subject invalid",
+                false,
+            );
         }
     };
-    issue_token_response_with_service_and_grant(
+    issue_token_response(
         issuance,
         token_service,
         client,
-        Some(&authorization_code_grant_key),
+        TokenIssuanceMode::SingleUse {
+            grant_key: authorization_code_grant_key.clone(),
+        },
         token_issue_from_authorization_code(AuthorizationCodeIssueInput {
             payload,
             subject,
@@ -639,6 +541,102 @@ pub(crate) async fn token_authorization_code_with_service(
         }),
     )
     .await
+}
+
+/// Pure Pending-redemption validation performed before any sender proof or
+/// atomic consumption. On error the authorization code stays Pending and no
+/// store transition happens.
+fn validate_pending_authorization_code_request(
+    issuance: &TokenIssuanceContext<'_>,
+    client: &ClientRow,
+    form: &TokenForm,
+    payload: &CodePayload,
+) -> Result<Vec<String>, HttpResponse> {
+    if payload.expires_at <= Utc::now() {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "授权码无效或已过期.",
+            false,
+        ));
+    }
+    if !redirect_uri_matches_authorization_request(payload, form.redirect_uri.as_deref()) {
+        return Err(authorization_code_client_mismatch_response());
+    }
+    match (&payload.code_challenge, &payload.code_challenge_method) {
+        (Some(code_challenge), Some(method)) if method == "S256" => {
+            let Some(verifier) = &form.code_verifier else {
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "缺少 code_verifier.",
+                    false,
+                ));
+            };
+            if !is_valid_pkce_value(verifier) || pkce_s256(verifier) != *code_challenge {
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "PKCE 校验失败.",
+                    false,
+                ));
+            }
+        }
+        (None, None) if !authorization_code_requires_pkce(client, payload) => {}
+        _ => {
+            return Err(oauth_token_error(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码 PKCE 状态无效.",
+                false,
+            ));
+        }
+    }
+    let audiences = match authorization_code_audiences_with_default(
+        issuance.config.default_audience(),
+        issuance
+            .config
+            .openid4vci_audience(&payload.scopes, &payload.authorization_details),
+        payload,
+        form,
+    ) {
+        Ok(audiences) => audiences,
+        Err(()) => {
+            return Err(oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_target",
+                "请求的 resource 超出授权请求范围.",
+                false,
+            ));
+        }
+    };
+    if !audiences_allowed(client, &audiences) {
+        return Err(oauth_token_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_target",
+            "请求的 audience 不在客户端允许范围内.",
+            false,
+        ));
+    }
+    if native_sso_requested(&payload.scopes) {
+        if !issuance.permits(nazo_runtime_modules::ModuleId::NativeSso) {
+            return Err(oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_scope",
+                "Native SSO is not enabled.",
+                false,
+            ));
+        }
+        if !payload.scopes.iter().any(|scope| scope == "openid") {
+            return Err(oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_scope",
+                "Native SSO requires openid.",
+                false,
+            ));
+        }
+    }
+    Ok(audiences)
 }
 
 async fn mark_failed_authorization_code(

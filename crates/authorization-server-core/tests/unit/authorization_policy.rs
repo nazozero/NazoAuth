@@ -10,8 +10,6 @@ fn client_policy<'a>(
         client_type: "confidential",
         allowed_scopes: scopes,
         allowed_audiences: audiences,
-        require_dpop_bound_tokens: false,
-        require_mtls_bound_tokens: false,
     }
 }
 
@@ -58,7 +56,6 @@ fn authorization_policy_normalizes_oidc_claims_rar_and_jarm() {
             signed_authorization_response_required: false,
             pkce_required: false,
         },
-        false,
     )
     .expect("valid request");
     assert_eq!(normalized.response_mode.as_deref(), Some("jwt"));
@@ -95,7 +92,6 @@ fn module_and_profile_failures_preserve_protocol_error_categories() {
                 signed_authorization_response_required: false,
                 pkce_required: false,
             },
-            false,
         ),
         Err(AuthorizationPolicyError::UnsupportedResponseMode)
     );
@@ -113,7 +109,6 @@ fn module_and_profile_failures_preserve_protocol_error_categories() {
                 signed_authorization_response_required: false,
                 pkce_required: false,
             },
-            false,
         ),
         Err(AuthorizationPolicyError::InvalidScope)
     );

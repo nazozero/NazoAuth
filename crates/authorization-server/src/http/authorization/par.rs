@@ -280,7 +280,7 @@ async fn par_after_rate_limit_inner(
             "客户端认证失败.",
         );
     }
-    let client = match context.service.client_by_id(&client_id).await {
+    let mut client = match context.service.client_by_id(&client_id).await {
         Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
             crate::http::token::client_auth::perform_dummy_client_secret_verification(
@@ -302,8 +302,8 @@ async fn par_after_rate_limit_inner(
             );
         }
     };
-    let client_policy = &client.security_policy;
-    let fapi2_security = context.config.requires_fapi2_security(client_policy);
+    let client_policy = client.security_policy.clone();
+    let fapi2_security = context.config.requires_fapi2_security(&client_policy);
     let par_ttl_seconds = if fapi2_security {
         context.config.par_ttl_seconds.min(599)
     } else {
@@ -377,9 +377,10 @@ async fn par_after_rate_limit_inner(
             crate::http::token::client_auth::ClientAuthConfig::new(
                 &context.config.issuer,
                 &context.config.client_secret_pepper,
+                context.remote_client_documents,
             ),
             &auth_request,
-            &client,
+            &mut client,
             &credentials,
             nazo_auth::ClientAuthenticationContext::AllowPublicNone,
         )
@@ -402,13 +403,15 @@ async fn par_after_rate_limit_inner(
             require_request_object: client.require_par_request_object
                 || context
                     .config
-                    .requires_signed_authorization_request(client_policy),
+                    .requires_signed_authorization_request(&client_policy),
             fapi2_security,
         },
     ) {
         return par_admission_error(error);
     }
-    if let Err(response) = apply_request_object_with_context(context, &mut params, &client).await {
+    if let Err(response) =
+        apply_request_object_with_context(context, &mut params, &mut client).await
+    {
         return response;
     }
     if !crate::http::authorization::accepts_module(

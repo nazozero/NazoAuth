@@ -1,5 +1,6 @@
 use super::*;
 use crate::adapters::audit::{audit_event_required, ensure_audit_storage};
+use crate::domain::client_policy::refresh_client_jwks;
 
 enum GuardedCibaCreation {
     Created(String),
@@ -17,6 +18,7 @@ pub(crate) async fn backchannel_authentication(
     authorization_service: Data<ServerAuthorizationService>,
     ciba_service: Data<ServerCibaService>,
     users: Data<dyn nazo_persistence::CibaAccountStore>,
+    remote_jwks: Data<dyn nazo_http_actix::RemoteJwksResolverPort>,
     config: Data<CibaHttpConfig>,
     runtime: Data<ServerRuntimeModuleRegistry>,
     req: HttpRequest,
@@ -29,6 +31,7 @@ pub(crate) async fn backchannel_authentication(
         Ok(form) => form,
         Err(response) => return response,
     };
+    let remote_jwks = remote_jwks.get_ref();
     let has_basic = has_basic_authorization_scheme(req.headers());
     let has_assertion = form.client_assertion_type.is_some() || form.client_assertion.is_some();
     if has_basic && (form.client_id.is_some() || form.client_secret.is_some() || has_assertion)
@@ -56,7 +59,7 @@ pub(crate) async fn backchannel_authentication(
             "客户端认证失败.",
         );
     };
-    let client = match authorization_service.client_by_id(client_id).await {
+    let mut client = match authorization_service.client_by_id(client_id).await {
         Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
             super::super::client_auth::perform_dummy_client_secret_verification(
@@ -81,12 +84,12 @@ pub(crate) async fn backchannel_authentication(
     let auth_request = client_auth_request_facts(&req, &config.trusted_proxy_cidrs);
     let assertion = match authenticate_client_with_dependencies(
         &authorization_service,
-        ClientAuthConfig::new(&config.issuer, &config.client_secret_pepper)
+        ClientAuthConfig::new(&config.issuer, &config.client_secret_pepper, remote_jwks)
             .with_endpoint_audience_aliases(std::slice::from_ref(
                 &config.mtls_endpoint_base_url.as_ref(),
             )),
         &auth_request,
-        &client,
+        &mut client,
         &credentials,
         ClientAuthenticationContext::ConfidentialOnly,
     )
@@ -110,6 +113,19 @@ pub(crate) async fn backchannel_authentication(
             StatusCode::BAD_REQUEST,
             "unauthorized_client",
             "该客户端未授权使用跨设备流程.",
+        );
+    }
+    if let Some(request_object) = form.request.as_deref()
+        && let Ok(header) = jsonwebtoken::decode_header(request_object)
+        && header.kid.is_some()
+        && let Err(error) =
+            refresh_client_jwks(&mut client, remote_jwks, header.kid.as_deref()).await
+    {
+        tracing::warn!(%error, "CIBA request object jwks_uri could not be refreshed");
+        return oauth_error(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "CIBA request object key source is unavailable.",
         );
     }
     if let Err(response) =

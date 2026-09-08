@@ -40,6 +40,7 @@ pub(crate) async fn token_jwt_bearer(
     form: &TokenForm,
     client_assertion: Option<&ValidatedClientAssertion>,
 ) -> HttpResponse {
+    let mut client = client.clone();
     let connection = state.valkey_connection();
     let service = ServerTokenService::new(
         crate::test_support::token_issuance_repository(state.diesel_db.clone()),
@@ -55,9 +56,10 @@ pub(crate) async fn token_jwt_bearer(
             config: &config,
             modules: &modules,
             authorization: &authorization,
+            remote_client_documents: crate::test_support::test_remote_client_documents(),
         },
         req,
-        client,
+        &mut client,
         form,
         client_assertion,
     )

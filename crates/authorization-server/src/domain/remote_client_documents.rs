@@ -1,35 +1,39 @@
-use std::{
-    collections::{HashMap, HashSet},
-    net::SocketAddr,
-    sync::Arc,
-    time::{Duration, Instant},
-};
+use std::{collections::HashSet, net::SocketAddr, sync::Arc, time::Duration};
 
 use futures_util::StreamExt;
+use moka::future::Cache;
+use moka::ops::compute;
 use reqwest::{StatusCode, header};
 use serde_json::Value;
-use tokio::sync::RwLock;
+use tokio::sync::Semaphore;
+use tokio::time::{Instant, timeout_at};
 use url::Url;
 
 use super::sector_identifier::is_blocked_ip;
 
 const MAX_DOCUMENT_BYTES: usize = 128 * 1024;
 const JWKS_CACHE_TTL: Duration = Duration::from_secs(30);
+const JWKS_CACHE_CAPACITY: u64 = 256;
+const REMOTE_DOCUMENT_DEADLINE: Duration = Duration::from_secs(10);
+const REMOTE_FETCH_CONCURRENCY: usize = 16;
 
 #[derive(Clone)]
 pub(crate) struct RemoteClientDocumentResolver {
     private_network_origins: Arc<HashSet<String>>,
-    jwks_cache: Arc<RwLock<HashMap<String, CachedJwks>>>,
-}
-
-#[derive(Clone)]
-struct CachedJwks {
-    fetched_at: Instant,
-    document: Value,
+    jwks_cache: Cache<String, Arc<Value>>,
+    fetch_slots: Arc<Semaphore>,
+    root_certificates: Arc<Vec<reqwest::Certificate>>,
 }
 
 impl RemoteClientDocumentResolver {
     pub(crate) fn new(private_network_origins: &[String]) -> Result<Self, String> {
+        Self::new_with_root_certificates(private_network_origins, Vec::new())
+    }
+
+    pub(crate) fn new_with_root_certificates(
+        private_network_origins: &[String],
+        root_certificates: Vec<reqwest::Certificate>,
+    ) -> Result<Self, String> {
         let mut origins = HashSet::new();
         for value in private_network_origins {
             let parsed = validate_https_url(value, false)?;
@@ -42,34 +46,80 @@ impl RemoteClientDocumentResolver {
         }
         Ok(Self {
             private_network_origins: Arc::new(origins),
-            jwks_cache: Arc::new(RwLock::new(HashMap::new())),
+            jwks_cache: Cache::builder()
+                .max_capacity(JWKS_CACHE_CAPACITY)
+                .time_to_live(JWKS_CACHE_TTL)
+                .build(),
+            fetch_slots: Arc::new(Semaphore::new(REMOTE_FETCH_CONCURRENCY)),
+            root_certificates: Arc::new(root_certificates),
         })
     }
 
-    pub(crate) async fn jwks(&self, uri: &str) -> Result<Value, String> {
-        if let Some(cached) = self.jwks_cache.read().await.get(uri)
-            && cached.fetched_at.elapsed() < JWKS_CACHE_TTL
+    /// Use a cached document only if it contains the requested signing key.
+    /// An unknown key causes one refresh attempt; a refresh failure is returned
+    /// directly and never falls back to stale cached material.
+    pub(crate) async fn jwks_for_kid(
+        &self,
+        uri: &str,
+        expected_kid: Option<&str>,
+    ) -> Result<Value, String> {
+        let deadline = Instant::now() + REMOTE_DOCUMENT_DEADLINE;
+        let cache_key = canonical_cache_key(uri)?;
+        if let Some(cached) = self.jwks_cache.get(&cache_key).await
+            && (expected_kid.is_none() || jwks_contains_kid(&cached, expected_kid))
         {
-            return Ok(cached.document.clone());
+            return Ok((*cached).clone());
         }
-        let body = self.fetch(uri, RemoteDocumentKind::Jwks).await?;
-        let document: Value = serde_json::from_slice(&body)
-            .map_err(|_| "remote JWKS is not valid JSON".to_owned())?;
-        if !document.is_object() || !document.get("keys").is_some_and(Value::is_array) {
-            return Err("remote JWKS must be an object containing a keys array".to_owned());
+
+        // Moka serializes this computation per URI.  A waiter that observes
+        // an entry installed by the preceding caller returns it without
+        // issuing a second fetch.  If the entry is still the one that caused
+        // this request's miss, exactly one refresh is attempted.
+        let previous = self.jwks_cache.get(&cache_key).await;
+        let uri = uri.to_owned();
+        let result = tokio::time::timeout_at(
+            deadline,
+            self.jwks_cache
+                .entry(cache_key.clone())
+                .and_try_compute_with(move |entry| async move {
+                    let current = entry.map(|entry| entry.into_value());
+                    let unchanged = match (&previous, &current) {
+                        (Some(previous), Some(current)) => Arc::ptr_eq(previous, current),
+                        (None, None) => true,
+                        _ => false,
+                    };
+                    if !unchanged {
+                        return Ok(compute::Op::Nop);
+                    }
+                    let body = self.fetch(&uri, RemoteDocumentKind::Jwks, deadline).await?;
+                    let document: Value = serde_json::from_slice(&body)
+                        .map_err(|_| "remote JWKS is not valid JSON".to_owned())?;
+                    if !document.is_object() || !document.get("keys").is_some_and(Value::is_array) {
+                        return Err(
+                            "remote JWKS must be an object containing a keys array".to_owned()
+                        );
+                    }
+                    let shared = Arc::new(document);
+                    Ok(compute::Op::Put(shared))
+                }),
+        )
+        .await
+        .map_err(|_| "remote document request timed out".to_owned())??;
+        match result {
+            compute::CompResult::Inserted(entry)
+            | compute::CompResult::ReplacedWith(entry)
+            | compute::CompResult::Unchanged(entry) => Ok((*entry.into_value()).clone()),
+            compute::CompResult::StillNone(_) | compute::CompResult::Removed(_) => {
+                Err("remote JWKS is unavailable".to_owned())
+            }
         }
-        self.jwks_cache.write().await.insert(
-            uri.to_owned(),
-            CachedJwks {
-                fetched_at: Instant::now(),
-                document: document.clone(),
-            },
-        );
-        Ok(document)
     }
 
     pub(crate) async fn request_object(&self, uri: &str) -> Result<String, String> {
-        let body = self.fetch(uri, RemoteDocumentKind::RequestObject).await?;
+        let deadline = Instant::now() + REMOTE_DOCUMENT_DEADLINE;
+        let body = self
+            .fetch(uri, RemoteDocumentKind::RequestObject, deadline)
+            .await?;
         let jwt = String::from_utf8(body)
             .map_err(|_| "remote request object must be UTF-8".to_owned())?;
         let jwt = jwt.trim();
@@ -79,7 +129,12 @@ impl RemoteClientDocumentResolver {
         Ok(jwt.to_owned())
     }
 
-    async fn fetch(&self, uri: &str, kind: RemoteDocumentKind) -> Result<Vec<u8>, String> {
+    async fn fetch(
+        &self,
+        uri: &str,
+        kind: RemoteDocumentKind,
+        deadline: Instant,
+    ) -> Result<Vec<u8>, String> {
         let parsed = validate_https_url(uri, kind == RemoteDocumentKind::RequestObject)?;
         let host = parsed
             .host_str()
@@ -88,8 +143,14 @@ impl RemoteClientDocumentResolver {
         let allow_private = self
             .private_network_origins
             .contains(&parsed.origin().ascii_serialization());
-        let addresses = tokio::net::lookup_host((host, port))
+        let _permit = self
+            .fetch_slots
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| "remote document concurrency limit reached".to_owned())?;
+        let addresses = timeout_at(deadline, tokio::net::lookup_host((host, port)))
             .await
+            .map_err(|_| "remote document DNS resolution timed out".to_owned())?
             .map_err(|_| "remote document DNS resolution failed".to_owned())?
             .collect::<Vec<SocketAddr>>();
         if addresses.is_empty() {
@@ -99,21 +160,27 @@ impl RemoteClientDocumentResolver {
             return Err("remote document resolved to a blocked network".to_owned());
         }
 
-        let client = reqwest::Client::builder()
+        let mut client_builder = reqwest::Client::builder()
             .no_proxy()
-            .timeout(Duration::from_secs(10))
             .connect_timeout(Duration::from_secs(5))
-            .redirect(reqwest::redirect::Policy::none())
+            .redirect(reqwest::redirect::Policy::none());
+        for certificate in self.root_certificates.iter() {
+            client_builder = client_builder.add_root_certificate(certificate.clone());
+        }
+        let client = client_builder
             .resolve_to_addrs(host, &addresses)
             .build()
             .map_err(|_| "remote document HTTP client could not be built".to_owned())?;
-        let response = client.get(parsed).send().await.map_err(|error| {
-            if error.is_timeout() {
-                "remote document request timed out".to_owned()
-            } else {
-                "remote document request failed".to_owned()
-            }
-        })?;
+        let response = timeout_at(deadline, client.get(parsed).send())
+            .await
+            .map_err(|_| "remote document request timed out".to_owned())?
+            .map_err(|error| {
+                if error.is_timeout() {
+                    "remote document request timed out".to_owned()
+                } else {
+                    "remote document request failed".to_owned()
+                }
+            })?;
         if response.status() != StatusCode::OK {
             return Err("remote document returned a non-success status".to_owned());
         }
@@ -132,17 +199,40 @@ impl RemoteClientDocumentResolver {
         if !kind.accepts_content_type(&content_type) {
             return Err("remote document has an unsupported content type".to_owned());
         }
-        let mut body = Vec::new();
-        let mut stream = response.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|_| "remote document body could not be read".to_owned())?;
-            if body.len().saturating_add(chunk.len()) > MAX_DOCUMENT_BYTES {
-                return Err("remote document is oversized".to_owned());
+        timeout_at(deadline, async move {
+            let mut body = Vec::new();
+            let mut stream = response.bytes_stream();
+            while let Some(chunk) = stream.next().await {
+                let chunk =
+                    chunk.map_err(|_| "remote document body could not be read".to_owned())?;
+                if body.len().saturating_add(chunk.len()) > MAX_DOCUMENT_BYTES {
+                    return Err("remote document is oversized".to_owned());
+                }
+                body.extend_from_slice(&chunk);
             }
-            body.extend_from_slice(&chunk);
-        }
-        Ok(body)
+            Ok(body)
+        })
+        .await
+        .map_err(|_| "remote document body timed out".to_owned())?
     }
+}
+
+fn canonical_cache_key(uri: &str) -> Result<String, String> {
+    let parsed = validate_https_url(uri, true)?;
+    Ok(parsed.to_string())
+}
+
+fn jwks_contains_kid(document: &Value, expected_kid: Option<&str>) -> bool {
+    let Some(expected_kid) = expected_kid else {
+        return true;
+    };
+    document
+        .get("keys")
+        .and_then(Value::as_array)
+        .is_some_and(|keys| {
+            keys.iter()
+                .any(|key| key.get("kid").and_then(Value::as_str) == Some(expected_kid))
+        })
 }
 
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -155,7 +245,9 @@ impl RemoteDocumentKind {
     fn accepts_content_type(self, content_type: &str) -> bool {
         let media_type = content_type.split(';').next().unwrap_or_default().trim();
         match self {
-            Self::Jwks => matches!(media_type, "application/json" | "application/jwk-set+json"),
+            Self::Jwks => {
+                matches!(media_type, "application/json" | "application/jwk-set+json")
+            }
             Self::RequestObject => matches!(
                 media_type,
                 "application/jwt" | "application/oauth-authz-req+jwt"
@@ -180,11 +272,15 @@ fn validate_https_url(value: &str, allow_fragment: bool) -> Result<Url, String> 
 }
 
 impl nazo_http_actix::RemoteJwksResolverPort for RemoteClientDocumentResolver {
-    fn resolve<'a>(&'a self, uri: &'a str) -> nazo_http_actix::RemoteJwksFuture<'a> {
-        Box::pin(async move { self.jwks(uri).await })
+    fn resolve<'a>(
+        &'a self,
+        uri: &'a str,
+        expected_kid: Option<&'a str>,
+    ) -> nazo_http_actix::RemoteJwksFuture<'a> {
+        Box::pin(async move { self.jwks_for_kid(uri, expected_kid).await })
     }
 }
 
 #[cfg(test)]
 #[path = "../../tests/unit/domain/remote_client_documents.rs"]
-mod tests;
+pub(crate) mod tests;

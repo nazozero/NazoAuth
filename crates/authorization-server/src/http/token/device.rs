@@ -183,12 +183,16 @@ pub(crate) fn parse_device_authorization_form(
     Ok(form)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) async fn device_authorization(
     authorization_service: Data<ServerAuthorizationService>,
     device_service: Data<ServerDeviceGrantService>,
     limiter: Data<TokenManagementRequestLimiter>,
     config: Data<DeviceHttpConfig>,
     runtime: Data<ServerRuntimeModuleRegistry>,
+    remote_client_documents: Data<
+        crate::domain::remote_client_documents::RemoteClientDocumentResolver,
+    >,
     req: HttpRequest,
     body: Bytes,
 ) -> HttpResponse {
@@ -197,6 +201,7 @@ pub(crate) async fn device_authorization(
         device_service,
         limiter,
         config,
+        remote_client_documents,
         device_module_admissible(&runtime, CapabilityAdmission::NewRequest),
         req,
         body,
@@ -204,11 +209,15 @@ pub(crate) async fn device_authorization(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn device_authorization_with_admission(
     authorization_service: Data<ServerAuthorizationService>,
     device_service: Data<ServerDeviceGrantService>,
     limiter: Data<TokenManagementRequestLimiter>,
     config: Data<DeviceHttpConfig>,
+    remote_client_documents: Data<
+        crate::domain::remote_client_documents::RemoteClientDocumentResolver,
+    >,
     module_admissible: bool,
     req: HttpRequest,
     body: Bytes,
@@ -260,7 +269,7 @@ async fn device_authorization_with_admission(
             "客户端认证失败.",
         );
     }
-    let client = match authorization_service.client_by_id(client_id).await {
+    let mut client = match authorization_service.client_by_id(client_id).await {
         Ok(Some(client)) if client.is_active => client,
         Ok(_) => {
             super::client_auth::perform_dummy_client_secret_verification(
@@ -286,8 +295,9 @@ async fn device_authorization_with_admission(
         &authorization_service,
         &config,
         &req,
-        &client,
+        &mut client,
         &credentials,
+        remote_client_documents.get_ref(),
     )
     .await
     {
@@ -659,16 +669,21 @@ async fn authenticate_device_authorization_client(
     authorization_service: &ServerAuthorizationService,
     config: &DeviceHttpConfig,
     req: &HttpRequest,
-    client: &ClientRow,
+    client: &mut ClientRow,
     credentials: &ClientCredentials,
+    remote_client_documents: &crate::domain::remote_client_documents::RemoteClientDocumentResolver,
 ) -> Result<(), HttpResponse> {
     let auth_request = client_auth_request_facts(req, &config.trusted_proxy_cidrs);
     let assertion = authenticate_client_with_dependencies(
         authorization_service,
-        ClientAuthConfig::new(&config.issuer, &config.client_secret_pepper)
-            .with_endpoint_audience_aliases(std::slice::from_ref(
-                &config.mtls_endpoint_base_url.as_ref(),
-            )),
+        ClientAuthConfig::new(
+            &config.issuer,
+            &config.client_secret_pepper,
+            remote_client_documents,
+        )
+        .with_endpoint_audience_aliases(std::slice::from_ref(
+            &config.mtls_endpoint_base_url.as_ref(),
+        )),
         &auth_request,
         client,
         credentials,

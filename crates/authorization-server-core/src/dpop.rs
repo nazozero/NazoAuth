@@ -10,8 +10,11 @@ use subtle::ConstantTimeEq;
 
 use crate::{AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort};
 
-pub const DPOP_REPLAY_TTL_SECONDS: u64 = 300;
+const DPOP_MAX_PROOF_AGE_SECONDS: i64 = 300;
+pub const DPOP_REPLAY_TTL_SECONDS: u64 =
+    DPOP_MAX_PROOF_AGE_SECONDS as u64 + DPOP_CLOCK_SKEW_SECONDS as u64 + 1;
 pub const DPOP_CLOCK_SKEW_SECONDS: i64 = 30;
+const DPOP_NONCE_TTL_SECONDS: u64 = 300;
 const MAX_DPOP_JTI_BYTES: usize = 128;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -112,6 +115,20 @@ struct DpopHeader {
     alg: String,
     typ: Option<String>,
     jwk: Value,
+    #[serde(
+        rename = "crit",
+        default,
+        deserialize_with = "deserialize_present_header"
+    )]
+    critical_extension_present: bool,
+}
+
+fn deserialize_present_header<'de, D>(d: D) -> Result<bool, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let _ = serde::de::IgnoredAny::deserialize(d)?;
+    Ok(true)
 }
 
 #[derive(Deserialize)]
@@ -237,7 +254,7 @@ fn replay_scope(
         .first()
         .ok_or(DpopError::InvalidProof)
         .and_then(|target| normalize_htu(target))?;
-    let material = format!("{}:{target}", request.method.to_ascii_uppercase());
+    let material = format!("{}:{target}", request.method);
     Ok(format!(
         "resource:{}",
         blake3::hash(material.as_bytes()).to_hex()
@@ -250,7 +267,7 @@ where
 {
     let nonce = new_dpop_nonce();
     store
-        .issue_nonce(&nonce, DPOP_REPLAY_TTL_SECONDS)
+        .issue_nonce(&nonce, DPOP_NONCE_TTL_SECONDS)
         .await
         .map_err(|DpopStateStoreError| DpopError::NonceStoreUnavailable)?;
     Ok(nonce)
@@ -295,6 +312,9 @@ fn verify_dpop_proof_at(
     };
 
     let (header, claims, signing_input, signature) = decode_proof(raw)?;
+    if header.critical_extension_present {
+        return Err(DpopError::InvalidProof);
+    }
     if !header
         .typ
         .as_deref()
@@ -351,7 +371,7 @@ fn validate_claims(
             htu_matches = true;
         }
     }
-    if !htu_matches || !claims.htm.eq_ignore_ascii_case(request.method) {
+    if !htu_matches || claims.htm != request.method {
         return Err(DpopError::InvalidProof);
     }
     if !iat_within_window(claims.iat, now) || !valid_jti(&claims.jti) {
@@ -560,7 +580,7 @@ fn iat_within_window(iat: i64, now: i64) -> bool {
     iat > now
         || now
             .checked_sub(iat)
-            .is_some_and(|age| age <= DPOP_REPLAY_TTL_SECONDS as i64)
+            .is_some_and(|age| age <= DPOP_MAX_PROOF_AGE_SECONDS)
 }
 
 fn valid_jti(jti: &str) -> bool {

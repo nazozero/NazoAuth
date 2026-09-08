@@ -6,14 +6,18 @@ use crate::adapters::security::blake3_hex;
 use crate::adapters::security::client_secret_digest;
 use crate::adapters::security::verify_private_key_jwt_claims_for_issuer;
 use crate::domain::ClientRow;
+use crate::domain::client_policy::refresh_client_jwks;
 
 use crate::http::mtls::MtlsClientCertificate;
 use crate::http::mtls::client_mtls_certificate_matches;
+
+use jsonwebtoken::decode_header;
 
 use nazo_auth::{
     ClientAuthenticationContext, ClientAuthenticationPolicyError, ClientAuthenticationRequirement,
     client_authentication_requirement,
 };
+use nazo_http_actix::RemoteJwksResolverPort;
 
 pub(crate) enum TokenManagementClientAuthError {
     InvalidClient,
@@ -48,29 +52,25 @@ pub(crate) struct ClientAuthConfig<'a> {
     issuer: &'a str,
     client_secret_pepper: &'a str,
     endpoint_audience_aliases: &'a [&'a str],
-    remote_jwks: Option<&'a crate::domain::remote_client_documents::RemoteClientDocumentResolver>,
+    remote_jwks: &'a dyn RemoteJwksResolverPort,
 }
 
 impl<'a> ClientAuthConfig<'a> {
-    pub(crate) fn new(issuer: &'a str, client_secret_pepper: &'a str) -> Self {
+    pub(crate) fn new(
+        issuer: &'a str,
+        client_secret_pepper: &'a str,
+        remote_jwks: &'a dyn RemoteJwksResolverPort,
+    ) -> Self {
         Self {
             issuer,
             client_secret_pepper,
             endpoint_audience_aliases: &[],
-            remote_jwks: None,
+            remote_jwks,
         }
     }
 
     pub(crate) fn with_endpoint_audience_aliases(mut self, aliases: &'a [&'a str]) -> Self {
         self.endpoint_audience_aliases = aliases;
-        self
-    }
-
-    pub(crate) fn with_remote_jwks(
-        mut self,
-        resolver: &'a crate::domain::remote_client_documents::RemoteClientDocumentResolver,
-    ) -> Self {
-        self.remote_jwks = Some(resolver);
         self
     }
 }
@@ -99,12 +99,12 @@ pub(crate) fn perform_dummy_client_secret_verification(
     }
 }
 
-#[cfg(not(test))]
+#[allow(dead_code)]
 pub(crate) async fn authenticate_introspection_client_with_dependencies(
     service: &crate::http::authorization::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
     request: &ClientAuthRequestFacts,
-    client: &ClientRow,
+    client: &mut ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
@@ -130,12 +130,12 @@ pub(crate) async fn authenticate_introspection_client_with_dependencies(
     })
 }
 
-#[cfg(not(test))]
+#[allow(dead_code)]
 pub(crate) async fn authenticate_revocation_client_with_dependencies(
     service: &crate::http::authorization::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
     request: &ClientAuthRequestFacts,
-    client: &ClientRow,
+    client: &mut ClientRow,
     credentials: &ClientCredentials,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
@@ -159,7 +159,7 @@ pub(crate) async fn authenticate_client_with_dependencies(
     service: &crate::http::authorization::ServerAuthorizationService,
     config: ClientAuthConfig<'_>,
     request: &ClientAuthRequestFacts,
-    client: &ClientRow,
+    client: &mut ClientRow,
     credentials: &ClientCredentials,
     context: ClientAuthenticationContext,
 ) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
@@ -179,28 +179,24 @@ pub(crate) async fn authenticate_client_with_dependencies(
     match requirement {
         ClientAuthenticationRequirement::PublicClient => Ok(None),
         ClientAuthenticationRequirement::PrivateKeyJwt { assertion } => {
-            let resolved_client;
-            let verification_client = if let (Some(uri), Some(resolver)) =
-                (client.jwks_uri.as_deref(), config.remote_jwks)
-            {
-                let jwks = resolver.jwks(uri).await.map_err(|error| {
-                    tracing::warn!(%error, "dynamic client jwks_uri could not be refreshed");
-                    TokenManagementClientAuthError::InvalidClient
-                })?;
-                resolved_client = {
-                    let mut client = client.clone();
-                    client.jwks = Some(jwks);
-                    client
-                };
-                &resolved_client
-            } else {
-                client
-            };
+            // The registered URI determines the key source; kid is only a
+            // hint to the resolver, including when it is absent. Signature
+            // and claim validation still happen below. Malformed
+            // assertions are rejected by the existing verifier without a
+            // network request.
+            if let Ok(header) = decode_header(assertion) {
+                refresh_client_jwks(client, config.remote_jwks, header.kid.as_deref())
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(%error, "dynamic client jwks_uri could not be refreshed");
+                        TokenManagementClientAuthError::StoreUnavailable
+                    })?;
+            }
             verify_private_key_jwt_claims_for_issuer(
                 config.issuer,
                 request.endpoint_path(),
                 config.endpoint_audience_aliases,
-                verification_client,
+                client,
                 assertion,
             )
             .map(Some)
@@ -244,6 +240,14 @@ pub(crate) async fn authenticate_client_with_dependencies(
                 log_client_auth_rejection(request, client, credentials, "missing_mtls_certificate");
                 return Err(TokenManagementClientAuthError::InvalidClient);
             };
+            if client.token_endpoint_auth_method == "self_signed_tls_client_auth" {
+                refresh_client_jwks(client, config.remote_jwks, None)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(%error, "dynamic client mTLS jwks_uri could not be refreshed");
+                        TokenManagementClientAuthError::StoreUnavailable
+                    })?;
+            }
             if !client_mtls_certificate_matches(client, certificate) {
                 log_client_auth_rejection(request, client, credentials, "mtls_certificate");
                 return Err(TokenManagementClientAuthError::InvalidClient);

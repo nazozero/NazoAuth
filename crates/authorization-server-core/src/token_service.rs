@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use crate::{
     AuthorizationCodeState, Claims, CodePayload, ConfirmationClaims, ConsumedAuthorizationCode,
-    NewRefreshToken, OAuthClient, OidcClaimRequest, RefreshToken, RefreshTokenPersistResult,
+    NewRefreshToken, OAuthClient, OidcClaimRequest, RefreshToken,
 };
 
 pub type TokenFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, TokenPortError>> + Send + 'a>>;
@@ -63,30 +63,35 @@ pub struct IssuedAccessToken {
     pub expires_at: i64,
 }
 
-/// Durable state for one logical token grant.  A grant may cross several
-/// storage systems (signer, durable persistence and Valkey), so the token endpoint
-/// records this state before it can return credentials.  The response body is
-/// opaque to the core crate and is encrypted by the persistence adapter.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TokenIssuancePhase {
-    Prepared,
-    Signed,
-    Persisted,
-    Delivered,
+/// The storage contract for a token issuance.  Only idempotent grants may
+/// recover a previously committed response; fresh and single-use grants keep
+/// their durable record without a response body.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TokenIssuanceMode {
+    Fresh,
+    SingleUse { grant_key: String },
+    Idempotent { grant_key: String },
 }
 
-impl TokenIssuancePhase {
+impl TokenIssuanceMode {
+    /// Resolve the durable grant key after the issuance id is known.
     #[must_use]
-    pub const fn as_str(self) -> &'static str {
+    pub fn grant_key(&self, issuance_id: Uuid) -> String {
         match self {
-            Self::Prepared => "prepared",
-            Self::Signed => "signed",
-            Self::Persisted => "persisted",
-            Self::Delivered => "delivered",
+            Self::Fresh => ephemeral_grant_key(issuance_id),
+            Self::SingleUse { grant_key } | Self::Idempotent { grant_key } => grant_key.clone(),
         }
     }
 }
 
+/// Build the non-recoverable grant key used by fresh issuances.
+#[must_use]
+pub fn ephemeral_grant_key(issuance_id: Uuid) -> String {
+    format!("ephemeral:{issuance_id}")
+}
+
+/// The terminal durable state returned by an issuance lookup.  It deliberately
+/// contains no process-owner or phase fields.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TokenIssuanceRecord {
     pub issuance_id: Uuid,
@@ -95,8 +100,6 @@ pub struct TokenIssuanceRecord {
     pub user_id: Option<Uuid>,
     pub grant_key: String,
     pub request_digest: String,
-    pub phase: TokenIssuancePhase,
-    pub claim_owner_id: Option<Uuid>,
     pub access_token_jti: Option<String>,
     pub access_token_expires_at: Option<i64>,
     pub response_body: Option<Vec<u8>>,
@@ -104,45 +107,43 @@ pub struct TokenIssuanceRecord {
     pub response_key_version: Option<String>,
 }
 
+/// Public, non-sensitive fields projected into a `token_issued` audit event.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PrepareTokenIssuance {
+pub struct TokenIssuedAuditFields {
+    pub client_id: String,
+    pub subject_hash: String,
+    pub scope: String,
+    pub audience: Vec<String>,
+}
+
+/// Owned input for the one durable token-issuance commit boundary.
+#[derive(Clone, Debug, PartialEq)]
+pub struct CommitTokenIssuance {
     pub issuance_id: Uuid,
     pub tenant_id: Uuid,
     pub client_id: Uuid,
-    /// Internal subject ownership for later tenant-scoped revocation.  Client
-    /// credentials and other subjectless grants deliberately store `None`.
     pub user_id: Option<Uuid>,
-    /// A stable, server-derived grant identity (for example an authorization
-    /// code hash or CIBA auth_req_id).  It is never exposed to clients.
-    pub grant_key: String,
+    pub mode: TokenIssuanceMode,
     pub request_digest: String,
-    pub expires_at: DateTime<Utc>,
+    pub access_token_jti: String,
+    pub access_token_expires_at: i64,
+    pub response_body: Option<Vec<u8>>,
+    pub refresh_token: Option<NewRefreshToken>,
+    pub audit_fields: TokenIssuedAuditFields,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub enum PrepareTokenIssuanceResult {
-    Created(TokenIssuanceRecord),
-    Existing(TokenIssuanceRecord),
+pub enum CommitTokenIssuanceResult {
+    /// This request inserted and committed the terminal issuance record.
+    Committed,
+    /// An idempotent request found the matching committed response.
+    Existing(Box<TokenIssuanceRecord>),
+    /// The durable key exists but does not match this request or cannot recover.
     Conflict,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TokenIssuanceClaimResult {
-    /// This caller became the only side-effect owner for the prepared row.
-    Applied,
-    /// Another caller owns the row. It must wait for or recover the terminal response.
-    Busy,
-    /// The durable row no longer exists. Retrying is fail-closed.
-    Missing,
-    /// The row identity or phase no longer matches this claim attempt.
-    Conflict,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TokenIssuanceTransitionResult {
-    Applied,
-    Missing,
-    Conflict,
+    /// A fresh or single-use grant was already committed.
+    AlreadyUsed,
+    /// Refresh-token reuse was detected and intentionally committed as a compromise.
+    RotationConflict,
 }
 
 pub struct AccessTokenSignInput<'a> {
@@ -279,7 +280,6 @@ pub struct TokenRevocation<'a> {
 }
 
 pub struct IssuedAuthorizationCodeTokens<'a> {
-    pub tenant_id: Uuid,
     pub client_id: Uuid,
     pub code_hash: &'a str,
     pub redemption_binding: &'a str,
@@ -289,49 +289,15 @@ pub struct IssuedAuthorizationCodeTokens<'a> {
     pub consumed_state_ttl_seconds: u64,
 }
 
-pub struct RecordTokenIssuanceSigned<'a> {
-    pub issuance_id: Uuid,
-    pub request_digest: &'a str,
-    pub claim_owner_id: Uuid,
-    pub access_token_jti: &'a str,
-    pub access_token_expires_at: i64,
-    pub response_body: &'a [u8],
-    pub response_digest: &'a str,
-}
-
 pub trait TokenRepositoryPort: Send + Sync {
     /// Verify that every configured encrypted-response key id is present in
     /// durable state before token traffic is admitted.
     fn validate_response_key_ring(&self) -> TokenFuture<'_, ()>;
 
-    fn prepare_token_issuance<'a>(
+    fn commit_token_issuance<'a>(
         &'a self,
-        input: PrepareTokenIssuance,
-    ) -> TokenFuture<'a, PrepareTokenIssuanceResult>;
-
-    fn claim_token_issuance<'a>(
-        &'a self,
-        issuance_id: Uuid,
-        request_digest: &'a str,
-        claim_owner_id: Uuid,
-    ) -> TokenFuture<'a, TokenIssuanceClaimResult>;
-
-    fn record_token_issuance_signed<'a>(
-        &'a self,
-        input: RecordTokenIssuanceSigned<'a>,
-    ) -> TokenFuture<'a, TokenIssuanceTransitionResult>;
-
-    fn mark_token_issuance_persisted<'a>(
-        &'a self,
-        issuance_id: Uuid,
-        request_digest: &'a str,
-    ) -> TokenFuture<'a, TokenIssuanceTransitionResult>;
-
-    fn mark_token_issuance_delivered<'a>(
-        &'a self,
-        issuance_id: Uuid,
-        request_digest: &'a str,
-    ) -> TokenFuture<'a, TokenIssuanceTransitionResult>;
+        input: CommitTokenIssuance,
+    ) -> TokenFuture<'a, CommitTokenIssuanceResult>;
 
     fn token_issuance_by_grant<'a>(
         &'a self,
@@ -352,17 +318,12 @@ pub trait TokenRepositoryPort: Send + Sync {
         raw_token: &'a str,
     ) -> TokenFuture<'a, Option<RefreshToken>>;
 
-    fn lost_response_successor_or_compromise<'a>(
+    fn inspect_lost_response_successor<'a>(
         &'a self,
         token: &'a RefreshToken,
         client_id: Uuid,
         retry_started_at: DateTime<Utc>,
     ) -> TokenFuture<'a, Option<RefreshToken>>;
-
-    fn persist_refresh_token<'a>(
-        &'a self,
-        token: NewRefreshToken,
-    ) -> TokenFuture<'a, RefreshTokenPersistResult>;
 
     fn active_subject_claims(
         &self,
@@ -572,51 +533,11 @@ where
         }
     }
 
-    pub async fn prepare_token_issuance(
+    pub async fn commit_token_issuance(
         &self,
-        input: PrepareTokenIssuance,
-    ) -> Result<PrepareTokenIssuanceResult, TokenPortError> {
-        self.repository.prepare_token_issuance(input).await
-    }
-
-    pub async fn claim_token_issuance(
-        &self,
-        issuance_id: Uuid,
-        request_digest: &str,
-        claim_owner_id: Uuid,
-    ) -> Result<TokenIssuanceClaimResult, TokenPortError> {
-        // Ownership is deliberately never stolen after a process crash: an
-        // uncompleted claim remains fail-closed until an operator repairs it.
-        self.repository
-            .claim_token_issuance(issuance_id, request_digest, claim_owner_id)
-            .await
-    }
-
-    pub async fn record_token_issuance_signed(
-        &self,
-        input: RecordTokenIssuanceSigned<'_>,
-    ) -> Result<TokenIssuanceTransitionResult, TokenPortError> {
-        self.repository.record_token_issuance_signed(input).await
-    }
-
-    pub async fn mark_token_issuance_persisted(
-        &self,
-        issuance_id: Uuid,
-        request_digest: &str,
-    ) -> Result<TokenIssuanceTransitionResult, TokenPortError> {
-        self.repository
-            .mark_token_issuance_persisted(issuance_id, request_digest)
-            .await
-    }
-
-    pub async fn mark_token_issuance_delivered(
-        &self,
-        issuance_id: Uuid,
-        request_digest: &str,
-    ) -> Result<TokenIssuanceTransitionResult, TokenPortError> {
-        self.repository
-            .mark_token_issuance_delivered(issuance_id, request_digest)
-            .await
+        input: CommitTokenIssuance,
+    ) -> Result<CommitTokenIssuanceResult, TokenPortError> {
+        self.repository.commit_token_issuance(input).await
     }
 
     pub async fn token_issuance_by_grant(
@@ -671,22 +592,15 @@ where
         self.state.load_native_sso(secret).await
     }
 
-    pub async fn recover_lost_refresh_response(
+    pub async fn inspect_lost_refresh_successor(
         &self,
         token: &RefreshToken,
         client_id: Uuid,
         retry_started_at: DateTime<Utc>,
     ) -> Result<Option<RefreshToken>, TokenPortError> {
         self.repository
-            .lost_response_successor_or_compromise(token, client_id, retry_started_at)
+            .inspect_lost_response_successor(token, client_id, retry_started_at)
             .await
-    }
-
-    pub async fn persist_refresh_token(
-        &self,
-        token: NewRefreshToken,
-    ) -> Result<RefreshTokenPersistResult, TokenPortError> {
-        self.repository.persist_refresh_token(token).await
     }
 
     pub async fn active_subject_claims(
@@ -786,25 +700,15 @@ where
                 consumed_at: Utc::now(),
             },
         };
-        let transition = self
+        match self
             .state
             .mark_authorization_code(issued.code_hash, &marker, issued.consumed_state_ttl_seconds)
-            .await;
-        if matches!(transition, Ok(AuthorizationCodeTransitionResult::Applied)) {
-            return Ok(());
+            .await
+        {
+            Ok(AuthorizationCodeTransitionResult::Applied) => Ok(()),
+            Ok(_) => Err(TokenPortError::Conflict),
+            Err(error) => Err(error),
         }
-
-        let expiry = DateTime::<Utc>::from_timestamp(issued.access_token_expires_at, 0);
-        self.repository
-            .revoke_issued_tokens(
-                issued.tenant_id,
-                issued.client_id,
-                issued.access_token_jti,
-                expiry,
-                issued.refresh_token_family_id,
-            )
-            .await?;
-        Err(transition.err().unwrap_or(TokenPortError::Conflict))
     }
 
     pub async fn store_access_token_subject(

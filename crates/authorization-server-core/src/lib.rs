@@ -73,8 +73,8 @@ pub use authorization_request::{
     RequestObjectJtiPolicy, RequestObjectPolicy, RequestObjectReplay,
     RequestObjectVerificationError, RequestObjectVerificationInput, VerifiedRequestObject,
     normalize_request_object, normalize_request_object_owned,
-    unverified_signed_request_object_client_id, validate_expanded_par_admission,
-    validate_raw_par_admission, verify_request_object,
+    unverified_signed_request_object_client_id, unverified_signed_request_object_kid,
+    validate_expanded_par_admission, validate_raw_par_admission, verify_request_object,
 };
 pub use authorization_service::{
     AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
@@ -213,12 +213,11 @@ pub use token_endpoint::{
 };
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,
-    AuthorizationCodeTransitionResult, IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken,
-    IssuedAuthorizationCodeTokens, PrepareTokenIssuance, PrepareTokenIssuanceResult,
-    RecordTokenIssuanceSigned, TokenFuture, TokenInspection, TokenIssuanceClaimResult,
-    TokenIssuancePhase, TokenIssuanceRecord, TokenIssuanceTransitionResult, TokenPortError,
-    TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort,
-    validate_sender_constraint,
+    AuthorizationCodeTransitionResult, CommitTokenIssuance, CommitTokenIssuanceResult,
+    IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, IssuedAuthorizationCodeTokens,
+    TokenFuture, TokenInspection, TokenIssuanceMode, TokenIssuanceRecord, TokenIssuedAuditFields,
+    TokenPortError, TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort,
+    TokenStateStorePort, ephemeral_grant_key, validate_sender_constraint,
 };
 pub use transaction::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,

@@ -301,11 +301,18 @@ pub(super) async fn prepare_insert(
     security_policy_override: Option<&nazo_auth::ClientSecurityPolicy>,
 ) -> Result<PreparedClientRegistration, AdminClientError> {
     if let Some(uri) = registration.jwks_uri.as_deref() {
-        registration.jwks = Some(endpoint.security.remote_jwks.resolve(uri).await.map_err(
-            |error| {
-                AdminClientError::InvalidRequest(format!("jwks_uri could not be resolved: {error}"))
-            },
-        )?);
+        registration.jwks = Some(
+            endpoint
+                .security
+                .remote_jwks
+                .resolve(uri, None)
+                .await
+                .map_err(|error| {
+                    AdminClientError::InvalidRequest(format!(
+                        "jwks_uri could not be resolved: {error}"
+                    ))
+                })?,
+        );
     }
     let mut request = registration.into_create_client_request();
     if let Some(security_policy) = security_policy_override {

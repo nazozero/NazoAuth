@@ -278,11 +278,13 @@ async fn poll_and_issue_ciba(request: CibaPollIssueRequest<'_, '_>) -> SendCibaR
         dpop_jkt,
         mtls_x5t_s256,
     );
-    let response = issue_token_response_with_service_and_grant(
+    let response = issue_token_response(
         issuance,
         token_service,
         client,
-        Some(&ciba_grant_key),
+        TokenIssuanceMode::SingleUse {
+            grant_key: ciba_grant_key.clone(),
+        },
         issue,
     )
     .await;

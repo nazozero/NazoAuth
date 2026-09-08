@@ -28,7 +28,7 @@ mod scim;
 pub(crate) mod sector_identifier;
 mod session_management;
 pub(crate) mod tenancy;
-#[cfg(not(test))]
+#[allow(dead_code)]
 mod token_management;
 mod userinfo;
 
@@ -80,7 +80,7 @@ pub(crate) use scim::{
     ServerScimRequestAuthorizer,
 };
 pub(crate) use session_management::ServerSessionManagementOperations;
-#[cfg(not(test))]
+#[allow(unused_imports)]
 pub(crate) use token_management::{
     ServerTokenManagementOperations, ServerTokenManagementRequestGuard,
 };

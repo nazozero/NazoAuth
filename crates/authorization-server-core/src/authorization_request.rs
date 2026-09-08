@@ -163,6 +163,23 @@ pub fn unverified_signed_request_object_client_id(request_object: &str) -> Optio
         .then_some(claims.client_id)
 }
 
+/// Extracts the untrusted `kid` header from a signed request object.
+///
+/// This is only a key-selection hint.  Callers must still run
+/// [`verify_request_object`] against the selected client keys before accepting
+/// any claims or parameters.
+#[must_use]
+pub fn unverified_signed_request_object_kid(request_object: &str) -> Option<String> {
+    let (header, _payload, signature) = split_compact_jwt(request_object)?;
+    if signature.is_empty() {
+        return None;
+    }
+    let header = decode_request_object_header(header).ok()?;
+    (header.alg != "none")
+        .then(|| jsonwebtoken::decode_header(request_object).ok()?.kid)
+        .flatten()
+}
+
 fn split_compact_jwt(token: &str) -> Option<(&str, &str, &str)> {
     let mut parts = token.split('.');
     let header = parts.next()?;
@@ -414,9 +431,17 @@ fn request_object_replay(
         return Ok(None);
     };
     let ttl_seconds = match claims.exp {
-        Some(expiry) => expiry
-            .saturating_sub(policy.now)
-            .clamp(1, REQUEST_OBJECT_MAX_TTL_SECONDS) as u64,
+        Some(expiry) => {
+            let remaining = expiry
+                .checked_sub(policy.now)
+                .ok_or(AuthorizationRequestError::RequestObjectClaims)?;
+            let remaining = u64::try_from(remaining)
+                .map_err(|_| AuthorizationRequestError::RequestObjectClaims)?;
+            if remaining == 0 {
+                return Err(AuthorizationRequestError::RequestObjectClaims);
+            }
+            remaining
+        }
         None => return Err(AuthorizationRequestError::RequestObjectClaims),
     };
     Ok(Some(RequestObjectReplay {

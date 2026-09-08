@@ -33,8 +33,6 @@ fn normalize(
             client_type,
             allowed_scopes: &scopes,
             allowed_audiences: &audiences,
-            require_dpop_bound_tokens: false,
-            require_mtls_bound_tokens: false,
         },
         AuthorizationCapabilityPolicy {
             authorization_details: true,
@@ -46,7 +44,6 @@ fn normalize(
             signed_authorization_response_required: false,
             pkce_required,
         },
-        false,
     )
 }
 

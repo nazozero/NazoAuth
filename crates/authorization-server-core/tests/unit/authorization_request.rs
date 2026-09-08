@@ -560,3 +560,49 @@ proptest! {
         prop_assert_eq!(accepted, expected);
     }
 }
+
+#[test]
+fn jar_replay_ttl_uses_validated_expiry() {
+    let t0 = 1_700_000_000;
+    let mut claims = signed_claims(t0);
+    claims.nbf = Some(t0 + 30);
+    claims.iat = Some(t0 + 30);
+    claims.exp = Some(t0 + 330);
+
+    let normalized = normalize_request_object(&HashMap::new(), &claims, signed_policy(t0))
+        .expect("remaining lifetime of 330 seconds is legal");
+    assert_eq!(
+        normalized.replay.expect("replay instruction").ttl_seconds,
+        330,
+        "the replay TTL must follow the validated expiry, not a 300 second cap"
+    );
+
+    let expired_now_claims = claims;
+    assert_eq!(
+        normalize_request_object(
+            &HashMap::new(),
+            &expired_now_claims,
+            signed_policy(t0 + 330)
+        ),
+        Err(AuthorizationRequestError::RequestObjectClaims),
+        "at the exp instant the object is no longer valid"
+    );
+}
+
+#[test]
+fn jar_expired_object_never_consumes_replay_state() {
+    let t0 = 1_700_000_000;
+    let mut expired = signed_claims(t0);
+    expired.exp = Some(t0);
+    assert_eq!(
+        normalize_request_object(&HashMap::new(), &expired, signed_policy(t0)),
+        Err(AuthorizationRequestError::RequestObjectClaims)
+    );
+
+    let mut unrepresentable = signed_claims(t0);
+    unrepresentable.exp = Some(i64::MIN);
+    assert_eq!(
+        normalize_request_object(&HashMap::new(), &unrepresentable, signed_policy(t0)),
+        Err(AuthorizationRequestError::RequestObjectClaims)
+    );
+}

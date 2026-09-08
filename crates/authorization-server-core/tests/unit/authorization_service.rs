@@ -43,10 +43,6 @@ impl AuthorizationRepositoryPort for FakeRepository {
         Box::pin(async move { Ok(client) })
     }
 
-    fn active_mtls_candidates(&self, _limit: usize) -> AuthorizationFuture<'_, Vec<OAuthClient>> {
-        Box::pin(async { Ok(Vec::new()) })
-    }
-
     fn grant<'a>(
         &'a self,
         _user_id: Uuid,

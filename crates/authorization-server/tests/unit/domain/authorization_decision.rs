@@ -1,4 +1,43 @@
 use super::*;
+
+#[actix_web::test]
+async fn authorization_decision_fails_closed_when_jarm_encryption_keys_cannot_refresh() {
+    let Some(fixture) = DecisionLiveFixture::new().await else {
+        return;
+    };
+    let suffix = Uuid::now_v7().to_string();
+    let user = fixture
+        .create_user(&format!("jarm-refresh-{suffix}"), "user", 0)
+        .await;
+    let client_id = format!("jarm-refresh-{suffix}");
+    let session_id = format!("jarm-refresh-session-{suffix}");
+    fixture.insert_client(&client_id, true).await;
+    fixture
+        .store_session(&user, &session_id, Utc::now().timestamp())
+        .await;
+    let mut connection = get_conn(&fixture.state.diesel_db).await.unwrap();
+    sql_query("UPDATE oauth_clients SET jwks_uri = 'https://invalid.example/jwks.json', jwks = '{\"keys\":[]}'::jsonb, authorization_encrypted_response_alg = 'RSA-OAEP-256', authorization_encrypted_response_enc = 'A256GCM' WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID).bind::<Text, _>(&client_id)
+        .execute(&mut connection).await.unwrap();
+    drop(connection);
+    let mut payload = consent_payload_for_user(&client_id, user.id);
+    payload.response_mode = Some("query.jwt".into());
+    payload.signed_authorization_response_required = Some(true);
+    fixture.store_consent_payload(&payload).await;
+    let request = fixture.auth_request(&session_id, Some("csrf-session-token"));
+    let response = authorize_decision(
+        fixture.state.clone(),
+        request,
+        Form(AuthorizationDecisionForm {
+            request_id: payload.request_id,
+            decision: "deny".into(),
+            csrf_token: None,
+        }),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(!response.headers().contains_key(header::LOCATION));
+}
 use actix_web::{
     HttpRequest, HttpResponse,
     cookie::Cookie,
@@ -71,6 +110,10 @@ fn authorization_decision_endpoint(
             nazo_identity::TenantId::new(DEFAULT_TENANT_ID).expect("default tenant ID is valid"),
             Arc::new(AuthorizationHttpConfig::from(state.settings.as_ref())),
             runtime_modules,
+            Arc::new(
+                crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                    .expect("empty resolver should build"),
+            ),
         )),
         SessionCookieConfig::new(
             &session.session_cookie_name,

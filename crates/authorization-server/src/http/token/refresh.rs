@@ -1,7 +1,5 @@
 //! refresh_token grant 处理。
-use crate::adapters::audit::{audit_event_required, audit_fields};
 use crate::adapters::security::ValidatedClientAssertion;
-use crate::adapters::security::blake3_hex;
 use crate::adapters::security::constant_time_eq;
 
 use crate::domain::client_policy::audiences_allowed;
@@ -18,18 +16,16 @@ use actix_web::http::StatusCode;
 
 use actix_web::{HttpRequest, HttpResponse};
 
-use chrono::{DateTime, Utc};
-use nazo_http_actix::client_ip_with_context;
+use chrono::Utc;
 use nazo_http_actix::oauth_token_error;
 
-use serde_json::json;
-use uuid::Uuid;
+use nazo_auth::TokenIssuanceMode;
 // 只处理 refresh token 校验、复用检测和轮换前置约束。
 
 use super::{
     SenderConstraintValidationError, ServerTokenService, TokenForm,
     consume_token_client_assertion_with_authorization_service,
-    issue::{TokenIssuanceContext, issue_token_response_with_service},
+    issue::{TokenIssuanceContext, issue_token_response},
     sender_constraint_multiple_error, should_issue_refresh_token,
     validate_token_sender_constraints,
 };
@@ -109,18 +105,6 @@ fn refresh_token_audiences(
         .ok_or(RefreshAudienceError::RequestedExceedsOriginal)
 }
 
-async fn lost_response_successor_or_mark_reuse(
-    service: &ServerTokenService,
-    token: &TokenRow,
-    client_id: Uuid,
-    retry_started_at: DateTime<Utc>,
-) -> anyhow::Result<Option<TokenRow>> {
-    service
-        .recover_lost_refresh_response(token, client_id, retry_started_at)
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to inspect refresh family: {error:?}"))
-}
-
 pub(crate) async fn token_refresh_with_service(
     token_service: &ServerTokenService,
     issuance: &TokenIssuanceContext<'_>,
@@ -183,64 +167,10 @@ pub(crate) async fn token_refresh_with_service(
         );
     }
     let mut lost_response_original_id = None;
-    if token.revoked_at.is_some() {
-        let successor = lost_response_successor_or_mark_reuse(
-            token_service,
-            &token,
-            client.id,
-            request_started_at,
-        )
-        .await;
-        match successor {
-            Ok(Some(successor)) => {
-                lost_response_original_id = Some(token.id);
-                token = successor;
-            }
-            Ok(None) => {
-                if let Err(error) = audit_event_required(
-                    "refresh_reuse_detected",
-                    audit_fields(&[
-                        ("client_id", json!(client.client_id)),
-                        ("token_family_id", json!(token.token_family_id)),
-                        (
-                            "source_ip_hash",
-                            json!(blake3_hex(&client_ip_with_context(
-                                req,
-                                issuance.config.client_ip_header_mode(),
-                                issuance.config.trusted_proxy_cidrs(),
-                            ))),
-                        ),
-                    ]),
-                )
-                .await
-                {
-                    tracing::error!(%error, "required refresh reuse audit failed");
-                    return oauth_token_error(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "刷新令牌重用审计写入失败.",
-                        false,
-                    );
-                }
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "refresh_token 无效或已撤销.",
-                    false,
-                );
-            }
-            Err(error) => {
-                tracing::warn!(%error, "failed to inspect or mark rotated refresh token family");
-                return oauth_token_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "refresh_token 复用处理失败.",
-                    false,
-                );
-            }
-        }
-    }
-    let authentication_context = &token.authentication_context;
+    // Keep the original token's authentication context independent from the
+    // optional lost-response successor replacement below.  Borrowing the
+    // context through `token` would prevent assigning the successor in place.
+    let authentication_context = token.authentication_context.clone();
     if !authentication_context.is_well_formed()
         || authentication_context.issuer != issuance.config.issuer()
         || authentication_context.audience != client.client_id
@@ -253,31 +183,6 @@ pub(crate) async fn token_refresh_with_service(
         );
     }
     let original_scopes = json_array_to_strings(&token.scopes);
-    if let Some(user_id) = token.user_id {
-        match token_service
-            .active_subject_claims(token.tenant_id, user_id)
-            .await
-        {
-            Ok(Some(_)) => {}
-            Ok(None) => {
-                return oauth_token_error(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "授权用户不存在或已停用.",
-                    false,
-                );
-            }
-            Err(error) => {
-                tracing::warn!(?error, "failed to load refresh token user");
-                return oauth_token_error(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "refresh_token 用户校验失败.",
-                    false,
-                );
-            }
-        }
-    }
     if client.client_type == "public"
         && client.require_dpop_bound_tokens
         && !client.require_mtls_bound_tokens
@@ -334,6 +239,30 @@ pub(crate) async fn token_refresh_with_service(
     .await
     {
         return super::token_client_assertion_error(error);
+    }
+    if token.revoked_at.is_some() {
+        let original_id = token.id;
+        match token_service
+            .inspect_lost_refresh_successor(&token, client.id, request_started_at)
+            .await
+        {
+            Ok(Some(successor)) => token = successor,
+            Ok(None) => {}
+            Err(error) => {
+                tracing::warn!(%error, "failed to inspect rotated refresh token family");
+                return oauth_token_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "refresh_token 复用处理失败.",
+                    false,
+                );
+            }
+        }
+        // The durable commit distinguishes a lost-response successor from an
+        // authenticated reuse.  In the latter case it atomically compromises
+        // the family and appends the rejection audit before returning
+        // RotationConflict.
+        lost_response_original_id = Some(original_id);
     }
     let openid4vci_credential_authorization = issuance
         .config
@@ -399,10 +328,11 @@ pub(crate) async fn token_refresh_with_service(
         None => refresh_token_policy(client, &token),
     };
     let refresh_id_token_sid = Some(authentication_context.id_token_sid.clone());
-    issue_token_response_with_service(
+    issue_token_response(
         issuance,
         token_service,
         client,
+        TokenIssuanceMode::Fresh,
         TokenIssue {
             user_id: token.user_id,
             subject: token.subject,

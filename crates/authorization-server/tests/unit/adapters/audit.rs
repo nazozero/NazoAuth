@@ -332,26 +332,15 @@ fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
     assert!(ciba.contains("CIBA decision audit could not be persisted."));
 
     let issuance = include_str!("../../../src/http/token/issue_grant.rs");
+    // Token issuance now commits its success audit in the same PG transaction
+    // as the durable token fact.  Keep the preflight before the idempotent
+    // read, and ensure the retired intent/saga markers cannot return.
     assert_source_order(
         issuance,
         "ensure_audit_storage().await",
-        "audit_event_required(\n        \"token_issuance_intent\"",
+        "token_issuance_by_grant(",
     );
-    assert_source_order(
-        issuance,
-        "audit_event_required(\n        \"token_issuance_intent\"",
-        "prepare_token_issuance(",
-    );
-    assert_source_order(
-        issuance,
-        "record_token_issuance_signed(",
-        "audit_event_required(\n        \"token_issued\"",
-    );
-    assert_source_order(
-        issuance,
-        "PrepareTokenIssuanceResult::Existing(record)",
-        "response_from_token_issuance(&record)",
-    );
-    assert!(issuance.contains("return response;"));
-    assert!(issuance.contains("令牌签发审计无法持久化."));
+    assert!(issuance.contains("commit_token_issuance("));
+    assert!(!issuance.contains("token_issuance_intent"));
+    assert!(!issuance.contains("record_token_issuance_signed("));
 }

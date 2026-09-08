@@ -70,6 +70,11 @@ impl ServiceAssembly {
             &mut extensions,
             web::Data::new(startup.settings.tenant.context),
         );
+        insert(
+            &mut extensions,
+            web::Data::from(startup.remote_client_documents.clone()
+                as Arc<dyn nazo_http_actix::RemoteJwksResolverPort>),
+        );
         if let Some(source) =
             crate::keyctl::MdocCrlSource::from_settings(&startup.settings, startup.keyset.clone())
         {

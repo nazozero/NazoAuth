@@ -187,7 +187,11 @@ impl SectorIdentifierResolverPort for FakeSecurity {
 }
 
 impl RemoteJwksResolverPort for FakeSecurity {
-    fn resolve<'a>(&'a self, _uri: &'a str) -> RemoteJwksFuture<'a> {
+    fn resolve<'a>(
+        &'a self,
+        _uri: &'a str,
+        _expected_kid: Option<&'a str>,
+    ) -> RemoteJwksFuture<'a> {
         Box::pin(async { Ok(json!({"keys": []})) })
     }
 }

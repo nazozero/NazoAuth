@@ -5,9 +5,7 @@
 //! token exchange, and ID-token issuance require separate policy models.
 use nazo_http_actix::oauth_token_error;
 
-use super::issue::{
-    TokenIssuanceContext, issue_token_response_with_service_and_grant, request_idempotency_key,
-};
+use super::issue::{TokenIssuanceContext, issue_token_response, request_idempotency_key};
 use super::{
     SenderConstraintValidationError, ValidatedSenderConstraints, sender_constraint_multiple_error,
     validate_token_sender_constraints,
@@ -28,8 +26,8 @@ use chrono::Utc;
 
 use nazo_auth::{
     Claims, PresentedSenderConstraint, TokenExchangeError, TokenExchangePolicy,
-    TokenExchangeRequestInput, TokenExchangeSenderBinding, admit_token_exchange, parse_scope,
-    token_exchange_actor_claim, token_exchange_issuance_binding,
+    TokenExchangeRequestInput, TokenExchangeSenderBinding, TokenIssuanceMode, admit_token_exchange,
+    parse_scope, token_exchange_actor_claim, token_exchange_issuance_binding,
     validate_token_exchange_access_token, validate_token_exchange_grant_prerequisites,
     validate_token_exchange_subject,
 };
@@ -471,11 +469,14 @@ pub(crate) async fn token_exchange(
         Err(error) => return token_exchange_admission_error_response(error, form),
     };
     let idempotency_key = request_idempotency_key(req);
-    issue_token_response_with_service_and_grant(
+    let mode = idempotency_key.map_or(TokenIssuanceMode::Fresh, |grant_key| {
+        TokenIssuanceMode::Idempotent { grant_key }
+    });
+    issue_token_response(
         issuance,
         token_service,
         client,
-        idempotency_key.as_deref(),
+        mode,
         TokenIssue {
             user_id: validated_subject.user_id,
             subject: validated_subject.subject,

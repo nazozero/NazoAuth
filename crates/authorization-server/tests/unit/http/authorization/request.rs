@@ -180,8 +180,6 @@ fn normalize_for_test(
             client_type: "confidential",
             allowed_scopes: &scopes,
             allowed_audiences: &[],
-            require_dpop_bound_tokens: false,
-            require_mtls_bound_tokens: false,
         },
         AuthorizationCapabilityPolicy {
             authorization_details: true,
@@ -193,7 +191,6 @@ fn normalize_for_test(
             signed_authorization_response_required: false,
             pkce_required: false,
         },
-        false,
     )
 }
 
@@ -252,8 +249,6 @@ fn normalize_pkce_case(
             client_type: "confidential",
             allowed_scopes: &scopes,
             allowed_audiences: &[],
-            require_dpop_bound_tokens: false,
-            require_mtls_bound_tokens: false,
         },
         AuthorizationCapabilityPolicy {
             authorization_details: true,
@@ -265,7 +260,6 @@ fn normalize_pkce_case(
             signed_authorization_response_required: false,
             pkce_required,
         },
-        false,
     )
 }
 

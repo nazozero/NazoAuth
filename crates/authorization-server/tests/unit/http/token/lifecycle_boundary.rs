@@ -186,9 +186,9 @@ fn ciba_transport_uses_composition_root_handles() {
 
 #[test]
 fn shared_issuance_core_uses_typed_context_and_existing_service() {
-    let source = include_str!("../../../../src/http/token/issue.rs");
+    let source = include_str!("../../../../src/http/token/issue_grant.rs");
     let core = source
-        .split("pub(crate) async fn issue_token_response_with_service")
+        .split("pub(crate) async fn issue_token_response(")
         .nth(1)
         .and_then(|source| source.split("#[cfg(test)]").next())
         .expect("issuance core must precede test-only fixture adapters");
@@ -276,7 +276,7 @@ fn device_token_issuance_handoff_uses_focused_context_and_services() {
     assert!(source.contains("device_service: &ServerDeviceGrantService"));
     assert!(source.contains("token_service: &ServerTokenService"));
     assert!(source.contains("issuance: &TokenIssuanceContext<'_>"));
-    assert!(source.contains("issue_token_response_with_service"));
+    assert!(source.contains("issue_token_response("));
     assert!(source.contains("validate_token_sender_constraints"));
     assert!(source.contains("consume_token_client_assertion_with_authorization_service"));
     for forbidden in [
