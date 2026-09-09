@@ -1,6 +1,10 @@
 # OAuth, OAuth 2.1, OIDC, and FAPI Best-Practice Matrix — 10/10 Revision
 
-Last reviewed: 2026-07-17.
+Implementation review: 2026-07-17. Official-source review: 2026-09-09.
+
+The source refresh updates versions and publication status only. Prior runtime
+evidence is not a compliance claim for the newer drafts or RFCs; see
+[the source delta review](spec-freshness.md#september-source-changes-and-implementation-boundaries).
 
 ## Scope
 
@@ -13,7 +17,7 @@ The matrix follows these source families:
 
 - RFC 9700, OAuth 2.0 Security Best Current Practice:
   <https://www.rfc-editor.org/info/rfc9700/>
-- OAuth 2.1 draft `draft-ietf-oauth-v2-1-15`:
+- OAuth 2.1 draft `draft-ietf-oauth-v2-1-16`:
   <https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/>
 - FAPI 2.0 Security Profile Final:
   <https://openid.net/specs/fapi-security-profile-2_0-final.html>
@@ -28,7 +32,7 @@ The matrix follows these source families:
 - RFC 9325 / BCP 195, Recommendations for Secure Use of TLS and DTLS:
   <https://www.rfc-editor.org/info/rfc9325/>
 - OAuth 2.0 for Browser-Based Applications draft:
-  <https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/>
+  <https://www.rfc-editor.org/info/rfc10017>
 - Current IETF OAuth Working Group document list:
   <https://datatracker.ietf.org/wg/oauth/documents/>
 - OAuth.net working-group specification index:
@@ -186,7 +190,7 @@ conditions:
 | RFC 9967 SCIM SETs and asynchronous completion | Default-closed provisioning notice SET transmitter with transactional PostgreSQL outbox, receiver-bound signed SETs, RFC 8936 poll/ack/error delivery, and bounded retention. | Implemented for create/put/patch/activate/deactivate notices; soft delete emits deactivate. Async requests, hard-delete events, full-resource payloads, and push delivery are not implemented. | `securityEvents.eventUris` is populated only while new event creation is enabled; `asyncRequest` remains `none`. Event receivers require a database SCIM token with `scim:events` and `event_audience`. |
 | RFC 8725 | Governing JWT implementation BCP across ID Tokens, access-token JWTs, client assertions, request objects, JARM, DPoP proofs, and signed introspection. | Implemented/profile-scoped | Enforce explicit alg allowlists, key/alg binding, no `none`, full crypto validation, and cross-JWT confusion defenses. |
 | RFC 9325 / BCP 195 | Governing TLS deployment baseline. | External/profile-scoped | Prefer TLS 1.3; allow TLS 1.2 only with modern ciphers; forbid SSL/TLS legacy versions; use HSTS for browser-facing endpoints. |
-| OAuth 2.0 for Browser-Based Applications draft | BCP guidance for SPA/browser OAuth clients; `draft-ietf-oauth-browser-based-apps-27` is in the RFC Editor queue without an RFC number on 2026-07-17. | Draft-27 delta audit complete; publication watch remains | The hosted authorization-server frontend is not a BFF; public browser clients use code + S256 PKCE and endpoint-specific non-credentialed CORS. Re-audit every requirement after RFC publication and do not invent a draft runtime profile. |
+| OAuth 2.0 for Browser-Based Applications | RFC 10017, published August 2026. | Prior draft-27 audit complete; final-RFC audit pending | The hosted authorization-server frontend is not a BFF; public browser clients use code + S256 PKCE and endpoint-specific non-credentialed CORS. Audit the final RFC before extending the existing claim. |
 
 ## Current OAuth Standards Roadmap
 
@@ -198,24 +202,24 @@ Final/RFC conformance claim. Rows marked `Not supported (planned)` are roadmap
 candidates; they remain invisible in discovery metadata until fully implemented
 and tested.
 
-| Standard or draft | Source status on 2026-07-17 | Project decision | Planning boundary |
+| Standard or draft | Source status on 2026-09-09 | Project decision | Planning boundary |
 | --- | --- | --- | --- |
-| `draft-ietf-oauth-v2-1-15` | OAuth WG active draft | Supported (draft-15-compatible implementation) | Current behavior follows draft-15, but final OAuth 2.1 conformance is not claimed until the RFC is published and audited requirement by requirement. |
-| `draft-ietf-oauth-browser-based-apps-27` | RFC Editor queue BCP | Supported (audited against draft-27) | Current behavior follows draft-27 secure browser guidance; re-audit after RFC publication before claiming final BCP alignment. |
-| `draft-ietf-oauth-cross-device-security-16` | RFC Editor queue BCP | Not supported (audit pending) | Device Grant, CIBA, Native SSO, and future cross-device flows must be audited against the BCP before claiming named support. |
+| `draft-ietf-oauth-v2-1-16` | OAuth WG active draft | Prior draft-15 alignment; draft-16 audit pending | Current behavior follows draft-15, but final OAuth 2.1 conformance is not claimed until the RFC is published and audited requirement by requirement. |
+| `RFC 10017` | Published BCP (August 2026) | Prior draft-27 audit; final-RFC audit pending | Current behavior follows draft-27 secure browser guidance; audit RFC 10017 before claiming final BCP alignment. |
+| `RFC 10027` | Published BCP (August 2026) | Not supported (audit pending) | Device Grant, CIBA, Native SSO, and future cross-device flows must be audited against the BCP before claiming named support. |
 | `draft-ietf-oauth-security-topics-update-03` | OAuth WG active draft | Not supported (audit pending) | RFC 9700 behavior is implemented; this update draft is not claimed until its delta is audited. |
-| `draft-ietf-oauth-rfc8725bis-07` | Waiting for AD Go-Ahead BCP | Not supported (audit pending) | RFC 8725 behavior is implemented; this bis draft is not claimed until JWT/JWS/JWE algorithm, key-binding, and cross-JWT confusion deltas are audited. |
+| `draft-ietf-oauth-rfc8725bis-10` | RFC Editor queue BCP | Not supported (audit pending) | RFC 8725 behavior is implemented; this bis draft is not claimed until JWT/JWS/JWE algorithm, key-binding, and cross-JWT confusion deltas are audited. |
 | `draft-ietf-oauth-rfc7523bis-11` | RFC Editor queue | Not supported (audit pending) | RFC 7523 behavior is implemented/bounded; this bis draft is not claimed until `private_key_jwt`, JWT bearer grants, assertion audience, replay, and key-binding deltas are audited. |
 | `draft-ietf-oauth-refresh-token-expiration-03` | OAuth WG active draft | Not supported (planned) | Add only after refresh-token and authorization-expiration state, metadata, revocation, and tests exist. |
 | `draft-ietf-oauth-first-party-apps-04` | OAuth WG active draft | Not supported (planned) | Evaluate same-party browser/BFF assumptions without weakening third-party client isolation. |
 | `draft-ietf-oauth-client-id-metadata-document-02` | OAuth WG active draft | Not supported (planned) | Consider only as a controlled public-client metadata bootstrap profile. |
-| `draft-ietf-oauth-attestation-based-client-auth-07` | Version fixed by OpenID4VCI 1.0 Final | Supported/profile-scoped for OpenID4VCI 1.0 and HAIP 1.0 | `attest_jwt_client_auth` is advertised only when the Client Attestation module and client policy require it. Refresh tokens are bound to the Client Instance `cnf` public key. The current `draft-ietf-oauth-attestation-based-client-auth-10` remains a separate freshness/delta-audit item. |
+| `draft-ietf-oauth-attestation-based-client-auth-07` | Version fixed by OpenID4VCI 1.0 Final | Supported/profile-scoped for OpenID4VCI 1.0 and HAIP 1.0 | `attest_jwt_client_auth` is advertised only when the Client Attestation module and client policy require it. Refresh tokens are bound to the Client Instance `cnf` public key. The current `draft-ietf-oauth-attestation-based-client-auth-11` remains a separate freshness/delta-audit item. |
 | `draft-ietf-oauth-spiffe-client-auth-02` | OAuth WG active draft | Not supported (planned) | Requires a workload identity deployment and SPIFFE trust-domain boundary. |
 | `draft-ietf-oauth-identity-assertion-authz-grant-04` | OAuth WG active draft | Not supported (planned) | Requires trusted third-party assertion issuers, subject mapping, revocation, replay, and audit policy. |
 | `draft-ietf-oauth-identity-chaining-17` | RFC Editor queue | Not supported (planned) | Requires cross-domain trust-chain, delegation, replay, and resource-server verification semantics. |
-| `draft-ietf-oauth-transaction-tokens-09` | OAuth WG active draft | Not supported (planned) | Requires a trusted-domain Transaction Token Service and workload call-chain model. |
+| `draft-ietf-oauth-transaction-tokens-11` | OAuth WG active draft | Not supported (planned) | Requires a trusted-domain Transaction Token Service and workload call-chain model. |
 | `draft-ietf-oauth-status-list-21` | RFC Editor queue | Not supported (planned) | Add for OpenID4VC credential status only with privacy-preserving status, revocation, and verifier semantics. |
-| `draft-ietf-oauth-sd-jwt-vc-17` | AD Evaluation | Implemented/profile-scoped | Keep final-delta watch inside the OpenID4VC `dc+sd-jwt` issuer/verifier profiles only. |
+| `draft-ietf-oauth-sd-jwt-vc-19` | In Last Call | Prior credential-profile support; draft-19 audit pending | Keep final-delta watch inside the OpenID4VC `dc+sd-jwt` issuer/verifier profiles only. |
 | OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1 | upstream specification publisher Final Specifications | Not supported (planned) | Requires trust anchors, trust-chain resolution, metadata policy, trust marks, federation endpoints, key rollover, and conformance evidence. |
 
 ### Exploratory OAuth Draft Watchlist
@@ -229,15 +233,15 @@ refer to them until they are promoted through the Review Gate for New Standards.
 | Draft or protocol family | Current posture | Why it matters |
 | --- | --- | --- |
 | RFC 9635 / RFC 9767 GNAP | Watch only | Adjacent authorization protocol; useful design reference, not an OAuth/OIDC feature toggle. |
-| `draft-aap-oauth-profile-01` | Watch only | Agent Authorization Profile may become relevant for AI-agent delegated access. |
-| `draft-li-oauth-delegated-authorization-02` | Watch only | Subordinate delegated tokens overlap with bounded Token Exchange and agent delegation. |
+| `draft-aap-oauth-profile-01` | Watch only; expired | Agent Authorization Profile may become relevant for AI-agent delegated access. |
+| `draft-li-oauth-delegated-authorization-03` | Watch only | Subordinate delegated tokens overlap with bounded Token Exchange and agent delegation. |
 | `draft-mcguinness-oauth-mission-00` | Watch only | Mission-bound authorization can inform bounded-purpose grants. |
 | `draft-mcguinness-oauth-client-instance-assertion-01` | Watch only | Client-instance identity may complement attestation-based client authentication. |
 | Actor delegation drafts (`draft-mcguinness-oauth-actor-profile-00`, `draft-mcguinness-oauth-actor-proofs-00`, `draft-mcguinness-oauth-actor-receipts-00`, `draft-mw-oauth-actor-chain-01`) | Watch only | Relevant to auditable multi-agent or multi-hop delegation. |
 | `draft-liu-oauth-authorization-evidence-01` | Watch only | Could improve access-token audit evidence if privacy and minimization are solved. |
-| `draft-parecki-oauth-global-token-revocation-06` | Watch only | Operationally useful for compromise response; requires careful blast-radius controls. |
-| RAR/resource metadata drafts (`draft-zehavi-oauth-rar-metadata-05`, `draft-skokan-oauth-resource-response-02`, `draft-mcguinness-oauth-rfc9728bis-01`) | Watch only | Could improve discovery of typed permissions and protected resource metadata. |
-| Sender-constraint drafts (`draft-mw-oauth-tls-session-bound-tokens-07`, `draft-richer-oauth-httpsig-02`) | Watch only | Potential future proof-of-possession alternatives; deployment feasibility remains unproven. |
+| `draft-parecki-oauth-global-token-revocation-06` | Watch only; expired | Operationally useful for compromise response; requires careful blast-radius controls. |
+| RAR/resource metadata drafts (`draft-ietf-oauth-rar-metadata-remediation-00`, `draft-skokan-oauth-resource-response-02`, `draft-mcguinness-oauth-rfc9728bis-01`) | RAR: WG draft, watch only; remaining two drafts expired | Could improve discovery of typed permissions and protected resource metadata. |
+| Sender-constraint drafts (`draft-mw-oauth-tls-session-bound-tokens-07`, `draft-richer-oauth-httpsig-03`) | Watch only | Potential future proof-of-possession alternatives; deployment feasibility remains unproven. |
 | `draft-moros-oauth-browser-session-handoff-00` | Watch only | Relevant to safe browser/native session handoff only if no-token-leakage guarantees hold. |
 
 ## Forbidden or Compatibility-Only Capabilities
@@ -271,8 +275,8 @@ These capabilities must not become default behavior:
 | --- | --- | --- | --- |
 | P1 | Dedicated OAuth 2.1 final audit | OAuth 2.1 is still a draft; final RFC may change requirements. | Requirement-by-requirement matrix after publication, discovery checks, grant/auth/PKCE/refresh tests. |
 | P1 | OAuth Security BCP delta audit | `draft-ietf-oauth-security-topics-update-03` may update the RFC 9700 baseline. | Requirement-by-requirement delta audit, metadata consequences, negative tests, and regression evidence before changing any public claim. |
-| P1 | JWT BCP and JWT assertion bis audits | `draft-ietf-oauth-rfc8725bis-07` and `draft-ietf-oauth-rfc7523bis-11` are the current successors for JWT best practice and assertion/client-auth profiles. | Update alg/key/confusion/replay/audience tests before adopting any new metadata or client-auth behavior. |
-| P1 | Browser and cross-device BCP final audits | Browser-based apps and cross-device flows are both in the RFC Editor queue. | Re-audit browser clients, Device Grant, CIBA, Native SSO, and hosted UI flows after RFC publication. |
+| P1 | JWT BCP and JWT assertion bis audits | `draft-ietf-oauth-rfc8725bis-10` and `draft-ietf-oauth-rfc7523bis-11` are the current successors for JWT best practice and assertion/client-auth profiles. | Update alg/key/confusion/replay/audience tests before adopting any new metadata or client-auth behavior. |
+| P1 | Browser and cross-device BCP final audits | RFC 10017 and RFC 10027 were published in August 2026. | Audit browser clients, Device Grant, CIBA, Native SSO, and hosted UI flows against the published RFCs before claiming final-BCP alignment. |
 | P1 | FAPI precision regression pack | FAPI profile includes more than PAR, PKCE, and sender constraints; it also defines precise timing, redirect, JWT/JWKS, and authorization-endpoint restrictions. | Keep code lifetime, PAR lifetime, PAR `redirect_uri`, outer parameter restriction, 303 redirect, JWT skew, duplicate `kid`, client auth, sender constraint, and non-PAR rejection tests green. |
 | P2 | Refresh-token and authorization-expiration metadata | `draft-ietf-oauth-refresh-token-expiration-03` can improve client visibility into authorization lifetime. | Add explicit state model, rotation/revocation semantics, metadata, and E2E tests before advertising. |
 | P2 | First-party app and client-id metadata profiles | First-party deployments and public-client metadata bootstrap may be useful but can blur client trust boundaries. | Define same-party/BFF boundaries, issuer/client metadata trust, downgrade behavior, and discovery truth tests. |

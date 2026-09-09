@@ -23,7 +23,7 @@ ALLOWED_HOSTS = {
     "openid_document": {"openid.net", "openid.bitbucket.io"},
 }
 DRAFT_PIN = re.compile(r"\b(draft-[a-z0-9-]+)-(\d{2})\b")
-RFC_REFERENCE = re.compile(r"\bRFC\s*(\d{4})\b", re.IGNORECASE)
+RFC_REFERENCE = re.compile(r"\bRFC\s*(\d{4,})\b", re.IGNORECASE)
 
 
 def _required_text(value: object, field: str, entry_id: str) -> str:
@@ -258,9 +258,20 @@ def check_entry(entry: dict, opener=urllib.request.urlopen) -> str:
             )
         if data.get("name") != document:
             raise RuntimeError(f"{entry['id']}: official document name mismatch")
-        if data.get("rfc") is not None or data.get("rfc_number") is not None:
+        # Published draft records can retain null RFC fields. Datatracker's
+        # document state still records publication (3) or replacement (4).
+        states = data.get("states", [])
+        if (
+            data.get("rfc") is not None
+            or data.get("rfc_number") is not None
+            or "/api/v1/doc/state/3/" in states
+        ):
             raise RuntimeError(
                 f"{entry['id']}: draft was published or replaced by an RFC; review the final document"
+            )
+        if "/api/v1/doc/state/4/" in states:
+            raise RuntimeError(
+                f"{entry['id']}: draft was replaced; review the successor document"
             )
         expires = data.get("expires")
         if isinstance(expires, str):

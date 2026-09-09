@@ -3,6 +3,14 @@
 NazoAuth 提供两条明确的部署契约：源码开发使用 Compose；独立 Linux 生产部署
 使用经过签名验证的 `nazoauthctl`，支持 Podman、Docker 和宿主机 systemd。
 
+## 默认 UI 与自定义 UI
+
+后端首次使用时自动安装官方 NazoAuthWeb，通过 `/ui/` 提供访问。资源位于
+`${DATA_DIR}/ui/current`（Compose 中为 `ui_data` 卷）。替换这些文件即可更新前端，
+无需后端重新构建或重启；后端升级会保留已有 UI 文件。前端需兼容所调用的 API。
+使用 `UI_STATIC_DIR` 指向已有的自定义 UI，或通过 `UI_ENABLED=false` 关闭托管，
+由独立 Web 服务器提供 UI 或仅运行 API。
+
 ## 源码树开发沙箱
 
 只需要：

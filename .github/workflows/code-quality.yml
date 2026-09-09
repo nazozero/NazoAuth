@@ -22,7 +22,6 @@ on:
       - "migrations/**"
       - "scripts/**/*.py"
       - "scripts/**/*.sh"
-      - "release/**"
   pull_request:
     paths:
       - ".github/workflows/code-quality.yml"
@@ -43,7 +42,6 @@ on:
       - "migrations/**"
       - "scripts/**/*.py"
       - "scripts/**/*.sh"
-      - "release/**"
   workflow_dispatch:
 
 permissions:

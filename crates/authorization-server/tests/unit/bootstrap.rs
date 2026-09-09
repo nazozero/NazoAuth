@@ -310,16 +310,27 @@ async fn bundled_ui_serves_assets_and_spa_routes_without_masking_missing_assets(
         actix_web::http::StatusCode::NOT_FOUND
     );
 
-    std::fs::remove_file(root.join("index.html")).unwrap();
-    let missing_index = actix_test::try_call_service(
+    // The same running service reads replacements, without reloading a descriptor.
+    std::fs::write(root.join("index.html"), "replacement frontend").unwrap();
+    let replaced = actix_test::call_service(
         &app,
         actix_test::TestRequest::get().uri("/ui/auth").to_request(),
     )
-    .await
-    .unwrap_err();
+    .await;
     assert_eq!(
-        missing_index.as_error::<std::io::Error>().unwrap().kind(),
-        std::io::ErrorKind::NotFound
+        actix_test::read_body(replaced).await,
+        "replacement frontend"
+    );
+
+    std::fs::remove_file(root.join("index.html")).unwrap();
+    let missing_index = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::get().uri("/ui/auth").to_request(),
+    )
+    .await;
+    assert_eq!(
+        missing_index.status(),
+        actix_web::http::StatusCode::NOT_FOUND
     );
 
     std::fs::remove_dir_all(root).unwrap();

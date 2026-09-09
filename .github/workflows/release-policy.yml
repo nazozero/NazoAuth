@@ -7,7 +7,7 @@ on:
     paths:
       - ".github/workflows/release-policy.yml"
       - ".github/workflows/release-security.yml"
-      - "release/**"
+      - "crates/operator-protocol/src/lib.rs"
       - "scripts/build_release_attestation.py"
       - "scripts/validate_release_oci.py"
       - "tests/unit/test_release_attestation.py"

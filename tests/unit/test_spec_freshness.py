@@ -143,6 +143,31 @@ class SpecFreshnessTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "official draft is expired"):
             self.module.check_entry(entry, opener)
 
+    def test_ietf_terminal_states_fail_with_null_rfc_fields(self):
+        entry = {
+            "id": "draft",
+            "kind": "ietf_draft",
+            "document": "draft-example",
+            "revision": "01",
+        }
+        for state, message in [
+            ("3", "published or replaced by an RFC"),
+            ("4", "draft was replaced"),
+        ]:
+            with self.subTest(state=state):
+                opener = lambda *_args, **_kwargs: FakeResponse(
+                    json.dumps({
+                        "name": "draft-example",
+                        "rev": "01",
+                        "rfc": None,
+                        "rfc_number": None,
+                        "states": [f"/api/v1/doc/state/{state}/"],
+                        "expires": "2099-01-01T00:00:00Z",
+                    }).encode()
+                )
+                with self.assertRaisesRegex(RuntimeError, message):
+                    self.module.check_entry(entry, opener)
+
     def test_openid_marker_and_final_url_are_required(self):
         entry = {
             "id": "grant",
@@ -259,11 +284,13 @@ class SpecFreshnessTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "docs").mkdir()
-            (root / "docs" / "current.md").write_text(
-                "RFC 7009 and RFC 6750", encoding="utf-8"
-            )
-            with self.assertRaisesRegex(ValueError, "untracked RFC 6750"):
-                self.module.validate_manifest(manifest, root)
+            for number in (6750, 10017):
+                with self.subTest(number=number):
+                    (root / "docs" / "current.md").write_text(
+                        f"RFC 7009 and RFC {number}", encoding="utf-8"
+                    )
+                    with self.assertRaisesRegex(ValueError, f"untracked RFC {number}"):
+                        self.module.validate_manifest(manifest, root)
 
     def test_expected_file_markers_link_mutable_sources_to_active_claims(self):
         manifest = {

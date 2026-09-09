@@ -145,7 +145,16 @@ fn ui_static_files(root: PathBuf) -> Files {
                         HttpResponse::NotFound().finish(),
                     ));
                 }
-                let file = NamedFile::open(index)?;
+                let file = match NamedFile::open(index) {
+                    Ok(file) => file,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                        return Ok(ServiceResponse::new(
+                            request,
+                            HttpResponse::NotFound().finish(),
+                        ));
+                    }
+                    Err(error) => return Err(error.into()),
+                };
                 let response = file.into_response(&request);
                 Ok(ServiceResponse::new(request, response))
             }

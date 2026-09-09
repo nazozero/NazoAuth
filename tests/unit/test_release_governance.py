@@ -217,8 +217,8 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertIn("condition: service_completed_successfully", source)
         self.assertIn("keys_data:/var/lib/nazo_oauth/keys", source)
         self.assertIn("avatars_data:/var/lib/nazo_oauth/avatars", source)
-        self.assertIn("ui_releases:/state/ui-releases", source)
-        self.assertIn("ui_releases:/var/lib/nazo_oauth/ui-releases", source)
+        self.assertIn("ui_data:/state/ui", source)
+        self.assertIn("ui_data:/var/lib/nazo_oauth/ui", source)
         self.assertNotIn("container_name:", source)
         self.assertNotIn("ipv4_address:", source)
         self.assertNotIn("name: nazo_oauth_net", source)
@@ -288,7 +288,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
             ROOT / ".github" / "workflows" / "release-security.yml"
         ).read_text(encoding="utf-8")
         validation = release.split("- name: Validate immutable release input", 1)[1].split(
-            "- name: Verify the independently released frontend subject", 1
+            "- name: Validate Release workflow and predicate contracts", 1
         )[0]
 
         self.assertIn('if [[ "$GITHUB_REF_TYPE" = tag ]]; then', validation)
@@ -349,12 +349,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
             ROOT / ".github" / "workflows" / "release-policy.yml"
         ).read_text(encoding="utf-8")
         self.assertIn("push:\n    branches: [main]", policy)
-        self.assertIn('      - "release/**"', policy)
-
-        quality = (
-            ROOT / ".github" / "workflows" / "code-quality.yml"
-        ).read_text(encoding="utf-8")
-        self.assertGreaterEqual(quality.count('      - "release/**"'), 2)
+        self.assertIn('      - "crates/operator-protocol/src/lib.rs"', policy)
 
     def test_pull_request_coverage_never_sends_the_codecov_token(self) -> None:
         coverage = (
@@ -539,9 +534,7 @@ class ReleaseGovernanceTests(unittest.TestCase):
             1,
         )
         self.assertIn("scripts/build_release_attestation.py", release)
-        self.assertIn("--frontend release/frontend.json", release)
         self.assertIn("--oci target/release-evidence/oci/descriptor.json", release)
-        self.assertIn("--operator-compatibility release/operator-compatibility.json", release)
 
     def test_conformance_workflow_does_not_repeat_the_rust_quality_gate(self) -> None:
         quality = (

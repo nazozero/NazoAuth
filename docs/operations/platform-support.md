@@ -49,10 +49,12 @@ binds container operations to `linux/arm64`. Host paths and systemd units are
 architecture-neutral; the signed target-specific binary digest remains the
 authority for install and every later update.
 
-The browser UI is not embedded in the server executable. A schema-6 Release
-attestation binds the independently attested NazoAuthWeb Release descriptor;
-the runtime obtains and verifies that UI artifact through the documented
-control-plane flow.
+NazoAuth provides APIs and an optional static UI host. On first use it installs
+the latest official NazoAuthWeb release into `${DATA_DIR}/ui/current` and serves `/ui/`.
+Existing files are reused without a frontend version pin. Frontend files may be
+replaced while the server is running; backend and controller releases do not
+overwrite them. Set `UI_STATIC_DIR` for a different directory or `UI_ENABLED=false`
+when another web server hosts the UI or no UI is required.
 
 ## Server and Protocol GitHub Releases
 
@@ -67,9 +69,8 @@ attestations, Sigstore, and the signed GHCR image.
 
 Each executable has a custom GitHub attestation with predicate type
 `https://nazo.run/attestations/release-manifest/v1`. Its closed schema binds the
-target, server executable digest, operator protocol and
-controller compatibility range, frontend descriptor,
-OCI index and platform manifests, and rollback boundary. Verify a downloaded
+target, server executable digest, operator protocol version,
+OCI index and platform manifests. Verify a downloaded
 file before execution:
 
 ```sh

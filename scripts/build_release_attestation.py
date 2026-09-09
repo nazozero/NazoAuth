@@ -12,9 +12,7 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 REPOSITORY = "nazozero/NazoAuth"
 OCI_REPOSITORY = "ghcr.io/nazozero/nazoauth"
-PROTOCOL_VERSION = 3
 SHA256 = re.compile(r"^sha256:[0-9a-f]{64}$")
-HEX_SHA256 = re.compile(r"^[0-9a-f]{64}$")
 VERSION = re.compile(
     r"^v(0|[1-9][0-9]*)\."
     r"(0|[1-9][0-9]*)\."
@@ -49,37 +47,6 @@ def load_closed_json(path: Path, keys: set[str], name: str) -> dict[str, Any]:
     return value
 
 
-def require_string(value: Any, name: str, maximum: int = 512) -> str:
-    if not isinstance(value, str) or not value or len(value) > maximum:
-        raise SystemExit(f"{name} must be a non-empty bounded string")
-    return value
-
-
-def validate_artifact_descriptor(
-    value: Any, name: str, *, repository: str | None = None
-) -> dict[str, Any]:
-    keys = {"repository", "name", "sha256", "size"}
-    if not isinstance(value, dict) or set(value) != keys:
-        raise SystemExit(f"{name} has an unexpected closed schema")
-    artifact_repository = require_string(value["repository"], f"{name}.repository")
-    if repository is not None and artifact_repository != repository:
-        raise SystemExit(f"{name}.repository is not the expected repository")
-    artifact_name = require_string(value["name"], f"{name}.name", 255)
-    if Path(artifact_name).name != artifact_name or "/" in artifact_name or "\\" in artifact_name:
-        raise SystemExit(f"{name}.name must be a plain file name")
-    digest = require_string(value["sha256"], f"{name}.sha256", 64)
-    if not HEX_SHA256.fullmatch(digest):
-        raise SystemExit(f"{name}.sha256 must be lowercase SHA-256")
-    if not isinstance(value["size"], int) or isinstance(value["size"], bool) or value["size"] <= 0:
-        raise SystemExit(f"{name}.size must be a positive integer")
-    return {
-        "repository": artifact_repository,
-        "name": artifact_name,
-        "sha256": digest,
-        "size": value["size"],
-    }
-
-
 def local_artifact(path: Path, expected_name: str) -> dict[str, Any]:
     if not path.is_file() or path.is_symlink() or path.name != expected_name:
         raise SystemExit(f"release artifact must be the expected regular file: {expected_name}")
@@ -95,40 +62,6 @@ def local_artifact(path: Path, expected_name: str) -> dict[str, Any]:
         "name": expected_name,
         "sha256": digest.hexdigest(),
         "size": size,
-    }
-
-
-def validate_frontend(path: Path) -> dict[str, Any]:
-    value = load_closed_json(
-        path,
-        {"schema", "repository", "version", "release_identity", "artifact"},
-        "frontend descriptor",
-    )
-    if value["schema"] != 1:
-        raise SystemExit("frontend descriptor has an unsupported schema")
-    repository = require_string(value["repository"], "frontend.repository")
-    if repository != "nazozero/NazoAuthWeb":
-        raise SystemExit("frontend.repository must be nazozero/NazoAuthWeb")
-    version = require_string(value["version"], "frontend.version")
-    if not VERSION.fullmatch(version):
-        raise SystemExit("frontend.version must be an immutable vSemVer tag")
-    identity = require_string(value["release_identity"], "frontend.release_identity")
-    expected_identity = (
-        f"https://github.com/{repository}/.github/workflows/"
-        f"release.yml@refs/tags/{version}"
-    )
-    if identity != expected_identity:
-        raise SystemExit("frontend.release_identity does not bind its repository and tag")
-    artifact = validate_artifact_descriptor(
-        value["artifact"], "frontend.artifact", repository=repository
-    )
-    if artifact["name"] != "nazoauth-web.tar.gz":
-        raise SystemExit("frontend.artifact.name must be nazoauth-web.tar.gz")
-    return {
-        "repository": repository,
-        "version": version,
-        "release_identity": identity,
-        "artifact": artifact,
     }
 
 
@@ -155,83 +88,14 @@ def validate_oci(path: Path) -> dict[str, Any]:
     }
 
 
-def validate_policy(path: Path) -> dict[str, Any]:
-    policy = load_closed_json(
-        path,
-        {
-            "schema",
-            "artifact_rollback",
-            "schema_compatible",
-            "database_restore",
-            "irreversible_migration",
-            "minimum_supported_version",
-            "migration_floor",
-            "rationale",
-        },
-        "release update policy",
+def operator_protocol_version() -> int:
+    source = (ROOT / "crates" / "operator-protocol" / "src" / "lib.rs").read_text(
+        encoding="utf-8"
     )
-    if policy["schema"] != 2:
-        raise SystemExit("release update policy has an unsupported schema")
-    for field in ("artifact_rollback", "schema_compatible", "irreversible_migration"):
-        if not isinstance(policy[field], bool):
-            raise SystemExit(f"{field} must be boolean")
-    if policy["database_restore"] not in {"backup", "pitr", "none"}:
-        raise SystemExit("database_restore must be backup, pitr, or none")
-    if policy["irreversible_migration"] and policy["schema_compatible"]:
-        raise SystemExit("an irreversible migration cannot be schema compatible")
-    minimum = require_string(policy["minimum_supported_version"], "minimum_supported_version")
-    if not re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", minimum):
-        raise SystemExit("minimum_supported_version must be SemVer without a v prefix")
-    floor = require_string(policy["migration_floor"], "migration_floor", 14)
-    if not re.fullmatch(r"[0-9]{14}", floor):
-        raise SystemExit("migration_floor must be a 14-digit migration version")
-    migration_versions = sorted(
-        candidate.name.split("_", 1)[0]
-        for candidate in (ROOT / "migrations").iterdir()
-        if candidate.is_dir() and re.match(r"^[0-9]{14}_", candidate.name)
-    )
-    if not migration_versions or floor != migration_versions[-1]:
-        raise SystemExit("migration_floor must equal the newest migration")
-    rationale = require_string(policy["rationale"], "rationale").strip()
-    return {
-        "artifact": policy["artifact_rollback"],
-        "schema_compatible": policy["schema_compatible"],
-        "database_restore": policy["database_restore"],
-        "irreversible_migration": policy["irreversible_migration"],
-        "minimum_supported_version": minimum,
-        "migration_floor": floor,
-        "rationale": rationale,
-    }
-
-
-def validate_operator_compatibility(path: Path) -> dict[str, Any]:
-    value = load_closed_json(
-        path,
-        {"schema", "version", "minimum_ctl_version", "maximum_ctl_version_exclusive"},
-        "operator protocol compatibility",
-    )
-    if value["schema"] != 1 or value["version"] != PROTOCOL_VERSION:
-        raise SystemExit("operator protocol compatibility version is unsupported")
-    minimum = require_string(value["minimum_ctl_version"], "minimum_ctl_version", 32)
-    maximum = require_string(
-        value["maximum_ctl_version_exclusive"],
-        "maximum_ctl_version_exclusive",
-        32,
-    )
-    semver = re.compile(r"^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$")
-    minimum_match = semver.fullmatch(minimum)
-    maximum_match = semver.fullmatch(maximum)
-    if minimum_match is None or maximum_match is None:
-        raise SystemExit("controller compatibility bounds must be stable SemVer")
-    minimum_tuple = tuple(int(part) for part in minimum_match.groups())
-    maximum_tuple = tuple(int(part) for part in maximum_match.groups())
-    if minimum_tuple >= maximum_tuple:
-        raise SystemExit("controller compatibility range must be non-empty")
-    return {
-        "version": PROTOCOL_VERSION,
-        "minimum_ctl_version": minimum,
-        "maximum_ctl_version_exclusive": maximum,
-    }
+    versions = re.findall(r"(?m)^pub const PROTOCOL_VERSION: u32 = ([0-9]+);$", source)
+    if len(versions) != 1:
+        raise SystemExit("operator protocol must declare exactly one numeric PROTOCOL_VERSION")
+    return int(versions[0])
 
 
 def main() -> None:
@@ -239,10 +103,7 @@ def main() -> None:
     parser.add_argument("--version", required=True)
     parser.add_argument("--target", required=True)
     parser.add_argument("--binary", type=Path, required=True)
-    parser.add_argument("--operator-compatibility", type=Path, required=True)
-    parser.add_argument("--frontend", type=Path, required=True)
     parser.add_argument("--oci", type=Path, required=True)
-    parser.add_argument("--policy", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -253,20 +114,18 @@ def main() -> None:
     extension = ".exe" if "windows" in args.target else ""
     binary_name = f"nazoauth-{args.target}{extension}"
     manifest = {
-        "schema": 6,
+        "schema": 7,
         "version": args.version,
         "target": args.target,
         "release_identity": (
             "https://github.com/nazozero/NazoAuth/"
             f".github/workflows/release-security.yml@refs/tags/{args.version}"
         ),
-        "operator_protocol": validate_operator_compatibility(args.operator_compatibility),
+        "operator_protocol": operator_protocol_version(),
         "artifacts": {
             "binary": local_artifact(args.binary, binary_name),
         },
-        "frontend": validate_frontend(args.frontend),
         "oci": validate_oci(args.oci),
-        "rollback": validate_policy(args.policy),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(

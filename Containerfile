@@ -15,7 +15,6 @@ RUN mkdir -p /usr/local/cargo \
 COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./
 COPY crates ./crates
 COPY migrations ./migrations
-COPY release/frontend.json ./release/frontend.json
 
 FROM build-base AS product-builder
 

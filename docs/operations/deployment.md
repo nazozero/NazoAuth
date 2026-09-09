@@ -13,6 +13,15 @@ For trusted-proxy deployments, configure the TLS terminator with the same
 policy. This restriction applies to server authentication, not the key
 algorithm of an OAuth client's mTLS certificate.
 
+## Default and custom UI
+
+The backend installs official NazoAuthWeb on first use and serves it at `/ui/`.
+Its files live in `${DATA_DIR}/ui/current` (the `ui_data` volume in Compose). Replace
+those files to update the frontend without rebuilding or restarting the backend;
+existing UI files are preserved across backend upgrades. Keep the frontend
+compatible with the API it calls. Use `UI_STATIC_DIR` for an existing custom UI,
+or `UI_ENABLED=false` when hosting it independently or running APIs only.
+
 ## Source-tree development sandbox
 
 Requirements:

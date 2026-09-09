@@ -67,8 +67,8 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Valkey connection string; startup rejects an unmarked nonempty database rather than adopting historical keys |
 | `VALKEY_STATE_EPOCH` | none (required UUIDv7) | Deployment state boundary. Every transient business key is physically namespaced as `nazo:state:v1:<deployment>:<epoch>:`. Set a fresh UUIDv7 before a restored candidate starts; never reuse a prior epoch. |
 | `DATA_DIR` | `runtime` | Base directory for persistent local files |
-| `UI_CACHE_DIR` | `${DATA_DIR}/ui-releases` | Writable cache for the verified frontend release selected from the embedded descriptor |
-| `UI_STATIC_DIR` | unset | Optional signed frontend directory containing `index.html`; serves files and SPA routes under `/ui/` |
+| `UI_ENABLED` | `true` | Host the default or custom static UI under `/ui/`; set false for API-only or external UI hosting |
+| `UI_STATIC_DIR` | `${DATA_DIR}/ui/current` | Existing custom UI directory. When unset, first use installs official NazoAuthWeb; existing files are preserved and can be replaced without restarting |
 | `CLIENT_SECRET_PEPPER` | generated under `DATA_DIR/secrets` | Explicit values override the persisted generated value; keep it stable and back it up with the database |
 | `PASSWORD_HASH_MAX_CONCURRENCY` | `8` | Maximum concurrent Argon2 password verifications per process; tune from CPU and memory capacity, not by lowering Argon2 cost |
 | `PASSWORD_HASH_QUEUE_TIMEOUT_MS` | `100` | Maximum bounded wait for a password-verification slot before returning `temporarily_unavailable` |

@@ -923,7 +923,7 @@ fn relative_persistent_paths_are_anchored_to_the_configuration_directory() {
     let path = temp_config_dir("relative_persistent_paths");
     std::fs::write(
         path.join(CONFIG_FILE),
-        "DATA_DIR: state\nUI_CACHE_DIR: cache/ui\n",
+        "DATA_DIR: state\nUI_STATIC_DIR: cache/ui\n",
     )
     .unwrap();
 
@@ -934,7 +934,7 @@ fn relative_persistent_paths_are_anchored_to_the_configuration_directory() {
         canonical_path.join("state").display().to_string()
     );
     assert_eq!(
-        source.string("UI_CACHE_DIR", ""),
+        source.string("UI_STATIC_DIR", ""),
         canonical_path.join("cache/ui").display().to_string()
     );
     let _ = std::fs::remove_dir_all(&path);
@@ -1143,7 +1143,7 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "TLS_RELOAD_INTERVAL_SECONDS",
             "TRANSPORT_MODE",
             "TRUSTED_PROXY_CIDRS",
-            "UI_CACHE_DIR",
+            "UI_ENABLED",
             "UI_STATIC_DIR",
         ]
     );

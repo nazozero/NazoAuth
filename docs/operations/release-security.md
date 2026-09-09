@@ -57,11 +57,10 @@ The `release-security` workflow runs for `v*` tags and manual dispatch:
 - scans the exact OCI archive with Trivy and publishes that archive without a
   second build
 - generates the server CycloneDX SBOM
-- binds each server binary to the closed schema-6 ReleaseManifest with the custom
+- binds each server binary to the closed schema-7 ReleaseManifest with the custom
   `https://nazo.run/attestations/release-manifest/v1` GitHub attestation
-- declares the operator protocol version and supported NazoAuthCtl SemVer range
-- binds the independently released and attested NazoAuthWeb descriptor rather
-  than embedding or republishing UI files
+- derives the operator protocol version from its Rust source; controllers
+  validate the manifest schema and protocol version without a release-version range
 - signs the OCI index; a rerun accepts an existing tag only when it resolves to
   the exact scanned digest and rejects every mismatch
 - retains SBOMs, OCI archives, predicates, and Sigstore bundles as internal CI
@@ -78,16 +77,37 @@ Standalone production deployments consume the server binaries through the
 independently released `nazoauthctl` from `nazozero/NazoAuthCtl`.
 The lifecycle tool retrieves the subject's GitHub attestation, verifies the
 tag-specific workflow identity and closed predicate before parsing artifact
-names or changing runtime state, and separately verifies the attested frontend
-and OCI descriptors. Custom deployment pipelines must enforce the same
-identity, digest, target, backup, and rollback-compatibility boundaries.
+names or changing runtime state, and verifies the OCI descriptors. Custom
+deployment pipelines must enforce the same artifact identity, digest, target,
+and database recovery boundaries.
 
-`nazoauthctl` does not download or install frontend files. The signed runtime
-downloads the independently released frontend, verifies the descriptor's
-archive digest and size, safely materializes its content-addressed cache, and
-writes the exact descriptor marker. Lifecycle acceptance then requires that
-marker, the cached `index.html`, and the bytes actually served from `/ui/` to
-match; an unrelated successful HTTP response is not sufficient.
+NazoAuthWeb is the default, optional UI. On first use, NazoAuth discovers the
+latest stable release from NazoAuthWeb's own GitHub repository, verifies the
+download against that release asset's digest and size, and installs writable
+files under `${DATA_DIR}/ui/current`. No frontend version or digest is stored in the
+backend release manifest. Existing `index.html` prevents automatic installation;
+backend upgrades do not overwrite deployed UI files or recheck their digest.
+
+Frontend files can be replaced in place while the backend is running. Use
+`UI_STATIC_DIR` for an existing custom directory, or `UI_ENABLED=false` to disable
+backend UI hosting. An initial download failure is logged and does not prevent
+API startup; the empty UI directory can subsequently be populated by an operator.
+The frontend must remain compatible with the API it uses. This is an API contract,
+not a requirement to release the frontend, backend, and controller together.
+
+Release schema 7 omits frontend pins, controller SemVer ranges, and asserted
+rollback policy. After executing a migration, the controller stops the writer
+on activation failure and requires verified recovery. A successful migrated
+update drops the previous artifact reference; a completed database recovery
+also clears the previous reference. Neither operation claims that the previous
+binary can run against the resulting database. Updates without migration retain
+the existing previous-artifact rollback path.
+
+The corresponding controller uses deployment-state schema 8 and backup-manifest
+schema 5. These are closed formats: older state and backup formats are not
+silently reinterpreted. Keep the prior controller and its recovery material
+available when preparing this format transition; this source change does not
+migrate deployed state or backups.
 
 All controller GitHub requests are HTTPS-only across redirects and have
 connection, redirect-count, total-time, and response-size bounds. Once an

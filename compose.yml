@@ -10,7 +10,7 @@ services:
       - generated_secrets:/state/secrets
       - bootstrap_data:/state/bootstrap
       - instance_data:/state/instance
-      - ui_releases:/state/ui-releases
+      - ui_data:/state/ui
       - operator_state:/state/operator
     command: ["sh", "-euc", "chown -R 10001:10001 /state/*; chmod 0700 /state/*"]
     networks:
@@ -37,7 +37,7 @@ services:
       - generated_secrets:/var/lib/nazo_oauth/secrets
       - bootstrap_data:/var/lib/nazo_oauth/bootstrap
       - instance_data:/var/lib/nazo_oauth/instance
-      - ui_releases:/var/lib/nazo_oauth/ui-releases
+      - ui_data:/var/lib/nazo_oauth/ui
     ports:
       - "${NAZOAUTH_BIND_ADDRESS:-127.0.0.1}:${NAZOAUTH_PORT:-8000}:8000"
     depends_on:
@@ -129,9 +129,9 @@ volumes:
   keys_data:
   avatars_data:
   bootstrap_data:
+  ui_data:
   instance_data:
   generated_secrets:
-  ui_releases:
   operator_state:
 
 networks:

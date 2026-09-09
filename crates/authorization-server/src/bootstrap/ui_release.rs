@@ -1,6 +1,5 @@
 use std::{
     fs::{self, File, OpenOptions},
-    io::Write as _,
     path::{Component, Path, PathBuf},
     time::Duration,
 };
@@ -9,52 +8,64 @@ use anyhow::{Context as _, bail};
 use flate2::read::GzDecoder;
 use fs2::FileExt as _;
 use futures_util::StreamExt as _;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sha2::{Digest as _, Sha256};
 use tokio::io::AsyncWriteExt as _;
 use url::Url;
 
 use crate::config::{ConfigSource, DEFAULT_DATA_DIR};
 
-const DEFAULT_FRONTEND: &str = include_str!("../../../../release/frontend.json");
+const RELEASE_API: &str = "https://api.github.com/repos/nazozero/NazoAuthWeb/releases/latest";
+const ARTIFACT_NAME: &str = "nazoauth-web.tar.gz";
+const MAX_METADATA_BYTES: usize = 1024 * 1024;
 const MAX_ARCHIVE_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_EXPANDED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_ENTRIES: usize = 10_000;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-struct FrontendDescriptor {
-    schema: u32,
-    repository: String,
-    version: String,
-    release_identity: String,
-    artifact: FrontendArtifact,
+#[derive(Debug, Deserialize)]
+struct GithubRelease {
+    tag_name: String,
+    draft: bool,
+    prerelease: bool,
+    assets: Vec<GithubAsset>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(deny_unknown_fields)]
-struct FrontendArtifact {
-    repository: String,
+#[derive(Debug, Deserialize)]
+struct GithubAsset {
     name: String,
+    size: u64,
+    digest: String,
+}
+
+// Download metadata is used once at installation; it is never a constraint on
+// the installed files or on subsequent frontend replacements.
+struct FrontendDownload {
+    version: String,
     sha256: String,
     size: u64,
 }
 
 pub(super) async fn resolve(config: &ConfigSource) -> anyhow::Result<Option<PathBuf>> {
+    if !config.bool("UI_ENABLED", true)? {
+        return Ok(None);
+    }
     if config.optional_string("UI_STATIC_DIR").is_some() {
         let path = config.persistent_path("UI_STATIC_DIR", None)?;
         return Ok(Some(validate_static_directory(&path)?));
     }
-    let descriptor: FrontendDescriptor = serde_json::from_str(DEFAULT_FRONTEND)
-        .context("embedded frontend descriptor is invalid")?;
-    descriptor.validate()?;
-    let cache = match config.optional_string("UI_CACHE_DIR") {
-        Some(_) => config.persistent_path("UI_CACHE_DIR", None)?,
-        None => config
-            .persistent_path("DATA_DIR", Some(DEFAULT_DATA_DIR))?
-            .join("ui-releases"),
-    };
-    Ok(Some(ensure_cached(&cache, &descriptor).await?))
+    let root = config
+        .persistent_path("DATA_DIR", Some(DEFAULT_DATA_DIR))?
+        .join("ui")
+        .join("current");
+    if !root.join("index.html").is_file()
+        && let Err(error) = install_default(&root).await
+    {
+        // UI availability must not prevent the API from starting. Keep the
+        // static root available so an operator can supply files in place.
+        tracing::warn!(%error, "default UI is unavailable; API startup continues");
+        fs::create_dir_all(&root)?;
+    }
+    Ok(Some(fs::canonicalize(root)?))
 }
 
 fn validate_static_directory(path: &Path) -> anyhow::Result<PathBuf> {
@@ -66,40 +77,39 @@ fn validate_static_directory(path: &Path) -> anyhow::Result<PathBuf> {
     Ok(path)
 }
 
-impl FrontendDescriptor {
-    fn validate(&self) -> anyhow::Result<()> {
-        let expected_identity = format!(
-            "https://github.com/{}/.github/workflows/release.yml@refs/tags/{}",
-            self.repository, self.version
-        );
-        if self.schema != 1
-            || self.repository != "nazozero/NazoAuthWeb"
-            || !semantic_tag(&self.version)
-            || self.release_identity != expected_identity
-            || self.artifact.repository != self.repository
-            || self.artifact.name != "nazoauth-web.tar.gz"
-            || !lower_hex(&self.artifact.sha256, 64)
-            || self.artifact.size == 0
-            || self.artifact.size > MAX_ARCHIVE_BYTES
-        {
-            bail!("embedded frontend descriptor failed policy validation");
+impl GithubRelease {
+    fn download(self) -> anyhow::Result<FrontendDownload> {
+        if self.draft || self.prerelease || !semantic_tag(&self.tag_name) {
+            bail!("default frontend must be a published stable release");
         }
-        Ok(())
-    }
-
-    fn url(&self) -> anyhow::Result<Url> {
-        Url::parse(&format!(
-            "https://github.com/{}/releases/download/{}/{}",
-            self.artifact.repository, self.version, self.artifact.name
-        ))
-        .context("frontend release URL is invalid")
+        let mut assets = self
+            .assets
+            .into_iter()
+            .filter(|asset| asset.name == ARTIFACT_NAME);
+        let asset = assets
+            .next()
+            .context("frontend release has no UI archive")?;
+        if assets.next().is_some() || asset.size == 0 || asset.size > MAX_ARCHIVE_BYTES {
+            bail!("frontend release must contain one bounded UI archive");
+        }
+        let sha256 = asset
+            .digest
+            .strip_prefix("sha256:")
+            .filter(|digest| lower_hex(digest, 64))
+            .context("GitHub frontend asset digest must be SHA-256")?
+            .to_owned();
+        Ok(FrontendDownload {
+            version: self.tag_name,
+            sha256,
+            size: asset.size,
+        })
     }
 }
 
-async fn ensure_cached(cache: &Path, descriptor: &FrontendDescriptor) -> anyhow::Result<PathBuf> {
-    fs::create_dir_all(cache)
-        .with_context(|| format!("failed to create UI cache {}", cache.display()))?;
-    let lock_path = cache.join(".lock");
+async fn install_default(root: &Path) -> anyhow::Result<()> {
+    let parent = root.parent().context("UI directory must have a parent")?;
+    fs::create_dir_all(parent)?;
+    let lock_path = parent.join(".ui-install.lock");
     let _lock = tokio::task::spawn_blocking(move || -> anyhow::Result<File> {
         let lock = OpenOptions::new()
             .create(true)
@@ -111,47 +121,17 @@ async fn ensure_cached(cache: &Path, descriptor: &FrontendDescriptor) -> anyhow:
         Ok(lock)
     })
     .await
-    .context("UI cache lock task failed")??;
-    let target = cache.join(&descriptor.artifact.sha256);
-    if cached_release_valid(&target, descriptor)? {
-        return fs::canonicalize(target).context("failed to resolve cached UI release");
+    .context("UI installation lock task failed")??;
+    if root.join("index.html").is_file() {
+        return Ok(());
     }
-    if target.exists() {
-        bail!(
-            "cached UI release failed validation and requires operator review: {}",
-            target.display()
-        );
+    if root.exists() && fs::read_dir(root)?.next().is_some() {
+        bail!("UI directory contains custom or incomplete files; refusing to overwrite them");
     }
-    let archive = cache.join(format!(".{}.download", descriptor.artifact.sha256));
-    if archive.exists() {
-        fs::remove_file(&archive)?;
-    }
-    download(&descriptor.url()?, descriptor, &archive).await?;
-    let staging = cache.join(format!(".{}.extract", descriptor.artifact.sha256));
-    if staging.exists() {
-        fs::remove_dir_all(&staging)?;
-    }
-    fs::create_dir(&staging)?;
-    if let Err(error) = extract(&archive, &staging) {
-        let _ = fs::remove_dir_all(&staging);
-        let _ = fs::remove_file(&archive);
-        return Err(error);
-    }
-    write_private(
-        &staging.join(".nazoauth-ui.json"),
-        &serde_json::to_vec(descriptor)?,
-    )?;
-    make_tree_read_only(&staging)?;
-    fs::rename(&staging, &target)?;
-    fs::remove_file(&archive)?;
-    sync_directory(cache)?;
-    fs::canonicalize(target).context("failed to resolve installed UI release")
-}
-
-async fn download(url: &Url, descriptor: &FrontendDescriptor, target: &Path) -> anyhow::Result<()> {
     let client = reqwest::Client::builder()
+        .user_agent(concat!("NazoAuth/", env!("CARGO_PKG_VERSION")))
         .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(90))
+        .timeout(Duration::from_secs(30))
         .redirect(reqwest::redirect::Policy::custom(|attempt| {
             if attempt.previous().len() >= 5 || !allowed_download_url(attempt.url()) {
                 attempt.stop()
@@ -160,7 +140,51 @@ async fn download(url: &Url, descriptor: &FrontendDescriptor, target: &Path) -> 
             }
         }))
         .build()?;
-    let response = client.get(url.clone()).send().await?.error_for_status()?;
+    let response = client
+        .get(RELEASE_API)
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await?
+        .error_for_status()?;
+    let mut stream = response.bytes_stream();
+    let mut metadata = Vec::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk?;
+        if metadata.len() + chunk.len() > MAX_METADATA_BYTES {
+            bail!("frontend release metadata exceeds the size limit");
+        }
+        metadata.extend_from_slice(&chunk);
+    }
+    let descriptor = serde_json::from_slice::<GithubRelease>(&metadata)?.download()?;
+    let work = parent.join(format!(".ui-install-{}", uuid::Uuid::now_v7()));
+    fs::create_dir(&work)?;
+    let result = async {
+        let archive = work.join(ARTIFACT_NAME);
+        download(&client, &descriptor, &archive).await?;
+        let staged = work.join("ui");
+        fs::create_dir(&staged)?;
+        extract(&archive, &staged)?;
+        if root.exists() {
+            fs::remove_dir(root)?; // Only an empty directory may be replaced.
+        }
+        fs::rename(staged, root)?;
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+    let _ = fs::remove_dir_all(work);
+    result
+}
+
+async fn download(
+    client: &reqwest::Client,
+    descriptor: &FrontendDownload,
+    target: &Path,
+) -> anyhow::Result<()> {
+    let url = format!(
+        "https://github.com/nazozero/NazoAuthWeb/releases/download/{}/{}",
+        descriptor.version, ARTIFACT_NAME
+    );
+    let response = client.get(url).send().await?.error_for_status()?;
     if !allowed_download_url(response.url()) {
         bail!("frontend download left the approved HTTPS origin set");
     }
@@ -173,17 +197,16 @@ async fn download(url: &Url, descriptor: &FrontendDescriptor, target: &Path) -> 
         size = size
             .checked_add(chunk.len() as u64)
             .context("frontend archive size overflow")?;
-        if size > descriptor.artifact.size || size > MAX_ARCHIVE_BYTES {
-            bail!("frontend archive exceeds its signed size");
+        if size > descriptor.size {
+            bail!("frontend archive exceeds its release size");
         }
         digest.update(&chunk);
         file.write_all(&chunk).await?;
     }
     file.flush().await?;
     file.sync_all().await?;
-    drop(file);
-    if size != descriptor.artifact.size || hex(&digest.finalize()) != descriptor.artifact.sha256 {
-        bail!("frontend archive does not match its signed digest and size");
+    if size != descriptor.size || hex(&digest.finalize()) != descriptor.sha256 {
+        bail!("frontend archive does not match the GitHub asset digest and size");
     }
     Ok(())
 }
@@ -200,6 +223,7 @@ fn allowed_download_url(url: &Url) -> bool {
     matches!(
         url.host_str(),
         Some("github.com")
+            | Some("api.github.com")
             | Some("objects.githubusercontent.com")
             | Some("release-assets.githubusercontent.com")
     )
@@ -245,77 +269,6 @@ fn safe_relative(path: &Path) -> bool {
         && path
             .components()
             .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
-}
-
-fn cached_release_valid(target: &Path, descriptor: &FrontendDescriptor) -> anyhow::Result<bool> {
-    if !target.exists() {
-        return Ok(false);
-    }
-    let marker = target.join(".nazoauth-ui.json");
-    if !target.join("index.html").is_file() || !marker.is_file() {
-        return Ok(false);
-    }
-    let current: FrontendDescriptor = serde_json::from_slice(&fs::read(marker)?)?;
-    Ok(&current == descriptor)
-}
-
-fn write_private(path: &Path, content: &[u8]) -> anyhow::Result<()> {
-    let mut options = OpenOptions::new();
-    options.create_new(true).write(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt as _;
-        options.mode(0o400);
-    }
-    let mut file = options.open(path)?;
-    file.write_all(content)?;
-    file.sync_all()?;
-    let mut permissions = file.metadata()?.permissions();
-    permissions.set_readonly(true);
-    file.set_permissions(permissions)?;
-    Ok(())
-}
-
-fn make_tree_read_only(root: &Path) -> anyhow::Result<()> {
-    for entry in fs::read_dir(root)? {
-        let entry = entry?;
-        let path = entry.path();
-        if entry.file_type()?.is_dir() {
-            make_tree_read_only(&path)?;
-        } else {
-            set_read_only(&path, false)?;
-        }
-    }
-    set_read_only(root, true)
-}
-
-fn set_read_only(path: &Path, _directory: bool) -> anyhow::Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt as _;
-        fs::set_permissions(
-            path,
-            fs::Permissions::from_mode(if _directory { 0o555 } else { 0o444 }),
-        )?;
-    }
-    #[cfg(not(unix))]
-    {
-        let mut permissions = fs::metadata(path)?.permissions();
-        permissions.set_readonly(true);
-        fs::set_permissions(path, permissions)?;
-    }
-    Ok(())
-}
-
-#[cfg(unix)]
-fn sync_directory(path: &Path) -> anyhow::Result<()> {
-    File::open(path)?.sync_all()?;
-    Ok(())
-}
-
-#[cfg(not(unix))]
-fn sync_directory(_path: &Path) -> anyhow::Result<()> {
-    Ok(())
 }
 
 fn semantic_tag(value: &str) -> bool {
