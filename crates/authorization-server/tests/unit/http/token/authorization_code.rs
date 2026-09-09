@@ -609,6 +609,15 @@ fn pending_authorization_code_validation_covers_non_consuming_policy_boundaries(
         payload.expires_at = Utc::now() + Duration::seconds(60);
         payload.code_challenge = None;
         payload.code_challenge_method = None;
+        for verifier in ["", "wrong-verifier", VALID_CODE_VERIFIER] {
+            form.code_verifier = Some(verifier.to_owned());
+            let downgrade =
+                validate_pending_authorization_code_request(&issuance, &client, &form, &payload)
+                    .expect_err("a verifier must never be accepted without an original challenge");
+            assert_eq!(downgrade.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(oauth_error_code(&downgrade), "invalid_grant");
+        }
+        form.code_verifier = None;
         let no_pkce = validate_pending_authorization_code_request(
             &issuance, &client, &form, &payload,
         )
@@ -627,6 +636,7 @@ fn pending_authorization_code_validation_covers_non_consuming_policy_boundaries(
         form.audiences.clear();
         payload.code_challenge = Some(pkce_s256(VALID_CODE_VERIFIER));
         payload.code_challenge_method = Some("S256".to_owned());
+        form.code_verifier = Some(VALID_CODE_VERIFIER.to_owned());
         payload.scopes = vec![crate::http::token::native_sso::DEVICE_SSO_SCOPE.to_owned()];
         let native_sso_disabled =
             validate_pending_authorization_code_request(&issuance, &client, &form, &payload)
@@ -1479,6 +1489,30 @@ async fn token_authorization_code_preserves_pending_state_for_redirect_pkce_and_
         .uri("/token")
         .to_http_request();
     let client = live_client("client-failure-cases");
+
+    let no_challenge_code = format!("code-{}", Uuid::now_v7());
+    let mut no_challenge_payload = payload_for_client(&client);
+    no_challenge_payload.code_challenge = None;
+    no_challenge_payload.code_challenge_method = None;
+    fixture
+        .store_code_state(
+            &no_challenge_code,
+            &AuthorizationCodeState::Pending {
+                payload: no_challenge_payload,
+            },
+        )
+        .await;
+    for verifier in ["", "wrong-verifier", VALID_CODE_VERIFIER] {
+        let mut form = form_for_code(&no_challenge_code);
+        form.code_verifier = Some(verifier.to_owned());
+        let response = token_authorization_code(&fixture.state, &req, &client, &form, None).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(&response), "invalid_grant");
+        assert!(matches!(
+            fixture.code_state(&no_challenge_code).await,
+            AuthorizationCodeState::Pending { .. }
+        ));
+    }
 
     let redirect_code = format!("code-{}", Uuid::now_v7());
     fixture

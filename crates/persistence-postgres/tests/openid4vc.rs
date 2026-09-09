@@ -673,6 +673,7 @@ async fn openid4vc_state_is_tenant_bound_and_sensitive_values_are_single_use_and
             credentials: vec![CredentialQuery {
                 id: "pid".to_owned(),
                 format: CredentialFormat::SdJwtVc,
+                multiple: false,
                 meta: None,
                 claims: None,
                 claim_sets: None,

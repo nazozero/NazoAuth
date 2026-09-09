@@ -582,7 +582,16 @@ fn validate_pending_authorization_code_request(
                 ));
             }
         }
-        (None, None) if !authorization_code_requires_pkce(client, payload) => {}
+        (None, None) if !authorization_code_requires_pkce(client, payload) => {
+            if form.code_verifier.is_some() {
+                return Err(oauth_token_error(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "原授权请求未包含 code_challenge.",
+                    false,
+                ));
+            }
+        }
         _ => {
             return Err(oauth_token_error(
                 StatusCode::SERVICE_UNAVAILABLE,

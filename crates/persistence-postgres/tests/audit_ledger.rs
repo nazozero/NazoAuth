@@ -133,7 +133,7 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
     }
     let first_id = Uuid::now_v7();
     let second_id = Uuid::now_v7();
-    let first = repository
+    repository
         .append(SecurityAuditEvent {
             event_id: first_id,
             event_type: "token_issued".to_owned(),
@@ -143,7 +143,7 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
         })
         .await
         .expect("first audit event should append");
-    let second = repository
+    repository
         .append(SecurityAuditEvent {
             event_id: second_id,
             event_type: "token_revoked".to_owned(),
@@ -153,18 +153,33 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
         })
         .await
         .expect("second audit event should append");
-    assert_eq!(second.sequence, first.sequence + 1);
+    let pending_health = repository.anchor_health().await.unwrap();
+    assert_eq!(
+        pending_health.head_sequence, initial_health.head_sequence,
+        "writer commits must not extend the global chain"
+    );
+    assert_eq!(pending_health.pending_count, 2);
+    let claimed = repository
+        .claim_due(10, 60)
+        .await
+        .expect("audit outbox should claim");
+    assert_eq!(claimed.len(), 2);
+    assert_eq!(claimed[0].event_id, first_id);
+    assert_eq!(claimed[1].event_id, second_id);
+    assert_eq!(claimed[1].sequence, claimed[0].sequence + 1);
+    let second_sequence = claimed[1].sequence;
 
     let mut connection = AsyncPgConnection::establish(&database_url)
         .await
         .expect("audit test database should connect");
-    let previous = sql_query("SELECT event_hash FROM security_audit_events WHERE event_id = $1")
-        .bind::<SqlUuid, _>(first_id)
-        .get_result::<EventHashRow>(&mut connection)
-        .await
-        .expect("first audit hash should be readable");
+    let previous =
+        sql_query("SELECT event_hash FROM security_audit_chain_entries WHERE event_id = $1")
+            .bind::<SqlUuid, _>(first_id)
+            .get_result::<EventHashRow>(&mut connection)
+            .await
+            .expect("first audit hash should be readable");
     let second_previous = sql_query(
-        "SELECT previous_hash AS event_hash FROM security_audit_events WHERE event_id = $1",
+        "SELECT previous_hash AS event_hash FROM security_audit_chain_entries WHERE event_id = $1",
     )
     .bind::<SqlUuid, _>(second_id)
     .get_result::<EventHashRow>(&mut connection)
@@ -172,10 +187,6 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
     .expect("second audit previous hash should be readable");
     assert_eq!(second_previous.event_hash, previous.event_hash);
 
-    let claimed = repository
-        .claim_due(10, 60)
-        .await
-        .expect("audit outbox should claim");
     let first_delivery = claimed
         .iter()
         .find(|delivery| delivery.event_id == first_id)
@@ -196,7 +207,7 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
         .anchor_health()
         .await
         .expect("audit anchor health should be readable through its function");
-    assert!(health.head_sequence >= second.sequence);
+    assert!(health.head_sequence >= second_sequence);
     assert_eq!(health.head_hash.len(), 32);
     assert_eq!(health.last_exported_sequence, Some(health.head_sequence));
     assert_eq!(
@@ -319,15 +330,15 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_claim_fencing() {
         payload: json!({"subject_hash": "idempotent"}),
         occurred_at: Utc::now(),
     };
-    let receipt = repository
+    let event_id = event.event_id;
+    repository
         .append(event.clone())
         .await
         .expect("a valid audit event should append");
-    let duplicate = repository
+    repository
         .append(event.clone())
         .await
         .expect("repeating an identical audit event should be idempotent");
-    assert_eq!(duplicate, receipt);
     let mut collision = event;
     collision.payload = json!({"subject_hash": "collision"});
     assert!(matches!(
@@ -340,21 +351,17 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_claim_fencing() {
         .await
         .expect("the appended audit event should be claimable")
         .into_iter()
-        .find(|delivery| delivery.event_id == receipt.event_id)
+        .find(|delivery| delivery.event_id == event_id)
         .expect("the appended audit event should have an outbox claim");
     assert!(matches!(
         repository
-            .mark_exported(
-                receipt.event_id,
-                first_delivery.attempts + 1,
-                "test-deployment"
-            )
+            .mark_exported(event_id, first_delivery.attempts + 1, "test-deployment")
             .await,
         Err(RepositoryError::Consistency(_))
     ));
     repository
         .reschedule(
-            receipt.event_id,
+            event_id,
             first_delivery.attempts,
             Utc::now() - Duration::seconds(1),
             "temporary exporter failure",
@@ -366,31 +373,26 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_claim_fencing() {
         .await
         .expect("a rescheduled event should be claimable again")
         .into_iter()
-        .find(|delivery| delivery.event_id == receipt.event_id)
+        .find(|delivery| delivery.event_id == event_id)
         .expect("the rescheduled event should be reclaimed");
     assert_eq!(second_delivery.attempts, first_delivery.attempts + 1);
+    assert_eq!(second_delivery.sequence, first_delivery.sequence);
+    assert_eq!(second_delivery.previous_hash, first_delivery.previous_hash);
+    assert_eq!(second_delivery.event_hash, first_delivery.event_hash);
     repository
-        .mark_exported(
-            receipt.event_id,
-            second_delivery.attempts,
-            "test-deployment",
-        )
+        .mark_exported(event_id, second_delivery.attempts, "test-deployment")
         .await
         .expect("the current claim should be acknowledged");
     assert!(matches!(
         repository
-            .mark_exported(
-                receipt.event_id,
-                second_delivery.attempts,
-                "test-deployment"
-            )
+            .mark_exported(event_id, second_delivery.attempts, "test-deployment")
             .await,
         Err(RepositoryError::Consistency(_))
     ));
     assert!(matches!(
         repository
             .reschedule(
-                receipt.event_id,
+                event_id,
                 second_delivery.attempts,
                 Utc::now(),
                 "late exporter failure",
@@ -399,7 +401,7 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_claim_fencing() {
         Err(RepositoryError::Consistency(_))
     ));
     let freshness = repository
-        .anchor_freshness()
+        .anchor_health()
         .await
         .expect("the immutable chain head should remain fresh");
     assert_eq!(freshness.head_hash.len(), 32);

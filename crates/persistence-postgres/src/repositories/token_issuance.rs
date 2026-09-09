@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 use crate::{
     DbPool,
+    pool::DiscardOnDrop,
     schema::{access_token_revocations, oauth_token_issuances},
 };
 
@@ -67,123 +68,77 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
 ) -> Result<usize, diesel::result::Error> {
     debug_assert!(client_id.is_some() || user_id.is_some());
     let now = Utc::now();
-    let mut query = oauth_token_issuances::table
-        .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
-        .filter(oauth_token_issuances::access_token_jti.is_not_null())
-        .filter(oauth_token_issuances::access_token_expires_at.gt(now))
-        .into_boxed();
-    if let Some(client_id) = client_id {
-        query = query.filter(oauth_token_issuances::client_id.eq(client_id));
-    }
-    if let Some(user_id) = user_id {
-        query = query.filter(oauth_token_issuances::user_id.eq(user_id));
-    }
-    let issued = query
-        .select((
-            oauth_token_issuances::client_id,
-            oauth_token_issuances::access_token_jti,
-            oauth_token_issuances::access_token_expires_at,
-        ))
-        .load::<(Uuid, Option<String>, Option<DateTime<Utc>>)>(connection)
-        .await?;
-    let mut revocations = issued
-        .into_iter()
-        .filter_map(|(client_id, jti, expires_at)| {
-            Some(NewAccessTokenRevocation {
+    sql_query(
+        "DECLARE nazo_owner_token_revocations NO SCROLL CURSOR WITHOUT HOLD FOR \
+         SELECT issuance.client_id, issuance.access_token_jti, issuance.access_token_expires_at AS expires_at \
+         FROM oauth_token_issuances AS issuance \
+         WHERE issuance.tenant_id = $1 AND issuance.access_token_jti IS NOT NULL \
+           AND issuance.access_token_expires_at > $4 \
+           AND ($2::uuid IS NULL OR issuance.client_id = $2) \
+           AND ($3::uuid IS NULL OR issuance.user_id = $3) \
+         UNION ALL \
+         SELECT client.id AS client_id, grant_row.token_id::text AS access_token_jti, grant_row.expires_at \
+         FROM openid4vci_access_grants AS grant_row \
+         JOIN oauth_clients AS client ON client.tenant_id = grant_row.tenant_id AND client.client_id = grant_row.client_id \
+         WHERE grant_row.tenant_id = $1 AND grant_row.revoked_at IS NULL AND grant_row.expires_at > $4 \
+           AND ($2::uuid IS NULL OR client.id = $2) \
+           AND ($3::uuid IS NULL OR grant_row.subject_id = $3)",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(client_id)
+    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
+    .bind::<sql_types::Timestamptz, _>(now)
+    .execute(connection)
+    .await?;
+    let mut inserted = 0;
+    loop {
+        let rows = sql_query("FETCH FORWARD 512 FROM nazo_owner_token_revocations")
+            .load::<OwnedAccessTokenRow>(connection)
+            .await?;
+        if rows.is_empty() {
+            break;
+        }
+        let revocations = rows
+            .into_iter()
+            .map(|row| NewAccessTokenRevocation {
                 id: Uuid::now_v7(),
-                access_token_jti_blake3: blake3::hash(jti?.as_bytes()).to_hex().to_string(),
-                client_id,
+                access_token_jti_blake3: blake3::hash(row.access_token_jti.as_bytes())
+                    .to_hex()
+                    .to_string(),
+                client_id: row.client_id,
                 tenant_id,
                 revoked_at: now,
-                expires_at: expires_at?,
+                expires_at: row.expires_at,
             })
-        })
-        .collect::<Vec<_>>();
-    let openid4vci = if let Some(user_id) = user_id {
-        let rows = sql_query(
-            "SELECT client.id AS client_id, grant_row.token_id::text AS access_token_jti,
-                    grant_row.expires_at
-             FROM openid4vci_access_grants grant_row
-             JOIN oauth_clients client
-               ON client.tenant_id = grant_row.tenant_id
-              AND client.client_id = grant_row.client_id
-             WHERE grant_row.tenant_id = $1 AND grant_row.subject_id = $2
-               AND grant_row.revoked_at IS NULL AND grant_row.expires_at > $3",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Uuid, _>(user_id)
-        .bind::<sql_types::Timestamptz, _>(now)
-        .load::<OwnedAccessTokenRow>(connection)
-        .await?;
-        sql_query(
-            "UPDATE openid4vci_access_grants
-             SET revoked_at = $3
-             WHERE tenant_id = $1 AND subject_id = $2 AND revoked_at IS NULL",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Uuid, _>(user_id)
-        .bind::<sql_types::Timestamptz, _>(now)
-        .execute(connection)
-        .await?;
-        rows
-    } else if let Some(client_id) = client_id {
-        let rows = sql_query(
-            "SELECT client.id AS client_id, grant_row.token_id::text AS access_token_jti,
-                    grant_row.expires_at
-             FROM openid4vci_access_grants grant_row
-             JOIN oauth_clients client
-               ON client.tenant_id = grant_row.tenant_id
-              AND client.client_id = grant_row.client_id
-             WHERE grant_row.tenant_id = $1 AND client.id = $2
-               AND grant_row.revoked_at IS NULL AND grant_row.expires_at > $3",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Uuid, _>(client_id)
-        .bind::<sql_types::Timestamptz, _>(now)
-        .load::<OwnedAccessTokenRow>(connection)
-        .await?;
-        sql_query(
-            "UPDATE openid4vci_access_grants grant_row
-             SET revoked_at = $3
-             FROM oauth_clients client
-             WHERE client.tenant_id = grant_row.tenant_id
-               AND client.client_id = grant_row.client_id
-               AND grant_row.tenant_id = $1 AND client.id = $2
-               AND grant_row.revoked_at IS NULL",
-        )
-        .bind::<sql_types::Uuid, _>(tenant_id)
-        .bind::<sql_types::Uuid, _>(client_id)
-        .bind::<sql_types::Timestamptz, _>(now)
-        .execute(connection)
-        .await?;
-        rows
-    } else {
-        Vec::new()
-    };
-    revocations.extend(openid4vci.into_iter().map(|row| {
-        NewAccessTokenRevocation {
-            id: Uuid::now_v7(),
-            access_token_jti_blake3: blake3::hash(row.access_token_jti.as_bytes())
-                .to_hex()
-                .to_string(),
-            client_id: row.client_id,
-            tenant_id,
-            revoked_at: now,
-            expires_at: row.expires_at,
-        }
-    }));
-    if revocations.is_empty() {
-        return Ok(0);
+            .collect::<Vec<_>>();
+        inserted += diesel::insert_into(access_token_revocations::table)
+            .values(&revocations)
+            .on_conflict((
+                access_token_revocations::tenant_id,
+                access_token_revocations::access_token_jti_blake3,
+            ))
+            .do_nothing()
+            .execute(connection)
+            .await?;
     }
-    diesel::insert_into(access_token_revocations::table)
-        .values(&revocations)
-        .on_conflict((
-            access_token_revocations::tenant_id,
-            access_token_revocations::access_token_jti_blake3,
-        ))
-        .do_nothing()
+    sql_query("CLOSE nazo_owner_token_revocations")
         .execute(connection)
-        .await
+        .await?;
+    sql_query(
+        "UPDATE openid4vci_access_grants AS grant_row SET revoked_at = $4 \
+         FROM oauth_clients AS client \
+         WHERE client.tenant_id = grant_row.tenant_id AND client.client_id = grant_row.client_id \
+           AND grant_row.tenant_id = $1 AND grant_row.revoked_at IS NULL \
+           AND ($2::uuid IS NULL OR client.id = $2) \
+           AND ($3::uuid IS NULL OR grant_row.subject_id = $3)",
+    )
+    .bind::<sql_types::Uuid, _>(tenant_id)
+    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(client_id)
+    .bind::<sql_types::Nullable<sql_types::Uuid>, _>(user_id)
+    .bind::<sql_types::Timestamptz, _>(now)
+    .execute(connection)
+    .await?;
+    Ok(inserted)
 }
 
 struct ResponseEnvelopeContext<'a> {
@@ -493,27 +448,6 @@ fn unseal_response(
         ));
     }
     Ok(plaintext)
-}
-
-struct DiscardOnDrop(Option<crate::DbConnection>);
-
-impl DiscardOnDrop {
-    fn connection(&mut self) -> &mut crate::DbConnection {
-        self.0
-            .as_mut()
-            .expect("token issuance connection guard is armed")
-    }
-    fn return_to_pool(mut self) {
-        let _ = self.0.take();
-    }
-}
-
-impl Drop for DiscardOnDrop {
-    fn drop(&mut self) {
-        if let Some(connection) = self.0.take() {
-            drop(crate::DbConnection::take(connection));
-        }
-    }
 }
 
 enum CommitTransactionError {

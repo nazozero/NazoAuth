@@ -123,6 +123,20 @@ where
         let object = vp_token
             .as_object()
             .ok_or(PresentationError::InvalidResponse)?;
+        // Validate every returned query before doing any credential verification.
+        for (id, value) in object {
+            let query = transaction
+                .request
+                .dcql_query
+                .credentials
+                .iter()
+                .find(|query| query.id == *id)
+                .ok_or(PresentationError::InvalidResponse)?;
+            let values = value.as_array().ok_or(PresentationError::InvalidResponse)?;
+            if values.is_empty() || (!query.multiple && values.len() != 1) {
+                return Err(PresentationError::DcqlUnsatisfied.into());
+            }
+        }
         let mdoc_session_transcript = mdoc_session_transcript(transaction)?;
         let mut verified = Vec::new();
         let mut satisfied = std::collections::BTreeSet::new();
@@ -130,9 +144,6 @@ where
             let Some(values) = object.get(&query.id).and_then(Value::as_array) else {
                 continue;
             };
-            if values.is_empty() {
-                return Err(PresentationError::DcqlUnsatisfied.into());
-            }
             for value in values {
                 let encoded = value.as_str().ok_or(PresentationError::InvalidResponse)?;
                 let credential = self

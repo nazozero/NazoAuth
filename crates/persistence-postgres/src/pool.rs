@@ -29,6 +29,28 @@ const MIGRATION_STATEMENT_TIMEOUT: &str = "240s";
 pub type DbPool = Pool<AsyncPgConnection>;
 pub type DbConnection = Object<AsyncPgConnection>;
 
+/// Discard the physical connection unless its transaction outcome is confirmed.
+/// Dropping a transaction future alone does not end a diesel-async transaction.
+pub(crate) struct DiscardOnDrop(pub(crate) Option<DbConnection>);
+
+impl DiscardOnDrop {
+    pub(crate) fn connection(&mut self) -> &mut DbConnection {
+        self.0.as_mut().expect("connection guard is armed")
+    }
+
+    pub(crate) fn return_to_pool(mut self) {
+        let _ = self.0.take();
+    }
+}
+
+impl Drop for DiscardOnDrop {
+    fn drop(&mut self) {
+        if let Some(connection) = self.0.take() {
+            drop(DbConnection::take(connection));
+        }
+    }
+}
+
 static DB_POOL_ACQUIRE_COUNT: AtomicU64 = AtomicU64::new(0);
 static DB_POOL_WAIT_NANOS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static DB_POOL_WAIT_NANOS_MAX: AtomicU64 = AtomicU64::new(0);
@@ -210,27 +232,24 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.__diesel_schema_migrations, \
                          public.security_audit_chain_state, \
                          public.security_audit_events, \
+                         public.security_audit_chain_entries, \
                          public.security_audit_event_outbox \
                      FROM {quoted_role};\
                      REVOKE ALL ON FUNCTION \
                          public.nazo_reject_security_audit_event_mutation(), \
                          public.nazo_security_audit_chain_head_for_update(), \
-                         public.nazo_append_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ, BYTEA, BYTEA), \
+                         public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
+                         public.nazo_append_security_audit_chain(BIGINT, BYTEA, UUID[], BYTEA[]), \
                          public.nazo_claim_security_audit_events(BIGINT, INTEGER), \
-                         public.nazo_ack_security_audit_event(UUID, INTEGER), \
                          public.nazo_ack_security_audit_event(UUID, INTEGER, TEXT), \
                          public.nazo_observe_security_audit_anchor(TEXT), \
                          public.nazo_record_security_audit_genesis(TEXT, BYTEA), \
                          public.nazo_reschedule_security_audit_event(UUID, INTEGER, TIMESTAMPTZ, TEXT), \
-                         public.nazo_security_audit_anchor_freshness(), \
-                         public.nazo_security_audit_anchor_health(), \
                          public.nazo_security_audit_shared_anchor_health(), \
-                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN), \
-                         public.nazo_security_audit_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
+                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
                      FROM {quoted_role};\
                      GRANT EXECUTE ON FUNCTION \
-                         public.nazo_security_audit_chain_head_for_update(), \
-                         public.nazo_append_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ, BYTEA, BYTEA), \
+                         public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
                          public.nazo_security_audit_shared_anchor_health(), \
                          public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
                      TO {quoted_role};"

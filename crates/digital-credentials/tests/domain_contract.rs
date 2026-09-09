@@ -18,6 +18,35 @@ fn dcql_requires_at_least_one_credential_query() {
 }
 
 #[test]
+fn dcql_multiple_defaults_to_false_and_accepts_only_booleans() {
+    let mut value = serde_json::json!({"credentials":[{"id":"pid","format":"dc+sd-jwt"}]});
+    let default: DcqlQuery = serde_json::from_value(value.clone()).unwrap();
+    assert!(!default.credentials[0].multiple);
+    for multiple in [false, true] {
+        value["credentials"][0]["multiple"] = multiple.into();
+        let query: DcqlQuery = serde_json::from_value(value.clone()).unwrap();
+        assert_eq!(query.credentials[0].multiple, multiple);
+        assert_eq!(query.validate(), Ok(()));
+        assert_eq!(
+            serde_json::to_value(&query).unwrap()["credentials"][0]["multiple"],
+            if multiple {
+                serde_json::json!(true)
+            } else {
+                serde_json::Value::Null
+            }
+        );
+    }
+    for invalid in [
+        serde_json::Value::Null,
+        serde_json::json!(1),
+        serde_json::json!("true"),
+    ] {
+        value["credentials"][0]["multiple"] = invalid;
+        assert!(serde_json::from_value::<DcqlQuery>(value.clone()).is_err());
+    }
+}
+
+#[test]
 fn dcql_claim_paths_and_sets_are_closed_over_declared_claims() {
     for (json, expected) in [
         (

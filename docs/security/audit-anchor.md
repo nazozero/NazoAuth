@@ -3,7 +3,11 @@
 NazoAuth persists security events in the append-only `security_audit_events`
 ledger and its durable outbox.  An independent `nazoauth audit-anchor-worker`
 (or equivalent sidecar) claims that outbox in bounded batches and sends one
-checkpoint per event to `AUDIT_ANCHOR_URL` over HTTPS.  The server process does
+checkpoint per event to `AUDIT_ANCHOR_URL` over HTTPS. The exporter assigns
+sequence and BLAKE3 hashes to committed events in immutable
+`security_audit_chain_entries`, atomically with its bounded outbox claim. A
+business transaction writes the event and outbox without locking the global
+chain head. Retries reuse the assigned chain entry. The server process does
 not run this exporter and does not receive its database role or sink secret.
 
 The hash chain and its sequence belong to the deployment. HTTP security events
@@ -42,8 +46,9 @@ Transport and non-success responses are rescheduled with bounded exponential
 backoff.  The response body is never logged, and the HMAC secret is never
 included in logs or the checkpoint.
 
-The worker records its observation and every externally accepted checkpoint in the shared audit chain state. Event acknowledgement and checkpoint advancement are one database operation. In `AUDIT_ANCHOR_MODE=required`, high-impact management preflight reads that shared state and fails closed unless the worker observation is recent, no outbox entries are pending, and the accepted checkpoint exactly equals the current ledger head. An empty ledger records its signed, externally accepted genesis checkpoint before required mode becomes ready. No instance-local health file is used.
-`optional` records health without blocking; `disabled` is an explicit
+The worker records its observation and every externally accepted checkpoint in the shared audit chain state. Event acknowledgement and checkpoint advancement are one database operation. In `AUDIT_ANCHOR_MODE=required`, high-impact management preflight requires a recent worker observation, a valid deployment checkpoint, and oldest pending event age within `AUDIT_ANCHOR_MAX_LAG_SECONDS`. A bounded backlog is allowed, including committed events not yet chained. With no backlog the checkpoint must equal the chain head; historical delivery latency does not keep a recovered deployment unavailable. An empty ledger records its signed, externally accepted genesis checkpoint before required mode becomes ready. No instance-local health file is used.
+`optional` and `disabled` do not read exporter health on management admission;
+the durable writer availability check still applies. `disabled` is an explicit
 development setting and provides no protection against a privileged local
 attacker.
 
@@ -60,7 +65,7 @@ Recommended production separation:
   `NAZOAUTH_MIGRATION_RUNTIME_ROLE` naming the server-writer role; migration
   resets that role's direct `public` schema/table/sequence privileges, grants
   application DML, and grants only ledger append/check-availability functions;
-* give the worker exporter role only outbox claim/ack/health rights;
+* give the worker exporter role only chain assignment and outbox claim/ack/health rights;
 * provide the worker `AUDIT_ANCHOR_DATABASE_URL` and `AUDIT_ANCHOR_TOKEN` (or
   its secret-file form), while the server receives only the deployment identity;
 * protect the HTTPS receiver with append-only/WORM retention and verify its

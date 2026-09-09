@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use nazo_identity::ports::RepositoryError;
 
-use crate::DbPool;
+use crate::{DbPool, pool::DiscardOnDrop};
 
 /// The maximum JSON payload accepted by the durable audit ledger.
 ///
@@ -16,24 +16,8 @@ use crate::DbPool;
 /// programming mistake.
 pub use nazo_persistence::{
     MAX_SECURITY_AUDIT_PAYLOAD_BYTES, SecurityAuditAnchorHealth, SecurityAuditEvent,
-    SecurityAuditFreshness as SecurityAuditAnchorFreshness, SecurityAuditOutboxDelivery,
-    SecurityAuditReceipt,
+    SecurityAuditOutboxDelivery,
 };
-
-/// A newly appended audit event together with the chain edge it extended.
-///
-/// Callers that commit another durable receipt in the same database
-/// transaction need both hashes to bind that receipt to the exact audit-chain
-/// transition.  Existing/idempotent events are deliberately not represented
-/// by this type because their previous hash cannot be inferred from the
-/// current chain head.
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct FreshSecurityAuditReceipt {
-    pub event_id: Uuid,
-    pub sequence: i64,
-    pub previous_hash: [u8; 32],
-    pub event_hash: [u8; 32],
-}
 
 #[derive(Clone)]
 pub struct AuditLedgerRepository {
@@ -46,7 +30,7 @@ impl AuditLedgerRepository {
         Self { pool }
     }
 
-    /// Verify that the writer API and append-only chain are available before a
+    /// Verify that the durable writer API is available before a
     /// caller starts a high-impact management operation. Strict mode rejects
     /// superusers, table owners, and any direct ledger table privilege.
     pub async fn check_available(&self) -> Result<(), RepositoryError> {
@@ -55,7 +39,7 @@ impl AuditLedgerRepository {
 
     /// The policy switch is explicit so isolated development fixtures can opt
     /// out of strict role checks without weakening the function API boundary.
-    /// Function EXECUTE grants and chain integrity are required in both modes.
+    /// Function EXECUTE grants are required in both modes.
     pub async fn check_available_with_policy(
         &self,
         require_least_privilege: bool,
@@ -64,8 +48,8 @@ impl AuditLedgerRepository {
             .await
     }
 
-    /// Verify the exporter API and append-only chain. The writer role does not
-    /// receive claim/ack/health EXECUTEs, so it cannot use this preflight.
+    /// Verify the exporter API. The writer role does not receive chain
+    /// assignment or claim/ack EXECUTEs, so it cannot use this preflight.
     pub async fn check_exporter_available(&self) -> Result<(), RepositoryError> {
         self.check_exporter_available_with_policy(true).await
     }
@@ -101,21 +85,6 @@ impl AuditLedgerRepository {
             ));
         }
         Ok(())
-    }
-
-    /// Return a valid chain head for a writer-side fail-closed check. The
-    /// SECURITY DEFINER function returns no row when the persisted head does
-    /// not match the immutable ledger.
-    pub async fn anchor_freshness(&self) -> Result<SecurityAuditAnchorFreshness, RepositoryError> {
-        let mut connection = self.connection().await?;
-        sql_query(
-            "SELECT last_sequence AS head_sequence, last_hash AS head_hash, checked_at \
-             FROM public.nazo_security_audit_anchor_freshness()",
-        )
-        .get_result::<SecurityAuditAnchorFreshnessRow>(&mut connection)
-        .await
-        .map(Into::into)
-        .map_err(map_error)
     }
 
     /// Return the exporter checkpoint and durable backlog without granting the
@@ -166,33 +135,17 @@ impl AuditLedgerRepository {
         require_current_outbox_claim(result.changed)
     }
 
-    /// Append one event and its exporter outbox entry in one transaction.
-    ///
-    /// The chain head is locked through a SECURITY DEFINER function. The
-    /// append function re-checks the locked head and performs all table writes
-    /// as its migration-owner definer, while the caller receives no direct
-    /// table INSERT/UPDATE privilege.
-    pub async fn append(
-        &self,
-        event: SecurityAuditEvent,
-    ) -> Result<SecurityAuditReceipt, RepositoryError> {
-        validate_event(&event)?;
-        validate_payload_size(&event)?;
-
+    /// Persist an event and its outbox entry atomically, without acquiring the chain head.
+    pub async fn append(&self, event: SecurityAuditEvent) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
-        connection
-            .transaction::<SecurityAuditReceipt, diesel::result::Error, _>(async |connection| {
-                append_on_connection(connection, &event)
-                    .await
-                    .map(AppendAuditOutcome::into_receipt)
-            })
+        append_on_connection(&mut connection, &event)
             .await
+            .map(|_| ())
             .map_err(map_error)
     }
 
-    /// Claim durable events for an external exporter. The event body is read
-    /// from the immutable ledger while delivery state is advanced in the
-    /// mutable outbox row by the exporter-only SECURITY DEFINER function.
+    /// Claim and chain a batch in one exporter transaction. A retry returns
+    /// its immutable chain entry instead of assigning a second sequence.
     pub async fn claim_due(
         &self,
         limit: i64,
@@ -203,18 +156,62 @@ impl AuditLedgerRepository {
                 "audit outbox claim limit or lock timeout is outside its safe bound".to_owned(),
             ));
         }
-        let mut connection = self.connection().await?;
-        sql_query(
-            "SELECT event_id, attempts, sequence, event_type, event_category, \
-                    payload, occurred_at, previous_hash, event_hash \
-             FROM public.nazo_claim_security_audit_events($1, $2)",
-        )
-        .bind::<diesel::sql_types::BigInt, _>(limit)
-        .bind::<diesel::sql_types::Integer, _>(lock_timeout_seconds)
-        .load::<SecurityAuditOutboxRow>(&mut connection)
-        .await
-        .map(|rows| rows.into_iter().map(Into::into).collect())
-        .map_err(map_error)
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let result = guard.connection().transaction::<_, diesel::result::Error, _>(async |connection| {
+            let mut head = sql_query(
+                "SELECT last_sequence, last_hash FROM public.nazo_security_audit_chain_head_for_update()",
+            ).get_result::<ChainStateRow>(connection).await?;
+            let previous_sequence = head.last_sequence;
+            let previous_hash = head.last_hash.clone();
+            let rows = sql_query(
+                "SELECT event_id, attempts, sequence, event_type, event_category, \
+                        payload, payload_canonical, occurred_at, previous_hash, event_hash \
+                 FROM public.nazo_claim_security_audit_events($1, $2)",
+            )
+            .bind::<diesel::sql_types::BigInt, _>(limit)
+            .bind::<diesel::sql_types::Integer, _>(lock_timeout_seconds)
+            .load::<SecurityAuditOutboxRow>(connection).await?;
+            let mut deliveries = Vec::with_capacity(rows.len());
+            let mut event_ids = Vec::new();
+            let mut event_hashes = Vec::new();
+            for row in rows {
+                let event = SecurityAuditEvent {
+                    event_id: row.event_id, event_type: row.event_type,
+                    event_category: row.event_category, payload: row.payload, occurred_at: row.occurred_at,
+                };
+                let (sequence, previous_hash, event_hash) = match (row.sequence, row.previous_hash, row.event_hash) {
+                    (Some(sequence), Some(previous_hash), Some(event_hash)) => (sequence, previous_hash, event_hash),
+                    (None, None, None) => {
+                        head.last_sequence = head.last_sequence.checked_add(1)
+                            .ok_or_else(|| invariant_error("security audit sequence overflow"))?;
+                        let event_hash = hash_event(head.last_sequence, &head.last_hash, &event, row.payload_canonical.as_bytes()).to_vec();
+                        let previous_hash = std::mem::replace(&mut head.last_hash, event_hash.clone());
+                        event_ids.push(event.event_id);
+                        event_hashes.push(event_hash.clone());
+                        (head.last_sequence, previous_hash, event_hash)
+                    }
+                    _ => return Err(invariant_error("security audit chain entry is incomplete")),
+                };
+                deliveries.push(SecurityAuditOutboxDelivery {
+                    event_id: event.event_id, sequence, event_type: event.event_type,
+                    event_category: event.event_category, payload: event.payload, occurred_at: event.occurred_at,
+                    previous_hash, event_hash, attempts: row.attempts,
+                });
+            }
+            if !event_ids.is_empty() {
+                sql_query("SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)")
+                    .bind::<diesel::sql_types::BigInt, _>(previous_sequence)
+                    .bind::<diesel::sql_types::Binary, _>(previous_hash)
+                    .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(event_ids)
+                    .bind::<diesel::sql_types::Array<diesel::sql_types::Binary>, _>(event_hashes)
+                    .execute(connection).await?;
+            }
+            Ok(deliveries)
+        }).await.map_err(map_error);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
     }
 
     pub async fn mark_exported(
@@ -264,115 +261,35 @@ impl AuditLedgerRepository {
     }
 }
 
-/// Append a new audit event using the caller's transaction and return the
-/// exact chain edge extended by the event.
-///
-/// This is the transaction-safe primitive for management operations that must
-/// atomically persist their resource mutation, audit event, and signed
-/// receipt.  Reusing an existing event id is rejected: an idempotent replay
-/// must return the already persisted management receipt instead of creating a
-/// second operation around an old audit event.
+/// Persist a fresh event in the caller's business transaction. An existing
+/// event id is an error: the caller must recover its original business result.
 pub async fn append_fresh_security_audit_on_connection(
     connection: &mut AsyncPgConnection,
     event: &SecurityAuditEvent,
-) -> Result<FreshSecurityAuditReceipt, diesel::result::Error> {
-    match append_on_connection(connection, event).await? {
-        AppendAuditOutcome::Fresh(receipt) => Ok(receipt),
-        AppendAuditOutcome::Existing(_) => Err(invariant_error(
+) -> Result<(), diesel::result::Error> {
+    if append_on_connection(connection, event).await? {
+        Ok(())
+    } else {
+        Err(invariant_error(
             "security audit event already exists in the immutable ledger",
-        )),
-    }
-}
-
-enum AppendAuditOutcome {
-    Fresh(FreshSecurityAuditReceipt),
-    Existing(SecurityAuditReceipt),
-}
-
-impl AppendAuditOutcome {
-    fn into_receipt(self) -> SecurityAuditReceipt {
-        match self {
-            Self::Fresh(receipt) => SecurityAuditReceipt {
-                event_id: receipt.event_id,
-                sequence: receipt.sequence,
-                event_hash: receipt.event_hash,
-            },
-            Self::Existing(receipt) => receipt,
-        }
+        ))
     }
 }
 
 async fn append_on_connection(
     connection: &mut AsyncPgConnection,
     event: &SecurityAuditEvent,
-) -> Result<AppendAuditOutcome, diesel::result::Error> {
+) -> Result<bool, diesel::result::Error> {
     validate_event_for_transaction(event)?;
-    let canonical_payload = sql_query("SELECT $1::jsonb::text AS payload_canonical")
+    sql_query("SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed")
+        .bind::<diesel::sql_types::Uuid, _>(event.event_id)
+        .bind::<diesel::sql_types::Text, _>(&event.event_type)
+        .bind::<diesel::sql_types::Text, _>(&event.event_category)
         .bind::<diesel::sql_types::Jsonb, _>(&event.payload)
-        .get_result::<CanonicalAuditPayloadRow>(connection)
-        .await?;
-    let state = sql_query(
-        "SELECT last_sequence, last_hash \
-         FROM public.nazo_security_audit_chain_head_for_update()",
-    )
-    .get_result::<ChainStateRow>(connection)
-    .await?;
-    let previous_hash: [u8; 32] =
-        state.last_hash.as_slice().try_into().map_err(|_| {
-            invariant_error("security audit chain state hash must be exactly 32 bytes")
-        })?;
-    let sequence = state
-        .last_sequence
-        .checked_add(1)
-        .ok_or_else(|| invariant_error("security audit sequence overflow"))?;
-    let event_hash = hash_event(
-        sequence,
-        &previous_hash,
-        event,
-        canonical_payload.payload_canonical.as_bytes(),
-    );
-
-    let append = sql_query(
-        "SELECT event_id, sequence, event_hash \
-         FROM public.nazo_append_security_audit_event(\
-             $1, $2, $3, $4, $5, $6, $7)",
-    )
-    .bind::<diesel::sql_types::Uuid, _>(event.event_id)
-    .bind::<diesel::sql_types::Text, _>(&event.event_type)
-    .bind::<diesel::sql_types::Text, _>(&event.event_category)
-    .bind::<diesel::sql_types::Jsonb, _>(&event.payload)
-    .bind::<diesel::sql_types::Timestamptz, _>(event.occurred_at)
-    .bind::<diesel::sql_types::Binary, _>(previous_hash.to_vec())
-    .bind::<diesel::sql_types::Binary, _>(event_hash.to_vec())
-    .get_result::<SecurityAuditAppendRow>(connection)
-    .await?;
-    let returned_hash: [u8; 32] = append
-        .event_hash
-        .try_into()
-        .map_err(|_| invariant_error("security audit append returned invalid hash"))?;
-    if append.event_id != event.event_id {
-        return Err(invariant_error(
-            "security audit append returned an unexpected event identity",
-        ));
-    }
-    if append.sequence == sequence && returned_hash == event_hash {
-        return Ok(AppendAuditOutcome::Fresh(FreshSecurityAuditReceipt {
-            event_id: append.event_id,
-            sequence: append.sequence,
-            previous_hash,
-            event_hash: returned_hash,
-        }));
-    }
-    if append.sequence > 0 && append.sequence <= state.last_sequence {
-        return Ok(AppendAuditOutcome::Existing(SecurityAuditReceipt {
-            event_id: append.event_id,
-            sequence: append.sequence,
-            event_hash: returned_hash,
-        }));
-    }
-    Err(invariant_error(
-        "security audit append returned an unexpected receipt",
-    ))
+        .bind::<diesel::sql_types::Timestamptz, _>(event.occurred_at)
+        .get_result::<AuditMutationRow>(connection)
+        .await
+        .map(|row| row.changed)
 }
 
 #[derive(QueryableByName)]
@@ -384,45 +301,9 @@ struct ChainStateRow {
 }
 
 #[derive(QueryableByName)]
-struct SecurityAuditAppendRow {
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    event_id: Uuid,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    sequence: i64,
-    #[diesel(sql_type = diesel::sql_types::Binary)]
-    event_hash: Vec<u8>,
-}
-
-#[derive(QueryableByName)]
-struct CanonicalAuditPayloadRow {
-    #[diesel(sql_type = diesel::sql_types::Text)]
-    payload_canonical: String,
-}
-
-#[derive(QueryableByName)]
 struct AuditPrivilegePreflightRow {
     #[diesel(sql_type = diesel::sql_types::Bool)]
     policy_satisfied: bool,
-}
-
-#[derive(QueryableByName)]
-struct SecurityAuditAnchorFreshnessRow {
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    head_sequence: i64,
-    #[diesel(sql_type = diesel::sql_types::Binary)]
-    head_hash: Vec<u8>,
-    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
-    checked_at: DateTime<Utc>,
-}
-
-impl From<SecurityAuditAnchorFreshnessRow> for SecurityAuditAnchorFreshness {
-    fn from(row: SecurityAuditAnchorFreshnessRow) -> Self {
-        Self {
-            head_sequence: row.head_sequence,
-            head_hash: row.head_hash,
-            checked_at: row.checked_at,
-        }
-    }
 }
 
 #[derive(QueryableByName)]
@@ -478,36 +359,22 @@ struct SecurityAuditOutboxRow {
     event_id: Uuid,
     #[diesel(sql_type = diesel::sql_types::Integer)]
     attempts: i32,
-    #[diesel(sql_type = diesel::sql_types::BigInt)]
-    sequence: i64,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::BigInt>)]
+    sequence: Option<i64>,
     #[diesel(sql_type = diesel::sql_types::Text)]
     event_type: String,
     #[diesel(sql_type = diesel::sql_types::Text)]
     event_category: String,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     payload: Value,
+    #[diesel(sql_type = diesel::sql_types::Text)]
+    payload_canonical: String,
     #[diesel(sql_type = diesel::sql_types::Timestamptz)]
     occurred_at: DateTime<Utc>,
-    #[diesel(sql_type = diesel::sql_types::Binary)]
-    previous_hash: Vec<u8>,
-    #[diesel(sql_type = diesel::sql_types::Binary)]
-    event_hash: Vec<u8>,
-}
-
-impl From<SecurityAuditOutboxRow> for SecurityAuditOutboxDelivery {
-    fn from(row: SecurityAuditOutboxRow) -> Self {
-        Self {
-            event_id: row.event_id,
-            sequence: row.sequence,
-            event_type: row.event_type,
-            event_category: row.event_category,
-            payload: row.payload,
-            occurred_at: row.occurred_at,
-            previous_hash: row.previous_hash,
-            event_hash: row.event_hash,
-            attempts: row.attempts,
-        }
-    }
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Binary>)]
+    previous_hash: Option<Vec<u8>>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Binary>)]
+    event_hash: Option<Vec<u8>>,
 }
 
 fn validate_event(event: &SecurityAuditEvent) -> Result<(), RepositoryError> {
@@ -535,23 +402,14 @@ fn validate_payload_size(event: &SecurityAuditEvent) -> Result<(), RepositoryErr
 }
 
 fn validate_event_for_transaction(event: &SecurityAuditEvent) -> Result<(), diesel::result::Error> {
-    if event.event_id.is_nil()
-        || !valid_identifier(&event.event_type)
-        || !valid_identifier(&event.event_category)
-        || !event.payload.is_object()
-    {
-        return Err(invariant_error(
-            "security audit event has invalid identity or payload",
-        ));
-    }
-    let payload_bytes = serde_json::to_vec(&event.payload)
-        .map_err(|_| invariant_error("security audit payload is not serializable"))?;
-    if payload_bytes.len() > MAX_SECURITY_AUDIT_PAYLOAD_BYTES {
-        return Err(invariant_error(
-            "security audit payload exceeds its safe bound",
-        ));
-    }
-    Ok(())
+    validate_event(event)
+        .and_then(|()| validate_payload_size(event))
+        .map_err(|error| {
+            diesel::result::Error::SerializationError(Box::new(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                error.to_string(),
+            )))
+        })
 }
 
 fn valid_identifier(value: &str) -> bool {

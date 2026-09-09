@@ -491,11 +491,17 @@ diesel::table! {
 diesel::table! {
     security_audit_events (event_id) {
         event_id -> Uuid,
-        sequence -> Int8,
         event_type -> Varchar,
         event_category -> Varchar,
         payload -> Jsonb,
         occurred_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    security_audit_chain_entries (event_id) {
+        event_id -> Uuid,
+        sequence -> Int8,
         previous_hash -> Binary,
         event_hash -> Binary,
     }
@@ -559,6 +565,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     runtime_module_instance_states,
     runtime_module_state_events,
     security_audit_chain_state,
+    security_audit_chain_entries,
     security_audit_events,
     security_audit_event_outbox
 );

@@ -138,20 +138,6 @@ pub struct SecurityAuditEvent {
     pub occurred_at: chrono::DateTime<chrono::Utc>,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SecurityAuditReceipt {
-    pub event_id: uuid::Uuid,
-    pub sequence: i64,
-    pub event_hash: [u8; 32],
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct SecurityAuditFreshness {
-    pub head_sequence: i64,
-    pub head_hash: Vec<u8>,
-    pub checked_at: chrono::DateTime<chrono::Utc>,
-}
-
 /// Append-only security-ledger capability used by the application audit
 /// boundary. Database roles, functions and chain storage remain adapter-owned.
 pub trait SecurityAuditLedger: Send + Sync {
@@ -160,14 +146,9 @@ pub trait SecurityAuditLedger: Send + Sync {
         require_least_privilege: bool,
     ) -> BoxFuture<'_, Result<(), RepositoryError>>;
 
-    fn anchor_freshness(&self) -> BoxFuture<'_, Result<SecurityAuditFreshness, RepositoryError>>;
-
     fn anchor_health(&self) -> BoxFuture<'_, Result<SecurityAuditAnchorHealth, RepositoryError>>;
 
-    fn append(
-        &self,
-        event: SecurityAuditEvent,
-    ) -> BoxFuture<'_, Result<SecurityAuditReceipt, RepositoryError>>;
+    fn append(&self, event: SecurityAuditEvent) -> BoxFuture<'_, Result<(), RepositoryError>>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

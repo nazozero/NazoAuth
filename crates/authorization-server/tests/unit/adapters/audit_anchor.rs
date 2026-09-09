@@ -874,16 +874,30 @@ fn preflight_accepts_shared_health_and_rejects_stale_or_unanchored_state() {
     pending.pending_count = 1;
     assert!(validate_health(&config, &pending, now).is_err());
 
-    let mut missing_occurrence = current.clone();
-    missing_occurrence.last_exported_occurred_at = None;
-    assert!(validate_health(&config, &missing_occurrence, now).is_err());
+    pending.oldest_pending_occurred_at = Some(now - ChronoDuration::seconds(300));
+    assert!(validate_health(&config, &pending, now).is_ok());
+    pending.oldest_pending_occurred_at = Some(now - ChronoDuration::seconds(301));
+    assert!(validate_health(&config, &pending, now).is_err());
 
-    let mut missing_delivery = current.clone();
-    missing_delivery.last_exported_at = None;
-    assert!(validate_health(&config, &missing_delivery, now).is_err());
+    let mut recovered = current.clone();
+    recovered.last_exported_occurred_at = Some(now - ChronoDuration::hours(1));
+    recovered.last_exported_at = Some(now - ChronoDuration::minutes(10));
+    assert!(
+        validate_health(&config, &recovered, now).is_ok(),
+        "historical delivery lag must not prevent recovery after the backlog is drained"
+    );
+
+    let mut missing_checkpoint = current.clone();
+    missing_checkpoint.last_exported_sequence = None;
+    assert!(validate_health(&config, &missing_checkpoint, now).is_err());
 
     let mut behind = current;
     behind.last_exported_sequence = Some(6);
+    assert!(validate_health(&config, &behind, now).is_err());
+    behind.pending_count = 1;
+    behind.oldest_pending_occurred_at = Some(now);
+    assert!(validate_health(&config, &behind, now).is_ok());
+    behind.last_exported_sequence = Some(8);
     assert!(validate_health(&config, &behind, now).is_err());
 }
 

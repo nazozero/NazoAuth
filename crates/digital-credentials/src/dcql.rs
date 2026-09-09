@@ -38,6 +38,8 @@ pub struct TrustedAuthority {
 pub struct CredentialQuery {
     pub id: String,
     pub format: CredentialFormat,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub multiple: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub meta: Option<Value>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -56,6 +58,10 @@ pub struct CredentialSetOption {
     pub options: Vec<Vec<String>>,
     #[serde(default = "required_by_default")]
     pub required: bool,
+}
+
+const fn is_false(value: &bool) -> bool {
+    !*value
 }
 
 const fn required_by_default() -> bool {

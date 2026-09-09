@@ -2,7 +2,7 @@ use diesel::{
     QueryableByName, sql_query,
     sql_types::{BigInt, Text, Uuid as SqlUuid},
 };
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_auth::{
     AccessTokenRevocation, AdminGrantRepositoryPort, CommitTokenIssuance,
     CommitTokenIssuanceResult, NewRefreshToken, PendingBackchannelLogoutDelivery,
@@ -257,6 +257,167 @@ async fn fixture(database_url: &str) -> FixtureIds {
     .expect("auth repository fixture should insert")
 }
 
+async fn seed_deactivation(database_url: &str, fixture: &FixtureIds, count: usize) {
+    let tenant = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let repository = TokenIssuanceRepository::new(create_pool(database_url, 1).unwrap());
+    let token = refresh_token_fixture(
+        fixture,
+        tenant,
+        Uuid::now_v7(),
+        Uuid::now_v7().to_string(),
+        None,
+    );
+    assert_eq!(
+        repository
+            .commit_token_issuance(refresh_issuance(token))
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+    let mut connection = AsyncPgConnection::establish(database_url).await.unwrap();
+    let client = fixture.client_id;
+    let user = fixture.user_id;
+    let public_id = &fixture.client_public_id;
+    connection.batch_execute(&format!(
+        "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, grant_key_blake3, request_digest, access_token_jti, access_token_expires_at, expires_at) \
+         SELECT gen_random_uuid(), '{tenant}', '{client}', '{user}', lpad(n::text,64,'0'), repeat('a',64), '{client}-' || n::text, NOW() + INTERVAL '1 hour', NOW() + INTERVAL '1 hour' FROM generate_series(1,{count}) n; \
+         INSERT INTO openid4vci_access_grants (token_id, token_hash, tenant_id, subject_id, client_id, credential_configuration_ids, credential_identifiers, expires_at) \
+         VALUES (gen_random_uuid(), repeat(md5('{client}'),2), '{tenant}', '{user}', '{public_id}', '[\"pid\"]', '[]', NOW() + INTERVAL '1 hour'); \
+         INSERT INTO user_client_grants (tenant_id, user_id, client_id, first_authorized_at, last_authorized_at, last_scopes) \
+         VALUES ('{tenant}', '{user}', '{client}', NOW(), NOW(), '[\"openid\"]');"
+    )).await.unwrap();
+}
+
+async fn deactivation_state(
+    connection: &mut AsyncPgConnection,
+    fixture: &FixtureIds,
+) -> serde_json::Value {
+    #[derive(QueryableByName)]
+    struct State {
+        #[diesel(sql_type = diesel::sql_types::Jsonb)]
+        value: serde_json::Value,
+    }
+    sql_query("SELECT jsonb_build_object( \
+        'client', (SELECT to_jsonb(c) FROM oauth_clients c WHERE id = $1), \
+        'issuances', (SELECT count(*) FROM oauth_token_issuances WHERE client_id = $1), \
+        'revocations', (SELECT count(*) FROM access_token_revocations WHERE client_id = $1), \
+        'active_vci', (SELECT count(*) FROM openid4vci_access_grants WHERE client_id = $2 AND revoked_at IS NULL), \
+        'active_refresh', (SELECT count(*) FROM oauth_tokens WHERE client_id = $1 AND revoked_at IS NULL), \
+        'grants', (SELECT count(*) FROM user_client_grants WHERE client_id = $1)) AS value")
+        .bind::<SqlUuid, _>(fixture.client_id).bind::<Text, _>(&fixture.client_public_id)
+        .get_result::<State>(connection).await.unwrap().value
+}
+
+#[tokio::test]
+async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let tenant = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let large = fixture(&database_url).await;
+    let second = fixture(&database_url).await;
+    let untouched = fixture(&database_url).await;
+    seed_deactivation(&database_url, &large, 100_000).await;
+    seed_deactivation(&database_url, &second, 513).await;
+    seed_deactivation(&database_url, &untouched, 2).await;
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let before = deactivation_state(&mut connection, &large).await;
+    let untouched_before = deactivation_state(&mut connection, &untouched).await;
+    let suffix = Uuid::now_v7().simple().to_string();
+    let sequence = format!("deactivate_count_{suffix}");
+    let gate = format!("deactivate_failure_{suffix}");
+    connection.batch_execute(&format!(
+        "CREATE SEQUENCE {sequence}; \
+         CREATE FUNCTION {gate}() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN \
+         IF NEW.client_id = '{}'::uuid AND nextval('{sequence}') = 513 THEN RAISE EXCEPTION 'injected 513th revocation'; END IF; RETURN NEW; END $$; \
+         CREATE TRIGGER {gate} BEFORE INSERT ON access_token_revocations FOR EACH ROW EXECUTE FUNCTION {gate}();", large.client_id
+    )).await.unwrap();
+    let failed = connection
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            nazo_postgres::deactivate_client_on_connection(connection, tenant, large.client_id)
+                .await
+        })
+        .await;
+    assert!(
+        failed
+            .unwrap_err()
+            .to_string()
+            .contains("injected 513th revocation")
+    );
+    let attempts = sql_query(format!(
+        "SELECT last_value::bigint AS count FROM {sequence}"
+    ))
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        attempts.count, 513,
+        "failure must occur after the first complete batch"
+    );
+    assert_eq!(
+        deactivation_state(&mut connection, &large).await,
+        before,
+        "client, first batch, VCI, refresh and grants must all roll back"
+    );
+    connection.batch_execute(&format!("DROP TRIGGER {gate} ON access_token_revocations; DROP FUNCTION {gate}(); DROP SEQUENCE {sequence}")).await.unwrap();
+
+    connection
+        .transaction::<_, diesel::result::Error, _>(async |connection| {
+            assert!(
+                nazo_postgres::deactivate_client_on_connection(connection, tenant, large.client_id)
+                    .await?
+            );
+            // A second owner in the same transaction catches an unclosed cursor.
+            assert!(
+                nazo_postgres::deactivate_client_on_connection(
+                    connection,
+                    tenant,
+                    second.client_id
+                )
+                .await?
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    for (owner, count) in [(&large, 100_002), (&second, 515)] {
+        let state = deactivation_state(&mut connection, owner).await;
+        assert_eq!(state["client"]["is_active"], false);
+        assert_eq!(state["revocations"], count);
+        for key in ["active_vci", "active_refresh", "grants"] {
+            assert_eq!(state[key], 0, "{key}");
+        }
+    }
+    assert_eq!(
+        deactivation_state(&mut connection, &untouched).await,
+        untouched_before
+    );
+
+    let concurrent = fixture(&database_url).await;
+    seed_deactivation(&database_url, &concurrent, 513).await;
+    let mut left = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let mut right = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let (left, right) = tokio::join!(
+        left.transaction::<_, diesel::result::Error, _>(async |c| {
+            nazo_postgres::deactivate_client_on_connection(c, tenant, concurrent.client_id).await
+        }),
+        right.transaction::<_, diesel::result::Error, _>(async |c| {
+            nazo_postgres::deactivate_client_on_connection(c, tenant, concurrent.client_id).await
+        })
+    );
+    assert_ne!(
+        left.unwrap(),
+        right.unwrap(),
+        "exactly one concurrent deactivation may change the owner"
+    );
+    let state = deactivation_state(&mut connection, &concurrent).await;
+    assert_eq!(state["client"]["is_active"], false);
+    assert_eq!(state["revocations"], 515);
+    for key in ["active_vci", "active_refresh", "grants"] {
+        assert_eq!(state[key], 0, "{key}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn idempotent_refresh_issuance_retains_expired_access_without_recovering_or_reissuing() {
     let database_url =
@@ -389,7 +550,7 @@ async fn assert_issuance_audit(
     input: &CommitTokenIssuance,
     expected: &[(&str, &str, serde_json::Value)],
 ) {
-    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, (o.attempts = 0 AND o.exported_at IS NULL) AS pending_outbox FROM security_audit_events e JOIN security_audit_event_outbox o USING(event_id) WHERE e.payload->>'issuance_id' = $1 ORDER BY e.sequence")
+    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, (o.attempts = 0 AND o.exported_at IS NULL) AS pending_outbox FROM security_audit_events e JOIN security_audit_event_outbox o USING(event_id) WHERE e.payload->>'issuance_id' = $1 ORDER BY e.occurred_at, e.event_id")
         .bind::<Text, _>(input.issuance_id.to_string()).load::<IssuanceAuditRow>(connection).await.unwrap();
     assert_eq!(rows.len(), expected.len());
     for (row, (event_type, category, fields)) in rows.iter().zip(expected) {

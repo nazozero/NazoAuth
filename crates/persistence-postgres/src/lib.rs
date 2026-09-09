@@ -30,31 +30,30 @@ pub use repositories::{
     AuthorizationRepository, CONTROLLER_KEY_TTL_SECONDS, CommitWithApprovalError,
     ControllerIdentityAction, ControllerRegistryError, ControllerRegistryRepository,
     ControllerSlotStatus, ControllerSlotSummary, DEPLOYMENT_IDENTITY_LOCK_SEED,
-    FederationRepository, FreshSecurityAuditReceipt, GrantAuthorization, GrantRepository,
-    IDENTITY_APPROVAL_TTL_SECONDS, IdentityApprovalError, IssuedIdentityApproval,
-    IssuedRecoveryChallenge, MAX_ACTIVE_CONTROLLER_SLOTS, MAX_RECOVERY_CHALLENGE_ATTEMPTS,
-    MAX_SECURITY_AUDIT_PAYLOAD_BYTES, ManagedCredentialDataset, ManagedCredentialDatasetWrite,
-    MfaRepository, MtlsTrustAnchorRepository, NewControllerSlot, NewRecoveryChallenge,
-    NewRecoveryRoot, NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding,
-    OAuthClientRepository, Openid4vcTrustPolicyClientBind, Openid4vcTrustPolicyForClient,
-    Openid4vcTrustPolicyRevoke, Openid4vcTrustPolicyWrite, Openid4vciDatasetRepository,
-    Openid4vciRepository, Openid4vpRepository, OperatorManagedTrustAnchor, PasskeyRepository,
+    FederationRepository, GrantAuthorization, GrantRepository, IDENTITY_APPROVAL_TTL_SECONDS,
+    IdentityApprovalError, IssuedIdentityApproval, IssuedRecoveryChallenge,
+    MAX_ACTIVE_CONTROLLER_SLOTS, MAX_RECOVERY_CHALLENGE_ATTEMPTS, MAX_SECURITY_AUDIT_PAYLOAD_BYTES,
+    ManagedCredentialDataset, ManagedCredentialDatasetWrite, MfaRepository,
+    MtlsTrustAnchorRepository, NewControllerSlot, NewRecoveryChallenge, NewRecoveryRoot,
+    NewStoredOpenid4vcTrustPolicy, NewTenantResourceBinding, OAuthClientRepository,
+    Openid4vcTrustPolicyClientBind, Openid4vcTrustPolicyForClient, Openid4vcTrustPolicyRevoke,
+    Openid4vcTrustPolicyWrite, Openid4vciDatasetRepository, Openid4vciRepository,
+    Openid4vpRepository, OperatorManagedTrustAnchor, PasskeyRepository,
     RECOVERY_CHALLENGE_TTL_SECONDS, RecoveredSlotCommit, RecoveryInvalidation, RecoveryRootError,
     RecoveryRootRepository, RecoveryRootSummary, RecoveryRotationError, RecoverySubmission,
     RotateControllerKey, RuntimeModuleEventPage, RuntimeModuleRepository, ScimEventRepository,
-    ScimRepository, SecurityAuditAnchorFreshness, SecurityAuditAnchorHealth, SecurityAuditEvent,
-    SecurityAuditOutboxDelivery, SecurityAuditReceipt, SigningKeysetRepository,
-    StoredControllerSlot, StoredOpenid4vcTrustPolicy, StoredRecoveryRoot, TenantBoundaryDefinition,
-    TenantDirectoryControlRepository, TenantDirectoryRepository, TenantProvisioningRequest,
-    TenantResourceBinding, TenantResourceBindingDeactivate, TenantResourceRepository,
-    TenantResourceState, TenantResourceStateCas, TenantRuntimeStatus, TokenIssuanceRepository,
-    TokenRepository, UserInsert, UserRepository, active_public_client_id_on_connection,
-    append_fresh_security_audit_on_connection, deactivate_client_on_connection,
-    delete_operator_managed_dataset_on_connection, disable_user_on_connection,
-    insert_client_on_connection, insert_operator_managed_trust_anchor_on_connection,
-    insert_user_on_connection, protect_dataset_claims,
-    revoke_operator_managed_trust_anchor_on_connection, unprotect_dataset_claims,
-    upsert_operator_managed_dataset_on_connection,
+    ScimRepository, SecurityAuditAnchorHealth, SecurityAuditEvent, SecurityAuditOutboxDelivery,
+    SigningKeysetRepository, StoredControllerSlot, StoredOpenid4vcTrustPolicy, StoredRecoveryRoot,
+    TenantBoundaryDefinition, TenantDirectoryControlRepository, TenantDirectoryRepository,
+    TenantProvisioningRequest, TenantResourceBinding, TenantResourceBindingDeactivate,
+    TenantResourceRepository, TenantResourceState, TenantResourceStateCas, TenantRuntimeStatus,
+    TokenIssuanceRepository, TokenRepository, UserInsert, UserRepository,
+    active_public_client_id_on_connection, append_fresh_security_audit_on_connection,
+    deactivate_client_on_connection, delete_operator_managed_dataset_on_connection,
+    disable_user_on_connection, insert_client_on_connection,
+    insert_operator_managed_trust_anchor_on_connection, insert_user_on_connection,
+    protect_dataset_claims, revoke_operator_managed_trust_anchor_on_connection,
+    unprotect_dataset_claims, upsert_operator_managed_dataset_on_connection,
 };
 pub use tenant_resource_executor::PostgresTenantResourceExecutor;
 
@@ -109,23 +108,6 @@ impl nazo_persistence::SecurityAuditLedger for AuditLedgerRepository {
         })
     }
 
-    fn anchor_freshness(
-        &self,
-    ) -> futures_util::future::BoxFuture<
-        '_,
-        Result<nazo_persistence::SecurityAuditFreshness, nazo_identity::ports::RepositoryError>,
-    > {
-        Box::pin(async move {
-            AuditLedgerRepository::anchor_freshness(self)
-                .await
-                .map(|freshness| nazo_persistence::SecurityAuditFreshness {
-                    head_sequence: freshness.head_sequence,
-                    head_hash: freshness.head_hash,
-                    checked_at: freshness.checked_at,
-                })
-        })
-    }
-
     fn anchor_health(
         &self,
     ) -> futures_util::future::BoxFuture<
@@ -138,28 +120,9 @@ impl nazo_persistence::SecurityAuditLedger for AuditLedgerRepository {
     fn append(
         &self,
         event: nazo_persistence::SecurityAuditEvent,
-    ) -> futures_util::future::BoxFuture<
-        '_,
-        Result<nazo_persistence::SecurityAuditReceipt, nazo_identity::ports::RepositoryError>,
-    > {
-        Box::pin(async move {
-            AuditLedgerRepository::append(
-                self,
-                SecurityAuditEvent {
-                    event_id: event.event_id,
-                    event_type: event.event_type,
-                    event_category: event.event_category,
-                    payload: event.payload,
-                    occurred_at: event.occurred_at,
-                },
-            )
-            .await
-            .map(|receipt| nazo_persistence::SecurityAuditReceipt {
-                event_id: receipt.event_id,
-                sequence: receipt.sequence,
-                event_hash: receipt.event_hash,
-            })
-        })
+    ) -> futures_util::future::BoxFuture<'_, Result<(), nazo_identity::ports::RepositoryError>>
+    {
+        Box::pin(async move { AuditLedgerRepository::append(self, event).await })
     }
 }
 

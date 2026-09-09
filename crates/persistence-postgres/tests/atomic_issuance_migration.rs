@@ -12,7 +12,6 @@ use uuid::Uuid;
 const UP: &str = include_str!("../../../migrations/20260906000100_atomic_token_issuance/up.sql");
 const DOWN: &str =
     include_str!("../../../migrations/20260906000100_atomic_token_issuance/down.sql");
-const HEAD: &str = include_str!("../migration-head.txt");
 
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
@@ -48,7 +47,6 @@ struct ColumnName {
 
 #[test]
 fn atomic_issuance_migration_contract_is_append_only_and_irreversible() {
-    assert_eq!(HEAD.trim(), "20260906000100_atomic_token_issuance");
     assert!(UP.contains("DROP COLUMN IF EXISTS phase"));
     assert!(UP.contains("DROP COLUMN IF EXISTS claim_owner_id"));
     assert!(UP.contains("DROP COLUMN IF EXISTS claim_started_at"));

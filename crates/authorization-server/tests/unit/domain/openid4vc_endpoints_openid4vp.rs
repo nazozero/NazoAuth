@@ -207,6 +207,7 @@ fn valid_dcql() -> DcqlQuery {
         credentials: vec![nazo_digital_credentials::CredentialQuery {
             id: "pid".to_owned(),
             format: CredentialFormat::SdJwtVc,
+            multiple: false,
             meta: None,
             claims: None,
             claim_sets: None,
@@ -437,6 +438,49 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
         .create(url_query_input.clone())
         .await
         .expect("URL query presentation should be stored");
+    // This is the canonical pre-multiple wire shape, independently of the
+    // current domain serializer. Existing JTI records must remain retryable.
+    let legacy = nazo_operator_protocol::Openid4vpNormalizedCreateRequest {
+        wallet_authorization_endpoint: url_query_input.wallet_authorization_endpoint.clone(),
+        dcql_query: json!({"credentials": [{"id": "pid", "format": "dc+sd-jwt"}]}),
+        haip: false,
+        client_id_prefix: "redirect_uri".to_owned(),
+        request_method: "url_query".to_owned(),
+        response_mode: "direct_post".to_owned(),
+        transaction_data: None,
+        openid4vc_trust_policy_resource_id: None,
+        openid4vc_trust_policy_digest: None,
+    };
+    let (legacy_json, legacy_hash) =
+        nazo_operator_protocol::canonical_openid4vp_normalized_create_request(&legacy).unwrap();
+    assert_eq!(url_query.idempotency.create_request_sha256, legacy_hash);
+    let mut connection = pool.get().await.unwrap();
+    sql_query("UPDATE openid4vp_transactions SET create_request_sha256 = $1, create_request_canonical_json = $2 WHERE id = $3")
+        .bind::<diesel::sql_types::Text, _>(&legacy_hash)
+        .bind::<diesel::sql_types::Text, _>(&legacy_json)
+        .bind::<diesel::sql_types::Uuid, _>(url_query.transaction_id)
+        .execute(&mut connection).await.unwrap();
+    drop(connection);
+    for multiple in [None, Some(false)] {
+        let mut wire = json!({
+            "create_request_jti": url_query_input.create_request_jti,
+            "wallet_authorization_endpoint": legacy.wallet_authorization_endpoint,
+            "dcql_query": legacy.dcql_query,
+            "haip": false, "client_id_prefix": "redirect_uri",
+            "request_method": "url_query", "response_mode": "direct_post"
+        });
+        if let Some(value) = multiple {
+            wire["dcql_query"]["credentials"][0]["multiple"] = value.into();
+        }
+        let input: CreatePresentationRequest = serde_json::from_value(wire).unwrap();
+        assert_eq!(operations.create(input).await.unwrap(), url_query);
+    }
+    let mut true_request = url_query_input.clone();
+    true_request.dcql_query.credentials[0].multiple = true;
+    assert_eq!(
+        operations.create(true_request).await.unwrap_err().status,
+        409
+    );
     assert_eq!(
         operations
             .create(url_query_input.clone())
@@ -646,4 +690,27 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
             .is_none(),
         "revocation must invalidate the frozen transaction"
     );
+}
+
+/// Cross-repository driver: NazoAuthCtl passes its actual start request to this
+/// test binary, and checks the digest returned by the server's typed DCQL path.
+#[test]
+#[ignore = "requires NAZO_VP_WIRE_INPUT and NAZO_VP_HASH_OUTPUT from the controller contract test"]
+fn canonicalize_controller_start_wire() {
+    let raw: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(std::env::var("NAZO_VP_WIRE_INPUT").unwrap()).unwrap(),
+    )
+    .unwrap();
+    let input: CreatePresentationRequest = serde_json::from_value(raw.clone()).unwrap();
+    let mut normalized_wire = raw;
+    normalized_wire
+        .as_object_mut()
+        .unwrap()
+        .remove("create_request_jti");
+    let mut normalized: nazo_operator_protocol::Openid4vpNormalizedCreateRequest =
+        serde_json::from_value(normalized_wire).unwrap();
+    normalized.dcql_query = serde_json::to_value(input.dcql_query).unwrap();
+    let (_, hash) =
+        nazo_operator_protocol::canonical_openid4vp_normalized_create_request(&normalized).unwrap();
+    std::fs::write(std::env::var("NAZO_VP_HASH_OUTPUT").unwrap(), hash).unwrap();
 }

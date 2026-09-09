@@ -3,10 +3,12 @@ use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
 
-const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 2] = ["20260805000100", "20260905000100"];
-const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 2] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 3] =
+    ["20260805000100", "20260905000100", "20260909000100"];
+const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 3] = [
     include_str!("../../../../migrations/20260805000100_security_audit_ledger/up.sql"),
     include_str!("../../../../migrations/20260905000100_shared_audit_anchor_state/up.sql"),
+    include_str!("../../../../migrations/20260909000100_exporter_owned_audit_chain/up.sql"),
 ];
 
 pub fn schema_database_url(base: &str, schema: &str) -> String {

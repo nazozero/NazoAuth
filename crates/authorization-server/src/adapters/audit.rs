@@ -189,11 +189,10 @@ pub(crate) fn install_persistent_audit_sink(
                     })
                     .await;
                 match persistence {
-                    Ok(receipt) => {
+                    Ok(()) => {
                         tracing::debug!(
                             target: "audit.persistence",
-                            event_id = %receipt.event_id,
-                            sequence = receipt.sequence,
+                            event_id = %event.event_id,
                             persistence_status = "durable",
                             "security audit event appended"
                         );
@@ -236,11 +235,13 @@ pub(crate) async fn ensure_audit_storage() -> anyhow::Result<()> {
         .map_err(|error| {
             anyhow::anyhow!("durable security audit repository unavailable: {error}")
         })?;
-    let health =
-        required.repository.anchor_health().await.map_err(|error| {
+    if required.preflight.is_required() {
+        let health = required.repository.anchor_health().await.map_err(|error| {
             anyhow::anyhow!("durable security audit health unavailable: {error}")
         })?;
-    required.preflight.ensure_fresh(&health)
+        required.preflight.ensure_fresh(&health)?;
+    }
+    Ok(())
 }
 
 /// Append a high-impact audit outcome synchronously. Unlike [`audit_event`],
@@ -257,7 +258,7 @@ pub(crate) async fn audit_event_required(
     let Some(required) = REQUIRED_AUDIT_REPOSITORY.get() else {
         anyhow::bail!("durable security audit repository is not configured");
     };
-    let receipt = required
+    required
         .repository
         .append(SecurityAuditEvent {
             event_id: queued.event_id,
@@ -272,7 +273,7 @@ pub(crate) async fn audit_event_required(
         target: "audit",
         event,
         fields = %queued.payload,
-        sequence = receipt.sequence,
+        event_id = %queued.event_id,
         persistence_status = "durable",
         "security audit event"
     );

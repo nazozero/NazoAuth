@@ -1,4 +1,7 @@
-use std::sync::{Arc, Mutex};
+use std::sync::{
+    Arc, Mutex,
+    atomic::{AtomicUsize, Ordering},
+};
 
 use chrono::{Duration, Utc};
 use nazo_digital_credentials::{
@@ -16,7 +19,9 @@ use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 #[derive(Clone, Default)]
-struct RecordingStore;
+struct RecordingStore {
+    completed: Arc<AtomicUsize>,
+}
 
 impl PresentationStorePort for RecordingStore {
     fn create<'a>(
@@ -64,7 +69,10 @@ impl PresentationStorePort for RecordingStore {
         _result: &'a PresentationResult,
         _now: chrono::DateTime<Utc>,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
-        Box::pin(async { Ok(true) })
+        Box::pin(async move {
+            self.completed.fetch_add(1, Ordering::SeqCst);
+            Ok(true)
+        })
     }
 
     fn result<'a>(
@@ -147,6 +155,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
             credentials: vec![CredentialQuery {
                 id: "mdl".to_owned(),
                 format: CredentialFormat::MsoMdoc,
+                multiple: false,
                 meta: Some(json!({"doctype_value":"org.iso.18013.5.1.mDL"})),
                 claims: None,
                 claim_sets: None,
@@ -198,7 +207,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
     let recorded = Arc::new(Mutex::new(None));
     let recorded_trust = Arc::new(Mutex::new(Vec::new()));
     let service = PresentationService::new(
-        RecordingStore,
+        RecordingStore::default(),
         RecordingVerifier {
             transcript: recorded.clone(),
             trust_anchors: recorded_trust.clone(),
@@ -255,7 +264,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
     let unencrypted_recorded = Arc::new(Mutex::new(None));
     let unencrypted_trust = Arc::new(Mutex::new(Vec::new()));
     PresentationService::new(
-        RecordingStore,
+        RecordingStore::default(),
         RecordingVerifier {
             transcript: unencrypted_recorded.clone(),
             trust_anchors: unencrypted_trust,
@@ -306,7 +315,7 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
         "direct_post uses a null JWK thumbprint even when client_metadata contains JWKS"
     );
 
-    let error = PresentationService::new(RecordingStore, MissingHolderVerifier)
+    let error = PresentationService::new(RecordingStore::default(), MissingHolderVerifier)
         .verify_response(
             &transaction,
             &AuthorizationResponse {
@@ -324,4 +333,146 @@ async fn final_mdoc_handover_binds_verifier_key_and_request_context() {
         error,
         PresentationServiceError::Presentation(PresentationError::DcqlUnsatisfied)
     );
+}
+
+fn cardinality_transaction() -> PresentationTransaction {
+    let now = Utc::now();
+    PresentationTransaction {
+        id: Uuid::now_v7(),
+        client_id_prefix: ClientIdPrefix::RedirectUri,
+        request_method: RequestMethod::RequestUriSignedPost,
+        response_mode: ResponseMode::DirectPost,
+        wallet_authorization_endpoint: "https://wallet.example/authorize".to_owned(),
+        request: serde_json::from_value(json!({
+            "client_id": "redirect_uri:https://verifier.example/response",
+            "response_type": "vp_token",
+            "response_mode": "direct_post",
+            "response_uri": "https://verifier.example/response",
+            "nonce": "nonce",
+            "state": "state",
+            "dcql_query": {"credentials": [
+                {"id": "first", "format": "mso_mdoc", "meta": {}},
+                {"id": "second", "format": "mso_mdoc", "meta": {}}
+            ]}
+        }))
+        .unwrap(),
+        request_object: None,
+        request_uri: None,
+        openid4vc_trust_policy_binding_id: None,
+        openid4vc_trust_policy_resource_id: None,
+        openid4vc_trust_policy_digest: None,
+        response_encryption_private_key: None,
+        created_at: now,
+        expires_at: now + Duration::minutes(5),
+    }
+}
+
+#[tokio::test]
+async fn dcql_checks_all_returned_cardinalities_before_verification_or_completion() {
+    for (multiple, values, valid, expected_count) in [
+        (false, json!([]), false, 0),
+        (false, json!(["one"]), true, 2),
+        (false, json!(["one", "two"]), false, 0),
+        (true, json!([]), false, 0),
+        (true, json!(["one"]), true, 2),
+        (true, json!(["one", "two"]), true, 3),
+    ] {
+        let mut transaction = cardinality_transaction();
+        transaction.request.dcql_query.credentials[1].multiple = multiple;
+        let store = RecordingStore::default();
+        let transcript = Arc::new(Mutex::new(None));
+        let service = PresentationService::new(
+            store.clone(),
+            RecordingVerifier {
+                transcript: transcript.clone(),
+                trust_anchors: Arc::default(),
+            },
+        );
+        let result = service
+            .verify_response(
+                &transaction,
+                &AuthorizationResponse {
+                    vp_token: Some(json!({"first": ["valid-first"], "second": values})),
+                    state: Some("state".to_owned()),
+                    error: None,
+                    error_description: None,
+                },
+                &[],
+                Utc::now(),
+            )
+            .await;
+        if valid {
+            assert_eq!(result.unwrap().credentials.len(), expected_count);
+            assert_eq!(store.completed.load(Ordering::SeqCst), 1);
+        } else {
+            assert_eq!(
+                result.unwrap_err(),
+                PresentationServiceError::Presentation(PresentationError::DcqlUnsatisfied)
+            );
+            assert!(
+                transcript.lock().unwrap().is_none(),
+                "even the first valid query must remain unverified"
+            );
+            assert_eq!(store.completed.load(Ordering::SeqCst), 0);
+        }
+    }
+}
+
+#[tokio::test]
+async fn dcql_optional_queries_may_be_absent_but_not_malformed_or_overfilled() {
+    let mut transaction = cardinality_transaction();
+    transaction.request.dcql_query.credential_sets =
+        Some(vec![nazo_digital_credentials::CredentialSetQuery {
+            options: vec![vec!["first".to_owned()]],
+            required: true,
+        }]);
+    for (vp_token, expected) in [
+        (json!({"first": ["one"]}), None),
+        (
+            json!({"first": ["one"], "second": ["one", "two"]}),
+            Some(PresentationError::DcqlUnsatisfied),
+        ),
+        (
+            json!({"first": ["one"], "second": "not-an-array"}),
+            Some(PresentationError::InvalidResponse),
+        ),
+        (
+            json!({"first": ["one"], "unknown": ["one"]}),
+            Some(PresentationError::InvalidResponse),
+        ),
+    ] {
+        let store = RecordingStore::default();
+        let transcript = Arc::new(Mutex::new(None));
+        let service = PresentationService::new(
+            store.clone(),
+            RecordingVerifier {
+                transcript: transcript.clone(),
+                trust_anchors: Arc::default(),
+            },
+        );
+        let result = service
+            .verify_response(
+                &transaction,
+                &AuthorizationResponse {
+                    vp_token: Some(vp_token),
+                    state: Some("state".to_owned()),
+                    error: None,
+                    error_description: None,
+                },
+                &[],
+                Utc::now(),
+            )
+            .await;
+        if let Some(expected) = expected {
+            assert_eq!(
+                result.unwrap_err(),
+                PresentationServiceError::Presentation(expected)
+            );
+            assert!(transcript.lock().unwrap().is_none());
+            assert_eq!(store.completed.load(Ordering::SeqCst), 0);
+        } else {
+            assert_eq!(result.unwrap().credentials.len(), 1);
+            assert_eq!(store.completed.load(Ordering::SeqCst), 1);
+        }
+    }
 }
