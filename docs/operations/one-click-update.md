@@ -108,11 +108,13 @@ the exact operation ID, request hash, typed payload, artifact target, and
 configuration revision. A lost response replays the same operation; it does not
 mint a parallel task.
 
-Rollback only changes the runtime artifact when the signed release policy and
-live schema facts permit it. Once an irreversible migration has applied,
-`rollback` returns `ROLLBACK_RECOVERY_REQUIRED`, leaves the writer stopped, and
-requires `recover` from a verified snapshot. Database rollback is never
-inferred from artifact rollback.
+Rollback uses recorded execution and schema facts; release-manifest schema 7
+does not carry an asserted rollback policy. A pending applied migration fences
+artifact rollback and leaves the writer stopped on activation failure. A
+successful update that applied migrations clears the previous-artifact
+reference, as does database recovery. Only updates without migration retain
+the previous-artifact rollback path. Use `recover` with a verified snapshot
+when artifact rollback is fenced; database rollback is never inferred from it.
 
 ## Backup and restore evidence
 

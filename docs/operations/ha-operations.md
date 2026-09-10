@@ -15,11 +15,10 @@ timeout, and partial-outage rules for both.
 | PostgreSQL signing-key generation + deployment wrapping root | active, prepublished, and retained token-signing private/public keys plus request-object recipient | issued tokens can become unverifiable or signing continuity can break | restore the matching encrypted row and wrapping root before serving traffic |
 | Configured avatar storage | tenant-isolated local files or S3-compatible objects | profile media can be lost or desynchronized from PostgreSQL metadata | restore objects and metadata consistently; independent local disks are not shared storage |
 
-OpenID4VC mdoc certificate bundles and their IACA private material remain a
-separate deployment-owned authority. Every instance that serves the same mdoc
-tenant must mount the identical read-only certificate/IACA material; do not let
-separate instances mint replacement IACAs. The signing-key database generation
-does not store or synchronize that CA lifecycle.
+Managed OpenID4VC certificate chains, IACA private material, and local DS
+revocation facts live in the same encrypted tenant keyset aggregate. Replicas
+read that shared generation; they do not mount independent authority files or
+mint replacement IACAs. See [managed OpenID4VC state](mdoc-shared-state.md).
 
 ## State epoch and restore boundary
 
@@ -67,13 +66,18 @@ Restore rehearsal proves:
 - discovery, JWKS, login, authorization, token, introspection, and revocation endpoints start successfully against the restored database
 - refresh-token family state and revoked-token state remain consistent after restore
 
-Point-in-time restore can roll back security events. After any PostgreSQL restore, rotate administrative credentials, review OAuth clients changed near the restore window, and consider revoking refresh-token families issued after the selected recovery point.
+Point-in-time restore can roll back security events. Apply the state-epoch,
+refresh-invalidation, and ingress-deadline procedure above; review affected
+administrative credentials and OAuth client changes. Reconcile the restored
+ledger with the [external audit receiver](../security/audit-anchor.md) before
+resuming export.
 
 ## PostgreSQL Failure Behavior
 
 When PostgreSQL is unavailable or the pool is exhausted:
 
-- `/health` can remain a process-health check; external readiness checks include a database probe outside this service.
+- `/live` checks process liveness. `/health` probes the database,
+  transient state, and signing-key lifecycle and returns `503` when not ready.
 - Discovery and JWKS can still serve if the process has loaded the keyset and configuration. A failed lifecycle refresh immediately makes signing fail closed. Each database generation and any signing lease also has a two-hour hard expiry, so an old snapshot cannot remain usable indefinitely if lifecycle supervision is interrupted.
 - Login, consent, authorization code issuance, token issuance, refresh, introspection, revocation, admin APIs, profile APIs, and userinfo that requires durable lookup fail with server errors.
 - The service must not mint tokens, mark grants, or accept revocation/introspection decisions from stale or partial durable state.
@@ -133,7 +137,9 @@ PostgreSQL incident:
 2. Identify whether the issue is connectivity, pool exhaustion, primary failure, replication lag, storage, or data corruption.
 3. Fail over through the managed HA path when the primary is unhealthy.
 4. Restore from backup only after selecting a recovery point and documenting expected token/client/grant rollback.
-5. Run migrations and smoke checks against the recovered database.
+5. Apply the supported recovery procedure: use a new state epoch, invalidate
+   refresh tokens, reconcile audit checkpoints, and keep ingress closed through
+   the returned token-lifetime deadline. Run migrations and smoke checks.
 6. Review client, grant, refresh-token, and admin changes near the incident window.
 
 Valkey incident:
@@ -158,5 +164,6 @@ For each production environment, preserve:
 ## OpenID4VC authority state
 
 Managed mdoc certificates, IACA private material and revocation facts use the
-shared encrypted tenant keyset. See [migration and rotation](mdoc-shared-state.md)
-for the explicit import required by existing file-backed deployments.
+shared encrypted tenant keyset. See [import, rotation, and revocation](mdoc-shared-state.md).
+Import accepts complete externally prepared material for an existing current
+keyset; it is not an automatic historical-format conversion.

@@ -13,7 +13,6 @@ the current release or an unmeasured deployment.
 | Document | Role |
 | --- | --- |
 | [performance-capacity-curve.md](performance-capacity-curve.md) | Unified capacity benchmark overview across the main and extended matrices. |
-| [performance-benchmarks.md](performance-benchmarks.md) | Dated generated benchmark snapshot; it is not a current-release capacity claim. |
 | [summaries/performance-capacity-main-summary.md](summaries/performance-capacity-main-summary.md) | Main capacity matrix summary. |
 | [summaries/performance-capacity-extended-summary.md](summaries/performance-capacity-extended-summary.md) | Extended capacity matrix summary. |
 
@@ -22,9 +21,8 @@ the current release or an unmeasured deployment.
 | Group | Directory | Contents |
 | --- | --- | --- |
 | Main matrix | [reports/main](reports/main) | Token-only, OIDC, refresh-only, and FAPI2 logged-in capacity reports. |
-| Extended matrix | [reports/extended](reports/extended) | mTLS, PAR/JAR, introspection, revocation, discovery/JWKS, CIBA, and same-user contention reports. |
-| Special runs | [reports/special](reports/special) | App CPU and single-instance capacity experiments. |
-| Development archive | [archive/dev](archive/dev) | Historical development capacity reports. |
+| Extended matrix | [reports/extended](reports/extended) | mTLS, PAR/JAR, introspection, revocation, discovery/JWKS, and same-user contention reports. |
+| Special runs | [reports/special](reports/special) | App CPU experiments with retained raw results. |
 
 ## Evidence Model
 
@@ -59,5 +57,8 @@ the current release or an unmeasured deployment.
 - Put one-off CPU, single-instance, or experiment reports under
   `reports/special/`.
 - Keep generated JSON results and environment captures in `perf/results/`.
+  A report without its raw result is not a retained benchmark baseline.
+  Temporary paths in old environment captures describe that run, not a current
+  deployment recipe; use `perf/README.md` for current runner commands.
 - Update [performance-capacity-curve.md](performance-capacity-curve.md) and
   the relevant summary file when adding a durable scenario report.

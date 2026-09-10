@@ -37,7 +37,7 @@ export NAZOAUTH_POSTGRES_LIFECYCLE_PASSWORD='replace-with-a-different-lifecycle-
 export NAZOAUTH_SIGNING_KEY_ENCRYPTION_KEY_ID='deployment-signing-root'
 export NAZOAUTH_SIGNING_KEY_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
 export NAZOAUTH_VALKEY_PASSWORD='replace-with-a-unique-valkey-password'
-export NAZOAUTH_VALKEY_STATE_EPOCH='replace-with-a-new-uuid'
+export NAZOAUTH_VALKEY_STATE_EPOCH='replace-with-a-new-uuidv7'
 docker compose up -d --build
 docker compose ps
 ```
@@ -153,9 +153,16 @@ TLS_RELOAD_INTERVAL_SECONDS: 5
 DATABASE_URL: "postgresql://nazo_runtime:<password>@db.internal:5432/oauth"
 VALKEY_URL: "redis://default:<password>@valkey.internal:6379/0"
 VALKEY_STATE_EPOCH: "019c8ca2-30a6-7000-8000-00000000e102"
+SIGNING_KEY_ENCRYPTION_KEY_ID: "deployment-signing-root"
+SIGNING_KEY_ENCRYPTION_KEY_FILE: "/run/secrets/signing-key-encryption-key"
 DATA_DIR: "/var/lib/nazoauth"
 RUST_LOG: "info"
 ```
+
+Provision the referenced wrapping-root file once as an unpadded base64url
+32-byte key and keep it with the matching database backups. Initialize schema
+and tenant state through the signed managed lifecycle before starting the
+runtime role; this listener example does not replace install or migration.
 
 `BIND` and `TLS_BIND` use ports above 1024 so the long-running process does
 not need root or `CAP_NET_BIND_SERVICE`; the root account is only needed to
@@ -265,7 +272,8 @@ Activation requires all of these checks:
 3. `/health` returns HTTP 200;
 4. `/.well-known/openid-configuration` returns the configured issuer;
 5. the reverse proxy serves the same endpoints through the public HTTPS origin;
-6. signing-key and avatar volumes remain mounted after a service restart.
+6. encrypted signing-key state, its wrapping root, and configured avatar storage
+   remain available after a service restart.
 
 Inspect the non-secret deployment state with:
 
@@ -312,7 +320,8 @@ production:
 - define backup and restore procedures;
 - monitor PostgreSQL, Valkey, disk usage, and `/health`; use `/live` only for
   process restart decisions;
-- keep signing keys and avatars on durable storage;
+- keep encrypted keysets in durable storage, protect the wrapping root
+  separately, and retain the configured avatar objects;
 - use an external PostgreSQL/Valkey service or an orchestrator when HA is
   required;
 - require the exact-commit security and conformance gates described in

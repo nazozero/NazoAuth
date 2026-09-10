@@ -337,7 +337,7 @@ available only while the persisted `http_message_signatures` module is enabled o
 it is not an authorization-server profile, emits no metadata, and leaves every
 existing profile unchanged while disabled. The implementation is pinned to the
 working draft built 2026-06-26 and the RFC 9421/RFC 9530 primitives listed in
-the [dated audit](fapi-http-signatures-draft-audit.md). Local Rust vectors and
+the [resource contract](fapi-http-signatures.md). Local Rust vectors and
 real-HTTP positive/negative coverage are implementation evidence. A newer draft or Final Specification triggers a
 fresh delta audit before any version claim changes.
 

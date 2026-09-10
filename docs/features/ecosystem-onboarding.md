@@ -56,7 +56,7 @@ prerequisite-gated protocol surface.
   control plane, not a private extension of `/register`.
 - Software statement trust anchors, issuer/audience validation, expiry windows,
   replay prevention, metadata merge rules, and signed onboarding policy.
-- [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html)
+- [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html)
   automatic and explicit registration are separate trust protocols and are not
   partially emulated by the product approval endpoints.
 
@@ -105,7 +105,7 @@ initial-access-token-gated DCR surface.
 ### Separately scoped behavior
 
 - Software statement trust anchors and metadata merge policy.
-- [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html)
+- [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html)
   automatic or explicit registration.
 
 ## Client Onboarding Profiles
@@ -152,7 +152,7 @@ exposure paths.
   decisions to the deployment. [RFC 6024](https://www.rfc-editor.org/rfc/rfc6024.html)
   supplies trust-anchor-management requirements. The HTTP approval workflow is
   therefore product behavior with its own least-privilege boundary.
-- [OpenID Federation 1.0](https://openid.net/specs/openid-federation-1_0.html)
+- [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html)
   defines automatic and explicit registration through signed entity statements
   and trust chains. It is a possible future protocol, not a standards label for
   the current manual approval workflow.

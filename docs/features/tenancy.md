@@ -123,7 +123,34 @@ shared Valkey database as an install, update, rollback, or recovery shortcut.
 
 Directory administration and the control-tenant-only control routes are
 separate from request routing. A normal tenant administrator does not obtain
-control-plane authority by selecting a host. See the [runtime directory
-lifecycle](../project/multitenancy/runtime-directory-lifecycle.md) and [control
-plane and admin boundary](../project/multitenancy/control-plane-and-admin.md)
-for the signed mutation and convergence contract.
+control-plane authority by selecting a host. A system administrator must belong
+to the control tenant, be active, and have `admin_level >= 2`. The existing
+`PATCH /admin/tenants/{tenant_id}/users/{user_id}/admin` route owns cross-tenant
+administrator changes, with CSRF, recent MFA, locked authority rechecks, and
+durable audit.
+
+## Directory management and convergence
+
+Signed operator tasks own `tenant-directory-create`, `tenant-directory-update`,
+`tenant-directory-disable`, `tenant-directory-reload`,
+`tenant-directory-finalize`, and `tenant-directory-describe`. Mutations bind the
+deployment, operation identity, request hash, target tenant, and expected global
+directory revision. The repository locks and checks those facts, applies the
+change, appends audit, and persists the replay-safe outcome in one transaction.
+An exact retry returns its outcome; changing the payload under the same operation
+identity conflicts. `describe` reports global and per-binding runtime revisions.
+
+`reload` increments the target binding's runtime revision. It accepts no material
+path, URL, or provider selector. Each process reconstructs the affected graph
+through the ordinary candidate-publication path. Unchanged bindings reuse their
+existing graphs; replaced lifecycle work retires after publication. Requests
+already holding an old graph may finish. Disablement removes the binding from
+new request resolution after each process publishes the updated index;
+`finalize` removes the directory binding after dependency cleanup and does not
+physically erase tenant business data.
+
+PostgreSQL owns revisions and mutation decisions. The Valkey directory snapshot
+is derived state: missing, corrupt, or ahead-of-database cache data is corrected
+from PostgreSQL. Periodic database reconciliation provides convergence when the
+cache is unavailable. An invalid candidate leaves the complete last valid index
+and its workers serving until a valid replacement can be published.

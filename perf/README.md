@@ -79,10 +79,12 @@ replicas. It is intended for dedicated benchmark machines, not routine local
 verification.
 
 Results are written to `perf/results/*.summary.json` and
-`perf/results/*.k6.json`. Markdown entry-point reports are written to
-`docs/performance/performance-benchmarks.md` and
-`docs/performance/performance-capacity-curve.md`; scenario-specific capacity
-reports are grouped under `docs/performance/reports/`.
+`perf/results/*.k6.json`. Runners generate Markdown summaries and capacity
+reports under `docs/performance/`; a fresh summary is run output, not an
+automatically maintained repository baseline. Promote a report only with its
+raw JSON, source identity, and environment capture, and update the
+[performance index](../docs/performance/README.md). Keep temporary experiments
+in the run's artifact directory until they meet that evidence boundary.
 
 ## Load Model
 

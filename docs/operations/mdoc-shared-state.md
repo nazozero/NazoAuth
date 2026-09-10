@@ -75,5 +75,5 @@ record revision to prevent lost writes. A conflict fails explicitly and must be
 reviewed before repeating the operation. Neither command modifies other tenants.
 
 Back up the database and wrapping root together. Restarting an instance requires
-no local mdoc directory. These storage properties do not by themselves prove
-whole-system multi-instance acceptance or authorize closing issue #108.
+no local mdoc directory. Deployment validation must still exercise cross-instance
+issuance, verification, rotation, and recovery against the actual shared stores.

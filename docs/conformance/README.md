@@ -1,12 +1,12 @@
-# Product-owned black-box records
+# Protocol regression and certification
 
-This directory retains NazoAuth protocol regression contracts and Markdown
-evidence from external black-box validation. OIDF evidence belongs with the
-product whose behavior it verifies. It does not introduce validator-specific
+This directory maintains NazoAuth protocol regression contracts. Formal OIDF
+certification is linked to its public register and identified product version. It does not introduce validator-specific
 server routes, schema, configuration, credentials, orchestration or runtime
 evidence formats.
 
-The RFC 9967 SCIM SET matrix is a project-owned executable black-box contract.
+The [RFC 9967 SCIM SET matrix](rfc9967-scim-set-matrix.md) is a project-owned
+executable black-box contract.
 
 Third-party validators are ordinary external clients; they do not create a
 server-side protocol or evidence exception.
@@ -19,11 +19,10 @@ FAPI-CIBA, OID4VCI 1.0 + HAIP 1.0, and OID4VP 1.0 + HAIP 1.0. The
 [README certification table](../../README.md#openid-certified) links each
 official register and lists the complete profiles and registration dates.
 
-## Product regression evidence
+## Run-specific evidence
 
-- [2026-09-06 Direct TLS and trusted proxy candidate acceptance](oidf-2026-09-06-dual-mode-candidate.md)
-  records the candidate's binary identities, original outcomes, manual review,
-  cleanup, certificate lifecycle, and signed evidence digests.
-- [2026-09-06 official-release acceptance](oidf-2026-09-06-official-release.md)
-  records the distributed artifacts and black-box result. It is engineering
-  acceptance for the identified artifacts, not an OIDF certification claim.
+Keep candidate runs, manual review, acceptance logs, and artifact digests in
+CI artifacts or the associated issue/PR. A successful external test run applies
+to the identified artifact and is not a certification for later versions.
+Maintained commands and evidence formats belong to the controller's
+[OIDF artifact guide](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/oidf-artifacts.md).

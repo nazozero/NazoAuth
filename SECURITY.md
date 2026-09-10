@@ -5,8 +5,10 @@ vulnerabilities privately before public disclosure.
 
 ## Supported Versions
 
-The project is pre-release. Security fixes are maintained on `main` until
-versioned releases are established.
+The project is pre-0.5 and releases versioned artifacts. Security fixes land on
+`main` and are published in new releases; older versions do not have a separate
+maintenance promise. Use the release notes and the controller's
+current format policy when planning an update or recovery.
 
 ## Reporting a Vulnerability
 
@@ -50,8 +52,12 @@ Production deployments treat these as hard security boundaries:
 - `COOKIE_SECURE` must be `true`.
 - `TRUSTED_PROXY_CIDRS` must include only controlled reverse proxies.
 - Reverse proxies must strip inbound forwarded, mTLS, and certificate headers before adding trusted values.
-- Private signing keys must be backed up and protected with least-privilege filesystem access.
+- Tenant signing and mdoc authority keysets are encrypted in shared durable
+  storage. Protect and back up their independent wrapping roots separately;
+  missing roots cannot be repaired by generating new keys.
 - PostgreSQL and Valkey must not be exposed to untrusted networks.
+- Tenant routing, operator admission, audit durability, and external receiver
+  trust are defined in the [Threat Model](docs/security/threat-model.md).
 
 ## Disclosure
 

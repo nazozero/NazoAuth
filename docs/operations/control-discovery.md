@@ -57,41 +57,13 @@ and fixed vectors live only in `crates/operator-protocol`. Controllers consume
 the protocol version shipped by the supported NazoAuth release; they do not
 copy protocol code.
 
-The management OpenID4VP create request carries a caller-generated,
-non-secret `create_request_jti` in canonical lowercase UUID form. The caller
-must reuse that JTI for automatic retries. NazoAuth binds it to the tenant and
-to canonical JSON of the fully default-expanded create request. An exact retry
-during the transaction retention window returns the same transaction,
-authorization URL, original `expires_in`, JTI, and create-request digest; the
-same JTI with different normalized input returns `409`. Once bounded cleanup
-removes the expired transaction, the JTI may be reused and creates a new
-transaction. Controllers must therefore never deliberately recycle create
-JTIs.
+First admission validates the active Controller key and its validity window.
+After acceptance, the exact operation ID and request hash select the durable
+journal record; a retry recovers that request's state or result even if the key
+has since retired. A new request signed by a retired key is rejected. Unknown
+executing outcomes require recovery by the owning operation, not blind replay.
 
-OpenID4VP verification intents and success receipts are also signed by the
-current instance identity. Receipt issuance is available for at most 600
-seconds after successful completion, and each public receipt is valid for at
-most 600 seconds after issuance. This deployment has no historical instance
-keyring for those receipts: before replacing or removing an instance identity,
-operators must stop new evidence attachment/issuance and drain both bounded
-windows. A receipt signed by any key other than the live discovery identity
-fails closed; key rotation must not overlap an active receipt window.
-
-Result and capability AEAD associated data binds tenant, transaction, evidence
-context, presentation-request digest, exact trust-policy tuple, and signed
-intent digest; capability ciphertext additionally binds the issuance JTI.
-Migration `20260828000600` deletes every pre-binding transaction and makes the
-create-request binding columns mandatory. Reads accept only the domain- and
-tenant-bound AEAD contract; transaction-ID-only ciphertext is never retried or
-reinterpreted.
-
-The database cleanup function deletes at most 256 expired transactions per
-call, uses the indexed effective expiry deadline, and is invoked before
-management create, evidence attach, and receipt issuance repository work. No
-new resident cleanup worker is introduced.
-
-The database itself does not provide an external monotonic rollback anchor. A
-whole-database rollback could therefore restore an older signed state. Normal
-APIs prevent JTI reuse and receipts expire within 600 seconds, but protection
-against storage-snapshot rollback requires an external monotonic deployment
-or backup-generation control and is outside this protocol revision.
+The database and local identity files do not provide an independent monotonic
+rollback anchor. Recovery must reconcile deployment, accepted release, journal,
+and backup state. These identity statements do not replace the
+[external audit receiver](../security/audit-anchor.md).

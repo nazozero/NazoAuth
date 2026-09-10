@@ -4,14 +4,16 @@ This document is normative for this implementation. A capability marked **Never
 supported by security policy** has no runtime flag, metadata advertisement,
 client field, or hidden compatibility path. Reintroducing one requires a new
 threat model, standards evidence, negative tests, metadata-truth tests, and an
-explicit policy reversal in the same review.
+explicit policy reversal in the same review. Some exclusions are stricter product
+choices; a normative reference must not be represented as prohibiting values
+that the standard permits.
 
 ## Never supported by security policy
 
 | Capability | Decision and evidence |
 | --- | --- |
 | OAuth implicit grant and OIDC Implicit OP | **Never supported by security policy.** OAuth 2.0 Security BCP describes authorization-code injection and access-token leakage defenses and recommends code-based flows; OAuth 2.1 omits the implicit grant. The authorization endpoint issues only `code`. See [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) and the [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/). |
-| OIDC Hybrid OP | **Never supported by security policy.** OIDC Core defines Hybrid Flow, but it exposes ID Tokens and/or access tokens through the browser front channel before token-endpoint exchange. That creates the same browser, URL, history, Referer, script, and intermediary exposure class that [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) deprecates for implicit-style token delivery. The supported interactive profile uses authorization code, with PKCE and sender constraints where required. |
+| OIDC Hybrid OP | **Never supported by security policy.** NazoAuth limits interactive responses to `code`. [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) explicitly allows `code id_token` when access tokens are issued only at the token endpoint. Excluding that response is a stricter product choice, not an RFC prohibition. Hybrid responses that return access tokens in the authorization response retain the leakage and replay risks discussed by that section. |
 | Resource Owner Password Credentials grant | **Never supported by security policy.** RFC 9700 Section 2.4 says this grant **MUST NOT** be used. |
 | Authorization code without PKCE for public, FAPI, sender-constrained, or non-OIDC clients; and `plain` PKCE for every client | **Never supported by security policy.** RFC 9700 Section 2.1.1 requires PKCE for public clients, recommends it for confidential clients, and identifies `S256` as the method that does not expose the verifier. Baseline confidential OIDC code flow remains interoperable with OIDC Core when PKCE is absent; all hardened profiles require S256. See also [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636.html). |
 | Unsigned Request Objects (`alg=none`) | **Never supported by security policy.** [RFC 9101 Section 4](https://www.rfc-editor.org/rfc/rfc9101.html#section-4) requires a Request Object to be signed or signed and then encrypted, and [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) requires strict algorithm verification. Discovery advertises only executable asymmetric signing algorithms. |

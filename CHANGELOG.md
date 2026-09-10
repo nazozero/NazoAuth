@@ -106,9 +106,9 @@ releases. Entries below describe their respective releases, not current support.
   in its path. Existing local avatars require manual migration before cutover.
 - Report configured storage failures without silently switching backends.
 
-See `docs/operations/avatar-direct-upload.md` and
-`docs/operations/shared-runtime-state-verification.md` for migration steps and
-verification boundaries. This release does not complete Issue #108's remaining
+See [avatar storage](docs/operations/avatar-direct-upload.md) and
+[HA operations](docs/operations/ha-operations.md) for current storage and recovery
+guidance. This release does not complete Issue #108's remaining
 mdoc material and whole-system multi-instance acceptance work.
 
 ## 0.2.8 - 2026-09-02

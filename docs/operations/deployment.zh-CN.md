@@ -26,7 +26,7 @@ export NAZOAUTH_POSTGRES_LIFECYCLE_PASSWORD='请替换为不同的lifecycle密�
 export NAZOAUTH_SIGNING_KEY_ENCRYPTION_KEY_ID='deployment-signing-root'
 export NAZOAUTH_SIGNING_KEY_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
 export NAZOAUTH_VALKEY_PASSWORD='请替换为唯一的Valkey密码'
-export NAZOAUTH_VALKEY_STATE_EPOCH='请替换为新生成的UUID'
+export NAZOAUTH_VALKEY_STATE_EPOCH='请替换为新生成的UUIDv7'
 docker compose up -d --build
 docker compose ps
 ```
@@ -120,9 +120,15 @@ TLS_RELOAD_INTERVAL_SECONDS: 5
 DATABASE_URL: "postgresql://nazo_runtime:<password>@db.internal:5432/oauth"
 VALKEY_URL: "redis://default:<password>@valkey.internal:6379/0"
 VALKEY_STATE_EPOCH: "019c8ca2-30a6-7000-8000-00000000e102"
+SIGNING_KEY_ENCRYPTION_KEY_ID: "deployment-signing-root"
+SIGNING_KEY_ENCRYPTION_KEY_FILE: "/run/secrets/signing-key-encryption-key"
 DATA_DIR: "/var/lib/nazoauth"
 RUST_LOG: "info"
 ```
+
+引用的包装根文件需预先写入一个以无填充 base64url 编码的 32 字节密钥，只生成一次，
+并与对应数据库备份配套保存。启动 runtime role 前，通过签名受管生命周期初始化 schema
+和租户状态；这里的 listener 示例不替代安装或迁移流程。
 
 `BIND` 和 `TLS_BIND` 使用大于 1024 的端口，因此长期运行的进程不需要 root 或
 `CAP_NET_BIND_SERVICE`；root 只用于准备文件和目录。如果客户端必须通过公开的 443 端口
@@ -206,7 +212,7 @@ subject/issuer DN 的叶证书可能被 OpenSSL/HAProxy 判为自签证书并拒
 3. `/health` 返回 HTTP 200；
 4. `/.well-known/openid-configuration` 返回配置的 issuer；
 5. 反向代理通过公开 HTTPS origin 提供相同接口；
-6. 服务重启后签名密钥和头像卷仍保持挂载。
+6. 服务重启后仍可访问加密签名 keyset、独立包装根及配置的头像存储。
 
 查看脱敏后的部署与审计状态：
 
@@ -246,7 +252,7 @@ snapshot 恢复。完整边界见[一键安装与升级](one-click-update.zh-CN.
 - 在适当的秘密管理系统中保存显式配置的 PostgreSQL 与 Valkey 凭据；
 - 建立可验证的备份和恢复流程；
 - 监控 PostgreSQL、Valkey、磁盘空间和 `/health`；仅用 `/live` 判断是否应重启进程；
-- 将签名密钥和头像放在持久存储上；
+- 将加密 keyset 放在持久存储上，独立保护包装根，并保留配置的头像对象；
 - 需要 HA 时改用外部 PostgreSQL/Valkey 或编排平台；
 - 对精确提交执行
   [release-security.md](release-security.md) 中的安全与一致性闸门。

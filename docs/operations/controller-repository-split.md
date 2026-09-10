@@ -13,9 +13,11 @@ released package version by server tag. Tagged server Releases additionally
 publish that exact package with provenance so later controller dependency
 updates have an immutable review subject; the compiled controller never
 downloads it during recovery. The server Release manifest schema 7
-contains `operator_protocol.version`, `minimum_ctl_version`, and
-`maximum_ctl_version_exclusive`; missing, malformed, or unsupported contracts
-fail closed.
+binds `operator_protocol.version`. Interoperability uses the accepted protocol
+version and manifest schema, not a separately maintained controller SemVer
+range. Missing, malformed, or unsupported contracts fail closed; the controller
+[compatibility contract](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/compatibility.md)
+is the authority for its accepted formats.
 
 The same crate owns the signed online discovery and offline deployment
 statement contracts; see [control discovery](control-discovery.md). These

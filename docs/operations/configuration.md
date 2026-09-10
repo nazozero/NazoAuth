@@ -41,12 +41,21 @@ TRUSTED_PROXY_CIDRS: "127.0.0.1/32"
 MTLS_CERTIFICATE_SOURCE: "disabled"
 DATABASE_URL: "postgresql://nazo_oauth:<password>@postgres:5432/oauth"
 VALKEY_URL: "redis://valkey:6379/0"
+VALKEY_STATE_EPOCH: "<fresh UUIDv7 for this deployment>"
+SIGNING_KEY_ENCRYPTION_KEY_ID: "deployment-signing-root"
+SIGNING_KEY_ENCRYPTION_KEY_FILE: "/run/secrets/signing-key-encryption-key"
 DATA_DIR: "/var/lib/nazo_oauth"
 CLIENT_SECRET_PEPPER: "<random 32+ byte secret>"
 TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY: "<base64url-encoded 32-byte key>"
 TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID: "response-2026-08"
 RUST_LOG: "info"
 ```
+
+Replace all placeholders, supply the deployment wrapping root as an unpadded
+base64url 32-byte key in the referenced file, and initialize the current schema
+and tenant directory through the deployment lifecycle before serving traffic.
+Reuse the same wrapping root and state epoch on ordinary restarts; a restore
+uses the [recovery procedure](ha-operations.md#state-epoch-and-restore-boundary).
 
 `DATA_DIR` defaults the persistent file locations:
 
@@ -132,6 +141,10 @@ The supported pairs are:
 | `OPENID4VP_VERIFIER_MANAGEMENT_TOKEN` | `OPENID4VP_VERIFIER_MANAGEMENT_TOKEN_FILE` |
 
 Use the exact pair names above; the code allowlist is authoritative.
+The independent audit worker additionally accepts `AUDIT_ANCHOR_TOKEN_FILE`;
+that input is not loaded into the server process. See
+[audit anchoring](../security/audit-anchor.md#configuration) for its separate
+configuration and database credentials.
 
 ## Local mdoc certificates and CRLs
 
@@ -143,23 +156,18 @@ temporary tenant is materialized. Tenant-local settings inherit this root
 configuration through the existing directory-binding path; the OIDF resource
 Apply does not carry a second country value.
 
-Existing locally generated mdoc bundles predate this profile and must be
-regenerated through the normal tenant-local key generation path after the
-setting is present. Generation writes a non-public IACA key under the tenant's
-OpenID4VC material directory, named by the IACA certificate fingerprint, then
-atomically activates the public DS/IACA bundle. The public bundle never contains
-that private key.
+Tenant bootstrap or key generation commits the certificate chain, IACA private
+material, and local revocation facts in the encrypted shared tenant keyset.
+Normal startup reads this aggregate; it does not create or reload authority
+files. The public keyset never exposes IACA private material.
 
-The DS publishes `/.well-known/mdoc/<iaca-sha256>.crl`. It is signed for each request from
-that IACA's retained key and contains only that IACA's DS when the existing
-revocation snapshot marks it `revoked`. A snapshot must contain an explicit
-`good` or `revoked` entry for that DS and remain within its `this_update` /
-`next_update` interval; missing, stale, or mismatched private-key material makes
-the CRL unavailable rather than returning an empty success response. Preserve
-the snapshot's revocation entries when updating it, and advance `this_update`
-on every change; this timestamp also identifies the CRL revision. Each private IACA PEM record
-also retains its DS and CA certificates, so rotation preserves the old CRL URL
-and its signer. Keep these records for the lifetime of the issued credentials.
+The DS publishes `/.well-known/mdoc/<iaca-sha256>.crl`. Each request reads the
+current durable authority state and signs with that IACA's retained key. A
+revoked DS appears with its recorded revocation time; missing or inconsistent
+authority material fails closed. Rotation retains historical IACA records and
+CRL URLs for already issued credentials. See
+[managed OpenID4VC state](mdoc-shared-state.md) for import, refresh windows,
+rotation, and revocation commands.
 
 ## Derived settings
 
@@ -279,7 +287,7 @@ Operators own client-key provisioning and revocation, clock synchronization,
 Valkey availability for atomic replay consumption, server signing-key custody,
 and signed-message evidence retention. A replay-store or response-signing
 failure returns a signed error when possible and never falls back to an
-unsigned success. See the [dated draft audit](../protocol/fapi-http-signatures-draft-audit.md).
+unsigned success. See the [experimental resource contract](../protocol/fapi-http-signatures.md).
 
 ## Public OP/AS security boundary
 

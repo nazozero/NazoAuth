@@ -62,8 +62,10 @@ The project separates three surfaces:
 - `tls_client_auth` supports subject DN and SAN matching.
 - `self_signed_tls_client_auth` uses registered client certificates with
   rotation semantics.
-- Signing keys support active, previous, retired, file-backed, KMS/HSM, and
-  external-command backends.
+- Signing keys use encrypted tenant database generations and an independently
+  protected wrapping root, with prepublished, active, grace, and retired states.
+  An external-command signer supports provider integration; hardware custody
+  and recovery require evidence from the selected KMS/HSM provider.
 - External signer output is locally verified against the active public JWK
   before a JWT is returned.
 - OpenTelemetry, structured security events, SBOM generation, dependency
@@ -121,8 +123,7 @@ Each item has a threat-model and acceptance-test entry in
 ## Evidence
 
 - Black-box protocol evidence: project-owned protocol tests.
-- OAuth 2.1 and best-practice audit:
-  [oauth2-1-self-audit.md](../protocol/oauth2-1-self-audit.md).
+- Current profile behavior: [profile matrix](../protocol/profile-matrix.md).
 - Negative protocol behavior: the relevant implementation tests and the
   [RFC compliance matrix](../protocol/rfc-compliance-matrix.md) are the current
   evidence index.

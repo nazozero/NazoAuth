@@ -75,7 +75,7 @@ nazoauthctl rollback --instance production
 
 更新只解析并验证一个不可变制品，签发一个 canonical `ControlOperation`，并在激活前通过目标机 journaled lifecycle 执行迁移。durable `ControlResult` 必须同时绑定 operation ID、request hash、typed payload、目标制品与配置 revision。响应丢失只会重放同一操作。
 
-回滚仅在签名 release policy 与实时 schema 事实允许时切换 runtime 制品。不可逆迁移一旦应用，`rollback` 会返回 `ROLLBACK_RECOVERY_REQUIRED`、保持 writer 停止，并要求从已验证 snapshot 执行 `recover`；它不会暗示数据库已回滚。
+回滚依据已经记录的执行和 schema 事实，release-manifest schema 7 不再声明回滚策略。待完成操作中已应用的迁移会阻止制品回滚，激活失败时 writer 保持停止。成功应用迁移的更新和数据库恢复都会清除 previous-artifact 引用；只有未执行迁移的更新保留旧制品回滚路径。被阻止时应从已验证 snapshot 执行 `recover`，不能把切换制品视为数据库回滚。
 
 ## 备份与恢复实证
 

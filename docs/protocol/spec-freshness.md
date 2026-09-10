@@ -1,6 +1,7 @@
 # Protocol Source Freshness
 
-Last official-source review: 2026-09-09. The inventory contains 98 sources;
+Mutable-source review: 2026-09-09. The inventory contains 104 sources, including
+six immutable RFC references added for the integration guides on 2026-09-10;
 four expired individual drafts remain on the watchlist and intentionally fail
 the online freshness gate. This date does not claim an implementation audit.
 
@@ -48,7 +49,9 @@ suites are not version authorities.
 
 The inventory also verifies the canonical pages and status markers for OIDC,
 FAPI 2.0, OpenID4VC, OpenID Federation, and every immutable RFC used by active
-protocol documentation.
+protocol and integration documentation, including both integration translations.
+The fixed OpenID4VCI draft-07 contract is an explicit profile pin in each guide;
+it does not replace the separately tracked current draft.
 
 ## September source changes and implementation boundaries
 

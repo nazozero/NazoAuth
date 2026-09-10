@@ -204,11 +204,13 @@ released artifacts and never builds source; see
 
 ## Compatibility and Verification
 
-Internal Rust APIs may change before the first stable release, but protocol and
-data contracts remain invariants: routes, configuration keys, migration
-history, PostgreSQL data, Valkey keys/payloads/TTL, token claims, OAuth/OIDC
-errors, discovery, and OIDC/FAPI/CIBA behavior. Contract tests must be in place
-before moving an implementation across a boundary.
+Within an implementation refactor, preserve the selected current contracts:
+routes, configuration, migration history, persisted data, transient-state
+keys/payloads/TTL, token claims, protocol errors, discovery, and profile behavior.
+Contract tests must be in place before moving an implementation across a
+boundary. This does not promise compatibility with historical releases: before
+0.5.0, unsupported configuration, state, and control-message formats are rejected
+rather than implicitly converted. See the [update and recovery contract](../operations/one-click-update.md).
 
 Production/test source boundaries, private-unit mounts, support seams, and
 integration-test placement are normative in [testing.md](testing.md). The

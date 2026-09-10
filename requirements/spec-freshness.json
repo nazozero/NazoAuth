@@ -2,13 +2,16 @@
   "schema_version": 1,
   "reviewed_at": "2026-09-09",
   "active_document_globs": [
-    "docs/protocol/*.md"
+    "docs/protocol/*.md",
+    "docs/integration/*.md"
   ],
   "active_document_paths": [
     "README.md",
     "docs/conformance/README.md"
   ],
   "allowed_profile_draft_pins": [
+    {"path":"docs/integration/openid-connect.md","document":"draft-ietf-oauth-attestation-based-client-auth","revision":"07","basis":"OpenID4VCI 1.0 Final section 14.7 normatively fixes draft-07; draft-11 remains the separately tracked mutable baseline."},
+    {"path":"docs/integration/openid-connect.zh-CN.md","document":"draft-ietf-oauth-attestation-based-client-auth","revision":"07","basis":"OpenID4VCI 1.0 Final section 14.7 normatively fixes draft-07; draft-11 remains the separately tracked mutable baseline."},
     {
       "path": "docs/protocol/oauth-spec-implementation-backlog.md",
       "document": "draft-ietf-oauth-attestation-based-client-auth",
@@ -23,7 +26,6 @@
     }
   ],
   "expected_file_markers": {
-    "docs/protocol/oauth2-1-self-audit.md": ["draft-ietf-oauth-v2-1-16"],
     "docs/protocol/rfc-compliance-matrix.md": ["draft-ietf-oauth-v2-1-16", "RFC 10017", "RFC 10027", "draft-ietf-oauth-rfc7523bis-11", "draft-ietf-oauth-status-list-21", "Not supported (planned)", "draft-aap-oauth-profile-01", "draft-parecki-oauth-global-token-revocation-06", "Watch only"],
     "docs/protocol/oauth-spec-implementation-backlog.md": ["fapi-ciba-03", "Stable ID1 compatibility", "draft-ietf-oauth-attestation-based-client-auth-11", "draft-ietf-oauth-transaction-tokens-11", "draft-ietf-oauth-client-id-metadata-document-02", "draft-ietf-oauth-security-topics-update-03", "draft-ietf-oauth-refresh-token-expiration-03", "draft-ietf-oauth-first-party-apps-04", "draft-ietf-oauth-identity-chaining-17", "draft-ietf-oauth-status-list-21", "draft-ietf-oauth-rfc8725bis-10", "draft-ietf-oauth-spiffe-client-auth-02", "draft-ietf-oauth-identity-assertion-authz-grant-04", "draft-ietf-oauth-rfc7523bis-11", "RFC 10027", "draft-ietf-oauth-sd-jwt-vc-19", "draft-aap-oauth-profile-01", "draft-li-oauth-delegated-authorization-03", "draft-mcguinness-oauth-mission-00", "draft-parecki-oauth-global-token-revocation-06", "oauth-v2-grant-management-03", "stable ID1", "draft 07 / Second Implementer's Draft"],
     "docs/protocol/spec-freshness.md": ["draft-ietf-oauth-v2-1-16", "RFC 10017", "draft-ietf-oauth-attestation-based-client-auth-11", "draft-ietf-oauth-transaction-tokens-11", "draft-ietf-oauth-client-id-metadata-document-02", "draft-ietf-oauth-security-topics-update-03", "draft-ietf-oauth-refresh-token-expiration-03", "draft-ietf-oauth-first-party-apps-04", "draft-ietf-oauth-identity-chaining-17", "draft-ietf-oauth-status-list-21", "draft-ietf-oauth-rfc8725bis-10", "draft-ietf-oauth-spiffe-client-auth-02", "draft-ietf-oauth-identity-assertion-authz-grant-04", "draft-ietf-oauth-rfc7523bis-11", "RFC 10027", "draft-ietf-oauth-sd-jwt-vc-19", "draft-aap-oauth-profile-01", "draft-li-oauth-delegated-authorization-03", "draft-mcguinness-oauth-client-instance-assertion-01", "draft-parecki-oauth-global-token-revocation-06", "draft-ietf-httpbis-layered-cookies-02", "fapi-ciba-03", "oauth-v2-grant-management-03", "Second Implementer's Draft"],
@@ -67,6 +69,12 @@
     {"id":"oauth-browser-session-handoff","title":"Browser Session Establishment Using OAuth 2.0 Token Exchange and Short-Lived Authorization Codes","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-moros-oauth-browser-session-handoff/","document":"draft-moros-oauth-browser-session-handoff","revision":"00"},
     {"id":"httpbis-layered-cookies","title":"Cookies: HTTP State Management Mechanism","kind":"ietf_draft","url":"https://datatracker.ietf.org/doc/draft-ietf-httpbis-layered-cookies/","document":"draft-ietf-httpbis-layered-cookies","revision":"02"},
 
+    {"id":"rfc4514","title":"Lightweight Directory Access Protocol (LDAP): String Representation of Distinguished Names","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc4514","number":4514,"markers":["RFC 4514","Lightweight Directory Access Protocol (LDAP): String Representation of Distinguished Names"]},
+    {"id":"rfc4517","title":"Lightweight Directory Access Protocol (LDAP): Syntaxes and Matching Rules","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc4517","number":4517,"markers":["RFC 4517","Lightweight Directory Access Protocol (LDAP): Syntaxes and Matching Rules"]},
+    {"id":"rfc5280","title":"Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc5280","number":5280,"markers":["RFC 5280","Internet X.509 Public Key Infrastructure Certificate and Certificate Revocation List (CRL) Profile"]},
+    {"id":"rfc6024","title":"Trust Anchor Management Requirements","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc6024","number":6024,"markers":["RFC 6024","Trust Anchor Management Requirements"]},
+    {"id":"rfc7517","title":"JSON Web Key (JWK)","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7517","number":7517,"markers":["RFC 7517","JSON Web Key (JWK)"]},
+    {"id":"rfc8037","title":"CFRG Elliptic Curve Diffie-Hellman (ECDH) and Signatures in JSON Object Signing and Encryption (JOSE)","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc8037","number":8037,"markers":["RFC 8037","CFRG Elliptic Curve Diffie-Hellman (ECDH) and Signatures in JSON Object Signing and Encryption (JOSE)"]},
     {"id":"rfc6749","title":"The OAuth 2.0 Authorization Framework","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc6749","number":6749,"markers":["RFC 6749","The OAuth 2.0 Authorization Framework"]},
     {"id":"rfc6750","title":"OAuth 2.0 Bearer Token Usage","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc6750","number":6750,"markers":["RFC 6750","Bearer Token Usage"]},
     {"id":"rfc7009","title":"OAuth 2.0 Token Revocation","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc7009","number":7009,"markers":["RFC 7009","OAuth 2.0 Token Revocation"]},

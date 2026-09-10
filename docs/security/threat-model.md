@@ -1,100 +1,90 @@
 # Threat Model
 
-## Scope
+## Scope and invariants
 
-The threat model covers the current authorization-server boundary. Update it
-in the same change that adds a profile, changes deployment topology, changes
-token format, or expands discovery metadata.
+This model covers the authorization server, tenant runtime, operator protocol,
+and their persistence and transport boundaries. PostgreSQL and Valkey are the
+current adapters; domain and persistence ports define ownership independently
+of those products. The controller has its own repository and release boundary.
+
+The central invariants are tenant-bound authority, client-bound credentials,
+atomic acceptance of security state, verified release and operation identity,
+and an explicit distinction between local evidence and external observation.
+Update this model when one of those invariants or its implementation changes.
 
 ## Assets
 
-- Authorization codes
-- Access tokens
-- Refresh tokens
-- ID Tokens
-- DPoP proofs and nonces
-- Client assertions
-- Request objects and PAR handles
-- User sessions and CSRF tokens
-- Signing keys and JWKS metadata
-- PostgreSQL durable state
-- Valkey transient security state
-- Discovery metadata
-- Audit logs
-- Signed Release manifests and artifact/OCI content digests
-- Registered deployment Controller keys and the independent Recovery Secret
-- Signed ControlOperation requests, application journals, typed outcomes, and security audit events
-- Database backups and recovery metadata
+- Authorization codes, PAR handles, request objects, client assertions, DPoP
+  proofs and nonces, access/refresh/ID tokens, and encrypted issuance responses.
+- User credentials, password hashes, MFA and passkey material, browser sessions,
+  consent, federation links, and tenant-scoped SCIM and OpenID4VC records.
+- Tenant signing and mdoc authority keysets, their independent wrapping roots,
+  external signer credentials, public keys, and discovery metadata.
+- Durable security state, transient replay/session/rate state, state epochs,
+  database backups, and recovery metadata.
+- Signed Release manifests, exact artifact digests, registered Controller keys,
+  Recovery Roots and offline Recovery Secrets, and instance TLS identities.
+- Signed ControlOperation requests, application journals, typed outcomes,
+  local audit events, outbox entries, and externally retained checkpoints.
 
-## Trust Boundaries
+## Trust boundaries
 
-| Boundary | Trusted side | Untrusted side | Required control |
-| --- | --- | --- | --- |
-| Browser to AS | AS endpoints | Browser, user-agent plugins, network attackers before TLS | HTTPS issuer, CSRF protection, redirect URI validation, PKCE |
-| Client to AS | AS endpoints | OAuth clients, compromised clients, malicious clients | Client registration policy, client authentication, PAR/JAR validation |
-| Reverse proxy to app | Configured trusted proxy CIDRs | Direct client traffic and untrusted proxies | `TRUSTED_PROXY_CIDRS`, header stripping, trusted internal channel |
-| Direct TLS peer to app | Rustls listener and verified TLS session | Forged certificate headers and untrusted client certificates | `TRANSPORT_MODE=direct-tls`, server identity, client CA verification, TLS connection-derived certificate facts |
-| App to PostgreSQL | Application process | Database network and operators outside least privilege | credentials, network isolation, backups, migration controls |
-| App to Valkey | Application process | Cache network and cache data loss | fail-closed replay/rate/session behavior |
-| AS to resource server | Resource server verifier | Token replay and wrong-audience use | issuer/audience/cnf validation, revocation or introspection fallback |
-| Host operator to target runtime | Root-owned `nazoauthctl` and registered deployment identity | Malicious local user, stale controller, wrong image/binary, replayed task | exact Release verification, actual OCI/binary digest, signed canonical ControlOperation on stdin, exact operation-id/request-hash journal |
-| `nazoauthctl` to container engine | Reviewed typed lifecycle operations | Compromised daemon, mutable image name, over-broad mounts/network | signed image digest check, operation-specific mount/network profile, non-root/read-only task container, no engine socket in task |
-| `nazoauthctl` to host runtime | Root-owned config and verified binary | Untrusted service account and ambient host filesystem/network | actual binary digest, `systemd-run` transient unit, fixed user, protected filesystem, explicit read/write paths and address families |
-| Controller identity to application task | Active Controller Registry slot for the deployment | Forged/expired/wrong-deployment/wrong-target envelope and retired key | fixed EdDSA/typ/kid/schema, deployment and target binding, closed claims, first-admission key validity, exact replay claim before mutation |
-| Secret input to dependency/application | stdin/FD or root-owned secret mount | argv, ordinary environment, inspect, journal, audit and persisted JWS | secret-file/provider adapters, opaque revision or keyed HMAC binding, sanitized child errors |
-| Release trust to deployment trust | Exact GitHub workflow identity and root-owned accepted-state record | downgrade, same-version substitution, controller impersonation | Sigstore bundle, closed manifest, SemVer anti-downgrade, protocol-version floor, Controller Registry |
-| Recovery Secret to controller recovery | Offline Recovery Secret derived from the active Recovery Root | missing/stolen controller and replay of old recovery material | explicit challenge, HKDF-derived proof, bounded attempts, atomic Controller slot replacement and Recovery Root rotation |
-| Local audit to external observer | Signed/hash-linked local chain | host root able to delete or replace all local state | offline verification detects ordinary tamper; no immutability claim without a separately configured real external witness |
+| Boundary | Required control and residual boundary |
+| --- | --- |
+| Browser or OAuth client to server | HTTPS issuer, exact redirect validation, client authentication, PKCE, CSRF/session protections, and profile-specific request validation. A registered client remains untrusted input. |
+| Request to tenant runtime | Canonical authority selects an immutable tenant context before tenant data access; unknown authorities fail closed. Direct TLS binds SNI and request authority. Directory revisions replace validated runtime state; failed reloads retain the last valid snapshot, without falling back to a different tenant. |
+| Reverse proxy to server | Only configured trusted proxy CIDRs can supply forwarding or mTLS facts. The proxy strips incoming copies and protects its connection to the server. Direct TLS obtains certificate facts from the verified TLS session. |
+| Server to remote metadata, JWKS, or federation peer | HTTPS and URI/DNS address policy, validated redirects, bounded concurrency, response size, and end-to-end deadlines. Cached data and unknown-key refreshes cannot bypass trust validation. |
+| Server to durable and transient stores | Application ports enforce ownership; deployment credentials, tenant predicates, atomic repository operations, least privilege, network isolation, and supported restore procedures enforce the adapter boundary. Store owners can exceed application-role restrictions. |
+| Encrypted keysets to wrapping roots | Tenant-bound authenticated encryption protects persisted keysets. Wrapping roots are backed up and held separately from the database. Missing roots fail closed; generating a replacement root does not recover old keys. External signer results are checked against the expected public key. |
+| AS to resource server | Exact issuer/audience, algorithm/key and sender-binding validation, with revocation or introspection according to the resource policy. Successful signature verification alone is insufficient authorization. |
+| Release producer to deployment | Verified workflow identity, signed manifest, exact binary/OCI digest, accepted release state, anti-downgrade policy, and operator-protocol/schema checks. Mutable image names are not artifact identity. |
+| Controller to runtime task | Signed closed ControlOperation claims bind deployment, target, operation ID, and request hash. First admission requires an active valid Controller key; the durable journal owns retries of an already accepted exact request. Key retirement does not erase that accepted operation. |
+| Controller to host or container engine | Typed lifecycle operations, verified artifacts, bounded mounts/network and secret delivery, protected host configuration, and restricted task execution. Host root, kernel, and a compromised engine remain privileged over the task. |
+| Recovery Secret to Controller Registry | Explicit challenge, derived proof, bounded attempts, and atomic replacement of the Controller slot with Recovery Root rotation. This does not rotate independent database, wrapping-root, or TLS credentials. |
+| Security event to ledger and external receiver | Queueing, required append, transactional append, and external delivery have different durability guarantees. Writer/exporter role separation and an independently retained receiver checkpoint are required for external evidence; see [Security Events](security-events.md) and [audit anchoring](audit-anchor.md). |
 
-## Threats and Controls
+## Threats and controls
 
-| Threat | Risk | Controls | Operational note |
-| --- | --- | --- | --- |
-| Authorization code theft | Stolen code exchanged by attacker | PKCE S256, redirect URI matching, client binding, short TTL, atomic code consumption | Profile matrix tests for every high-security client class |
-| Authorization code replay | Reuse races mint extra tokens | Valkey state machine, consumed-code token revocation | More concurrency and lost-response regression tests |
-| Redirect mix-up | Token delivered to wrong client or endpoint | Exact redirect URI matching, issuer metadata, authorization response issuer support | Negative conformance fixtures for mix-up variants |
-| JAR replay | Reused signed request object repeats authorization transaction | Signed object validation, optional `jti` replay state when present | Product hardening profile for mandatory request object `jti` |
-| DPoP replay | Captured proof reused inside validity window | Proof `jti`, `htu`, `htm`, `ath`, nonce, JWK thumbprint, Valkey replay state | More explicit nonce profile tests and downgrade tests |
-| mTLS header spoofing | Direct attacker forges forwarded certificate headers | mTLS evidence accepted only from trusted proxy CIDRs; duplicate/conflicting forwarded cert headers rejected | Require trusted proxy config in deployments, add proxy-to-app TLS guidance and live checks |
-| Refresh token reuse | Stolen refresh token extends session | Opaque token hash storage, token family tracking, reuse detection | State-machine doc for lost-response retry; FAPI2 default no routine rotation |
-| CSRF | Browser performs unwanted state-changing request | CSRF cookie/header check, SameSite cookies | Extend CSRF tests across all admin/profile mutation endpoints |
-| XSS session theft | Script steals session credential | Session id only in HTTPOnly cookie; login JSON omits `session_id` | Frontend CSP and template audit |
-| Key compromise | Signing key leak enables token forgery | Keyset validation, prepublished/active/grace/retired JWKS states, keyctl lifecycle, optional external KMS/HSM signer backend | Emergency rotation runbook and rehearsal evidence |
-| Valkey outage | Replay/rate/session state unavailable | Sensitive paths fail with server errors instead of weakening controls | HA guidance, chaos tests, timeout SLOs |
-| PostgreSQL outage | Durable state unavailable | Protocol endpoints return server errors | HA guidance, backup/restore tests, migration rollback plan |
-| Metadata overclaim | Clients rely on unsupported security behavior | Discovery generated from runtime state for signing algs | Profile-aware metadata tests and conformance records |
-| Operator task replay or response loss | A retry repeats a migration or key mutation | exact operation-id/request-hash claim, application journal, typed durable result recovery | A resumed exact request returns its existing result and cannot start different work |
-| Target substitution | Signed request reaches a different artifact than the controller approved | ctl/runtime measures OCI image digest or host binary digest; app checks the same ControlOperation content target; the durable ControlResult binds the exact operation ID and request hash | The application receives the OCI digest from the runtime boundary rather than deriving it from inside the container |
-| Secret leakage through orchestration | Database, Valkey or private-key material appears in process metadata or logs | secret stdin/FD/mount/provider only, path-valued `*_FILE` environment, allowlisted audit schemas, sanitized process failures | Host root and a compromised engine remain able to inspect mounted secrets |
-| Unsafe automatic rollback | Old code resumes against incompatible or irreversible schema | signed Release recovery policy distinguishes artifact rollback, schema-compatible rollback, backup/PITR restore and irreversible barrier | Database rollback is never described as automatic; `update --plan` states the actual boundary |
-| Controller key loss or theft | Operations become unavailable or attacker signs tasks | mutations stop when signing fails; Recovery Secret challenge atomically replaces the active Controller slot and Recovery Root; old Controller requests are rejected | If wider host/dependency compromise is suspected, rotate those independent credentials too |
+| Threat | Current control | Limit or operational responsibility |
+| --- | --- | --- |
+| Authorization code theft and replay | Client/redirect binding, PKCE S256, short pending-code lifetime, atomic transient-state transitions, and durable issuance identity with consumed-code revocation. | Consumed-code evidence lasts for the issued access-token or initial refresh-token lifetime, not every future extension of a refresh family. |
+| Principal disabled or changed during issuance | The durable issuance transaction locks and checks the relevant principal before commit. | A preceding HTTP or cache check does not replace that transaction boundary. |
+| Lost token response or refresh reuse | Encrypted durable issuance response, exact issuance identity, token-family state, and reuse handling. | Follow the selected profile's rotation policy and [refresh-token contract](../protocol/refresh-token-rotation.md); FAPI2 does not imply routine rotation. |
+| Redirect mix-up or signed-request replay | Exact redirect and issuer validation, signed request validation, and replay checks for supported request-object and assertion claims. | Required claims depend on the selected profile; do not infer a universal mandatory JAR `jti` policy. |
+| DPoP or mTLS bypass | Method/URI/token binding, nonce and replay state, key thumbprint, and trusted transport certificate evidence. | Cached certificate facts are request-scoped and created only after trust checks. Resource servers must enforce sender constraints too. |
+| Cross-tenant data, keys, or audit attribution | Immutable request tenant, tenant-scoped repositories and keysets, signed management bindings, and tenant capture before audit queueing. | Database ownership and arbitrary host code execution are outside row-level application isolation. |
+| CSRF, session theft, or identity-link confusion | CSRF validation, secure HTTPOnly session cookies, consent and explicit identity-link policy, and MFA/passkey verification. | Browser and relying-party policy remain part of the deployment's security boundary. |
+| Password or remote-I/O resource exhaustion | Password-hash permits live through blocking work; remote DNS/HTTP work uses bounded admission, deadlines and body limits. Unknown-key refreshes are coalesced and failure results cached. | Capacity and timeout settings need deployment measurements; bounded work is not a throughput guarantee. |
+| Signing or mdoc key compromise | Encrypted shared keyset state, validated lifecycle transitions, tenant binding, expected-public-key verification, and coordinated runtime refresh. | Rotation needs the matching wrapping roots and, for external signers, provider-specific recovery and hardware evidence. |
+| Durable or replay-store outage | Sensitive paths propagate dependency failures instead of weakening security checks. | Availability depends on dependency topology and restore discipline; see [HA operations](../operations/ha-operations.md). |
+| Inconsistent database/transient-state restore | A new state epoch, refresh invalidation, and ingress lifetime/deadline controls form the supported recovery procedure. | Restoring an old pending-code snapshot beside newer issuance records under the same epoch is not a supported recovery mode. |
+| Operator replay, response loss, or key retirement | Exact operation-ID/request-hash journal and durable typed result recovery. | An uncertain executing operation cannot be blindly rerun; only its owning operation's idempotent recovery can resolve it. New requests signed by a retired key are rejected. |
+| Secret leakage through orchestration or audit | Secret files/FD/stdin/provider inputs, explicit field schemas, sanitized child errors, and no raw bearer material in audit payloads. | Audit redaction removes a small set of top-level names only. Producers must not supply nested or renamed credentials. |
+| Audit loss or privileged rewriting | Required/transactional appends where owned, durable export outbox, ordered hash chain, retry fencing, and optional required-mode freshness checks. | In-process queued events can be lost. A chain held only by the local operator is not immutable; a 2xx delivery is not a signed receiver receipt or proof of WORM retention. |
+| Target substitution or unsafe rollback | Measured artifact identity and signed operation target; recorded migration and recovery boundaries fence artifact rollback. | Database recovery needs an independently verified snapshot. Current pre-0.5 formats reject unsupported historical state rather than converting it implicitly. |
+| Metadata overclaim | Runtime-generated capabilities and explicit profile/standards matrices. | Tests, external suite results, and formal certification are separate evidence levels. |
 
-## Operator-control-plane modes and residual risk
+## Deployment and residual risk
 
-- Managed production uses only `nazoauthctl` mutations and the fixed
-  `nazoauth operator-task` entry point. The long-running database role has no
-  DDL or temporary-table privilege.
-- Source-tree Compose is an explicit development sandbox with an ephemeral
-  development operator identity. It is not a production compatibility mode.
-- External PostgreSQL/Valkey deployments keep backup/PITR and network-policy
-  ownership outside NazoAuth; doctor and update plan must report that boundary.
-- Online human approval and an external audit sink are not implemented without
-  a real configured consumer. Local root is recorded as an actor category, not
-  misrepresented as a natural-person identity.
-- The file-backed Controller key and offline Recovery Secret, container engine, host root,
-  kernel, and firmware are outside the cryptographic protection boundary. A
-  root or engine compromise can read mounted secrets and replace local evidence;
-  signed local chains make ordinary tampering detectable but not externally
-  immutable.
+Managed production uses `nazoauthctl` and the fixed `nazoauth operator-task`
+entry point for mutations. The runtime database role has no DDL or temporary
+table privilege. Source-tree Compose is a development sandbox with an ephemeral
+operator identity. External dependency owners retain backup/PITR and network
+policy responsibility.
 
-## Review Triggers
+Controller signing keys, Recovery Secrets, wrapping roots, TLS identities, and
+exporter credentials are separate authorities. Losing one is not repaired by
+rotating another. Root/engine compromise can read mounted secrets and alter
+local state; compromise of both the writer host and the independent receiver
+also defeats that external evidence boundary. The implemented exporter requires
+a real configured receiver and verified retention policy. Local root is an
+actor category, not proof of a natural person's identity or online approval.
 
-Update this threat model when:
+## Review triggers
 
-- a new profile is added or advertised
-- discovery metadata changes
-- token format, `cnf`, or signing algorithms change
-- reverse proxy or mTLS deployment topology changes
-- refresh token rotation semantics change
-- DCR, RAR, Device Grant, Token Exchange, federation, or SCIM is added
-- production incident, conformance failure, or security report reveals a new class
+Review this model when profiles or discovery claims change; tenant routing,
+key custody, signing algorithms, token formats, replay/rotation behavior,
+proxy/TLS topology, remote network access, operator admission, persistence,
+audit delivery, release/recovery formats, or deployment ownership changes;
+or an incident, security report, or conformance failure reveals a missing case.

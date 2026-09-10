@@ -1,7 +1,9 @@
 # External audit-ledger anchoring
 
-NazoAuth persists security events in the append-only `security_audit_events`
-ledger and its durable outbox.  An independent `nazoauth audit-anchor-worker`
+Committed security events enter the append-only `security_audit_events`
+ledger and its durable outbox. Application emission is not always synchronous;
+see [Security Events](security-events.md) for queue loss, required append, and
+transactional producer boundaries. An independent `nazoauth audit-anchor-worker`
 (or equivalent sidecar) claims that outbox in bounded batches and sends one
 checkpoint per event to `AUDIT_ANCHOR_URL` over HTTPS. The exporter assigns
 sequence and BLAKE3 hashes to committed events in immutable
@@ -35,16 +37,32 @@ The receiver must recompute the BLAKE3 event hash before accepting a
 checkpoint. The hash input is `nazo.audit.v1\0`, big-endian sequence, previous
 hash, UUID bytes, length-prefixed UTF-8 event type and category, big-endian
 microsecond timestamp, and length-prefixed PostgreSQL `jsonb::text` payload.
-This makes the independent receiver, rather than the database writer alone,
-the final authority for hash-chain validity.
+Sequence and timestamp are signed 64-bit integers; lengths are unsigned 64-bit
+byte counts, all big-endian. Hashes are 32 raw bytes and the event UUID is 16 raw
+bytes. The JSON wire envelope encodes hashes as unpadded base64url. A receiver
+must reproduce PostgreSQL `jsonb::text` representation, including whitespace
+and key ordering; hashing arbitrary reserialized JSON is not equivalent.
+The [ledger adapter](../../crates/persistence-postgres/src/repositories/audit_ledger.rs)
+owns this encoding. The receiver independently validates deployment identity,
+sequence continuity, previous hash, event content, and duplicate consistency.
 
 The worker authenticates the exact JSON body with HMAC-SHA-256 in
-`X-Nazo-Audit-Signature: sha256=<base64url>`. Only a 2xx response acknowledges
+`X-Nazo-Audit-Signature: sha256=<base64url>` (unpadded). The separate
+`X-Nazo-Audit-Sent-At` header is not covered by this MAC. Only a 2xx response acknowledges
 the outbox row; an idempotent receiver must return 2xx for a replay rather than
 an ambiguous conflict response.
-Transport and non-success responses are rescheduled with bounded exponential
-backoff.  The response body is never logged, and the HMAC secret is never
+Transport and non-success responses are rescheduled from one second up to
+300 seconds with exponential backoff. Claim, acknowledgement, and rescheduling
+are fenced by the expected delivery attempt, so an expired claimant cannot
+advance a newer claim. The response body is never logged, and the HMAC secret is never
 included in logs or the checkpoint.
+
+This is shared-secret authentication, not a non-repudiable signature. The worker
+does not validate a signed receiver receipt; it records the receiver's HTTP
+acceptance. An idempotent receiver must persist before returning success and
+reject a duplicate identity whose contents differ. Empty-ledger genesis uses
+the nil UUID, sequence zero, identical previous/event hashes, and Unix epoch
+time; it is a checkpoint, not a fabricated security event.
 
 The worker records its observation and every externally accepted checkpoint in the shared audit chain state. Event acknowledgement and checkpoint advancement are one database operation. In `AUDIT_ANCHOR_MODE=required`, high-impact management preflight requires a recent worker observation, a valid deployment checkpoint, and oldest pending event age within `AUDIT_ANCHOR_MAX_LAG_SECONDS`. A bounded backlog is allowed, including committed events not yet chained. With no backlog the checkpoint must equal the chain head; historical delivery latency does not keep a recovered deployment unavailable. An empty ledger records its signed, externally accepted genesis checkpoint before required mode becomes ready. No instance-local health file is used.
 `optional` and `disabled` do not read exporter health on management admission;
@@ -61,13 +79,15 @@ when it is not.
 Recommended production separation:
 
 * pre-create distinct lifecycle, server-writer, and exporter database roles;
-* run `nazoauth migrate` with the lifecycle database URL and
+* for a source-managed deployment, run `nazoauth migrate` with the lifecycle database URL and
   `NAZOAUTH_MIGRATION_RUNTIME_ROLE` naming the server-writer role; migration
   resets that role's direct `public` schema/table/sequence privileges, grants
   application DML, and grants only ledger append/check-availability functions;
 * give the worker exporter role only chain assignment and outbox claim/ack/health rights;
 * provide the worker `AUDIT_ANCHOR_DATABASE_URL` and `AUDIT_ANCHOR_TOKEN` (or
   its secret-file form), while the server receives only the deployment identity;
+* use the [ledger role provisioning runbook](../operations/security-audit-ledger-roles.md)
+  for grants and the managed operator-task migration boundary;
 * protect the HTTPS receiver with append-only/WORM retention and verify its
   idempotency behavior independently.
 
@@ -81,8 +101,35 @@ Database provisioning remains responsible for database `CONNECT`, removal of
 function grants. Those are database-wide trust decisions and are not silently
 changed by an application migration.
 
-Worker configuration also includes `AUDIT_ANCHOR_MODE`, `DEPLOYMENT_ID`,
-`AUDIT_ANCHOR_URL`, polling/request/freshness/lag
-durations, bounded batch size, a positive lock timeout, and an optional
-`AUDIT_ANCHOR_DATABASE_MAX_CONNECTIONS`. The server must never receive the
-worker database URL or sink token.
+## Configuration
+
+The [configuration loader](../../crates/authorization-server/src/adapters/audit_anchor/config.rs)
+is the authority for accepted values. Secret-file forms follow the normal
+[configuration precedence](../operations/configuration.md).
+
+| Setting | Default / requirement |
+| --- | --- |
+| `AUDIT_ANCHOR_MODE` | `disabled`; worker requires `optional` or `required`. |
+| `DEPLOYMENT_ID` | Required in enabled modes; 1–255 ASCII letters, digits, `.`, `-`, or `_`. |
+| `AUDIT_ANCHOR_FRESHNESS_SECONDS` | 120; positive in enabled modes. |
+| `AUDIT_ANCHOR_MAX_LAG_SECONDS` | 300; positive in enabled modes. |
+| `AUDIT_ANCHOR_URL` | Worker-only HTTPS URL without credentials, query, or fragment; redirects are disabled. |
+| `AUDIT_ANCHOR_TOKEN` | Worker-only HMAC secret, at least 16 bytes. |
+| `AUDIT_ANCHOR_DATABASE_URL` | Worker-only exporter-role database URL. |
+| `AUDIT_ANCHOR_DATABASE_MAX_CONNECTIONS` | 4; positive. |
+| `AUDIT_ANCHOR_POLL_INTERVAL_SECONDS` | 5; positive. |
+| `AUDIT_ANCHOR_REQUEST_TIMEOUT_SECONDS` | 10; positive. |
+| `AUDIT_ANCHOR_BATCH_SIZE` | 64; range 1–256. |
+| `AUDIT_ANCHOR_LOCK_TIMEOUT_SECONDS` | 60; range 1–3600. |
+
+The server receives the preflight settings and deployment identity, never the
+worker database URL or sink token. Required mode rejects stale/future worker
+observations, a mismatched deployment, invalid checkpoints, or excessive oldest
+pending age. It gates callers of management preflight; it is not a promise that
+every HTTP response waits for its own external checkpoint.
+
+After database restore, reconcile the local chain and outbox with the receiver's
+already accepted deployment sequence before resuming export. Do not erase the
+receiver's history or reset deployment identity merely to make a fork appear
+continuous. Database ownership can rewrite unanchored local state; only
+independently protected receiver history survives that boundary.

@@ -41,3 +41,10 @@ enforced by `python scripts/verify_static_contracts.py --check`.
 Documentation, issue reports, and suggestions that contain no contributed code
 do not require a CLA, but their authors must avoid including third-party
 confidential information or material they are not authorized to submit.
+
+## Documentation
+
+Update the owning guide and affected translations when behavior changes. Follow
+[documentation maintenance rules](docs/README.md#maintenance-rules): keep durable
+contracts and runbooks, put one-time task/review evidence in the issue, PR, or
+CI artifacts, and repair indexes and references when removing a document.

@@ -49,8 +49,8 @@ registration metadata 都是可执行 allowlist。
 | OpenID4VC High Assurance Interoperability Profile 1.0 / HAIP | 完整支持 | 默认关闭；通过 HAIP-compatible Credential Issuer 和 Verifier 角色配置、credential-format 配置、trust 配置启用 | [OpenID4VC HAIP 1.0](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html), [OpenID4VCI 1.0 Final](https://openid.net/specs/openid-4-verifiable-credential-issuance-1_0-final.html), [OpenID4VP 1.0 Final](https://openid.net/specs/openid-4-verifiable-presentations-1_0-final.html) | 面向高保障 OpenID4VC 签发和出示流程的 profile 级支持；不属于普通 OIDC RP 登录。 |
 | OpenID Connect Native SSO for Mobile Apps | 支持；默认关闭；待 Final 审计 | 仅在持久化 `native_sso` 模块启用且客户端具备 `device_sso` 范围/策略时宣告 | [OpenID Connect Native SSO](https://openid.net/specs/openid-connect-native-sso-1_0.html), [Second Implementer's Draft](https://openid.net/specs/openid-connect-native-sso-1_0-ID2.html) | 已实现 ID Token `ds_hash`、`device_secret`、refresh-family 活性校验和目标客户端绑定；当前是 draft 07 / ID2 兼容，不宣称 Final Specification。 |
 | OpenID Federation 1.1 / OpenID Federation for OpenID Connect 1.1 | 不支持（待实现） | 不宣告；没有 Federation Entity Configuration 或 `/.well-known/openid-federation` endpoint | [OpenID Federation 1.1](https://openid.net/specs/openid-federation-1_1.html), [OpenID Federation for OpenID Connect 1.1](https://openid.net/specs/openid-federation-connect-1_1.html) | 将作为独立 federation trust-chain 能力实现，不属于普通 OIDC RP 登录。 |
-| OIDC Implicit OP | 永不支持 | 无启用开关；不宣告 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | 由 OAuth Security BCP / OAuth 2.1 方向排除。 |
-| OIDC Hybrid OP | 永不支持 | 无启用开关；不宣告 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OIDC Core 定义了 Hybrid Flow，但它把 ID Token / access token 前通道交付重新带入 authorization-code 交互。RFC 9700 已弃用 implicit 前通道 token 交付；支持的交互式 profile 保持为 code flow + PKCE / sender constraint。 |
+| OIDC Implicit OP | 永不支持 | 无启用开关；不宣告 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | NazoAuth 的产品策略排除所有 implicit 响应；RFC 9700 的相应要求具体针对前通道 access token 交付。 |
+| OIDC Hybrid OP | 永不支持 | 无启用开关；不宣告 | [OpenID Connect Core 1.0](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | 由 [NazoAuth 产品策略](../protocol/not-implemented-security-policy.md) 排除；对 `code id_token` 的限制严于 RFC 9700。 |
 | Resource Owner Password Credentials | 永不支持 | 无启用开关；请求时拒绝 | [RFC 6749 Section 4.3](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.3), [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP 明确 password grant MUST NOT be used。 |
 
 ## 规划中的规范与草案
@@ -63,11 +63,11 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 
 | 规范或草案 | 当前状态 | 为什么现在不作为可宣告能力 | 后续完成条件 |
 | --- | --- | --- | --- |
-| OAuth 2.1 Authorization Framework | 支持（按 draft-15 兼容实现） | [draft-ietf-oauth-v2-1-15](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) 仍是草案，不是最终 RFC；因此不能宣称 OAuth 2.1 final conformance。当前实现已经对齐 code flow、S256 PKCE、禁用 implicit/password、精确 redirect 和安全默认值。 | 等最终 RFC 发布后做逐条审计，并把最终要求映射到代码、metadata、负向测试和一致性证据。 |
-| OAuth 2.0 for Browser-Based Applications | 支持（按 draft-27 已审计） | [draft-ietf-oauth-browser-based-apps-27](https://datatracker.ietf.org/doc/draft-ietf-oauth-browser-based-apps/) 已在 RFC Editor 队列；当前实现已经采用 code + S256 PKCE、禁用 implicit、避免浏览器前通道 token 交付，并完成 draft-27 delta audit。 | RFC 发布后复审 SPA/BFF/browser-client 要求；不新增虚假的 runtime profile 或 discovery claim。 |
-| Cross-Device Flows: Security BCP | 不支持（待审计） | [draft-ietf-oauth-cross-device-security-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-cross-device-security/) 是跨设备安全 BCP，不是单个端点；Device Grant、CIBA、Native SSO 已作为独立模块存在，但尚未按该 BCP 做逐条一致性审计。 | 用最终 BCP 复审这些跨设备流程；不会自动扩大 grant type。 |
+| OAuth 2.1 Authorization Framework | draft-15 实现基础；draft-16 待审计 | 当前跟踪 [draft-ietf-oauth-v2-1-16](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/)。先前 draft-15 的证据不能证明 draft-16 或最终 RFC 一致性。 | 复审输入大小、PKCE 和同意流程等差异，再更新支持声明。 |
+| OAuth 2.0 for Browser-Based Applications | 最终 RFC 待审计 | [RFC 10017](https://www.rfc-editor.org/rfc/rfc10017.html) 已发布，先前 draft-27 审查不能证明最终 RFC 一致性。 | 按 RFC 复审 SPA、BFF、浏览器客户端和会话要求；不新增 runtime profile。 |
+| Cross-Device Flows: Security BCP | 待审计 | [RFC 10027](https://www.rfc-editor.org/rfc/rfc10027.html) 已发布。Device Grant、CIBA 和 Native SSO 已存在，但尚未完成该 BCP 的逐条审计。 | 复审各适用跨设备流程，不自动扩大 grant 权限。 |
 | OAuth Security BCP Update | 不支持（待审计） | [draft-ietf-oauth-security-topics-update-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-security-topics-update/) 是 [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) 的增量更新方向。当前支持 RFC 9700，但尚未按该更新草案做逐条差异审计。 | 作为 RFC 9700 delta audit；任何行为变化都必须同步 metadata、测试和文档。 |
-| JWT BCP / JWT Assertion bis | 不支持（待审计） | [draft-ietf-oauth-rfc8725bis-07](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 与 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 尚未完成最终发布。当前支持的是 RFC 8725/RFC 7523 行为，不宣称支持这两个 bis 草案。 | 完成算法 allowlist、audience、replay、key binding、cross-JWT confusion 和 `private_key_jwt` 复审。 |
+| JWT BCP / JWT Assertion bis | 不支持（待审计） | [draft-ietf-oauth-rfc8725bis-10](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc8725bis/) 与 [draft-ietf-oauth-rfc7523bis-11](https://datatracker.ietf.org/doc/draft-ietf-oauth-rfc7523bis/) 尚未完成最终发布。当前支持的是 RFC 8725/RFC 7523 行为，不宣称支持这两个 bis 草案。 | 完成算法 allowlist、audience、replay、key binding、cross-JWT confusion 和 `private_key_jwt` 复审。 |
 | OAuth Client Attestation | 支持 OpenID4VCI 1.0 固定引用的 draft-07；默认关闭 | [draft-ietf-oauth-attestation-based-client-auth-07](https://datatracker.ietf.org/doc/html/draft-ietf-oauth-attestation-based-client-auth-07) 是 OpenID4VCI 1.0 Final 明确固定的版本；当前实现支持 `attest_jwt_client_auth`，并将 refresh token 绑定到 Client Instance `cnf` 公钥。只有模块启用且客户端策略要求时才宣告。 | 后续草案及最终 RFC 必须作为独立 delta audit；不能把更新草案的破坏性语法变化混入 HAIP 1.0 / OpenID4VCI 1.0 profile。 |
 | FAPI 2.0 HTTP Signatures | 实验性支持；默认关闭；待稳定规范审计 | [FAPI 2.0 HTTP Signatures working draft](https://openid.bitbucket.io/fapi/fapi-2_0-http-signatures.html) 不是 Final Specification；持久化 `http_message_signatures` 模块控制 `/fapi/resource`。 | 规范稳定或有 adopter 后再决定是否宣告；每个新草案/Final 都必须做 delta audit。 |
 | Refresh Token and Authorization Expiration | 不支持（待实现） | [draft-ietf-oauth-refresh-token-expiration-03](https://datatracker.ietf.org/doc/draft-ietf-oauth-refresh-token-expiration/) 要求把授权关系和 refresh token 生命周期显式建模；当前 metadata 不宣告这类过期语义。 | 定义授权有效期、refresh-family 状态、撤销语义、metadata 和端到端测试。 |
@@ -83,9 +83,9 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 | --- | --- | --- |
 | GNAP Core / GNAP Resource Server Connections | 观察中 | [RFC 9635](https://www.rfc-editor.org/rfc/rfc9635.html) 和 [RFC 9767](https://www.rfc-editor.org/rfc/rfc9767.html) 是相邻授权协议；可作为后续 grant negotiation 设计参考，但不是 OAuth/OIDC 开关。 |
 | Agent Authorization Profile | 观察中 | [draft-aap-oauth-profile-01](https://datatracker.ietf.org/doc/draft-aap-oauth-profile/) 对 AI agent delegated access 有参考价值；尚不能作为实现承诺。 |
-| Delegated Authorization / Actor Chain | 观察中 | [draft-li-oauth-delegated-authorization-02](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/) 和 [draft-mw-oauth-actor-chain-01](https://datatracker.ietf.org/doc/draft-mw-oauth-actor-chain/) 与 token exchange、actor delegation、审计链相关。 |
+| Delegated Authorization / Actor Chain | 观察中 | [draft-li-oauth-delegated-authorization-03](https://datatracker.ietf.org/doc/draft-li-oauth-delegated-authorization/) 和 [draft-mw-oauth-actor-chain-01](https://datatracker.ietf.org/doc/draft-mw-oauth-actor-chain/) 与 token exchange、actor delegation、审计链相关。 |
 | Global Token Revocation | 观察中 | [draft-parecki-oauth-global-token-revocation-06](https://datatracker.ietf.org/doc/draft-parecki-oauth-global-token-revocation/) 对账号失陷和事故响应有价值，但需要严格 blast-radius、审计和多客户端策略。 |
-| RAR / Resource Metadata 扩展 | 观察中 | [draft-zehavi-oauth-rar-metadata-05](https://datatracker.ietf.org/doc/draft-zehavi-oauth-rar-metadata/)、[draft-skokan-oauth-resource-response-02](https://datatracker.ietf.org/doc/draft-skokan-oauth-resource-response/) 和 [draft-mcguinness-oauth-rfc9728bis-01](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-rfc9728bis/) 可能改善 typed permissions 与 protected-resource metadata。 |
+| RAR / Resource Metadata 扩展 | 观察中 | [draft-ietf-oauth-rar-metadata-remediation-00](https://datatracker.ietf.org/doc/draft-ietf-oauth-rar-metadata-remediation/)、[draft-skokan-oauth-resource-response-02](https://datatracker.ietf.org/doc/draft-skokan-oauth-resource-response/) 和 [draft-mcguinness-oauth-rfc9728bis-01](https://datatracker.ietf.org/doc/draft-mcguinness-oauth-rfc9728bis/) 可能改善 typed permissions 与 protected-resource metadata。 |
 
 ## 可发现端点
 
@@ -309,7 +309,7 @@ Content encryption algorithms：
 | Implicit ID Token | 永不支持 | `id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | OIDC Core 定义了该值，但它不经过 token endpoint 兑换，而是通过浏览器前通道交付 ID Token。支持的交互式 profile 将 ID Token 签发保持在 authorization-code 兑换之后。 |
 | Implicit Access Token | 永不支持 | `token` | [RFC 6749 Section 4.2](https://www.rfc-editor.org/rfc/rfc6749.html#section-4.2), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | OAuth Security BCP 已弃用 implicit grant。 |
 | Implicit ID Token + Access Token | 永不支持 | `id_token token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | 排除原因是它依赖 implicit 前通道 token 交付。 |
-| Hybrid Code + ID Token | 永不支持 | `code id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | OIDC Core 定义了该值，但它会在 token endpoint 兑换之前通过浏览器前通道发送 ID Token，保留了 RFC 9700 希望从 implicit-style response 中移除的暴露面。 |
+| Hybrid Code + ID Token | 永不支持 | `code id_token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | 由 [NazoAuth 产品策略](../protocol/not-implemented-security-policy.md) 排除；对 `code id_token` 的限制严于 RFC 9700。 |
 | Hybrid Code + Token | 永不支持 | `code token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | OIDC Core 定义了该值，但它通过浏览器前通道返回 access token；RFC 9700 已弃用这种暴露模式。 |
 | Hybrid Code + ID Token + Token | 永不支持 | `code id_token token` | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | 同时组合前通道 ID Token 与 access-token 交付；支持的交互式 profile 将这些 token 保持在后端 token endpoint 兑换路径中。 |
 
@@ -390,20 +390,20 @@ Front-channel 和 session-management 行为由项目自有协议测试覆盖。�
 
 ## Dynamic Registration 不是 legacy Dynamic OP
 
-实现的是安全的 RFC 7591 / RFC 7592 动态客户端注册。Implicit 和 hybrid flow 被 RFC 9700 和 OAuth 2.1 方向排除。
+实现的是安全的 RFC 7591 / RFC 7592 动态客户端注册。NazoAuth 策略排除 implicit 和 hybrid 响应；下文区分规范要求与更严格的产品选择。
 
 术语应精确使用：
 
 - “Dynamic Client Registration” 指由 initial access token 前提控制的 RFC 7591 / RFC 7592 客户端生命周期支持。
 
-## 规范支撑的永不支持边界
+## 规范要求与产品策略边界
 
-以下决定不是本地偏好，而是来自当前 IETF / OpenID 安全指导，并作为实现边界编码。
+以下实现边界同时包含规范要求和更严格的产品选择。引用规范不表示该规范禁止所有被 NazoAuth 排除的值；具体依据见各行说明。
 
 | 能力 | 状态 | 规范或当前安全来源 | 原因 |
 | --- | --- | --- | --- |
 | Implicit grant 和 implicit OIDC response types | 永不支持 | [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP 弃用 implicit；浏览器前通道 token 交付的泄漏和重放属性弱于 code flow + PKCE。该边界也把 OIDC implicit ID Token response 排除在受支持交互式 profile 之外。 |
-| Hybrid response types | 永不支持 | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | OIDC Core 定义了 Hybrid Flow，但它会在 token endpoint 之前通过浏览器前通道暴露 ID Token 和/或 access token。RFC 9700 已弃用 implicit 前通道 token 交付；支持的交互式 profile 保持 authorization code，并在需要时叠加 PKCE / sender constraint。 |
+| Hybrid response types | 永不支持 | [OpenID Connect Core](https://openid.net/specs/openid-connect-core-1_0.html), [RFC 9700 Section 2.1.2](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.1.2) | 由 [NazoAuth 产品策略](../protocol/not-implemented-security-policy.md) 排除；对 `code id_token` 的限制严于 RFC 9700。 |
 | Resource Owner Password Credentials | 永不支持 | [RFC 9700 Section 2.4](https://www.rfc-editor.org/rfc/rfc9700.html#section-2.4), [OAuth 2.1 draft](https://datatracker.ietf.org/doc/draft-ietf-oauth-v2-1/) | OAuth Security BCP 明确 password grant MUST NOT be used，因为它把用户凭据暴露给客户端，也无法自然组合现代 MFA/passkey 认证。 |
 | Unsigned Request Objects（`alg=none`） | 永不支持 | [RFC 9101 Section 4](https://www.rfc-editor.org/rfc/rfc9101.html#section-4), [RFC 8725 Section 3.1](https://www.rfc-editor.org/rfc/rfc8725.html#section-3.1) | 受保护 Request Object 表面要求签名；JWT BCP 要求应用只允许满足自身安全要求的算法。 |
 | Query-string bearer tokens | 永不支持 | [RFC 6750 Section 2.3](https://www.rfc-editor.org/rfc/rfc6750.html#section-2.3), [RFC 9700](https://www.rfc-editor.org/rfc/rfc9700.html) | RFC 6750 虽记录 query method，但明确不推荐，因为 URL 很容易进入日志并泄漏。 |
@@ -422,7 +422,7 @@ Front-channel 和 session-management 行为由项目自有协议测试覆盖。�
 - FAPI form-body bearer token；
 - CIBA push mode。
 
-这些是有规范依据的实现边界，不是隐藏配置开关。不要尝试用未公开部署选项重新启用。
+这些是明确的实现策略，规范依据见上文，不是隐藏配置开关。不要尝试用未公开部署选项重新启用。
 
 ## 元数据真实性与部署开关
 
