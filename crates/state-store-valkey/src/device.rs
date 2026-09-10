@@ -75,10 +75,6 @@ pub enum DeviceCreateResult {
     UserCodeCollision,
 }
 
-/// Backwards-compatible name for the device-flow CAS token now owned by the
-/// core state-store contract.
-pub type StoredDeviceState = DeviceStateVersion;
-
 #[derive(Clone, Debug)]
 pub struct DeviceStore {
     connection: ValkeyConnection,
@@ -177,7 +173,7 @@ impl DeviceStore {
     async fn replace_snapshot(
         &self,
         key: String,
-        expected: &StoredDeviceState,
+        expected: &DeviceStateVersion,
         replacement: &DeviceAuthorizationState,
     ) -> Result<DeviceAtomicResult, Error> {
         let replacement = serde_json::to_string(replacement).map_err(|error| {
@@ -197,7 +193,7 @@ impl DeviceStore {
         &self,
         device_hash: &str,
         user_code: &str,
-        expected: &StoredDeviceState,
+        expected: &DeviceStateVersion,
         replacement: &DeviceAuthorizationState,
     ) -> Result<DeviceAtomicResult, Error> {
         let replacement = serde_json::to_string(replacement).map_err(|error| {
@@ -223,7 +219,7 @@ impl DeviceStore {
     async fn consume_snapshot(
         &self,
         device_code: &str,
-        expected: &StoredDeviceState,
+        expected: &DeviceStateVersion,
     ) -> Result<DeviceAtomicResult, Error> {
         let reply = command::eval_string(
             &self.connection,

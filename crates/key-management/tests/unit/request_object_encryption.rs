@@ -1,11 +1,21 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use serde_json::json;
 
-use crate::KeyManager;
+use crate::KeySettings;
 
-#[test]
-fn dedicated_request_object_key_decrypts_authenticated_nested_jwt() {
-    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::RS256);
+fn settings() -> KeySettings {
+    KeySettings {
+        external_command: Vec::new(),
+        external_timeout: std::time::Duration::from_secs(2),
+        rotation_interval: chrono::Duration::days(90),
+        prepublish_window: chrono::Duration::days(1),
+        verification_grace: chrono::Duration::minutes(10),
+    }
+}
+
+#[tokio::test]
+async fn dedicated_request_object_key_decrypts_authenticated_nested_jwt() {
+    let manager = crate::test_support::key_manager(settings()).await.unwrap();
     let jwk = manager.snapshot().request_object_encryption_jwk.clone();
     let nested = "header.claims.signature";
     let compact = encrypt(&jwk, nested.as_bytes());
@@ -18,9 +28,9 @@ fn dedicated_request_object_key_decrypts_authenticated_nested_jwt() {
     );
 }
 
-#[test]
-fn request_object_decryption_rejects_tampered_ciphertext() {
-    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::RS256);
+#[tokio::test]
+async fn request_object_decryption_rejects_tampered_ciphertext() {
+    let manager = crate::test_support::key_manager(settings()).await.unwrap();
     let jwk = manager.snapshot().request_object_encryption_jwk.clone();
     let mut compact = encrypt(&jwk, b"header.claims.signature");
     let replacement = if compact.ends_with('A') { 'B' } else { 'A' };
@@ -30,9 +40,9 @@ fn request_object_decryption_rejects_tampered_ciphertext() {
     assert!(manager.decrypt_request_object(&compact).is_err());
 }
 
-#[test]
-fn request_object_decryption_rejects_invalid_encrypted_key_before_aead() {
-    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::RS256);
+#[tokio::test]
+async fn request_object_decryption_rejects_invalid_encrypted_key_before_aead() {
+    let manager = crate::test_support::key_manager(settings()).await.unwrap();
     let jwk = manager.snapshot().request_object_encryption_jwk.clone();
     let protected = URL_SAFE_NO_PAD.encode(
         serde_json::to_vec(&json!({

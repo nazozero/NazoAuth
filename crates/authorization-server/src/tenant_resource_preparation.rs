@@ -15,9 +15,9 @@ use nazo_identity::ports::SecretHashPort as _;
 use uuid::Uuid;
 
 use crate::bootstrap::RegistrationSecretHasher;
+use crate::domain::remote_client_documents::RemoteClientDocumentResolver;
 use crate::http::admin::clients::{
-    ServerAdminClientCrypto, ServerAdminClientService, ServerSectorIdentifierResolver,
-    admin_client_policy,
+    ServerAdminClientCrypto, ServerAdminClientService, admin_client_policy,
 };
 use crate::settings::Settings;
 use nazo_persistence::tenant_resources::{
@@ -148,6 +148,9 @@ pub(crate) async fn control_plane_resources(
         .context("tenant-resource operations require the application configuration")?;
     let settings = Settings::from_directory_binding(&config, binding)
         .context("tenant-resource operations require valid application settings")?;
+    let remote_client_documents =
+        RemoteClientDocumentResolver::new(&settings.modules.remote_client_document_private_origins)
+            .map_err(anyhow::Error::msg)?;
     let keyset = nazo_key_management::KeyManager::load_or_create_database(
         settings.key_settings(),
         binding.tenant.tenant_id.as_uuid(),
@@ -157,7 +160,7 @@ pub(crate) async fn control_plane_resources(
     .await?;
     let service = ServerAdminClientService::new(
         clients,
-        ServerSectorIdentifierResolver,
+        remote_client_documents,
         ServerAdminClientCrypto::new(keyset),
         admin_client_policy(&settings),
     );

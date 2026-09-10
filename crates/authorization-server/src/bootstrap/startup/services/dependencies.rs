@@ -95,7 +95,7 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
     let admin_client_config = web::Data::new(AdminClientConfig::from_settings(&startup.settings));
     let admin_client_service = web::Data::new(ServerAdminClientService::new(
         persistence.admin_clients(),
-        ServerSectorIdentifierResolver,
+        remote_client_documents.as_ref().clone(),
         ServerAdminClientCrypto::new(keyset.clone()),
         admin_client_policy(&startup.settings),
     ));

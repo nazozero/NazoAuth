@@ -156,6 +156,48 @@ async fn refresh_token_row_count(state: &TestInfrastructure, client: &ClientRow)
     .count
 }
 
+async fn token_issuance_row_count(state: &TestInfrastructure, client: &ClientRow) -> i64 {
+    let mut connection = get_conn(&state.diesel_db)
+        .await
+        .expect("issue test database connection should be available");
+    sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE tenant_id = $1 AND client_id = $2",
+    )
+    .bind::<SqlUuid, _>(client.tenant_id)
+    .bind::<SqlUuid, _>(client.id)
+    .get_result::<TokenRowCount>(&mut connection)
+    .await
+    .expect("issue token issuance count should load")
+    .count
+}
+
+async fn wait_for_issuance_commit_lock(
+    observer: &mut AsyncPgConnection,
+    blocking_backend_pid: i64,
+    issuer: &mut tokio::task::JoinHandle<(StatusCode, String)>,
+) {
+    let deadline = std::time::Instant::now() + StdDuration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        let blocked = sql_query(
+            "SELECT COUNT(*)::bigint AS count FROM pg_stat_activity WHERE $1::bigint = ANY(pg_blocking_pids(pid))",
+        )
+        .bind::<BigInt, _>(blocking_backend_pid)
+        .get_result::<TokenRowCount>(observer)
+        .await
+        .expect("blocked token issuance should be observable");
+        if blocked.count > 0 {
+            return;
+        }
+        tokio::select! {
+            result = &mut *issuer => panic!(
+                "issuance ended before blocking on the principal row lock: {result:?}"
+            ),
+            () = tokio::task::yield_now() => {}
+        }
+    }
+    panic!("timed out waiting for token issuance to block on the principal row lock");
+}
+
 async fn delete_token_issuance(state: &TestInfrastructure, issuance_id: Uuid) {
     let mut connection = get_conn(&state.diesel_db)
         .await
@@ -175,7 +217,7 @@ use std::time::Duration as StdDuration;
 use crate::config::ConfigSource;
 use diesel::sql_query;
 use diesel::sql_types::{BigInt, Jsonb, Text, Uuid as SqlUuid};
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use fred::interfaces::ClientLike;
 use nazo_postgres::{create_pool, get_conn};
 
@@ -198,6 +240,7 @@ pub(crate) async fn persist_token_issuance_response_for_test(
     client: &ClientRow,
     grant_key: &str,
 ) {
+    insert_issue_client(state, client).await;
     let service = ServerTokenService::new(
         crate::test_support::token_issuance_repository(state.diesel_db.clone()),
         std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
@@ -571,18 +614,19 @@ fn refresh_token_grant_matching_is_exact_and_scope_case_sensitive() {
 
 #[test]
 fn failed_authorization_code_transition_is_idempotent_only_for_terminal_or_missing_states() {
-    for state in ["ok", "missing", "failed", "consumed"] {
+    use nazo_auth::AuthorizationCodeTransitionResult::*;
+    for state in [Applied, Missing, Failed, Consumed] {
         assert!(
             authorization_code_state::failed_authorization_code_transition_result(state).is_ok(),
-            "failed marker cleanup should tolerate {state}"
+            "failed marker cleanup should tolerate {state:?}"
         );
     }
 
-    for state in ["pending", "busy", "malformed"] {
+    for state in [Pending, Consuming, Malformed] {
         let error = authorization_code_state::failed_authorization_code_transition_result(state)
             .expect_err("failed marker must not hide an unexpected active state");
         assert!(
-            error.to_string().contains(state),
+            error.to_string().contains(&format!("{state:?}")),
             "error should preserve the unexpected state for diagnostics"
         );
     }
@@ -1102,7 +1146,9 @@ async fn client_credentials_issue_returns_minimal_bearer_token_response_without_
     let Some(state) = issue_state_with_live_database() else {
         return;
     };
-    let client = client_with_grants(&["client_credentials"]);
+    let mut client = client_with_grants(&["client_credentials"]);
+    client.client_id = format!("issue-client-credentials-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
     let mut issue = token_issue_without_openid();
     issue.user_id = None;
     issue.subject = client.client_id.clone();
@@ -1135,6 +1181,96 @@ async fn client_credentials_issue_returns_minimal_bearer_token_response_without_
     );
     assert!(value.get("id_token").is_none());
     assert!(value.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn issuance_rechecks_principal_deactivation_before_commit() {
+    let Some(state) = issue_state_with_live_database_pool_size(3) else {
+        return;
+    };
+    let database_url =
+        std::env::var("DATABASE_URL").expect("live issue fixture must provide DATABASE_URL");
+    for (principal, deactivation_sql, expected_error) in [
+        (
+            "client",
+            "UPDATE oauth_clients SET is_active = FALSE WHERE id = $1",
+            "unauthorized_client",
+        ),
+        (
+            "subject",
+            "UPDATE users SET is_active = FALSE WHERE id = $1",
+            "invalid_grant",
+        ),
+    ] {
+        let mut client = client_with_grants(&["client_credentials"]);
+        client.client_id = format!("issue-principal-race-{principal}-{}", Uuid::now_v7());
+        let user_id = Uuid::now_v7();
+        insert_issue_client(&state, &client).await;
+        insert_issue_user(&state, user_id).await;
+
+        let mut issue = token_issue_without_openid();
+        issue.user_id = Some(user_id);
+        issue.subject = user_id.to_string();
+        issue.include_refresh = false;
+
+        let principal_id = if principal == "client" {
+            client.id
+        } else {
+            user_id
+        };
+        let mut coordinator = AsyncPgConnection::establish(&database_url)
+            .await
+            .expect("principal lock coordinator should connect");
+        let mut observer = AsyncPgConnection::establish(&database_url)
+            .await
+            .expect("principal lock observer should connect");
+        sql_query("BEGIN")
+            .execute(&mut coordinator)
+            .await
+            .expect("principal lock transaction should begin");
+        let locked = sql_query(
+            "SELECT 1::bigint AS count FROM oauth_clients WHERE tenant_id = $1 AND id = $2 FOR UPDATE",
+        )
+        .bind::<SqlUuid, _>(client.tenant_id)
+        .bind::<SqlUuid, _>(client.id)
+        .get_result::<TokenRowCount>(&mut coordinator)
+        .await
+        .expect("active client fixture should lock");
+        assert_eq!(locked.count, 1);
+        let blocking_backend_pid = sql_query("SELECT pg_backend_pid()::bigint AS count")
+            .get_result::<TokenRowCount>(&mut coordinator)
+            .await
+            .expect("principal lock backend pid should load")
+            .count;
+
+        let issue_state = state.clone();
+        let issue_client = client.clone();
+        let mut issuer = actix_web::rt::spawn(async move {
+            let response = issue_token_response(&issue_state, &issue_client, issue).await;
+            (response.status(), oauth_error_code(&response))
+        });
+        wait_for_issuance_commit_lock(&mut observer, blocking_backend_pid, &mut issuer).await;
+
+        let changed = sql_query(deactivation_sql)
+            .bind::<SqlUuid, _>(principal_id)
+            .execute(&mut coordinator)
+            .await
+            .expect("principal deactivation should update its locked row");
+        assert_eq!(changed, 1);
+        sql_query("COMMIT")
+            .execute(&mut coordinator)
+            .await
+            .expect("principal deactivation should commit");
+
+        let (status, error) = issuer.await.expect("issuance task should join");
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(error, expected_error);
+        assert_eq!(
+            token_issuance_row_count(&state, &client).await,
+            0,
+            "issuance must not persist after {principal} deactivation"
+        );
+    }
 }
 
 #[actix_web::test]
@@ -1411,7 +1547,9 @@ async fn same_idempotent_grant_retry_reuses_the_persisted_response() {
     let Some(state) = issue_state_with_live_database() else {
         return;
     };
-    let client = client_with_grants(&["client_credentials"]);
+    let mut client = client_with_grants(&["client_credentials"]);
+    client.client_id = format!("idempotent-client-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
     let grant_key = format!("idempotent-test-{}", Uuid::now_v7());
     let mut first_issue = token_issue_without_openid();
     first_issue.include_refresh = false;
@@ -1894,7 +2032,9 @@ async fn authorization_code_marker_failure_revokes_the_issued_access_token() {
         .init()
         .await
         .expect("live authorization-code fixture should connect to Valkey");
-    let client = client_with_grants(&["client_credentials"]);
+    let mut client = client_with_grants(&["client_credentials"]);
+    client.client_id = format!("issue-marker-failure-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
     let mut issue = token_issue_without_openid();
     issue.user_id = None;
     issue.subject = client.client_id.clone();

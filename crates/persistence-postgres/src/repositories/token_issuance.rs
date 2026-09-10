@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::{
     DbPool,
     pool::DiscardOnDrop,
-    schema::{access_token_revocations, oauth_token_issuances},
+    schema::{access_token_revocations, oauth_clients, oauth_token_issuances, users},
 };
 
 use super::{
@@ -646,6 +646,16 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                         diesel::sql_query("SET LOCAL lock_timeout = '2s'")
                             .execute(connection)
                             .await?;
+                        if let Some(result) = lock_inactive_issuance_principal(
+                            connection,
+                            input.tenant_id,
+                            input.client_id,
+                            input.user_id,
+                        )
+                        .await?
+                        {
+                            return Ok(result);
+                        }
                         let now = Utc::now();
                         if matches!(input.mode, TokenIssuanceMode::Idempotent { .. }) {
                             let jti_expired = oauth_token_issuances::access_token_expires_at
@@ -913,6 +923,41 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
+}
+
+async fn lock_inactive_issuance_principal(
+    connection: &mut diesel_async::AsyncPgConnection,
+    tenant_id: Uuid,
+    client_id: Uuid,
+    user_id: Option<Uuid>,
+) -> diesel::QueryResult<Option<CommitTokenIssuanceResult>> {
+    let client_is_active = oauth_clients::table
+        .filter(oauth_clients::tenant_id.eq(tenant_id))
+        .filter(oauth_clients::id.eq(client_id))
+        .select(oauth_clients::is_active)
+        .for_share()
+        .first::<bool>(connection)
+        .await
+        .optional()?;
+    if client_is_active != Some(true) {
+        return Ok(Some(CommitTokenIssuanceResult::ClientInactive));
+    }
+
+    let Some(user_id) = user_id else {
+        return Ok(None);
+    };
+    let user_is_active = users::table
+        .filter(users::tenant_id.eq(tenant_id))
+        .filter(users::id.eq(user_id))
+        .select(users::is_active)
+        .for_share()
+        .first::<bool>(connection)
+        .await
+        .optional()?;
+    if user_is_active != Some(true) {
+        return Ok(Some(CommitTokenIssuanceResult::SubjectInactive));
+    }
+    Ok(None)
 }
 
 fn classify_existing_issuance(

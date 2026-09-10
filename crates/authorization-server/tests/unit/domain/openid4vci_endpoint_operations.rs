@@ -38,25 +38,18 @@ fn invalid_pool() -> nazo_postgres::DbPool {
 }
 
 async fn fixture_crypto() -> Openid4vcCredentialCrypto {
-    let root = std::env::temp_dir().join(format!(
-        "nazo-openid4vci-endpoint-{}",
-        Uuid::now_v7().simple()
-    ));
-    std::fs::create_dir_all(&root).expect("endpoint key fixture directory");
     let settings = KeySettings {
-        keys_dir: root.clone(),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(30),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::hours(1),
     };
-    KeyManager::load_or_create(settings.clone())
+    let keyset = nazo_key_management::test_support::key_manager(settings)
         .await
-        .expect("endpoint key store initialization");
-    let signing_kid = KeyManager::register_local(
-        &settings,
-        LocalKeyRegistration {
+        .expect("database-backed endpoint keyset should initialize");
+    let signing_kid = keyset
+        .database_register_local(LocalKeyRegistration {
             algorithm: jsonwebtoken::Algorithm::ES256,
             purposes: [
                 SigningPurpose::Credential,
@@ -64,21 +57,15 @@ async fn fixture_crypto() -> Openid4vcCredentialCrypto {
             ]
             .into_iter()
             .collect(),
-        },
+        })
+        .await
+        .expect("database endpoint signing key registration");
+    let signing_key = KeyPair::from_pem(
+        &keyset
+            .database_local_private_key_pem(&signing_kid)
+            .expect("database endpoint signing key PEM"),
     )
-    .await
-    .expect("endpoint signing key registration");
-    let signing_record = KeyManager::list_keys(&settings)
-        .await
-        .expect("endpoint key listing")
-        .into_iter()
-        .find(|record| record.kid == signing_kid)
-        .expect("registered endpoint signing key");
-    let signing_key_pem = tokio::fs::read_to_string(root.join(signing_record.locator))
-        .await
-        .expect("registered endpoint signing key PEM");
-    let signing_key =
-        KeyPair::from_pem(&signing_key_pem).expect("registered endpoint P-256 signing key");
+    .expect("database endpoint P-256 signing key");
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("endpoint CA key");
     let now = time::OffsetDateTime::now_utc();
     let mut ca_params = CertificateParams::default();
@@ -98,9 +85,6 @@ async fn fixture_crypto() -> Openid4vcCredentialCrypto {
         .signed_by(&signing_key, &ca)
         .expect("endpoint leaf certificate");
 
-    let keyset = KeyManager::load_or_create(settings)
-        .await
-        .expect("endpoint key manager");
     keyset.set_openid4vc_material_for_test(Openid4vcMaterial {
         public: Openid4vcPublicMaterial {
             signing_kid,
@@ -110,14 +94,12 @@ async fn fixture_crypto() -> Openid4vcCredentialCrypto {
         },
         iaca_private_materials: Default::default(),
     });
-    let crypto = Openid4vcCredentialCrypto::new_with_policies(
+    Openid4vcCredentialCrypto::new_with_policies(
         keyset,
         VcIssuerTrustPolicy::san_bound(),
         crate::settings::Openid4vcRevocationPolicy::Disabled,
     )
-    .expect("endpoint credential crypto");
-    std::fs::remove_dir_all(root).expect("endpoint key fixture cleanup");
-    crypto
+    .expect("endpoint credential crypto")
 }
 
 async fn operations(enabled: bool) -> ServerCredentialIssuerOperations {

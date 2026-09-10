@@ -1,7 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
     fmt,
-    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
@@ -181,7 +180,7 @@ impl KeySnapshot {
         purpose: SigningPurpose,
         algorithm: jsonwebtoken::Algorithm,
     ) -> Option<&VerificationKey> {
-        let algorithm = crate::store::signing_algorithm_name(algorithm)?;
+        let algorithm = crate::serialization::signing_algorithm_name(algorithm)?;
         let matches = |key: &&VerificationKey| {
             key.can_sign(purpose)
                 && key.public_jwk.get("alg").and_then(Value::as_str) == Some(algorithm)
@@ -200,7 +199,7 @@ impl KeySnapshot {
     pub fn response_signing_alg_values_supported(&self) -> Vec<&'static str> {
         self.response_signing_algorithms
             .iter()
-            .filter_map(|algorithm| crate::store::signing_algorithm_name(*algorithm))
+            .filter_map(|algorithm| crate::serialization::signing_algorithm_name(*algorithm))
             .collect()
     }
 
@@ -208,7 +207,7 @@ impl KeySnapshot {
     pub fn id_token_signing_alg_values_supported(&self) -> Vec<&'static str> {
         self.id_token_signing_algorithms
             .iter()
-            .filter_map(|algorithm| crate::store::signing_algorithm_name(*algorithm))
+            .filter_map(|algorithm| crate::serialization::signing_algorithm_name(*algorithm))
             .collect()
     }
 
@@ -220,7 +219,6 @@ impl KeySnapshot {
 
 #[derive(Clone, Debug)]
 pub struct KeySettings {
-    pub keys_dir: PathBuf,
     pub external_command: Vec<String>,
     pub external_timeout: Duration,
     pub rotation_interval: chrono::Duration,
@@ -342,7 +340,7 @@ pub(crate) struct KeyManagerInner {
     pub(crate) settings: KeySettings,
     pub(crate) health: Arc<LifecycleHealth>,
     pub(crate) lifecycle_shutdown: watch::Sender<bool>,
-    pub(crate) database: Option<crate::database::DatabaseKeysetBinding>,
+    pub(crate) database: crate::database::DatabaseKeysetBinding,
 }
 
 #[derive(Clone)]
@@ -445,7 +443,7 @@ impl Signer for Openid4vcSigningLease {
         ) {
             return Err(SignError::KeyUnavailable);
         }
-        let algorithm = crate::store::signing_algorithm_from_name(request.algorithm)
+        let algorithm = crate::serialization::signing_algorithm_from_name(request.algorithm)
             .ok_or(SignError::UnsupportedAlgorithm)?;
         if algorithm != jsonwebtoken::Algorithm::ES256 {
             return Err(SignError::UnsupportedAlgorithm);
@@ -473,7 +471,7 @@ impl LoadedKeyset {
         purpose: SigningPurpose,
         algorithm: jsonwebtoken::Algorithm,
     ) -> Option<SelectedKey<'_>> {
-        let algorithm_name = crate::store::signing_algorithm_name(algorithm)?;
+        let algorithm_name = crate::serialization::signing_algorithm_name(algorithm)?;
         let active = self
             .verification_keys
             .iter()
@@ -631,25 +629,9 @@ pub(crate) fn openid4vc_material_is_revoked(material: &Openid4vcMaterial) -> any
 }
 
 impl KeyManager {
-    pub async fn list_keys(settings: &KeySettings) -> anyhow::Result<Vec<KeyRecord>> {
-        crate::store::list_keys(settings).await
-    }
-
     /// Read operator key metadata from the repository-backed keyset.
     pub async fn database_list_keys(&self) -> anyhow::Result<Vec<KeyRecord>> {
-        let database = self
-            .inner
-            .database
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("key manager is not repository-backed"))?;
-        crate::database::list(&self.inner.settings, database).await
-    }
-
-    pub async fn register_external(
-        settings: &KeySettings,
-        registration: ExternalKeyRegistration,
-    ) -> anyhow::Result<()> {
-        crate::store::register_external_key(settings, registration).await
+        crate::database::list(&self.inner.settings, &self.inner.database).await
     }
 
     /// Register an external signer in the repository-backed keyset.
@@ -657,25 +639,16 @@ impl KeyManager {
         &self,
         registration: ExternalKeyRegistration,
     ) -> anyhow::Result<()> {
-        let database = self
-            .inner
-            .database
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("key manager is not repository-backed"))?;
-        let loaded =
-            crate::database::register_external(&self.inner.settings, database, registration)
-                .await?;
+        let loaded = crate::database::register_external(
+            &self.inner.settings,
+            &self.inner.database,
+            registration,
+        )
+        .await?;
         self.inner
             .generation
             .store(Arc::new(KeyGeneration::database(loaded)));
         Ok(())
-    }
-
-    pub async fn register_local(
-        settings: &KeySettings,
-        registration: LocalKeyRegistration,
-    ) -> anyhow::Result<String> {
-        crate::store::register_local_key(settings, registration).await
     }
 
     /// Register a purpose-scoped local key in the repository-backed keyset.
@@ -683,13 +656,12 @@ impl KeyManager {
         &self,
         registration: LocalKeyRegistration,
     ) -> anyhow::Result<String> {
-        let database = self
-            .inner
-            .database
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("key manager is not repository-backed"))?;
-        let (kid, loaded) =
-            crate::database::register_local(&self.inner.settings, database, registration).await?;
+        let (kid, loaded) = crate::database::register_local(
+            &self.inner.settings,
+            &self.inner.database,
+            registration,
+        )
+        .await?;
         self.inner
             .generation
             .store(Arc::new(KeyGeneration::database(loaded)));
@@ -699,9 +671,6 @@ impl KeyManager {
     /// Return an in-memory local key only for material that must be handed to
     /// the mdoc certificate generator. It never reads a key file.
     pub fn database_local_private_key_pem(&self, kid: &str) -> anyhow::Result<String> {
-        if self.inner.database.is_none() {
-            anyhow::bail!("key manager is not repository-backed");
-        }
         crate::database::local_private_key_pem(&self.inner.generation.load().loaded, kid)
     }
 
@@ -709,12 +678,7 @@ impl KeyManager {
     /// keyset. The persisted revocation timestamps are returned unchanged;
     /// request handling uses the generation-pinned projection instead.
     pub async fn database_openid4vc_state(&self) -> anyhow::Result<Openid4vcState> {
-        let database = self
-            .inner
-            .database
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("key manager is not repository-backed"))?;
-        crate::database::openid4vc_state(database, &self.inner.settings).await
+        crate::database::openid4vc_state(&self.inner.database, &self.inner.settings).await
     }
 
     /// Atomically commit OpenID4VC public and private material as one keyset
@@ -726,14 +690,9 @@ impl KeyManager {
         material: Openid4vcMaterial,
         new_private_key_pem: Option<String>,
     ) -> anyhow::Result<()> {
-        let database = self
-            .inner
-            .database
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("key manager is not repository-backed"))?;
         let loaded = crate::database::commit_openid4vc(
             &self.inner.settings,
-            database,
+            &self.inner.database,
             expected_revision,
             material,
             new_private_key_pem,
@@ -772,7 +731,7 @@ impl KeyManager {
         loaded.openid4vc_material = Some(material.into());
         self.inner
             .generation
-            .store(Arc::new(KeyGeneration::new(loaded)));
+            .store(Arc::new(KeyGeneration::database(loaded)));
     }
 
     /// Pin the currently published OpenID4VC signing key and its matching
@@ -831,15 +790,18 @@ impl KeyManager {
         algorithm: jsonwebtoken::Algorithm,
         behavior: TestSigningBehavior,
     ) -> Self {
-        let material = crate::store::generate_key_material(algorithm)
+        let material = crate::serialization::generate_key_material(algorithm)
             .expect("test signing key should generate");
         let kid = format!(
             "test-{}",
-            crate::store::signing_algorithm_name(algorithm).unwrap()
+            crate::serialization::signing_algorithm_name(algorithm).unwrap()
         );
-        let public_jwk =
-            crate::store::public_jwk_from_private_der(&kid, algorithm, &material.private_pkcs8_der)
-                .expect("test public JWK should derive");
+        let public_jwk = crate::serialization::public_jwk_from_private_der(
+            &kid,
+            algorithm,
+            &material.private_pkcs8_der,
+        )
+        .expect("test public JWK should derive");
         let active_signing_key = match behavior {
             TestSigningBehavior::Working => {
                 ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der.clone())
@@ -862,7 +824,7 @@ impl KeyManager {
                 retire_at: None,
                 managed: ManagedKey {
                     kid,
-                    algorithm: crate::store::signing_algorithm_name(algorithm)
+                    algorithm: crate::serialization::signing_algorithm_name(algorithm)
                         .unwrap()
                         .to_owned(),
                     purposes: all_signing_purposes(),
@@ -877,14 +839,15 @@ impl KeyManager {
         };
         let mut loaded = loaded;
         loaded.request_object_encryption_jwk =
-            crate::store::request_object_encryption_jwk(&loaded.request_object_decryption_key)
-                .expect("test request object encryption JWK");
-        let generation = KeyGeneration::new(loaded);
+            crate::request_object_encryption::request_object_encryption_jwk(
+                &loaded.request_object_decryption_key,
+            )
+            .expect("test request object encryption JWK");
+        let generation = KeyGeneration::database(loaded);
         Self {
             inner: Arc::new(KeyManagerInner {
                 generation: ArcSwap::from_pointee(generation),
                 settings: KeySettings {
-                    keys_dir: PathBuf::new(),
                     external_command: Vec::new(),
                     external_timeout: Duration::from_secs(2),
                     rotation_interval: chrono::Duration::days(90),
@@ -893,7 +856,11 @@ impl KeyManager {
                 },
                 health: Arc::new(LifecycleHealth::new()),
                 lifecycle_shutdown: watch::channel(false).0,
-                database: None,
+                database: crate::database::DatabaseKeysetBinding {
+                    tenant_id: uuid::Uuid::now_v7(),
+                    repository: Arc::new(crate::test_support::MemorySigningKeyRepository::default()),
+                    wrapping_keys: crate::test_support::wrapping_key_ring(),
+                },
             }),
         }
     }
@@ -903,20 +870,23 @@ impl KeyManager {
     pub fn for_test_with_auxiliary(algorithm: jsonwebtoken::Algorithm) -> Self {
         let manager = Self::for_test(jsonwebtoken::Algorithm::EdDSA);
         let mut loaded = manager.inner.generation.load().loaded.clone();
-        let material = crate::store::generate_key_material(algorithm).unwrap();
+        let material = crate::serialization::generate_key_material(algorithm).unwrap();
         let kid = format!(
             "test-aux-{}",
-            crate::store::signing_algorithm_name(algorithm).unwrap()
+            crate::serialization::signing_algorithm_name(algorithm).unwrap()
         );
-        let public_jwk =
-            crate::store::public_jwk_from_private_der(&kid, algorithm, &material.private_pkcs8_der)
-                .unwrap();
+        let public_jwk = crate::serialization::public_jwk_from_private_der(
+            &kid,
+            algorithm,
+            &material.private_pkcs8_der,
+        )
+        .unwrap();
         loaded.verification_keys.push(StoredVerificationKey {
             public_jwk,
             retire_at: None,
             managed: ManagedKey {
                 kid,
-                algorithm: crate::store::signing_algorithm_name(algorithm)
+                algorithm: crate::serialization::signing_algorithm_name(algorithm)
                     .unwrap()
                     .to_owned(),
                 purposes: [
@@ -935,45 +905,19 @@ impl KeyManager {
         manager
             .inner
             .generation
-            .store(Arc::new(KeyGeneration::new(loaded)));
+            .store(Arc::new(KeyGeneration::database(loaded)));
         manager
-    }
-
-    pub async fn validate(settings: &KeySettings) -> anyhow::Result<()> {
-        let path = settings.keys_dir.join("keyset.json");
-        if crate::store::try_load_keyset(settings, &path)
-            .await?
-            .is_none()
-        {
-            anyhow::bail!("keyset.json does not exist");
-        }
-        Ok(())
     }
 
     /// Validate the sealed repository generation, including its public/private
     /// correspondence and request-object key material.
     pub async fn database_validate(&self) -> anyhow::Result<()> {
-        let database = self
-            .inner
-            .database
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("key manager is not repository-backed"))?;
-        crate::database::validate(&self.inner.settings, database).await
+        crate::database::validate(&self.inner.settings, &self.inner.database).await
     }
 
     /// Opaque repository generation revision for an operator result.
     pub async fn database_revision(&self) -> anyhow::Result<String> {
-        let database = self
-            .inner
-            .database
-            .as_ref()
-            .ok_or_else(|| anyhow::anyhow!("key manager is not repository-backed"))?;
-        crate::database::revision(database).await
-    }
-
-    pub async fn load_or_create(settings: KeySettings) -> anyhow::Result<Self> {
-        let loaded = crate::store::load_or_create_keyset(&settings).await?;
-        Ok(Self::from_loaded(settings, loaded))
+        crate::database::revision(&self.inner.database).await
     }
 
     pub async fn load_or_create_database(
@@ -991,53 +935,15 @@ impl KeyManager {
                 settings,
                 health: Arc::new(LifecycleHealth::new()),
                 lifecycle_shutdown: watch::channel(false).0,
-                database: Some(database),
+                database,
             }),
         })
-    }
-
-    /// Import the legacy file keyset once, preserving every kid and public
-    /// projection. The files are read only and are never used by DB startup.
-    pub async fn import_legacy_file_keyset(
-        settings: KeySettings,
-        tenant_id: uuid::Uuid,
-        repository: Arc<dyn crate::SigningKeyRepository>,
-        wrapping_keys: crate::SigningKeyWrappingKeyRing,
-    ) -> anyhow::Result<Self> {
-        let (loaded, database) = crate::database::import_legacy_file_keyset(
-            &settings,
-            tenant_id,
-            repository,
-            wrapping_keys,
-        )
-        .await?;
-        Ok(Self {
-            inner: Arc::new(KeyManagerInner {
-                generation: ArcSwap::from_pointee(KeyGeneration::database(loaded)),
-                settings,
-                health: Arc::new(LifecycleHealth::new()),
-                lifecycle_shutdown: watch::channel(false).0,
-                database: Some(database),
-            }),
-        })
-    }
-
-    pub(crate) fn from_loaded(settings: KeySettings, loaded: LoadedKeyset) -> Self {
-        Self {
-            inner: Arc::new(KeyManagerInner {
-                generation: ArcSwap::from_pointee(KeyGeneration::new(loaded)),
-                settings,
-                health: Arc::new(LifecycleHealth::new()),
-                lifecycle_shutdown: watch::channel(false).0,
-                database: None,
-            }),
-        }
     }
 
     #[must_use]
     pub fn health(&self) -> KeyHealth {
         let health = self.inner.health.snapshot();
-        if self.inner.database.is_some() && self.inner.generation.load().is_expired() {
+        if self.inner.generation.load().is_expired() {
             KeyHealth {
                 status: KeyHealthStatus::Unhealthy,
                 consecutive_failures: health.consecutive_failures,
@@ -1108,19 +1014,12 @@ impl KeyManager {
     }
 
     pub async fn refresh(&self) -> anyhow::Result<()> {
-        let result = if let Some(database) = &self.inner.database {
-            crate::database::refresh(&self.inner.settings, database).await
-        } else {
-            crate::store::load_or_create_keyset(&self.inner.settings).await
-        };
+        let result = crate::database::refresh(&self.inner.settings, &self.inner.database).await;
         match result {
             Ok(loaded) => {
-                let generation = if self.inner.database.is_some() {
-                    KeyGeneration::database(loaded)
-                } else {
-                    KeyGeneration::new(loaded)
-                };
-                self.inner.generation.store(Arc::new(generation));
+                self.inner
+                    .generation
+                    .store(Arc::new(KeyGeneration::database(loaded)));
                 self.inner.health.mark_success();
                 Ok(())
             }
@@ -1225,7 +1124,7 @@ impl Signer for KeyManager {
         if !self.is_healthy() {
             return Err(SignError::KeyUnavailable);
         }
-        let algorithm = crate::store::signing_algorithm_from_name(request.algorithm)
+        let algorithm = crate::serialization::signing_algorithm_from_name(request.algorithm)
             .ok_or(SignError::UnsupportedAlgorithm)?;
         let generation = self.inner.generation.load_full();
         let selected = generation
@@ -1272,15 +1171,6 @@ fn sign_error_to_jwt(error: SignError) -> jsonwebtoken::errors::Error {
 }
 
 impl KeyGeneration {
-    fn new(loaded: LoadedKeyset) -> Self {
-        let snapshot = Arc::new(snapshot_from_loaded(&loaded));
-        Self {
-            loaded,
-            snapshot,
-            expires_at: None,
-        }
-    }
-
     fn database(loaded: LoadedKeyset) -> Self {
         let snapshot = Arc::new(snapshot_from_loaded(&loaded));
         Self {

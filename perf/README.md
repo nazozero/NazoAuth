@@ -49,7 +49,7 @@ Run a short App CPU smoke test:
 
 This test uses the NazoAuth service CPU override only (`PERF_APP_CPUS`, default
 `1`; optionally `PERF_APP_TASKSET` for process-level CPU affinity). PostgreSQL,
-Valkey, migration, key setup, and the k6 perf runner remain unrestricted unless
+Valkey, migration, and the k6 perf runner remain unrestricted unless
 `APP_CPU_CAPACITY_INFRA_CPUSET` is set explicitly. In nested Docker
 environments where Docker CPU quota is not enforced reliably, process-level
 `taskset` is the effective limiter.
@@ -63,7 +63,7 @@ Run a single-instance full-flow max test:
 This runs one NazoAuth instance through the full OIDC cold-login flow with
 short, high-arrival-rate points. The script splits the runner's allowed CPU set
 into an application half and an infrastructure half: NazoAuth is pinned to the
-application half, while PostgreSQL, Valkey, migration, key setup, and k6 use the
+application half, while PostgreSQL, Valkey, migration, and k6 use the
 infrastructure half. The default scenario is `oidc_cold_login_refresh`, which
 includes PAR, password login, authorization decision, authorization-code token
 exchange, and refresh-token rotation.
@@ -100,9 +100,6 @@ happy-path session:
   account-level locking behavior under stress.
 - `PERF_FLOW_VUS` defaults to `PERF_VUS`. It is only an explicit override for
   long authorization-code style flows, not a hidden reduction in concurrency.
-
-The compose stack also starts a local runtime keyset service before NazoAuth so
-FAPI paths can issue the required RS256 and PS256 server-side tokens.
 
 ## Profiles
 

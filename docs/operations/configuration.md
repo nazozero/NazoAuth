@@ -13,20 +13,23 @@ absent, the command copies the minimal example to `.env.yaml`, reports the new
 path, materializes required service-owned secrets, and continues startup.
 Explicit YAML and environment values still take precedence.
 
-The default deployment is same-origin. The public URL is configured once and
-the server derives the related URLs from it:
+The default deployment is same-origin per tenant issuer. `PUBLIC_BASE_URL`
+(and an optional `ISSUER`) seed the initial system-tenant directory binding:
 
 ```text
 PUBLIC_BASE_URL=https://auth.example.com
 ISSUER=https://auth.example.com
-FRONTEND_BASE_URL=https://auth.example.com/ui/
-PASSKEY_ORIGIN=https://auth.example.com
-PASSKEY_RP_ID=auth.example.com
-PROTECTED_RESOURCE_IDENTIFIER=https://auth.example.com/fapi/resource
 CLIENT_SECRET_PEPPER=<random 32+ byte secret>
 TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY=<base64url-encoded 32-byte key>
 TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID=response-2026-08
 ```
+
+After `nazoauth tenant-bootstrap` initializes the directory, an active binding
+owns the tenant, realm, organization, canonical external Host, and HTTPS issuer.
+The process builds a separate immutable runtime graph for each binding and
+routes a request only by its canonical Host. The directory-derived issuer then
+supplies that graph's frontend and CORS defaults; there is no process-wide
+`TENANT_ID`, `REALM_ID`, or `ORGANIZATION_ID` request selector.
 
 ## Minimal deployment
 
@@ -48,7 +51,6 @@ RUST_LOG: "info"
 `DATA_DIR` defaults the persistent file locations:
 
 ```text
-JWK_KEYS_DIR = DATA_DIR + "/keys"
 avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 ```
 
@@ -57,11 +59,9 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | Setting | Default | Notes |
 | --- | --- | --- |
 | `BIND` | `0.0.0.0:8000` | Public listener; HTTPS in `direct-tls`, HTTP otherwise |
-| `PUBLIC_BASE_URL` | `http://127.0.0.1:8000` | Public same-origin base URL |
-| `TRANSPORT_MODE` | implicit only for loopback HTTP | `loopback-http`, `direct-tls`, or `trusted-proxy`; required for non-loopback issuers |
-| `TENANT_ID` | `00000000-0000-0000-0000-000000000001` | Process-wide active tenant; the row must exist and have `active` status |
-| `REALM_ID` | `00000000-0000-0000-0000-000000000002` | Default identity placement; it must be active and belong to `TENANT_ID`, but it is not a request-routing or authorization partition |
-| `ORGANIZATION_ID` | `00000000-0000-0000-0000-000000000003` | Default identity placement; it must be active and belong to `TENANT_ID`, but it is not a request-routing or authorization partition |
+| `PUBLIC_BASE_URL` | `http://127.0.0.1:8000` | Seeds the initial system-tenant directory binding and process-level control settings. Active directory bindings supply the request issuer and Host. |
+| `ISSUER` | `PUBLIC_BASE_URL` | Optional issuer for the initial system binding. A directory binding replaces it for that tenant graph. |
+| `TRANSPORT_MODE` | implicit only for loopback HTTP | `loopback-http`, `direct-tls`, or `trusted-proxy`; required for non-loopback issuers. This is a process transport boundary, not a tenant selector. |
 | `DATABASE_URL` | `postgresql://postgres:postgres@127.0.0.1:5432/oauth` | PostgreSQL connection string for the current `nazoauth` launcher |
 | `DATABASE_MAX_CONNECTIONS` | `32` | Maximum PostgreSQL pool size per NazoAuth process |
 | `VALKEY_URL` | `redis://127.0.0.1:6379/0` | Valkey connection string; startup rejects an unmarked nonempty database rather than adopting historical keys |
@@ -109,6 +109,30 @@ platform store is empty. This path does not load `libpq` or the system OpenSSL
 ABI. Use `sslmode=require` for remote or untrusted networks and
 `sslmode=disable` only for a separately protected local/private transport.
 
+## Secret file inputs
+
+A secret can be supplied as its direct setting or through its paired `_FILE`
+setting. A direct value takes precedence; otherwise NazoAuth reads the referenced
+file during startup. Relative file paths resolve from the configuration
+directory. `_FILE` is intentionally limited to secret material: it is not a
+generic indirection for URLs, endpoint addresses, flags, identifiers, or limits.
+
+The supported pairs are:
+
+| Primary setting | File setting |
+| --- | --- |
+| `CLIENT_SECRET_PEPPER` | `CLIENT_SECRET_PEPPER_FILE` |
+| `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN` | `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN_FILE` |
+| `PAIRWISE_SUBJECT_SECRET` | `PAIRWISE_SUBJECT_SECRET_FILE` |
+| `MFA_TOTP_ENCRYPTION_KEY`, `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY` | `MFA_TOTP_ENCRYPTION_KEY_FILE`, `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_FILE` |
+| `TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY`, `TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY` | `TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_FILE`, `TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_FILE` |
+| `SIGNING_KEY_ENCRYPTION_KEY`, `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY` | `SIGNING_KEY_ENCRYPTION_KEY_FILE`, `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_FILE` |
+| `OPENID4VC_DATA_ENCRYPTION_KEY` | `OPENID4VC_DATA_ENCRYPTION_KEY_FILE` |
+| `OPENID4VCI_ISSUER_MANAGEMENT_TOKEN` | `OPENID4VCI_ISSUER_MANAGEMENT_TOKEN_FILE` |
+| `OPENID4VP_VERIFIER_MANAGEMENT_TOKEN` | `OPENID4VP_VERIFIER_MANAGEMENT_TOKEN_FILE` |
+
+Use the exact pair names above; the code allowlist is authoritative.
+
 ## Local mdoc certificates and CRLs
 
 Set `OPENID4VC_MDOC_ISSUING_COUNTRY` in the server `.env.yaml` before an
@@ -139,16 +163,21 @@ and its signer. Keep these records for the lifetime of the issued credentials.
 
 ## Derived settings
 
+For the initial system binding, the root configuration derives these values.
+For each active directory binding, its issuer replaces the configured issuer;
+that issuer also derives the tenant graph's frontend URL and CORS default.
+Explicit deployment-wide security settings remain global, and passkey settings
+still derive from the binding issuer when no explicit passkey override exists.
+
 | Derived value | Rule |
 | --- | --- |
-| `ISSUER` | `PUBLIC_BASE_URL`, unless explicitly overridden |
-| `FRONTEND_BASE_URL` | `PUBLIC_BASE_URL + "/ui/"`, unless explicitly overridden |
-| `CORS_ALLOWED_ORIGINS` | origin of `PUBLIC_BASE_URL`, unless explicitly overridden |
+| `ISSUER` | `PUBLIC_BASE_URL`, unless explicitly overridden for the initial system binding; a directory binding replaces it for its tenant graph. |
+| `FRONTEND_BASE_URL` | `PUBLIC_BASE_URL + "/ui/"` for the initial system binding; a directory tenant uses its issuer + `/ui/`. |
+| `CORS_ALLOWED_ORIGINS` | origin of `PUBLIC_BASE_URL` for the initial system binding; a directory tenant uses its issuer origin. |
 | `COOKIE_SECURE` | `true` when issuer uses HTTPS |
 | `PASSKEY_ORIGIN` | issuer, unless explicitly overridden |
 | `PASSKEY_RP_ID` | host of `PASSKEY_ORIGIN`, unless explicitly overridden |
 | `PROTECTED_RESOURCE_IDENTIFIER` | `ISSUER + "/fapi/resource"`, unless explicitly overridden |
-| `JWK_KEYS_DIR` | `DATA_DIR + "/keys"`, only as an explicit one-shot legacy key import source |
 | `SIGNING_KEY_ENCRYPTION_KEY_ID` | required deployment-provided nonempty wrapping-key identifier |
 | `SIGNING_KEY_ENCRYPTION_KEY` | required deployment-provided unpadded base64url 32-byte signing-key wrapping key |
 | `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_ID` / `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY` | optional matched previous wrapping-key pair while rewrapping persisted signing material |
@@ -160,10 +189,7 @@ Explicit overrides are retained for advanced deployments. New deployments
 should prefer same-origin defaults.
 
 Signing keys, their dedicated request-object decryption key, and their public
-projection are one encrypted generation in PostgreSQL. `JWK_KEYS_DIR` is not a
-runtime authority and is never created or read during ordinary startup. An
-operator may explicitly import a complete old directory once; that preserves
-every existing `kid` and leaves the source directory untouched for rollback.
+projection are one encrypted generation in PostgreSQL.
 
 Every server instance for a deployment must receive the same
 `SIGNING_KEY_ENCRYPTION_KEY_ID` and `SIGNING_KEY_ENCRYPTION_KEY`. The key is
@@ -174,19 +200,25 @@ a new generation, verify all instances can load it, then remove the previous
 pair. Back up the encrypted PostgreSQL row and the wrapping root together;
 the database ciphertext cannot recover private keys without its wrapping root.
 
-For a file-backed deployment upgrade, stop old writers and run the one-shot
-offline import before starting the database-backed server:
+Fresh deployment initializes the database keyset through tenant bootstrap.
+Historical file keysets are not imported or converted. Before 0.5.0, version
+updates do not preserve compatibility with historical releases; retain the
+backup and matching recovery tools for an existing deployment.
 
-```
-nazoauth keys-import --tenant <tenant-uuid> --from <legacy-jwk-keys-directory>
-```
+## Authorization-code replay state
 
-The target tenant must already be active in the directory and the process must
-have the deployment wrapping-key configuration. The command does not delete,
-rewrite, or keep reading the source directory. Keep it and a PostgreSQL backup
-until rollback is no longer required. Repeating the import is accepted only
-when the database contains the same imported key identities and private
-material; an unrelated keyset already created by server startup is an error.
+A consumed authorization-code marker is Valkey security state, not a disposable
+cache entry. It retains the redemption binding, issued access-token identity and
+expiry, and the optional refresh-token family so a later matching replay can
+revoke the issued access token and refresh family.
+
+The marker keeps the access-token TTL used at the original exchange when no
+refresh token was issued. When that exchange issued a refresh token, it keeps
+that exchange's refresh-token TTL instead. Expiry changes this one marker to
+`Missing`; it cannot revive the authorization code. Each refresh successor has
+its own relative TTL, so the marker does not attempt to retain an unbounded
+refresh family forever. Do not shorten these configured TTLs below the lifetime
+of credentials that a replay must still be able to revoke.
 
 ## Composable capability defaults
 
@@ -297,8 +329,11 @@ The following settings are still supported but should not be part of a quick
 deployment path. They are candidates for the administrator UI:
 
 - conditional OpenID4VC service settings: `ENABLE_OPENID4VCI_ISSUER`,
-  `ENABLE_OPENID4VP_VERIFIER`. All runtime capabilities use their explicit
-  persisted desired state.
+  `ENABLE_OPENID4VP_VERIFIER`, `ENABLE_DIRECTORY_OPENID4VCI_ISSUER`, and
+  `ENABLE_DIRECTORY_OPENID4VP_VERIFIER`. Each directory flag defaults to its
+  matching global flag; tenant-specific settings use the directory value, while
+  routes register if either value is enabled. These flags do not replace the
+  explicit persisted desired state for runtime modules.
 - protocol tuning: `DPOP_NONCE_POLICY`, `FAPI_RESOURCE_DPOP_NONCE_POLICY`, `REQUEST_OBJECT_JTI_POLICY`,
   `CIBA_SECURITY_PROFILE`, `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`,
   `PAR_TTL_SECONDS`,

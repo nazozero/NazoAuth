@@ -7,7 +7,7 @@
 use crate::adapters::security::constant_time_eq;
 use crate::domain::ClientRow;
 
-use actix_web::{HttpRequest, dev::Extensions, web::Data};
+use actix_web::{HttpMessage, HttpRequest, dev::Extensions, web::Data};
 
 use actix_web::http::header::HeaderMap;
 
@@ -110,6 +110,9 @@ pub(crate) struct MtlsCertificateSource {
     mode: MtlsCertificateSourceMode,
 }
 
+#[derive(Clone)]
+struct ForwardedClientCertificate(Option<MtlsClientCertificate>);
+
 impl MtlsCertificateSource {
     pub(crate) fn new(mode: MtlsCertificateSourceMode) -> Self {
         Self { mode }
@@ -144,13 +147,24 @@ fn request_mtls_client_certificate_from_configured_source(
         MtlsCertificateSourceMode::Rfc9440
             if request_from_trusted_proxy_cidrs(req, trusted_proxy_cidrs) =>
         {
-            let mut certificate = request_mtls_client_certificate_from_rfc9440(req.headers())?;
-            certificate.deployment_trusted_chain = req
-                .app_data::<Data<dyn rustls::server::danger::ClientCertVerifier>>()
-                .is_some_and(|verifier| {
-                    certificate_chain_verified(&certificate, verifier.get_ref())
-                });
-            Some(certificate)
+            if let Some(cached) = req.extensions().get::<ForwardedClientCertificate>() {
+                return cached.0.clone();
+            }
+            let certificate = request_mtls_client_certificate_from_rfc9440(req.headers()).map(
+                |mut certificate| {
+                    certificate.deployment_trusted_chain = req
+                        .app_data::<Data<dyn rustls::server::danger::ClientCertVerifier>>()
+                        .is_some_and(|verifier| {
+                            certificate_chain_verified(&certificate, verifier.get_ref())
+                        });
+                    certificate
+                },
+            );
+            // These transport facts are immutable for this request. Tenant
+            // trust decisions remain with the caller's current tenant binding.
+            req.extensions_mut()
+                .insert(ForwardedClientCertificate(certificate.clone()));
+            certificate
         }
         MtlsCertificateSourceMode::Rfc9440 => None,
     }

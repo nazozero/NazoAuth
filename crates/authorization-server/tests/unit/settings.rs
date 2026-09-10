@@ -145,10 +145,6 @@ fn directory_tenant_uses_the_authoritative_host_and_tenant_storage_roots() {
         "https://AUTH.example.test:8443/issuer"
     );
     assert_eq!(
-        settings.keys.jwk_keys_dir,
-        data_dir.join("tenants/00000000-0000-0000-0000-000000000011/keys")
-    );
-    assert_eq!(
         settings.storage.avatar_storage_dir,
         data_dir.join("tenants/00000000-0000-0000-0000-000000000011/avatars")
     );
@@ -213,30 +209,6 @@ fn directory_tenant_rejects_host_mismatch_but_namespaces_explicit_storage_roots(
         .endpoint
         .transport_mode,
         TransportMode::DirectTls
-    );
-
-    let keys = ConfigSource::from_owned_pairs_for_test([
-        (
-            "JWK_KEYS_DIR".to_owned(),
-            "test-runtime/shared-keys".to_owned(),
-        ),
-        ("TRANSPORT_MODE".to_owned(), "trusted-proxy".to_owned()),
-        ("TRUSTED_PROXY_CIDRS".to_owned(), "127.0.0.1/32".to_owned()),
-        ("MTLS_CERTIFICATE_SOURCE".to_owned(), "rfc9440".to_owned()),
-        (
-            "CLIENT_SECRET_PEPPER".to_owned(),
-            "0123456789abcdef0123456789abcdef".to_owned(),
-        ),
-    ]);
-    assert!(
-        Settings::from_directory_binding(
-            &keys,
-            &directory_binding("https://auth.example.test", "auth.example.test"),
-        )
-        .err()
-        .expect("directory tenant must reject shared key path")
-        .to_string()
-        .contains("JWK_KEYS_DIR must not be configured")
     );
 
     let avatars = ConfigSource::from_pairs_for_test([
@@ -1312,7 +1284,6 @@ fn data_dir_drives_default_persistent_storage_paths() {
         settings.storage.avatar_storage_dir,
         data_dir.join("tenants/00000000-0000-0000-0000-000000000001/avatars")
     );
-    assert_eq!(settings.keys.jwk_keys_dir, data_dir.join("keys"));
 }
 
 #[test]
@@ -1320,7 +1291,6 @@ fn explicit_storage_paths_override_data_dir_derivations() {
     let config = ConfigSource::from_pairs_for_test([
         ("DATA_DIR", "test-runtime/nazo-oauth"),
         ("AVATAR_STORAGE_DIR", "test-runtime/avatars"),
-        ("JWK_KEYS_DIR", "test-runtime/keys"),
     ]);
     let settings = Settings::from_config(&config).unwrap();
     let config_dir = std::fs::canonicalize(".").unwrap();
@@ -1328,10 +1298,6 @@ fn explicit_storage_paths_override_data_dir_derivations() {
     assert_eq!(
         settings.storage.avatar_storage_dir,
         config_dir.join("test-runtime/avatars/00000000-0000-0000-0000-000000000001")
-    );
-    assert_eq!(
-        settings.keys.jwk_keys_dir,
-        config_dir.join("test-runtime/keys")
     );
 }
 

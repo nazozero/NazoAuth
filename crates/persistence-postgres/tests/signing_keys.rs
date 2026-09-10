@@ -132,9 +132,8 @@ fn assert_same_runtime_public_material(
     );
 }
 
-fn database_key_settings(keys_dir: std::path::PathBuf) -> KeySettings {
+fn database_key_settings() -> KeySettings {
     KeySettings {
-        keys_dir,
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
@@ -153,8 +152,8 @@ fn candidate(revision: i64, marker: u8) -> PersistedSigningKeyset {
 }
 
 #[tokio::test]
-async fn database_managers_share_encrypted_keys_and_restart_without_local_files()
--> anyhow::Result<()> {
+async fn database_managers_share_encrypted_keys_and_restart_after_rewrapping() -> anyhow::Result<()>
+{
     use nazo_key_management::{KeyManager, KeySettings, SigningKeyWrappingKeyRing};
     use std::sync::Arc;
 
@@ -170,9 +169,7 @@ async fn database_managers_share_encrypted_keys_and_restart_without_local_files(
     .bind::<SqlUuid, _>(tenant)
     .execute(&mut pool.get().await?)
     .await?;
-    let directory = std::env::temp_dir().join(format!("nazo-shared-key-proof-{tenant}"));
     let settings = KeySettings {
-        keys_dir: directory.clone(),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
@@ -196,7 +193,6 @@ async fn database_managers_share_encrypted_keys_and_restart_without_local_files(
     let (first, second) = (first?, second?);
     let original_kid = first.snapshot().active_kid.clone();
     assert_eq!(original_kid, second.snapshot().active_kid);
-    assert!(!directory.exists());
     let persisted = SigningKeyRepository::load(repository.as_ref())
         .await?
         .unwrap();
@@ -251,7 +247,6 @@ async fn database_managers_share_encrypted_keys_and_restart_without_local_files(
     )
     .await?;
     assert_eq!(restarted.snapshot().active_kid, original_kid);
-    assert!(!directory.exists());
     sql_query("DELETE FROM tenants WHERE id = $1")
         .bind::<SqlUuid, _>(tenant)
         .execute(&mut pool.get().await?)
@@ -275,8 +270,7 @@ async fn database_managed_openid4vc_material_survives_refresh_rotation_and_resta
     .execute(&mut pool.get().await?)
     .await?;
 
-    let keys_dir = std::env::temp_dir().join(format!("nazo-managed-mdoc-{tenant}"));
-    let settings = database_key_settings(keys_dir.clone());
+    let settings = database_key_settings();
     let wrapping_keys = SigningKeyWrappingKeyRing::new("mdoc-test", [37_u8; 32], None)?;
     let repository: std::sync::Arc<dyn SigningKeyRepository> =
         std::sync::Arc::new(SigningKeysetRepository::for_tenant(pool.clone(), tenant));
@@ -385,16 +379,13 @@ async fn database_managed_openid4vc_material_survives_refresh_rotation_and_resta
     assert_eq!(current_lease.kid(), "mdoc-signing-2");
     assert_same_runtime_public_material(current_lease.material(), &rotated.public);
 
-    let fresh_dir = std::env::temp_dir().join(format!("nazo-managed-mdoc-fresh-{tenant}"));
-    assert!(!fresh_dir.exists());
     let fresh = KeyManager::load_or_create_database(
-        database_key_settings(fresh_dir.clone()),
+        database_key_settings(),
         tenant,
         repository.clone(),
         wrapping_keys,
     )
     .await?;
-    assert!(!fresh_dir.exists());
     let fresh_state = fresh.database_openid4vc_state().await?;
     assert_eq!(fresh_state.material, Some(rotated.clone()));
     let fresh_lease = fresh.prepare_openid4vc_signing()?;

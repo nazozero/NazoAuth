@@ -1096,6 +1096,7 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
         .to_http_request();
     let mut client = client_row();
     client.require_dpop_bound_tokens = false;
+    insert_refresh_client(&state, &client).await;
     let family_id = Uuid::now_v7();
 
     let mut reused = token_row_for_client(&state, &client);
@@ -1700,6 +1701,7 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
     let req = mtls_refresh_request(&certificate);
     let mut client = client_row();
     client.require_dpop_bound_tokens = false;
+    insert_refresh_client(&state, &client).await;
     let family_id = Uuid::now_v7();
     let mut revoked = token_row_for_client(&state, &client);
     revoked.client_id = client.id;

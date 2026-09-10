@@ -324,14 +324,13 @@ limited to SCIM `/Users` listing and `/ServiceProviderConfig`; it is not an
 OAuth authorization-server profile and cannot change any profile selection or
 OAuth/OIDC/FAPI metadata.
 
-The dated
-[Browser-Based Applications draft-27 audit](../conformance/2026-07-11-browser-based-applications-draft-27-audit.md)
-is also complete as security evidence, not as a runtime profile. NazoAuthWeb is the first-party
-same-origin authorization-server frontend with a server-managed session, not a BFF, and receives no OAuth tokens. A third-party
-browser-only application remains a public `oauth2-oidc-baseline` client using
-authorization code + S256 PKCE, exact redirects, and non-credentialed
-endpoint-specific CORS. The final RFC requires a separate delta audit before
-any final-standard claim.
+Browser-based security guidance is implementation evidence, not a runtime
+profile. NazoAuthWeb is the first-party same-origin authorization-server
+frontend with a server-managed session and receives no OAuth tokens. A
+third-party browser-only application remains a public `oauth2-oidc-baseline`
+client using authorization code + S256 PKCE, exact redirects, and
+non-credentialed endpoint-specific CORS. The final RFC requires a separate
+delta audit before any final-standard claim.
 
 FAPI HTTP Signatures is the second bounded M8 implementation candidate. It is
 available only while the persisted `http_message_signatures` module is enabled on `/fapi/resource`;

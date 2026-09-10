@@ -1,6 +1,6 @@
 use super::*;
 
-use std::{path::Path, sync::Arc};
+use std::sync::Arc;
 
 use diesel::sql_query;
 use diesel_async::RunQueryDsl;
@@ -28,35 +28,27 @@ fn invalid_pool() -> nazo_postgres::DbPool {
     .expect("pool construction should not connect")
 }
 
-async fn fixture_crypto(root: &Path) -> Openid4vcCredentialCrypto {
-    fixture_crypto_with_dns(root, true).await.0
+async fn fixture_crypto() -> Openid4vcCredentialCrypto {
+    fixture_crypto_with_dns(true).await.0
 }
 
-async fn fixture_crypto_without_dns(root: &Path) -> Openid4vcCredentialCrypto {
-    fixture_crypto_with_dns(root, false).await.0
+async fn fixture_crypto_without_dns() -> Openid4vcCredentialCrypto {
+    fixture_crypto_with_dns(false).await.0
 }
 
-async fn fixture_crypto_with_dns(
-    root: &Path,
-    include_dns: bool,
-) -> (Openid4vcCredentialCrypto, KeyManager) {
-    tokio::fs::create_dir_all(root)
-        .await
-        .expect("fixture key directory should be created");
+async fn fixture_crypto_with_dns(include_dns: bool) -> (Openid4vcCredentialCrypto, KeyManager) {
     let settings = KeySettings {
-        keys_dir: root.to_owned(),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(30),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::hours(1),
     };
-    KeyManager::load_or_create(settings.clone())
+    let key_manager = nazo_key_management::test_support::key_manager(settings)
         .await
-        .expect("fixture key store should initialize");
-    let signing_kid = KeyManager::register_local(
-        &settings,
-        LocalKeyRegistration {
+        .expect("database-backed fixture keyset should initialize");
+    let signing_kid = key_manager
+        .database_register_local(LocalKeyRegistration {
             algorithm: jsonwebtoken::Algorithm::ES256,
             purposes: [
                 SigningPurpose::Credential,
@@ -64,21 +56,15 @@ async fn fixture_crypto_with_dns(
             ]
             .into_iter()
             .collect(),
-        },
+        })
+        .await
+        .expect("database fixture signing key should register");
+    let signing_key = KeyPair::from_pem(
+        &key_manager
+            .database_local_private_key_pem(&signing_kid)
+            .expect("database fixture signing key PEM should load"),
     )
-    .await
-    .expect("fixture signing key should register");
-    let signing_record = KeyManager::list_keys(&settings)
-        .await
-        .expect("fixture keys should list")
-        .into_iter()
-        .find(|record| record.kid == signing_kid)
-        .expect("registered fixture signing key should exist");
-    let signing_key_pem = tokio::fs::read_to_string(root.join(signing_record.locator))
-        .await
-        .expect("registered fixture signing key PEM should load");
-    let signing_key =
-        KeyPair::from_pem(&signing_key_pem).expect("registered fixture P-256 signing key");
+    .expect("database fixture P-256 signing key");
     let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("fixture CA key");
     let mut ca_params = CertificateParams::default();
     ca_params.is_ca = IsCa::Ca(BasicConstraints::Unconstrained);
@@ -100,9 +86,6 @@ async fn fixture_crypto_with_dns(
         .signed_by(&signing_key, &ca)
         .expect("fixture leaf certificate");
 
-    let key_manager = KeyManager::load_or_create(settings)
-        .await
-        .expect("fixture key manager should load");
     key_manager.set_openid4vc_material_for_test(Openid4vcMaterial {
         public: Openid4vcPublicMaterial {
             signing_kid,
@@ -150,12 +133,8 @@ fn rotated_material(current: &Openid4vcPublicMaterial) -> Openid4vcMaterial {
     }
 }
 
-async fn operations(
-    pool: nazo_postgres::DbPool,
-    root: &Path,
-    enabled: bool,
-) -> ServerPresentationOperations {
-    let crypto = fixture_crypto(root).await;
+async fn operations(pool: nazo_postgres::DbPool, enabled: bool) -> ServerPresentationOperations {
+    let crypto = fixture_crypto().await;
     operations_with_crypto(pool, crypto, enabled).await
 }
 
@@ -272,8 +251,7 @@ fn ordinary_trust_policy_material() -> serde_json::Value {
 
 #[tokio::test]
 async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() {
-    let root = std::env::temp_dir().join(format!("nazo-openid4vp-disabled-{}", Uuid::now_v7()));
-    let disabled = operations(invalid_pool(), &root, false).await;
+    let disabled = operations(invalid_pool(), false).await;
     let disabled_error = disabled
         .create(create_input(None, None, None, false))
         .await
@@ -291,7 +269,7 @@ async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() 
         )
     );
 
-    let enabled = operations(invalid_pool(), &root.join("enabled"), true).await;
+    let enabled = operations(invalid_pool(), true).await;
     let wallet_error = enabled
         .create(CreatePresentationRequest {
             wallet_authorization_endpoint: "http://wallet.example/authorize".to_owned(),
@@ -356,12 +334,8 @@ async fn create_rejects_disabled_verifier_and_untrusted_wallet_before_storage() 
         )
     );
 
-    let no_dns = operations_with_crypto(
-        invalid_pool(),
-        fixture_crypto_without_dns(&root.join("without-dns")).await,
-        true,
-    )
-    .await;
+    let no_dns =
+        operations_with_crypto(invalid_pool(), fixture_crypto_without_dns().await, true).await;
     let no_dns_error = no_dns
         .create(create_input(
             Some("request_uri_signed_get"),
@@ -423,9 +397,8 @@ async fn create_and_request_cover_standard_modes_and_tenant_bound_trust() {
     let Some(database_url) = std::env::var("DATABASE_URL").ok() else {
         return;
     };
-    let root = std::env::temp_dir().join(format!("nazo-openid4vp-live-{}", Uuid::now_v7()));
     let pool = nazo_postgres::create_pool(database_url, 2).expect("live pool should build");
-    let (crypto, keyset) = fixture_crypto_with_dns(&root, true).await;
+    let (crypto, keyset) = fixture_crypto_with_dns(true).await;
     let operations = operations_with_crypto(pool.clone(), crypto, true).await;
 
     let url_query_input = create_input(

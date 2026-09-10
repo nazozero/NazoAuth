@@ -1,6 +1,5 @@
 use super::{
-    AdminClientConfig, ServerAdminClientCrypto, ServerAdminClientService,
-    ServerSectorIdentifierResolver, admin_client_policy,
+    AdminClientConfig, ServerAdminClientCrypto, ServerAdminClientService, admin_client_policy,
 };
 use crate::adapters::security::random_urlsafe_token;
 use crate::settings::Settings;
@@ -12,6 +11,12 @@ use nazo_key_management::{
 };
 use serde_json::Value;
 use std::sync::Arc;
+
+fn sector_identifier_resolver()
+-> crate::domain::remote_client_documents::RemoteClientDocumentResolver {
+    crate::domain::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+        .expect("empty sector-identifier policy should be valid")
+}
 
 pub(crate) use nazo_auth::{
     AdminClientError as InsertClientError, CreateClientRequest, PreparedClientRegistration,
@@ -43,7 +48,7 @@ pub(crate) fn admin_client_service(
     actix_web::web::Data::new(ServerAdminClientService::new(
         std::sync::Arc::new(nazo_postgres::OAuthClientRepository::new(database))
             as std::sync::Arc<dyn nazo_auth::AdminClientRepositoryPort>,
-        ServerSectorIdentifierResolver,
+        sector_identifier_resolver(),
         ServerAdminClientCrypto::new(keyset),
         admin_client_policy(settings),
     ))
@@ -64,6 +69,7 @@ pub(crate) async fn prepare_client_insert_with_secret_pepper(
     let crypto = TestAdminClientCrypto {
         response_signing_algorithms,
     };
+    let sector_identifiers = sector_identifier_resolver();
     nazo_auth::prepare_client_registration(
         payload,
         &nazo_auth::AdminClientPolicy {
@@ -71,7 +77,7 @@ pub(crate) async fn prepare_client_insert_with_secret_pepper(
             pairwise_subject_secret: pairwise_subject_secret.map(ToOwned::to_owned),
             client_secret_pepper: client_secret_pepper.to_owned(),
         },
-        &ServerSectorIdentifierResolver,
+        &sector_identifiers,
         &crypto,
     )
     .await
@@ -133,6 +139,7 @@ pub(crate) async fn prepare_client_patch(
     let crypto = TestAdminClientCrypto {
         response_signing_algorithms,
     };
+    let sector_identifiers = sector_identifier_resolver();
     nazo_auth::prepare_client_patch(
         current.clone(),
         payload,
@@ -142,7 +149,7 @@ pub(crate) async fn prepare_client_patch(
             client_secret_pepper: crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER
                 .to_owned(),
         },
-        &ServerSectorIdentifierResolver,
+        &sector_identifiers,
         &crypto,
     )
     .await

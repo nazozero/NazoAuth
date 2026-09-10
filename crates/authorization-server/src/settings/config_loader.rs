@@ -124,11 +124,6 @@ impl Settings {
         config: &ConfigSource,
         binding: &nazo_identity::TenantDirectoryBinding,
     ) -> anyhow::Result<Self> {
-        if config.get("JWK_KEYS_DIR").is_some() {
-            bail!(
-                "JWK_KEYS_DIR must not be configured for a directory-managed tenant; tenant key directories are derived from DATA_DIR"
-            );
-        }
         Self::from_config_for_tenant(config, Some(TenantOverride::from_directory(binding)?))
     }
 
@@ -484,40 +479,28 @@ impl Settings {
         let passkey = PasskeySettings::from_config(config, &issuer)?;
         let email = EmailSettings::from_config(config, &issuer)?;
         let federation = FederationSettings::from_config(config)?;
-        let mut task_key_settings = key_settings_from_config(config)?;
+        let task_key_settings = key_settings_from_config(config)?;
         let fapi_http_signature_max_age_seconds =
             config.parse("FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS", 60)?;
         if !(1..=300).contains(&fapi_http_signature_max_age_seconds) {
             bail!("FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS must be between 1 and 300");
         }
         let data_dir = config.persistent_path("DATA_DIR", Some(DEFAULT_DATA_DIR))?;
-        if tenant_specific {
-            if openid4vc_enabled {
-                let tenant_id = tenant.context.tenant_id;
-                openid4vc_data_encryption_key = openid4vc_data_encryption_key.map(|root| {
-                    derive_tenant_secret(&root, tenant_id, b"nazoauth/openid4vc/data-encryption/v1")
-                });
-                openid4vci_issuer_management_token =
-                    openid4vci_issuer_management_token.map(|root| {
-                        derive_tenant_management_token(
-                            root,
-                            tenant_id,
-                            b"nazoauth/openid4vci/management/v1",
-                        )
-                    });
-                openid4vp_verifier_management_token =
-                    openid4vp_verifier_management_token.map(|root| {
-                        derive_tenant_management_token(
-                            root,
-                            tenant_id,
-                            b"nazoauth/openid4vp/management/v1",
-                        )
-                    });
-            }
-            task_key_settings.keys_dir = data_dir
-                .join("tenants")
-                .join(tenant.context.tenant_id.as_uuid().to_string())
-                .join("keys");
+        if tenant_specific && openid4vc_enabled {
+            let tenant_id = tenant.context.tenant_id;
+            openid4vc_data_encryption_key = openid4vc_data_encryption_key.map(|root| {
+                derive_tenant_secret(&root, tenant_id, b"nazoauth/openid4vc/data-encryption/v1")
+            });
+            openid4vci_issuer_management_token = openid4vci_issuer_management_token.map(|root| {
+                derive_tenant_management_token(
+                    root,
+                    tenant_id,
+                    b"nazoauth/openid4vci/management/v1",
+                )
+            });
+            openid4vp_verifier_management_token = openid4vp_verifier_management_token.map(|root| {
+                derive_tenant_management_token(root, tenant_id, b"nazoauth/openid4vp/management/v1")
+            });
         }
         let tenant_id = tenant.context.tenant_id.as_uuid().to_string();
         let avatar_storage_dir = match config.optional_string("AVATAR_STORAGE_DIR") {
@@ -672,7 +655,6 @@ impl Settings {
                 federation,
             },
             keys: KeyManagementSettings {
-                jwk_keys_dir: task_key_settings.keys_dir,
                 signing_external_command: task_key_settings.external_command,
                 signing_external_timeout_ms: task_key_settings.external_timeout.as_millis() as u64,
                 signing_key_rotation_interval_seconds: task_key_settings

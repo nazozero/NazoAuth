@@ -1,17 +1,9 @@
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 
-use futures_util::StreamExt;
-
-const MAX_RESPONSE_BYTES: u64 = 128 * 1024;
+pub(crate) const MAX_RESPONSE_BYTES: u64 = 128 * 1024;
 
 #[derive(Debug)]
 pub(crate) enum SectorIdentifierError {
-    InvalidUri,
-    SchemeNotHttps,
-    BlockedHost,
-    DnsResolutionFailed,
-    HttpError,
-    Timeout,
     InvalidContentType,
     ResponseTooLarge,
     InvalidJson,
@@ -124,19 +116,12 @@ fn is_globally_reachable_ipv6(address: std::net::Ipv6Addr) -> bool {
         .any(|(network, prefix_length)| ipv6_in_prefix(address, network, prefix_length))
 }
 
-fn append_response_chunk(body: &mut Vec<u8>, chunk: &[u8]) -> Result<(), SectorIdentifierError> {
-    if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES as usize {
-        return Err(SectorIdentifierError::ResponseTooLarge);
-    }
-    body.extend_from_slice(chunk);
-    Ok(())
-}
-
 pub(crate) fn parse_sector_identifier_document(
     content_type: &str,
     body: &[u8],
 ) -> Result<Vec<String>, SectorIdentifierError> {
-    if !content_type.contains("application/json") {
+    let media_type = content_type.split(';').next().unwrap_or_default().trim();
+    if !media_type.eq_ignore_ascii_case("application/json") {
         return Err(SectorIdentifierError::InvalidContentType);
     }
     if body.len() as u64 > MAX_RESPONSE_BYTES {
@@ -150,75 +135,6 @@ pub(crate) fn parse_sector_identifier_document(
         }
     }
     Ok(uris)
-}
-
-pub(crate) async fn fetch_sector_identifier_uris(
-    uri: &str,
-) -> Result<Vec<String>, SectorIdentifierError> {
-    let parsed = url::Url::parse(uri).map_err(|_| SectorIdentifierError::InvalidUri)?;
-    if parsed.scheme() != "https" {
-        return Err(SectorIdentifierError::SchemeNotHttps);
-    }
-    let host = parsed.host_str().ok_or(SectorIdentifierError::InvalidUri)?;
-    if is_blocked_host(host) {
-        return Err(SectorIdentifierError::BlockedHost);
-    }
-    if host.eq_ignore_ascii_case("invalid") || host.to_ascii_lowercase().ends_with(".invalid") {
-        return Err(SectorIdentifierError::DnsResolutionFailed);
-    }
-    let port = parsed
-        .port_or_known_default()
-        .ok_or(SectorIdentifierError::InvalidUri)?;
-    let addresses = tokio::net::lookup_host((host, port))
-        .await
-        .map_err(|_| SectorIdentifierError::DnsResolutionFailed)?
-        .collect::<Vec<SocketAddr>>();
-    if addresses.is_empty() {
-        return Err(SectorIdentifierError::DnsResolutionFailed);
-    }
-    if addresses.iter().any(|addr| is_blocked_ip(addr.ip())) {
-        return Err(SectorIdentifierError::BlockedHost);
-    }
-    let client = reqwest::Client::builder()
-        .no_proxy()
-        .timeout(std::time::Duration::from_secs(10))
-        .connect_timeout(std::time::Duration::from_secs(5))
-        .redirect(reqwest::redirect::Policy::none())
-        .resolve_to_addrs(host, &addresses)
-        .build()
-        .map_err(|_| SectorIdentifierError::HttpError)?;
-    let response = client
-        .get(uri)
-        .send()
-        .await
-        .map_err(|error| {
-            if error.is_timeout() {
-                SectorIdentifierError::Timeout
-            } else {
-                SectorIdentifierError::HttpError
-            }
-        })?
-        .error_for_status()
-        .map_err(|_| SectorIdentifierError::HttpError)?;
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_RESPONSE_BYTES)
-    {
-        return Err(SectorIdentifierError::ResponseTooLarge);
-    }
-    let content_type = response
-        .headers()
-        .get(reqwest::header::CONTENT_TYPE)
-        .and_then(|value| value.to_str().ok())
-        .unwrap_or("")
-        .to_owned();
-    let mut body = Vec::new();
-    let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(|_| SectorIdentifierError::HttpError)?;
-        append_response_chunk(&mut body, &chunk)?;
-    }
-    parse_sector_identifier_document(&content_type, &body)
 }
 
 #[cfg(test)]

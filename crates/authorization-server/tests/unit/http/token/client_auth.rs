@@ -539,6 +539,45 @@ async fn private_key_jwt_refreshes_registered_jwks_and_fails_closed_on_resolver_
 }
 
 #[actix_web::test]
+async fn private_key_jwt_unknown_kid_after_successful_refresh_is_invalid_client() {
+    let state = token_management_state();
+    let signing_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let registered_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
+    let uri = "https://client.example/jwks";
+    let mut client = confidential_client_with_secret(&fixture_secret("unknown-kid"));
+    client.token_endpoint_auth_method = "private_key_jwt".to_owned();
+    client.jwks_uri = Some(uri.to_owned());
+
+    let mut credentials = client_credentials("private_key_jwt");
+    credentials.client_assertion = Some(signed_client_assertion(
+        &client.client_id,
+        &state.settings.endpoint.issuer,
+        "unknown-kid",
+        &signing_key,
+        "unknown-kid-invalid-client",
+    ));
+    let resolver = crate::test_support::CountingJwksResolver::with_document(
+        uri,
+        json!({"keys": [registered_key.public_jwk("registered-kid")]}),
+    );
+
+    let error = verify_confidential_client_with_resolver(
+        &state,
+        &ClientAuthRequestFacts::new("/token", None),
+        &client,
+        &credentials,
+        &resolver,
+    )
+    .await
+    .expect_err("a successful JWKS refresh with an unknown kid must reach signature validation");
+    assert!(matches!(
+        error,
+        TokenManagementClientAuthError::InvalidClient
+    ));
+    assert_eq!(resolver.calls(), 1);
+}
+
+#[actix_web::test]
 async fn private_key_jwt_without_kid_uses_the_registered_key_source() {
     let state = token_management_state();
     let old = client_signing_fixture(jsonwebtoken::Algorithm::RS256);

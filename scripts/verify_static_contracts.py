@@ -836,7 +836,7 @@ def check_openid4vc_boundaries() -> None:
         (
             ROOT / "crates" / "key-management" / "src" / name
         ).read_text(encoding="utf-8")
-        for name in ("store.rs", "serialization.rs", "lifecycle.rs")
+        for name in ("database.rs", "serialization.rs")
     )
     for marker in (
         "generate-local",

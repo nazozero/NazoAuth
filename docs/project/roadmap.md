@@ -74,12 +74,16 @@ The project separates three surfaces:
 
 ## Identity Platform Surface
 
-- Single-tenant runtime with tenant-aware schema boundaries.
+- Directory-managed, host-routed tenant runtimes. Each active binding supplies
+  a tenant, realm, organization, canonical host, and issuer; every request uses
+  the matching immutable tenant graph, with no default-tenant fallback.
 - TOTP MFA, backup codes, remembered MFA, and step-up authentication.
 - WebAuthn/passkeys.
-- External OIDC/SAML federation.
-- SCIM 2.0 provisioning for the default tenant with hashed, rotatable, scoped,
-  audited database tokens. No global deployment-token fallback exists.
+- Configuration-gated external OIDC, OAuth2 social, and trusted SAML-gateway
+  federation. These login adapters are distinct from OpenID Federation
+  trust-chain protocol support.
+- SCIM 2.0 provisioning with hashed, rotatable, scoped, audited database tokens
+  in the resolved tenant. No global deployment-token fallback exists.
 
 ## Rust Resource Server Support
 
@@ -104,7 +108,10 @@ remain prerequisite-gated or intentionally bounded:
 - Device Authorization Grant server support is active on new databases, while
   client grant and cross-device authority remain explicit.
 - External-token, refresh-token, or ID-token Token Exchange profiles.
-- Request-level dynamic tenant or issuer routing.
+- OpenID Federation 1.1 trust-chain behavior: entity configuration, trust
+  anchors and chains, metadata policy, trust marks, and federation
+  fetch/list/resolve endpoints. This is not required for the implemented
+  third-party login adapters.
 - RFC 9701 encrypted introspection responses outside the signed-introspection
   profile, or without per-client JWE response metadata.
 
@@ -116,8 +123,9 @@ Each item has a threat-model and acceptance-test entry in
 - Black-box protocol evidence: project-owned protocol tests.
 - OAuth 2.1 and best-practice audit:
   [oauth2-1-self-audit.md](../protocol/oauth2-1-self-audit.md).
-- Negative conformance fixtures:
-  [conformance/negative-fixtures.md](../conformance/negative-fixtures.md).
+- Negative protocol behavior: the relevant implementation tests and the
+  [RFC compliance matrix](../protocol/rfc-compliance-matrix.md) are the current
+  evidence index.
 - Deployment guide:
   [deployment.md](../operations/deployment.md).
 - Release controls:

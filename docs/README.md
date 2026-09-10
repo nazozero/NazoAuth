@@ -17,8 +17,8 @@ set can be scanned from one place.
 | Workspace and runtime-module architecture | [project/architecture.md](project/architecture.md) |
 | Deployment | [operations/deployment.md](operations/deployment.md) |
 | Chinese deployment | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) |
-| Fresh production activation | [operations/fresh-production-activation.md](operations/fresh-production-activation.md) |
-| Chinese fresh production activation | [operations/fresh-production-activation.zh-CN.md](operations/fresh-production-activation.zh-CN.md) |
+| Managed install, update, and recovery | [operations/one-click-update.md](operations/one-click-update.md) |
+| Chinese managed install, update, and recovery | [operations/one-click-update.zh-CN.md](operations/one-click-update.zh-CN.md) |
 | Configuration | [operations/configuration.md](operations/configuration.md) |
 | Release platform support | [operations/platform-support.md](operations/platform-support.md) |
 | OpenID Connect integration | [integration/openid-connect.md](integration/openid-connect.md) |
@@ -60,11 +60,17 @@ set can be scanned from one place.
 | Document | Role |
 | --- | --- |
 | [operations/configuration.md](operations/configuration.md) | Runtime configuration model and environment settings. |
+| [operations/configuration-inventory.md](operations/configuration-inventory.md) | Configuration ownership guide; code remains the key allowlist authority. |
+| [operations/control-discovery.md](operations/control-discovery.md) | Signed, read-only controller discovery protocol. |
+| [operations/controller-repository-split.md](operations/controller-repository-split.md) | Server/controller repository and release boundary. |
 | [operations/deployment.md](operations/deployment.md) | English deployment guide. |
 | [operations/deployment.zh-CN.md](operations/deployment.zh-CN.md) | Chinese deployment guide. |
 | [operations/one-click-update.md](operations/one-click-update.md) | Signed one-click Podman, Docker, and host installation and updates. |
 | [operations/one-click-update.zh-CN.md](operations/one-click-update.zh-CN.md) | Chinese signed one-click installation and update guide. |
-| [operations/ha-operations.md](operations/ha-operations.md) | PostgreSQL and Valkey operational guidance. |
+| [operations/ha-operations.md](operations/ha-operations.md) | PostgreSQL and Valkey availability, recovery, and state-epoch guidance. |
+| [operations/shared-runtime-state-verification.md](operations/shared-runtime-state-verification.md) | Shared runtime-state verification boundary. |
+| [operations/mdoc-shared-state.md](operations/mdoc-shared-state.md) | Managed OpenID4VC authority-state migration and rotation. |
+| [operations/avatar-direct-upload.md](operations/avatar-direct-upload.md) | Avatar direct-upload storage and migration boundary. |
 | [operations/release-security.md](operations/release-security.md) | Release security checks, provenance, and supply-chain controls. |
 | [operations/platform-support.md](operations/platform-support.md) | Native binary targets, OCI architectures, dependency boundaries, and binary-only Release assets. |
 | [operations/release-boundary.md](operations/release-boundary.md) | Production artifact and conformance-tool separation boundary. |
@@ -119,6 +125,7 @@ set can be scanned from one place.
 | --- | --- |
 | [conformance/README.md](conformance/README.md) | Protocol regression contracts and external OIDF evidence. |
 | [conformance/oidf-2026-09-06-dual-mode-candidate.md](conformance/oidf-2026-09-06-dual-mode-candidate.md) | Direct TLS/proxy candidate results, review and signed evidence identities. |
+| [conformance/oidf-2026-09-06-official-release.md](conformance/oidf-2026-09-06-official-release.md) | Dated engineering acceptance for identified Release artifacts; not certification. |
 
 ### Coverage
 
@@ -132,8 +139,8 @@ set can be scanned from one place.
 | --- | --- |
 | [../perf/README.md](../perf/README.md) | Benchmark runner usage, load model, profiles, and metrics. |
 | [performance/README.md](performance/README.md) | Local performance documentation index, report groups, common semantics, and maintenance rules. |
-| [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) | Unified capacity benchmark overview. |
-| [performance/performance-benchmarks.md](performance/performance-benchmarks.md) | Latest generated benchmark report. |
+| [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) | Dated capacity baseline with its recorded source and environment. |
+| [performance/performance-benchmarks.md](performance/performance-benchmarks.md) | Dated generated benchmark snapshot; not a current capacity claim. |
 | [performance/summaries](performance/summaries) | Main and extended capacity matrix summaries. |
 | [performance/reports](performance/reports) | Scenario-level capacity reports grouped by main, extended, and special runs. |
 | [performance/archive/dev](performance/archive/dev) | Historical development benchmark reports. |
@@ -144,8 +151,16 @@ set can be scanned from one place.
 | --- | --- |
 | [project/roadmap.md](project/roadmap.md) | Current scope, roadmap, and deferred capability record. |
 | [project/architecture.md](project/architecture.md) | Workspace boundaries, dependency direction, composition, and runtime-module lifecycle contract. |
-| [project/spec-coverage-and-responsibility-audit-2026-08-20.md](project/spec-coverage-and-responsibility-audit-2026-08-20.md) | Exact-head specification-to-test traceability, Linux coverage evidence, residual gaps, and file-responsibility decisions for the 2026-08-20 audit. |
-| [project/openai-build-week-2026.md](project/openai-build-week-2026.md) | English Build Week before/after boundary, Codex collaboration, evidence, and judge test path. |
+| [project/spec-coverage-and-responsibility-audit-2026-08-20.md](project/spec-coverage-and-responsibility-audit-2026-08-20.md) | Dated exact-head specification-to-test traceability, Linux coverage evidence, residual gaps, and file-responsibility decisions. |
+| [project/review-2026-09-10.md](project/review-2026-09-10.md) | Current bounded review record and verification status. |
+
+### Dated Evidence and Plans
+
+The candidate and official-release conformance reports, security finding ledger,
+project audits, implementation plans, generated environment captures, and
+performance scenario reports are retained as dated evidence. They document the
+identified commit, artifact, or test environment; they do not state current
+product support, certification, or capacity by themselves.
 
 ### Examples
 

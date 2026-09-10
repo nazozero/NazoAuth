@@ -2,7 +2,10 @@ use super::*;
 use std::{
     io::{Read, Write},
     net::{SocketAddr, TcpListener},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
     thread,
     time::Duration,
 };
@@ -29,6 +32,11 @@ fn content_types_are_narrowly_accepted() {
     assert!(!RemoteDocumentKind::Jwks.accepts_content_type("text/plain"));
     assert!(RemoteDocumentKind::RequestObject.accepts_content_type("application/jwt"));
     assert!(!RemoteDocumentKind::RequestObject.accepts_content_type("application/json"));
+    assert!(
+        RemoteDocumentKind::SectorIdentifier
+            .accepts_content_type("application/json; charset=utf-8")
+    );
+    assert!(!RemoteDocumentKind::SectorIdentifier.accepts_content_type("application/jwk-set+json"));
 }
 
 fn tls_server(
@@ -48,6 +56,18 @@ fn tls_server(
 pub(crate) fn tls_server_sequence(
     responses: Vec<(u16, String, Vec<u8>, bool)>,
 ) -> (SocketAddr, thread::JoinHandle<()>, Vec<u8>) {
+    let (address, handle, certificate_der, _) = tls_server_sequence_with_request_count(responses);
+    (address, handle, certificate_der)
+}
+
+fn tls_server_sequence_with_request_count(
+    responses: Vec<(u16, String, Vec<u8>, bool)>,
+) -> (
+    SocketAddr,
+    thread::JoinHandle<()>,
+    Vec<u8>,
+    Arc<AtomicUsize>,
+) {
     let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("generate TLS test key");
     let certificate = CertificateParams::new(vec!["localhost".to_owned()])
         .expect("TLS certificate params")
@@ -66,9 +86,12 @@ pub(crate) fn tls_server_sequence(
     let address = listener
         .local_addr()
         .expect("read TLS test listener address");
+    let request_count = Arc::new(AtomicUsize::new(0));
+    let accepted_requests = Arc::clone(&request_count);
     let handle = thread::spawn(move || {
         for (status, content_type, body, content_length) in responses {
             let (stream, _) = listener.accept().expect("accept TLS test request");
+            accepted_requests.fetch_add(1, Ordering::SeqCst);
             let connection = rustls::ServerConnection::new(Arc::new(config.clone()))
                 .expect("create TLS connection");
             let mut stream = rustls::StreamOwned::new(connection, stream);
@@ -93,7 +116,7 @@ pub(crate) fn tls_server_sequence(
             stream.write_all(&body).expect("write TLS test body");
         }
     });
-    (address, handle, certificate_der)
+    (address, handle, certificate_der, request_count)
 }
 
 pub(crate) fn resolver_for(
@@ -173,6 +196,183 @@ async fn jwks_refreshes_for_an_unknown_kid_and_rejects_bad_payloads() {
 }
 
 #[tokio::test]
+async fn jwks_unknown_kids_share_one_forced_refresh_budget_and_merge_waiters() {
+    let (address, server, certificate_der, request_count) =
+        tls_server_sequence_with_request_count(vec![
+            (
+                200,
+                "application/json".to_owned(),
+                br#"{"keys":[{"kid":"old"}]}"#.to_vec(),
+                true,
+            ),
+            (
+                200,
+                "application/json".to_owned(),
+                br#"{"keys":[{"kid":"rotated"}]}"#.to_vec(),
+                true,
+            ),
+        ]);
+    let resolver = resolver_for(address, &certificate_der);
+    let uri = format!("https://localhost:{}/jwks", address.port());
+    resolver
+        .jwks_for_kid(&uri, Some("old"))
+        .await
+        .expect("initial JWKS should fetch");
+
+    let (rotated, attacker) = tokio::join!(
+        resolver.jwks_for_kid(&uri, Some("rotated")),
+        resolver.jwks_for_kid(&uri, Some("attacker-kid")),
+    );
+    assert!(rotated.is_ok());
+    assert!(attacker.is_ok());
+
+    let suppressed = resolver
+        .jwks_for_kid(&uri, Some("another-attacker-kid"))
+        .await;
+    assert!(suppressed.is_ok());
+    assert_eq!(request_count.load(Ordering::SeqCst), 2);
+    resolver.jwks_cache.run_pending_tasks().await;
+    assert_eq!(resolver.jwks_cache.entry_count(), 1);
+    server
+        .join()
+        .expect("bounded JWKS refresh server should exit");
+}
+
+#[tokio::test]
+async fn jwks_failed_forced_refresh_consumes_the_uri_budget_without_stale_success() {
+    let (address, server, certificate_der, request_count) =
+        tls_server_sequence_with_request_count(vec![
+            (
+                200,
+                "application/json".to_owned(),
+                br#"{"keys":[{"kid":"old"}]}"#.to_vec(),
+                true,
+            ),
+            (500, "application/json".to_owned(), br#"{}"#.to_vec(), true),
+        ]);
+    let resolver = resolver_for(address, &certificate_der);
+    let uri = format!("https://localhost:{}/jwks", address.port());
+    resolver
+        .jwks_for_kid(&uri, Some("old"))
+        .await
+        .expect("initial JWKS should fetch");
+
+    assert!(
+        resolver
+            .jwks_for_kid(&uri, Some("missing-one"))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        resolver
+            .jwks_for_kid(&uri, Some("missing-two"))
+            .await
+            .expect("a cooldown-suppressed miss should return the cached JWKS")["keys"][0]["kid"],
+        "old"
+    );
+    assert_eq!(request_count.load(Ordering::SeqCst), 2);
+    assert_eq!(
+        resolver
+            .jwks_for_kid(&uri, Some("old"))
+            .await
+            .expect("a matching key may still use the cached document")["keys"][0]["kid"],
+        "old"
+    );
+    server
+        .join()
+        .expect("failed-refresh JWKS server should exit");
+}
+
+#[tokio::test]
+async fn jwks_initial_miss_allows_one_immediate_rotation_refresh() {
+    let (address, server, certificate_der, request_count) =
+        tls_server_sequence_with_request_count(vec![
+            (
+                200,
+                "application/json".to_owned(),
+                br#"{"keys":[{"kid":"old"}]}"#.to_vec(),
+                true,
+            ),
+            (
+                200,
+                "application/json".to_owned(),
+                br#"{"keys":[{"kid":"new"}]}"#.to_vec(),
+                true,
+            ),
+        ]);
+    let resolver = resolver_for(address, &certificate_der);
+    let uri = format!("https://localhost:{}/jwks", address.port());
+
+    assert_eq!(
+        resolver
+            .jwks_for_kid(&uri, Some("new"))
+            .await
+            .expect("an initial fetch returns the valid JWKS even for an unknown hint")["keys"][0]
+            ["kid"],
+        "old"
+    );
+    assert_eq!(request_count.load(Ordering::SeqCst), 1);
+    assert_eq!(
+        resolver
+            .jwks_for_kid(&uri, Some("new"))
+            .await
+            .expect("an initial key miss may immediately confirm rotation")["keys"][0]["kid"],
+        "new"
+    );
+    assert_eq!(request_count.load(Ordering::SeqCst), 2);
+    server.join().expect("initial-miss JWKS server should exit");
+}
+
+#[tokio::test]
+async fn jwks_cold_refresh_after_eviction_restores_the_forced_refresh_budget() {
+    let (address, server, certificate_der, request_count) =
+        tls_server_sequence_with_request_count(vec![
+            (
+                200,
+                "application/json".to_owned(),
+                br#"{"keys":[{"kid":"old"}]}"#.to_vec(),
+                true,
+            ),
+            (
+                200,
+                "application/json".to_owned(),
+                br#"{"keys":[{"kid":"rotated"}]}"#.to_vec(),
+                true,
+            ),
+            (
+                200,
+                "application/json".to_owned(),
+                br#"{"keys":[{"kid":"cold"}]}"#.to_vec(),
+                true,
+            ),
+        ]);
+    let resolver = resolver_for(address, &certificate_der);
+    let uri = format!("https://localhost:{}/jwks", address.port());
+    resolver
+        .jwks_for_kid(&uri, Some("old"))
+        .await
+        .expect("initial JWKS should fetch");
+    resolver
+        .jwks_for_kid(&uri, Some("rotated"))
+        .await
+        .expect("unknown kid should trigger one forced refresh");
+
+    resolver
+        .jwks_cache
+        .invalidate(&canonical_cache_key(&uri).expect("canonical JWKS URI"))
+        .await;
+    assert_eq!(
+        resolver
+            .jwks_for_kid(&uri, Some("cold"))
+            .await
+            .expect("an evicted entry should cold-refresh")["keys"][0]["kid"],
+        "cold"
+    );
+    assert_eq!(request_count.load(Ordering::SeqCst), 3);
+    server.join().expect("cold-refresh JWKS server should exit");
+}
+
+#[tokio::test]
 async fn request_objects_validate_utf8_size_and_content_type() {
     let (address, server, certificate_der) =
         tls_server(200, "application/jwt", b"  signed.jwt \n".to_vec(), true);
@@ -201,11 +401,22 @@ async fn request_objects_validate_utf8_size_and_content_type() {
 }
 
 #[tokio::test]
+async fn sector_identifier_fetch_always_rejects_private_destinations() {
+    let resolver = RemoteClientDocumentResolver::new(&["https://localhost:1".to_owned()]).unwrap();
+
+    let error = resolver
+        .sector_identifier_uris("https://localhost:1/sector.json")
+        .await
+        .expect_err("sector identifier documents must use public destinations");
+    assert!(error.contains("blocked network"));
+}
+
+#[tokio::test]
 async fn remote_fetch_rejects_oversize_bodies_dns_failures_and_exhausted_slots() {
     let (address, server, certificate_der) = tls_server(
         200,
         "application/json",
-        vec![b'x'; MAX_DOCUMENT_BYTES + 1],
+        vec![b'x'; MAX_RESPONSE_BYTES as usize + 1],
         true,
     );
     let resolver = resolver_for(address, &certificate_der);
@@ -216,7 +427,7 @@ async fn remote_fetch_rejects_oversize_bodies_dns_failures_and_exhausted_slots()
     let (address, server, certificate_der) = tls_server(
         200,
         "application/json",
-        vec![b'x'; MAX_DOCUMENT_BYTES + 1],
+        vec![b'x'; MAX_RESPONSE_BYTES as usize + 1],
         false,
     );
     let resolver = resolver_for(address, &certificate_der);
@@ -227,24 +438,28 @@ async fn remote_fetch_rejects_oversize_bodies_dns_failures_and_exhausted_slots()
         .expect("streamed oversized TLS server should exit");
 
     let resolver = RemoteClientDocumentResolver::new(&[]).expect("resolver should build");
-    let blocked_error = resolver
+    let Err(blocked_error) = resolver
         .fetch(
             "https://localhost:1/jwks",
             RemoteDocumentKind::Jwks,
             tokio::time::Instant::now() + Duration::from_secs(2),
         )
         .await
-        .expect_err("private addresses must be blocked without an exact origin allowlist");
+    else {
+        panic!("private addresses must be blocked without an exact origin allowlist");
+    };
     assert!(blocked_error.contains("blocked network"));
 
-    let dns_error = resolver
+    let Err(dns_error) = resolver
         .fetch(
             "https://does-not-exist.invalid/jwks",
             RemoteDocumentKind::Jwks,
             tokio::time::Instant::now() + Duration::from_secs(2),
         )
         .await
-        .expect_err("unresolvable host should fail closed");
+    else {
+        panic!("unresolvable host should fail closed");
+    };
     assert!(
         dns_error.contains("DNS") || dns_error.contains("blocked"),
         "unexpected remote fetch error: {dns_error}"
@@ -256,11 +471,7 @@ async fn remote_fetch_rejects_oversize_bodies_dns_failures_and_exhausted_slots()
         .try_acquire_many_owned(REMOTE_FETCH_CONCURRENCY as u32)
         .expect("all test fetch slots should be acquirable");
     let slot_error = resolver
-        .fetch(
-            "https://localhost:1/jwks",
-            RemoteDocumentKind::Jwks,
-            tokio::time::Instant::now() + Duration::from_secs(2),
-        )
+        .sector_identifier_uris("https://example.com/sector.json")
         .await
         .expect_err("exhausted fetch slots should fail closed");
     assert!(slot_error.contains("concurrency"));

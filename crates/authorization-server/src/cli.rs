@@ -21,7 +21,7 @@ use crate::{
 };
 use zeroize::Zeroizing;
 
-const USAGE: &str = "usage: nazoauth <server|operator-task|audit-anchor-worker|release-identity|migrate|tenant-bootstrap|keys-import|mdoc-import|mdoc-rotate|mdoc-revoke|admin-provision>";
+const USAGE: &str = "usage: nazoauth <server|operator-task|audit-anchor-worker|release-identity|migrate|tenant-bootstrap|mdoc-import|mdoc-rotate|mdoc-revoke|admin-provision>";
 const ADMIN_PROVISION_CREDENTIAL_FILE_ENV: &str = "NAZOAUTH_ADMIN_PROVISION_FILE";
 const ADMIN_PROVISION_OPERATION_ID_ENV: &str = "NAZOAUTH_ADMIN_PROVISION_OPERATION_ID";
 const ADMIN_PROVISION_DEPLOYMENT_ID_ENV: &str = "NAZOAUTH_ADMIN_PROVISION_DEPLOYMENT_ID";
@@ -143,32 +143,6 @@ pub async fn run(
                 .await?;
             let runtime_config = ConfigSource::load()?;
             ensure_system_tenant_material(&runtime_config, operator_persistence.as_ref()).await?;
-            Ok(())
-        }
-        Command::KeysImport { tenant_id, source } => {
-            let migration_config = ConfigSource::load_for_migrations()?;
-            let operator_persistence = persistence.operator_persistence(&migration_config).await?;
-            crate::operator_task::migrate_and_initialize_tenant_directory(
-                operator_persistence.as_ref(),
-            )
-            .await?;
-            let config = ConfigSource::load()?;
-            let directory = operator_persistence
-                .tenant_directory()
-                .load_active()
-                .await?;
-            let binding = directory
-                .tenants
-                .iter()
-                .find(|binding| binding.tenant.tenant_id.as_uuid() == tenant_id)
-                .ok_or_else(|| anyhow::anyhow!("keys-import requires an active tenant binding"))?;
-            crate::keyctl::operator_import_legacy_file_keyset(
-                &config,
-                binding,
-                operator_persistence.as_ref(),
-                source,
-            )
-            .await?;
             Ok(())
         }
         Command::MdocManage { tenant_id, action } => {
@@ -440,10 +414,6 @@ enum Command {
     ReleaseIdentity,
     Migrate,
     TenantBootstrap,
-    KeysImport {
-        tenant_id: uuid::Uuid,
-        source: PathBuf,
-    },
     MdocManage {
         tenant_id: uuid::Uuid,
         action: crate::keyctl::MdocManagementAction,
@@ -488,43 +458,6 @@ impl Command {
             "tenant-bootstrap" => {
                 ensure_no_extra_args(args, "tenant-bootstrap")?;
                 Ok(Self::TenantBootstrap)
-            }
-            "keys-import" => {
-                let mut tenant_id = None;
-                let mut source = None;
-                while let Some(argument) = args.next() {
-                    match argument.as_str() {
-                        "--tenant" => {
-                            let value = args.next().ok_or_else(|| {
-                                anyhow::anyhow!("keys-import requires --tenant <uuid>")
-                            })?;
-                            if tenant_id
-                                .replace(value.parse().map_err(|_| {
-                                    anyhow::anyhow!("keys-import --tenant must be a UUID")
-                                })?)
-                                .is_some()
-                            {
-                                bail!("keys-import accepts --tenant once");
-                            }
-                        }
-                        "--from" => {
-                            let value = args.next().ok_or_else(|| {
-                                anyhow::anyhow!("keys-import requires --from <directory>")
-                            })?;
-                            if source.replace(PathBuf::from(value)).is_some() {
-                                bail!("keys-import accepts --from once");
-                            }
-                        }
-                        _ => bail!("keys-import does not accept argument {argument}"),
-                    }
-                }
-                Ok(Self::KeysImport {
-                    tenant_id: tenant_id
-                        .ok_or_else(|| anyhow::anyhow!("keys-import requires --tenant <uuid>"))?,
-                    source: source.ok_or_else(|| {
-                        anyhow::anyhow!("keys-import requires --from <directory>")
-                    })?,
-                })
             }
             "mdoc-import" | "mdoc-rotate" | "mdoc-revoke" => {
                 let mut tenant_id = None;
@@ -590,7 +523,7 @@ fn usage_for_args(args: &[String]) -> String {
         return USAGE.to_owned();
     }
     format!(
-        "usage: {program} <server|operator-task|audit-anchor-worker|release-identity|migrate|tenant-bootstrap|keys-import|mdoc-import|mdoc-rotate|mdoc-revoke|admin-provision>"
+        "usage: {program} <server|operator-task|audit-anchor-worker|release-identity|migrate|tenant-bootstrap|mdoc-import|mdoc-rotate|mdoc-revoke|admin-provision>"
     )
 }
 

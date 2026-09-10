@@ -4,12 +4,16 @@ This directory keeps benchmark documentation and durable performance evidence
 for NazoAuth. The root of this directory is reserved for stable entry points;
 scenario-level reports are grouped below `reports/`.
 
+All reports retain their generation date and source-commit context. They are
+historical measurements and regression baselines; none is an implicit claim for
+the current release or an unmeasured deployment.
+
 ## Entry Points
 
 | Document | Role |
 | --- | --- |
 | [performance-capacity-curve.md](performance-capacity-curve.md) | Unified capacity benchmark overview across the main and extended matrices. |
-| [performance-benchmarks.md](performance-benchmarks.md) | Latest generated benchmark report from `perf/runner.py`. |
+| [performance-benchmarks.md](performance-benchmarks.md) | Dated generated benchmark snapshot; it is not a current-release capacity claim. |
 | [summaries/performance-capacity-main-summary.md](summaries/performance-capacity-main-summary.md) | Main capacity matrix summary. |
 | [summaries/performance-capacity-extended-summary.md](summaries/performance-capacity-extended-summary.md) | Extended capacity matrix summary. |
 

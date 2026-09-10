@@ -46,18 +46,10 @@
         "mode": "ro"
       },
       {
-        "source": "/opt/nazo-oauth/runtime/keys",
-        "target": "/var/lib/nazo_oauth/keys",
-        "mode": "rw"
-      },
-      {
         "source": "/opt/nazo-oauth/runtime/avatars",
         "target": "/var/lib/nazo_oauth/avatars",
         "mode": "rw"
       }
-    ],
-    "snapshot_paths": [
-      "/opt/nazo-oauth/runtime/keys"
     ],
     "environment": {}
   },

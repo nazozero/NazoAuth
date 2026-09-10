@@ -101,7 +101,6 @@ fn baseline_settings() -> Settings {
     settings.protocol.auth_code_ttl_seconds = 300;
     settings.session.cookie_secure = true;
     settings.storage.avatar_storage_dir = std::env::temp_dir().join("unused-avatars");
-    settings.keys.jwk_keys_dir = std::env::temp_dir().join("unused-keys");
     settings
 }
 

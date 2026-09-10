@@ -11,7 +11,7 @@ timeout, and partial-outage rules for both.
 | Store | State | Loss impact | Recovery expectation |
 | --- | --- | --- | --- |
 | PostgreSQL | users, clients, grants, refresh tokens, access-token revocation state, client metadata, audit-relevant durable rows | durable account, client, token, and grant state can be lost or rolled back | restore from tested backups or promote a consistent replica |
-| Valkey | sessions, authorization codes, PAR handles, DPoP proof replay keys, client assertion replay keys, rate-limit counters, consent transaction state | in-flight browser/API transactions fail; replay/rate controls must not silently weaken | fail closed for security-sensitive paths; restart transactions after recovery |
+| Valkey | sessions, authorization codes and consumed-code replay markers, PAR handles, DPoP proof replay keys, client assertion replay keys, rate-limit counters, consent transaction state | in-flight browser/API transactions fail; replay/rate controls must not silently weaken | fail closed for security-sensitive paths; restart transactions after recovery |
 | PostgreSQL signing-key generation + deployment wrapping root | active, prepublished, and retained token-signing private/public keys plus request-object recipient | issued tokens can become unverifiable or signing continuity can break | restore the matching encrypted row and wrapping root before serving traffic |
 | Configured avatar storage | tenant-isolated local files or S3-compatible objects | profile media can be lost or desynchronized from PostgreSQL metadata | restore objects and metadata consistently; independent local disks are not shared storage |
 
@@ -20,6 +20,21 @@ separate deployment-owned authority. Every instance that serves the same mdoc
 tenant must mount the identical read-only certificate/IACA material; do not let
 separate instances mint replacement IACAs. The signing-key database generation
 does not store or synchronize that CA lifecycle.
+
+## State epoch and restore boundary
+
+Valkey holds transient security state, rather than a cache that can be rolled
+back independently of PostgreSQL. Every transient business key is namespaced by
+`VALKEY_STATE_EPOCH`. Do not flush a shared logical database or restore an old
+Valkey snapshot as an installation, rollback, or recovery shortcut.
+
+For a PostgreSQL restore, the managed recovery flow selects a new UUIDv7 state
+epoch before the candidate starts. The new namespace leaves pre-restore pending
+state unaddressed. `RecoveryInvalidate` durably revokes refresh tokens and
+returns a `not_before` time that covers the maximum access-token or ID-token
+TTL plus clock skew. The controller keeps public ingress closed until strictly
+after that deadline; this is the boundary for stateless tokens that cannot be
+revoked retroactively.
 
 ## PostgreSQL High Availability
 
@@ -101,7 +116,7 @@ When Valkey is unavailable or times out:
 | Area | Expected behavior |
 | --- | --- |
 | Sessions | authenticated profile/admin flows fail or require re-login; session lookup must not be bypassed |
-| Authorization codes | code creation, lookup, and replay protection fail closed |
+| Authorization codes and consumed-code markers | code creation, lookup, and replay protection fail closed; the marker retains a replay revocation basis only for the configured access-token TTL or original refresh-token TTL |
 | PAR | pushed request storage and lookup fail closed; authorization requests must not fall back to unsigned or unpushed parameters in FAPI/PAR-required profiles |
 | DPoP replay cache | proof replay checks fail closed; a token must not be issued or accepted without replay state when the profile requires it |
 | `private_key_jwt` replay cache | assertion `jti` storage failures reject the assertion |

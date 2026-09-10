@@ -6,14 +6,15 @@ mod external;
 mod jwks;
 mod lifecycle;
 mod local;
-mod lock;
 mod model;
 mod mtls_trust;
 mod repository;
 mod request_object_encryption;
 mod serialization;
-mod store;
 mod token;
+
+#[cfg(any(test, feature = "test-support"))]
+pub mod test_support;
 
 pub use client_registration::{
     ClientRegistrationCrypto, SUPPORTED_CLIENT_JWT_SIGNING_ALGS, client_jwks_contains_signing_key,
@@ -34,4 +35,12 @@ pub use repository::{
     SigningKeyWrappingKeyError, SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult,
     SigningKeysetCreateResult,
 };
-pub use store::{signing_algorithm_from_name, signing_algorithm_name};
+pub use serialization::{signing_algorithm_from_name, signing_algorithm_name};
+
+#[cfg(test)]
+#[path = "../tests/unit/key_repository.rs"]
+mod key_repository_tests;
+
+#[cfg(test)]
+#[path = "../tests/unit/purpose_scoped_keys.rs"]
+mod purpose_scoped_keys_tests;

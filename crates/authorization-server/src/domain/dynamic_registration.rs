@@ -9,7 +9,6 @@ use serde_json::json;
 use crate::adapters::audit::{audit_event, audit_fields};
 use crate::adapters::security::{blake3_hex, constant_time_eq, random_urlsafe_token};
 use crate::domain::remote_client_documents::RemoteClientDocumentResolver;
-use crate::http::admin::clients::ServerSectorIdentifierResolver;
 use crate::runtime_modules::ServerRuntimeModuleRegistry;
 use crate::settings::Settings;
 use nazo_auth::{RequestRateLimitBucket, RequestRateLimitPort};
@@ -181,7 +180,7 @@ pub(crate) fn dynamic_registration_endpoint(
             request_object_encryption_encs: vec!["A256GCM"],
         },
         clients,
-        Arc::new(ServerSectorIdentifierResolver),
+        remote_client_documents.clone(),
         nazo_http_actix::DynamicRegistrationSecurityServices::new(
             remote_client_documents,
             crypto.clone(),

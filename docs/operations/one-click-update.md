@@ -1,6 +1,6 @@
 # Managed installation, update, and recovery
 
-NazoAuthCtl v0.2 manages NazoAuth through one current protocol lineage. A
+NazoAuthCtl manages NazoAuth through one current protocol lineage. A
 controller uses its user-scoped Registry for host and instance inventory; the
 target host's `DeploymentState` remains authoritative for runtime, artifact,
 configuration, resources, journal, and backup facts. Removed controller state,
@@ -21,7 +21,7 @@ nazoauthctl install \
   --host production-host \
   --name production \
   --public-url https://auth.example.com \
-  --to v0.2.3 \
+  --to '<nazoauth-release-tag>' \
   --runtime podman \
   --database-host db.internal \
   --database-port 5432 \
@@ -35,6 +35,8 @@ nazoauthctl install \
   --valkey-password-file ./valkey-password
 ```
 
+Replace `<nazoauth-release-tag>` with the required published, signed NazoAuth Release tag.
+
 The command verifies the official Release and immutable runtime artifact,
 creates a deployment-scoped non-nil UUIDv7 state epoch, writes the target
 configuration and secrets with target-native paths, starts the runtime, checks
@@ -47,39 +49,31 @@ only the runtime URL; migration, backup, and recovery use the lifecycle role.
 PostgreSQL and Valkey are external/shared resources. NazoAuthCtl records their
 ownership boundary but does not create, replace, or delete them.
 
-To build a clean current deployment from stopped current-format data already on
-the target, add both options:
+## Administrator provisioning and controller binding
 
-```sh
-  --import-data-root /srv/nazoauth-import/data \
-  --import-mfa-key-file /srv/nazoauth-import/mfa-totp-key
-```
-
-The two absolute target-side paths are an inseparable pair. Import copies only
-the current allowlisted data, signing keys, and application secrets plus the
-MFA key. It does not read an old DeploymentState, controller state, bootstrap
-state, UI cache, or command format.
-
-## Controller binding and administrator provisioning
-
-Bind a Controller Key before normal mutations:
-
-```sh
-nazoauthctl bind --instance production --label operations \
-  --output-secret-file ./production-recovery-secret
-```
-
-The bind transaction enrolls the first Recovery Root. Its Recovery Secret must
-be stored offline before the commit is attempted. If the commit is interrupted,
-the owner-only pending record preserves that exact proposal and secret until
-terminal reconciliation; a retry never mints a different secret behind the
-operator's back.
-
-Create the first administrator interactively:
+Create the first administrator before binding the controller:
 
 ```sh
 nazoauthctl admin create --instance production
 ```
+
+Sign in at `https://auth.example.com/ui/auth` and enroll MFA. Then bind a
+Controller Key using that administrator account and a fresh MFA code:
+
+```sh
+nazoauthctl bind --instance production --label operations \
+  --output-secret-file ./production-recovery-secret
+nazoauthctl verify --instance production
+```
+
+Administrator creation uses the target-local deployment authority and does not
+require a Controller Key. Binding requires an existing administrator and fresh
+MFA approval. The install receipt confirms local health; `verify` checks public
+DNS, TLS, and OIDC separately.
+
+The first bind also enrolls a Recovery Root. Store its Recovery Secret offline
+before committing. If the commit is interrupted, the private pending record
+retains the same proposal and secret until the outcome is reconciled.
 
 Automation supplies a strict JSON object containing exactly `email` and
 `password` through stdin:
@@ -96,8 +90,14 @@ Registry, or logs.
 
 ## Update and rollback
 
+> [!WARNING]
+> Before 0.5.0, releases change rapidly and do not support historical versions.
+> Configuration, stored state, and control messages must match the current
+> format. Keep a verified backup and the matching recovery tools before changing
+> a deployment; an update command is not a cross-version compatibility promise.
+
 ```sh
-nazoauthctl update --instance production --to v0.2.6
+nazoauthctl update --instance production --to '<nazoauth-release-tag>'
 nazoauthctl rollback --instance production
 ```
 

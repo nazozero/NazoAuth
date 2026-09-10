@@ -166,10 +166,6 @@ pub enum AtomicResult {
     DeadlineElapsed,
 }
 
-/// Backwards-compatible name for the CIBA CAS token now owned by the core
-/// state-store contract.
-pub type StoredCibaRequest = CibaStateVersion;
-
 #[derive(Clone, Debug)]
 pub struct CibaStore {
     connection: ValkeyConnection,
@@ -271,7 +267,7 @@ impl CibaStore {
     pub async fn replace(
         &self,
         auth_req_id: &str,
-        expected: &StoredCibaRequest,
+        expected: &CibaStateVersion,
         replacement: &CibaRequestState,
     ) -> Result<AtomicResult, Error> {
         self.replace_with_authorization_deadline(auth_req_id, expected, replacement, None)
@@ -281,7 +277,7 @@ impl CibaStore {
     pub async fn replace_with_authorization_deadline(
         &self,
         auth_req_id: &str,
-        expected: &StoredCibaRequest,
+        expected: &CibaStateVersion,
         replacement: &CibaRequestState,
         authorization_deadline: Option<i64>,
     ) -> Result<AtomicResult, Error> {
@@ -318,7 +314,7 @@ impl CibaStore {
     pub async fn delete(
         &self,
         auth_req_id: &str,
-        expected: &StoredCibaRequest,
+        expected: &CibaStateVersion,
     ) -> Result<AtomicResult, Error> {
         self.delete_with_authorization_deadline(auth_req_id, expected, None)
             .await
@@ -327,7 +323,7 @@ impl CibaStore {
     pub async fn delete_with_authorization_deadline(
         &self,
         auth_req_id: &str,
-        expected: &StoredCibaRequest,
+        expected: &CibaStateVersion,
         authorization_deadline: Option<i64>,
     ) -> Result<AtomicResult, Error> {
         let reply = command::eval_string(

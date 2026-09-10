@@ -189,9 +189,8 @@ fn mdoc_database_config(data_dir: &Path) -> ConfigSource {
     ])
 }
 
-fn database_key_settings(data_dir: &Path) -> KeySettings {
+fn database_key_settings() -> KeySettings {
     KeySettings {
-        keys_dir: data_dir.join("keys"),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
@@ -342,11 +341,10 @@ fn assert_same_persisted_record(left: &PersistedSigningKeyset, right: &Persisted
 
 async fn database_manager(
     repository: Arc<MemorySigningKeyRepository>,
-    data_dir: &Path,
     tenant_id: Uuid,
 ) -> KeyManager {
     KeyManager::load_or_create_database(
-        database_key_settings(data_dir),
+        database_key_settings(),
         tenant_id,
         repository,
         SigningKeyWrappingKeyRing::new("keyctl-test-root", [0x42; 32], None)
@@ -358,10 +356,9 @@ async fn database_manager(
 
 async fn database_manager_with_mdoc_key(
     repository: Arc<MemorySigningKeyRepository>,
-    data_dir: &Path,
     tenant_id: Uuid,
 ) -> (KeyManager, String, KeyPair) {
-    let manager = database_manager(repository, data_dir, tenant_id).await;
+    let manager = database_manager(repository, tenant_id).await;
     let kid = manager
         .database_register_local(LocalKeyRegistration {
             algorithm: jsonwebtoken::Algorithm::ES256,
@@ -515,7 +512,6 @@ async fn database_operator_keyctl_roundtrip_keeps_keys_in_the_repository() {
             .is_ok_and(|revision| revision > 0)
     );
     assert!(certificate_chain.is_none());
-    assert!(!data_dir.exists());
 
     let (second_kid, second_revision, certificate_chain) =
         operator_generate_local_database_for_tenant(
@@ -578,53 +574,12 @@ async fn database_operator_keyctl_roundtrip_keeps_keys_in_the_repository() {
                     && key["key_ref"] == "kms://unit/external-key"
             })
     );
-    assert!(!data_dir.exists());
 }
 
 #[tokio::test]
-async fn database_import_preserves_legacy_kid_as_an_explicit_operation() {
-    let data_dir = temporary_directory("database-import");
-    let legacy_dir = data_dir.join("legacy");
-    let legacy = KeyManager::load_or_create(database_key_settings(&legacy_dir))
-        .await
-        .expect("legacy keyset generation");
-    let expected_kid = legacy.snapshot().active_kid.clone();
-    let config = database_config(&data_dir);
-    let binding = tenant_binding("http://127.0.0.1:43124");
+async fn managed_generation_is_idempotent() {
     let repository = Arc::new(MemorySigningKeyRepository::default());
-    let persistence = MemoryOperatorPersistence {
-        repository: repository.clone(),
-    };
-
-    let revision = operator_import_legacy_file_keyset(
-        &config,
-        &binding,
-        &persistence,
-        legacy_dir.join("keys"),
-    )
-    .await
-    .expect("explicit legacy keyset import");
-    assert!(!revision.is_empty());
-    assert!(legacy_dir.join("keys").join("keyset.json").exists());
-    assert!(!data_dir.join("keys").exists());
-
-    let persisted = repository
-        .load()
-        .await
-        .expect("repository load")
-        .expect("imported keyset");
-    assert_eq!(persisted.public_metadata["active_kid"], expected_kid);
-
-    tokio::fs::remove_dir_all(data_dir)
-        .await
-        .expect("legacy import fixture cleanup");
-}
-
-#[tokio::test]
-async fn managed_generation_is_idempotent_and_never_writes_files() {
-    let data_dir = temporary_directory("managed-idempotent");
-    let repository = Arc::new(MemorySigningKeyRepository::default());
-    let manager = database_manager(repository, &data_dir, Uuid::now_v7()).await;
+    let manager = database_manager(repository, Uuid::now_v7()).await;
     let profile = managed_profile("tenant.example");
 
     let first_kid =
@@ -638,7 +593,6 @@ async fn managed_generation_is_idempotent_and_never_writes_files() {
     let first_material = first_state.material.expect("managed material");
     assert_eq!(first_kid, first_material.public.signing_kid);
     assert_complete_managed_material(&first_material);
-    assert!(!data_dir.exists());
 
     let second_kid =
         generate_local_with_database_manager(&manager, Some(&profile), managed_options())
@@ -652,18 +606,16 @@ async fn managed_generation_is_idempotent_and_never_writes_files() {
     assert_eq!(second_kid, first_kid);
     assert_eq!(second_state.revision, first_state.revision);
     assert_same_material(&first_material, &second_material);
-    assert!(!data_dir.exists());
 }
 
 #[tokio::test]
 async fn concurrent_managed_initialization_converges_on_one_complete_generation() {
-    let data_dir = temporary_directory("managed-concurrent");
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
-    let first = database_manager(repository.clone(), &data_dir, tenant_id).await;
-    let second = database_manager(repository.clone(), &data_dir, tenant_id).await;
-    let third = database_manager(repository.clone(), &data_dir, tenant_id).await;
-    let fourth = database_manager(repository.clone(), &data_dir, tenant_id).await;
+    let first = database_manager(repository.clone(), tenant_id).await;
+    let second = database_manager(repository.clone(), tenant_id).await;
+    let third = database_manager(repository.clone(), tenant_id).await;
+    let fourth = database_manager(repository.clone(), tenant_id).await;
     let profile = managed_profile("tenant.example");
 
     let (first_kid, second_kid, third_kid, fourth_kid) = tokio::join!(
@@ -680,7 +632,7 @@ async fn concurrent_managed_initialization_converges_on_one_complete_generation(
     assert_eq!(first_kid, third_kid);
     assert_eq!(first_kid, fourth_kid);
 
-    let winner = database_manager(repository, &data_dir, tenant_id).await;
+    let winner = database_manager(repository, tenant_id).await;
     let state = winner
         .database_openid4vc_state()
         .await
@@ -688,14 +640,12 @@ async fn concurrent_managed_initialization_converges_on_one_complete_generation(
     let material = state.material.expect("complete concurrent material");
     assert_eq!(material.public.signing_kid, first_kid);
     assert_complete_managed_material(&material);
-    assert!(!data_dir.exists());
 }
 
 #[tokio::test]
 async fn failed_managed_cas_does_not_leave_partial_material() {
-    let data_dir = temporary_directory("managed-cas");
     let repository = Arc::new(MemorySigningKeyRepository::default());
-    let manager = database_manager(repository.clone(), &data_dir, Uuid::now_v7()).await;
+    let manager = database_manager(repository.clone(), Uuid::now_v7()).await;
     let profile = managed_profile("tenant.example");
 
     generate_local_with_database_manager(&manager, Some(&profile), managed_options())
@@ -750,15 +700,13 @@ async fn failed_managed_cas_does_not_leave_partial_material() {
         &winner_material,
         state_after.material.as_ref().expect("winner retained"),
     );
-    assert!(!data_dir.exists());
 }
 
 #[tokio::test]
 async fn restart_with_a_different_key_manager_still_serves_database_backed_crl() {
-    let data_dir = temporary_directory("managed-restart-crl");
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
-    let manager = database_manager(repository.clone(), &data_dir, tenant_id).await;
+    let manager = database_manager(repository.clone(), tenant_id).await;
     let profile = managed_profile("tenant.example");
     generate_local_with_database_manager(&manager, Some(&profile), managed_options())
         .await
@@ -776,7 +724,7 @@ async fn restart_with_a_different_key_manager_still_serves_database_backed_crl()
         .clone();
     let iaca = iaca_certificates(&material, &issuer_id);
 
-    let restarted = database_manager(repository, &data_dir, tenant_id).await;
+    let restarted = database_manager(repository, tenant_id).await;
     let source = MdocCrlSource {
         keyset: restarted,
         issuer_contact_uri: profile
@@ -804,18 +752,16 @@ async fn restart_with_a_different_key_manager_still_serves_database_backed_crl()
         response.headers().get("content-type").unwrap(),
         "application/pkix-crl"
     );
-    assert!(!data_dir.exists());
 }
 
 #[tokio::test]
 async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
-    let data_dir = temporary_directory("mdoc-import");
     let source = temporary_directory("mdoc-import-source");
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
     let profile = managed_profile("tenant.example");
     let (manager, kid, signing_key) =
-        database_manager_with_mdoc_key(repository.clone(), &data_dir, tenant_id).await;
+        database_manager_with_mdoc_key(repository.clone(), tenant_id).await;
 
     let active = write_mdoc_import_fixture(&source, &signing_key, &profile, true)
         .await
@@ -847,6 +793,7 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
     let mut revoked_historical_entry = historical_entry;
     revoked_historical_entry.status =
         nazo_digital_credentials::CertificateRevocationStatus::Revoked;
+    revoked_historical_entry.revoked_at = Some(imported_snapshot.this_update);
     let revoked_historical_certificate = revoked_historical_entry.certificate.clone();
     imported_snapshot.entries.push(revoked_historical_entry);
     tokio::fs::write(
@@ -952,7 +899,6 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
             .to_string()
             .contains("already exists")
     );
-    assert!(!data_dir.exists());
 
     tokio::fs::remove_dir_all(source)
         .await
@@ -961,13 +907,11 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
 
 #[tokio::test]
 async fn mdoc_import_fails_explicitly_when_iaca_material_is_missing() {
-    let data_dir = temporary_directory("mdoc-import-missing-iaca");
     let source = temporary_directory("mdoc-import-missing-iaca-source");
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
     let profile = managed_profile("tenant.example");
-    let (manager, _kid, signing_key) =
-        database_manager_with_mdoc_key(repository, &data_dir, tenant_id).await;
+    let (manager, _kid, signing_key) = database_manager_with_mdoc_key(repository, tenant_id).await;
     write_mdoc_import_fixture(&source, &signing_key, &profile, false)
         .await
         .expect("missing-IACA import fixture");
@@ -988,7 +932,6 @@ async fn mdoc_import_fails_explicitly_when_iaca_material_is_missing() {
             .to_string()
             .contains("explicit mdoc-import")
     );
-    assert!(!data_dir.exists());
 
     tokio::fs::remove_dir_all(source)
         .await
@@ -996,73 +939,63 @@ async fn mdoc_import_fails_explicitly_when_iaca_material_is_missing() {
 }
 
 #[tokio::test]
-async fn pre_iaca_bundle_import_then_rotation_preserves_legacy_verification() {
-    let data_dir = temporary_directory("mdoc-pre-iaca-import");
-    let source = temporary_directory("mdoc-pre-iaca-import-source");
+async fn mdoc_import_rejects_revoked_status_without_timestamp_without_writing_keyset() {
+    let source = temporary_directory("mdoc-import-missing-revocation-time-source");
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
-    let (manager, legacy_kid, signing_key) =
-        database_manager_with_mdoc_key(repository, &data_dir, tenant_id).await;
-    let legacy_profile = Openid4vcCertificateProfile {
-        hostname: "tenant.example".to_owned(),
-        mdoc_profile: None,
-    };
-    let legacy = write_mdoc_import_fixture(&source, &signing_key, &legacy_profile, false)
+    let profile = managed_profile("tenant.example");
+    let (manager, _, signing_key) = database_manager_with_mdoc_key(repository, tenant_id).await;
+    let imported = write_mdoc_import_fixture(&source, &signing_key, &profile, true)
         .await
-        .expect("pre-IACA import fixture");
-    let legacy_ca =
-        pem_certificate(parse_certificates(&legacy.public.certificate_chain_pem)[1].as_ref());
+        .expect("complete import fixture");
+    let mut snapshot = imported
+        .public
+        .revocation_snapshot
+        .expect("complete import fixture snapshot");
+    let entry = snapshot
+        .entries
+        .first_mut()
+        .expect("complete import fixture DS status");
+    entry.status = nazo_digital_credentials::CertificateRevocationStatus::Revoked;
+    entry.revoked_at = None;
+    tokio::fs::write(
+        source.join("revocation-snapshot.json"),
+        serde_json::to_vec(&snapshot).expect("invalid legacy revocation fixture"),
+    )
+    .await
+    .expect("write legacy revocation fixture");
 
-    import_mdoc_directory(&manager, &legacy_profile, &source)
-        .await
-        .expect("pre-IACA certificate import");
-    let imported = manager
+    let before = manager
         .database_openid4vc_state()
         .await
-        .expect("imported legacy state")
-        .material
-        .expect("legacy material");
-    assert_eq!(imported.public.signing_kid, legacy_kid);
-    assert!(imported.iaca_private_materials.is_empty());
-    assert!(imported.public.trust_anchors_pem.contains(&legacy_ca));
-
-    rotate_managed_material(&manager, &managed_profile("tenant.example"))
+        .expect("keyset state before rejected import");
+    let error = import_mdoc_directory(&manager, &profile, &source)
         .await
-        .expect("first managed mdoc rotation");
-    let rotated = manager
-        .database_openid4vc_state()
-        .await
-        .expect("rotated managed state")
-        .material
-        .expect("managed material");
-    assert_complete_managed_material(&rotated);
-    assert_ne!(rotated.public.signing_kid, legacy_kid);
-    assert!(rotated.public.trust_anchors_pem.contains(&legacy_ca));
-    let legacy_record = manager
-        .database_list_keys()
-        .await
-        .expect("database keys")
-        .into_iter()
-        .find(|record| record.kid == legacy_kid)
-        .expect("legacy verification key");
-    assert_eq!(
-        legacy_record.status,
-        nazo_key_management::KeyRecordStatus::Grace
+        .expect_err("revoked DS without a timestamp must be rejected");
+    assert!(
+        error
+            .to_string()
+            .contains("revoked DS status is missing its revocation time")
     );
-    assert!(legacy_record.retire_at.is_some());
-    assert!(!data_dir.exists());
+    assert_eq!(
+        manager
+            .database_openid4vc_state()
+            .await
+            .expect("keyset state after rejected import"),
+        before,
+        "rejected legacy revocation data must not write the keyset"
+    );
 
     tokio::fs::remove_dir_all(source)
         .await
-        .expect("pre-IACA fixture cleanup");
+        .expect("missing-revocation-time fixture cleanup");
 }
 
 #[tokio::test]
 async fn rotation_retains_old_and_new_ca_crls_and_trust_anchors() {
-    let data_dir = temporary_directory("mdoc-rotation");
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
-    let manager = database_manager(repository.clone(), &data_dir, tenant_id).await;
+    let manager = database_manager(repository.clone(), tenant_id).await;
     let profile = managed_profile("tenant.example");
     generate_local_with_database_manager(&manager, Some(&profile), managed_options())
         .await
@@ -1112,7 +1045,7 @@ async fn rotation_retains_old_and_new_ca_crls_and_trust_anchors() {
     let new_ca_pem = pem_certificate(new_iaca[1].as_ref());
     assert!(new_material.public.trust_anchors_pem.contains(&new_ca_pem));
 
-    let restarted = database_manager(repository, &data_dir, tenant_id).await;
+    let restarted = database_manager(repository, tenant_id).await;
     let source = MdocCrlSource {
         keyset: restarted,
         issuer_contact_uri: profile
@@ -1135,7 +1068,6 @@ async fn rotation_retains_old_and_new_ca_crls_and_trust_anchors() {
         assert!(parsed_crl.verify_signature(ca.public_key()).is_ok());
         assert_eq!(parsed_crl.iter_revoked_certificates().count(), 0);
     }
-    assert!(!data_dir.exists());
 }
 
 #[tokio::test]
@@ -1148,12 +1080,9 @@ async fn operator_mdoc_management_imports_rotates_and_revokes_persisted_material
     let persistence = MemoryOperatorPersistence {
         repository: repository.clone(),
     };
-    let (manager, _, active_key) = database_manager_with_mdoc_key(
-        repository.clone(),
-        &data_dir,
-        binding.tenant.tenant_id.as_uuid(),
-    )
-    .await;
+    let (manager, _, active_key) =
+        database_manager_with_mdoc_key(repository.clone(), binding.tenant.tenant_id.as_uuid())
+            .await;
     write_mdoc_import_fixture(
         &source,
         &active_key,
@@ -1269,12 +1198,10 @@ async fn operator_mdoc_management_imports_rotates_and_revokes_persisted_material
 
 #[tokio::test]
 async fn certificate_import_without_mdoc_keeps_an_empty_revocation_snapshot() {
-    let data_dir = temporary_directory("certificate-import");
     let source = temporary_directory("certificate-import-source");
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
-    let (manager, _, active_key) =
-        database_manager_with_mdoc_key(repository, &data_dir, tenant_id).await;
+    let (manager, _, active_key) = database_manager_with_mdoc_key(repository, tenant_id).await;
     let profile = Openid4vcCertificateProfile {
         hostname: "tenant.example".to_owned(),
         mdoc_profile: None,

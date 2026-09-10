@@ -268,9 +268,6 @@ export EMAIL_CODE_SEND_COOLDOWN_SECONDS='1'
 export EMAIL_CODE_PEER_COOLDOWN_SECONDS='1'
 export EMAIL_CODE_DEV_RESPONSE_ENABLED='false'
 export DATA_DIR='runtime/codecov'
-# Directory-managed tenants derive their key storage from the database; an
-# inherited legacy JWK_KEYS_DIR would make Settings reject this fixture.
-unset JWK_KEYS_DIR
 export AVATAR_OBJECT_STORE='local'
 export AVATAR_STORAGE_DIR="$DATA_DIR/avatars"
 export SIGNING_KEY_ENCRYPTION_KEY_ID='codecov-signing-root-v1'

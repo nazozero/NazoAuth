@@ -23,11 +23,15 @@ NazoAuth 提供两条明确的部署契约：源码开发使用 Compose；独立
 ```sh
 export NAZOAUTH_POSTGRES_PASSWORD='请替换为唯一的runtime密码'
 export NAZOAUTH_POSTGRES_LIFECYCLE_PASSWORD='请替换为不同的lifecycle密码'
+export NAZOAUTH_SIGNING_KEY_ENCRYPTION_KEY_ID='deployment-signing-root'
+export NAZOAUTH_SIGNING_KEY_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')"
 export NAZOAUTH_VALKEY_PASSWORD='请替换为唯一的Valkey密码'
 export NAZOAUTH_VALKEY_STATE_EPOCH='请替换为新生成的UUID'
 docker compose up -d --build
 docker compose ps
 ```
+
+签名密钥包装根只生成一次，并随数据库保存；重启部署时复用同一包装根。
 
 启动前必须替换全部占位值。密码会嵌入连接 URL，因此只能使用 RFC 3986
 unreserved 字符（`A-Z`、`a-z`、`0-9`、`-`、`.`、`_`、`~`）。lifecycle
@@ -36,7 +40,7 @@ runtime role。Compose 直接向 NazoAuth 传入 `DATABASE_URL` 和 `VALKEY_URL`
 应用专用的 URL 文件或密码文件。PostgreSQL 只会在首次初始化新的 `postgres_data`
 卷时创建 runtime role，因此修改这些环境变量不会自动轮换已有数据库的凭据。
 
-需要改变宿主机端口和浏览器看到的公开 origin 时，保留上述四个变量并执行：
+需要改变宿主机端口和浏览器看到的公开 origin 时，保留上述变量并执行：
 
 ```sh
 NAZOAUTH_PORT=443 \
@@ -66,11 +70,23 @@ Compose server 使用非特权容器用户 `10001:10001`；root `runtime-init` �
 
 Compose 使用显式提供的凭据启动 PostgreSQL 和 Valkey，通过 lifecycle PostgreSQL
 role 执行迁移，再使用独立的 runtime role 启动服务。迁移启动只依赖 PostgreSQL；
-只有服务端需要等待 Valkey 就绪。可直接打开：
+只有服务端需要等待 Valkey 就绪。保留默认 loopback origin 与端口时，可打开：
 
 - `http://127.0.0.1:8000/health`：依赖就绪探针
 - `http://127.0.0.1:8000/live`：进程存活探针
 - `http://127.0.0.1:8000/.well-known/openid-configuration`
+
+包括探针在内的所有路由都通过 Host 解析活动目录 binding。issuer 使用
+`auth.example.com` 时，明文后端探针也必须保留该 Host，例如：
+
+```sh
+curl --fail --header 'Host: auth.example.com' http://127.0.0.1:8000/health
+```
+
+请将后端端口替换为实际发布端口。对绑定域名的部署只发送 IP Host 会得到 `404`，
+不会回退到默认租户。Direct TLS 应在 URL 中保留 issuer 域名，使 SNI 与 Host 一致；
+可用 `curl --resolve auth.example.com:8443:127.0.0.1 https://auth.example.com:8443/health`
+检查本地 listener，并保留证书验证。
 
 首次源码构建需要联网下载 Rust 依赖；后续构建会复用本地容器缓存。
 
@@ -117,7 +133,7 @@ HTTP hop 接收经过清洗且已认证的证书证据；两种模式互斥。
 
 ## 公开部署
 
-正式发布优先使用生命周期入口：
+已发布的生产安装使用受支持的生命周期入口：
 
 ```sh
 nazoauthctl host add production-host --ssh production --privilege sudo
@@ -136,8 +152,8 @@ nazoauthctl admin create --instance production
 ```
 
 runtime 必须明确选择 `podman`、`docker` 或 `host`。两套 PostgreSQL role 与
-Valkey 凭据必须已经存在；NazoAuthCtl 不会为外部服务创建凭据。目标机当前格式
-数据导入与备份边界见[一键安装与升级](one-click-update.zh-CN.md)。
+Valkey 凭据必须已经存在；NazoAuthCtl 不会为外部服务创建凭据。管理员创建、控制端
+绑定与备份流程见[一键安装与升级](one-click-update.zh-CN.md)。
 
 `nazoauthctl` 生成私有服务配置、deployment identity、签名 identity、应用 secret
 和恢复状态，并只把 NazoAuth 发布到选定的宿主机 loopback 端口。可使用任意符合要求
@@ -235,6 +251,6 @@ snapshot 恢复。完整边界见[一键安装与升级](one-click-update.zh-CN.
 - 对精确提交执行
   [release-security.md](release-security.md) 中的安全与一致性闸门。
 
-如需有意清空数据面，请使用
-[全新环境部署与生产启用](fresh-production-activation.zh-CN.md)。高级配置见
-[configuration.md](configuration.md)。
+有意替换为空的数据面属于新的受管 deployment，不能在原 deployment identity 或
+state epoch 上直接重置。请使用[一键安装与升级](one-click-update.zh-CN.md)中的已签名
+install/recovery 生命周期。高级配置见 [configuration.md](configuration.md)。

@@ -363,23 +363,29 @@ async fn persist_refresh_token_inner(
 ) -> diesel::QueryResult<RefreshTokenPersistResult> {
     lock_refresh_grant_scope(connection, token.tenant_id, token.user_id, token.client_id).await?;
     lock_refresh_family(connection, token.family_id).await?;
-    if refresh_family_has_different_context(
-        connection,
-        token.tenant_id,
-        token.family_id,
-        &authentication_context,
-    )
-    .await?
-    {
-        compromise_family(connection, token.tenant_id, token.family_id).await?;
-        return Ok(RefreshTokenPersistResult::RotationConflict);
-    }
     if let Some(rotated_from_id) = token.rotated_from_id {
+        let parent = load_family_token(
+            connection,
+            token.tenant_id,
+            token.family_id,
+            token.user_id,
+            token.client_id,
+            rotated_from_id,
+        )
+        .await?;
+        if !matches!(
+            parent.as_ref(),
+            Some(parent) if parent.oidc_auth_context == authentication_context
+        ) {
+            compromise_family(connection, token.tenant_id, token.family_id).await?;
+            return Ok(RefreshTokenPersistResult::RotationConflict);
+        }
         if let Some(retry) = token.lost_response_retry {
             let original = load_family_token(
                 connection,
                 token.tenant_id,
                 token.family_id,
+                token.user_id,
                 token.client_id,
                 retry.original_id,
             )
@@ -416,6 +422,9 @@ async fn persist_refresh_token_inner(
             compromise_family(connection, token.tenant_id, token.family_id).await?;
             return Ok(RefreshTokenPersistResult::RotationConflict);
         }
+    } else if refresh_family_exists(connection, token.tenant_id, token.family_id).await? {
+        compromise_family(connection, token.tenant_id, token.family_id).await?;
+        return Ok(RefreshTokenPersistResult::RotationConflict);
     }
     insert_refresh_token(connection, token, authentication_context).await?;
     Ok(RefreshTokenPersistResult::Inserted)
@@ -449,32 +458,32 @@ async fn insert_refresh_token(
         .await
 }
 
-async fn refresh_family_has_different_context(
+async fn refresh_family_exists(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     family_id: Uuid,
-    authentication_context: &serde_json::Value,
 ) -> diesel::QueryResult<bool> {
-    oauth_tokens::table
-        .filter(oauth_tokens::tenant_id.eq(tenant_id))
-        .filter(oauth_tokens::token_family_id.eq(family_id))
-        .filter(oauth_tokens::oidc_auth_context.is_distinct_from(authentication_context))
-        .select(diesel::dsl::count_star())
-        .first::<i64>(connection)
-        .await
-        .map(|count| count != 0)
+    diesel::select(diesel::dsl::exists(
+        oauth_tokens::table
+            .filter(oauth_tokens::tenant_id.eq(tenant_id))
+            .filter(oauth_tokens::token_family_id.eq(family_id)),
+    ))
+    .get_result::<bool>(connection)
+    .await
 }
 
 async fn load_family_token(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     family_id: Uuid,
+    user_id: Option<Uuid>,
     client_id: Uuid,
     token_id: Uuid,
 ) -> diesel::QueryResult<Option<RefreshTokenRow>> {
     oauth_tokens::table
         .filter(oauth_tokens::tenant_id.eq(tenant_id))
         .filter(oauth_tokens::token_family_id.eq(family_id))
+        .filter(oauth_tokens::user_id.is_not_distinct_from(user_id))
         .filter(oauth_tokens::client_id.eq(client_id))
         .filter(oauth_tokens::id.eq(token_id))
         .select(RefreshTokenRow::as_select())

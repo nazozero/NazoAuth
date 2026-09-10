@@ -51,12 +51,6 @@ updates:
     open-pull-requests-limit: 5
 
   - package-ecosystem: docker
-    directory: /perf/keyset
-    schedule:
-      interval: weekly
-    open-pull-requests-limit: 5
-
-  - package-ecosystem: docker
     directory: /perf/runner
     schedule:
       interval: weekly

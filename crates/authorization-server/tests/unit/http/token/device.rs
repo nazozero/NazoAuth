@@ -700,7 +700,8 @@ async fn device_code_replay_rejects_a_consumed_code_even_with_a_persisted_respon
     let Some(state) = live_device_replay_state().await else {
         return;
     };
-    let client = device_client();
+    let mut client = device_client();
+    client.client_id = format!("device-persisted-replay-{}", client.id);
     let device_code = format!("device-replay-{}", Uuid::now_v7());
     let grant_key = device_grant_key(&device_code, None, None);
 

@@ -17,18 +17,6 @@ use serde_json::json;
 
 static CIBA_PING_DELIVERY_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
-#[test]
-fn legacy_version_exports_alias_the_core_cas_tokens() {
-    let ciba: nazo_valkey::StoredCibaRequest =
-        nazo_auth::CibaStateVersion::new("ciba-snapshot".to_owned(), 1_700_000_120);
-    let device: nazo_valkey::StoredDeviceState =
-        nazo_auth::DeviceStateVersion::new("device-snapshot".to_owned());
-
-    assert_eq!(ciba.comparison_token(), "ciba-snapshot");
-    assert_eq!(ciba.retention_expires_at(), 1_700_000_120);
-    assert_eq!(device.comparison_token(), "device-snapshot");
-}
-
 fn ciba_approval_context(auth_time: i64) -> CibaAuthenticationContext {
     CibaAuthenticationContext {
         auth_time,

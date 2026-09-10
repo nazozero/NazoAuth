@@ -156,6 +156,20 @@ fn rfc9440_source_accepts_only_a_trusted_peer() {
             .as_deref(),
         Some(certificate.thumbprint.as_str())
     );
+    assert!(
+        trusted
+            .extensions()
+            .get::<ForwardedClientCertificate>()
+            .is_some()
+    );
+    assert_eq!(
+        request_mtls_thumbprint(&trusted, &trusted_proxy).as_deref(),
+        Some(certificate.thumbprint.as_str())
+    );
+    assert!(
+        request_mtls_client_certificate(&trusted, &[]).is_none(),
+        "cached facts must not bypass the caller's trusted proxy policy"
+    );
 
     let untrusted = TestRequest::default()
         .app_data(source)

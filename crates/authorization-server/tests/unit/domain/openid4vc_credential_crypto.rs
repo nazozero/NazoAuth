@@ -1,4 +1,4 @@
-use std::{collections::BTreeSet, path::PathBuf, time::Duration as StdDuration};
+use std::{collections::BTreeSet, time::Duration as StdDuration};
 
 use base64::{
     Engine as _,
@@ -31,7 +31,6 @@ use rcgen::{
 };
 use serde_json::{Value, json};
 use sha2::Digest as _;
-use uuid::Uuid;
 
 use super::*;
 
@@ -142,31 +141,19 @@ fn certificate_fixture_with_key(host: &str, leaf_key: KeyPair) -> CertificateFix
     }
 }
 
-async fn real_crypto_fixture() -> (
-    Openid4vcCredentialCrypto,
-    CertificateFixture,
-    PathBuf,
-    String,
-) {
-    let key_dir = std::env::temp_dir().join(format!(
-        "nazo-openid4vc-credential-crypto-{}",
-        Uuid::now_v7().simple()
-    ));
-    std::fs::create_dir_all(&key_dir).expect("credential key directory");
+async fn real_crypto_fixture() -> (Openid4vcCredentialCrypto, CertificateFixture, String) {
     let settings = KeySettings {
-        keys_dir: key_dir.clone(),
         external_command: Vec::new(),
         external_timeout: StdDuration::from_secs(1),
         rotation_interval: chrono::Duration::days(1),
         prepublish_window: chrono::Duration::hours(1),
         verification_grace: chrono::Duration::hours(1),
     };
-    KeyManager::load_or_create(settings.clone())
+    let keyset = nazo_key_management::test_support::key_manager(settings)
         .await
-        .expect("credential keyset should initialize");
-    let kid = KeyManager::register_local(
-        &settings,
-        LocalKeyRegistration {
+        .expect("database-backed credential keyset should initialize");
+    let kid = keyset
+        .database_register_local(LocalKeyRegistration {
             algorithm: Algorithm::ES256,
             purposes: [
                 nazo_auth::SigningPurpose::Credential,
@@ -174,31 +161,20 @@ async fn real_crypto_fixture() -> (
             ]
             .into_iter()
             .collect::<BTreeSet<_>>(),
-        },
-    )
-    .await
-    .expect("credential key should register");
-    let record = KeyManager::list_keys(&settings)
+        })
         .await
-        .expect("credential keys should list")
-        .into_iter()
-        .find(|record| record.kid == kid)
-        .expect("registered credential key should be listed");
-    assert_eq!(record.backend, "local-pem");
-    assert!(!record.locator.is_empty());
-    let leaf_pem = std::fs::read_to_string(key_dir.join(record.locator))
-        .expect("credential private key should be readable");
+        .expect("database credential key should register");
+    let leaf_pem = keyset
+        .database_local_private_key_pem(&kid)
+        .expect("database credential private key should be available");
     let leaf_key = KeyPair::from_pem(&leaf_pem).expect("credential private key should parse");
     let certs = certificate_fixture_with_key("issuer.example", leaf_key);
-    let keyset = KeyManager::load_or_create(settings)
-        .await
-        .expect("credential keyset should reload");
     let crypto = crypto_with_certificate(
         keyset,
         &certs,
         crate::settings::Openid4vcRevocationPolicy::Disabled,
     );
-    (crypto, certs, key_dir, kid)
+    (crypto, certs, kid)
 }
 
 fn crypto_with_certificate(
@@ -494,7 +470,7 @@ fn constructor_fails_closed_without_managed_material() {
 
 #[tokio::test]
 async fn request_and_metadata_signing_emit_required_jose_headers() {
-    let (crypto, certs, key_dir, kid) = real_crypto_fixture().await;
+    let (crypto, certs, kid) = real_crypto_fixture().await;
     let expected_x5c = vec![STANDARD.encode(&certs.leaf_der)];
     let lease = crypto.prepare_signing().expect("signing lease");
     let request = crypto
@@ -522,7 +498,6 @@ async fn request_and_metadata_signing_emit_required_jose_headers() {
     assert_eq!(metadata_header.alg, Algorithm::ES256);
     assert_eq!(metadata_header.kid.as_deref(), Some(kid.as_str()));
     assert_eq!(metadata_header.x5c.as_ref(), Some(&expected_x5c));
-    let _ = std::fs::remove_dir_all(key_dir);
 }
 
 #[tokio::test]
@@ -586,7 +561,7 @@ async fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
         json!({"given_name": "Ada", "age": 42}),
         Some(json!({"idx": 2, "uri": "https://status.example"})),
     );
-    let (crypto, certs, key_dir, _) = real_crypto_fixture().await;
+    let (crypto, certs, _) = real_crypto_fixture().await;
     let (_, leaf) = x509_parser::parse_x509_certificate(&certs.leaf_der).expect("leaf certificate");
     let decoding_key =
         jsonwebtoken::DecodingKey::from_ec_der(leaf.public_key().subject_public_key.data.as_ref());
@@ -612,13 +587,12 @@ async fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
         crypto.sign(&malformed).await,
         Err(CredentialTrustError::InvalidEncoding)
     );
-    let _ = std::fs::remove_dir_all(key_dir);
 }
 
 #[tokio::test]
 async fn mdoc_signing_covers_holder_and_namespace_encoding_errors() {
     let (holder_jwk, _) = es256_jwk(33);
-    let (crypto, _, key_dir, _) = real_crypto_fixture().await;
+    let (crypto, _, _) = real_crypto_fixture().await;
     let input = mdoc_input(
         Some(HolderBinding::Jwk { jwk: holder_jwk }),
         json!({
@@ -685,13 +659,12 @@ async fn mdoc_signing_covers_holder_and_namespace_encoding_errors() {
             .await,
         Err(CredentialTrustError::InvalidEncoding)
     );
-    let _ = std::fs::remove_dir_all(key_dir);
 }
 
 #[tokio::test]
 async fn mdoc_signing_skips_mdl_country_validation_for_other_document_types() {
     let (holder_jwk, _) = es256_jwk(34);
-    let (crypto, _, key_dir, _) = real_crypto_fixture().await;
+    let (crypto, _, _) = real_crypto_fixture().await;
     let mut input = mdoc_input(
         Some(HolderBinding::Jwk { jwk: holder_jwk }),
         json!({"example.namespace": {"value": "accepted"}}),
@@ -702,13 +675,12 @@ async fn mdoc_signing_skips_mdl_country_validation_for_other_document_types() {
         .await
         .expect("non-mDL document should not require an mDL issuing country");
     assert!(!encoded.is_empty());
-    let _ = std::fs::remove_dir_all(key_dir);
 }
 
 #[tokio::test]
 async fn mdoc_signing_requires_the_issuing_country_from_the_leaf_certificate() {
     let (holder_jwk, _) = es256_jwk(36);
-    let (crypto, _, key_dir, _) = real_crypto_fixture().await;
+    let (crypto, _, _) = real_crypto_fixture().await;
     for claims in [
         json!({"org.iso.18013.5.1": {"family_name":"Lovelace"}}),
         json!({"org.iso.18013.5.1": {"issuing_country": 840}}),
@@ -740,7 +712,6 @@ async fn mdoc_signing_requires_the_issuing_country_from_the_leaf_certificate() {
         .await
         .expect("matching mDL issuing country");
     assert!(!encoded.is_empty());
-    let _ = std::fs::remove_dir_all(key_dir);
 }
 
 #[test]
@@ -1064,7 +1035,7 @@ fn sd_jwt_verification_rejects_holder_and_issuer_policy_failures() {
 
 #[tokio::test]
 async fn mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors() {
-    let (crypto, _, key_dir, _) = real_crypto_fixture().await;
+    let (crypto, _, _) = real_crypto_fixture().await;
     let missing_transcript = PresentedCredential {
         format: CredentialFormat::MsoMdoc,
         encoded: URL_SAFE_NO_PAD.encode([0xa0]),
@@ -1096,12 +1067,11 @@ async fn mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors()
         crypto.verify_mdoc(&bad_anchor),
         Err(CredentialTrustError::InvalidEncoding)
     );
-    let _ = std::fs::remove_dir_all(key_dir);
 }
 
 #[tokio::test]
 async fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
-    let (crypto, certs, key_dir, _) = real_crypto_fixture().await;
+    let (crypto, certs, _) = real_crypto_fixture().await;
     let (encoded, transcript) = valid_mdoc_presentation(&certs);
     let presentation = PresentedCredential {
         format: CredentialFormat::MsoMdoc,
@@ -1133,7 +1103,6 @@ async fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() 
         strict_revocation.verify_mdoc(&presentation),
         Err(CredentialTrustError::RevocationSnapshotUnavailable)
     );
-    let _ = std::fs::remove_dir_all(key_dir);
 }
 
 #[test]

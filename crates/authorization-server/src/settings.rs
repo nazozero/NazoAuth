@@ -173,7 +173,6 @@ pub(crate) struct IdentityRuntimeSettings {
 
 #[derive(Clone)]
 pub(crate) struct KeyManagementSettings {
-    pub(crate) jwk_keys_dir: PathBuf,
     pub(crate) signing_external_command: Vec<String>,
     pub(crate) signing_external_timeout_ms: u64,
     pub(crate) signing_key_rotation_interval_seconds: i64,
@@ -250,7 +249,6 @@ impl Openid4vcRevocationPolicy {
 impl Settings {
     pub(crate) fn key_settings(&self) -> nazo_key_management::KeySettings {
         nazo_key_management::KeySettings {
-            keys_dir: self.keys.jwk_keys_dir.clone(),
             external_command: self.keys.signing_external_command.clone(),
             external_timeout: std::time::Duration::from_millis(
                 self.keys.signing_external_timeout_ms,
@@ -577,14 +575,9 @@ pub(crate) fn key_settings_from_config(
             "SIGNING_KEY_PREPUBLISH_SECONDS must be less than SIGNING_KEY_ROTATION_INTERVAL_SECONDS"
         );
     }
-    let data_dir = config.persistent_path("DATA_DIR", Some(DEFAULT_DATA_DIR))?;
     let access_token_ttl_seconds = bounded_access_token_ttl_seconds(config)?;
     let id_token_ttl_seconds = bounded_id_token_ttl_seconds(config)?;
     Ok(nazo_key_management::KeySettings {
-        keys_dir: match config.optional_string("JWK_KEYS_DIR") {
-            Some(_) => config.persistent_path("JWK_KEYS_DIR", None)?,
-            None => data_dir.join("keys"),
-        },
         external_command: parse_signing_external_command(
             config.optional_string("SIGNING_EXTERNAL_COMMAND"),
         ),

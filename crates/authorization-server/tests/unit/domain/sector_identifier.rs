@@ -1,6 +1,5 @@
 use super::{
-    MAX_RESPONSE_BYTES, SectorIdentifierError, append_response_chunk, fetch_sector_identifier_uris,
-    is_blocked_host, is_blocked_ip, parse_sector_identifier_document,
+    SectorIdentifierError, is_blocked_host, is_blocked_ip, parse_sector_identifier_document,
 };
 use std::net::IpAddr;
 
@@ -108,27 +107,6 @@ fn allow_globally_reachable_special_purpose_ipv6_destinations() {
 }
 
 #[test]
-fn response_limit_is_enforced_before_appending_an_oversized_chunk() {
-    let mut body = vec![0; MAX_RESPONSE_BYTES as usize];
-
-    let err = append_response_chunk(&mut body, &[1])
-        .expect_err("a chunk beyond the response limit must be rejected");
-
-    assert!(matches!(err, SectorIdentifierError::ResponseTooLarge));
-    assert_eq!(body.len(), MAX_RESPONSE_BYTES as usize);
-}
-
-#[test]
-fn response_chunks_are_appended_in_order_below_the_closed_limit() {
-    let mut body = b"first".to_vec();
-
-    append_response_chunk(&mut body, b"-second").unwrap();
-    append_response_chunk(&mut body, b"-third").unwrap();
-
-    assert_eq!(body, b"first-second-third");
-}
-
-#[test]
 fn block_localhost_domain() {
     assert!(is_blocked_host("localhost"));
 }
@@ -174,54 +152,6 @@ fn block_literal_private_hosts() {
     assert!(is_blocked_host("::"));
 }
 
-#[actix_web::test]
-async fn fetch_rejects_invalid_sector_identifier_uri_before_network() {
-    let err = fetch_sector_identifier_uris("not-a-uri")
-        .await
-        .expect_err("invalid URI must fail before DNS or HTTP");
-
-    assert!(matches!(err, SectorIdentifierError::InvalidUri));
-}
-
-#[actix_web::test]
-async fn fetch_rejects_non_https_sector_identifier_uri() {
-    let err = fetch_sector_identifier_uris("http://example.com/sector.json")
-        .await
-        .expect_err("sector_identifier_uri must be HTTPS");
-
-    assert!(matches!(err, SectorIdentifierError::SchemeNotHttps));
-}
-
-#[actix_web::test]
-async fn fetch_rejects_loopback_sector_identifier_uri_before_dns() {
-    let err = fetch_sector_identifier_uris("https://127.0.0.1/sector.json")
-        .await
-        .expect_err("loopback sector_identifier_uri must be blocked before DNS");
-
-    assert!(matches!(err, SectorIdentifierError::BlockedHost));
-}
-
-#[actix_web::test]
-async fn fetch_reports_dns_resolution_failure_for_unresolvable_public_host() {
-    let err = fetch_sector_identifier_uris("https://sector.invalid/sector.json")
-        .await
-        .expect_err("unresolvable public host must fail at DNS resolution");
-
-    assert!(matches!(err, SectorIdentifierError::DnsResolutionFailed));
-}
-
-#[actix_web::test]
-async fn fetch_pins_a_resolved_public_destination_and_fails_closed_on_transport_error() {
-    let err = fetch_sector_identifier_uris("https://192.0.0.9:1/sector.json")
-        .await
-        .expect_err("a closed public endpoint must not produce a document");
-
-    assert!(matches!(
-        err,
-        SectorIdentifierError::HttpError | SectorIdentifierError::Timeout
-    ));
-}
-
 #[test]
 fn parse_sector_identifier_document_accepts_json_content_type_with_parameters() {
     let uris = parse_sector_identifier_document(
@@ -243,6 +173,14 @@ fn parse_sector_identifier_document_accepts_json_content_type_with_parameters() 
 fn parse_sector_identifier_document_rejects_non_json_content_type() {
     let err = parse_sector_identifier_document("text/plain", br#"[]"#)
         .expect_err("sector identifier document must be JSON");
+
+    assert!(matches!(err, SectorIdentifierError::InvalidContentType));
+}
+
+#[test]
+fn parse_sector_identifier_document_rejects_jsonp_content_type() {
+    let err = parse_sector_identifier_document("application/jsonp", br#"[]"#)
+        .expect_err("sector identifier documents must use application/json");
 
     assert!(matches!(err, SectorIdentifierError::InvalidContentType));
 }

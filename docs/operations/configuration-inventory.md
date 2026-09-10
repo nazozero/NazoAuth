@@ -1,8 +1,9 @@
 # Configuration inventory
 
 This is the reviewed configuration contract for NazoAuth and NazoAuthCtl.
-The server allowlist currently contains **157** names. The list below is
-grouped only to make the decision readable; every name is an exact option.
+The accepted server keys and secret-file pairs are defined in
+[`crates/authorization-server/src/config.rs`](../../crates/authorization-server/src/config.rs).
+This document explains operator ownership; it is not a second, counted allowlist.
 
 Legend:
 
@@ -19,23 +20,25 @@ Legend:
 
 | Exact names | Importance / decision |
 |---|---|
-| `BIND`, `PUBLIC_BASE_URL`, `DATA_DIR`, `RUST_LOG` | **保留**。The process listener, public contract, durable state root, and diagnostics have no redundant owner. |
-| `ISSUER`, `FRONTEND_BASE_URL`, `MTLS_ENDPOINT_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `COOKIE_SECURE`, `SESSION_COOKIE_NAME`, `CSRF_COOKIE_NAME` | **保留（默认/派生）**。All default from the public issuer; explicit values remain for split-origin or reverse-proxy deployments. |
+| `BIND`, `PUBLIC_BASE_URL`, `DATA_DIR`, `RUST_LOG` | **保留**。The process listener, initial system-tenant directory seed, durable state root, and diagnostics have no redundant owner. Active request routing comes from the tenant directory, not `PUBLIC_BASE_URL` alone. |
+| `ISSUER`, `FRONTEND_BASE_URL`, `MTLS_ENDPOINT_BASE_URL`, `CORS_ALLOWED_ORIGINS`, `COOKIE_SECURE`, `SESSION_COOKIE_NAME`, `CSRF_COOKIE_NAME` | **保留（默认/派生）**。The initial system binding derives these from its issuer. A directory-managed tenant derives issuer, frontend URL, and CORS from its binding; transport, cookie, and explicit security policy remain process configuration. |
 | `TRANSPORT_MODE`, `CLIENT_IP_HEADER_MODE`, `TRUSTED_PROXY_CIDRS`, `MTLS_CERTIFICATE_SOURCE` | **保留（外部）**。These describe the direct-TLS or proxy trust boundary and must not be guessed. |
 | `TLS_BIND`, `TLS_CERTIFICATE_FILE`, `TLS_PRIVATE_KEY_FILE`, `TLS_CLIENT_CA_FILE`, `TLS_RELOAD_INTERVAL_SECONDS` | **保留（外部）**。Certificate lifecycle belongs to the TLS owner; NazoAuth atomically consumes a fully validated server certificate/key generation, while client-CA changes still require a controlled restart and staged activation, public verification and crash recovery remain deployment responsibilities. Silently creating a production certificate would be unsafe. |
 | `UI_ENABLED`, `UI_STATIC_DIR`, `AVATAR_STORAGE_DIR`, `AVATAR_MAX_BYTES` | **保留（默认/派生）**。Paths and the upload bound are operational policy; storage paths default below `DATA_DIR`. |
 | `DATABASE_URL`, `DATABASE_MAX_CONNECTIONS`, `VALKEY_URL`, `VALKEY_COMMAND_TIMEOUT_MS` | **保留（外部/默认）**。CTL generates local managed dependency URLs; an independent server cannot create a reachable external database or Valkey service. Connection URLs are supplied directly; orchestrators such as Kubernetes can project Secret values into these environment variables without an application-specific file indirection. |
-| `DEPLOYMENT_ID`, `RUNTIME_INSTANCE_ID`, `INSTANCE_IDENTITY_DIR`, `JWK_KEYS_DIR` | **保留（默认/自动生成）**。Identity IDs and signing-key paths are persisted; missing deployment/instance identity and signing material are generated atomically. |
+| `VALKEY_STATE_EPOCH` | **保留（恢复切分）**。It namespaces transient protocol security state. A managed restore selects a new UUIDv7 epoch; it is not a cache value to roll back or reuse. |
+| `DEPLOYMENT_ID`, `RUNTIME_INSTANCE_ID`, `INSTANCE_IDENTITY_DIR` | **保留（默认/自动生成）**。Deployment and instance identities are persisted; missing identity is generated atomically. |
 | `AUTHORIZATION_SERVER_PROFILE`, `DEFAULT_AUDIENCE`, `PROTECTED_RESOURCE_IDENTIFIER`, `SUBJECT_TYPE` | **保留**。These change protocol semantics and issuer/client subject contracts. The protected-resource identifier defaults from the issuer. |
 | `ACCESS_TOKEN_TTL_SECONDS`, `AUTH_CODE_TTL_SECONDS`, `ID_TOKEN_TTL_SECONDS`, `REFRESH_TOKEN_TTL_SECONDS`, `SESSION_TTL_SECONDS`, `PAR_TTL_SECONDS`, `DEVICE_AUTHORIZATION_TTL_SECONDS`, `DEVICE_AUTHORIZATION_POLL_INTERVAL_SECONDS`, `CIBA_AUTH_REQ_ID_TTL_SECONDS`, `CIBA_POLL_INTERVAL_SECONDS`, `CLIENT_DELIVERY_TTL_SECONDS` | **保留**。These are bounded lifetime/back-pressure policy, not feature toggles. |
 | `DPOP_NONCE_POLICY`, `FAPI_RESOURCE_DPOP_NONCE_POLICY`, `REQUEST_OBJECT_JTI_POLICY`, `REQUIRE_PUSHED_AUTHORIZATION_REQUESTS`, `CIBA_SECURITY_PROFILE`, `FAPI_HTTP_SIGNATURE_MAX_AGE_SECONDS` | **保留**。They select protocol assurance and replay windows; invalid combinations fail closed. |
 | `CIBA_NOTIFICATION_PRIVATE_ORIGINS`, `CIBA_PING_TLS_TRUST_BUNDLE`, `BACKCHANNEL_LOGOUT_PRIVATE_ORIGINS`, `REMOTE_CLIENT_DOCUMENT_PRIVATE_ORIGINS` | **条件/外部**。These are exact-origin or trust-bundle boundaries; leave empty unless the integration is deliberately enabled. |
-| `ENABLE_OPENID4VCI_ISSUER`, `ENABLE_OPENID4VP_VERIFIER` | **条件**。These configure the OpenID4VC services. All runtime modules, including authorization details, Native SSO, HTTP signatures, and SCIM security events, are controlled only by persisted explicit desired state. |
+| `ENABLE_OPENID4VCI_ISSUER`, `ENABLE_OPENID4VP_VERIFIER`, `ENABLE_DIRECTORY_OPENID4VCI_ISSUER`, `ENABLE_DIRECTORY_OPENID4VP_VERIFIER` | **条件**。The directory flags default to their respective global flag. For tenant-specific settings they select the issuer/verifier; routes register when either the global or directory flag is enabled. These settings do not replace persisted runtime-module desired state. |
 | `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`, `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN_FILE` | **保留（自动生成）**。The initial-access bearer is generated and persisted when absent; its presence is the provisioning prerequisite, while the runtime-module database state remains authoritative. |
 | `SCIM_EVENT_RETENTION_SECONDS` | **保留**。Retention is a data-minimization and delivery-retry policy. |
 | `CLIENT_SECRET_PEPPER`, `CLIENT_SECRET_PEPPER_FILE`, `PAIRWISE_SUBJECT_SECRET`, `PAIRWISE_SUBJECT_SECRET_FILE` | **保留（自动生成/条件）**。The server creates durable random material; pairwise material is only needed for `SUBJECT_TYPE=pairwise`. File forms support controlled import/recovery. |
 | `MFA_TOTP_ENCRYPTION_KEY`, `MFA_TOTP_ENCRYPTION_KEY_FILE`, `MFA_TOTP_ENCRYPTION_KEY_ID`, `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY`, `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_FILE`, `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID` | **保留（自动生成）**。Current TOTP material and its ID are generated/derived; previous material is optional rotation input. |
 | `TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY`, `TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_FILE`, `TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID`, `TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY`, `TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_FILE`, `TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID` | **保留（自动生成）**。Current response-envelope material and IDs are generated/derived; previous material is only for rotation overlap. |
+| `SIGNING_KEY_ENCRYPTION_KEY`, `SIGNING_KEY_ENCRYPTION_KEY_FILE`, `SIGNING_KEY_ENCRYPTION_KEY_ID`, `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY`, `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_FILE`, `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_ID` | **保留（外部/恢复）**。The deployment supplies the current wrapping root and, during a controlled rewrap, the matched previous root. `_FILE` forms support mounted-secret delivery without making ordinary settings file-backed. |
 | `OPENID4VC_DATA_ENCRYPTION_KEY`, `OPENID4VC_DATA_ENCRYPTION_KEY_FILE`, `OPENID4VCI_ISSUER_MANAGEMENT_TOKEN`, `OPENID4VCI_ISSUER_MANAGEMENT_TOKEN_FILE`, `OPENID4VP_VERIFIER_MANAGEMENT_TOKEN`, `OPENID4VP_VERIFIER_MANAGEMENT_TOKEN_FILE` | **条件/自动生成**。When the corresponding OpenID4VC module is enabled, service-owned encryption and management material is generated and persisted. |
 | `OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON`, `OPENID4VC_CLIENT_ATTESTATION_ISSUER`, `OPENID4VC_KEY_ATTESTATION_JWKS_JSON` | **条件/外部**。These are trust assertions for an external attestation ecosystem; NazoAuth must not mint trust for itself. |
 | `OPENID4VC_REVOCATION_POLICY`, `OPENID4VC_TRANSACTION_TTL_SECONDS`, `OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON`, `OPENID4VCI_DEFERRED_CREDENTIAL_CONFIGURATIONS`, `OPENID4VP_WALLET_AUTHORIZATION_ORIGINS` | **条件**。Required only for the selected issuer/verifier profile. Certificate, trust-anchor, and revocation facts are stored with the managed encrypted signing-key generation; the listed policy and configuration remain operator choices. |
@@ -106,9 +109,8 @@ Install retains only deployment boundaries and external dependency facts:
 `--host`, `--name`, `--public-url`, `--to`, `--artifact-sha256`, `--runtime`,
 `--install-root`, PostgreSQL host/port/database, distinct runtime and lifecycle
 roles with one password file each, and Valkey host/port/password-file. The
-optional `--import-data-root` and `--import-mfa-key-file` are an inseparable
-pair of absolute target-side current-format import paths. The controller does
-not provision shared dependencies, infer roles, or read old deployment state.
+controller does not provision shared dependencies, infer roles, or import
+historical deployment data.
 
 The important design rule is therefore: configuration selects boundaries and
 policy; service-owned key material is generated once and persisted; only

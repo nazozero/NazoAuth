@@ -61,7 +61,6 @@ if [ -n "${APP_CPUSET}" ] || [ -n "${INFRA_CPUSET}" ] || [ -n "${APP_CPUS}" ] ||
     write_service_override postgres "${INFRA_CPUSET}" "" ""
     write_service_override valkey "${INFRA_CPUSET}" "" ""
     write_service_override nazoauth "${APP_CPUSET}" "${APP_CPUS}" "${APP_TASKSET}"
-    write_service_override keyset "${INFRA_CPUSET}" "" ""
     write_service_override migrate "${INFRA_CPUSET}" "" ""
     write_service_override perf "${INFRA_CPUSET}" "" ""
   } >"${PERF_COMPOSE_OVERRIDE}"
@@ -107,12 +106,12 @@ else
   COMPOSE_FILES_VALUE="docker-compose.perf.yml"
 fi
 
-PIN_TEXT="nazoauth:${APP_CPUSET_VALUE} quota=${APP_CPUS_VALUE} taskset=${APP_TASKSET_VALUE}; postgres,valkey,keyset,migrate,perf:${INFRA_CPUSET_VALUE}"
+PIN_TEXT="nazoauth:${APP_CPUSET_VALUE} quota=${APP_CPUS_VALUE} taskset=${APP_TASKSET_VALUE}; postgres,valkey,migrate,perf:${INFRA_CPUSET_VALUE}"
 
 if [ -n "${APP_TASKSET}" ]; then
   CPU_MODEL_TEXT="NazoAuth is started through taskset on CPU ${APP_TASKSET}. Docker cpus/cpuset fields are still recorded, but process CPU affinity is the effective app CPU limiter in nested Docker."
 elif [ -n "${APP_CPUS}" ]; then
-  CPU_MODEL_TEXT="NazoAuth has a Docker CPU quota of ${APP_CPUS} CPU(s). PostgreSQL, Valkey, keyset, migrate, and perf use the infra CPU set and are not CPU-quota limited by this override."
+  CPU_MODEL_TEXT="NazoAuth has a Docker CPU quota of ${APP_CPUS} CPU(s). PostgreSQL, Valkey, migrate, and perf use the infra CPU set and are not CPU-quota limited by this override."
 else
   CPU_MODEL_TEXT="Docker cpuset isolation where configured; no CPU quota unless App CPU quota is set. NazoAuth is additionally scaled by the stage instance count."
 fi
@@ -160,8 +159,7 @@ fi
   echo "| Network topology | Single Docker bridge network; perf runner reaches NazoAuth at http://nazoauth:8000; NazoAuth reaches PostgreSQL and Valkey inside the same network. |"
   echo "| PostgreSQL container | docker.io/library/postgres:18-alpine; pg_stat_statements enabled; track_io_timing enabled; ephemeral Docker volume. |"
   echo "| Valkey container | docker.io/valkey/valkey:8-alpine; RDB save disabled; AOF disabled; warning log level; ephemeral state for benchmark isolation. |"
-  echo "| NazoAuth container | Built from local Containerfile target runtime; PERF_METRICS_ENABLED=true; runtime key volume shared with keyset/migrate. |"
-  echo "| Key material setup | keyset service generates runtime RS256 and PS256 keys before migration and benchmark traffic. |"
+  echo "| NazoAuth container | Built from local Containerfile target runtime; PERF_METRICS_ENABLED=true; signing keys are database-backed. |"
   echo "| Migration setup | migrate service runs a signed, one-shot operator-task before the NazoAuth service is considered ready for benchmark traffic. |"
   echo "| Perf runner | Built from perf/runner/Containerfile; mounts Docker socket for container stats; writes Markdown reports under docs/performance/reports/ and runtime JSON/logs to ignored perf/results/. |"
   echo "| Metrics sources | k6 HTTP metrics; Docker stats CPU/memory samples; PostgreSQL pg_stat_statements; NazoAuth DB pool metrics; Valkey INFO counters. |"

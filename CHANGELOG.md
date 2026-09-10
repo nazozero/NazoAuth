@@ -1,7 +1,31 @@
 # Changelog
 
-Project changes are recorded in Keep a Changelog style. Versioned releases use
-semantic versioning once public release tags are cut.
+Project changes are recorded by release. Before 0.5.0, the project iterates
+rapidly and version updates do not preserve compatibility with historical
+releases. Entries below describe their respective releases, not current support.
+
+## Unreleased
+
+### Removed
+
+- The file signing-key backend, `keys-import`, `JWK_KEYS_DIR`, and the obsolete
+  performance keyset container. Runtime and test key managers use database
+  repositories.
+- Valkey state-version aliases. Callers use the core state-version types.
+- Implicit revocation-time backfill during mdoc certificate import. Revoked
+  records must include their own timestamp.
+
+### Documentation
+
+- Rebuild the English and Chinese READMEs around deployment, application
+  integration, and current capabilities; state the pre-0.5.0 version policy.
+- List all 29 profiles in the official `Nazo Auth Server 0.2.0` certification
+  records, including OID4VCI/OID4VP with HAIP, and display the OpenID Certified
+  mark with its registered version.
+- Describe the storage interfaces separately from the PostgreSQL and Valkey
+  adapters supplied by the current distribution.
+- Correct first installation to create an administrator, enroll MFA, and then
+  bind the controller.
 
 ## 0.2.15 - 2026-09-06
 

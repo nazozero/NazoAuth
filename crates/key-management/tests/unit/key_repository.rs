@@ -1,12 +1,13 @@
 use std::sync::{
-    Arc, Mutex,
+    Arc,
     atomic::{AtomicUsize, Ordering},
 };
 
-use nazo_key_management::{
+use crate::{
     KeyManager, KeySettings, PersistedSigningKeyset, SealedKeyMaterial, SigningKeyRepository,
     SigningKeyRepositoryFuture, SigningKeyWrappingKeyError, SigningKeyWrappingKeyRing,
     SigningKeysetCompareAndSwapResult, SigningKeysetCreateResult,
+    test_support::MemorySigningKeyRepository,
 };
 use uuid::Uuid;
 
@@ -101,55 +102,15 @@ fn wrapping_key_ring_rejects_invalid_ids_and_malformed_material() {
     );
 }
 
-#[derive(Default)]
-struct MemoryRepository(Mutex<Option<PersistedSigningKeyset>>);
-
-impl SigningKeyRepository for MemoryRepository {
-    fn load(&self) -> SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
-        Box::pin(async move { Ok(self.0.lock().unwrap().clone()) })
-    }
-    fn create_if_absent(
-        &self,
-        candidate: PersistedSigningKeyset,
-    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
-        Box::pin(async move {
-            let mut record = self.0.lock().unwrap();
-            Ok(match record.clone() {
-                Some(existing) => SigningKeysetCreateResult::Existing(existing),
-                None => {
-                    *record = Some(candidate.clone());
-                    SigningKeysetCreateResult::Created(candidate)
-                }
-            })
-        })
-    }
-    fn compare_and_swap(
-        &self,
-        expected: i64,
-        candidate: PersistedSigningKeyset,
-    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
-        Box::pin(async move {
-            let mut record = self.0.lock().unwrap();
-            let current = record.clone().unwrap();
-            Ok(if current.revision == expected {
-                *record = Some(candidate.clone());
-                SigningKeysetCompareAndSwapResult::Applied(candidate)
-            } else {
-                SigningKeysetCompareAndSwapResult::Conflict(current)
-            })
-        })
-    }
-}
-
 struct ConflictRepository {
-    record: Mutex<Option<PersistedSigningKeyset>>,
+    inner: MemorySigningKeyRepository,
     conflicts_remaining: AtomicUsize,
 }
 
 impl ConflictRepository {
     fn with_conflicts(conflicts: usize) -> Self {
         Self {
-            record: Mutex::new(None),
+            inner: MemorySigningKeyRepository::default(),
             conflicts_remaining: AtomicUsize::new(conflicts),
         }
     }
@@ -157,23 +118,14 @@ impl ConflictRepository {
 
 impl SigningKeyRepository for ConflictRepository {
     fn load(&self) -> SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
-        Box::pin(async move { Ok(self.record.lock().unwrap().clone()) })
+        self.inner.load()
     }
 
     fn create_if_absent(
         &self,
         candidate: PersistedSigningKeyset,
     ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
-        Box::pin(async move {
-            let mut record = self.record.lock().unwrap();
-            Ok(match record.clone() {
-                Some(existing) => SigningKeysetCreateResult::Existing(existing),
-                None => {
-                    *record = Some(candidate.clone());
-                    SigningKeysetCreateResult::Created(candidate)
-                }
-            })
-        })
+        self.inner.create_if_absent(candidate)
     }
 
     fn compare_and_swap(
@@ -182,8 +134,7 @@ impl SigningKeyRepository for ConflictRepository {
         candidate: PersistedSigningKeyset,
     ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
         Box::pin(async move {
-            let mut record = self.record.lock().unwrap();
-            let current = record.clone().expect("keyset exists before CAS");
+            let current = self.inner.load().await?.expect("keyset exists before CAS");
             if self
                 .conflicts_remaining
                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |remaining| {
@@ -197,22 +148,17 @@ impl SigningKeyRepository for ConflictRepository {
             {
                 return Ok(SigningKeysetCompareAndSwapResult::Conflict(current));
             }
-            Ok(if current.revision == expected {
-                *record = Some(candidate.clone());
-                SigningKeysetCompareAndSwapResult::Applied(candidate)
-            } else {
-                SigningKeysetCompareAndSwapResult::Conflict(current)
-            })
+            self.inner.compare_and_swap(expected, candidate).await
         })
     }
 }
 
 fn decrypted_payload(
-    repository: &MemoryRepository,
+    repository: &MemorySigningKeyRepository,
     tenant: Uuid,
     ring: &SigningKeyWrappingKeyRing,
 ) -> serde_json::Value {
-    let record = repository.0.lock().unwrap().clone().unwrap();
+    let record = repository.snapshot().unwrap();
     let sealed = SealedKeyMaterial::from_persisted_bytes(
         record.wrapping_key_id,
         &record.encrypted_private_material,
@@ -227,12 +173,12 @@ fn decrypted_payload(
 }
 
 fn replace_payload(
-    repository: &MemoryRepository,
+    repository: &MemorySigningKeyRepository,
     tenant: Uuid,
     ring: &SigningKeyWrappingKeyRing,
     payload: serde_json::Value,
 ) {
-    let mut record = repository.0.lock().unwrap().clone().unwrap();
+    let mut record = repository.snapshot().unwrap();
     let mut public_metadata = payload.clone();
     public_metadata
         .as_object_mut()
@@ -252,21 +198,19 @@ fn replace_payload(
     record.public_metadata = public_metadata;
     record.encrypted_private_material = sealed.into_persisted_bytes();
     record.wrapping_key_id = ring.current_id().to_owned();
-    *repository.0.lock().unwrap() = Some(record);
+    repository.replace(Some(record));
 }
 
 #[tokio::test]
 async fn two_managers_share_database_keyset_without_writing_key_files() {
-    let root = std::env::temp_dir().join(format!("nazoauth-db-keys-{}", Uuid::now_v7()));
     let settings = KeySettings {
-        keys_dir: root.clone(),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
     };
-    let repository = Arc::new(MemoryRepository::default());
+    let repository = Arc::new(MemorySigningKeyRepository::default());
     let ring = SigningKeyWrappingKeyRing::new("current", [3_u8; 32], None).unwrap();
     let tenant = Uuid::now_v7();
     let (first, second) = tokio::join!(
@@ -281,25 +225,19 @@ async fn two_managers_share_database_keyset_without_writing_key_files() {
     let first = first.unwrap();
     let second = second.unwrap();
     assert_eq!(first.snapshot().active_kid, second.snapshot().active_kid);
-    assert!(
-        !root.exists(),
-        "database key path must not create local files"
-    );
     assert_eq!(repository.load().await.unwrap().unwrap().revision, 1);
 }
 
 #[tokio::test]
 async fn database_registration_converges_and_survives_restart_without_files() {
-    let root = std::env::temp_dir().join(format!("nazoauth-db-register-{}", Uuid::now_v7()));
     let settings = KeySettings {
-        keys_dir: root.clone(),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
     };
-    let repository = Arc::new(MemoryRepository::default());
+    let repository = Arc::new(MemorySigningKeyRepository::default());
     let ring = SigningKeyWrappingKeyRing::new("current", [4_u8; 32], None).unwrap();
     let tenant = Uuid::now_v7();
     let first = KeyManager::load_or_create_database(
@@ -317,7 +255,7 @@ async fn database_registration_converges_and_survives_restart_without_files() {
     .into_iter()
     .collect();
     let (first_kid, second_kid) = tokio::join!(
-        first.database_register_local(nazo_key_management::LocalKeyRegistration {
+        first.database_register_local(crate::LocalKeyRegistration {
             algorithm: jsonwebtoken::Algorithm::ES256,
             purposes: purposes.clone()
         }),
@@ -336,16 +274,12 @@ async fn database_registration_converges_and_survives_restart_without_files() {
             .iter()
             .any(|record| record.kid == first_kid && record.backend == "local-db")
     );
-    assert!(
-        !root.exists(),
-        "database key registration must not write key files"
-    );
     let restarted = KeyManager::load_or_create_database(settings, tenant, repository.clone(), ring)
         .await
         .unwrap();
     assert_eq!(
         restarted
-            .database_register_local(nazo_key_management::LocalKeyRegistration {
+            .database_register_local(crate::LocalKeyRegistration {
                 algorithm: jsonwebtoken::Algorithm::ES256,
                 purposes
             })
@@ -357,73 +291,15 @@ async fn database_registration_converges_and_survives_restart_without_files() {
 }
 
 #[tokio::test]
-async fn explicit_file_import_preserves_existing_kid_without_second_authority() {
-    let root = std::env::temp_dir().join(format!("nazoauth-key-import-{}", Uuid::now_v7()));
-    let settings = KeySettings {
-        keys_dir: root.clone(),
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
-        rotation_interval: chrono::Duration::days(90),
-        prepublish_window: chrono::Duration::days(1),
-        verification_grace: chrono::Duration::minutes(10),
-    };
-    let legacy = KeyManager::load_or_create(settings.clone()).await.unwrap();
-    let expected_kid = legacy.snapshot().active_kid.clone();
-    let repository = Arc::new(MemoryRepository::default());
-    let tenant = Uuid::now_v7();
-    let ring = SigningKeyWrappingKeyRing::new("current", [5_u8; 32], None).unwrap();
-    let imported = KeyManager::import_legacy_file_keyset(
-        settings.clone(),
-        tenant,
-        repository.clone(),
-        ring.clone(),
-    )
-    .await
-    .unwrap();
-    assert_eq!(imported.snapshot().active_kid, expected_kid);
-    assert_eq!(repository.load().await.unwrap().unwrap().revision, 1);
-
-    let retried = KeyManager::import_legacy_file_keyset(settings.clone(), tenant, repository, ring)
-        .await
-        .expect("the same imported keyset must be idempotent");
-    assert_eq!(retried.snapshot().active_kid, expected_kid);
-
-    let conflicting_repository = Arc::new(MemoryRepository::default());
-    KeyManager::load_or_create_database(
-        settings.clone(),
-        tenant,
-        conflicting_repository.clone(),
-        SigningKeyWrappingKeyRing::new("current", [5_u8; 32], None).unwrap(),
-    )
-    .await
-    .unwrap();
-    let error = match KeyManager::import_legacy_file_keyset(
-        settings,
-        tenant,
-        conflicting_repository,
-        SigningKeyWrappingKeyRing::new("current", [5_u8; 32], None).unwrap(),
-    )
-    .await
-    {
-        Ok(_) => {
-            panic!("a preinitialized database must not discard different imported key material")
-        }
-        Err(error) => error,
-    };
-    assert!(error.to_string().contains("different"));
-}
-
-#[tokio::test]
 async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
     let settings = KeySettings {
-        keys_dir: std::env::temp_dir().join(format!("nazoauth-key-startup-{}", Uuid::now_v7())),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
     };
-    let repository = Arc::new(MemoryRepository::default());
+    let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant = Uuid::now_v7();
     let ring = SigningKeyWrappingKeyRing::new("current", [10_u8; 32], None).unwrap();
     let manager = KeyManager::load_or_create_database(
@@ -458,7 +334,7 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
     let records = restarted.database_list_keys().await.unwrap();
     let prepublished = records
         .iter()
-        .find(|record| record.status == nazo_key_management::KeyRecordStatus::Prepublished)
+        .find(|record| record.status == crate::KeyRecordStatus::Prepublished)
         .expect("startup must publish a rotation candidate before readiness");
     assert!(
         restarted
@@ -471,14 +347,13 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
 #[tokio::test]
 async fn expired_database_key_remains_encrypted_but_is_not_advertised_or_verifiable() {
     let settings = KeySettings {
-        keys_dir: std::env::temp_dir().join(format!("nazoauth-key-retired-{}", Uuid::now_v7())),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::seconds(-1),
         prepublish_window: chrono::Duration::zero(),
         verification_grace: chrono::Duration::minutes(10),
     };
-    let repository = Arc::new(MemoryRepository::default());
+    let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant = Uuid::now_v7();
     let ring = SigningKeyWrappingKeyRing::new("current", [11_u8; 32], None).unwrap();
     let manager = KeyManager::load_or_create_database(
@@ -535,22 +410,20 @@ async fn expired_database_key_remains_encrypted_but_is_not_advertised_or_verifia
             .find(|record| record.kid == retired_kid)
             .unwrap()
             .status,
-        nazo_key_management::KeyRecordStatus::Retired
+        crate::KeyRecordStatus::Retired
     );
 }
 
 #[tokio::test]
 async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_removed() {
-    let root = std::env::temp_dir().join(format!("nazoauth-key-reseal-{}", Uuid::now_v7()));
     let settings = KeySettings {
-        keys_dir: root,
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
     };
-    let repository = Arc::new(MemoryRepository::default());
+    let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant = Uuid::now_v7();
     let old = SigningKeyWrappingKeyRing::new("old", [6_u8; 32], None).unwrap();
     KeyManager::load_or_create_database(settings.clone(), tenant, repository.clone(), old)
@@ -581,7 +454,6 @@ async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_remov
 #[tokio::test]
 async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
     let settings = KeySettings {
-        keys_dir: std::env::temp_dir().join(format!("nazoauth-db-conflict-{}", Uuid::now_v7())),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
@@ -599,7 +471,7 @@ async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
     .unwrap();
 
     let kid = manager
-        .database_register_local(nazo_key_management::LocalKeyRegistration {
+        .database_register_local(crate::LocalKeyRegistration {
             algorithm: jsonwebtoken::Algorithm::ES256,
             purposes: [nazo_auth::SigningPurpose::Credential]
                 .into_iter()
@@ -614,7 +486,6 @@ async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
 #[tokio::test]
 async fn database_update_stops_after_the_cas_conflict_budget() {
     let settings = KeySettings {
-        keys_dir: std::env::temp_dir().join(format!("nazoauth-db-no-converge-{}", Uuid::now_v7())),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
@@ -632,7 +503,7 @@ async fn database_update_stops_after_the_cas_conflict_budget() {
     .unwrap();
 
     let error = manager
-        .database_register_local(nazo_key_management::LocalKeyRegistration {
+        .database_register_local(crate::LocalKeyRegistration {
             algorithm: jsonwebtoken::Algorithm::ES256,
             purposes: [nazo_auth::SigningPurpose::Credential]
                 .into_iter()

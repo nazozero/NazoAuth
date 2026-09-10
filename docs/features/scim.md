@@ -2,9 +2,10 @@
 
 ## Scope
 
-SCIM support is a default-tenant provisioning surface with database-backed SCIM
-credentials. It is an identity-platform feature, not part of OAuth/OIDC or FAPI
-conformance.
+SCIM support is a tenant-scoped provisioning surface with database-backed SCIM
+credentials. The request Host selects the tenant graph before SCIM authorization
+runs; a credential for another tenant is rejected. It is an identity-platform
+feature, not part of OAuth/OIDC or FAPI conformance.
 
 ## Configuration
 
@@ -44,10 +45,11 @@ Credential behavior:
   older than 180 days together with expired security state. This keeps audit
   retention bounded while preserving a compromise investigation window.
 
-Outside default SCIM:
+Outside the implemented SCIM boundary:
 
 - OAuth client-credentials or introspection-backed SCIM authorization.
-- Per-tenant SCIM credential routing. The schema stores `tenant_id`; provisioning uses the default tenant boundary.
+- Cross-tenant use of one SCIM credential. Every credential and cursor remains
+  bound to the tenant selected from the request Host.
 
 ## Endpoints
 
@@ -70,9 +72,10 @@ SCIM `userName` maps to the local `users.email` login identifier. The primary
 email must match `userName`; create, replace, and patch requests that split
 these identities are rejected.
 
-Provisioned users are created in the default tenant, realm, and organization. A
-deployment with request-level tenant routing must select the tenant boundary
-before creating, listing, updating, or deleting users.
+Provisioned users are created in the tenant, realm, and organization carried by
+the resolved request graph. Host resolution happens before SCIM credential
+validation and before create, list, update, or delete operations; a SCIM token
+cannot select or escape another tenant boundary.
 
 ## Supported Operations
 

@@ -486,26 +486,6 @@ async fn database_key_manager_for_tenant(
     )
     .await
 }
-
-pub(crate) async fn operator_import_legacy_file_keyset(
-    config: &ConfigSource,
-    binding: &nazo_identity::TenantDirectoryBinding,
-    persistence: &dyn crate::operator_task::OperatorPersistence,
-    source_directory: PathBuf,
-) -> anyhow::Result<String> {
-    let mut source_settings = Settings::from_directory_binding(config, binding)?.key_settings();
-    source_settings.keys_dir = source_directory;
-    let manager = nazo_key_management::KeyManager::import_legacy_file_keyset(
-        source_settings,
-        binding.tenant.tenant_id.as_uuid(),
-        persistence.signing_key_repository(binding.tenant.tenant_id.as_uuid()),
-        crate::settings::signing_key_wrapping_key_ring(config)?,
-    )
-    .await?;
-    manager.database_validate().await?;
-    manager.database_revision().await
-}
-
 pub(crate) async fn operator_list_database_for_tenant(
     config: &ConfigSource,
     binding: &nazo_identity::TenantDirectoryBinding,
@@ -821,15 +801,13 @@ async fn import_mdoc_directory(
         let bytes = tokio::fs::read(source.join("revocation-snapshot.json"))
             .await
             .context("failed to read import revocation-snapshot.json")?;
-        let mut snapshot =
-            nazo_digital_credentials::CertificateRevocationSnapshot::from_json(&bytes)
-                .map_err(|e| anyhow::anyhow!("invalid imported revocation state: {e}"))?;
-        for entry in &mut snapshot.entries {
-            if entry.status == nazo_digital_credentials::CertificateRevocationStatus::Revoked
+        let snapshot = nazo_digital_credentials::CertificateRevocationSnapshot::from_json(&bytes)
+            .map_err(|e| anyhow::anyhow!("invalid imported revocation state: {e}"))?;
+        if snapshot.entries.iter().any(|entry| {
+            entry.status == nazo_digital_credentials::CertificateRevocationStatus::Revoked
                 && entry.revoked_at.is_none()
-            {
-                entry.revoked_at = Some(snapshot.this_update);
-            }
+        }) {
+            bail!("imported revoked DS status is missing its revocation time");
         }
         let mut owned_certificates = BTreeSet::new();
         let mut directory = tokio::fs::read_dir(source.join("iaca-keys"))

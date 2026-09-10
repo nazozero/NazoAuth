@@ -11,7 +11,7 @@ Supported federation modes:
 - multiple modular external OIDC provider instances
 - OAuth2 social provider adapters for QQ, WeChat, and custom JSON userinfo providers
 - one trusted SAML gateway integration
-- default-tenant external identity links
+- tenant-scoped external identity links in the resolved request runtime
 - normal HTTPOnly server-side sessions after successful federation login
 
 ## Provider Registry
@@ -108,8 +108,10 @@ and constant-time signature comparison.
 ## Identity Linking
 
 External identities are stored in `external_identity_links` and bound to the
-default tenant. The unique key is `(tenant_id, provider_type, provider_id,
-subject)`.
+tenant selected from the request host. The unique key is `(tenant_id,
+provider_type, provider_id, subject)`. The provider registry is process
+configuration, while account lookup, linking, provisioning, session creation,
+and transient federation state execute through that resolved tenant graph.
 
 Resolution order:
 

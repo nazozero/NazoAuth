@@ -15,13 +15,7 @@ use tokio::sync::Semaphore;
 use tokio::time;
 
 use crate::local::SigningBackend;
-use crate::{
-    model::{ExternalKeyRegistration, ExternalSigningKey, KeySettings},
-    serialization::{
-        keyset_keys, keyset_keys_mut, load_keyset_json, signing_algorithm_name,
-        validate_keyset_json, write_json_atomic,
-    },
-};
+use crate::{model::ExternalSigningKey, signing_algorithm_name};
 use nazo_auth::{SignError, Signature};
 use std::{
     future::Future,
@@ -520,59 +514,6 @@ pub(super) fn decoding_key_from_public_jwk(
 
 pub(super) fn jwt_provider_error(message: impl Into<String>) -> jsonwebtoken::errors::Error {
     jsonwebtoken::errors::ErrorKind::Provider(message.into()).into()
-}
-
-/// Registers an externally managed signing key without copying private material into the keyset.
-///
-/// The caller supplies the already parsed public JWK, and the JSON update is committed through the
-/// shared atomic writer. Retrying the exact registration is idempotent; changing any part of an
-/// existing `kid` fails closed so a key reference cannot silently drift.
-pub(crate) async fn register_external_key(
-    settings: &KeySettings,
-    registration: ExternalKeyRegistration,
-) -> anyhow::Result<()> {
-    let algorithm = signing_algorithm_name(registration.algorithm)
-        .ok_or_else(|| anyhow::anyhow!("unsupported signing alg"))?;
-    let public_jwk = registration.public_jwk;
-    let _lock = crate::lock::acquire_keyset_lock(&settings.keys_dir).await?;
-    let path = settings.keys_dir.join("keyset.json");
-    let creating_keyset = !path.exists();
-    let mut keyset = if creating_keyset {
-        json!({
-            "schema_version": crate::serialization::KEYSET_SCHEMA_VERSION,
-            "active_kid": registration.kid,
-            "keys": []
-        })
-    } else {
-        load_keyset_json(settings).await?
-    };
-    if let Some(existing) = keyset_keys(&keyset)?
-        .iter()
-        .find(|key| key.get("kid").and_then(Value::as_str) == Some(registration.kid.as_str()))
-    {
-        if existing.get("alg").and_then(Value::as_str) == Some(algorithm)
-            && existing.get("key_ref").and_then(Value::as_str)
-                == Some(registration.key_ref.as_str())
-            && existing.get("public_jwk") == Some(&public_jwk)
-        {
-            return Ok(());
-        }
-        anyhow::bail!("external key kid already exists with different material");
-    }
-    keyset_keys_mut(&mut keyset)?.push(json!({
-        "kid":registration.kid,
-        "alg":algorithm,
-        "backend":"external-command",
-        "key_ref":registration.key_ref,
-        "public_jwk":public_jwk,
-        "created_at":chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-        "retire_at":null
-    }));
-    validate_keyset_json(&keyset)?;
-    if creating_keyset {
-        crate::request_object_encryption::ensure_request_object_encryption_key(settings).await?;
-    }
-    write_json_atomic(&path, &keyset).await
 }
 
 #[cfg(test)]

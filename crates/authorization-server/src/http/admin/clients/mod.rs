@@ -5,16 +5,16 @@ pub(crate) mod list;
 pub(crate) mod templates;
 pub(crate) mod update;
 
-use crate::domain::sector_identifier::fetch_sector_identifier_uris;
+use crate::domain::remote_client_documents::RemoteClientDocumentResolver;
 use crate::settings::Settings;
-use nazo_auth::{AdminClientPolicy, SectorIdentifierFuture, SectorIdentifierResolverPort};
+use nazo_auth::AdminClientPolicy;
 use std::sync::Arc;
 
 pub(crate) use nazo_key_management::ClientRegistrationCrypto as ServerAdminClientCrypto;
 
 pub(crate) type ServerAdminClientService = nazo_auth::AdminClientService<
     Arc<dyn nazo_auth::AdminClientRepositoryPort>,
-    ServerSectorIdentifierResolver,
+    RemoteClientDocumentResolver,
     ServerAdminClientCrypto,
 >;
 
@@ -43,19 +43,6 @@ pub(crate) fn admin_client_policy(settings: &Settings) -> AdminClientPolicy {
         tenant: settings.tenant.context,
         pairwise_subject_secret: settings.protocol.pairwise_subject_secret.clone(),
         client_secret_pepper: settings.protocol.client_secret_pepper.clone(),
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct ServerSectorIdentifierResolver;
-
-impl SectorIdentifierResolverPort for ServerSectorIdentifierResolver {
-    fn resolve<'a>(&'a self, uri: &'a str) -> SectorIdentifierFuture<'a> {
-        Box::pin(async move {
-            fetch_sector_identifier_uris(uri)
-                .await
-                .map_err(|error| format!("{error:?}"))
-        })
     }
 }
 

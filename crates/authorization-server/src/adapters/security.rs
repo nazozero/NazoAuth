@@ -135,27 +135,34 @@ pub(crate) async fn verify_password_blocking_limited(
     password_hash: nazo_identity::PasswordHash,
 ) -> Result<bool, PasswordVerificationError> {
     let acquire = password_hash_concurrency_limit().clone().acquire_owned();
-    let Ok(Ok(_permit)) = timeout(password_hash_queue_timeout(), acquire).await else {
+    let Ok(Ok(permit)) = timeout(password_hash_queue_timeout(), acquire).await else {
         return Err(PasswordVerificationError::Saturated);
     };
 
-    tokio::task::spawn_blocking(move || password_hash.verify_password(&password))
-        .await
-        .map_err(|_| PasswordVerificationError::WorkerFailed)
+    tokio::task::spawn_blocking(move || {
+        // A cancelled caller cannot stop an already queued or running worker.
+        let _permit = permit;
+        password_hash.verify_password(&password)
+    })
+    .await
+    .map_err(|_| PasswordVerificationError::WorkerFailed)
 }
 
 pub(crate) async fn hash_password_blocking_limited(
     password: String,
 ) -> Result<String, PasswordHashingError> {
     let acquire = password_hash_concurrency_limit().clone().acquire_owned();
-    let Ok(Ok(_permit)) = timeout(password_hash_queue_timeout(), acquire).await else {
+    let Ok(Ok(permit)) = timeout(password_hash_queue_timeout(), acquire).await else {
         return Err(PasswordHashingError::Saturated);
     };
 
-    tokio::task::spawn_blocking(move || hash_password(&password))
-        .await
-        .map_err(|_| PasswordHashingError::WorkerFailed)?
-        .map_err(|_| PasswordHashingError::HashFailed)
+    tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        hash_password(&password)
+    })
+    .await
+    .map_err(|_| PasswordHashingError::WorkerFailed)?
+    .map_err(|_| PasswordHashingError::HashFailed)
 }
 
 pub(crate) async fn verify_encoded_hashes_blocking_limited(
@@ -163,11 +170,12 @@ pub(crate) async fn verify_encoded_hashes_blocking_limited(
     candidates: Vec<nazo_identity::ports::EncodedSecretHash>,
 ) -> Result<Option<usize>, PasswordVerificationError> {
     let acquire = password_hash_concurrency_limit().clone().acquire_owned();
-    let Ok(Ok(_permit)) = timeout(password_hash_queue_timeout(), acquire).await else {
+    let Ok(Ok(permit)) = timeout(password_hash_queue_timeout(), acquire).await else {
         return Err(PasswordVerificationError::Saturated);
     };
 
     tokio::task::spawn_blocking(move || {
+        let _permit = permit;
         candidates.into_iter().position(|candidate| {
             let Ok(parsed) = PasswordHash::new(candidate.as_str()) else {
                 return false;

@@ -8,7 +8,7 @@ use std::{
 use tokio::time::{Instant, sleep};
 use uuid::Uuid;
 
-use crate::store::{generate_key_material, public_jwk_from_private_der};
+use crate::serialization::{generate_key_material, public_jwk_from_private_der};
 
 fn external_signing_key() -> ExternalSigningKey {
     external_signing_key_with_command(Arc::new(vec!["unused-test-signer".to_owned()]), 100)

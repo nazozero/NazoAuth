@@ -1,11 +1,20 @@
 use super::*;
 use chrono::{DateTime, Utc};
 
-pub(super) fn failed_authorization_code_transition_result(result: &str) -> anyhow::Result<()> {
-    if matches!(result, "ok" | "missing" | "failed" | "consumed") {
-        Ok(())
-    } else {
-        anyhow::bail!("authorization code state is {result}, expected consuming")
+pub(super) fn failed_authorization_code_transition_result(
+    result: nazo_auth::AuthorizationCodeTransitionResult,
+) -> anyhow::Result<()> {
+    use nazo_auth::AuthorizationCodeTransitionResult;
+    match result {
+        AuthorizationCodeTransitionResult::Applied
+        | AuthorizationCodeTransitionResult::Missing
+        | AuthorizationCodeTransitionResult::Failed
+        | AuthorizationCodeTransitionResult::Consumed => Ok(()),
+        AuthorizationCodeTransitionResult::Malformed
+        | AuthorizationCodeTransitionResult::Pending
+        | AuthorizationCodeTransitionResult::Consuming => {
+            anyhow::bail!("authorization code state is {result:?}, expected consuming")
+        }
     }
 }
 
@@ -32,21 +41,7 @@ pub(crate) async fn mark_failed_authorization_code(
         .mark_authorization_code_failed(code_hash, error_code, ttl_seconds)
         .await
         .map_err(|error| anyhow::anyhow!("failed to mark authorization code: {error:?}"))?;
-    failed_authorization_code_transition_result(authorization_transition_name(result))
-}
-
-fn authorization_transition_name(
-    result: nazo_auth::AuthorizationCodeTransitionResult,
-) -> &'static str {
-    match result {
-        nazo_auth::AuthorizationCodeTransitionResult::Applied => "ok",
-        nazo_auth::AuthorizationCodeTransitionResult::Missing => "missing",
-        nazo_auth::AuthorizationCodeTransitionResult::Malformed => "malformed",
-        nazo_auth::AuthorizationCodeTransitionResult::Pending => "pending",
-        nazo_auth::AuthorizationCodeTransitionResult::Consuming => "consuming",
-        nazo_auth::AuthorizationCodeTransitionResult::Consumed => "consumed",
-        nazo_auth::AuthorizationCodeTransitionResult::Failed => "failed",
-    }
+    failed_authorization_code_transition_result(result)
 }
 
 pub(super) async fn mark_failed_authorization_code_if_needed(

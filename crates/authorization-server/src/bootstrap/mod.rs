@@ -81,8 +81,7 @@ use crate::domain::{
 };
 use crate::http::admin::access_requests::AdminAccessRequestConfig;
 use crate::http::admin::clients::{
-    AdminClientConfig, ServerAdminClientCrypto, ServerAdminClientService,
-    ServerSectorIdentifierResolver, admin_client_policy,
+    AdminClientConfig, ServerAdminClientCrypto, ServerAdminClientService, admin_client_policy,
 };
 use crate::http::admin::federation::AdminFederationConfig;
 use crate::http::auth::csrf::CsrfHttpConfig;

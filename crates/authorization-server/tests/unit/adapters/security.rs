@@ -13,6 +13,84 @@ fn password_hash_capacity_defaults_match_the_documented_bounded_policy() {
     assert_eq!(default_password_hash_queue_timeout_ms(), 100);
 }
 
+#[test]
+fn cancelled_password_callers_keep_capacity_until_the_blocking_workers_finish() {
+    use std::{future::Future, pin::Pin, task::Poll};
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    // Occupy the worker so every production call is deterministically queued.
+    // Dropping release on a failed assertion also unblocks runtime shutdown.
+    let (release, wait) = std::sync::mpsc::channel();
+    let (started, ready) = std::sync::mpsc::channel();
+    let blocker = runtime.spawn_blocking(move || {
+        started.send(()).unwrap();
+        let _ = wait.recv();
+    });
+    ready.recv_timeout(Duration::from_secs(5)).unwrap();
+
+    let capacity = password_hash_concurrency_limit().available_permits();
+    assert!(capacity >= 3);
+    let password = Uuid::now_v7().to_string();
+    let encoded = hash_password(&password).unwrap();
+    runtime.block_on(async {
+        for index in 0..capacity {
+            let mut work: Pin<Box<dyn Future<Output = ()>>> = match index % 3 {
+                0 => Box::pin(async {
+                    let _ = verify_password_blocking_limited(
+                        password.clone(),
+                        nazo_identity::PasswordHash::new(encoded.clone()).unwrap(),
+                    )
+                    .await;
+                }),
+                1 => Box::pin(async {
+                    let _ = hash_password_blocking_limited(password.clone()).await;
+                }),
+                _ => Box::pin(async {
+                    let _ = verify_encoded_hashes_blocking_limited(
+                        password.clone(),
+                        vec![
+                            nazo_identity::ports::EncodedSecretHash::new(encoded.clone()).unwrap(),
+                        ],
+                    )
+                    .await;
+                }),
+            };
+            assert!(matches!(futures_util::poll!(&mut work), Poll::Pending));
+            drop(work);
+            assert_eq!(
+                password_hash_concurrency_limit().available_permits(),
+                capacity - index - 1,
+                "cancelling a caller must not release its worker's capacity"
+            );
+        }
+        assert_eq!(
+            hash_password_blocking_limited(password.clone()).await,
+            Err(PasswordHashingError::Saturated)
+        );
+    });
+
+    release.send(()).unwrap();
+    runtime.block_on(async {
+        blocker.await.unwrap();
+        let permits = timeout(
+            Duration::from_secs(10),
+            password_hash_concurrency_limit().acquire_many(capacity as u32),
+        )
+        .await
+        .expect("all queued workers must finish and return their permits")
+        .unwrap();
+        drop(permits);
+        assert_eq!(
+            password_hash_concurrency_limit().available_permits(),
+            capacity
+        );
+    });
+}
+
 fn extract_client_credentials(
     req: &HttpRequest,
     settings: &Settings,

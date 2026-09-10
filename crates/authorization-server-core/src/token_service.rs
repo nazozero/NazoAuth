@@ -142,6 +142,10 @@ pub enum CommitTokenIssuanceResult {
     Conflict,
     /// A fresh or single-use grant was already committed.
     AlreadyUsed,
+    /// The client was disabled before durable token issuance could commit.
+    ClientInactive,
+    /// The subject was disabled before durable token issuance could commit.
+    SubjectInactive,
     /// Refresh-token reuse was detected and intentionally committed as a compromise.
     RotationConflict,
 }

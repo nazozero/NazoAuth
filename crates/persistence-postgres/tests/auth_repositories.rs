@@ -75,6 +75,19 @@ async fn wait_for_lock_wait(connection: &mut AsyncPgConnection, application_name
     panic!("timed out waiting for lock wait from {application_name}");
 }
 
+async fn wait_for_lock_wait_or_task<T: std::fmt::Debug>(
+    connection: &mut AsyncPgConnection,
+    application_name: &str,
+    task: &mut tokio::task::JoinHandle<T>,
+) {
+    tokio::select! {
+        () = wait_for_lock_wait(connection, application_name) => {}
+        result = task => panic!(
+            "task ended before reaching a PostgreSQL lock wait from {application_name}: {result:?}"
+        ),
+    }
+}
+
 fn family_lock_key(family_id: Uuid) -> i64 {
     let bytes = family_id.as_bytes();
     let high = i64::from_be_bytes(bytes[..8].try_into().expect("UUID has 16 bytes"));
@@ -161,6 +174,57 @@ async fn remove_rotation_insert_gate(
         .execute(&mut *connection)
         .await
         .expect("rotation insert gate should be removed");
+}
+
+async fn install_issuance_insert_gate(
+    connection: &mut AsyncPgConnection,
+    client_id: Uuid,
+    gate_key: i64,
+) -> (String, String) {
+    let suffix = Uuid::now_v7().simple().to_string();
+    let function = format!("test_token_issuance_gate_{suffix}");
+    let trigger = format!("test_token_issuance_gate_trigger_{suffix}");
+    sql_query(format!(
+        r#"
+        CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$
+        BEGIN
+            IF NEW.client_id = '{client_id}'::uuid THEN
+                PERFORM pg_advisory_xact_lock({gate_key});
+            END IF;
+            RETURN NEW;
+        END
+        $$
+        "#
+    ))
+    .execute(&mut *connection)
+    .await
+    .expect("token issuance gate function should install");
+    sql_query(format!(
+        r#"
+        CREATE TRIGGER {trigger}
+        BEFORE INSERT ON oauth_token_issuances
+        FOR EACH ROW EXECUTE FUNCTION {function}()
+        "#
+    ))
+    .execute(connection)
+    .await
+    .expect("token issuance gate should install");
+    (trigger, function)
+}
+
+async fn remove_issuance_insert_gate(
+    connection: &mut AsyncPgConnection,
+    trigger: &str,
+    function: &str,
+) {
+    sql_query(format!("DROP TRIGGER {trigger} ON oauth_token_issuances"))
+        .execute(&mut *connection)
+        .await
+        .expect("token issuance gate trigger should be removed");
+    sql_query(format!("DROP FUNCTION {function}()"))
+        .execute(connection)
+        .await
+        .expect("token issuance gate function should be removed");
 }
 
 fn refresh_token_fixture(
@@ -789,6 +853,360 @@ async fn refresh_token_authentication_context_round_trips_and_rejects_invalid_va
         null_result.is_err(),
         "the database must reject a missing refresh authentication context"
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
+    let database_url =
+        database_url().expect("refresh-family regression requires a live PostgreSQL database");
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let issuance = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
+
+    let chain_family = Uuid::now_v7();
+    let root_raw = format!("direct-parent-root-{}", Uuid::now_v7());
+    let root = refresh_token_fixture(&fixture, tenant_id, chain_family, root_raw.clone(), None);
+    assert_eq!(
+        issuance
+            .commit_token_issuance(refresh_issuance(root))
+            .await
+            .expect("root refresh token should persist"),
+        CommitTokenIssuanceResult::Committed
+    );
+    let root_id = tokens
+        .by_raw_refresh_token(tenant_id, &root_raw)
+        .await
+        .expect("root refresh token should load")
+        .expect("root refresh token should exist")
+        .id;
+    let child_raw = format!("direct-parent-child-{}", Uuid::now_v7());
+    let child = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        chain_family,
+        child_raw.clone(),
+        Some(root_id),
+    );
+    assert_eq!(
+        issuance
+            .commit_token_issuance(refresh_issuance(child))
+            .await
+            .expect("direct child should rotate"),
+        CommitTokenIssuanceResult::Committed
+    );
+    let child_id = tokens
+        .by_raw_refresh_token(tenant_id, &child_raw)
+        .await
+        .expect("child refresh token should load")
+        .expect("child refresh token should exist")
+        .id;
+    assert_eq!(
+        issuance
+            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                chain_family,
+                format!("direct-parent-grandchild-{}", Uuid::now_v7()),
+                Some(child_id),
+            )))
+            .await
+            .expect("grandchild should rotate from its direct parent"),
+        CommitTokenIssuanceResult::Committed
+    );
+
+    let duplicate_root_family = Uuid::now_v7();
+    assert_eq!(
+        issuance
+            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                duplicate_root_family,
+                format!("duplicate-root-first-{}", Uuid::now_v7()),
+                None,
+            )))
+            .await
+            .expect("first root refresh token should persist"),
+        CommitTokenIssuanceResult::Committed
+    );
+    assert_eq!(
+        issuance
+            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                duplicate_root_family,
+                format!("duplicate-root-second-{}", Uuid::now_v7()),
+                None,
+            )))
+            .await
+            .expect("duplicate root should be classified"),
+        CommitTokenIssuanceResult::RotationConflict
+    );
+    assert!(
+        !tokens
+            .family_active(tenant_id, duplicate_root_family, fixture.user_id)
+            .await
+            .expect("duplicate-root family state should load")
+    );
+
+    let context_mismatch_family = Uuid::now_v7();
+    let context_root_raw = format!("context-parent-root-{}", Uuid::now_v7());
+    assert_eq!(
+        issuance
+            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                context_mismatch_family,
+                context_root_raw.clone(),
+                None,
+            )))
+            .await
+            .expect("context root should persist"),
+        CommitTokenIssuanceResult::Committed
+    );
+    let context_root_id = tokens
+        .by_raw_refresh_token(tenant_id, &context_root_raw)
+        .await
+        .expect("context root should load")
+        .expect("context root should exist")
+        .id;
+    let mut mismatched_context = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        context_mismatch_family,
+        format!("context-parent-child-{}", Uuid::now_v7()),
+        Some(context_root_id),
+    );
+    mismatched_context.authentication_context.nonce = Some("different-authentication".to_owned());
+    assert_eq!(
+        issuance
+            .commit_token_issuance(refresh_issuance(mismatched_context))
+            .await
+            .expect("context mismatch should be classified"),
+        CommitTokenIssuanceResult::RotationConflict
+    );
+    assert!(
+        !tokens
+            .family_active(tenant_id, context_mismatch_family, fixture.user_id)
+            .await
+            .expect("context-mismatch family state should load")
+    );
+
+    let owner_mismatch_family = Uuid::now_v7();
+    let owner_root_raw = format!("owner-parent-root-{}", Uuid::now_v7());
+    assert_eq!(
+        issuance
+            .commit_token_issuance(refresh_issuance(refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                owner_mismatch_family,
+                owner_root_raw.clone(),
+                None,
+            )))
+            .await
+            .expect("owner root should persist"),
+        CommitTokenIssuanceResult::Committed
+    );
+    let owner_root_id = tokens
+        .by_raw_refresh_token(tenant_id, &owner_root_raw)
+        .await
+        .expect("owner root should load")
+        .expect("owner root should exist")
+        .id;
+    let mut wrong_subject = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        owner_mismatch_family,
+        format!("owner-parent-child-{}", Uuid::now_v7()),
+        Some(owner_root_id),
+    );
+    wrong_subject.user_id = None;
+    wrong_subject.subject = fixture.client_public_id.clone();
+    assert_eq!(
+        issuance
+            .commit_token_issuance(refresh_issuance(wrong_subject))
+            .await
+            .expect("a parent owned by another subject should be classified"),
+        CommitTokenIssuanceResult::RotationConflict
+    );
+    assert!(
+        !tokens
+            .family_active(tenant_id, owner_mismatch_family, fixture.user_id)
+            .await
+            .expect("owner-mismatch family state should load")
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn issuance_waits_for_principal_deactivation_and_rechecks_the_committed_state() {
+    let database_url = database_url()
+        .expect("principal-deactivation regression requires a live PostgreSQL database");
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    for (principal_table, expected) in [
+        ("oauth_clients", CommitTokenIssuanceResult::ClientInactive),
+        ("users", CommitTokenIssuanceResult::SubjectInactive),
+    ] {
+        let fixture = fixture(&database_url).await;
+        let principal_id = if principal_table == "oauth_clients" {
+            fixture.client_id
+        } else {
+            fixture.user_id
+        };
+        let raw_token = format!(
+            "principal-deactivation-{principal_table}-{}",
+            Uuid::now_v7()
+        );
+        let input = refresh_issuance(refresh_token_fixture(
+            &fixture,
+            tenant_id,
+            Uuid::now_v7(),
+            raw_token.clone(),
+            None,
+        ));
+        let application_name = format!("issuance-{principal_table}-{}", Uuid::now_v7().simple());
+        let repository = TokenIssuanceRepository::new(
+            create_pool(tagged_database_url(&database_url, &application_name), 1).unwrap(),
+        );
+        let mut coordinator = AsyncPgConnection::establish(&database_url)
+            .await
+            .expect("test coordinator should connect");
+        let mut observer = AsyncPgConnection::establish(&database_url)
+            .await
+            .expect("lock observer should connect");
+        coordinator
+            .batch_execute("BEGIN")
+            .await
+            .expect("principal deactivation transaction should begin");
+        let changed = match principal_table {
+            "oauth_clients" => {
+                sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE id = $1")
+                    .bind::<SqlUuid, _>(principal_id)
+                    .execute(&mut coordinator)
+                    .await
+            }
+            "users" => {
+                sql_query("UPDATE users SET is_active = FALSE WHERE id = $1")
+                    .bind::<SqlUuid, _>(principal_id)
+                    .execute(&mut coordinator)
+                    .await
+            }
+            _ => unreachable!("test principal table is fixed"),
+        }
+        .expect("principal deactivation should hold its row lock");
+        assert_eq!(changed, 1, "principal fixture must be active");
+        let mut issuer = tokio::spawn(async move { repository.commit_token_issuance(input).await });
+        wait_for_lock_wait_or_task(&mut observer, &application_name, &mut issuer).await;
+        coordinator
+            .batch_execute("COMMIT")
+            .await
+            .expect("principal deactivation should commit");
+        assert_eq!(
+            issuer
+                .await
+                .expect("issuance task should join")
+                .expect("issuance should classify a committed deactivation"),
+            expected
+        );
+        assert!(
+            TokenRepository::new(create_pool(&database_url, 1).unwrap())
+                .by_raw_refresh_token(tenant_id, &raw_token)
+                .await
+                .expect("refresh lookup should succeed")
+                .is_none(),
+            "issuance must not persist a refresh token after {principal_table} deactivation"
+        );
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn client_deactivation_waits_for_issuance_and_revokes_committed_credentials() {
+    let database_url = database_url()
+        .expect("issuance/deactivation regression requires a live PostgreSQL database");
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let fixture = fixture(&database_url).await;
+    let family_id = Uuid::now_v7();
+    let raw_token = format!("issuance-before-deactivation-{}", Uuid::now_v7());
+    let input = refresh_issuance(refresh_token_fixture(
+        &fixture, tenant_id, family_id, raw_token, None,
+    ));
+    let access_token_jti = input.access_token_jti.clone();
+    let gate_key = family_lock_key(family_id).wrapping_add(1);
+    let mut coordinator = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test coordinator should connect");
+    let (trigger, function) =
+        install_issuance_insert_gate(&mut coordinator, fixture.client_id, gate_key).await;
+    sql_query("SELECT pg_advisory_lock($1)")
+        .bind::<BigInt, _>(gate_key)
+        .execute(&mut coordinator)
+        .await
+        .expect("coordinator should hold token issuance gate");
+
+    let issuance_application = format!("issuance-before-deactivation-{}", Uuid::now_v7().simple());
+    let issuance = TokenIssuanceRepository::new(
+        create_pool(tagged_database_url(&database_url, &issuance_application), 1).unwrap(),
+    );
+    let mut issuer = tokio::spawn(async move { issuance.commit_token_issuance(input).await });
+    wait_for_lock_wait_or_task(&mut coordinator, &issuance_application, &mut issuer).await;
+
+    let deactivation_application =
+        format!("deactivation-after-issuance-{}", Uuid::now_v7().simple());
+    let deactivation_database_url = tagged_database_url(&database_url, &deactivation_application);
+    let client_id = fixture.client_id;
+    let mut deactivation = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&deactivation_database_url)
+            .await
+            .expect("deactivation connection should establish");
+        connection
+            .transaction::<bool, diesel::result::Error, _>(async |connection| {
+                nazo_postgres::deactivate_client_on_connection(connection, tenant_id, client_id)
+                    .await
+            })
+            .await
+    });
+    wait_for_lock_wait_or_task(
+        &mut coordinator,
+        &deactivation_application,
+        &mut deactivation,
+    )
+    .await;
+
+    sql_query("SELECT pg_advisory_unlock($1)")
+        .bind::<BigInt, _>(gate_key)
+        .execute(&mut coordinator)
+        .await
+        .expect("coordinator should release token issuance gate");
+    assert_eq!(
+        issuer
+            .await
+            .expect("issuance task should join")
+            .expect("issuance should commit before deactivation acquires its row lock"),
+        CommitTokenIssuanceResult::Committed
+    );
+    assert!(
+        deactivation
+            .await
+            .expect("deactivation task should join")
+            .expect("deactivation should commit"),
+        "the real deactivation path must run after issuance releases FOR SHARE"
+    );
+
+    let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
+    assert!(
+        tokens
+            .access_token_revoked(tenant_id, &access_token_jti)
+            .await
+            .expect("access-token revocation should load"),
+        "deactivation must revoke the access token committed while it was blocked"
+    );
+    assert!(
+        !tokens
+            .family_active(tenant_id, family_id, fixture.user_id)
+            .await
+            .expect("refresh family state should load"),
+        "deactivation must revoke the refresh token committed while it was blocked"
+    );
+    remove_issuance_insert_gate(&mut coordinator, &trigger, &function).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

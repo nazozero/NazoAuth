@@ -1,6 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::Instant,
 };
 
@@ -8,64 +8,17 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::{SignRequest, Signer, SigningPurpose};
 
 use super::{
-    ExternalKeyRegistration, KeyGeneration, KeyHandle, KeyManager, KeyRecordStatus, KeySettings,
-    KeyState, LocalKeyRegistration, ManagedKey, Openid4vcMaterial, Openid4vcPublicMaterial,
-    StoredVerificationKey, TestSigningBehavior,
+    KeyGeneration, KeyHandle, KeyManager, KeyRecordStatus, KeySettings, KeyState, ManagedKey,
+    Openid4vcMaterial, Openid4vcPublicMaterial, StoredVerificationKey, TestSigningBehavior,
 };
-use crate::{
-    PersistedSigningKeyset, SigningKeyRepository, SigningKeyRepositoryFuture,
-    SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult, SigningKeysetCreateResult,
-};
-
-#[derive(Default)]
-struct MemoryRepository(Mutex<Option<PersistedSigningKeyset>>);
-
-impl SigningKeyRepository for MemoryRepository {
-    fn load(&self) -> SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
-        Box::pin(async move { Ok(self.0.lock().unwrap().clone()) })
-    }
-
-    fn create_if_absent(
-        &self,
-        candidate: PersistedSigningKeyset,
-    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
-        Box::pin(async move {
-            let mut record = self.0.lock().unwrap();
-            Ok(match record.clone() {
-                Some(existing) => SigningKeysetCreateResult::Existing(existing),
-                None => {
-                    *record = Some(candidate.clone());
-                    SigningKeysetCreateResult::Created(candidate)
-                }
-            })
-        })
-    }
-
-    fn compare_and_swap(
-        &self,
-        expected: i64,
-        candidate: PersistedSigningKeyset,
-    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
-        Box::pin(async move {
-            let mut record = self.0.lock().unwrap();
-            let current = record.clone().expect("keyset exists before CAS");
-            Ok(if current.revision == expected {
-                *record = Some(candidate.clone());
-                SigningKeysetCompareAndSwapResult::Applied(candidate)
-            } else {
-                SigningKeysetCompareAndSwapResult::Conflict(current)
-            })
-        })
-    }
-}
+use crate::{SigningKeyWrappingKeyRing, test_support::MemorySigningKeyRepository};
 
 fn database_settings(
-    name: &str,
+    _name: &str,
     rotation_interval: chrono::Duration,
     prepublish_window: chrono::Duration,
 ) -> KeySettings {
     KeySettings {
-        keys_dir: std::env::temp_dir().join(format!("nazo-key-{name}-{}", uuid::Uuid::now_v7())),
         external_command: Vec::new(),
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval,
@@ -78,7 +31,7 @@ async fn database_manager(settings: KeySettings) -> KeyManager {
     KeyManager::load_or_create_database(
         settings,
         uuid::Uuid::now_v7(),
-        Arc::new(MemoryRepository::default()),
+        Arc::new(MemorySigningKeyRepository::default()),
         SigningKeyWrappingKeyRing::new("current", [17_u8; 32], None).unwrap(),
     )
     .await
@@ -103,7 +56,7 @@ fn manager_with_policy(state: KeyState, purposes: &[SigningPurpose]) -> KeyManag
     manager
         .inner
         .generation
-        .store(Arc::new(KeyGeneration::new(loaded)));
+        .store(Arc::new(KeyGeneration::database(loaded)));
     manager
 }
 
@@ -429,7 +382,7 @@ fn openid4vc_lease_requires_healthy_complete_matching_material() {
     incomplete
         .inner
         .generation
-        .store(Arc::new(KeyGeneration::new(loaded)));
+        .store(Arc::new(KeyGeneration::database(loaded)));
     assert!(incomplete.prepare_openid4vc_signing().is_err());
 
     let mismatched = KeyManager::for_test(jsonwebtoken::Algorithm::ES256);
@@ -593,37 +546,6 @@ fn external_purpose_key_is_not_selected_as_a_local_signer() {
             .is_none(),
         "the local Signer path must not pretend it can invoke an external key"
     );
-}
-
-#[tokio::test]
-async fn database_operator_methods_reject_file_backed_managers() {
-    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
-    let registration = ExternalKeyRegistration {
-        kid: "unused".to_owned(),
-        algorithm: jsonwebtoken::Algorithm::EdDSA,
-        key_ref: "kms://unused".to_owned(),
-        public_jwk: serde_json::Value::Null,
-    };
-
-    assert!(manager.database_list_keys().await.is_err());
-    assert!(
-        manager
-            .database_register_external(registration)
-            .await
-            .is_err()
-    );
-    assert!(
-        manager
-            .database_register_local(LocalKeyRegistration {
-                algorithm: jsonwebtoken::Algorithm::ES256,
-                purposes: [SigningPurpose::Credential].into_iter().collect(),
-            })
-            .await
-            .is_err()
-    );
-    assert!(manager.database_validate().await.is_err());
-    assert!(manager.database_revision().await.is_err());
-    assert!(manager.database_local_private_key_pem("unused").is_err());
 }
 
 #[tokio::test]

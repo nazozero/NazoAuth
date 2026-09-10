@@ -1,7 +1,4 @@
-use std::{
-    collections::BTreeSet,
-    sync::{Arc, Mutex},
-};
+use std::{collections::BTreeSet, sync::Arc};
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use nazo_auth::SigningPurpose;
@@ -17,59 +14,20 @@ use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::{KeyManager, Openid4vcPublicMaterial, SigningKeyRepositoryFuture};
+use crate::{
+    KeyManager, Openid4vcPublicMaterial, SigningKeyRepository,
+    test_support::MemorySigningKeyRepository,
+};
 
 use super::*;
 
-#[derive(Default)]
-struct TestRepository(Mutex<Option<PersistedSigningKeyset>>);
-
-impl SigningKeyRepository for TestRepository {
-    fn load(&self) -> SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
-        Box::pin(async move { Ok(self.0.lock().unwrap().clone()) })
-    }
-
-    fn create_if_absent(
-        &self,
-        candidate: PersistedSigningKeyset,
-    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
-        Box::pin(async move {
-            let mut record = self.0.lock().unwrap();
-            Ok(match record.clone() {
-                Some(existing) => SigningKeysetCreateResult::Existing(existing),
-                None => {
-                    *record = Some(candidate.clone());
-                    SigningKeysetCreateResult::Created(candidate)
-                }
-            })
-        })
-    }
-
-    fn compare_and_swap(
-        &self,
-        expected_revision: i64,
-        candidate: PersistedSigningKeyset,
-    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
-        Box::pin(async move {
-            let mut record = self.0.lock().unwrap();
-            let current = record.clone().expect("keyset exists before CAS");
-            Ok(if current.revision == expected_revision {
-                *record = Some(candidate.clone());
-                SigningKeysetCompareAndSwapResult::Applied(candidate)
-            } else {
-                SigningKeysetCompareAndSwapResult::Conflict(current)
-            })
-        })
-    }
-}
-
 async fn database_fixture() -> (
     KeyManager,
-    Arc<TestRepository>,
+    Arc<MemorySigningKeyRepository>,
     Uuid,
     SigningKeyWrappingKeyRing,
 ) {
-    let repository = Arc::new(TestRepository::default());
+    let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
     let wrapping_keys = SigningKeyWrappingKeyRing::new(
         "openid4vc-test-root",
@@ -166,13 +124,73 @@ fn hex_sha256(bytes: &[u8]) -> String {
 
 fn settings(external_command: Vec<String>) -> KeySettings {
     KeySettings {
-        keys_dir: std::env::temp_dir().join(format!("nazoauth-database-test-{}", Uuid::now_v7())),
         external_command,
         external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
     }
+}
+
+async fn database_manager_from_payload(
+    payload: Value,
+    external_command: Vec<String>,
+) -> KeyManager {
+    let repository = Arc::new(MemorySigningKeyRepository::default());
+    let tenant_id = Uuid::now_v7();
+    let wrapping_keys =
+        SigningKeyWrappingKeyRing::new("database-test", [0x81_u8; 32], None).unwrap();
+    repository
+        .create_if_absent(
+            persist_payload(tenant_id, 1, payload, &wrapping_keys)
+                .expect("database fixture payload should persist"),
+        )
+        .await
+        .expect("database fixture record should initialize");
+    KeyManager::load_or_create_database(
+        settings(external_command),
+        tenant_id,
+        repository,
+        wrapping_keys,
+    )
+    .await
+    .expect("database fixture manager should load")
+}
+
+fn active_external_payload() -> (Value, String, Vec<u8>) {
+    let mut payload = valid_payload();
+    let active = active_entry_mut(&mut payload);
+    let kid = active["kid"].as_str().unwrap().to_owned();
+    let private_key = URL_SAFE_NO_PAD
+        .decode(active["private_pkcs8_der"].as_str().unwrap())
+        .expect("active database private key should decode");
+    active["backend"] = json!("external-command");
+    active["key_ref"] = json!("kms://test/active");
+    active.as_object_mut().unwrap().remove("private_pkcs8_der");
+    (payload, kid, private_key)
+}
+
+#[cfg(windows)]
+fn external_signature_command(signature: &str) -> Vec<String> {
+    vec![
+        "pwsh".to_owned(),
+        "-NoLogo".to_owned(),
+        "-NoProfile".to_owned(),
+        "-NonInteractive".to_owned(),
+        "-Command".to_owned(),
+        format!(
+            "$null=[Console]::In.ReadToEnd(); [Console]::Out.Write('{{\"signature\":\"{signature}\"}}')"
+        ),
+    ]
+}
+
+#[cfg(unix)]
+fn external_signature_command(signature: &str) -> Vec<String> {
+    vec![
+        "sh".to_owned(),
+        "-c".to_owned(),
+        format!("cat >/dev/null; printf '%s' '{{\"signature\":\"{signature}\"}}'"),
+    ]
 }
 
 fn valid_payload() -> Value {
@@ -197,106 +215,6 @@ fn external_entry_from_active(payload: &Value, kid: &str) -> Value {
     entry.as_object_mut().unwrap().remove("private_pkcs8_der");
     entry["public_jwk"]["kid"] = json!(kid);
     entry
-}
-
-#[test]
-fn import_identity_requires_backend_specific_private_material() {
-    let local = json!({
-        "kid":"local",
-        "alg":"RS256",
-        "backend":"local-db",
-        "purposes":null,
-        "public_jwk":null,
-        "private_pkcs8_der":"private"
-    });
-    assert_eq!(import_identity(&local).unwrap()["kid"], "local");
-
-    let external = json!({
-        "kid":"external",
-        "alg":"RS256",
-        "backend":"external-command",
-        "purposes":null,
-        "public_jwk":null,
-        "key_ref":"kms://test/external"
-    });
-    assert_eq!(
-        import_identity(&external).unwrap()["key_ref"],
-        "kms://test/external"
-    );
-
-    let mut missing_local = local.clone();
-    missing_local
-        .as_object_mut()
-        .unwrap()
-        .remove("private_pkcs8_der");
-    assert!(import_identity(&missing_local).is_err());
-
-    let mut missing_external = external.clone();
-    missing_external.as_object_mut().unwrap().remove("key_ref");
-    assert!(import_identity(&missing_external).is_err());
-    assert!(import_identity(&json!({"backend":"unsupported"})).is_err());
-    assert!(import_identity(&json!({})).is_err());
-}
-
-#[test]
-fn import_compatibility_rejects_missing_or_changed_generation_members() {
-    let local = json!({
-        "kid":"local",
-        "alg":"RS256",
-        "backend":"local-db",
-        "purposes":null,
-        "public_jwk":{"kid":"local"},
-        "private_pkcs8_der":"private"
-    });
-    let imported = json!({
-        "request_object_private_pem":"request",
-        "keys":[local.clone()]
-    });
-    let existing = imported.clone();
-    assert!(ensure_import_is_compatible(&imported, &existing).is_ok());
-
-    let mut changed_request = existing.clone();
-    changed_request["request_object_private_pem"] = json!("changed");
-    assert!(ensure_import_is_compatible(&imported, &changed_request).is_err());
-    assert!(
-        ensure_import_is_compatible(&imported, &json!({"request_object_private_pem":"request"}))
-            .is_err()
-    );
-    assert!(
-        ensure_import_is_compatible(&json!({"request_object_private_pem":"request"}), &existing)
-            .is_err()
-    );
-
-    let mut missing_kid = imported.clone();
-    missing_kid["keys"][0]
-        .as_object_mut()
-        .unwrap()
-        .remove("kid");
-    assert!(ensure_import_is_compatible(&missing_kid, &existing).is_err());
-
-    let mut missing_existing_key = existing.clone();
-    missing_existing_key["keys"] = json!([]);
-    assert!(ensure_import_is_compatible(&imported, &missing_existing_key).is_err());
-
-    let mut changed_private = existing.clone();
-    changed_private["keys"][0]["private_pkcs8_der"] = json!("changed");
-    assert!(ensure_import_is_compatible(&imported, &changed_private).is_err());
-
-    let external = json!({
-        "kid":"external",
-        "alg":"RS256",
-        "backend":"external-command",
-        "purposes":null,
-        "public_jwk":{"kid":"external"},
-        "key_ref":"kms://test/external"
-    });
-    assert!(
-        ensure_import_is_compatible(
-            &json!({"request_object_private_pem":"request","keys":[external.clone()]}),
-            &json!({"request_object_private_pem":"request","keys":[external]})
-        )
-        .is_ok()
-    );
 }
 
 #[test]
@@ -411,6 +329,101 @@ fn load_payload_handles_external_keys_with_and_without_a_signer_command() {
     ));
 }
 
+#[tokio::test]
+async fn database_jwt_encoding_rejects_mismatched_kid_and_unsupported_algorithm() {
+    let (manager, _repository, _tenant_id, _wrapping_keys) = database_fixture().await;
+    let active = manager.snapshot();
+    let mut wrong_kid = jsonwebtoken::Header::new(active.active_alg);
+    wrong_kid.kid = Some("wrong-kid".to_owned());
+    let error = manager
+        .encode_jwt(
+            SigningPurpose::IdToken,
+            &wrong_kid,
+            &json!({"sub":"database-key-constraints"}),
+        )
+        .await
+        .expect_err("database JWT signing must reject a header kid outside the selected key");
+    assert!(matches!(
+        error.kind(),
+        jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
+    ));
+
+    let mut unsupported = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
+    unsupported.kid = Some(active.active_kid.clone());
+    let error = manager
+        .encode_jwt(
+            SigningPurpose::IdToken,
+            &unsupported,
+            &json!({"sub":"database-key-constraints"}),
+        )
+        .await
+        .expect_err("database JWT signing must reject symmetric algorithms");
+    assert!(matches!(
+        error.kind(),
+        jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
+    ));
+}
+
+#[tokio::test]
+async fn active_database_external_key_signs_only_with_a_matching_public_signature() {
+    let claims = json!({"sub":"database-external", "exp":4_102_444_800_i64});
+    let (payload, kid, private_key) = active_external_payload();
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    header.kid = Some(kid.clone());
+    let expected = jsonwebtoken::encode(
+        &header,
+        &claims,
+        &jsonwebtoken::EncodingKey::from_rsa_der(&private_key),
+    )
+    .expect("fixture RSA key should sign");
+    let signature = expected
+        .rsplit('.')
+        .next()
+        .expect("compact JWT must contain a signature");
+    let bad_payload = payload.clone();
+    let manager =
+        database_manager_from_payload(payload, external_signature_command(signature)).await;
+
+    let token = manager
+        .encode_jwt(SigningPurpose::IdToken, &header, &claims)
+        .await
+        .expect("database active external key should produce a verifiable JWT");
+    let public_jwk: jsonwebtoken::jwk::Jwk = serde_json::from_value(
+        manager
+            .snapshot()
+            .verification_key(&kid)
+            .expect("active external public key should be published")
+            .public_jwk
+            .clone(),
+    )
+    .expect("published external JWK should decode");
+    let decoded = jsonwebtoken::decode::<Value>(
+        &token,
+        &jsonwebtoken::DecodingKey::from_jwk(&public_jwk).expect("published JWK should verify"),
+        &jsonwebtoken::Validation::new(jsonwebtoken::Algorithm::RS256),
+    )
+    .expect("database external JWT should verify against its public JWK");
+    assert_eq!(decoded.claims["sub"], "database-external");
+
+    let bad_manager = database_manager_from_payload(
+        bad_payload,
+        external_signature_command(&URL_SAFE_NO_PAD.encode(b"wrong-signature")),
+    )
+    .await;
+    let error = bad_manager
+        .encode_jwt(SigningPurpose::IdToken, &header, &claims)
+        .await
+        .expect_err("a database external signature must match the active public JWK");
+    assert!(
+        matches!(
+            error.kind(),
+            jsonwebtoken::errors::ErrorKind::Provider(message)
+                if message == &nazo_auth::SignError::SigningFailed.to_string()
+        ),
+        "wrong signature rejection: {error:?}"
+    );
+}
+
 #[test]
 fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
     let mut candidate = valid_payload();
@@ -452,6 +465,41 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
     let active = active_entry_mut(&mut external_active);
     active["backend"] = json!("external-command");
     assert!(!maintain_payload(&mut external_active, &stable).unwrap());
+}
+
+#[test]
+fn database_rotation_selects_the_oldest_local_candidate_and_ignores_external_candidates() {
+    let mut payload = valid_payload();
+    let now = chrono::Utc::now();
+    active_entry_mut(&mut payload)["created_at"] =
+        json!(timestamp(now - chrono::Duration::seconds(11)));
+    let mut external = external_entry_from_active(&payload, "external-earliest");
+    external["created_at"] = json!(timestamp(now - chrono::Duration::seconds(6)));
+    let oldest_local = local_entry(
+        jsonwebtoken::Algorithm::RS256,
+        timestamp(now - chrono::Duration::seconds(5)),
+        None::<Vec<SigningPurpose>>,
+    )
+    .expect("oldest local candidate should generate");
+    let oldest_local_kid = oldest_local["kid"].as_str().unwrap().to_owned();
+    let newer_local = local_entry(
+        jsonwebtoken::Algorithm::RS256,
+        timestamp(now - chrono::Duration::seconds(4)),
+        None::<Vec<SigningPurpose>>,
+    )
+    .expect("newer local candidate should generate");
+    payload["keys"]
+        .as_array_mut()
+        .unwrap()
+        .extend([external, oldest_local, newer_local]);
+
+    let rotation_settings = KeySettings {
+        rotation_interval: chrono::Duration::seconds(10),
+        prepublish_window: chrono::Duration::seconds(3),
+        ..settings(Vec::new())
+    };
+    assert!(maintain_payload(&mut payload, &rotation_settings).unwrap());
+    assert_eq!(payload["active_kid"], oldest_local_kid);
 }
 
 #[test]

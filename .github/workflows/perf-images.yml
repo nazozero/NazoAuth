@@ -4,13 +4,11 @@ on:
   pull_request:
     paths:
       - "perf/**"
-      - "scripts/ensure_runtime_keyset.py"
       - ".github/workflows/perf-images.yml"
   push:
     branches: [main]
     paths:
       - "perf/**"
-      - "scripts/ensure_runtime_keyset.py"
       - ".github/workflows/perf-images.yml"
   workflow_dispatch:
 
@@ -29,9 +27,6 @@ jobs:
           - name: performance runner
             containerfile: perf/runner/Containerfile
             image: nazoauth-perf-runner:ci
-          - name: runtime keyset
-            containerfile: perf/keyset/Containerfile
-            image: nazoauth-runtime-keyset:ci
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -40,18 +35,4 @@ jobs:
 
       - name: Smoke test image
         shell: bash
-        run: |
-          case "${{ matrix.image }}" in
-            nazoauth-perf-runner:ci)
-              docker run --rm --entrypoint python "${{ matrix.image }}" -c \
-                'import argon2, blake3, cryptography, psycopg, redis; print("performance dependencies import successfully")'
-              ;;
-            nazoauth-runtime-keyset:ci)
-              docker run --rm --entrypoint sh "${{ matrix.image }}" -c \
-                'python /scripts/ensure_runtime_keyset.py --key-dir /tmp/keys --active-alg PS256 --required-alg RS256 && test -s /tmp/keys/keyset.json'
-              ;;
-            *)
-              echo "Unknown smoke-test image: ${{ matrix.image }}" >&2
-              exit 1
-              ;;
-          esac
+        run: docker run --rm --entrypoint python "${{ matrix.image }}" -c 'import argon2, blake3, cryptography, psycopg, redis; print("performance dependencies import successfully")'

@@ -12,7 +12,7 @@ the administrator-provisioning client, and controller self-update/rollback.
 released package version by server tag. Tagged server Releases additionally
 publish that exact package with provenance so later controller dependency
 updates have an immutable review subject; the compiled controller never
-downloads it during recovery. The server Release manifest schema 6
+downloads it during recovery. The server Release manifest schema 7
 contains `operator_protocol.version`, `minimum_ctl_version`, and
 `maximum_ctl_version_exclusive`; missing, malformed, or unsupported contracts
 fail closed.

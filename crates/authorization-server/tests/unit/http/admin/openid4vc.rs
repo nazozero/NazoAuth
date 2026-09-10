@@ -2,7 +2,6 @@ use super::*;
 
 use std::{
     collections::{BTreeMap, BTreeSet},
-    path::PathBuf,
     sync::Arc,
     time::Duration as StdDuration,
 };
@@ -95,13 +94,6 @@ struct LiveOpenid4vcAdminFixture {
     state: Data<TestInfrastructure>,
     endpoint: Data<CredentialDatasetAdminService>,
     crypto: Openid4vcCredentialCrypto,
-    key_dir: PathBuf,
-}
-
-impl Drop for LiveOpenid4vcAdminFixture {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.key_dir);
-    }
 }
 
 impl LiveOpenid4vcAdminFixture {
@@ -144,21 +136,10 @@ impl LiveOpenid4vcAdminFixture {
         let diesel_db = create_pool(database_url, 4).expect("database pool should build");
         initialize_audit_dependencies(&diesel_db);
 
-        let key_dir =
-            std::env::temp_dir().join(format!("nazo-openid4vc-admin-{}", Uuid::now_v7().simple()));
-        std::fs::create_dir_all(&key_dir).expect("credential key directory should be created");
-        let (key_manager, chain_pem, anchors_pem) = credential_key_material(&key_dir).await;
+        let (key_manager, signing_kid, chain_pem, anchors_pem) = credential_key_material().await;
         key_manager.set_openid4vc_material_for_test(Openid4vcMaterial {
             public: Openid4vcPublicMaterial {
-                signing_kid: key_manager
-                    .snapshot()
-                    .signing_verification_key(
-                        nazo_auth::SigningPurpose::Credential,
-                        jsonwebtoken::Algorithm::ES256,
-                    )
-                    .expect("fixture credential key")
-                    .kid
-                    .clone(),
+                signing_kid,
                 certificate_chain_pem: chain_pem,
                 trust_anchors_pem: anchors_pem,
                 revocation_snapshot: None,
@@ -238,7 +219,6 @@ impl LiveOpenid4vcAdminFixture {
             state,
             endpoint: Data::new(CredentialDatasetAdminService::new(operations)),
             crypto,
-            key_dir,
         })
     }
 
@@ -412,21 +392,19 @@ impl LiveOpenid4vcAdminFixture {
     }
 }
 
-async fn credential_key_material(key_dir: &std::path::Path) -> (KeyManager, String, String) {
+async fn credential_key_material() -> (KeyManager, String, String, String) {
     let settings = KeySettings {
-        keys_dir: key_dir.to_owned(),
         external_command: Vec::new(),
         external_timeout: StdDuration::from_secs(1),
         rotation_interval: chrono::Duration::days(1),
         prepublish_window: chrono::Duration::hours(1),
         verification_grace: chrono::Duration::hours(1),
     };
-    KeyManager::load_or_create(settings.clone())
+    let key_manager = nazo_key_management::test_support::key_manager(settings)
         .await
-        .expect("credential keyset should initialize");
-    let kid = KeyManager::register_local(
-        &settings,
-        LocalKeyRegistration {
+        .expect("database-backed credential keyset should initialize");
+    let signing_kid = key_manager
+        .database_register_local(LocalKeyRegistration {
             algorithm: jsonwebtoken::Algorithm::ES256,
             purposes: [
                 nazo_auth::SigningPurpose::Credential,
@@ -434,20 +412,12 @@ async fn credential_key_material(key_dir: &std::path::Path) -> (KeyManager, Stri
             ]
             .into_iter()
             .collect(),
-        },
-    )
-    .await
-    .expect("credential key should register");
-    let record = KeyManager::list_keys(&settings)
+        })
         .await
-        .expect("credential keys should list")
-        .into_iter()
-        .find(|record| record.kid == kid)
-        .expect("registered credential key should be listed");
-    assert_eq!(record.backend, "local-pem");
-    assert!(!record.locator.is_empty());
-    let leaf_pem = std::fs::read_to_string(key_dir.join(record.locator))
-        .expect("credential private key should be readable");
+        .expect("database credential key should register");
+    let leaf_pem = key_manager
+        .database_local_private_key_pem(&signing_kid)
+        .expect("database credential private key should be available");
     let leaf_key = KeyPair::from_pem(&leaf_pem).expect("credential private key should parse");
 
     let root_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("root key");
@@ -461,13 +431,7 @@ async fn credential_key_material(key_dir: &std::path::Path) -> (KeyManager, Stri
         .expect("leaf certificate");
     let chain_pem = format!("{}{}", leaf.pem(), root.pem());
     let anchors_pem = root.pem();
-    (
-        KeyManager::load_or_create(settings)
-            .await
-            .expect("credential keyset should reload"),
-        chain_pem,
-        anchors_pem,
-    )
+    (key_manager, signing_kid, chain_pem, anchors_pem)
 }
 
 #[actix_web::test]

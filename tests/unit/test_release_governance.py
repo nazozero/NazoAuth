@@ -156,14 +156,18 @@ class ReleaseGovernanceTests(unittest.TestCase):
 
         for path in (ROOT / "README.md", ROOT / "README.zh-CN.md"):
             source = path.read_text(encoding="utf-8")
+            commands = " ".join(source.replace("\\\n", " ").split())
             self.assertIn(
                 "nazoauthctl install --host production-host --name production",
-                source,
+                commands,
             )
             self.assertIn("--runtime podman", source)
             self.assertNotIn("--runtime auto", source)
-            self.assertIn("nazoauthctl doctor", source)
-            self.assertIn("compose.yml", source)
+            self.assertIn("nazoauthctl verify --instance production", source)
+            self.assertLess(
+                source.index("nazoauthctl admin create"),
+                source.index("nazoauthctl bind"),
+            )
             self.assertRegex(source.lower(), r"development|开发")
             self.assertNotIn("docker compose up -d --build", source)
 
@@ -215,7 +219,6 @@ class ReleaseGovernanceTests(unittest.TestCase):
             source,
         )
         self.assertIn("condition: service_completed_successfully", source)
-        self.assertIn("keys_data:/var/lib/nazo_oauth/keys", source)
         self.assertIn("avatars_data:/var/lib/nazo_oauth/avatars", source)
         self.assertIn("ui_data:/state/ui", source)
         self.assertIn("ui_data:/var/lib/nazo_oauth/ui", source)
@@ -611,11 +614,8 @@ class ReleaseGovernanceTests(unittest.TestCase):
         )
         pull_request = source.split("pull_request:", 1)[1].split("push:", 1)[0]
         self.assertIn('"perf/**"', pull_request)
-        self.assertIn('"scripts/ensure_runtime_keyset.py"', pull_request)
         self.assertIn("perf/runner/Containerfile", source)
-        self.assertIn("perf/keyset/Containerfile", source)
         self.assertIn("performance dependencies import successfully", source)
-        self.assertIn("test -s /tmp/keys/keyset.json", source)
 
     def test_proptest_regression_corpus_is_versioned(self) -> None:
         corpus = ROOT / "proptest-regressions" / "support"

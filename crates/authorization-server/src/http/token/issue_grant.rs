@@ -649,6 +649,36 @@ pub(crate) async fn issue_token_response(
             "令牌签发授权已使用.",
             false,
         ),
+        Ok(CommitTokenIssuanceResult::ClientInactive) => {
+            mark_failed_authorization_code_if_needed(
+                token_service,
+                issue.authorization_code_hash.as_deref(),
+                "client_inactive",
+                auth_code_ttl_seconds,
+            )
+            .await;
+            oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "unauthorized_client",
+                "该客户端未启用当前授权类型.",
+                false,
+            )
+        }
+        Ok(CommitTokenIssuanceResult::SubjectInactive) => {
+            mark_failed_authorization_code_if_needed(
+                token_service,
+                issue.authorization_code_hash.as_deref(),
+                "subject_inactive",
+                auth_code_ttl_seconds,
+            )
+            .await;
+            oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "授权用户不存在或已停用.",
+                false,
+            )
+        }
         Ok(CommitTokenIssuanceResult::RotationConflict) => {
             mark_failed_authorization_code_if_needed(
                 token_service,

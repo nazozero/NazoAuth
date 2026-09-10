@@ -142,7 +142,6 @@ const OVERRIDING_ENV_KEYS: &[&str] = &[
     "PUBLIC_BASE_URL",
     "BIND",
     "DATA_DIR",
-    "JWK_KEYS_DIR",
     "AVATAR_STORAGE_DIR",
     "TRANSPORT_MODE",
     "DEPLOYMENT_ID",

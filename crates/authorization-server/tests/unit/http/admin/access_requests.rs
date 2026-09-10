@@ -15,11 +15,12 @@ use std::time::Duration as StdDuration;
 
 use crate::config::ConfigSource;
 use crate::domain::ClientRow;
+use crate::domain::remote_client_documents::RemoteClientDocumentResolver;
 use crate::domain::tenancy::DEFAULT_ORGANIZATION_ID;
 use crate::domain::tenancy::DEFAULT_REALM_ID;
 use crate::domain::tenancy::DEFAULT_TENANT_ID;
 use crate::http::admin::clients::{
-    ServerAdminClientCrypto, ServerSectorIdentifierResolver, admin_client_policy,
+    ServerAdminClientCrypto, ServerAdminClientService, admin_client_policy,
 };
 use crate::http::sessions::SessionHttpConfig;
 use crate::http::sessions::SessionPayload;
@@ -153,7 +154,8 @@ fn admin_access_request_dependencies(
             Arc::new(nazo_postgres::OAuthClientRepository::new(
                 state.diesel_db.clone(),
             )) as Arc<dyn nazo_auth::AdminClientRepositoryPort>,
-            ServerSectorIdentifierResolver,
+            RemoteClientDocumentResolver::new(&[])
+                .expect("empty sector-identifier policy should be valid"),
             ServerAdminClientCrypto::new(state.keyset.clone()),
             admin_client_policy(&state.settings),
         )),

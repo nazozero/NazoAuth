@@ -26,11 +26,10 @@ pub use authorization_state::AuthorizationStateAdapter;
 pub use avatar_upload_state::AvatarUploadStateStore;
 pub use ciba::{
     AtomicResult, CibaPingDelivery, CibaPingFinishOutcome, CibaPingFinishResult, CibaStore,
-    StoredCibaRequest,
 };
 pub use connection::{ValkeyClient, ValkeyConnection};
 pub use delivery::{DeliveryConsume, DeliveryStore, StoredDelivery};
-pub use device::{DeviceCreateResult, DeviceStore, StoredDeviceState};
+pub use device::{DeviceCreateResult, DeviceStore};
 pub use error::{Error, ErrorKind};
 
 pub(crate) fn identity_repository_error(error: Error) -> nazo_identity::ports::RepositoryError {

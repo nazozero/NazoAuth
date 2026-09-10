@@ -436,9 +436,10 @@ async fn jwt_bearer_replay_rejects_a_consumed_jti_even_with_a_persisted_response
         return;
     };
     let private_key = client_signing_fixture(jsonwebtoken::Algorithm::RS256);
-    let client = jwt_bearer_client("client-a", "jwt-bearer-replay-kid", &private_key);
+    let client_id = format!("jwt-bearer-persisted-replay-{}", Uuid::now_v7());
+    let client = jwt_bearer_client(&client_id, "jwt-bearer-replay-kid", &private_key);
     let assertion = signed_jwt_bearer_assertion(
-        "client-a",
+        &client_id,
         "jwt-bearer-replay-kid",
         &private_key,
         json!({"jti": format!("jwt-bearer-endpoint-replay-{}", Uuid::now_v7())}),

@@ -26,65 +26,25 @@ Managed issuer state does not use external trust resources as a private-key
 store. The former managed certificate/trust/revocation file settings and file
 reload interval have been removed.
 
-## Upgrade from file-backed certificates
+## Import complete certificate material
 
-Use the new binary with the deployment's normal configuration and the same
-signing-key encryption root. This is a host-administrator operation. Ctl has no
-arbitrary remote-command or directory-import interface, so migration is explicit
-on the target host, not hidden in server startup.
+An administrator can import externally prepared certificates into an existing
+tenant database keyset using the deployment's normal configuration:
 
-1. Keep a backup of the existing database, encryption root and each tenant's
-   `openid4vc` directory. Prevent old instances or management jobs from updating
-   those files during migration.
-2. Remove `OPENID4VC_SIGNING_CERTIFICATE_CHAIN_FILE`,
-   `OPENID4VC_TRUST_ANCHORS_FILE`, `OPENID4VC_REVOCATION_SNAPSHOT_FILE` and
-   `OPENID4VC_REVOCATION_RELOAD_INTERVAL_SECONDS` from deployment configuration.
-3. Import each affected tenant before starting its new runtime:
+```sh
+nazoauth mdoc-import --tenant <tenant-uuid> --from <certificate-material-directory>
+```
 
-   ```sh
-   nazoauth mdoc-import --tenant <tenant-uuid> --from <tenant-openid4vc-directory>
-   ```
+The directory contains `certificate-bundle.pem`. An mdoc profile also requires
+`revocation-snapshot.json` and `iaca-keys/<IACA-fingerprint>.pem` for each IACA.
+Each IACA file contains its private key, DS certificate, and IACA certificate.
+The selected signing key must already exist in the tenant database keyset and
+match the supplied leaf certificate. Non-mdoc profiles can import a certificate
+chain without IACA material.
 
-   The directory contains `certificate-bundle.pem`, and for mdoc also
-   `revocation-snapshot.json` plus `iaca-keys/<IACA-fingerprint>.pem`.
-   Each IACA file contains its private key, DS certificate and IACA certificate.
-   The selected signing key must already be in the tenant database keyset.
-   Deployments predating database keysets must first perform the separate
-   `nazoauth keys-import --tenant <tenant-uuid> --from <legacy-keys-directory>`.
-4. Check the command's successful revision result, then start the new instances
-   against the shared database. Verify credential issuance and old CRL URLs.
-   Source files are not deleted by import; retain them with the migration backup.
-
-### Upgrade from a pre-IACA bundle
-
-NazoAuth v0.2.9 generated a local CA only while creating
-`certificate-bundle.pem`; it did not retain the CA private key or create an
-`iaca-keys/` directory. Its certificate also predates the managed mdoc
-certificate profile. Those bytes cannot be treated as a current IACA record or
-used to sign a CRL.
-
-For that released format, keep the old service stopped and use two explicit
-steps after `keys-import`:
-
-1. Make a migration-only copy of the final configuration whose
-   `OPENID4VCI_CREDENTIAL_CONFIGURATIONS_JSON` omits every `mso_mdoc`
-   configuration. Run `mdoc-import` with that copy. This preserves the existing
-   ES256 `kid`, certificate and public CA as historical verification material;
-   it does not invent the unavailable CA private key.
-2. Run `mdoc-rotate` with the final configuration, including the intended
-   `mso_mdoc` configuration. The single database commit creates a new conformant
-   DS/IACA generation and revocation state, retains the old CA trust anchor, and
-   keeps the old ES256 key through the configured verification grace period.
-
-Do not use this path for a source that already contains `iaca-keys/`, or when a
-locally owned revocation record must remain serviceable under its old IACA.
-Import those complete records with the ordinary procedure instead. Verify the
-old `kid` remains in JWKS, the new active `kid` issues credentials, and the new
-IACA CRL endpoint succeeds before starting the managed update.
-
-Import checks certificate/key relationships and keeps the existing signing kid.
-A legacy revoked entry without its own timestamp uses the old snapshot observation
-time once during import; subsequent CRL refreshes and rotation preserve it.
+Import checks these relationships and preserves the existing signing kid.
+Every revoked entry must carry its own revocation timestamp. Missing timestamps
+are rejected; the snapshot observation time is not a substitute for the event.
 It imports only locally owned DS revocation facts; mixed external status input
 must not be promoted to authoritative local state. Missing IACA records, a
 mismatched chain or an existing managed aggregate cause an error. No automatic
@@ -94,6 +54,10 @@ unchanged. A repeated import after success reports that material already exists.
 Fresh installations initialize the complete aggregate through tenant bootstrap
 or the existing tenant key-generation operation. Normal server startup reads
 it and does not create certificate files.
+
+Before 0.5.0, historical release formats are not supported or converted.
+Retaining prior IACA records during normal key rotation serves credentials
+already issued by the current lifecycle; it is not a file-format upgrade path.
 
 ## Rotation and revocation
 

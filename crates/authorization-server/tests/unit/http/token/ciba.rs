@@ -2510,6 +2510,7 @@ async fn ciba_replay_rejects_a_consumed_auth_req_id_even_with_a_persisted_respon
     configure_ciba_test_mtls_proxy(&mut state);
     let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
     let mut client = ciba_private_key_jwt_client("ciba-replay-kid", &key);
+    client.client_id = format!("ciba-persisted-replay-{}", client.id);
     client.require_mtls_bound_tokens = true;
     let auth_req_id = format!("ciba-replay-{}", Uuid::now_v7());
     let grant_key = ciba_grant_key(

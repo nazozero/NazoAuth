@@ -1062,7 +1062,6 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "ID_TOKEN_TTL_SECONDS",
             "INSTANCE_IDENTITY_DIR",
             "ISSUER",
-            "JWK_KEYS_DIR",
             "LOGIN_FAILURE_IP_EMAIL_MAX_ATTEMPTS",
             "LOGIN_FAILURE_WINDOW_SECONDS",
             "MTLS_ENDPOINT_BASE_URL",
