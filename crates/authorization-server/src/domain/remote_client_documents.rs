@@ -1,16 +1,7 @@
-use std::{
-    collections::HashSet,
-    net::SocketAddr,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-    time::Duration,
-};
+use std::{collections::HashSet, net::SocketAddr, num::NonZeroUsize, sync::Arc, time::Duration};
 
+use super::jwks_cache::{JwksCache, Lookup};
 use futures_util::StreamExt;
-use moka::future::Cache;
-use moka::ops::compute;
 use reqwest::{StatusCode, header};
 use serde_json::Value;
 use tokio::sync::Semaphore;
@@ -22,34 +13,17 @@ use super::sector_identifier::{
 };
 
 const JWKS_CACHE_TTL: Duration = Duration::from_secs(30);
-const JWKS_CACHE_CAPACITY: u64 = 256;
+const JWKS_CACHE_CAPACITY: usize = 256;
 const REMOTE_DOCUMENT_DEADLINE: Duration = Duration::from_secs(10);
 const REMOTE_FETCH_CONCURRENCY: usize = 16;
 
 #[derive(Clone)]
 pub(crate) struct RemoteClientDocumentResolver {
     private_network_origins: Arc<HashSet<String>>,
-    jwks_cache: Cache<String, Arc<JwksCacheEntry>>,
+    jwks_cache: Arc<JwksCache>,
+    cache_epoch: Instant,
     fetch_slots: Arc<Semaphore>,
     root_certificates: Arc<Vec<reqwest::Certificate>>,
-}
-
-struct JwksCacheEntry {
-    document: Value,
-    forced_refresh_attempted: AtomicBool,
-}
-
-impl JwksCacheEntry {
-    fn new(document: Value, forced_refresh_attempted: bool) -> Self {
-        Self {
-            document,
-            forced_refresh_attempted: AtomicBool::new(forced_refresh_attempted),
-        }
-    }
-
-    fn try_mark_forced_refresh(&self) -> bool {
-        !self.forced_refresh_attempted.swap(true, Ordering::AcqRel)
-    }
 }
 
 impl RemoteClientDocumentResolver {
@@ -73,10 +47,11 @@ impl RemoteClientDocumentResolver {
         }
         Ok(Self {
             private_network_origins: Arc::new(origins),
-            jwks_cache: Cache::builder()
-                .max_capacity(JWKS_CACHE_CAPACITY)
-                .time_to_live(JWKS_CACHE_TTL)
-                .build(),
+            jwks_cache: Arc::new(JwksCache::new(
+                NonZeroUsize::new(JWKS_CACHE_CAPACITY).expect("nonzero JWKS capacity"),
+                JWKS_CACHE_TTL,
+            )),
+            cache_epoch: Instant::now(),
             fetch_slots: Arc::new(Semaphore::new(REMOTE_FETCH_CONCURRENCY)),
             root_certificates: Arc::new(root_certificates),
         })
@@ -93,60 +68,39 @@ impl RemoteClientDocumentResolver {
     ) -> Result<Value, String> {
         let deadline = Instant::now() + REMOTE_DOCUMENT_DEADLINE;
         let cache_key = canonical_cache_key(uri)?;
-        if let Some(cached) = self.jwks_cache.get(&cache_key).await
-            && (expected_kid.is_none() || jwks_contains_kid(&cached.document, expected_kid))
+        let cached = self.jwks_cache.get(&cache_key, self.cache_epoch.elapsed());
+        if let Some(document) = &cached
+            && jwks_contains_kid(document, expected_kid)
         {
-            return Ok(cached.document.clone());
+            return Ok(document.as_ref().clone());
         }
+        let document =
+            match self
+                .jwks_cache
+                .begin(cache_key, cached.as_ref(), self.cache_epoch.elapsed())
+            {
+                Lookup::Ready(document) => document,
+                Lookup::Wait(pending) => timeout_at(deadline, pending)
+                    .await
+                    .map_err(|_| "remote document request timed out".to_owned())??,
+                Lookup::Fetch(guard) => {
+                    let result = timeout_at(deadline, self.fetch_jwks(uri, deadline))
+                        .await
+                        .map_err(|_| "remote document request timed out".to_owned())
+                        .and_then(|result| result);
+                    guard.finish(result, self.cache_epoch.elapsed())?
+                }
+            };
+        Ok(document.as_ref().clone())
+    }
 
-        // Moka serializes this computation per URI.  A waiter that observes
-        // an entry installed by the preceding caller returns it without
-        // issuing a second fetch.  If the entry is still the one that caused
-        // this request's miss, exactly one refresh is attempted.
-        let previous = self.jwks_cache.get(&cache_key).await;
-        let uri = uri.to_owned();
-        let result = tokio::time::timeout_at(
-            deadline,
-            self.jwks_cache
-                .entry(cache_key.clone())
-                .and_try_compute_with(move |entry| async move {
-                    let current = entry.map(|entry| entry.into_value());
-                    let unchanged = match (&previous, &current) {
-                        (Some(previous), Some(current)) => Arc::ptr_eq(previous, current),
-                        (None, None) => true,
-                        _ => false,
-                    };
-                    if !unchanged {
-                        return Ok(compute::Op::Nop);
-                    }
-                    let forced_refresh = current
-                        .as_ref()
-                        .is_some_and(|entry| entry.try_mark_forced_refresh());
-                    if current.is_some() && !forced_refresh {
-                        return Ok(compute::Op::Nop);
-                    }
-                    let fetched = self.fetch(&uri, RemoteDocumentKind::Jwks, deadline).await?;
-                    let document: Value = serde_json::from_slice(&fetched.body)
-                        .map_err(|_| "remote JWKS is not valid JSON".to_owned())?;
-                    if !document.is_object() || !document.get("keys").is_some_and(Value::is_array) {
-                        return Err(
-                            "remote JWKS must be an object containing a keys array".to_owned()
-                        );
-                    }
-                    let shared = Arc::new(JwksCacheEntry::new(document, forced_refresh));
-                    Ok(compute::Op::Put(shared))
-                }),
-        )
-        .await
-        .map_err(|_| "remote document request timed out".to_owned())??;
-        let document = match result {
-            compute::CompResult::Inserted(entry)
-            | compute::CompResult::ReplacedWith(entry)
-            | compute::CompResult::Unchanged(entry) => entry.into_value().document.clone(),
-            compute::CompResult::StillNone(_) | compute::CompResult::Removed(_) => {
-                return Err("remote JWKS is unavailable".to_owned());
-            }
-        };
+    async fn fetch_jwks(&self, uri: &str, deadline: Instant) -> Result<Value, String> {
+        let fetched = self.fetch(uri, RemoteDocumentKind::Jwks, deadline).await?;
+        let document: Value = serde_json::from_slice(&fetched.body)
+            .map_err(|_| "remote JWKS is not valid JSON".to_owned())?;
+        if !document.is_object() || !document.get("keys").is_some_and(Value::is_array) {
+            return Err("remote JWKS must be an object containing a keys array".to_owned());
+        }
         Ok(document)
     }
 

@@ -10,6 +10,7 @@ mod ciba_ping_tls;
 pub(crate) mod client_jwe;
 pub(crate) mod client_policy;
 mod dynamic_registration;
+mod jwks_cache;
 mod local_registration;
 mod metadata;
 mod mfa_profile;

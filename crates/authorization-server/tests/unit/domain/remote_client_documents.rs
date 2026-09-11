@@ -133,6 +133,31 @@ pub(crate) fn resolver_for(
 }
 
 #[tokio::test]
+async fn concurrent_cold_jwks_requests_share_one_network_result() {
+    for status in [200, 500] {
+        let (address, server, certificate_der, request_count) =
+            tls_server_sequence_with_request_count(vec![(
+                status,
+                "application/json".to_owned(),
+                br#"{"keys":[{"kid":"shared"}]}"#.to_vec(),
+                true,
+            )]);
+        let resolver = resolver_for(address, &certificate_der);
+        let uri = format!("https://localhost:{}/jwks", address.port());
+        let results = futures_util::future::join_all(
+            (0..32).map(|_| resolver.jwks_for_kid(&uri, Some("shared"))),
+        )
+        .await;
+        for result in &results {
+            assert_eq!(result, &results[0]);
+            assert_eq!(result.is_ok(), status == 200);
+        }
+        assert_eq!(request_count.load(Ordering::SeqCst), 1);
+        server.join().expect("shared JWKS server should exit");
+    }
+}
+
+#[tokio::test]
 async fn jwks_fetches_valid_documents_and_reuses_a_matching_cache_entry() {
     let body = br#"{"keys":[{"kid":"key-1","kty":"OKP"}]}"#.to_vec();
     let (address, server, certificate_der) = tls_server(200, "application/json", body, true);
@@ -231,8 +256,7 @@ async fn jwks_unknown_kids_share_one_forced_refresh_budget_and_merge_waiters() {
         .await;
     assert!(suppressed.is_ok());
     assert_eq!(request_count.load(Ordering::SeqCst), 2);
-    resolver.jwks_cache.run_pending_tasks().await;
-    assert_eq!(resolver.jwks_cache.entry_count(), 1);
+
     server
         .join()
         .expect("bounded JWKS refresh server should exit");
@@ -324,7 +348,7 @@ async fn jwks_initial_miss_allows_one_immediate_rotation_refresh() {
 }
 
 #[tokio::test]
-async fn jwks_cold_refresh_after_eviction_restores_the_forced_refresh_budget() {
+async fn jwks_cold_refresh_after_expiry_restores_the_forced_refresh_budget() {
     let (address, server, certificate_der, request_count) =
         tls_server_sequence_with_request_count(vec![
             (
@@ -357,10 +381,8 @@ async fn jwks_cold_refresh_after_eviction_restores_the_forced_refresh_budget() {
         .await
         .expect("unknown kid should trigger one forced refresh");
 
-    resolver
-        .jwks_cache
-        .invalidate(&canonical_cache_key(&uri).expect("canonical JWKS URI"))
-        .await;
+    let mut resolver = resolver;
+    resolver.cache_epoch -= JWKS_CACHE_TTL;
     assert_eq!(
         resolver
             .jwks_for_kid(&uri, Some("cold"))
