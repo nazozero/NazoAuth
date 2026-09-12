@@ -132,3 +132,12 @@ If suitable evidence is missing, run the required workflow manually on `main`
 and wait for success before retrying a release from that commit. Rerunning an
 old tag still uses the workflow stored at that tag; this policy change takes
 effect for subsequent release commits containing it.
+
+## Runtime image security updates
+
+The conformance image build bypasses BuildKit cache for `runtime-base`; release
+OCI assembly bypasses cache for its `runtime` stage. This reruns the existing
+`apt-get update` and `apt-get upgrade` on every CI build, while keeping Rust
+compilation caches. Docker does not invalidate a cached `RUN` layer when Debian
+publishes package updates. Both paths still scan the resulting image and reject
+fixable HIGH/CRITICAL vulnerabilities before reuse or publication.

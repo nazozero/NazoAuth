@@ -71,6 +71,18 @@ class ReleaseGovernanceTests(unittest.TestCase):
                 self.assertIn("apt-get upgrade -y --no-install-recommends", source)
                 self.assertIn("rm -rf /var/lib/apt/lists/*", source)
 
+    def test_image_builds_refresh_runtime_security_packages(self) -> None:
+        for workflow, containerfile, stage in (
+            ("conformance-security.yml", "Containerfile", "runtime-base"),
+            ("release-security.yml", "Containerfile.release", "runtime"),
+        ):
+            source = (ROOT / ".github/workflows" / workflow).read_text()
+            self.assertIn(
+                f"file: {containerfile}\n          no-cache-filters: {stage}", source
+            )
+            self.assertIn(f" AS {stage}\n", (ROOT / containerfile).read_text())
+            self.assertIn("cache-from: type=gha", source)
+
     def test_release_oci_reuses_the_exact_native_application_binaries(self) -> None:
         workflow = (
             ROOT / ".github" / "workflows" / "release-security.yml"
