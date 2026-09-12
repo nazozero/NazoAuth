@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
+use crate::contracts::profile_account::{ProfileAccountError, ProfileMe};
 use chrono::{TimeZone as _, Utc};
-use nazo_http_actix::{ProfileAccountError, ProfileMe};
 use nazo_identity::{
     AccountIdentity, AccountProfileService, Principal, ProfilePatch, PublicAccount, SessionId,
     SessionService, TenantContext, TenantId, UserId, UserProfile, UserRole,
@@ -174,78 +174,84 @@ fn operations(
     )
 }
 
-#[tokio::test]
-async fn active_and_pending_sessions_expose_their_distinct_profile_shapes() {
-    let active = operations(Ok(Some(snapshot(false))), Vec::new())
-        .me(SessionId::new("active"))
-        .await
-        .unwrap();
-    let ProfileMe::Active(active) = active else {
-        panic!("active session must produce the full profile")
-    };
-    assert_eq!(active.email, "alice@example.test");
-    assert_eq!(active.display_name.as_deref(), Some("Alice"));
-    assert_eq!(active.authorized_app_count, 2);
+#[test]
+fn active_and_pending_sessions_expose_their_distinct_profile_shapes() {
+    futures_executor::block_on(async {
+        let active = operations(Ok(Some(snapshot(false))), Vec::new())
+            .me(SessionId::new("active"))
+            .await
+            .unwrap();
+        let ProfileMe::Active(active) = active else {
+            panic!("active session must produce the full profile")
+        };
+        assert_eq!(active.email, "alice@example.test");
+        assert_eq!(active.display_name.as_deref(), Some("Alice"));
+        assert_eq!(active.authorized_app_count, 2);
 
-    let pending = operations(Ok(Some(snapshot(true))), Vec::new())
-        .me(SessionId::new("pending"))
-        .await
-        .unwrap();
-    let ProfileMe::PendingMfa(pending) = pending else {
-        panic!("pending MFA session must produce the reduced profile")
-    };
-    assert_eq!(pending.email, "alice@example.test");
-    assert_eq!(pending.id, account().id());
+        let pending = operations(Ok(Some(snapshot(true))), Vec::new())
+            .me(SessionId::new("pending"))
+            .await
+            .unwrap();
+        let ProfileMe::PendingMfa(pending) = pending else {
+            panic!("pending MFA session must produce the reduced profile")
+        };
+        assert_eq!(pending.email, "alice@example.test");
+        assert_eq!(pending.id, account().id());
+    });
 }
 
-#[tokio::test]
-async fn missing_and_unavailable_sessions_remain_distinct_errors() {
-    let missing = operations(Ok(None), Vec::new())
-        .me(SessionId::new("missing"))
-        .await;
-    assert_eq!(missing, Err(ProfileAccountError::LoginRequired));
+#[test]
+fn missing_and_unavailable_sessions_remain_distinct_errors() {
+    futures_executor::block_on(async {
+        let missing = operations(Ok(None), Vec::new())
+            .me(SessionId::new("missing"))
+            .await;
+        assert_eq!(missing, Err(ProfileAccountError::LoginRequired));
 
-    let unavailable = operations(Err(RepositoryError::Unavailable), Vec::new())
-        .me(SessionId::new("unavailable"))
-        .await;
-    assert_eq!(
-        unavailable,
-        Err(ProfileAccountError::SessionLookupUnavailable)
-    );
+        let unavailable = operations(Err(RepositoryError::Unavailable), Vec::new())
+            .me(SessionId::new("unavailable"))
+            .await;
+        assert_eq!(
+            unavailable,
+            Err(ProfileAccountError::SessionLookupUnavailable)
+        );
+    });
 }
 
-#[tokio::test]
-async fn update_validation_and_application_projection_stay_in_focused_services() {
-    let application = AuthorizedApplication {
-        client_id: "client-1".to_owned(),
-        client_name: "Example Client".to_owned(),
-        last_scopes: json!(["openid", 42, null, "profile"]),
-        last_authorized_at: Utc.timestamp_opt(1_700_000_000, 0).unwrap(),
-        authorization_count: 3,
-    };
-    let operations = operations(Ok(Some(snapshot(false))), vec![application]);
+#[test]
+fn update_validation_and_application_projection_stay_in_focused_services() {
+    futures_executor::block_on(async {
+        let application = AuthorizedApplication {
+            client_id: "client-1".to_owned(),
+            client_name: "Example Client".to_owned(),
+            last_scopes: json!(["openid", 42, null, "profile"]),
+            last_authorized_at: Utc.timestamp_opt(1_700_000_000, 0).unwrap(),
+            authorization_count: 3,
+        };
+        let operations = operations(Ok(Some(snapshot(false))), vec![application]);
 
-    let update = operations
-        .update(
-            SessionId::new("active"),
-            ProfilePatch {
-                profile_url: Some("javascript:alert(1)".to_owned()),
-                ..ProfilePatch::default()
-            },
-        )
-        .await;
-    assert_eq!(
-        update,
-        Err(ProfileAccountError::Validation(
-            nazo_identity::ProfileValidationError::InvalidHttpUrl("profile_url")
-        ))
-    );
+        let update = operations
+            .update(
+                SessionId::new("active"),
+                ProfilePatch {
+                    profile_url: Some("javascript:alert(1)".to_owned()),
+                    ..ProfilePatch::default()
+                },
+            )
+            .await;
+        assert_eq!(
+            update,
+            Err(ProfileAccountError::Validation(
+                nazo_identity::ProfileValidationError::InvalidHttpUrl("profile_url")
+            ))
+        );
 
-    let applications = operations
-        .applications(SessionId::new("active"))
-        .await
-        .unwrap();
-    assert_eq!(applications.total, 1);
-    assert_eq!(applications.items[0].last_scopes, vec!["openid", "profile"]);
-    assert_eq!(applications.items[0].authorization_count, 3);
+        let applications = operations
+            .applications(SessionId::new("active"))
+            .await
+            .unwrap();
+        assert_eq!(applications.total, 1);
+        assert_eq!(applications.items[0].last_scopes, vec!["openid", "profile"]);
+        assert_eq!(applications.items[0].authorization_count, 3);
+    });
 }

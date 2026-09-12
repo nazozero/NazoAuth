@@ -1,3 +1,4 @@
+use crate::ports::mdoc::MdocDocumentSigner;
 #[cfg(test)]
 use coset::CborSerializable;
 use nazo_digital_credentials::{
@@ -5,13 +6,14 @@ use nazo_digital_credentials::{
     PresentedCredential, VcIssuerTrustPolicy, VerifiedCredential,
 };
 use nazo_key_management::KeyManager;
+use std::sync::Arc;
 
 mod certificates;
 mod mdoc;
 mod sd_jwt;
 mod signer;
 
-pub(crate) use certificates::parse_scoped_credential_trust_anchors;
+pub use certificates::parse_scoped_credential_trust_anchors;
 #[cfg(test)]
 pub(crate) use mdoc::{
     mdoc_failed_assessments_accepted, mdoc_holder_key, standard_device_authentication_bytes,
@@ -20,13 +22,14 @@ pub(crate) use mdoc::{
 #[cfg(test)]
 use mdoc::verify_direct_scoped_trust_anchor;
 #[cfg(test)]
-use mdoc::{AsyncCoseSigner, mdoc_assessments_accepted, verify_certificate_chain_at};
+use mdoc::{mdoc_assessments_accepted, verify_certificate_chain_at};
 
 #[derive(Clone)]
-pub(crate) struct Openid4vcCredentialCrypto {
+pub struct Openid4vcCredentialCrypto {
     keyset: KeyManager,
+    mdoc_signer: Arc<dyn MdocDocumentSigner>,
     issuer_trust_policy: VcIssuerTrustPolicy,
-    revocation_policy: crate::settings::Openid4vcRevocationPolicy,
+    revocation_policy: crate::policy::Openid4vcRevocationPolicy,
 }
 
 impl CredentialVerifierPort for Openid4vcCredentialCrypto {

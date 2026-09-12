@@ -6,7 +6,11 @@ use actix_web::{
     http::{Method, StatusCode},
     test, web,
 };
-use nazo_runtime_modules::{ModuleId, ModuleRevision};
+use nazo_auth::{CibaMetadataProfile, MetadataAuthorizationServerProfile, MetadataSubjectType};
+use nazo_oauth_server::contracts::metadata::{
+    MetadataEndpointConfig, MetadataSnapshot, MetadataSnapshotSource,
+};
+use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision};
 use serde_json::json;
 
 use super::*;

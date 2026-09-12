@@ -2,19 +2,24 @@ use std::sync::{Arc, Mutex};
 
 use actix_web::{App, http::StatusCode, test, web};
 use nazo_openid4vc_http_actix::{
+    CredentialIssuerEndpoint, PresentationEndpoint, create_credential_offer, create_presentation,
+    credential, credential_issuer_metadata, deferred_credential, notification,
+    presentation_complete, presentation_response,
+};
+use nazo_openid4vci::application::{
     AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
-    CreatePresentationRequest, CreatePresentationResponse, CredentialEndpointResponse,
-    CredentialHttpError, CredentialIssuerEndpoint, CredentialIssuerFuture,
+    CredentialEndpointResponse, CredentialHttpError, CredentialIssuerFuture,
     CredentialIssuerOperations, CredentialRequestBody, CredentialRequestContext,
     CredentialResponseBody, PreAuthorizedTokenRequest, PreAuthorizedTokenResponse,
-    PresentationEndpoint, PresentationFuture, PresentationHttpError, PresentationOperations,
-    PresentationResponseBody, PresentationResponseInput, create_credential_offer,
-    create_presentation, credential, credential_issuer_metadata, deferred_credential, notification,
-    presentation_complete, presentation_response,
 };
 use nazo_openid4vci::{
     CredentialIssuerMetadata, CredentialOffer, CredentialRequest, CredentialResponse,
     DeferredCredentialRequest, NotificationRequest,
+};
+use nazo_openid4vp::application::{
+    CreatePresentationRequest, CreatePresentationResponse, PresentationFuture,
+    PresentationHttpError, PresentationOperations, PresentationResponseBody,
+    PresentationResponseInput,
 };
 use nazo_openid4vp::{PresentationResult, PresentationTransaction};
 use serde_json::json;

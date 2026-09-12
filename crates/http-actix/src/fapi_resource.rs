@@ -1,4 +1,9 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::sync::Arc;
+
+use nazo_oauth_server::contracts::fapi_resource::{
+    FapiAuthorizationError, FapiHttpMessageSignatures, FapiResourceAuthorizer,
+    FapiSignatureOperationError, FapiSignatureVerificationError,
+};
 
 use actix_web::{
     HttpRequest, HttpResponse,
@@ -15,74 +20,19 @@ use nazo_http_signatures::{
 use nazo_resource_server::{
     AccessTokenScheme, DpopProofVerifierError, ProtectedResourceAuthorizationContext,
     ProtectedResourceAuthorizationError, ProtectedResourceAuthorizationRequest,
-    ProtectedResourceAuthorizationResult, ResourceServerVerifierError,
+    ResourceServerVerifierError,
 };
 use serde_json::json;
 
 use crate::{
-    AccessTokenAuthScheme, ResourceAccessToken, json_response_no_store, oauth_bearer_error,
-    oauth_error, resource_access_token,
+    ResourceAccessToken, json_response_no_store, oauth_bearer_error, oauth_error,
+    resource_access_token,
 };
+use nazo_oauth_server::contracts::userinfo::AccessTokenAuthScheme;
 
 const FAPI_HTTP_SIGNATURE_FUTURE_SKEW_SECONDS: i64 = 5;
 
-pub type FapiFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-#[derive(Debug)]
-pub enum FapiAuthorizationError {
-    Protocol(ProtectedResourceAuthorizationError),
-    UseDpopNonce(String),
-    DpopNonceUnavailable,
-}
-
-pub trait FapiResourceAuthorizer: Send + Sync {
-    fn authorize<'a>(
-        &'a self,
-        request: ProtectedResourceAuthorizationRequest<'a>,
-        context: ProtectedResourceAuthorizationContext<'a>,
-    ) -> FapiFuture<'a, Result<ProtectedResourceAuthorizationResult, FapiAuthorizationError>>;
-}
-
-pub trait FapiMtlsThumbprintResolver: Send + Sync {
-    fn resolve(&self, request: &HttpRequest) -> Option<String>;
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FapiSignatureVerificationError {
-    Invalid,
-    Replay,
-    LookupUnavailable,
-    ReplayUnavailable,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum FapiSignatureOperationError {
-    Unavailable,
-}
-
-pub trait FapiResponseSignature: Send + Sync {
-    fn kid(&self) -> &str;
-    fn algorithm(&self) -> &str;
-    fn sign<'a>(
-        &'a self,
-        signature_base: &'a [u8],
-    ) -> FapiFuture<'a, Result<Vec<u8>, FapiSignatureOperationError>>;
-}
-
-pub trait FapiHttpMessageSignatures: Send + Sync {
-    fn enabled(&self) -> bool;
-
-    fn verify_and_consume<'a>(
-        &'a self,
-        tenant_id: &'a str,
-        client_id: &'a str,
-        input: &'a VerifiedInput,
-    ) -> FapiFuture<'a, Result<(), FapiSignatureVerificationError>>;
-
-    fn response_signature(
-        &self,
-    ) -> Result<Arc<dyn FapiResponseSignature>, FapiSignatureOperationError>;
-}
+use crate::mtls::MtlsThumbprintExtractor;
 
 #[derive(Clone)]
 pub struct FapiResourceEndpoint {
@@ -90,7 +40,7 @@ pub struct FapiResourceEndpoint {
     mtls_endpoint_base_url: String,
     signature_max_age_seconds: i64,
     authorizer: Arc<dyn FapiResourceAuthorizer>,
-    mtls: Arc<dyn FapiMtlsThumbprintResolver>,
+    mtls: Arc<dyn MtlsThumbprintExtractor>,
     signatures: Arc<dyn FapiHttpMessageSignatures>,
 }
 
@@ -100,7 +50,7 @@ impl FapiResourceEndpoint {
         mtls_endpoint_base_url: impl Into<String>,
         signature_max_age_seconds: i64,
         authorizer: Arc<dyn FapiResourceAuthorizer>,
-        mtls: Arc<dyn FapiMtlsThumbprintResolver>,
+        mtls: Arc<dyn MtlsThumbprintExtractor>,
         signatures: Arc<dyn FapiHttpMessageSignatures>,
     ) -> Self {
         Self {

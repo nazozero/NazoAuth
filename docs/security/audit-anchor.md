@@ -103,7 +103,7 @@ changed by an application migration.
 
 ## Configuration
 
-The [configuration loader](../../crates/authorization-server/src/adapters/audit_anchor/config.rs)
+The [configuration loader](../../crates/nazoauth/src/adapters/audit_anchor/config.rs)
 is the authority for accepted values. Secret-file forms follow the normal
 [configuration precedence](../operations/configuration.md).
 

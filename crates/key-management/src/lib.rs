@@ -3,6 +3,8 @@ mod client_registration;
 mod crypto;
 mod database;
 mod external;
+mod external_signer;
+pub use external_signer::{ExternalKeySigner, ExternalSignRequest};
 mod jwks;
 mod lifecycle;
 mod local;

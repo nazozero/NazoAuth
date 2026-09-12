@@ -19,8 +19,6 @@ fn database_settings(
     prepublish_window: chrono::Duration,
 ) -> KeySettings {
     KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval,
         prepublish_window,
         verification_grace: chrono::Duration::minutes(10),
@@ -30,6 +28,7 @@ fn database_settings(
 async fn database_manager(settings: KeySettings) -> KeyManager {
     KeyManager::load_or_create_database(
         settings,
+        None,
         uuid::Uuid::now_v7(),
         Arc::new(MemorySigningKeyRepository::default()),
         SigningKeyWrappingKeyRing::new("current", [17_u8; 32], None).unwrap(),

@@ -79,9 +79,46 @@ pub(crate) fn wrapping_key_ring() -> SigningKeyWrappingKeyRing {
 pub async fn key_manager(settings: KeySettings) -> anyhow::Result<KeyManager> {
     KeyManager::load_or_create_database(
         settings,
+        None,
         uuid::Uuid::now_v7(),
         Arc::new(MemorySigningKeyRepository::default()),
         wrapping_key_ring(),
     )
     .await
+}
+
+/// Semantic failure fixture; no process execution is involved.
+pub struct FailingExternalKeySigner;
+
+impl crate::ExternalKeySigner for FailingExternalKeySigner {
+    fn sign<'a>(
+        &'a self,
+        _request: crate::ExternalSignRequest<'a>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<nazo_auth::Signature, nazo_auth::SignError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async { Err(nazo_auth::SignError::SigningFailed) })
+    }
+}
+
+/// Fixed signature fixture for local verification tests.
+pub struct FixedExternalKeySigner(pub Vec<u8>);
+
+impl crate::ExternalKeySigner for FixedExternalKeySigner {
+    fn sign<'a>(
+        &'a self,
+        _request: crate::ExternalSignRequest<'a>,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<nazo_auth::Signature, nazo_auth::SignError>>
+                + Send
+                + 'a,
+        >,
+    > {
+        Box::pin(async { Ok(nazo_auth::Signature::new(self.0.clone())) })
+    }
 }

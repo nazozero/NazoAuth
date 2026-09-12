@@ -7,10 +7,7 @@ use nazo_openid4vci::CredentialDatasetPort;
 
 const VCI_CREDENTIAL_IDENTIFIER_PREFIX: &str = "nazo-vci-";
 
-pub(crate) fn openid4vci_authorization_detail(
-    issuer: &str,
-    credential_configuration_id: &str,
-) -> Value {
+pub fn openid4vci_authorization_detail(issuer: &str, credential_configuration_id: &str) -> Value {
     json!({
         "type": "openid_credential",
         "credential_configuration_id": credential_configuration_id,
@@ -30,7 +27,7 @@ pub(crate) fn openid4vci_credential_identifier(
     ))
 }
 
-pub(crate) fn openid4vci_configuration_id_from_identifier(
+pub fn openid4vci_configuration_id_from_identifier(
     identifier: &nazo_openid4vci::CredentialIdentifier,
 ) -> Option<String> {
     let encoded = identifier
@@ -42,7 +39,7 @@ pub(crate) fn openid4vci_configuration_id_from_identifier(
     String::from_utf8(decoded).ok()
 }
 
-pub(crate) fn token_endpoint_dpop_target_uris(issuer: &str, request_url: &str) -> Vec<String> {
+pub fn token_endpoint_dpop_target_uris(issuer: &str, request_url: &str) -> Vec<String> {
     let public = format!("{}/token", issuer.trim_end_matches('/'));
     let trusted_request_url = url::Url::parse(request_url).ok().and_then(|request| {
         let issuer = url::Url::parse(issuer).ok()?;

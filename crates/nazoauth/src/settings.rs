@@ -1,0 +1,583 @@
+//! Runtime settings.
+// Settings are built from the startup configuration snapshot.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::PathBuf;
+
+use anyhow::bail;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use nazo_auth::{
+    is_loopback_http_url, validate_cors_origin, validate_frontend_base_url, validate_issuer_url,
+    validate_protected_resource_identifier,
+};
+use url::Url;
+
+use crate::adapters::security::LOCAL_DEVELOPMENT_CLIENT_SECRET_PEPPER;
+use crate::config::{ConfigSource, DEFAULT_DATA_DIR};
+use crate::http::mtls::MtlsCertificateSourceMode;
+use nazo_http_actix::{ClientIpHeaderMode, IpCidr, parse_trusted_proxy_cidrs};
+
+/// Access tokens are stateless JWTs. Recovery can close ingress only after
+/// this bounded lifetime plus the verifier skew has elapsed.
+pub(crate) const MAX_ACCESS_TOKEN_TTL_SECONDS: i64 = 3_600;
+pub(crate) const MAX_ID_TOKEN_TTL_SECONDS: i64 = 3_600;
+pub(crate) const RECOVERY_ACCESS_TOKEN_CLOCK_SKEW_SECONDS: i64 = 60;
+
+mod config_loader;
+mod email;
+mod federation;
+mod passkey;
+mod profile;
+mod rate_limit;
+
+pub(crate) use config_loader::{
+    credential_configurations_from_config, mdoc_issuing_country_from_config,
+};
+pub(crate) use email::{EmailDelivery, EmailSettings, SmtpEmailSettings, SmtpTlsMode};
+pub(crate) use federation::{
+    ExternalLoginProvider, ExternalLoginProviderAdapter, FederationProviderRegistry,
+    FederationSettings, OidcFederationSettings, SamlGatewaySettings, SocialProviderKind,
+    SocialProviderSettings,
+};
+use nazo_auth::DpopNoncePolicy;
+use nazo_oauth_server::policy::{
+    AuthorizationServerProfile, CibaSecurityProfile, Openid4vcRevocationPolicy,
+    RequestObjectJtiPolicy, SubjectType,
+};
+pub(crate) use passkey::PasskeySettings;
+pub(crate) use rate_limit::RateLimitSettings;
+
+/// OAuth service runtime parameters.
+#[derive(Clone)]
+pub(crate) struct Settings {
+    pub(crate) tenant: TenantSettings,
+    pub(crate) endpoint: EndpointSettings,
+    pub(crate) protocol: ProtocolSettings,
+    pub(crate) session: SessionSettings,
+    pub(crate) storage: StorageSettings,
+    pub(crate) identity: IdentityRuntimeSettings,
+    pub(crate) keys: KeyManagementSettings,
+    pub(crate) modules: ModuleSettings,
+    pub(crate) device: DeviceGrantSettings,
+    pub(crate) ciba: CibaSettings,
+    pub(crate) openid4vc: Openid4vcSettings,
+}
+
+/// The immutable tenant identity selected for this runtime snapshot.
+///
+/// A directory binding creates one complete `Settings` value per tenant.
+/// Keeping the host beside the identity prevents request routing from consulting
+/// a second tenant registry after the snapshot has been selected.
+#[derive(Clone)]
+pub(crate) struct TenantSettings {
+    pub(crate) context: nazo_identity::TenantContext,
+}
+
+/// Canonicalizes a configured tenant host without accepting a URL, userinfo,
+/// path, or port. Ports cannot distinguish tenants because TLS SNI has none.
+pub(crate) use nazo_identity::canonical_tenant_host;
+
+#[derive(Clone)]
+pub(crate) struct EndpointSettings {
+    pub(crate) issuer: String,
+    pub(crate) mtls_endpoint_base_url: String,
+    pub(crate) frontend_base_url: String,
+    pub(crate) cors_allowed_origins: Vec<String>,
+    pub(crate) trusted_proxy_cidrs: Vec<IpCidr>,
+    pub(crate) client_ip_header_mode: ClientIpHeaderMode,
+    pub(crate) transport_mode: TransportMode,
+    pub(crate) mtls_certificate_source: MtlsCertificateSourceMode,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) enum TransportMode {
+    LoopbackHttp,
+    DirectTls,
+    TrustedProxy,
+}
+
+impl TransportMode {
+    fn from_config(value: Option<&str>, issuer: &str) -> anyhow::Result<Self> {
+        match value.map(str::trim).filter(|value| !value.is_empty()) {
+            None if is_loopback_http_url(issuer) => Ok(Self::LoopbackHttp),
+            None => bail!(
+                "TRANSPORT_MODE is required for non-loopback issuers and must be direct-tls or trusted-proxy"
+            ),
+            Some("loopback-http") if is_loopback_http_url(issuer) => Ok(Self::LoopbackHttp),
+            Some("loopback-http") => {
+                bail!("TRANSPORT_MODE=loopback-http requires a loopback HTTP issuer")
+            }
+            Some("direct-tls") if issuer.starts_with("https://") => Ok(Self::DirectTls),
+            Some("direct-tls") => bail!("direct-tls transport requires an HTTPS issuer"),
+            Some("trusted-proxy")
+                if issuer.starts_with("https://") || is_loopback_http_url(issuer) =>
+            {
+                Ok(Self::TrustedProxy)
+            }
+            Some("trusted-proxy") => {
+                bail!("trusted-proxy transport requires an HTTPS or loopback HTTP issuer")
+            }
+            Some(value) => bail!(
+                "TRANSPORT_MODE must be loopback-http, direct-tls, or trusted-proxy; got {value}"
+            ),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct ProtocolSettings {
+    pub(crate) default_audience: String,
+    pub(crate) protected_resource_identifier: String,
+    pub(crate) authorization_server_profile: AuthorizationServerProfile,
+    pub(crate) ciba_security_profile: CibaSecurityProfile,
+    pub(crate) dpop_nonce_policy: DpopNoncePolicy,
+    pub(crate) fapi_resource_dpop_nonce_policy: DpopNoncePolicy,
+    pub(crate) request_object_jti_policy: RequestObjectJtiPolicy,
+    pub(crate) auth_code_ttl_seconds: u64,
+    pub(crate) access_token_ttl_seconds: i64,
+    pub(crate) id_token_ttl_seconds: i64,
+    pub(crate) refresh_token_ttl_seconds: i64,
+    pub(crate) client_secret_pepper: String,
+    pub(crate) subject_type: SubjectType,
+    pub(crate) pairwise_subject_secret: Option<String>,
+    pub(crate) par_ttl_seconds: u64,
+    pub(crate) require_pushed_authorization_requests: bool,
+    pub(crate) fapi_http_signature_max_age_seconds: i64,
+}
+
+#[derive(Clone)]
+pub(crate) struct SessionSettings {
+    pub(crate) session_cookie_name: String,
+    pub(crate) csrf_cookie_name: String,
+    pub(crate) cookie_secure: bool,
+    pub(crate) session_ttl_seconds: u64,
+    pub(crate) pending_mfa_session_ttl_seconds: u64,
+}
+
+#[derive(Clone)]
+pub(crate) struct StorageSettings {
+    pub(crate) avatar_max_bytes: usize,
+    pub(crate) client_delivery_ttl_seconds: u64,
+    pub(crate) data_dir: PathBuf,
+    pub(crate) avatar_storage_dir: PathBuf,
+    pub(crate) scim_event_retention_seconds: u64,
+}
+
+#[derive(Clone)]
+pub(crate) struct IdentityRuntimeSettings {
+    pub(crate) rate_limit: RateLimitSettings,
+    pub(crate) email: EmailSettings,
+    pub(crate) email_code_dev_response_enabled: bool,
+    pub(crate) passkey: PasskeySettings,
+    pub(crate) federation: FederationSettings,
+}
+
+#[derive(Clone)]
+pub(crate) struct KeyManagementSettings {
+    pub(crate) signing_external_command: Vec<String>,
+    pub(crate) signing_external_timeout_ms: u64,
+    pub(crate) signing_key_rotation_interval_seconds: i64,
+    pub(crate) signing_key_prepublish_seconds: i64,
+}
+
+#[derive(Clone)]
+pub(crate) struct ModuleSettings {
+    pub(crate) enable_openid4vci_issuer: bool,
+    pub(crate) enable_openid4vp_verifier: bool,
+    /// Route registration is process-wide, while module services are selected
+    /// from the request tenant's runtime. These flags cover both the control
+    /// tenant and directory-managed tenants without enabling either service
+    /// for the control tenant.
+    pub(crate) register_openid4vci_routes: bool,
+    pub(crate) register_openid4vp_routes: bool,
+    pub(crate) dynamic_client_registration_initial_access_token: Option<String>,
+    pub(crate) remote_client_document_private_origins: Vec<String>,
+    pub(crate) backchannel_logout_private_origins: Vec<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct DeviceGrantSettings {
+    pub(crate) device_authorization_ttl_seconds: u64,
+    pub(crate) device_authorization_poll_interval_seconds: u64,
+}
+
+#[derive(Clone)]
+pub(crate) struct CibaSettings {
+    pub(crate) ciba_auth_req_id_ttl_seconds: u64,
+    pub(crate) ciba_poll_interval_seconds: u64,
+    pub(crate) ciba_notification_private_origins: Vec<String>,
+}
+
+#[derive(Clone)]
+pub(crate) struct Openid4vcSettings {
+    pub(crate) data_encryption_key: Option<[u8; 32]>,
+    pub(crate) client_attestation_jwks: Option<serde_json::Value>,
+    pub(crate) key_attestation_jwks: Option<serde_json::Value>,
+    pub(crate) client_attestation_issuer: Option<String>,
+    pub(crate) credential_configurations:
+        BTreeMap<String, nazo_openid4vci::CredentialConfiguration>,
+    pub(crate) deferred_credential_configurations: std::collections::BTreeSet<String>,
+    pub(crate) issuer_management_token: Option<String>,
+    pub(crate) wallet_authorization_origins: Vec<String>,
+    pub(crate) verifier_management_token: Option<String>,
+    pub(crate) transaction_ttl_seconds: u64,
+    pub(crate) revocation_policy: Openid4vcRevocationPolicy,
+}
+
+impl Settings {
+    pub(crate) fn external_key_signer(
+        &self,
+    ) -> Option<std::sync::Arc<dyn nazo_key_management::ExternalKeySigner>> {
+        if self.keys.signing_external_command.is_empty() {
+            return None;
+        }
+        Some(std::sync::Arc::new(
+            crate::adapters::external_signer::CommandExternalKeySigner::new(
+                self.keys.signing_external_command.clone(),
+                std::time::Duration::from_millis(self.keys.signing_external_timeout_ms),
+            ),
+        ))
+    }
+
+    pub(crate) fn key_settings(&self) -> nazo_key_management::KeySettings {
+        nazo_key_management::KeySettings {
+            rotation_interval: chrono::Duration::seconds(
+                self.keys.signing_key_rotation_interval_seconds,
+            ),
+            prepublish_window: chrono::Duration::seconds(self.keys.signing_key_prepublish_seconds),
+            verification_grace: chrono::Duration::seconds(
+                self.protocol
+                    .access_token_ttl_seconds
+                    .max(self.protocol.id_token_ttl_seconds),
+            ),
+        }
+    }
+}
+
+pub(crate) fn mfa_totp_key_ring(
+    config: &ConfigSource,
+) -> anyhow::Result<Option<nazo_identity::ports::MfaTotpKeyRing>> {
+    let current_key = parse_optional_32_byte_key(config, "MFA_TOTP_ENCRYPTION_KEY")?;
+    let current_key_id = config.optional_string("MFA_TOTP_ENCRYPTION_KEY_ID");
+    let previous_key = parse_optional_32_byte_key(config, "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY")?;
+    let previous_key_id = config.optional_string("MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID");
+    validate_mfa_totp_key_pair(
+        "MFA_TOTP_ENCRYPTION_KEY",
+        current_key,
+        "MFA_TOTP_ENCRYPTION_KEY_ID",
+        current_key_id.as_deref(),
+    )?;
+    validate_mfa_totp_key_pair(
+        "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY",
+        previous_key,
+        "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID",
+        previous_key_id.as_deref(),
+    )?;
+    if current_key.is_none() && (previous_key.is_some() || previous_key_id.is_some()) {
+        bail!(
+            "MFA_TOTP_ENCRYPTION_KEY is required when a previous TOTP encryption key is configured"
+        );
+    }
+    if let (Some(current), Some(previous)) = (current_key_id.as_deref(), previous_key_id.as_deref())
+        && current == previous
+    {
+        bail!("MFA_TOTP_ENCRYPTION_KEY_ID and MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID must differ");
+    }
+    let Some(current_key) = current_key else {
+        return Ok(None);
+    };
+    let current = nazo_identity::ports::MfaTotpKey::new(
+        current_key_id.expect("validated MFA TOTP current key id"),
+        current_key,
+    )?;
+    let previous = previous_key
+        .zip(previous_key_id)
+        .map(|(key, id)| nazo_identity::ports::MfaTotpKey::new(id, key))
+        .transpose()?;
+    Ok(Some(nazo_identity::ports::MfaTotpKeyRing::new(
+        current, previous,
+    )?))
+}
+
+/// Parses the independent response-envelope key ring used by durable token
+/// issuance recovery. The current key/id pair is mandatory for the running
+/// server; the previous pair is optional only during a bounded rotation
+/// overlap. `Settings::from_config` calls the optional validator so malformed
+/// values fail early, while bootstrap calls this strict function before
+/// constructing the token repository.
+pub(crate) fn token_issuance_response_key_ring(
+    config: &ConfigSource,
+) -> anyhow::Result<nazo_persistence::TokenIssuanceResponseKeyRing> {
+    let current_key = parse_required_32_byte_key(config, "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY")?;
+    let current_id = config.required_string("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID")?;
+    let previous_key =
+        parse_optional_32_byte_key(config, "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY")?;
+    let previous_id = config.optional_string("TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID");
+    if previous_key.is_some() != previous_id.is_some() {
+        bail!(
+            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY and TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID must be configured together"
+        );
+    }
+    let previous = previous_key.zip(previous_id).map(|(key, id)| (id, key));
+    nazo_persistence::TokenIssuanceResponseKeyRing::new(current_id, current_key, previous)
+        .map_err(anyhow::Error::from)
+}
+
+pub(crate) fn signing_key_wrapping_key_ring(
+    config: &ConfigSource,
+) -> anyhow::Result<nazo_key_management::SigningKeyWrappingKeyRing> {
+    let current_key = parse_required_32_byte_key(config, "SIGNING_KEY_ENCRYPTION_KEY")?;
+    let current_id = config.required_string("SIGNING_KEY_ENCRYPTION_KEY_ID")?;
+    let previous_key = parse_optional_32_byte_key(config, "SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY")?;
+    let previous_id = config.optional_string("SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_ID");
+    if previous_key.is_some() != previous_id.is_some() {
+        bail!(
+            "SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY and SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_ID must be configured together"
+        );
+    }
+    nazo_key_management::SigningKeyWrappingKeyRing::new(
+        current_id,
+        current_key,
+        previous_key.zip(previous_id).map(|(key, id)| (id, key)),
+    )
+    .map_err(anyhow::Error::from)
+}
+
+fn validate_optional_token_issuance_response_key_config(
+    config: &ConfigSource,
+) -> anyhow::Result<()> {
+    let current_key = config.optional_string("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY");
+    let current_id = config.optional_string("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID");
+    let previous_key = config.optional_string("TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY");
+    let previous_id = config.optional_string("TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID");
+    if current_key.is_none()
+        && current_id.is_none()
+        && previous_key.is_none()
+        && previous_id.is_none()
+    {
+        return Ok(());
+    }
+    let _ = token_issuance_response_key_ring(config)?;
+    Ok(())
+}
+
+fn parse_required_32_byte_key(
+    config: &ConfigSource,
+    name: &'static str,
+) -> anyhow::Result<[u8; 32]> {
+    let value = config.required_string(name)?;
+    let decoded = URL_SAFE_NO_PAD.decode(value).map_err(anyhow::Error::from)?;
+    <[u8; 32]>::try_from(decoded)
+        .map_err(|_| anyhow::anyhow!("{name} must decode to exactly 32 bytes"))
+}
+
+fn parse_optional_32_byte_key(
+    config: &ConfigSource,
+    name: &'static str,
+) -> anyhow::Result<Option<[u8; 32]>> {
+    config
+        .optional_string(name)
+        .map(|value| URL_SAFE_NO_PAD.decode(value).map_err(anyhow::Error::from))
+        .transpose()?
+        .map(|value| {
+            <[u8; 32]>::try_from(value)
+                .map_err(|_| anyhow::anyhow!("{name} must decode to exactly 32 bytes"))
+        })
+        .transpose()
+}
+
+fn validate_mfa_totp_key_pair(
+    key_name: &'static str,
+    key: Option<[u8; 32]>,
+    id_name: &'static str,
+    id: Option<&str>,
+) -> anyhow::Result<()> {
+    if key.is_some() != id.is_some() {
+        bail!("{key_name} and {id_name} must be configured together");
+    }
+    if id.is_some_and(|value| value.len() > 128) {
+        bail!("{id_name} must be at most 128 bytes");
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy)]
+enum AttestationTrustPurpose {
+    Client,
+    HolderKey,
+}
+
+fn parse_attestation_jwk_set(
+    config: &ConfigSource,
+    key: &'static str,
+    purpose: AttestationTrustPurpose,
+) -> anyhow::Result<Option<serde_json::Value>> {
+    let Some(encoded) = config.optional_string(key) else {
+        return Ok(None);
+    };
+    let jwks = serde_json::from_str::<serde_json::Value>(&encoded)?;
+    let keys = jwks
+        .get("keys")
+        .and_then(serde_json::Value::as_array)
+        .filter(|keys| !keys.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("{key} must be a non-empty JWK Set"))?;
+    let mut key_ids = BTreeSet::new();
+    for jwk in keys {
+        let object = jwk
+            .as_object()
+            .ok_or_else(|| anyhow::anyhow!("{key} must contain JWK objects"))?;
+        if ["d", "p", "q", "dp", "dq", "qi", "oth", "k"]
+            .iter()
+            .any(|name| object.contains_key(*name))
+        {
+            bail!("{key} must contain public verification keys only");
+        }
+        let kid = object
+            .get("kid")
+            .and_then(serde_json::Value::as_str)
+            .filter(|kid| !kid.is_empty())
+            .ok_or_else(|| anyhow::anyhow!("{key} keys must have a non-empty kid"))?;
+        if !key_ids.insert(kid) {
+            bail!("{key} must not contain duplicate kid values");
+        }
+        let supported = match (
+            purpose,
+            object.get("kty").and_then(serde_json::Value::as_str),
+            object.get("crv").and_then(serde_json::Value::as_str),
+        ) {
+            (AttestationTrustPurpose::Client, Some("EC"), Some("P-256")) => {
+                object.get("x").is_some_and(serde_json::Value::is_string)
+                    && object.get("y").is_some_and(serde_json::Value::is_string)
+            }
+            (AttestationTrustPurpose::HolderKey, Some("EC"), Some("P-256")) => {
+                object.get("x").is_some_and(serde_json::Value::is_string)
+                    && object.get("y").is_some_and(serde_json::Value::is_string)
+            }
+            (AttestationTrustPurpose::HolderKey, Some("OKP"), Some("Ed25519")) => {
+                object.get("x").is_some_and(serde_json::Value::is_string)
+            }
+            _ => false,
+        };
+        if !supported {
+            let purpose = match purpose {
+                AttestationTrustPurpose::Client => "client attestation",
+                AttestationTrustPurpose::HolderKey => "holder key attestation",
+            };
+            bail!("{key} contains a key unsupported for {purpose}");
+        }
+    }
+    Ok(Some(jwks))
+}
+
+pub(super) fn positive_u64(
+    config: &ConfigSource,
+    key: &str,
+    default: u64,
+    label: &str,
+) -> anyhow::Result<u64> {
+    let value = config.parse(key, default)?;
+    if value == 0 {
+        bail!("{label} must be positive");
+    }
+    Ok(value)
+}
+
+pub(super) fn positive_i64(
+    config: &ConfigSource,
+    key: &str,
+    default: i64,
+    label: &str,
+) -> anyhow::Result<i64> {
+    let value = config.parse(key, default)?;
+    if value <= 0 {
+        bail!("{label} must be positive");
+    }
+    Ok(value)
+}
+
+pub(crate) fn bounded_access_token_ttl_seconds(config: &ConfigSource) -> anyhow::Result<i64> {
+    let ttl = positive_i64(
+        config,
+        "ACCESS_TOKEN_TTL_SECONDS",
+        300,
+        "ACCESS_TOKEN_TTL_SECONDS",
+    )?;
+    if ttl > MAX_ACCESS_TOKEN_TTL_SECONDS {
+        bail!(
+            "ACCESS_TOKEN_TTL_SECONDS must not exceed {MAX_ACCESS_TOKEN_TTL_SECONDS} so recovery can bound stateless JWT expiry"
+        );
+    }
+    Ok(ttl)
+}
+
+pub(crate) fn bounded_id_token_ttl_seconds(config: &ConfigSource) -> anyhow::Result<i64> {
+    let ttl = positive_i64(config, "ID_TOKEN_TTL_SECONDS", 600, "ID_TOKEN_TTL_SECONDS")?;
+    if ttl > MAX_ID_TOKEN_TTL_SECONDS {
+        bail!(
+            "ID_TOKEN_TTL_SECONDS must not exceed {MAX_ID_TOKEN_TTL_SECONDS} so recovery can bound signed token expiry"
+        );
+    }
+    Ok(ttl)
+}
+
+fn url_origin(value: &str) -> anyhow::Result<String> {
+    let url = Url::parse(value).map_err(|_| anyhow::anyhow!("PUBLIC_BASE_URL must be absolute"))?;
+    let Some(host) = url.host_str() else {
+        bail!("PUBLIC_BASE_URL must include host");
+    };
+    let mut origin = format!("{}://{}", url.scheme(), host);
+    if let Some(port) = url.port() {
+        origin.push(':');
+        origin.push_str(&port.to_string());
+    }
+    Ok(origin)
+}
+
+fn parse_signing_external_command(value: Option<String>) -> Vec<String> {
+    value
+        .map(|value| {
+            value
+                .split(',')
+                .map(str::trim)
+                .filter(|part| !part.is_empty())
+                .map(ToOwned::to_owned)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub(crate) fn key_settings_from_config(
+    config: &ConfigSource,
+) -> anyhow::Result<nazo_key_management::KeySettings> {
+    let rotation_interval_seconds =
+        config.parse("SIGNING_KEY_ROTATION_INTERVAL_SECONDS", 7_776_000)?;
+    let prepublish_seconds = config.parse("SIGNING_KEY_PREPUBLISH_SECONDS", 86_400)?;
+    if rotation_interval_seconds <= 0 {
+        bail!("SIGNING_KEY_ROTATION_INTERVAL_SECONDS must be positive");
+    }
+    if prepublish_seconds <= 0 {
+        bail!("SIGNING_KEY_PREPUBLISH_SECONDS must be positive");
+    }
+    if prepublish_seconds >= rotation_interval_seconds {
+        bail!(
+            "SIGNING_KEY_PREPUBLISH_SECONDS must be less than SIGNING_KEY_ROTATION_INTERVAL_SECONDS"
+        );
+    }
+    let access_token_ttl_seconds = bounded_access_token_ttl_seconds(config)?;
+    let id_token_ttl_seconds = bounded_id_token_ttl_seconds(config)?;
+    Ok(nazo_key_management::KeySettings {
+        rotation_interval: chrono::Duration::seconds(rotation_interval_seconds),
+        prepublish_window: chrono::Duration::seconds(prepublish_seconds),
+        verification_grace: chrono::Duration::seconds(
+            access_token_ttl_seconds.max(id_token_ttl_seconds),
+        ),
+    })
+}
+
+fn default_protected_resource_identifier(issuer: &str) -> String {
+    format!("{}/fapi/resource", issuer.trim_end_matches('/'))
+}
+
+#[cfg(test)]
+#[path = "../tests/unit/settings.rs"]
+mod tests;

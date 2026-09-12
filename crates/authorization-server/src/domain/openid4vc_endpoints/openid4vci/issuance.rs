@@ -17,7 +17,7 @@ impl ServerCredentialIssuerOperations {
                     "Credential issuer is not accepting new requests.",
                 ));
             }
-            let request = self.request_json(body).await?;
+            let request = request_json(&self.request_encryption, body)?;
             let access = self.access(&context).await?;
             let request_digest = issuance_request_digest(
                 "credential",
@@ -40,7 +40,7 @@ impl ServerCredentialIssuerOperations {
             {
                 return response_from_record(response);
             }
-            let dpop_nonce = self.next_dpop_nonce(&access).await?;
+            let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
             let configuration_id = resolve_configuration_id(&request, &access)?;
             let configuration = self
                 .configurations
@@ -84,13 +84,10 @@ impl ServerCredentialIssuerOperations {
                 )
                 .await
                 .map_err(map_issuance_error)?;
-            let body = match self
-                .finish_response(
-                    pending.response.clone(),
-                    request.credential_response_encryption.as_ref(),
-                )
-                .await
-            {
+            let body = match finish_response(
+                pending.response.clone(),
+                request.credential_response_encryption.as_ref(),
+            ) {
                 Ok(body) => body,
                 Err(error) => {
                     let _ = self.service.rollback_pending(&pending, Utc::now()).await;
@@ -133,7 +130,7 @@ impl ServerCredentialIssuerOperations {
                     "Credential issuer is unavailable.",
                 ));
             }
-            let request = self.request_json(body).await?;
+            let request = request_json(&self.request_encryption, body)?;
             let access = self.access(&context).await?;
             let request_digest = issuance_request_digest(
                 "deferred",
@@ -156,7 +153,7 @@ impl ServerCredentialIssuerOperations {
             {
                 return response_from_record(response);
             }
-            let dpop_nonce = self.next_dpop_nonce(&access).await?;
+            let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
             let transaction_hash = blake3_hex(&request.transaction_id);
             let claim_id = Uuid::now_v7().to_string();
             let deferred = self
@@ -241,17 +238,15 @@ impl ServerCredentialIssuerOperations {
                 };
                 // Finish response encoding before committing the lease. If
                 // encryption fails, the transaction remains retryable.
-                let body = self
-                    .finish_response(
-                        CredentialResponse {
-                            credentials: Some(credentials),
-                            transaction_id: None,
-                            notification_id: Some(notification_id),
-                            interval: None,
-                        },
-                        request.credential_response_encryption.as_ref(),
-                    )
-                    .await?;
+                let body = finish_response(
+                    CredentialResponse {
+                        credentials: Some(credentials),
+                        transaction_id: None,
+                        notification_id: Some(notification_id),
+                        interval: None,
+                    },
+                    request.credential_response_encryption.as_ref(),
+                )?;
                 let response_record = stored_response(
                     issuance_id,
                     access.token_id,
@@ -313,7 +308,7 @@ impl ServerCredentialIssuerOperations {
                 ));
             }
             let access = self.access(&context).await?;
-            let dpop_nonce = self.next_dpop_nonce(&access).await?;
+            let dpop_nonce = next_dpop_nonce(self.authorization.as_ref(), &access).await?;
             let recorded = self
                 .store
                 .record_notification(&IssuanceNotification {

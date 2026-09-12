@@ -7,14 +7,15 @@ use std::{
 
 use chrono::{Duration, Utc};
 use nazo_auth::{
-    DpopError, DpopNoncePolicy, DpopProofRequest, issue_authorization_server_dpop_nonce,
-    token_audience_contains, validate_authorization_server_dpop,
+    DpopError, DpopNoncePolicy, DpopProofRequest, DpopStateStorePort,
+    issue_authorization_server_dpop_nonce, token_audience_contains,
+    validate_authorization_server_dpop,
 };
 use nazo_digital_credentials::{
     CredentialSignerPort, EphemeralEncryptionKey, encrypt_ecdh_es, encrypt_ecdh_es_deflate,
 };
 use nazo_identity::{TenantId, UserId};
-use nazo_openid4vc_http_actix::{
+use nazo_openid4vci::application::{
     AccessTokenScheme, CreateCredentialOfferRequest, CreateCredentialOfferResponse,
     CredentialEndpointResponse, CredentialHttpError, CredentialIssuerFuture,
     CredentialIssuerOperations, CredentialRequestBody, CredentialRequestContext,
@@ -34,23 +35,22 @@ use nazo_runtime_modules::ModuleId;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::{
-    adapters::security::{
-        blake3_hex, constant_time_eq, hash_password_blocking_limited, random_urlsafe_token,
-    },
-    domain::{
-        Openid4vcClientAttestationValidator, Openid4vcCredentialCrypto, Openid4vcProofValidator,
-    },
-    http::{authorization::ServerAuthorizationService, token::ServerTokenService},
-    runtime_modules::ServerRuntimeModuleRegistry,
-};
+use crate::crypto::{blake3_hex, constant_time_eq, random_urlsafe_token};
+use crate::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator;
+use crate::domain::openid4vc::{Openid4vcCredentialCrypto, Openid4vcProofValidator};
+use crate::services::{ServerAuthorizationService, ServerTokenService};
+use nazo_identity::ports::SecretHashPort;
+use nazo_runtime_modules::SnapshotStore;
 
 mod dataset;
 mod issuance;
 mod offers;
+#[cfg(test)]
+#[path = "../../../../tests/unit/domain/openid4vci_response.rs"]
+mod response_tests;
 
 use dataset::Openid4vcDataset;
-pub(crate) use dataset::{
+pub use dataset::{
     openid4vci_authorization_detail, openid4vci_configuration_id_from_identifier,
     token_endpoint_dpop_target_uris,
 };
@@ -62,10 +62,87 @@ type VciService = CredentialIssuerService<
     Openid4vcCredentialCrypto,
 >;
 
+#[cfg(test)]
+#[path = "../../../../tests/unit/domain/openid4vci_request_json.rs"]
+mod request_json_tests;
+
+fn request_json<T: serde::de::DeserializeOwned>(
+    request_encryption: &EphemeralEncryptionKey,
+    body: CredentialRequestBody<T>,
+) -> Result<T, CredentialHttpError> {
+    match body {
+        CredentialRequestBody::Json(value) => Ok(value),
+        CredentialRequestBody::Jwt(value) => {
+            let plaintext = request_encryption
+                .decrypt_credential_request(&value, "openid4vci-request-encryption")
+                .map_err(|_| {
+                    vci_error(
+                        400,
+                        "invalid_encryption_parameters",
+                        "Credential request encryption is invalid.",
+                    )
+                })?;
+            serde_json::from_slice(&plaintext).map_err(|_| {
+                vci_error(
+                    400,
+                    "invalid_credential_request",
+                    "Encrypted credential request is malformed.",
+                )
+            })
+        }
+    }
+}
+
+fn finish_response(
+    response: CredentialResponse,
+    encryption: Option<&CredentialResponseEncryption>,
+) -> Result<CredentialResponseBody, CredentialHttpError> {
+    if let Some(encryption) = encryption {
+        if encryption.jwk.get("alg").and_then(Value::as_str) != Some("ECDH-ES")
+            || encryption.enc != "A256GCM"
+            || encryption.zip.as_deref().is_some_and(|zip| zip != "DEF")
+        {
+            return Err(vci_error(
+                400,
+                "invalid_encryption_parameters",
+                "Credential response encryption parameters are unsupported.",
+            ));
+        }
+        let bytes = serde_json::to_vec(&response)
+            .map_err(|_| vci_error(500, "server_error", "Credential response encoding failed."))?;
+        let encrypted = if encryption.zip.as_deref() == Some("DEF") {
+            encrypt_ecdh_es_deflate(&bytes, &encryption.jwk, Some("application/json"))
+        } else {
+            encrypt_ecdh_es(&bytes, &encryption.jwk, Some("application/json"))
+        };
+        return encrypted.map(CredentialResponseBody::Jwt).map_err(|_| {
+            vci_error(
+                400,
+                "invalid_encryption_parameters",
+                "Credential response encryption key is invalid.",
+            )
+        });
+    }
+    Ok(CredentialResponseBody::Json(response))
+}
+
+async fn next_dpop_nonce<S: DpopStateStorePort + ?Sized>(
+    store: &S,
+    access: &CredentialAccess,
+) -> Result<Option<String>, CredentialHttpError> {
+    if access.dpop_jkt.is_none() {
+        return Ok(None);
+    }
+    issue_authorization_server_dpop_nonce(store)
+        .await
+        .map(Some)
+        .map_err(|_| vci_error(503, "server_error", "DPoP nonce issuance is unavailable."))
+}
+
 /// Issuer administration input. OpenID4VCI does not define this control-plane object.
 #[derive(Clone, Debug, PartialEq, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct PutCredentialDatasetRequest {
+pub struct PutCredentialDatasetRequest {
     pub claims: Value,
     #[serde(default)]
     pub valid_from: Option<chrono::DateTime<chrono::Utc>>,
@@ -74,7 +151,7 @@ pub(crate) struct PutCredentialDatasetRequest {
 }
 
 #[derive(Clone, Debug, PartialEq, serde::Serialize)]
-pub(crate) struct CredentialDatasetResponse {
+pub struct CredentialDatasetResponse {
     pub subject_id: Uuid,
     pub credential_configuration_id: String,
     pub claims: Value,
@@ -83,12 +160,13 @@ pub(crate) struct CredentialDatasetResponse {
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
 
-pub(crate) struct ServerCredentialIssuerOperations {
+pub struct ServerCredentialIssuerOperations {
     store: Arc<dyn Openid4vciStore>,
     service: VciService,
     token_service: Arc<ServerTokenService>,
     authorization: Arc<ServerAuthorizationService>,
-    pub(super) runtime: Arc<ServerRuntimeModuleRegistry>,
+    pub(super) snapshots: Arc<SnapshotStore>,
+    tx_code_hasher: Arc<dyn SecretHashPort>,
     crypto: Openid4vcCredentialCrypto,
     request_encryption: EphemeralEncryptionKey,
     issuer: String,
@@ -103,7 +181,7 @@ pub(crate) struct ServerCredentialIssuerOperations {
 
 #[allow(clippy::too_many_arguments)]
 impl ServerCredentialIssuerOperations {
-    pub(crate) fn new(
+    pub fn new(
         store: Arc<dyn Openid4vciStore>,
         users: Arc<dyn Openid4vcSubjectStore>,
         datasets: Arc<dyn Openid4vciDatasetStore>,
@@ -111,7 +189,8 @@ impl ServerCredentialIssuerOperations {
         data_key: [u8; 32],
         token_service: Arc<ServerTokenService>,
         authorization: Arc<ServerAuthorizationService>,
-        runtime: Arc<ServerRuntimeModuleRegistry>,
+        snapshots: Arc<SnapshotStore>,
+        tx_code_hasher: Arc<dyn SecretHashPort>,
         crypto: Openid4vcCredentialCrypto,
         proof_validator: Openid4vcProofValidator,
         client_attestation: Option<Arc<Openid4vcClientAttestationValidator>>,
@@ -136,7 +215,8 @@ impl ServerCredentialIssuerOperations {
             service,
             token_service,
             authorization,
-            runtime,
+            snapshots,
+            tx_code_hasher,
             crypto,
             request_encryption: EphemeralEncryptionKey::derive(
                 &data_key,
@@ -155,7 +235,7 @@ impl ServerCredentialIssuerOperations {
 
     pub(super) fn enabled(&self, admission: nazo_auth::CapabilityAdmission) -> bool {
         nazo_auth::module_admissible(
-            &self.runtime.snapshot(),
+            &self.snapshots.load_full(),
             ModuleId::Openid4vciIssuer,
             admission,
         )
@@ -192,34 +272,6 @@ impl ServerCredentialIssuerOperations {
             display: Vec::new(),
             credential_configurations_supported: self.configurations.as_ref().clone(),
             signed_metadata: None,
-        }
-    }
-
-    async fn request_json<T: serde::de::DeserializeOwned>(
-        &self,
-        body: CredentialRequestBody<T>,
-    ) -> Result<T, CredentialHttpError> {
-        match body {
-            CredentialRequestBody::Json(value) => Ok(value),
-            CredentialRequestBody::Jwt(value) => {
-                let plaintext = self
-                    .request_encryption
-                    .decrypt_credential_request(&value, "openid4vci-request-encryption")
-                    .map_err(|_| {
-                        vci_error(
-                            400,
-                            "invalid_encryption_parameters",
-                            "Credential request encryption is invalid.",
-                        )
-                    })?;
-                serde_json::from_slice(&plaintext).map_err(|_| {
-                    vci_error(
-                        400,
-                        "invalid_credential_request",
-                        "Encrypted credential request is malformed.",
-                    )
-                })
-            }
         }
     }
 
@@ -424,54 +476,6 @@ impl ServerCredentialIssuerOperations {
             })?;
         Ok(access)
     }
-
-    async fn finish_response(
-        &self,
-        response: CredentialResponse,
-        encryption: Option<&CredentialResponseEncryption>,
-    ) -> Result<CredentialResponseBody, CredentialHttpError> {
-        if let Some(encryption) = encryption {
-            if encryption.jwk.get("alg").and_then(Value::as_str) != Some("ECDH-ES")
-                || encryption.enc != "A256GCM"
-                || encryption.zip.as_deref().is_some_and(|zip| zip != "DEF")
-            {
-                return Err(vci_error(
-                    400,
-                    "invalid_encryption_parameters",
-                    "Credential response encryption parameters are unsupported.",
-                ));
-            }
-            let bytes = serde_json::to_vec(&response).map_err(|_| {
-                vci_error(500, "server_error", "Credential response encoding failed.")
-            })?;
-            let encrypted = if encryption.zip.as_deref() == Some("DEF") {
-                encrypt_ecdh_es_deflate(&bytes, &encryption.jwk, Some("application/json"))
-            } else {
-                encrypt_ecdh_es(&bytes, &encryption.jwk, Some("application/json"))
-            };
-            return encrypted.map(CredentialResponseBody::Jwt).map_err(|_| {
-                vci_error(
-                    400,
-                    "invalid_encryption_parameters",
-                    "Credential response encryption key is invalid.",
-                )
-            });
-        }
-        Ok(CredentialResponseBody::Json(response))
-    }
-
-    async fn next_dpop_nonce(
-        &self,
-        access: &CredentialAccess,
-    ) -> Result<Option<String>, CredentialHttpError> {
-        if access.dpop_jkt.is_none() {
-            return Ok(None);
-        }
-        issue_authorization_server_dpop_nonce(self.authorization.as_ref())
-            .await
-            .map(Some)
-            .map_err(|_| vci_error(503, "server_error", "DPoP nonce issuance is unavailable."))
-    }
 }
 
 impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
@@ -587,6 +591,3 @@ impl CredentialIssuerOperations for ServerCredentialIssuerOperations {
         self.create_offer_operation(request)
     }
 }
-#[cfg(test)]
-#[path = "../../../../tests/unit/domain/openid4vci_endpoint_operations.rs"]
-mod tests;

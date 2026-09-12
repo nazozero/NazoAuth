@@ -15,9 +15,11 @@ use actix_web::{
 };
 use nazo_http_actix::ClientIpHeaderMode;
 use nazo_http_actix::{
-    AuthorizationDecisionCommand, AuthorizationDecisionEndpoint, AuthorizationDecisionError,
-    AuthorizationDecisionForm, AuthorizationDecisionFuture, AuthorizationDecisionOperations,
-    AuthorizationDecisionResponse, authorize_decision,
+    AuthorizationDecisionEndpoint, AuthorizationDecisionForm, authorize_decision,
+};
+use nazo_oauth_server::contracts::authorization_decision::{
+    AuthorizationDecisionCommand, AuthorizationDecisionError, AuthorizationDecisionFuture,
+    AuthorizationDecisionOperations, AuthorizationDecisionResponse,
 };
 use serde_json::{Value, json};
 

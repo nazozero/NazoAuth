@@ -1,14 +1,13 @@
 use std::sync::Arc;
 
-use actix_web::{HttpRequest, http::header};
-use hmac::{Hmac, KeyInit, Mac};
-use nazo_http_actix::{
-    ScimAuthorizationError, ScimAuthorizedRequest, ScimBootstrapPasswordProvider,
-    ScimCursorProtector, ScimDependencyError, ScimFuture, ScimRequestAuthorizer,
+use crate::contracts::scim::{
+    ScimAuthenticationFacts, ScimAuthorizationError, ScimAuthorizedRequest, ScimCursorProtector,
+    ScimDependencyError, ScimFuture, ScimRequestAuthorizer,
 };
+use hmac::{Hmac, KeyInit, Mac};
 use nazo_identity::{
     TenantContext, TenantId,
-    ports::{PasswordHashInput, ScimCredentialUse},
+    ports::ScimCredentialUse,
     scim::{
         SCIM_CURSOR_AAD, SCIM_CURSOR_KEY_LABEL, SCIM_CURSOR_NONCE_LEN, SCIM_CURSOR_TAG_LEN,
         ScimCursorSubject, ScimRequiredScope, ScimService, scim_credential_allows,
@@ -19,43 +18,40 @@ use nazo_scim_events::{
 };
 use sha2::Sha256;
 
-use crate::{
-    adapters::{
-        audit::{audit_event, audit_fields},
-        security::{blake3_hex, hash_password_blocking_limited, random_urlsafe_token},
-    },
-    runtime_modules::ServerRuntimeModuleRegistry,
-};
-use nazo_http_actix::{ClientIpConfig, client_ip_with_config};
+use crate::crypto::blake3_hex;
+use crate::ports::audit::SecurityAudit;
+use crate::ports::audit::audit_fields;
+
+use nazo_runtime_modules::SnapshotStore;
 
 type HmacSha256 = Hmac<Sha256>;
 
 #[derive(Clone)]
-pub(crate) struct ServerScimRequestAuthorizer {
+pub struct ServerScimRequestAuthorizer {
     service: ScimService,
     tenant: TenantContext,
-    client_ip: ClientIpConfig,
-    runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+    audit: Arc<dyn SecurityAudit>,
+    runtime_modules: Arc<SnapshotStore>,
 }
 
 impl ServerScimRequestAuthorizer {
-    pub(crate) fn new(
+    pub fn new(
         service: ScimService,
         tenant: TenantContext,
-        client_ip: ClientIpConfig,
-        runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+        runtime_modules: Arc<SnapshotStore>,
+        audit: Arc<dyn SecurityAudit>,
     ) -> Self {
         Self {
             service,
             tenant,
-            client_ip,
+            audit,
             runtime_modules,
         }
     }
 
     fn enabled(&self) -> bool {
         nazo_auth::module_admissible(
-            &self.runtime_modules.snapshot(),
+            &self.runtime_modules.load_full(),
             nazo_runtime_modules::ModuleId::Scim,
             nazo_auth::CapabilityAdmission::NewRequest,
         )
@@ -110,7 +106,7 @@ impl ServerScimRequestAuthorizer {
         {
             tracing::warn!(%error, %token_id, "failed to insert SCIM token audit event");
         }
-        audit_event(
+        self.audit.record(
             "scim_token_used",
             audit_fields(&[
                 ("token_id", serde_json::json!(credential.token_id)),
@@ -132,7 +128,7 @@ impl ServerScimRequestAuthorizer {
         reason: &str,
         token_id: Option<uuid::Uuid>,
     ) {
-        audit_event(
+        self.audit.record(
             "scim_token_denied",
             audit_fields(&[
                 ("token_id", serde_json::json!(token_id)),
@@ -147,17 +143,13 @@ impl ServerScimRequestAuthorizer {
 impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
     fn authorize<'a>(
         &'a self,
-        request: &'a HttpRequest,
+        facts: ScimAuthenticationFacts<'a>,
         required_scope: ScimRequiredScope,
     ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>> {
         let enabled = self.enabled();
-        let token = bearer_token(request).map(ToOwned::to_owned);
-        let ip_hash = blake3_hex(&client_ip_with_config(request, &self.client_ip));
-        let user_agent_hash = request
-            .headers()
-            .get(header::USER_AGENT)
-            .and_then(|value| value.to_str().ok())
-            .map(blake3_hex);
+        let token = facts.bearer_token;
+        let ip_hash = blake3_hex(&facts.source_ip);
+        let user_agent_hash = facts.user_agent.map(blake3_hex);
         Box::pin(async move {
             if !enabled {
                 return Err(ScimAuthorizationError::Disabled);
@@ -166,7 +158,7 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                 self.audit_denied(&ip_hash, required_scope, "missing_bearer", None);
                 return Err(ScimAuthorizationError::MissingBearer);
             };
-            let credential = match self.credential(&token).await {
+            let credential = match self.credential(token).await {
                 Ok(credential) => credential,
                 Err(ScimAuthorizationError::InvalidBearer) => {
                     self.audit_denied(&ip_hash, required_scope, "invalid_token", None);
@@ -218,7 +210,7 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
 
     fn security_events_enabled(&self) -> bool {
         nazo_auth::module_admissible(
-            &self.runtime_modules.snapshot(),
+            &self.runtime_modules.load_full(),
             nazo_runtime_modules::ModuleId::ScimSecurityEvents,
             nazo_auth::CapabilityAdmission::NewRequest,
         )
@@ -226,7 +218,7 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
 
     fn security_event_delivery_enabled(&self) -> bool {
         nazo_auth::module_admissible(
-            &self.runtime_modules.snapshot(),
+            &self.runtime_modules.load_full(),
             nazo_runtime_modules::ModuleId::ScimSecurityEvents,
             nazo_auth::CapabilityAdmission::ExistingTransaction,
         )
@@ -243,13 +235,13 @@ struct AuthorizedCredential {
 }
 
 #[derive(Clone)]
-pub(crate) struct ServerScimEventSigner {
+pub struct ServerScimEventSigner {
     keyset: nazo_key_management::KeyManager,
 }
 
 impl ServerScimEventSigner {
     #[must_use]
-    pub(crate) fn new(keyset: nazo_key_management::KeyManager) -> Self {
+    pub fn new(keyset: nazo_key_management::KeyManager) -> Self {
         Self { keyset }
     }
 }
@@ -271,28 +263,13 @@ impl EventSignerPort for ServerScimEventSigner {
     }
 }
 
-fn bearer_token(request: &HttpRequest) -> Option<&str> {
-    let raw = request
-        .headers()
-        .get(header::AUTHORIZATION)?
-        .to_str()
-        .ok()?
-        .trim();
-    let (scheme, token) = raw.split_once(char::is_whitespace)?;
-    let token = token.trim();
-    (scheme.eq_ignore_ascii_case("Bearer")
-        && !token.is_empty()
-        && !token.contains(char::is_whitespace))
-    .then_some(token)
-}
-
 #[derive(Clone)]
-pub(crate) struct ServerScimCursorProtector {
+pub struct ServerScimCursorProtector {
     key: [u8; 32],
 }
 
 impl ServerScimCursorProtector {
-    pub(crate) fn new(client_secret_pepper: &str) -> anyhow::Result<Self> {
+    pub fn new(client_secret_pepper: &str) -> anyhow::Result<Self> {
         let mut mac = <HmacSha256 as KeyInit>::new_from_slice(client_secret_pepper.as_bytes())?;
         mac.update(SCIM_CURSOR_KEY_LABEL);
         Ok(Self {
@@ -322,20 +299,6 @@ impl ScimCursorProtector for ServerScimCursorProtector {
         let (ciphertext, tag) = remainder.split_at(remainder.len() - SCIM_CURSOR_TAG_LEN);
         crate::crypto::aes_256_gcm_decrypt(&self.key, nonce, SCIM_CURSOR_AAD, ciphertext, tag)
             .map_err(|_| ScimDependencyError::Unavailable)
-    }
-}
-
-#[derive(Clone, Copy)]
-pub(crate) struct ServerScimBootstrapPasswordProvider;
-
-impl ScimBootstrapPasswordProvider for ServerScimBootstrapPasswordProvider {
-    fn password_hash(&self) -> ScimFuture<'_, Result<PasswordHashInput, ScimDependencyError>> {
-        Box::pin(async {
-            let hash = hash_password_blocking_limited(random_urlsafe_token())
-                .await
-                .map_err(|_| ScimDependencyError::Unavailable)?;
-            PasswordHashInput::new(hash).map_err(|_| ScimDependencyError::Unavailable)
-        })
     }
 }
 

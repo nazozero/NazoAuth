@@ -1,12 +1,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 
-use nazo_openid4vc_http_actix::{
-    CredentialEndpointResponse, CredentialHttpError, CredentialResponseBody, PresentationHttpError,
+use nazo_openid4vci::application::{
+    CredentialEndpointResponse, CredentialHttpError, CredentialResponseBody,
 };
 use nazo_openid4vci::{
     CredentialAccess, CredentialConfiguration, CredentialError, CredentialRequest,
     CredentialResponse, CredentialResponseEncoding, StoredCredentialResponse,
 };
+use nazo_openid4vp::application::PresentationHttpError;
 use serde_json::Value;
 use uuid::Uuid;
 

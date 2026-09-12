@@ -1,0 +1,203 @@
+use std::{
+    io::{Read as _, Write as _},
+    net::TcpListener,
+    sync::Arc,
+    thread,
+    time::Duration,
+};
+
+use rcgen::{CertificateParams, KeyPair, PKCS_ECDSA_P256_SHA256};
+
+use crate::adapters::ciba_ping_tls::{
+    CIBA_PING_TLS_MAX, CIBA_PING_TLS_MIN, apply_ciba_ping_tls_policy,
+};
+
+fn test_identity() -> (
+    rustls::pki_types::PrivateKeyDer<'static>,
+    rustls::pki_types::CertificateDer<'static>,
+) {
+    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).expect("generate test P-256 key");
+    let certificate = CertificateParams::new(vec!["localhost".to_owned()])
+        .expect("certificate params")
+        .self_signed(&key)
+        .expect("self-signed certificate");
+    let private_key = rustls::pki_types::PrivatePkcs8KeyDer::from(key.serialize_der());
+    (private_key.into(), certificate.der().clone())
+}
+
+fn single_version_tls_server(
+    version: &'static rustls::SupportedProtocolVersion,
+) -> (std::net::SocketAddr, thread::JoinHandle<()>) {
+    single_version_tls_server_with_status(version, 204)
+}
+
+fn single_version_tls_server_with_status(
+    version: &'static rustls::SupportedProtocolVersion,
+    status: u16,
+) -> (std::net::SocketAddr, thread::JoinHandle<()>) {
+    let (key, certificate) = test_identity();
+    let provider = rustls::crypto::aws_lc_rs::default_provider();
+    let config = rustls::ServerConfig::builder_with_provider(Arc::new(provider))
+        .with_protocol_versions(&[version])
+        .expect("configure single-version TLS server")
+        .with_no_client_auth()
+        .with_single_cert(vec![certificate], key)
+        .expect("configure TLS test identity");
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind TLS test server");
+    let address = listener.local_addr().expect("read TLS test address");
+    let handle = thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept TLS test connection");
+        let connection =
+            rustls::ServerConnection::new(Arc::new(config)).expect("create TLS server connection");
+        let mut stream = rustls::StreamOwned::new(connection, stream);
+        if stream.conn.complete_io(&mut stream.sock).is_ok() {
+            let mut request = [0_u8; 2048];
+            let _ = stream.read(&mut request);
+            let reason = match status {
+                200 => "OK",
+                204 => "No Content",
+                400 => "Bad Request",
+                500 => "Internal Server Error",
+                _ => "Test Response",
+            };
+            let response = format!(
+                "HTTP/1.1 {status} {reason}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            );
+            stream
+                .write_all(response.as_bytes())
+                .expect("write TLS test response");
+        }
+    });
+    (address, handle)
+}
+
+async fn post_to_server(
+    address: std::net::SocketAddr,
+    server: thread::JoinHandle<()>,
+) -> reqwest::Result<reqwest::Response> {
+    let client =
+        apply_ciba_ping_tls_policy(reqwest::Client::builder().danger_accept_invalid_certs(true))
+            .expect("apply CIBA Ping TLS policy")
+            .connect_timeout(Duration::from_secs(3))
+            .timeout(Duration::from_secs(5))
+            .build()
+            .expect("build CIBA Ping test client");
+
+    let result = client
+        .post(format!("https://{address}/ciba-notification-endpoint"))
+        .send()
+        .await;
+    server.join().expect("join TLS test server");
+    result
+}
+
+async fn post_to_single_version_server(
+    version: &'static rustls::SupportedProtocolVersion,
+) -> reqwest::Result<reqwest::Response> {
+    let (address, server) = single_version_tls_server(version);
+    post_to_server(address, server).await
+}
+
+async fn post_to_single_version_server_with_status(
+    version: &'static rustls::SupportedProtocolVersion,
+    status: u16,
+) -> reqwest::Result<reqwest::Response> {
+    let (address, server) = single_version_tls_server_with_status(version, status);
+    post_to_server(address, server).await
+}
+
+#[test]
+fn ciba_ping_transport_policy_is_bounded_to_tls12_and_tls13() {
+    assert!(matches!(CIBA_PING_TLS_MIN, reqwest::tls::Version::TLS_1_2));
+    assert!(matches!(CIBA_PING_TLS_MAX, reqwest::tls::Version::TLS_1_3));
+}
+
+#[tokio::test]
+async fn ciba_ping_transport_supports_the_tls12_fapi_baseline() {
+    let response = post_to_single_version_server(&rustls::version::TLS12)
+        .await
+        .expect("CIBA Ping must interoperate with a TLS 1.2-only FAPI endpoint");
+
+    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn ciba_ping_transport_supports_tls13() {
+    let (address, server) = single_version_tls_server(&rustls::version::TLS13);
+    let response = post_to_server(address, server)
+        .await
+        .expect("CIBA Ping must offer TLS 1.3 when the endpoint supports it");
+
+    assert_eq!(response.status(), reqwest::StatusCode::NO_CONTENT);
+}
+
+#[tokio::test]
+async fn ciba_ping_transport_preserves_terminal_and_retry_http_statuses() {
+    let terminal = post_to_single_version_server_with_status(&rustls::version::TLS12, 400)
+        .await
+        .expect("TLS 1.2 endpoint should return its terminal status");
+    assert_eq!(terminal.status(), reqwest::StatusCode::BAD_REQUEST);
+
+    let retry = post_to_single_version_server_with_status(&rustls::version::TLS13, 500)
+        .await
+        .expect("TLS 1.3 endpoint should return its retry status");
+    assert_eq!(retry.status(), reqwest::StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[test]
+fn ciba_ping_sender_private_network_exceptions_require_https_origins() {
+    use super::CibaPingHttpSender;
+    let sender =
+        CibaPingHttpSender::new(&["https://Example.COM:443".to_owned()]).expect("HTTPS origin");
+    assert!(
+        sender
+            .private_network_origins
+            .contains("https://example.com")
+    );
+    for invalid in [
+        "http://example.com",
+        "https://example.com/path",
+        "https://example.com/?query=yes",
+    ] {
+        assert!(
+            CibaPingHttpSender::new(&[invalid.to_owned()]).is_err(),
+            "{invalid}"
+        );
+    }
+}
+
+#[test]
+fn ciba_ping_sender_preserves_notification_idempotency_key() {
+    assert_eq!(
+        super::ciba_ping_idempotency_key("request-hash"),
+        "nazo-ciba-ping-request-hash"
+    );
+}
+
+#[tokio::test]
+async fn ciba_ping_sender_blocks_private_networks_and_keeps_certificate_validation_for_exceptions()
+{
+    use nazo_oauth_server::{
+        ports::transient_state::CibaPingDelivery, workers::ciba_ping::CibaPingSender,
+    };
+    let (address, server) = single_version_tls_server(&rustls::version::TLS13);
+    let origin = format!("https://{address}");
+    let delivery = CibaPingDelivery {
+        auth_req_id_hash: "request-hash".into(),
+        auth_req_id: "request-id".into(),
+        endpoint: format!("{origin}/notify"),
+        client_notification_token: uuid::Uuid::now_v7().to_string(),
+        attempts: 0,
+        expires_at: chrono::Utc::now().timestamp() + 60,
+    };
+    let denied = super::CibaPingHttpSender::new(&[])
+        .unwrap()
+        .send(&delivery)
+        .await
+        .unwrap_err();
+    assert!(denied.to_string().contains("blocked network"));
+    let sender = super::CibaPingHttpSender::new(&[origin]).unwrap();
+    let error = sender.send(&delivery).await.unwrap_err();
+    assert!(error.to_string().contains("CIBA ping request failed"));
+    server.join().unwrap();
+}

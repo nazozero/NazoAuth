@@ -8,11 +8,15 @@ use actix_web::{
     test, web,
 };
 use nazo_http_actix::{
-    AuthenticationRateLimitError, ClientIpConfig, ClientIpHeaderMode, MfaBackupCodesRegenerated,
-    MfaChallengeCommand, MfaChallengeSuccess, MfaCodeCommand, MfaProfileConfig, MfaProfileEndpoint,
+    ClientIpConfig, ClientIpHeaderMode, MfaProfileConfig, MfaProfileEndpoint,
+    configure_mfa_challenge_route, configure_mfa_profile_routes,
+};
+use nazo_oauth_server::contracts::local_registration::AuthenticationRateLimitError;
+use nazo_oauth_server::contracts::mfa_profile::{
+    MfaBackupCodesRegenerated, MfaChallengeCommand, MfaChallengeSuccess, MfaCodeCommand,
     MfaProfileError, MfaProfileErrorKind, MfaProfileFuture, MfaProfileOperations,
     MfaRequestContext, MfaSessionRotation, MfaStepUpSuccess, MfaTotpConfirmation,
-    MfaTotpEnrollment, configure_mfa_challenge_route, configure_mfa_profile_routes,
+    MfaTotpEnrollment,
 };
 
 #[derive(Clone, Default)]

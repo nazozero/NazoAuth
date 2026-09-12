@@ -204,7 +204,7 @@ docker run -d --name "$MINIO_CONTAINER" \
   --publish 127.0.0.1:9000:9000 \
   --env MINIO_ROOT_USER=sharedstate-test \
   --env MINIO_ROOT_PASSWORD=sharedstate-test-only \
-  docker.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
+  quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
   server /data
 
 services_ready=false
@@ -367,7 +367,7 @@ COVERAGE_LIVE_TESTS=(
   par_fapi2_rejects_shared_secret_client_auth_after_authentication
 )
 for test_name in "${COVERAGE_LIVE_TESTS[@]}"; do
-  cargo test --locked -p nazo-oauth-server --lib "$test_name" -- --ignored
+  cargo test --locked -p nazoauth --lib "$test_name" -- --ignored
 done
 
 # Export exactly the test executables recorded by Cargo's JSON artifact stream.

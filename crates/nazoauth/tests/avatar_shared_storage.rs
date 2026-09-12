@@ -151,9 +151,9 @@ async fn browser_put(
     target: &nazo_identity::ports::AvatarUploadTarget,
     bytes: &[u8],
 ) -> Result<(), String> {
-    let method = reqwest::Method::from_bytes(target.method.as_bytes())
+    let method = reqwest_012::Method::from_bytes(target.method.as_bytes())
         .map_err(|error| format!("invalid upload method: {error}"))?;
-    let client = reqwest::Client::new();
+    let client = reqwest_012::Client::new();
     let mut request = client.request(method, &target.url);
     for (name, value) in &target.headers {
         request = request.header(name, value);

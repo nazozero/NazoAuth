@@ -8,9 +8,10 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::{
-    ExternalKeyRegistration, KeyRecord, KeyRecordStatus, LocalKeyRegistration, Openid4vcMaterial,
-    Openid4vcState, PersistedSigningKeyset, SealedKeyMaterial, SigningKeyRepository,
-    SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult, SigningKeysetCreateResult,
+    ExternalKeyRegistration, ExternalKeySigner, KeyRecord, KeyRecordStatus, LocalKeyRegistration,
+    Openid4vcMaterial, Openid4vcState, PersistedSigningKeyset, SealedKeyMaterial,
+    SigningKeyRepository, SigningKeyWrappingKeyRing, SigningKeysetCompareAndSwapResult,
+    SigningKeysetCreateResult,
     model::{
         ActiveSigningKey, ExternalSigningKey, KeyHandle, KeySettings, KeyState, LoadedKeyset,
         ManagedKey, StoredVerificationKey,
@@ -26,6 +27,7 @@ const MAX_CAS_ATTEMPTS: usize = 8;
 
 pub(crate) async fn load_or_create(
     settings: &KeySettings,
+    external_signer: Option<Arc<dyn ExternalKeySigner>>,
     tenant_id: Uuid,
     repository: Arc<dyn SigningKeyRepository>,
     wrapping_keys: SigningKeyWrappingKeyRing,
@@ -43,6 +45,7 @@ pub(crate) async fn load_or_create(
         tenant_id,
         repository,
         wrapping_keys,
+        external_signer,
     };
     // Startup is a lifecycle boundary.  Do not wait for the periodic refresh
     // before creating a required prepublished key or promoting one that has
@@ -55,6 +58,7 @@ pub(crate) struct DatabaseKeysetBinding {
     pub(crate) tenant_id: Uuid,
     pub(crate) repository: Arc<dyn SigningKeyRepository>,
     pub(crate) wrapping_keys: SigningKeyWrappingKeyRing,
+    pub(crate) external_signer: Option<Arc<dyn ExternalKeySigner>>,
 }
 
 pub(crate) async fn refresh(
@@ -68,21 +72,26 @@ pub(crate) async fn refresh(
 }
 
 pub(crate) async fn list(
-    settings: &KeySettings,
+    _settings: &KeySettings,
     binding: &DatabaseKeysetBinding,
 ) -> anyhow::Result<Vec<KeyRecord>> {
     let record = require_record(binding).await?;
     let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
-    let _ = load_payload(settings, &payload)?;
+    let _ = load_payload(binding.external_signer.as_ref(), &payload)?;
     records(&payload)
 }
 
 pub(crate) async fn validate(
-    settings: &KeySettings,
+    _settings: &KeySettings,
     binding: &DatabaseKeysetBinding,
 ) -> anyhow::Result<()> {
     let record = require_record(binding).await?;
-    let _ = load_record(settings, binding.tenant_id, &binding.wrapping_keys, &record)?;
+    let _ = load_record(
+        binding.external_signer.as_ref(),
+        binding.tenant_id,
+        &binding.wrapping_keys,
+        &record,
+    )?;
     Ok(())
 }
 
@@ -173,11 +182,11 @@ pub(crate) async fn register_external(
 
 pub(crate) async fn openid4vc_state(
     binding: &DatabaseKeysetBinding,
-    settings: &KeySettings,
+    _settings: &KeySettings,
 ) -> anyhow::Result<Openid4vcState> {
     let record = require_record(binding).await?;
     let payload = decrypt_payload(binding.tenant_id, &binding.wrapping_keys, &record)?;
-    load_payload(settings, &payload)?;
+    load_payload(binding.external_signer.as_ref(), &payload)?;
     Ok(Openid4vcState {
         revision: record.revision,
         material: payload
@@ -249,7 +258,7 @@ pub(crate) async fn commit_openid4vc(
     }
     payload["openid4vc"] = serde_json::to_value(material)?;
     // Validate the entire candidate before the sole externally visible write.
-    let loaded = load_payload(settings, &payload)?;
+    let loaded = load_payload(binding.external_signer.as_ref(), &payload)?;
     let revision = record
         .revision
         .checked_add(1)
@@ -332,7 +341,7 @@ async fn require_record(binding: &DatabaseKeysetBinding) -> anyhow::Result<Persi
 
 async fn update<F>(
     binding: &DatabaseKeysetBinding,
-    settings: &KeySettings,
+    _settings: &KeySettings,
     reseal_if_current_key_changed: bool,
     mut mutation: F,
 ) -> anyhow::Result<LoadedKeyset>
@@ -346,7 +355,7 @@ where
             && (!reseal_if_current_key_changed
                 || record.wrapping_key_id == binding.wrapping_keys.current_id())
         {
-            return load_payload(settings, &payload);
+            return load_payload(binding.external_signer.as_ref(), &payload);
         }
         let revision = record
             .revision
@@ -360,7 +369,12 @@ where
             .await?
         {
             SigningKeysetCompareAndSwapResult::Applied(record) => {
-                return load_record(settings, binding.tenant_id, &binding.wrapping_keys, &record);
+                return load_record(
+                    binding.external_signer.as_ref(),
+                    binding.tenant_id,
+                    &binding.wrapping_keys,
+                    &record,
+                );
             }
             SigningKeysetCompareAndSwapResult::Conflict(winner) => record = winner,
         }
@@ -619,15 +633,18 @@ fn decrypt_payload(
 }
 
 fn load_record(
-    settings: &KeySettings,
+    external_signer: Option<&Arc<dyn ExternalKeySigner>>,
     tenant_id: Uuid,
     keys: &SigningKeyWrappingKeyRing,
     record: &PersistedSigningKeyset,
 ) -> anyhow::Result<LoadedKeyset> {
-    load_payload(settings, &decrypt_payload(tenant_id, keys, record)?)
+    load_payload(external_signer, &decrypt_payload(tenant_id, keys, record)?)
 }
 
-fn load_payload(settings: &KeySettings, payload: &Value) -> anyhow::Result<LoadedKeyset> {
+fn load_payload(
+    external_signer: Option<&Arc<dyn ExternalKeySigner>>,
+    payload: &Value,
+) -> anyhow::Result<LoadedKeyset> {
     if payload.get("schema_version").and_then(Value::as_str) != Some(KEYSET_SCHEMA_VERSION) {
         anyhow::bail!("database keyset has unsupported schema version");
     }
@@ -704,15 +721,12 @@ fn load_payload(settings: &KeySettings, payload: &Value) -> anyhow::Result<Loade
                     .ok_or_else(|| anyhow!("external key {kid} missing key_ref"))?
                     .to_owned();
                 let signing = if kid == active_kid {
-                    if settings.external_command.is_empty() {
-                        anyhow::bail!(
-                            "SIGNING_EXTERNAL_COMMAND is required for active external-command key {kid}"
-                        );
-                    }
-                    Some(ActiveSigningKey::ExternalCommand(ExternalSigningKey {
-                        command: Arc::new(settings.external_command.clone()),
+                    let signer = external_signer.cloned().ok_or_else(|| anyhow!(
+                        "external signing capability is required for active external-command key {kid}"
+                    ))?;
+                    Some(ActiveSigningKey::External(ExternalSigningKey {
                         key_ref: key_ref.clone(),
-                        timeout: settings.external_timeout,
+                        signer,
                     }))
                 } else {
                     None

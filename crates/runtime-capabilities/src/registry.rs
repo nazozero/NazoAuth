@@ -59,4 +59,9 @@ where
                 .collect(),
         }
     }
+
+    #[must_use]
+    pub fn snapshot_store(&self) -> Arc<SnapshotStore> {
+        Arc::clone(&self.snapshots)
+    }
 }

@@ -1,86 +1,34 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+#[cfg(test)]
+use nazo_identity::{PasskeyLoginBegin, PasskeyRegistrationBegin};
+use nazo_oauth_server::contracts::local_registration::{
+    AuthenticationRateLimit, AuthenticationRateLimitError,
+};
+#[cfg(test)]
+use nazo_oauth_server::contracts::passkey::PasskeyFuture;
+use nazo_oauth_server::contracts::passkey::{
+    PasskeyEndpointError, PasskeyLoginFinishCommand, PasskeyLoginOperations, PasskeyProfileContext,
+    PasskeyProfileOperations, PasskeyRegistrationFinishCommand,
+};
+
+use std::sync::Arc;
 
 use actix_web::{
     HttpRequest, HttpResponse,
     http::{StatusCode, header},
     web::{self, Data, Json, Path, ServiceConfig},
 };
-use chrono::{DateTime, Utc};
-use nazo_identity::{
-    LoginSuccess, PasskeyError, PasskeyLoginBegin, PasskeyRegistrationBegin, RememberedMfaProof,
-    ports::PasskeyCredential,
-};
+use chrono::Utc;
+use nazo_identity::{LoginSuccess, PasskeyError, RememberedMfaProof, ports::PasskeyCredential};
 use passkey_auth::{AuthenticationResponse, RegistrationResponse};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::{
-    AuthenticationRateLimit, AuthenticationRateLimitError, ClientIpConfig,
-    authorization_error_response, clear_cookie, client_ip_with_config, cookie_value, csrf_error,
-    empty_response_no_store, has_valid_csrf_token_for_cookies, json_response_no_store,
-    json_response_status_no_store, make_cookie, with_cookie_headers,
+    ClientIpConfig, authorization_error_response, clear_cookie, client_ip_with_config,
+    cookie_value, csrf_error, empty_response_no_store, has_valid_csrf_token_for_cookies,
+    json_response_no_store, json_response_status_no_store, make_cookie, with_cookie_headers,
 };
-
-pub type PasskeyFuture<'a, T> =
-    Pin<Box<dyn Future<Output = Result<T, PasskeyEndpointError>> + Send + 'a>>;
-
-#[derive(Debug)]
-pub enum PasskeyEndpointError {
-    Core(PasskeyError),
-    SessionMissing,
-    SessionUnavailable,
-}
-
-impl From<PasskeyError> for PasskeyEndpointError {
-    fn from(error: PasskeyError) -> Self {
-        Self::Core(error)
-    }
-}
-
-pub struct PasskeyLoginFinishCommand {
-    pub ceremony_id: String,
-    pub response: AuthenticationResponse,
-    pub source_ip: String,
-    pub remembered_mfa: Option<RememberedMfaProof>,
-    pub previous_session_id: Option<String>,
-    pub now: DateTime<Utc>,
-}
-
-pub trait PasskeyLoginOperations: Send + Sync {
-    fn login_begin(&self, email: String) -> PasskeyFuture<'_, PasskeyLoginBegin>;
-
-    fn login_finish(&self, command: PasskeyLoginFinishCommand) -> PasskeyFuture<'_, LoginSuccess>;
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct PasskeyProfileContext {
-    pub session_id: String,
-    pub now: i64,
-}
-
-pub struct PasskeyRegistrationFinishCommand {
-    pub context: PasskeyProfileContext,
-    pub ceremony_id: String,
-    pub response: RegistrationResponse,
-}
-
-pub trait PasskeyProfileOperations: Send + Sync {
-    fn registration_begin(
-        &self,
-        context: PasskeyProfileContext,
-        label: Option<String>,
-    ) -> PasskeyFuture<'_, PasskeyRegistrationBegin>;
-
-    fn registration_finish(
-        &self,
-        command: PasskeyRegistrationFinishCommand,
-    ) -> PasskeyFuture<'_, PasskeyCredential>;
-
-    fn list(&self, context: PasskeyProfileContext) -> PasskeyFuture<'_, Vec<PasskeyCredential>>;
-
-    fn delete(&self, context: PasskeyProfileContext, passkey_id: Uuid) -> PasskeyFuture<'_, ()>;
-}
 
 #[derive(Clone)]
 pub struct PasskeyLoginConfig {

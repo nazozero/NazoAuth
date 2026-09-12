@@ -28,7 +28,7 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `identity` | `nazo-identity` | Framework-independent users, tenants, organizations, login, sessions, MFA, passkeys, verification, federation, external identities, subject claims, and authentication context. It depends on `nazo-scim-events` for SCIM event types, not on `nazo-auth`, Actix, Diesel, Fred, or database rows. |
 | `resource-server` | `nazo-resource-server` | Standalone JWT access-token and sender-constraint verification. It is independent of the authorization server, identity, and every Web framework. |
 | `http-signatures` | `nazo-http-signatures` | Reusable HTTP Message Signatures, structured-field, content-digest, signing, and verification primitives. Authorization-server FAPI policy remains in `nazo-auth`. |
-| `key-management` | `nazo-key-management` | Key generation, purpose-specific lifecycle, rotation, JWKS material, signing implementations, external-command signing, and OpenID4VC signing material. It keeps KMS/HSM integration at the key boundary. |
+| `key-management` | `nazo-key-management` | Key generation, purpose-specific lifecycle, rotation, JWKS material, signing implementations, an external-signer port, and OpenID4VC signing material. The native host owns external-command execution and refresh scheduling. |
 | `operator-protocol` | `nazo-operator-protocol` | Versioned signed control-operation requests, receipts, identity and recovery contracts shared by the runtime and NazoAuthCtl. It contains no host-execution adapter. |
 | `scim-events` | `nazo-scim-events` | Framework-neutral SCIM security-event and delivery data types used by identity, persistence, and HTTP presentation. |
 | `openid4vci` | `nazo-openid4vci` | Framework-independent OpenID4VCI issuance protocol types, validation, and transaction behavior. |
@@ -37,13 +37,13 @@ package names retain the `nazo-` namespace and do not determine directory names.
 | `persistence-postgres` | `nazo-postgres` | Durable PostgreSQL adapter: Diesel schema and rows, pool, queries, repository implementations, explicit row/domain conversion, migrations, and transaction boundaries. Rows never leave this crate. |
 | `state-store-valkey` | `nazo-valkey` | Atomic state-store adapter: Fred connection handling, stable keys and payloads, TTL, Lua operations, replay/session/short-lived protocol state, and rate-limit storage. It owns storage mechanics, not protocol or identity policy. |
 | `runtime-capabilities` | `nazo-runtime-modules` | Runtime-controllable protocol capability identifiers, desired and actual lifecycle state, revision rules, immutable active snapshots, dependency checks, disable policy, request leases, and audit event types. It is not a generic plugin or miscellaneous-module crate. |
-| `http-actix` | `nazo-http-actix` | Actix extraction, request context, CORS, middleware, security headers, protocol response presentation, and Actix-specific integration. It does not query Diesel or Fred and does not construct token claims. |
+| `http-actix` | `nazo-http-actix` | Actix extraction, request context, CORS, middleware, security headers, protocol response presentation, and Actix-specific integration over application capabilities. It depends on `nazo-oauth-server`, does not query Diesel or Fred, and does not construct token claims. |
 | `openid4vc-http-actix` | `nazo-openid4vc-http-actix` | Actix transport adapters for the OpenID4VCI and OpenID4VP cores, including their controller-protocol protected management surface. |
-| `authorization-server` | `nazo-oauth-server` | Database-neutral application composition: validates configuration, builds tenant service graphs from semantic bindings, registers static routes, resolves each request to its tenant graph, and starts Actix. Ordinary handlers receive only focused handles. |
-| `authorization-server-postgres` | `nazo-oauth-server-postgres` | PostgreSQL launcher adapter. It binds PostgreSQL repositories to the server persistence ports and has no Valkey dependency. |
-| `authorization-server-valkey` | `nazo-oauth-server-valkey` | Valkey launcher adapter. It owns Valkey configuration, connection setup, namespace binding, and transient-state port composition, with no persistent-database dependency. |
-| `authorization-server-object-store` | `nazo-oauth-server-object-store` | Avatar object-storage launcher adapter. It selects local or S3-compatible tenant-scoped storage and produces only the server's object-store binding. |
-| `nazoauth` | `nazoauth` | Thin aggregate and the only production executable. It selects the PostgreSQL, Valkey, and avatar-storage launchers without owning their implementations. |
+| `authorization-server` | `nazo-oauth-server` | Host-independent application capabilities: authorization and token flows, domain operations, typed contracts, semantic ports, and worker operations. It does not load process configuration, register Actix routes, open connections, or schedule native background tasks. |
+| `authorization-server-postgres` | `nazo-oauth-server-postgres` | PostgreSQL provider: binds an existing pool and repositories to application persistence ports. Native startup, migration/operator execution, and pool construction belong to `nazoauth`. It has no Valkey dependency. |
+| `authorization-server-valkey` | `nazo-oauth-server-valkey` | Valkey provider: composes tenant-scoped transient-state ports and namespace bindings from a supplied client, with no persistent-database dependency. The native launcher owns configuration and connection startup. |
+| `authorization-server-object-store` | `nazo-oauth-server-object-store` | Concrete S3-compatible avatar storage, including credentials and request signing. The native host selects local or S3 storage and constructs the tenant binding. |
+| `nazoauth` | `nazoauth` | Native host and production executable: configuration, launchers, tenant/bootstrap composition, HTTP wiring, CLI/operator tasks, TLS, process adapters, local storage, and background scheduling. It calls application capabilities and concrete infrastructure adapters. |
 
 The historical Axum/Tower and tonic adapters are removed. Only Actix transport
 integration is maintained. The generic resource-server core may use the
@@ -53,50 +53,27 @@ framework-neutral `http` types without becoming a Web-framework adapter.
 
 Dependencies point from policy consumers to stable domain APIs and from
 infrastructure adapters to the ports they implement. The composition root is
-the only package expected to see every concrete launch adapter. The following
-is the current direct workspace shape; an arrow means the left-hand package
-depends on the named workspace package(s), not that it uses every API on every
-request.
+the only package expected to see every concrete launch adapter. The manifests are the authority for individual direct dependencies. The main
+ownership direction is:
 
 ```text
-digital-credentials, http-signatures, operator-protocol,
-resource-server, runtime-capabilities, scim-events -> no other NazoAuth crate
-
-openid4vci, openid4vp -> digital-credentials
-identity             -> scim-events
-authorization-server-core -> identity, runtime-capabilities
-key-management       -> authorization-server-core, digital-credentials
-persistence          -> authorization-server-core, identity, operator-protocol,
-                        openid4vci, openid4vp, runtime-capabilities
-persistence-postgres -> persistence, authorization-server-core, identity,
-                        key-management, resource-server, runtime-capabilities,
-                        scim-events, digital-credentials, openid4vci, openid4vp,
-                        operator-protocol
-state-store-valkey   -> authorization-server-core, identity, resource-server
-http-actix           -> authorization-server-core, http-signatures, identity,
-                        resource-server, runtime-capabilities, scim-events
-openid4vc-http-actix -> digital-credentials, openid4vci, openid4vp,
-                        operator-protocol
-authorization-server -> authorization-server-core, http-signatures, http-actix,
-                        identity, key-management, persistence, resource-server,
-                        runtime-capabilities, scim-events, digital-credentials,
-                        openid4vci, openid4vp, openid4vc-http-actix,
-                        operator-protocol; no database or Valkey adapter
-authorization-server-postgres -> authorization-server, persistence-postgres,
-                        authorization-server-core, identity, key-management,
-                        persistence, resource-server, scim-events, openid4vci
-authorization-server-valkey -> authorization-server, state-store-valkey,
-                        authorization-server-core, identity, resource-server
-authorization-server-object-store -> authorization-server, identity
-nazoauth -> authorization-server, authorization-server-postgres,
-            authorization-server-valkey, authorization-server-object-store
+native host (nazoauth) -> application, HTTP adapters, infrastructure adapters
+HTTP adapters         -> application capabilities and domain APIs
+application           -> domain APIs and semantic ports
+driver adapters       -> the ports they implement
 ```
+`authorization-server` owns the application layer; `nazoauth` owns native
+composition. A type using framework-neutral `http`, futures, or `Arc` does not
+by itself create a native-host dependency. See each crate's `Cargo.toml` for
+the current dependency edges rather than copying an exhaustive graph here.
+
 
 The enforced prohibitions are more important than a broad graph:
 
 - `identity` does not depend on `authorization-server-core`.
 - `resource-server` does not depend on `authorization-server-core`, `identity`, or Actix.
 - `authorization-server-core` does not depend on Actix, PostgreSQL, Diesel,
+- `authorization-server` does not depend on Actix, native launchers, or database/state drivers.
   Valkey, Fred, or rows.
 - `http-actix` does not depend on Diesel or Fred.
 - no crate cycle, workspace-wide prelude, or cross-crate glob re-export is
@@ -216,15 +193,7 @@ Production/test source boundaries, private-unit mounts, support seams, and
 integration-test placement are normative in [testing.md](testing.md). The
 static-contract gate enforces that structure across every workspace crate.
 
-The final local gate is:
-
-```sh
-cargo fmt --check
-cargo check --workspace --all-targets --all-features --locked
-cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
-cargo test --workspace --all-features --locked
-```
-
-Integration, migration, HTTP E2E, security, concurrency, fault-injection,
-container, deployment, and conformance gates remain additional requirements;
-passing the four Cargo commands does not replace them.
+Use the commands and isolated service prerequisites in
+[testing.md](testing.md#verification). Choose validation for the changed
+boundary; source checks do not establish deployment, conformance, or load-test
+results. Historical reports apply only to their recorded revisions.

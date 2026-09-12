@@ -1,4 +1,15 @@
-use std::sync::Arc;
+use std::{future::Future, pin::Pin, sync::Arc};
+
+use nazo_auth::TokenInspection;
+use nazo_oauth_server::contracts::{
+    token_client_auth::TokenClientAuthTransportFacts,
+    token_forms::TokenOnlyForm,
+    token_management::{
+        TokenIntrospectionRepresentation, TokenManagementError, TokenManagementFuture,
+        TokenManagementOperations, TokenManagementRateLimitError, TokenManagementRequestFacts,
+        TokenManagementRequestGuard,
+    },
+};
 
 use actix_web::{App, http::header, middleware::from_fn, test, web};
 

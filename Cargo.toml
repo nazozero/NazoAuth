@@ -29,7 +29,7 @@ resolver = "3"
 exclude = ["fuzz"]
 
 [workspace.package]
-version = "0.2.15"
+version = "0.2.16"
 edition = "2024"
 license = "AGPL-3.0-or-later"
 repository = "https://github.com/nazozero/NazoAuth"
@@ -59,6 +59,7 @@ fs2 = "0.4.3"
 futures-util = "0.3.32"
 futures-executor = "0.3.32"
 hmac = "0.13.0"
+http = "1.4.2"
 image = { version = "0.25.10", default-features = false, features = ["jpeg", "png", "webp"] }
 jsonwebtoken = { version = "11.0.0", default-features = false }
 mdoc-rs = { version = "0.2.0", default-features = false, features = ["issue"] }

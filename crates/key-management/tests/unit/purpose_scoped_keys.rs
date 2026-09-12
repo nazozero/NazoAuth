@@ -1,12 +1,10 @@
-use std::{collections::BTreeSet, time::Duration};
+use std::collections::BTreeSet;
 
 use crate::{KeyRecordStatus, KeySettings, LocalKeyRegistration, test_support::key_manager};
 use nazo_auth::{SignError, SignRequest, Signer, SigningPurpose};
 
 fn settings(rotation_interval: chrono::Duration) -> KeySettings {
     KeySettings {
-        external_command: Vec::new(),
-        external_timeout: Duration::from_secs(2),
         rotation_interval,
         prepublish_window: chrono::Duration::zero(),
         verification_grace: chrono::Duration::minutes(10),

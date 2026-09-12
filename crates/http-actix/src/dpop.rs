@@ -6,14 +6,9 @@ use actix_web::{
     },
 };
 use nazo_auth::DpopError;
+use nazo_oauth_server::contracts::request_facts::DpopErrorContext;
 
 use crate::oauth_error;
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum DpopErrorContext {
-    TokenEndpoint,
-    ProtectedResource,
-}
 
 pub fn dpop_proof_present(headers: &HeaderMap) -> bool {
     headers.contains_key(HeaderName::from_static("dpop"))
@@ -32,17 +27,6 @@ pub fn dpop_proof_header(headers: &HeaderMap) -> Result<Option<&str>, DpopError>
         .map_err(|_| DpopError::MalformedProof)?
         .trim();
     Ok((!value.is_empty()).then_some(value))
-}
-
-/// Builds the exact configured endpoint URIs accepted by the DPoP core.
-///
-/// The request Host and forwarding headers are intentionally not consulted;
-/// trusted deployment configuration remains the authority for external URIs.
-pub fn dpop_target_uris(issuer: &str, mtls_endpoint_base_url: &str, path: &str) -> [String; 2] {
-    [
-        format!("{}{path}", issuer.trim_end_matches('/')),
-        format!("{}{path}", mtls_endpoint_base_url.trim_end_matches('/')),
-    ]
 }
 
 pub fn dpop_error_response(error: DpopError, context: DpopErrorContext) -> HttpResponse {

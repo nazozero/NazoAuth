@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use nazo_oauth_server_object_store::AvatarObjectStoreLauncher;
-use nazo_oauth_server_postgres::PostgresLauncher;
-use nazo_oauth_server_valkey::ValkeyTransientStateLauncher;
+use nazoauth::launchers::object_store::AvatarObjectStoreLauncher;
+use nazoauth::launchers::postgres::PostgresLauncher;
+use nazoauth::launchers::valkey::ValkeyTransientStateLauncher;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    nazo_oauth_server::cli::run(
+    nazoauth::cli::run(
         std::env::args(),
         Arc::new(PostgresLauncher),
         Arc::new(ValkeyTransientStateLauncher),

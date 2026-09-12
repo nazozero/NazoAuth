@@ -1,10 +1,10 @@
 use std::sync::Arc;
 
-use nazo_auth::{RequestRateLimitBucket, RequestRateLimitPort};
-use nazo_http_actix::{
+use crate::contracts::local_registration::{
     AuthenticationRateLimit, AuthenticationRateLimitError, LocalRegistrationFuture,
     LocalRegistrationOperations,
 };
+use nazo_auth::{RequestRateLimitBucket, RequestRateLimitPort};
 use nazo_identity::{
     RegisterLocalAccountError, RegisterLocalAccountInput, RegistrationService,
     SendVerificationCodeError, SendVerificationCodeOutcome,
@@ -13,12 +13,12 @@ use nazo_identity::{
 };
 
 #[derive(Clone)]
-pub(crate) struct ServerLocalRegistrationOperations<V, H, E> {
+pub struct ServerLocalRegistrationOperations<V, H, E> {
     service: RegistrationService<V, H, E>,
 }
 
 impl<V, H, E> ServerLocalRegistrationOperations<V, H, E> {
-    pub(crate) fn new(service: RegistrationService<V, H, E>) -> Self {
+    pub fn new(service: RegistrationService<V, H, E>) -> Self {
         Self { service }
     }
 }
@@ -72,14 +72,14 @@ where
 /// Backend failures and counters are converted to the HTTP-facing typed
 /// boundary; response rendering remains in `nazo-http-actix`.
 #[derive(Clone)]
-pub(crate) struct ServerAuthenticationRateLimit {
+pub struct ServerAuthenticationRateLimit {
     store: Arc<dyn RequestRateLimitPort>,
     window_seconds: u64,
     max_requests: u64,
 }
 
 impl ServerAuthenticationRateLimit {
-    pub(crate) fn new(
+    pub fn new(
         store: Arc<dyn RequestRateLimitPort>,
         window_seconds: u64,
         max_requests: u64,
@@ -119,7 +119,3 @@ impl AuthenticationRateLimit for ServerAuthenticationRateLimit {
         })
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/unit/domain/local_registration.rs"]
-mod tests;

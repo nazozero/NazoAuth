@@ -26,6 +26,10 @@ pub struct IpCidr {
 }
 
 impl ClientIpConfig {
+    pub fn trusted_proxy_cidrs(&self) -> &[IpCidr] {
+        &self.trusted_proxy_cidrs
+    }
+
     #[must_use]
     pub fn new(trusted_proxy_cidrs: &[IpCidr], header_mode: ClientIpHeaderMode) -> Self {
         Self {

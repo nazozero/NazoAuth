@@ -7,23 +7,4 @@
 
 mod s3;
 
-use nazo_identity::TenantId;
-use nazo_oauth_server::bootstrap::{
-    ServerAvatarObjectStoreProvider, ServerAvatarStorageCapability,
-};
-
-/// Composition marker for the existing server-multipart local avatar path.
-/// It deliberately has no direct-object implementation.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct LocalAvatarObjectStoreProvider;
-
-impl ServerAvatarObjectStoreProvider for LocalAvatarObjectStoreProvider {
-    fn for_tenant(&self, _tenant_id: TenantId) -> ServerAvatarStorageCapability {
-        ServerAvatarStorageCapability::Local { directory: None }
-    }
-}
-
-pub use s3::{
-    AvatarObjectStoreLauncher, S3AvatarObjectStore, S3AvatarObjectStoreConfig,
-    S3AvatarObjectStoreProvider,
-};
+pub use s3::{S3AvatarObjectStore, S3AvatarObjectStoreConfig};

@@ -1,0 +1,1744 @@
+#[path = "../../../../../authorization-server/tests/support/authorization_code.rs"]
+mod code_fixture;
+use code_fixture::{VALID_CODE_VERIFIER, code_payload, form_for_code};
+
+use crate::test_support::token_response_body as response_body;
+use response_body::oauth_error_code;
+
+use crate::test_support::TestInfrastructure;
+use actix_web::HttpRequest;
+use actix_web::HttpResponse;
+use actix_web::http::StatusCode;
+use chrono::Utc;
+use nazo_auth::DpopError;
+use nazo_auth::ValidatedClientAssertion;
+use nazo_oauth_server::contracts::token_forms::TokenForm;
+use nazo_oauth_server::crypto::blake3_hex;
+use nazo_oauth_server::crypto::pkce_s256;
+use nazo_oauth_server::domain::oauth::AuthorizationCodeState;
+use nazo_oauth_server::domain::oauth::CodePayload;
+use nazo_oauth_server::domain::oauth::ConsumedAuthorizationCode;
+use nazo_oauth_server::domain::oauth::RefreshTokenPolicy;
+use nazo_oauth_server::domain::rows::ClientRow;
+use nazo_oauth_server::services::ServerTokenService;
+use nazo_oauth_server::token::authorization_code::AuthorizationCodeConsumption;
+use nazo_oauth_server::token::authorization_code::AuthorizationCodeIssueInput;
+use nazo_oauth_server::token::authorization_code::authorization_code_client_mismatch_response;
+use nazo_oauth_server::token::authorization_code::authorization_code_dpop_error_response;
+use nazo_oauth_server::token::authorization_code::authorization_code_grant_key;
+use nazo_oauth_server::token::authorization_code::authorization_code_mtls_holder_error_response;
+use nazo_oauth_server::token::authorization_code::begin_authorization_code_consumption_with_service;
+use nazo_oauth_server::token::authorization_code::load_pending_authorization_code_payload_with_service;
+use nazo_oauth_server::token::authorization_code::redirect_uri_matches_authorization_request;
+use nazo_oauth_server::token::authorization_code::refresh_token_dpop_binding;
+use nazo_oauth_server::token::authorization_code::token_authorization_code_with_service;
+use nazo_oauth_server::token::authorization_code::token_issue_from_authorization_code;
+use nazo_oauth_server::token::authorization_code::validate_pending_authorization_code_request;
+use nazo_oauth_server::token::issue::TokenIssuanceContext;
+
+use nazo_valkey::test_support::authorization_code_storage_key as authorization_code_key;
+
+use nazo_identity::DEFAULT_ORGANIZATION_ID;
+
+use nazo_identity::DEFAULT_REALM_ID;
+
+use nazo_identity::DEFAULT_TENANT_ID;
+
+use crate::settings::Settings;
+
+use crate::test_support::valkey::valkey_get;
+
+use crate::test_support::valkey::valkey_set_ex;
+
+use actix_web::http::header;
+
+use actix_web::http::header::HeaderValue;
+
+use actix_web::web::Data;
+
+use base64::Engine;
+
+use chrono::{DateTime, Duration};
+
+use nazo_auth::OidcClaimRequest;
+
+use serde_json::{Value, json};
+
+use uuid::Uuid;
+
+fn test_token_service(state: &TestInfrastructure) -> ServerTokenService {
+    ServerTokenService::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        state.keyset.clone(),
+    )
+}
+
+async fn load_pending_authorization_code_payload(
+    state: &TestInfrastructure,
+    code_hash: &str,
+) -> Result<Option<Box<CodePayload>>, HttpResponse> {
+    load_pending_authorization_code_payload_with_service(&test_token_service(state), code_hash)
+        .await
+        .map_err(nazo_http_actix::oauth_endpoint_error_response)
+}
+
+async fn begin_authorization_code_consumption(
+    state: &TestInfrastructure,
+    code_hash: &str,
+) -> Result<AuthorizationCodeConsumption, HttpResponse> {
+    begin_authorization_code_consumption_with_service(&test_token_service(state), code_hash)
+        .await
+        .map_err(nazo_http_actix::oauth_endpoint_error_response)
+}
+
+pub(crate) async fn token_authorization_code(
+    state: &TestInfrastructure,
+    req: &HttpRequest,
+    client: &ClientRow,
+    form: &TokenForm,
+    client_assertion: Option<&ValidatedClientAssertion>,
+) -> HttpResponse {
+    let service = test_token_service(state);
+    let config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
+    let modules = state.active_module_snapshot();
+    let authorization = crate::http::token::issue::test_support::test_authorization_service(state);
+    crate::http::token::issue::test_support::present_token_result(
+        token_authorization_code_with_service(
+            &service,
+            &TokenIssuanceContext {
+                config: &config,
+                modules: &modules,
+                authorization: &authorization,
+                security_audit: crate::http::authorization::test_support::test_security_audit(),
+                remote_client_documents: crate::test_support::test_remote_client_documents(),
+            },
+            &crate::http::token::issue::test_support::token_request_facts(
+                req,
+                state.settings.as_ref(),
+            ),
+            client,
+            form,
+            client_assertion,
+            None,
+        )
+        .await,
+    )
+}
+
+use crate::schema::{access_token_revocations, oauth_tokens};
+use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+use diesel::prelude::*;
+use diesel::sql_query;
+use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
+use diesel_async::RunQueryDsl;
+use fred::interfaces::ClientLike;
+use fred::prelude::{
+    Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
+};
+use std::sync::Arc;
+use std::time::Duration as StdDuration;
+
+use crate::config::ConfigSource;
+use crate::test_support::DatabaseUserFixture;
+use nazo_auth::pairwise_subject as oidc_subject;
+use nazo_postgres::{create_pool, get_conn};
+
+fn unavailable_valkey_client() -> fred::prelude::Client {
+    let mut builder = ValkeyBuilder::from_config(
+        ValkeyConfig::from_url("redis://127.0.0.1:1").expect("unavailable Valkey URL should parse"),
+    );
+    builder.with_performance_config(|performance: &mut PerformanceConfig| {
+        performance.default_command_timeout = StdDuration::from_millis(200);
+    });
+    builder.with_connection_config(|connection: &mut ConnectionConfig| {
+        connection.connection_timeout = StdDuration::from_millis(200);
+        connection.internal_command_timeout = StdDuration::from_millis(200);
+        connection.max_command_attempts = 1;
+    });
+    builder
+        .build()
+        .expect("unavailable valkey client construction should not connect")
+}
+
+fn test_state() -> TestInfrastructure {
+    TestInfrastructure {
+        diesel_db: create_pool(
+            "postgres://nazo_auth_code_test_invalid:nazo_auth_code_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: unavailable_valkey_client(),
+        settings: Arc::new(
+            Settings::from_config(&ConfigSource::default()).expect("default settings should load"),
+        ),
+        keyset: crate::test_support::test_key_manager(),
+    }
+}
+
+fn pkce_policy_client() -> ClientRow {
+    client_row! {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
+        realm_id: DEFAULT_REALM_ID,
+        organization_id: DEFAULT_ORGANIZATION_ID,
+        client_id: "client-1".to_owned(),
+        client_name: "Client".to_owned(),
+        client_type: "confidential".to_owned(),
+        client_secret_hash: None,
+        redirect_uris: json!(["https://client.example/callback"]),
+        scopes: json!(["openid"]),
+        allowed_audiences: json!(["resource://default"]),
+        grant_types: json!(["authorization_code"]),
+        token_endpoint_auth_method: "client_secret_basic".to_owned(),
+        require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: json!([]),
+        tls_client_auth_san_uri: json!([]),
+        tls_client_auth_san_ip: json!([]),
+        tls_client_auth_san_email: json!([]),
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: false,
+        is_active: true,
+        jwks: None,
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
+        userinfo_signed_response_alg: None,
+        userinfo_encrypted_response_alg: None,
+        userinfo_encrypted_response_enc: None,
+        authorization_signed_response_alg: None,
+        authorization_encrypted_response_alg: None,
+        authorization_encrypted_response_enc: None,
+        post_logout_redirect_uris: json!([]),
+        backchannel_logout_uri: None,
+        backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
+    }
+}
+
+struct LiveAuthorizationCodeFixture {
+    state: Data<TestInfrastructure>,
+}
+
+impl LiveAuthorizationCodeFixture {
+    async fn new() -> Option<Self> {
+        let settings = Self::settings();
+        Self::new_with_settings_and_keyset(settings, crate::test_support::failing_key_manager())
+            .await
+    }
+
+    fn settings() -> Settings {
+        let config = ConfigSource::from_pairs_for_test([
+            ("ISSUER", "https://issuer.example"),
+            (
+                "CLIENT_SECRET_PEPPER",
+                "client-secret-pepper-for-tests-000000000001",
+            ),
+            ("MTLS_ENDPOINT_BASE_URL", "https://issuer.example"),
+            ("FRONTEND_BASE_URL", "https://app.example"),
+            ("TRANSPORT_MODE", "trusted-proxy"),
+            ("TRUSTED_PROXY_CIDRS", "127.0.0.1/32"),
+            ("MTLS_CERTIFICATE_SOURCE", "rfc9440"),
+            ("COOKIE_SECURE", "true"),
+            ("TOKEN_RATE_LIMIT_MAX_REQUESTS", "100000"),
+        ]);
+        Settings::from_config(&config).expect("test settings should load")
+    }
+
+    async fn new_with_settings_and_keyset(
+        settings: Settings,
+        keyset: nazo_key_management::KeyManager,
+    ) -> Option<Self> {
+        let database_url = std::env::var("DATABASE_URL").ok()?;
+        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+        let mut valkey_builder = ValkeyBuilder::from_config(
+            ValkeyConfig::from_url(&valkey_url).expect("VALKEY_URL should parse"),
+        );
+        valkey_builder.with_performance_config(|performance: &mut PerformanceConfig| {
+            performance.default_command_timeout = StdDuration::from_millis(1000);
+        });
+        valkey_builder.with_connection_config(|connection: &mut ConnectionConfig| {
+            connection.connection_timeout = StdDuration::from_millis(1000);
+            connection.internal_command_timeout = StdDuration::from_millis(1000);
+            connection.max_command_attempts = 1;
+        });
+        let valkey = valkey_builder.build().expect("valkey client should build");
+        valkey.init().await.expect("valkey should connect");
+        let diesel_db = create_pool(database_url, 4).expect("database pool should build");
+        crate::test_support::initialize_audit_dependencies(&diesel_db);
+
+        Some(Self {
+            state: Data::new(TestInfrastructure {
+                diesel_db,
+                valkey,
+                settings: Arc::new(settings),
+                keyset,
+            }),
+        })
+    }
+
+    async fn insert_client(&self, client: &ClientRow) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND client_id = $2")
+            .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+            .bind::<Text, _>(client.client_id.as_str())
+            .execute(&mut conn)
+            .await
+            .expect("test client cleanup should succeed");
+
+        sql_query(
+            r#"
+            INSERT INTO oauth_clients (
+                id, tenant_id, realm_id, organization_id, client_id, client_name, client_type,
+                client_secret_hash, redirect_uris, scopes, allowed_audiences,
+                grant_types, token_endpoint_auth_method, require_dpop_bound_tokens,
+                require_mtls_bound_tokens, tls_client_auth_subject_dn, tls_client_auth_cert_sha256,
+                tls_client_auth_san_dns, tls_client_auth_san_uri, tls_client_auth_san_ip,
+                tls_client_auth_san_email, allow_client_assertion_audience_array,
+                allow_client_assertion_endpoint_audience, require_par_request_object,
+                is_active, jwks, security_policy,
+                post_logout_redirect_uris, backchannel_logout_uri,
+                backchannel_logout_session_required, subject_type, sector_identifier_uri,
+                sector_identifier_host
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6, $7,
+                $8, $9, $10, $11,
+                $12, $13, $14,
+                $15, NULL, NULL,
+                '[]'::jsonb, '[]'::jsonb, '[]'::jsonb,
+                '[]'::jsonb, false,
+                false, false,
+                $16, NULL,
+                '{"version":1,"assurance":"baseline","require_signed_authorization_request":false,"require_signed_authorization_response":false,"require_signed_introspection_response":false,"session_management":false,"allow_cross_device_flows":false,"allow_confidential_oidc_without_pkce":false}'::jsonb,
+                '[]'::jsonb, NULL,
+                true, $17, $18, $19
+            )
+            "#,
+        )
+        .bind::<SqlUuid, _>(client.id)
+        .bind::<SqlUuid, _>(client.tenant_id)
+        .bind::<SqlUuid, _>(client.realm_id)
+        .bind::<SqlUuid, _>(client.organization_id)
+        .bind::<Text, _>(client.client_id.as_str())
+        .bind::<Text, _>(client.client_name.as_str())
+        .bind::<Text, _>(client.client_type.as_str())
+        .bind::<Nullable<Text>, _>(Option::<&str>::None)
+        .bind::<Jsonb, _>(json!(&client.redirect_uris))
+        .bind::<Jsonb, _>(json!(&client.scopes))
+        .bind::<Jsonb, _>(json!(&client.allowed_audiences))
+        .bind::<Jsonb, _>(json!(&client.grant_types))
+        .bind::<Text, _>(client.token_endpoint_auth_method.as_str())
+        .bind::<Bool, _>(client.require_dpop_bound_tokens)
+        .bind::<Bool, _>(client.require_mtls_bound_tokens)
+        .bind::<Bool, _>(client.is_active)
+        .bind::<Text, _>(client.subject_type.as_str())
+        .bind::<Nullable<Text>, _>(client.sector_identifier_uri.as_deref())
+        .bind::<Nullable<Text>, _>(client.sector_identifier_host.as_deref())
+        .execute(&mut conn)
+        .await
+        .expect("test client insert should succeed");
+    }
+
+    async fn insert_user(&self) -> DatabaseUserFixture {
+        let suffix = Uuid::now_v7();
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO users (
+                id, tenant_id, realm_id, organization_id, username, email,
+                password_hash, is_active, mfa_enabled, email_verified, role, admin_level
+            )
+            VALUES (
+                $1, $2, $3, $4, $5, $6,
+                'unused-auth-code-test-hash', true, false, true, 'user', 0
+            )
+            RETURNING *
+            "#,
+        )
+        .bind::<SqlUuid, _>(suffix)
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+        .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+        .bind::<Text, _>(format!("auth-code-{suffix}"))
+        .bind::<Text, _>(format!("auth-code-{suffix}@example.com"))
+        .get_result::<DatabaseUserFixture>(&mut conn)
+        .await
+        .expect("test user should insert")
+    }
+
+    async fn store_code_state(&self, code: &str, state: &AuthorizationCodeState) {
+        valkey_set_ex(
+            &self.state.valkey,
+            authorization_code_key(code),
+            serde_json::to_string(state).expect("authorization code state should serialize"),
+            self.state.settings.protocol.auth_code_ttl_seconds,
+        )
+        .await
+        .expect("authorization code state should store");
+    }
+
+    async fn store_raw_code_state(&self, code: &str, raw: &str) {
+        valkey_set_ex(
+            &self.state.valkey,
+            authorization_code_key(code),
+            raw.to_owned(),
+            self.state.settings.protocol.auth_code_ttl_seconds,
+        )
+        .await
+        .expect("raw authorization code state should store");
+    }
+
+    async fn code_state(&self, code: &str) -> AuthorizationCodeState {
+        let raw = valkey_get(&self.state.valkey, authorization_code_key(code))
+            .await
+            .expect("authorization code lookup should succeed")
+            .expect("authorization code state should exist");
+        serde_json::from_str(&raw).expect("authorization code state should deserialize")
+    }
+
+    async fn insert_refresh_token(&self, client: &ClientRow, family_id: Uuid) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO oauth_tokens (
+                id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id,
+                client_id, user_id, scopes, audience, oidc_auth_context,
+                authorization_details, issued_at, expires_at,
+                revoked_at, reuse_detected_at, subject, dpop_jkt, mtls_x5t_s256
+            )
+            VALUES (
+                $1, $2, $3, $4, NULL,
+                $5, $6, '["openid","offline_access"]'::jsonb,
+                '["resource://default"]'::jsonb,
+                jsonb_build_object(
+                    'version', 1, 'issuer', 'https://issuer.example.test',
+                    'audience', $7, 'auth_time', floor(extract(epoch from now()))::bigint,
+                    'amr', '["pwd"]'::jsonb, 'oidc_sid', NULL, 'id_token_sid', NULL,
+                    'acr', NULL, 'nonce', NULL, 'userinfo_claims', '[]'::jsonb,
+                    'userinfo_claim_requests', '[]'::jsonb, 'id_token_claims', '[]'::jsonb,
+                    'id_token_claim_requests', '[]'::jsonb
+                ),
+                '[]'::jsonb, now(),
+                now() + interval '1 day', NULL, NULL, 'subject-1', NULL, NULL
+            )
+            "#,
+        )
+        .bind::<SqlUuid, _>(Uuid::now_v7())
+        .bind::<SqlUuid, _>(client.tenant_id)
+        .bind::<Text, _>(blake3_hex(&format!("refresh-token-{family_id}")))
+        .bind::<SqlUuid, _>(family_id)
+        .bind::<SqlUuid, _>(client.id)
+        .bind::<Nullable<SqlUuid>, _>(None::<Uuid>)
+        .bind::<Text, _>(client.client_id.as_str())
+        .execute(&mut conn)
+        .await
+        .expect("refresh token row should insert");
+    }
+
+    async fn access_token_revocation_count(
+        &self,
+        client: &ClientRow,
+        access_token_jti: &str,
+    ) -> i64 {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        access_token_revocations::table
+            .filter(access_token_revocations::tenant_id.eq(client.tenant_id))
+            .filter(access_token_revocations::client_id.eq(client.id))
+            .filter(
+                access_token_revocations::access_token_jti_blake3.eq(blake3_hex(access_token_jti)),
+            )
+            .count()
+            .get_result::<i64>(&mut conn)
+            .await
+            .expect("access token revocation count should load")
+    }
+
+    async fn refresh_token_revoked_at(
+        &self,
+        client: &ClientRow,
+        family_id: Uuid,
+    ) -> Option<DateTime<Utc>> {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        oauth_tokens::table
+            .filter(oauth_tokens::tenant_id.eq(client.tenant_id))
+            .filter(oauth_tokens::client_id.eq(client.id))
+            .filter(oauth_tokens::token_family_id.eq(family_id))
+            .select(oauth_tokens::revoked_at)
+            .first::<Option<DateTime<Utc>>>(&mut conn)
+            .await
+            .expect("refresh token row should load")
+    }
+}
+
+fn valid_keyset(_kid: &str) -> nazo_key_management::KeyManager {
+    crate::test_support::test_key_manager_with_algorithm(jsonwebtoken::Algorithm::RS256)
+}
+
+fn live_client(client_id: &str) -> ClientRow {
+    let mut client = pkce_policy_client();
+    client.id = Uuid::now_v7();
+    client.client_id = client_id.to_owned();
+    client.client_name = "Live Token Client".to_owned();
+    client.grant_types = vec!["authorization_code".to_owned(), "refresh_token".to_owned()];
+    client.allowed_audiences = vec!["resource://default".to_owned()];
+    client.redirect_uris = vec!["https://client.example/callback".to_owned()];
+    client
+}
+
+fn payload_for_client(client: &ClientRow) -> CodePayload {
+    let mut payload = code_payload(true);
+    payload.client_id = client.client_id.clone();
+    payload.code_challenge = Some(pkce_s256(VALID_CODE_VERIFIER));
+    payload.code_challenge_method = Some("S256".to_owned());
+    payload.redirect_uri = "https://client.example/callback".to_owned();
+    payload.redirect_uri_was_supplied = true;
+    payload.scopes = vec!["openid".to_owned()];
+    payload
+}
+
+#[actix_web::test]
+async fn pending_authorization_code_validation_covers_non_consuming_policy_boundaries() {
+    let state = test_state();
+    let config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
+    let authorization = crate::http::token::issue::test_support::test_authorization_service(&state);
+    let mut modules = state.active_module_snapshot();
+    let client = pkce_policy_client();
+    let mut payload = payload_for_client(&client);
+    let mut form = form_for_code("pure-validation");
+
+    {
+        let issuance = TokenIssuanceContext {
+            config: &config,
+            modules: &modules,
+            authorization: &authorization,
+            security_audit: crate::http::authorization::test_support::test_security_audit(),
+            remote_client_documents: crate::test_support::test_remote_client_documents(),
+        };
+        payload.expires_at = Utc::now() - Duration::seconds(1);
+        let expired =
+            validate_pending_authorization_code_request(&issuance, &client, &form, &payload)
+                .map_err(nazo_http_actix::oauth_endpoint_error_response)
+                .expect_err(
+                    "expired pending authorization codes must be rejected before consumption",
+                );
+        assert_eq!(expired.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(expired).await, "invalid_grant");
+
+        payload.expires_at = Utc::now() + Duration::seconds(60);
+        payload.code_challenge = None;
+        payload.code_challenge_method = None;
+        for verifier in ["", "wrong-verifier", VALID_CODE_VERIFIER] {
+            form.code_verifier = Some(verifier.to_owned());
+            let downgrade =
+                validate_pending_authorization_code_request(&issuance, &client, &form, &payload)
+                    .map_err(nazo_http_actix::oauth_endpoint_error_response)
+                    .expect_err("a verifier must never be accepted without an original challenge");
+            assert_eq!(downgrade.status(), StatusCode::BAD_REQUEST);
+            assert_eq!(oauth_error_code(downgrade).await, "invalid_grant");
+        }
+        form.code_verifier = None;
+        let no_pkce = validate_pending_authorization_code_request(
+            &issuance, &client, &form, &payload,
+        )
+        .map_err(nazo_http_actix::oauth_endpoint_error_response)
+        .expect("confidential openid clients may redeem codes without PKCE when policy allows it");
+        assert_eq!(no_pkce, vec!["resource://default".to_owned()]);
+
+        payload.resource_indicators = vec!["resource://authorized".to_owned()];
+        form.audiences = vec!["resource://outside".to_owned()];
+        let outside_resource =
+            validate_pending_authorization_code_request(&issuance, &client, &form, &payload)
+                .map_err(nazo_http_actix::oauth_endpoint_error_response)
+                .expect_err("a token resource outside the authorization must be rejected");
+        assert_eq!(outside_resource.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(outside_resource).await, "invalid_target");
+
+        payload.resource_indicators.clear();
+        form.audiences.clear();
+        payload.code_challenge = Some(pkce_s256(VALID_CODE_VERIFIER));
+        payload.code_challenge_method = Some("S256".to_owned());
+        form.code_verifier = Some(VALID_CODE_VERIFIER.to_owned());
+        payload.scopes = vec![nazo_oauth_server::token::native_sso::DEVICE_SSO_SCOPE.to_owned()];
+        let native_sso_disabled =
+            validate_pending_authorization_code_request(&issuance, &client, &form, &payload)
+                .map_err(nazo_http_actix::oauth_endpoint_error_response)
+                .expect_err("Native SSO must be rejected when its runtime module is disabled");
+        assert_eq!(native_sso_disabled.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(native_sso_disabled).await, "invalid_scope");
+    }
+
+    modules
+        .accepting
+        .insert(nazo_runtime_modules::ModuleId::NativeSso);
+    let issuance = TokenIssuanceContext {
+        config: &config,
+        modules: &modules,
+        authorization: &authorization,
+        security_audit: crate::http::authorization::test_support::test_security_audit(),
+        remote_client_documents: crate::test_support::test_remote_client_documents(),
+    };
+    let native_sso_without_openid =
+        validate_pending_authorization_code_request(&issuance, &client, &form, &payload)
+            .map_err(nazo_http_actix::oauth_endpoint_error_response)
+            .expect_err("Native SSO must require the openid scope");
+    assert_eq!(native_sso_without_openid.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(native_sso_without_openid).await,
+        "invalid_scope"
+    );
+}
+
+async fn token_json_body(response: HttpResponse) -> (StatusCode, Value) {
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("response body should be readable");
+    let value = serde_json::from_slice(&body).expect("response should be JSON");
+    (status, value)
+}
+
+fn jwt_payload(token: &str) -> Value {
+    let payload = token
+        .split('.')
+        .nth(1)
+        .expect("JWT should contain a payload segment");
+    let decoded = URL_SAFE_NO_PAD
+        .decode(payload)
+        .expect("JWT payload should be base64url");
+    serde_json::from_slice(&decoded).expect("JWT payload should be JSON")
+}
+
+#[actix_web::test]
+async fn token_authorization_code_uses_client_pairwise_subject_sector() {
+    let mut settings = LiveAuthorizationCodeFixture::settings();
+    settings.protocol.pairwise_subject_secret =
+        Some("0123456789012345678901234567890123456789".to_owned());
+    let Some(fixture) = LiveAuthorizationCodeFixture::new_with_settings_and_keyset(
+        settings,
+        valid_keyset("auth-code-pairwise-test-kid"),
+    )
+    .await
+    else {
+        return;
+    };
+
+    let user = fixture.insert_user().await;
+    let mut client = live_client(&format!("client-pairwise-{}", Uuid::now_v7()));
+    client.subject_type = "pairwise".to_owned();
+    client.sector_identifier_host = Some("registered-sector.example".to_owned());
+    fixture.insert_client(&client).await;
+
+    let mut payload = payload_for_client(&client);
+    payload.user_id = user.id;
+    payload.scopes = vec!["openid".to_owned()];
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
+        .await;
+
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let mut form = form_for_code(&code);
+    form.client_id = Some(client.client_id.clone());
+    let response = token_authorization_code(&fixture.state, &req, &client, &form, None).await;
+    let (status, body) = token_json_body(response).await;
+
+    assert_eq!(status, StatusCode::OK, "unexpected token response: {body}");
+    let expected_subject = oidc_subject(
+        fixture
+            .state
+            .settings
+            .protocol
+            .pairwise_subject_secret
+            .as_ref()
+            .expect("pairwise secret should be configured")
+            .as_bytes(),
+        &fixture.state.settings.endpoint.issuer,
+        "registered-sector.example",
+        user.id,
+    );
+    assert_ne!(expected_subject, user.id.to_string());
+    assert_eq!(
+        jwt_payload(
+            body["access_token"]
+                .as_str()
+                .expect("access token should be returned")
+        )["sub"],
+        json!(expected_subject)
+    );
+    assert_eq!(
+        jwt_payload(
+            body["id_token"]
+                .as_str()
+                .expect("id token should be returned")
+        )["sub"],
+        json!(expected_subject)
+    );
+}
+
+#[actix_web::test]
+async fn token_authorization_code_fails_closed_when_pairwise_secret_is_missing() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new_with_settings_and_keyset(
+        LiveAuthorizationCodeFixture::settings(),
+        valid_keyset("auth-code-subject-policy-test-kid"),
+    )
+    .await
+    else {
+        return;
+    };
+
+    let user = fixture.insert_user().await;
+    let mut client = live_client(&format!("client-subject-policy-{}", Uuid::now_v7()));
+    client.subject_type = "pairwise".to_owned();
+    client.sector_identifier_host = Some("registered-sector.example".to_owned());
+    fixture.insert_client(&client).await;
+
+    let mut payload = payload_for_client(&client);
+    payload.user_id = user.id;
+    payload.scopes = vec!["openid".to_owned()];
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
+        .await;
+
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let mut form = form_for_code(&code);
+    form.client_id = Some(client.client_id.clone());
+    let response = token_authorization_code(&fixture.state, &req, &client, &form, None).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(response).await, "server_error");
+    match fixture.code_state(&code).await {
+        AuthorizationCodeState::Failed { error, .. } => {
+            assert_eq!(error, "subject_policy_invalid");
+        }
+        _ => panic!("invalid subject policy should mark the authorization code as failed"),
+    }
+}
+
+#[test]
+fn authorization_code_token_issue_preserves_independent_oidc_sid() {
+    let payload = code_payload(true);
+    let auth_time = payload.auth_time;
+
+    let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
+        payload,
+        subject: "subject-1".to_owned(),
+        audiences: vec!["resource://default".to_owned()],
+        dpop_jkt: Some("dpop-jkt".to_owned()),
+        mtls_x5t_s256: Some("mtls-thumbprint".to_owned()),
+        code_hash: "code-hash".to_owned(),
+        refresh_token_dpop_jkt: Some("refresh-dpop-jkt".to_owned()),
+        refresh_token_mtls_x5t_s256: Some("refresh-mtls-thumbprint".to_owned()),
+        refresh_token_client_attestation_jkt: Some("client-attestation-jkt".to_owned()),
+    });
+
+    assert_eq!(issue.subject, "subject-1");
+    assert_eq!(issue.oidc_sid.as_deref(), Some("sid-1"));
+    assert_eq!(issue.authorization_code_hash.as_deref(), Some("code-hash"));
+    assert!(issue.include_refresh);
+    assert_eq!(issue.refresh_token_policy, RefreshTokenPolicy::IssueNew);
+    assert_eq!(issue.scopes, vec!["openid".to_owned()]);
+    assert_eq!(issue.audiences, vec!["resource://default".to_owned()]);
+    assert_eq!(issue.nonce, None);
+    assert_eq!(issue.auth_time, Some(auth_time));
+    assert_eq!(issue.dpop_jkt.as_deref(), Some("dpop-jkt"));
+    assert_eq!(
+        issue.refresh_token_mtls_x5t_s256.as_deref(),
+        Some("refresh-mtls-thumbprint")
+    );
+    assert_eq!(
+        issue.refresh_token_client_attestation_jkt.as_deref(),
+        Some("client-attestation-jkt")
+    );
+}
+
+#[test]
+fn authorization_code_token_issue_creates_native_sso_binding_for_device_sso_scope() {
+    let mut payload = code_payload(true);
+    payload.scopes = vec![
+        "openid".to_owned(),
+        "offline_access".to_owned(),
+        "device_sso".to_owned(),
+    ];
+
+    let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
+        payload,
+        subject: "subject-1".to_owned(),
+        audiences: vec!["resource://default".to_owned()],
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        code_hash: "code-hash".to_owned(),
+        refresh_token_dpop_jkt: None,
+        refresh_token_mtls_x5t_s256: None,
+        refresh_token_client_attestation_jkt: None,
+    });
+
+    let binding = issue
+        .native_sso
+        .as_ref()
+        .expect("device_sso scope should create a Native SSO binding");
+    assert_eq!(binding.sid, "sid-1");
+    assert_eq!(
+        binding.ds_hash,
+        nazo_oauth_server::token::native_sso::native_sso_device_secret_hash(&binding.device_secret)
+    );
+}
+
+#[test]
+fn authorization_code_token_issue_preserves_requested_oidc_claims_and_acr() {
+    let mut payload = code_payload(true);
+    payload.acr = Some("urn:example:acr:phishing-resistant".to_owned());
+    payload.userinfo_claims = vec!["name".to_owned(), "email".to_owned()];
+    payload.userinfo_claim_requests = vec![OidcClaimRequest {
+        name: "email".to_owned(),
+        essential: true,
+        value: Some(json!("alice@example.com")),
+        values: Vec::new(),
+    }];
+    payload.id_token_claims = vec!["auth_time".to_owned(), "sid".to_owned()];
+    payload.id_token_claim_requests = vec![OidcClaimRequest {
+        name: "acr".to_owned(),
+        essential: true,
+        value: Some(json!("urn:example:acr:phishing-resistant")),
+        values: Vec::new(),
+    }];
+
+    let issue = token_issue_from_authorization_code(AuthorizationCodeIssueInput {
+        payload,
+        subject: "subject-1".to_owned(),
+        audiences: vec!["resource://default".to_owned()],
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        code_hash: "code-hash".to_owned(),
+        refresh_token_dpop_jkt: None,
+        refresh_token_mtls_x5t_s256: None,
+        refresh_token_client_attestation_jkt: None,
+    });
+
+    assert_eq!(
+        issue.acr.as_deref(),
+        Some("urn:example:acr:phishing-resistant")
+    );
+    assert_eq!(issue.userinfo_claims, vec!["name", "email"]);
+    assert_eq!(issue.userinfo_claim_requests.len(), 1);
+    assert_eq!(issue.userinfo_claim_requests[0].name, "email");
+    assert!(issue.userinfo_claim_requests[0].essential);
+    assert_eq!(issue.id_token_claims, vec!["auth_time", "sid"]);
+    assert_eq!(issue.id_token_claim_requests.len(), 1);
+    assert_eq!(issue.id_token_claim_requests[0].name, "acr");
+    assert!(issue.id_token_claim_requests[0].essential);
+}
+
+#[test]
+fn authorization_code_redirect_uri_matching_preserves_oauth_binding_rules() {
+    let mut supplied = code_payload(true);
+    assert!(redirect_uri_matches_authorization_request(
+        &supplied,
+        Some("https://client.example/callback")
+    ));
+    assert!(!redirect_uri_matches_authorization_request(&supplied, None));
+    assert!(!redirect_uri_matches_authorization_request(
+        &supplied,
+        Some("https://client.example/other")
+    ));
+
+    supplied.redirect_uri_was_supplied = false;
+    assert!(redirect_uri_matches_authorization_request(&supplied, None));
+    assert!(redirect_uri_matches_authorization_request(
+        &supplied,
+        Some("https://client.example/callback")
+    ));
+    assert!(!redirect_uri_matches_authorization_request(
+        &supplied,
+        Some("https://client.example/other")
+    ));
+}
+
+#[actix_web::test]
+async fn authorization_code_holder_error_responses_preserve_oauth_error_classes() {
+    let mtls = nazo_http_actix::oauth_endpoint_error_response(
+        authorization_code_mtls_holder_error_response(),
+    );
+    assert_eq!(mtls.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(mtls).await, "invalid_request");
+
+    let mismatch = nazo_http_actix::oauth_endpoint_error_response(
+        authorization_code_client_mismatch_response(),
+    );
+    assert_eq!(mismatch.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(mismatch).await, "invalid_grant");
+
+    let dpop = nazo_http_actix::oauth_endpoint_error_response(
+        authorization_code_dpop_error_response(DpopError::MissingProof),
+    );
+    assert_eq!(dpop.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(dpop).await, "invalid_grant");
+}
+
+#[test]
+fn confidential_required_dpop_client_does_not_pin_refresh_token_to_access_token_dpop_key() {
+    let mut client = pkce_policy_client();
+    client.client_type = "confidential".to_owned();
+    client.require_dpop_bound_tokens = true;
+    let mut payload = code_payload(true);
+    payload.dpop_jkt = None;
+
+    assert!(
+        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
+            .is_none()
+    );
+}
+
+#[test]
+fn public_dpop_client_binds_refresh_token_to_dpop_key() {
+    let mut client = pkce_policy_client();
+    client.client_type = "public".to_owned();
+    client.require_dpop_bound_tokens = false;
+    let mut payload = code_payload(true);
+    payload.dpop_jkt = None;
+
+    assert_eq!(
+        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
+            .as_deref(),
+        Some("verified-dpop-jkt")
+    );
+}
+
+#[test]
+fn confidential_optional_dpop_code_pins_refresh_token_to_verified_dpop_key() {
+    let mut client = pkce_policy_client();
+    client.client_type = "confidential".to_owned();
+    client.require_dpop_bound_tokens = false;
+    let mut payload = code_payload(true);
+    payload.dpop_jkt = Some("request-dpop-jkt".to_owned());
+
+    assert_eq!(
+        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
+            .as_deref(),
+        Some("verified-dpop-jkt")
+    );
+}
+
+#[test]
+fn bearer_confidential_client_does_not_bind_refresh_token_to_access_token_dpop() {
+    let mut client = pkce_policy_client();
+    client.client_type = "confidential".to_owned();
+    client.require_dpop_bound_tokens = false;
+    let mut payload = code_payload(true);
+    payload.dpop_jkt = None;
+
+    assert!(
+        refresh_token_dpop_binding(&client, &payload, Some("verified-dpop-jkt".to_owned()))
+            .is_none()
+    );
+}
+
+#[actix_web::test]
+async fn authorization_code_grant_requires_code_before_state_lookup() {
+    let state = test_state();
+    let client = pkce_policy_client();
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let form = TokenForm {
+        grant_type: "authorization_code".to_owned(),
+        code: None,
+        device_code: None,
+        auth_req_id: None,
+        redirect_uri: Some("https://client.example/callback".to_owned()),
+        code_verifier: Some("verifier".to_owned()),
+        refresh_token: None,
+        device_secret: None,
+        scope: None,
+        client_id: Some("client-1".to_owned()),
+        client_secret: None,
+        client_assertion_type: None,
+        client_assertion: None,
+        assertion: None,
+        requested_token_type: None,
+        subject_token: None,
+        subject_token_type: None,
+        actor_token: None,
+        actor_token_type: None,
+        audiences: Vec::new(),
+        has_audience_param: false,
+    };
+
+    let response = token_authorization_code(&state, &req, &client, &form, None).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(response).await, "invalid_request");
+}
+
+#[actix_web::test]
+async fn authorization_code_helpers_fail_closed_when_valkey_is_unavailable() {
+    let state = test_state();
+    let code_hash = blake3_hex("code-unavailable");
+    let client = pkce_policy_client();
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+
+    let pending = load_pending_authorization_code_payload(&state, &code_hash)
+        .await
+        .expect_err("unavailable Valkey must not be treated as an absent authorization code");
+    assert_eq!(pending.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(pending).await, "server_error");
+
+    let consuming = match begin_authorization_code_consumption(&state, &code_hash).await {
+        Ok(_) => panic!("unavailable Valkey must not start authorization code consumption"),
+        Err(response) => response,
+    };
+    assert_eq!(consuming.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(consuming).await, "server_error");
+
+    let endpoint = token_authorization_code(
+        &state,
+        &req,
+        &client,
+        &form_for_code("code-unavailable"),
+        None,
+    )
+    .await;
+    assert_eq!(endpoint.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(endpoint).await, "server_error");
+}
+
+#[actix_web::test]
+async fn load_pending_authorization_code_payload_reads_pending_missing_and_malformed_states() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let client = live_client("live-load-client");
+    let pending_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &pending_code,
+            &AuthorizationCodeState::Pending {
+                payload: payload_for_client(&client),
+            },
+        )
+        .await;
+
+    let pending =
+        load_pending_authorization_code_payload(&fixture.state, &blake3_hex(&pending_code))
+            .await
+            .expect("pending state should load");
+    assert_eq!(
+        pending.expect("pending payload should exist").client_id,
+        client.client_id
+    );
+
+    let missing =
+        load_pending_authorization_code_payload(&fixture.state, &blake3_hex("missing-code"))
+            .await
+            .expect("missing state should not error");
+    assert!(missing.is_none());
+
+    let malformed_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_raw_code_state(&malformed_code, "{not-json")
+        .await;
+    let malformed =
+        load_pending_authorization_code_payload(&fixture.state, &blake3_hex(&malformed_code))
+            .await
+            .expect_err("malformed authorization code state must fail closed");
+    assert_eq!(malformed.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(malformed).await, "server_error");
+}
+
+#[actix_web::test]
+async fn begin_authorization_code_consumption_tracks_single_consumer_and_terminal_states() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let client = live_client("live-consume-client");
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &code,
+            &AuthorizationCodeState::Pending {
+                payload: payload_for_client(&client),
+            },
+        )
+        .await;
+
+    match begin_authorization_code_consumption(&fixture.state, &blake3_hex(&code))
+        .await
+        .expect("pending authorization code should start consuming")
+    {
+        AuthorizationCodeConsumption::Consuming(payload) => {
+            assert_eq!(payload.client_id, client.client_id);
+        }
+        _ => panic!("pending authorization code must move into consuming state"),
+    }
+
+    assert!(matches!(
+        begin_authorization_code_consumption(&fixture.state, &blake3_hex(&code))
+            .await
+            .expect("second consumer should observe busy state"),
+        AuthorizationCodeConsumption::Busy
+    ));
+
+    let failed_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &failed_code,
+            &AuthorizationCodeState::Failed {
+                failed_at: Utc::now(),
+                error: "pkce_failed".to_owned(),
+            },
+        )
+        .await;
+    assert!(matches!(
+        begin_authorization_code_consumption(&fixture.state, &blake3_hex(&failed_code))
+            .await
+            .expect("failed code should remain terminal"),
+        AuthorizationCodeConsumption::Failed
+    ));
+
+    let malformed_code = format!("code-{}", Uuid::now_v7());
+    fixture.store_raw_code_state(&malformed_code, "{").await;
+    assert!(matches!(
+        begin_authorization_code_consumption(&fixture.state, &blake3_hex(&malformed_code))
+            .await
+            .expect("malformed stored state should map to malformed consumption"),
+        AuthorizationCodeConsumption::Malformed
+    ));
+}
+
+#[actix_web::test]
+async fn token_authorization_code_rejects_client_binding_mismatch_without_consuming_code() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let client = live_client("client-bound");
+    let mut payload = payload_for_client(&client);
+    payload.client_id = "different-client".to_owned();
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
+        .await;
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let form = form_for_code(&code);
+
+    let response = token_authorization_code(&fixture.state, &req, &client, &form, None).await;
+    let (status, body) = token_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+    assert!(matches!(
+        fixture.code_state(&code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+}
+
+#[actix_web::test]
+async fn token_authorization_code_requires_sender_constrained_proof_before_consumption() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+
+    let mut dpop_client = live_client("client-dpop");
+    dpop_client.require_dpop_bound_tokens = true;
+    let dpop_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &dpop_code,
+            &AuthorizationCodeState::Pending {
+                payload: payload_for_client(&dpop_client),
+            },
+        )
+        .await;
+    let dpop_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &dpop_client,
+        &form_for_code(&dpop_code),
+        None,
+    )
+    .await;
+    let (status, body) = token_json_body(dpop_response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+    assert!(matches!(
+        fixture.code_state(&dpop_code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+
+    let mtls_client = live_client("client-mtls");
+    let mut mtls_payload = payload_for_client(&mtls_client);
+    mtls_payload.mtls_x5t_s256 = Some("w7JAoU_gJbZJvV-zCOvU9yFJq0FNC_edCMRM78P8eQQ".to_owned());
+    let mtls_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &mtls_code,
+            &AuthorizationCodeState::Pending {
+                payload: mtls_payload,
+            },
+        )
+        .await;
+    let mtls_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &mtls_client,
+        &form_for_code(&mtls_code),
+        None,
+    )
+    .await;
+    let (status, body) = token_json_body(mtls_response).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert!(matches!(
+        fixture.code_state(&mtls_code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+}
+
+#[actix_web::test]
+async fn token_authorization_code_enforces_client_mtls_policy_before_consumption() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let mut client = live_client(&format!("client-mtls-policy-{}", Uuid::now_v7()));
+    client.require_mtls_bound_tokens = true;
+    fixture.insert_client(&client).await;
+    let user = fixture.insert_user().await;
+    let mut unbound_payload = payload_for_client(&client);
+    unbound_payload.user_id = user.id;
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &code,
+            &AuthorizationCodeState::Pending {
+                payload: unbound_payload,
+            },
+        )
+        .await;
+
+    let response =
+        token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None).await;
+    let (status, body) = token_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_request");
+    assert!(matches!(
+        fixture.code_state(&code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+
+    let bound_code = format!("code-{}", Uuid::now_v7());
+    let mut bound_payload = payload_for_client(&client);
+    bound_payload.user_id = user.id;
+    fixture
+        .store_code_state(
+            &bound_code,
+            &AuthorizationCodeState::Pending {
+                payload: bound_payload,
+            },
+        )
+        .await;
+    let certificate =
+        crate::test_support::rfc9440_certificate_fixture("authorization-code-mtls-policy");
+    let verified_req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .app_data(actix_web::web::Data::new(
+            crate::http::mtls::MtlsCertificateSource::new(
+                crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
+            ),
+        ))
+        .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
+        .insert_header(("client-cert", certificate.header.as_str()))
+        .to_http_request();
+
+    let bound_response = token_authorization_code(
+        &fixture.state,
+        &verified_req,
+        &client,
+        &form_for_code(&bound_code),
+        None,
+    )
+    .await;
+    let (bound_status, bound_body) = token_json_body(bound_response).await;
+
+    assert_eq!(
+        bound_status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "holder binding should succeed before the fixture reaches its intentionally invalid signing key: {bound_body}"
+    );
+    assert_eq!(bound_body["error"], "server_error");
+}
+
+#[actix_web::test]
+async fn token_authorization_code_accepts_matching_mtls_bound_code_before_issuing_response() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let client = live_client(&format!("client-mtls-bound-{}", Uuid::now_v7()));
+    fixture.insert_client(&client).await;
+    let user = fixture.insert_user().await;
+    let certificate = crate::test_support::rfc9440_certificate_fixture("authorization-code-actual");
+    let mut payload = payload_for_client(&client);
+    payload.user_id = user.id;
+    payload.mtls_x5t_s256 = Some(certificate.thumbprint.clone());
+    payload.scopes = vec!["accounts".to_owned()];
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(&code, &AuthorizationCodeState::Pending { payload })
+        .await;
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .app_data(actix_web::web::Data::new(
+            crate::http::mtls::MtlsCertificateSource::new(
+                crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
+            ),
+        ))
+        .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
+        .insert_header(("client-cert", certificate.header.as_str()))
+        .to_http_request();
+
+    let response =
+        token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None).await;
+    let (status, body) = token_json_body(response).await;
+
+    assert_eq!(
+        status,
+        StatusCode::INTERNAL_SERVER_ERROR,
+        "the fixture uses an intentionally invalid signing key after holder binding succeeds: {body}"
+    );
+    assert_eq!(body["error"], "server_error");
+}
+
+#[actix_web::test]
+async fn token_authorization_code_preserves_pending_state_for_redirect_pkce_and_audience_errors() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let client = live_client("client-failure-cases");
+
+    let no_challenge_code = format!("code-{}", Uuid::now_v7());
+    let mut no_challenge_payload = payload_for_client(&client);
+    no_challenge_payload.code_challenge = None;
+    no_challenge_payload.code_challenge_method = None;
+    fixture
+        .store_code_state(
+            &no_challenge_code,
+            &AuthorizationCodeState::Pending {
+                payload: no_challenge_payload,
+            },
+        )
+        .await;
+    for verifier in ["", "wrong-verifier", VALID_CODE_VERIFIER] {
+        let mut form = form_for_code(&no_challenge_code);
+        form.code_verifier = Some(verifier.to_owned());
+        let response = token_authorization_code(&fixture.state, &req, &client, &form, None).await;
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(oauth_error_code(response).await, "invalid_grant");
+        assert!(matches!(
+            fixture.code_state(&no_challenge_code).await,
+            AuthorizationCodeState::Pending { .. }
+        ));
+    }
+
+    let redirect_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &redirect_code,
+            &AuthorizationCodeState::Pending {
+                payload: payload_for_client(&client),
+            },
+        )
+        .await;
+    let mut redirect_form = form_for_code(&redirect_code);
+    redirect_form.redirect_uri = Some("https://attacker.example/callback".to_owned());
+    let redirect_response =
+        token_authorization_code(&fixture.state, &req, &client, &redirect_form, None).await;
+    assert_eq!(oauth_error_code(redirect_response).await, "invalid_grant");
+    assert!(matches!(
+        fixture.code_state(&redirect_code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+
+    let missing_verifier_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &missing_verifier_code,
+            &AuthorizationCodeState::Pending {
+                payload: payload_for_client(&client),
+            },
+        )
+        .await;
+    let mut missing_verifier_form = form_for_code(&missing_verifier_code);
+    missing_verifier_form.code_verifier = None;
+    let missing_verifier_response =
+        token_authorization_code(&fixture.state, &req, &client, &missing_verifier_form, None).await;
+    assert_eq!(
+        oauth_error_code(missing_verifier_response).await,
+        "invalid_grant"
+    );
+    assert!(matches!(
+        fixture.code_state(&missing_verifier_code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+
+    let pkce_failed_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &pkce_failed_code,
+            &AuthorizationCodeState::Pending {
+                payload: payload_for_client(&client),
+            },
+        )
+        .await;
+    let mut pkce_failed_form = form_for_code(&pkce_failed_code);
+    pkce_failed_form.code_verifier = Some("wrong-verifier".to_owned());
+    let pkce_failed_response =
+        token_authorization_code(&fixture.state, &req, &client, &pkce_failed_form, None).await;
+    assert_eq!(
+        oauth_error_code(pkce_failed_response).await,
+        "invalid_grant"
+    );
+    assert!(matches!(
+        fixture.code_state(&pkce_failed_code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+
+    let pkce_state_code = format!("code-{}", Uuid::now_v7());
+    let mut pkce_state_payload = payload_for_client(&client);
+    pkce_state_payload.code_challenge_method = None;
+    fixture
+        .store_code_state(
+            &pkce_state_code,
+            &AuthorizationCodeState::Pending {
+                payload: pkce_state_payload,
+            },
+        )
+        .await;
+    let pkce_state_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &client,
+        &form_for_code(&pkce_state_code),
+        None,
+    )
+    .await;
+    assert_eq!(
+        pkce_state_response.status(),
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    assert_eq!(oauth_error_code(pkce_state_response).await, "server_error");
+    assert!(matches!(
+        fixture.code_state(&pkce_state_code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+
+    let audience_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &audience_code,
+            &AuthorizationCodeState::Pending {
+                payload: payload_for_client(&client),
+            },
+        )
+        .await;
+    let mut audience_form = form_for_code(&audience_code);
+    audience_form.audiences = vec!["resource://other".to_owned()];
+    let audience_response =
+        token_authorization_code(&fixture.state, &req, &client, &audience_form, None).await;
+    assert_eq!(audience_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(audience_response).await, "invalid_target");
+    assert!(matches!(
+        fixture.code_state(&audience_code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+}
+
+#[actix_web::test]
+async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reuse() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let client = live_client(&format!("client-replay-{}", Uuid::now_v7()));
+    fixture.insert_client(&client).await;
+    let family_id = Uuid::now_v7();
+    fixture.insert_refresh_token(&client, family_id).await;
+
+    let code = format!("code-{}", Uuid::now_v7());
+    let marker = ConsumedAuthorizationCode {
+        client_id: client.id,
+        redemption_binding: Some(authorization_code_grant_key(
+            &blake3_hex(&code),
+            &form_for_code(&code),
+            None,
+            None,
+            None,
+        )),
+        access_token_jti: format!("access-jti-{}", Uuid::now_v7()),
+        access_token_expires_at: Utc::now().timestamp() + 300,
+        refresh_token_family_id: Some(family_id),
+        consumed_at: Utc::now(),
+    };
+    fixture
+        .store_code_state(
+            &code,
+            &AuthorizationCodeState::Consumed {
+                marker: marker.clone(),
+            },
+        )
+        .await;
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let response =
+        token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None).await;
+    let (status, body) = token_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+    assert_eq!(
+        fixture
+            .access_token_revocation_count(&client, &marker.access_token_jti)
+            .await,
+        1
+    );
+    assert!(
+        fixture
+            .refresh_token_revoked_at(&client, family_id)
+            .await
+            .is_some(),
+        "authorization code replay must revoke the refresh token family"
+    );
+
+    let missing_client_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &missing_client_code,
+            &AuthorizationCodeState::Consumed {
+                marker: ConsumedAuthorizationCode {
+                    client_id: Uuid::now_v7(),
+                    redemption_binding: None,
+                    access_token_jti: "access-jti-2".to_owned(),
+                    access_token_expires_at: Utc::now().timestamp() + 300,
+                    refresh_token_family_id: None,
+                    consumed_at: Utc::now(),
+                },
+            },
+        )
+        .await;
+    let missing_client_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &client,
+        &form_for_code(&missing_client_code),
+        None,
+    )
+    .await;
+    assert_eq!(missing_client_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        oauth_error_code(missing_client_response).await,
+        "invalid_grant"
+    );
+    assert_eq!(
+        fixture
+            .access_token_revocation_count(&client, "access-jti-2")
+            .await,
+        0,
+        "a marker bound to another client must not revoke the authenticated client's tokens"
+    );
+}
+
+#[actix_web::test]
+async fn token_authorization_code_replay_fails_closed_when_token_revocation_errors() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let client = live_client(&format!("client-replay-db-error-{}", Uuid::now_v7()));
+    let state = Data::new(TestInfrastructure {
+        diesel_db: create_pool(
+            "postgres://nazo_auth_code_test_invalid:nazo_auth_code_test_invalid@127.0.0.1:1/nazo"
+                .to_owned(),
+            1,
+        )
+        .expect("pool construction should not connect"),
+        valkey: fixture.state.valkey.clone(),
+        settings: fixture.state.settings.clone(),
+        keyset: fixture.state.keyset.clone(),
+    });
+    let code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &code,
+            &AuthorizationCodeState::Consumed {
+                marker: ConsumedAuthorizationCode {
+                    client_id: client.id,
+                    redemption_binding: Some(authorization_code_grant_key(
+                        &blake3_hex(&code),
+                        &form_for_code(&code),
+                        None,
+                        None,
+                        None,
+                    )),
+                    access_token_jti: format!("access-jti-{}", Uuid::now_v7()),
+                    access_token_expires_at: Utc::now().timestamp() + 300,
+                    refresh_token_family_id: Some(Uuid::now_v7()),
+                    consumed_at: Utc::now(),
+                },
+            },
+        )
+        .await;
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+
+    let response =
+        token_authorization_code(&state, &req, &client, &form_for_code(&code), None).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(response).await, "server_error");
+}
+
+#[actix_web::test]
+async fn token_authorization_code_reports_busy_failed_and_missing_states() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let client = live_client("client-terminal");
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+
+    let consuming_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &consuming_code,
+            &AuthorizationCodeState::Consuming {
+                payload: payload_for_client(&client),
+                consuming_at: Utc::now(),
+            },
+        )
+        .await;
+    let consuming_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &client,
+        &form_for_code(&consuming_code),
+        None,
+    )
+    .await;
+    assert_eq!(consuming_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(consuming_response).await, "invalid_grant");
+
+    let expired_code = format!("code-{}", Uuid::now_v7());
+    let mut expired_payload = payload_for_client(&client);
+    expired_payload.expires_at = Utc::now() - Duration::seconds(1);
+    fixture
+        .store_code_state(
+            &expired_code,
+            &AuthorizationCodeState::Pending {
+                payload: expired_payload,
+            },
+        )
+        .await;
+    let expired_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &client,
+        &form_for_code(&expired_code),
+        None,
+    )
+    .await;
+    assert_eq!(expired_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(expired_response).await, "invalid_grant");
+    assert!(matches!(
+        fixture.code_state(&expired_code).await,
+        AuthorizationCodeState::Pending { .. }
+    ));
+
+    let failed_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_code_state(
+            &failed_code,
+            &AuthorizationCodeState::Failed {
+                failed_at: Utc::now(),
+                error: "pkce_failed".to_owned(),
+            },
+        )
+        .await;
+    let failed_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &client,
+        &form_for_code(&failed_code),
+        None,
+    )
+    .await;
+    assert_eq!(failed_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(failed_response).await, "invalid_grant");
+
+    let missing_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &client,
+        &form_for_code("missing-code"),
+        None,
+    )
+    .await;
+    assert_eq!(missing_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(missing_response).await, "invalid_grant");
+
+    let malformed_code = format!("code-{}", Uuid::now_v7());
+    fixture
+        .store_raw_code_state(&malformed_code, r#"{"status":"unknown"}"#)
+        .await;
+    let malformed_response = token_authorization_code(
+        &fixture.state,
+        &req,
+        &client,
+        &form_for_code(&malformed_code),
+        None,
+    )
+    .await;
+    assert_eq!(malformed_response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(oauth_error_code(malformed_response).await, "server_error");
+}
+
+#[path = "authorization_code/error_mapping.rs"]
+mod error_mapping;
+#[path = "authorization_code/redirect_uri.rs"]
+mod redirect_uri;

@@ -12,25 +12,97 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
-anyhow.workspace = true
-nazo-oauth-server.workspace = true
-nazo-oauth-server-object-store.workspace = true
-nazo-oauth-server-postgres.workspace = true
-nazo-oauth-server-valkey.workspace = true
+http.workspace = true
+actix-cors = { workspace = true }
+actix-files = { workspace = true }
+actix-multipart = "0.8.0"
+actix-tls = { workspace = true, features = ["accept", "rustls-0_23"] }
+actix-web = { workspace = true, features = ["cookies", "rustls-0_23"] }
+anyhow = { workspace = true }
+arc-swap = { workspace = true }
+argon2 = { workspace = true }
+atomicwrites = { workspace = true }
+aws-lc-rs = { workspace = true }
+base64 = { workspace = true }
+blake3 = { workspace = true }
+chrono = { workspace = true, features = ["serde"] }
+ciborium = { workspace = true }
+coset = { workspace = true }
+der = { workspace = true }
+ed25519-dalek = { workspace = true }
+flate2 = { workspace = true }
+fs2 = { workspace = true }
+futures-channel = { workspace = true }
+futures-util = { workspace = true }
+hmac = { workspace = true }
+jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+lettre = { workspace = true, features = ["aws-lc-rs", "builder", "rustls-platform-verifier", "smtp-transport", "tokio1-rustls"] }
+lru = { workspace = true }
+mdoc-rs = { workspace = true }
+nazo-auth = { workspace = true }
+nazo-digital-credentials = { workspace = true }
+nazo-http-actix = { workspace = true }
+nazo-http-signatures = { workspace = true }
+nazo-identity = { workspace = true }
+nazo-key-management = { workspace = true }
+nazo-oauth-server = { workspace = true }
+nazo-oauth-server-object-store = { workspace = true }
+nazo-oauth-server-postgres = { workspace = true }
+nazo-oauth-server-valkey = { workspace = true }
+nazo-openid4vc-http-actix = { workspace = true }
+nazo-openid4vci = { workspace = true }
+nazo-openid4vp = { workspace = true }
+nazo-operator-protocol = { workspace = true }
+nazo-persistence = { workspace = true }
+nazo-postgres = { workspace = true }
+nazo-resource-server = { workspace = true }
+nazo-runtime-modules = { workspace = true }
+nazo-scim-events = { workspace = true }
+nazo-valkey = { workspace = true }
+opentelemetry = "0.32.0"
+opentelemetry-appender-tracing = "0.32.0"
+opentelemetry-otlp = { version = "0.32.0", default-features = false, features = ["http-proto", "logs", "metrics", "reqwest-blocking-client", "trace"] }
+opentelemetry_sdk = { version = "0.32.1", features = ["logs", "metrics", "rt-tokio", "trace"] }
+p256 = { workspace = true, features = ["ecdh", "ecdsa", "pkcs8"] }
+passkey-auth = { workspace = true }
+process-wrap = { workspace = true }
+rand = { workspace = true }
+rcgen = { workspace = true }
+reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "http2", "json", "stream"] }
+rustix = { workspace = true }
+rustls = { workspace = true }
+semver = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+sha1 = { workspace = true }
+sha2 = { workspace = true }
+tar = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-opentelemetry = "0.33.0"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+url = { workspace = true }
+urlencoding = { workspace = true }
+uuid = { workspace = true, features = ["v7", "serde"] }
+webpki = { workspace = true }
+x509-cert = { workspace = true }
+x509-parser = { workspace = true }
+yaml_serde = "0.10.4"
+yasna = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
-base64.workspace = true
-chrono.workspace = true
-diesel = { workspace = true, features = ["postgres_backend"] }
-diesel-async = { workspace = true, features = ["postgres"] }
-ed25519-dalek.workspace = true
-nazo-identity.workspace = true
-nazo-operator-protocol.workspace = true
-nazo-postgres.workspace = true
-nazo-valkey.workspace = true
-rand.workspace = true
-reqwest = { version = "0.12.28", default-features = false, features = ["rustls-tls"] }
+tokio = { workspace = true, features = ["test-util"] }
+chrono = { workspace = true }
+diesel = { workspace = true, features = ["64-column-tables", "chrono", "postgres_backend", "serde_json", "uuid"] }
+diesel-async = { workspace = true, features = ["deadpool", "postgres"] }
+diesel_migrations = { workspace = true }
+fred = { workspace = true, features = ["i-scripts"] }
+nazo-key-management = { workspace = true, features = ["test-support"] }
+pkcs8 = { workspace = true }
+proptest = { workspace = true }
+reqwest_012 = { package = "reqwest", version = "0.12.28", default-features = false, features = ["rustls-tls"] }
 uuid = { workspace = true, features = ["v7"] }
 
 [lints]

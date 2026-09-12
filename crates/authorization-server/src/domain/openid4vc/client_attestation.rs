@@ -1,4 +1,4 @@
-use super::crypto_helpers::decoding_key;
+use crate::crypto::decoding_key;
 
 use std::sync::Arc;
 
@@ -9,24 +9,24 @@ use nazo_persistence::{ClientTrustPolicy, Openid4vcTrustPolicyStore};
 use serde_json::Value;
 
 #[derive(Clone)]
-pub(crate) struct Openid4vcClientAttestationValidator {
+pub struct Openid4vcClientAttestationValidator {
     static_trust: Option<(Arc<str>, Arc<Value>)>,
     trust_policies: Option<(Arc<dyn Openid4vcTrustPolicyStore>, uuid::Uuid)>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub(crate) struct ValidatedClientAttestation {
-    pub(crate) client_id: String,
-    pub(crate) client_instance_key_thumbprint: String,
-    pub(crate) replay_id: String,
-    pub(crate) replay_ttl_seconds: u64,
+pub struct ValidatedClientAttestation {
+    pub client_id: String,
+    pub client_instance_key_thumbprint: String,
+    pub replay_id: String,
+    pub replay_ttl_seconds: u64,
 }
 
 const CLIENT_ATTESTATION_CLOCK_SKEW_SECONDS: i64 = 60;
 const CLIENT_ATTESTATION_POP_MAX_AGE_SECONDS: i64 = 300;
 const CLIENT_ATTESTATION_POP_MAX_JTI_BYTES: usize = 128;
 
-pub(crate) fn client_instance_key_thumbprint(instance_key: &Value) -> anyhow::Result<String> {
+pub fn client_instance_key_thumbprint(instance_key: &Value) -> anyhow::Result<String> {
     if instance_key.get("d").is_some()
         || instance_key.get("kty").and_then(Value::as_str) != Some("EC")
         || instance_key.get("crv").and_then(Value::as_str) != Some("P-256")
@@ -38,10 +38,7 @@ pub(crate) fn client_instance_key_thumbprint(instance_key: &Value) -> anyhow::Re
 }
 
 impl Openid4vcClientAttestationValidator {
-    pub(crate) fn new(
-        attester_issuer: impl Into<String>,
-        trust_jwks: Value,
-    ) -> anyhow::Result<Self> {
+    pub fn new(attester_issuer: impl Into<String>, trust_jwks: Value) -> anyhow::Result<Self> {
         let attester_issuer = attester_issuer.into();
         if attester_issuer.trim().is_empty()
             || trust_jwks
@@ -57,7 +54,7 @@ impl Openid4vcClientAttestationValidator {
         })
     }
 
-    pub(crate) fn with_trust_policies(
+    pub fn with_trust_policies(
         static_trust: Option<(String, Value)>,
         repository: Arc<dyn Openid4vcTrustPolicyStore>,
         tenant_id: uuid::Uuid,
@@ -74,7 +71,7 @@ impl Openid4vcClientAttestationValidator {
         Ok(validator)
     }
 
-    pub(crate) fn unverified_client_id(attestation: &str) -> Option<String> {
+    pub fn unverified_client_id(attestation: &str) -> Option<String> {
         decode_compact_jwt(attestation)
             .ok()?
             .claims
@@ -84,7 +81,7 @@ impl Openid4vcClientAttestationValidator {
             .map(ToOwned::to_owned)
     }
 
-    pub(crate) fn validate(
+    pub fn validate(
         &self,
         attestation: &str,
         proof: &str,
@@ -186,7 +183,7 @@ impl Openid4vcClientAttestationValidator {
         })
     }
 
-    pub(crate) async fn validate_for_client(
+    pub async fn validate_for_client(
         &self,
         attestation: &str,
         proof: &str,
@@ -233,3 +230,7 @@ fn select_jwk<'a>(jwks: &'a Value, kid: Option<&str>, alg: &str) -> anyhow::Resu
         _ => anyhow::bail!("client attestation signing key is ambiguous or unavailable"),
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/domain/openid4vc/client_attestation.rs"]
+mod tests;

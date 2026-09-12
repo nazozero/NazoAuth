@@ -4,6 +4,10 @@ use std::sync::{
 };
 
 use actix_web::{App, http::header, test, web};
+use nazo_oauth_server::contracts::fapi_resource::{
+    FapiAuthorizationError, FapiFuture, FapiHttpMessageSignatures, FapiResourceAuthorizer,
+    FapiResponseSignature, FapiSignatureOperationError, FapiSignatureVerificationError,
+};
 use nazo_resource_server::{
     ProtectedResourceAuthorizationResult, VerifiedAccessToken, VerifiedSenderConstraintProof,
 };
@@ -44,7 +48,7 @@ impl FapiResourceAuthorizer for Authorizer {
 
 struct NoMtls;
 
-impl FapiMtlsThumbprintResolver for NoMtls {
+impl MtlsThumbprintExtractor for NoMtls {
     fn resolve(&self, _request: &HttpRequest) -> Option<String> {
         None
     }

@@ -1,14 +1,13 @@
 use std::{collections::BTreeMap, sync::Arc};
 
 use actix_web::{
-    App, HttpRequest,
+    App,
     http::{StatusCode, header},
     test as actix_test, web,
 };
 use nazo_http_actix::{
-    ScimAuthorizationError, ScimAuthorizedRequest, ScimBootstrapPasswordProvider,
-    ScimCursorProtector, ScimDependencyError, ScimEndpoint, ScimFuture, ScimRequestAuthorizer,
-    scim_poll_security_events, scim_service_provider_config,
+    ClientIpConfig, ClientIpHeaderMode, IpCidr, ScimEndpoint, scim_poll_security_events,
+    scim_service_provider_config,
 };
 use nazo_identity::{
     PublicAccount, TenantContext, UserId,
@@ -17,6 +16,11 @@ use nazo_identity::{
         ScimCredentialUse, ScimListQuery, ScimRepositoryPort, UserPage,
     },
     scim::{NormalizedScimUser, ScimCursorSubject, ScimPatch, ScimRequiredScope, ScimService},
+};
+use nazo_oauth_server::contracts::scim::{
+    ScimAuthenticationFacts, ScimAuthorizationError, ScimAuthorizedRequest,
+    ScimBootstrapPasswordProvider, ScimCursorProtector, ScimDependencyError, ScimFuture,
+    ScimRequestAuthorizer,
 };
 use nazo_scim_events::{EventPollerPort, EventReceiver, MutationContext, ValidatedPollRequest};
 use serde_json::{Value, json};
@@ -90,7 +94,7 @@ struct AllowRequests;
 impl ScimRequestAuthorizer for AllowRequests {
     fn authorize<'a>(
         &'a self,
-        _request: &'a HttpRequest,
+        _facts: ScimAuthenticationFacts<'a>,
         _required_scope: ScimRequiredScope,
     ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>> {
         Box::pin(async {
@@ -109,10 +113,33 @@ impl ScimRequestAuthorizer for AllowRequests {
 
 struct DenyRequests(ScimAuthorizationError);
 
+type CapturedAuthenticationFact = (Option<String>, String, Option<String>);
+
+#[derive(Default)]
+struct CapturedAuthenticationFacts {
+    values: std::sync::Mutex<Vec<CapturedAuthenticationFact>>,
+}
+
+impl ScimRequestAuthorizer for CapturedAuthenticationFacts {
+    fn authorize<'a>(
+        &'a self,
+        facts: ScimAuthenticationFacts<'a>,
+        required_scope: ScimRequiredScope,
+    ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>> {
+        assert_eq!(required_scope, ScimRequiredScope::Read);
+        self.values.lock().unwrap().push((
+            facts.bearer_token.map(ToOwned::to_owned),
+            facts.source_ip,
+            facts.user_agent.map(ToOwned::to_owned),
+        ));
+        Box::pin(async { Err(ScimAuthorizationError::MissingBearer) })
+    }
+}
+
 impl ScimRequestAuthorizer for DenyRequests {
     fn authorize<'a>(
         &'a self,
-        _request: &'a HttpRequest,
+        _facts: ScimAuthenticationFacts<'a>,
         _required_scope: ScimRequiredScope,
     ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>> {
         let error = self.0;
@@ -127,7 +154,7 @@ struct EventRequests {
 impl ScimRequestAuthorizer for EventRequests {
     fn authorize<'a>(
         &'a self,
-        _request: &'a HttpRequest,
+        _facts: ScimAuthenticationFacts<'a>,
         _required_scope: ScimRequiredScope,
     ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>> {
         let receiver = self.receiver.clone();
@@ -195,6 +222,7 @@ fn endpoint(authorizer: Arc<dyn ScimRequestAuthorizer>) -> web::Data<ScimEndpoin
         authorizer,
         Arc::new(UnusedCursor),
         Arc::new(UnusedPassword),
+        ClientIpConfig::new(&[], ClientIpHeaderMode::None),
     ))
 }
 
@@ -212,9 +240,98 @@ fn event_endpoint() -> web::Data<ScimEndpoint> {
             }),
             Arc::new(UnusedCursor),
             Arc::new(UnusedPassword),
+            ClientIpConfig::new(&[], ClientIpHeaderMode::None),
         )
         .with_security_events(Arc::new(FixedPoller)),
     )
+}
+
+#[actix_web::test]
+async fn authorization_extracts_only_bearer_source_ip_and_user_agent() {
+    let captured = Arc::new(CapturedAuthenticationFacts::default());
+    let app = actix_test::init_service(
+        App::new()
+            .app_data(web::Data::new(ScimEndpoint::new(
+                ScimService::new(Arc::new(UnusedRepository), Arc::new(UnusedAudit)),
+                captured.clone(),
+                Arc::new(UnusedCursor),
+                Arc::new(UnusedPassword),
+                ClientIpConfig::new(
+                    &[IpCidr::parse("192.0.2.0/24").unwrap()],
+                    ClientIpHeaderMode::XForwardedFor,
+                ),
+            )))
+            .route(
+                "/scim/v2/ServiceProviderConfig",
+                web::get().to(scim_service_provider_config),
+            ),
+    )
+    .await;
+    for (authorization, token) in [
+        ("Bearer scim-token", Some("scim-token")),
+        ("bearer\tscim-token", Some("scim-token")),
+        ("  Bearer scim-token  ", Some("scim-token")),
+        ("Basic scim-token", None),
+        ("Bearer", None),
+        ("Bearer ", None),
+        ("Bearer scim-token extra", None),
+    ] {
+        let response = actix_test::call_service(
+            &app,
+            actix_test::TestRequest::get()
+                .uri("/scim/v2/ServiceProviderConfig")
+                .peer_addr("192.0.2.10:1234".parse().unwrap())
+                .insert_header((header::AUTHORIZATION, authorization))
+                .insert_header((header::USER_AGENT, "  scim-agent  "))
+                .insert_header(("x-forwarded-for", "203.0.113.7"))
+                .to_request(),
+        )
+        .await;
+        assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            captured.values.lock().unwrap().pop().unwrap(),
+            (
+                token.map(ToOwned::to_owned),
+                "203.0.113.7".to_owned(),
+                Some("  scim-agent  ".to_owned()),
+            )
+        );
+    }
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::get()
+            .uri("/scim/v2/ServiceProviderConfig")
+            .peer_addr("198.51.100.10:1234".parse().unwrap())
+            .insert_header((
+                header::AUTHORIZATION,
+                header::HeaderValue::from_bytes(b"Bearer \xff").unwrap(),
+            ))
+            .insert_header((
+                header::USER_AGENT,
+                header::HeaderValue::from_bytes(b"\xff").unwrap(),
+            ))
+            .insert_header(("x-forwarded-for", "203.0.113.7"))
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        captured.values.lock().unwrap().pop().unwrap(),
+        (None, "198.51.100.10".to_owned(), None)
+    );
+    let response = actix_test::call_service(
+        &app,
+        actix_test::TestRequest::get()
+            .uri("/scim/v2/ServiceProviderConfig")
+            .peer_addr("198.51.100.10:1234".parse().unwrap())
+            .to_request(),
+    )
+    .await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        captured.values.lock().unwrap().pop().unwrap(),
+        (None, "198.51.100.10".to_owned(), None)
+    );
 }
 
 #[actix_web::test]

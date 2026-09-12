@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{Duration, Utc};
 use coset::{CborSerializable, CoseKeyBuilder, iana};
@@ -15,19 +13,22 @@ use serde_json::{Value, json};
 
 use nazo_openid4vci::ProofValidatorPort as _;
 
-use super::{
-    Openid4vcClientAttestationValidator, Openid4vcProofValidator,
-    client_attestation::client_instance_key_thumbprint,
-    credential_crypto::{
-        mdoc_failed_assessments_accepted, mdoc_holder_key, standard_device_authentication_bytes,
-    },
-    crypto_helpers::{
-        algorithm_name, cbor_to_json, decoding_key, decoding_key_trust, json_to_cbor,
-        jwk_to_cose_key, jwk_to_ec2_cose_key, parse_pem_certificates, parse_x509, timestamp_claim,
-        verify_openid4vc_chain,
-    },
-    proof_validator::KeyAttestationContext,
-};
+use super::Openid4vcProofValidator;
+use super::credential_crypto::mdoc_failed_assessments_accepted;
+use super::credential_crypto::mdoc_holder_key;
+use super::credential_crypto::standard_device_authentication_bytes;
+use super::crypto_helpers::algorithm_name;
+use super::crypto_helpers::cbor_to_json;
+use super::crypto_helpers::decoding_key_trust;
+use super::crypto_helpers::json_to_cbor;
+use super::crypto_helpers::jwk_to_cose_key;
+use super::crypto_helpers::jwk_to_ec2_cose_key;
+use super::crypto_helpers::parse_pem_certificates;
+use super::crypto_helpers::parse_x509;
+use super::crypto_helpers::timestamp_claim;
+use super::crypto_helpers::verify_openid4vc_chain;
+use super::proof_validator::KeyAttestationContext;
+use crate::crypto::decoding_key;
 
 fn es256_test_key(seed: u8) -> (Value, EncodingKey) {
     let signing_key = SigningKey::from_slice(&[seed; 32]).expect("valid P-256 test key");
@@ -111,19 +112,6 @@ fn signed_jwt_proof(
             .insert("key_attestation".to_owned(), key_attestation.to_owned());
     }
     encode(&header, claims, key).expect("proof JWT")
-}
-
-fn signed_client_attestation_jwt(
-    claims: &Value,
-    key: &EncodingKey,
-    typ: &str,
-    algorithm: Algorithm,
-    kid: Option<&str>,
-) -> String {
-    let mut header = Header::new(algorithm);
-    header.typ = Some(typ.to_owned());
-    header.kid = kid.map(ToOwned::to_owned);
-    encode(&header, claims, key).expect("client attestation JWT")
 }
 
 async fn validate_jwt_proof(
@@ -237,37 +225,39 @@ fn attestation_proof_accepts_missing_expiration() {
     .expect("exp is optional for an attestation proof");
 }
 
-#[tokio::test]
-async fn proof_port_accepts_one_attestation_set_and_returns_each_attested_public_key() {
-    let now = Utc::now();
-    let first_key = es256_test_key(27).0;
-    let second_key = es256_test_key(29).0;
-    let (validator, encoded, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
-        "nonce": "expected-nonce",
-        "exp": now.timestamp() + 300,
-        "attested_keys": [first_key.clone(), second_key.clone()],
-    }));
-    let proofs = Proofs(std::collections::BTreeMap::from([(
-        "attestation".to_owned(),
-        vec![Value::String(encoded)],
-    )]));
+#[test]
+fn proof_port_accepts_one_attestation_set_and_returns_each_attested_public_key() {
+    futures_executor::block_on(async {
+        let now = Utc::now();
+        let first_key = es256_test_key(27).0;
+        let second_key = es256_test_key(29).0;
+        let (validator, encoded, metadata) = key_attestation_fixture(json!({
+            "iat": now.timestamp(),
+            "nonce": "expected-nonce",
+            "exp": now.timestamp() + 300,
+            "attested_keys": [first_key.clone(), second_key.clone()],
+        }));
+        let proofs = Proofs(std::collections::BTreeMap::from([(
+            "attestation".to_owned(),
+            vec![Value::String(encoded)],
+        )]));
 
-    let validated = validator
-        .validate(
-            &proofs,
-            "wallet-client",
-            "https://issuer.example",
-            "expected-nonce",
-            &metadata,
-        )
-        .await
-        .expect("the attestation proof should validate");
+        let validated = validator
+            .validate(
+                &proofs,
+                "wallet-client",
+                "https://issuer.example",
+                "expected-nonce",
+                &metadata,
+            )
+            .await
+            .expect("the attestation proof should validate");
 
-    assert_eq!(validated.len(), 2);
-    assert_eq!(validated[0].proof_type, "attestation");
-    assert_eq!(validated[0].holder_binding, json!({"jwk": first_key}));
-    assert_eq!(validated[1].holder_binding, json!({"jwk": second_key}));
+        assert_eq!(validated.len(), 2);
+        assert_eq!(validated[0].proof_type, "attestation");
+        assert_eq!(validated[0].holder_binding, json!({"jwk": first_key}));
+        assert_eq!(validated[1].holder_binding, json!({"jwk": second_key}));
+    })
 }
 
 #[test]
@@ -332,67 +322,6 @@ fn jwt_proof_key_attestation_accepts_missing_nonce() {
         KeyAttestationContext::JwtProof,
     )
     .expect("the outer JWT proof already carries the required nonce");
-}
-
-#[test]
-fn client_attestation_draft_07_accepts_optional_time_claims_and_binds_instance_key() {
-    let now = Utc::now().timestamp();
-    let (mut attester_jwk, attester_key) = es256_test_key(5);
-    let (instance_jwk, instance_key) = es256_test_key(7);
-    let mut attestation_header = Header::new(Algorithm::ES256);
-    attestation_header.typ = Some("oauth-client-attestation+jwt".to_owned());
-    attestation_header.kid = Some("attester-key".to_owned());
-    let attestation = encode(
-        &attestation_header,
-        &json!({
-            "iss": "https://attester.example",
-            "sub": "wallet-client",
-            "exp": now + 600,
-            "cnf": {"jwk": instance_jwk.clone()},
-        }),
-        &attester_key,
-    )
-    .expect("client attestation JWT");
-    let mut proof_header = Header::new(Algorithm::ES256);
-    proof_header.typ = Some("oauth-client-attestation-pop+jwt".to_owned());
-    let proof = encode(
-        &proof_header,
-        &json!({
-            "iss": "wallet-client",
-            "aud": "https://issuer.example",
-            "iat": now,
-            "jti": "fresh-proof",
-        }),
-        &instance_key,
-    )
-    .expect("client attestation PoP JWT");
-    attester_jwk["kid"] = json!("attester-key");
-    attester_jwk["alg"] = json!("ES256");
-    let validator = Openid4vcClientAttestationValidator::new(
-        "https://attester.example",
-        json!({"keys": [attester_jwk]}),
-    )
-    .expect("client attestation validator");
-
-    let validated = validator
-        .validate(&attestation, &proof, "https://issuer.example", now)
-        .expect("draft-07 optional claims must remain optional");
-
-    assert_eq!(validated.client_id, "wallet-client");
-    assert_eq!(
-        validated.client_instance_key_thumbprint,
-        client_instance_key_thumbprint(&instance_jwk).expect("instance JWK thumbprint")
-    );
-    assert_eq!(validated.replay_id, "fresh-proof");
-    assert_eq!(validated.replay_ttl_seconds, 300);
-}
-
-#[test]
-fn client_attestation_rejects_private_instance_key_material() {
-    let (mut instance_jwk, _) = es256_test_key(11);
-    instance_jwk["d"] = json!("private-material");
-
-    assert!(client_instance_key_thumbprint(&instance_jwk).is_err());
 }
 
 #[test]
@@ -710,317 +639,323 @@ fn crypto_helpers_verify_openid4vc_certificate_chain_and_anchor_policy() {
     assert!(verify_openid4vc_chain(&[vec![1, 2, 3]], &[]).is_err());
 }
 
-#[tokio::test]
-async fn proof_validator_rejects_ambiguous_and_malformed_proof_sets() {
-    let now = Utc::now();
-    let (validator, attestation, metadata) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
-        "nonce": "expected-nonce",
-        "attested_keys": [es256_test_key(47).0],
-    }));
-    let two_types = Proofs(std::collections::BTreeMap::from([
-        (
-            "attestation".to_owned(),
-            vec![Value::String(attestation.clone())],
-        ),
-        ("jwt".to_owned(), vec![Value::String(attestation.clone())]),
-    ]));
-    assert_eq!(
-        validator
-            .validate(
-                &two_types,
-                "wallet-client",
-                "https://issuer.example",
-                "expected-nonce",
-                &metadata,
-            )
-            .await,
-        Err(ProofError::UnsupportedType)
-    );
-
-    for proofs in [
-        Proofs(std::collections::BTreeMap::from([(
-            "attestation".to_owned(),
-            vec![json!(42)],
-        )])),
-        Proofs(std::collections::BTreeMap::from([(
-            "attestation".to_owned(),
-            vec![json!("not-a-jwt")],
-        )])),
-        Proofs(std::collections::BTreeMap::from([
+#[test]
+fn proof_validator_rejects_ambiguous_and_malformed_proof_sets() {
+    futures_executor::block_on(async {
+        let now = Utc::now();
+        let (validator, attestation, metadata) = key_attestation_fixture(json!({
+            "iat": now.timestamp(),
+            "nonce": "expected-nonce",
+            "attested_keys": [es256_test_key(47).0],
+        }));
+        let two_types = Proofs(std::collections::BTreeMap::from([
             (
                 "attestation".to_owned(),
                 vec![Value::String(attestation.clone())],
             ),
-            ("unused".to_owned(), Vec::new()),
-        ])),
-    ] {
-        assert!(matches!(
+            ("jwt".to_owned(), vec![Value::String(attestation.clone())]),
+        ]));
+        assert_eq!(
             validator
                 .validate(
-                    &proofs,
+                    &two_types,
                     "wallet-client",
                     "https://issuer.example",
                     "expected-nonce",
                     &metadata,
                 )
                 .await,
-            Err(ProofError::UnsupportedType | ProofError::InvalidKeyAttestation)
-        ));
-    }
+            Err(ProofError::UnsupportedType)
+        );
 
-    for proofs in [
-        Proofs(std::collections::BTreeMap::new()),
-        Proofs(std::collections::BTreeMap::from([(
-            "jwt".to_owned(),
-            Vec::new(),
-        )])),
-        Proofs(std::collections::BTreeMap::from([(
-            "jwt".to_owned(),
-            vec![json!(42)],
-        )])),
-    ] {
-        assert!(matches!(
-            validator
-                .validate(
-                    &proofs,
-                    "wallet-client",
-                    "https://issuer.example",
-                    "expected-nonce",
-                    &metadata,
-                )
-                .await,
-            Err(ProofError::UnsupportedType | ProofError::InvalidSignature)
-        ));
-    }
+        for proofs in [
+            Proofs(std::collections::BTreeMap::from([(
+                "attestation".to_owned(),
+                vec![json!(42)],
+            )])),
+            Proofs(std::collections::BTreeMap::from([(
+                "attestation".to_owned(),
+                vec![json!("not-a-jwt")],
+            )])),
+            Proofs(std::collections::BTreeMap::from([
+                (
+                    "attestation".to_owned(),
+                    vec![Value::String(attestation.clone())],
+                ),
+                ("unused".to_owned(), Vec::new()),
+            ])),
+        ] {
+            assert!(matches!(
+                validator
+                    .validate(
+                        &proofs,
+                        "wallet-client",
+                        "https://issuer.example",
+                        "expected-nonce",
+                        &metadata,
+                    )
+                    .await,
+                Err(ProofError::UnsupportedType | ProofError::InvalidKeyAttestation)
+            ));
+        }
+
+        for proofs in [
+            Proofs(std::collections::BTreeMap::new()),
+            Proofs(std::collections::BTreeMap::from([(
+                "jwt".to_owned(),
+                Vec::new(),
+            )])),
+            Proofs(std::collections::BTreeMap::from([(
+                "jwt".to_owned(),
+                vec![json!(42)],
+            )])),
+        ] {
+            assert!(matches!(
+                validator
+                    .validate(
+                        &proofs,
+                        "wallet-client",
+                        "https://issuer.example",
+                        "expected-nonce",
+                        &metadata,
+                    )
+                    .await,
+                Err(ProofError::UnsupportedType | ProofError::InvalidSignature)
+            ));
+        }
+    })
 }
 
-#[tokio::test]
-async fn proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts() {
-    let now = Utc::now();
-    let (wallet_jwk, wallet_key) = es256_test_key(53);
-    let validator = Openid4vcProofValidator::new(json!({"keys": []}))
-        .expect("empty trust set is structurally valid");
-    let metadata = proof_metadata(None);
-    let claims = json!({
-        "nonce": "expected-nonce",
-        "iat": now.timestamp(),
-        "aud": "https://issuer.example",
-    });
-
-    let valid = signed_jwt_proof(
-        Some(&wallet_jwk),
-        &wallet_key,
-        &claims,
-        Some("openid4vci-proof+jwt"),
-        Algorithm::ES256,
-        None,
-    );
-    assert_eq!(
-        validate_jwt_proof(&validator, valid.clone(), &metadata)
-            .await
-            .unwrap()
-            .len(),
-        1
-    );
-
-    let bad_typ = signed_jwt_proof(
-        Some(&wallet_jwk),
-        &wallet_key,
-        &claims,
-        Some("JWT"),
-        Algorithm::ES256,
-        None,
-    );
-    assert_eq!(
-        validate_jwt_proof(&validator, bad_typ, &metadata).await,
-        Err(ProofError::UnsupportedType)
-    );
-
-    let no_jwk = signed_jwt_proof(
-        None,
-        &wallet_key,
-        &claims,
-        Some("openid4vci-proof+jwt"),
-        Algorithm::ES256,
-        None,
-    );
-    assert_eq!(
-        validate_jwt_proof(&validator, no_jwk, &metadata).await,
-        Err(ProofError::InvalidSignature)
-    );
-
-    let mut bad_jwk = wallet_jwk.clone();
-    bad_jwk["x"] = json!("not-base64");
-    let bad_jwk = signed_jwt_proof(
-        Some(&bad_jwk),
-        &wallet_key,
-        &claims,
-        Some("openid4vci-proof+jwt"),
-        Algorithm::ES256,
-        None,
-    );
-    assert_eq!(
-        validate_jwt_proof(&validator, bad_jwk, &metadata).await,
-        Err(ProofError::InvalidSignature)
-    );
-
-    let mut invalid_claims = claims.clone();
-    invalid_claims["nonce"] = json!("wrong-nonce");
-    let invalid_nonce = signed_jwt_proof(
-        Some(&wallet_jwk),
-        &wallet_key,
-        &invalid_claims,
-        Some("openid4vci-proof+jwt"),
-        Algorithm::ES256,
-        None,
-    );
-    assert_eq!(
-        validate_jwt_proof(&validator, invalid_nonce, &metadata).await,
-        Err(ProofError::InvalidNonce)
-    );
-
-    for iat in [
-        (now - Duration::minutes(5) - Duration::seconds(1)).timestamp(),
-        (now + Duration::minutes(5)).timestamp(),
-    ] {
-        let stale = json!({
+#[test]
+fn proof_validator_enforces_jwt_header_key_metadata_and_claim_contracts() {
+    futures_executor::block_on(async {
+        let now = Utc::now();
+        let (wallet_jwk, wallet_key) = es256_test_key(53);
+        let validator = Openid4vcProofValidator::new(json!({"keys": []}))
+            .expect("empty trust set is structurally valid");
+        let metadata = proof_metadata(None);
+        let claims = json!({
             "nonce": "expected-nonce",
-            "iat": iat,
+            "iat": now.timestamp(),
             "aud": "https://issuer.example",
         });
-        let stale = signed_jwt_proof(
+
+        let valid = signed_jwt_proof(
             Some(&wallet_jwk),
             &wallet_key,
-            &stale,
+            &claims,
             Some("openid4vci-proof+jwt"),
             Algorithm::ES256,
             None,
         );
         assert_eq!(
-            validate_jwt_proof(&validator, stale, &metadata).await,
+            validate_jwt_proof(&validator, valid.clone(), &metadata)
+                .await
+                .unwrap()
+                .len(),
+            1
+        );
+
+        let bad_typ = signed_jwt_proof(
+            Some(&wallet_jwk),
+            &wallet_key,
+            &claims,
+            Some("JWT"),
+            Algorithm::ES256,
+            None,
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, bad_typ, &metadata).await,
+            Err(ProofError::UnsupportedType)
+        );
+
+        let no_jwk = signed_jwt_proof(
+            None,
+            &wallet_key,
+            &claims,
+            Some("openid4vci-proof+jwt"),
+            Algorithm::ES256,
+            None,
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, no_jwk, &metadata).await,
+            Err(ProofError::InvalidSignature)
+        );
+
+        let mut bad_jwk = wallet_jwk.clone();
+        bad_jwk["x"] = json!("not-base64");
+        let bad_jwk = signed_jwt_proof(
+            Some(&bad_jwk),
+            &wallet_key,
+            &claims,
+            Some("openid4vci-proof+jwt"),
+            Algorithm::ES256,
+            None,
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, bad_jwk, &metadata).await,
+            Err(ProofError::InvalidSignature)
+        );
+
+        let mut invalid_claims = claims.clone();
+        invalid_claims["nonce"] = json!("wrong-nonce");
+        let invalid_nonce = signed_jwt_proof(
+            Some(&wallet_jwk),
+            &wallet_key,
+            &invalid_claims,
+            Some("openid4vci-proof+jwt"),
+            Algorithm::ES256,
+            None,
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, invalid_nonce, &metadata).await,
             Err(ProofError::InvalidNonce)
         );
-    }
 
-    let hs = signed_jwt_proof(
-        None,
-        &EncodingKey::from_secret(b"test-secret"),
-        &claims,
-        Some("openid4vci-proof+jwt"),
-        Algorithm::HS256,
-        None,
-    );
-    assert_eq!(
-        validate_jwt_proof(&validator, hs, &metadata).await,
-        Err(ProofError::UnsupportedType)
-    );
-    let unsupported_metadata = nazo_openid4vci::ProofTypeMetadata {
-        proof_signing_alg_values_supported: vec!["EdDSA".to_owned()],
-        key_attestations_required: None,
-    };
-    assert_eq!(
-        validate_jwt_proof(&validator, valid, &unsupported_metadata).await,
-        Err(ProofError::UnsupportedType)
-    );
+        for iat in [
+            (now - Duration::minutes(5) - Duration::seconds(1)).timestamp(),
+            (now + Duration::minutes(5)).timestamp(),
+        ] {
+            let stale = json!({
+                "nonce": "expected-nonce",
+                "iat": iat,
+                "aud": "https://issuer.example",
+            });
+            let stale = signed_jwt_proof(
+                Some(&wallet_jwk),
+                &wallet_key,
+                &stale,
+                Some("openid4vci-proof+jwt"),
+                Algorithm::ES256,
+                None,
+            );
+            assert_eq!(
+                validate_jwt_proof(&validator, stale, &metadata).await,
+                Err(ProofError::InvalidNonce)
+            );
+        }
+
+        let hs = signed_jwt_proof(
+            None,
+            &EncodingKey::from_secret(b"test-secret"),
+            &claims,
+            Some("openid4vci-proof+jwt"),
+            Algorithm::HS256,
+            None,
+        );
+        assert_eq!(
+            validate_jwt_proof(&validator, hs, &metadata).await,
+            Err(ProofError::UnsupportedType)
+        );
+        let unsupported_metadata = nazo_openid4vci::ProofTypeMetadata {
+            proof_signing_alg_values_supported: vec!["EdDSA".to_owned()],
+            key_attestations_required: None,
+        };
+        assert_eq!(
+            validate_jwt_proof(&validator, valid, &unsupported_metadata).await,
+            Err(ProofError::UnsupportedType)
+        );
+    })
 }
 
-#[tokio::test]
-async fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
-    let now = Utc::now();
-    let (wallet_jwk, wallet_key) = es256_test_key(59);
-    let (validator, attestation, _) = key_attestation_fixture(json!({
-        "iat": now.timestamp(),
-        "exp": now.timestamp() + 300,
-        "attested_keys": [wallet_jwk.clone()],
-        "key_storage": ["iso_18045_moderate"],
-    }));
-    let mut required = std::collections::BTreeMap::new();
-    required.insert(
-        "key_storage".to_owned(),
-        vec!["iso_18045_moderate".to_owned()],
-    );
-    let metadata = proof_metadata(Some(required));
-    let claims = json!({
-        "nonce": "expected-nonce",
-        "iat": now.timestamp(),
-        "aud": "https://issuer.example",
-    });
-    let proof = signed_jwt_proof(
-        Some(&wallet_jwk),
-        &wallet_key,
-        &claims,
-        Some("openid4vci-proof+jwt"),
-        Algorithm::ES256,
-        Some(&attestation),
-    );
-    let proofs = Proofs(std::collections::BTreeMap::from([(
-        "jwt".to_owned(),
-        vec![Value::String(proof)],
-    )]));
-    let validated = validator
-        .validate(
-            &proofs,
-            "wallet-client",
-            "https://issuer.example",
-            "expected-nonce",
-            &metadata,
-        )
-        .await
-        .expect("matching key attestation");
-    assert_eq!(validated.len(), 1);
-    assert!(validated[0].key_attestation.is_some());
-
-    let (other_jwk, other_key) = es256_test_key(61);
-    let mismatched_proof = signed_jwt_proof(
-        Some(&other_jwk),
-        &other_key,
-        &claims,
-        Some("openid4vci-proof+jwt"),
-        Algorithm::ES256,
-        Some(&attestation),
-    );
-    let mismatched = Proofs(std::collections::BTreeMap::from([(
-        "jwt".to_owned(),
-        vec![Value::String(mismatched_proof)],
-    )]));
-    assert_eq!(
-        validator
+#[test]
+fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
+    futures_executor::block_on(async {
+        let now = Utc::now();
+        let (wallet_jwk, wallet_key) = es256_test_key(59);
+        let (validator, attestation, _) = key_attestation_fixture(json!({
+            "iat": now.timestamp(),
+            "exp": now.timestamp() + 300,
+            "attested_keys": [wallet_jwk.clone()],
+            "key_storage": ["iso_18045_moderate"],
+        }));
+        let mut required = std::collections::BTreeMap::new();
+        required.insert(
+            "key_storage".to_owned(),
+            vec!["iso_18045_moderate".to_owned()],
+        );
+        let metadata = proof_metadata(Some(required));
+        let claims = json!({
+            "nonce": "expected-nonce",
+            "iat": now.timestamp(),
+            "aud": "https://issuer.example",
+        });
+        let proof = signed_jwt_proof(
+            Some(&wallet_jwk),
+            &wallet_key,
+            &claims,
+            Some("openid4vci-proof+jwt"),
+            Algorithm::ES256,
+            Some(&attestation),
+        );
+        let proofs = Proofs(std::collections::BTreeMap::from([(
+            "jwt".to_owned(),
+            vec![Value::String(proof)],
+        )]));
+        let validated = validator
             .validate(
-                &mismatched,
+                &proofs,
                 "wallet-client",
                 "https://issuer.example",
                 "expected-nonce",
                 &metadata,
             )
-            .await,
-        Err(ProofError::InvalidKeyAttestation)
-    );
+            .await
+            .expect("matching key attestation");
+        assert_eq!(validated.len(), 1);
+        assert!(validated[0].key_attestation.is_some());
 
-    let malformed_extension = signed_jwt_proof(
-        Some(&wallet_jwk),
-        &wallet_key,
-        &claims,
-        Some("openid4vci-proof+jwt"),
-        Algorithm::ES256,
-        Some("malformed-attestation"),
-    );
-    let malformed = Proofs(std::collections::BTreeMap::from([(
-        "jwt".to_owned(),
-        vec![Value::String(malformed_extension)],
-    )]));
-    assert_eq!(
-        validator
-            .validate(
-                &malformed,
-                "wallet-client",
-                "https://issuer.example",
-                "expected-nonce",
-                &metadata,
-            )
-            .await,
-        Err(ProofError::InvalidKeyAttestation)
-    );
+        let (other_jwk, other_key) = es256_test_key(61);
+        let mismatched_proof = signed_jwt_proof(
+            Some(&other_jwk),
+            &other_key,
+            &claims,
+            Some("openid4vci-proof+jwt"),
+            Algorithm::ES256,
+            Some(&attestation),
+        );
+        let mismatched = Proofs(std::collections::BTreeMap::from([(
+            "jwt".to_owned(),
+            vec![Value::String(mismatched_proof)],
+        )]));
+        assert_eq!(
+            validator
+                .validate(
+                    &mismatched,
+                    "wallet-client",
+                    "https://issuer.example",
+                    "expected-nonce",
+                    &metadata,
+                )
+                .await,
+            Err(ProofError::InvalidKeyAttestation)
+        );
+
+        let malformed_extension = signed_jwt_proof(
+            Some(&wallet_jwk),
+            &wallet_key,
+            &claims,
+            Some("openid4vci-proof+jwt"),
+            Algorithm::ES256,
+            Some("malformed-attestation"),
+        );
+        let malformed = Proofs(std::collections::BTreeMap::from([(
+            "jwt".to_owned(),
+            vec![Value::String(malformed_extension)],
+        )]));
+        assert_eq!(
+            validator
+                .validate(
+                    &malformed,
+                    "wallet-client",
+                    "https://issuer.example",
+                    "expected-nonce",
+                    &metadata,
+                )
+                .await,
+            Err(ProofError::InvalidKeyAttestation)
+        );
+    })
 }
 
 #[test]
@@ -1117,366 +1052,4 @@ fn key_attestation_validates_header_nonce_expiry_and_component_requirements() {
             Err(ProofError::InvalidKeyAttestation)
         ));
     }
-}
-
-#[test]
-fn client_attestation_configuration_and_unverified_subject_are_strict() {
-    let (jwk, key) = es256_test_key(79);
-    assert!(Openid4vcClientAttestationValidator::new("", json!({"keys": [jwk]})).is_err());
-    assert!(
-        Openid4vcClientAttestationValidator::new("https://attester.example", json!({"keys": []}),)
-            .is_err()
-    );
-    for invalid in [
-        json!({"kty": "OKP", "crv": "Ed25519", "x": "AQ"}),
-        json!({"kty": "EC", "crv": "P-384", "x": "AQ", "y": "Ag"}),
-    ] {
-        assert!(client_instance_key_thumbprint(&invalid).is_err());
-    }
-
-    let compact = signed_client_attestation_jwt(
-        &json!({"sub": "wallet-client"}),
-        &key,
-        "oauth-client-attestation+jwt",
-        Algorithm::ES256,
-        None,
-    );
-    assert_eq!(
-        Openid4vcClientAttestationValidator::unverified_client_id(&compact).as_deref(),
-        Some("wallet-client")
-    );
-    assert_eq!(
-        Openid4vcClientAttestationValidator::unverified_client_id("not-a-jwt"),
-        None
-    );
-    let no_subject = signed_client_attestation_jwt(
-        &json!({"sub": ""}),
-        &key,
-        "oauth-client-attestation+jwt",
-        Algorithm::ES256,
-        None,
-    );
-    assert_eq!(
-        Openid4vcClientAttestationValidator::unverified_client_id(&no_subject),
-        None
-    );
-}
-
-fn valid_client_attestation_fixture() -> (
-    Openid4vcClientAttestationValidator,
-    String,
-    String,
-    Value,
-    EncodingKey,
-    i64,
-) {
-    let now = Utc::now().timestamp();
-    let (mut attester_jwk, attester_key) = es256_test_key(83);
-    attester_jwk["kid"] = json!("attester-key");
-    attester_jwk["alg"] = json!("ES256");
-    let (instance_jwk, instance_key) = es256_test_key(89);
-    let attestation = signed_client_attestation_jwt(
-        &json!({
-            "iss": "https://attester.example",
-            "sub": "wallet-client",
-            "exp": now + 600,
-            "cnf": {"jwk": instance_jwk.clone()},
-        }),
-        &attester_key,
-        "oauth-client-attestation+jwt",
-        Algorithm::ES256,
-        Some("attester-key"),
-    );
-    let proof = signed_client_attestation_jwt(
-        &json!({
-            "iss": "wallet-client",
-            "aud": "https://issuer.example",
-            "iat": now,
-            "jti": "fresh-proof",
-        }),
-        &instance_key,
-        "oauth-client-attestation-pop+jwt",
-        Algorithm::ES256,
-        None,
-    );
-    let validator = Openid4vcClientAttestationValidator::new(
-        "https://attester.example",
-        json!({"keys": [attester_jwk]}),
-    )
-    .expect("client attestation validator");
-    (
-        validator,
-        attestation,
-        proof,
-        instance_jwk,
-        instance_key,
-        now,
-    )
-}
-
-#[test]
-fn client_attestation_rejects_header_key_claim_and_replay_contract_violations() {
-    let (validator, attestation, proof, instance_jwk, instance_key, now) =
-        valid_client_attestation_fixture();
-    validator
-        .validate(&attestation, &proof, "https://issuer.example", now)
-        .expect("valid client attestation fixture");
-
-    let (mut attester_jwk, attester_key) = es256_test_key(83);
-    attester_jwk["kid"] = json!("attester-key");
-    attester_jwk["alg"] = json!("ES256");
-    let trust = json!({"keys": [attester_jwk]});
-    let instance_claim = json!({"jwk": instance_jwk.clone()});
-    let attestation_claims = json!({
-        "iss": "https://attester.example",
-        "sub": "wallet-client",
-        "exp": now + 600,
-        "cnf": instance_claim,
-    });
-    let make_validator = |trust: Value| {
-        Openid4vcClientAttestationValidator::new("https://attester.example", trust)
-            .expect("validator configuration")
-    };
-
-    let wrong_type = signed_client_attestation_jwt(
-        &attestation_claims,
-        &attester_key,
-        "JWT",
-        Algorithm::ES256,
-        Some("attester-key"),
-    );
-    assert!(
-        make_validator(trust.clone())
-            .validate(&wrong_type, &proof, "https://issuer.example", now)
-            .is_err()
-    );
-
-    let wrong_algorithm = signed_client_attestation_jwt(
-        &attestation_claims,
-        &EncodingKey::from_secret(b"attester-secret"),
-        "oauth-client-attestation+jwt",
-        Algorithm::HS256,
-        Some("attester-key"),
-    );
-    assert!(
-        make_validator(trust.clone())
-            .validate(&wrong_algorithm, &proof, "https://issuer.example", now)
-            .is_err()
-    );
-    let unknown_kid = signed_client_attestation_jwt(
-        &attestation_claims,
-        &attester_key,
-        "oauth-client-attestation+jwt",
-        Algorithm::ES256,
-        Some("unknown-kid"),
-    );
-    assert!(
-        make_validator(trust.clone())
-            .validate(&unknown_kid, &proof, "https://issuer.example", now)
-            .is_err()
-    );
-    let mut ambiguous = trust.clone();
-    ambiguous["keys"] = json!([ambiguous["keys"][0].clone(), ambiguous["keys"][0].clone()]);
-    assert!(
-        make_validator(ambiguous)
-            .validate(&attestation, &proof, "https://issuer.example", now)
-            .is_err()
-    );
-
-    let mut bad_trust_key = trust["keys"][0].clone();
-    bad_trust_key["x"] = json!("invalid");
-    assert!(
-        make_validator(json!({"keys": [bad_trust_key]}))
-            .validate(&attestation, &proof, "https://issuer.example", now)
-            .is_err()
-    );
-
-    for claims in [
-        json!({"sub": "wallet-client", "exp": now + 600}),
-        json!({"iss": "https://wrong.example", "sub": "wallet-client", "exp": now + 600, "cnf": {"jwk": instance_jwk.clone()}}),
-        json!({"iss": "https://attester.example", "sub": "", "exp": now + 600, "cnf": {"jwk": instance_jwk.clone()}}),
-        json!({"iss": "https://attester.example", "sub": "wallet-client", "exp": now + 600, "cnf": {}}),
-        json!({"iss": "https://attester.example", "sub": "wallet-client", "exp": now + 600, "cnf": {"jwk": {"kty": "RSA"}}}),
-    ] {
-        let token = signed_client_attestation_jwt(
-            &claims,
-            &attester_key,
-            "oauth-client-attestation+jwt",
-            Algorithm::ES256,
-            Some("attester-key"),
-        );
-        assert!(
-            validator
-                .validate(&token, &proof, "https://issuer.example", now)
-                .is_err()
-        );
-    }
-
-    let future_iat = signed_client_attestation_jwt(
-        &json!({
-            "iss": "https://attester.example",
-            "sub": "wallet-client",
-            "iat": now + 61,
-            "exp": now + 600,
-            "cnf": {"jwk": instance_jwk.clone()},
-        }),
-        &attester_key,
-        "oauth-client-attestation+jwt",
-        Algorithm::ES256,
-        Some("attester-key"),
-    );
-    assert!(
-        validator
-            .validate(&future_iat, &proof, "https://issuer.example", now)
-            .is_err()
-    );
-
-    let wrong_proof_type = signed_client_attestation_jwt(
-        &json!({
-            "iss": "wallet-client",
-            "aud": "https://issuer.example",
-            "iat": now,
-            "jti": "fresh-proof",
-        }),
-        &instance_key,
-        "JWT",
-        Algorithm::ES256,
-        None,
-    );
-    assert!(
-        validator
-            .validate(
-                &attestation,
-                &wrong_proof_type,
-                "https://issuer.example",
-                now
-            )
-            .is_err()
-    );
-
-    let wrong_proof_algorithm = signed_client_attestation_jwt(
-        &json!({
-            "iss": "wallet-client",
-            "aud": "https://issuer.example",
-            "iat": now,
-            "jti": "fresh-proof",
-        }),
-        &EncodingKey::from_secret(b"proof-secret"),
-        "oauth-client-attestation-pop+jwt",
-        Algorithm::HS256,
-        None,
-    );
-    assert!(
-        validator
-            .validate(
-                &attestation,
-                &wrong_proof_algorithm,
-                "https://issuer.example",
-                now
-            )
-            .is_err()
-    );
-
-    for claims in [
-        json!({"iss": "other-client", "aud": "https://issuer.example", "iat": now, "jti": "fresh-proof"}),
-        json!({"iss": "wallet-client", "aud": "wrong-audience", "iat": now, "jti": "fresh-proof"}),
-        json!({"iss": "wallet-client", "aud": "https://issuer.example", "iat": now, "jti": ""}),
-        json!({"iss": "wallet-client", "aud": "https://issuer.example", "iat": now, "jti": "x".repeat(129)}),
-        json!({"iss": "wallet-client", "aud": "https://issuer.example", "iat": now - 301, "jti": "fresh-proof"}),
-        json!({"iss": "wallet-client", "aud": "https://issuer.example", "iat": now + 61, "jti": "fresh-proof"}),
-    ] {
-        let token = signed_client_attestation_jwt(
-            &claims,
-            &instance_key,
-            "oauth-client-attestation-pop+jwt",
-            Algorithm::ES256,
-            None,
-        );
-        assert!(
-            validator
-                .validate(&attestation, &token, "https://issuer.example", now)
-                .is_err()
-        );
-    }
-}
-
-#[tokio::test]
-async fn client_attestation_validate_for_client_uses_static_trust_when_client_is_unbound() {
-    let (validator, attestation, proof, _, _, now) = valid_client_attestation_fixture();
-    let validated = validator
-        .validate_for_client(&attestation, &proof, "https://issuer.example", now)
-        .await
-        .expect("static trust fallback should validate");
-    assert_eq!(validated.client_id, "wallet-client");
-}
-
-#[tokio::test]
-async fn client_attestation_trust_policy_constructor_and_lookup_fail_closed_without_database() {
-    let (mut attester_jwk, attester_key) = es256_test_key(97);
-    attester_jwk["kid"] = json!("attester-key");
-    attester_jwk["alg"] = json!("ES256");
-    let pool = nazo_postgres::create_pool(
-        "postgres://openid4vc_policy:openid4vc_policy@127.0.0.1:1/oauth".to_owned(),
-        1,
-    )
-    .expect("pool construction should not connect");
-    let repository = nazo_postgres::TenantResourceRepository::new(pool.clone());
-    let configured = Openid4vcClientAttestationValidator::with_trust_policies(
-        Some((
-            "https://attester.example".to_owned(),
-            json!({"keys": [attester_jwk.clone()]}),
-        )),
-        Arc::new(repository),
-        uuid::Uuid::nil(),
-    )
-    .expect("static trust plus ordinary policy repository should configure");
-    let now = Utc::now().timestamp();
-    let instance_jwk = es256_test_key(101).0;
-    let instance_key = es256_test_key(101).1;
-    let attestation = signed_client_attestation_jwt(
-        &json!({
-            "iss": "https://attester.example",
-            "sub": "wallet-client",
-            "exp": now + 600,
-            "cnf": {"jwk": instance_jwk},
-        }),
-        &attester_key,
-        "oauth-client-attestation+jwt",
-        Algorithm::ES256,
-        Some("attester-key"),
-    );
-    let proof = signed_client_attestation_jwt(
-        &json!({
-            "iss": "wallet-client",
-            "aud": "https://issuer.example",
-            "iat": now,
-            "jti": "constructor-proof",
-        }),
-        &instance_key,
-        "oauth-client-attestation-pop+jwt",
-        Algorithm::ES256,
-        None,
-    );
-    let validated = configured
-        .validate(&attestation, &proof, "https://issuer.example", now)
-        .expect("configured static trust must validate a matching attestation");
-    assert_eq!(validated.client_id, "wallet-client");
-
-    let dynamic = Openid4vcClientAttestationValidator::with_trust_policies(
-        None,
-        Arc::new(nazo_postgres::TenantResourceRepository::new(pool)),
-        uuid::Uuid::nil(),
-    )
-    .expect("ordinary policy-only validator should configure");
-    let (static_validator, attestation, proof, _, _, now) = valid_client_attestation_fixture();
-    let error = dynamic
-        .validate_for_client(&attestation, &proof, "https://issuer.example", now)
-        .await
-        .expect_err("unavailable ordinary policy database must fail closed");
-    assert!(!format!("{error:#}").is_empty());
-    let validated = static_validator
-        .validate_for_client(&attestation, &proof, "https://issuer.example", now)
-        .await
-        .expect("static validator should remain observable through its public behavior");
-    assert_eq!(validated.client_id, "wallet-client");
 }

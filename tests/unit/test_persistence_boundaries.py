@@ -70,7 +70,9 @@ class PersistenceBoundaryTests(unittest.TestCase):
             "_on_connection(",
         )
         violations: list[str] = []
-        for path in sorted((SERVER / "src").rglob("*.rs")):
+        for path in sorted([*(SERVER / "src").rglob("*.rs"), *(DISTRIBUTION / "src").rglob("*.rs")]):
+            if path.is_relative_to(DISTRIBUTION / "src" / "launchers"):
+                continue
             source = path.read_text(encoding="utf-8")
             for marker in forbidden:
                 if marker in source:

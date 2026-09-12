@@ -134,8 +134,6 @@ fn assert_same_runtime_public_material(
 
 fn database_key_settings() -> KeySettings {
     KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
@@ -170,8 +168,6 @@ async fn database_managers_share_encrypted_keys_and_restart_after_rewrapping() -
     .execute(&mut pool.get().await?)
     .await?;
     let settings = KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
@@ -184,11 +180,18 @@ async fn database_managers_share_encrypted_keys_and_restart_after_rewrapping() -
     let (first, second) = tokio::join!(
         KeyManager::load_or_create_database(
             settings.clone(),
+            None,
             tenant,
             repository.clone(),
             ring.clone()
         ),
-        KeyManager::load_or_create_database(settings.clone(), tenant, second_repository, ring),
+        KeyManager::load_or_create_database(
+            settings.clone(),
+            None,
+            tenant,
+            second_repository,
+            ring
+        ),
     );
     let (first, second) = (first?, second?);
     let original_kid = first.snapshot().active_kid.clone();
@@ -211,9 +214,15 @@ async fn database_managers_share_encrypted_keys_and_restart_after_rewrapping() -
     );
     let wrong = SigningKeyWrappingKeyRing::new("first", [18_u8; 32], None)?;
     assert!(
-        KeyManager::load_or_create_database(settings.clone(), tenant, repository.clone(), wrong)
-            .await
-            .is_err()
+        KeyManager::load_or_create_database(
+            settings.clone(),
+            None,
+            tenant,
+            repository.clone(),
+            wrong
+        )
+        .await
+        .is_err()
     );
 
     drop(first);
@@ -225,6 +234,7 @@ async fn database_managers_share_encrypted_keys_and_restart_after_rewrapping() -
     )?;
     let rolling = KeyManager::load_or_create_database(
         settings.clone(),
+        None,
         tenant,
         repository.clone(),
         rolling_ring,
@@ -241,6 +251,7 @@ async fn database_managers_share_encrypted_keys_and_restart_after_rewrapping() -
     drop(rolling);
     let restarted = KeyManager::load_or_create_database(
         settings,
+        None,
         tenant,
         repository,
         SigningKeyWrappingKeyRing::new("second", [19_u8; 32], None)?,
@@ -279,6 +290,7 @@ async fn database_managed_openid4vc_material_survives_refresh_rotation_and_resta
 
     let first = KeyManager::load_or_create_database(
         settings.clone(),
+        None,
         tenant,
         repository.clone(),
         wrapping_keys.clone(),
@@ -286,6 +298,7 @@ async fn database_managed_openid4vc_material_survives_refresh_rotation_and_resta
     .await?;
     let second = KeyManager::load_or_create_database(
         settings.clone(),
+        None,
         tenant,
         second_repository,
         wrapping_keys.clone(),
@@ -381,6 +394,7 @@ async fn database_managed_openid4vc_material_survives_refresh_rotation_and_resta
 
     let fresh = KeyManager::load_or_create_database(
         database_key_settings(),
+        None,
         tenant,
         repository.clone(),
         wrapping_keys,

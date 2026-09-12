@@ -1,4 +1,12 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+#[cfg(test)]
+use nazo_identity::{AuthorizedApplicationsView, SessionId};
+#[cfg(test)]
+use nazo_oauth_server::contracts::profile_account::ProfileAccountFuture;
+use nazo_oauth_server::contracts::profile_account::{
+    ProfileAccountError, ProfileAccountOperations, ProfileMe,
+};
+
+use std::sync::Arc;
 
 use actix_web::{
     HttpRequest, HttpResponse,
@@ -6,49 +14,13 @@ use actix_web::{
     web::{Data, Json},
 };
 use nazo_identity::{
-    AccountProfileView, AuthorizedApplicationsView, PendingMfaProfileView, ProfilePatch,
-    ProfileValidationError, SessionId,
+    AccountProfileView, PendingMfaProfileView, ProfilePatch, ProfileValidationError,
 };
 use serde::{Deserialize, Serialize};
 
 use crate::{
     SessionCookieConfig, csrf_error, json_response_no_store, login_required_response, oauth_error,
 };
-
-pub type ProfileAccountFuture<'a, T> =
-    Pin<Box<dyn Future<Output = Result<T, ProfileAccountError>> + Send + 'a>>;
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ProfileMe {
-    Active(Box<AccountProfileView>),
-    PendingMfa(PendingMfaProfileView),
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum ProfileAccountError {
-    LoginRequired,
-    SessionLookupUnavailable,
-    OverviewUnavailable,
-    Validation(ProfileValidationError),
-    UpdateUnavailable,
-    UpdatedOverviewUnavailable,
-    ApplicationsUnavailable,
-}
-
-pub trait ProfileAccountOperations: Send + Sync {
-    fn me(&self, session_id: SessionId) -> ProfileAccountFuture<'_, ProfileMe>;
-
-    fn update(
-        &self,
-        session_id: SessionId,
-        patch: ProfilePatch,
-    ) -> ProfileAccountFuture<'_, AccountProfileView>;
-
-    fn applications(
-        &self,
-        session_id: SessionId,
-    ) -> ProfileAccountFuture<'_, AuthorizedApplicationsView>;
-}
 
 #[derive(Clone)]
 pub struct ProfileAccountEndpoint {

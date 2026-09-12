@@ -10,21 +10,12 @@ use actix_web::{
 use serde::Serialize;
 use serde_json::json;
 
-#[derive(Clone)]
-pub struct OAuthJsonErrorFields {
-    pub error: String,
-}
-
 pub fn oauth_error(status: StatusCode, error: &str, description: &str) -> HttpResponse {
     let description = oauth_error_description(description);
-    let mut response = json_response_status(
+    json_response_status(
         status,
         json!({"error": error, "error_description": description}),
-    );
-    response.extensions_mut().insert(OAuthJsonErrorFields {
-        error: error.to_owned(),
-    });
-    response
+    )
 }
 
 pub fn authorization_error_response(
@@ -155,6 +146,111 @@ pub fn is_oauth_error_description_byte(byte: u8) -> bool {
         byte,
         0x09 | 0x0A | 0x0D | 0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E
     )
+}
+
+/// Presents the existing OAuth endpoint error policies after semantic decisions.
+pub fn oauth_endpoint_error_response(
+    error: nazo_oauth_server::contracts::oauth_error::OAuthEndpointError,
+) -> HttpResponse {
+    use nazo_oauth_server::contracts::oauth_error::OAuthEndpointError;
+    let status = |value: http::StatusCode| {
+        StatusCode::from_u16(value.as_u16()).expect("HTTP status is valid")
+    };
+    match error {
+        OAuthEndpointError::Json(fields) => {
+            oauth_error(status(fields.status), &fields.error, &fields.description)
+        }
+        OAuthEndpointError::Authorization(fields) => {
+            authorization_error_response(status(fields.status), &fields.error, &fields.description)
+        }
+        OAuthEndpointError::Token {
+            fields,
+            basic_challenge,
+        } => oauth_token_error(
+            status(fields.status),
+            &fields.error,
+            &fields.description,
+            basic_challenge,
+        ),
+        OAuthEndpointError::Bearer(fields) => {
+            oauth_bearer_error(status(fields.status), &fields.error, &fields.description)
+        }
+        OAuthEndpointError::Dpop { error, context } => crate::dpop_error_response(error, context),
+        OAuthEndpointError::PreAuthorized(error) => pre_authorized_token_error_response(error),
+        OAuthEndpointError::RateLimited {
+            retry_after_seconds,
+        } => {
+            let mut response = authorization_error_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                "temporarily_unavailable",
+                "请求过于频繁，请稍后重试.",
+            );
+            if let Ok(value) = HeaderValue::from_str(&retry_after_seconds.to_string()) {
+                response.headers_mut().insert(header::RETRY_AFTER, value);
+            }
+            response
+        }
+        OAuthEndpointError::Disabled => HttpResponse::NotFound().finish(),
+    }
+}
+
+pub fn pre_authorized_token_error_response(
+    error: nazo_openid4vci::application::CredentialHttpError,
+) -> HttpResponse {
+    let mut response = oauth_token_error(
+        StatusCode::from_u16(error.status).unwrap_or(StatusCode::BAD_REQUEST),
+        error.error,
+        error.description,
+        false,
+    );
+    if let Some(challenge) = match error.error {
+        "use_dpop_nonce" => Some(header::HeaderValue::from_static(
+            r#"DPoP error="use_dpop_nonce""#,
+        )),
+        "invalid_dpop_proof" => Some(header::HeaderValue::from_static(
+            r#"DPoP error="invalid_dpop_proof""#,
+        )),
+        _ => None,
+    } {
+        response
+            .headers_mut()
+            .insert(header::WWW_AUTHENTICATE, challenge);
+    }
+    if let Some(nonce) = error.dpop_nonce
+        && let Ok(value) = header::HeaderValue::from_str(&nonce)
+    {
+        response
+            .headers_mut()
+            .insert(header::HeaderName::from_static("dpop-nonce"), value);
+    }
+    response
+}
+
+/// Presents each token result with its original cache and nonce policy.
+pub fn token_endpoint_success_response(
+    success: nazo_oauth_server::contracts::token_endpoint::TokenEndpointSuccess,
+) -> HttpResponse {
+    use nazo_oauth_server::contracts::token_endpoint::TokenEndpointSuccess;
+    match success {
+        TokenEndpointSuccess::Issued { body, dpop_nonce } => {
+            let mut response = json_response_no_store(body);
+            if let Some(nonce) = dpop_nonce
+                && let Ok(value) = HeaderValue::from_str(&nonce)
+            {
+                response
+                    .headers_mut()
+                    .insert(header::HeaderName::from_static("dpop-nonce"), value);
+            }
+            response
+        }
+        TokenEndpointSuccess::Replayed { body } => HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .content_type("application/json")
+            .body(body),
+        TokenEndpointSuccess::PreAuthorized(body) => HttpResponse::Ok()
+            .insert_header((header::CACHE_CONTROL, "no-store"))
+            .json(body),
+    }
 }
 
 #[cfg(test)]

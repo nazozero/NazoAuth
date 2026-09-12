@@ -204,8 +204,6 @@ fn replace_payload(
 #[tokio::test]
 async fn two_managers_share_database_keyset_without_writing_key_files() {
     let settings = KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
@@ -216,11 +214,12 @@ async fn two_managers_share_database_keyset_without_writing_key_files() {
     let (first, second) = tokio::join!(
         KeyManager::load_or_create_database(
             settings.clone(),
+            None,
             tenant,
             repository.clone(),
             ring.clone()
         ),
-        KeyManager::load_or_create_database(settings, tenant, repository.clone(), ring),
+        KeyManager::load_or_create_database(settings, None, tenant, repository.clone(), ring),
     );
     let first = first.unwrap();
     let second = second.unwrap();
@@ -231,8 +230,6 @@ async fn two_managers_share_database_keyset_without_writing_key_files() {
 #[tokio::test]
 async fn database_registration_converges_and_survives_restart_without_files() {
     let settings = KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
@@ -242,6 +239,7 @@ async fn database_registration_converges_and_survives_restart_without_files() {
     let tenant = Uuid::now_v7();
     let first = KeyManager::load_or_create_database(
         settings.clone(),
+        None,
         tenant,
         repository.clone(),
         ring.clone(),
@@ -261,6 +259,7 @@ async fn database_registration_converges_and_survives_restart_without_files() {
         }),
         KeyManager::load_or_create_database(
             settings.clone(),
+            None,
             tenant,
             repository.clone(),
             ring.clone()
@@ -274,9 +273,10 @@ async fn database_registration_converges_and_survives_restart_without_files() {
             .iter()
             .any(|record| record.kid == first_kid && record.backend == "local-db")
     );
-    let restarted = KeyManager::load_or_create_database(settings, tenant, repository.clone(), ring)
-        .await
-        .unwrap();
+    let restarted =
+        KeyManager::load_or_create_database(settings, None, tenant, repository.clone(), ring)
+            .await
+            .unwrap();
     assert_eq!(
         restarted
             .database_register_local(crate::LocalKeyRegistration {
@@ -293,8 +293,6 @@ async fn database_registration_converges_and_survives_restart_without_files() {
 #[tokio::test]
 async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
     let settings = KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
@@ -304,6 +302,7 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
     let ring = SigningKeyWrappingKeyRing::new("current", [10_u8; 32], None).unwrap();
     let manager = KeyManager::load_or_create_database(
         settings.clone(),
+        None,
         tenant,
         repository.clone(),
         ring.clone(),
@@ -324,9 +323,10 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
     );
     replace_payload(&repository, tenant, &ring, payload);
 
-    let restarted = KeyManager::load_or_create_database(settings, tenant, repository.clone(), ring)
-        .await
-        .unwrap();
+    let restarted =
+        KeyManager::load_or_create_database(settings, None, tenant, repository.clone(), ring)
+            .await
+            .unwrap();
     assert_eq!(
         repository.load().await.unwrap().unwrap().revision,
         revision + 1
@@ -347,8 +347,6 @@ async fn database_startup_maintains_an_overdue_keyset_before_it_is_ready() {
 #[tokio::test]
 async fn expired_database_key_remains_encrypted_but_is_not_advertised_or_verifiable() {
     let settings = KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::seconds(-1),
         prepublish_window: chrono::Duration::zero(),
         verification_grace: chrono::Duration::minutes(10),
@@ -358,6 +356,7 @@ async fn expired_database_key_remains_encrypted_but_is_not_advertised_or_verifia
     let ring = SigningKeyWrappingKeyRing::new("current", [11_u8; 32], None).unwrap();
     let manager = KeyManager::load_or_create_database(
         settings.clone(),
+        None,
         tenant,
         repository.clone(),
         ring.clone(),
@@ -378,9 +377,10 @@ async fn expired_database_key_remains_encrypted_but_is_not_advertised_or_verifia
     );
     replace_payload(&repository, tenant, &ring, payload);
 
-    let restarted = KeyManager::load_or_create_database(settings, tenant, repository.clone(), ring)
-        .await
-        .unwrap();
+    let restarted =
+        KeyManager::load_or_create_database(settings, None, tenant, repository.clone(), ring)
+            .await
+            .unwrap();
     assert!(
         repository.load().await.unwrap().unwrap().public_metadata["keys"]
             .as_array()
@@ -417,8 +417,6 @@ async fn expired_database_key_remains_encrypted_but_is_not_advertised_or_verifia
 #[tokio::test]
 async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_removed() {
     let settings = KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
@@ -426,16 +424,21 @@ async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_remov
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant = Uuid::now_v7();
     let old = SigningKeyWrappingKeyRing::new("old", [6_u8; 32], None).unwrap();
-    KeyManager::load_or_create_database(settings.clone(), tenant, repository.clone(), old)
+    KeyManager::load_or_create_database(settings.clone(), None, tenant, repository.clone(), old)
         .await
         .unwrap();
     let rollover =
         SigningKeyWrappingKeyRing::new("new", [7_u8; 32], Some(("old".to_owned(), [6_u8; 32])))
             .unwrap();
-    let manager =
-        KeyManager::load_or_create_database(settings.clone(), tenant, repository.clone(), rollover)
-            .await
-            .unwrap();
+    let manager = KeyManager::load_or_create_database(
+        settings.clone(),
+        None,
+        tenant,
+        repository.clone(),
+        rollover,
+    )
+    .await
+    .unwrap();
     manager.refresh().await.unwrap();
     assert_eq!(
         repository.load().await.unwrap().unwrap().wrapping_key_id,
@@ -443,6 +446,7 @@ async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_remov
     );
     KeyManager::load_or_create_database(
         settings,
+        None,
         tenant,
         repository,
         SigningKeyWrappingKeyRing::new("new", [7_u8; 32], None).unwrap(),
@@ -454,8 +458,6 @@ async fn refresh_reseals_an_old_generation_before_previous_wrapping_key_is_remov
 #[tokio::test]
 async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
     let settings = KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
@@ -463,6 +465,7 @@ async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
     let repository = Arc::new(ConflictRepository::with_conflicts(2));
     let manager = KeyManager::load_or_create_database(
         settings,
+        None,
         Uuid::now_v7(),
         repository.clone(),
         SigningKeyWrappingKeyRing::new("current", [12_u8; 32], None).unwrap(),
@@ -486,8 +489,6 @@ async fn database_update_retries_compare_and_swap_conflicts_before_applying() {
 #[tokio::test]
 async fn database_update_stops_after_the_cas_conflict_budget() {
     let settings = KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
@@ -495,6 +496,7 @@ async fn database_update_stops_after_the_cas_conflict_budget() {
     let repository = Arc::new(ConflictRepository::with_conflicts(8));
     let manager = KeyManager::load_or_create_database(
         settings,
+        None,
         Uuid::now_v7(),
         repository,
         SigningKeyWrappingKeyRing::new("current", [13_u8; 32], None).unwrap(),

@@ -1,4 +1,12 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+#[cfg(test)]
+use nazo_identity::registration::RegisteredAccount;
+#[cfg(test)]
+use nazo_oauth_server::contracts::local_registration::LocalRegistrationFuture;
+use nazo_oauth_server::contracts::local_registration::{
+    AuthenticationRateLimit, AuthenticationRateLimitError, LocalRegistrationOperations,
+};
+
+use std::sync::Arc;
 
 use actix_web::{
     HttpRequest, HttpResponse,
@@ -7,7 +15,7 @@ use actix_web::{
 };
 use nazo_identity::{
     RegisterLocalAccountError, RegisterLocalAccountInput, SendVerificationCodeError,
-    SendVerificationCodeOutcome, email::normalize_email_address, registration::RegisteredAccount,
+    SendVerificationCodeOutcome, email::normalize_email_address,
 };
 use serde::Deserialize;
 use serde_json::json;
@@ -16,34 +24,6 @@ use crate::{
     ClientIpConfig, authorization_error_response, client_ip_with_config, json_response,
     json_response_status, oauth_error,
 };
-
-pub type LocalRegistrationFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-pub trait LocalRegistrationOperations: Send + Sync {
-    fn send_verification_code<'a>(
-        &'a self,
-        normalized_email: &'a str,
-        peer_subject: &'a str,
-    ) -> LocalRegistrationFuture<'a, Result<SendVerificationCodeOutcome, SendVerificationCodeError>>;
-
-    fn register_local_account(
-        &self,
-        input: RegisterLocalAccountInput,
-    ) -> LocalRegistrationFuture<'_, Result<RegisteredAccount, RegisterLocalAccountError>>;
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum AuthenticationRateLimitError {
-    Limited { retry_after_seconds: u64 },
-    Unavailable,
-}
-
-pub trait AuthenticationRateLimit: Send + Sync {
-    fn enforce<'a>(
-        &'a self,
-        subject: &'a str,
-    ) -> LocalRegistrationFuture<'a, Result<(), AuthenticationRateLimitError>>;
-}
 
 #[derive(Clone)]
 pub struct LocalRegistrationEndpoint {

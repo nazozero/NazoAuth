@@ -69,7 +69,7 @@ class CoveragePhaseIsolationTests(unittest.TestCase):
         ):
             self.assertIn(test_name, self.source[live_tests:coverage_export])
         self.assertIn(
-            'cargo test --locked -p nazo-oauth-server --lib "$test_name" -- --ignored',
+            'cargo test --locked -p nazoauth --lib "$test_name" -- --ignored',
             self.source[live_tests:coverage_export],
         )
         self.assertLess(workspace_tests, live_tests)

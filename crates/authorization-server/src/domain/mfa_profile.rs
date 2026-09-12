@@ -1,70 +1,22 @@
 use std::sync::Arc;
 
-use chrono::{DateTime, Duration, Utc};
-use nazo_http_actix::{
-    AuthenticationRateLimit, MfaBackupCodesRegenerated, MfaChallengeCommand, MfaChallengeSuccess,
-    MfaCodeCommand, MfaProfileError, MfaProfileErrorKind, MfaProfileFuture, MfaProfileOperations,
+use crate::contracts::local_registration::AuthenticationRateLimit;
+use crate::contracts::mfa_profile::{
+    MfaBackupCodesRegenerated, MfaChallengeCommand, MfaChallengeSuccess, MfaCodeCommand,
+    MfaProfileError, MfaProfileErrorKind, MfaProfileFuture, MfaProfileOperations,
     MfaRequestContext, MfaSessionRotation, MfaStepUpSuccess, MfaTotpConfirmation,
     MfaTotpEnrollment,
 };
+use chrono::{DateTime, Duration, Utc};
 use nazo_identity::{
     MfaService, MfaServiceError, MfaServiceErrorKind, PublicAccount, SessionId, SessionResolution,
     SessionRotation, SessionService, TotpConfirmationOutcome,
     mfa::MfaVerificationMethod,
-    ports::{
-        EncodedSecretHash, MfaAttemptThrottleDecision, MfaAttemptThrottlePort, MfaHashError,
-        MfaHashFuture, MfaSecretHashPort,
-    },
+    ports::{MfaAttemptThrottleDecision, MfaAttemptThrottlePort},
 };
-
-use crate::adapters::security::{
-    PasswordHashingError, PasswordVerificationError, hash_password_blocking_limited,
-    verify_encoded_hashes_blocking_limited,
-};
-
-pub(crate) const MFA_REMEMBERED_COOKIE_NAME: &str = "nazo_oauth_mfa_remembered";
-pub(crate) const MFA_REMEMBERED_TTL_SECONDS: u64 = 2_592_000;
-
-#[derive(Clone, Copy)]
-pub(crate) struct ServerMfaSecretHasher;
-
-impl MfaSecretHashPort for ServerMfaSecretHasher {
-    fn hash_secrets(&self, secrets: Vec<String>) -> MfaHashFuture<'_, Vec<EncodedSecretHash>> {
-        Box::pin(async move {
-            let mut hashes = Vec::with_capacity(secrets.len());
-            for secret in secrets {
-                let hash =
-                    hash_password_blocking_limited(secret)
-                        .await
-                        .map_err(|error| match error {
-                            PasswordHashingError::Saturated => MfaHashError::Busy,
-                            PasswordHashingError::WorkerFailed
-                            | PasswordHashingError::HashFailed => MfaHashError::Failed,
-                        })?;
-                hashes.push(EncodedSecretHash::new(hash).map_err(|_| MfaHashError::Failed)?);
-            }
-            Ok(hashes)
-        })
-    }
-
-    fn find_matching_secret(
-        &self,
-        secret: String,
-        candidates: Vec<EncodedSecretHash>,
-    ) -> MfaHashFuture<'_, Option<usize>> {
-        Box::pin(async move {
-            verify_encoded_hashes_blocking_limited(secret, candidates)
-                .await
-                .map_err(|error| match error {
-                    PasswordVerificationError::Saturated => MfaHashError::Busy,
-                    PasswordVerificationError::WorkerFailed => MfaHashError::Failed,
-                })
-        })
-    }
-}
 
 #[derive(Clone)]
-pub(crate) struct ServerMfaProfileOperations {
+pub struct ServerMfaProfileOperations {
     mfa: MfaService,
     sessions: SessionService,
     rate_limit: Arc<dyn AuthenticationRateLimit>,
@@ -78,7 +30,7 @@ pub(crate) struct ServerMfaProfileOperations {
 
 impl ServerMfaProfileOperations {
     #[allow(clippy::too_many_arguments)]
-    pub(crate) fn new(
+    pub fn new(
         mfa: MfaService,
         sessions: SessionService,
         rate_limit: Arc<dyn AuthenticationRateLimit>,

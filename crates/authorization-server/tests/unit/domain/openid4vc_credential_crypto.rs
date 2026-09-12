@@ -1,4 +1,7 @@
-use std::{collections::BTreeSet, time::Duration as StdDuration};
+use std::{collections::BTreeSet, sync::Arc};
+
+#[path = "../../support/mdoc_signer.rs"]
+mod mdoc_signer;
 
 use base64::{
     Engine as _,
@@ -143,8 +146,6 @@ fn certificate_fixture_with_key(host: &str, leaf_key: KeyPair) -> CertificateFix
 
 async fn real_crypto_fixture() -> (Openid4vcCredentialCrypto, CertificateFixture, String) {
     let settings = KeySettings {
-        external_command: Vec::new(),
-        external_timeout: StdDuration::from_secs(1),
         rotation_interval: chrono::Duration::days(1),
         prepublish_window: chrono::Duration::hours(1),
         verification_grace: chrono::Duration::hours(1),
@@ -172,7 +173,7 @@ async fn real_crypto_fixture() -> (Openid4vcCredentialCrypto, CertificateFixture
     let crypto = crypto_with_certificate(
         keyset,
         &certs,
-        crate::settings::Openid4vcRevocationPolicy::Disabled,
+        crate::policy::Openid4vcRevocationPolicy::Disabled,
     );
     (crypto, certs, kid)
 }
@@ -180,7 +181,7 @@ async fn real_crypto_fixture() -> (Openid4vcCredentialCrypto, CertificateFixture
 fn crypto_with_certificate(
     keyset: nazo_key_management::KeyManager,
     certs: &CertificateFixture,
-    revocation_policy: crate::settings::Openid4vcRevocationPolicy,
+    revocation_policy: crate::policy::Openid4vcRevocationPolicy,
 ) -> Openid4vcCredentialCrypto {
     let signing_kid = keyset
         .snapshot()
@@ -204,6 +205,7 @@ fn crypto_with_certificate(
         keyset,
         VcIssuerTrustPolicy::san_bound(),
         revocation_policy,
+        Arc::new(mdoc_signer::LocalTestMdocDocumentSigner),
     )
     .expect("fixture OpenID4VC material should validate")
 }
@@ -424,7 +426,7 @@ fn sd_presentation_fixture() -> (
     let crypto = crypto_with_certificate(
         nazo_key_management::KeyManager::for_test(Algorithm::ES256),
         &certs,
-        crate::settings::Openid4vcRevocationPolicy::Disabled,
+        crate::policy::Openid4vcRevocationPolicy::Disabled,
     );
     (crypto, presentation, json!("Ada"), certs)
 }
@@ -462,71 +464,76 @@ fn constructor_fails_closed_without_managed_material() {
         Openid4vcCredentialCrypto::new_with_policies(
             nazo_key_management::KeyManager::for_test(Algorithm::ES256),
             VcIssuerTrustPolicy::san_bound(),
-            crate::settings::Openid4vcRevocationPolicy::Disabled,
+            crate::policy::Openid4vcRevocationPolicy::Disabled,
+            Arc::new(mdoc_signer::LocalTestMdocDocumentSigner),
         )
         .is_err()
     );
 }
 
-#[tokio::test]
-async fn request_and_metadata_signing_emit_required_jose_headers() {
-    let (crypto, certs, kid) = real_crypto_fixture().await;
-    let expected_x5c = vec![STANDARD.encode(&certs.leaf_der)];
-    let lease = crypto.prepare_signing().expect("signing lease");
-    let request = crypto
-        .sign_request_object(
-            &lease,
-            &json!({"client_id": "wallet", "response_type": ["vp_token"]}),
-        )
-        .await
-        .expect("request object");
-    let request_header = decode_header(&request).expect("request header");
-    assert_eq!(request_header.typ.as_deref(), Some("oauth-authz-req+jwt"));
-    assert_eq!(request_header.alg, Algorithm::ES256);
-    assert_eq!(request_header.kid.as_deref(), Some(kid.as_str()));
-    assert_eq!(request_header.x5c.as_ref(), Some(&expected_x5c));
-
-    let metadata = crypto
-        .sign_issuer_metadata(&json!({"credential_issuer": "https://issuer.example"}))
-        .await
-        .expect("issuer metadata");
-    let metadata_header = decode_header(&metadata).expect("metadata header");
-    assert_eq!(
-        metadata_header.typ.as_deref(),
-        Some("openidvci-issuer-metadata+jwt")
-    );
-    assert_eq!(metadata_header.alg, Algorithm::ES256);
-    assert_eq!(metadata_header.kid.as_deref(), Some(kid.as_str()));
-    assert_eq!(metadata_header.x5c.as_ref(), Some(&expected_x5c));
-}
-
-#[tokio::test]
-async fn request_and_metadata_signing_map_key_failures_to_errors() {
-    let certs = certificate_fixture("issuer.example");
-    let failing_keyset = nazo_key_management::KeyManager::for_test_behavior(
-        Algorithm::ES256,
-        nazo_key_management::TestSigningBehavior::Failing,
-    );
-    let crypto = crypto_with_certificate(
-        failing_keyset,
-        &certs,
-        crate::settings::Openid4vcRevocationPolicy::Disabled,
-    );
-    assert!(
-        crypto
+#[test]
+fn request_and_metadata_signing_emit_required_jose_headers() {
+    futures_executor::block_on(async {
+        let (crypto, certs, kid) = real_crypto_fixture().await;
+        let expected_x5c = vec![STANDARD.encode(&certs.leaf_der)];
+        let lease = crypto.prepare_signing().expect("signing lease");
+        let request = crypto
             .sign_request_object(
-                &crypto.prepare_signing().expect("failing signing lease"),
-                &json!({"iss": "issuer"}),
+                &lease,
+                &json!({"client_id": "wallet", "response_type": ["vp_token"]}),
             )
             .await
-            .is_err()
-    );
-    assert!(
-        crypto
-            .sign_issuer_metadata(&json!({"iss": "issuer"}))
+            .expect("request object");
+        let request_header = decode_header(&request).expect("request header");
+        assert_eq!(request_header.typ.as_deref(), Some("oauth-authz-req+jwt"));
+        assert_eq!(request_header.alg, Algorithm::ES256);
+        assert_eq!(request_header.kid.as_deref(), Some(kid.as_str()));
+        assert_eq!(request_header.x5c.as_ref(), Some(&expected_x5c));
+
+        let metadata = crypto
+            .sign_issuer_metadata(&json!({"credential_issuer": "https://issuer.example"}))
             .await
-            .is_err()
-    );
+            .expect("issuer metadata");
+        let metadata_header = decode_header(&metadata).expect("metadata header");
+        assert_eq!(
+            metadata_header.typ.as_deref(),
+            Some("openidvci-issuer-metadata+jwt")
+        );
+        assert_eq!(metadata_header.alg, Algorithm::ES256);
+        assert_eq!(metadata_header.kid.as_deref(), Some(kid.as_str()));
+        assert_eq!(metadata_header.x5c.as_ref(), Some(&expected_x5c));
+    })
+}
+
+#[test]
+fn request_and_metadata_signing_map_key_failures_to_errors() {
+    futures_executor::block_on(async {
+        let certs = certificate_fixture("issuer.example");
+        let failing_keyset = nazo_key_management::KeyManager::for_test_behavior(
+            Algorithm::ES256,
+            nazo_key_management::TestSigningBehavior::Failing,
+        );
+        let crypto = crypto_with_certificate(
+            failing_keyset,
+            &certs,
+            crate::policy::Openid4vcRevocationPolicy::Disabled,
+        );
+        assert!(
+            crypto
+                .sign_request_object(
+                    &crypto.prepare_signing().expect("failing signing lease"),
+                    &json!({"iss": "issuer"}),
+                )
+                .await
+                .is_err()
+        );
+        assert!(
+            crypto
+                .sign_issuer_metadata(&json!({"iss": "issuer"}))
+                .await
+                .is_err()
+        );
+    })
 }
 
 #[test]
@@ -535,7 +542,7 @@ fn certificate_client_ids_bind_to_hash_and_dns_san() {
     let crypto = crypto_with_certificate(
         nazo_key_management::KeyManager::for_test(Algorithm::ES256),
         &certs,
-        crate::settings::Openid4vcRevocationPolicy::Disabled,
+        crate::policy::Openid4vcRevocationPolicy::Disabled,
     );
     let lease = crypto.prepare_signing().expect("signing lease");
     assert_eq!(
@@ -551,167 +558,177 @@ fn certificate_client_ids_bind_to_hash_and_dns_san() {
     );
 }
 
-#[tokio::test]
-async fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
-    let (holder_jwk, _) = es256_jwk(17);
-    let input = sd_input(
-        Some(HolderBinding::Jwk {
-            jwk: holder_jwk.clone(),
-        }),
-        json!({"given_name": "Ada", "age": 42}),
-        Some(json!({"idx": 2, "uri": "https://status.example"})),
-    );
-    let (crypto, certs, _) = real_crypto_fixture().await;
-    let (_, leaf) = x509_parser::parse_x509_certificate(&certs.leaf_der).expect("leaf certificate");
-    let decoding_key =
-        jsonwebtoken::DecodingKey::from_ec_der(leaf.public_key().subject_public_key.data.as_ref());
-    let encoded = crypto.sign(&input).await.expect("SD-JWT signing");
-    let parts = encoded.split('~').collect::<Vec<_>>();
-    assert_eq!(parts.len(), 4);
-    assert!(parts[0].split('.').count() == 3);
-    assert_eq!(parts.last(), Some(&""));
-    let header = decode_header(parts[0]).expect("SD-JWT header");
-    assert_eq!(header.typ.as_deref(), Some("dc+sd-jwt"));
-    let claims: Value = decode(
-        parts[0],
-        &decoding_key,
-        &jsonwebtoken::Validation::new(Algorithm::ES256),
-    )
-    .expect("decode SD-JWT")
-    .claims;
-    assert_eq!(claims["vct"], "ExampleCredential");
-    assert_eq!(claims["cnf"]["jwk"], holder_jwk);
+#[test]
+fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
+    futures_executor::block_on(async {
+        let (holder_jwk, _) = es256_jwk(17);
+        let input = sd_input(
+            Some(HolderBinding::Jwk {
+                jwk: holder_jwk.clone(),
+            }),
+            json!({"given_name": "Ada", "age": 42}),
+            Some(json!({"idx": 2, "uri": "https://status.example"})),
+        );
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (_, leaf) =
+            x509_parser::parse_x509_certificate(&certs.leaf_der).expect("leaf certificate");
+        let decoding_key = jsonwebtoken::DecodingKey::from_ec_der(
+            leaf.public_key().subject_public_key.data.as_ref(),
+        );
+        let encoded = crypto.sign(&input).await.expect("SD-JWT signing");
+        let parts = encoded.split('~').collect::<Vec<_>>();
+        assert_eq!(parts.len(), 4);
+        assert!(parts[0].split('.').count() == 3);
+        assert_eq!(parts.last(), Some(&""));
+        let header = decode_header(parts[0]).expect("SD-JWT header");
+        assert_eq!(header.typ.as_deref(), Some("dc+sd-jwt"));
+        let claims: Value = decode(
+            parts[0],
+            &decoding_key,
+            &jsonwebtoken::Validation::new(Algorithm::ES256),
+        )
+        .expect("decode SD-JWT")
+        .claims;
+        assert_eq!(claims["vct"], "ExampleCredential");
+        assert_eq!(claims["cnf"]["jwk"], holder_jwk);
 
-    let malformed = sd_input(None, json!("not an object"), None);
-    assert_eq!(
-        crypto.sign(&malformed).await,
-        Err(CredentialTrustError::InvalidEncoding)
-    );
+        let malformed = sd_input(None, json!("not an object"), None);
+        assert_eq!(
+            crypto.sign(&malformed).await,
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    })
 }
 
-#[tokio::test]
-async fn mdoc_signing_covers_holder_and_namespace_encoding_errors() {
-    let (holder_jwk, _) = es256_jwk(33);
-    let (crypto, _, _) = real_crypto_fixture().await;
-    let input = mdoc_input(
-        Some(HolderBinding::Jwk { jwk: holder_jwk }),
-        json!({
-            "org.iso.18013.5.1": {
-                "name": "Ada",
-                "issuing_country": "US",
-                "age": 42,
-                "active": true,
-                "score": 1.5,
-                "empty": null,
-                "tags": ["a", 2],
-                "nested": {"ok": true},
-            }
-        }),
-    );
-    let encoded = crypto.sign(&input).await.expect("mDoc signing");
-    assert!(!encoded.is_empty());
-    assert!(URL_SAFE_NO_PAD.decode(encoded).is_ok());
+#[test]
+fn mdoc_signing_covers_holder_and_namespace_encoding_errors() {
+    futures_executor::block_on(async {
+        let (holder_jwk, _) = es256_jwk(33);
+        let (crypto, _, _) = real_crypto_fixture().await;
+        let input = mdoc_input(
+            Some(HolderBinding::Jwk { jwk: holder_jwk }),
+            json!({
+                "org.iso.18013.5.1": {
+                    "name": "Ada",
+                    "issuing_country": "US",
+                    "age": 42,
+                    "active": true,
+                    "score": 1.5,
+                    "empty": null,
+                    "tags": ["a", 2],
+                    "nested": {"ok": true},
+                }
+            }),
+        );
+        let encoded = crypto.sign(&input).await.expect("mDoc signing");
+        assert!(!encoded.is_empty());
+        assert!(URL_SAFE_NO_PAD.decode(encoded).is_ok());
 
-    assert_eq!(
-        crypto.sign(&mdoc_input(None, json!({"ns": {}}))).await,
-        Err(CredentialTrustError::InvalidHolderBinding)
-    );
-    assert_eq!(
-        crypto
-            .sign(&mdoc_input(
-                Some(HolderBinding::Jwk {
-                    jwk: json!({"kty": "RSA"})
-                }),
-                json!({"org.iso.18013.5.1": {"issuing_country": "US"}}),
-            ))
-            .await,
-        Err(CredentialTrustError::InvalidHolderBinding)
-    );
-    assert_eq!(
-        crypto
-            .sign(&mdoc_input(
-                Some(HolderBinding::Jwk {
-                    jwk: json!({"kty": "EC", "crv": "P-256", "x": "bad", "y": "bad"})
-                }),
-                json!({"org.iso.18013.5.1": {"issuing_country": "US"}}),
-            ))
-            .await,
-        Err(CredentialTrustError::InvalidHolderBinding)
-    );
-    let (valid_jwk, _) = es256_jwk(35);
-    assert_eq!(
-        crypto
-            .sign(&mdoc_input(
-                Some(HolderBinding::Jwk {
-                    jwk: valid_jwk.clone()
-                }),
-                json!([]),
-            ))
-            .await,
-        Err(CredentialTrustError::InvalidEncoding)
-    );
-    assert_eq!(
-        crypto
-            .sign(&mdoc_input(
-                Some(HolderBinding::Jwk { jwk: valid_jwk }),
-                json!({"org.iso.18013.5.1": {"issuing_country": "US"}, "ns": "not an object"}),
-            ))
-            .await,
-        Err(CredentialTrustError::InvalidEncoding)
-    );
-}
-
-#[tokio::test]
-async fn mdoc_signing_skips_mdl_country_validation_for_other_document_types() {
-    let (holder_jwk, _) = es256_jwk(34);
-    let (crypto, _, _) = real_crypto_fixture().await;
-    let mut input = mdoc_input(
-        Some(HolderBinding::Jwk { jwk: holder_jwk }),
-        json!({"example.namespace": {"value": "accepted"}}),
-    );
-    input.payload.credential_type = "org.example.other".to_owned();
-    let encoded = crypto
-        .sign(&input)
-        .await
-        .expect("non-mDL document should not require an mDL issuing country");
-    assert!(!encoded.is_empty());
-}
-
-#[tokio::test]
-async fn mdoc_signing_requires_the_issuing_country_from_the_leaf_certificate() {
-    let (holder_jwk, _) = es256_jwk(36);
-    let (crypto, _, _) = real_crypto_fixture().await;
-    for claims in [
-        json!({"org.iso.18013.5.1": {"family_name":"Lovelace"}}),
-        json!({"org.iso.18013.5.1": {"issuing_country": 840}}),
-        json!({"org.iso.18013.5.1": {"issuing_country":"us"}}),
-        json!({"org.iso.18013.5.1": {"issuing_country":"CA"}}),
-    ] {
+        assert_eq!(
+            crypto.sign(&mdoc_input(None, json!({"ns": {}}))).await,
+            Err(CredentialTrustError::InvalidHolderBinding)
+        );
         assert_eq!(
             crypto
                 .sign(&mdoc_input(
                     Some(HolderBinding::Jwk {
-                        jwk: holder_jwk.clone(),
+                        jwk: json!({"kty": "RSA"})
                     }),
-                    claims,
+                    json!({"org.iso.18013.5.1": {"issuing_country": "US"}}),
+                ))
+                .await,
+            Err(CredentialTrustError::InvalidHolderBinding)
+        );
+        assert_eq!(
+            crypto
+                .sign(&mdoc_input(
+                    Some(HolderBinding::Jwk {
+                        jwk: json!({"kty": "EC", "crv": "P-256", "x": "bad", "y": "bad"})
+                    }),
+                    json!({"org.iso.18013.5.1": {"issuing_country": "US"}}),
+                ))
+                .await,
+            Err(CredentialTrustError::InvalidHolderBinding)
+        );
+        let (valid_jwk, _) = es256_jwk(35);
+        assert_eq!(
+            crypto
+                .sign(&mdoc_input(
+                    Some(HolderBinding::Jwk {
+                        jwk: valid_jwk.clone()
+                    }),
+                    json!([]),
                 ))
                 .await,
             Err(CredentialTrustError::InvalidEncoding)
         );
-    }
-    let encoded = crypto
-        .sign(&mdoc_input(
+        assert_eq!(
+            crypto
+                .sign(&mdoc_input(
+                    Some(HolderBinding::Jwk { jwk: valid_jwk }),
+                    json!({"org.iso.18013.5.1": {"issuing_country": "US"}, "ns": "not an object"}),
+                ))
+                .await,
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    })
+}
+
+#[test]
+fn mdoc_signing_skips_mdl_country_validation_for_other_document_types() {
+    futures_executor::block_on(async {
+        let (holder_jwk, _) = es256_jwk(34);
+        let (crypto, _, _) = real_crypto_fixture().await;
+        let mut input = mdoc_input(
             Some(HolderBinding::Jwk { jwk: holder_jwk }),
-            json!({
-                "org.iso.18013.5.1": {
-                    "issuing_country":"US",
-                    "family_name":"Lovelace"
-                }
-            }),
-        ))
-        .await
-        .expect("matching mDL issuing country");
-    assert!(!encoded.is_empty());
+            json!({"example.namespace": {"value": "accepted"}}),
+        );
+        input.payload.credential_type = "org.example.other".to_owned();
+        let encoded = crypto
+            .sign(&input)
+            .await
+            .expect("non-mDL document should not require an mDL issuing country");
+        assert!(!encoded.is_empty());
+    })
+}
+
+#[test]
+fn mdoc_signing_requires_the_issuing_country_from_the_leaf_certificate() {
+    futures_executor::block_on(async {
+        let (holder_jwk, _) = es256_jwk(36);
+        let (crypto, _, _) = real_crypto_fixture().await;
+        for claims in [
+            json!({"org.iso.18013.5.1": {"family_name":"Lovelace"}}),
+            json!({"org.iso.18013.5.1": {"issuing_country": 840}}),
+            json!({"org.iso.18013.5.1": {"issuing_country":"us"}}),
+            json!({"org.iso.18013.5.1": {"issuing_country":"CA"}}),
+        ] {
+            assert_eq!(
+                crypto
+                    .sign(&mdoc_input(
+                        Some(HolderBinding::Jwk {
+                            jwk: holder_jwk.clone(),
+                        }),
+                        claims,
+                    ))
+                    .await,
+                Err(CredentialTrustError::InvalidEncoding)
+            );
+        }
+        let encoded = crypto
+            .sign(&mdoc_input(
+                Some(HolderBinding::Jwk { jwk: holder_jwk }),
+                json!({
+                    "org.iso.18013.5.1": {
+                        "issuing_country":"US",
+                        "family_name":"Lovelace"
+                    }
+                }),
+            ))
+            .await
+            .expect("matching mDL issuing country");
+        assert!(!encoded.is_empty());
+    })
 }
 
 #[test]
@@ -754,7 +771,7 @@ fn sd_jwt_chain_and_combined_anchor_validation_fail_closed() {
     let crypto = crypto_with_certificate(
         nazo_key_management::KeyManager::for_test(Algorithm::ES256),
         &certs,
-        crate::settings::Openid4vcRevocationPolicy::Disabled,
+        crate::policy::Openid4vcRevocationPolicy::Disabled,
     );
     let valid = crypto
         .validate_sd_jwt_chain(&[STANDARD.encode(&certs.leaf_der)], &[])
@@ -799,8 +816,8 @@ fn current_revocation_policy_preserves_optional_and_required_snapshots() {
         entries: Vec::new(),
     };
     for (mode, required) in [
-        (crate::settings::Openid4vcRevocationPolicy::Optional, false),
-        (crate::settings::Openid4vcRevocationPolicy::Required, true),
+        (crate::policy::Openid4vcRevocationPolicy::Optional, false),
+        (crate::policy::Openid4vcRevocationPolicy::Required, true),
     ] {
         let certs = certificate_fixture("issuer.example");
         let keyset = KeyManager::for_test(Algorithm::ES256);
@@ -818,6 +835,7 @@ fn current_revocation_policy_preserves_optional_and_required_snapshots() {
             keyset,
             VcIssuerTrustPolicy::san_bound(),
             mode,
+            Arc::new(mdoc_signer::LocalTestMdocDocumentSigner),
         )
         .expect("revocation policy fixture");
         let policy = crypto.current_revocation_policy();
@@ -826,59 +844,62 @@ fn current_revocation_policy_preserves_optional_and_required_snapshots() {
     }
 }
 
-#[tokio::test]
-async fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
-    let (crypto, presentation, disclosed, _certs) = sd_presentation_fixture();
-    let verified = crypto
-        .verify_sd_jwt(&presentation)
-        .expect("valid SD-JWT presentation");
-    let verified_via_port = crypto
-        .verify(&presentation)
-        .await
-        .expect("credential verifier port");
-    assert_eq!(verified_via_port, verified);
-    assert_eq!(verified.format, CredentialFormat::SdJwtVc);
-    assert_eq!(verified.issuer, "https://issuer.example");
-    assert_eq!(verified.credential_type, "ExampleCredential");
-    assert_eq!(verified.claims["given_name"], disclosed);
-    assert_eq!(verified.status, Some(json!({"idx": 3})));
-    assert!(verified.holder_key.is_some());
+#[test]
+fn sd_jwt_verification_accepts_valid_holder_binding_and_rejects_tampering() {
+    futures_executor::block_on(async {
+        let (crypto, presentation, disclosed, _certs) = sd_presentation_fixture();
+        let verified = crypto
+            .verify_sd_jwt(&presentation)
+            .expect("valid SD-JWT presentation");
+        let verified_via_port = crypto
+            .verify(&presentation)
+            .await
+            .expect("credential verifier port");
+        assert_eq!(verified_via_port, verified);
+        assert_eq!(verified.format, CredentialFormat::SdJwtVc);
+        assert_eq!(verified.issuer, "https://issuer.example");
+        assert_eq!(verified.credential_type, "ExampleCredential");
+        assert_eq!(verified.claims["given_name"], disclosed);
+        assert_eq!(verified.status, Some(json!({"idx": 3})));
+        assert!(verified.holder_key.is_some());
 
-    let mut malformed = presentation.clone();
-    malformed.encoded = "broken".to_owned();
-    assert_eq!(
-        crypto.verify_sd_jwt(&malformed),
-        Err(CredentialTrustError::InvalidEncoding)
-    );
-    let mut wrong_typ = presentation.clone();
-    let parts = wrong_typ.encoded.split('~').collect::<Vec<_>>();
-    let mut header = decode_header(parts[0]).expect("header");
-    header.typ = Some("JWT".to_owned());
-    let (_, issuer_key) = es256_jwk(99);
-    let claims = json!({"iss": "https://issuer.example", "exp": Utc::now().timestamp() + 300});
-    let jwt = encode(&header, &claims, &issuer_key).expect("JWT");
-    wrong_typ.encoded = format!("{jwt}~{}~{}", parts[1], parts[2]);
-    assert_eq!(
-        crypto.verify_sd_jwt(&wrong_typ),
-        Err(CredentialTrustError::InvalidEncoding)
-    );
+        let mut malformed = presentation.clone();
+        malformed.encoded = "broken".to_owned();
+        assert_eq!(
+            crypto.verify_sd_jwt(&malformed),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+        let mut wrong_typ = presentation.clone();
+        let parts = wrong_typ.encoded.split('~').collect::<Vec<_>>();
+        let mut header = decode_header(parts[0]).expect("header");
+        header.typ = Some("JWT".to_owned());
+        let (_, issuer_key) = es256_jwk(99);
+        let claims = json!({"iss": "https://issuer.example", "exp": Utc::now().timestamp() + 300});
+        let jwt = encode(&header, &claims, &issuer_key).expect("JWT");
+        wrong_typ.encoded = format!("{jwt}~{}~{}", parts[1], parts[2]);
+        assert_eq!(
+            crypto.verify_sd_jwt(&wrong_typ),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
 
-    let mut unknown_disclosure = presentation.clone();
-    let parts = unknown_disclosure.encoded.split('~').collect::<Vec<_>>();
-    let disclosure = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!(["salt2", "x", 1])).unwrap());
-    unknown_disclosure.encoded = format!("{}~{}~{}", parts[0], disclosure, parts[2]);
-    assert_eq!(
-        crypto.verify_sd_jwt(&unknown_disclosure),
-        Err(CredentialTrustError::InvalidSignature)
-    );
+        let mut unknown_disclosure = presentation.clone();
+        let parts = unknown_disclosure.encoded.split('~').collect::<Vec<_>>();
+        let disclosure =
+            URL_SAFE_NO_PAD.encode(serde_json::to_vec(&json!(["salt2", "x", 1])).unwrap());
+        unknown_disclosure.encoded = format!("{}~{}~{}", parts[0], disclosure, parts[2]);
+        assert_eq!(
+            crypto.verify_sd_jwt(&unknown_disclosure),
+            Err(CredentialTrustError::InvalidSignature)
+        );
 
-    let mut duplicate = presentation.clone();
-    let parts = duplicate.encoded.split('~').collect::<Vec<_>>();
-    duplicate.encoded = format!("{}~{}~{}~{}", parts[0], parts[1], parts[1], parts[2]);
-    assert_eq!(
-        crypto.verify_sd_jwt(&duplicate),
-        Err(CredentialTrustError::InvalidEncoding)
-    );
+        let mut duplicate = presentation.clone();
+        let parts = duplicate.encoded.split('~').collect::<Vec<_>>();
+        duplicate.encoded = format!("{}~{}~{}~{}", parts[0], parts[1], parts[1], parts[2]);
+        assert_eq!(
+            crypto.verify_sd_jwt(&duplicate),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    })
 }
 
 #[test]
@@ -1024,7 +1045,7 @@ fn sd_jwt_verification_rejects_holder_and_issuer_policy_failures() {
         Err(CredentialTrustError::UntrustedIssuer)
     );
     let strict_revocation = Openid4vcCredentialCrypto {
-        revocation_policy: crate::settings::Openid4vcRevocationPolicy::Required,
+        revocation_policy: crate::policy::Openid4vcRevocationPolicy::Required,
         ..crypto
     };
     assert_eq!(
@@ -1033,76 +1054,80 @@ fn sd_jwt_verification_rejects_holder_and_issuer_policy_failures() {
     );
 }
 
-#[tokio::test]
-async fn mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors() {
-    let (crypto, _, _) = real_crypto_fixture().await;
-    let missing_transcript = PresentedCredential {
-        format: CredentialFormat::MsoMdoc,
-        encoded: URL_SAFE_NO_PAD.encode([0xa0]),
-        expected_nonce: "nonce".to_owned(),
-        expected_audience: "aud".to_owned(),
-        response_uri: "https://verifier.example/response".to_owned(),
-        mdoc_session_transcript: None,
-        additional_trust_anchors: vec![],
-    };
-    assert_eq!(
-        crypto.verify_mdoc(&missing_transcript),
-        Err(CredentialTrustError::InvalidHolderBinding)
-    );
-    let bad_cbor = PresentedCredential {
-        mdoc_session_transcript: Some(vec![0x83, 0xf6, 0xf6, 0xf6]),
-        ..missing_transcript.clone()
-    };
-    assert_eq!(
-        crypto.verify_mdoc(&bad_cbor),
-        Err(CredentialTrustError::InvalidEncoding)
-    );
-    let bad_anchor = PresentedCredential {
-        mdoc_session_transcript: Some(vec![0x83, 0xf6, 0xf6, 0xf6]),
-        encoded: URL_SAFE_NO_PAD.encode([0xa0]),
-        additional_trust_anchors: vec![vec![1, 2, 3]],
-        ..missing_transcript
-    };
-    assert_eq!(
-        crypto.verify_mdoc(&bad_anchor),
-        Err(CredentialTrustError::InvalidEncoding)
-    );
+#[test]
+fn mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors() {
+    futures_executor::block_on(async {
+        let (crypto, _, _) = real_crypto_fixture().await;
+        let missing_transcript = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded: URL_SAFE_NO_PAD.encode([0xa0]),
+            expected_nonce: "nonce".to_owned(),
+            expected_audience: "aud".to_owned(),
+            response_uri: "https://verifier.example/response".to_owned(),
+            mdoc_session_transcript: None,
+            additional_trust_anchors: vec![],
+        };
+        assert_eq!(
+            crypto.verify_mdoc(&missing_transcript),
+            Err(CredentialTrustError::InvalidHolderBinding)
+        );
+        let bad_cbor = PresentedCredential {
+            mdoc_session_transcript: Some(vec![0x83, 0xf6, 0xf6, 0xf6]),
+            ..missing_transcript.clone()
+        };
+        assert_eq!(
+            crypto.verify_mdoc(&bad_cbor),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+        let bad_anchor = PresentedCredential {
+            mdoc_session_transcript: Some(vec![0x83, 0xf6, 0xf6, 0xf6]),
+            encoded: URL_SAFE_NO_PAD.encode([0xa0]),
+            additional_trust_anchors: vec![vec![1, 2, 3]],
+            ..missing_transcript
+        };
+        assert_eq!(
+            crypto.verify_mdoc(&bad_anchor),
+            Err(CredentialTrustError::InvalidEncoding)
+        );
+    })
 }
 
-#[tokio::test]
-async fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
-    let (crypto, certs, _) = real_crypto_fixture().await;
-    let (encoded, transcript) = valid_mdoc_presentation(&certs);
-    let presentation = PresentedCredential {
-        format: CredentialFormat::MsoMdoc,
-        encoded,
-        expected_nonce: "verifier-nonce".to_owned(),
-        expected_audience: "https://verifier.example".to_owned(),
-        response_uri: "https://verifier.example/response".to_owned(),
-        mdoc_session_transcript: Some(transcript),
-        additional_trust_anchors: vec![],
-    };
-    let verified = crypto
-        .verify_mdoc(&presentation)
-        .expect("signed mdoc presentation");
-    assert_eq!(verified.format, CredentialFormat::MsoMdoc);
-    assert_eq!(verified.credential_type, "org.iso.18013.5.1.mDL");
-    assert_eq!(verified.claims["org.iso.18013.5.1"]["given_name"], "Ada");
-    assert_eq!(verified.claims["org.iso.18013.5.1"]["age"], 42);
-    assert!(verified.holder_key.is_some());
-    assert_eq!(verified.status, None);
-    assert_eq!(
-        verified.issuer,
-        URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(&certs.leaf_der))
-    );
-    let strict_revocation = Openid4vcCredentialCrypto {
-        revocation_policy: crate::settings::Openid4vcRevocationPolicy::Required,
-        ..crypto
-    };
-    assert_eq!(
-        strict_revocation.verify_mdoc(&presentation),
-        Err(CredentialTrustError::RevocationSnapshotUnavailable)
-    );
+#[test]
+fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (encoded, transcript) = valid_mdoc_presentation(&certs);
+        let presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded,
+            expected_nonce: "verifier-nonce".to_owned(),
+            expected_audience: "https://verifier.example".to_owned(),
+            response_uri: "https://verifier.example/response".to_owned(),
+            mdoc_session_transcript: Some(transcript),
+            additional_trust_anchors: vec![],
+        };
+        let verified = crypto
+            .verify_mdoc(&presentation)
+            .expect("signed mdoc presentation");
+        assert_eq!(verified.format, CredentialFormat::MsoMdoc);
+        assert_eq!(verified.credential_type, "org.iso.18013.5.1.mDL");
+        assert_eq!(verified.claims["org.iso.18013.5.1"]["given_name"], "Ada");
+        assert_eq!(verified.claims["org.iso.18013.5.1"]["age"], 42);
+        assert!(verified.holder_key.is_some());
+        assert_eq!(verified.status, None);
+        assert_eq!(
+            verified.issuer,
+            URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(&certs.leaf_der))
+        );
+        let strict_revocation = Openid4vcCredentialCrypto {
+            revocation_policy: crate::policy::Openid4vcRevocationPolicy::Required,
+            ..crypto
+        };
+        assert_eq!(
+            strict_revocation.verify_mdoc(&presentation),
+            Err(CredentialTrustError::RevocationSnapshotUnavailable)
+        );
+    })
 }
 
 #[test]
@@ -1231,42 +1256,4 @@ fn standard_device_authentication_bytes_is_deterministic_and_rejects_bad_inputs(
             .expect("DeviceAuthenticationBytes");
     assert_eq!(first, second);
     assert!(standard_device_authentication_bytes(&[0xff], "doc", &[0xa0]).is_err());
-}
-
-#[test]
-fn async_cose_signer_uses_credential_scope_and_propagates_signing_errors() {
-    let certs = certificate_fixture("issuer.example");
-    let runtime = tokio::runtime::Runtime::new().expect("test runtime");
-    let handle = runtime.handle().clone();
-    let crypto = crypto_with_certificate(
-        nazo_key_management::KeyManager::for_test(Algorithm::ES256),
-        &certs,
-        crate::settings::Openid4vcRevocationPolicy::Disabled,
-    );
-    let signer = AsyncCoseSigner {
-        lease: crypto.prepare_signing().expect("signing lease"),
-        certificate_der: certs.leaf_der,
-        runtime: handle.clone(),
-    };
-    let signature = signer.sign(b"credential tbs").expect("signature");
-    assert_eq!(signature.len(), 64);
-    assert_eq!(signer.algorithm(), -7);
-    assert!(!signer.certificate_der().is_empty());
-
-    let failing_crypto = crypto_with_certificate(
-        nazo_key_management::KeyManager::for_test_behavior(
-            Algorithm::ES256,
-            nazo_key_management::TestSigningBehavior::Failing,
-        ),
-        &certificate_fixture("issuer.example"),
-        crate::settings::Openid4vcRevocationPolicy::Disabled,
-    );
-    let failing = AsyncCoseSigner {
-        lease: failing_crypto
-            .prepare_signing()
-            .expect("failing signing lease"),
-        certificate_der: vec![1, 2, 3],
-        runtime: handle,
-    };
-    assert!(failing.sign(b"credential tbs").is_err());
 }

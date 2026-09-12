@@ -44,7 +44,10 @@ impl AuthenticationRateLimit for RateLimit {
     fn enforce<'a>(
         &'a self,
         subject: &'a str,
-    ) -> crate::LocalRegistrationFuture<'a, Result<(), AuthenticationRateLimitError>> {
+    ) -> nazo_oauth_server::contracts::local_registration::LocalRegistrationFuture<
+        'a,
+        Result<(), AuthenticationRateLimitError>,
+    > {
         self.subjects.lock().unwrap().push(subject.to_owned());
         let result = self.result;
         Box::pin(async move { result })

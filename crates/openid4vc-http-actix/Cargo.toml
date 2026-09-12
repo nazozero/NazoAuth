@@ -8,16 +8,15 @@ repository.workspace = true
 [dependencies]
 actix-web.workspace = true
 chrono.workspace = true
-nazo-digital-credentials.workspace = true
 nazo-openid4vci.workspace = true
 nazo-openid4vp.workspace = true
-nazo-operator-protocol.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 url.workspace = true
 uuid = { workspace = true, features = ["serde", "v7"] }
 
 [dev-dependencies]
+nazo-operator-protocol.workspace = true
 tokio = { workspace = true, features = ["macros", "rt"] }
 
 [lints]

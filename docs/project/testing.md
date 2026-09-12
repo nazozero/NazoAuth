@@ -78,5 +78,38 @@ review and a concrete explanation.
 - missing mount targets, any `tests/support/seams` file, test-side `include!`,
   and the legacy `tests/source_mounted` directory.
 
-Run the structure check before the normal Rust quality gate documented in
-[architecture.md](architecture.md#compatibility-and-verification).
+Run the structure check before the Rust quality gate below.
+
+## Verification
+
+Use the pinned toolchain in `rust-toolchain.toml`. The executable CI definition
+is [code-quality.yml](../../.github/workflows/code-quality.yml); it owns the
+service versions, fixtures, and complete environment. Do not point these tests
+at a deployment database or state store.
+
+The workspace suite requires isolated PostgreSQL and Valkey, a separate audit
+test database (`NAZO_AUDIT_TEST_DATABASE_URL`), and the S3-compatible fixture
+configured with `NAZO_TEST_S3_*`. Copy the workflow's other fixture settings,
+including its state epoch and tenant/federation setup. The shared integration
+fixtures run with `RUST_TEST_THREADS=1`.
+
+```sh
+python scripts/verify_static_contracts.py --check
+python scripts/check_persistence_dependency_graph.py
+cargo fmt --check
+cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
+cargo test --locked -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables
+cargo test --workspace --all-features --locked
+```
+
+The migration test prepares the isolated schema before the full suite, as in
+CI. For a focused change, run the owning package/test target first; broaden
+validation when the change crosses boundaries or leaves an unresolved risk.
+Documentation-only changes need source/example/reference checks, not a Rust
+build. A passed unit suite does not replace required HTTP, migration, recovery,
+conformance, deployment, or performance evidence.
+
+Every change must update its corresponding documentation, examples, and index
+entries. If behavior is unchanged, update the relevant explanation or source
+reference without inventing a behavior change. Keep historical reports tied to
+their recorded revisions instead of rewriting them as current test results.

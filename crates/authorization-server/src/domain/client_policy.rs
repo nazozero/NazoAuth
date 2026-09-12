@@ -1,20 +1,20 @@
 //! Database-row and client-key adapters for framework-independent OAuth policy.
-use crate::domain::ClientRow;
-use nazo_http_actix::RemoteJwksResolverPort;
+use crate::contracts::dynamic_client_registration::RemoteJwksResolverPort;
+use crate::domain::rows::ClientRow;
 
-pub(crate) use nazo_auth::{
+pub use nazo_auth::{
     RedirectUriError, is_subset, is_valid_pkce_value, parse_resource_indicators, parse_scope,
     string_array_values as json_array_to_strings,
 };
-pub(crate) fn client_supports_grant(client: &ClientRow, grant_type: &str) -> bool {
+pub fn client_supports_grant(client: &ClientRow, grant_type: &str) -> bool {
     client.grant_types.iter().any(|grant| grant == grant_type)
 }
 
-pub(crate) fn audiences_allowed(client: &ClientRow, audiences: &[String]) -> bool {
+pub fn audiences_allowed(client: &ClientRow, audiences: &[String]) -> bool {
     !audiences.is_empty() && nazo_auth::is_subset(audiences, &client.allowed_audiences)
 }
 
-pub(crate) fn registered_redirect_uri(
+pub fn registered_redirect_uri(
     client: &ClientRow,
     requested_redirect_uri: Option<&str>,
 ) -> Result<String, RedirectUriError> {
@@ -30,7 +30,7 @@ pub(crate) fn registered_redirect_uri(
 /// A client without a registered URI keeps its persisted JWKS and never
 /// invokes the resolver.  The caller remains responsible for mapping resolver
 /// failures to the endpoint-specific protocol error.
-pub(crate) async fn refresh_client_jwks(
+pub async fn refresh_client_jwks(
     client: &mut ClientRow,
     resolver: &dyn RemoteJwksResolverPort,
     expected_kid: Option<&str>,
@@ -46,7 +46,7 @@ pub(crate) async fn refresh_client_jwks(
 /// for JWE. Callers may invoke this unconditionally after computing the
 /// selected response's predicate, so unrelated response policies never cause
 /// a resolver call.
-pub(crate) async fn refresh_client_jwks_for_encryption(
+pub async fn refresh_client_jwks_for_encryption(
     client: &mut ClientRow,
     resolver: &dyn RemoteJwksResolverPort,
     response_encryption_configured: bool,

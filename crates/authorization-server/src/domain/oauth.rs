@@ -4,14 +4,14 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 use uuid::Uuid;
 
-pub(crate) use nazo_auth::{
+pub use nazo_auth::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,
     OidcClaimRequest, PushedAuthorizationRequest,
 };
 
 /// token 签发函数所需的归一化输入。
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RefreshTokenPolicy {
+pub enum RefreshTokenPolicy {
     IssueNew,
     Rotate {
         family_id: Uuid,
@@ -26,47 +26,47 @@ pub(crate) enum RefreshTokenPolicy {
     PreserveExisting,
 }
 
-pub(crate) struct TokenIssue {
-    pub(crate) user_id: Option<Uuid>,
-    pub(crate) subject: String,
-    pub(crate) scopes: Vec<String>,
-    pub(crate) authorization_details: Value,
-    pub(crate) audiences: Vec<String>,
-    pub(crate) nonce: Option<String>,
-    pub(crate) auth_time: Option<i64>,
-    pub(crate) amr: Vec<String>,
-    pub(crate) oidc_sid: Option<String>,
-    pub(crate) acr: Option<String>,
-    pub(crate) userinfo_claims: Vec<String>,
-    pub(crate) userinfo_claim_requests: Vec<OidcClaimRequest>,
-    pub(crate) id_token_claims: Vec<String>,
-    pub(crate) id_token_claim_requests: Vec<OidcClaimRequest>,
+pub struct TokenIssue {
+    pub user_id: Option<Uuid>,
+    pub subject: String,
+    pub scopes: Vec<String>,
+    pub authorization_details: Value,
+    pub audiences: Vec<String>,
+    pub nonce: Option<String>,
+    pub auth_time: Option<i64>,
+    pub amr: Vec<String>,
+    pub oidc_sid: Option<String>,
+    pub acr: Option<String>,
+    pub userinfo_claims: Vec<String>,
+    pub userinfo_claim_requests: Vec<OidcClaimRequest>,
+    pub id_token_claims: Vec<String>,
+    pub id_token_claim_requests: Vec<OidcClaimRequest>,
     /// `None` means this is not a refresh issuance. `Some(None)` records that
     /// the original ID Token omitted `sid`; `Some(Some(value))` preserves the
     /// exact SID emitted by the original ID Token (including Native SSO).
-    pub(crate) refresh_id_token_sid: Option<Option<String>>,
-    pub(crate) include_refresh: bool,
-    pub(crate) refresh_token_policy: RefreshTokenPolicy,
-    pub(crate) dpop_jkt: Option<String>,
-    pub(crate) refresh_token_dpop_jkt: Option<String>,
-    pub(crate) mtls_x5t_s256: Option<String>,
-    pub(crate) refresh_token_mtls_x5t_s256: Option<String>,
-    pub(crate) refresh_token_client_attestation_jkt: Option<String>,
+    pub refresh_id_token_sid: Option<Option<String>>,
+    pub include_refresh: bool,
+    pub refresh_token_policy: RefreshTokenPolicy,
+    pub dpop_jkt: Option<String>,
+    pub refresh_token_dpop_jkt: Option<String>,
+    pub mtls_x5t_s256: Option<String>,
+    pub refresh_token_mtls_x5t_s256: Option<String>,
+    pub refresh_token_client_attestation_jkt: Option<String>,
     /// Original refresh-token authorization. A refresh request may narrow the
     /// access-token scope, but RFC 6749 requires a rotated refresh token to
     /// retain the scope of the token presented by the client.
-    pub(crate) refresh_token_scopes: Option<Vec<String>>,
-    pub(crate) authorization_code_hash: Option<String>,
-    pub(crate) actor: Option<Value>,
-    pub(crate) issued_token_type: Option<String>,
-    pub(crate) native_sso: Option<NativeSsoTokenBinding>,
+    pub refresh_token_scopes: Option<Vec<String>>,
+    pub authorization_code_hash: Option<String>,
+    pub actor: Option<Value>,
+    pub issued_token_type: Option<String>,
+    pub native_sso: Option<NativeSsoTokenBinding>,
 }
 
 #[derive(Clone, Debug)]
-pub(crate) struct NativeSsoTokenBinding {
-    pub(crate) device_secret: String,
-    pub(crate) ds_hash: String,
-    pub(crate) sid: String,
+pub struct NativeSsoTokenBinding {
+    pub device_secret: String,
+    pub ds_hash: String,
+    pub sid: String,
 }
 
 #[cfg(test)]

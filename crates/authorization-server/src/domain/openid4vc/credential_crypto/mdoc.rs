@@ -2,11 +2,10 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use coset::CborSerializable;
 use mdoc_rs::{
-    builder::{CoseSigner, DocumentBuilder},
+    builder::DocumentBuilder,
     cbor::data_item::{encode_cbor_canonical, wrap_tag24},
     model::types::ValidityInfo,
 };
-use nazo_auth::{SignRequest, Signer, SigningPurpose};
 use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
@@ -66,15 +65,10 @@ pub(super) async fn sign(
             .collect::<Result<Vec<_>, CredentialTrustError>>()?;
         builder = builder.add_namespace(namespace, entries);
     }
-    let signer = AsyncCoseSigner {
-        lease,
-        certificate_der: signing_material.leaf_der,
-        runtime: tokio::runtime::Handle::current(),
-    };
-    let document = tokio::task::spawn_blocking(move || builder.sign(&signer))
-        .await
-        .map_err(|_| CredentialTrustError::Unavailable)?
-        .map_err(|_| CredentialTrustError::Unavailable)?;
+    let document = crypto
+        .mdoc_signer
+        .sign(builder, lease, signing_material.leaf_der)
+        .await?;
     let mut namespace_entries = Vec::new();
     for (namespace, items) in &document.issuer_signed.name_spaces {
         namespace_entries.push((
@@ -499,30 +493,4 @@ pub(crate) fn mdoc_holder_key(
         .to_vec()
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     Ok(json!({"cose_key": URL_SAFE_NO_PAD.encode(encoded)}))
-}
-
-pub(super) struct AsyncCoseSigner {
-    pub(super) lease: nazo_key_management::Openid4vcSigningLease,
-    pub(super) certificate_der: Vec<u8>,
-    pub(super) runtime: tokio::runtime::Handle,
-}
-
-impl CoseSigner for AsyncCoseSigner {
-    fn sign(&self, tbs: &[u8]) -> Result<Vec<u8>, mdoc_rs::MdocError> {
-        self.runtime
-            .block_on(self.lease.sign(SignRequest {
-                purpose: SigningPurpose::Credential,
-                algorithm: "ES256",
-                signing_input: tbs,
-            }))
-            .map(nazo_auth::Signature::into_bytes)
-            .map_err(|error| mdoc_rs::MdocError::Issuance(error.to_string()))
-    }
-
-    fn algorithm(&self) -> i64 {
-        -7
-    }
-    fn certificate_der(&self) -> &[u8] {
-        &self.certificate_der
-    }
 }

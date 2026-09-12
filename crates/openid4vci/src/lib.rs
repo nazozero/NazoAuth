@@ -5,6 +5,7 @@
 //! supplied through ports so enabling VCI does not alter the authorization
 //! server's baseline behavior.
 
+pub mod application;
 mod metadata;
 mod model;
 mod offer;

@@ -1,4 +1,5 @@
-use super::crypto_helpers::{algorithm_name, decoding_key};
+use super::crypto_helpers::algorithm_name;
+use crate::crypto::decoding_key;
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
@@ -12,7 +13,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 
 #[derive(Clone)]
-pub(crate) struct Openid4vcProofValidator {
+pub struct Openid4vcProofValidator {
     pub(super) key_attestation_jwks: Arc<Value>,
     trust_policies: Option<(Arc<dyn Openid4vcTrustPolicyStore>, uuid::Uuid)>,
 }
@@ -24,7 +25,7 @@ pub(crate) enum KeyAttestationContext {
 }
 
 impl Openid4vcProofValidator {
-    pub(crate) fn new(key_attestation_jwks: Value) -> anyhow::Result<Self> {
+    pub fn new(key_attestation_jwks: Value) -> anyhow::Result<Self> {
         if key_attestation_jwks
             .get("keys")
             .and_then(Value::as_array)
@@ -38,7 +39,7 @@ impl Openid4vcProofValidator {
         })
     }
 
-    pub(crate) fn with_trust_policies(
+    pub fn with_trust_policies(
         mut self,
         repository: Arc<dyn Openid4vcTrustPolicyStore>,
         tenant_id: uuid::Uuid,

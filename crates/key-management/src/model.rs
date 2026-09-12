@@ -8,6 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use crate::ExternalKeySigner;
 use crate::local::SigningBackend;
 use arc_swap::ArcSwap;
 use base64::{Engine, encoded_len, engine::general_purpose::URL_SAFE_NO_PAD};
@@ -16,7 +17,6 @@ use nazo_auth::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 use p256::elliptic_curve::sec1::ToSec1Point;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use tokio::sync::watch;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum KeyState {
@@ -106,15 +106,14 @@ pub(crate) enum KeyHandle {
 
 #[derive(Clone)]
 pub(crate) struct ExternalSigningKey {
-    pub(crate) command: Arc<Vec<String>>,
     pub(crate) key_ref: String,
-    pub(crate) timeout: Duration,
+    pub(crate) signer: Arc<dyn ExternalKeySigner>,
 }
 
 #[derive(Clone)]
 pub(crate) enum ActiveSigningKey {
     LocalPkcs8Der(Vec<u8>),
-    ExternalCommand(ExternalSigningKey),
+    External(ExternalSigningKey),
 }
 
 #[derive(Clone)]
@@ -219,8 +218,6 @@ impl KeySnapshot {
 
 #[derive(Clone, Debug)]
 pub struct KeySettings {
-    pub external_command: Vec<String>,
-    pub external_timeout: Duration,
     pub rotation_interval: chrono::Duration,
     pub prepublish_window: chrono::Duration,
     pub verification_grace: chrono::Duration,
@@ -339,7 +336,6 @@ pub(crate) struct KeyManagerInner {
     pub(crate) generation: ArcSwap<KeyGeneration>,
     pub(crate) settings: KeySettings,
     pub(crate) health: Arc<LifecycleHealth>,
-    pub(crate) lifecycle_shutdown: watch::Sender<bool>,
     pub(crate) database: crate::database::DatabaseKeysetBinding,
 }
 
@@ -807,11 +803,10 @@ impl KeyManager {
                 ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der.clone())
             }
             TestSigningBehavior::Failing => ActiveSigningKey::LocalPkcs8Der(Vec::new()),
-            TestSigningBehavior::ExternalFailure { stderr } => {
-                ActiveSigningKey::ExternalCommand(ExternalSigningKey {
-                    command: Arc::new(external_failure_command(&stderr)),
+            TestSigningBehavior::ExternalFailure { stderr: _ } => {
+                ActiveSigningKey::External(ExternalSigningKey {
                     key_ref: "kms://test/failure".to_owned(),
-                    timeout: Duration::from_secs(2),
+                    signer: Arc::new(crate::test_support::FailingExternalKeySigner),
                 })
             }
         };
@@ -848,18 +843,16 @@ impl KeyManager {
             inner: Arc::new(KeyManagerInner {
                 generation: ArcSwap::from_pointee(generation),
                 settings: KeySettings {
-                    external_command: Vec::new(),
-                    external_timeout: Duration::from_secs(2),
                     rotation_interval: chrono::Duration::days(90),
                     prepublish_window: chrono::Duration::days(1),
                     verification_grace: chrono::Duration::minutes(10),
                 },
                 health: Arc::new(LifecycleHealth::new()),
-                lifecycle_shutdown: watch::channel(false).0,
                 database: crate::database::DatabaseKeysetBinding {
                     tenant_id: uuid::Uuid::now_v7(),
                     repository: Arc::new(crate::test_support::MemorySigningKeyRepository::default()),
                     wrapping_keys: crate::test_support::wrapping_key_ring(),
+                    external_signer: None,
                 },
             }),
         }
@@ -922,19 +915,24 @@ impl KeyManager {
 
     pub async fn load_or_create_database(
         settings: KeySettings,
+        external_signer: Option<Arc<dyn ExternalKeySigner>>,
         tenant_id: uuid::Uuid,
         repository: Arc<dyn crate::SigningKeyRepository>,
         wrapping_keys: crate::SigningKeyWrappingKeyRing,
     ) -> anyhow::Result<Self> {
-        let (loaded, database) =
-            crate::database::load_or_create(&settings, tenant_id, repository, wrapping_keys)
-                .await?;
+        let (loaded, database) = crate::database::load_or_create(
+            &settings,
+            external_signer,
+            tenant_id,
+            repository,
+            wrapping_keys,
+        )
+        .await?;
         Ok(Self {
             inner: Arc::new(KeyManagerInner {
                 generation: ArcSwap::from_pointee(KeyGeneration::database(loaded)),
                 settings,
                 health: Arc::new(LifecycleHealth::new()),
-                lifecycle_shutdown: watch::channel(false).0,
                 database,
             }),
         })
@@ -956,14 +954,6 @@ impl KeyManager {
     #[must_use]
     pub fn is_healthy(&self) -> bool {
         self.health().is_healthy()
-    }
-
-    /// Stop the lifecycle loop owned by the caller's background task.
-    ///
-    /// The manager remains usable for inspection, but no further automatic
-    /// refreshes are attempted after the loop observes this signal.
-    pub fn stop_lifecycle(&self) {
-        self.inner.lifecycle_shutdown.send_replace(true);
     }
 
     #[must_use]
@@ -1092,33 +1082,6 @@ async fn encode_jwt_for_generation<T: Serialize>(
     Ok(signing_input)
 }
 
-#[cfg(all(any(test, feature = "test-support"), windows))]
-fn external_failure_command(stderr: &str) -> Vec<String> {
-    vec![
-        "pwsh".to_owned(),
-        "-NoLogo".to_owned(),
-        "-NoProfile".to_owned(),
-        "-NonInteractive".to_owned(),
-        "-Command".to_owned(),
-        format!(
-            "$null=[Console]::In.ReadToEnd(); [Console]::Error.Write('{}'); exit 7",
-            stderr.replace('\'', "''")
-        ),
-    ]
-}
-
-#[cfg(all(any(test, feature = "test-support"), unix))]
-fn external_failure_command(stderr: &str) -> Vec<String> {
-    vec![
-        "sh".to_owned(),
-        "-c".to_owned(),
-        format!(
-            "cat >/dev/null; printf '%s' '{}' >&2; exit 7",
-            stderr.replace('\'', "'\"'\"'")
-        ),
-    ]
-}
-
 impl Signer for KeyManager {
     async fn sign<'a>(&'a self, request: SignRequest<'a>) -> Result<Signature, SignError> {
         if !self.is_healthy() {
@@ -1145,7 +1108,7 @@ async fn sign_selected(selected: &SelectedKey<'_>, input: &[u8]) -> Result<Signa
             .sign(input)
             .await
         }
-        SelectedHandle::Active(ActiveSigningKey::ExternalCommand(external)) => {
+        SelectedHandle::Active(ActiveSigningKey::External(external)) => {
             crate::external::ExternalBackend {
                 external,
                 kid: selected.kid,

@@ -125,3 +125,15 @@ pub enum AuthenticationAuditEvent {
 pub trait AuthenticationAuditPort: Send + Sync {
     fn record(&self, event: AuthenticationAuditEvent);
 }
+
+impl<T: SecretVerifyPort + ?Sized> SecretVerifyPort for std::sync::Arc<T> {
+    fn verify_secret(&self, secret: String, password_hash: PasswordHash) -> SecretVerifyFuture<'_> {
+        self.as_ref().verify_secret(secret, password_hash)
+    }
+}
+
+impl<T: AuthenticationAuditPort + ?Sized> AuthenticationAuditPort for std::sync::Arc<T> {
+    fn record(&self, event: AuthenticationAuditEvent) {
+        self.as_ref().record(event);
+    }
+}

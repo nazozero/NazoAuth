@@ -6,6 +6,9 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
+nazo-openid4vci.workspace = true
+nazo-oauth-server.workspace = true
+http.workspace = true
 actix-web = { workspace = true, features = ["cookies"] }
 actix-cors.workspace = true
 base64.workspace = true

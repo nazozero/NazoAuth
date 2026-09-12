@@ -6,6 +6,7 @@ use actix_web::{
         header::{self, HeaderMap},
     },
 };
+use nazo_oauth_server::contracts::userinfo::AccessTokenAuthScheme;
 use serde_json::json;
 
 use crate::{authorization_error_response, json_response_no_store};
@@ -34,12 +35,6 @@ pub async fn mfa_method_not_allowed() -> HttpResponse {
         "invalid_request",
         "HTTP method is not allowed.",
     )
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum AccessTokenAuthScheme {
-    Bearer,
-    DPoP,
 }
 
 #[derive(Debug, PartialEq, Eq)]

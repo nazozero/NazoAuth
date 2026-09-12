@@ -1,0 +1,322 @@
+use super::tokens::*;
+use super::*;
+use crate::config::ConfigSource;
+use crate::settings::Settings;
+use crate::test_support::ClientSigningFixture;
+use crate::test_support::client_signing_fixture;
+use actix_web::test::TestRequest;
+use chrono::Utc;
+use nazo_auth::ValidatedClientAssertion;
+use nazo_identity::DEFAULT_ORGANIZATION_ID;
+use nazo_identity::DEFAULT_REALM_ID;
+use nazo_identity::DEFAULT_TENANT_ID;
+use nazo_oauth_server::domain::rows::ClientRow;
+use nazo_oauth_server::security::client_assertion::{
+    ClientAssertionError, verify_private_key_jwt_claims_for_issuer,
+};
+use serde_json::{Value, json};
+use uuid::Uuid;
+
+#[test]
+fn password_hash_capacity_defaults_match_the_documented_bounded_policy() {
+    assert_eq!(default_password_hash_max_concurrency(), 8);
+    assert_eq!(default_password_hash_queue_timeout_ms(), 100);
+}
+
+#[test]
+fn cancelled_password_callers_keep_capacity_until_the_blocking_workers_finish() {
+    use std::{future::Future, pin::Pin, task::Poll};
+
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .max_blocking_threads(1)
+        .build()
+        .unwrap();
+    // Occupy the worker so every production call is deterministically queued.
+    // Dropping release on a failed assertion also unblocks runtime shutdown.
+    let (release, wait) = std::sync::mpsc::channel();
+    let (started, ready) = std::sync::mpsc::channel();
+    let blocker = runtime.spawn_blocking(move || {
+        started.send(()).unwrap();
+        let _ = wait.recv();
+    });
+    ready.recv_timeout(Duration::from_secs(5)).unwrap();
+
+    let capacity = password_hash_concurrency_limit().available_permits();
+    assert!(capacity >= 3);
+    let password = Uuid::now_v7().to_string();
+    let encoded = hash_password(&password).unwrap();
+    runtime.block_on(async {
+        for index in 0..capacity {
+            let mut work: Pin<Box<dyn Future<Output = ()>>> = match index % 3 {
+                0 => Box::pin(async {
+                    let _ = verify_password_blocking_limited(
+                        password.clone(),
+                        nazo_identity::PasswordHash::new(encoded.clone()).unwrap(),
+                    )
+                    .await;
+                }),
+                1 => Box::pin(async {
+                    let _ = hash_password_blocking_limited(password.clone()).await;
+                }),
+                _ => Box::pin(async {
+                    let _ = verify_encoded_hashes_blocking_limited(
+                        password.clone(),
+                        vec![
+                            nazo_identity::ports::EncodedSecretHash::new(encoded.clone()).unwrap(),
+                        ],
+                    )
+                    .await;
+                }),
+            };
+            assert!(matches!(futures_util::poll!(&mut work), Poll::Pending));
+            drop(work);
+            assert_eq!(
+                password_hash_concurrency_limit().available_permits(),
+                capacity - index - 1,
+                "cancelling a caller must not release its worker's capacity"
+            );
+        }
+        assert_eq!(
+            hash_password_blocking_limited(password.clone()).await,
+            Err(PasswordHashingError::Saturated)
+        );
+    });
+
+    release.send(()).unwrap();
+    runtime.block_on(async {
+        blocker.await.unwrap();
+        let permits = timeout(
+            Duration::from_secs(10),
+            password_hash_concurrency_limit().acquire_many(capacity as u32),
+        )
+        .await
+        .expect("all queued workers must finish and return their permits")
+        .unwrap();
+        drop(permits);
+        assert_eq!(
+            password_hash_concurrency_limit().available_permits(),
+            capacity
+        );
+    });
+}
+
+fn extract_client_credentials(
+    req: &HttpRequest,
+    settings: &Settings,
+    form_client_id: Option<&str>,
+    form_secret: Option<&str>,
+    form_assertion_type: Option<&str>,
+    form_assertion: Option<&str>,
+) -> ClientCredentials {
+    extract_client_credentials_with_trusted_proxies(
+        req,
+        &settings.endpoint.trusted_proxy_cidrs,
+        form_client_id,
+        form_secret,
+        form_assertion_type,
+        form_assertion,
+    )
+}
+
+fn verify_private_key_jwt_claims_with_settings(
+    settings: &Settings,
+    req: &HttpRequest,
+    client: &ClientRow,
+    assertion: &str,
+) -> Result<ValidatedClientAssertion, ClientAssertionError> {
+    verify_private_key_jwt_claims_for_issuer(
+        &settings.endpoint.issuer,
+        req.uri().path(),
+        std::slice::from_ref(&settings.endpoint.mtls_endpoint_base_url.as_str()),
+        client,
+        assertion,
+    )
+}
+
+#[path = "security/client_assertion.rs"]
+mod client_assertion;
+#[path = "security/client_auth.rs"]
+mod client_auth;
+#[path = "security/entropy_passwords.rs"]
+mod entropy_passwords;
+#[path = "security/security_tokens.rs"]
+mod security_tokens;
+#[path = "security/token_claims.rs"]
+mod token_claims;
+
+fn test_settings() -> Settings {
+    Settings::from_config(&ConfigSource::default()).expect("default settings should load")
+}
+
+fn private_key_jwt_client(jwks: Value) -> ClientRow {
+    client_row! {
+        id: Uuid::now_v7(),
+        tenant_id: DEFAULT_TENANT_ID,
+        realm_id: DEFAULT_REALM_ID,
+        organization_id: DEFAULT_ORGANIZATION_ID,
+        client_id: "client-1".to_owned(),
+        client_name: "Client".to_owned(),
+        client_type: "confidential".to_owned(),
+        client_secret_hash: None,
+        redirect_uris: json!(["https://client.example/callback"]),
+        scopes: json!(["openid"]),
+        allowed_audiences: json!(["resource://default"]),
+        grant_types: json!(["authorization_code"]),
+        token_endpoint_auth_method: "private_key_jwt".to_owned(),
+        require_dpop_bound_tokens: false,
+        require_mtls_bound_tokens: false,
+        tls_client_auth_subject_dn: None,
+        tls_client_auth_cert_sha256: None,
+        tls_client_auth_san_dns: json!([]),
+        tls_client_auth_san_uri: json!([]),
+        tls_client_auth_san_ip: json!([]),
+        tls_client_auth_san_email: json!([]),
+        allow_client_assertion_audience_array: false,
+        allow_client_assertion_endpoint_audience: false,
+        require_par_request_object: false,
+        is_active: true,
+        jwks: Some(jwks),
+        introspection_encrypted_response_alg: None,
+        introspection_encrypted_response_enc: None,
+        userinfo_signed_response_alg: None,
+        userinfo_encrypted_response_alg: None,
+        userinfo_encrypted_response_enc: None,
+        authorization_signed_response_alg: None,
+        authorization_encrypted_response_alg: None,
+        authorization_encrypted_response_enc: None,
+        post_logout_redirect_uris: json!([]),
+        backchannel_logout_uri: None,
+        backchannel_logout_session_required: true,
+        frontchannel_logout_uri: None,
+        frontchannel_logout_session_required: true,
+        subject_type: "public".to_owned(),
+        sector_identifier_uri: None,
+        sector_identifier_host: None,
+    }
+}
+
+fn signed_client_assertion(
+    client_id: &str,
+    audience: &str,
+    kid: &str,
+    fixture: &ClientSigningFixture,
+    jti: &str,
+) -> String {
+    let now = Utc::now().timestamp();
+    let claims = json!({
+        "iss": client_id,
+        "sub": client_id,
+        "aud": audience,
+        "iat": now,
+        "nbf": now,
+        "exp": now + 120,
+        "jti": jti
+    });
+    let mut header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    header.kid = Some(kid.to_owned());
+    fixture.encode_jwt(&header, &claims)
+}
+
+fn signed_client_assertion_without_kid(
+    client_id: &str,
+    audience: &str,
+    fixture: &ClientSigningFixture,
+    jti: &str,
+) -> String {
+    let now = Utc::now().timestamp();
+    let claims = json!({
+        "iss": client_id,
+        "sub": client_id,
+        "aud": audience,
+        "iat": now,
+        "nbf": now,
+        "exp": now + 120,
+        "jti": jti
+    });
+    let header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::RS256);
+    fixture.encode_jwt(&header, &claims)
+}
+
+#[tokio::test]
+async fn verify_password_blocking_matches_argon2_verifier() {
+    let password = uuid::Uuid::now_v7().to_string();
+    let hash = hash_password(&password).expect("password should hash");
+
+    assert!(
+        verify_password_blocking_limited(
+            password,
+            nazo_identity::PasswordHash::new(hash.clone()).unwrap(),
+        )
+        .await
+        .expect("password verification should run")
+    );
+    assert!(
+        !verify_password_blocking_limited(
+            "wrong password".to_owned(),
+            nazo_identity::PasswordHash::new(hash).unwrap(),
+        )
+        .await
+        .expect("password verification should run")
+    );
+}
+
+#[test]
+fn dummy_password_hash_is_valid_and_never_matches_the_probe_password() {
+    let hash = dummy_password_hash().expect("dummy password hash should initialize");
+
+    let hash = nazo_identity::PasswordHash::new(hash).expect("valid dummy password hash");
+    assert!(!hash.verify_password("attacker supplied password"));
+}
+
+#[tokio::test]
+async fn mfa_secret_hasher_preserves_candidate_order_and_rejects_wrong_secret() {
+    use nazo_identity::ports::MfaSecretHashPort;
+    let hasher = super::ServerMfaSecretHasher;
+    let first = uuid::Uuid::now_v7().to_string();
+    let second = uuid::Uuid::now_v7().to_string();
+    let hashes = hasher
+        .hash_secrets(vec![first.clone(), second.clone()])
+        .await
+        .unwrap();
+    assert_eq!(hashes.len(), 2);
+    assert_eq!(
+        hasher
+            .find_matching_secret(second, hashes.clone())
+            .await
+            .unwrap(),
+        Some(1)
+    );
+    assert_eq!(
+        hasher
+            .find_matching_secret(first, hashes.clone())
+            .await
+            .unwrap(),
+        Some(0)
+    );
+    assert_eq!(
+        hasher
+            .find_matching_secret("wrong-secret".into(), hashes)
+            .await
+            .unwrap(),
+        None
+    );
+    assert!(hasher.hash_secrets(vec![]).await.unwrap().is_empty());
+}
+#[tokio::test]
+async fn scim_bootstrap_password_provider_returns_valid_independent_hashes() {
+    use nazo_oauth_server::contracts::scim::ScimBootstrapPasswordProvider;
+    let provider = super::ServerScimBootstrapPasswordProvider;
+    let first = provider
+        .password_hash()
+        .await
+        .unwrap()
+        .into_persistence_value();
+    let second = provider
+        .password_hash()
+        .await
+        .unwrap()
+        .into_persistence_value();
+    assert_ne!(first.as_str(), second.as_str());
+    assert!(argon2::PasswordHash::new(first.as_str()).is_ok());
+}

@@ -5,9 +5,9 @@ use actix_web::{
     http::{Method, StatusCode, header},
     test, web,
 };
-use nazo_http_actix::{
-    OidcLogoutCommand, OidcLogoutConfig, OidcLogoutEndpoint, OidcLogoutError, OidcLogoutFuture,
-    OidcLogoutOperations, OidcLogoutSuccess, oidc_logout,
+use nazo_http_actix::{OidcLogoutConfig, OidcLogoutEndpoint, oidc_logout};
+use nazo_oauth_server::contracts::oidc_logout::{
+    OidcLogoutCommand, OidcLogoutError, OidcLogoutFuture, OidcLogoutOperations, OidcLogoutSuccess,
 };
 
 struct Operations {

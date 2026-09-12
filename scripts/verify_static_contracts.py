@@ -63,6 +63,533 @@ FORBIDDEN_CRATE_DEPENDENCIES = {
     "http-actix": {"diesel", "diesel-async", "fred", "nazo-postgres", "nazo-valkey"},
 }
 
+# Canonical package roles, shared with the Cargo graph guard.
+PACKAGE_ROLES = {
+    "nazo-oauth-server": "application",
+    "nazo-auth": "domain",
+    "nazo-oauth-server-object-store": "adapter",
+    "nazo-oauth-server-postgres": "adapter",
+    "nazo-oauth-server-valkey": "adapter",
+    "nazo-digital-credentials": "domain",
+    "nazo-http-actix": "adapter",
+    "nazo-http-signatures": "domain",
+    "nazo-identity": "domain",
+    "nazo-key-management": "domain",
+    "nazoauth": "host",
+    "nazo-openid4vc-http-actix": "adapter",
+    "nazo-openid4vci": "domain",
+    "nazo-openid4vp": "domain",
+    "nazo-operator-protocol": "domain",
+    "nazo-persistence": "domain",
+    "nazo-postgres": "adapter",
+    "nazo-resource-server": "domain",
+    "nazo-runtime-modules": "domain",
+    "nazo-scim-events": "domain",
+    "nazo-valkey": "adapter",
+}
+ALLOWED_DEPENDENCY_ROLES = {
+    "domain": {"domain"},
+    "application": {"domain", "application"},
+    "adapter": {"domain", "application", "adapter"},
+    "host": {"domain", "application", "adapter", "host"},
+}
+
+
+# Reviewed direct third-party dependencies. New entries require an owner review:
+# data/algorithm libraries are distinct from concrete network/runtime/Host execution.
+NEUTRAL_DEPENDENCIES = {
+    "aes-gcm", "anyhow", "arc-swap", "argon2", "aws-lc-rs", "base64", "blake3",
+    "chrono", "ciborium", "coset", "der", "ed25519-dalek", "flate2", "futures-util",
+    "hmac", "http", "httpsig", "image", "jsonwebtoken", "lru", "p256", "passkey-auth",
+    "pem", "pkcs8", "rand", "rcgen", "semver", "serde", "serde_json", "sfv", "sha1",
+    "sha2", "subtle", "tar", "thiserror", "time", "tracing", "url", "urlencoding",
+    "uuid", "x509-cert", "x509-parser", "yaml_serde", "yasna", "zeroize",
+}
+EXECUTION_DEPENDENCIES = {
+    "actix", "actix-cors", "actix-files", "actix-multipart", "actix-rt", "actix-tls",
+    "actix-web", "async-std", "atomicwrites", "aws-credential-types", "aws-sigv4",
+    "axum", "diesel", "diesel-async", "diesel_migrations", "fred", "fs2",
+    "futures-executor", "hyper", "lettre_email", "opentelemetry",
+    "opentelemetry-appender-tracing", "opentelemetry-otlp", "opentelemetry_sdk",
+    "process-wrap", "reqwest", "rustix", "smol", "tokio", "tokio-postgres",
+    "tokio-postgres-rustls", "tonic", "tracing-opentelemetry", "tracing-subscriber",
+}
+# These crates expose both neutral values/algorithms and optional execution APIs.
+# Inner consumers retain only their reviewed neutral API use (checked below).
+MIXED_DEPENDENCIES = {"lettre", "rustls", "rustls-webpki", "mdoc-rs", "futures-channel"}
+INNER_ROLES = {"domain", "application"}
+REMOVED_BOUNDARY_SYMBOLS = {"SendCibaResponse", "OAuthJsonErrorFields", "RequestContext"}
+CONCRETE_INNER_TYPES = {
+    "HttpRequest", "HttpResponse", "FromRequest", "Responder", "JoinHandle",
+    "WebRequest", "WebResponse", "HttpServer", "ServerHandle",
+}
+HOST_PATHS = re.compile(
+    r"^(?:std::(?:fs|process|thread)(?:::|$)"
+    r"|std::env::(?:args|args_os|var|var_os|vars|vars_os|current_dir|current_exe|temp_dir|"
+    r"set_var|remove_var|set_current_dir|home_dir)(?:::|$)"
+    r"|std::net::(?:TcpListener|TcpStream|UdpSocket|ToSocketAddrs)(?:::|$)"
+    r"|std::io::(?:stdin|stdout|stderr)(?:::|$)"
+    r"|rustls::(?:ClientConnection|ServerConnection|Connection|Stream|StreamOwned)(?:::|$)"
+    r"|lettre::(?:AsyncSmtpTransport|SmtpTransport|AsyncTransport|Transport|transport)(?:::|$)"
+    r"|mdoc_rs::(?:runtime|transport|http|ble|nfc)(?:::|$)"
+    r"|image::(?:open|save_buffer|save_buffer_with_format|ImageReader::open|io::Reader::open)(?:::|$))"
+)
+
+
+# T02 canonical contracts. Paths are definition owners, not re-export facades.
+T02_CONTRACT_OWNERS = {
+    "crates/authorization-server/src/contracts/authorization_decision.rs": (
+        "AuthorizationDecisionFuture",
+        "AuthorizationDecisionCommand",
+        "AuthorizationDecisionResponse",
+        "AuthorizationDecisionError",
+        "AuthorizationDecisionOperations",
+    ),
+    "crates/authorization-server/src/contracts/local_registration.rs": (
+        "LocalRegistrationFuture",
+        "LocalRegistrationOperations",
+        "AuthenticationRateLimitError",
+        "AuthenticationRateLimit",
+    ),
+    "crates/authorization-server/src/contracts/password_login.rs": (
+        "PasswordLoginFuture",
+        "PasswordLoginOperations",
+    ),
+    "crates/authorization-server/src/contracts/passkey.rs": (
+        "PasskeyFuture",
+        "PasskeyEndpointError",
+        "PasskeyLoginFinishCommand",
+        "PasskeyLoginOperations",
+        "PasskeyProfileContext",
+        "PasskeyRegistrationFinishCommand",
+        "PasskeyProfileOperations",
+    ),
+    "crates/authorization-server/src/contracts/mfa_profile.rs": (
+        "MfaProfileFuture",
+        "MfaRequestContext",
+        "MfaCodeCommand",
+        "MfaChallengeCommand",
+        "MfaSessionRotation",
+        "MfaTotpEnrollment",
+        "MfaTotpConfirmation",
+        "MfaChallengeSuccess",
+        "MfaStepUpSuccess",
+        "MfaBackupCodesRegenerated",
+        "MfaProfileErrorKind",
+        "MfaProfileError",
+        "MfaProfileOperations",
+    ),
+    "crates/authorization-server/src/contracts/profile_account.rs": (
+        "ProfileAccountFuture",
+        "ProfileMe",
+        "ProfileAccountError",
+        "ProfileAccountOperations",
+    ),
+    "crates/authorization-server/src/contracts/oidc_logout.rs": (
+        "OidcLogoutFuture",
+        "OidcLogoutRequest",
+        "OidcLogoutCommand",
+        "OidcLogoutSuccess",
+        "OidcLogoutError",
+        "OidcLogoutOperations",
+    ),
+    "crates/authorization-server/src/contracts/session_management.rs": (
+        "SessionManagementFuture",
+        "SessionManagementOriginFuture",
+        "SessionManagementAvailability",
+        "SessionManagementError",
+        "SessionManagementOperations",
+    ),
+    "crates/authorization-server/src/contracts/metadata.rs": (
+        "MetadataEndpointConfig",
+        "MetadataSnapshot",
+        "MetadataSnapshotSource",
+    ),
+    "crates/authorization-server/src/contracts/runtime_modules.rs": (
+        "RuntimeModuleAdminFuture",
+        "RuntimeModuleAdminError",
+        "RuntimeModuleAdministration",
+    ),
+    "crates/authorization-server/src/contracts/fapi_resource.rs": (
+        "FapiFuture",
+        "FapiAuthorizationError",
+        "FapiResourceAuthorizer",
+        "FapiSignatureVerificationError",
+        "FapiSignatureOperationError",
+        "FapiResponseSignature",
+        "FapiHttpMessageSignatures",
+    ),
+    "crates/authorization-server/src/contracts/token_management.rs": (
+        "TOKEN_INTROSPECTION_JWT_MEDIA_TYPE",
+        "TokenManagementFuture",
+        "TokenManagementRateLimitError",
+        "TokenManagementError",
+        "TokenIntrospectionRepresentation",
+        "TokenManagementRequestFacts",
+        "TokenManagementRequestGuard",
+        "TokenManagementOperations",
+    ),
+    "crates/authorization-server/src/contracts/dynamic_client_registration.rs": (
+        "RemoteJwksFuture",
+        "RemoteJwksResolverPort",
+        "DynamicRegistrationRateLimitError",
+        "DynamicRegistrationRequestGuard",
+        "DynamicRegistrationSecurityServices",
+    ),
+    "crates/authorization-server/src/contracts/scim.rs": (
+        "ScimFuture", "ScimAuthorizedRequest", "ScimAuthorizationError",
+        "ScimRequestAuthorizer", "ScimDependencyError", "ScimCursorProtector",
+        "ScimBootstrapPasswordProvider",
+    ),
+    "crates/authorization-server/src/contracts/userinfo.rs": (
+        "AccessTokenAuthScheme", "UserinfoFuture", "UserinfoRepresentation",
+        "UserinfoSuccess", "UserinfoDpopError", "UserinfoError", "UserinfoOperations",
+    ),
+    "crates/authorization-server/src/contracts/request_facts.rs": (
+        "DpopErrorContext",
+    ),
+    "crates/authorization-server/src/contracts/token_client_auth.rs": (
+        "BasicAuthorizationCredentials",
+        "ClientCertificateFacts",
+        "TokenClientAuthTransportFacts",
+    ),
+    "crates/authorization-server/src/contracts/token_forms.rs": (
+        "TokenForm",
+        "TokenOnlyForm",
+        "PreAuthorizedTokenParameters",
+        "ParsedTokenForm",
+        "TokenFormError",
+        "TokenManagementFormError",
+    ),
+    "crates/openid4vci/src/application.rs": (
+        "CredentialIssuerFuture",
+        "AccessTokenScheme",
+        "CredentialRequestContext",
+        "CredentialResponseBody",
+        "CredentialEndpointResponse",
+        "CredentialRequestBody",
+        "PreAuthorizedTokenRequest",
+        "PreAuthorizedTokenResponse",
+        "CreateCredentialOfferRequest",
+        "CreateCredentialOfferResponse",
+        "CredentialHttpError",
+        "CredentialIssuerOperations",
+    ),
+    "crates/openid4vp/src/application.rs": (
+        "PresentationFuture",
+        "PresentationResponseBody",
+        "PresentationResponseInput",
+        "PresentationHttpError",
+        "CreatePresentationRequest",
+        "CreatePresentationResponse",
+        "PresentationOperations",
+    ),
+}
+
+
+def cfg_is_production_possible(expression: str) -> bool:
+    """Only exclude cfg expressions proven false when test=false; features stay unknown."""
+    def evaluate(value):
+        value = value.strip()
+        if value == "test":
+            return False
+        operator = re.fullmatch(r"(all|any|not)\s*\((.*)\)", value, re.DOTALL)
+        if not operator:
+            return None
+        body = operator[2]
+        parts, start, depth = [], 0, 0
+        for index, char in enumerate(body):
+            depth += (char == "(") - (char == ")")
+            if char == "," and depth == 0:
+                if body[start:index].strip():
+                    parts.append(body[start:index])
+                start = index + 1
+        if body[start:].strip():
+            parts.append(body[start:])
+        values = [evaluate(part) for part in parts]
+        if operator[1] == "not":
+            return None if len(values) != 1 or values[0] is None else not values[0]
+        if operator[1] == "all":
+            return False if False in values else (None if None in values else True)
+        return True if True in values else (None if None in values else False)
+    return evaluate(expression) is not False
+
+
+def rust_production_source(source: str) -> str:
+    """Mask comments/literals and explicit test-only items, retaining feature code."""
+    non_code = re.compile(
+        r'r(?P<hashes>#{0,255})"[\s\S]*?"(?P=hashes)'
+        r'|"(?:\\.|[^"\\])*"'
+        r"|'(?:\\.|[^'\\\n])'"
+        r"|//[^\n]*|/\*[\s\S]*?\*/"
+    )
+    source = non_code.sub(lambda match: re.sub(r"[^\n]", " ", match[0]), source)
+    test_items = []
+    for match in re.finditer(r"#(?P<file>!)?\[\s*cfg\s*\(", source):
+        end, depth = match.end(), 1
+        while end < len(source) and depth:
+            depth += (source[end] == "(") - (source[end] == ")")
+            end += 1
+        if depth or cfg_is_production_possible(source[match.end():end - 1]):
+            continue
+        if match["file"]:
+            return re.sub(r"[^\n]", " ", source)
+        closing = re.match(r"\s*\]", source[end:])
+        if closing:
+            test_items.append((match.start(), end + closing.end()))
+    for start, attribute_end in reversed(test_items):
+        item = re.match(r"\s*(?:#\[[^\]]*\]\s*)*", source[attribute_end:])
+        cursor = attribute_end + item.end()
+        boundary = re.search(r"[;{]", source[cursor:])
+        if boundary is None:
+            continue
+        end = cursor + boundary.end()
+        if source[end - 1] == "{":
+            depth = 1
+            while end < len(source) and depth:
+                depth += (source[end] == "{") - (source[end] == "}")
+                end += 1
+        source = source[:start] + re.sub(r"[^\n]", " ", source[start:end]) + source[end:]
+    return source
+
+
+def check_contract_definition_owners() -> None:
+    owners = {
+        symbol: path
+        for path, symbols in T02_CONTRACT_OWNERS.items()
+        for symbol in symbols
+    }
+    definitions: dict[str, list[str]] = {symbol: [] for symbol in owners}
+    definition = re.compile(
+        r"\b(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?"
+        r"(?:struct|enum|trait|type|const)\s+(\w+)\b"
+    )
+    exports = re.compile(r"\bpub(?:\([^)]*\))?\s+use\s+([^;]+);", re.DOTALL)
+    imports = re.compile(r"\buse\s+([^;]+);", re.DOTALL)
+    adapter_directories = {"http-actix", "openid4vc-http-actix"}
+    workspace_manifest = ROOT / "Cargo.toml"
+    workspace = (
+        tomllib.loads(workspace_manifest.read_text(encoding="utf-8")).get("workspace", {})
+        if workspace_manifest.is_file() else {}
+    )
+    adapter_aliases = {}
+    violations = []
+    for path in sorted((ROOT / "crates").glob("*/src/**/*.rs")):
+        relative = path.relative_to(ROOT).as_posix()
+        source = rust_production_source(path.read_text(encoding="utf-8"))
+        retired_symbols = REMOVED_BOUNDARY_SYMBOLS & set(re.findall(r"\b\w+\b", source))
+        if retired_symbols:
+            violations.append(f"{relative} retains removed boundary symbols: {sorted(retired_symbols)}")
+        for match in definition.finditer(source):
+            symbol = match[1]
+            # This pre-existing resource-server enum is a distinct protocol type.
+            if symbol == "AccessTokenScheme" and relative == "crates/resource-server/src/service.rs":
+                continue
+            if symbol in definitions:
+                definitions[symbol].append(relative)
+        if path.relative_to(ROOT).parts[1] not in adapter_directories:
+            continue
+        adapter_directory = path.relative_to(ROOT).parts[1]
+        if adapter_directory not in adapter_aliases:
+            manifest_path = ROOT / "crates" / adapter_directory / "Cargo.toml"
+            adapter_aliases[adapter_directory] = {
+                spec["_alias"].replace("-", "_"): name.replace("-", "_")
+                for name, spec in resolved_production_dependencies(manifest_path, workspace)
+            } if manifest_path.is_file() else {}
+        aliases = adapter_aliases[adapter_directory].copy()
+        for original, alias in re.findall(r"\bextern\s+crate\s+(\w+)\s+as\s+(\w+)\s*;", source):
+            aliases[alias] = resolved_rust_path(original, aliases)
+        for match in imports.finditer(source):
+            for imported, alias in rust_use_bindings(match[1]):
+                if alias not in {"*", "_"} and imported != alias:
+                    aliases[alias] = resolved_rust_path(imported, aliases)
+        contract_roots = (
+            "nazo_oauth_server::contracts", "nazo_openid4vci::application",
+            "nazo_openid4vp::application",
+        )
+        for match in exports.finditer(source):
+            for exported, _alias in rust_use_bindings(match[1]):
+                resolved = resolved_rust_path(exported, aliases)
+                identifiers = set(resolved.split("::"))
+                if identifiers & owners.keys() or any(
+                    resolved == origin or resolved.startswith(origin + "::")
+                    for origin in contract_roots
+                ):
+                    violations.append(f"{relative} re-exports migrated contracts: {match[1].strip()}")
+                    break
+    for symbol, expected in owners.items():
+        if definitions[symbol] != [expected]:
+            violations.append(
+                f"{symbol} must be defined once in {expected}; found {definitions[symbol]}"
+            )
+    retired = ROOT / "crates" / "http-actix" / "src" / "request_context.rs"
+    if retired.exists():
+        violations.append("unused HTTP RequestContext source must be removed")
+    if violations:
+        raise SystemExit("contract ownership boundary violated:\n" + "\n".join(violations))
+
+
+def production_dependency_entries(manifest: dict, workspace: dict):
+    """Yield every explicit normal/build edge, including disabled target/optional edges."""
+    sections = [(None, manifest), *manifest.get("target", {}).items()]
+    for target, section in sections:
+        for table, kind in (("dependencies", "normal"), ("build-dependencies", "build")):
+            for alias, value in section.get(table, {}).items():
+                spec = value.copy() if isinstance(value, dict) else {"version": value}
+                if spec.get("workspace"):
+                    inherited = workspace.get("dependencies", {}).get(alias, {})
+                    inherited = inherited if isinstance(inherited, dict) else {"version": inherited}
+                    # Cargo adds member features to workspace dependency features.
+                    features = [*inherited.get("features", []), *spec.get("features", [])]
+                    spec = {**inherited, **spec}
+                    if features:
+                        spec["features"] = features
+                yield alias, spec.get("package", alias), spec, kind, target
+
+
+def declared_production_dependencies(manifest: dict, workspace: dict):
+    """Compatibility for existing policy callers; all edge contexts are still scanned."""
+    for _alias, package, spec, _kind, _target in production_dependency_entries(manifest, workspace):
+        yield package, spec
+
+
+def resolved_production_dependencies(manifest_path: Path, workspace: dict):
+    """Resolve Cargo aliases and local package identity once for both architecture guards.
+
+    Returned specs also carry _alias, _kind, _target and the resolved absolute crate
+    directory _path. These are guard metadata, not Cargo manifest fields.
+    """
+    manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    for alias, package, spec, kind, target in production_dependency_entries(manifest, workspace):
+        local_path = None
+        if "path" in spec:
+            base = ROOT if spec.get("workspace") else manifest_path.parent
+            local_path = (base / spec["path"]).resolve()
+            candidate = local_path / "Cargo.toml"
+            if candidate.is_file():
+                package = tomllib.loads(candidate.read_text(encoding="utf-8"))["package"]["name"]
+        yield package, {
+            **spec, "_alias": alias, "_kind": kind, "_target": target,
+            "_path": str(local_path) if local_path is not None else None,
+        }
+
+
+def package_manifests():
+    return sorted((ROOT / "crates").glob("*/Cargo.toml"))
+
+
+def check_package_roles() -> None:
+    workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
+    reviewed = NEUTRAL_DEPENDENCIES | EXECUTION_DEPENDENCIES | MIXED_DEPENDENCIES
+    violations = []
+    for path in package_manifests():
+        manifest = tomllib.loads(path.read_text(encoding="utf-8"))
+        package = manifest["package"]["name"]
+        role = PACKAGE_ROLES.get(package)
+        if role is None:
+            violations.append(f"unclassified local package requires owner review: {package}")
+            continue
+        for dependency, spec in resolved_production_dependencies(path, workspace):
+            dependency_role = PACKAGE_ROLES.get(dependency)
+            edge = f"{package} ({role}) -> {dependency} [{spec['_kind']}, target={spec['_target']}, alias={spec['_alias']}]"
+            if dependency_role:
+                if dependency_role not in ALLOWED_DEPENDENCY_ROLES[role]:
+                    violations.append(f"{edge}: forbidden {dependency_role} dependency")
+            elif spec["_path"] is not None or dependency not in reviewed:
+                violations.append(f"{edge}: unclassified dependency requires owner review")
+            elif role in INNER_ROLES and dependency in EXECUTION_DEPENDENCIES:
+                violations.append(f"{edge}: concrete execution dependency in an inner package")
+            if role in INNER_ROLES and dependency == "lettre":
+                transport_features = [feature for feature in spec.get("features", []) if
+                    feature.startswith(("smtp-", "sendmail-", "file-", "tokio", "async-std", "pool"))]
+                if transport_features:
+                    violations.append(f"{edge}: SMTP execution features {transport_features}")
+    if violations:
+        raise SystemExit("package dependency boundary violated:\n" + "\n".join(violations))
+
+
+def rust_use_bindings(expression: str, prefix: str = ""):
+    """Expand Rust use trees sufficiently to inspect imports and renamed paths."""
+    depth = 0
+    start = 0
+    parts = []
+    for index, character in enumerate(expression):
+        depth += (character == "{") - (character == "}")
+        if character == "," and depth == 0:
+            parts.append(expression[start:index])
+            start = index + 1
+    parts.append(expression[start:])
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        if "{" in part:
+            head, nested = part.split("{", 1)
+            nested = nested.rsplit("}", 1)[0]
+            head = re.sub(r"\s+", "", head).strip(":")
+            yield from rust_use_bindings(nested, "::".join(filter(None, (prefix, head))))
+            continue
+        item, *renamed = re.split(r"\s+as\s+", part)
+        item = re.sub(r"\s+", "", item).strip(":")
+        path = prefix if item == "self" else "::".join(filter(None, (prefix, item)))
+        alias = renamed[0].strip() if renamed else path.rsplit("::", 1)[-1]
+        yield path, alias
+
+
+def resolved_rust_path(path: str, aliases: dict[str, str]) -> str:
+    path = re.sub(r"\s+", "", path).lstrip(":")
+    seen = set()
+    while True:
+        root, separator, suffix = path.partition("::")
+        if root in seen:
+            break
+        seen.add(root)
+        replacement = aliases.get(root)
+        if replacement is None or replacement == root:
+            break
+        path = replacement + (separator + suffix if separator else "")
+    return path
+
+
+def check_inner_source_boundaries() -> None:
+    workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
+    concrete_crates = {name.replace("-", "_") for name in EXECUTION_DEPENDENCIES}
+    concrete_crates.update(name.replace("-", "_") for name, role in PACKAGE_ROLES.items() if role in {"adapter", "host"})
+    violations = []
+    imports = re.compile(r"\buse\s+([^;]+);", re.DOTALL)
+    qualified = re.compile(r"(?<!\w)(?:::)?[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)+")
+    for manifest_path in package_manifests():
+        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+        if PACKAGE_ROLES.get(manifest["package"]["name"]) not in INNER_ROLES:
+            continue
+        dependency_aliases = {
+            spec["_alias"].replace("-", "_"): name.replace("-", "_")
+            for name, spec in resolved_production_dependencies(manifest_path, workspace)
+        }
+        for path in sorted((manifest_path.parent / "src").rglob("*.rs")):
+            source = rust_production_source(path.read_text(encoding="utf-8"))
+            aliases = dependency_aliases.copy()
+            for original, alias in re.findall(r"\bextern\s+crate\s+(\w+)\s+as\s+(\w+)\s*;", source):
+                aliases[alias] = resolved_rust_path(original, aliases)
+            bindings = [binding for match in imports.finditer(source) for binding in rust_use_bindings(match[1])]
+            for imported, alias in bindings:
+                if alias not in {"*", "_"} and imported != alias:
+                    aliases[alias] = resolved_rust_path(imported, aliases)
+            candidates = [imported for imported, _ in bindings]
+            candidates.extend(match[0] for match in qualified.finditer(source))
+            forbidden_paths = set()
+            for candidate in candidates:
+                resolved = resolved_rust_path(candidate, aliases)
+                if resolved.partition("::")[0] in concrete_crates or HOST_PATHS.match(resolved):
+                    forbidden_paths.add(resolved)
+            forbidden_types = CONCRETE_INNER_TYPES & set(re.findall(r"\b\w+\b", source))
+            if forbidden_paths or forbidden_types:
+                relative = path.relative_to(ROOT).as_posix()
+                violations.append(f"{relative}: concrete execution/types {sorted(forbidden_paths | forbidden_types)}")
+    if violations:
+        raise SystemExit("inner source boundary violated:\n" + "\n".join(violations))
+
+
 RFC9967_CASES = {
     "discovery_exact_event_uris",
     "poll_authorization_boundaries",
@@ -171,7 +698,7 @@ def check_documentation_boundaries() -> None:
 
 
 def check_authorization_server_import_boundaries() -> None:
-    for path in sorted((ROOT / "crates" / "authorization-server" / "src").rglob("*.rs")):
+    for path in sorted([*(ROOT / "crates" / "authorization-server" / "src").rglob("*.rs"), *(ROOT / "crates" / "nazoauth" / "src").rglob("*.rs")]):
         text = path.read_text(encoding="utf-8")
         relative = path.relative_to(ROOT)
         if GLOB_REEXPORT.search(text):
@@ -297,12 +824,12 @@ def check_toolchain_pins() -> None:
 
 
 def check_crate_dependency_boundaries() -> None:
+    check_package_roles()
+    workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
     for crate, forbidden in FORBIDDEN_CRATE_DEPENDENCIES.items():
         manifest_path = ROOT / "crates" / crate / "Cargo.toml"
         manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
-        declared = set()
-        for section in ("dependencies", "build-dependencies"):
-            declared.update(manifest.get(section, {}))
+        declared = {name for name, _ in resolved_production_dependencies(manifest_path, workspace)}
         violations = sorted(declared & forbidden)
         if violations:
             raise SystemExit(
@@ -314,7 +841,9 @@ def check_transient_state_backend_boundary() -> None:
     server_root = ROOT / "crates" / "authorization-server" / "src"
     forbidden = ("nazo_valkey", "ValkeyConnection", "VALKEY_")
     violations = []
-    for path in sorted(server_root.rglob("*.rs")):
+    for path in sorted([*server_root.rglob("*.rs"), *(ROOT / "crates" / "nazoauth" / "src").rglob("*.rs")]):
+        if path.is_relative_to(ROOT / "crates" / "nazoauth" / "src" / "launchers"):
+            continue
         source = path.read_text(encoding="utf-8")
         markers = [marker for marker in forbidden if marker in source]
         if markers:
@@ -346,20 +875,16 @@ def check_aggregate_package_boundary() -> None:
 
     manifest_path = ROOT / "crates" / "nazoauth" / "Cargo.toml"
     manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
-    dependencies = set(manifest.get("dependencies", {}))
-    expected = {
-        "anyhow",
-        "nazo-oauth-server",
-        "nazo-oauth-server-postgres",
-        "nazo-oauth-server-valkey",
-        "nazo-oauth-server-object-store",
-        "tokio",
-    }
-    if dependencies != expected:
-        raise SystemExit(
-            f"nazoauth aggregate dependencies must be composition-only: "
-            f"expected {sorted(expected)}, got {sorted(dependencies)}"
-        )
+    if "bin" not in manifest or manifest["bin"][0]["name"] != "nazoauth":
+        raise SystemExit("Native Host must retain the nazoauth executable")
+    native_root = ROOT / "crates" / "nazoauth" / "src"
+    for relative in ("lib.rs", "main.rs", "launchers/mod.rs", "launchers/postgres.rs", "launchers/valkey.rs", "launchers/object_store.rs"):
+        if not (native_root / relative).is_file():
+            raise SystemExit(f"Native Host ownership is missing: {relative}")
+    application = ROOT / "crates" / "authorization-server" / "src"
+    for retired in ("bootstrap", "cli.rs", "config.rs", "operator_task", "recovery_root.rs"):
+        if (application / retired).exists():
+            raise SystemExit(f"Native Host source remains in Application: {retired}")
 
     source = (ROOT / "crates" / "nazoauth" / "src" / "main.rs").read_text(
         encoding="utf-8"
@@ -432,14 +957,10 @@ def check_rust_test_structure() -> None:
         r"(?P=indent)(?P<item>[^\r\n]+)"
     )
     allowed_nested_seams = {
-        "crates/authorization-server/src/bootstrap/startup/configuration.rs": (
-            "let backchannel_logout_worker = None;",
-        ),
-        "crates/authorization-server/src/bootstrap/startup/tenant_runtime.rs": (
+        "crates/nazoauth/src/bootstrap/startup/tenant_runtime.rs": (
             "pub(super) fn for_test(binding: TenantDirectoryBinding) -> Arc<Self> {",
             "pub(super) fn for_test_reusing(",
             "pub(super) fn shares_lifecycle_with(&self, other: &Self) -> bool {",
-            "let ciba_ping_worker = None;",
         ),
     }
 
@@ -620,8 +1141,8 @@ def check_removed_security_capabilities() -> None:
         raise SystemExit(f"removed security capabilities reappeared: {violations}")
 
     removed_test_harness = [
-        ROOT / "crates" / "authorization-server" / "src" / "http" / "scim.rs",
-        ROOT / "crates" / "authorization-server" / "src" / "http" / "scim",
+        ROOT / "crates" / "nazoauth" / "src" / "http" / "scim.rs",
+        ROOT / "crates" / "nazoauth" / "src" / "http" / "scim",
     ]
     present = [path.relative_to(ROOT) for path in removed_test_harness if path.exists()]
     if present:
@@ -644,10 +1165,11 @@ def check_removed_security_capabilities() -> None:
 
 def check_fapi_ciba_boundaries() -> None:
     delivery = (
-        ROOT / "crates" / "authorization-server" / "src" / "domain" / "ciba_ping_delivery.rs"
+        ROOT / "crates" / "nazoauth" / "src" / "adapters" / "ciba_ping_sender.rs"
     ).read_text(encoding="utf-8")
-    forbidden_test_markers = ("#[cfg(test)]", "mod tests", "#[test]")
-    if any(marker in delivery for marker in forbidden_test_markers):
+    # External cfg(test) mounts are allowed; executable tests still live under tests/.
+    forbidden_test_markers = ("#[test]", "#[tokio::test]", "#[actix_web::test]")
+    if any(marker in delivery for marker in forbidden_test_markers) or re.search(r"mod\s+tests\s*\{", delivery):
         raise SystemExit("CIBA ping delivery tests must remain outside production source")
     required_delivery_guards = (
         "apply_ciba_ping_tls_policy(reqwest::Client::builder().no_proxy())",
@@ -655,14 +1177,28 @@ def check_fapi_ciba_boundaries() -> None:
         ".resolve_to_addrs(host, &addresses)",
         ".bearer_auth(&delivery.client_notification_token)",
         "is_blocked_ip(address.ip())",
-        "classify_ciba_ping_status(response.status().as_u16())",
+        ".connect_timeout(Duration::from_secs(3))",
+        ".timeout(Duration::from_secs(5))",
     )
     missing = [guard for guard in required_delivery_guards if guard not in delivery]
     if missing:
         raise SystemExit(f"CIBA ping delivery security guards are missing: {missing}")
 
+    delivery_worker = (
+        ROOT / "crates" / "authorization-server" / "src" / "workers" / "ciba_ping.rs"
+    ).read_text(encoding="utf-8")
+    for marker in (
+        "classify_ciba_ping_status(status.as_u16())", "next_ciba_ping_retry_at(",
+        ".finish(&delivery, outcome)", ".buffer_unordered(DELIVERY_CONCURRENCY)",
+        ".collect::<Vec<_>>()", "CibaPingFinishResult::Missing | CibaPingFinishResult::Conflict",
+    ):
+        if marker not in delivery_worker:
+            raise SystemExit(f"CIBA ping application delivery policy is missing: {marker}")
+    if re.search(r"#\[\s*cfg\s*\(\s*not\s*\(\s*test\s*\)", delivery_worker):
+        raise SystemExit("CIBA ping tests must compile the production batch worker")
+
     tls_policy = (
-        ROOT / "crates" / "authorization-server" / "src" / "domain" / "ciba_ping_tls.rs"
+        ROOT / "crates" / "nazoauth" / "src" / "adapters" / "ciba_ping_tls.rs"
     ).read_text(encoding="utf-8")
     if any(marker in tls_policy for marker in forbidden_test_markers):
         raise SystemExit("CIBA ping TLS policy tests must remain outside production source")
@@ -685,7 +1221,7 @@ def check_fapi_ciba_boundaries() -> None:
     tls_policy_test = (
         ROOT
         / "crates"
-        / "authorization-server"
+        / "nazoauth"
         / "tests"
         / "unit"
         / "domain"
@@ -770,16 +1306,16 @@ def check_openid4vc_boundaries() -> None:
         raise SystemExit(f"OpenID4VC separated test contracts are missing: {missing_tests}")
 
     server_settings = read_rust_module_tree(
-        ROOT / "crates" / "authorization-server" / "src" / "settings.rs"
+        ROOT / "crates" / "nazoauth" / "src" / "settings.rs"
     )
     server_config = (
-        ROOT / "crates" / "authorization-server" / "src" / "config.rs"
+        ROOT / "crates" / "nazoauth" / "src" / "config.rs"
     ).read_text(encoding="utf-8")
     server_routes = (
-        ROOT / "crates" / "authorization-server" / "src" / "bootstrap" / "routes.rs"
+        ROOT / "crates" / "nazoauth" / "src" / "bootstrap" / "routes.rs"
     ).read_text(encoding="utf-8")
     dataset_admin = (
-        ROOT / "crates" / "authorization-server" / "src" / "http" / "admin" / "openid4vc.rs"
+        ROOT / "crates" / "nazoauth" / "src" / "http" / "admin" / "openid4vc.rs"
     ).read_text(encoding="utf-8")
     openid4vc_protocol_adapter = (
         ROOT / "crates" / "openid4vc-http-actix" / "src" / "vci.rs"
@@ -829,7 +1365,7 @@ def check_openid4vc_boundaries() -> None:
     ):
         if marker not in openid4vc_server_domain:
             raise SystemExit(f"OpenID4VC internal control-plane boundary is missing: {marker}")
-    keyctl = (ROOT / "crates" / "authorization-server" / "src" / "keyctl.rs").read_text(
+    keyctl = (ROOT / "crates" / "nazoauth" / "src" / "keyctl.rs").read_text(
         encoding="utf-8"
     )
     key_store = "\n".join(
@@ -869,7 +1405,7 @@ def check_openid4vc_boundaries() -> None:
 
 
 def check_admin_provision_boundary() -> None:
-    server_root = ROOT / "crates" / "authorization-server"
+    server_root = ROOT / "crates" / "nazoauth"
     persistence_root = ROOT / "crates" / "persistence-postgres"
     retired_http_module = "bootstrap" + "_" + "admin.rs"
     retired_repository_module = "initial" + "_" + "admin" + "_" + "bootstrap.rs"
@@ -956,6 +1492,8 @@ def main() -> None:
         check_authorization_server_import_boundaries()
         check_toolchain_pins()
         check_crate_dependency_boundaries()
+        check_contract_definition_owners()
+        check_inner_source_boundaries()
         check_transient_state_backend_boundary()
         check_aggregate_package_boundary()
         check_connection_url_configuration_boundary()

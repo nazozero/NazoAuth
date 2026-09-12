@@ -3,30 +3,8 @@ use chrono::Utc;
 use coset::{CoseKeyBuilder, iana};
 use jsonwebtoken::{Algorithm, DecodingKey};
 use nazo_digital_credentials::CredentialTrustError;
-use nazo_openid4vci::ProofError;
 use rustls::pki_types::{CertificateDer, pem::PemObject as _};
 use serde_json::{Map, Value, json};
-
-pub(super) fn decoding_key(jwk: &Value, algorithm: Algorithm) -> Result<DecodingKey, ProofError> {
-    match algorithm {
-        Algorithm::ES256 => DecodingKey::from_ec_components(
-            jwk.get("x")
-                .and_then(Value::as_str)
-                .ok_or(ProofError::InvalidSignature)?,
-            jwk.get("y")
-                .and_then(Value::as_str)
-                .ok_or(ProofError::InvalidSignature)?,
-        )
-        .map_err(|_| ProofError::InvalidSignature),
-        Algorithm::EdDSA => DecodingKey::from_ed_components(
-            jwk.get("x")
-                .and_then(Value::as_str)
-                .ok_or(ProofError::InvalidSignature)?,
-        )
-        .map_err(|_| ProofError::InvalidSignature),
-        _ => Err(ProofError::UnsupportedType),
-    }
-}
 
 pub(super) fn decoding_key_trust(
     jwk: &Value,

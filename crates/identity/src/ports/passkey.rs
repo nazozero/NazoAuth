@@ -139,3 +139,9 @@ where
 pub trait PasskeyAuditPort: Send + Sync {
     fn record(&self, event: crate::passkey::PasskeyAuditEvent);
 }
+
+impl<T: PasskeyAuditPort + ?Sized> PasskeyAuditPort for std::sync::Arc<T> {
+    fn record(&self, event: crate::passkey::PasskeyAuditEvent) {
+        self.as_ref().record(event);
+    }
+}

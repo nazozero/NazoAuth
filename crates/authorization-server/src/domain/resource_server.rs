@@ -1,43 +1,26 @@
-use crate::settings::{DpopNoncePolicy, Settings};
-use nazo_http_actix::IpCidr;
+use nazo_auth::DpopNoncePolicy;
 
 #[derive(Clone)]
-pub(crate) struct ResourceServerConfig {
-    pub(crate) issuer: String,
-    pub(crate) mtls_endpoint_base_url: String,
-    pub(crate) default_audience: String,
-    pub(crate) protected_resource_identifier: String,
-    pub(crate) dpop_nonce_policy: DpopNoncePolicy,
-    pub(crate) fapi_http_signature_max_age_seconds: i64,
-    pub(crate) trusted_proxy_cidrs: Vec<IpCidr>,
-}
-
-impl From<&Settings> for ResourceServerConfig {
-    fn from(settings: &Settings) -> Self {
-        let endpoint = &settings.endpoint;
-        let protocol = &settings.protocol;
-        Self {
-            issuer: endpoint.issuer.clone(),
-            mtls_endpoint_base_url: endpoint.mtls_endpoint_base_url.clone(),
-            default_audience: protocol.default_audience.to_owned(),
-            protected_resource_identifier: protocol.protected_resource_identifier.to_owned(),
-            dpop_nonce_policy: protocol.fapi_resource_dpop_nonce_policy,
-            fapi_http_signature_max_age_seconds: protocol.fapi_http_signature_max_age_seconds,
-            trusted_proxy_cidrs: endpoint.trusted_proxy_cidrs.to_vec(),
-        }
-    }
+pub struct ResourceServerConfig {
+    pub issuer: String,
+    pub mtls_endpoint_base_url: String,
+    pub default_audience: String,
+    pub protected_resource_identifier: String,
+    pub dpop_nonce_policy: DpopNoncePolicy,
+    pub fapi_http_signature_max_age_seconds: i64,
 }
 
 mod production {
     use std::sync::{Arc, Mutex};
 
-    use actix_web::HttpRequest;
-    use jsonwebtoken::Algorithm;
-    use nazo_http_actix::{
-        FapiAuthorizationError, FapiFuture, FapiHttpMessageSignatures, FapiMtlsThumbprintResolver,
-        FapiResourceAuthorizer, FapiResponseSignature, FapiSignatureOperationError,
-        FapiSignatureVerificationError,
+    use crate::contracts::fapi_resource::{
+        FapiAuthorizationError, FapiFuture, FapiHttpMessageSignatures, FapiResourceAuthorizer,
+        FapiResponseSignature, FapiSignatureOperationError, FapiSignatureVerificationError,
     };
+    use crate::ports::fapi_replay::{
+        FapiHttpSignatureReplayConsumption, FapiHttpSignatureReplayStore,
+    };
+    use jsonwebtoken::Algorithm;
     use nazo_http_signatures::VerifiedInput;
     use nazo_key_management::{HttpSigningLease, KeySnapshot};
     use nazo_resource_server::{
@@ -49,10 +32,8 @@ mod production {
     };
     use nazo_runtime_modules::ModuleId;
 
-    use crate::{
-        http::mtls::request_mtls_thumbprint, runtime_modules::ServerRuntimeModuleRegistry,
-        settings::DpopNoncePolicy,
-    };
+    use nazo_auth::DpopNoncePolicy;
+    use nazo_runtime_modules::SnapshotStore;
 
     use super::ResourceServerConfig;
 
@@ -60,32 +41,6 @@ mod production {
         Arc<dyn AccessTokenRevocationLookup>,
         Arc<dyn ProtectedResourceDpopStateStore>,
     >;
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub enum FapiHttpSignatureReplayConsumption {
-        Accepted,
-        Replay,
-    }
-
-    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-    pub struct FapiHttpSignatureReplayStoreError;
-
-    /// Atomic replay-fingerprint consumption for FAPI HTTP Message Signatures.
-    ///
-    /// Implementations must reserve a fingerprint at most once within the
-    /// requested validity window. Backend failures are distinct from replay so
-    /// the protocol adapter can fail closed with `ReplayUnavailable`.
-    pub trait FapiHttpSignatureReplayStore: Send + Sync {
-        fn consume<'a>(
-            &'a self,
-            tenant_id: nazo_identity::TenantId,
-            fingerprint: &'a [u8],
-            ttl_seconds: i64,
-        ) -> FapiFuture<
-            'a,
-            Result<FapiHttpSignatureReplayConsumption, FapiHttpSignatureReplayStoreError>,
-        >;
-    }
 
     struct CachedResourceAuthorizationService {
         keys: Arc<KeySnapshot>,
@@ -102,7 +57,7 @@ mod production {
     }
 
     #[derive(Clone)]
-    pub(crate) struct ServerFapiResourceAuthorizer {
+    pub struct ServerFapiResourceAuthorizer {
         config: ResourceServerConfig,
         keyset: nazo_key_management::KeyManager,
         tokens: Arc<dyn AccessTokenRevocationLookup>,
@@ -111,7 +66,7 @@ mod production {
     }
 
     impl ServerFapiResourceAuthorizer {
-        pub(crate) fn from_port(
+        pub fn from_port(
             config: ResourceServerConfig,
             keyset: nazo_key_management::KeyManager,
             tokens: Arc<dyn AccessTokenRevocationLookup>,
@@ -208,39 +163,20 @@ mod production {
     }
 
     #[derive(Clone)]
-    pub(crate) struct ServerFapiMtlsResolver {
-        trusted_proxy_cidrs: Arc<[nazo_http_actix::IpCidr]>,
-    }
-
-    impl ServerFapiMtlsResolver {
-        pub(crate) fn new(trusted_proxy_cidrs: Vec<nazo_http_actix::IpCidr>) -> Self {
-            Self {
-                trusted_proxy_cidrs: trusted_proxy_cidrs.into(),
-            }
-        }
-    }
-
-    impl FapiMtlsThumbprintResolver for ServerFapiMtlsResolver {
-        fn resolve(&self, request: &HttpRequest) -> Option<String> {
-            request_mtls_thumbprint(request, &self.trusted_proxy_cidrs)
-        }
-    }
-
-    #[derive(Clone)]
-    pub(crate) struct ServerFapiHttpMessageSignatures {
+    pub struct ServerFapiHttpMessageSignatures {
         clients: Arc<dyn nazo_auth::AdminClientRepositoryPort>,
         replay: Arc<dyn FapiHttpSignatureReplayStore>,
         keyset: nazo_key_management::KeyManager,
-        runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+        runtime_modules: Arc<SnapshotStore>,
         max_age_seconds: i64,
     }
 
     impl ServerFapiHttpMessageSignatures {
-        pub(crate) fn from_port(
+        pub fn from_port(
             clients: Arc<dyn nazo_auth::AdminClientRepositoryPort>,
             replay: Arc<dyn FapiHttpSignatureReplayStore>,
             keyset: nazo_key_management::KeyManager,
-            runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+            runtime_modules: Arc<SnapshotStore>,
             max_age_seconds: i64,
         ) -> Self {
             Self {
@@ -256,7 +192,7 @@ mod production {
     impl FapiHttpMessageSignatures for ServerFapiHttpMessageSignatures {
         fn enabled(&self) -> bool {
             nazo_auth::module_admissible(
-                &self.runtime_modules.snapshot(),
+                &self.runtime_modules.load_full(),
                 ModuleId::HttpMessageSignatures,
                 nazo_auth::CapabilityAdmission::NewRequest,
             )
@@ -352,14 +288,8 @@ mod production {
     }
 }
 
+pub use production::{ServerFapiHttpMessageSignatures, ServerFapiResourceAuthorizer};
+
 #[cfg(test)]
 #[path = "../../tests/unit/domain/resource_server.rs"]
 mod tests;
-
-pub use production::{
-    FapiHttpSignatureReplayConsumption, FapiHttpSignatureReplayStore,
-    FapiHttpSignatureReplayStoreError,
-};
-pub(crate) use production::{
-    ServerFapiHttpMessageSignatures, ServerFapiMtlsResolver, ServerFapiResourceAuthorizer,
-};

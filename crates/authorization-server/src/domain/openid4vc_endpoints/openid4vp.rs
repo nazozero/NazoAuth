@@ -6,7 +6,7 @@ use base64::Engine as _;
 use chrono::{Duration, Utc};
 use nazo_digital_credentials::EphemeralEncryptionKey;
 use nazo_key_management::Openid4vcSigningLease;
-use nazo_openid4vc_http_actix::{
+use nazo_openid4vp::application::{
     CreatePresentationRequest, CreatePresentationResponse, PresentationFuture,
     PresentationHttpError, PresentationOperations, PresentationResponseBody,
     PresentationResponseInput,
@@ -22,35 +22,34 @@ use nazo_runtime_modules::ModuleId;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::{
-    adapters::security::random_urlsafe_token, domain::Openid4vcCredentialCrypto,
-    runtime_modules::ServerRuntimeModuleRegistry,
-};
+use crate::crypto::random_urlsafe_token;
+use crate::domain::openid4vc::{Openid4vcCredentialCrypto, parse_scoped_credential_trust_anchors};
+use nazo_runtime_modules::SnapshotStore;
 
-pub(crate) struct ServerPresentationOperations {
+pub struct ServerPresentationOperations {
     store: Arc<dyn Openid4vpStore>,
     trust_policies: Arc<dyn Openid4vcTrustPolicyStore>,
     service: PresentationService<Arc<dyn Openid4vpStore>, Openid4vcCredentialCrypto>,
     crypto: Openid4vcCredentialCrypto,
-    runtime: Arc<ServerRuntimeModuleRegistry>,
+    snapshots: Arc<SnapshotStore>,
     issuer: String,
     wallet_origins: Vec<String>,
     transaction_ttl_seconds: u64,
     tenant_id: Uuid,
 }
 
-pub(crate) struct PresentationVerifierConfig {
-    pub(crate) issuer: String,
-    pub(crate) wallet_origins: Vec<String>,
-    pub(crate) transaction_ttl_seconds: u64,
+pub struct PresentationVerifierConfig {
+    pub issuer: String,
+    pub wallet_origins: Vec<String>,
+    pub transaction_ttl_seconds: u64,
 }
 
 impl ServerPresentationOperations {
-    pub(crate) fn new(
+    pub fn new(
         store: Arc<dyn Openid4vpStore>,
         tenant_id: Uuid,
         crypto: Openid4vcCredentialCrypto,
-        runtime: Arc<ServerRuntimeModuleRegistry>,
+        snapshots: Arc<SnapshotStore>,
         trust_policies: Arc<dyn Openid4vcTrustPolicyStore>,
         config: PresentationVerifierConfig,
     ) -> Self {
@@ -60,7 +59,7 @@ impl ServerPresentationOperations {
             trust_policies,
             service,
             crypto,
-            runtime,
+            snapshots,
             issuer: config.issuer,
             wallet_origins: config.wallet_origins,
             transaction_ttl_seconds: config.transaction_ttl_seconds.max(30),
@@ -119,7 +118,7 @@ impl ServerPresentationOperations {
 
     fn enabled(&self, admission: nazo_auth::CapabilityAdmission) -> bool {
         nazo_auth::module_admissible(
-            &self.runtime.snapshot(),
+            &self.snapshots.load_full(),
             ModuleId::Openid4vpVerifier,
             admission,
         )
@@ -254,16 +253,15 @@ impl ServerPresentationOperations {
                 "Presentation transaction is invalid.",
             ));
         }
-        crate::domain::parse_scoped_credential_trust_anchors(
-            &policy.material.credential_trust_anchor_pem,
+        parse_scoped_credential_trust_anchors(&policy.material.credential_trust_anchor_pem).map_err(
+            |_| {
+                vp_error(
+                    503,
+                    "server_error",
+                    "OpenID4VC credential trust anchor is invalid.",
+                )
+            },
         )
-        .map_err(|_| {
-            vp_error(
-                503,
-                "server_error",
-                "OpenID4VC credential trust anchor is invalid.",
-            )
-        })
     }
 }
 
@@ -798,7 +796,3 @@ impl PresentationOperations for ServerPresentationOperations {
         })
     }
 }
-
-#[cfg(test)]
-#[path = "../../../tests/unit/domain/openid4vc_endpoints_openid4vp.rs"]
-mod tests;

@@ -22,7 +22,7 @@ proves admission to an attempt; it does not prove the mutation committed.
 
 ## Structured HTTP/application events
 
-The [application audit adapter](../../crates/authorization-server/src/adapters/audit.rs)
+The [application audit adapter](../../crates/nazoauth/src/adapters/audit.rs)
 owns the event allowlist below. Collectors parse `event` and the serialized JSON
 `fields` on tracing records with target `audit` and message `security audit event`.
 Fields contain `schema_version="nazo.audit.v1"`, `event_category`, and the

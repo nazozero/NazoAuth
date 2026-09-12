@@ -1,41 +1,27 @@
 use std::{future::Future, sync::Arc};
 
+use crate::contracts::oidc_logout::{
+    OidcLogoutCommand, OidcLogoutError, OidcLogoutFuture, OidcLogoutOperations, OidcLogoutSuccess,
+};
 use chrono::{DateTime, Utc};
 use nazo_auth::{
     BackchannelLogoutClaimsInput, BackchannelLogoutOutboxPort, LogoutClientRepositoryPort,
     LogoutDependencyError, LogoutInput, LogoutService, LogoutServiceError, LogoutSession,
     LogoutTokenSignerPort, RpLogoutRequest,
 };
-use nazo_http_actix::{
-    OidcLogoutCommand, OidcLogoutError, OidcLogoutFuture, OidcLogoutOperations, OidcLogoutSuccess,
-};
 use nazo_key_management::KeyManager;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::adapters::security::jwt_decoding_key_from_jwk;
-use crate::http::sessions::SessionProfileHandles;
-use crate::runtime_modules::ServerRuntimeModuleRegistry;
-use crate::settings::Settings;
+use crate::crypto::jwt_decoding_key_from_jwk;
+use crate::sessions::SessionResolver;
 use nazo_key_management::signing_algorithm_name;
+use nazo_runtime_modules::SnapshotStore;
 
 #[derive(Clone)]
-pub(crate) struct OidcLogoutConfig {
-    issuer: Box<str>,
-    pairwise_subject_secret: Option<Box<str>>,
-}
-
-impl From<&Settings> for OidcLogoutConfig {
-    fn from(settings: &Settings) -> Self {
-        Self {
-            issuer: settings.endpoint.issuer.as_str().into(),
-            pairwise_subject_secret: settings
-                .protocol
-                .pairwise_subject_secret
-                .as_deref()
-                .map(Into::into),
-        }
-    }
+pub struct OidcLogoutConfig {
+    pub issuer: Box<str>,
+    pub pairwise_subject_secret: Option<Box<str>>,
 }
 
 /// OIDC logout dependencies assembled once at the composition root.
@@ -43,22 +29,22 @@ impl From<&Settings> for OidcLogoutConfig {
 /// Transport code can resolve the current session and invoke logout operations,
 /// but cannot obtain backend connections or complete settings.
 #[derive(Clone)]
-pub(crate) struct OidcLogoutHandles {
-    sessions: SessionProfileHandles,
+pub struct OidcLogoutHandles {
+    sessions: Arc<SessionResolver>,
     service: LogoutService,
     keys: KeyManager,
     config: OidcLogoutConfig,
-    runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+    snapshots: Arc<SnapshotStore>,
 }
 
 impl OidcLogoutHandles {
-    pub(crate) fn new(
-        sessions: SessionProfileHandles,
+    pub fn new(
+        sessions: Arc<SessionResolver>,
         clients: Arc<dyn LogoutClientRepositoryPort>,
         deliveries: Arc<dyn BackchannelLogoutOutboxPort>,
         keys: KeyManager,
         config: OidcLogoutConfig,
-        runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+        snapshots: Arc<SnapshotStore>,
     ) -> Self {
         let service = LogoutService::new(
             clients,
@@ -75,17 +61,17 @@ impl OidcLogoutHandles {
             service,
             keys,
             config,
-            runtime_modules,
+            snapshots,
         }
     }
 
-    pub(crate) fn issuer(&self) -> &str {
+    pub fn issuer(&self) -> &str {
         &self.config.issuer
     }
 
-    pub(crate) fn permits_existing_frontchannel_transaction(&self) -> bool {
+    pub fn permits_existing_frontchannel_transaction(&self) -> bool {
         nazo_auth::module_admissible(
-            &self.runtime_modules.snapshot(),
+            &self.snapshots.load_full(),
             nazo_runtime_modules::ModuleId::FrontchannelLogout,
             nazo_auth::CapabilityAdmission::ExistingTransaction,
         )

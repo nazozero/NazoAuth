@@ -5,8 +5,6 @@ use crate::KeySettings;
 
 fn settings() -> KeySettings {
     KeySettings {
-        external_command: Vec::new(),
-        external_timeout: std::time::Duration::from_secs(2),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),

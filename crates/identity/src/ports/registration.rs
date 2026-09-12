@@ -179,3 +179,31 @@ pub trait VerificationEmailDeliveryPort: Send + Sync {
         code_ttl_seconds: u64,
     ) -> RepositoryFuture<'a, ()>;
 }
+
+impl<T: SecretHashPort + ?Sized> SecretHashPort for std::sync::Arc<T> {
+    fn hash_secret(&self, secret: String) -> RepositoryFuture<'_, PasswordHashInput> {
+        self.as_ref().hash_secret(secret)
+    }
+
+    fn verify_secret(
+        &self,
+        secret: String,
+        password_hash: PasswordHash,
+    ) -> RepositoryFuture<'_, bool> {
+        self.as_ref().verify_secret(secret, password_hash)
+    }
+}
+
+impl<T: VerificationEmailDeliveryPort + ?Sized> VerificationEmailDeliveryPort
+    for std::sync::Arc<T>
+{
+    fn deliver<'a>(
+        &'a self,
+        normalized_email: &'a str,
+        code: &'a str,
+        code_ttl_seconds: u64,
+    ) -> RepositoryFuture<'a, ()> {
+        self.as_ref()
+            .deliver(normalized_email, code, code_ttl_seconds)
+    }
+}

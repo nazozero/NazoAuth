@@ -12,7 +12,7 @@ use super::Openid4vcCredentialCrypto;
 
 const MAX_SCOPED_CREDENTIAL_TRUST_ANCHORS: usize = 4;
 
-pub(crate) fn parse_scoped_credential_trust_anchors(pem: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+pub fn parse_scoped_credential_trust_anchors(pem: &str) -> anyhow::Result<Vec<Vec<u8>>> {
     let certificates = parse_pem_certificates(pem.as_bytes())?;
     if certificates.is_empty() || certificates.len() > MAX_SCOPED_CREDENTIAL_TRUST_ANCHORS {
         anyhow::bail!(
@@ -43,10 +43,11 @@ pub(super) struct Openid4vcSigningMaterial {
 }
 
 impl Openid4vcCredentialCrypto {
-    pub(crate) fn new_with_policies(
+    pub fn new_with_policies(
         keyset: KeyManager,
         issuer_trust_policy: VcIssuerTrustPolicy,
-        revocation_policy: crate::settings::Openid4vcRevocationPolicy,
+        revocation_policy: crate::policy::Openid4vcRevocationPolicy,
+        mdoc_signer: Arc<dyn crate::ports::mdoc::MdocDocumentSigner>,
     ) -> anyhow::Result<Self> {
         let material = keyset.openid4vc_public_material().ok_or_else(|| {
             anyhow::anyhow!("OpenID4VC managed certificate material is unavailable")
@@ -54,6 +55,7 @@ impl Openid4vcCredentialCrypto {
         validate_public_material(&material)?;
         Ok(Self {
             keyset,
+            mdoc_signer,
             issuer_trust_policy,
             revocation_policy,
         })
@@ -125,7 +127,7 @@ impl Openid4vcCredentialCrypto {
 
     pub(super) fn current_revocation_policy(&self) -> CertificateRevocationPolicy {
         match self.revocation_policy {
-            crate::settings::Openid4vcRevocationPolicy::Disabled => {
+            crate::policy::Openid4vcRevocationPolicy::Disabled => {
                 CertificateRevocationPolicy::disabled()
             }
             mode => self
@@ -134,13 +136,13 @@ impl Openid4vcCredentialCrypto {
                 .and_then(|material| material.revocation_snapshot.clone())
                 .map(Arc::new)
                 .map(|snapshot| match mode {
-                    crate::settings::Openid4vcRevocationPolicy::Optional => {
+                    crate::policy::Openid4vcRevocationPolicy::Optional => {
                         CertificateRevocationPolicy::optional(snapshot)
                     }
-                    crate::settings::Openid4vcRevocationPolicy::Required => {
+                    crate::policy::Openid4vcRevocationPolicy::Required => {
                         CertificateRevocationPolicy::required(snapshot)
                     }
-                    crate::settings::Openid4vcRevocationPolicy::Disabled => unreachable!(),
+                    crate::policy::Openid4vcRevocationPolicy::Disabled => unreachable!(),
                 })
                 .unwrap_or_else(CertificateRevocationPolicy::required_without_snapshot),
         }

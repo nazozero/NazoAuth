@@ -3,8 +3,8 @@
 ## Scope
 
 Resource servers use the public verifier API in the `nazo-resource-server`
-crate. The server package keeps a compatibility re-export, but the verifier
-crate itself does not depend on the authorization server, identity, a Web
+crate. Import it directly; the application and native-host packages do not
+provide a compatibility re-export. The verifier crate does not depend on the authorization server, identity, a Web
 framework, PostgreSQL, or Valkey.
 Authorization-server internals that skip audience validation for `/userinfo` or
 `/introspect` are not resource-server verification APIs.

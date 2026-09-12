@@ -2,23 +2,23 @@
 
 //! Valkey composition adapter for the backend-neutral authorization server.
 //!
-//! This crate owns Valkey configuration, connection setup, namespace binding,
-//! and translation into semantic transient-state ports. Persistent storage is
+//! This crate owns tenant namespace binding and translation into semantic
+//! transient-state ports. Persistent storage is
 //! deliberately outside this boundary.
 
 use std::sync::Arc;
 
-use nazo_oauth_server::{
-    FapiHttpSignatureReplayConsumption, FapiHttpSignatureReplayStore,
-    FapiHttpSignatureReplayStoreError,
-    bootstrap::{
+use nazo_oauth_server::ports::{
+    fapi_replay::{
+        FapiHttpSignatureReplayConsumption, FapiHttpSignatureReplayStore,
+        FapiHttpSignatureReplayStoreError,
+    },
+    transient_state::{
         CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome, CibaPingFinishResult,
         ServerStateBackendBindings, ServerTransientStateBindings, ServerTransientStateProvider,
         TenantDirectoryCachePort, TenantTransientStateFactory, TransientStateError,
         TransientStateFuture, TransientStateHealthPort,
     },
-    cli::{LauncherFuture, TransientStateLauncher},
-    config::{ConfigSource, ServerConfigExtension},
 };
 
 #[derive(Clone)]
@@ -297,50 +297,14 @@ fn map_transient_state_error(error: nazo_valkey::Error) -> TransientStateError {
     }
 }
 
-/// Selects Valkey as the server's transient-state backend.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct ValkeyTransientStateLauncher;
-
-impl TransientStateLauncher for ValkeyTransientStateLauncher {
-    fn server_config_extension(&self) -> ServerConfigExtension {
-        ServerConfigExtension::new(
-            "VALKEY_URL: \"redis://127.0.0.1:6379/0\"\n".to_owned(),
-            vec![
-                "VALKEY_COMMAND_TIMEOUT_MS",
-                "VALKEY_STATE_EPOCH",
-                "VALKEY_URL",
-            ],
-            "VALKEY_STATE_EPOCH",
-        )
-    }
-
-    fn server_bindings<'a>(
-        &'a self,
-        source: &'a ConfigSource,
-        deployment_id: &'a str,
-    ) -> LauncherFuture<'a, ServerStateBackendBindings> {
-        Box::pin(async move {
-            let state_epoch = source.transient_state_epoch()?;
-            let url = source.string("VALKEY_URL", "redis://127.0.0.1:6379/0");
-            let command_timeout_ms = source.parse::<u64>("VALKEY_COMMAND_TIMEOUT_MS", 1_000)?;
-            if command_timeout_ms == 0 {
-                anyhow::bail!("VALKEY_COMMAND_TIMEOUT_MS must be greater than zero");
-            }
-            let client = nazo_valkey::ValkeyClient::connect(
-                &url,
-                std::time::Duration::from_millis(command_timeout_ms),
-                deployment_id,
-                state_epoch,
-            )
-            .await?;
-            Ok(ServerStateBackendBindings::new(
-                Arc::new(ValkeyProviderFactory {
-                    client: client.clone(),
-                }),
-                Arc::new(ValkeyTenantDirectoryCache {
-                    cache: nazo_valkey::TenantDirectoryCache::new(&client),
-                }),
-            ))
-        })
-    }
+/// Constructs semantic state bindings from an already connected client.
+pub fn server_state_bindings(client: nazo_valkey::ValkeyClient) -> ServerStateBackendBindings {
+    ServerStateBackendBindings::new(
+        Arc::new(ValkeyProviderFactory {
+            client: client.clone(),
+        }),
+        Arc::new(ValkeyTenantDirectoryCache {
+            cache: nazo_valkey::TenantDirectoryCache::new(&client),
+        }),
+    )
 }

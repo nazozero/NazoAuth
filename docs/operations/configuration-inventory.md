@@ -2,7 +2,7 @@
 
 This is the reviewed configuration contract for NazoAuth and NazoAuthCtl.
 The accepted server keys and secret-file pairs are defined in
-[`crates/authorization-server/src/config.rs`](../../crates/authorization-server/src/config.rs).
+[`crates/nazoauth/src/config.rs`](../../crates/nazoauth/src/config.rs).
 This document explains operator ownership; it is not a second, counted allowlist.
 
 Legend:

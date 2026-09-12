@@ -1,78 +1,34 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::sync::Arc;
 
 use actix_web::{
     HttpRequest, HttpResponse,
     http::{StatusCode, header},
     web::{Bytes, Data},
 };
-use serde_json::Value;
 
+use crate::mtls::MtlsThumbprintExtractor;
 use crate::{
-    AccessTokenAuthScheme, ResourceAccessToken, json_response_no_store, oauth_bearer_error,
-    oauth_error, resource_access_token,
+    ResourceAccessToken, json_response_no_store, oauth_bearer_error, oauth_error,
+    resource_access_token,
 };
-
-pub type UserinfoFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<UserinfoSuccess, UserinfoError>> + 'a>>;
-
-#[derive(Clone, Debug, PartialEq)]
-pub enum UserinfoRepresentation {
-    Claims(Value),
-    Jwt(String),
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct UserinfoSuccess {
-    pub representation: UserinfoRepresentation,
-    pub dpop_nonce: Option<String>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UserinfoDpopError {
-    MissingProof,
-    MalformedProof,
-    InvalidProof,
-    ReplayDetected,
-    BindingMismatch,
-    TokenNotBound,
-    UseNonce(String),
-    NonceStoreUnavailable,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub enum UserinfoError {
-    InvalidAccessToken,
-    InvalidAudience,
-    InvalidTenantBoundary,
-    RevokedAccessToken,
-    Dpop(UserinfoDpopError),
-    MissingMtlsCertificate,
-    MtlsCertificateMismatch,
-    InsufficientScope,
-    InvalidSubject,
-    InactiveSubject,
-    ClientUnavailable,
-    QueryUnavailable,
-    ResponseProtectionFailed,
-}
-
-pub trait UserinfoOperations: Send + Sync {
-    fn userinfo<'a>(
-        &'a self,
-        request: &'a HttpRequest,
-        scheme: AccessTokenAuthScheme,
-        token: String,
-    ) -> UserinfoFuture<'a>;
-}
+use nazo_oauth_server::contracts::request_facts::DpopRequestFacts;
+use nazo_oauth_server::contracts::userinfo::{
+    UserinfoDpopError, UserinfoError, UserinfoOperations, UserinfoRepresentation,
+    UserinfoRequestFacts, UserinfoSuccess,
+};
 
 #[derive(Clone)]
 pub struct UserinfoEndpoint {
     operations: Arc<dyn UserinfoOperations>,
+    mtls: Arc<dyn MtlsThumbprintExtractor>,
 }
 
 impl UserinfoEndpoint {
-    pub fn new(operations: Arc<dyn UserinfoOperations>) -> Self {
-        Self { operations }
+    pub fn new(
+        operations: Arc<dyn UserinfoOperations>,
+        mtls: Arc<dyn MtlsThumbprintExtractor>,
+    ) -> Self {
+        Self { operations, mtls }
     }
 }
 
@@ -95,7 +51,26 @@ pub async fn userinfo(
         }
     };
 
-    match endpoint.operations.userinfo(&request, scheme, token).await {
+    let prepared = match endpoint.operations.prepare(scheme, token).await {
+        Ok(prepared) => prepared,
+        Err(error) => return userinfo_error_response(error),
+    };
+    let mtls_thumbprint = if prepared.requires_mtls_certificate() {
+        endpoint.mtls.resolve(&request)
+    } else {
+        None
+    };
+    let facts = UserinfoRequestFacts {
+        dpop: DpopRequestFacts {
+            method: http::Method::from_bytes(request.method().as_str().as_bytes())
+                .expect("HTTP method is valid"),
+            path: request.uri().path(),
+            proof: crate::dpop_proof_header(request.headers()),
+            proof_present: crate::dpop_proof_present(request.headers()),
+        },
+        mtls_thumbprint,
+    };
+    match endpoint.operations.userinfo(prepared, facts).await {
         Ok(success) => userinfo_success_response(success),
         Err(error) => userinfo_error_response(error),
     }

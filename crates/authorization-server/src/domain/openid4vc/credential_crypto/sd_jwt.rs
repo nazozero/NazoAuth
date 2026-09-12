@@ -13,7 +13,8 @@ use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use sha2::{Digest, Sha256};
 
-use super::super::crypto_helpers::{decoding_key_trust, timestamp_claim};
+use super::super::crypto_helpers::decoding_key_trust;
+use super::super::crypto_helpers::timestamp_claim;
 use super::Openid4vcCredentialCrypto;
 
 pub(super) struct ValidatedSdJwtChain {

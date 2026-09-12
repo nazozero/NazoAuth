@@ -23,45 +23,49 @@ fn id_token_hint_expires_at_the_exact_exp_boundary() {
     assert!(id_token_hint_expired(1_999_999_999, now));
 }
 
-#[tokio::test]
-async fn postgres_outbox_failure_never_deletes_the_valkey_session() {
-    let delete_calls = Arc::new(AtomicUsize::new(0));
-    let observed = delete_calls.clone();
-    let result = finalize_logout_execution(
-        Err(LogoutServiceError::OutboxUnavailable),
-        Some("session-cookie".to_owned()),
-        move |_| {
-            observed.fetch_add(1, Ordering::SeqCst);
-            async { Ok(()) }
-        },
-    )
-    .await;
-    assert_eq!(result, Err(OidcLogoutError::OutboxUnavailable));
-    assert_eq!(delete_calls.load(Ordering::SeqCst), 0);
+#[test]
+fn postgres_outbox_failure_never_deletes_the_valkey_session() {
+    futures_executor::block_on(async {
+        let delete_calls = Arc::new(AtomicUsize::new(0));
+        let observed = delete_calls.clone();
+        let result = finalize_logout_execution(
+            Err(LogoutServiceError::OutboxUnavailable),
+            Some("session-cookie".to_owned()),
+            move |_| {
+                observed.fetch_add(1, Ordering::SeqCst);
+                async { Ok(()) }
+            },
+        )
+        .await;
+        assert_eq!(result, Err(OidcLogoutError::OutboxUnavailable));
+        assert_eq!(delete_calls.load(Ordering::SeqCst), 0);
+    });
 }
 
-#[tokio::test]
-async fn valkey_failure_keeps_the_committed_operation_retryable() {
-    let operation_key = "same-user-and-oidc-session";
-    let first = finalize_logout_execution(
-        Ok(committed_execution(operation_key)),
-        Some("session-cookie".to_owned()),
-        |_| async { Err(()) },
-    )
-    .await;
-    assert_eq!(first, Err(OidcLogoutError::SessionDeleteUnavailable));
+#[test]
+fn valkey_failure_keeps_the_committed_operation_retryable() {
+    futures_executor::block_on(async {
+        let operation_key = "same-user-and-oidc-session";
+        let first = finalize_logout_execution(
+            Ok(committed_execution(operation_key)),
+            Some("session-cookie".to_owned()),
+            |_| async { Err(()) },
+        )
+        .await;
+        assert_eq!(first, Err(OidcLogoutError::SessionDeleteUnavailable));
 
-    let second = finalize_logout_execution(
-        Ok(committed_execution(operation_key)),
-        Some("session-cookie".to_owned()),
-        |_| async { Ok(()) },
-    )
-    .await;
-    assert_eq!(
-        second,
-        Ok(OidcLogoutSuccess {
-            redirect_uri: None,
-            frontchannel_logout_urls: Vec::new(),
-        })
-    );
+        let second = finalize_logout_execution(
+            Ok(committed_execution(operation_key)),
+            Some("session-cookie".to_owned()),
+            |_| async { Ok(()) },
+        )
+        .await;
+        assert_eq!(
+            second,
+            Ok(OidcLogoutSuccess {
+                redirect_uri: None,
+                frontchannel_logout_urls: Vec::new(),
+            })
+        );
+    });
 }

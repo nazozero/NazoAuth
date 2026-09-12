@@ -1,5 +1,6 @@
 use actix_web::{body::to_bytes, http::header, test::TestRequest};
 use nazo_auth::DpopReplayAudit;
+use nazo_oauth_server::security::dpop::dpop_target_uris;
 
 use super::*;
 

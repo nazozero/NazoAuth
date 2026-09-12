@@ -26,10 +26,7 @@ const EMAIL_CLAIMS: &[&str] = &["email", "email_verified"];
 const ADDRESS_CLAIMS: &[&str] = &["address"];
 const PHONE_CLAIMS: &[&str] = &["phone_number", "phone_number_verified"];
 
-pub(crate) fn user_claims_are_covered_by_scopes(
-    scopes: &[String],
-    requested_claims: &[String],
-) -> bool {
+pub fn user_claims_are_covered_by_scopes(scopes: &[String], requested_claims: &[String]) -> bool {
     requested_claims.iter().all(|claim| {
         let required_scope = if PROFILE_CLAIMS.contains(&claim.as_str()) {
             "profile"
@@ -46,7 +43,7 @@ pub(crate) fn user_claims_are_covered_by_scopes(
     })
 }
 
-pub(crate) fn oidc_user_claims(
+pub fn oidc_user_claims(
     user: &nazo_identity::SubjectClaims,
     scopes: &[String],
     subject: &str,
@@ -335,7 +332,7 @@ fn user_display_name(user: &nazo_identity::SubjectClaims) -> &str {
         .unwrap_or(&user.preferred_username)
 }
 
-pub(crate) fn oidc_id_token_user_claims(
+pub fn oidc_id_token_user_claims(
     user: &nazo_identity::SubjectClaims,
     scopes: &[String],
     subject: &str,

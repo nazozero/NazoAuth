@@ -1,14 +1,14 @@
 use std::sync::Arc;
 
-use nazo_auth::{AdminClientRepositoryPort, CapabilityAdmission, module_admissible};
-use nazo_http_actix::{
+use crate::contracts::session_management::{
     SessionManagementAvailability, SessionManagementError, SessionManagementFuture,
     SessionManagementOperations, SessionManagementOriginFuture,
 };
+use nazo_auth::{AdminClientRepositoryPort, CapabilityAdmission, module_admissible};
 use nazo_runtime_modules::ModuleId;
 
-use crate::http::sessions::SessionProfileHandles;
-use crate::runtime_modules::ServerRuntimeModuleRegistry;
+use crate::sessions::SessionResolver;
+use nazo_runtime_modules::SnapshotStore;
 
 /// Minimal composition-root provider for OIDC Session Management.
 ///
@@ -16,29 +16,29 @@ use crate::runtime_modules::ServerRuntimeModuleRegistry;
 /// The resolver deliberately preserves account revocation, pending-MFA, and
 /// malformed-session checks before an OP browser-state can be reported live.
 #[derive(Clone)]
-pub(crate) struct ServerSessionManagementOperations {
-    sessions: SessionProfileHandles,
+pub struct ServerSessionManagementOperations {
+    sessions: Arc<SessionResolver>,
     clients: Arc<dyn AdminClientRepositoryPort>,
-    runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+    snapshots: Arc<SnapshotStore>,
 }
 
 impl ServerSessionManagementOperations {
-    pub(crate) fn new(
-        sessions: SessionProfileHandles,
+    pub fn new(
+        sessions: Arc<SessionResolver>,
         clients: Arc<dyn AdminClientRepositoryPort>,
-        runtime_modules: Arc<ServerRuntimeModuleRegistry>,
+        snapshots: Arc<SnapshotStore>,
     ) -> Self {
         Self {
             sessions,
             clients,
-            runtime_modules,
+            snapshots,
         }
     }
 }
 
 impl SessionManagementOperations for ServerSessionManagementOperations {
     fn availability(&self) -> SessionManagementAvailability {
-        let snapshot = self.runtime_modules.snapshot();
+        let snapshot = self.snapshots.load_full();
         if module_admissible(
             &snapshot,
             ModuleId::SessionManagement,

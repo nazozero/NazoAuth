@@ -16,7 +16,10 @@ use nazo_identity::{
     ports::{RepositoryFuture, SessionAccountPort, SessionStorePort},
     session::SessionRecord,
 };
-use nazo_runtime_modules::DesiredStateRecord;
+use nazo_oauth_server::contracts::runtime_modules::{
+    RuntimeModuleAdminError, RuntimeModuleAdminFuture, RuntimeModuleAdministration,
+};
+use nazo_runtime_modules::{DesiredStateRecord, ModuleEventPage};
 use serde_json::Value;
 use uuid::Uuid;
 

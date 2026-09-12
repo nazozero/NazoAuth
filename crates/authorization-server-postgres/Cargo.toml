@@ -7,7 +7,6 @@ repository.workspace = true
 publish = false
 
 [dependencies]
-anyhow.workspace = true
 nazo-auth.workspace = true
 nazo-identity.workspace = true
 nazo-key-management.workspace = true

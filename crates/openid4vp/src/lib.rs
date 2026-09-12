@@ -4,6 +4,7 @@
 //! applies DCQL. Wallet UI, HTTP, storage, X.509 trust, and credential-format
 //! cryptography are adapters outside this crate.
 
+pub mod application;
 mod model;
 mod policy;
 mod service;

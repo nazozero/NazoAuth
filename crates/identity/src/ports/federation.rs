@@ -168,3 +168,15 @@ pub trait FederationPasswordHasherPort: Send + Sync {
 pub trait FederationAuditPort: Send + Sync {
     fn record(&self, event: crate::federation::FederationAuditEvent);
 }
+
+impl<T: FederationPasswordHasherPort + ?Sized> FederationPasswordHasherPort for std::sync::Arc<T> {
+    fn hash_bootstrap_secret(&self) -> RepositoryFuture<'_, PasswordHashInput> {
+        self.as_ref().hash_bootstrap_secret()
+    }
+}
+
+impl<T: FederationAuditPort + ?Sized> FederationAuditPort for std::sync::Arc<T> {
+    fn record(&self, event: crate::federation::FederationAuditEvent) {
+        self.as_ref().record(event);
+    }
+}

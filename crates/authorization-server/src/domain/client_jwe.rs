@@ -1,12 +1,10 @@
 //! Client-bound compact JWE construction for encrypted OAuth and OIDC responses.
 
-use crate::adapters::security::{
-    SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
-};
 use aws_lc_rs::key_wrap::{AES_128, AES_256, AesKek, KeyWrap};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use nazo_auth::{ClientJweKeyManagement, client_jwe_key_management_from_name};
+use nazo_auth::{SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS};
 use p256::{
     PublicKey, SecretKey,
     ecdh::diffie_hellman,
@@ -15,20 +13,20 @@ use p256::{
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
-pub(crate) struct ClientJweKey<'a> {
-    pub(crate) kid: Option<&'a str>,
-    pub(crate) alg: &'a str,
-    pub(crate) enc: &'a str,
-    pub(crate) jwk: &'a Value,
+pub struct ClientJweKey<'a> {
+    pub kid: Option<&'a str>,
+    pub alg: &'a str,
+    pub enc: &'a str,
+    pub jwk: &'a Value,
 }
 
 #[derive(Clone, Copy)]
-pub(crate) enum JwePayloadKind {
+pub enum JwePayloadKind {
     Claims,
     NestedJwt,
 }
 
-pub(crate) fn client_jwe_key<'a>(
+pub fn client_jwe_key<'a>(
     jwks: Option<&'a Value>,
     alg: Option<&'a str>,
     enc: Option<&'a str>,
@@ -70,7 +68,7 @@ pub(crate) fn client_jwe_key<'a>(
     Ok(Some(ClientJweKey { kid, alg, enc, jwk }))
 }
 
-pub(crate) fn encrypt_compact_jwe(
+pub fn encrypt_compact_jwe(
     key: &ClientJweKey<'_>,
     plaintext: &[u8],
     payload_kind: JwePayloadKind,

@@ -1,14 +1,32 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    future::Future,
+    pin::Pin,
+    sync::{Arc, Mutex},
+};
 
-use actix_web::{App, http::header, test, web};
+use actix_web::{
+    App,
+    http::{StatusCode, header},
+    test,
+    web::{self, Data},
+};
 use nazo_auth::{
-    AdminClientCryptoPort, SectorIdentifierFuture, SectorIdentifierResolverPort,
+    AdminClientCryptoPort, ClientSecretDigesterPort, DynamicRegistrationSecretPort, OAuthClient,
+    PreparedClientRegistration, SectorIdentifierFuture, SectorIdentifierResolverPort,
     ValidatedClientRegistration,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 use super::*;
+use nazo_identity::TenantContext;
+use nazo_oauth_server::contracts::dynamic_client_registration::{
+    DynamicRegistrationRateLimitError, DynamicRegistrationRequestGuard,
+    DynamicRegistrationSecurityServices, RemoteJwksFuture, RemoteJwksResolverPort,
+};
+use nazo_oauth_server::domain::dynamic_registration::{
+    DynamicRegistrationApplication, DynamicRegistrationConfig,
+};
 
 const RP_METADATA_CHOICE_FIELDS: &[&str] = &[
     "subject_types_supported",
@@ -160,21 +178,28 @@ impl DynamicRegistrationClientStore for FakeStore {
 #[actix_web::test]
 async fn registration_access_token_lookup_fails_closed_across_tenants() {
     let store = FakeStore::new();
-    let mut endpoint = endpoint_with_store(true, store);
-    endpoint.config.tenant = TenantContext {
+    let mut config = application_config();
+    config.tenant = TenantContext {
         tenant_id: nazo_identity::TenantId::new(Uuid::from_u128(11)).unwrap(),
         realm_id: nazo_identity::RealmId::new(Uuid::from_u128(12)).unwrap(),
         organization_id: nazo_identity::OrganizationId::new(Uuid::from_u128(13)).unwrap(),
     };
-    let request = test::TestRequest::default()
-        .insert_header((header::AUTHORIZATION, "Bearer registration-token"))
-        .to_http_request();
-
-    let response = authenticate_registration_client(&endpoint, &request, "client-1")
+    let endpoint = endpoint_with_config(
+        config,
+        store,
+        FakeGuard {
+            enabled: true,
+            rate_limit: None,
+        },
+    );
+    let response = endpoint
+        .application
+        .read("client-test", Some("registration-token"), "203.0.113.77")
         .await
         .expect_err("a token from the default tenant must not cross into another tenant");
-
-    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert!(
+        matches!(response, nazo_oauth_server::contracts::oauth_error::OAuthEndpointError::Bearer(fields) if fields.status.as_u16() == StatusCode::UNAUTHORIZED.as_u16())
+    );
 }
 
 #[derive(Clone, Copy)]
@@ -275,34 +300,53 @@ fn endpoint(enabled: bool) -> DynamicRegistrationEndpoint {
     endpoint_with_store(enabled, FakeStore::new())
 }
 
+fn application_config() -> DynamicRegistrationConfig {
+    DynamicRegistrationConfig {
+        tenant: TenantContext::default_system(),
+        issuer: "https://issuer.example".to_owned(),
+        default_audience: "https://api.example".to_owned(),
+        pairwise_subject_secret: None,
+        client_secret_pepper: "pepper".to_owned(),
+        initial_access_token: Some("initial-token".to_owned()),
+        rate_limit_window_seconds: 60,
+        rate_limit_max_requests: 100,
+        id_token_signing_algs: vec!["RS256", "PS256"],
+        response_signing_algs: vec!["RS256", "PS256"],
+        request_object_encryption_algs: vec!["RSA-OAEP-256"],
+        request_object_encryption_encs: vec!["A256GCM"],
+    }
+}
+
 fn endpoint_with_store(enabled: bool, store: FakeStore) -> DynamicRegistrationEndpoint {
-    DynamicRegistrationEndpoint::new(
-        DynamicRegistrationEndpointConfig {
-            tenant: TenantContext::default_system(),
-            issuer: "https://issuer.example".to_owned(),
-            default_audience: "https://api.example".to_owned(),
-            pairwise_subject_secret: None,
-            client_secret_pepper: "pepper".to_owned(),
-            initial_access_token: Some("initial-token".to_owned()),
-            client_ip_header_mode: ClientIpHeaderMode::None,
-            trusted_proxy_cidrs: Vec::new(),
-            id_token_signing_algs: vec!["RS256", "PS256"],
-            response_signing_algs: vec!["RS256", "PS256"],
-            request_object_encryption_algs: vec!["RSA-OAEP-256"],
-            request_object_encryption_encs: vec!["A256GCM"],
-        },
-        Arc::new(store),
-        Arc::new(FakeSecurity),
-        DynamicRegistrationSecurityServices::new(
-            Arc::new(FakeSecurity),
-            Arc::new(FakeSecurity),
-            Arc::new(FakeSecurity),
-            Arc::new(FakeSecurity),
-        ),
-        Arc::new(FakeGuard {
+    endpoint_with_config(
+        application_config(),
+        store,
+        FakeGuard {
             enabled,
             rate_limit: None,
-        }),
+        },
+    )
+}
+
+fn endpoint_with_config(
+    config: DynamicRegistrationConfig,
+    store: FakeStore,
+    guard: FakeGuard,
+) -> DynamicRegistrationEndpoint {
+    DynamicRegistrationEndpoint::new(
+        Arc::new(DynamicRegistrationApplication::new(
+            config,
+            Arc::new(store),
+            Arc::new(FakeSecurity),
+            DynamicRegistrationSecurityServices::new(
+                Arc::new(FakeSecurity),
+                Arc::new(FakeSecurity),
+                Arc::new(FakeSecurity),
+                Arc::new(FakeSecurity),
+            ),
+            Arc::new(guard),
+        )),
+        ClientIpConfig::new(&[], ClientIpHeaderMode::None),
     )
 }
 
@@ -318,36 +362,45 @@ fn configure(config: &mut web::ServiceConfig) {
 
 #[actix_web::test]
 async fn bearer_credentials_are_closed_to_exact_non_empty_scheme_and_expected_token() {
-    assert!(!initial_access_token_authorized(
-        &FakeSecurity,
-        Some("Bearer initial-token"),
-        None,
-    ));
-    assert!(!initial_access_token_authorized(
-        &FakeSecurity,
-        None,
-        Some("initial-token"),
-    ));
-    assert!(!initial_access_token_authorized(
-        &FakeSecurity,
-        Some("Bearer   "),
-        Some("initial-token"),
-    ));
-    assert!(initial_access_token_authorized(
-        &FakeSecurity,
-        Some("bearer initial-token"),
-        Some("initial-token"),
-    ));
-    assert!(!initial_access_token_authorized(
-        &FakeSecurity,
-        Some("Bearer initial-token extra"),
-        Some("initial-token"),
-    ));
-    assert!(initial_access_token_authorized(
-        &FakeSecurity,
-        Some("  Bearer initial-token  "),
-        Some("initial-token"),
-    ));
+    for (header, expected, authorized) in [
+        (Some("Bearer initial-token"), None, false),
+        (None, Some("initial-token"), false),
+        (Some("Bearer   "), Some("initial-token"), false),
+        (Some("bearer initial-token"), Some("initial-token"), true),
+        (
+            Some("Bearer initial-token extra"),
+            Some("initial-token"),
+            false,
+        ),
+        (
+            Some("  Bearer initial-token  "),
+            Some("initial-token"),
+            true,
+        ),
+    ] {
+        let mut config = application_config();
+        config.initial_access_token = expected.map(str::to_owned);
+        let endpoint = endpoint_with_config(
+            config,
+            FakeStore::new(),
+            FakeGuard {
+                enabled: true,
+                rate_limit: None,
+            },
+        );
+        let payload =
+            serde_json::from_value(json!({"redirect_uris": ["https://client.example/callback"]}))
+                .unwrap();
+        let result = endpoint
+            .application
+            .create(payload, header.and_then(parse_bearer), "203.0.113.77")
+            .await;
+        assert_eq!(
+            result.is_ok(),
+            authorized,
+            "header={header:?}, expected={expected:?}"
+        );
+    }
 
     let request = test::TestRequest::default()
         .insert_header((header::AUTHORIZATION, "Bearer registration-token"))
@@ -993,13 +1046,16 @@ async fn client_configuration_read_preserves_authenticated_registration_token() 
 
 #[actix_web::test]
 async fn rate_limit_error_keeps_oauth_code_and_retry_after() {
-    let mut endpoint = endpoint(true);
-    endpoint.request_guard = Arc::new(FakeGuard {
-        enabled: true,
-        rate_limit: Some(DynamicRegistrationRateLimitError::Limited {
-            retry_after_seconds: 30,
-        }),
-    });
+    let endpoint = endpoint_with_config(
+        application_config(),
+        FakeStore::new(),
+        FakeGuard {
+            enabled: true,
+            rate_limit: Some(DynamicRegistrationRateLimitError::Limited {
+                retry_after_seconds: 30,
+            }),
+        },
+    );
     let service = test::init_service(
         App::new()
             .app_data(Data::new(endpoint))

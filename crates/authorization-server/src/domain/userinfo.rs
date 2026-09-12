@@ -1,50 +1,50 @@
 use std::sync::Arc;
 
-use actix_web::HttpRequest;
-use nazo_auth::{Claims, DpopStateStorePort, OAuthClient, token_audience_contains};
-use nazo_http_actix::RemoteJwksResolverPort;
-use nazo_http_actix::{
-    AccessTokenAuthScheme, UserinfoDpopError, UserinfoError, UserinfoFuture, UserinfoOperations,
-    UserinfoRepresentation, UserinfoSuccess,
+use crate::contracts::dynamic_client_registration::RemoteJwksResolverPort;
+use crate::contracts::request_facts::DpopRequestFacts;
+use crate::contracts::userinfo::AccessTokenAuthScheme;
+use crate::contracts::userinfo::{
+    PreparedUserinfo, UserinfoDpopError, UserinfoError, UserinfoFuture, UserinfoOperations,
+    UserinfoPreparationFuture, UserinfoRepresentation, UserinfoRequestFacts, UserinfoSuccess,
 };
+use nazo_auth::{Claims, DpopStateStorePort, OAuthClient, token_audience_contains};
 use nazo_key_management::{KeyManager, signing_algorithm_from_name};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-use crate::adapters::security::{access_token_tenant_id, blake3_hex, constant_time_eq};
+use crate::crypto::{access_token_tenant_id, blake3_hex, constant_time_eq};
 use crate::domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe};
 use crate::domain::client_policy::{parse_scope, refresh_client_jwks_for_encryption};
 use crate::domain::oidc_claims::oidc_user_claims;
-use crate::http::dpop::{DpopError, validate_dpop_proof_with_store};
-use crate::http::mtls::request_mtls_thumbprint;
-use crate::settings::{DpopNoncePolicy, Settings};
-use nazo_http_actix::IpCidr;
+use nazo_auth::DpopError;
+use nazo_auth::DpopNoncePolicy;
 
-use crate::http::token::ServerTokenService;
+use crate::services::ServerTokenService;
 
 #[derive(Clone)]
-pub(crate) struct UserinfoConfig {
+pub struct UserinfoConfig {
     issuer: Box<str>,
     default_audience: Box<str>,
     mtls_endpoint_base_url: Box<str>,
     dpop_nonce_policy: DpopNoncePolicy,
-    trusted_proxy_cidrs: Box<[IpCidr]>,
-}
-
-impl From<&Settings> for UserinfoConfig {
-    fn from(settings: &Settings) -> Self {
-        Self {
-            issuer: settings.endpoint.issuer.as_str().into(),
-            default_audience: settings.protocol.default_audience.as_str().into(),
-            mtls_endpoint_base_url: settings.endpoint.mtls_endpoint_base_url.as_str().into(),
-            dpop_nonce_policy: settings.protocol.dpop_nonce_policy,
-            trusted_proxy_cidrs: settings.endpoint.trusted_proxy_cidrs.clone().into(),
-        }
-    }
 }
 
 impl UserinfoConfig {
-    pub(crate) fn audience_allowed(&self, audience: &Value) -> bool {
+    pub fn new(
+        issuer: impl Into<Box<str>>,
+        default_audience: impl Into<Box<str>>,
+        mtls_endpoint_base_url: impl Into<Box<str>>,
+        dpop_nonce_policy: DpopNoncePolicy,
+    ) -> Self {
+        Self {
+            issuer: issuer.into(),
+            default_audience: default_audience.into(),
+            mtls_endpoint_base_url: mtls_endpoint_base_url.into(),
+            dpop_nonce_policy,
+        }
+    }
+
+    pub fn audience_allowed(&self, audience: &Value) -> bool {
         let userinfo_url = format!("{}/userinfo", self.issuer.trim_end_matches('/'));
         token_audience_contains(audience, &self.default_audience)
             || token_audience_contains(audience, &userinfo_url)
@@ -56,33 +56,33 @@ impl UserinfoConfig {
 /// Token, subject, revocation and client reads remain on `ServerTokenService`;
 /// this handle only owns DPoP replay state, response signing, and focused policy.
 #[derive(Clone)]
-pub(crate) struct UserinfoHandles {
+pub struct UserinfoHandles {
     dpop_state: Arc<dyn DpopStateStorePort>,
+    security_audit: Arc<dyn crate::ports::audit::SecurityAudit>,
     keys: KeyManager,
     config: UserinfoConfig,
     remote_client_documents: Arc<dyn RemoteJwksResolverPort>,
 }
 
 #[derive(Clone)]
-pub(crate) struct ServerUserinfoOperations {
+pub struct ServerUserinfoOperations {
     token_service: Arc<ServerTokenService>,
     handles: UserinfoHandles,
 }
 
 impl ServerUserinfoOperations {
-    pub(crate) fn new(token_service: Arc<ServerTokenService>, handles: UserinfoHandles) -> Self {
+    pub fn new(token_service: Arc<ServerTokenService>, handles: UserinfoHandles) -> Self {
         Self {
             token_service,
             handles,
         }
     }
 
-    async fn execute(
+    async fn prepare_token(
         &self,
-        request: &HttpRequest,
         scheme: AccessTokenAuthScheme,
         token: String,
-    ) -> Result<UserinfoSuccess, UserinfoError> {
+    ) -> Result<PreparedUserinfo, UserinfoError> {
         let claims = self
             .token_service
             .decode_access_token(self.handles.issuer(), &token)
@@ -109,8 +109,27 @@ impl ServerUserinfoOperations {
             return Err(UserinfoError::RevokedAccessToken);
         }
 
+        Ok(PreparedUserinfo {
+            scheme,
+            token,
+            claims,
+            tenant_id,
+        })
+    }
+
+    async fn execute(
+        &self,
+        prepared: PreparedUserinfo,
+        facts: UserinfoRequestFacts<'_>,
+    ) -> Result<UserinfoSuccess, UserinfoError> {
+        let PreparedUserinfo {
+            scheme,
+            token,
+            claims,
+            tenant_id,
+        } = prepared;
         let dpop_nonce = self
-            .validate_sender_constraint(request, scheme, &token, &claims)
+            .validate_sender_constraint(facts, scheme, &token, &claims)
             .await?;
         if !claims
             .scope
@@ -188,7 +207,7 @@ impl ServerUserinfoOperations {
 
     async fn validate_sender_constraint(
         &self,
-        request: &HttpRequest,
+        facts: UserinfoRequestFacts<'_>,
         scheme: AccessTokenAuthScheme,
         token: &str,
         claims: &Claims,
@@ -196,7 +215,7 @@ impl ServerUserinfoOperations {
         match (scheme, claims.cnf.as_ref()) {
             (AccessTokenAuthScheme::DPoP, Some(cnf)) if cnf.jkt.is_some() => {
                 self.handles
-                    .validate_dpop_proof(request, token, cnf.jkt.as_deref())
+                    .validate_dpop_proof(facts.dpop, token, cnf.jkt.as_deref())
                     .await
                     .map_err(map_dpop_error)?;
                 self.handles
@@ -210,9 +229,8 @@ impl ServerUserinfoOperations {
             }
             (AccessTokenAuthScheme::Bearer, Some(cnf)) if cnf.x5t_s256.is_some() => {
                 let expected = cnf.x5t_s256.as_deref().unwrap_or_default();
-                let actual = self
-                    .handles
-                    .request_mtls_thumbprint(request)
+                let actual = facts
+                    .mtls_thumbprint
                     .ok_or(UserinfoError::MissingMtlsCertificate)?;
                 if !constant_time_eq(expected.as_bytes(), actual.as_bytes()) {
                     return Err(UserinfoError::MtlsCertificateMismatch);
@@ -300,13 +318,20 @@ impl ServerUserinfoOperations {
 }
 
 impl UserinfoOperations for ServerUserinfoOperations {
-    fn userinfo<'a>(
+    fn prepare<'a>(
         &'a self,
-        request: &'a HttpRequest,
         scheme: AccessTokenAuthScheme,
         token: String,
+    ) -> UserinfoPreparationFuture<'a> {
+        Box::pin(async move { self.prepare_token(scheme, token).await })
+    }
+
+    fn userinfo<'a>(
+        &'a self,
+        prepared: PreparedUserinfo,
+        facts: UserinfoRequestFacts<'a>,
     ) -> UserinfoFuture<'a> {
-        Box::pin(async move { self.execute(request, scheme, token).await })
+        Box::pin(async move { self.execute(prepared, facts).await })
     }
 }
 
@@ -325,55 +350,54 @@ fn map_dpop_error(error: DpopError) -> UserinfoError {
 }
 
 impl UserinfoHandles {
-    pub(crate) fn new(
+    pub fn new(
         dpop_state: Arc<dyn DpopStateStorePort>,
+        security_audit: Arc<dyn crate::ports::audit::SecurityAudit>,
         keys: KeyManager,
         config: UserinfoConfig,
         remote_client_documents: Arc<dyn RemoteJwksResolverPort>,
     ) -> Self {
         Self {
             dpop_state,
+            security_audit,
             keys,
             config,
             remote_client_documents,
         }
     }
 
-    pub(crate) fn issuer(&self) -> &str {
+    pub fn issuer(&self) -> &str {
         &self.config.issuer
     }
 
-    pub(crate) fn audience_allowed(&self, audience: &Value) -> bool {
+    pub fn audience_allowed(&self, audience: &Value) -> bool {
         self.config.audience_allowed(audience)
     }
 
-    pub(crate) async fn validate_dpop_proof(
+    pub async fn validate_dpop_proof(
         &self,
-        req: &HttpRequest,
+        facts: DpopRequestFacts<'_>,
         token: &str,
         expected_jkt: Option<&str>,
     ) -> Result<Option<String>, DpopError> {
-        validate_dpop_proof_with_store(
+        crate::security::dpop::validate_dpop_proof(
             self.dpop_state.as_ref(),
+            self.security_audit.as_ref(),
             self.issuer(),
             &self.config.mtls_endpoint_base_url,
             self.config.dpop_nonce_policy,
-            req,
+            facts,
             Some(token),
             expected_jkt,
         )
         .await
     }
 
-    pub(crate) async fn issue_dpop_nonce(&self) -> Result<String, DpopError> {
-        crate::http::dpop::issue_dpop_nonce_with_store(self.dpop_state.as_ref()).await
+    pub async fn issue_dpop_nonce(&self) -> Result<String, DpopError> {
+        nazo_auth::issue_authorization_server_dpop_nonce(self.dpop_state.as_ref()).await
     }
 
-    pub(crate) fn request_mtls_thumbprint(&self, req: &HttpRequest) -> Option<String> {
-        request_mtls_thumbprint(req, &self.config.trusted_proxy_cidrs)
-    }
-
-    pub(crate) async fn sign_response_jwt(
+    pub async fn sign_response_jwt(
         &self,
         purpose: nazo_auth::SigningPurpose,
         claims: &Value,
@@ -385,7 +409,3 @@ impl UserinfoHandles {
         self.keys.encode_jwt(purpose, &header, claims).await
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/unit/domain/userinfo.rs"]
-mod tests;

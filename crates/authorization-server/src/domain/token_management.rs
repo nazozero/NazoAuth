@@ -1,50 +1,45 @@
 use std::{future::Future, pin::Pin, sync::Arc};
 
+use crate::contracts::token_client_auth::TokenClientAuthTransportFacts;
+use crate::contracts::token_forms::TokenOnlyForm;
+use crate::contracts::token_management::{
+    TokenIntrospectionRepresentation, TokenManagementError, TokenManagementFuture,
+    TokenManagementOperations, TokenManagementRateLimitError, TokenManagementRequestFacts,
+    TokenManagementRequestGuard,
+};
 use chrono::Utc;
 use nazo_auth::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, ClientAuthenticationContext, IntrospectionSignInput,
     OAuthClient, unverified_client_assertion_client_id,
 };
-use nazo_http_actix::{
-    TokenClientAuthTransportFacts, TokenIntrospectionRepresentation, TokenManagementError,
-    TokenManagementFuture, TokenManagementOperations, TokenManagementRateLimitError,
-    TokenManagementRequestFacts, TokenManagementRequestGuard, TokenOnlyForm,
-};
 use serde_json::json;
 
-use crate::{
-    adapters::{
-        audit::{audit_event, audit_fields},
-        security::blake3_hex,
-    },
-    domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
-    domain::client_policy::refresh_client_jwks_for_encryption,
-    http::{
-        authorization::{AuthorizationHttpConfig, ServerAuthorizationService},
-        token::{
-            ServerTokenService,
-            client_auth::{
-                ClientAuthConfig, ClientAuthRequestFacts, TokenManagementClientAuthError,
-                authenticate_introspection_client_with_dependencies,
-                authenticate_revocation_client_with_dependencies,
-                perform_dummy_client_secret_verification,
-            },
-        },
-    },
-};
-use nazo_http_actix::RemoteJwksResolverPort;
+use crate::authorization::config::AuthorizationConfig;
+use crate::contracts::dynamic_client_registration::RemoteJwksResolverPort;
+use crate::crypto::blake3_hex;
+use crate::domain::client_jwe::JwePayloadKind;
+use crate::domain::client_jwe::client_jwe_key;
+use crate::domain::client_jwe::encrypt_compact_jwe;
+use crate::domain::client_policy::refresh_client_jwks_for_encryption;
+use crate::ports::audit::SecurityAudit;
+use crate::ports::audit::audit_fields;
+use crate::services::ServerAuthorizationService;
+use crate::services::ServerTokenService;
+use crate::token::client_auth::ClientAuthConfig;
+use crate::token::client_auth::ClientAuthRequestFacts;
+use crate::token::client_auth::TokenManagementClientAuthError;
+use crate::token::client_auth::authenticate_introspection_client_with_dependencies;
+use crate::token::client_auth::authenticate_revocation_client_with_dependencies;
+use crate::token::client_auth::perform_dummy_client_secret_verification;
 
 #[derive(Clone)]
-pub(crate) struct ServerTokenManagementRequestGuard {
+pub struct ServerTokenManagementRequestGuard {
     token_service: Arc<ServerTokenService>,
-    config: Arc<AuthorizationHttpConfig>,
+    config: Arc<AuthorizationConfig>,
 }
 
 impl ServerTokenManagementRequestGuard {
-    pub(crate) fn new(
-        token_service: Arc<ServerTokenService>,
-        config: Arc<AuthorizationHttpConfig>,
-    ) -> Self {
+    pub fn new(token_service: Arc<ServerTokenService>, config: Arc<AuthorizationConfig>) -> Self {
         Self {
             token_service,
             config,
@@ -78,25 +73,28 @@ impl TokenManagementRequestGuard for ServerTokenManagementRequestGuard {
 }
 
 #[derive(Clone)]
-pub(crate) struct ServerTokenManagementOperations {
+pub struct ServerTokenManagementOperations {
     token_service: Arc<ServerTokenService>,
     authorization_service: Arc<ServerAuthorizationService>,
-    config: Arc<AuthorizationHttpConfig>,
+    config: Arc<AuthorizationConfig>,
     remote_client_documents: Arc<dyn RemoteJwksResolverPort>,
+    audit: Arc<dyn SecurityAudit>,
 }
 
 impl ServerTokenManagementOperations {
-    pub(crate) fn new(
+    pub fn new(
         token_service: Arc<ServerTokenService>,
         authorization_service: Arc<ServerAuthorizationService>,
-        config: Arc<AuthorizationHttpConfig>,
+        config: Arc<AuthorizationConfig>,
         remote_client_documents: Arc<dyn RemoteJwksResolverPort>,
+        audit: Arc<dyn SecurityAudit>,
     ) -> Self {
         Self {
             token_service,
             authorization_service,
             config,
             remote_client_documents,
+            audit,
         }
     }
 
@@ -151,6 +149,7 @@ impl ServerTokenManagementOperations {
             &self.config.issuer,
             &self.config.client_secret_pepper,
             self.remote_client_documents.as_ref(),
+            self.audit.as_ref(),
         );
         let auth_request =
             ClientAuthRequestFacts::new(&request.endpoint_path, request.client_certificate.clone());
@@ -293,7 +292,7 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                     tracing::warn!(%error, "failed to revoke token");
                     TokenManagementError::RevocationUnavailable
                 })?;
-            audit_event(
+            self.audit.record(
                 "token_revoked",
                 audit_fields(&[
                     ("client_id", json!(client.client_id)),

@@ -1,5 +1,9 @@
 use std::sync::Arc;
 
+use crate::contracts::authorization_decision::{
+    AuthorizationDecisionCommand, AuthorizationDecisionError, AuthorizationDecisionFuture,
+    AuthorizationDecisionOperations, AuthorizationDecisionResponse,
+};
 use chrono::Utc;
 use nazo_auth::{
     AuthorizationApprovalInput, AuthorizationDecisionAdmissionError, AuthorizationResponsePlan,
@@ -8,44 +12,45 @@ use nazo_auth::{
     plain_authorization_response_uri, plan_authorization_response,
     signed_jarm_authorization_response_uri,
 };
-use nazo_http_actix::{
-    AuthorizationDecisionCommand, AuthorizationDecisionError, AuthorizationDecisionFuture,
-    AuthorizationDecisionOperations, AuthorizationDecisionResponse,
-};
 use nazo_identity::{SessionResolution, SessionService};
 use nazo_runtime_modules::ModuleId;
 use serde_json::json;
 use uuid::Uuid;
 
-use crate::{
-    adapters::{
-        audit::{audit_event, audit_event_required, audit_fields, ensure_audit_storage},
-        security::{blake3_hex, random_urlsafe_token},
-    },
-    domain::client_jwe::{JwePayloadKind, client_jwe_key, encrypt_compact_jwe},
-    domain::client_policy::refresh_client_jwks_for_encryption,
-    http::authorization::{AuthorizationHttpConfig, ServerAuthorizationService},
-    runtime_modules::ServerRuntimeModuleRegistry,
-};
+use crate::authorization::config::AuthorizationConfig;
+use crate::crypto::blake3_hex;
+use crate::crypto::random_urlsafe_token;
+use crate::domain::client_jwe::JwePayloadKind;
+use crate::domain::client_jwe::client_jwe_key;
+use crate::domain::client_jwe::encrypt_compact_jwe;
+use crate::domain::client_policy::refresh_client_jwks_for_encryption;
+use crate::ports::audit::{SecurityAudit, audit_fields};
+use crate::services::ServerAuthorizationService;
+use nazo_runtime_modules::SnapshotStore;
 
 #[derive(Clone)]
-pub(crate) struct ServerAuthorizationDecisionOperations {
+pub struct ServerAuthorizationDecisionOperations {
     service: Arc<ServerAuthorizationService>,
     sessions: SessionService,
     tenant_id: nazo_identity::TenantId,
-    config: Arc<AuthorizationHttpConfig>,
-    runtime_modules: Arc<ServerRuntimeModuleRegistry>,
-    remote_client_documents: Arc<dyn nazo_http_actix::RemoteJwksResolverPort>,
+    config: Arc<AuthorizationConfig>,
+    runtime_modules: Arc<SnapshotStore>,
+    security_audit: Arc<dyn SecurityAudit>,
+    remote_client_documents:
+        Arc<dyn crate::contracts::dynamic_client_registration::RemoteJwksResolverPort>,
 }
 
 impl ServerAuthorizationDecisionOperations {
-    pub(crate) fn new(
+    pub fn new(
         service: Arc<ServerAuthorizationService>,
         sessions: SessionService,
         tenant_id: nazo_identity::TenantId,
-        config: Arc<AuthorizationHttpConfig>,
-        runtime_modules: Arc<ServerRuntimeModuleRegistry>,
-        remote_client_documents: Arc<dyn nazo_http_actix::RemoteJwksResolverPort>,
+        config: Arc<AuthorizationConfig>,
+        runtime_modules: Arc<SnapshotStore>,
+        remote_client_documents: Arc<
+            dyn crate::contracts::dynamic_client_registration::RemoteJwksResolverPort,
+        >,
+        security_audit: Arc<dyn SecurityAudit>,
     ) -> Self {
         Self {
             service,
@@ -53,6 +58,7 @@ impl ServerAuthorizationDecisionOperations {
             tenant_id,
             config,
             runtime_modules,
+            security_audit,
             remote_client_documents,
         }
     }
@@ -75,28 +81,32 @@ impl ServerAuthorizationDecisionOperations {
             }
         };
 
-        ensure_audit_storage().await.map_err(|error| {
-            tracing::error!(%error, "authorization decision audit preflight failed");
-            AuthorizationDecisionError::AuditUnavailable
-        })?;
+        self.security_audit
+            .ensure_storage()
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "authorization decision audit preflight failed");
+                AuthorizationDecisionError::AuditUnavailable
+            })?;
         let decision = match command.decision {
             UserAuthorizationDecision::Approve => "approve",
             UserAuthorizationDecision::Deny => "deny",
         };
-        audit_event_required(
-            "authorization_decision_intent",
-            audit_fields(&[
-                ("request_id_hash", json!(blake3_hex(&command.request_id))),
-                ("user_id", json!(session.user().id())),
-                ("decision", json!(decision)),
-                ("source_ip_hash", json!(blake3_hex(&command.source_ip))),
-            ]),
-        )
-        .await
-        .map_err(|error| {
-            tracing::error!(%error, "authorization decision audit intent failed");
-            AuthorizationDecisionError::AuditUnavailable
-        })?;
+        self.security_audit
+            .record_required(
+                "authorization_decision_intent",
+                audit_fields(&[
+                    ("request_id_hash", json!(blake3_hex(&command.request_id))),
+                    ("user_id", json!(session.user().id())),
+                    ("decision", json!(decision)),
+                    ("source_ip_hash", json!(blake3_hex(&command.source_ip))),
+                ]),
+            )
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "authorization decision audit intent failed");
+                AuthorizationDecisionError::AuditUnavailable
+            })?;
 
         let payload = match self
             .service
@@ -141,7 +151,12 @@ impl ServerAuthorizationDecisionOperations {
         // remains best-effort because consent/PAR state and the audit ledger
         // are separate stores and cannot commit atomically here.
         if command.decision == UserAuthorizationDecision::Deny {
-            record_decision_audit("authorization_denied", &payload, &command.source_ip);
+            record_decision_audit(
+                self.security_audit.as_ref(),
+                "authorization_denied",
+                &payload,
+                &command.source_ip,
+            );
             return self
                 .response_location(&payload, None, Some("access_denied"), None)
                 .await;
@@ -189,7 +204,12 @@ impl ServerAuthorizationDecisionOperations {
             return Err(AuthorizationDecisionError::LoginRequired);
         }
 
-        record_decision_audit("authorization_approved", &payload, &command.source_ip);
+        record_decision_audit(
+            self.security_audit.as_ref(),
+            "authorization_approved",
+            &payload,
+            &command.source_ip,
+        );
         self.response_location(&payload, Some(&code), None, payload.oidc_sid.as_deref())
             .await
     }
@@ -201,7 +221,7 @@ impl ServerAuthorizationDecisionOperations {
         error: Option<&str>,
         oidc_sid: Option<&str>,
     ) -> Result<AuthorizationDecisionResponse, AuthorizationDecisionError> {
-        let modules = self.runtime_modules.snapshot();
+        let modules = self.runtime_modules.load_full();
         let plan = plan_authorization_response(AuthorizationResponsePolicyInput {
             issuer: &self.config.issuer,
             redirect_uri: &payload.redirect_uri,
@@ -361,8 +381,13 @@ fn map_response_policy_error(
     }
 }
 
-fn record_decision_audit(event: &str, payload: &nazo_auth::ConsentPayload, source_ip: &str) {
-    audit_event(
+fn record_decision_audit(
+    audit: &dyn SecurityAudit,
+    event: &str,
+    payload: &nazo_auth::ConsentPayload,
+    source_ip: &str,
+) {
+    audit.record(
         event,
         audit_fields(&[
             ("user_id", json!(payload.user_id)),
@@ -373,7 +398,3 @@ fn record_decision_audit(event: &str, payload: &nazo_auth::ConsentPayload, sourc
         ]),
     );
 }
-
-#[cfg(test)]
-#[path = "../../tests/unit/domain/authorization_decision.rs"]
-mod tests;

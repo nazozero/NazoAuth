@@ -23,13 +23,11 @@ pem.workspace = true
 pkcs8.workspace = true
 p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
 rand.workspace = true
-process-wrap.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true
 hmac.workspace = true
 thiserror.workspace = true
-tokio = { workspace = true, features = ["io-util", "macros", "process", "rt", "sync", "time"] }
 tracing.workspace = true
 uuid = { workspace = true, features = ["v7", "serde"] }
 x509-cert.workspace = true
@@ -39,5 +37,7 @@ x509-parser.workspace = true
 workspace = true
 
 [dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt"] }
+futures-executor.workspace = true
 rcgen.workspace = true
 time.workspace = true

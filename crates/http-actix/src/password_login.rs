@@ -1,4 +1,13 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+#[cfg(test)]
+use nazo_identity::authentication::PasswordLoginResult;
+use nazo_oauth_server::contracts::local_registration::{
+    AuthenticationRateLimit, AuthenticationRateLimitError,
+};
+#[cfg(test)]
+use nazo_oauth_server::contracts::password_login::PasswordLoginFuture;
+use nazo_oauth_server::contracts::password_login::PasswordLoginOperations;
+
+use std::sync::Arc;
 
 use actix_web::{
     HttpRequest, HttpResponse,
@@ -6,26 +15,14 @@ use actix_web::{
     web::{Bytes, Data},
 };
 use chrono::Utc;
-use nazo_identity::{
-    AuthenticatePasswordError, AuthenticatePasswordInput, RememberedMfaProof,
-    authentication::PasswordLoginResult,
-};
+use nazo_identity::{AuthenticatePasswordError, AuthenticatePasswordInput, RememberedMfaProof};
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::{
-    AuthenticationRateLimit, AuthenticationRateLimitError, ClientIpConfig,
-    authorization_error_response, client_ip_with_config, cookie_value, json_response, make_cookie,
-    oauth_error, with_cookie_headers,
+    ClientIpConfig, authorization_error_response, client_ip_with_config, cookie_value,
+    json_response, make_cookie, oauth_error, with_cookie_headers,
 };
-
-pub type PasswordLoginFuture<'a> = Pin<
-    Box<dyn Future<Output = Result<PasswordLoginResult, AuthenticatePasswordError>> + Send + 'a>,
->;
-
-pub trait PasswordLoginOperations: Send + Sync {
-    fn authenticate_password(&self, input: AuthenticatePasswordInput) -> PasswordLoginFuture<'_>;
-}
 
 #[derive(Clone)]
 pub struct PasswordLoginConfig {

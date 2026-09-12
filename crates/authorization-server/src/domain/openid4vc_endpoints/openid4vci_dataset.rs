@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use chrono::Utc;
 use nazo_identity::{TenantId, UserId};
-use nazo_openid4vc_http_actix::CredentialHttpError;
 use nazo_openid4vci::CredentialConfiguration;
+use nazo_openid4vci::application::CredentialHttpError;
 use serde_json::Value;
 use uuid::Uuid;
 
@@ -14,16 +14,16 @@ use super::openid4vci::{
 };
 
 #[derive(Clone)]
-pub(crate) struct CredentialDatasetAdminService {
+pub struct CredentialDatasetAdminService {
     issuer: Arc<ServerCredentialIssuerOperations>,
 }
 
 impl CredentialDatasetAdminService {
-    pub(crate) fn new(issuer: Arc<ServerCredentialIssuerOperations>) -> Self {
+    pub fn new(issuer: Arc<ServerCredentialIssuerOperations>) -> Self {
         Self { issuer }
     }
 
-    pub(crate) async fn put_dataset(
+    pub async fn put_dataset(
         &self,
         tenant_id: Uuid,
         actor_user_id: Uuid,
@@ -94,7 +94,7 @@ impl CredentialDatasetAdminService {
             .await
     }
 
-    pub(crate) async fn get_dataset(
+    pub async fn get_dataset(
         &self,
         tenant_id: Uuid,
         subject_id: Uuid,
@@ -126,7 +126,7 @@ impl CredentialDatasetAdminService {
         })
     }
 
-    pub(crate) async fn delete_dataset(
+    pub async fn delete_dataset(
         &self,
         tenant_id: Uuid,
         actor_user_id: Uuid,

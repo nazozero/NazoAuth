@@ -419,13 +419,19 @@ impl ServerCredentialIssuerOperations {
                 expires_at: Utc::now() + Duration::seconds(request.expires_in as i64),
             };
             let tx_code_hash = match request.tx_code {
-                Some(code) => Some(hash_password_blocking_limited(code).await.map_err(|_| {
-                    vci_error(
-                        503,
-                        "server_error",
-                        "Transaction code hashing is unavailable.",
-                    )
-                })?),
+                Some(code) => Some(
+                    self.tx_code_hasher
+                        .hash_secret(code)
+                        .await
+                        .map_err(|_| {
+                            vci_error(
+                                503,
+                                "server_error",
+                                "Transaction code hashing is unavailable.",
+                            )
+                        })?
+                        .into_persistence_value(),
+                ),
                 None => None,
             };
             let issuer_state_hash = issuer_state.as_deref().map(blake3_hex);

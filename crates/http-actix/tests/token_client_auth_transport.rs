@@ -1,9 +1,8 @@
 use actix_web::{http::header, test::TestRequest};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use nazo_auth::{TokenEndpointError, token_client_authentication_context};
-use nazo_http_actix::{
-    TokenClientAuthForm, TokenClientAuthTransportFacts, token_client_auth_transport_facts,
-};
+use nazo_http_actix::{TokenClientAuthForm, token_client_auth_transport_facts};
+use nazo_oauth_server::contracts::token_client_auth::TokenClientAuthTransportFacts;
 
 fn facts(
     authorization: Option<&str>,

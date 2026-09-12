@@ -1,4 +1,4 @@
-use nazo_http_actix::{
+use crate::contracts::profile_account::{
     ProfileAccountError, ProfileAccountFuture, ProfileAccountOperations, ProfileMe,
 };
 use nazo_identity::{
@@ -7,13 +7,13 @@ use nazo_identity::{
 };
 
 #[derive(Clone)]
-pub(crate) struct ServerProfileAccountOperations {
+pub struct ServerProfileAccountOperations {
     sessions: SessionService,
     profiles: AccountProfileService,
 }
 
 impl ServerProfileAccountOperations {
-    pub(crate) fn new(sessions: SessionService, profiles: AccountProfileService) -> Self {
+    pub fn new(sessions: SessionService, profiles: AccountProfileService) -> Self {
         Self { sessions, profiles }
     }
     async fn active_account(

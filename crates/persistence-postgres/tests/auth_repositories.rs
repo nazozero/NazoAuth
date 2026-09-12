@@ -1892,23 +1892,22 @@ async fn backchannel_logout_fanout_rolls_back_when_any_delivery_is_invalid() {
 
 #[test]
 fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
-    let server =
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../authorization-server/src");
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
     for relative in [
-        "domain/rows.rs",
-        "http/admin/grants.rs",
-        "http/authorization/request/prompt_none.rs",
-        "domain/scim.rs",
-        "http/token/issue/authorization_code_state.rs",
-        "http/token/issue/refresh_persistence.rs",
-        "http/token/native_sso.rs",
-        "http/token/refresh.rs",
-        "http/token/token_exchange.rs",
-        "domain/userinfo.rs",
-        "domain/client_policy.rs",
-        "http/views.rs",
+        "authorization-server/src/domain/rows.rs",
+        "nazoauth/src/http/admin/grants.rs",
+        "authorization-server/src/authorization/request/prompt_none.rs",
+        "authorization-server/src/domain/scim.rs",
+        "authorization-server/src/token/issue/authorization_code_state.rs",
+        "authorization-server/src/token/issue/refresh_persistence.rs",
+        "authorization-server/src/token/native_sso.rs",
+        "authorization-server/src/token/refresh.rs",
+        "authorization-server/src/token/token_exchange.rs",
+        "authorization-server/src/domain/userinfo.rs",
+        "authorization-server/src/domain/client_policy.rs",
+        "nazoauth/src/http/views.rs",
     ] {
-        let source = std::fs::read_to_string(server.join(relative))
+        let source = std::fs::read_to_string(crates.join(relative))
             .unwrap_or_else(|error| panic!("failed to read {relative}: {error}"));
         for forbidden in [
             "diesel::",
@@ -1926,10 +1925,12 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
             );
         }
     }
-    assert!(
-        !server.join("schema.rs").exists(),
-        "server production source must not contain a test-only Diesel schema"
-    );
+    for package in ["authorization-server", "nazoauth"] {
+        assert!(
+            !crates.join(package).join("src/schema.rs").exists(),
+            "server production source must not contain a test-only Diesel schema"
+        );
+    }
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

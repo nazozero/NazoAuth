@@ -36,7 +36,8 @@ async fn database_fixture() -> (
     )
     .unwrap();
     let manager = KeyManager::load_or_create_database(
-        settings(Vec::new()),
+        settings(),
+        None,
         tenant_id,
         repository.clone(),
         wrapping_keys.clone(),
@@ -122,10 +123,8 @@ fn hex_sha256(bytes: &[u8]) -> String {
         .collect()
 }
 
-fn settings(external_command: Vec<String>) -> KeySettings {
+fn settings() -> KeySettings {
     KeySettings {
-        external_command,
-        external_timeout: std::time::Duration::from_secs(1),
         rotation_interval: chrono::Duration::days(90),
         prepublish_window: chrono::Duration::days(1),
         verification_grace: chrono::Duration::minutes(10),
@@ -134,7 +133,7 @@ fn settings(external_command: Vec<String>) -> KeySettings {
 
 async fn database_manager_from_payload(
     payload: Value,
-    external_command: Vec<String>,
+    external_signer: Arc<dyn ExternalKeySigner>,
 ) -> KeyManager {
     let repository = Arc::new(MemorySigningKeyRepository::default());
     let tenant_id = Uuid::now_v7();
@@ -148,7 +147,8 @@ async fn database_manager_from_payload(
         .await
         .expect("database fixture record should initialize");
     KeyManager::load_or_create_database(
-        settings(external_command),
+        settings(),
+        Some(external_signer),
         tenant_id,
         repository,
         wrapping_keys,
@@ -170,27 +170,10 @@ fn active_external_payload() -> (Value, String, Vec<u8>) {
     (payload, kid, private_key)
 }
 
-#[cfg(windows)]
-fn external_signature_command(signature: &str) -> Vec<String> {
-    vec![
-        "pwsh".to_owned(),
-        "-NoLogo".to_owned(),
-        "-NoProfile".to_owned(),
-        "-NonInteractive".to_owned(),
-        "-Command".to_owned(),
-        format!(
-            "$null=[Console]::In.ReadToEnd(); [Console]::Out.Write('{{\"signature\":\"{signature}\"}}')"
-        ),
-    ]
-}
-
-#[cfg(unix)]
-fn external_signature_command(signature: &str) -> Vec<String> {
-    vec![
-        "sh".to_owned(),
-        "-c".to_owned(),
-        format!("cat >/dev/null; printf '%s' '{{\"signature\":\"{signature}\"}}'"),
-    ]
+fn external_signature(signature: &str) -> Arc<dyn ExternalKeySigner> {
+    Arc::new(crate::test_support::FixedExternalKeySigner(
+        URL_SAFE_NO_PAD.decode(signature).unwrap(),
+    ))
 }
 
 fn valid_payload() -> Value {
@@ -243,22 +226,22 @@ fn load_payload_rejects_tampered_local_and_generation_metadata() {
 
     let mut schema = base.clone();
     schema["schema_version"] = json!("legacy");
-    assert!(load_payload(&settings(Vec::new()), &schema).is_err());
+    assert!(load_payload(None, &schema).is_err());
 
     let mut missing_active = base.clone();
     missing_active.as_object_mut().unwrap().remove("active_kid");
-    assert!(load_payload(&settings(Vec::new()), &missing_active).is_err());
+    assert!(load_payload(None, &missing_active).is_err());
 
     let mut invalid_request = base.clone();
     invalid_request["request_object_private_pem"] = json!(URL_SAFE_NO_PAD.encode([1_u8]));
-    assert!(load_payload(&settings(Vec::new()), &invalid_request).is_err());
+    assert!(load_payload(None, &invalid_request).is_err());
 
     let mut missing_private = base.clone();
     active_entry_mut(&mut missing_private)
         .as_object_mut()
         .unwrap()
         .remove("private_pkcs8_der");
-    assert!(load_payload(&settings(Vec::new()), &missing_private).is_err());
+    assert!(load_payload(None, &missing_private).is_err());
 
     let mut mismatched_public = base.clone();
     active_entry_mut(&mut mismatched_public)["public_jwk"] = json!({
@@ -268,7 +251,7 @@ fn load_payload_rejects_tampered_local_and_generation_metadata() {
         "n":"AQ",
         "e":"AQAB"
     });
-    assert!(load_payload(&settings(Vec::new()), &mismatched_public).is_err());
+    assert!(load_payload(None, &mismatched_public).is_err());
 
     let mut duplicate_kid = base.clone();
     let duplicate = duplicate_kid["keys"][0].clone();
@@ -276,33 +259,33 @@ fn load_payload_rejects_tampered_local_and_generation_metadata() {
         .as_array_mut()
         .unwrap()
         .push(duplicate);
-    assert!(load_payload(&settings(Vec::new()), &duplicate_kid).is_err());
+    assert!(load_payload(None, &duplicate_kid).is_err());
 
     let mut unsupported_backend = base.clone();
     active_entry_mut(&mut unsupported_backend)["backend"] = json!("unsupported");
-    assert!(load_payload(&settings(Vec::new()), &unsupported_backend).is_err());
+    assert!(load_payload(None, &unsupported_backend).is_err());
 
     let mut active_purpose = base.clone();
     active_entry_mut(&mut active_purpose)["purposes"] = json!(["credential"]);
-    assert!(load_payload(&settings(Vec::new()), &active_purpose).is_err());
+    assert!(load_payload(None, &active_purpose).is_err());
 
     let mut active_retired = base.clone();
     active_entry_mut(&mut active_retired)["retire_at"] = json!(
         (chrono::Utc::now() + chrono::Duration::hours(1))
             .to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
     );
-    assert!(load_payload(&settings(Vec::new()), &active_retired).is_err());
+    assert!(load_payload(None, &active_retired).is_err());
 }
 
 #[test]
-fn load_payload_handles_external_keys_with_and_without_a_signer_command() {
+fn load_payload_handles_external_keys_with_and_without_a_signer_capability() {
     let base = valid_payload();
     let mut non_active = base.clone();
     non_active["keys"]
         .as_array_mut()
         .unwrap()
         .push(external_entry_from_active(&base, "external"));
-    let loaded = load_payload(&settings(Vec::new()), &non_active).unwrap();
+    let loaded = load_payload(None, &non_active).unwrap();
     assert!(loaded.verification_keys.iter().any(|entry| {
         entry.managed.kid == "external"
             && matches!(entry.managed.handle, KeyHandle::External { .. })
@@ -313,19 +296,21 @@ fn load_payload_handles_external_keys_with_and_without_a_signer_command() {
         .as_object_mut()
         .unwrap()
         .remove("key_ref");
-    assert!(load_payload(&settings(Vec::new()), &missing_ref).is_err());
+    assert!(load_payload(None, &missing_ref).is_err());
 
     let mut active_external = base.clone();
     let active = active_entry_mut(&mut active_external);
     active["backend"] = json!("external-command");
     active["key_ref"] = json!("kms://test/active");
     active.as_object_mut().unwrap().remove("private_pkcs8_der");
-    assert!(load_payload(&settings(Vec::new()), &active_external).is_err());
-    let loaded = load_payload(&settings(vec!["test-signer".to_owned()]), &active_external)
-        .expect("an active external key needs only an explicit command");
+    assert!(load_payload(None, &active_external).is_err());
+    let signer: Arc<dyn ExternalKeySigner> =
+        Arc::new(crate::test_support::FailingExternalKeySigner);
+    let loaded = load_payload(Some(&signer), &active_external)
+        .expect("an active external key needs an explicit signer capability");
     assert!(matches!(
         loaded.active_signing_key,
-        ActiveSigningKey::ExternalCommand(_)
+        ActiveSigningKey::External(_)
     ));
 }
 
@@ -381,9 +366,20 @@ async fn active_database_external_key_signs_only_with_a_matching_public_signatur
         .next()
         .expect("compact JWT must contain a signature");
     let bad_payload = payload.clone();
-    let manager =
-        database_manager_from_payload(payload, external_signature_command(signature)).await;
+    let manager = database_manager_from_payload(payload, external_signature(signature)).await;
 
+    manager
+        .refresh()
+        .await
+        .expect("refresh retains external signing capability");
+    manager
+        .database_validate()
+        .await
+        .expect("validation retains external signing capability");
+    manager
+        .database_list_keys()
+        .await
+        .expect("listing retains external signing capability");
     let token = manager
         .encode_jwt(SigningPurpose::IdToken, &header, &claims)
         .await
@@ -407,7 +403,7 @@ async fn active_database_external_key_signs_only_with_a_matching_public_signatur
 
     let bad_manager = database_manager_from_payload(
         bad_payload,
-        external_signature_command(&URL_SAFE_NO_PAD.encode(b"wrong-signature")),
+        external_signature(&URL_SAFE_NO_PAD.encode(b"wrong-signature")),
     )
     .await;
     let error = bad_manager
@@ -427,7 +423,7 @@ async fn active_database_external_key_signs_only_with_a_matching_public_signatur
 #[test]
 fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
     let mut candidate = valid_payload();
-    let due = settings(Vec::new());
+    let due = settings();
     let mut due = KeySettings {
         rotation_interval: chrono::Duration::seconds(-1),
         prepublish_window: chrono::Duration::days(1),
@@ -451,7 +447,7 @@ fn maintain_payload_prepublishes_rotates_and_repairs_protocol_keys() {
         .as_array_mut()
         .unwrap()
         .retain(|entry| entry["alg"] != "PS256");
-    let stable = settings(Vec::new());
+    let stable = settings();
     assert!(maintain_payload(&mut missing_protocol, &stable).unwrap());
     assert!(
         missing_protocol["keys"]
@@ -496,7 +492,7 @@ fn database_rotation_selects_the_oldest_local_candidate_and_ignores_external_can
     let rotation_settings = KeySettings {
         rotation_interval: chrono::Duration::seconds(10),
         prepublish_window: chrono::Duration::seconds(3),
-        ..settings(Vec::new())
+        ..settings()
     };
     assert!(maintain_payload(&mut payload, &rotation_settings).unwrap());
     assert_eq!(payload["active_kid"], oldest_local_kid);
@@ -600,7 +596,7 @@ fn registration_validation_rejects_ambiguous_or_unsafe_inputs() {
 #[test]
 fn local_private_key_export_requires_a_local_database_key() {
     let payload = valid_payload();
-    let loaded = load_payload(&settings(Vec::new()), &payload).unwrap();
+    let loaded = load_payload(None, &payload).unwrap();
     let kid = loaded.active_kid.clone();
     assert!(
         local_private_key_pem(&loaded, &kid)
@@ -612,7 +608,7 @@ fn local_private_key_export_requires_a_local_database_key() {
     let mut with_external = payload;
     let external = external_entry_from_active(&with_external, "external");
     with_external["keys"].as_array_mut().unwrap().push(external);
-    let loaded = load_payload(&settings(Vec::new()), &with_external).unwrap();
+    let loaded = load_payload(None, &with_external).unwrap();
     assert!(local_private_key_pem(&loaded, "external").is_err());
 }
 
@@ -737,7 +733,8 @@ async fn openid4vc_public_projection_redacts_iaca_and_reload_rebases_observation
     );
 
     let reloaded = KeyManager::load_or_create_database(
-        settings(Vec::new()),
+        settings(),
+        None,
         tenant_id,
         repository.clone(),
         wrapping_keys,

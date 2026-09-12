@@ -1,4 +1,4 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::sync::Arc;
 
 use actix_web::{
     HttpRequest, HttpResponse,
@@ -7,8 +7,8 @@ use actix_web::{
 };
 use chrono::Utc;
 use nazo_identity::{
-    TenantContext, UserId,
-    ports::{PasswordHashInput, RepositoryError},
+    UserId,
+    ports::RepositoryError,
     scim::{
         ScimCursorContext, ScimCursorError, ScimCursorSubject, ScimListRequest, ScimPagination,
         ScimPatchRequest, ScimRequiredScope, ScimService, ScimUserRequest,
@@ -20,62 +20,17 @@ use nazo_identity::{
         scim_user_document, select_scim_pagination, validate_patch_schema,
     },
 };
-use nazo_scim_events::{
-    EventPollerPort, EventReceiver, MutationContext, PollRequest, ValidatedPollRequest,
-};
+use nazo_scim_events::{EventPollerPort, MutationContext, PollRequest, ValidatedPollRequest};
 use serde_json::json;
 
-use crate::{empty_response, json_response, json_response_status};
+use nazo_oauth_server::contracts::scim::{
+    ScimAuthenticationFacts, ScimAuthorizationError, ScimAuthorizedRequest,
+    ScimBootstrapPasswordProvider, ScimCursorProtector, ScimDependencyError, ScimRequestAuthorizer,
+};
 
-pub type ScimFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
-
-#[derive(Clone, Debug)]
-pub struct ScimAuthorizedRequest {
-    pub tenant: TenantContext,
-    pub cursor_subject: ScimCursorSubject,
-    pub event_receiver: Option<EventReceiver>,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ScimAuthorizationError {
-    Disabled,
-    MissingBearer,
-    InvalidBearer,
-    InsufficientScope,
-    TenantMismatch,
-    EventReceiverNotConfigured,
-    BackendUnavailable,
-}
-
-pub trait ScimRequestAuthorizer: Send + Sync {
-    fn authorize<'a>(
-        &'a self,
-        request: &'a HttpRequest,
-        required_scope: ScimRequiredScope,
-    ) -> ScimFuture<'a, Result<ScimAuthorizedRequest, ScimAuthorizationError>>;
-
-    fn security_events_enabled(&self) -> bool {
-        false
-    }
-
-    fn security_event_delivery_enabled(&self) -> bool {
-        self.security_events_enabled()
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum ScimDependencyError {
-    Unavailable,
-}
-
-pub trait ScimCursorProtector: Send + Sync {
-    fn protect(&self, plaintext: &[u8]) -> Result<Vec<u8>, ScimDependencyError>;
-    fn unprotect(&self, protected: &[u8]) -> Result<Vec<u8>, ScimDependencyError>;
-}
-
-pub trait ScimBootstrapPasswordProvider: Send + Sync {
-    fn password_hash(&self) -> ScimFuture<'_, Result<PasswordHashInput, ScimDependencyError>>;
-}
+use crate::{
+    ClientIpConfig, client_ip_with_config, empty_response, json_response, json_response_status,
+};
 
 #[derive(Clone)]
 pub struct ScimEndpoint {
@@ -83,6 +38,7 @@ pub struct ScimEndpoint {
     authorizer: Arc<dyn ScimRequestAuthorizer>,
     cursors: Arc<dyn ScimCursorProtector>,
     passwords: Arc<dyn ScimBootstrapPasswordProvider>,
+    client_ip: ClientIpConfig,
     events: Option<Arc<dyn EventPollerPort>>,
 }
 
@@ -92,12 +48,14 @@ impl ScimEndpoint {
         authorizer: Arc<dyn ScimRequestAuthorizer>,
         cursors: Arc<dyn ScimCursorProtector>,
         passwords: Arc<dyn ScimBootstrapPasswordProvider>,
+        client_ip: ClientIpConfig,
     ) -> Self {
         Self {
             service,
             authorizer,
             cursors,
             passwords,
+            client_ip,
             events: None,
         }
     }
@@ -458,7 +416,35 @@ async fn authorize(
     request: &HttpRequest,
     required_scope: ScimRequiredScope,
 ) -> Result<ScimAuthorizedRequest, ScimAuthorizationError> {
-    endpoint.authorizer.authorize(request, required_scope).await
+    endpoint
+        .authorizer
+        .authorize(
+            ScimAuthenticationFacts {
+                bearer_token: bearer_token(request),
+                source_ip: client_ip_with_config(request, &endpoint.client_ip),
+                user_agent: request
+                    .headers()
+                    .get(header::USER_AGENT)
+                    .and_then(|value| value.to_str().ok()),
+            },
+            required_scope,
+        )
+        .await
+}
+
+fn bearer_token(request: &HttpRequest) -> Option<&str> {
+    let raw = request
+        .headers()
+        .get(header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .trim();
+    let (scheme, token) = raw.split_once(char::is_whitespace)?;
+    let token = token.trim();
+    (scheme.eq_ignore_ascii_case("Bearer")
+        && !token.is_empty()
+        && !token.contains(char::is_whitespace))
+    .then_some(token)
 }
 
 fn authorization_error(error: ScimAuthorizationError) -> HttpResponse {

@@ -1,4 +1,4 @@
-use nazo_http_actix::{
+use crate::contracts::passkey::{
     PasskeyEndpointError, PasskeyFuture, PasskeyLoginFinishCommand, PasskeyLoginOperations,
     PasskeyProfileContext, PasskeyProfileOperations, PasskeyRegistrationFinishCommand,
 };
@@ -8,16 +8,16 @@ use nazo_identity::{
 };
 use uuid::Uuid;
 
-use crate::bootstrap::LocalPasskeyService;
+use crate::services::LocalPasskeyService;
 
 #[derive(Clone)]
-pub(crate) struct PasskeyOperationsProvider {
+pub struct PasskeyOperationsProvider {
     passkeys: LocalPasskeyService,
     sessions: SessionService,
 }
 
 impl PasskeyOperationsProvider {
-    pub(crate) fn new(passkeys: LocalPasskeyService, sessions: SessionService) -> Self {
+    pub fn new(passkeys: LocalPasskeyService, sessions: SessionService) -> Self {
         Self { passkeys, sessions }
     }
 
@@ -141,15 +141,3 @@ impl PasskeyProfileOperations for PasskeyOperationsProvider {
         })
     }
 }
-
-#[cfg(test)]
-#[path = "../../tests/support/domain/passkey.rs"]
-pub(crate) mod test_support;
-
-#[cfg(test)]
-#[path = "../../tests/unit/domain/passkey/login.rs"]
-mod login_tests;
-
-#[cfg(test)]
-#[path = "../../tests/unit/domain/passkey/profile.rs"]
-mod profile_tests;

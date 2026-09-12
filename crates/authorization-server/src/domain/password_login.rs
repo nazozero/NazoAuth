@@ -1,4 +1,4 @@
-use nazo_http_actix::{PasswordLoginFuture, PasswordLoginOperations};
+use crate::contracts::password_login::{PasswordLoginFuture, PasswordLoginOperations};
 use nazo_identity::{
     AuthenticatePasswordError, AuthenticatePasswordInput, AuthenticationService,
     authentication::PasswordLoginResult,
@@ -6,12 +6,12 @@ use nazo_identity::{
 };
 
 #[derive(Clone)]
-pub(crate) struct ServerPasswordLoginOperations<T, V, S, U> {
+pub struct ServerPasswordLoginOperations<T, V, S, U> {
     service: AuthenticationService<T, V, S, U>,
 }
 
 impl<T, V, S, U> ServerPasswordLoginOperations<T, V, S, U> {
-    pub(crate) fn new(service: AuthenticationService<T, V, S, U>) -> Self {
+    pub fn new(service: AuthenticationService<T, V, S, U>) -> Self {
         Self { service }
     }
 }

@@ -1,45 +1,39 @@
+use crate::{
+    empty_response_no_store, json_response_no_store, json_response_status_no_store,
+    oauth_endpoint_error_response,
+};
 use actix_web::{HttpResponse, http::StatusCode};
 use chrono::Utc;
-use nazo_auth::{DynamicRegistrationError, OAuthClient};
+use nazo_auth::OAuthClient;
+use nazo_oauth_server::{
+    contracts::oauth_error::OAuthEndpointError,
+    domain::dynamic_registration::DynamicRegistrationResult,
+};
 use serde_json::{Value, json};
 
-use crate::{json_response_status_no_store, oauth_bearer_error, oauth_error};
-
-pub(super) fn initial_access_denied() -> HttpResponse {
-    oauth_bearer_error(
-        StatusCode::UNAUTHORIZED,
-        "invalid_token",
-        "Initial access token is missing or invalid.",
-    )
-}
-
-pub(super) fn registration_access_denied() -> HttpResponse {
-    oauth_bearer_error(
-        StatusCode::UNAUTHORIZED,
-        "invalid_token",
-        "Registration access token is missing or invalid.",
-    )
-}
-
-pub(super) fn lookup_failed() -> HttpResponse {
-    oauth_error(
-        StatusCode::SERVICE_UNAVAILABLE,
-        "server_error",
-        "Client configuration lookup failed.",
-    )
-}
-
-pub(super) fn map_insert_error(message: String) -> DynamicRegistrationError {
-    let error = if message.contains("redirect_uri") {
-        "invalid_redirect_uri"
-    } else {
-        "invalid_client_metadata"
-    };
-    DynamicRegistrationError::new(error, message)
-}
-
-pub(super) fn dynamic_registration_error_response(error: DynamicRegistrationError) -> HttpResponse {
-    oauth_error(StatusCode::BAD_REQUEST, error.error, &error.description)
+pub(super) fn dynamic_registration_result_response(
+    result: Result<DynamicRegistrationResult, OAuthEndpointError>,
+) -> HttpResponse {
+    match result {
+        Ok(DynamicRegistrationResult::Created(result)) => dynamic_registration_created_response(
+            &result.client,
+            &result.response_types,
+            result.issued_secret,
+            &result.issuer,
+            &result.registration_access_token,
+        ),
+        Ok(
+            DynamicRegistrationResult::Read(result) | DynamicRegistrationResult::Updated(result),
+        ) => json_response_no_store(dynamic_registration_response(
+            &result.client,
+            &result.response_types,
+            result.issued_secret,
+            &result.issuer,
+            &result.registration_access_token,
+        )),
+        Ok(DynamicRegistrationResult::Deleted) => empty_response_no_store(StatusCode::NO_CONTENT),
+        Err(error) => oauth_endpoint_error_response(error),
+    }
 }
 
 pub(super) fn dynamic_registration_created_response(

@@ -1792,10 +1792,10 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
     }
 
     let mut violations = Vec::new();
-    visit(
-        &std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../authorization-server/src"),
-        &mut violations,
-    );
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    for package in ["authorization-server", "nazoauth"] {
+        visit(&crates.join(package).join("src"), &mut violations);
+    }
     assert!(
         violations.is_empty(),
         "server identity persistence leaked outside nazo-postgres:\n{}",
@@ -1806,13 +1806,11 @@ fn server_has_no_identity_rows_or_identity_diesel_queries() {
 #[test]
 fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let admin_path = manifest.join("../authorization-server/src/http/admin/access_requests.rs");
-    let profile_path = manifest.join("../authorization-server/src/http/profile/access_requests.rs");
-    let delivery_path = manifest.join("../authorization-server/src/http/profile/delivery.rs");
+    let admin_path = manifest.join("../nazoauth/src/http/admin/access_requests.rs");
+    let profile_path = manifest.join("../nazoauth/src/http/profile/access_requests.rs");
+    let delivery_path = manifest.join("../nazoauth/src/http/profile/delivery.rs");
     let identity_profile_path = manifest.join("../identity/src/profile.rs");
-    let support_path = manifest.join("../authorization-server/src/support/access_requests.rs");
-    let forwarding_repositories_path =
-        manifest.join("../authorization-server/src/support/repositories.rs");
+
     let admin = std::fs::read_to_string(admin_path).expect("admin access handler is readable");
     let profile =
         std::fs::read_to_string(profile_path).expect("profile access handler is readable");
@@ -1824,14 +1822,17 @@ fn access_request_boundary_has_no_server_diesel_or_forwarding_support_layer() {
         assert!(!source.contains("diesel::"));
         assert!(!source.contains("client_access_requests::"));
     }
-    assert!(
-        !support_path.exists(),
-        "forwarding access-request support layer must stay deleted"
-    );
-    assert!(
-        !forwarding_repositories_path.exists(),
-        "forwarding repository helpers must not hide focused repository use"
-    );
+    for package in ["authorization-server", "nazoauth"] {
+        let source = manifest.join("..").join(package).join("src");
+        assert!(
+            !source.join("support/access_requests.rs").exists(),
+            "forwarding access-request support layer must stay deleted"
+        );
+        assert!(
+            !source.join("support/repositories.rs").exists(),
+            "forwarding repository helpers must not hide focused repository use"
+        );
+    }
     assert!(admin.contains("RepositoryError::AlreadyProcessed"));
     assert!(
         admin
@@ -1904,13 +1905,24 @@ fn oauth_client_queries_cross_the_persistence_port_without_a_server_postgres_dep
     fn visit(
         path: &std::path::Path,
         support_root: &std::path::Path,
+        composition_root: Option<&std::path::Path>,
         violations: &mut Vec<String>,
         direct_repository_calls: &mut usize,
     ) {
         for entry in std::fs::read_dir(path).expect("server source directory is readable") {
             let path = entry.expect("server source entry is readable").path();
+            // Native launchers compose concrete adapters; migrated callers must not.
+            if composition_root.is_some_and(|root| path.starts_with(root)) {
+                continue;
+            }
             if path.is_dir() {
-                visit(&path, support_root, violations, direct_repository_calls);
+                visit(
+                    &path,
+                    support_root,
+                    composition_root,
+                    violations,
+                    direct_repository_calls,
+                );
                 continue;
             }
             if !path.extension().is_some_and(|extension| extension == "rs") {
@@ -1943,16 +1955,20 @@ fn oauth_client_queries_cross_the_persistence_port_without_a_server_postgres_dep
     }
 
     let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    let server_root = manifest.join("../authorization-server/src");
-    let support_root = server_root.join("support");
     let mut violations = Vec::new();
     let mut direct_repository_calls = 0;
-    visit(
-        &server_root,
-        &support_root,
-        &mut violations,
-        &mut direct_repository_calls,
-    );
+    for package in ["authorization-server", "nazoauth"] {
+        let server_root = manifest.join("..").join(package).join("src");
+        let support_root = server_root.join("support");
+        let composition_root = (package == "nazoauth").then(|| server_root.join("launchers"));
+        visit(
+            &server_root,
+            &support_root,
+            composition_root.as_deref(),
+            &mut violations,
+            &mut direct_repository_calls,
+        );
+    }
     assert!(
         violations.is_empty(),
         "OAuth client query facades are forbidden:\n{}",
@@ -2334,12 +2350,16 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
         !auth_root.contains("verify_client_secret_hash"),
         "auth must not expose a public stored-hash verifier"
     );
-    assert!(
-        !manifest
-            .join("../authorization-server/src/schema.rs")
-            .exists(),
-        "server production source must not contain a test-only Diesel schema"
-    );
+    for package in ["authorization-server", "nazoauth"] {
+        assert!(
+            !manifest
+                .join("..")
+                .join(package)
+                .join("src/schema.rs")
+                .exists(),
+            "server production source must not contain a test-only Diesel schema"
+        );
+    }
 
     fn visit(path: &std::path::Path, violations: &mut Vec<String>) {
         for entry in std::fs::read_dir(path).expect("server source directory is readable") {
@@ -2397,10 +2417,12 @@ fn oauth_client_repository_keeps_records_private_and_returns_domain_clients() {
     }
 
     let mut violations = Vec::new();
-    visit(
-        &manifest.join("../authorization-server/src"),
-        &mut violations,
-    );
+    for package in ["authorization-server", "nazoauth"] {
+        visit(
+            &manifest.join("..").join(package).join("src"),
+            &mut violations,
+        );
+    }
     assert!(
         violations.is_empty(),
         "server production code must not own OAuth-client persistence:\n{}",
@@ -2414,12 +2436,11 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
     let users = std::fs::read_to_string(manifest.join("src/repositories/users.rs"))
         .expect("user repository source is readable");
     let issue =
-        std::fs::read_to_string(manifest.join("../authorization-server/src/http/token/issue.rs"))
+        std::fs::read_to_string(manifest.join("../authorization-server/src/token/issue.rs"))
             .expect("token issue source is readable");
-    let issue_grant = std::fs::read_to_string(
-        manifest.join("../authorization-server/src/http/token/issue_grant.rs"),
-    )
-    .expect("token grant issue source is readable");
+    let issue_grant =
+        std::fs::read_to_string(manifest.join("../authorization-server/src/token/issue_grant.rs"))
+            .expect("token grant issue source is readable");
     let issue = format!("{issue}\n{issue_grant}");
     let userinfo =
         std::fs::read_to_string(manifest.join("../authorization-server/src/domain/userinfo.rs"))

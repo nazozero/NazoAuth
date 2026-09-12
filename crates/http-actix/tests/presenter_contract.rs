@@ -179,3 +179,88 @@ proptest! {
         }
     }
 }
+
+#[actix_web::test]
+async fn issued_token_keeps_cache_pragma_and_nonce() {
+    use nazo_oauth_server::contracts::token_endpoint::TokenEndpointSuccess;
+    let response = nazo_http_actix::token_endpoint_success_response(TokenEndpointSuccess::Issued {
+        body: json!({"access_token": "issued", "token_type": "DPoP"}),
+        dpop_nonce: Some("next-nonce".into()),
+    });
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert_eq!(response.headers().get(header::PRAGMA).unwrap(), "no-cache");
+    assert_eq!(response.headers().get("dpop-nonce").unwrap(), "next-nonce");
+    assert_eq!(
+        actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap(),
+        br#"{"access_token":"issued","token_type":"DPoP"}"#.as_slice()
+    );
+}
+
+#[actix_web::test]
+async fn replayed_token_preserves_stored_bytes_without_adding_pragma_or_nonce() {
+    use nazo_oauth_server::contracts::token_endpoint::TokenEndpointSuccess;
+    let stored = b"{ \"token_type\": \"Bearer\", \"access_token\":\"replayed\" }\n".to_vec();
+    let response =
+        nazo_http_actix::token_endpoint_success_response(TokenEndpointSuccess::Replayed {
+            body: stored.clone(),
+        });
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert!(response.headers().get(header::PRAGMA).is_none());
+    assert!(response.headers().get("dpop-nonce").is_none());
+    assert_eq!(
+        actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap()
+            .as_ref(),
+        stored.as_slice()
+    );
+}
+
+#[actix_web::test]
+async fn preauthorized_token_keeps_its_own_json_and_cache_policy() {
+    use nazo_oauth_server::contracts::token_endpoint::TokenEndpointSuccess;
+    let response =
+        nazo_http_actix::token_endpoint_success_response(TokenEndpointSuccess::PreAuthorized(
+            nazo_openid4vci::application::PreAuthorizedTokenResponse {
+                access_token: "preauthorized".into(),
+                token_type: "Bearer".into(),
+                expires_in: 600,
+                authorization_details: Vec::new(),
+            },
+        ));
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response.headers().get(header::CONTENT_TYPE).unwrap(),
+        "application/json"
+    );
+    assert_eq!(
+        response.headers().get(header::CACHE_CONTROL).unwrap(),
+        "no-store"
+    );
+    assert!(response.headers().get(header::PRAGMA).is_none());
+    assert!(response.headers().get("dpop-nonce").is_none());
+    assert_eq!(
+        actix_web::body::to_bytes(response.into_body())
+            .await
+            .unwrap(),
+        br#"{"access_token":"preauthorized","token_type":"Bearer","expires_in":600}"#.as_slice()
+    );
+}
