@@ -135,9 +135,13 @@ effect for subsequent release commits containing it.
 
 ## Runtime image security updates
 
-The conformance image build bypasses BuildKit cache for `runtime-base`; release
+The conformance image build bypasses BuildKit cache for `runtime-base` and every downstream runtime stage; release
 OCI assembly bypasses cache for its `runtime` stage. This reruns the existing
 `apt-get update` and `apt-get upgrade` on every CI build, while keeping Rust
 compilation caches. Docker does not invalidate a cached `RUN` layer when Debian
 publishes package updates. Both paths still scan the resulting image and reject
 fixable HIGH/CRITICAL vulnerabilities before reuse or publication.
+
+Runtime descendants are rebuilt as well so an imported cached final stage cannot
+retain the former package layer. CI logs the installed versions of the affected
+packages from the final image before scanning its exported archive.
