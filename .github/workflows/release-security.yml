@@ -22,7 +22,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Require successful governed CI for exact tag commit
+          fetch-depth: 0
+      - name: Require successful governed CI for release inputs
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -33,36 +34,7 @@ jobs:
           git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic_auth" fetch \
             --no-tags origin \
             refs/heads/main:refs/remotes/origin/main
-          if ! git merge-base --is-ancestor "$RELEASE_SHA" refs/remotes/origin/main; then
-            echo "release tag commit $RELEASE_SHA is not reachable from main" >&2
-            exit 1
-          fi
-          gate_event=push
-          gate_branch=main
-          for workflow in code-quality.yml release-policy.yml; do
-            runs="$(gh api \
-              --method GET \
-              -H 'Accept: application/vnd.github+json' \
-              "/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/runs" \
-              -f event="$gate_event" \
-              -f branch="$gate_branch" \
-              -f head_sha="$RELEASE_SHA" \
-              -F per_page=100)"
-            if ! jq -e \
-              --arg sha "$RELEASE_SHA" \
-              --arg event "$gate_event" \
-              --arg branch "$gate_branch" '
-              any(.workflow_runs[]?;
-                .head_sha == $sha and
-                .head_branch == $branch and
-                .event == $event and
-                .status == "completed" and
-                .conclusion == "success")
-            ' <<<"$runs" >/dev/null; then
-              echo "required workflow $workflow has no successful $gate_event run on $gate_branch for $RELEASE_SHA" >&2
-              exit 1
-            fi
-          done
+          python3 scripts/check_release_ci.py
       - uses: dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1 # 1.98.0
       - name: Validate immutable release input
         shell: bash
@@ -97,7 +69,8 @@ jobs:
             fi
           fi
       - name: Validate Release workflow and predicate contracts
-        run: python3 -m unittest tests.unit.test_release_attestation tests.unit.test_release_governance tests.unit.test_release_oci
+        run: python3 -m unittest tests.unit.test_release_attestation tests.unit.test_release_governance
+          tests.unit.test_release_ci tests.unit.test_release_oci
       - name: Install pinned Rust supply-chain tools
         uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
         with:

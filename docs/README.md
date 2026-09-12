@@ -153,7 +153,7 @@ set can be scanned from one place.
 | --- | --- |
 | [project/roadmap.md](project/roadmap.md) | Current scope, roadmap, and deferred capability record. |
 | [project/architecture.md](project/architecture.md) | Workspace boundaries, dependency direction, composition, and runtime-module lifecycle contract. |
-| [project/testing.md](project/testing.md) | Test ownership, commands, and evidence boundaries. |
+| [project/testing.md](project/testing.md) | Test ownership, commands, evidence boundaries, and release CI prerequisites. |
 
 ### Examples
 

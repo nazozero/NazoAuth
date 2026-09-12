@@ -315,44 +315,14 @@ class ReleaseGovernanceTests(unittest.TestCase):
             policy.index("- name: Validate immutable release input"),
         )
 
-    def test_tag_release_requires_successful_governed_ci_for_the_exact_commit(self) -> None:
-        release = (
-            ROOT / ".github" / "workflows" / "release-security.yml"
-        ).read_text(encoding="utf-8")
-        for required in (
-            "actions: read",
-            "printf 'x-access-token:%s' \"$GH_TOKEN\" | base64 -w 0",
-            "http.https://github.com/.extraheader=AUTHORIZATION: basic $basic_auth",
-            "refs/heads/main:refs/remotes/origin/main",
-            'if ! git merge-base --is-ancestor "$RELEASE_SHA" refs/remotes/origin/main',
-            "gate_event=push",
-            "gate_branch=main",
-            "is not reachable from main",
-            "/actions/workflows/${workflow}/runs",
-            '-f event="$gate_event"',
-            '-f branch="$gate_branch"',
-            '-f head_sha="$RELEASE_SHA"',
-            "for workflow in code-quality.yml release-policy.yml; do",
-            '.head_sha == $sha',
-            '.head_branch == $branch',
-            '.event == $event',
-            '.status == "completed"',
-            '.conclusion == "success"',
-        ):
-            self.assertIn(required, release)
-
-        gate = release.split(
-            "- name: Require successful governed CI for exact tag commit", 1
-        )[1].split("- uses: dtolnay/rust-toolchain@", 1)[0]
-        self.assertNotIn("github.ref_type == 'tag'", gate)
-        self.assertNotIn("NAZOAUTH_RELEASE_BRANCH", gate)
-        self.assertNotIn("release_ref", gate)
-
-        policy = (
-            ROOT / ".github" / "workflows" / "release-policy.yml"
-        ).read_text(encoding="utf-8")
-        self.assertIn("push:\n    branches: [main]", policy)
-        self.assertIn('      - "crates/operator-protocol/src/lib.rs"', policy)
+    def test_tag_release_checks_governed_ci_with_full_history(self) -> None:
+        release = (ROOT / ".github/workflows/release-security.yml").read_text()
+        policy = release.split("  policy:", 1)[1].split("  platform-binaries:", 1)[0]
+        self.assertIn("actions: read", release)
+        self.assertIn("fetch-depth: 0", policy)
+        self.assertIn("refs/heads/main:refs/remotes/origin/main", policy)
+        self.assertIn("python3 scripts/check_release_ci.py", policy)
+        self.assertIn("persist-credentials: false", policy)
 
     def test_pull_request_coverage_never_sends_the_codecov_token(self) -> None:
         coverage = (

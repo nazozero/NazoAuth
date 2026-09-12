@@ -113,3 +113,22 @@ Every change must update its corresponding documentation, examples, and index
 entries. If behavior is unchanged, update the relevant explanation or source
 reference without inventing a behavior change. Keep historical reports tied to
 their recorded revisions instead of rewriting them as current test results.
+
+## Release CI prerequisites
+
+Release commits must be reachable from `main`. Both `code-quality.yml` and
+`release-policy.yml` require a completed successful run on `main`, triggered by
+`push` or `workflow_dispatch`. The gate searches the latest 100 runs per workflow.
+
+A run may cover the exact release commit or an ancestor when the intervening
+net changes affect only `docs/`, root Markdown files, or the retired
+`NazoAuth-Web-Runtime-Refactor-Task-Package/`. Code, dependencies, build inputs,
+scripts, and workflow changes require fresh checks. PR runs, failed checks,
+unrelated commits, and later commits do not qualify. Accepted run IDs and
+commits are printed in the policy job log.
+
+Documentation-only pushes retain the existing quality-workflow path filter.
+If suitable evidence is missing, run the required workflow manually on `main`
+and wait for success before retrying a release from that commit. Rerunning an
+old tag still uses the workflow stored at that tag; this policy change takes
+effect for subsequent release commits containing it.

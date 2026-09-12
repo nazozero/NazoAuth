@@ -8,6 +8,8 @@ on:
       - ".github/workflows/release-policy.yml"
       - ".github/workflows/release-security.yml"
       - "crates/operator-protocol/src/lib.rs"
+      - "scripts/check_release_ci.py"
+      - "tests/unit/test_release_ci.py"
       - "scripts/build_release_attestation.py"
       - "scripts/validate_release_oci.py"
       - "tests/unit/test_release_attestation.py"
@@ -32,4 +34,5 @@ jobs:
           python3 -m unittest
           tests.unit.test_release_attestation
           tests.unit.test_release_governance
+          tests.unit.test_release_ci
           tests.unit.test_release_oci
