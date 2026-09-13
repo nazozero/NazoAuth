@@ -5,6 +5,7 @@ fn baseline_policy_is_explicitly_default_deny() {
     let policy = ClientSecurityPolicy::default();
 
     assert_eq!(policy.assurance, ClientAssuranceLevel::Baseline);
+    assert!(!policy.require_pushed_authorization_requests);
     assert!(!policy.require_signed_authorization_request);
     assert!(!policy.require_signed_authorization_response);
     assert!(!policy.require_signed_introspection_response);
@@ -45,4 +46,21 @@ fn unknown_policy_version_fails_closed() {
         policy.validate(),
         Err("unsupported client security policy version")
     );
+}
+
+#[test]
+fn pushed_requests_are_independent_of_fapi_client_authentication() {
+    let policy: ClientSecurityPolicy = serde_json::from_value(serde_json::json!({
+        "version": 1,
+        "require_pushed_authorization_requests": true
+    }))
+    .expect("PAR can be required for an attested wallet client");
+    assert!(policy.require_pushed_authorization_requests);
+    assert!(!policy.requires_fapi2_security());
+    assert!(!policy.require_signed_authorization_request);
+    assert_eq!(policy.validate(), Ok(()));
+
+    let previous: ClientSecurityPolicy = serde_json::from_value(serde_json::json!({"version": 1}))
+        .expect("existing policy remains readable");
+    assert!(!previous.require_pushed_authorization_requests);
 }

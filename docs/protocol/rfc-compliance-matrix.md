@@ -164,7 +164,7 @@ conditions:
 | RFC 8707 | Required for audience/resource correctness. | Implemented | Maintain authorization/PAR/token/refresh narrowing behavior. |
 | RFC 9068 | Current JWT access-token profile for resource-server verification, not a universal requirement. | Implemented/profile-scoped | Keep claims minimal and verifier strict; keep opaque-token/introspection alternative architecturally possible. |
 | RFC 9101 | Required for FAPI message-signing authorization request profile. | Profile-scoped | Keep direct signed request objects; defer external `request_uri` until SSRF/cache/lifecycle controls exist. |
-| RFC 9126 | Required for FAPI and recommended for high-value clients. | Implemented | Keep one-time request URI and secret redaction. |
+| RFC 9126 | Required for FAPI and HAIP issuance through the authorization endpoint; independently selectable by client policy. | Implemented | Keep one-time request URI and secret redaction. See [client policy](composable-capability-policy.md) for attested HAIP wallets. |
 | RFC 9207 | Required mix-up mitigation. | Implemented | Keep `iss` support and tests. |
 | RFC 9396 | Recommended for typed high-value permissions, unsafe as unbounded JSON pass-through. | Profile-scoped | Keep allowlisted types and feature-gated metadata. |
 | RFC 9449 | Required sender-constraint option for browser/native-friendly high-value clients. | Implemented | Keep nonce/replay validation strict. |

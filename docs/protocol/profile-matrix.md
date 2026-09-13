@@ -128,7 +128,7 @@ Required negative tests:
 | Client auth | Static clients, public or confidential according to registration |
 | Token binding | Bearer, DPoP, or mTLS depending on client policy |
 | DPoP nonce | Authorization-server and token endpoints use `DPOP_NONCE_POLICY=required` by default. The FAPI protected resource endpoint uses `FAPI_RESOURCE_DPOP_NONCE_POLICY=optional` by default because RFC 9449 makes resource nonces optional and the official FAPI2 DPoP resource tests exercise replay through `jti`, not a mandatory initial resource nonce challenge. |
-| PAR | Optional unless client/profile requires it |
+| PAR | Optional unless `security_policy.require_pushed_authorization_requests=true`, FAPI2 assurance, or the server policy requires it |
 | JAR | Optional; signed request objects validated when supplied |
 | ID Token | RS256 support must be real; active signing alg is advertised |
 | UserInfo | Requires valid access token with `openid` scope |
