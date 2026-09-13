@@ -33,10 +33,11 @@ edition = "2021"
 
 [features]
 default = []
-jose = ["dep:jsonwebtoken", "dep:aws-lc-rs", "dep:p256", "dep:ed25519-dalek",
+jose = ["dep:jsonwebtoken", "jsonwebtoken/aws_lc_rs", "dep:aws-lc-rs",
+        "dep:p256", "p256/pkcs8", "dep:ed25519-dalek",
         "dep:pkcs8", "dep:der", "dep:x509-cert", "dep:base64", "dep:rand",
         "dep:serde", "dep:serde_json"]
-ecdh = ["dep:p256", "dep:zeroize"]
+ecdh = ["dep:p256", "p256/ecdh", "dep:zeroize"]
 aead = ["dep:aes-gcm"]
 password = ["dep:argon2"]
 ed25519 = ["dep:ed25519-dalek"]
@@ -82,12 +83,8 @@ pub struct VerificationKey {
     pub(crate) inner: jsonwebtoken::DecodingKey,
 }
 
-pub fn encode<T: serde::Serialize>(
-    header: &Header,
-    claims: &T,
-    key: &[u8],
-) -> crate::Result<String> {
-    let _ = (header, claims, key);
+pub fn decode_header(token: &str) -> crate::Result<String> {
+    let _ = token;
     Ok(String::new())
 }
 """
@@ -497,6 +494,119 @@ class CryptoBoundaryTest(unittest.TestCase):
             "}\n",
         )
         self.assertViolation("crypto public surface: backend path p256::SecretKey")
+
+    def test_crypto_aliased_type_export_fails(self):
+        _append(
+            self.crypto_jwt,
+            "use p256::SecretKey;\n"
+            "pub type ExposedKey = SecretKey;\n",
+        )
+        self.assertViolation("crypto public surface")
+
+    def test_crypto_module_alias_reexport_fails(self):
+        _append(
+            self.crypto_jwt,
+            "use p256 as backend;\n"
+            "pub use backend::SecretKey;\n",
+        )
+        self.assertViolation("crypto public surface")
+
+    def test_crypto_tuple_field_backend_fails(self):
+        _append(
+            self.crypto_jwt,
+            "pub struct Exposed(pub p256::SecretKey);\n",
+        )
+        self.assertViolation("crypto public surface")
+
+    def test_crypto_public_field_on_opaque_type_fails(self):
+        _append(
+            self.crypto_jwt,
+            "pub struct VerificationKey(pub u8);\n",
+        )
+        self.assertViolation("public tuple field on opaque type VerificationKey")
+        _append(
+            self.crypto_jwt,
+            "pub struct VerificationKey { pub count: u8 }\n",
+        )
+        self.assertViolation("public field count on opaque type VerificationKey")
+
+    def test_crypto_provider_reexport_fails(self):
+        _append(
+            self.crypto_jwt,
+            "pub use rustls::crypto::CryptoProvider;\n",
+        )
+        self.assertViolation("crypto public surface")
+
+    def test_crypto_unlisted_public_fn_fails(self):
+        _append(self.crypto_jwt, "pub fn issue_oauth_token() -> u64 { 1 }\n")
+        self.assertViolation("crypto public surface")
+
+    def test_crypto_unlisted_public_type_fails(self):
+        _append(self.crypto_jwt, "pub struct KeyMaterial { raw: [u8; 32] }\n")
+        self.assertViolation("crypto public surface")
+
+    def test_crypto_unlisted_method_fails(self):
+        _append(
+            self.crypto_jwt,
+            "impl VerificationKey {\n"
+            "    pub fn raw_key(&self) -> &[u8] { &[] }\n"
+            "}\n",
+        )
+        self.assertViolation("crypto public surface")
+
+    def test_crypto_unlisted_public_mod_fails(self):
+        _append(self.crypto_jwt, "pub mod extra {}\n")
+        self.assertViolation("crypto public surface")
+
+    def test_crypto_aliased_signature_backend_fails(self):
+        _append(
+            self.crypto_jwt,
+            "use p256::SecretKey;\n"
+            "pub fn leak() -> SecretKey { todo!() }\n",
+        )
+        self.assertViolation("crypto public surface")
+
+    def test_aliased_ufcs_verify_signature_fails(self):
+        _append(self.app_manifest, 'x509-parser = "0.18"\n')
+        _append(
+            self.app_lib,
+            "use x509_parser::certificate::X509Certificate as Cert;\n"
+            "pub fn check(c: &u8) { let _ = Cert::verify_signature(c); }\n",
+        )
+        self.assertViolation("native verify_signature call")
+
+    def test_nested_alias_ufcs_verify_signature_fails(self):
+        _append(self.app_manifest, 'x509-parser = "0.18"\n')
+        _append(
+            self.app_lib,
+            "use x509_parser::certificate;\n"
+            "pub fn check(c: &u8) {\n"
+            "    let _ = certificate::X509Certificate::verify_signature(c);\n"
+            "}\n",
+        )
+        self.assertViolation("native verify_signature call")
+
+    def test_crypto_feature_member_forwarding_fails(self):
+        content = self.crypto_manifest.read_text(encoding="utf-8")
+        self.crypto_manifest.write_text(
+            content.replace(
+                'password = ["dep:argon2"]',
+                'password = ["dep:argon2", "dep:aws-lc-rs"]',
+            ),
+            encoding="utf-8",
+        )
+        self.assertViolation("crypto features: password")
+
+    def test_crypto_feature_member_missing_fails(self):
+        content = self.crypto_manifest.read_text(encoding="utf-8")
+        self.crypto_manifest.write_text(
+            content.replace(
+                '"dep:x509-parser", "x509-parser/verify-aws"',
+                '"dep:x509-parser"',
+            ),
+            encoding="utf-8",
+        )
+        self.assertViolation("crypto features: x509")
 
 
 if __name__ == "__main__":

@@ -796,6 +796,17 @@ mod password {
 #[cfg(feature = "x509")]
 mod certificate {
     use nazo_crypto::{CryptoError, certificate as certs};
+    use x509_parser::extensions::ParsedExtension;
+
+    const NOW: i64 = 1_760_000_000;
+    const CA_SECONDS: i64 = 3650 * 86_400;
+    const LEAF_SECONDS: i64 = 457 * 86_400;
+    const CA_SKI: [u8; 20] = [0xAA; 20];
+    const LEAF_SKI: [u8; 20] = [0xBB; 20];
+
+    fn at(seconds: i64) -> x509_parser::time::ASN1Time {
+        x509_parser::time::ASN1Time::from_timestamp(seconds).unwrap()
+    }
 
     fn to_pem(der: &[u8]) -> String {
         const ALPHABET: &[u8; 64] =
@@ -825,42 +836,90 @@ mod certificate {
         format!("-----BEGIN CERTIFICATE-----\n{wrapped}-----END CERTIFICATE-----\n")
     }
 
+    fn country() -> certs::DnValue {
+        certs::DnValue::PrintableString(certs::PrintableString::try_from("DE").unwrap())
+    }
+
+    // Mirrors build_openid4vc_certificate_bundle's mdoc profile in keyctl.rs.
     fn ca_params() -> certs::CertificateParams {
         let mut params = certs::CertificateParams::default();
         params.distinguished_name = certs::DistinguishedName::new();
         params
             .distinguished_name
-            .push(certs::DnType::CommonName, "NazoAuth Test CA");
+            .push(certs::DnType::CommonName, "NazoAuth OpenID4VC Local CA");
+        params
+            .distinguished_name
+            .push(certs::DnType::CountryName, country());
         params.is_ca = certs::IsCa::Ca(certs::BasicConstraints::Constrained(0));
         params.key_usages = vec![
             certs::KeyUsagePurpose::KeyCertSign,
             certs::KeyUsagePurpose::CrlSign,
         ];
-        params.serial_number = Some(certs::SerialNumber::from(vec![0x01, 0x02, 0x03]));
+        params.not_before = at(NOW).to_datetime();
+        params.not_after = at(NOW + CA_SECONDS).to_datetime();
+        params.serial_number = Some(certs::SerialNumber::from(vec![0x42; 19]));
+        params.key_identifier_method = certs::KeyIdMethod::PreSpecified(CA_SKI.to_vec());
         params
     }
 
-    fn leaf_params() -> certs::CertificateParams {
+    fn leaf_params(leaf_ski: &[u8]) -> certs::CertificateParams {
         let mut params = certs::CertificateParams::new(vec!["client.example".to_owned()]).unwrap();
         params.distinguished_name = certs::DistinguishedName::new();
         params
             .distinguished_name
             .push(certs::DnType::CommonName, "client.example");
+        params
+            .distinguished_name
+            .push(certs::DnType::CountryName, country());
         params.is_ca = certs::IsCa::NoCa;
         params.key_usages = vec![certs::KeyUsagePurpose::DigitalSignature];
-        params.extended_key_usages = vec![rcgen::ExtendedKeyUsagePurpose::ClientAuth];
+        params.not_before = at(NOW).to_datetime();
+        params.not_after = at(NOW + LEAF_SECONDS).to_datetime();
+        params.serial_number = Some(certs::SerialNumber::from(vec![0x7B; 19]));
+        params.use_authority_key_identifier_extension = true;
         params
+            .custom_extensions
+            .push(subject_key_identifier(leaf_ski));
+        params
+    }
+
+    // DER OCTET STRING wrapping, matching keyctl's yasna write_bytes.
+    fn subject_key_identifier(key_id: &[u8]) -> certs::CustomExtension {
+        let mut content = vec![0x04, key_id.len() as u8];
+        content.extend_from_slice(key_id);
+        certs::CustomExtension::from_oid_content(&[2, 5, 29, 14], content)
+    }
+
+    fn subject_key_id(
+        certificate: &x509_parser::certificate::X509Certificate<'_>,
+    ) -> Option<Vec<u8>> {
+        certificate
+            .extensions()
+            .iter()
+            .find_map(|extension| match extension.parsed_extension() {
+                ParsedExtension::SubjectKeyIdentifier(identifier) => Some(identifier.0.to_vec()),
+                _ => None,
+            })
+    }
+
+    fn authority_key_id(
+        certificate: &x509_parser::certificate::X509Certificate<'_>,
+    ) -> Option<Vec<u8>> {
+        certificate
+            .extensions()
+            .iter()
+            .find_map(|extension| match extension.parsed_extension() {
+                ParsedExtension::AuthorityKeyIdentifier(identifier) => {
+                    identifier.key_identifier.as_ref().map(|key| key.0.to_vec())
+                }
+                _ => None,
+            })
     }
 
     #[test]
     fn certificate_signatures_and_profiles_interoperate() {
-        let now_seconds = 1_760_000_000_i64;
-        let this_update = x509_parser::time::ASN1Time::from_timestamp(now_seconds)
-            .unwrap()
-            .to_datetime();
-        let next_update = x509_parser::time::ASN1Time::from_timestamp(now_seconds + 86_400)
-            .unwrap()
-            .to_datetime();
+        let this_update = at(NOW).to_datetime();
+        let next_update = at(NOW + 86_400).to_datetime();
 
         // CA generation and public projection match the old rcgen path.
         let ca_key_pem = certs::generate_p256_private_key_pem().unwrap();
@@ -872,16 +931,64 @@ mod certificate {
         );
 
         let (_, ca) = x509_parser::parse_x509_certificate(&ca_der).unwrap();
-        assert_eq!(ca.subject().to_string(), "CN=NazoAuth Test CA");
+        assert_eq!(
+            ca.subject()
+                .iter_common_name()
+                .next()
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "NazoAuth OpenID4VC Local CA"
+        );
+        assert_eq!(
+            ca.subject()
+                .iter_country()
+                .next()
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "DE"
+        );
+        let ca_constraints = ca.basic_constraints().unwrap().unwrap();
+        assert!(ca_constraints.value.ca);
+        assert_eq!(ca_constraints.value.path_len_constraint, Some(0));
+        assert_eq!(subject_key_id(&ca).as_deref(), Some(&CA_SKI[..]));
+        assert!(ca.raw_serial().len() <= 20);
+        assert_eq!(
+            ca.validity().not_after.timestamp() - ca.validity().not_before.timestamp(),
+            CA_SECONDS
+        );
         assert!(certs::verify_signature(&ca, ca.public_key()).is_ok());
         ca.verify_signature(Some(ca.public_key())).unwrap();
 
-        // Leaf issuance through the rebuilt issuer keeps DN/AKI/profile.
+        // Leaf issuance through the rebuilt issuer keeps DN/SKI/AKI/profile.
         let leaf_key_pem = certs::generate_p256_private_key_pem().unwrap();
-        let leaf_der = certs::sign(leaf_params(), &leaf_key_pem, &ca_der, &ca_key_pem).unwrap();
+        let leaf_der =
+            certs::sign(leaf_params(&LEAF_SKI), &leaf_key_pem, &ca_der, &ca_key_pem).unwrap();
         let (_, leaf) = x509_parser::parse_x509_certificate(&leaf_der).unwrap();
-        assert_eq!(leaf.subject().to_string(), "CN=client.example");
-        assert_eq!(leaf.issuer().to_string(), "CN=NazoAuth Test CA");
+        assert_eq!(
+            leaf.subject()
+                .iter_common_name()
+                .next()
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "client.example"
+        );
+        assert_eq!(
+            leaf.subject()
+                .iter_country()
+                .next()
+                .unwrap()
+                .as_str()
+                .unwrap(),
+            "DE"
+        );
+        assert_eq!(
+            leaf.issuer(),
+            ca.subject(),
+            "leaf issuer must be the CA subject"
+        );
         assert!(certs::verify_signature(&leaf, ca.public_key()).is_ok());
         leaf.verify_signature(Some(ca.public_key())).unwrap();
         assert!(matches!(
@@ -895,8 +1002,15 @@ mod certificate {
                 .map(|constraints| constraints.value.ca)
                 .unwrap_or_default()
         );
+        assert_eq!(subject_key_id(&leaf).as_deref(), Some(&LEAF_SKI[..]));
+        assert_eq!(authority_key_id(&leaf).as_deref(), Some(&CA_SKI[..]));
+        assert!(leaf.raw_serial().len() <= 20);
+        assert_eq!(
+            leaf.validity().not_after.timestamp() - leaf.validity().not_before.timestamp(),
+            LEAF_SECONDS
+        );
 
-        // CRL issuance through the rebuilt issuer.
+        // CRL issuance through the rebuilt issuer keeps dates and serials.
         let crl = certs::CertificateRevocationListParams {
             this_update,
             next_update,
@@ -908,50 +1022,72 @@ mod certificate {
                 reason_code: None,
                 invalidity_date: None,
             }],
-            key_identifier_method: certs::KeyIdMethod::PreSpecified(vec![0xAA; 20]),
+            key_identifier_method: certs::KeyIdMethod::PreSpecified(CA_SKI.to_vec()),
         };
         let crl_der = certs::sign_crl(crl, &ca_der, &ca_key_pem).unwrap();
         let (_, parsed_crl) = x509_parser::parse_x509_crl(&crl_der).unwrap();
-        assert_eq!(parsed_crl.issuer().to_string(), "CN=NazoAuth Test CA");
+        assert_eq!(
+            parsed_crl.issuer(),
+            ca.subject(),
+            "CRL issuer must be the CA subject"
+        );
+        assert_eq!(parsed_crl.last_update().timestamp(), NOW);
+        assert_eq!(parsed_crl.next_update().unwrap().timestamp(), NOW + 86_400);
+        assert_eq!(
+            parsed_crl.crl_number().map(|number| number.to_string()),
+            Some("7".to_owned())
+        );
+        let revoked = parsed_crl.iter_revoked_certificates().next().unwrap();
+        assert_eq!(revoked.raw_serial(), leaf.raw_serial());
+        assert_eq!(revoked.revocation_date.timestamp(), NOW);
         assert_eq!(parsed_crl.iter_revoked_certificates().count(), 1);
         assert!(parsed_crl.verify_signature(ca.public_key()).is_ok());
 
         // Standard client-chain verification against the anchor at a fixed time.
         let anchors = to_pem(&ca_der);
         assert!(
-            certs::verify_client_chain_at(
-                std::slice::from_ref(&leaf_der),
-                &anchors,
-                now_seconds as u64
-            )
-            .is_ok()
+            certs::verify_client_chain_at(std::slice::from_ref(&leaf_der), &anchors, NOW as u64)
+                .is_ok()
         );
 
-        // Wrong trust root, expiry, tampered or empty chain are rejected.
+        // Wrong trust root, expired, not-yet-valid, tampered or empty chain fail.
         let other_key_pem = certs::generate_p256_private_key_pem().unwrap();
         let other_der = certs::self_signed(ca_params(), &other_key_pem).unwrap();
         assert!(
             certs::verify_client_chain_at(
                 std::slice::from_ref(&leaf_der),
                 &to_pem(&other_der),
-                now_seconds as u64
+                NOW as u64
             )
             .is_err()
         );
-        // rcgen defaults not_before to 1975-01-01: verifying in 1970 fails.
-        assert!(
-            certs::verify_client_chain_at(std::slice::from_ref(&leaf_der), &anchors, 1_000)
-                .is_err()
-        );
+        // Actual expiry: one second past the leaf's not_after.
+        assert!(matches!(
+            certs::verify_client_chain_at(
+                std::slice::from_ref(&leaf_der),
+                &anchors,
+                (NOW + LEAF_SECONDS + 1) as u64
+            ),
+            Err(CryptoError::InvalidSignature)
+        ));
+        // Not yet valid: one second before the leaf's not_before.
+        assert!(matches!(
+            certs::verify_client_chain_at(
+                std::slice::from_ref(&leaf_der),
+                &anchors,
+                (NOW - 1) as u64
+            ),
+            Err(CryptoError::InvalidSignature)
+        ));
         let mut tampered = leaf_der.clone();
         *tampered.last_mut().unwrap() ^= 0x01;
-        assert!(certs::verify_client_chain_at(&[tampered], &anchors, now_seconds as u64).is_err());
+        assert!(certs::verify_client_chain_at(&[tampered], &anchors, NOW as u64).is_err());
         assert!(matches!(
-            certs::verify_client_chain_at(&[], &anchors, now_seconds as u64),
+            certs::verify_client_chain_at(&[], &anchors, NOW as u64),
             Err(CryptoError::InvalidInput)
         ));
         assert!(matches!(
-            certs::verify_client_chain_at(&[leaf_der], "not pem", now_seconds as u64),
+            certs::verify_client_chain_at(&[leaf_der], "not pem", NOW as u64),
             Err(CryptoError::InvalidInput)
         ));
         assert!(matches!(
