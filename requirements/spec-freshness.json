@@ -106,6 +106,7 @@
     {"id":"rfc9126","title":"OAuth 2.0 Pushed Authorization Requests","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9126","number":9126,"markers":["RFC 9126","OAuth 2.0 Pushed Authorization Requests"]},
     {"id":"rfc9396","title":"OAuth 2.0 Rich Authorization Requests","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9396","number":9396,"markers":["RFC 9396","OAuth 2.0 Rich Authorization Requests"]},
     {"id":"rfc9421","title":"HTTP Message Signatures","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9421","number":9421,"markers":["RFC 9421","HTTP Message Signatures"]},
+    {"id":"rfc9440","title":"Client-Cert HTTP Header Field","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9440","number":9440,"markers":["RFC 9440","Client-Cert HTTP Header Field"]},
     {"id":"rfc9449","title":"OAuth 2.0 Demonstrating Proof of Possession","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9449","number":9449,"markers":["RFC 9449","Demonstrating Proof of Possession"]},
     {"id":"rfc9470","title":"OAuth 2.0 Step Up Authentication Challenge Protocol","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9470","number":9470,"markers":["RFC 9470","OAuth 2.0 Step Up Authentication"]},
     {"id":"rfc9530","title":"Digest Fields","kind":"rfc","url":"https://www.rfc-editor.org/info/rfc9530","number":9530,"markers":["RFC 9530","Digest Fields"]},

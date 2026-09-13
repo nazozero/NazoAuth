@@ -1,6 +1,6 @@
 # 受管安装、更新与恢复
 
-NazoAuthCtl 只支持当前 protocol 谱系。控制端 Registry 负责主机与实例清单；目标机 `DeploymentState` 是 runtime、制品、配置、资源、journal 与备份事实的唯一权威。已删除的控制器状态、task envelope、旧命令和 secret-provider 入口不会被读取或转换。
+控制端 Registry 负责主机与实例清单；目标机 `DeploymentState` 是 runtime、制品、配置、资源、journal 与备份事实的唯一权威。支持的持久化格式与控制消息由[控制器兼容契约](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/compatibility.md)定义。未知或损坏的状态会保留，并在写入前拒绝操作。
 
 ## 全新安装
 
@@ -13,7 +13,7 @@ nazoauthctl install \
   --host production-host \
   --name production \
   --public-url https://auth.example.com \
-  --to <nazoauth-release-tag> \
+  --to '<nazoauth-release-tag>' \
   --runtime podman \
   --database-host db.internal \
   --database-port 5432 \
@@ -66,10 +66,10 @@ controller 的受保护凭据路径交付，不进入 argv、普通环境变量�
 ## 更新与回滚
 
 > [!WARNING]
-> 0.5.0 之前，本项目快速迭代，版本更新不做历史兼容。配置、持久化状态和控制消息必须符合当前格式。变更部署前，保留经过验证的备份及其配套恢复工具；更新命令不代表跨版本兼容承诺。
+> 更新前检查目标服务端的配置与迁移要求。控制器持久化格式有独立的兼容契约：受支持的历史记录仍可读取，只读检查不会改写记录。保留经过验证的备份及其配套恢复工具；控制器能读取状态，不代表服务端制品或数据库迁移可以回滚。
 
 ```sh
-nazoauthctl update --instance production --to <nazoauth-release-tag>
+nazoauthctl update --instance production --to '<nazoauth-release-tag>'
 nazoauthctl rollback --instance production
 ```
 
@@ -112,6 +112,9 @@ nazoauthctl recover --instance production --recovery-secret-file ./recovery-secr
 
 激活前必须验证 Release bytes、attestation、Sigstore identity、manifest 与 OCI digest。应用直接用正在执行的二进制或镜像摘要验证签名 ControlOperation，Ctl 从 runtime 观测同一个内容身份。
 
-公网引导对经过 attestation 验证的 Release reader 采取失败关闭，并且只接受公开非草稿 Release。操作端必须具备 GitHub CLI、`python3`、`sha256sum` 与 `install`；缺少 reader 或验证工具时直接失败，不允许退回到未验证制品。
+控制器的 Release verifier 只接受公开、非草稿 Release，使用有界 `curl` 请求，并通过
+宿主 `cosign` 或固定的 Podman/Docker 后备镜像验证 Sigstore bundle。缺少验证工具
+直接失败，不能使用未经证明的制品。运行时、SSH 和数据库操作另有目标环境前提，见
+[控制器开发指南](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/development.md)。
 
 命令面以 `nazoauthctl --help` 和各子命令 help 为唯一权威；本文只描述 v0.2 当前模型。

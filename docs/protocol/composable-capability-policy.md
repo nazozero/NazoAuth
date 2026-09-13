@@ -61,7 +61,8 @@ Admin-created clients receive this default policy:
   "require_signed_authorization_response": false,
   "require_signed_introspection_response": false,
   "session_management": false,
-  "allow_cross_device_flows": false
+  "allow_cross_device_flows": false,
+  "allow_confidential_oidc_without_pkce": false
 }
 ```
 
@@ -77,9 +78,15 @@ compose compatible controls, for example:
   "require_signed_authorization_response": true,
   "require_signed_introspection_response": true,
   "session_management": true,
-  "allow_cross_device_flows": true
+  "allow_cross_device_flows": true,
+  "allow_confidential_oidc_without_pkce": false
 }
 ```
+
+`allow_confidential_oidc_without_pkce` defaults to false. Only a controlled
+baseline confidential OIDC compatibility boundary may set it; FAPI and
+sender-constrained authorization still require S256. The DCR application sets
+this exception for its supported confidential OIDC registration profile.
 
 These fields are independent. FAPI2 assurance enforces confidential client
 type, strong client authentication, PAR, S256 PKCE, sender-constrained tokens,

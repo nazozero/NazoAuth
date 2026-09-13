@@ -213,14 +213,16 @@ and backup procedures are documented in
 `nazoauthctl` generates the private server configuration, deployment identity,
 signing identity, application secrets, and recovery state. It binds NazoAuth
 to the selected host loopback port. Put any
-standards-compliant TLS reverse proxy in front of
-`http://127.0.0.1:8000`. Configure `TRUSTED_PROXY_CIDRS` only for proxy
+standards-compliant TLS reverse proxy in front of the deployment-specific
+loopback endpoint. Read `runtime.loopback_port` from
+`nazoauthctl --json status --instance production`; container port 8000 is not
+the published host port. Configure `TRUSTED_PROXY_CIDRS` only for proxy
 addresses you control, and keep `CLIENT_IP_HEADER_MODE=none` until the proxy
 sanitizes forwarded headers correctly.
 
-Set `NAZOAUTH_PORT` when the host loopback port must differ. Changing the host
-port does not change the issuer: `PUBLIC_BASE_URL` must still match the public
-HTTPS address seen by clients.
+`NAZOAUTH_PORT` belongs to the source-tree Compose example; the managed
+installer derives and records its own loopback port. `PUBLIC_BASE_URL` must
+still match the public HTTPS address seen by clients.
 
 ### Reverse proxy and mTLS
 
@@ -267,8 +269,8 @@ any check fails.
 
 Activation requires all of these checks:
 
-1. `nazoauthctl status` reports the signed Release and content-addressed target;
-2. `nazoauthctl doctor` verifies audit, readiness, target digest, and the runtime DDL boundary;
+1. `nazoauthctl status --instance production` reports the signed Release and content-addressed target;
+2. `nazoauthctl doctor --instance production` reports current target status and diagnostic observations; verify database privileges and audit health through their owning checks;
 3. `/health` returns HTTP 200;
 4. `/.well-known/openid-configuration` returns the configured issuer;
 5. the reverse proxy serves the same endpoints through the public HTTPS origin;
@@ -278,7 +280,7 @@ Activation requires all of these checks:
 Inspect the non-secret deployment state with:
 
 ```sh
-nazoauthctl status
+nazoauthctl status --instance production
 nazoauthctl operation --instance production --limit 20
 ```
 

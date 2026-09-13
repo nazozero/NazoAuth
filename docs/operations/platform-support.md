@@ -34,13 +34,14 @@ digests.
 ## Product and Controller Boundaries
 
 `nazoauth` is the portable application executable. `nazoauthctl` has its own
-native matrix and Release in `nazozero/NazoAuthCtl`. The formal `install`, `update`, `rollback`, `recover`,
-and migration lifecycle supports Linux `x86_64` and Linux `aarch64` only. Host
-mode additionally requires root and systemd; Podman and Docker lifecycle modes
-require their corresponding Linux engine. Other operating systems and CPU
-architectures are rejected before installation mutates state. A successful
-Windows or macOS binary smoke does not claim that Linux service installation,
-ownership, mount labeling, or database recovery commands work natively there.
+native matrix and Release in `nazozero/NazoAuthCtl`. Managed lifecycle capability is negotiated with the target helper. Current clean
+install accepts Linux and Windows target path models, then selects only a
+runtime advertised by that helper. Podman/Docker require a usable engine;
+`host` is the Linux systemd backend. Direct TLS clean install currently requires
+a Linux Podman or Docker target. macOS is not an accepted clean-install target.
+Native binary smoke and unit tests do not establish an end-to-end lifecycle,
+mount, permission, or recovery guarantee on any target; retain target-specific
+execution evidence. The controller repository owns this qualification boundary.
 
 On Linux x86-64, the controller selects the x86-64 GNU or musl Release artifact
 and binds container operations to the signed `linux/amd64` platform-manifest

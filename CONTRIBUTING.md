@@ -44,7 +44,8 @@ confidential information or material they are not authorized to submit.
 
 ## Documentation
 
-Update the owning guide and affected translations when behavior changes. Follow
+Every change must update its owning documentation and affected examples,
+translations, and index entries. Follow
 [documentation maintenance rules](docs/README.md#maintenance-rules): keep durable
 contracts and runbooks, put one-time task/review evidence in the issue, PR, or
 CI artifacts, and repair indexes and references when removing a document.
