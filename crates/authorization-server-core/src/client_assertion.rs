@@ -1,5 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
+use nazo_crypto::jwt::{
+    Algorithm, Validation, VerificationKey as JwtVerificationKey, decode, decode_header,
+};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -118,7 +120,7 @@ struct ClientAssertionClaims {
 
 #[must_use]
 pub fn unverified_client_assertion_client_id(assertion: &str) -> Option<String> {
-    let claims = jsonwebtoken::dangerous::insecure_decode::<ClientAssertionClaims>(assertion)
+    let claims = nazo_crypto::jwt::dangerous::insecure_decode::<ClientAssertionClaims>(assertion)
         .ok()?
         .claims;
     (claims.iss == claims.sub && !claims.sub.trim().is_empty()).then_some(claims.sub)
@@ -205,13 +207,15 @@ fn client_assertion_audience_candidates(
 }
 
 fn client_assertion_decode_error(
-    error: jsonwebtoken::errors::Error,
+    error: nazo_crypto::CryptoError,
 ) -> ClientAssertionValidationError {
-    use jsonwebtoken::errors::ErrorKind;
-
-    match error.kind() {
-        ErrorKind::InvalidSignature => ClientAssertionValidationError::InvalidSignature,
-        ErrorKind::InvalidAlgorithm => ClientAssertionValidationError::InvalidAlgorithm,
+    match error {
+        nazo_crypto::CryptoError::InvalidSignature => {
+            ClientAssertionValidationError::InvalidSignature
+        }
+        nazo_crypto::CryptoError::UnsupportedAlgorithm => {
+            ClientAssertionValidationError::InvalidAlgorithm
+        }
         _ => ClientAssertionValidationError::Decode,
     }
 }
@@ -258,7 +262,7 @@ fn client_assertion_decoding_key(
     client: &OAuthClient,
     kid: Option<&str>,
     algorithm: Algorithm,
-) -> Option<(Option<String>, DecodingKey)> {
+) -> Option<(Option<String>, JwtVerificationKey)> {
     if let Some(kid) = kid {
         return client_jwt_decoding_key(client, kid, algorithm)
             .map(|decoding_key| (Some(kid.to_owned()), decoding_key));
@@ -275,7 +279,7 @@ pub(crate) fn client_jwt_decoding_key(
     client: &OAuthClient,
     kid: &str,
     algorithm: Algorithm,
-) -> Option<DecodingKey> {
+) -> Option<JwtVerificationKey> {
     let keys = client.jwks.as_ref()?.get("keys")?.as_array()?;
     let mut matching = keys
         .iter()
@@ -287,7 +291,7 @@ pub(crate) fn client_jwt_decoding_key(
     jwt_decoding_key_from_jwk(selected, algorithm)
 }
 
-fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<DecodingKey> {
+fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<JwtVerificationKey> {
     let (expected_algorithm, key_type) = supported_client_jwt_algorithm(algorithm)?;
     if key
         .get("alg")
@@ -311,7 +315,7 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<Decodi
             }
             let x = key.get("x").and_then(Value::as_str)?;
             (URL_SAFE_NO_PAD.decode(x).ok()?.len() == 32)
-                .then(|| DecodingKey::from_ed_components(x).ok())?
+                .then(|| JwtVerificationKey::from_ed_components(x).ok())?
         }
         SupportedClientJwtAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -324,7 +328,7 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<Decodi
             if !rsa_public_key_components_are_safe(&modulus, &exponent_bytes) {
                 return None;
             }
-            DecodingKey::from_rsa_components(
+            JwtVerificationKey::from_rsa_components(
                 key.get("n").and_then(Value::as_str)?,
                 key.get("e").and_then(Value::as_str)?,
             )
@@ -343,7 +347,7 @@ fn jwt_decoding_key_from_jwk(key: &Value, algorithm: Algorithm) -> Option<Decodi
             {
                 return None;
             }
-            DecodingKey::from_ec_components(x, y).ok()
+            JwtVerificationKey::from_ec_components(x, y).ok()
         }
     }
 }

@@ -7,10 +7,6 @@ use actix_web::HttpRequest;
 use actix_web::http::header;
 use actix_web::http::header::{HeaderMap, HeaderValue};
 use anyhow::{anyhow, bail};
-use argon2::Argon2;
-use argon2::PasswordHash;
-use argon2::PasswordHasher;
-use argon2::PasswordVerifier;
 use nazo_auth::unverified_client_assertion_client_id;
 use std::sync::{
     Arc, OnceLock,
@@ -78,10 +74,13 @@ pub(crate) enum PasswordHashingError {
     HashFailed,
 }
 
-pub(crate) fn hash_password(password: &str) -> argon2::password_hash::Result<String> {
-    Ok(password_hasher()
-        .hash_password(password.as_bytes())?
-        .to_string())
+pub(crate) fn hash_password(password: &str) -> nazo_crypto::Result<String> {
+    nazo_crypto::password::hash_argon2id(
+        password.as_bytes(),
+        ARGON2_MEMORY_COST_KIB,
+        ARGON2_TIME_COST,
+        ARGON2_PARALLELISM,
+    )
 }
 
 pub(crate) fn initialize_dummy_password_hash() -> anyhow::Result<()> {
@@ -178,27 +177,11 @@ pub(crate) async fn verify_encoded_hashes_blocking_limited(
     tokio::task::spawn_blocking(move || {
         let _permit = permit;
         candidates.into_iter().position(|candidate| {
-            let Ok(parsed) = PasswordHash::new(candidate.as_str()) else {
-                return false;
-            };
-            password_hasher()
-                .verify_password(secret.as_bytes(), &parsed)
-                .is_ok()
+            nazo_crypto::password::verify_argon2_phc(candidate.as_str(), secret.as_bytes())
         })
     })
     .await
     .map_err(|_| PasswordVerificationError::WorkerFailed)
-}
-
-fn password_hasher() -> Argon2<'static> {
-    let params = argon2::Params::new(
-        ARGON2_MEMORY_COST_KIB,
-        ARGON2_TIME_COST,
-        ARGON2_PARALLELISM,
-        None,
-    )
-    .expect("Argon2 password hash policy must be valid");
-    Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params)
 }
 
 fn password_hash_concurrency_limit() -> &'static Arc<Semaphore> {

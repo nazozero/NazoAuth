@@ -4,7 +4,7 @@ use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
-use ed25519_dalek::{Signature, Verifier as _, VerifyingKey};
+use nazo_crypto::ed25519::VerifyingKey;
 use serde::de::DeserializeOwned;
 
 use crate::signing::{compact_segments, decode_json, decode_protected_header};
@@ -93,10 +93,11 @@ fn verify_compact<T: DeserializeOwned>(
     let signature_bytes = URL_SAFE_NO_PAD
         .decode(signature)
         .map_err(|_| ProtocolError::Base64)?;
-    let signature =
-        Signature::from_slice(&signature_bytes).map_err(|_| ProtocolError::Signature)?;
-    key.verify(format!("{protected}.{payload}").as_bytes(), &signature)
-        .map_err(|_| ProtocolError::Signature)?;
+    key.verify(
+        format!("{protected}.{payload}").as_bytes(),
+        &signature_bytes,
+    )
+    .map_err(|_| ProtocolError::Signature)?;
     decode_json(payload)
 }
 

@@ -21,6 +21,7 @@ members = [
     "crates/resource-server",
     "crates/scim-events",
     "crates/state-store-valkey",
+    "crates/crypto",
 ]
 default-members = [
     "crates/nazoauth",
@@ -69,6 +70,7 @@ coset = "0.4.2"
 ciborium = "0.2.2"
 lettre = { version = "0.11.22", default-features = false }
 nazo-auth = { version = "0.2.0", path = "crates/authorization-server-core" }
+nazo-crypto = { path = "crates/crypto", default-features = false }
 nazo-digital-credentials = { version = "0.2.0", path = "crates/digital-credentials" }
 nazo-http-actix = { version = "0.2.0", path = "crates/http-actix" }
 nazo-http-signatures = { version = "0.2.0", path = "crates/http-signatures" }
@@ -117,7 +119,7 @@ urlencoding = "2.1.3"
 uuid = "1.23.5"
 wait-timeout = "0.2.1"
 x509-cert = "0.3.0"
-x509-parser = { version = "0.18.1", features = ["verify-aws"] }
+x509-parser = "0.18.1"
 yasna = "0.6.0"
 zeroize = { version = "1.8.2", features = ["derive"] }
 

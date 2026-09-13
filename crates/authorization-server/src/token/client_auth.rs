@@ -11,7 +11,7 @@ use nazo_auth::ValidatedClientAssertion;
 use crate::contracts::token_client_auth::ClientCertificateFacts;
 use crate::security::mtls::client_mtls_certificate_matches;
 
-use jsonwebtoken::decode_header;
+use nazo_crypto::jwt::decode_header;
 
 use crate::contracts::dynamic_client_registration::RemoteJwksResolverPort;
 use nazo_auth::{

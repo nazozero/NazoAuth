@@ -1,4 +1,3 @@
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
 use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
 use diesel_async::RunQueryDsl;
@@ -178,11 +177,9 @@ struct AuthorizationOfferRow {
 pub(super) fn tx_code_matches(expected: Option<&str>, presented: Option<&str>) -> bool {
     match (expected, presented) {
         (None, None) => true,
-        (Some(expected), Some(presented)) => PasswordHash::new(expected).is_ok_and(|hash| {
-            Argon2::default()
-                .verify_password(presented.as_bytes(), &hash)
-                .is_ok()
-        }),
+        (Some(expected), Some(presented)) => {
+            nazo_crypto::password::verify_argon2_phc(expected, presented.as_bytes())
+        }
         _ => false,
     }
 }

@@ -19,3 +19,7 @@ pub mod workers;
 #[cfg(test)]
 #[path = "../tests/support/mod.rs"]
 mod test_support;
+
+#[cfg(test)]
+#[path = "../tests/support/crypto.rs"]
+mod crypto_test_support;

@@ -4,7 +4,7 @@ use crate::crypto::decoding_key;
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use chrono::{Duration, Utc};
-use jsonwebtoken::{Algorithm, Validation, decode, decode_header};
+use nazo_crypto::jwt::{Algorithm, Validation, decode, decode_header};
 use nazo_digital_credentials::decode_compact_jwt;
 use nazo_openid4vci::{ProofError, ProofValidatorPort, Proofs, ValidatedProof};
 use nazo_operator_protocol::Openid4vcTrustPolicy;
