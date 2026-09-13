@@ -71,7 +71,7 @@ set can be scanned from one place.
 | [operations/one-click-update.md](operations/one-click-update.md) | Signed one-click Podman, Docker, and host installation and updates. |
 | [operations/one-click-update.zh-CN.md](operations/one-click-update.zh-CN.md) | Chinese signed one-click installation and update guide. |
 | [operations/ha-operations.md](operations/ha-operations.md) | PostgreSQL and Valkey availability, recovery, and state-epoch guidance. |
-| [operations/mdoc-shared-state.md](operations/mdoc-shared-state.md) | Managed OpenID4VC authority-state import, rotation, and revocation. |
+| [operations/mdoc-shared-state.md](operations/mdoc-shared-state.md) | Managed OpenID4VC authority-state import, rotation, revocation, and issuer certificate verification. |
 | [operations/avatar-direct-upload.md](operations/avatar-direct-upload.md) | Avatar direct-upload storage and migration boundary. |
 | [operations/release-security.md](operations/release-security.md) | Release security checks, provenance, and supply-chain controls. |
 | [operations/release-security.zh-CN.md](operations/release-security.zh-CN.md) | Chinese release security guide. |

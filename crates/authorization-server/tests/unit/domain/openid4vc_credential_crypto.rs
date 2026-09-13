@@ -230,7 +230,10 @@ impl CoseSigner for TestMdocIssuerSigner {
     }
 }
 
-fn valid_mdoc_presentation(certs: &CertificateFixture) -> (String, Vec<u8>) {
+fn valid_mdoc_presentation(
+    certs: &CertificateFixture,
+    signed_at: chrono::DateTime<Utc>,
+) -> (String, Vec<u8>) {
     let issuer_secret =
         p256::SecretKey::from_pkcs8_der(&certs.leaf_key.serialize_der()).expect("leaf private key");
     let issuer_signing_key =
@@ -247,7 +250,7 @@ fn valid_mdoc_presentation(certs: &CertificateFixture) -> (String, Vec<u8>) {
     let issuer_document = DocumentBuilder::new("org.iso.18013.5.1.mDL")
         .device_key(device_key)
         .validity(ValidityInfo {
-            signed: now,
+            signed: signed_at,
             valid_from: now - Duration::minutes(1),
             valid_until: now + Duration::hours(1),
             expected_update: None,
@@ -1096,7 +1099,7 @@ fn mdoc_verification_rejects_missing_transcript_bad_cbor_and_bad_anchors() {
 fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
     futures_executor::block_on(async {
         let (crypto, certs, _) = real_crypto_fixture().await;
-        let (encoded, transcript) = valid_mdoc_presentation(&certs);
+        let (encoded, transcript) = valid_mdoc_presentation(&certs, Utc::now());
         let presentation = PresentedCredential {
             format: CredentialFormat::MsoMdoc,
             encoded,
@@ -1126,6 +1129,36 @@ fn mdoc_verification_accepts_signed_device_response_and_extracts_claims() {
         assert_eq!(
             strict_revocation.verify_mdoc(&presentation),
             Err(CredentialTrustError::RevocationSnapshotUnavailable)
+        );
+    })
+}
+
+#[test]
+fn mdoc_verification_rejects_signing_before_certificate_validity() {
+    futures_executor::block_on(async {
+        let (crypto, certs, _) = real_crypto_fixture().await;
+        let (encoded, transcript) =
+            valid_mdoc_presentation(&certs, Utc::now() - Duration::hours(1));
+        let presentation = PresentedCredential {
+            format: CredentialFormat::MsoMdoc,
+            encoded,
+            expected_nonce: "verifier-nonce".to_owned(),
+            expected_audience: "https://verifier.example".to_owned(),
+            response_uri: "https://verifier.example/response".to_owned(),
+            mdoc_session_transcript: Some(transcript),
+            additional_trust_anchors: vec![],
+        };
+        assert!(
+            verify_certificate_chain_at(
+                std::slice::from_ref(&certs.leaf_der),
+                std::slice::from_ref(&certs.ca_der),
+                Utc::now().timestamp(),
+            )
+            .expect("certificate is valid at presentation time")
+        );
+        assert_eq!(
+            crypto.verify_mdoc(&presentation),
+            Err(CredentialTrustError::InvalidSignature)
         );
     })
 }
