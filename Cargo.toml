@@ -70,7 +70,7 @@ coset = "0.4.2"
 ciborium = "0.2.2"
 lettre = { version = "0.11.22", default-features = false }
 nazo-auth = { version = "0.2.0", path = "crates/authorization-server-core" }
-nazo-crypto = { path = "crates/crypto", default-features = false }
+nazo-crypto = { version = "0.2.0", path = "crates/crypto", default-features = false }
 nazo-digital-credentials = { version = "0.2.0", path = "crates/digital-credentials" }
 nazo-http-actix = { version = "0.2.0", path = "crates/http-actix" }
 nazo-http-signatures = { version = "0.2.0", path = "crates/http-signatures" }
