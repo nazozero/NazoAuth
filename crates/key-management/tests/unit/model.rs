@@ -249,8 +249,8 @@ async fn jwt_encoding_rejects_grace_and_retired_keys() {
             .await
             .expect_err("non-active keys must not encode JWTs");
         assert!(matches!(
-            error.kind(),
-            jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
+            error,
+            nazo_crypto::CryptoError::UnsupportedAlgorithm
         ));
     }
 }

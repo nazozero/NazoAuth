@@ -132,7 +132,7 @@ pub(crate) fn signed_ciba_request_object_claims(
     if header_value.get("alg").and_then(Value::as_str) == Some("none") {
         return Err(ciba_invalid_request("CIBA request object must be signed."));
     }
-    let header = jsonwebtoken::decode_header(request_object)
+    let header = nazo_crypto::jwt::decode_header(request_object)
         .map_err(|_| ciba_invalid_request("CIBA request object header is invalid."))?;
     if !ciba_jwt_signing_algorithm_supported(header.alg) {
         return Err(ciba_invalid_request(
@@ -156,11 +156,11 @@ pub(crate) fn signed_ciba_request_object_claims(
             "CIBA request object signing key is invalid.",
         ));
     };
-    let mut validation = jsonwebtoken::Validation::new(header.alg);
+    let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
     validation.validate_aud = false;
     validation.set_required_spec_claims::<&str>(&[]);
     validation.set_issuer(&[client.client_id.as_str()]);
-    jsonwebtoken::decode::<CibaAuthenticationRequestClaims>(
+    nazo_crypto::jwt::decode::<CibaAuthenticationRequestClaims>(
         request_object,
         &decoding_key,
         &validation,

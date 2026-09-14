@@ -6,7 +6,7 @@
 //! defense live in E04/E03, not in this wire model.
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-use ed25519_dalek::{Signer as _, SigningKey};
+use nazo_crypto::ed25519::SigningKey;
 use sha2::{Digest as _, Sha256};
 
 use super::*;
@@ -276,10 +276,7 @@ fn wrong_kid_and_wrong_signer_are_rejected() {
     let payload = compact.split('.').nth(1).unwrap().to_owned();
     let signing_input = format!("{protected}.{payload}");
     let signature = other.sign(signing_input.as_bytes());
-    let cross_signed = format!(
-        "{signing_input}.{}",
-        URL_SAFE_NO_PAD.encode(signature.to_bytes())
-    );
+    let cross_signed = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature));
     assert!(matches!(
         verify_control_operation_signature(&cross_signed, &other_kid, &other.verifying_key()),
         Err(ProtocolError::Policy(_))
@@ -327,10 +324,7 @@ fn non_canonical_payload_encoding_is_rejected_even_when_correctly_signed() {
     // verifier must refuse it, because exactly one encoding may exist.
     let signing_input = format!("{protected}.{}", URL_SAFE_NO_PAD.encode(&pretty));
     let signature = key.sign(signing_input.as_bytes());
-    let forged_encoding = format!(
-        "{signing_input}.{}",
-        URL_SAFE_NO_PAD.encode(signature.to_bytes())
-    );
+    let forged_encoding = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature));
     assert!(matches!(
         verify_control_operation_signature(&forged_encoding, &operation.kid, &key.verifying_key()),
         Err(ProtocolError::Policy(

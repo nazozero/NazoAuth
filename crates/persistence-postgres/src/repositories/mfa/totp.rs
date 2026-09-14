@@ -3,10 +3,6 @@ use crate::{
     repositories::audit::insert_identity_security_event,
     schema::{user_mfa_backup_codes, user_totp_credentials, users},
 };
-use aes_gcm::{
-    Aes256Gcm, KeyInit,
-    aead::{Aead, Payload},
-};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, dsl::now};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
@@ -503,19 +499,20 @@ pub(super) fn protect_totp_secret(
         ));
     }
     let key_id = keyring.current().id();
-    let cipher = Aes256Gcm::new_from_slice(keyring.current().key())
-        .map_err(|_| RepositoryError::Consistency("invalid TOTP encryption key".to_owned()))?;
     let mut nonce = [0_u8; TOTP_NONCE_LEN];
     rand::rng().fill_bytes(&mut nonce);
-    let ciphertext = cipher
-        .encrypt(
-            (&nonce).into(),
-            Payload {
-                msg: secret.as_bytes(),
-                aad: &totp_aad(tenant_id, user_id, key_id),
-            },
-        )
-        .map_err(|_| RepositoryError::Unexpected("TOTP secret encryption failed".to_owned()))?;
+    let ciphertext = nazo_crypto::aead::encrypt(
+        keyring.current().key(),
+        &nonce,
+        &totp_aad(tenant_id, user_id, key_id),
+        secret.as_bytes(),
+    )
+    .map_err(|error| match error {
+        nazo_crypto::CryptoError::InvalidKey => {
+            RepositoryError::Consistency("invalid TOTP encryption key".to_owned())
+        }
+        _ => RepositoryError::Unexpected("TOTP secret encryption failed".to_owned()),
+    })?;
     let mut protected = Vec::with_capacity(1 + nonce.len() + ciphertext.len());
     protected.push(TOTP_ENVELOPE_VERSION);
     protected.extend_from_slice(&nonce);
@@ -552,18 +549,18 @@ pub(super) fn decode_totp_secret(
     let nonce: &[u8; TOTP_NONCE_LEN] = protected[1..1 + TOTP_NONCE_LEN]
         .try_into()
         .map_err(|_| RepositoryError::Consistency("TOTP secret nonce is malformed".to_owned()))?;
-    let plaintext = Aes256Gcm::new_from_slice(key.key())
-        .map_err(|_| RepositoryError::Consistency("invalid TOTP encryption key".to_owned()))?
-        .decrypt(
-            nonce.into(),
-            Payload {
-                msg: &protected[1 + TOTP_NONCE_LEN..],
-                aad: &totp_aad(tenant_id, user_id, &key_id),
-            },
-        )
-        .map_err(|_| {
-            RepositoryError::Consistency("TOTP secret authentication failed".to_owned())
-        })?;
+    let plaintext = nazo_crypto::aead::decrypt(
+        key.key(),
+        nonce,
+        &totp_aad(tenant_id, user_id, &key_id),
+        &protected[1 + TOTP_NONCE_LEN..],
+    )
+    .map_err(|error| match error {
+        nazo_crypto::CryptoError::InvalidKey => {
+            RepositoryError::Consistency("invalid TOTP encryption key".to_owned())
+        }
+        _ => RepositoryError::Consistency("TOTP secret authentication failed".to_owned()),
+    })?;
     let secret = String::from_utf8(plaintext)
         .map_err(|_| RepositoryError::Consistency("TOTP secret is not valid UTF-8".to_owned()))?;
     if secret.trim().len() < 16 || secret.len() > 128 {

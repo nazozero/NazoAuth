@@ -8,7 +8,7 @@ edition = "2024"
 cargo-fuzz = true
 
 [dependencies]
-ed25519-dalek = "3.0.0"
+nazo-crypto = { path = "../crates/crypto", features = ["ed25519"] }
 libfuzzer-sys = "0.4"
 nazo-operator-protocol = { path = "../crates/operator-protocol" }
 

@@ -97,13 +97,13 @@ pub(super) fn verify_oidc_id_token(
     token: &str,
     expected_nonce: &str,
 ) -> anyhow::Result<OidcIdTokenClaims> {
-    let header = jsonwebtoken::decode_header(token)?;
+    let header = nazo_crypto::jwt::decode_header(token)?;
     if !matches!(
         header.alg,
-        jsonwebtoken::Algorithm::RS256
-            | jsonwebtoken::Algorithm::PS256
-            | jsonwebtoken::Algorithm::ES256
-            | jsonwebtoken::Algorithm::EdDSA
+        nazo_crypto::jwt::Algorithm::RS256
+            | nazo_crypto::jwt::Algorithm::PS256
+            | nazo_crypto::jwt::Algorithm::ES256
+            | nazo_crypto::jwt::Algorithm::EdDSA
     ) {
         anyhow::bail!("OIDC ID Token algorithm is not allowed");
     }
@@ -121,10 +121,10 @@ pub(super) fn verify_oidc_id_token(
         .ok_or_else(|| anyhow::anyhow!("kid not found"))?;
     let decoding_key = jwt_decoding_key_from_jwk(key, header.alg)
         .ok_or_else(|| anyhow::anyhow!("unsupported OIDC JWK"))?;
-    let mut validation = jsonwebtoken::Validation::new(header.alg);
+    let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
     validation.set_issuer(&[provider.issuer.as_str()]);
     validation.set_audience(&[provider.client_id.as_str()]);
-    let token = jsonwebtoken::decode::<OidcIdTokenClaims>(token, &decoding_key, &validation)?;
+    let token = nazo_crypto::jwt::decode::<OidcIdTokenClaims>(token, &decoding_key, &validation)?;
     let claims = token.claims;
     let audience_count = claims.aud.as_array().map_or(1, Vec::len);
     if claims.nonce.as_deref() != Some(expected_nonce)

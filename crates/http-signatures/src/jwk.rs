@@ -1,5 +1,5 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use jsonwebtoken::{Algorithm, DecodingKey};
+use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use serde_json::Value;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
@@ -46,11 +46,9 @@ pub fn verify_jwk_signature(
     }
     let decoding_key = public_decoding_key(key, algorithm)
         .ok_or(JwkSignatureVerificationError::InvalidPublicKey)?;
-    let encoded_signature = URL_SAFE_NO_PAD.encode(signature);
-    match jsonwebtoken::crypto::verify(&encoded_signature, signing_input, &decoding_key, algorithm)
-    {
-        Ok(true) => Ok(()),
-        Ok(false) | Err(_) => Err(JwkSignatureVerificationError::InvalidSignature),
+    match nazo_crypto::signature::verify(algorithm, &decoding_key, signing_input, signature) {
+        Ok(()) => Ok(()),
+        Err(_) => Err(JwkSignatureVerificationError::InvalidSignature),
     }
 }
 
@@ -63,7 +61,7 @@ fn jwt_algorithm(algorithm: &str) -> Result<Algorithm, JwkSignatureVerificationE
     }
 }
 
-fn public_decoding_key(key: &Value, algorithm: Algorithm) -> Option<DecodingKey> {
+fn public_decoding_key(key: &Value, algorithm: Algorithm) -> Option<JwtVerificationKey> {
     let expected_algorithm = match algorithm {
         Algorithm::EdDSA => "EdDSA",
         Algorithm::RS256 => "RS256",
@@ -102,7 +100,7 @@ fn public_decoding_key(key: &Value, algorithm: Algorithm) -> Option<DecodingKey>
             }
             let x = key.get("x")?.as_str()?;
             (URL_SAFE_NO_PAD.decode(x).ok()?.len() == 32)
-                .then(|| DecodingKey::from_ed_components(x).ok())?
+                .then(|| JwtVerificationKey::from_ed_components(x).ok())?
         }
         Algorithm::RS256 => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -117,7 +115,7 @@ fn public_decoding_key(key: &Value, algorithm: Algorithm) -> Option<DecodingKey>
             {
                 return None;
             }
-            DecodingKey::from_rsa_components(n, e).ok()
+            JwtVerificationKey::from_rsa_components(n, e).ok()
         }
         Algorithm::ES256 => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -132,7 +130,7 @@ fn public_decoding_key(key: &Value, algorithm: Algorithm) -> Option<DecodingKey>
             {
                 return None;
             }
-            DecodingKey::from_ec_components(x, y).ok()
+            JwtVerificationKey::from_ec_components(x, y).ok()
         }
         _ => None,
     }

@@ -2,7 +2,7 @@ use crate::crypto::decoding_key;
 
 use std::sync::Arc;
 
-use jsonwebtoken::{Algorithm, Validation, decode};
+use nazo_crypto::jwt::{Algorithm, Validation, decode};
 use nazo_digital_credentials::decode_compact_jwt;
 use nazo_operator_protocol::Openid4vcTrustPolicy;
 use nazo_persistence::{ClientTrustPolicy, Openid4vcTrustPolicyStore};

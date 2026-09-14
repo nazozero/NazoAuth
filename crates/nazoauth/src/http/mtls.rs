@@ -9,8 +9,7 @@ use actix_web::{HttpMessage, HttpRequest, dev::Extensions, web::Data};
 use base64::{Engine, engine::general_purpose::STANDARD};
 use nazo_http_actix::{IpCidr, mtls::MtlsThumbprintExtractor, request_from_trusted_proxy_cidrs};
 use nazo_oauth_server::{
-    contracts::token_client_auth::ClientCertificateFacts,
-    security::mtls::{certificate_chain_verified, certificate_der_identity},
+    contracts::token_client_auth::ClientCertificateFacts, security::mtls::certificate_der_identity,
 };
 use std::{any::Any, sync::Arc};
 const RFC9440_CLIENT_CERT_HEADER: &str = "client-cert";
@@ -198,3 +197,21 @@ impl MtlsThumbprintExtractor for ServerMtlsThumbprintExtractor {
 #[cfg(test)]
 #[path = "../../tests/unit/http/mtls.rs"]
 mod tests;
+
+fn certificate_chain_verified(
+    certificate: &ClientCertificateFacts,
+    verifier: &dyn rustls::server::danger::ClientCertVerifier,
+) -> bool {
+    use rustls::pki_types::{CertificateDer, UnixTime};
+    let chain = certificate
+        .certificate_chain_der
+        .iter()
+        .map(|der| CertificateDer::from(der.as_slice()))
+        .collect::<Vec<_>>();
+    let Some((leaf, intermediates)) = chain.split_first() else {
+        return false;
+    };
+    verifier
+        .verify_client_cert(leaf, intermediates, UnixTime::now())
+        .is_ok()
+}

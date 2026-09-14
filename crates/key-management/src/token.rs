@@ -9,6 +9,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{KeyManager, signing_algorithm_from_name};
+use nazo_crypto::jwt::VerificationKey as JwtVerificationKey;
 
 impl TokenSignerPort for KeyManager {
     fn sign_access_token<'a>(
@@ -41,7 +42,7 @@ impl TokenSignerPort for KeyManager {
                 &jti,
             );
             let keyset = self.snapshot();
-            let mut header = jsonwebtoken::Header::new(keyset.active_alg);
+            let mut header = nazo_crypto::jwt::Header::new(keyset.active_alg);
             header.typ = Some("at+jwt".to_owned());
             header.kid = Some(keyset.active_kid.clone());
             let token = self
@@ -79,7 +80,7 @@ impl TokenSignerPort for KeyManager {
                 }
                 None => self.snapshot().active_alg,
             };
-            let mut header = jsonwebtoken::Header::new(algorithm);
+            let mut header = nazo_crypto::jwt::Header::new(algorithm);
             header.typ = Some("JWT".to_owned());
             self.encode_jwt(SigningPurpose::IdToken, &header, &Value::Object(claims))
                 .await
@@ -93,7 +94,7 @@ impl TokenSignerPort for KeyManager {
         token: &'a str,
     ) -> TokenFuture<'a, Option<Claims>> {
         Box::pin(async move {
-            let Some(header) = jsonwebtoken::decode_header(token).ok() else {
+            let Some(header) = nazo_crypto::jwt::decode_header(token).ok() else {
                 return Ok(None);
             };
             if header.typ.as_deref() != Some("at+jwt")
@@ -109,13 +110,14 @@ impl TokenSignerPort for KeyManager {
             else {
                 return Ok(None);
             };
-            let Some(decoding_key) = decoding_key(&key.public_jwk, header.alg) else {
+            let Some(decoding_key) = jwt_verification_key(&key.public_jwk, header.alg) else {
                 return Ok(None);
             };
-            let mut validation = jsonwebtoken::Validation::new(header.alg);
+            let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
             validation.validate_aud = false;
             validation.set_issuer(&[issuer]);
-            let Some(data) = jsonwebtoken::decode::<Claims>(token, &decoding_key, &validation).ok()
+            let Some(data) =
+                nazo_crypto::jwt::decode::<Claims>(token, &decoding_key, &validation).ok()
             else {
                 return Ok(None);
             };
@@ -129,7 +131,7 @@ impl TokenSignerPort for KeyManager {
         token: &'a str,
     ) -> TokenFuture<'a, Option<Value>> {
         Box::pin(async move {
-            let Some(header) = jsonwebtoken::decode_header(token).ok() else {
+            let Some(header) = nazo_crypto::jwt::decode_header(token).ok() else {
                 return Ok(None);
             };
             let snapshot = self.snapshot();
@@ -140,15 +142,15 @@ impl TokenSignerPort for KeyManager {
             else {
                 return Ok(None);
             };
-            let Some(decoding_key) = decoding_key(&key.public_jwk, header.alg) else {
+            let Some(decoding_key) = jwt_verification_key(&key.public_jwk, header.alg) else {
                 return Ok(None);
             };
-            let mut validation = jsonwebtoken::Validation::new(header.alg);
+            let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
             validation.validate_aud = false;
             validation.validate_exp = false;
             validation.set_issuer(&[issuer]);
             Ok(
-                jsonwebtoken::decode::<Value>(token, &decoding_key, &validation)
+                nazo_crypto::jwt::decode::<Value>(token, &decoding_key, &validation)
                     .ok()
                     .map(|data| data.claims),
             )
@@ -167,7 +169,7 @@ impl TokenSignerPort for KeyManager {
                 }
                 None => snapshot.active_alg,
             };
-            let mut header = jsonwebtoken::Header::new(algorithm);
+            let mut header = nazo_crypto::jwt::Header::new(algorithm);
             header.typ = Some("token-introspection+jwt".to_owned());
             let claims = serde_json::json!({
                 "iss": input.issuer,
@@ -182,10 +184,10 @@ impl TokenSignerPort for KeyManager {
     }
 }
 
-fn decoding_key(
+fn jwt_verification_key(
     key: &Value,
-    algorithm: jsonwebtoken::Algorithm,
-) -> Option<jsonwebtoken::DecodingKey> {
+    algorithm: nazo_crypto::jwt::Algorithm,
+) -> Option<JwtVerificationKey> {
     let algorithm_name = crate::signing_algorithm_name(algorithm)?;
     if key.get("d").is_some()
         || key
@@ -200,7 +202,7 @@ fn decoding_key(
         return None;
     }
     match algorithm {
-        jsonwebtoken::Algorithm::EdDSA
+        nazo_crypto::jwt::Algorithm::EdDSA
             if key.get("kty").and_then(Value::as_str) == Some("OKP")
                 && key.get("crv").and_then(Value::as_str) == Some("Ed25519") =>
         {
@@ -208,9 +210,9 @@ fn decoding_key(
             if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32 {
                 return None;
             }
-            jsonwebtoken::DecodingKey::from_ed_components(x).ok()
+            JwtVerificationKey::from_ed_components(x).ok()
         }
-        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256
+        nazo_crypto::jwt::Algorithm::RS256 | nazo_crypto::jwt::Algorithm::PS256
             if key.get("kty").and_then(Value::as_str) == Some("RSA") =>
         {
             let modulus = key.get("n")?.as_str()?;
@@ -221,9 +223,9 @@ fn decoding_key(
             ) {
                 return None;
             }
-            jsonwebtoken::DecodingKey::from_rsa_components(modulus, exponent).ok()
+            JwtVerificationKey::from_rsa_components(modulus, exponent).ok()
         }
-        jsonwebtoken::Algorithm::ES256
+        nazo_crypto::jwt::Algorithm::ES256
             if key.get("kty").and_then(Value::as_str) == Some("EC")
                 && key.get("crv").and_then(Value::as_str) == Some("P-256") =>
         {
@@ -234,7 +236,7 @@ fn decoding_key(
             {
                 return None;
             }
-            jsonwebtoken::DecodingKey::from_ec_components(x, y).ok()
+            JwtVerificationKey::from_ec_components(x, y).ok()
         }
         _ => None,
     }

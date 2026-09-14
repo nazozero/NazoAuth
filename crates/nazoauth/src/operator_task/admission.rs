@@ -16,7 +16,7 @@
 use anyhow::{Context as _, bail};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
-use ed25519_dalek::VerifyingKey;
+use nazo_crypto::ed25519::VerifyingKey;
 use nazo_operator_protocol::{
     ControlOperation, MAX_COMPACT_JWS_BYTES, MAX_CONTROL_OPERATION_BYTES,
     validate_control_operation,

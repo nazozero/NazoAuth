@@ -1,7 +1,7 @@
 //! Signing and compact-JWS encoding for the operator protocol.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
+use nazo_crypto::ed25519::{SigningKey, VerifyingKey};
 use serde::{Serialize, de::DeserializeOwned};
 use sha2::{Digest as _, Sha256};
 
@@ -179,10 +179,7 @@ pub(crate) fn sign_compact<T: Serialize>(
     let payload = encode_json(claims)?;
     let signing_input = format!("{protected}.{payload}");
     let signature = key.sign(signing_input.as_bytes());
-    let compact = format!(
-        "{signing_input}.{}",
-        URL_SAFE_NO_PAD.encode(signature.to_bytes())
-    );
+    let compact = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature));
     if compact.len() > MAX_COMPACT_JWS_BYTES {
         return Err(ProtocolError::TooLarge);
     }

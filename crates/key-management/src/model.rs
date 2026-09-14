@@ -9,12 +9,10 @@ use std::{
 };
 
 use crate::ExternalKeySigner;
-use crate::local::SigningBackend;
 use arc_swap::ArcSwap;
 use base64::{Engine, encoded_len, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use nazo_auth::{SignError, SignRequest, Signature, Signer, SigningPurpose};
-use p256::elliptic_curve::sec1::ToSec1Point;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -126,7 +124,7 @@ pub(crate) struct StoredVerificationKey {
 #[derive(Clone)]
 pub(crate) struct LoadedKeyset {
     pub(crate) active_kid: String,
-    pub(crate) active_alg: jsonwebtoken::Algorithm,
+    pub(crate) active_alg: nazo_crypto::jwt::Algorithm,
     pub(crate) active_signing_key: ActiveSigningKey,
     pub(crate) verification_keys: Vec<StoredVerificationKey>,
     pub(crate) request_object_decryption_key: Vec<u8>,
@@ -158,10 +156,10 @@ impl VerificationKey {
 #[derive(Clone, Debug)]
 pub struct KeySnapshot {
     pub active_kid: String,
-    pub active_alg: jsonwebtoken::Algorithm,
+    pub active_alg: nazo_crypto::jwt::Algorithm,
     pub verification_keys: Vec<VerificationKey>,
-    pub(crate) id_token_signing_algorithms: Vec<jsonwebtoken::Algorithm>,
-    pub(crate) response_signing_algorithms: Vec<jsonwebtoken::Algorithm>,
+    pub(crate) id_token_signing_algorithms: Vec<nazo_crypto::jwt::Algorithm>,
+    pub(crate) response_signing_algorithms: Vec<nazo_crypto::jwt::Algorithm>,
     pub request_object_encryption_jwk: Value,
 }
 
@@ -177,7 +175,7 @@ impl KeySnapshot {
     pub fn signing_verification_key(
         &self,
         purpose: SigningPurpose,
-        algorithm: jsonwebtoken::Algorithm,
+        algorithm: nazo_crypto::jwt::Algorithm,
     ) -> Option<&VerificationKey> {
         let algorithm = crate::serialization::signing_algorithm_name(algorithm)?;
         let matches = |key: &&VerificationKey| {
@@ -265,14 +263,14 @@ impl KeyRecordStatus {
 #[derive(Clone, Debug)]
 pub struct ExternalKeyRegistration {
     pub kid: String,
-    pub algorithm: jsonwebtoken::Algorithm,
+    pub algorithm: nazo_crypto::jwt::Algorithm,
     pub key_ref: String,
     pub public_jwk: Value,
 }
 
 #[derive(Clone, Debug)]
 pub struct LocalKeyRegistration {
-    pub algorithm: jsonwebtoken::Algorithm,
+    pub algorithm: nazo_crypto::jwt::Algorithm,
     pub purposes: BTreeSet<SigningPurpose>,
 }
 
@@ -348,7 +346,7 @@ pub struct HttpSigningLease {
     generation: Arc<KeyGeneration>,
     health: Arc<LifecycleHealth>,
     kid: String,
-    algorithm: jsonwebtoken::Algorithm,
+    algorithm: nazo_crypto::jwt::Algorithm,
     http_algorithm: &'static str,
 }
 
@@ -413,9 +411,9 @@ impl Openid4vcSigningLease {
     pub async fn encode_jwt<T: Serialize>(
         &self,
         purpose: SigningPurpose,
-        header: &jsonwebtoken::Header,
+        header: &nazo_crypto::jwt::Header,
         claims: &T,
-    ) -> jsonwebtoken::errors::Result<String> {
+    ) -> nazo_crypto::Result<String> {
         encode_jwt_for_generation(
             &self.generation,
             &self.health,
@@ -441,7 +439,7 @@ impl Signer for Openid4vcSigningLease {
         }
         let algorithm = crate::serialization::signing_algorithm_from_name(request.algorithm)
             .ok_or(SignError::UnsupportedAlgorithm)?;
-        if algorithm != jsonwebtoken::Algorithm::ES256 {
+        if algorithm != nazo_crypto::jwt::Algorithm::ES256 {
             return Err(SignError::UnsupportedAlgorithm);
         }
         let selected = self
@@ -465,7 +463,7 @@ impl LoadedKeyset {
     pub(crate) fn selected_key(
         &self,
         purpose: SigningPurpose,
-        algorithm: jsonwebtoken::Algorithm,
+        algorithm: nazo_crypto::jwt::Algorithm,
     ) -> Option<SelectedKey<'_>> {
         let algorithm_name = crate::serialization::signing_algorithm_name(algorithm)?;
         let active = self
@@ -510,7 +508,7 @@ impl LoadedKeyset {
 
 pub(crate) struct SelectedKey<'a> {
     pub(crate) kid: &'a str,
-    pub(crate) algorithm: jsonwebtoken::Algorithm,
+    pub(crate) algorithm: nazo_crypto::jwt::Algorithm,
     pub(crate) handle: SelectedHandle<'a>,
     pub(crate) public_jwk: &'a Value,
 }
@@ -589,9 +587,9 @@ pub(crate) fn p256_public_key_from_jwk(jwk: &Value, description: &str) -> anyhow
     point.push(4);
     point.extend_from_slice(&x);
     point.extend_from_slice(&y);
-    let public = p256::PublicKey::from_sec1_bytes(&point)
-        .map_err(|error| anyhow::anyhow!("{description} public JWK point is invalid: {error}"))?;
-    Ok(public.to_sec1_point(false).as_bytes().to_vec())
+    Ok(nazo_crypto::ec::normalize_p256_public_key(&point)
+        .map_err(|error| anyhow::anyhow!("{description} public JWK point is invalid: {error}"))?
+        .to_vec())
 }
 
 pub(crate) fn p256_public_key_from_certificate(
@@ -604,9 +602,9 @@ pub(crate) fn p256_public_key_from_certificate(
         anyhow::bail!("{description} contains trailing bytes after a certificate");
     }
     let point = certificate.public_key().subject_public_key.data.as_ref();
-    let public = p256::PublicKey::from_sec1_bytes(point)
-        .map_err(|error| anyhow::anyhow!("{description} is not an ES256 certificate: {error}"))?;
-    Ok(public.to_sec1_point(false).as_bytes().to_vec())
+    Ok(nazo_crypto::ec::normalize_p256_public_key(point)
+        .map_err(|error| anyhow::anyhow!("{description} is not an ES256 certificate: {error}"))?
+        .to_vec())
 }
 
 pub(crate) fn openid4vc_material_is_revoked(material: &Openid4vcMaterial) -> anyhow::Result<bool> {
@@ -747,13 +745,16 @@ impl KeyManager {
             .ok_or_else(|| anyhow::anyhow!("OpenID4VC signing material is unavailable"))?;
         let credential = generation
             .loaded
-            .selected_key(SigningPurpose::Credential, jsonwebtoken::Algorithm::ES256)
+            .selected_key(
+                SigningPurpose::Credential,
+                nazo_crypto::jwt::Algorithm::ES256,
+            )
             .ok_or_else(|| anyhow::anyhow!("OpenID4VC credential signing key unavailable"))?;
         let presentation = generation
             .loaded
             .selected_key(
                 SigningPurpose::PresentationRequest,
-                jsonwebtoken::Algorithm::ES256,
+                nazo_crypto::jwt::Algorithm::ES256,
             )
             .ok_or_else(|| {
                 anyhow::anyhow!("OpenID4VC presentation-request signing key unavailable")
@@ -776,14 +777,14 @@ impl KeyManager {
 
     #[cfg(any(test, feature = "test-support"))]
     #[must_use]
-    pub fn for_test(algorithm: jsonwebtoken::Algorithm) -> Self {
+    pub fn for_test(algorithm: nazo_crypto::jwt::Algorithm) -> Self {
         Self::for_test_behavior(algorithm, TestSigningBehavior::Working)
     }
 
     #[cfg(any(test, feature = "test-support"))]
     #[must_use]
     pub fn for_test_behavior(
-        algorithm: jsonwebtoken::Algorithm,
+        algorithm: nazo_crypto::jwt::Algorithm,
         behavior: TestSigningBehavior,
     ) -> Self {
         let material = crate::serialization::generate_key_material(algorithm)
@@ -860,8 +861,8 @@ impl KeyManager {
 
     #[cfg(any(test, feature = "test-support"))]
     #[must_use]
-    pub fn for_test_with_auxiliary(algorithm: jsonwebtoken::Algorithm) -> Self {
-        let manager = Self::for_test(jsonwebtoken::Algorithm::EdDSA);
+    pub fn for_test_with_auxiliary(algorithm: nazo_crypto::jwt::Algorithm) -> Self {
+        let manager = Self::for_test(nazo_crypto::jwt::Algorithm::EdDSA);
         let mut loaded = manager.inner.generation.load().loaded.clone();
         let material = crate::serialization::generate_key_material(algorithm).unwrap();
         let kid = format!(
@@ -964,9 +965,9 @@ impl KeyManager {
     pub async fn encode_jwt<T: Serialize>(
         &self,
         purpose: SigningPurpose,
-        header: &jsonwebtoken::Header,
+        header: &nazo_crypto::jwt::Header,
         claims: &T,
-    ) -> jsonwebtoken::errors::Result<String> {
+    ) -> nazo_crypto::Result<String> {
         let generation = self.inner.generation.load_full();
         encode_jwt_for_generation(
             &generation,
@@ -989,9 +990,9 @@ impl KeyManager {
             .selected_key(SigningPurpose::HttpMessage, generation.loaded.active_alg)
             .ok_or_else(|| anyhow::anyhow!("HTTP message signing key unavailable"))?;
         let http_algorithm = match selected.algorithm {
-            jsonwebtoken::Algorithm::EdDSA => "ed25519",
-            jsonwebtoken::Algorithm::RS256 => "rsa-v1_5-sha256",
-            jsonwebtoken::Algorithm::ES256 => "ecdsa-p256-sha256",
+            nazo_crypto::jwt::Algorithm::EdDSA => "ed25519",
+            nazo_crypto::jwt::Algorithm::RS256 => "rsa-v1_5-sha256",
+            nazo_crypto::jwt::Algorithm::ES256 => "ecdsa-p256-sha256",
             _ => anyhow::bail!("unsupported HTTP message signing algorithm"),
         };
         Ok(HttpSigningLease {
@@ -1026,11 +1027,11 @@ async fn encode_jwt_for_generation<T: Serialize>(
     health: &LifecycleHealth,
     expected_kid: Option<&str>,
     purpose: SigningPurpose,
-    header: &jsonwebtoken::Header,
+    header: &nazo_crypto::jwt::Header,
     claims: &T,
-) -> jsonwebtoken::errors::Result<String> {
+) -> nazo_crypto::Result<String> {
     if generation.is_expired() || !health.snapshot().is_healthy() {
-        return Err(jsonwebtoken::errors::ErrorKind::InvalidKeyFormat.into());
+        return Err(nazo_crypto::CryptoError::InvalidKey);
     }
     if expected_kid.is_some()
         && !matches!(
@@ -1038,24 +1039,26 @@ async fn encode_jwt_for_generation<T: Serialize>(
             SigningPurpose::Credential | SigningPurpose::PresentationRequest
         )
     {
-        return Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into());
+        return Err(nazo_crypto::CryptoError::UnsupportedAlgorithm);
     }
-    if expected_kid.is_some() && header.alg != jsonwebtoken::Algorithm::ES256 {
-        return Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into());
+    if expected_kid.is_some() && header.alg != nazo_crypto::jwt::Algorithm::ES256 {
+        return Err(nazo_crypto::CryptoError::UnsupportedAlgorithm);
     }
     let selected = generation
         .loaded
         .selected_key(purpose, header.alg)
-        .ok_or(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm)?;
+        .ok_or(nazo_crypto::CryptoError::UnsupportedAlgorithm)?;
     if expected_kid.is_some_and(|kid| kid != selected.kid)
         || header.kid.as_deref().is_some_and(|kid| kid != selected.kid)
     {
-        return Err(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm.into());
+        return Err(nazo_crypto::CryptoError::UnsupportedAlgorithm);
     }
     let mut header = header.clone();
     header.kid = Some(selected.kid.to_owned());
-    let header_json = serde_json::to_vec(&header)?;
-    let claims_json = serde_json::to_vec(claims)?;
+    let header_json =
+        serde_json::to_vec(&header).map_err(|_| nazo_crypto::CryptoError::InvalidInput)?;
+    let claims_json =
+        serde_json::to_vec(claims).map_err(|_| nazo_crypto::CryptoError::InvalidInput)?;
     let mut signing_input = String::with_capacity(
         encoded_len(header_json.len(), false)
             .expect("JWT header is too large to encode")
@@ -1071,7 +1074,7 @@ async fn encode_jwt_for_generation<T: Serialize>(
     drop(claims_json);
     let signature = sign_selected(&selected, signing_input.as_bytes())
         .await
-        .map_err(sign_error_to_jwt)?;
+        .map_err(|_| nazo_crypto::CryptoError::OperationFailed)?;
     signing_input.reserve(
         encoded_len(signature.as_bytes().len(), false)
             .expect("JWT signature is too large to encode")
@@ -1101,36 +1104,26 @@ impl Signer for KeyManager {
 async fn sign_selected(selected: &SelectedKey<'_>, input: &[u8]) -> Result<Signature, SignError> {
     match &selected.handle {
         SelectedHandle::Active(ActiveSigningKey::LocalPkcs8Der(private_key)) => {
-            crate::local::LocalBackend {
-                algorithm: selected.algorithm,
-                private_key,
-            }
-            .sign(input)
-            .await
+            nazo_crypto::signature::sign(selected.algorithm, private_key, input)
+                .map(Signature::new)
+                .map_err(|_| SignError::SigningFailed)
         }
         SelectedHandle::Active(ActiveSigningKey::External(external)) => {
-            crate::external::ExternalBackend {
+            crate::external::sign_external(
                 external,
-                kid: selected.kid,
-                algorithm: selected.algorithm,
-                public_jwk: selected.public_jwk,
-            }
-            .sign(input)
+                selected.kid,
+                selected.algorithm,
+                selected.public_jwk,
+                input,
+            )
             .await
         }
         SelectedHandle::Local(private_key) => {
-            crate::local::LocalBackend {
-                algorithm: selected.algorithm,
-                private_key,
-            }
-            .sign(input)
-            .await
+            nazo_crypto::signature::sign(selected.algorithm, private_key, input)
+                .map(Signature::new)
+                .map_err(|_| SignError::SigningFailed)
         }
     }
-}
-
-fn sign_error_to_jwt(error: SignError) -> jsonwebtoken::errors::Error {
-    crate::external::jwt_provider_error(error.to_string())
 }
 
 impl KeyGeneration {
@@ -1150,11 +1143,11 @@ impl KeyGeneration {
 }
 
 pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
-    const ORDERED: [jsonwebtoken::Algorithm; 4] = [
-        jsonwebtoken::Algorithm::EdDSA,
-        jsonwebtoken::Algorithm::RS256,
-        jsonwebtoken::Algorithm::ES256,
-        jsonwebtoken::Algorithm::PS256,
+    const ORDERED: [nazo_crypto::jwt::Algorithm; 4] = [
+        nazo_crypto::jwt::Algorithm::EdDSA,
+        nazo_crypto::jwt::Algorithm::RS256,
+        nazo_crypto::jwt::Algorithm::ES256,
+        nazo_crypto::jwt::Algorithm::PS256,
     ];
     let id_token_signing_algorithms = ORDERED
         .into_iter()
@@ -1204,7 +1197,7 @@ pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
 
 #[cfg(any(test, feature = "test-support"))]
 fn test_request_object_decryption_key() -> anyhow::Result<Vec<u8>> {
-    crate::crypto::generate_rsa_pkcs8_pem(2048)
+    crate::serialization::generate_rsa_pkcs8_pem(2048)
 }
 
 #[cfg(any(test, feature = "test-support"))]

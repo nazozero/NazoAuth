@@ -31,7 +31,7 @@ impl AuthorizationResponseSignerPort for KeyManager {
                 }
                 None => self.snapshot().active_alg,
             };
-            let mut header = jsonwebtoken::Header::new(algorithm);
+            let mut header = nazo_crypto::jwt::Header::new(algorithm);
             header.typ = Some("oauth-authz-resp+jwt".to_owned());
             self.encode_jwt(SigningPurpose::Jarm, &header, &Value::Object(claims))
                 .await

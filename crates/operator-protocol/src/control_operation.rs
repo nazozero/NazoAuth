@@ -42,7 +42,7 @@
 use std::collections::BTreeMap;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use ed25519_dalek::{Signature, Signer as _, SigningKey, Verifier as _, VerifyingKey};
+use nazo_crypto::ed25519::{SigningKey, VerifyingKey};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
@@ -1158,10 +1158,7 @@ pub fn sign_control_operation(
     let payload = URL_SAFE_NO_PAD.encode(canonical_control_operation_bytes(operation)?);
     let signing_input = format!("{protected}.{payload}");
     let signature = key.sign(signing_input.as_bytes());
-    let compact = format!(
-        "{signing_input}.{}",
-        URL_SAFE_NO_PAD.encode(signature.to_bytes())
-    );
+    let compact = format!("{signing_input}.{}", URL_SAFE_NO_PAD.encode(signature));
     if compact.len() > MAX_COMPACT_JWS_BYTES {
         return Err(ProtocolError::TooLarge);
     }
@@ -1227,10 +1224,11 @@ pub fn verify_control_operation_signature(
     let signature_bytes = URL_SAFE_NO_PAD
         .decode(signature)
         .map_err(|_| ProtocolError::Base64)?;
-    let signature =
-        Signature::from_slice(&signature_bytes).map_err(|_| ProtocolError::Signature)?;
-    key.verify(format!("{protected}.{payload}").as_bytes(), &signature)
-        .map_err(|_| ProtocolError::Signature)?;
+    key.verify(
+        format!("{protected}.{payload}").as_bytes(),
+        &signature_bytes,
+    )
+    .map_err(|_| ProtocolError::Signature)?;
     Ok(operation)
 }
 

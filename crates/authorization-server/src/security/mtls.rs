@@ -57,47 +57,15 @@ pub fn certificate_der_identity(der: &[u8]) -> Option<ClientCertificateFacts> {
 /// PKI authentication consumes the tenant's currently approved trust anchors.
 /// Revocation therefore takes effect on existing TLS connections as well.
 pub fn certificate_chain_trusted(certificate: &ClientCertificateFacts, anchors: &str) -> bool {
-    use rustls::{
-        RootCertStore,
-        pki_types::{CertificateDer, pem::PemObject},
+    let Ok(unix_seconds) = u64::try_from(chrono::Utc::now().timestamp()) else {
+        return false;
     };
-
-    let mut roots = RootCertStore::empty();
-    for certificate in CertificateDer::pem_slice_iter(anchors.as_bytes()) {
-        let Ok(certificate) = certificate else {
-            return false;
-        };
-        if roots.add(certificate).is_err() {
-            return false;
-        }
-    }
-    let provider = std::sync::Arc::new(rustls::crypto::aws_lc_rs::default_provider());
-    let Ok(verifier) = rustls::server::WebPkiClientVerifier::builder_with_provider(
-        std::sync::Arc::new(roots),
-        provider,
+    nazo_crypto::certificate::verify_client_chain_at(
+        &certificate.certificate_chain_der,
+        anchors,
+        unix_seconds,
     )
-    .build() else {
-        return false;
-    };
-    certificate_chain_verified(certificate, verifier.as_ref())
-}
-
-pub fn certificate_chain_verified(
-    certificate: &ClientCertificateFacts,
-    verifier: &dyn rustls::server::danger::ClientCertVerifier,
-) -> bool {
-    use rustls::pki_types::{CertificateDer, UnixTime};
-    let chain = certificate
-        .certificate_chain_der
-        .iter()
-        .map(|der| CertificateDer::from(der.as_slice()))
-        .collect::<Vec<_>>();
-    let Some((leaf, intermediates)) = chain.split_first() else {
-        return false;
-    };
-    verifier
-        .verify_client_cert(leaf, intermediates, UnixTime::now())
-        .is_ok()
+    .is_ok()
 }
 
 pub fn certificate_x5c_thumbprint(value: &str) -> Option<String> {

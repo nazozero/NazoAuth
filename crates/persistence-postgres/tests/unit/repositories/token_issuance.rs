@@ -1,4 +1,8 @@
 use super::*;
+use aes_gcm::{
+    Aes256Gcm, KeyInit,
+    aead::{Aead, Payload},
+};
 use nazo_auth::TokenIssuedAuditFields;
 
 // Real PostgreSQL cursor/bind/transaction coverage. Session-local tables keep

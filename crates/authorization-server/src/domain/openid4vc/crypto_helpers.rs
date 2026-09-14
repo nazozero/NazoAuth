@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use coset::{CoseKeyBuilder, iana};
-use jsonwebtoken::{Algorithm, DecodingKey};
+use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use nazo_digital_credentials::CredentialTrustError;
 use rustls::pki_types::{CertificateDer, pem::PemObject as _};
 use serde_json::{Map, Value, json};
@@ -9,9 +9,9 @@ use serde_json::{Map, Value, json};
 pub(super) fn decoding_key_trust(
     jwk: &Value,
     algorithm: Algorithm,
-) -> Result<DecodingKey, CredentialTrustError> {
+) -> Result<JwtVerificationKey, CredentialTrustError> {
     match algorithm {
-        Algorithm::ES256 => DecodingKey::from_ec_components(
+        Algorithm::ES256 => JwtVerificationKey::from_ec_components(
             jwk.get("x")
                 .and_then(Value::as_str)
                 .ok_or(CredentialTrustError::InvalidHolderBinding)?,
@@ -20,7 +20,7 @@ pub(super) fn decoding_key_trust(
                 .ok_or(CredentialTrustError::InvalidHolderBinding)?,
         )
         .map_err(|_| CredentialTrustError::InvalidHolderBinding),
-        Algorithm::EdDSA => DecodingKey::from_ed_components(
+        Algorithm::EdDSA => JwtVerificationKey::from_ed_components(
             jwk.get("x")
                 .and_then(Value::as_str)
                 .ok_or(CredentialTrustError::InvalidHolderBinding)?,
@@ -167,7 +167,7 @@ pub(super) fn verify_openid4vc_chain(
         if !issuer.is_ca()
             || !issuer.validity().is_valid()
             || current.issuer() != issuer.subject()
-            || current.verify_signature(Some(issuer.public_key())).is_err()
+            || nazo_crypto::certificate::verify_signature(&current, issuer.public_key()).is_err()
         {
             anyhow::bail!("OpenID4VC signing certificate chain is invalid");
         }
@@ -178,7 +178,7 @@ pub(super) fn verify_openid4vc_chain(
             anchor.is_ca()
                 && anchor.validity().is_valid()
                 && current.issuer() == anchor.subject()
-                && current.verify_signature(Some(anchor.public_key())).is_ok()
+                && nazo_crypto::certificate::verify_signature(&current, anchor.public_key()).is_ok()
         })
     });
     if !anchored {

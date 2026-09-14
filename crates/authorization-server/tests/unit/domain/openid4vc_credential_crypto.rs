@@ -9,7 +9,7 @@ use base64::{
 };
 use chrono::{Duration, Utc};
 use coset::{CoseKeyBuilder, SignatureContext, iana};
-use jsonwebtoken::{Algorithm, EncodingKey, Header, decode, decode_header, encode};
+use jsonwebtoken::{Algorithm, EncodingKey, Header, decode_header, encode};
 use mdoc_rs::{
     MdocError,
     builder::{CoseSigner, DocumentBuilder},
@@ -575,7 +575,7 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
         let (crypto, certs, _) = real_crypto_fixture().await;
         let (_, leaf) =
             x509_parser::parse_x509_certificate(&certs.leaf_der).expect("leaf certificate");
-        let decoding_key = jsonwebtoken::DecodingKey::from_ec_der(
+        let decoding_key = nazo_crypto::jwt::VerificationKey::from_ec_sec1(
             leaf.public_key().subject_public_key.data.as_ref(),
         );
         let encoded = crypto.sign(&input).await.expect("SD-JWT signing");
@@ -585,7 +585,7 @@ fn sd_jwt_signing_supports_disclosures_holder_binding_and_status() {
         assert_eq!(parts.last(), Some(&""));
         let header = decode_header(parts[0]).expect("SD-JWT header");
         assert_eq!(header.typ.as_deref(), Some("dc+sd-jwt"));
-        let claims: Value = decode(
+        let claims: Value = nazo_crypto::jwt::decode(
             parts[0],
             &decoding_key,
             &jsonwebtoken::Validation::new(Algorithm::ES256),

@@ -218,7 +218,7 @@ fn refreshed_id_token_essential_claims_satisfied(
         })
 }
 
-fn id_token_signing_alg_for_client(client: &ClientRow) -> jsonwebtoken::Algorithm {
+fn id_token_signing_alg_for_client(client: &ClientRow) -> nazo_crypto::jwt::Algorithm {
     client
         .id_token_signed_response_alg
         .as_deref()
@@ -228,9 +228,9 @@ fn id_token_signing_alg_for_client(client: &ClientRow) -> jsonwebtoken::Algorith
                 || client.require_mtls_bound_tokens
                 || client.require_par_request_object
             {
-                jsonwebtoken::Algorithm::PS256
+                nazo_crypto::jwt::Algorithm::PS256
             } else {
-                jsonwebtoken::Algorithm::RS256
+                nazo_crypto::jwt::Algorithm::RS256
             }
         })
 }

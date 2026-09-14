@@ -1,6 +1,10 @@
 use super::*;
 use aws_lc_rs::key_wrap::{AES_128, AES_256, AesKek, KeyWrap};
-use p256::elliptic_curve::Generate;
+use p256::{
+    PublicKey, SecretKey,
+    ecdh::diffie_hellman,
+    elliptic_curve::{Generate, sec1::ToSec1Point},
+};
 
 #[test]
 fn client_jwe_key_rejects_ambiguous_matching_keys() {
@@ -117,6 +121,7 @@ fn decrypt_ecdh_compact_jwe(compact: &str, recipient: &SecretKey) -> Vec<u8> {
         .and_then(Value::as_str)
         .expect("JWE alg header");
     let ephemeral = parse_p256_public_jwk(header.get("epk").expect("epk header")).expect("epk");
+    let ephemeral = PublicKey::from_sec1_bytes(&ephemeral).expect("epk point");
     let shared = diffie_hellman(recipient.to_nonzero_scalar(), ephemeral.as_affine());
     let cek = if alg == "ECDH-ES" {
         assert!(parts[1].is_empty());
@@ -154,8 +159,14 @@ fn decrypt_ecdh_compact_jwe(compact: &str, recipient: &SecretKey) -> Vec<u8> {
         .expect("tag")
         .try_into()
         .expect("128-bit tag");
-    crate::crypto::aes_256_gcm_decrypt(&cek, &iv, parts[0].as_bytes(), &ciphertext, &tag)
-        .expect("decrypt compact JWE")
+    crate::crypto_test_support::aes_256_gcm_decrypt(
+        &cek,
+        &iv,
+        parts[0].as_bytes(),
+        &ciphertext,
+        &tag,
+    )
+    .expect("decrypt compact JWE")
 }
 
 fn aes_key_unwrap(kek: &[u8], encrypted_key: &[u8]) -> Vec<u8> {
@@ -171,4 +182,14 @@ fn aes_key_unwrap(kek: &[u8], encrypted_key: &[u8]) -> Vec<u8> {
     }
     .expect("unwrap CEK");
     unwrapped.to_vec()
+}
+
+fn public_p256_jwk(key: PublicKey) -> Value {
+    let point = key.to_sec1_point(false);
+    json!({
+        "kty": "EC",
+        "crv": "P-256",
+        "x": URL_SAFE_NO_PAD.encode(point.x().expect("uncompressed P-256 point has x")),
+        "y": URL_SAFE_NO_PAD.encode(point.y().expect("uncompressed P-256 point has y")),
+    })
 }
