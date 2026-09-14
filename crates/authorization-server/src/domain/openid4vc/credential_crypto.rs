@@ -1,6 +1,4 @@
 use crate::ports::mdoc::MdocDocumentSigner;
-#[cfg(test)]
-use coset::CborSerializable;
 use nazo_digital_credentials::{
     CredentialFormat, CredentialFuture, CredentialTrustError, CredentialVerifierPort,
     PresentedCredential, VcIssuerTrustPolicy, VerifiedCredential,
@@ -9,20 +7,11 @@ use nazo_key_management::KeyManager;
 use std::sync::Arc;
 
 mod certificates;
-mod mdoc;
+pub(crate) mod mdoc;
 mod sd_jwt;
 mod signer;
 
 pub use certificates::parse_scoped_credential_trust_anchors;
-#[cfg(test)]
-pub(crate) use mdoc::{
-    mdoc_failed_assessments_accepted, mdoc_holder_key, standard_device_authentication_bytes,
-};
-
-#[cfg(test)]
-use mdoc::verify_direct_scoped_trust_anchor;
-#[cfg(test)]
-use mdoc::{mdoc_assessments_accepted, verify_certificate_chain_at};
 
 #[derive(Clone)]
 pub struct Openid4vcCredentialCrypto {

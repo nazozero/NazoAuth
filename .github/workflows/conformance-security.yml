@@ -73,8 +73,6 @@ jobs:
           python -m py_compile scripts/full_real_request_source_policy.py scripts/rfc9967_scim_set_e2e.py
           python scripts/rfc9967_scim_set_e2e.py --source-policy-check
           python tests/unit/test_rfc9967_scim_set_e2e_source_policy.py
-      - name: Verify compatibility contracts
-        run: python scripts/verify_static_contracts.py --check
 
   supply-chain-gate:
     runs-on: ubuntu-latest

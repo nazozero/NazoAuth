@@ -77,6 +77,7 @@ def package_names(package: str, root: Path | None = None) -> set[str]:
         "cargo",
         "tree",
         "--locked",
+        "--all-features",
         "--package",
         package,
         "--edges",

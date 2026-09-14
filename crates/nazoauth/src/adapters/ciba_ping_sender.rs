@@ -52,10 +52,7 @@ impl CibaPingHttpSender {
         if !allow_private && addresses.iter().any(|address| is_blocked_ip(address.ip())) {
             anyhow::bail!("CIBA ping endpoint resolved to a blocked network");
         }
-        let client = apply_ciba_ping_tls_policy(reqwest::Client::builder().no_proxy())?
-            .connect_timeout(Duration::from_secs(3))
-            .timeout(Duration::from_secs(5))
-            .redirect(reqwest::redirect::Policy::none())
+        let client = apply_ciba_ping_client_policy(reqwest::Client::builder())?
             .resolve_to_addrs(host, &addresses)
             .build()
             .context("failed to build CIBA ping HTTP client")?;
@@ -74,6 +71,15 @@ impl CibaPingHttpSender {
         Ok(response.status())
     }
 }
+fn apply_ciba_ping_client_policy(
+    builder: reqwest::ClientBuilder,
+) -> anyhow::Result<reqwest::ClientBuilder> {
+    Ok(apply_ciba_ping_tls_policy(builder.no_proxy())?
+        .connect_timeout(Duration::from_secs(3))
+        .timeout(Duration::from_secs(5))
+        .redirect(reqwest::redirect::Policy::none()))
+}
+
 fn ciba_ping_idempotency_key(auth_req_id_hash: &str) -> String {
     format!("nazo-ciba-ping-{auth_req_id_hash}")
 }

@@ -104,15 +104,20 @@ def cfg_is_production_possible(expression: str) -> bool:
     return evaluate(expression) is not False
 
 
-def rust_production_source(source: str) -> str:
-    """Mask comments/literals and explicit test-only items, retaining feature code."""
+def mask_rust_non_code(source: str) -> str:
+    """Blank comments and string/char literal contents without moving offsets."""
     non_code = re.compile(
         r'r(?P<hashes>#{0,255})"[\s\S]*?"(?P=hashes)'
         r'|"(?:\\[\s\S]|[^"\\])*"'
         r"|'(?:\\.|[^'\\\n])'"
         r"|//[^\n]*|/\*[\s\S]*?\*/"
     )
-    source = non_code.sub(lambda match: re.sub(r"[^\n]", " ", match[0]), source)
+    return non_code.sub(lambda match: re.sub(r"[^\n]", " ", match[0]), source)
+
+
+def rust_production_source(source: str) -> str:
+    """Mask comments/literals and explicit test-only items, retaining feature code."""
+    source = mask_rust_non_code(source)
     test_items = []
     for match in re.finditer(r"#(?P<file>!)?\[\s*cfg\s*\(", source):
         end, depth = match.end(), 1
@@ -526,17 +531,25 @@ def check_rust_test_structure() -> None:
     """Enforce physical separation: test code lives under tests/, never inside src/.
 
     Production ``src/**`` may carry only declaration-only test mounts
-    (``#[cfg(test)] #[path = "../tests/..."] mod x;``) and ordinary test seams
-    decided by code review. Test files must not recompile production source
-    through ``include!`` or ``#[path]``.
+    (``#[cfg(test)] #[path = "../tests/..."] mod x;``). Any other test-only item
+    (``#[cfg(test)] fn/impl/const/use/...``) is test code embedded in production
+    source and must live under ``tests/**`` instead. Test files must not
+    recompile production source through ``include!`` or ``#[path]``.
     """
     test_attribute = re.compile(
-        r"(?m)^\s*#\[\s*(?:(?:tokio|actix_web|actix_rt)\s*::\s*)?test(?:\s*\([^\]]*\))?\s*\]"
+        r"#\[\s*(?:(?:tokio|actix_web|actix_rt)\s*::\s*)?test(?:\s*\([^\]]*\))?\s*\]"
     )
     module_item = re.compile(
         r"(?P<attrs>(?:\s*#\[[^\]]*\])*)\s*"
         r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*(?P<term>[;{])"
     )
+    attr_cluster = re.compile(r"(?:\s*#\[[^\]]*\])+")
+    item_keyword = re.compile(
+        r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?"
+        r"(?:(?:async|unsafe|extern(?:\s*\"[^\"]*\")?|const|default)\s+)*"
+        r"(mod|use|fn|impl|const|static|struct|enum|union|trait|type|macro)\b"
+    )
+    inner_cfg = re.compile(r"#\s*!\s*\[\s*cfg\s*\((?P<expr>[^]]*)\)\s*\]")
     path_attribute = re.compile(r'#\[\s*path\s*=\s*"([^"]+)"\s*\]')
     violations = []
     for crate in sorted((ROOT / "crates").iterdir()):
@@ -553,18 +566,35 @@ def check_rust_test_structure() -> None:
             ):
                 violations.append(f"{relative} is a test file inside src")
             source = source_file.read_text(encoding="utf-8")
-            if test_attribute.search(source):
+            masked = mask_rust_non_code(source)
+            if test_attribute.search(masked):
                 violations.append(f"{relative} declares an executable test in production source")
-            if "include!(" in source:
+            if "include!(" in masked:
                 violations.append(f"{relative} includes another source file")
-            for match in module_item.finditer(source):
+            for inner in inner_cfg.finditer(masked):
+                if not cfg_is_production_possible(inner["expr"]):
+                    violations.append(
+                        f"{relative} gates the whole file behind a test-only cfg"
+                    )
+            for cluster in attr_cluster.finditer(masked):
+                block = cluster[0]
+                if "cfg" not in block or not _cfg_is_test_only(block):
+                    continue
+                item = item_keyword.match(masked, cluster.end())
+                if item is not None and item.group(1) == "mod":
+                    continue  # module mounts are validated below
+                violations.append(
+                    f"{relative} declares a test-only item in production source"
+                )
+            for match in module_item.finditer(masked):
                 block = match["attrs"]
                 test_only = _cfg_is_test_only(block)
                 if match["term"] == "{":
                     if test_only:
                         violations.append(f"{relative} embeds an inline test module")
                     continue
-                path_match = path_attribute.search(block)
+                real_block = source[match.start("attrs"):match.end("attrs")]
+                path_match = path_attribute.search(real_block)
                 if path_match is None:
                     if test_only:
                         violations.append(
@@ -590,7 +620,8 @@ def check_rust_test_structure() -> None:
             continue
         for test_file in sorted(test_root.rglob("*.rs")):
             source = test_file.read_text(encoding="utf-8")
-            if "include!(" in source:
+            masked = mask_rust_non_code(source)
+            if "include!(" in masked:
                 violations.append(
                     f"{test_file.relative_to(ROOT).as_posix()} includes another source file"
                 )
@@ -603,6 +634,26 @@ def check_rust_test_structure() -> None:
                     )
     if violations:
         raise SystemExit("Rust test structure violations:\n- " + "\n- ".join(violations))
+
+
+def check_ciba_ping_connection_pinning() -> None:
+    """The CIBA ping sender must dial exactly the addresses it validated.
+
+    Resolution is validated against the blocked-network policy; the client must
+    then pin those same addresses, otherwise a DNS rebinding between validation
+    and connect would bypass the check. Redirect and environment-proxy behavior
+    are covered by end-to-end tests; this single invariant remains because no
+    black-box test can distinguish a pinned connection from re-resolution.
+    """
+    path = ROOT / "crates" / "nazoauth" / "src" / "adapters" / "ciba_ping_sender.rs"
+    source = rust_production_source(path.read_text(encoding="utf-8"))
+    for anchor in ("lookup_host", "is_blocked_ip", "resolve_to_addrs"):
+        if anchor not in source:
+            raise SystemExit(
+                f"{path.relative_to(ROOT)} must resolve the endpoint once, validate "
+                "the addresses against the blocked-network policy, and pin the same "
+                f"addresses on the connection ({anchor} missing)"
+            )
 
 
 def check_rfc9967_matrix() -> None:
@@ -658,6 +709,7 @@ def main() -> None:
         check_aggregate_package_boundary()
         check_workspace_package_metadata()
         check_rust_test_structure()
+        check_ciba_ping_connection_pinning()
         check_rfc9967_matrix()
 
 

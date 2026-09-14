@@ -1,10 +1,6 @@
-#[cfg(test)]
-use nazo_identity::authentication::PasswordLoginResult;
 use nazo_oauth_server::contracts::local_registration::{
     AuthenticationRateLimit, AuthenticationRateLimitError,
 };
-#[cfg(test)]
-use nazo_oauth_server::contracts::password_login::PasswordLoginFuture;
 use nazo_oauth_server::contracts::password_login::PasswordLoginOperations;
 
 use std::sync::Arc;

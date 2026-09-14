@@ -1,7 +1,3 @@
-#[cfg(test)]
-use nazo_identity::{AuthorizedApplicationsView, SessionId};
-#[cfg(test)]
-use nazo_oauth_server::contracts::profile_account::ProfileAccountFuture;
 use nazo_oauth_server::contracts::profile_account::{
     ProfileAccountError, ProfileAccountOperations, ProfileMe,
 };

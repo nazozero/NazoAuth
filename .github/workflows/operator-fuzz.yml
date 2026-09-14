@@ -3,17 +3,10 @@ name: operator-fuzz
 on:
   push:
     branches: [main]
-    paths:
-      - ".github/workflows/operator-fuzz.yml"
-      - "crates/operator-protocol/**"
-      - "fuzz/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
   pull_request:
     paths:
       - ".github/workflows/operator-fuzz.yml"
+      - "crates/crypto/**"
       - "crates/operator-protocol/**"
       - "fuzz/**"
       - "Cargo.toml"

@@ -1,10 +1,6 @@
-#[cfg(test)]
-use nazo_identity::{PasskeyLoginBegin, PasskeyRegistrationBegin};
 use nazo_oauth_server::contracts::local_registration::{
     AuthenticationRateLimit, AuthenticationRateLimitError,
 };
-#[cfg(test)]
-use nazo_oauth_server::contracts::passkey::PasskeyFuture;
 use nazo_oauth_server::contracts::passkey::{
     PasskeyEndpointError, PasskeyLoginFinishCommand, PasskeyLoginOperations, PasskeyProfileContext,
     PasskeyProfileOperations, PasskeyRegistrationFinishCommand,

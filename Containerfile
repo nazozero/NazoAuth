@@ -27,8 +27,10 @@ RUN --mount=type=cache,id=nazoauth-cargo-registry,target=/usr/local/cargo/regist
 
 FROM docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS runtime-base
 
+# perl-base rides the pinned base digest; this exact-version install lands the
+# CVE-2026-4147 fix until a new trixie-slim snapshot ships it.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates \
+    && apt-get install -y --no-install-recommends ca-certificates perl-base=5.40.1-6+deb13u1 \
     && groupadd --gid 10001 nazoauth \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nazoauth \
     && rm -rf /var/lib/apt/lists/*

@@ -37,9 +37,6 @@ mod signing;
 mod verification;
 mod wire;
 
-#[cfg(test)]
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-
 pub use control_operation::*;
 pub use recovery::{
     RECOVERY_CHALLENGE_ACTION, RECOVERY_CHALLENGE_ALLOCATION_ACTION, RECOVERY_KDF_ID,
@@ -58,9 +55,6 @@ pub use verification::{
     verify_deployment_statement, verify_discovery_statement,
 };
 pub use wire::*;
-
-#[cfg(test)]
-pub(crate) use signing::sign_compact;
 
 #[cfg(test)]
 #[path = "../tests/unit/mod.rs"]

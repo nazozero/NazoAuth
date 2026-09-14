@@ -280,3 +280,70 @@ class RustTestStructureBoundaries(unittest.TestCase):
             },
             False,
         )
+
+    def test_test_only_items_beyond_module_mounts_fail(self) -> None:
+        """Test-only helpers must live under tests/, not inside production source."""
+        for source in (
+            "#[cfg(test)]\nfn make_fake_runtime() {}\n",
+            "#[cfg(test)]\nimpl Service {\n    fn for_test() {}\n}\n",
+            "#[cfg(test)]\nconst TEST_VALUE: usize = 123;\n",
+            "#[cfg(test)]\nuse helper::Fixture;\n",
+            "#[cfg(test)]\npub use inner::TestClient;\n",
+            "#[cfg(test)]\nstatic TEST_FLAG: bool = true;\n",
+            "#[cfg(all(test, feature = \"fixtures\"))]\nfn seeded_rng() {}\n",
+            "#[cfg(test)]\ntrait FakePort {}\n",
+            "#[cfg(test)]\nmod tests;\n",
+        ):
+            with self.subTest(source=source):
+                self.assert_structure({"crates/app/src/lib.rs": source}, True)
+
+    def test_production_possible_and_production_only_cfg_items_pass(self) -> None:
+        self.assert_structure(
+            {
+                "crates/app/src/lib.rs": (
+                    '#[cfg(any(test, feature = "test-support"))]\n'
+                    "pub(crate) fn for_review_seam() {}\n"
+                    "#[cfg(not(test))]\n"
+                    "pub fn production_only() {}\n"
+                ),
+            },
+            False,
+        )
+
+
+class CibaPingConnectionPinning(unittest.TestCase):
+    """Validated CIBA addresses must be the addresses the client dials."""
+
+    SENDER = "crates/nazoauth/src/adapters/ciba_ping_sender.rs"
+
+    def assert_pinning(self, source: str, rejected: bool) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / self.SENDER
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+            with patch.object(GUARDS, "ROOT", root):
+                if rejected:
+                    with self.assertRaises(SystemExit):
+                        GUARDS.check_ciba_ping_connection_pinning()
+                else:
+                    GUARDS.check_ciba_ping_connection_pinning()
+
+    def test_validated_resolution_then_pinned_connection_passes(self) -> None:
+        self.assert_pinning(
+            "async fn post(&self) {\n"
+            "    let addresses = tokio::net::lookup_host((host, port)).await?.collect();\n"
+            "    if addresses.iter().any(|a| is_blocked_ip(a.ip())) { bail!(); }\n"
+            "    client.resolve_to_addrs(host, &addresses).build()\n"
+            "}\n",
+            False,
+        )
+
+    def test_dropping_any_step_of_the_chain_fails(self) -> None:
+        for missing in (
+            "fn post() { client.build() }",
+            "fn post() { lookup_host((h, p)); client.build() }",
+            "fn post() { lookup_host((h, p)); is_blocked_ip(ip); client.build() }",
+        ):
+            with self.subTest(source=missing):
+                self.assert_pinning(missing, True)

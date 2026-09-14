@@ -51,7 +51,7 @@ class PersistenceGraphTests(unittest.TestCase):
         output = "nazo-auth v1.0.0 (local)\nnazoauth v1.0.0 (local)\ndiesel v2.3.0 (*)\n"
         with mock.patch.object(GRAPH.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, output, "")) as run:
             self.assertEqual(GRAPH.package_names("nazo-auth", self.root), {"nazo-auth", "nazoauth", "diesel"})
-        self.assertEqual(run.call_args.args[0], ["cargo", "tree", "--locked", "--package", "nazo-auth", "--edges", "normal,build", "--prefix", "none"])
+        self.assertEqual(run.call_args.args[0], ["cargo", "tree", "--locked", "--all-features", "--package", "nazo-auth", "--edges", "normal,build", "--prefix", "none"])
         self.assertEqual(run.call_args.kwargs["cwd"], self.root)
 
     def test_tree_failure_is_not_treated_as_an_empty_valid_graph(self) -> None:

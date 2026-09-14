@@ -85,6 +85,13 @@ class ReleaseGovernanceTests(unittest.TestCase):
                 self.assertIn(
                     "apt-get install -y --no-install-recommends ca-certificates", source
                 )
+                # Security fixes on the pinned base land as exact-version
+                # package pins (Renovate-managed), never as unpinned upgrades.
+                self.assertRegex(
+                    source,
+                    r"apt-get install -y --no-install-recommends ca-certificates"
+                    r" perl-base=[0-9][^\s\\]*",
+                )
                 self.assertIn("rm -rf /var/lib/apt/lists/*", source)
 
     def test_image_builds_refresh_runtime_security_packages(self) -> None:
@@ -609,15 +616,28 @@ class ReleaseGovernanceTests(unittest.TestCase):
         quality = (ROOT / ".github" / "workflows" / "code-quality.yml").read_text(
             encoding="utf-8"
         )
+        release_ci = (ROOT / "scripts" / "check_release_ci.py").read_text(encoding="utf-8")
         self.assertNotIn("operator_jws_parser", quality)
         self.assertNotIn("cargo-fuzz", quality)
         self.assertIn("fuzz run operator_jws_parser", source)
         self.assertIn("schedule:", source)
-        for trigger in ("push:", "pull_request:"):
-            section = source.split(trigger, 1)[1].split("  workflow_dispatch:", 1)[0]
-            for path in ('"crates/operator-protocol/**"', '"fuzz/**"'):
-                self.assertIn(path, section, trigger)
-            self.assertNotIn('"crates/**"', section, trigger)
+        # Every main push fuzzes the parser so releases can require the gate.
+        push = source.split("push:", 1)[1].split("pull_request:", 1)[0]
+        self.assertIn("branches: [main]", push)
+        self.assertNotIn("paths:", push)
+        # PRs fuzz only when parser inputs changed; the target also exercises
+        # nazo_crypto, so crypto changes must trigger the gate too.
+        pull_request = source.split("pull_request:", 1)[1].split(
+            "  workflow_dispatch:", 1
+        )[0]
+        for path in (
+            '"crates/crypto/**"',
+            '"crates/operator-protocol/**"',
+            '"fuzz/**"',
+        ):
+            self.assertIn(path, pull_request)
+        self.assertNotIn('"crates/**"', pull_request)
+        self.assertIn('"operator-fuzz.yml"', release_ci)
 
     def test_codeql_security_page_excludes_quality_only_queries(self) -> None:
         source = (ROOT / ".github" / "workflows" / "codeql.yml").read_text(

@@ -73,6 +73,10 @@ the internal layout of `tests/`. It rejects:
 
 - executable tests (`#[test]`, `#[tokio::test]`, `#[actix_web::test]`) or
   inline test modules under `src`;
+- any other test-only item under `src` — a `#[cfg(test)]` function, `impl`
+  block, constant, import, re-export, or statement belongs under `tests/`
+  (conditions that a feature flag can also enable, such as
+  `#[cfg(any(test, feature = "..."))]`, remain production-possible);
 - test files under `src` (`src/tests.rs`, `src/*_tests.rs`, `src/**/tests/`);
 - a test-only module declaration without an external `#[path]` mount, or a
   test-only mount that resolves back into `src`;

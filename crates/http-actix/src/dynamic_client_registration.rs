@@ -23,8 +23,5 @@ pub use nazo_auth::{
 pub use types::DynamicRegistrationEndpoint;
 
 #[cfg(test)]
-use auth::{bearer_token, parse_bearer};
-
-#[cfg(test)]
 #[path = "../tests/unit/dynamic_client_registration.rs"]
 mod tests;

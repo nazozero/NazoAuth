@@ -8,7 +8,7 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use chrono::{Duration, Utc};
-use coset::{CoseKeyBuilder, SignatureContext, iana};
+use coset::{CborSerializable, CoseKeyBuilder, SignatureContext, iana};
 use jsonwebtoken::{Algorithm, EncodingKey, Header, decode_header, encode};
 use mdoc_rs::{
     MdocError,
@@ -35,6 +35,11 @@ use rcgen::{
 use serde_json::{Value, json};
 use sha2::Digest as _;
 
+use super::mdoc::{
+    mdoc_assessments_accepted, mdoc_failed_assessments_accepted, mdoc_holder_key,
+    standard_device_authentication_bytes, verify_certificate_chain_at,
+    verify_direct_scoped_trust_anchor,
+};
 use super::*;
 
 trait CredentialCryptoTestExt {

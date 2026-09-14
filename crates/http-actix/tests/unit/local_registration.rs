@@ -2,6 +2,8 @@ use std::sync::Mutex;
 
 use actix_web::{App, body::to_bytes, http::header, middleware::from_fn, test, web};
 use nazo_identity::ports::RepositoryError;
+use nazo_identity::registration::RegisteredAccount;
+use nazo_oauth_server::contracts::local_registration::LocalRegistrationFuture;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
