@@ -301,7 +301,7 @@ fn parse_ec_public_jwk(jwk: &Value) -> Result<[u8; 65], JweError> {
     point[0] = 4;
     point[1..33].copy_from_slice(&x);
     point[33..].copy_from_slice(&y);
-    nazo_crypto::ec::normalize_p256_public_key(&point).map_err(|_| JweError::InvalidKey)
+    Ok(point)
 }
 
 fn decode_coordinate(jwk: &Value, name: &str) -> Result<[u8; 32], JweError> {

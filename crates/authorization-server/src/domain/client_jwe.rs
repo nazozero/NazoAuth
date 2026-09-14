@@ -175,7 +175,7 @@ fn parse_p256_public_jwk(jwk: &Value) -> anyhow::Result<[u8; 65]> {
     point[0] = 4;
     point[1..33].copy_from_slice(&x);
     point[33..].copy_from_slice(&y);
-    nazo_crypto::ec::normalize_p256_public_key(&point).map_err(|error| anyhow::anyhow!(error))
+    Ok(point)
 }
 
 fn decode_p256_coordinate(jwk: &Value, name: &str) -> anyhow::Result<[u8; 32]> {
