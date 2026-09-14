@@ -113,10 +113,11 @@ Documentation-only changes need source/example/reference checks, not a Rust
 build. A passed unit suite does not replace required HTTP, migration, recovery,
 conformance, deployment, or performance evidence.
 
-Every change must update its corresponding documentation, examples, and index
-entries. If behavior is unchanged, update the relevant explanation or source
-reference without inventing a behavior change. Keep historical reports tied to
-their recorded revisions instead of rewriting them as current test results.
+Update affected documentation, examples, and index entries when a change
+affects documented behavior, contracts, ownership, configuration, or source
+paths; purely internal or mechanical changes do not require documentation-only
+churn. Keep historical reports tied to their recorded revisions instead of
+rewriting them as current test results.
 
 ## Release CI prerequisites
 
