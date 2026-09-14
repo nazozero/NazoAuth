@@ -201,11 +201,6 @@ impl nazo_persistence::RuntimeModuleStore for RuntimeModuleRepository {
     }
 }
 
-// The focused unit test is intentionally mounted here so the production
-// module remains the stable test boundary while implementation files evolve.
-#[cfg(test)]
-use desired::next_desired_revision;
-
 #[cfg(test)]
 #[path = "../../tests/unit/repositories/runtime_modules.rs"]
 mod tests;

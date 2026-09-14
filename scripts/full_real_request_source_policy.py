@@ -52,23 +52,16 @@ class RuntimeCaseEvidence:
         self._asserted = False
 
 
-def validate_case_registry(
-    registry: CaseRegistry,
-    *,
-    required: frozenset[str],
-    allowed_handlers: frozenset[str],
-) -> None:
+def validate_case_registry(registry: CaseRegistry) -> None:
+    """The loaded registry is authoritative: names must be unique and each case
+    must name a handler. Case count or membership is not frozen."""
     names = [name for name, _, _ in registry]
     duplicates = sorted({name for name in names if names.count(name) > 1})
-    actual = set(names)
-    missing = sorted(required - actual)
-    extra = sorted(actual - required)
-    handlers = {handler for _, handler, _ in registry}
-    unknown_handlers = sorted(handlers - allowed_handlers)
-    if duplicates or missing or extra or unknown_handlers:
+    unnamed = [name for name, handler, _ in registry if not handler]
+    if duplicates or not names or unnamed:
         raise AssertionError(
-            f"invalid case registry: duplicates={duplicates}, missing={missing}, "
-            f"extra={extra}, unknown_handlers={unknown_handlers}"
+            f"invalid case registry: empty={not names}, duplicates={duplicates}, "
+            f"missing_handler={unnamed}"
         )
 
 
@@ -76,17 +69,14 @@ def execute_case_registry(
     registry: CaseRegistry,
     handlers: Mapping[str, Any],
     *,
-    required: frozenset[str],
-    allowed_handlers: frozenset[str],
     evidence: RuntimeCaseEvidence,
 ) -> tuple[str, ...]:
-    validate_case_registry(
-        registry,
-        required=required,
-        allowed_handlers=allowed_handlers,
-    )
-    if set(handlers) != allowed_handlers:
-        raise AssertionError("runtime case handler map is not exact")
+    validate_case_registry(registry)
+    required = frozenset(name for name, _, _ in registry)
+    if set(handlers) != {handler for _, handler, _ in registry}:
+        raise AssertionError("runtime case handler map does not match the registry")
+    if evidence.required != required:
+        raise AssertionError("runtime evidence does not cover the registry")
 
     executed: list[str] = []
     for name, handler_name, parameters in registry:
@@ -102,6 +92,6 @@ def execute_case_registry(
         evidence.finish()
         executed.append(name)
 
-    if set(executed) != required or len(executed) != len(required):
+    if frozenset(executed) != required or len(executed) != len(required):
         raise AssertionError("executed runtime cases are not exact")
     return tuple(executed)

@@ -2,7 +2,9 @@ use nazo_crypto::ed25519::SigningKey;
 use proptest::prelude::*;
 
 use super::*;
+use crate::signing::sign_compact;
 use crate::verification::*;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 
 // This module is included by lib.rs so private protocol invariants remain testable.
 

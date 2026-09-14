@@ -6,6 +6,10 @@ use actix_web::{
     test as actix_test, web,
 };
 
+use nazo_oauth_server::contracts::session_management::{
+    SessionManagementAvailability, SessionManagementFuture, SessionManagementOriginFuture,
+};
+
 use crate::security_headers;
 
 use super::*;

@@ -1,4 +1,4 @@
-use super::super::sector_identifier_host_for_redirects;
+use super::super::helpers::sector_identifier_host_for_redirects;
 use super::AdminClientError;
 
 #[test]

@@ -2,7 +2,7 @@ use crate::domain::rows::ClientRow;
 
 use chrono::Utc;
 
-use nazo_identity::{PublicAccount, TenantContext};
+use nazo_identity::{DEFAULT_TENANT_ID, PublicAccount, TenantContext};
 
 use serde_json::json;
 use uuid::Uuid;
@@ -14,8 +14,6 @@ fn includes_user(context: TenantContext, user: &PublicAccount) -> bool {
 fn includes_client(context: TenantContext, client: &ClientRow) -> bool {
     context.matches_raw(client.tenant_id, client.realm_id, client.organization_id)
 }
-
-use super::*;
 
 fn user_in_context(context: TenantContext) -> PublicAccount {
     PublicAccount {

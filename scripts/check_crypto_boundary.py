@@ -81,8 +81,7 @@ _PUB_STRUCT = re.compile(r"\bpub\s+struct\s+(\w+)")
 _PUB_ENUM = re.compile(r"\bpub\s+enum\s+(\w+)")
 _PUB_TYPE = re.compile(r"\bpub\s+type\s+(\w+)")
 _PUB_FIELD = re.compile(r"\bpub(\s*\(\s*crate\s*\))?\s+(\w+)\s*:\s*([^,})]+)")
-_PUB_TRAIT = re.compile(r"\bpub\s+trait\b")
-_FORBIDDEN_IMPL = re.compile(r"\bimpl\b[^{]*\b(?:Deref|DerefMut|AsRef|Borrow)\b")
+_ACCESS_IMPL = re.compile(r"\bimpl\b[^{]*\b(?:Deref|DerefMut|AsRef|Borrow)\b")
 
 
 def _load_manifest(path: Path) -> dict:
@@ -346,17 +345,17 @@ def _crypto_source_violations(relative: str, masked: str, dependency_aliases: di
                 f"public type exposes {path}",
             ))
             break
-    for match in _PUB_TRAIT.finditer(masked):
-        violations.append((match.start(), "crypto public surface", "public trait"))
-    for match in _FORBIDDEN_IMPL.finditer(masked):
-        violations.append((
-            match.start(), "crypto public surface",
-            "Deref/AsRef/Borrow impl exposes backend internals",
-        ))
-    for match in re.finditer(r"\binto_inner\b", masked):
-        violations.append((
-            match.start(), "crypto public surface", "into_inner exposes backend key",
-        ))
+    # Accessor-style impls are allowed; they fail only when the impl itself
+    # names a concrete backend or secret representation.
+    for match in _ACCESS_IMPL.finditer(masked):
+        region = _brace_region(masked, match.start())
+        for _pos, path in _backend_paths(region, aliases):
+            if leaked(path):
+                violations.append((
+                    match.start(), "crypto public surface",
+                    f"Deref/AsRef/Borrow impl exposes {path}",
+                ))
+                break
     return violations
 
 

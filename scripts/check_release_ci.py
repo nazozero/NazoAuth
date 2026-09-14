@@ -47,7 +47,7 @@ def main() -> None:
     release_sha = os.environ["RELEASE_SHA"]
     if not is_ancestor(release_sha, "refs/remotes/origin/main"):
         raise SystemExit("release commit is not reachable from main")
-    for workflow in ("code-quality.yml", "release-policy.yml"):
+    for workflow in ("code-quality.yml", "release-policy.yml", "operator-fuzz.yml"):
         # Search the latest 100 runs; older evidence is not needed for normal releases.
         response = subprocess.check_output([
             "gh", "api", "--method", "GET",

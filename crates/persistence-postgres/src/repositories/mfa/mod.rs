@@ -14,14 +14,6 @@ mod ports;
 mod remembered_devices;
 mod totp;
 
-#[cfg(test)]
-use backup_codes::validate_backup_hash_count;
-#[cfg(test)]
-use totp::{
-    TOTP_ENVELOPE_VERSION, TOTP_MIN_PROTECTED_LEN, TOTP_NONCE_LEN, decode_totp_secret,
-    protect_totp_secret, totp_aad,
-};
-
 #[derive(Clone)]
 pub struct MfaRepository {
     pool: DbPool,
@@ -142,14 +134,6 @@ pub(super) fn map_mfa_error(error: diesel::result::Error) -> RepositoryError {
         other => RepositoryError::Unexpected(other.to_string()),
     }
 }
-
-#[cfg(test)]
-use aes_gcm::{
-    Aes256Gcm, KeyInit,
-    aead::{Aead, Payload},
-};
-#[cfg(test)]
-use nazo_identity::{mfa::MFA_BACKUP_CODE_COUNT, ports::MfaTotpKeyRing};
 
 #[cfg(test)]
 #[path = "../../../tests/unit/repositories/mfa.rs"]

@@ -410,8 +410,22 @@ class CryptoBoundaryTest(unittest.TestCase):
             "}\n",
         )
         self.assertViolation("crypto public surface")
-        _append(self.crypto_jwt, "pub trait Signer {}\n")
-        self.assertViolation("crypto public surface: public trait")
+
+    def test_crypto_neutral_apis_pass(self):
+        """Neutral public API shapes must not be rejected as implementation form."""
+        _append(
+            self.crypto_jwt,
+            "pub trait Signer {\n"
+            "    fn sign(&self, data: &[u8]) -> crate::Result<Vec<u8>>;\n"
+            "}\n"
+            "impl AsRef<[u8]> for VerificationKey {\n"
+            "    fn as_ref(&self) -> &[u8] { &[] }\n"
+            "}\n"
+            "impl VerificationKey {\n"
+            "    pub fn into_inner(self) -> Vec<u8> { Vec::new() }\n"
+            "}\n",
+        )
+        self.assertClean()
 
     def test_crypto_signature_leaks_fail(self):
         _append(

@@ -2,6 +2,8 @@ use std::sync::Mutex;
 
 use actix_web::{body::to_bytes, cookie::Cookie, http::header, test};
 use chrono::{TimeZone, Utc};
+use nazo_identity::{AuthorizedApplicationsView, SessionId};
+use nazo_oauth_server::contracts::profile_account::ProfileAccountFuture;
 use serde_json::{Value, json};
 
 use super::*;

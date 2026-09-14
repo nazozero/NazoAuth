@@ -1,4 +1,7 @@
+use super::mapping::string_array;
 use super::*;
+use nazo_identity::ports::RepositoryError;
+use serde_json::Value;
 
 #[test]
 fn persisted_client_string_arrays_reject_non_array_json() {

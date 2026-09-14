@@ -1,5 +1,15 @@
+use super::backup_codes::validate_backup_hash_count;
+use super::totp::{
+    TOTP_ENVELOPE_VERSION, TOTP_MIN_PROTECTED_LEN, TOTP_NONCE_LEN, decode_totp_secret,
+    protect_totp_secret, totp_aad,
+};
 use super::*;
-use nazo_identity::ports::MfaTotpKey;
+use aes_gcm::{
+    Aes256Gcm, KeyInit,
+    aead::{Aead, Payload},
+};
+use nazo_identity::mfa::MFA_BACKUP_CODE_COUNT;
+use nazo_identity::ports::{MfaTotpKey, MfaTotpKeyRing};
 use uuid::Uuid;
 
 fn single_key_ring() -> MfaTotpKeyRing {

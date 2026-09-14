@@ -56,19 +56,49 @@ class ReleaseGovernanceTests(unittest.TestCase):
         ):
             self.assertNotIn(retired_binary, final_stage)
 
-    def test_runtime_images_apply_available_distribution_security_updates(self) -> None:
+    def test_runtime_images_install_required_packages_on_pinned_digests(self) -> None:
+        """Runtime stages install only required packages on a digest-pinned base.
+
+        Security updates land by bumping the pinned base digest (Renovate), not
+        by drifting package versions at build time with ``apt-get upgrade``.
+        """
         runtime_base = (ROOT / "Containerfile").read_text(encoding="utf-8").split(
             " AS runtime-base", 1
         )[1].split("\nFROM runtime-base AS runtime", 1)[0]
         release_runtime = (ROOT / "Containerfile.release").read_text(encoding="utf-8")
 
+        self.assertRegex(
+            (ROOT / "Containerfile").read_text(encoding="utf-8"),
+            r"FROM docker\.io/library/debian:[^\s@]+@sha256:[0-9a-f]{64} AS runtime-base",
+        )
+        self.assertRegex(
+            release_runtime,
+            r"FROM docker\.io/library/debian:[^\s@]+@sha256:[0-9a-f]{64} AS runtime",
+        )
         for name, source in (
             ("Containerfile runtime-base", runtime_base),
             ("Containerfile.release", release_runtime),
         ):
             with self.subTest(containerfile=name):
                 self.assertIn("apt-get update", source)
-                self.assertIn("apt-get upgrade -y --no-install-recommends", source)
+                self.assertNotIn("apt-get upgrade", source)
+                install = re.search(
+                    r"apt-get install -y --no-install-recommends(.*?)&&", source, re.S
+                )
+                self.assertIsNotNone(install)
+                packages = install.group(1).replace("\\\n", " ")
+                # Security fixes on the pinned base land as exact-version
+                # package pins (Renovate-managed), never as unpinned upgrades.
+                for pinned in (
+                    "ca-certificates",
+                    "gzip=",
+                    "libpcre2-8-0=",
+                    "libsqlite3-0=",
+                    "perl-base=",
+                ):
+                    self.assertIn(pinned, packages)
+                for package, version in re.findall(r"(\S+)=([^\s\\]*)", packages):
+                    self.assertTrue(version, f"{name}: {package} is unpinned")
                 self.assertIn("rm -rf /var/lib/apt/lists/*", source)
 
     def test_image_builds_refresh_runtime_security_packages(self) -> None:
@@ -337,15 +367,16 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertIn("python3 scripts/check_release_ci.py", policy)
         self.assertIn("persist-credentials: false", policy)
 
-    def test_pull_request_coverage_never_sends_the_codecov_token(self) -> None:
+    def test_coverage_is_a_main_branch_signal_not_a_pull_request_gate(self) -> None:
         coverage = (
             ROOT / ".github" / "workflows" / "codecov.yml"
         ).read_text(encoding="utf-8")
-        upload = coverage.split("- name: Upload coverage to Codecov", 1)[1].split(
-            "- name: Verify complete Git patch coverage", 1
-        )[0]
-        self.assertIn("if: github.event_name != 'pull_request'", upload)
+        self.assertNotIn("pull_request:", coverage)
+        self.assertNotIn("check_patch_coverage", coverage)
+        self.assertIn("branches: [main]", coverage)
+        upload = coverage.split("- name: Upload coverage to Codecov", 1)[1]
         self.assertIn("token: ${{ secrets.CODECOV_TOKEN }}", upload)
+        self.assertNotIn("secrets.CODECOV_TOKEN", coverage.split("- name: Upload coverage to Codecov", 1)[0])
 
     def test_branch_dispatch_keeps_the_native_matrix_without_publishing(self) -> None:
         release = (
@@ -549,7 +580,8 @@ class ReleaseGovernanceTests(unittest.TestCase):
         self.assertEqual(conformance.count("file: Containerfile"), 1)
         self.assertIn("name: Upload scanned service image", conformance)
         self.assertIn("name: Download scanned service image", conformance)
-        self.assertIn("sha256sum --check nazo-oauth-service.tar.sha256", conformance)
+        self.assertNotIn("sha256sum --check", conformance)
+        self.assertNotIn("image-id.txt", conformance)
         self.assertIn("docker load --input target/ci-service-image/nazo-oauth-service.tar", conformance)
 
     def test_conformance_migrates_with_the_built_service_image(self) -> None:
@@ -574,15 +606,45 @@ class ReleaseGovernanceTests(unittest.TestCase):
     def test_heavy_pull_request_workflows_do_not_match_docs_only_changes(self) -> None:
         for name in (
             "code-quality.yml",
-            "codecov.yml",
             "codeql.yml",
             "conformance-security.yml",
             "dependency-review.yml",
+            "operator-fuzz.yml",
         ):
             source = (ROOT / ".github" / "workflows" / name).read_text(encoding="utf-8")
             pull_request = source.split("pull_request:", 1)[1].split("workflow_dispatch:", 1)[0]
             self.assertIn("paths:", pull_request, name)
             self.assertNotRegex(pull_request, r'(?m)^\s+-\s+"?(?:README\.md|docs/\*\*)"?\s*$')
+
+    def test_operator_fuzz_is_scoped_to_operator_parser_inputs(self) -> None:
+        source = (ROOT / ".github" / "workflows" / "operator-fuzz.yml").read_text(
+            encoding="utf-8"
+        )
+        quality = (ROOT / ".github" / "workflows" / "code-quality.yml").read_text(
+            encoding="utf-8"
+        )
+        release_ci = (ROOT / "scripts" / "check_release_ci.py").read_text(encoding="utf-8")
+        self.assertNotIn("operator_jws_parser", quality)
+        self.assertNotIn("cargo-fuzz", quality)
+        self.assertIn("fuzz run operator_jws_parser", source)
+        self.assertIn("schedule:", source)
+        # Every main push fuzzes the parser so releases can require the gate.
+        push = source.split("push:", 1)[1].split("pull_request:", 1)[0]
+        self.assertIn("branches: [main]", push)
+        self.assertNotIn("paths:", push)
+        # PRs fuzz only when parser inputs changed; the target also exercises
+        # nazo_crypto, so crypto changes must trigger the gate too.
+        pull_request = source.split("pull_request:", 1)[1].split(
+            "  workflow_dispatch:", 1
+        )[0]
+        for path in (
+            '"crates/crypto/**"',
+            '"crates/operator-protocol/**"',
+            '"fuzz/**"',
+        ):
+            self.assertIn(path, pull_request)
+        self.assertNotIn('"crates/**"', pull_request)
+        self.assertIn('"operator-fuzz.yml"', release_ci)
 
     def test_codeql_security_page_excludes_quality_only_queries(self) -> None:
         source = (ROOT / ".github" / "workflows" / "codeql.yml").read_text(

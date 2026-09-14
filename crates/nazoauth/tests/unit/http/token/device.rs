@@ -6,7 +6,7 @@ use super::*;
 use crate::config::ConfigSource;
 use nazo_oauth_server::token::device_issuance::token_device_code_with_service;
 
-use crate::http::token::{TokenForm, device_config::DeviceHttpConfig};
+use crate::http::token::device_config::DeviceHttpConfig;
 use crate::settings::Settings;
 use crate::test_support::TestInfrastructure;
 use actix_web::test::TestRequest;
@@ -22,6 +22,7 @@ use fred::prelude::{
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 use nazo_identity::DEFAULT_REALM_ID;
 use nazo_identity::DEFAULT_TENANT_ID;
+use nazo_oauth_server::contracts::token_forms::TokenForm;
 use nazo_oauth_server::domain::rows::ClientRow;
 use nazo_oauth_server::rate_limit::TokenManagementRequestLimiter;
 use nazo_oauth_server::services::ServerDeviceGrantService;
