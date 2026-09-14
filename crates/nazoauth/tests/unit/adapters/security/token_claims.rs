@@ -105,10 +105,7 @@ async fn make_jwt_rejects_conflicting_sender_constraints_before_signing() {
         Ok(_) => panic!("conflicting sender constraints must fail before signing"),
         Err(error) => error,
     };
-    assert!(matches!(
-        error.kind(),
-        jsonwebtoken::errors::ErrorKind::InvalidToken
-    ));
+    assert!(matches!(error, nazo_crypto::CryptoError::InvalidToken));
 }
 
 #[tokio::test]

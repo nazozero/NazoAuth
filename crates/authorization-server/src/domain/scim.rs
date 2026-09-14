@@ -253,7 +253,7 @@ impl EventSignerPort for ServerScimEventSigner {
     ) -> EventFuture<'a, Result<String, EventSigningError>> {
         Box::pin(async move {
             let snapshot = self.keyset.snapshot();
-            let mut header = jsonwebtoken::Header::new(snapshot.active_alg);
+            let mut header = nazo_crypto::jwt::Header::new(snapshot.active_alg);
             header.typ = Some(nazo_scim_events::SECURITY_EVENT_MEDIA_TYPE.to_owned());
             self.keyset
                 .encode_jwt(nazo_auth::SigningPurpose::SecurityEvent, &header, claims)
@@ -281,13 +281,12 @@ impl ServerScimCursorProtector {
 impl ScimCursorProtector for ServerScimCursorProtector {
     fn protect(&self, plaintext: &[u8]) -> Result<Vec<u8>, ScimDependencyError> {
         let nonce = rand::random::<[u8; SCIM_CURSOR_NONCE_LEN]>();
-        let (ciphertext, tag) =
-            crate::crypto::aes_256_gcm_encrypt(&self.key, &nonce, SCIM_CURSOR_AAD, plaintext)
+        let ciphertext_and_tag =
+            nazo_crypto::aead::encrypt(&self.key, &nonce, SCIM_CURSOR_AAD, plaintext)
                 .map_err(|_| ScimDependencyError::Unavailable)?;
-        let mut protected = Vec::with_capacity(nonce.len() + ciphertext.len() + tag.len());
+        let mut protected = Vec::with_capacity(nonce.len() + ciphertext_and_tag.len());
         protected.extend_from_slice(&nonce);
-        protected.extend_from_slice(&ciphertext);
-        protected.extend_from_slice(&tag);
+        protected.extend_from_slice(&ciphertext_and_tag);
         Ok(protected)
     }
 
@@ -295,9 +294,8 @@ impl ScimCursorProtector for ServerScimCursorProtector {
         if protected.len() <= SCIM_CURSOR_NONCE_LEN + SCIM_CURSOR_TAG_LEN {
             return Err(ScimDependencyError::Unavailable);
         }
-        let (nonce, remainder) = protected.split_at(SCIM_CURSOR_NONCE_LEN);
-        let (ciphertext, tag) = remainder.split_at(remainder.len() - SCIM_CURSOR_TAG_LEN);
-        crate::crypto::aes_256_gcm_decrypt(&self.key, nonce, SCIM_CURSOR_AAD, ciphertext, tag)
+        let (nonce, ciphertext_and_tag) = protected.split_at(SCIM_CURSOR_NONCE_LEN);
+        nazo_crypto::aead::decrypt(&self.key, nonce, SCIM_CURSOR_AAD, ciphertext_and_tag)
             .map_err(|_| ScimDependencyError::Unavailable)
     }
 }

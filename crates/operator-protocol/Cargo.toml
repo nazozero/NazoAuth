@@ -8,8 +8,8 @@ repository.workspace = true
 [dependencies]
 base64.workspace = true
 chrono.workspace = true
-ed25519-dalek.workspace = true
 hmac.workspace = true
+nazo-crypto = { workspace = true, features = ["ed25519"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 sha2.workspace = true

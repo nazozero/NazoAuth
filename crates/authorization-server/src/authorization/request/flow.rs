@@ -249,7 +249,9 @@ pub(crate) async fn authorize_request_with_context(
     if let Some(error) = consumed_request_uri_error {
         return authorization_oauth_error_redirect(context, &redirect_uri, error, q).await;
     }
-    if fapi2_security && !used_pushed_authorization_request {
+    if (fapi2_security || client_policy.require_pushed_authorization_requests)
+        && !used_pushed_authorization_request
+    {
         return authorization_oauth_error_redirect(context, &redirect_uri, "invalid_request", q)
             .await;
     }

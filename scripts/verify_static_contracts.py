@@ -67,6 +67,7 @@ FORBIDDEN_CRATE_DEPENDENCIES = {
 PACKAGE_ROLES = {
     "nazo-oauth-server": "application",
     "nazo-auth": "domain",
+    "nazo-crypto": "domain",
     "nazo-oauth-server-object-store": "adapter",
     "nazo-oauth-server-postgres": "adapter",
     "nazo-oauth-server-valkey": "adapter",
@@ -319,7 +320,7 @@ def rust_production_source(source: str) -> str:
     """Mask comments/literals and explicit test-only items, retaining feature code."""
     non_code = re.compile(
         r'r(?P<hashes>#{0,255})"[\s\S]*?"(?P=hashes)'
-        r'|"(?:\\.|[^"\\])*"'
+        r'|"(?:\\[\s\S]|[^"\\])*"'
         r"|'(?:\\.|[^'\\\n])'"
         r"|//[^\n]*|/\*[\s\S]*?\*/"
     )

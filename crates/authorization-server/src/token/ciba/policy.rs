@@ -8,20 +8,20 @@ pub fn ciba_client_assertion_algorithm_supported(
     assertion.is_none_or(|assertion| ciba_jwt_signing_algorithm_supported(assertion.algorithm()))
 }
 
-pub fn ciba_jwt_signing_algorithm_supported(alg: jsonwebtoken::Algorithm) -> bool {
+pub fn ciba_jwt_signing_algorithm_supported(alg: nazo_crypto::jwt::Algorithm) -> bool {
     matches!(
         alg,
-        jsonwebtoken::Algorithm::EdDSA
-            | jsonwebtoken::Algorithm::ES256
-            | jsonwebtoken::Algorithm::PS256
+        nazo_crypto::jwt::Algorithm::EdDSA
+            | nazo_crypto::jwt::Algorithm::ES256
+            | nazo_crypto::jwt::Algorithm::PS256
     )
 }
 
-pub fn ciba_algorithm_name(alg: jsonwebtoken::Algorithm) -> Option<&'static str> {
+pub fn ciba_algorithm_name(alg: nazo_crypto::jwt::Algorithm) -> Option<&'static str> {
     match alg {
-        jsonwebtoken::Algorithm::EdDSA => Some("EdDSA"),
-        jsonwebtoken::Algorithm::ES256 => Some("ES256"),
-        jsonwebtoken::Algorithm::PS256 => Some("PS256"),
+        nazo_crypto::jwt::Algorithm::EdDSA => Some("EdDSA"),
+        nazo_crypto::jwt::Algorithm::ES256 => Some("ES256"),
+        nazo_crypto::jwt::Algorithm::PS256 => Some("PS256"),
         _ => None,
     }
 }

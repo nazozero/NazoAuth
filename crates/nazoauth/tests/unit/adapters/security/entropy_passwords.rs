@@ -1,4 +1,5 @@
 use super::*;
+use argon2::PasswordHash;
 use nazo_oauth_server::crypto::random_urlsafe_token;
 
 #[test]

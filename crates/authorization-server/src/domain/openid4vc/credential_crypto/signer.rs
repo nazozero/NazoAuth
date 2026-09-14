@@ -1,5 +1,5 @@
-use jsonwebtoken::Algorithm;
 use nazo_auth::SigningPurpose;
+use nazo_crypto::jwt::Algorithm;
 use nazo_digital_credentials::{
     CredentialFormat, CredentialFuture, CredentialSignInput, CredentialSignerPort,
     CredentialTrustError,
@@ -16,7 +16,7 @@ impl Openid4vcCredentialCrypto {
         claims: &Value,
     ) -> anyhow::Result<String> {
         let material = self.signing_material(lease)?;
-        let mut header = jsonwebtoken::Header::new(Algorithm::ES256);
+        let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
         header.typ = Some("oauth-authz-req+jwt".to_owned());
         header.x5c = Some(material.x5c);
         lease
@@ -28,7 +28,7 @@ impl Openid4vcCredentialCrypto {
     pub(crate) async fn sign_issuer_metadata(&self, claims: &Value) -> anyhow::Result<String> {
         let lease = self.prepare_signing()?;
         let material = self.signing_material(&lease)?;
-        let mut header = jsonwebtoken::Header::new(Algorithm::ES256);
+        let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
         header.typ = Some("openidvci-issuer-metadata+jwt".to_owned());
         header.x5c = Some(material.x5c);
         lease

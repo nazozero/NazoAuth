@@ -82,7 +82,7 @@ impl OidcLogoutHandles {
         token: &str,
         now: DateTime<Utc>,
     ) -> Option<DecodedIdTokenHint> {
-        let header = jsonwebtoken::decode_header(token).ok()?;
+        let header = nazo_crypto::jwt::decode_header(token).ok()?;
         if header.typ.as_deref().is_some_and(|typ| typ != "JWT")
             || signing_algorithm_name(header.alg).is_none()
         {
@@ -91,14 +91,14 @@ impl OidcLogoutHandles {
         let keyset = self.keys.snapshot();
         let verification_key = keyset.verification_key(header.kid.as_deref()?)?;
         let decoding_key = jwt_decoding_key_from_jwk(&verification_key.public_jwk, header.alg)?;
-        let mut validation = jsonwebtoken::Validation::new(header.alg);
+        let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
         validation.validate_aud = false;
         // RP-Initiated Logout 1.0 §2 recommends accepting an expired ID Token
         // when it remains bound to the current or a recent OP session. The auth
         // service below enforces that session binding before accepting it.
         validation.validate_exp = false;
         validation.set_issuer(&[self.issuer()]);
-        jsonwebtoken::decode::<DecodedIdTokenHintClaims>(token, &decoding_key, &validation)
+        nazo_crypto::jwt::decode::<DecodedIdTokenHintClaims>(token, &decoding_key, &validation)
             .ok()
             .map(|data| DecodedIdTokenHint {
                 expired: id_token_hint_expired(data.claims.exp, now),
@@ -152,7 +152,7 @@ impl LogoutTokenSignerPort for ServerLogoutTokenSigner {
                 issued_at.timestamp(),
             );
             let snapshot = self.keys.snapshot();
-            let mut header = jsonwebtoken::Header::new(snapshot.active_alg);
+            let mut header = nazo_crypto::jwt::Header::new(snapshot.active_alg);
             header.typ = Some("logout+jwt".to_owned());
             header.kid = Some(snapshot.active_kid.clone());
             self.keys

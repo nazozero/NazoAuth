@@ -326,13 +326,21 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
 
 [[package]]
+name = "nazo-crypto"
+version = "0.2.16"
+dependencies = [
+ "ed25519-dalek",
+ "thiserror",
+]
+
+[[package]]
 name = "nazo-operator-protocol"
-version = "0.2.2"
+version = "0.2.16"
 dependencies = [
  "base64",
  "chrono",
- "ed25519-dalek",
  "hmac",
+ "nazo-crypto",
  "serde",
  "serde_json",
  "sha2",
@@ -343,8 +351,8 @@ dependencies = [
 name = "nazoauth-fuzz"
 version = "0.0.0"
 dependencies = [
- "ed25519-dalek",
  "libfuzzer-sys",
+ "nazo-crypto",
  "nazo-operator-protocol",
 ]
 

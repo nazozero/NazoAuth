@@ -57,11 +57,13 @@ Admin-created clients receive this default policy:
 {
   "version": 1,
   "assurance": "baseline",
+  "require_pushed_authorization_requests": false,
   "require_signed_authorization_request": false,
   "require_signed_authorization_response": false,
   "require_signed_introspection_response": false,
   "session_management": false,
-  "allow_cross_device_flows": false
+  "allow_cross_device_flows": false,
+  "allow_confidential_oidc_without_pkce": false
 }
 ```
 
@@ -73,13 +75,20 @@ compose compatible controls, for example:
 {
   "version": 1,
   "assurance": "fapi2",
+  "require_pushed_authorization_requests": true,
   "require_signed_authorization_request": true,
   "require_signed_authorization_response": true,
   "require_signed_introspection_response": true,
   "session_management": true,
-  "allow_cross_device_flows": true
+  "allow_cross_device_flows": true,
+  "allow_confidential_oidc_without_pkce": false
 }
 ```
+
+`allow_confidential_oidc_without_pkce` defaults to false. Only a controlled
+baseline confidential OIDC compatibility boundary may set it; FAPI and
+sender-constrained authorization still require S256. The DCR application sets
+this exception for its supported confidential OIDC registration profile.
 
 These fields are independent. FAPI2 assurance enforces confidential client
 type, strong client authentication, PAR, S256 PKCE, sender-constrained tokens,
@@ -95,9 +104,20 @@ Unknown policy versions and fields are rejected.
 Sender constraints are independent of the authorization request channel.
 `require_dpop_bound_tokens` and `require_mtls_bound_tokens` constrain token
 issuance and PKCE strength at the authorization endpoint; they never force a
-baseline client into PAR or JAR. Only the explicit FAPI2 assurance profile and
-the explicit `require_signed_authorization_request` flag select the
-signed/pushed request channel.
+baseline client into PAR or JAR. FAPI2 assurance or
+`require_pushed_authorization_requests=true` requires PAR;
+`require_signed_authorization_request` independently requires signed input.
+The PAR check requires a stored pushed request, not merely a signed Request
+Object or an arbitrary `request_uri`.
+
+The per-client PAR requirement follows [RFC 9126 section 6](https://www.rfc-editor.org/rfc/rfc9126.html#section-6).
+Its default is false. [HAIP 1.0 section 4](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#section-4)
+requires PAR when using the authorization endpoint, while allowing wallet
+attestation in place of FAPI client authentication. Register those wallets
+with `assurance=baseline`, `require_pushed_authorization_requests=true`,
+`token_endpoint_auth_method=attest_jwt_client_auth`, and
+`require_dpop_bound_tokens=true`. This composition does not weaken FAPI2 client
+authentication or impose PAR on unrelated DPoP clients.
 
 ## Upgrade behavior
 

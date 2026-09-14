@@ -1,6 +1,5 @@
 use std::{error::Error, fmt};
 
-use argon2::{Argon2, PasswordHash as EncodedPasswordHash, PasswordVerifier};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -326,12 +325,7 @@ impl PasswordHash {
     /// Verifies a password candidate without releasing the persisted verifier.
     #[must_use]
     pub fn verify_password(&self, candidate: &str) -> bool {
-        let Ok(encoded) = EncodedPasswordHash::new(&self.0) else {
-            return false;
-        };
-        Argon2::default()
-            .verify_password(candidate.as_bytes(), &encoded)
-            .is_ok()
+        nazo_crypto::password::verify_argon2_phc(&self.0, candidate.as_bytes())
     }
 }
 

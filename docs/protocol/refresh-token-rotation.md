@@ -32,8 +32,8 @@ The retry continues from the active successor and rotates again. Any ambiguous o
 ## Sender Constraints
 
 DPoP-bound refresh tokens require a valid DPoP proof for refresh. mTLS-bound
-refresh tokens require a verified forwarded certificate thumbprint from a
-trusted proxy and constant-time match against the stored certificate
+refresh tokens require a verified certificate thumbprint from Direct TLS or
+trusted RFC 9440 forwarding and constant-time match against the stored certificate
 thumbprint. A refresh token issued through `attest_jwt_client_auth` is bound to
 the RFC 7638 thumbprint of the Client Instance public key in the attestation
 `cnf.jwk`. Every refresh request must use Client Attestation with that same key;

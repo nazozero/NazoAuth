@@ -1,4 +1,4 @@
-use ed25519_dalek::SigningKey;
+use nazo_crypto::ed25519::SigningKey;
 use proptest::prelude::*;
 
 use super::*;

@@ -2,7 +2,7 @@
 
 pub struct ExternalSignRequest<'a> {
     pub kid: &'a str,
-    pub algorithm: jsonwebtoken::Algorithm,
+    pub algorithm: nazo_crypto::jwt::Algorithm,
     pub key_ref: &'a str,
     pub signing_input: &'a [u8],
 }

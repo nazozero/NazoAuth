@@ -7,14 +7,13 @@ use std::{
 
 use anyhow::{Context, bail};
 use nazo_auth::SigningPurpose;
+use nazo_crypto::certificate::{
+    BasicConstraints, CertificateParams, CertificateRevocationListParams, CrlDistributionPoint,
+    CustomExtension, DistinguishedName, DnType, DnValue, IsCa, KeyIdMethod, KeyUsagePurpose,
+    PrintableString, RevokedCertParams, SerialNumber,
+};
 use nazo_key_management::{
     KeyManager, Openid4vcMaterial, Openid4vcPublicMaterial, signing_algorithm_from_name,
-};
-use rcgen::{
-    BasicConstraints, CertificateParams, CertificateRevocationListParams, CertifiedIssuer,
-    CustomExtension, DistinguishedName, DnType, DnValue, IsCa, Issuer, KeyIdMethod, KeyPair,
-    KeyUsagePurpose, PKCS_ECDSA_P256_SHA256, RevokedCertParams, SerialNumber,
-    string::PrintableString,
 };
 use rustls::pki_types::{CertificateDer, pem::PemObject};
 use sha1::{Digest as _, Sha1};
@@ -114,13 +113,11 @@ pub(crate) async fn signed_mdoc_crl(
         .iter()
         .find(|entry| entry.issuer == source.issuer_contact_uri && entry.certificate == identity)
         .context("mdoc revocation snapshot has no status for the current DS certificate")?;
-    let private_key = KeyPair::from_pem(issuer_material)
+    let issuer_public_key = nazo_crypto::certificate::public_key_from_pem(issuer_material)
         .context("failed to parse IACA private key as PKCS#8 PEM")?;
-    if private_key.public_key_raw() != ca.public_key().subject_public_key.data.as_ref() {
+    if issuer_public_key != ca.public_key().subject_public_key.data.as_ref() {
         bail!("IACA private key does not match current certificate bundle");
     }
-    let issuer = Issuer::from_ca_cert_der(&certificates[1], private_key)
-        .context("failed to build CRL issuer from IACA certificate")?;
     let this_update = time::OffsetDateTime::now_utc();
     let next_update = this_update + time::Duration::hours(24);
     let revoked_certs = match entry.status {
@@ -138,7 +135,7 @@ pub(crate) async fn signed_mdoc_crl(
             invalidity_date: None,
         }],
     };
-    let crl = CertificateRevocationListParams {
+    let crl_params = CertificateRevocationListParams {
         this_update,
         next_update,
         crl_number: SerialNumber::from(
@@ -147,11 +144,14 @@ pub(crate) async fn signed_mdoc_crl(
         ),
         issuing_distribution_point: None,
         revoked_certs,
-        key_identifier_method: KeyIdMethod::PreSpecified(subject_key_identifier(issuer.key())),
-    }
-    .signed_by(&issuer)
-    .context("failed to sign mdoc CRL")?;
-    Ok(Some(crl.der().to_vec()))
+        key_identifier_method: KeyIdMethod::PreSpecified(subject_key_identifier_from_public_key(
+            &issuer_public_key,
+        )),
+    };
+    let crl =
+        nazo_crypto::certificate::sign_crl(crl_params, certificates[1].as_ref(), issuer_material)
+            .context("failed to sign mdoc CRL")?;
+    Ok(Some(crl))
 }
 
 fn is_mdoc_document_signing_certificate(
@@ -190,7 +190,7 @@ fn mdoc_certificate_profile(
 
 #[derive(Debug)]
 struct GenerateLocalKeyOptions {
-    alg: jsonwebtoken::Algorithm,
+    alg: nazo_crypto::jwt::Algorithm,
     purposes: BTreeSet<SigningPurpose>,
 }
 
@@ -305,13 +305,13 @@ fn subject_key_identifier_from_public_key(public_key: &[u8]) -> Vec<u8> {
 }
 
 fn build_openid4vc_certificate_bundle(
-    signing_key: &KeyPair,
+    signing_key_pem: &str,
     hostname: &str,
     mdoc_profile: Option<&MdocCertificateProfile>,
 ) -> anyhow::Result<Openid4vcCertificateBundle> {
     let now = time::OffsetDateTime::now_utc();
     let ca_not_after = now + time::Duration::days(3650);
-    let ca_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?;
+    let ca_key_pem = nazo_crypto::certificate::generate_p256_private_key_pem()?;
     let mut ca_params = CertificateParams::default();
     ca_params.distinguished_name = DistinguishedName::new();
     ca_params
@@ -337,9 +337,11 @@ fn build_openid4vc_certificate_bundle(
     ca_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
     if mdoc_profile.is_some() {
         ca_params.key_identifier_method =
-            KeyIdMethod::PreSpecified(subject_key_identifier(&ca_key));
+            KeyIdMethod::PreSpecified(subject_key_identifier_from_public_key(
+                &nazo_crypto::certificate::public_key_from_pem(&ca_key_pem)?,
+            ));
     }
-    let ca = CertifiedIssuer::self_signed(ca_params, ca_key)?;
+    let ca_der = nazo_crypto::certificate::self_signed(ca_params, &ca_key_pem)?;
 
     let mut leaf_params = CertificateParams::new(vec![hostname.to_owned()])?;
     leaf_params.distinguished_name = DistinguishedName::new();
@@ -356,17 +358,19 @@ fn build_openid4vc_certificate_bundle(
             .push(document_signing_extended_key_usage());
         leaf_params
             .custom_extensions
-            .push(subject_key_identifier_extension(signing_key));
+            .push(subject_key_identifier_extension(
+                &nazo_crypto::certificate::public_key_from_pem(signing_key_pem)?,
+            ));
         leaf_params
             .custom_extensions
             .push(issuer_alternative_name(&profile.issuer_contact_uri));
         leaf_params
             .crl_distribution_points
-            .push(rcgen::CrlDistributionPoint {
+            .push(CrlDistributionPoint {
                 uris: vec![format!(
                     "{}/{}.crl",
                     profile.crl_distribution_uri,
-                    sha256_hex(ca.der())
+                    sha256_hex(&ca_der)
                 )],
             });
     }
@@ -380,26 +384,27 @@ fn build_openid4vc_certificate_bundle(
     };
     leaf_params.serial_number = Some(SerialNumber::from(rand::random::<[u8; 19]>().to_vec()));
     leaf_params.use_authority_key_identifier_extension = mdoc_profile.is_some();
-    let leaf = leaf_params.signed_by(signing_key, &ca)?;
+    let leaf_der =
+        nazo_crypto::certificate::sign(leaf_params, signing_key_pem, &ca_der, &ca_key_pem)?;
+    let leaf_pem = pem_certificate(&leaf_der);
+    let ca_pem = pem_certificate(&ca_der);
 
     Ok(Openid4vcCertificateBundle {
-        contents: format!("{}{}", leaf.pem(), ca.pem()).into_bytes(),
+        contents: format!("{leaf_pem}{ca_pem}").into_bytes(),
         mdoc_material: mdoc_profile.map(|_| MdocCertificateMaterial {
-            leaf_der: leaf.der().to_vec(),
-            ca_der: ca.der().to_vec(),
+            leaf_der,
+            ca_der,
             // One immutable IACA record owns its key and sole DS. Retaining it
             // keeps the certificate's CRL address valid across key rotation.
-            issuer_material_pem: format!("{}{}{}", ca.key().serialize_pem(), leaf.pem(), ca.pem()),
+            issuer_material_pem: format!("{ca_key_pem}{leaf_pem}{ca_pem}"),
         }),
     })
 }
 
-fn subject_key_identifier(key: &KeyPair) -> Vec<u8> {
-    subject_key_identifier_from_public_key(key.public_key_raw())
-}
-
-fn subject_key_identifier_extension(key: &KeyPair) -> CustomExtension {
-    let content = yasna::construct_der(|writer| writer.write_bytes(&subject_key_identifier(key)));
+fn subject_key_identifier_extension(public_key: &[u8]) -> CustomExtension {
+    let content = yasna::construct_der(|writer| {
+        writer.write_bytes(&subject_key_identifier_from_public_key(public_key));
+    });
     CustomExtension::from_oid_content(&[2, 5, 29, 14], content)
 }
 
@@ -580,7 +585,7 @@ fn database_certificate_profile(
     if options.purposes != both {
         return Ok(None);
     }
-    if options.alg != jsonwebtoken::Algorithm::ES256 {
+    if options.alg != nazo_crypto::jwt::Algorithm::ES256 {
         bail!("OpenID4VC certificates require ES256");
     }
     let issuer = Url::parse(&binding.issuer)?;
@@ -616,23 +621,26 @@ async fn generate_local_with_database_manager(
     }
     if manager
         .snapshot()
-        .signing_verification_key(SigningPurpose::Credential, jsonwebtoken::Algorithm::ES256)
+        .signing_verification_key(
+            SigningPurpose::Credential,
+            nazo_crypto::jwt::Algorithm::ES256,
+        )
         .is_some()
         || manager
             .snapshot()
             .signing_verification_key(
                 SigningPurpose::PresentationRequest,
-                jsonwebtoken::Algorithm::ES256,
+                nazo_crypto::jwt::Algorithm::ES256,
             )
             .is_some()
     {
         bail!("existing OpenID4VC key requires explicit mdoc-import before use");
     }
-    let signing_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?;
-    let material = build_managed_material(&signing_key, profile, None)?;
+    let signing_key_pem = nazo_crypto::certificate::generate_p256_private_key_pem()?;
+    let material = build_managed_material(&signing_key_pem, profile, None)?;
     let kid = material.public.signing_kid.clone();
     match manager
-        .database_commit_openid4vc(state.revision, material, Some(signing_key.serialize_pem()))
+        .database_commit_openid4vc(state.revision, material, Some(signing_key_pem))
         .await
     {
         Ok(()) => Ok(kid),
@@ -652,12 +660,12 @@ async fn generate_local_with_database_manager(
 }
 
 fn build_managed_material(
-    signing_key: &KeyPair,
+    signing_key_pem: &str,
     profile: &Openid4vcCertificateProfile,
     previous: Option<Openid4vcMaterial>,
 ) -> anyhow::Result<Openid4vcMaterial> {
     let bundle = build_openid4vc_certificate_bundle(
-        signing_key,
+        signing_key_pem,
         &profile.hostname,
         profile.mdoc_profile.as_ref(),
     )?;
@@ -747,8 +755,8 @@ fn validate_managed_profile(
         || !ca.is_ca()
         || leaf.issuer() != ca.subject()
         || ca.subject() != ca.issuer()
-        || ca.verify_signature(Some(ca.public_key())).is_err()
-        || leaf.verify_signature(Some(ca.public_key())).is_err()
+        || nazo_crypto::certificate::verify_signature(&ca, ca.public_key()).is_err()
+        || nazo_crypto::certificate::verify_signature(&leaf, ca.public_key()).is_err()
         || !leaf.validity().is_valid()
         || !ca.validity().is_valid()
         || profile
@@ -775,7 +783,10 @@ async fn import_mdoc_directory(
     }
     let snapshot = manager.snapshot();
     let key = snapshot
-        .signing_verification_key(SigningPurpose::Credential, jsonwebtoken::Algorithm::ES256)
+        .signing_verification_key(
+            SigningPurpose::Credential,
+            nazo_crypto::jwt::Algorithm::ES256,
+        )
         .context("import requires the existing credential signing key in the database")?;
     let chain = tokio::fs::read_to_string(source.join("certificate-bundle.pem"))
         .await
@@ -816,13 +827,13 @@ async fn import_mdoc_directory(
                 .map_err(|e| anyhow::anyhow!("invalid imported DS: {e}"))?;
             let (_, ca) = x509_parser::parse_x509_certificate(certificates[1].as_ref())
                 .map_err(|e| anyhow::anyhow!("invalid imported IACA: {e}"))?;
-            let private_key = KeyPair::from_pem(&pem)?;
+            let private_public_key = nazo_crypto::certificate::public_key_from_pem(&pem)?;
             if !ca.is_ca()
                 || ca.subject() != ca.issuer()
                 || leaf.issuer() != ca.subject()
-                || private_key.public_key_raw() != ca.public_key().subject_public_key.data.as_ref()
-                || ca.verify_signature(Some(ca.public_key())).is_err()
-                || leaf.verify_signature(Some(ca.public_key())).is_err()
+                || private_public_key != ca.public_key().subject_public_key.data.as_ref()
+                || nazo_crypto::certificate::verify_signature(&ca, ca.public_key()).is_err()
+                || nazo_crypto::certificate::verify_signature(&leaf, ca.public_key()).is_err()
                 || !is_mdoc_document_signing_certificate(&leaf)
             {
                 bail!("imported IACA key and certificate chain do not match");
@@ -906,10 +917,10 @@ async fn rotate_managed_material(
     let previous = state
         .material
         .context("rotation requires initialized OpenID4VC material")?;
-    let key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256)?;
-    let material = build_managed_material(&key, profile, Some(previous))?;
+    let key_pem = nazo_crypto::certificate::generate_p256_private_key_pem()?;
+    let material = build_managed_material(&key_pem, profile, Some(previous))?;
     manager
-        .database_commit_openid4vc(state.revision, material, Some(key.serialize_pem()))
+        .database_commit_openid4vc(state.revision, material, Some(key_pem))
         .await?;
     manager.database_revision().await
 }

@@ -163,12 +163,14 @@ Valkey 凭据必须已经存在；NazoAuthCtl 不会为外部服务创建凭据�
 
 `nazoauthctl` 生成私有服务配置、deployment identity、签名 identity、应用 secret
 和恢复状态，并只把 NazoAuth 发布到选定的宿主机 loopback 端口。可使用任意符合要求
-的 TLS 反向代理，把公开 HTTPS 流量转发到 `http://127.0.0.1:8000`。
+的 TLS 反向代理，把公开 HTTPS 流量转发到该部署的 loopback 地址。通过
+`nazoauthctl --json status --instance production` 的 `runtime.loopback_port`
+读取实际宿主端口；容器内的 8000 端口不是宿主发布端口。
 `TRUSTED_PROXY_CIDRS` 只能包含受控代理地址；在代理正确清洗 forwarded headers
 之前，保持 `CLIENT_IP_HEADER_MODE=none`。
 
-宿主机端口需要变化时设置 `NAZOAUTH_PORT`。该变量只改变本机监听端口，不改变
-issuer；`PUBLIC_BASE_URL` 仍必须等于客户端看到的公开 HTTPS 地址。
+`NAZOAUTH_PORT` 只属于源码 Compose 示例；托管安装器自行派生并记录 loopback
+端口。`PUBLIC_BASE_URL` 仍必须等于客户端看到的公开 HTTPS 地址。
 
 ### 反向代理与 mTLS
 
@@ -207,8 +209,8 @@ subject/issuer DN 的叶证书可能被 OpenSSL/HAProxy 判为自签证书并拒
 
 满足以下条件后才算启用：
 
-1. `nazoauthctl status` 报告签名 Release 和内容寻址 target；
-2. `nazoauthctl doctor` 验证审计、readiness、target digest 和 runtime DDL 边界；
+1. `nazoauthctl status --instance production` 报告签名 Release 和内容寻址 target；
+2. `nazoauthctl doctor --instance production` 报告目标当前状态与诊断观察；数据库权限和审计健康仍需执行各自的检查；
 3. `/health` 返回 HTTP 200；
 4. `/.well-known/openid-configuration` 返回配置的 issuer；
 5. 反向代理通过公开 HTTPS origin 提供相同接口；
@@ -217,7 +219,7 @@ subject/issuer DN 的叶证书可能被 OpenSSL/HAProxy 判为自签证书并拒
 查看脱敏后的部署与审计状态：
 
 ```sh
-nazoauthctl status
+nazoauthctl status --instance production
 nazoauthctl operation --instance production --limit 20
 ```
 

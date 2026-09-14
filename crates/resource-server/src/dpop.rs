@@ -1,7 +1,7 @@
 use super::VerifiedSenderConstraintProof;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use jsonwebtoken::{Algorithm, DecodingKey};
+use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -133,7 +133,7 @@ impl DpopProofVerifier {
         access_token: &str,
         now: i64,
     ) -> Result<DpopProofVerification, DpopProofVerifierError> {
-        let header = jsonwebtoken::decode_header(proof_jwt)
+        let header = nazo_crypto::jwt::decode_header(proof_jwt)
             .map_err(|_| DpopProofVerifierError::MalformedProof)?;
         if !header
             .typ
@@ -283,7 +283,7 @@ impl Default for DpopProofVerifierConfig {
 
 pub(super) fn decode_and_verify_dpop_proof(
     proof_jwt: &str,
-    decoding_key: &DecodingKey,
+    decoding_key: &JwtVerificationKey,
     alg: Algorithm,
 ) -> Result<DpopProofClaims, DpopProofVerifierError> {
     let mut parts = proof_jwt.split('.');
@@ -300,11 +300,11 @@ pub(super) fn decode_and_verify_dpop_proof(
         return Err(DpopProofVerifierError::MalformedProof);
     }
     let signing_input = format!("{header}.{payload}");
-    if !jsonwebtoken::crypto::verify(signature, signing_input.as_bytes(), decoding_key, alg)
-        .map_err(|_| DpopProofVerifierError::InvalidSignature)?
-    {
-        return Err(DpopProofVerifierError::InvalidSignature);
-    }
+    let raw_signature = URL_SAFE_NO_PAD
+        .decode(signature)
+        .map_err(|_| DpopProofVerifierError::InvalidSignature)?;
+    nazo_crypto::signature::verify(alg, decoding_key, signing_input.as_bytes(), &raw_signature)
+        .map_err(|_| DpopProofVerifierError::InvalidSignature)?;
     let payload = URL_SAFE_NO_PAD
         .decode(payload)
         .map_err(|_| DpopProofVerifierError::MalformedProof)?;
@@ -313,7 +313,7 @@ pub(super) fn decode_and_verify_dpop_proof(
     Ok(claims)
 }
 
-pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
+pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVerificationKey> {
     const PRIVATE_JWK_MEMBERS: [&str; 8] = ["d", "p", "q", "dp", "dq", "qi", "oth", "k"];
 
     let key = key.as_object()?;
@@ -349,7 +349,7 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<Decod
             if bytes.len() != 32 {
                 return None;
             }
-            DecodingKey::from_ed_components(x).ok()
+            JwtVerificationKey::from_ed_components(x).ok()
         }
         SupportedDpopAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -362,7 +362,7 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<Decod
             if !rsa_public_key_components_are_safe(&modulus, &exponent) {
                 return None;
             }
-            DecodingKey::from_rsa_components(n, e).ok()
+            JwtVerificationKey::from_rsa_components(n, e).ok()
         }
         SupportedDpopAlgorithm::Ec => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -377,7 +377,7 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<Decod
             if x_bytes.len() != 32 || y_bytes.len() != 32 {
                 return None;
             }
-            DecodingKey::from_ec_components(x, y).ok()
+            JwtVerificationKey::from_ec_components(x, y).ok()
         }
     }
 }

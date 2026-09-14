@@ -36,7 +36,7 @@ deployment can satisfy.
 | RAR | RFC 9396-style `authorization_details` accepted on authorization, PAR, and signed request object inputs only while the explicit persisted `authorization_details` runtime module is enabled |
 | Refresh policy | Rotation by default for refresh-token grants |
 | Token TTLs | Authorization code <= configured `AUTH_CODE_TTL_SECONDS`; access token <= configured `ACCESS_TOKEN_TTL_SECONDS` |
-| Metadata | Generated as the union of active server capabilities; mTLS capabilities are advertised only when trusted proxy CIDRs are configured; client policy is enforced after discovery |
+| Metadata | Generated as the union of active server capabilities; mTLS capabilities require an enabled certificate source (`direct-tls` or trusted RFC 9440 forwarding); client policy is enforced after discovery |
 
 Refresh-token rotation follows the state machine in `docs/protocol/refresh-token-rotation.md`. The lost-response retry window is a compatibility recovery path, not a replay bypass.
 
@@ -83,7 +83,7 @@ client onboarding guidance lives in
 
 | Surface | Profile boundary | Metadata rule |
 | --- | --- | --- |
-| Dynamic Client Registration / DCRM | Conditional RFC 7591 and RFC 7592 client lifecycle for DCR-created clients only; registration and management operations emit non-secret audit events. `jwks_uri` is accepted only when the constrained HTTPS remote-document resolver can fetch and validate the client JWK Set. | `registration_endpoint` appears only when an initial access token is configured; DCR-created clients receive baseline policy and cannot self-grant elevated capabilities. |
+| Dynamic Client Registration / DCRM | Conditional RFC 7591 and RFC 7592 client lifecycle for DCR-created clients only; registration and management operations emit non-secret audit events. `jwks_uri` is accepted only when the constrained HTTPS remote-document resolver can fetch and validate the client JWK Set. | `registration_endpoint` appears only while the DCR module is active with an initial access token; DCR-created clients receive baseline policy and cannot self-grant elevated capabilities. |
 | Device Authorization Grant | Server support is default-on for new databases, but client use is default-deny. | Device endpoint and `device_code` grant metadata appear when the runtime module is active; a request still requires the client grant allowlist and `allow_cross_device_flows=true`. |
 | Token Exchange local profile | Bounded RFC 8693 access-token to access-token exchange for locally issued subject/actor tokens and explicitly allowed targets. | The grant type is advertised only because the local profile is implemented; external, refresh-token, and ID-token exchange profiles are not implied. |
 | Third-party JWT bearer assertion trust | Deferred profile for external assertion issuers and non-client subjects; the implemented JWT bearer grant remains client-bound. | No discovery metadata is advertised until issuer allowlists, subject mapping, replay, revocation, audit, and negative tests exist. |
@@ -128,7 +128,7 @@ Required negative tests:
 | Client auth | Static clients, public or confidential according to registration |
 | Token binding | Bearer, DPoP, or mTLS depending on client policy |
 | DPoP nonce | Authorization-server and token endpoints use `DPOP_NONCE_POLICY=required` by default. The FAPI protected resource endpoint uses `FAPI_RESOURCE_DPOP_NONCE_POLICY=optional` by default because RFC 9449 makes resource nonces optional and the official FAPI2 DPoP resource tests exercise replay through `jti`, not a mandatory initial resource nonce challenge. |
-| PAR | Optional unless client/profile requires it |
+| PAR | Optional unless `security_policy.require_pushed_authorization_requests=true`, FAPI2 assurance, or the server policy requires it |
 | JAR | Optional; signed request objects validated when supplied |
 | ID Token | RS256 support must be real; active signing alg is advertised |
 | UserInfo | Requires valid access token with `openid` scope |

@@ -1,7 +1,3 @@
-use aes_gcm::{
-    Aes256Gcm, KeyInit,
-    aead::{Aead, Payload},
-};
 use chrono::{DateTime, Utc};
 use diesel::{
     BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl, QueryableByName,
@@ -383,20 +379,16 @@ fn seal_response(
 ) -> Result<Vec<u8>, RepositoryError> {
     let response_keys = response_keys.ok_or(RepositoryError::Unavailable)?;
     let key = response_keys.current_key();
-    let cipher = Aes256Gcm::new_from_slice(key)
-        .map_err(|_| RepositoryError::Consistency("invalid issuance response key".to_owned()))?;
     let mut nonce = [0_u8; RESPONSE_NONCE_LEN];
     rand::rng().fill_bytes(&mut nonce);
-    let ciphertext = cipher
-        .encrypt(
-            (&nonce).into(),
-            Payload {
-                msg: response_body,
-                aad: &response_aad(context),
-            },
-        )
-        .map_err(|_| {
-            RepositoryError::Unexpected("token issuance response encryption failed".to_owned())
+    let ciphertext = nazo_crypto::aead::encrypt(key, &nonce, &response_aad(context), response_body)
+        .map_err(|error| match error {
+            nazo_crypto::CryptoError::InvalidKey => {
+                RepositoryError::Consistency("invalid issuance response key".to_owned())
+            }
+            _ => {
+                RepositoryError::Unexpected("token issuance response encryption failed".to_owned())
+            }
         })?;
     let mut protected = Vec::with_capacity(1 + nonce.len() + ciphertext.len());
     protected.push(TOKEN_ISSUANCE_RESPONSE_ENVELOPE_VERSION_BYTE);
@@ -430,17 +422,14 @@ fn unseal_response(
     let nonce: &[u8; 12] = nonce.try_into().map_err(|_| {
         RepositoryError::Consistency("token issuance response nonce is malformed".to_owned())
     })?;
-    let plaintext = Aes256Gcm::new_from_slice(key)
-        .map_err(|_| RepositoryError::Consistency("invalid issuance response key".to_owned()))?
-        .decrypt(
-            nonce.into(),
-            Payload {
-                msg: ciphertext,
-                aad: &response_aad(context),
-            },
-        )
-        .map_err(|_| {
-            RepositoryError::Consistency("token issuance response authentication failed".to_owned())
+    let plaintext = nazo_crypto::aead::decrypt(key, nonce, &response_aad(context), ciphertext)
+        .map_err(|error| match error {
+            nazo_crypto::CryptoError::InvalidKey => {
+                RepositoryError::Consistency("invalid issuance response key".to_owned())
+            }
+            _ => RepositoryError::Consistency(
+                "token issuance response authentication failed".to_owned(),
+            ),
         })?;
     if blake3::hash(&plaintext).to_hex().to_string() != context.response_digest {
         return Err(RepositoryError::Consistency(

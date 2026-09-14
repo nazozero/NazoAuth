@@ -216,7 +216,8 @@ pub(crate) async fn commit_openid4vc(
         }
         let private = crate::serialization::pem_to_der(&private_pem)
             .ok_or_else(|| anyhow!("OpenID4VC signing key must be a PKCS#8 PEM"))?;
-        let public = public_jwk_from_private_der(kid, jsonwebtoken::Algorithm::ES256, &private)?;
+        let public =
+            public_jwk_from_private_der(kid, nazo_crypto::jwt::Algorithm::ES256, &private)?;
         let keys = payload["keys"]
             .as_array_mut()
             .ok_or_else(|| anyhow!("keyset missing keys"))?;
@@ -281,12 +282,15 @@ pub(crate) fn validate_openid4vc_material(loaded: &LoadedKeyset) -> anyhow::Resu
         return Ok(());
     };
     let credential = loaded
-        .selected_key(SigningPurpose::Credential, jsonwebtoken::Algorithm::ES256)
+        .selected_key(
+            SigningPurpose::Credential,
+            nazo_crypto::jwt::Algorithm::ES256,
+        )
         .ok_or_else(|| anyhow!("OpenID4VC credential signing key unavailable"))?;
     let presentation = loaded
         .selected_key(
             SigningPurpose::PresentationRequest,
-            jsonwebtoken::Algorithm::ES256,
+            nazo_crypto::jwt::Algorithm::ES256,
         )
         .ok_or_else(|| anyhow!("OpenID4VC presentation-request signing key unavailable"))?;
     if credential.kid != presentation.kid || credential.kid != material.public.signing_kid {
@@ -385,12 +389,12 @@ where
 fn initial_payload() -> anyhow::Result<Value> {
     let now = timestamp(Utc::now());
     let active = local_entry(
-        jsonwebtoken::Algorithm::RS256,
+        nazo_crypto::jwt::Algorithm::RS256,
         now.clone(),
         None::<Vec<SigningPurpose>>,
     )?;
     let protocol = local_entry(
-        jsonwebtoken::Algorithm::PS256,
+        nazo_crypto::jwt::Algorithm::PS256,
         now,
         Some([
             SigningPurpose::IdToken,
@@ -399,11 +403,11 @@ fn initial_payload() -> anyhow::Result<Value> {
         ]),
     )?;
     Ok(
-        json!({"schema_version":KEYSET_SCHEMA_VERSION,"active_kid":active["kid"].clone(),"keys":[active,protocol],"request_object_private_pem":URL_SAFE_NO_PAD.encode(crate::crypto::generate_rsa_pkcs8_pem(3072)?)}),
+        json!({"schema_version":KEYSET_SCHEMA_VERSION,"active_kid":active["kid"].clone(),"keys":[active,protocol],"request_object_private_pem":URL_SAFE_NO_PAD.encode(crate::serialization::generate_rsa_pkcs8_pem(3072)?)}),
     )
 }
 fn local_entry(
-    algorithm: jsonwebtoken::Algorithm,
+    algorithm: nazo_crypto::jwt::Algorithm,
     created_at: String,
     purposes: Option<impl IntoIterator<Item = SigningPurpose>>,
 ) -> anyhow::Result<Value> {
@@ -486,8 +490,8 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
             changed = true;
         }
         for algorithm in [
-            jsonwebtoken::Algorithm::RS256,
-            jsonwebtoken::Algorithm::PS256,
+            nazo_crypto::jwt::Algorithm::RS256,
+            nazo_crypto::jwt::Algorithm::PS256,
         ] {
             if algorithm != active_algorithm && !has_live_protocol_key(keys, algorithm, now)? {
                 keys.push(local_entry(
@@ -513,7 +517,7 @@ fn maintain_payload(payload: &mut Value, settings: &KeySettings) -> anyhow::Resu
 fn prepublished_candidate(
     keys: &[Value],
     active_kid: &str,
-    algorithm: jsonwebtoken::Algorithm,
+    algorithm: nazo_crypto::jwt::Algorithm,
 ) -> anyhow::Result<Option<usize>> {
     let mut selected: Option<(usize, DateTime<Utc>)> = None;
     for (index, entry) in keys.iter().enumerate() {
@@ -545,7 +549,7 @@ fn activate(keys: &mut [Value], old_kid: &str, new_kid: &str, retire_at: DateTim
 
 fn has_live_protocol_key(
     keys: &[Value],
-    algorithm: jsonwebtoken::Algorithm,
+    algorithm: nazo_crypto::jwt::Algorithm,
     now: DateTime<Utc>,
 ) -> anyhow::Result<bool> {
     for entry in keys {
@@ -658,7 +662,9 @@ fn load_payload(
             .as_str()
             .ok_or_else(|| anyhow!("keyset missing request object private key"))?,
     )?;
-    crate::crypto::validate_rsa_pkcs8_pem(&request_object_decryption_key)?;
+    let request_object_der =
+        crate::serialization::rsa_pkcs8_from_pem(&request_object_decryption_key)?;
+    nazo_crypto::key_wrap::validate_rsa_pkcs8(&request_object_der)?;
     let request_object_encryption_jwk =
         crate::request_object_encryption::request_object_encryption_jwk(
             &request_object_decryption_key,

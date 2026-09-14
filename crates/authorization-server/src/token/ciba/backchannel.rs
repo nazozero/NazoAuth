@@ -169,7 +169,7 @@ impl CibaApplication {
             ));
         }
         if let Some(request_object) = form.request.as_deref()
-            && let Ok(header) = jsonwebtoken::decode_header(request_object)
+            && let Ok(header) = nazo_crypto::jwt::decode_header(request_object)
             && header.kid.is_some()
             && let Err(error) =
                 refresh_client_jwks(&mut client, remote_jwks, header.kid.as_deref()).await

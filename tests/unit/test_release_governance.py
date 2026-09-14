@@ -242,13 +242,13 @@ class ReleaseGovernanceTests(unittest.TestCase):
     def test_public_bootstrap_requires_an_attested_release_reader(self) -> None:
         for name in ("one-click-update.md", "one-click-update.zh-CN.md"):
             source = (ROOT / "docs" / "operations" / name).read_text(encoding="utf-8")
-            self.assertIn("`python3`", source)
-            self.assertIn("`sha256sum`", source)
-            self.assertIn("`install`", source)
+            self.assertIn("`curl`", source)
+            self.assertIn("`cosign`", source)
+            self.assertIn("Sigstore", source)
             self.assertNotIn("controller-keyed HMAC", source)
             self.assertNotIn("使用 controller key 计算", source)
-            self.assertIn("GitHub CLI", source)
-            self.assertRegex(source, r"public non-draft Release|公开非草稿 Release")
+            self.assertNotIn("GitHub CLI", source)
+            self.assertRegex(source, r"public non-draft Release|公开、非草稿 Release")
 
     def test_server_release_builds_only_the_application_executable(self) -> None:
         server_manifest = (
