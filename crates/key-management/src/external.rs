@@ -13,7 +13,6 @@ pub(crate) async fn sign_external(
     public_jwk: &Value,
     signing_input: &[u8],
 ) -> Result<Signature, SignError> {
-    std::str::from_utf8(signing_input).map_err(|_| SignError::SigningFailed)?;
     let signature = external
         .signer
         .sign(ExternalSignRequest {

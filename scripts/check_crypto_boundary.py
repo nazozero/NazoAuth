@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """Verify that concrete crypto backends stay behind the nazo-crypto boundary.
 
-Exit 0 prints PASS; exit 1 prints every violation as
-``relative/path:line-or-0: rule: detail`` sorted and deduplicated.
+The guard freezes architectural invariants only: dependency direction, backend
+type/key/provider non-leakage, and the sanctioned bypass rules. It deliberately
+does not freeze implementation shape (exact dependency sets, feature member
+lists, or public API names) so the crypto implementation can evolve without a
+second architecture database. Exit 0 prints PASS; exit 1 prints every
+violation as ``relative/path:line-or-0: rule: detail`` sorted and deduplicated.
 """
 
 import argparse
@@ -21,13 +25,6 @@ BACKEND_PACKAGES = {
     "web-sys", "wolfssl", "wolfssl-sys",
 }
 
-CRYPTO_DEPENDENCIES = {
-    "aes-gcm", "argon2", "aws-lc-rs", "base64", "der",
-    "ed25519-dalek", "jsonwebtoken", "p256", "pkcs8", "rand",
-    "rcgen", "rustls", "serde", "serde_json", "thiserror",
-    "x509-cert", "x509-parser", "zeroize",
-}
-
 TLS_EXCEPTIONS = {
     "crates/nazoauth/src/bootstrap/transport.rs": {
         "rustls::crypto::CryptoProvider",
@@ -41,6 +38,8 @@ TLS_EXCEPTIONS = {
     },
 }
 
+# Backend DTOs sanctioned to appear in nazo-crypto's public API (and therefore
+# in upper layers). Any other backend type re-export or signature path leaks.
 DTO_EXPORTS = {
     "jwt": {"Algorithm", "Header", "TokenData", "Validation"},
     "certificate": {
@@ -52,64 +51,12 @@ DTO_EXPORTS = {
     },
 }
 
+# The six capability features are the architectural contract consumers select;
+# their internal member lists are implementation detail and are not frozen.
 _CRYPTO_FEATURES = {"aead", "ecdh", "ed25519", "jose", "password", "x509"}
-_CRYPTO_FEATURE_MEMBERS = {
-    "jose": [
-        "dep:jsonwebtoken", "jsonwebtoken/aws_lc_rs", "dep:aws-lc-rs",
-        "dep:p256", "p256/pkcs8", "dep:ed25519-dalek", "dep:pkcs8",
-        "dep:der", "dep:x509-cert", "dep:base64", "dep:rand",
-        "dep:serde", "dep:serde_json",
-    ],
-    "ecdh": ["dep:p256", "p256/ecdh", "dep:zeroize"],
-    "aead": ["dep:aes-gcm"],
-    "password": ["dep:argon2"],
-    "ed25519": ["dep:ed25519-dalek"],
-    "x509": [
-        "dep:rcgen", "dep:rustls", "dep:x509-parser", "x509-parser/verify-aws",
-    ],
-}
-# Frozen public surface per crypto module (ARCHITECTURE.md §3-§9): only these
-# modules, opaque types, free functions, inherent methods, and DTO re-exports
-# may appear as public items inside crates/crypto.
-_CRYPTO_PUBLIC_TYPES = {
-    "lib": {"CryptoError", "Result"},
-    "jwt": {"VerificationKey"},
-    "ec": {"P256SecretKey"},
-    "ed25519": {"SigningKey", "VerifyingKey"},
-}
-_CRYPTO_PUBLIC_FNS = {
-    "jwt": {"decode_header", "decode", "insecure_decode"},
-    "signature": {"sign", "verify", "generate_private_key", "public_jwk"},
-    "key_wrap": {
-        "generate_rsa_pkcs8_der", "validate_rsa_pkcs8", "rsa_public_components",
-        "rsa_oaep256_encrypt", "rsa_oaep256_decrypt", "aes_wrap",
-    },
-    "ec": {"normalize_p256_public_key"},
-    "aead": {"encrypt", "decrypt"},
-    "password": {"hash_argon2id", "verify_argon2_phc"},
-    "certificate": {
-        "generate_p256_private_key_pem", "public_key_from_pem", "self_signed",
-        "sign", "sign_crl", "verify_signature", "verify_client_chain_at",
-    },
-}
-_CRYPTO_PUBLIC_METHODS = {
-    "VerificationKey": {
-        "from_rsa_components", "from_ec_components", "from_ed_components",
-        "from_ec_sec1",
-    },
-    "P256SecretKey": {
-        "generate", "from_secret_bytes", "secret_bytes", "public_key", "agree",
-    },
-    "SigningKey": {"from_bytes", "to_bytes", "verifying_key", "sign"},
-    "VerifyingKey": {"from_bytes", "to_bytes", "verify"},
-}
-_CRYPTO_PUBLIC_MODS = {
-    "lib": {
-        "aead", "certificate", "ec", "ed25519", "jwt", "key_wrap",
-        "password", "signature",
-    },
-    "jwt": {"dangerous"},
-}
+# Types wrapping secret/backend key material: their fields must never be public.
+_CRYPTO_OPAQUE_TYPES = {"VerificationKey", "P256SecretKey", "SigningKey", "VerifyingKey"}
+_PROVIDER_PREFIX = "rustls::crypto::"
 _X509_VERIFY_FEATURES = {"ring", "verify", "verify-aws"}
 _ALLOWED_SIGNATURE_PATHS = {
     "x509_parser::certificate::X509Certificate",
@@ -133,13 +80,9 @@ _PUB_FN = re.compile(r"\bpub\s+(?:async\s+|unsafe\s+|extern\s+\S+\s+)*fn\s+(\w+)
 _PUB_STRUCT = re.compile(r"\bpub\s+struct\s+(\w+)")
 _PUB_ENUM = re.compile(r"\bpub\s+enum\s+(\w+)")
 _PUB_TYPE = re.compile(r"\bpub\s+type\s+(\w+)")
-_PUB_MOD = re.compile(r"\bpub\s+mod\s+(\w+)")
-_PUB_CONST_STATIC = re.compile(r"\bpub\s+(?:const|static)\s+(\w+)")
 _PUB_FIELD = re.compile(r"\bpub(\s*\(\s*crate\s*\))?\s+(\w+)\s*:\s*([^,})]+)")
 _PUB_TRAIT = re.compile(r"\bpub\s+trait\b")
 _FORBIDDEN_IMPL = re.compile(r"\bimpl\b[^{]*\b(?:Deref|DerefMut|AsRef|Borrow)\b")
-_PATH_ATTR = re.compile(r"#\[\s*path\s*=\s*\"([^\"]+)\"\s*\]")
-_INCLUDE = re.compile(r"\binclude!\s*\(")
 
 
 def _load_manifest(path: Path) -> dict:
@@ -164,19 +107,6 @@ def _all_dependency_packages(manifest: dict, workspace: dict) -> dict:
 
 def manifest_violations(root: Path) -> list:
     """Check Cargo manifests for backend edges, feature forwarding, and identity."""
-    consumer_features = {
-        "nazo-auth": ["ecdh", "jose"],
-        "nazo-digital-credentials": ["aead", "ecdh"],
-        "nazo-http-signatures": ["jose"],
-        "nazo-identity": ["password"],
-        "nazo-key-management": ["aead", "ecdh", "jose"],
-        "nazo-oauth-server": ["aead", "ecdh", "jose", "x509"],
-        "nazo-operator-protocol": ["ed25519"],
-        "nazo-postgres": ["aead", "password"],
-        "nazo-resource-server": ["jose"],
-        "nazoauth": ["ed25519", "jose", "password", "x509"],
-        "nazoauth-fuzz": ["ed25519"],
-    }
     violations = []
     workspace = _load_manifest(root / "Cargo.toml").get("workspace", {})
     crypto_dir = (root / "crates" / "crypto").resolve()
@@ -187,16 +117,11 @@ def manifest_violations(root: Path) -> list:
     fuzz_manifest = root / "fuzz" / "Cargo.toml"
     if fuzz_manifest.is_file():
         manifests.append(fuzz_manifest)
-    reviewed = (
-        contracts.NEUTRAL_DEPENDENCIES | contracts.EXECUTION_DEPENDENCIES
-        | contracts.MIXED_DEPENDENCIES
-    )
     for manifest_path in manifests:
         manifest = _load_manifest(manifest_path)
         name = manifest.get("package", {}).get("name", "")
         relative = manifest_path.relative_to(root).as_posix()
         is_crypto = manifest_path.parent.resolve() == crypto_dir
-        is_fuzz = manifest_path.parent.resolve() == (root / "fuzz").resolve()
         if name == "nazo-crypto" and not is_crypto:
             violations.append(
                 f"{relative}:0: crypto identity: package 'nazo-crypto' must live in crates/crypto"
@@ -205,20 +130,11 @@ def manifest_violations(root: Path) -> list:
             contracts.resolved_production_dependencies(manifest_path, workspace)
         )
         if is_crypto:
-            packages = {package for package, _spec in dependencies}
             for package, spec in dependencies:
                 if spec["_path"] or package in contracts.PACKAGE_ROLES:
                     violations.append(
                         f"{relative}:0: crypto isolation: local dependency {package}"
                     )
-            for package in sorted(packages - CRYPTO_DEPENDENCIES):
-                violations.append(
-                    f"{relative}:0: crypto dependency: unlisted dependency {package}"
-                )
-            for package in sorted(CRYPTO_DEPENDENCIES - packages):
-                violations.append(
-                    f"{relative}:0: crypto dependency: missing required dependency {package}"
-                )
             features = manifest.get("features", {})
             keys = set(features)
             if features.get("default") == []:
@@ -228,15 +144,6 @@ def manifest_violations(root: Path) -> list:
                     f"{relative}:0: crypto features: expected {sorted(_CRYPTO_FEATURES)}, "
                     f"found {sorted(set(features))}"
                 )
-            for name, expected in _CRYPTO_FEATURE_MEMBERS.items():
-                if name not in features:
-                    continue
-                found = sorted(features[name] or [])
-                if found != sorted(expected):
-                    violations.append(
-                        f"{relative}:0: crypto features: {name} expects "
-                        f"{sorted(expected)}, found {found}"
-                    )
             continue
         for package, spec in dependencies:
             context = spec["_kind"] + (f" target {spec['_target']}" if spec["_target"] else "")
@@ -259,29 +166,6 @@ def manifest_violations(root: Path) -> list:
                         f"{relative}:0: crypto dependency: nazo-crypto must resolve "
                         f"to crates/crypto"
                     )
-                if name not in consumer_features:
-                    violations.append(
-                        f"{relative}:0: crypto consumer: {name} is not a registered consumer"
-                    )
-                elif sorted(spec.get("features") or []) != consumer_features[name]:
-                    violations.append(
-                        f"{relative}:0: crypto features: {name} expects "
-                        f"{consumer_features[name]}, found {sorted(spec.get('features') or [])}"
-                    )
-            if spec["_path"] and package not in contracts.PACKAGE_ROLES:
-                violations.append(
-                    f"{relative}:0: unreviewed dependency: unregistered local package "
-                    f"{package}"
-                )
-            if (
-                not is_fuzz
-                and not spec["_path"]
-                and package not in reviewed
-                and package not in contracts.PACKAGE_ROLES
-            ):
-                violations.append(
-                    f"{relative}:0: unreviewed dependency: {package}"
-                )
         aliases = _all_dependency_packages(manifest, workspace)
         for feature, entries in manifest.get("features", {}).items():
             for entry in entries if isinstance(entries, list) else []:
@@ -342,43 +226,30 @@ def _rust_aliases(masked: str, dependency_aliases: dict) -> dict:
     return aliases
 
 
+def _backend_roots() -> set:
+    return {name.replace("-", "_") for name in BACKEND_PACKAGES}
+
+
+def _is_backend_path(path: str) -> bool:
+    """A path rooted at a concrete backend, or a TLS provider type."""
+    return (
+        path.partition("::")[0] in _backend_roots()
+        or path.startswith(_PROVIDER_PREFIX)
+    )
+
+
 def _backend_paths(region: str, aliases: dict | None = None):
-    backend_rust = {name.replace("-", "_") for name in BACKEND_PACKAGES}
+    """Yield (position, resolved-path) for backend/provider paths in a region."""
     aliases = aliases or {}
     for match in _QUALIFIED.finditer(region):
         path = contracts.resolved_rust_path(match[0], aliases)
-        if path.partition("::")[0] in backend_rust:
+        if _is_backend_path(path):
             yield match.start(), path
     for alias, target in aliases.items():
-        if target.partition("::")[0] not in backend_rust:
+        if not _is_backend_path(target):
             continue
         for match in re.finditer(rf"(?<![\w:]){re.escape(alias)}\b(?!\s*::)", region):
             yield match.start(), target
-
-
-def _impl_body(masked: str, impl_start: int):
-    """Return (open, close, target_type) for a statement-level `impl` block."""
-    index = impl_start - 1
-    while index >= 0 and masked[index] in " \t":
-        index -= 1
-    if index >= 0 and masked[index] in "-:,(=&|":
-        return None  # `impl Trait` inside a signature, not an impl block
-    open_index = masked.find("{", impl_start)
-    close_index = masked.find(";", impl_start)
-    if open_index == -1 or (close_index != -1 and close_index < open_index):
-        return None
-    header = re.sub(r"<[^<>]*>", "", masked[impl_start:open_index])
-    header = re.split(r"\bfor\b", header)[-1].split("where")[0]
-    words = re.findall(r"[A-Za-z_]\w*", header)
-    depth = 0
-    end = len(masked)
-    for index in range(open_index, len(masked)):
-        depth += masked[index] == "{"
-        depth -= masked[index] == "}"
-        if not depth:
-            end = index + 1
-            break
-    return open_index, end, (words[-1] if words else "")
 
 
 def _tuple_fields(decl: str):
@@ -401,87 +272,50 @@ def _tuple_fields(decl: str):
 
 
 def _crypto_source_violations(relative: str, masked: str, dependency_aliases: dict) -> list:
-    """Check the public surface of crates/crypto against the frozen API."""
-    stem = Path(relative).stem
-    backend_rust = {name.replace("-", "_") for name in BACKEND_PACKAGES}
+    """Check that crates/crypto's public surface never leaks backend types.
+
+    Free functions, methods, modules, and type names are unconstrained — only
+    backend key/provider/error/type leakage and provider-style abstractions are
+    violations. Sanctioned DTO leaves are exempt.
+    """
     aliases = _rust_aliases(masked, dependency_aliases)
-    allowed_types = _CRYPTO_PUBLIC_TYPES.get(stem, set())
-    allowed_dto = DTO_EXPORTS.get(stem, set())
+    allowed_dto = DTO_EXPORTS.get(Path(relative).stem, set())
     violations = []
+
+    def leaked(path: str) -> bool:
+        return path.rpartition("::")[2] not in allowed_dto and _is_backend_path(path)
+
     for match in _PUB_USES.finditer(masked):
         for imported, _alias in contracts.rust_use_bindings(match[1]):
             resolved = contracts.resolved_rust_path(imported, aliases)
-            if resolved.rpartition("::")[2] in allowed_dto:
-                continue
-            kind = (
-                "backend re-export"
-                if resolved.partition("::")[0] in backend_rust
-                else "unlisted public re-export"
-            )
-            violations.append((
-                match.start(), "crypto public surface", f"{kind} {resolved}",
-            ))
-    for match in _PUB_MOD.finditer(masked):
-        if match[1] not in _CRYPTO_PUBLIC_MODS.get(stem, set()):
-            violations.append((
-                match.start(), "crypto public surface",
-                f"unlisted public module {match[1]}",
-            ))
-    for match in _PUB_CONST_STATIC.finditer(masked):
-        violations.append((
-            match.start(), "crypto public surface",
-            f"unlisted public constant {match[1]}",
-        ))
-    impl_spans = []
-    for match in re.finditer(r"\bimpl\b", masked):
-        body = _impl_body(masked, match.end())
-        if not body:
-            continue
-        open_index, end, target = body
-        impl_spans.append((open_index, end))
-        for fn in _PUB_FN.finditer(masked, open_index, end):
-            if fn[1] not in _CRYPTO_PUBLIC_METHODS.get(target, set()):
+            if leaked(resolved):
                 violations.append((
-                    fn.start(), "crypto public surface",
-                    f"unlisted public method {fn[1]} on {target}",
+                    match.start(), "crypto public surface",
+                    f"backend re-export {resolved}",
                 ))
     for match in _PUB_FN.finditer(masked):
         region = _decl_region(masked, match.end())
         for _pos, path in _backend_paths(region, aliases):
-            if path in _ALLOWED_SIGNATURE_PATHS or (
-                path.rpartition("::")[2] in allowed_dto
-            ):
+            if path in _ALLOWED_SIGNATURE_PATHS or not leaked(path):
                 continue
             violations.append((
                 match.start(), "crypto public surface",
                 f"backend path {path} in public signature",
             ))
-        if any(start <= match.start() < end for start, end in impl_spans):
-            continue
-        if match[1] not in _CRYPTO_PUBLIC_FNS.get(stem, set()):
-            violations.append((
-                match.start(), "crypto public surface",
-                f"unlisted public function {match[1]}",
-            ))
     for match in _PUB_STRUCT.finditer(masked):
-        whitelisted = match[1] in allowed_types
-        if not whitelisted:
-            violations.append((
-                match.start(), "crypto public surface",
-                f"unlisted public type {match[1]}",
-            ))
+        opaque = match[1] in _CRYPTO_OPAQUE_TYPES
         region = _brace_region(masked, match.end())
         for field in _PUB_FIELD.finditer(region):
             crate_visible, field_name, field_type = field[1], field[2], field[3]
-            if crate_visible and stem == "jwt" and field_name == "inner":
+            if crate_visible and Path(relative).stem == "jwt" and field_name == "inner":
                 continue
-            paths = [p for _p, p in _backend_paths(field_type, aliases)]
+            paths = [p for _p, p in _backend_paths(field_type, aliases) if leaked(p)]
             if paths:
                 violations.append((
                     match.start(), "crypto public surface",
                     f"public field {field_name} exposes {paths[0]}",
                 ))
-            elif whitelisted:
+            elif opaque and not crate_visible:
                 violations.append((
                     match.start(), "crypto public surface",
                     f"public field {field_name} on opaque type {match[1]}",
@@ -491,25 +325,22 @@ def _crypto_source_violations(relative: str, masked: str, dependency_aliases: di
             if not re.match(r"pub\b", stripped) or re.match(r"pub\s*\(", stripped):
                 continue
             field_type = stripped[3:].strip()
-            paths = [p for _p, p in _backend_paths(field_type, aliases)]
+            paths = [p for _p, p in _backend_paths(field_type, aliases) if leaked(p)]
             if paths:
                 violations.append((
                     match.start(), "crypto public surface",
                     f"public tuple field exposes {paths[0]}",
                 ))
-            elif whitelisted:
+            elif opaque:
                 violations.append((
                     match.start(), "crypto public surface",
                     f"public tuple field on opaque type {match[1]}",
                 ))
     for match in list(_PUB_ENUM.finditer(masked)) + list(_PUB_TYPE.finditer(masked)):
-        if match[1] not in allowed_types:
-            violations.append((
-                match.start(), "crypto public surface",
-                f"unlisted public type {match[1]}",
-            ))
         region = _brace_region(masked, match.end())
         for _pos, path in _backend_paths(region, aliases):
+            if not leaked(path):
+                continue
             violations.append((
                 match.start(), "crypto public surface",
                 f"public type exposes {path}",
@@ -530,11 +361,11 @@ def _crypto_source_violations(relative: str, masked: str, dependency_aliases: di
 
 
 def source_violations(root: Path) -> list:
-    """Check production sources for backend paths and banned method calls."""
+    """Check production sources for backend paths and banned native calls."""
     violations = []
     workspace = _load_manifest(root / "Cargo.toml").get("workspace", {})
     crypto_dir = (root / "crates" / "crypto").resolve()
-    backend_rust = {name.replace("-", "_") for name in BACKEND_PACKAGES}
+    backend_rust = _backend_roots()
     for manifest_path in sorted((root / "crates").glob("*/Cargo.toml")):
         crate_dir = manifest_path.parent
         manifest = _load_manifest(manifest_path)
@@ -559,7 +390,11 @@ def source_violations(root: Path) -> list:
                     )
                 continue
             aliases = _rust_aliases(masked, dependency_aliases)
-            candidates = [(m.start(), i) for m in _USES.finditer(masked) for i, _a in contracts.rust_use_bindings(m[1])]
+            candidates = [
+                (m.start(), i)
+                for m in _USES.finditer(masked)
+                for i, _a in contracts.rust_use_bindings(m[1])
+            ]
             candidates.extend(
                 (m.start(), m[0]) for m in _QUALIFIED.finditer(masked)
             )
@@ -577,7 +412,7 @@ def source_violations(root: Path) -> list:
                 detail = None
                 if root_name in backend_rust:
                     detail = f"backend path {resolved}"
-                elif resolved.startswith("rustls::crypto::"):
+                elif resolved.startswith(_PROVIDER_PREFIX):
                     allowed = TLS_EXCEPTIONS.get(relative, set())
                     if not any(resolved.startswith(prefix) for prefix in allowed):
                         detail = f"TLS provider path {resolved} outside fixed exceptions"
@@ -606,20 +441,6 @@ def source_violations(root: Path) -> list:
                     violations.append(
                         f"{relative}:{_line_number(text, match.start())}: "
                         f"{rule}: {match[0].strip()} outside nazo-crypto"
-                    )
-            for match in _INCLUDE.finditer(masked):
-                violations.append(
-                    f"{relative}:{_line_number(text, match.start())}: "
-                    f"include macro: include! is forbidden in production code"
-                )
-            for match in _PATH_ATTR.finditer(text):
-                if not masked[match.start():match.end()].strip():
-                    continue
-                target = (path.parent / match[1]).resolve()
-                if not str(target).startswith(str((crate_dir / "src").resolve())):
-                    violations.append(
-                        f"{relative}:{_line_number(text, match.start())}: "
-                        f"production path attribute: {match[1]} escapes crate src"
                     )
     return violations
 

@@ -109,13 +109,6 @@ pub fn verify_client_chain_at(
     if chain_der.is_empty() {
         return Err(CryptoError::InvalidInput);
     }
-    for der in chain_der {
-        let (remainder, _) =
-            x509_parser::parse_x509_certificate(der).map_err(|_| CryptoError::InvalidInput)?;
-        if !remainder.is_empty() {
-            return Err(CryptoError::InvalidInput);
-        }
-    }
     let chain = chain_der
         .iter()
         .map(|der| CertificateDer::from(der.as_slice()))

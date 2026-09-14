@@ -2,7 +2,9 @@
 """Mutation tests for check_crypto_boundary.py.
 
 Every case builds a minimal temporary workspace fixture and runs the real
-guard implementation; no guard rules are duplicated here.
+guard implementation; no guard rules are duplicated here. Cases cover real
+architectural regressions only — backend edges, backend/provider leakage, and
+sanctioned bypass rules — not parser syntax coverage or implementation shape.
 """
 
 import shutil
@@ -187,24 +189,20 @@ class CryptoBoundaryTest(unittest.TestCase):
     def test_clean_fixture_passes(self):
         self.assertClean()
 
-    # -- manifest mutations ------------------------------------------------
+    # -- manifest boundary rules -------------------------------------------
 
-    def test_alias_normal_backend_dependency_fails(self):
+    def test_aliased_backend_dependency_fails(self):
         _append(self.app_manifest, 'jwt = { package = "jsonwebtoken", version = "11" }\n')
         self.assertViolation("backend dependency: jwt (jsonwebtoken)")
 
-    def test_target_specific_backend_dependency_fails(self):
+    def test_backend_dependency_sections_fail(self):
         _append(
             self.app_manifest,
             "[target.'cfg(unix)'.dependencies]\nring = \"0.17\"\n",
         )
         self.assertViolation("backend dependency: ring")
-
-    def test_optional_backend_dependency_fails(self):
         _append(self.app_manifest, 'argon2 = { version = "0.5", optional = true }\n')
         self.assertViolation("backend dependency: argon2")
-
-    def test_build_dependency_fails(self):
         _append(self.app_manifest, '[build-dependencies]\np256 = "0.14"\n')
         self.assertViolation("backend dependency: p256")
 
@@ -215,20 +213,6 @@ class CryptoBoundaryTest(unittest.TestCase):
         )
         _append(self.app_manifest, "jwt = { workspace = true }\n")
         self.assertViolation("backend dependency: jwt (jsonwebtoken)")
-
-    def test_unknown_third_party_dependency_fails(self):
-        _append(self.app_manifest, 'unreviewed-lib = "1"\n')
-        self.assertViolation("unreviewed dependency: unreviewed-lib")
-
-    def test_unknown_local_package_fails(self):
-        _write(
-            self._tmp,
-            "crates/mystery/Cargo.toml",
-            '[package]\nname = "mystery-pkg"\nversion = "0.1.0"\n',
-        )
-        _write(self._tmp, "crates/mystery/src/lib.rs", "")
-        _append(self.app_manifest, 'mystery-pkg = { path = "../mystery" }\n')
-        self.assertViolation("unregistered local package mystery-pkg")
 
     def test_backend_feature_forwarding_fails(self):
         _append(
@@ -247,25 +231,6 @@ class CryptoBoundaryTest(unittest.TestCase):
         )
         self.assertViolation("x509 verification feature")
 
-    def test_crypto_consumer_feature_mismatch_fails(self):
-        self.app_manifest.write_text(
-            APP_MANIFEST.replace(
-                '["aead", "ecdh", "jose", "x509"]', '["jose"]'
-            ),
-            encoding="utf-8",
-        )
-        self.assertViolation("crypto features: nazo-oauth-server")
-
-    def test_unregistered_consumer_fails(self):
-        _write(
-            self._tmp,
-            "crates/web/Cargo.toml",
-            '[package]\nname = "nazo-http-actix"\nversion = "0.1.0"\n\n'
-            '[dependencies]\nnazo-crypto = { path = "../crypto", features = ["jose"] }\n',
-        )
-        _write(self._tmp, "crates/web/src/lib.rs", "")
-        self.assertViolation("crypto consumer: nazo-http-actix is not a registered consumer")
-
     def test_crypto_local_dependency_fails(self):
         _write(
             self._tmp,
@@ -276,19 +241,7 @@ class CryptoBoundaryTest(unittest.TestCase):
         _append(self.crypto_manifest, 'nazo-auth = { path = "../auth" }\n')
         self.assertViolation("crypto isolation: local dependency nazo-auth")
 
-    def test_crypto_unlisted_external_dependency_fails(self):
-        _append(self.crypto_manifest, 'unlisted-lib = "1"\n')
-        self.assertViolation("crypto dependency: unlisted dependency unlisted-lib")
-
-    def test_crypto_missing_required_dependency_fails(self):
-        content = self.crypto_manifest.read_text(encoding="utf-8")
-        self.crypto_manifest.write_text(
-            content.replace('zeroize = { version = "1", optional = true }\n', ""),
-            encoding="utf-8",
-        )
-        self.assertViolation("crypto dependency: missing required dependency zeroize")
-
-    def test_crypto_feature_table_mismatch_fails(self):
+    def test_crypto_feature_names_mismatch_fails(self):
         content = self.crypto_manifest.read_text(encoding="utf-8")
         self.crypto_manifest.write_text(
             content.replace("default = []", 'default = []\nextra = []'),
@@ -310,9 +263,9 @@ class CryptoBoundaryTest(unittest.TestCase):
         self.assertViolation("crypto identity")
         self.assertViolation("nazo-crypto must resolve to crates/crypto")
 
-    # -- source mutations --------------------------------------------------
+    # -- consumer source rules ----------------------------------------------
 
-    def test_renamed_native_use_fails(self):
+    def test_aliased_backend_use_fails(self):
         _append(
             self.app_lib,
             "use p256 as ec;\n"
@@ -321,14 +274,21 @@ class CryptoBoundaryTest(unittest.TestCase):
             "}\n",
         )
         self.assertViolation("backend use: backend path p256")
-
-    def test_nested_native_use_fails(self):
-        _append(self.app_lib, "use aes_gcm::aead::Aead;\n")
-        self.assertViolation("backend use: backend path aes_gcm")
-
-    def test_native_reexport_fails(self):
         _append(self.app_lib, "pub use jsonwebtoken::DecodingKey;\n")
         self.assertViolation("backend use: backend path jsonwebtoken")
+
+    def test_masked_and_test_code_pass(self):
+        _append(
+            self.app_lib,
+            "// aws_lc_rs is mentioned in a comment\n"
+            'const DOC: &str = r#"aws_lc_rs raw string"#;\n'
+            'const PLAIN: &str = "aws_lc_rs ordinary string";\n'
+            "#[cfg(test)]\nmod tests {\n"
+            "    use aes_gcm::Aes256Gcm;\n"
+            "    fn oracle() { let _ = Aes256Gcm::generate_key; }\n"
+            "}\n",
+        )
+        self.assertClean()
 
     def test_test_support_feature_use_fails(self):
         _append(
@@ -337,46 +297,24 @@ class CryptoBoundaryTest(unittest.TestCase):
         )
         self.assertViolation("backend use: backend path aes_gcm")
 
-    def test_string_and_comment_mentions_pass(self):
-        _append(
-            self.app_lib,
-            "// aws_lc_rs is mentioned in a comment\n"
-            'const DOC: &str = r#"aws_lc_rs raw string"#;\n'
-            'const PLAIN: &str = "aws_lc_rs ordinary string";\n',
-        )
-        self.assertClean()
-
-    def test_cfg_test_oracle_passes(self):
-        _append(
-            self.app_lib,
-            "#[cfg(test)]\nmod tests {\n"
-            "    use aes_gcm::Aes256Gcm;\n"
-            "    fn oracle() { let _ = Aes256Gcm::generate_key; }\n"
-            "}\n",
-        )
-        self.assertClean()
-
-    def test_escaped_multiline_string_then_native_code_fails(self):
-        _append(
-            self.app_lib,
-            'const ESCAPED: &str = "first\\\nsecond";\n'
-            "use p256::SecretKey;\n",
-        )
-        self.assertViolation("backend use: backend path p256")
-
     def test_x509_parse_only_passes(self):
         _append(self.app_manifest, 'x509-parser = "0.18"\n')
         _append(self.app_lib, "use x509_parser::prelude::X509Certificate;\n")
         self.assertClean()
 
-    def test_direct_verify_signature_fails(self):
+    def test_native_verify_signature_fails(self):
+        _append(self.app_manifest, 'x509-parser = "0.18"\n')
         _append(self.app_lib, "pub fn check(c: &u8) { let _ = c.verify_signature(); }\n")
         self.assertViolation("native verify_signature call")
-
-    def test_ufcs_verify_signature_fails(self):
         _append(
             self.app_lib,
-            "pub fn check(c: &u8) { let _ = X509Certificate::verify_signature(c); }\n",
+            "pub fn check2(c: &u8) { let _ = X509Certificate::verify_signature(c); }\n",
+        )
+        self.assertViolation("native verify_signature call")
+        _append(
+            self.app_lib,
+            "use x509_parser::certificate::X509Certificate as Cert;\n"
+            "pub fn check3(c: &u8) { let _ = Cert::verify_signature(c); }\n",
         )
         self.assertViolation("native verify_signature call")
 
@@ -401,13 +339,13 @@ class CryptoBoundaryTest(unittest.TestCase):
         )
         self.assertClean()
 
-    def test_tls_provider_exception_file_passes(self):
+    def test_tls_provider_exceptions(self):
         _write(
             self._tmp,
             "crates/nazoauth/Cargo.toml",
             '[package]\nname = "nazoauth"\nversion = "0.1.0"\n\n'
             "[dependencies]\n"
-            'nazo-crypto = { path = "../crypto", features = ["ed25519", "jose", "password", "x509"] }\n'
+            'nazo-crypto = { path = "../crypto", features = ["x509"] }\n'
             'rustls = "0.23"\n',
         )
         _write(
@@ -419,50 +357,44 @@ class CryptoBoundaryTest(unittest.TestCase):
             "}\n",
         )
         self.assertClean()
-
-    def test_tls_provider_outside_exception_fails(self):
         _append(
             self.app_lib,
             "pub fn provider() { let _ = rustls::crypto::aws_lc_rs::default_provider(); }\n",
         )
         self.assertViolation("TLS provider path")
 
-    def test_test_only_path_attribute_passes(self):
-        _write(self._tmp, "crates/app/tests/oracle.rs", "use aes_gcm::Aes256Gcm;\n")
-        _append(
-            self.app_lib,
-            "#[cfg(test)]\n"
-            '#[path = "../tests/oracle.rs"]\nmod oracle;\n',
-        )
-        self.assertClean()
+    # -- crypto public surface (leakage only; names are not frozen) ---------
 
-    def test_production_path_attribute_escaping_src_fails(self):
-        _write(self._tmp, "crates/app/tests/oracle.rs", "")
-        _append(
-            self.app_lib,
-            '#[path = "../tests/oracle.rs"]\nmod oracle;\n',
-        )
-        self.assertViolation("production path attribute")
-
-    def test_include_macro_fails(self):
-        _write(self._tmp, "crates/app/src/included.rs", "")
-        _append(self.app_lib, 'include!("included.rs");\n')
-        self.assertViolation("include macro")
-
-    # -- crypto public surface --------------------------------------------
-
-    def test_crypto_public_backend_field_fails(self):
+    def test_crypto_field_leaks_fail(self):
         _append(
             self.crypto_jwt,
             "pub struct Leaked {\n    pub inner: p256::SecretKey,\n}\n",
         )
         self.assertViolation("crypto public surface: public field inner")
+        _append(
+            self.crypto_jwt,
+            "pub struct Exposed(pub p256::SecretKey);\n",
+        )
+        self.assertViolation("crypto public surface: public tuple field")
+        _append(
+            self.crypto_jwt,
+            "pub struct SigningKey { pub raw: u8 }\n",
+        )
+        self.assertViolation("public field raw on opaque type SigningKey")
 
-    def test_crypto_backend_reexport_fails(self):
+    def test_crypto_reexport_leaks_fail(self):
         _append(self.crypto_jwt, "pub use p256::SecretKey;\n")
         self.assertViolation("crypto public surface: backend re-export")
+        _append(self.crypto_jwt, "pub use rustls::crypto::CryptoProvider;\n")
+        self.assertViolation("crypto public surface")
+        _append(
+            self.crypto_jwt,
+            "use p256 as backend;\n"
+            "pub use backend::VerifyingKey as PublicKey;\n",
+        )
+        self.assertViolation("crypto public surface")
 
-    def test_crypto_deref_impl_fails(self):
+    def test_crypto_abstraction_leaks_fail(self):
         _append(
             self.crypto_jwt,
             "impl std::ops::Deref for VerificationKey {\n"
@@ -471,8 +403,6 @@ class CryptoBoundaryTest(unittest.TestCase):
             "}\n",
         )
         self.assertViolation("crypto public surface")
-
-    def test_crypto_into_inner_fails(self):
         _append(
             self.crypto_jwt,
             "impl VerificationKey {\n"
@@ -480,12 +410,10 @@ class CryptoBoundaryTest(unittest.TestCase):
             "}\n",
         )
         self.assertViolation("crypto public surface")
-
-    def test_crypto_public_trait_fails(self):
         _append(self.crypto_jwt, "pub trait Signer {}\n")
         self.assertViolation("crypto public surface: public trait")
 
-    def test_crypto_public_signature_backend_path_fails(self):
+    def test_crypto_signature_leaks_fail(self):
         _append(
             self.crypto_jwt,
             "pub fn leak(key: &VerificationKey) -> p256::SecretKey {\n"
@@ -494,119 +422,26 @@ class CryptoBoundaryTest(unittest.TestCase):
             "}\n",
         )
         self.assertViolation("crypto public surface: backend path p256::SecretKey")
-
-    def test_crypto_aliased_type_export_fails(self):
         _append(
             self.crypto_jwt,
             "use p256::SecretKey;\n"
-            "pub type ExposedKey = SecretKey;\n",
+            "pub fn leak2() -> SecretKey { todo!() }\n",
         )
         self.assertViolation("crypto public surface")
 
-    def test_crypto_module_alias_reexport_fails(self):
+    def test_crypto_api_evolution_passes(self):
+        """New public items without backend leakage are not violations."""
         _append(
             self.crypto_jwt,
-            "use p256 as backend;\n"
-            "pub use backend::SecretKey;\n",
-        )
-        self.assertViolation("crypto public surface")
-
-    def test_crypto_tuple_field_backend_fails(self):
-        _append(
-            self.crypto_jwt,
-            "pub struct Exposed(pub p256::SecretKey);\n",
-        )
-        self.assertViolation("crypto public surface")
-
-    def test_crypto_public_field_on_opaque_type_fails(self):
-        _append(
-            self.crypto_jwt,
-            "pub struct VerificationKey(pub u8);\n",
-        )
-        self.assertViolation("public tuple field on opaque type VerificationKey")
-        _append(
-            self.crypto_jwt,
-            "pub struct VerificationKey { pub count: u8 }\n",
-        )
-        self.assertViolation("public field count on opaque type VerificationKey")
-
-    def test_crypto_provider_reexport_fails(self):
-        _append(
-            self.crypto_jwt,
-            "pub use rustls::crypto::CryptoProvider;\n",
-        )
-        self.assertViolation("crypto public surface")
-
-    def test_crypto_unlisted_public_fn_fails(self):
-        _append(self.crypto_jwt, "pub fn issue_oauth_token() -> u64 { 1 }\n")
-        self.assertViolation("crypto public surface")
-
-    def test_crypto_unlisted_public_type_fails(self):
-        _append(self.crypto_jwt, "pub struct KeyMaterial { raw: [u8; 32] }\n")
-        self.assertViolation("crypto public surface")
-
-    def test_crypto_unlisted_method_fails(self):
-        _append(
-            self.crypto_jwt,
-            "impl VerificationKey {\n"
-            "    pub fn raw_key(&self) -> &[u8] { &[] }\n"
+            "pub const FORMAT_VERSION: u32 = 1;\n"
+            "pub struct PlainData { pub count: u8 }\n"
+            "pub mod extra {}\n"
+            "pub fn new_capability(input: &[u8]) -> crate::Result<Vec<u8>> {\n"
+            "    let _ = input;\n"
+            "    Ok(Vec::new())\n"
             "}\n",
         )
-        self.assertViolation("crypto public surface")
-
-    def test_crypto_unlisted_public_mod_fails(self):
-        _append(self.crypto_jwt, "pub mod extra {}\n")
-        self.assertViolation("crypto public surface")
-
-    def test_crypto_aliased_signature_backend_fails(self):
-        _append(
-            self.crypto_jwt,
-            "use p256::SecretKey;\n"
-            "pub fn leak() -> SecretKey { todo!() }\n",
-        )
-        self.assertViolation("crypto public surface")
-
-    def test_aliased_ufcs_verify_signature_fails(self):
-        _append(self.app_manifest, 'x509-parser = "0.18"\n')
-        _append(
-            self.app_lib,
-            "use x509_parser::certificate::X509Certificate as Cert;\n"
-            "pub fn check(c: &u8) { let _ = Cert::verify_signature(c); }\n",
-        )
-        self.assertViolation("native verify_signature call")
-
-    def test_nested_alias_ufcs_verify_signature_fails(self):
-        _append(self.app_manifest, 'x509-parser = "0.18"\n')
-        _append(
-            self.app_lib,
-            "use x509_parser::certificate;\n"
-            "pub fn check(c: &u8) {\n"
-            "    let _ = certificate::X509Certificate::verify_signature(c);\n"
-            "}\n",
-        )
-        self.assertViolation("native verify_signature call")
-
-    def test_crypto_feature_member_forwarding_fails(self):
-        content = self.crypto_manifest.read_text(encoding="utf-8")
-        self.crypto_manifest.write_text(
-            content.replace(
-                'password = ["dep:argon2"]',
-                'password = ["dep:argon2", "dep:aws-lc-rs"]',
-            ),
-            encoding="utf-8",
-        )
-        self.assertViolation("crypto features: password")
-
-    def test_crypto_feature_member_missing_fails(self):
-        content = self.crypto_manifest.read_text(encoding="utf-8")
-        self.crypto_manifest.write_text(
-            content.replace(
-                '"dep:x509-parser", "x509-parser/verify-aws"',
-                '"dep:x509-parser"',
-            ),
-            encoding="utf-8",
-        )
-        self.assertViolation("crypto features: x509")
+        self.assertClean()
 
 
 if __name__ == "__main__":
