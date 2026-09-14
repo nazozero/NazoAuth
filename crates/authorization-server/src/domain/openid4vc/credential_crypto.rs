@@ -7,7 +7,7 @@ use nazo_key_management::KeyManager;
 use std::sync::Arc;
 
 mod certificates;
-pub(crate) mod mdoc;
+pub(super) mod mdoc;
 mod sd_jwt;
 mod signer;
 

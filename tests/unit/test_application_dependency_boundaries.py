@@ -347,3 +347,14 @@ class CibaPingConnectionPinning(unittest.TestCase):
         ):
             with self.subTest(source=missing):
                 self.assert_pinning(missing, True)
+
+    def test_pinning_an_unvalidated_address_collection_fails(self) -> None:
+        self.assert_pinning(
+            "async fn post(&self) {\n"
+            "    let addresses = tokio::net::lookup_host((host, port)).await?.collect();\n"
+            "    if addresses.iter().any(|a| is_blocked_ip(a.ip())) { bail!(); }\n"
+            "    let other_addresses = fallback_addresses();\n"
+            "    client.resolve_to_addrs(host, &other_addresses).build()\n"
+            "}\n",
+            True,
+        )

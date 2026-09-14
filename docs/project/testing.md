@@ -59,11 +59,9 @@ reimplement policy, parsing, key derivation, cryptography, or state
 transitions. Tests that need raw persistence keys use the owning storage
 crate's test harness so the derivation still has one implementation.
 
-Conditional runtime behavior under `cfg(test)` is exceptional. It is allowed
-only when the production action is unsafe or nondeterministic in a test process
-(for example, process abort, real network proxy discovery, or live service
-composition). Whether a concrete seam is justified is a code-review decision;
-CI does not keep a list of approved seams.
+The only `cfg(test)` construct allowed under `src/` is a test module mount that
+resolves into `tests/`; every other test-only implementation or import lives
+under `tests/`.
 
 ## Enforcement
 
@@ -122,9 +120,10 @@ their recorded revisions instead of rewriting them as current test results.
 
 ## Release CI prerequisites
 
-Release commits must be reachable from `main`. Both `code-quality.yml` and
-`release-policy.yml` require a completed successful run on `main`, triggered by
-`push` or `workflow_dispatch`. The gate searches the latest 100 runs per workflow.
+Release commits must be reachable from `main`. `code-quality.yml`,
+`release-policy.yml`, and `operator-fuzz.yml` each require a completed
+successful run on `main`, triggered by `push` or `workflow_dispatch`. The gate
+searches the latest 100 runs per workflow.
 
 A run may cover the exact release commit or an ancestor when the intervening
 net changes affect only `docs/`, root Markdown files, or the retired
@@ -142,9 +141,12 @@ effect for subsequent release commits containing it.
 ## Runtime image security updates
 
 Runtime stages install their required packages on a digest-pinned Debian base
-and never run `apt-get upgrade`: package versions must not drift at build time.
-Security updates land by updating the pinned base digest (Renovate covers the
-base images), after which the conformance image build bypasses BuildKit cache
+and never run `apt-get upgrade`. Security-sensitive packages may additionally be
+pinned to exact Debian versions (Renovate-managed) when the pinned base does not
+yet carry a fix; the resulting image is scanned fail-closed by Trivy for fixable
+HIGH/CRITICAL findings. Routine security updates land by updating the pinned
+base digest (Renovate covers the base images), after which the conformance image
+build bypasses BuildKit cache
 for `runtime-base` and every downstream runtime stage; release OCI assembly
 bypasses cache for its `runtime` stage. Both paths scan the resulting image
 and reject fixable HIGH/CRITICAL vulnerabilities before reuse or publication.

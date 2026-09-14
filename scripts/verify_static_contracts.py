@@ -639,21 +639,46 @@ def check_rust_test_structure() -> None:
 def check_ciba_ping_connection_pinning() -> None:
     """The CIBA ping sender must dial exactly the addresses it validated.
 
-    Resolution is validated against the blocked-network policy; the client must
-    then pin those same addresses, otherwise a DNS rebinding between validation
-    and connect would bypass the check. Redirect and environment-proxy behavior
-    are covered by end-to-end tests; this single invariant remains because no
-    black-box test can distinguish a pinned connection from re-resolution.
+    The binding produced by lookup_host must be the same binding iterated by
+    is_blocked_ip and passed to resolve_to_addrs; pinning any other collection
+    re-opens the DNS rebinding window between validation and connect. Redirect
+    and environment-proxy behavior are covered by end-to-end tests; this single
+    invariant remains because no black-box test can distinguish a pinned
+    connection from re-resolution.
     """
     path = ROOT / "crates" / "nazoauth" / "src" / "adapters" / "ciba_ping_sender.rs"
     source = rust_production_source(path.read_text(encoding="utf-8"))
-    for anchor in ("lookup_host", "is_blocked_ip", "resolve_to_addrs"):
-        if anchor not in source:
-            raise SystemExit(
-                f"{path.relative_to(ROOT)} must resolve the endpoint once, validate "
-                "the addresses against the blocked-network policy, and pin the same "
-                f"addresses on the connection ({anchor} missing)"
-            )
+    reference = path.relative_to(ROOT)
+    binding = re.search(
+        r"\blet\s+(?:mut\s+)?([A-Za-z_]\w*)\s*=[^;]*?\blookup_host\b[^;]*;",
+        source,
+        re.DOTALL,
+    )
+    if binding is None:
+        raise SystemExit(
+            f"{reference} must bind lookup_host(...) results to a local variable"
+        )
+    variable = binding.group(1)
+    rest = source[binding.end() :]
+    validation = re.search(
+        rf"\b{re.escape(variable)}\s*\.\s*iter\(\)\s*\.\s*any\s*\([^;]*?is_blocked_ip",
+        rest,
+    )
+    if validation is None:
+        raise SystemExit(
+            f"{reference} must validate every element of `{variable}` against "
+            "is_blocked_ip before dialing"
+        )
+    pinning = re.search(
+        rf"\.resolve_to_addrs\s*\([^;]*?&{re.escape(variable)}\b",
+        rest[validation.end() :],
+    )
+    if pinning is None:
+        raise SystemExit(
+            f"{reference} must pin the connection to `&{variable}` via "
+            "resolve_to_addrs; dialing any other address collection bypasses "
+            "the blocked-network validation"
+        )
 
 
 def check_rfc9967_matrix() -> None:

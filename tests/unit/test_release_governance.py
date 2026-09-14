@@ -82,16 +82,23 @@ class ReleaseGovernanceTests(unittest.TestCase):
             with self.subTest(containerfile=name):
                 self.assertIn("apt-get update", source)
                 self.assertNotIn("apt-get upgrade", source)
-                self.assertIn(
-                    "apt-get install -y --no-install-recommends ca-certificates", source
+                install = re.search(
+                    r"apt-get install -y --no-install-recommends(.*?)&&", source, re.S
                 )
+                self.assertIsNotNone(install)
+                packages = install.group(1).replace("\\\n", " ")
                 # Security fixes on the pinned base land as exact-version
                 # package pins (Renovate-managed), never as unpinned upgrades.
-                self.assertRegex(
-                    source,
-                    r"apt-get install -y --no-install-recommends ca-certificates"
-                    r" perl-base=[0-9][^\s\\]*",
-                )
+                for pinned in (
+                    "ca-certificates",
+                    "gzip=",
+                    "libpcre2-8-0=",
+                    "libsqlite3-0=",
+                    "perl-base=",
+                ):
+                    self.assertIn(pinned, packages)
+                for package, version in re.findall(r"(\S+)=([^\s\\]*)", packages):
+                    self.assertTrue(version, f"{name}: {package} is unpinned")
                 self.assertIn("rm -rf /var/lib/apt/lists/*", source)
 
     def test_image_builds_refresh_runtime_security_packages(self) -> None:
