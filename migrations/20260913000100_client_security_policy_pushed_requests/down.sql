@@ -1,6 +1,22 @@
--- Rows written while the relaxed validator was active may carry
--- require_pushed_authorization_requests; strip it so the restored strict
--- CHECK does not leave them un-updatable.
+-- Fail closed: a client whose policy requires pushed authorization requests
+-- must not be silently relaxed to the old validator. Refuse the downgrade
+-- before touching any data.
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM oauth_clients
+        WHERE security_policy -> 'require_pushed_authorization_requests' = 'true'::jsonb
+    ) THEN
+        RAISE EXCEPTION
+            'downgrade refused: client security policy requires pushed authorization requests';
+    END IF;
+END
+$$;
+
+-- No `true` remains at this point, and the relaxed validator only admits a
+-- boolean, so every surviving key is `false`; stripping it restores the
+-- pre-migration policy shape.
 UPDATE oauth_clients
 SET security_policy = security_policy - 'require_pushed_authorization_requests'
 WHERE security_policy ? 'require_pushed_authorization_requests';

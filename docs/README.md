@@ -189,7 +189,10 @@ These files are text artifacts but are not general reader documentation.
 - Retain historical release notes and benchmark baselines only with a clear
   version/source and purpose. Benchmark claims must link retained raw results.
 - Update affected guides, translations, indexes, source references, and
-  specification inventory as applicable with every change, including code
-  ownership and source-path changes that preserve external behavior.
+  specification inventory when a change affects documented behavior,
+  contracts, ownership, configuration, or source paths — including code
+  ownership and source-path changes that preserve external behavior. Purely
+  internal or mechanical changes with no documentation impact do not require
+  documentation-only churn.
 - Keep generated lock files and regression seed corpora out of the reader-facing
   documentation flow; index them only as support artifacts.
