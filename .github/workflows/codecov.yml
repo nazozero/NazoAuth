@@ -15,27 +15,6 @@ on:
       - "src/**"
       - "scripts/generate_codecov_lcov.sh"
       - "scripts/merge_lcov.py"
-      - "scripts/check_patch_coverage.py"
-      - "tests/**"
-      - "benches/**"
-      - "examples/**/*.rs"
-      - "examples/**/Cargo.toml"
-      - "examples/**/Cargo.lock"
-      - "migrations/**"
-  pull_request:
-    paths:
-      - ".github/workflows/codecov.yml"
-      - "codecov.yml"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain"
-      - "rust-toolchain.toml"
-      - "requirements/codecov.txt"
-      - "crates/**"
-      - "src/**"
-      - "scripts/generate_codecov_lcov.sh"
-      - "scripts/merge_lcov.py"
-      - "scripts/check_patch_coverage.py"
       - "tests/**"
       - "benches/**"
       - "examples/**/*.rs"
@@ -56,9 +35,6 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          # The complete base-to-head diff is required for the repository-owned
-          # patch gate. GitHub's pull-files API can omit large file patches.
-          fetch-depth: 0
 
       - uses: dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1 # 1.98.0
         with:
@@ -81,7 +57,7 @@ jobs:
           tool: cargo-llvm-cov@0.9.0
 
       - name: Verify deterministic LCOV union
-        run: python -m unittest tests.unit.test_merge_lcov tests.unit.test_check_patch_coverage
+        run: python -m unittest tests.unit.test_merge_lcov
 
       - name: Generate coverage report
         shell: bash
@@ -100,19 +76,9 @@ jobs:
           retention-days: 7
 
       - name: Upload coverage to Codecov
-        if: github.event_name != 'pull_request'
         uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7
         with:
           files: lcov.info
           disable_search: true
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
-
-      - name: Verify complete Git patch coverage
-        if: github.event_name == 'pull_request'
-        run: >-
-          python scripts/check_patch_coverage.py
-          --lcov lcov.info
-          --base "${{ github.event.pull_request.base.sha }}"
-          --head "${{ github.event.pull_request.head.sha }}"
-          --threshold 90

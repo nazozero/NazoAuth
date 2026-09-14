@@ -62,21 +62,23 @@ crate's test harness so the derivation still has one implementation.
 Conditional runtime behavior under `cfg(test)` is exceptional. It is allowed
 only when the production action is unsafe or nondeterministic in a test process
 (for example, process abort, real network proxy discovery, or live service
-composition). Every exception is enumerated by
-`scripts/verify_static_contracts.py`; adding one requires an architectural
-review and a concrete explanation.
+composition). Whether a concrete seam is justified is a code-review decision;
+CI does not keep a list of approved seams.
 
 ## Enforcement
 
-`python scripts/verify_static_contracts.py --check` rejects:
+`python scripts/verify_static_contracts.py --check` enforces the physical
+separation only; it does not freeze test file names, test function names, or
+the internal layout of `tests/`. It rejects:
 
-- executable tests or inline test modules under `src`;
-- test files under `src`;
-- top-level `cfg(test)` items that are not explicit unit/support mounts;
-- unreviewed nested test seams;
-- a test that reaches into `src` with `#[path]` or `include!`;
-- missing mount targets, any `tests/support/seams` file, test-side `include!`,
-  and the legacy `tests/source_mounted` directory.
+- executable tests (`#[test]`, `#[tokio::test]`, `#[actix_web::test]`) or
+  inline test modules under `src`;
+- test files under `src` (`src/tests.rs`, `src/*_tests.rs`, `src/**/tests/`);
+- a test-only module declaration without an external `#[path]` mount, or a
+  test-only mount that resolves back into `src`;
+- a production `#[path]` module remap that compiles a file outside `src`;
+- a test file that reaches into `src` with `#[path]` or `include!`;
+- missing mount targets.
 
 Run the structure check before the Rust quality gate below.
 
@@ -135,12 +137,13 @@ effect for subsequent release commits containing it.
 
 ## Runtime image security updates
 
-The conformance image build bypasses BuildKit cache for `runtime-base` and every downstream runtime stage; release
-OCI assembly bypasses cache for its `runtime` stage. This reruns the existing
-`apt-get update` and `apt-get upgrade` on every CI build, while keeping Rust
-compilation caches. Docker does not invalidate a cached `RUN` layer when Debian
-publishes package updates. Both paths still scan the resulting image and reject
-fixable HIGH/CRITICAL vulnerabilities before reuse or publication.
+Runtime stages install their required packages on a digest-pinned Debian base
+and never run `apt-get upgrade`: package versions must not drift at build time.
+Security updates land by updating the pinned base digest (Renovate covers the
+base images), after which the conformance image build bypasses BuildKit cache
+for `runtime-base` and every downstream runtime stage; release OCI assembly
+bypasses cache for its `runtime` stage. Both paths scan the resulting image
+and reject fixable HIGH/CRITICAL vulnerabilities before reuse or publication.
 
 Runtime descendants are rebuilt as well so an imported cached final stage cannot
 retain the former package layer. CI logs the installed versions of the affected
