@@ -397,7 +397,7 @@ pub(super) fn verify_direct_scoped_trust_anchor(
     Ok(anchor.is_ca()
         && anchor.validity().is_valid_at(at)
         && anchor.issuer() == anchor.subject()
-        && anchor.verify_signature(Some(anchor.public_key())).is_ok())
+        && nazo_crypto::certificate::verify_signature(&anchor, anchor.public_key()).is_ok())
 }
 
 pub(super) fn verify_certificate_chain_at(
@@ -422,7 +422,7 @@ pub(super) fn verify_certificate_chain_at(
         if !issuer.is_ca()
             || !issuer.validity().is_valid_at(at)
             || current.issuer() != issuer.subject()
-            || current.verify_signature(Some(issuer.public_key())).is_err()
+            || nazo_crypto::certificate::verify_signature(&current, issuer.public_key()).is_err()
         {
             return Ok(false);
         }
@@ -433,7 +433,7 @@ pub(super) fn verify_certificate_chain_at(
             anchor.is_ca()
                 && anchor.validity().is_valid_at(at)
                 && current.issuer() == anchor.subject()
-                && current.verify_signature(Some(anchor.public_key())).is_ok()
+                && nazo_crypto::certificate::verify_signature(&current, anchor.public_key()).is_ok()
         })
     }))
 }

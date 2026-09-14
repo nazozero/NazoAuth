@@ -25,7 +25,7 @@ Legend:
 | `TRANSPORT_MODE`, `CLIENT_IP_HEADER_MODE`, `TRUSTED_PROXY_CIDRS`, `MTLS_CERTIFICATE_SOURCE` | **保留（外部）**。These describe the direct-TLS or proxy trust boundary and must not be guessed. |
 | `TLS_BIND`, `TLS_CERTIFICATE_FILE`, `TLS_PRIVATE_KEY_FILE`, `TLS_CLIENT_CA_FILE`, `TLS_RELOAD_INTERVAL_SECONDS` | **保留（外部）**。Certificate lifecycle belongs to the TLS owner; NazoAuth atomically consumes a fully validated server certificate/key generation, while client-CA changes still require a controlled restart and staged activation, public verification and crash recovery remain deployment responsibilities. Silently creating a production certificate would be unsafe. |
 | `UI_ENABLED`, `UI_STATIC_DIR`, `AVATAR_STORAGE_DIR`, `AVATAR_MAX_BYTES` | **保留（默认/派生）**。Paths and the upload bound are operational policy; storage paths default below `DATA_DIR`. |
-| `DATABASE_URL`, `DATABASE_MAX_CONNECTIONS`, `VALKEY_URL`, `VALKEY_COMMAND_TIMEOUT_MS` | **保留（外部/默认）**。CTL generates local managed dependency URLs; an independent server cannot create a reachable external database or Valkey service. Connection URLs are supplied directly; orchestrators such as Kubernetes can project Secret values into these environment variables without an application-specific file indirection. |
+| `DATABASE_URL`, `DATABASE_MAX_CONNECTIONS`, `VALKEY_URL`, `VALKEY_COMMAND_TIMEOUT_MS` | **保留（外部/默认）**。CTL generates target URLs from explicit external dependency facts; an independent server cannot create a reachable external database or Valkey service. Connection URLs are supplied directly; orchestrators such as Kubernetes can project Secret values into these environment variables without an application-specific file indirection. |
 | `VALKEY_STATE_EPOCH` | **保留（恢复切分）**。It namespaces transient protocol security state. A managed restore selects a new UUIDv7 epoch; it is not a cache value to roll back or reuse. |
 | `DEPLOYMENT_ID`, `RUNTIME_INSTANCE_ID`, `INSTANCE_IDENTITY_DIR` | **保留（默认/自动生成）**。Deployment and instance identities are persisted; missing identity is generated atomically. |
 | `AUTHORIZATION_SERVER_PROFILE`, `DEFAULT_AUDIENCE`, `PROTECTED_RESOURCE_IDENTIFIER`, `SUBJECT_TYPE` | **保留**。These change protocol semantics and issuer/client subject contracts. The protected-resource identifier defaults from the issuer. |
@@ -58,65 +58,26 @@ option. It is required only by the one-shot `nazoauth migrate` command, names
 the pre-created long-running PostgreSQL role, and is never persisted as a
 second deployment fact.
 
-## NazoAuthCtl options
+## NazoAuthCtl configuration ownership
 
-### Durable `UpdateConfig` fields
+NazoAuthCtl's user-scoped Registry locates hosts and instances. The target's
+`DeploymentState` owns runtime, artifact, configuration, resource, journal, and
+backup facts. The old `UpdateConfig` document and its environment/transport
+namespace are not a current input and are not converted.
 
-The JSON document has these top-level fields:
+Installation receives explicit external PostgreSQL and Valkey connection facts;
+the controller does not provision those shared services. Credentials enter
+through bounded private files, not argv. Target configuration and secret
+references are generated and recorded by the install lifecycle. See
+[managed installation](one-click-update.md) for the server-facing procedure.
 
-`schema`, `trust`, `capabilities`, `install_profile`, `repository`,
-`backup_root`, `deployment_root`, `operator`, `dependencies`, `runtime`,
-`postgres`, `valkey`, `ui`.
+The controller repository owns the exact parser, state schemas, TLS provider
+configuration, and their maintenance:
 
-Nested fields are deliberately explicit and are not user secrets on argv:
+- [Commands and operations](https://github.com/nazozero/NazoAuthCtl/blob/main/README.md)
+- [Code and state ownership](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/development.md)
+- [Accepted formats and recovery](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/compatibility.md)
+- [TLS provider configuration](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/tls-certificate-provider.md)
 
-- Controller slots, the local Controller-key reference, operation journal, and
-  Recovery Secret lifecycle are owned by `nazoauthctl` state rather than the
-  application configuration namespace.
-- `dependencies.*`: `mode`, `database_url_file`,
-  `migration_database_url_file`, `valkey_url_file`.
-- `runtime.*`: `backend`, `dependency_backend`, `container_name`,
-  `runtime_instance_id`, `network`, `ip_address`, `publish_address`,
-  `health_url`, `readiness_attempts`, `readiness_interval_seconds`,
-  `public_discovery_url`, `expected_issuer`, `mounts`, `snapshot_paths`,
-  `environment`, `service_name`, `service_user`, `binary_path`,
-  `binary_releases`, `working_directory`.
-- `mounts[*]`: `source`, `target`, `read_only`, `selinux_relabel`.
-- `postgres.*`: `container_name`, `database`, `user`, `image`,
-  `validation_image`.
-- `valkey.*`: `container_name`, `data_volume`, `image`, `rdb_path`,
-  `password_file`.
-- `ui.*`: `releases_root`.
-- `capabilities.*`: `runtime`, `artifact`, `server_config`, `database`,
-  `valkey`, `operator_tasks`, `backups`, `proxy_tls`; each grant has
-  `responsibility` and `scope`.
-
-`updater_install_path` was removed: self-update already resolves the running
-CTL executable and had no consumer for a configured path.
-
-### CTL environment and transport names
-
-| Names | Decision |
-|---|---|
-| `NAZOAUTHCTL_CONFIG_ROOT`, `NAZOAUTHCTL_STATE_ROOT`, `NAZOAUTHCTL_BREAK_GLASS_ROOT`, `NAZOAUTH_UPDATE_CONFIG`, `NAZOAUTH_BINARY_INSTALL_PATH`, `NAZOAUTH_BINARY_RELEASES`, `NAZOAUTH_SYSTEMD_UNIT_DIR` | **保留**. They locate durable state or the selected artifact/runtime boundary. |
-| `NAZOAUTHCTL_LOCK`, `NAZOAUTHCTL_RECOVERY_OPERATION` | **保留（受限）**. Lock/recovery markers are process-safety transport, not application configuration. |
-| `NAZOAUTH_OPERATOR_STATE_DIRECTORY`, `NAZOAUTH_OPERATOR_PUBLIC_JWK_FILE`, `NAZOAUTH_OPERATOR_CHANGE_SET_FILE`, `NAZOAUTH_SERVER_CONFIG_FILE` | **保留（内部传输）**. One-shot operator tasks receive only the current protocol's bounded file references; these are not user options. |
-| `NAZOAUTHCTL_TESTING`, server-side `NAZOAUTH_OPERATOR_DEPLOYMENT_ID_FILE`, `NAZOAUTH_OPERATOR_TEST_FAILPOINT`, `NAZOAUTH_OPERATOR_TEST_FAILPOINT_MARKER` | **测试专用**. Never enable them in a production environment. |
-
-### Install and operation flags
-
-Install retains only deployment boundaries and external dependency facts:
-`--host`, `--name`, `--public-url`, `--to`, `--artifact-sha256`, `--runtime`,
-`--install-root`, PostgreSQL host/port/database, distinct runtime and lifecycle
-roles with one password file each, and Valkey host/port/password-file. The
-controller does not provision shared dependencies, infer roles, or import
-historical deployment data.
-
-The important design rule is therefore: configuration selects boundaries and
-policy; service-owned key material is generated once and persisted; only
-credentials whose peer is outside NazoAuth remain externally provisioned.
-
-The exact command and option set is generated by `nazoauthctl --help` and each
-subcommand's help. This inventory deliberately does not duplicate that parser
-surface, so removed command shapes cannot survive here as documentation-only
-compatibility.
+Do not duplicate controller field inventories here. A cross-repository contract
+change must update both owners' corresponding guides and examples.

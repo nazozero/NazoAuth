@@ -15,7 +15,7 @@ use std::{
 
 use chrono::Utc;
 use diesel_async::{AsyncConnection as _, AsyncPgConnection, SimpleAsyncConnection as _};
-use ed25519_dalek::SigningKey;
+use nazo_crypto::ed25519::SigningKey;
 use nazo_operator_protocol::{
     CONTROL_OPERATION_SCHEMA, ControlOperation, ControlOperationPayload, ControlOutcome,
     ControlTenantBoundary, controller_key_id, decode_control_result, sign_control_operation,
@@ -49,7 +49,9 @@ fn temporary_directory(tag: &str) -> PathBuf {
 
 /// Fresh isolated database with the full migration chain and one enrolled
 /// controller slot for the signing key.
-async fn isolated_directory(tag: &str) -> Option<(String, ed25519_dalek::VerifyingKey, String)> {
+async fn isolated_directory(
+    tag: &str,
+) -> Option<(String, nazo_crypto::ed25519::VerifyingKey, String)> {
     let base = database_url()?;
     let database_name = format!("directory_process_{}_{}", tag, Uuid::now_v7().simple());
     let mut coordinator = AsyncPgConnection::establish(&base)

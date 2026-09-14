@@ -1,7 +1,3 @@
-use aes_gcm::{
-    Aes256Gcm, KeyInit,
-    aead::{Aead, Payload},
-};
 use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncPgConnection, RunQueryDsl};
@@ -476,20 +472,17 @@ pub fn protect_dataset_claims(
 ) -> Result<Vec<u8>, CredentialStoreError> {
     let plaintext =
         serde_json::to_vec(claims).map_err(|_| CredentialStoreError::InvalidTransition)?;
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| CredentialStoreError::Unavailable)?;
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
     let mut protected = nonce.to_vec();
     protected.extend_from_slice(
-        &cipher
-            .encrypt(
-                (&nonce).into(),
-                Payload {
-                    msg: &plaintext,
-                    aad: &dataset_aad(tenant_id, subject_id, credential_configuration_id),
-                },
-            )
-            .map_err(|_| CredentialStoreError::Unavailable)?,
+        &nazo_crypto::aead::encrypt(
+            key,
+            &nonce,
+            &dataset_aad(tenant_id, subject_id, credential_configuration_id),
+            &plaintext,
+        )
+        .map_err(|_| CredentialStoreError::Unavailable)?,
     );
     Ok(protected)
 }
@@ -510,15 +503,15 @@ pub fn unprotect_dataset_claims(
     let nonce: &[u8; 12] = nonce
         .try_into()
         .map_err(|_| CredentialStoreError::InvalidTransition)?;
-    let plaintext = Aes256Gcm::new_from_slice(key)
-        .map_err(|_| CredentialStoreError::Unavailable)?
-        .decrypt(
-            nonce.into(),
-            Payload {
-                msg: ciphertext,
-                aad: &dataset_aad(tenant_id, subject_id, credential_configuration_id),
-            },
-        )
-        .map_err(|_| CredentialStoreError::InvalidTransition)?;
+    let plaintext = nazo_crypto::aead::decrypt(
+        key,
+        nonce,
+        &dataset_aad(tenant_id, subject_id, credential_configuration_id),
+        ciphertext,
+    )
+    .map_err(|error| match error {
+        nazo_crypto::CryptoError::InvalidKey => CredentialStoreError::Unavailable,
+        _ => CredentialStoreError::InvalidTransition,
+    })?;
     serde_json::from_slice(&plaintext).map_err(|_| CredentialStoreError::InvalidTransition)
 }

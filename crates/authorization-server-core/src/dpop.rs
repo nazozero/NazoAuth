@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, future::Future, pin::Pin};
 
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use jsonwebtoken::{Algorithm, DecodingKey};
+use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use rand::random;
 use serde::Deserialize;
 use serde_json::Value;
@@ -431,7 +431,10 @@ fn dpop_algorithm(value: &str) -> Option<Algorithm> {
     }
 }
 
-fn public_dpop_decoding_key(key: &Value, algorithm: Algorithm) -> Result<DecodingKey, DpopError> {
+fn public_dpop_decoding_key(
+    key: &Value,
+    algorithm: Algorithm,
+) -> Result<JwtVerificationKey, DpopError> {
     let expected_alg = match algorithm {
         Algorithm::EdDSA => "EdDSA",
         Algorithm::ES256 => "ES256",
@@ -469,7 +472,7 @@ fn public_dpop_decoding_key(key: &Value, algorithm: Algorithm) -> Result<Decodin
             {
                 return Err(DpopError::InvalidProof);
             }
-            DecodingKey::from_ed_components(x).map_err(|_| DpopError::InvalidProof)
+            JwtVerificationKey::from_ed_components(x).map_err(|_| DpopError::InvalidProof)
         }
         Algorithm::ES256 => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -493,7 +496,7 @@ fn public_dpop_decoding_key(key: &Value, algorithm: Algorithm) -> Result<Decodin
             }) {
                 return Err(DpopError::InvalidProof);
             }
-            DecodingKey::from_ec_components(x, y).map_err(|_| DpopError::InvalidProof)
+            JwtVerificationKey::from_ec_components(x, y).map_err(|_| DpopError::InvalidProof)
         }
         _ => Err(DpopError::InvalidProof),
     }
@@ -517,13 +520,16 @@ fn key_ops_allow_verification(key: &Value) -> bool {
 
 fn verify_signature(
     algorithm: Algorithm,
-    decoding_key: &DecodingKey,
+    decoding_key: &JwtVerificationKey,
     signing_input: &[u8],
     signature: &str,
 ) -> Result<(), DpopError> {
-    match jsonwebtoken::crypto::verify(signature, signing_input, decoding_key, algorithm) {
-        Ok(true) => Ok(()),
-        Ok(false) => Err(DpopError::InvalidProof),
+    let raw = URL_SAFE_NO_PAD
+        .decode(signature)
+        .map_err(|_| DpopError::MalformedProof)?;
+    match nazo_crypto::signature::verify(algorithm, decoding_key, signing_input, &raw) {
+        Ok(()) => Ok(()),
+        Err(nazo_crypto::CryptoError::InvalidSignature) => Err(DpopError::InvalidProof),
         Err(_) => Err(DpopError::MalformedProof),
     }
 }

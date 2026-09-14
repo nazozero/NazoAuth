@@ -329,8 +329,8 @@ async fn database_jwt_encoding_rejects_mismatched_kid_and_unsupported_algorithm(
         .await
         .expect_err("database JWT signing must reject a header kid outside the selected key");
     assert!(matches!(
-        error.kind(),
-        jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
+        error,
+        nazo_crypto::CryptoError::UnsupportedAlgorithm
     ));
 
     let mut unsupported = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256);
@@ -344,8 +344,8 @@ async fn database_jwt_encoding_rejects_mismatched_kid_and_unsupported_algorithm(
         .await
         .expect_err("database JWT signing must reject symmetric algorithms");
     assert!(matches!(
-        error.kind(),
-        jsonwebtoken::errors::ErrorKind::InvalidAlgorithm
+        error,
+        nazo_crypto::CryptoError::UnsupportedAlgorithm
     ));
 }
 
@@ -411,11 +411,7 @@ async fn active_database_external_key_signs_only_with_a_matching_public_signatur
         .await
         .expect_err("a database external signature must match the active public JWK");
     assert!(
-        matches!(
-            error.kind(),
-            jsonwebtoken::errors::ErrorKind::Provider(message)
-                if message == &nazo_auth::SignError::SigningFailed.to_string()
-        ),
+        matches!(error, nazo_crypto::CryptoError::OperationFailed),
         "wrong signature rejection: {error:?}"
     );
 }

@@ -3,7 +3,9 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use chrono::{Duration, Utc};
-use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
+use nazo_crypto::jwt::{
+    Algorithm, Validation, VerificationKey as JwtVerificationKey, decode, decode_header,
+};
 use nazo_digital_credentials::{
     CredentialFormat, CredentialSignInput, CredentialTrustError, HolderBinding,
     PresentedCredential, VerifiedCredential,
@@ -18,7 +20,7 @@ use super::super::crypto_helpers::timestamp_claim;
 use super::Openid4vcCredentialCrypto;
 
 pub(super) struct ValidatedSdJwtChain {
-    pub(super) decoding_key: DecodingKey,
+    pub(super) decoding_key: JwtVerificationKey,
     pub(super) certificates: Vec<Vec<u8>>,
     pub(super) leaf_der: Vec<u8>,
 }
@@ -65,7 +67,7 @@ pub(super) async fn sign(
     let material = crypto
         .signing_material(&lease)
         .map_err(|_| CredentialTrustError::Unavailable)?;
-    let mut header = jsonwebtoken::Header::new(Algorithm::ES256);
+    let mut header = nazo_crypto::jwt::Header::new(Algorithm::ES256);
     header.typ = Some("dc+sd-jwt".to_owned());
     header.x5c = Some(material.x5c);
     let jwt = lease
@@ -232,7 +234,9 @@ pub(super) fn validate_sd_jwt_chain(
     let (_, leaf) = x509_parser::parse_x509_certificate(&leaf_der)
         .map_err(|_| CredentialTrustError::InvalidEncoding)?;
     Ok(ValidatedSdJwtChain {
-        decoding_key: DecodingKey::from_ec_der(leaf.public_key().subject_public_key.data.as_ref()),
+        decoding_key: JwtVerificationKey::from_ec_sec1(
+            leaf.public_key().subject_public_key.data.as_ref(),
+        ),
         certificates,
         leaf_der,
     })

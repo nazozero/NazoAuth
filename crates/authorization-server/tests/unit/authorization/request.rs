@@ -869,3 +869,81 @@ fn request_object_jwks_failure_is_server_error_without_using_persisted_fallback(
         assert_eq!(fixture.ports.calls(), vec!["remote_jwks"]);
     });
 }
+
+#[test]
+fn attested_clients_enforce_their_pushed_request_policy_before_login() {
+    use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
+    use chrono::{Duration, Utc};
+    use nazo_auth::PushedAuthorizationRequest;
+
+    futures_executor::block_on(async {
+        for (required, pushed, expected_error) in [
+            (false, false, "login_required"),
+            (true, false, "invalid_request"),
+            (true, true, "login_required"),
+        ] {
+            let mut client = authorization_fixture::client(true);
+            client.registration.token_endpoint_auth_method = "attest_jwt_client_auth".into();
+            client.registration.require_dpop_bound_tokens = true;
+            client
+                .registration
+                .security_policy
+                .require_pushed_authorization_requests = required;
+            let redirect_uri = client.redirect_uris[0].clone();
+            let fixture = authorization_fixture::Fixture::new(Ok(Some(client)), Ok(None));
+            let mut parameters = query(&[
+                ("client_id", "client-1"),
+                ("redirect_uri", &redirect_uri),
+                ("response_type", "code"),
+                ("scope", "openid"),
+                ("prompt", "none"),
+                ("state", "wallet-state"),
+                (
+                    "code_challenge",
+                    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+                ),
+                ("code_challenge_method", "S256"),
+            ]);
+            if pushed {
+                let uri = "urn:ietf:params:oauth:request_uri:wallet-request";
+                fixture.ports.stored_par.lock().unwrap().push((
+                    uri.into(),
+                    PushedAuthorizationRequest {
+                        client_id: "client-1".into(),
+                        params: parameters.clone(),
+                        dpop_jkt: None,
+                        mtls_x5t_s256: None,
+                        issued_at: Utc::now(),
+                        expires_at: Utc::now() + Duration::seconds(60),
+                    },
+                    60,
+                ));
+                parameters = query(&[("client_id", "client-1"), ("request_uri", uri)]);
+            }
+            let result = fixture
+                .make_application()
+                .authorize(
+                    &AuthorizationRequestFacts {
+                        source_ip: "192.0.2.10",
+                        session_id: None,
+                        user_agent: None,
+                    },
+                    &mut parameters,
+                )
+                .await
+                .expect("registered redirect receives the OAuth error");
+            let AuthorizationOutcome::Redirect { location } = result else {
+                panic!("expected authorization redirect");
+            };
+            let destination = url::Url::parse(&location).unwrap();
+            let response: HashMap<_, _> = destination.query_pairs().into_owned().collect();
+            assert_eq!(
+                response["error"], expected_error,
+                "required={required}, pushed={pushed}"
+            );
+            assert_eq!(response["state"], "wallet-state");
+            assert!(!response.contains_key("code"));
+            assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+        }
+    });
+}

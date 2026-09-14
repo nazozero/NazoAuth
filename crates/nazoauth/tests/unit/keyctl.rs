@@ -380,7 +380,7 @@ async fn write_mdoc_import_fixture(
     profile: &Openid4vcCertificateProfile,
     include_iaca_directory: bool,
 ) -> anyhow::Result<Openid4vcMaterial> {
-    let active = build_managed_material(active_key, profile, None)?;
+    let active = build_managed_material(&active_key.serialize_pem(), profile, None)?;
     tokio::fs::create_dir_all(source).await?;
     tokio::fs::write(
         source.join("certificate-bundle.pem"),
@@ -671,9 +671,12 @@ async fn failed_managed_cas_does_not_leave_partial_material() {
         .expect("record before stale CAS");
 
     let rejected_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-    let rejected_material =
-        build_managed_material(&rejected_key, &profile, Some(winner_material.clone()))
-            .expect("candidate managed material");
+    let rejected_material = build_managed_material(
+        &rejected_key.serialize_pem(),
+        &profile,
+        Some(winner_material.clone()),
+    )
+    .expect("candidate managed material");
     assert!(
         manager
             .database_commit_openid4vc(
@@ -766,7 +769,7 @@ async fn mdoc_import_preserves_kid_iaca_history_and_rejects_overwrite() {
         .await
         .expect("active import fixture");
     let historical_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
-    let historical = build_managed_material(&historical_key, &profile, None)
+    let historical = build_managed_material(&historical_key.serialize_pem(), &profile, None)
         .expect("historical import material");
     let historical_id = historical
         .iaca_private_materials
@@ -1205,8 +1208,8 @@ async fn certificate_import_without_mdoc_keeps_an_empty_revocation_snapshot() {
         hostname: "tenant.example".to_owned(),
         mdoc_profile: None,
     };
-    let material =
-        build_managed_material(&active_key, &profile, None).expect("certificate import material");
+    let material = build_managed_material(&active_key.serialize_pem(), &profile, None)
+        .expect("certificate import material");
     tokio::fs::create_dir_all(&source)
         .await
         .expect("certificate import directory");

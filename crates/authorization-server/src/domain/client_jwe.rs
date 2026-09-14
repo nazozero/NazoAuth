@@ -1,15 +1,10 @@
 //! Client-bound compact JWE construction for encrypted OAuth and OIDC responses.
 
-use aws_lc_rs::key_wrap::{AES_128, AES_256, AesKek, KeyWrap};
 use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use nazo_auth::{ClientJweKeyManagement, client_jwe_key_management_from_name};
 use nazo_auth::{SUPPORTED_CLIENT_JWE_CONTENT_ENC_ALGS, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS};
-use p256::{
-    PublicKey, SecretKey,
-    ecdh::diffie_hellman,
-    elliptic_curve::{Generate, sec1::ToSec1Point},
-};
+use nazo_crypto::ec::P256SecretKey;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 
@@ -102,7 +97,7 @@ pub fn encrypt_compact_jwe(
         }
         ClientJweKeyManagement::EcdhEsDirect => {
             let recipient = parse_p256_public_jwk(key.jwk)?;
-            let ephemeral = SecretKey::generate();
+            let ephemeral = P256SecretKey::generate();
             protected_header.insert("epk".to_owned(), public_p256_jwk(ephemeral.public_key()));
             let protected = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&protected_header)?);
             return encrypt_compact_jwe_with_cek(
@@ -114,7 +109,7 @@ pub fn encrypt_compact_jwe(
         }
         ClientJweKeyManagement::EcdhEsA128Kw | ClientJweKeyManagement::EcdhEsA256Kw => {
             let recipient = parse_p256_public_jwk(key.jwk)?;
-            let ephemeral = SecretKey::generate();
+            let ephemeral = P256SecretKey::generate();
             protected_header.insert("epk".to_owned(), public_p256_jwk(ephemeral.public_key()));
             let kek_bits = match alg {
                 ClientJweKeyManagement::EcdhEsA128Kw => 128,
@@ -123,7 +118,7 @@ pub fn encrypt_compact_jwe(
             };
             let kek = ecdh_derive_key(&ephemeral, &recipient, alg.name(), kek_bits)?;
             let cek = rand::random::<[u8; 32]>();
-            let encrypted_key = aes_key_wrap(&kek, &cek)?;
+            let encrypted_key = nazo_crypto::key_wrap::aes_wrap(&kek, &cek)?;
             (cek, encrypted_key)
         }
     };
@@ -138,8 +133,9 @@ fn encrypt_compact_jwe_with_cek(
     plaintext: &[u8],
 ) -> anyhow::Result<String> {
     let iv = rand::random::<[u8; 12]>();
+    let ciphertext_and_tag = nazo_crypto::aead::encrypt(cek, &iv, protected.as_bytes(), plaintext)?;
     let (ciphertext, tag) =
-        crate::crypto::aes_256_gcm_encrypt(cek, &iv, protected.as_bytes(), plaintext)?;
+        ciphertext_and_tag.split_at(ciphertext_and_tag.len().saturating_sub(16));
     Ok(format!(
         "{}.{}.{}.{}.{}",
         protected,
@@ -159,14 +155,14 @@ fn rsa_oaep_256_encrypt_jwk(jwk: &Value, plaintext: &[u8]) -> anyhow::Result<Vec
         .get("e")
         .and_then(Value::as_str)
         .ok_or_else(|| anyhow::anyhow!("RSA JWE key missing e"))?;
-    crate::crypto::rsa_oaep_sha256_encrypt(
+    Ok(nazo_crypto::key_wrap::rsa_oaep256_encrypt(
         &URL_SAFE_NO_PAD.decode(n)?,
         &URL_SAFE_NO_PAD.decode(e)?,
         plaintext,
-    )
+    )?)
 }
 
-fn parse_p256_public_jwk(jwk: &Value) -> anyhow::Result<PublicKey> {
+fn parse_p256_public_jwk(jwk: &Value) -> anyhow::Result<[u8; 65]> {
     if jwk.get("kty").and_then(Value::as_str) != Some("EC")
         || jwk.get("crv").and_then(Value::as_str) != Some("P-256")
         || jwk.get("d").is_some()
@@ -179,7 +175,7 @@ fn parse_p256_public_jwk(jwk: &Value) -> anyhow::Result<PublicKey> {
     point[0] = 4;
     point[1..33].copy_from_slice(&x);
     point[33..].copy_from_slice(&y);
-    PublicKey::from_sec1_bytes(&point).map_err(|error| anyhow::anyhow!(error))
+    Ok(point)
 }
 
 fn decode_p256_coordinate(jwk: &Value, name: &str) -> anyhow::Result<[u8; 32]> {
@@ -193,30 +189,23 @@ fn decode_p256_coordinate(jwk: &Value, name: &str) -> anyhow::Result<[u8; 32]> {
         .map_err(|_| anyhow::anyhow!("P-256 JWE key {name} has invalid length"))
 }
 
-fn public_p256_jwk(key: PublicKey) -> Value {
-    let point = key.to_sec1_point(false);
+fn public_p256_jwk(key: [u8; 65]) -> Value {
     json!({
         "kty": "EC",
         "crv": "P-256",
-        "x": URL_SAFE_NO_PAD.encode(point.x().expect("uncompressed P-256 point has x")),
-        "y": URL_SAFE_NO_PAD.encode(point.y().expect("uncompressed P-256 point has y")),
+        "x": URL_SAFE_NO_PAD.encode(&key[1..33]),
+        "y": URL_SAFE_NO_PAD.encode(&key[33..65]),
     })
 }
 
 fn ecdh_derive_key(
-    ephemeral: &SecretKey,
-    recipient: &PublicKey,
+    ephemeral: &P256SecretKey,
+    recipient: &[u8; 65],
     algorithm: &str,
     key_bits: u32,
 ) -> anyhow::Result<Vec<u8>> {
-    let shared = diffie_hellman(ephemeral.to_nonzero_scalar(), recipient.as_affine());
-    Ok(concat_kdf(
-        shared.raw_secret_bytes().as_slice(),
-        algorithm,
-        &[],
-        &[],
-        key_bits,
-    ))
+    let shared = ephemeral.agree(recipient)?;
+    Ok(concat_kdf(&shared[..], algorithm, &[], &[], key_bits))
 }
 
 fn concat_kdf(
@@ -237,21 +226,6 @@ fn concat_kdf(
     digest.update(apv);
     digest.update(key_bits.to_be_bytes());
     digest.finalize()[..(key_bits / 8) as usize].to_vec()
-}
-
-fn aes_key_wrap(kek: &[u8], cek: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let mut output = vec![0_u8; cek.len() + 8];
-    let wrapped = match kek.len() {
-        16 => AesKek::new(&AES_128, kek)
-            .map_err(|_| anyhow::anyhow!("invalid A128KW key"))?
-            .wrap(cek, &mut output),
-        32 => AesKek::new(&AES_256, kek)
-            .map_err(|_| anyhow::anyhow!("invalid A256KW key"))?
-            .wrap(cek, &mut output),
-        _ => anyhow::bail!("unsupported AES-KW key length"),
-    }
-    .map_err(|_| anyhow::anyhow!("AES-KW wrapping failed"))?;
-    Ok(wrapped.to_vec())
 }
 
 #[cfg(test)]

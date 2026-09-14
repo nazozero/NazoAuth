@@ -8,8 +8,7 @@ they are not divided one crate per RFC. Calls between crates remain ordinary
 in-process Rust calls. The design does not use a dynamic-library plugin ABI,
 RPC, an event bus, a command bus, or layers whose only job is forwarding.
 
-The root manifest is a virtual workspace with resolver 3 and currently has 21
-members. This repository releases the `nazoauth` application composition root.
+The root manifest is a virtual workspace with resolver 3. This repository releases the `nazoauth` application composition root.
 Its CLI includes the version-coupled server and operator-task work; the
 independently released host lifecycle controller lives in
 [`nazozero/NazoAuthCtl`](https://github.com/nazozero/NazoAuthCtl) and consumes
@@ -62,19 +61,19 @@ HTTP adapters         -> application capabilities and domain APIs
 application           -> domain APIs and semantic ports
 driver adapters       -> the ports they implement
 ```
+
 `authorization-server` owns the application layer; `nazoauth` owns native
 composition. A type using framework-neutral `http`, futures, or `Arc` does not
 by itself create a native-host dependency. See each crate's `Cargo.toml` for
 the current dependency edges rather than copying an exhaustive graph here.
-
 
 The enforced prohibitions are more important than a broad graph:
 
 - `identity` does not depend on `authorization-server-core`.
 - `resource-server` does not depend on `authorization-server-core`, `identity`, or Actix.
 - `authorization-server-core` does not depend on Actix, PostgreSQL, Diesel,
-- `authorization-server` does not depend on Actix, native launchers, or database/state drivers.
   Valkey, Fred, or rows.
+- `authorization-server` does not depend on Actix, native launchers, or database/state drivers.
 - `http-actix` does not depend on Diesel or Fred.
 - no crate cycle, workspace-wide prelude, or cross-crate glob re-export is
   allowed.
@@ -105,8 +104,7 @@ cannot drift during a transition.
 Each `ModuleId` declares:
 
 - dependencies;
-- a default inherited state;
-- `desired_state`: `inherit`, `enabled`, or `disabled`;
+- an explicit persisted `desired_state`: `enabled` or `disabled`;
 - actual state: `Disabled`, `Starting`, `Enabled`, `Draining`, or `Failed`;
 - a `DisablePolicy`: immediate, finish executing requests, drain stored
   transactions with a bound, or not runtime-disableable.

@@ -9,7 +9,7 @@ use actix_web::{HttpResponse, web};
 use anyhow::{Context as _, bail};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
-use ed25519_dalek::SigningKey;
+use nazo_crypto::ed25519::SigningKey;
 use nazo_operator_protocol::{
     CONTROL_DISCOVERY_PRODUCT, CONTROL_DISCOVERY_SCHEMA, DeploymentStatement, DiscoveryRequest,
     DiscoveryResponse, DiscoveryStatement, PROTOCOL_VERSION, decode_instance_public_key,

@@ -144,7 +144,7 @@ impl SigningKeyWrappingKeyRing {
         Ok(SealedKeyMaterial {
             wrapping_key_id: self.current.id.clone(),
             nonce,
-            ciphertext: crate::crypto::aes_256_gcm_encrypt(
+            ciphertext: nazo_crypto::aead::encrypt(
                 &self.current.key,
                 &nonce,
                 &associated_data(tenant_id, purpose),
@@ -165,14 +165,12 @@ impl SigningKeyWrappingKeyRing {
         if material.ciphertext.len() < 16 {
             anyhow::bail!("signing-key encrypted material is malformed");
         }
-        let split = material.ciphertext.len() - 16;
-        crate::crypto::aes_256_gcm_decrypt(
+        Ok(nazo_crypto::aead::decrypt(
             key,
             &material.nonce,
             &associated_data(tenant_id, purpose),
-            &material.ciphertext[..split],
-            &material.ciphertext[split..],
-        )
+            &material.ciphertext,
+        )?)
     }
 
     pub fn seal_generation(
@@ -206,12 +204,7 @@ impl SigningKeyWrappingKeyRing {
         Ok(SealedKeyMaterial {
             wrapping_key_id: self.current.id.clone(),
             nonce,
-            ciphertext: crate::crypto::aes_256_gcm_encrypt(
-                &self.current.key,
-                &nonce,
-                &aad,
-                plaintext,
-            )?,
+            ciphertext: nazo_crypto::aead::encrypt(&self.current.key, &nonce, &aad, plaintext)?,
         })
     }
 
@@ -219,18 +212,15 @@ impl SigningKeyWrappingKeyRing {
         let key = self
             .key_for(&material.wrapping_key_id)
             .ok_or_else(|| anyhow::anyhow!("signing-key wrapping key is unavailable"))?;
-        let split = material
-            .ciphertext
-            .len()
-            .checked_sub(16)
-            .ok_or_else(|| anyhow::anyhow!("signing-key encrypted material is malformed"))?;
-        crate::crypto::aes_256_gcm_decrypt(
+        if material.ciphertext.len() < 16 {
+            anyhow::bail!("signing-key encrypted material is malformed");
+        }
+        Ok(nazo_crypto::aead::decrypt(
             key,
             &material.nonce,
             &aad,
-            &material.ciphertext[..split],
-            &material.ciphertext[split..],
-        )
+            &material.ciphertext,
+        )?)
     }
 
     fn key_for(&self, id: &str) -> Option<&[u8; 32]> {

@@ -134,9 +134,18 @@ impl AuthorizationStateStorePort for Ports {
     }
     fn load_par<'a>(
         &'a self,
-        _request_uri: &'a str,
+        request_uri: &'a str,
     ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        panic!("unexpected AuthorizationStateStorePort::load_par call")
+        self.record("load_par");
+        Box::pin(async move {
+            Ok(self
+                .stored_par
+                .lock()
+                .unwrap()
+                .iter()
+                .find(|(uri, _, _)| uri == request_uri)
+                .map(|(_, request, _)| request.clone()))
+        })
     }
     fn take_par<'a>(
         &'a self,

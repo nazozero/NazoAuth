@@ -71,7 +71,7 @@ set can be scanned from one place.
 | [operations/one-click-update.md](operations/one-click-update.md) | Signed one-click Podman, Docker, and host installation and updates. |
 | [operations/one-click-update.zh-CN.md](operations/one-click-update.zh-CN.md) | Chinese signed one-click installation and update guide. |
 | [operations/ha-operations.md](operations/ha-operations.md) | PostgreSQL and Valkey availability, recovery, and state-epoch guidance. |
-| [operations/mdoc-shared-state.md](operations/mdoc-shared-state.md) | Managed OpenID4VC authority-state import, rotation, and revocation. |
+| [operations/mdoc-shared-state.md](operations/mdoc-shared-state.md) | Managed OpenID4VC authority-state import, rotation, revocation, and issuer certificate verification. |
 | [operations/avatar-direct-upload.md](operations/avatar-direct-upload.md) | Avatar direct-upload storage and migration boundary. |
 | [operations/release-security.md](operations/release-security.md) | Release security checks, provenance, and supply-chain controls. |
 | [operations/release-security.zh-CN.md](operations/release-security.zh-CN.md) | Chinese release security guide. |
@@ -189,6 +189,10 @@ These files are text artifacts but are not general reader documentation.
 - Retain historical release notes and benchmark baselines only with a clear
   version/source and purpose. Benchmark claims must link retained raw results.
 - Update affected guides, translations, indexes, source references, and
-  specification inventory together when behavior or document paths change.
+  specification inventory when a change affects documented behavior,
+  contracts, ownership, configuration, or source paths — including code
+  ownership and source-path changes that preserve external behavior. Purely
+  internal or mechanical changes with no documentation impact do not require
+  documentation-only churn.
 - Keep generated lock files and regression seed corpora out of the reader-facing
   documentation flow; index them only as support artifacts.

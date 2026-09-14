@@ -65,6 +65,12 @@ const LEGACY_PERSISTED_SECURITY_STATE_CUT_DOWN: &str = include_str!(
 const TENANT_RESOURCE_PROVENANCE_CUT_UP: &str = include_str!(
     "../../../migrations/20260828000300_remove_tenant_resource_change_set_provenance/up.sql"
 );
+const PUSHED_REQUESTS_POLICY_UP: &str = include_str!(
+    "../../../migrations/20260913000100_client_security_policy_pushed_requests/up.sql"
+);
+const PUSHED_REQUESTS_POLICY_DOWN: &str = include_str!(
+    "../../../migrations/20260913000100_client_security_policy_pushed_requests/down.sql"
+);
 
 #[derive(QueryableByName)]
 struct ProviderType {
@@ -1178,6 +1184,193 @@ async fn oidc_logout_idempotency_migration_is_additive_partial_and_reversible() 
         .batch_execute(OIDC_LOGOUT_IDEMPOTENCY_UP)
         .await
         .expect("logout idempotency migration should reapply");
+    connection
+        .batch_execute(&format!(
+            "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"
+        ))
+        .await
+        .expect("test schema should drop");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pushed_requests_policy_downgrade_fails_closed_on_required_clients() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let schema = format!("pushed_requests_policy_{}", Uuid::now_v7().simple());
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+    // Baseline: the pre-migration strict validator with the exact eight-key set.
+    connection
+        .batch_execute(&format!(
+            r#"
+            CREATE SCHEMA "{schema}";
+            SET search_path TO "{schema}";
+            CREATE OR REPLACE FUNCTION nazo_client_security_policy_is_current(policy JSONB)
+            RETURNS BOOLEAN LANGUAGE SQL IMMUTABLE STRICT PARALLEL SAFE AS $$
+                SELECT jsonb_typeof(policy) = 'object'
+                   AND policy ?& ARRAY[
+                        'version', 'assurance', 'require_signed_authorization_request',
+                        'require_signed_authorization_response',
+                        'require_signed_introspection_response', 'session_management',
+                        'allow_cross_device_flows', 'allow_confidential_oidc_without_pkce'
+                   ]
+                   AND policy - ARRAY[
+                        'version', 'assurance', 'require_signed_authorization_request',
+                        'require_signed_authorization_response',
+                        'require_signed_introspection_response', 'session_management',
+                        'allow_cross_device_flows', 'allow_confidential_oidc_without_pkce'
+                   ] = '{{}}'::jsonb
+                   AND jsonb_typeof(policy -> 'version') = 'number'
+                   AND policy ->> 'version' = '1'
+                   AND jsonb_typeof(policy -> 'assurance') = 'string'
+                   AND policy ->> 'assurance' IN ('baseline', 'fapi2')
+                   AND jsonb_typeof(policy -> 'require_signed_authorization_request') = 'boolean'
+                   AND jsonb_typeof(policy -> 'require_signed_authorization_response') = 'boolean'
+                   AND jsonb_typeof(policy -> 'require_signed_introspection_response') = 'boolean'
+                   AND jsonb_typeof(policy -> 'session_management') = 'boolean'
+                   AND jsonb_typeof(policy -> 'allow_cross_device_flows') = 'boolean'
+                   AND jsonb_typeof(policy -> 'allow_confidential_oidc_without_pkce') = 'boolean';
+            $$;
+            CREATE TABLE oauth_clients (
+                id BIGINT PRIMARY KEY,
+                security_policy JSONB NOT NULL,
+                CONSTRAINT ck_oauth_clients_security_policy_object CHECK (
+                    nazo_client_security_policy_is_current(security_policy)
+                )
+            );
+            INSERT INTO oauth_clients VALUES (1, '{{
+                "version": 1, "assurance": "baseline",
+                "require_signed_authorization_request": false,
+                "require_signed_authorization_response": false,
+                "require_signed_introspection_response": false,
+                "session_management": true,
+                "allow_cross_device_flows": true,
+                "allow_confidential_oidc_without_pkce": false
+            }}');
+            "#
+        ))
+        .await
+        .expect("baseline schema should create");
+
+    connection
+        .transaction::<(), diesel::result::Error, _>(async |connection| {
+            connection.batch_execute(PUSHED_REQUESTS_POLICY_UP).await
+        })
+        .await
+        .expect("up migration should succeed");
+    // Case A row: field present with false.
+    sql_query(
+        r#"INSERT INTO oauth_clients VALUES (2, '{
+            "version": 1, "assurance": "baseline",
+            "require_signed_authorization_request": false,
+            "require_signed_authorization_response": false,
+            "require_signed_introspection_response": false,
+            "session_management": true,
+            "allow_cross_device_flows": true,
+            "allow_confidential_oidc_without_pkce": false,
+            "require_pushed_authorization_requests": false
+        }')"#,
+    )
+    .execute(&mut connection)
+    .await
+    .expect("false pushed-requests policy should insert under relaxed validator");
+    // Case B row: field present with true.
+    sql_query(
+        r#"INSERT INTO oauth_clients VALUES (3, '{
+            "version": 1, "assurance": "fapi2",
+            "require_signed_authorization_request": true,
+            "require_signed_authorization_response": true,
+            "require_signed_introspection_response": true,
+            "session_management": true,
+            "allow_cross_device_flows": false,
+            "allow_confidential_oidc_without_pkce": false,
+            "require_pushed_authorization_requests": true
+        }')"#,
+    )
+    .execute(&mut connection)
+    .await
+    .expect("true pushed-requests policy should insert under relaxed validator");
+
+    // Case B: downgrade must refuse while a client requires PAR, and the
+    // refused transaction must leave the row untouched.
+    let refused = connection
+        .transaction::<(), diesel::result::Error, _>(async |connection| {
+            connection.batch_execute(PUSHED_REQUESTS_POLICY_DOWN).await
+        })
+        .await;
+    let message = refused
+        .expect_err("downgrade must fail closed when a client requires PAR")
+        .to_string();
+    assert!(
+        message.contains("downgrade refused"),
+        "refusal should explain the security policy reason, got: {message}"
+    );
+    let still_required = sql_query(
+        "SELECT security_policy -> 'require_pushed_authorization_requests' = 'true'::jsonb \
+         AS value FROM oauth_clients WHERE id = 3",
+    )
+    .load::<BooleanRow>(&mut connection)
+    .await
+    .expect("required client row should remain queryable")
+    .pop()
+    .expect("required client row should still exist")
+    .value;
+    assert!(
+        still_required,
+        "refused downgrade must not modify the PAR-required row"
+    );
+
+    // Case A: once no client requires PAR, downgrade strips only the new key,
+    // restores the strict validator, and keeps rows updatable.
+    sql_query("DELETE FROM oauth_clients WHERE id = 3")
+        .execute(&mut connection)
+        .await
+        .expect("operator removal of the PAR-required client should work");
+    connection
+        .transaction::<(), diesel::result::Error, _>(async |connection| {
+            connection.batch_execute(PUSHED_REQUESTS_POLICY_DOWN).await
+        })
+        .await
+        .expect("downgrade should succeed when no client requires PAR");
+    let key_stripped = sql_query(
+        "SELECT NOT (security_policy ? 'require_pushed_authorization_requests') AS value \
+         FROM oauth_clients WHERE id = 2",
+    )
+    .load::<BooleanRow>(&mut connection)
+    .await
+    .expect("stripped policy should remain queryable")
+    .pop()
+    .expect("false-policy row should still exist")
+    .value;
+    assert!(
+        key_stripped,
+        "downgrade must strip the field from false policies"
+    );
+    sql_query("UPDATE oauth_clients SET security_policy = security_policy WHERE id = 2")
+        .execute(&mut connection)
+        .await
+        .expect("stripped policy must satisfy the restored strict CHECK on update");
+    assert!(
+        sql_query(
+            r#"INSERT INTO oauth_clients VALUES (4, '{
+                "version": 1, "assurance": "baseline",
+                "require_signed_authorization_request": false,
+                "require_signed_authorization_response": false,
+                "require_signed_introspection_response": false,
+                "session_management": true,
+                "allow_cross_device_flows": true,
+                "allow_confidential_oidc_without_pkce": false,
+                "require_pushed_authorization_requests": false
+            }')"#,
+        )
+        .execute(&mut connection)
+        .await
+        .is_err(),
+        "restored validator must reject the new key again"
+    );
+
     connection
         .batch_execute(&format!(
             "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"

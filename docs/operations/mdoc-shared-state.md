@@ -26,6 +26,21 @@ Managed issuer state does not use external trust resources as a private-key
 store. The former managed certificate/trust/revocation file settings and file
 reload interval have been removed.
 
+## Issuer verification
+
+ISO/IEC 18013-5:2021 section 9.3.1, step 5 requires the MSO
+`validityInfo.signed` time to fall within the document signer certificate's
+validity period. The verifier checks the issuer certificate chain at that
+signing time, as well as the issuer signature, credential validity, revocation,
+and device authentication. A certificate being valid when a presentation is
+received does not establish that it was valid when the MSO was signed.
+
+The standard is identified in the [HAIP normative references](https://openid.net/specs/openid4vc-high-assurance-interoperability-profile-1_0-final.html#ISO.18013-5).
+Freshly issued test certificates and backdated MSO signing times can violate
+this requirement even when both signatures verify. The issuer must choose a
+signing time within the certificate's validity; verifiers must preserve the
+check for ordinary credentials and external conformance fixtures alike.
+
 ## Import complete certificate material
 
 An administrator can import externally prepared certificates into an existing

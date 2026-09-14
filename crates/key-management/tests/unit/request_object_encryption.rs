@@ -78,7 +78,7 @@ fn encrypt(jwk: &serde_json::Value, plaintext: &[u8]) -> String {
         .expect("header"),
     );
     let cek = rand::random::<[u8; 32]>();
-    let encrypted_key = crate::crypto::test_support::rsa_oaep_sha256_encrypt(
+    let encrypted_key = crate::crypto_test_support::rsa_oaep_sha256_encrypt(
         &URL_SAFE_NO_PAD
             .decode(jwk["n"].as_str().expect("n"))
             .expect("n encoding"),
@@ -90,13 +90,9 @@ fn encrypt(jwk: &serde_json::Value, plaintext: &[u8]) -> String {
     .expect("encrypt key");
 
     let iv = rand::random::<[u8; 12]>();
-    let (ciphertext, tag) = crate::crypto::test_support::aes_256_gcm_encrypt(
-        &cek,
-        &iv,
-        protected.as_bytes(),
-        plaintext,
-    )
-    .expect("encrypt payload");
+    let (ciphertext, tag) =
+        crate::crypto_test_support::aes_256_gcm_encrypt(&cek, &iv, protected.as_bytes(), plaintext)
+            .expect("encrypt payload");
     format!(
         "{}.{}.{}.{}.{}",
         protected,

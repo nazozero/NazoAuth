@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use jsonwebtoken::{Validation, decode, decode_header};
+use nazo_crypto::jwt::{Validation, decode, decode_header};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -176,7 +176,7 @@ pub fn unverified_signed_request_object_kid(request_object: &str) -> Option<Stri
     }
     let header = decode_request_object_header(header).ok()?;
     (header.alg != "none")
-        .then(|| jsonwebtoken::decode_header(request_object).ok()?.kid)
+        .then(|| nazo_crypto::jwt::decode_header(request_object).ok()?.kid)
         .flatten()
 }
 

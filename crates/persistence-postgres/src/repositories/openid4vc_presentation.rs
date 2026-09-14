@@ -1,7 +1,3 @@
-use aes_gcm::{
-    Aes256Gcm, KeyInit,
-    aead::{Aead, Payload},
-};
 use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, QueryableByName, sql_query, sql_types};
 use diesel_async::RunQueryDsl;
@@ -604,20 +600,17 @@ fn protect_payload(
     transaction_id: Uuid,
     plaintext: &[u8],
 ) -> Result<Vec<u8>, PresentationStoreError> {
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| PresentationStoreError::Unavailable)?;
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
     let mut protected = nonce.to_vec();
     protected.extend_from_slice(
-        &cipher
-            .encrypt(
-                (&nonce).into(),
-                Payload {
-                    msg: plaintext,
-                    aad: &payload_aad(domain, tenant_id, transaction_id),
-                },
-            )
-            .map_err(|_| PresentationStoreError::Unavailable)?,
+        &nazo_crypto::aead::encrypt(
+            key,
+            &nonce,
+            &payload_aad(domain, tenant_id, transaction_id),
+            plaintext,
+        )
+        .map_err(|_| PresentationStoreError::Unavailable)?,
     );
     Ok(protected)
 }
@@ -635,15 +628,9 @@ fn unprotect_payload(
     let nonce: &[u8; 12] = nonce
         .try_into()
         .map_err(|_| PresentationStoreError::InvalidTransition)?;
-    let cipher = Aes256Gcm::new_from_slice(key).map_err(|_| PresentationStoreError::Unavailable)?;
     let aad = payload_aad(domain, tenant_id, transaction_id);
-    cipher
-        .decrypt(
-            nonce.into(),
-            Payload {
-                msg: ciphertext,
-                aad: &aad,
-            },
-        )
-        .map_err(|_| PresentationStoreError::InvalidTransition)
+    nazo_crypto::aead::decrypt(key, nonce, &aad, ciphertext).map_err(|error| match error {
+        nazo_crypto::CryptoError::InvalidKey => PresentationStoreError::Unavailable,
+        _ => PresentationStoreError::InvalidTransition,
+    })
 }

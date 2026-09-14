@@ -4,13 +4,11 @@ use serde::Deserialize;
 use serde_json::Value;
 use sha2::Digest as _;
 
-use crate::{
-    KeyManager,
-    crypto::{aes_256_gcm_decrypt, rsa_oaep_sha256_decrypt},
-};
+use crate::KeyManager;
 
 pub(crate) fn request_object_encryption_jwk(private_key_pem: &[u8]) -> anyhow::Result<Value> {
-    let (n, e, public_der) = crate::crypto::rsa_public_components_from_pem(private_key_pem)?;
+    let der = crate::serialization::rsa_pkcs8_from_pem(private_key_pem)?;
+    let (n, e, public_der) = nazo_crypto::key_wrap::rsa_public_components(&der)?;
     let kid = format!(
         "request-object-{}",
         URL_SAFE_NO_PAD.encode(&sha2::Sha256::digest(&public_der)[..12])
@@ -77,10 +75,11 @@ impl KeyManager {
         let encrypted_key = URL_SAFE_NO_PAD
             .decode(encrypted_key)
             .context("invalid encrypted key encoding")?;
-        let cek = rsa_oaep_sha256_decrypt(
+        let private_der = crate::serialization::rsa_pkcs8_from_pem(
             &generation.loaded.request_object_decryption_key,
-            &encrypted_key,
         )?;
+        let cek = nazo_crypto::key_wrap::rsa_oaep256_decrypt(&private_der, &encrypted_key)
+            .context("RSA-OAEP-256 decryption failed")?;
         if cek.len() != 32 {
             return Err(anyhow!(
                 "request object content encryption key must be 256 bits"
@@ -97,7 +96,9 @@ impl KeyManager {
         if iv.len() != 12 || tag.len() != 16 {
             return Err(anyhow!("invalid A256GCM iv or tag length"));
         }
-        let plaintext = aes_256_gcm_decrypt(&cek, &iv, protected.as_bytes(), &ciphertext, &tag)
+        let mut combined = ciphertext;
+        combined.extend_from_slice(&tag);
+        let plaintext = nazo_crypto::aead::decrypt(&cek, &iv, protected.as_bytes(), &combined)
             .context("request object authentication failed")?;
         String::from_utf8(plaintext).context("request object plaintext is not UTF-8")
     }

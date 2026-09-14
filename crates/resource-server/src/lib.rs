@@ -7,7 +7,7 @@
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
-use jsonwebtoken::{Algorithm, Validation};
+use nazo_crypto::jwt::{Algorithm, Validation};
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
@@ -191,7 +191,7 @@ impl ResourceServerVerifier {
         token: &str,
         now: i64,
     ) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
-        let header = jsonwebtoken::decode_header(token)
+        let header = nazo_crypto::jwt::decode_header(token)
             .map_err(|_| ResourceServerVerifierError::InvalidToken)?;
         if header.typ.as_deref() != Some("at+jwt") {
             return Err(ResourceServerVerifierError::WrongTokenType);
@@ -212,8 +212,9 @@ impl ResourceServerVerifier {
         validation.validate_aud = false;
         validation.validate_exp = false;
         validation.validate_nbf = false;
-        let decoded = jsonwebtoken::decode::<AccessTokenClaims>(token, &decoding_key, &validation)
-            .map_err(|_| ResourceServerVerifierError::InvalidToken)?;
+        let decoded =
+            nazo_crypto::jwt::decode::<AccessTokenClaims>(token, &decoding_key, &validation)
+                .map_err(|_| ResourceServerVerifierError::InvalidToken)?;
         self.validate_claims(decoded.claims, now)
     }
 

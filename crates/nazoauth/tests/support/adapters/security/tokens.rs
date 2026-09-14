@@ -37,11 +37,9 @@ pub(crate) struct IssuedAccessToken {
 pub(super) fn validate_access_token_sender_constraint(
     dpop_jkt: Option<&str>,
     mtls_x5t_s256: Option<&str>,
-) -> jsonwebtoken::errors::Result<()> {
+) -> nazo_crypto::Result<()> {
     if dpop_jkt.is_some() && mtls_x5t_s256.is_some() {
-        return Err(jsonwebtoken::errors::Error::from(
-            jsonwebtoken::errors::ErrorKind::InvalidToken,
-        ));
+        return Err(nazo_crypto::CryptoError::InvalidToken);
     }
     Ok(())
 }
@@ -50,7 +48,7 @@ pub(crate) async fn make_jwt(
     keyset: &nazo_key_management::KeyManager,
     issuer: &str,
     input: AccessTokenJwtInput<'_>,
-) -> jsonwebtoken::errors::Result<IssuedAccessToken> {
+) -> nazo_crypto::Result<IssuedAccessToken> {
     validate_access_token_sender_constraint(input.dpop_jkt, input.mtls_x5t_s256)?;
     let now = Utc::now().timestamp();
     let jti = Uuid::now_v7().to_string();
@@ -96,7 +94,7 @@ pub(crate) async fn sign_response_jwt(
     claims: &Value,
     typ: &str,
     signing_alg: Option<jsonwebtoken::Algorithm>,
-) -> jsonwebtoken::errors::Result<String> {
+) -> nazo_crypto::Result<String> {
     let key_snapshot = keyset.snapshot();
     let alg = signing_alg.unwrap_or(key_snapshot.active_alg);
     let mut header = jsonwebtoken::Header::new(alg);
@@ -119,7 +117,7 @@ pub(crate) fn decode_access_claims_with(
     let mut validation = jsonwebtoken::Validation::new(header.alg);
     validation.validate_aud = false;
     validation.set_issuer(&[issuer]);
-    let token_data = jsonwebtoken::decode::<Claims>(token, &decoding_key, &validation).ok()?;
+    let token_data = nazo_crypto::jwt::decode::<Claims>(token, &decoding_key, &validation).ok()?;
     if token_data.claims.token_use != "access" {
         return None;
     }

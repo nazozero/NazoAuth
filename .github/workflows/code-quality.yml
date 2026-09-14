@@ -162,6 +162,12 @@ jobs:
       - name: Verify persistence dependency isolation
         run: python scripts/check_persistence_dependency_graph.py
 
+      - name: Verify crypto boundary
+        run: python scripts/check_crypto_boundary.py
+
+      - name: Test crypto boundary guard
+        run: python -m unittest discover -s scripts -p 'test_crypto_boundary.py'
+
       - name: Format
         run: cargo fmt --check
 

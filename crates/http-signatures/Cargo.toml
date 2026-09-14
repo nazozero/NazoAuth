@@ -8,7 +8,7 @@ repository.workspace = true
 [dependencies]
 base64.workspace = true
 httpsig = "0.0.26"
-jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+nazo-crypto = { workspace = true, features = ["jose"] }
 serde_json.workspace = true
 sfv = "0.15.0"
 sha2.workspace = true
@@ -18,6 +18,7 @@ url.workspace = true
 
 [dev-dependencies]
 aws-lc-rs.workspace = true
+jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
 ed25519-dalek.workspace = true
 p256 = { workspace = true, features = ["ecdsa"] }
 proptest.workspace = true

@@ -1,16 +1,8 @@
 use std::io::{Read, Write};
 
-use aes_gcm::{
-    Aes128Gcm, Aes256Gcm, KeyInit,
-    aead::{Aead, Payload},
-};
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use flate2::{Compression, read::DeflateDecoder, write::DeflateEncoder};
-use p256::{
-    PublicKey, SecretKey,
-    ecdh::diffie_hellman,
-    elliptic_curve::{Generate, sec1::ToSec1Point},
-};
+use nazo_crypto::ec::P256SecretKey;
 use rand::Rng;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -31,14 +23,14 @@ pub enum JweError {
 
 #[derive(Clone)]
 pub struct EphemeralEncryptionKey {
-    secret: SecretKey,
+    secret: P256SecretKey,
 }
 
 impl EphemeralEncryptionKey {
     #[must_use]
     pub fn generate() -> Self {
         Self {
-            secret: SecretKey::generate(),
+            secret: P256SecretKey::generate(),
         }
     }
 
@@ -49,11 +41,11 @@ impl EphemeralEncryptionKey {
 
     #[must_use]
     pub fn secret_bytes(&self) -> [u8; 32] {
-        self.secret.to_bytes().into()
+        self.secret.secret_bytes()
     }
 
     pub fn from_secret_bytes(bytes: &[u8; 32]) -> Result<Self, JweError> {
-        SecretKey::from_slice(bytes)
+        P256SecretKey::from_secret_bytes(bytes)
             .map(|secret| Self { secret })
             .map_err(|_| JweError::InvalidKey)
     }
@@ -129,15 +121,11 @@ fn encrypt_ecdh_es_with_zip(
         _ => return Err(JweError::Unsupported),
     };
     let recipient = parse_recipient_public_jwk(recipient_jwk)?;
-    let ephemeral = SecretKey::generate();
-    let shared = diffie_hellman(ephemeral.to_nonzero_scalar(), recipient.as_affine());
-    let key = concat_kdf(
-        shared.raw_secret_bytes().as_slice(),
-        enc,
-        &[],
-        &[],
-        key_bits,
-    );
+    let ephemeral = P256SecretKey::generate();
+    let shared = ephemeral
+        .agree(&recipient)
+        .map_err(|_| JweError::InvalidKey)?;
+    let key = concat_kdf(shared.as_slice(), enc, &[], &[], key_bits);
     let mut header = json!({
         "alg": "ECDH-ES", "enc": enc, "epk": ephemeral_public_jwk(ephemeral.public_key()),
     });
@@ -165,20 +153,9 @@ fn encrypt_ecdh_es_with_zip(
     };
     let mut nonce = [0_u8; 12];
     rand::rng().fill_bytes(&mut nonce);
-    let payload = Payload {
-        msg: plaintext,
-        aad: protected.as_bytes(),
-    };
-    let ciphertext_and_tag = match enc {
-        "A128GCM" => Aes128Gcm::new_from_slice(&key)
-            .map_err(|_| JweError::InvalidKey)?
-            .encrypt((&nonce).into(), payload),
-        "A256GCM" => Aes256Gcm::new_from_slice(&key)
-            .map_err(|_| JweError::InvalidKey)?
-            .encrypt((&nonce).into(), payload),
-        _ => unreachable!("enc was validated above"),
-    }
-    .map_err(|_| JweError::AuthenticationFailed)?;
+    let ciphertext_and_tag =
+        nazo_crypto::aead::encrypt(&key, &nonce, protected.as_bytes(), plaintext)
+            .map_err(jwe_aead_error)?;
     let tag_at = ciphertext_and_tag
         .len()
         .checked_sub(16)
@@ -192,9 +169,16 @@ fn encrypt_ecdh_es_with_zip(
     ))
 }
 
+fn jwe_aead_error(error: nazo_crypto::CryptoError) -> JweError {
+    match error {
+        nazo_crypto::CryptoError::InvalidKey => JweError::InvalidKey,
+        _ => JweError::AuthenticationFailed,
+    }
+}
+
 fn decrypt_ecdh_es(
     compact: &str,
-    recipient: &SecretKey,
+    recipient: &P256SecretKey,
     expected_kid: Option<&str>,
 ) -> Result<Vec<u8>, JweError> {
     let parts = compact.split('.').collect::<Vec<_>>();
@@ -225,16 +209,12 @@ fn decrypt_ecdh_es(
         return Err(JweError::Unsupported);
     }
     let ephemeral = parse_ephemeral_public_jwk(header.get("epk").ok_or(JweError::Malformed)?)?;
-    let shared = diffie_hellman(recipient.to_nonzero_scalar(), ephemeral.as_affine());
+    let shared = recipient
+        .agree(&ephemeral)
+        .map_err(|_| JweError::InvalidKey)?;
     let apu = decode_party_info(&header, "apu")?;
     let apv = decode_party_info(&header, "apv")?;
-    let key = concat_kdf(
-        shared.raw_secret_bytes().as_slice(),
-        enc,
-        &apu,
-        &apv,
-        key_bits,
-    );
+    let key = concat_kdf(shared.as_slice(), enc, &apu, &apv, key_bits);
     let nonce: [u8; 12] = URL_SAFE_NO_PAD
         .decode(parts[2])
         .map_err(|_| JweError::Malformed)?
@@ -250,20 +230,8 @@ fn decrypt_ecdh_es(
         return Err(JweError::Malformed);
     }
     ciphertext.extend_from_slice(&tag);
-    let payload = Payload {
-        msg: &ciphertext,
-        aad: parts[0].as_bytes(),
-    };
-    let plaintext = match enc {
-        "A128GCM" => Aes128Gcm::new_from_slice(&key)
-            .map_err(|_| JweError::InvalidKey)?
-            .decrypt((&nonce).into(), payload),
-        "A256GCM" => Aes256Gcm::new_from_slice(&key)
-            .map_err(|_| JweError::InvalidKey)?
-            .decrypt((&nonce).into(), payload),
-        _ => unreachable!("enc was validated above"),
-    }
-    .map_err(|_| JweError::AuthenticationFailed)?;
+    let plaintext = nazo_crypto::aead::decrypt(&key, &nonce, parts[0].as_bytes(), &ciphertext)
+        .map_err(jwe_aead_error)?;
     match header.get("zip").and_then(Value::as_str) {
         None => Ok(plaintext),
         Some("DEF") => decompress_deflate(&plaintext),
@@ -286,34 +254,33 @@ fn decompress_deflate(compressed: &[u8]) -> Result<Vec<u8>, JweError> {
     Ok(output)
 }
 
-fn public_jwk(key: PublicKey) -> Value {
+fn public_jwk(key: [u8; 65]) -> Value {
     let mut jwk = ec_public_jwk(key);
     jwk["use"] = Value::String("enc".to_owned());
     jwk["alg"] = Value::String("ECDH-ES".to_owned());
     jwk
 }
 
-fn ephemeral_public_jwk(key: PublicKey) -> Value {
+fn ephemeral_public_jwk(key: [u8; 65]) -> Value {
     ec_public_jwk(key)
 }
 
-fn ec_public_jwk(key: PublicKey) -> Value {
-    let point = key.to_sec1_point(false);
+fn ec_public_jwk(key: [u8; 65]) -> Value {
     json!({
         "kty": "EC", "crv": "P-256",
-        "x": URL_SAFE_NO_PAD.encode(point.x().expect("uncompressed P-256 point has x")),
-        "y": URL_SAFE_NO_PAD.encode(point.y().expect("uncompressed P-256 point has y")),
+        "x": URL_SAFE_NO_PAD.encode(&key[1..33]),
+        "y": URL_SAFE_NO_PAD.encode(&key[33..65]),
     })
 }
 
-fn parse_recipient_public_jwk(jwk: &Value) -> Result<PublicKey, JweError> {
+fn parse_recipient_public_jwk(jwk: &Value) -> Result<[u8; 65], JweError> {
     if jwk.get("alg").and_then(Value::as_str) != Some("ECDH-ES") {
         return Err(JweError::InvalidKey);
     }
     parse_ec_public_jwk(jwk)
 }
 
-fn parse_ephemeral_public_jwk(jwk: &Value) -> Result<PublicKey, JweError> {
+fn parse_ephemeral_public_jwk(jwk: &Value) -> Result<[u8; 65], JweError> {
     match jwk.get("alg") {
         None => {}
         Some(Value::String(algorithm)) if algorithm == "ECDH-ES" => {}
@@ -322,7 +289,7 @@ fn parse_ephemeral_public_jwk(jwk: &Value) -> Result<PublicKey, JweError> {
     parse_ec_public_jwk(jwk)
 }
 
-fn parse_ec_public_jwk(jwk: &Value) -> Result<PublicKey, JweError> {
+fn parse_ec_public_jwk(jwk: &Value) -> Result<[u8; 65], JweError> {
     if jwk.get("kty").and_then(Value::as_str) != Some("EC")
         || jwk.get("crv").and_then(Value::as_str) != Some("P-256")
     {
@@ -334,7 +301,7 @@ fn parse_ec_public_jwk(jwk: &Value) -> Result<PublicKey, JweError> {
     point[0] = 4;
     point[1..33].copy_from_slice(&x);
     point[33..].copy_from_slice(&y);
-    PublicKey::from_sec1_bytes(&point).map_err(|_| JweError::InvalidKey)
+    Ok(point)
 }
 
 fn decode_coordinate(jwk: &Value, name: &str) -> Result<[u8; 32], JweError> {

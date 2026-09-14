@@ -22,21 +22,24 @@ fn eddsa_fixture(kid: &str) -> (Vec<u8>, Value) {
     (material.private_pkcs8_der, public_jwk)
 }
 
-fn sign_input(private_key: &[u8], signing_input: &str) -> String {
-    jsonwebtoken::crypto::sign(
+fn sign_input(private_key: &[u8], signing_input: &str) -> Vec<u8> {
+    let encoded = jsonwebtoken::crypto::sign(
         signing_input.as_bytes(),
         &jsonwebtoken::EncodingKey::from_ed_der(private_key),
         jsonwebtoken::Algorithm::EdDSA,
     )
-    .expect("test signature should sign")
+    .expect("test signature should sign");
+    URL_SAFE_NO_PAD
+        .decode(encoded)
+        .expect("test signature is base64url")
 }
 
 #[test]
 fn external_signature_verification_accepts_signature_bound_to_active_public_jwk() {
     let kid = "external-kid";
-    let signing_input = "header.claims";
+    let signing_input = b"header.claims";
     let (private_key, public_jwk) = eddsa_fixture(kid);
-    let signature = sign_input(&private_key, signing_input);
+    let signature = sign_input(&private_key, "header.claims");
 
     verify_external_jwt_signature(
         &external_signing_key(),
@@ -58,14 +61,14 @@ fn external_signature_verification_rejects_signature_that_does_not_match_input()
         &external_signing_key(),
         kid,
         jsonwebtoken::Algorithm::EdDSA,
-        "header.tampered_claims",
+        b"header.tampered_claims",
         &signature,
         &public_jwk,
     )
     .expect_err("external signer output must be checked against the exact signing input");
 
     assert!(
-        format!("{error}").contains("does not verify"),
+        matches!(error, nazo_crypto::CryptoError::InvalidSignature),
         "unexpected verification error: {error}"
     );
 }
@@ -76,14 +79,14 @@ fn external_signature_verification_rejects_unusable_active_public_jwk() {
         &external_signing_key(),
         "external-kid",
         jsonwebtoken::Algorithm::EdDSA,
-        "header.claims",
-        "ZmFrZS1zaWduYXR1cmU",
+        b"header.claims",
+        b"fake-signature",
         &json!({"kty": "oct", "k": "not-a-public-signing-key"}),
     )
     .expect_err("external signer verification must fail closed without usable public JWK");
 
     assert!(
-        format!("{error}").contains("not usable"),
+        matches!(error, nazo_crypto::CryptoError::InvalidKey),
         "unexpected verification error: {error}"
     );
 }
@@ -176,19 +179,41 @@ fn external_signer_output_is_verified_against_exact_message() {
     let signature = sign_input(&private_key, "expected");
     let external = ExternalSigningKey {
         key_ref: "kms://test/key".to_owned(),
-        signer: Arc::new(crate::test_support::FixedExternalKeySigner(
-            URL_SAFE_NO_PAD.decode(signature).unwrap(),
-        )),
+        signer: Arc::new(crate::test_support::FixedExternalKeySigner(signature)),
     };
-    let backend = ExternalBackend {
-        external: &external,
-        kid,
-        algorithm: jsonwebtoken::Algorithm::EdDSA,
-        public_jwk: &public_jwk,
-    };
-    assert!(futures_executor::block_on(backend.sign(b"expected")).is_ok());
+    assert!(
+        futures_executor::block_on(sign_external(
+            &external,
+            kid,
+            jsonwebtoken::Algorithm::EdDSA,
+            &public_jwk,
+            b"expected",
+        ))
+        .is_ok()
+    );
     assert!(matches!(
-        futures_executor::block_on(backend.sign(b"tampered")),
+        futures_executor::block_on(sign_external(
+            &external,
+            kid,
+            jsonwebtoken::Algorithm::EdDSA,
+            &public_jwk,
+            b"tampered",
+        )),
+        Err(SignError::SigningFailed)
+    ));
+
+    let empty = ExternalSigningKey {
+        key_ref: "kms://test/key".to_owned(),
+        signer: Arc::new(crate::test_support::FixedExternalKeySigner(Vec::new())),
+    };
+    assert!(matches!(
+        futures_executor::block_on(sign_external(
+            &empty,
+            kid,
+            jsonwebtoken::Algorithm::EdDSA,
+            &public_jwk,
+            b"expected",
+        )),
         Err(SignError::SigningFailed)
     ));
 }

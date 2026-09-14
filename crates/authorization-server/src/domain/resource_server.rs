@@ -20,7 +20,7 @@ mod production {
     use crate::ports::fapi_replay::{
         FapiHttpSignatureReplayConsumption, FapiHttpSignatureReplayStore,
     };
-    use jsonwebtoken::Algorithm;
+    use nazo_crypto::jwt::Algorithm;
     use nazo_http_signatures::VerifiedInput;
     use nazo_key_management::{HttpSigningLease, KeySnapshot};
     use nazo_resource_server::{

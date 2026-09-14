@@ -19,6 +19,8 @@ pub struct ClientSecurityPolicy {
     #[serde(default)]
     pub assurance: ClientAssuranceLevel,
     #[serde(default)]
+    pub require_pushed_authorization_requests: bool,
+    #[serde(default)]
     pub require_signed_authorization_request: bool,
     #[serde(default)]
     pub require_signed_authorization_response: bool,
@@ -40,6 +42,7 @@ impl Default for ClientSecurityPolicy {
         Self {
             version: CLIENT_SECURITY_POLICY_VERSION,
             assurance: ClientAssuranceLevel::Baseline,
+            require_pushed_authorization_requests: false,
             require_signed_authorization_request: false,
             require_signed_authorization_response: false,
             require_signed_introspection_response: false,

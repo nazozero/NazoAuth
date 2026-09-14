@@ -3,9 +3,10 @@
 NazoAuthCtl manages NazoAuth through one current protocol lineage. A
 controller uses its user-scoped Registry for host and instance inventory; the
 target host's `DeploymentState` remains authoritative for runtime, artifact,
-configuration, resources, journal, and backup facts. Removed controller state,
-task envelopes, secret-provider adapters, and old command shapes are not read
-or converted.
+configuration, resources, journal, and backup facts. Supported persistence and
+control-message formats are defined by the controller's
+[compatibility contract](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/compatibility.md).
+Unknown or damaged state is preserved and rejected before mutation.
 
 ## Fresh installation
 
@@ -91,10 +92,11 @@ Registry, or logs.
 ## Update and rollback
 
 > [!WARNING]
-> Before 0.5.0, releases change rapidly and do not support historical versions.
-> Configuration, stored state, and control messages must match the current
-> format. Keep a verified backup and the matching recovery tools before changing
-> a deployment; an update command is not a cross-version compatibility promise.
+> Check the target server's configuration and migration requirements before an
+> update. Controller persistence has a separate compatibility contract: supported
+> historical records remain readable, and inspection does not rewrite them.
+> Keep a verified backup and matching recovery tools. Readable controller state
+> does not establish that a server artifact or database migration can be rolled back.
 
 ```sh
 nazoauthctl update --instance production --to '<nazoauth-release-tag>'
@@ -180,10 +182,12 @@ digest are verified before activation. The application independently validates
 the signed ControlOperation against the executing binary or image digest, while
 NazoAuthCtl observes the same content identity from the runtime.
 
-Public bootstrap is fail-closed on the attested Release reader and accepts only
-a public non-draft Release. The operator host therefore needs GitHub CLI plus
-`python3`, `sha256sum`, and `install`; a missing reader or verification tool is
-an error, not permission to consume an unattested artifact.
+The controller's Release verifier accepts only a public non-draft Release. It
+uses bounded `curl` requests and verifies Sigstore bundles with host `cosign`
+or its pinned Podman/Docker fallback. A missing verification tool is an error,
+not permission to consume an unattested artifact. Runtime, SSH and database
+operations have their own target prerequisites; consult the controller's
+[development guide](https://github.com/nazozero/NazoAuthCtl/blob/main/docs/development.md).
 
 Use `nazoauthctl --help` and subcommand help as the only command-surface
 authority. This document describes the current v0.2 model only.

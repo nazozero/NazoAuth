@@ -24,7 +24,7 @@ registration metadata 都是可执行 allowlist。
 | OAuth 2.0 Protected Resource Metadata | 完整支持 | 配置对应 protected-resource metadata 表面后可用 | [RFC 9728](https://www.rfc-editor.org/rfc/rfc9728.html) | 提供通用和 FAPI 资源元数据面。 |
 | OAuth 2.0 Form Post Response Mode | 完整支持 | active profile 允许 `form_post` 时为基线 code-flow 客户端宣告 | [OAuth 2.0 Form Post Response Mode](https://openid.net/specs/oauth-v2-form-post-response-mode-1_0.html) | 不启用 implicit 或 hybrid 前通道令牌交付。 |
 | OpenID Connect Third-Party Initiated Login | 完整支持 | 通过 HTTPS `initiate_login_uri` 客户端元数据提供 | [OpenID Connect Third-Party Initiated Login 1.0](https://openid.net/specs/openid-connect-3rd-party-initiated-login.html) | 这是 OP 侧元数据支持；initiation URI 本身是 RP 端点。 |
-| Dynamic Client Registration | 完整支持 | 仅在配置非空 initial access token 时宣告 | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [OpenID Connect Dynamic Client Registration 1.0](https://openid.net/specs/openid-connect-registration-1_0.html) | DCR 创建的客户端只获得 baseline 策略，不能自行提升能力。 |
+| Dynamic Client Registration | 完整支持 | 仅在 DCR 模块处于活动状态且具有非空 initial access token 时宣告 | [RFC 7591](https://www.rfc-editor.org/rfc/rfc7591.html), [OpenID Connect Dynamic Client Registration 1.0](https://openid.net/specs/openid-connect-registration-1_0.html) | DCR 创建的客户端只获得 baseline 策略，不能自行提升能力。 |
 | Dynamic Client Registration Management | 完整支持 | 对通过 Dynamic Client Registration 创建的客户端可用 | [RFC 7592](https://www.rfc-editor.org/rfc/rfc7592.html) | 使用受保护的 `registration_client_uri` 和 registration access token。 |
 | OpenID Connect RP Metadata Choices | 完整支持 | DCR 已启用，且服务端支持对应单值元数据 | [OpenID Connect RP Metadata Choices 1.0](https://openid.net/specs/openid-connect-rp-metadata-choices-1_0-final.html) | 规范定义的 19 个 choices 字段都按服务端真实可执行能力协商，并持久化为单值客户端元数据；ID Token、Request Object、客户端断言、UserInfo/JARM/CIBA 与 introspection 的运行时消费者会执行所选算法。choices 数组只作为注册输入，注册响应只返回最终单值。 |
 | Pushed Authorization Requests | 完整支持 | FAPI profile 必需；基线客户端按客户端策略可用 | [RFC 9126](https://www.rfc-editor.org/rfc/rfc9126.html) | 基线客户端不强制使用 PAR，除非客户端策略要求。 |
@@ -105,7 +105,7 @@ metadata 中宣告的能力。它不是当前部署能力清单。状态为“�
 | Introspection | `/introspect` | 用于资源服务器验证和 profile-specific 受保护响应。 |
 | Revocation | `/revoke` | 用于适用的 refresh/access token 撤销。 |
 | Logout | `/logout` | RP-Initiated Logout，严格校验已注册 redirect URI。 |
-| Dynamic registration | `/register` | 仅在配置非空 initial access token 时宣告。 |
+| Dynamic registration | `/register` | 仅在 DCR 模块处于活动状态且具有非空 initial access token 时宣告。 |
 | Device authorization | `/device_authorization` | 运行时模块活跃时宣告；客户端使用仍需 grant 与跨设备策略授权。 |
 
 Discovery 元数据是权威信息。字段缺失时，该部署没有声明对应能力。

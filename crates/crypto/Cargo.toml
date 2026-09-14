@@ -1,0 +1,52 @@
+[package]
+name = "nazo-crypto"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+jose = [
+    "dep:jsonwebtoken",
+    "jsonwebtoken/aws_lc_rs",
+    "dep:aws-lc-rs",
+    "dep:p256",
+    "p256/pkcs8",
+    "dep:ed25519-dalek",
+    "dep:pkcs8",
+    "dep:der",
+    "dep:x509-cert",
+    "dep:base64",
+    "dep:rand",
+    "dep:serde",
+    "dep:serde_json",
+]
+ecdh = ["dep:p256", "p256/ecdh", "dep:zeroize"]
+aead = ["dep:aes-gcm"]
+password = ["dep:argon2"]
+ed25519 = ["dep:ed25519-dalek"]
+x509 = ["dep:rcgen", "dep:rustls", "dep:x509-parser", "x509-parser/verify-aws"]
+
+[dependencies]
+aes-gcm = { workspace = true, optional = true }
+argon2 = { workspace = true, optional = true }
+aws-lc-rs = { workspace = true, optional = true }
+base64 = { workspace = true, optional = true }
+der = { workspace = true, optional = true }
+ed25519-dalek = { workspace = true, optional = true }
+jsonwebtoken = { workspace = true, optional = true }
+p256 = { workspace = true, optional = true }
+pkcs8 = { workspace = true, optional = true }
+rand = { workspace = true, optional = true }
+rcgen = { workspace = true, optional = true }
+rustls = { workspace = true, optional = true }
+serde = { workspace = true, optional = true, features = ["derive"] }
+serde_json = { workspace = true, optional = true }
+thiserror.workspace = true
+x509-cert = { workspace = true, optional = true }
+x509-parser = { workspace = true, optional = true }
+zeroize = { workspace = true, optional = true }
+
+[lints]
+workspace = true

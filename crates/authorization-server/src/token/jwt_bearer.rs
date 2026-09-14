@@ -76,18 +76,18 @@ pub fn validate_jwt_bearer_assertion_with_issuer(
     assertion: &str,
 ) -> Result<ValidatedJwtBearerAssertion, JwtBearerAssertionError> {
     let header =
-        jsonwebtoken::decode_header(assertion).map_err(|_| JwtBearerAssertionError::Invalid)?;
+        nazo_crypto::jwt::decode_header(assertion).map_err(|_| JwtBearerAssertionError::Invalid)?;
     if header.typ.as_deref() != Some(JWT_BEARER_ASSERTION_TYP) {
         return Err(JwtBearerAssertionError::Invalid);
     }
     let kid = header.kid.ok_or(JwtBearerAssertionError::Invalid)?;
     let decoding_key = client_jwt_decoding_key(client, &kid, header.alg)
         .ok_or(JwtBearerAssertionError::Invalid)?;
-    let mut validation = jsonwebtoken::Validation::new(header.alg);
+    let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
     validation.validate_aud = false;
     validation.set_issuer(&[client.client_id.as_str()]);
     let token_data =
-        jsonwebtoken::decode::<JwtBearerAssertionClaims>(assertion, &decoding_key, &validation)
+        nazo_crypto::jwt::decode::<JwtBearerAssertionClaims>(assertion, &decoding_key, &validation)
             .map_err(|_| JwtBearerAssertionError::Invalid)?;
     let now = Utc::now().timestamp();
     validate_jwt_bearer_assertion_claims(
@@ -203,7 +203,7 @@ pub async fn token_jwt_bearer_with_service(
         .assertion
         .as_deref()
         .expect("validated JWT bearer grant must contain assertion");
-    if let Ok(header) = jsonwebtoken::decode_header(assertion)
+    if let Ok(header) = nazo_crypto::jwt::decode_header(assertion)
         && header.kid.is_some()
         && let Err(error) = refresh_client_jwks(
             client,

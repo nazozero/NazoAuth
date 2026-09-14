@@ -11,6 +11,23 @@ executable black-box contract.
 Third-party validators are ordinary external clients; they do not create a
 server-side protocol or evidence exception.
 
+## Normative requirements and external results
+
+Protocol behavior follows the applicable specification and its selected
+profile. A Suite result is evidence to investigate, not an authority that
+overrides either. Reproduce a discrepancy using the request, response, and
+signed material; identify the specification edition and clause before changing
+the implementation or reporting a validator defect.
+
+For HAIP issuance, [client policy](../protocol/composable-capability-policy.md)
+requires PAR independently of the wallet's client authentication method.
+For mdoc presentations, [issuer verification](../operations/mdoc-shared-state.md#issuer-verification)
+checks certificate validity at the MSO signing time. A happy-flow fixture that
+violates that requirement must still be rejected. Do not relax verification,
+rewrite a signed credential, or turn the resulting Suite failure into a pass
+or an expected skip. Retain the original outcome and report the discrepancy
+separately.
+
 ## OpenID certification
 
 The OpenID Foundation's public registers list `NazoAuth / Nazo Auth Server

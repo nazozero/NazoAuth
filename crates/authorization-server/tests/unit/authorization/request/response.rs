@@ -122,7 +122,7 @@ fn decode_jarm_claims(state: &Fixture, response_jwt: &str, audience: &str) -> Va
     validation.validate_exp = false;
     validation.set_audience(&[audience]);
     validation.set_issuer(&[state.config.issuer.as_ref()]);
-    jsonwebtoken::decode::<Value>(response_jwt, &decoding_key, &validation)
+    nazo_crypto::jwt::decode::<Value>(response_jwt, &decoding_key, &validation)
         .expect("JARM response should verify with the active key")
         .claims
 }
@@ -152,8 +152,13 @@ fn decrypt_jarm_jwe(
     let ciphertext = URL_SAFE_NO_PAD.decode(parts[3])?;
     let tag = URL_SAFE_NO_PAD.decode(parts[4])?;
     let cek = private_key.decrypt_oaep_sha256(&encrypted_key)?;
-    let plaintext =
-        crate::crypto::aes_256_gcm_decrypt(&cek, &iv, parts[0].as_bytes(), &ciphertext, &tag)?;
+    let plaintext = crate::crypto_test_support::aes_256_gcm_decrypt(
+        &cek,
+        &iv,
+        parts[0].as_bytes(),
+        &ciphertext,
+        &tag,
+    )?;
     Ok((protected_header, String::from_utf8(plaintext)?))
 }
 

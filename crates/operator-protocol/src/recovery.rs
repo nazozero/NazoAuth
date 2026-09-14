@@ -21,8 +21,8 @@
 //! functions are plain caller-owned buffers that never enter logs or errors.
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
 use hmac::{Hmac, KeyInit, Mac};
+use nazo_crypto::ed25519::{SigningKey, VerifyingKey};
 use sha2::{Digest as _, Sha256};
 
 use crate::ProtocolError;
@@ -281,9 +281,7 @@ impl RecoveryProposal {
         allocation_nonce: &[u8; 32],
         current_seed: &[u8; 32],
     ) -> [u8; 64] {
-        SigningKey::from_bytes(current_seed)
-            .sign(&self.allocation_message(allocation_nonce))
-            .to_bytes()
+        SigningKey::from_bytes(current_seed).sign(&self.allocation_message(allocation_nonce))
     }
 
     /// Verify one allocation proof against the currently anchored Recovery
@@ -296,15 +294,11 @@ impl RecoveryProposal {
         recovery_public_key: &[u8; 32],
         signature: &[u8; 64],
     ) -> bool {
-        use ed25519_dalek::Verifier as _;
-        let Ok(signature) = ed25519_dalek::Signature::from_slice(signature) else {
-            return false;
-        };
         let Ok(verifying_key) = VerifyingKey::from_bytes(recovery_public_key) else {
             return false;
         };
         verifying_key
-            .verify(&self.allocation_message(allocation_nonce), &signature)
+            .verify(&self.allocation_message(allocation_nonce), signature)
             .is_ok()
     }
 
@@ -341,9 +335,7 @@ impl RecoveryProposal {
         nonce: &[u8; 32],
         old_seed: &[u8; 32],
     ) -> [u8; 64] {
-        SigningKey::from_bytes(old_seed)
-            .sign(&self.challenge_message(challenge_id, nonce))
-            .to_bytes()
+        SigningKey::from_bytes(old_seed).sign(&self.challenge_message(challenge_id, nonce))
     }
 
     /// Verify one Ed25519 signature over the canonical challenge message
@@ -358,15 +350,11 @@ impl RecoveryProposal {
         recovery_public_key: &[u8; 32],
         signature: &[u8; 64],
     ) -> bool {
-        use ed25519_dalek::Verifier as _;
-        let Ok(signature) = ed25519_dalek::Signature::from_slice(signature) else {
-            return false;
-        };
         let Ok(verifying_key) = VerifyingKey::from_bytes(recovery_public_key) else {
             return false;
         };
         verifying_key
-            .verify(&self.challenge_message(challenge_id, nonce), &signature)
+            .verify(&self.challenge_message(challenge_id, nonce), signature)
             .is_ok()
     }
 }

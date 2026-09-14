@@ -9,8 +9,9 @@ Nazo Auth Server is configured in two layers:
   move to the administrator UI over time
 
 `nazoauth server` uses `.env.yaml` in its working directory. If the file is
-absent, the command copies the minimal example to `.env.yaml`, reports the new
-path, materializes required service-owned secrets, and continues startup.
+absent, the command generates `.env.yaml` from startup defaults and the selected
+storage launchers, including a fresh state epoch, reports the new path,
+materializes required service-owned secrets, and continues startup.
 Explicit YAML and environment values still take precedence.
 
 The default deployment is same-origin per tenant issuer. `PUBLIC_BASE_URL`
@@ -238,8 +239,8 @@ cannot use either until `allow_cross_device_flows=true` and the corresponding
 grant/metadata are assigned. Session Management similarly requires
 `session_management=true`.
 
-Dynamic Client Registration is active only when
-`DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN` is non-empty. The token is
+Dynamic Client Registration requires an active persisted DCR module and a
+non-empty `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN`. The token is
 generated and persisted by the server/managed installer when it is not
 provided. Experimental, draft, remote-trust, and role-specific modules remain
 conditional on their complete prerequisites.

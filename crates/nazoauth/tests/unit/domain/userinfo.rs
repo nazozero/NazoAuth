@@ -390,14 +390,10 @@ fn decrypt_userinfo_jwe(
     let cek = private_key
         .decrypt_oaep_sha256(&encrypted_key)
         .expect("RSA-OAEP encrypted key should decrypt");
-    let plaintext = nazo_oauth_server::crypto::aes_256_gcm_decrypt(
-        &cek,
-        &iv,
-        parts[0].as_bytes(),
-        &ciphertext,
-        &tag,
-    )
-    .expect("A256GCM ciphertext should decrypt");
+    let mut ciphertext_and_tag = ciphertext.clone();
+    ciphertext_and_tag.extend_from_slice(&tag);
+    let plaintext = nazo_crypto::aead::decrypt(&cek, &iv, parts[0].as_bytes(), &ciphertext_and_tag)
+        .expect("A256GCM ciphertext should decrypt");
     (
         protected_header,
         String::from_utf8(plaintext).expect("JWE plaintext should be UTF-8"),
@@ -414,7 +410,7 @@ fn decode_signed_userinfo(state: &TestInfrastructure, client_id: &str, token: &s
     validation.required_spec_claims.clear();
     validation.set_audience(&[client_id]);
     validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
-    jsonwebtoken::decode::<Value>(token, &decoding_key, &validation)
+    nazo_crypto::jwt::decode::<Value>(token, &decoding_key, &validation)
         .expect("UserInfo JWS should verify")
         .claims
 }

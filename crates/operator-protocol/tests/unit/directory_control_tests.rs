@@ -3,7 +3,7 @@
 //! identities and unknown fields, and their result data validates on the wire
 //! and replays from the journal byte-identically.
 
-use ed25519_dalek::SigningKey;
+use nazo_crypto::ed25519::SigningKey;
 
 use super::*;
 

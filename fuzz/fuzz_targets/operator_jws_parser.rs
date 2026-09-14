@@ -1,6 +1,6 @@
 #![no_main]
 
-use ed25519_dalek::SigningKey;
+use nazo_crypto::ed25519::SigningKey;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|data: &[u8]| {

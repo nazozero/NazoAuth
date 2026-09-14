@@ -44,7 +44,11 @@ confidential information or material they are not authorized to submit.
 
 ## Documentation
 
-Update the owning guide and affected translations when behavior changes. Follow
+Update affected documentation, examples, translations, and indexes when a
+change affects documented behavior, contracts, ownership, configuration,
+source paths, or other documented facts. Purely internal or mechanical
+changes with no documentation impact do not require documentation-only
+churn. Follow
 [documentation maintenance rules](docs/README.md#maintenance-rules): keep durable
 contracts and runbooks, put one-time task/review evidence in the issue, PR, or
 CI artifacts, and repair indexes and references when removing a document.

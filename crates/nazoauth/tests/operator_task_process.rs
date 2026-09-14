@@ -23,7 +23,7 @@ use diesel::{
 use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
-use ed25519_dalek::SigningKey;
+use nazo_crypto::ed25519::SigningKey;
 use nazo_operator_protocol::{
     CONTROL_OPERATION_SCHEMA, ControlOperation, ControlOperationPayload, ControlOutcome,
     controller_key_id, decode_control_result, sign_control_operation,
@@ -578,9 +578,8 @@ async fn admission_refuses_every_forged_or_unservicable_operation_class() {
         _ => panic!("compact JWS shape"),
     };
     use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD as FORGED_B64};
-    use ed25519_dalek::Signer as _;
     let signing_input = format!("{protected}.{payload}");
-    let forged_signature = FORGED_B64.encode(stranger.sign(signing_input.as_bytes()).to_bytes());
+    let forged_signature = FORGED_B64.encode(stranger.sign(signing_input.as_bytes()));
     let forged_compact = format!("{signing_input}.{forged_signature}");
     assert_rejection(&run(forged_compact, env()), "authorization");
 

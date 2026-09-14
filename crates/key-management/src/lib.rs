@@ -1,13 +1,11 @@
 mod authorization_response;
 mod client_registration;
-mod crypto;
 mod database;
 mod external;
 mod external_signer;
 pub use external_signer::{ExternalKeySigner, ExternalSignRequest};
 mod jwks;
 mod lifecycle;
-mod local;
 mod model;
 mod mtls_trust;
 mod repository;
@@ -38,6 +36,10 @@ pub use repository::{
     SigningKeysetCreateResult,
 };
 pub use serialization::{signing_algorithm_from_name, signing_algorithm_name};
+
+#[cfg(test)]
+#[path = "../tests/support/crypto.rs"]
+mod crypto_test_support;
 
 #[cfg(test)]
 #[path = "../tests/unit/key_repository.rs"]

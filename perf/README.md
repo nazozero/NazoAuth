@@ -68,7 +68,11 @@ infrastructure half. The default scenario is `oidc_cold_login_refresh`, which
 includes PAR, password login, authorization decision, authorization-code token
 exchange, and refresh-token rotation.
 
-Run the extended fixed-arrival-rate matrix from a Linux development environment:
+The extended matrix wrapper below is a publishing workflow: it changes local
+Git identity, commits reports, and pushes to the current/CNB branch. Run it only
+with explicit publication authorization in its dedicated benchmark checkout.
+For an unpublished local run, use `perf/capacity.py` with selected scenarios
+and leave `CAPACITY_CHECKPOINT_COMMIT=0`.
 
 ```sh
 ./perf/extended_capacity_matrix.sh
@@ -110,8 +114,8 @@ happy-path session:
 | `single-endpoint` | `token_client_credentials`, `mtls_client_credentials`, `par_signed_request_object` | Isolates endpoint throughput and authentication overhead. |
 | `oidc-mixed` | `refresh_token_rotation`, `introspect_opaque_refresh_token`, `authorize_par_session` | Exercises normal OIDC login, PAR, authorization-code exchange, refresh rotation, and opaque refresh-token introspection across many users. |
 | `oidc-same-user-contention` | `same_user_refresh_token_rotation`, `same_user_introspect_opaque_refresh_token`, `same_user_authorize_par_session` | Exercises concurrent operations from one account to reveal account/session contention risks. |
-| `fapi2-high-security` | `fapi2_par_jar_private_key_jwt_dpop` | Exercises PAR + signed JAR + `private_key_jwt` + DPoP-bound authorization-code and refresh paths. |
-| `capacity` | `token_only_client_credentials`, `oidc_cold_login_refresh`, `oidc_logged_in_authorization_code`, `oidc_refresh_only`, `fapi2_full_security` | Fixed-arrival-rate scenarios used by `perf/capacity.py` to build 1/2/4 replica capacity curves. |
+| `fapi2-high-security` | `fapi2_par_jar_private_key_jwt_dpop`, `fapi2_logged_in_high_security` | Exercises PAR + signed JAR + `private_key_jwt` + DPoP-bound authorization-code and refresh paths. |
+| `capacity` | `token_only_client_credentials`, `oidc_cold_login_refresh`, `oidc_logged_in_authorization_code`, `oidc_refresh_only`, `fapi2_full_security`, `fapi2_logged_in_high_security` | Fixed-arrival-rate scenarios used by `perf/capacity.py` to build 1/2/4 replica capacity curves. |
 | `extended-capacity` | `mtls_client_credentials`, `par_signed_request_object`, `introspect_opaque_refresh_token`, `authorize_par_session`, `revoke_refresh_token`, `metadata_jwks`, `same_user_refresh_token_rotation`, `same_user_introspect_opaque_refresh_token`, `same_user_authorize_par_session` | Covers protocol and security surfaces that should not be mixed into the primary capacity curve. |
 
 ## Capacity Curve Model
@@ -131,10 +135,8 @@ The default long matrix covers:
 
 `perf/extended_capacity_matrix.sh` runs a separate 30 minute per point
 matrix for mTLS, opaque-token introspection, PAR/JAR endpoint cost,
-authorization-session cost, token revocation, discovery/JWKS reads, CIBA poll
-mode, and same-user contention. The CIBA scenario uses `private_key_jwt`
-PS256 client authentication, a signed CIBA request object, automated approval,
-and a DPoP-bound CIBA token request. Dynamic Client Registration still requires
+authorization-session cost, token revocation, discovery/JWKS reads, and same-user contention. The current runner has no
+CIBA scenario. Dynamic Client Registration still requires
 dedicated provisioning setup and is kept out of this matrix.
 
 The report normalizes observed throughput by NazoAuth service CPU usage:
@@ -177,5 +179,11 @@ The server profile remains `oauth2-baseline` so ordinary OIDC and FAPI-style
 client-level hardening can be measured in one reproducible environment. The
 FAPI scenario uses client-level PAR request-object enforcement,
 `private_key_jwt`, signed JAR, and DPoP-bound tokens. The mTLS endpoint scenario
-uses trusted forwarded certificate thumbprint headers on the isolated perf
-network.
+uses the RFC 9440 `Client-Cert` header carrying the fixture certificate on the
+isolated trusted perf network.
+
+`perf/run_capacity.sh` defaults to committing and pushing results. Set both
+`CNB_CAPACITY_COMMIT=0` and `CAPACITY_CHECKPOINT_COMMIT=0` for a local run.
+The app-CPU and single-instance wrappers disable their own final commit by
+default, but inherited checkpoint settings must still be reviewed. The extended
+matrix's parent publication step has no equivalent opt-out.

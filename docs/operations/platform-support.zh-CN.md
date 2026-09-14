@@ -18,11 +18,11 @@ OCI Release 是一个只包含 `linux/amd64` 与 `linux/arm64` 的 index；签�
 
 ## 安装与升级边界
 
-正式的 `install`、`update`、`rollback`、`recover` 和 migration 生命周期只支持
-Linux `x86_64` 与 Linux `aarch64`。其他操作系统或 CPU 架构会在创建配置、密钥、
-数据库或容器之前被明确拒绝。Windows 与 macOS 二进制通过原生 smoke/test 只证明
-对应可执行文件及只读诊断界面，不代表它们能够执行 Linux 的 systemd、所有权、挂载
-标签或数据库恢复流程。
+托管生命周期按目标 helper 宣告的运行时能力选择。当前 clean install 接受 Linux
+和 Windows 路径模型；Podman/Docker 需要可用引擎，`host` 是 Linux systemd 后端。
+Direct TLS clean install 当前只接受 Linux Podman/Docker；macOS 不是可安装目标。
+原生二进制 smoke 和单元测试不能证明该平台的完整安装、权限、挂载或恢复流程，
+必须保留目标平台的实际执行证据。该能力边界由独立控制器仓库维护。
 
 宿主机模式要求 root 与 systemd，并根据当前架构选择对应 GNU 或 musl Release
 二进制；systemd unit 和部署目录本身不包含架构假设。Podman/Docker 模式在 x86-64

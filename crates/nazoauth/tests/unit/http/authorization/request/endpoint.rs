@@ -456,7 +456,7 @@ fn decode_jarm_claims(state: &TestInfrastructure, response_jwt: &str, audience: 
     validation.validate_exp = false;
     validation.set_audience(&[audience]);
     validation.set_issuer(&[state.settings.endpoint.issuer.as_str()]);
-    jsonwebtoken::decode::<Value>(response_jwt, &decoding_key, &validation)
+    nazo_crypto::jwt::decode::<Value>(response_jwt, &decoding_key, &validation)
         .expect("JARM response should verify with the active key")
         .claims
 }

@@ -20,26 +20,22 @@ actix-tls = { workspace = true, features = ["accept", "rustls-0_23"] }
 actix-web = { workspace = true, features = ["cookies", "rustls-0_23"] }
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
-argon2 = { workspace = true }
 atomicwrites = { workspace = true }
-aws-lc-rs = { workspace = true }
 base64 = { workspace = true }
 blake3 = { workspace = true }
 chrono = { workspace = true, features = ["serde"] }
 ciborium = { workspace = true }
 coset = { workspace = true }
-der = { workspace = true }
-ed25519-dalek = { workspace = true }
 flate2 = { workspace = true }
 fs2 = { workspace = true }
 futures-channel = { workspace = true }
 futures-util = { workspace = true }
 hmac = { workspace = true }
-jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
 lettre = { workspace = true, features = ["aws-lc-rs", "builder", "rustls-platform-verifier", "smtp-transport", "tokio1-rustls"] }
 lru = { workspace = true }
 mdoc-rs = { workspace = true }
 nazo-auth = { workspace = true }
+nazo-crypto = { workspace = true, features = ["jose", "password", "ed25519", "x509"] }
 nazo-digital-credentials = { workspace = true }
 nazo-http-actix = { workspace = true }
 nazo-http-signatures = { workspace = true }
@@ -63,11 +59,9 @@ opentelemetry = "0.32.0"
 opentelemetry-appender-tracing = "0.32.0"
 opentelemetry-otlp = { version = "0.32.0", default-features = false, features = ["http-proto", "logs", "metrics", "reqwest-blocking-client", "trace"] }
 opentelemetry_sdk = { version = "0.32.1", features = ["logs", "metrics", "rt-tokio", "trace"] }
-p256 = { workspace = true, features = ["ecdh", "ecdsa", "pkcs8"] }
 passkey-auth = { workspace = true }
 process-wrap = { workspace = true }
 rand = { workspace = true }
-rcgen = { workspace = true }
 reqwest = { version = "0.13.4", default-features = false, features = ["rustls", "http2", "json", "stream"] }
 rustix = { workspace = true }
 rustls = { workspace = true }
@@ -86,13 +80,18 @@ url = { workspace = true }
 urlencoding = { workspace = true }
 uuid = { workspace = true, features = ["v7", "serde"] }
 webpki = { workspace = true }
-x509-cert = { workspace = true }
 x509-parser = { workspace = true }
 yaml_serde = "0.10.4"
 yasna = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+argon2 = { workspace = true }
+aws-lc-rs = { workspace = true }
+ed25519-dalek = { workspace = true }
+jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
+p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
+rcgen = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 chrono = { workspace = true }
 diesel = { workspace = true, features = ["64-column-tables", "chrono", "postgres_backend", "serde_json", "uuid"] }

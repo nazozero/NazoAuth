@@ -1,95 +1,8 @@
-use anyhow::anyhow;
-use aws_lc_rs::{
-    aead::{AES_256_GCM, Aad, LessSafeKey, Nonce, UnboundKey},
-    rsa::{OAEP_SHA256_MGF1SHA256, OaepPublicEncryptingKey, PublicEncryptingKey},
-};
-use der::{
-    Encode,
-    asn1::{Any, BitString, UintRef},
-};
-use x509_cert::spki::{AlgorithmIdentifierOwned, ObjectIdentifier, SubjectPublicKeyInfoOwned};
-
-#[derive(der::Sequence)]
-struct RsaPublicKey<'a> {
-    modulus: UintRef<'a>,
-    public_exponent: UintRef<'a>,
-}
-
-fn rsa_public_spki(n: &[u8], e: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let pkcs1 = RsaPublicKey {
-        modulus: UintRef::new(n)?,
-        public_exponent: UintRef::new(e)?,
-    }
-    .to_der()?;
-    Ok(SubjectPublicKeyInfoOwned {
-        algorithm: AlgorithmIdentifierOwned {
-            oid: ObjectIdentifier::new_unwrap("1.2.840.113549.1.1.1"),
-            parameters: Some(Any::null()),
-        },
-        subject_public_key: BitString::from_bytes(&pkcs1)?,
-    }
-    .to_der()?)
-}
-
-pub fn rsa_oaep_sha256_encrypt(n: &[u8], e: &[u8], plaintext: &[u8]) -> anyhow::Result<Vec<u8>> {
-    let public = PublicEncryptingKey::from_der(&rsa_public_spki(n, e)?)
-        .map_err(|_| anyhow!("invalid RSA public key"))?;
-    let public =
-        OaepPublicEncryptingKey::new(public).map_err(|_| anyhow!("invalid RSA-OAEP public key"))?;
-    let mut ciphertext = vec![0; public.ciphertext_size()];
-    Ok(public
-        .encrypt(&OAEP_SHA256_MGF1SHA256, plaintext, &mut ciphertext, None)
-        .map_err(|_| anyhow!("RSA-OAEP-256 encryption failed"))?
-        .to_vec())
-}
-
-pub fn aes_256_gcm_encrypt(
-    key: &[u8],
-    nonce: &[u8],
-    aad: &[u8],
-    plaintext: &[u8],
-) -> anyhow::Result<(Vec<u8>, [u8; 16])> {
-    let key = LessSafeKey::new(
-        UnboundKey::new(&AES_256_GCM, key).map_err(|_| anyhow!("invalid AES-256-GCM key"))?,
-    );
-    let nonce = Nonce::try_assume_unique_for_key(nonce)
-        .map_err(|_| anyhow!("invalid AES-256-GCM nonce"))?;
-    let mut ciphertext = plaintext.to_vec();
-    let tag = key
-        .seal_in_place_separate_tag(nonce, Aad::from(aad), &mut ciphertext)
-        .map_err(|_| anyhow!("AES-256-GCM encryption failed"))?;
-    Ok((
-        ciphertext,
-        tag.as_ref().try_into().expect("AES-GCM tag is 16 bytes"),
-    ))
-}
-
-pub fn aes_256_gcm_decrypt(
-    key: &[u8],
-    nonce: &[u8],
-    aad: &[u8],
-    ciphertext: &[u8],
-    tag: &[u8],
-) -> anyhow::Result<Vec<u8>> {
-    let key = LessSafeKey::new(
-        UnboundKey::new(&AES_256_GCM, key).map_err(|_| anyhow!("invalid AES-256-GCM key"))?,
-    );
-    let nonce = Nonce::try_assume_unique_for_key(nonce)
-        .map_err(|_| anyhow!("invalid AES-256-GCM nonce"))?;
-    let mut protected = Vec::with_capacity(ciphertext.len() + tag.len());
-    protected.extend_from_slice(ciphertext);
-    protected.extend_from_slice(tag);
-    let plaintext = key
-        .open_in_place(nonce, Aad::from(aad), &mut protected)
-        .map_err(|_| anyhow!("AES-256-GCM authentication failed"))?;
-    Ok(plaintext.to_vec())
-}
-
 use crate::domain::rows::ClientRow;
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use hmac::{Hmac, KeyInit, Mac};
-use jsonwebtoken::{Algorithm, DecodingKey};
 use nazo_auth::{Claims, rsa_public_key_components_are_safe};
+use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use nazo_openid4vci::ProofError;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -149,8 +62,8 @@ pub fn pkce_s256(verifier: &str) -> String {
 pub fn client_jwt_decoding_key(
     client: &ClientRow,
     kid: &str,
-    alg: jsonwebtoken::Algorithm,
-) -> Option<jsonwebtoken::DecodingKey> {
+    alg: Algorithm,
+) -> Option<JwtVerificationKey> {
     let keys = client.jwks.as_ref()?.get("keys")?.as_array()?;
     let key = keys
         .iter()
@@ -158,10 +71,7 @@ pub fn client_jwt_decoding_key(
     jwt_decoding_key_from_jwk(key, alg)
 }
 
-pub fn jwt_decoding_key_from_jwk(
-    key: &Value,
-    alg: jsonwebtoken::Algorithm,
-) -> Option<jsonwebtoken::DecodingKey> {
+pub fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerificationKey> {
     let (expected_alg, supported_alg) = supported_client_jwt_algorithm(alg)?;
     if let Some(key_alg) = key.get("alg").and_then(Value::as_str)
         && key_alg != expected_alg
@@ -188,7 +98,7 @@ pub fn jwt_decoding_key_from_jwk(
             if bytes.len() != 32 {
                 return None;
             }
-            jsonwebtoken::DecodingKey::from_ed_components(x).ok()
+            JwtVerificationKey::from_ed_components(x).ok()
         }
         SupportedClientJwtAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -201,7 +111,7 @@ pub fn jwt_decoding_key_from_jwk(
             if !rsa_public_key_components_are_safe(&modulus, &exponent) {
                 return None;
             }
-            jsonwebtoken::DecodingKey::from_rsa_components(n, e).ok()
+            JwtVerificationKey::from_rsa_components(n, e).ok()
         }
         SupportedClientJwtAlgorithm::Ec => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -216,26 +126,26 @@ pub fn jwt_decoding_key_from_jwk(
             if x_bytes.len() != 32 || y_bytes.len() != 32 {
                 return None;
             }
-            jsonwebtoken::DecodingKey::from_ec_components(x, y).ok()
+            JwtVerificationKey::from_ec_components(x, y).ok()
         }
     }
 }
 
 fn supported_client_jwt_algorithm(
-    alg: jsonwebtoken::Algorithm,
+    alg: Algorithm,
 ) -> Option<(&'static str, SupportedClientJwtAlgorithm)> {
     match alg {
-        jsonwebtoken::Algorithm::EdDSA => Some(("EdDSA", SupportedClientJwtAlgorithm::EdDsa)),
-        jsonwebtoken::Algorithm::RS256 => Some(("RS256", SupportedClientJwtAlgorithm::Rsa)),
-        jsonwebtoken::Algorithm::ES256 => Some(("ES256", SupportedClientJwtAlgorithm::Ec)),
-        jsonwebtoken::Algorithm::PS256 => Some(("PS256", SupportedClientJwtAlgorithm::Rsa)),
+        Algorithm::EdDSA => Some(("EdDSA", SupportedClientJwtAlgorithm::EdDsa)),
+        Algorithm::RS256 => Some(("RS256", SupportedClientJwtAlgorithm::Rsa)),
+        Algorithm::ES256 => Some(("ES256", SupportedClientJwtAlgorithm::Ec)),
+        Algorithm::PS256 => Some(("PS256", SupportedClientJwtAlgorithm::Rsa)),
         _ => None,
     }
 }
 
-pub fn decoding_key(jwk: &Value, algorithm: Algorithm) -> Result<DecodingKey, ProofError> {
+pub fn decoding_key(jwk: &Value, algorithm: Algorithm) -> Result<JwtVerificationKey, ProofError> {
     match algorithm {
-        Algorithm::ES256 => DecodingKey::from_ec_components(
+        Algorithm::ES256 => JwtVerificationKey::from_ec_components(
             jwk.get("x")
                 .and_then(Value::as_str)
                 .ok_or(ProofError::InvalidSignature)?,
@@ -244,7 +154,7 @@ pub fn decoding_key(jwk: &Value, algorithm: Algorithm) -> Result<DecodingKey, Pr
                 .ok_or(ProofError::InvalidSignature)?,
         )
         .map_err(|_| ProofError::InvalidSignature),
-        Algorithm::EdDSA => DecodingKey::from_ed_components(
+        Algorithm::EdDSA => JwtVerificationKey::from_ed_components(
             jwk.get("x")
                 .and_then(Value::as_str)
                 .ok_or(ProofError::InvalidSignature)?,

@@ -415,7 +415,7 @@ fn validate_tls_server_chain(
         if !issuer.is_ca()
             || !issuer.validity().is_valid()
             || child.issuer() != issuer.subject()
-            || child.verify_signature(Some(issuer.public_key())).is_err()
+            || nazo_crypto::certificate::verify_signature(&child, issuer.public_key()).is_err()
         {
             anyhow::bail!(
                 "TLS certificate chain {} is invalid between certificates {} and {}",

@@ -5,11 +5,11 @@ use base64::{
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
 };
 use hmac::{Hmac, Mac};
-use jsonwebtoken::{Algorithm, DecodingKey};
 use nazo_auth::{
     AdminClientCryptoPort, ClientSecretDigesterPort, SUPPORTED_CLIENT_JWE_KEY_MANAGEMENT_ALGS,
     client_jwe_encryption_key_matches_alg,
 };
+use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use serde_json::Value;
 use sha2::Sha256;
 
@@ -300,7 +300,7 @@ fn client_jwt_algorithm_from_name(value: &str) -> Option<Algorithm> {
     }
 }
 
-fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
+fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<JwtVerificationKey> {
     let expected_alg = match alg {
         Algorithm::EdDSA => "EdDSA",
         Algorithm::RS256 => "RS256",
@@ -326,7 +326,7 @@ fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<DecodingKey>
             }
             let x = key.get("x").and_then(Value::as_str)?;
             (URL_SAFE_NO_PAD.decode(x).ok()?.len() == 32)
-                .then(|| DecodingKey::from_ed_components(x).ok())
+                .then(|| JwtVerificationKey::from_ed_components(x).ok())
                 .flatten()
         }
         Algorithm::RS256 | Algorithm::PS256 => {
@@ -340,7 +340,7 @@ fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<DecodingKey>
             {
                 return None;
             }
-            DecodingKey::from_rsa_components(n, e).ok()
+            JwtVerificationKey::from_rsa_components(n, e).ok()
         }
         Algorithm::ES256 => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -355,7 +355,7 @@ fn jwt_decoding_key_from_jwk(key: &Value, alg: Algorithm) -> Option<DecodingKey>
             {
                 return None;
             }
-            DecodingKey::from_ec_components(x, y).ok()
+            JwtVerificationKey::from_ec_components(x, y).ok()
         }
         _ => None,
     }

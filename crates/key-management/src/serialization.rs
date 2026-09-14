@@ -3,15 +3,10 @@
 use std::collections::BTreeSet;
 
 use anyhow::{Context, anyhow};
-use base64::{
-    Engine,
-    engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
-};
+use base64::{Engine, engine::general_purpose::STANDARD};
 use chrono::{DateTime, Utc};
-use ed25519_dalek::SigningKey;
-use jsonwebtoken::jwk::{Jwk, PublicKeyUse};
 use nazo_auth::SigningPurpose;
-use p256::elliptic_curve::{Generate, pkcs8::EncodePrivateKey as EncodeEcPrivateKey};
+use nazo_crypto::jwt::Algorithm;
 use serde_json::{Value, json};
 
 pub(crate) const KEYSET_SCHEMA_VERSION: &str = "nazo.keyset.v1";
@@ -46,100 +41,47 @@ pub(crate) struct GeneratedKeyMaterial {
     pub(crate) private_pkcs8_der: Vec<u8>,
 }
 
-pub(crate) fn generate_key_material(
-    alg: jsonwebtoken::Algorithm,
-) -> anyhow::Result<GeneratedKeyMaterial> {
-    let private_pkcs8_der = match alg {
-        jsonwebtoken::Algorithm::EdDSA => {
-            let seed: [u8; 32] = rand::random();
-            ed25519_pkcs8_private_der(&seed)
-        }
-        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
-            crate::crypto::generate_rsa_pkcs1_der(2048)?
-        }
-        jsonwebtoken::Algorithm::ES256 => {
-            let secret_key = p256::SecretKey::try_generate()?;
-            secret_key.to_pkcs8_der()?.as_bytes().to_vec()
-        }
-        _ => anyhow::bail!("unsupported server signing alg"),
-    };
-    Ok(GeneratedKeyMaterial { private_pkcs8_der })
-}
-
-fn public_key_from_ed_private_der(private_pkcs8_der: &[u8]) -> Option<[u8; 32]> {
-    let seed = ed25519_seed_from_pkcs8(private_pkcs8_der)?;
-    Some(SigningKey::from_bytes(&seed).verifying_key().to_bytes())
+pub(crate) fn generate_key_material(alg: Algorithm) -> anyhow::Result<GeneratedKeyMaterial> {
+    Ok(GeneratedKeyMaterial {
+        private_pkcs8_der: nazo_crypto::signature::generate_private_key(alg)?,
+    })
 }
 
 pub(crate) fn public_jwk_from_private_der(
     kid: &str,
-    alg: jsonwebtoken::Algorithm,
+    alg: Algorithm,
     private_pkcs8_der: &[u8],
 ) -> anyhow::Result<Value> {
-    let mut jwk = match alg {
-        jsonwebtoken::Algorithm::EdDSA => {
-            let public_key = public_key_from_ed_private_der(private_pkcs8_der)
-                .ok_or_else(|| anyhow!("invalid Ed25519 private key"))?;
-            json!({
-                "kty": "OKP",
-                "crv": "Ed25519",
-                "x": URL_SAFE_NO_PAD.encode(public_key),
-                "use": "sig",
-                "alg": "EdDSA",
-                "kid": kid
-            })
-        }
-        jsonwebtoken::Algorithm::RS256 | jsonwebtoken::Algorithm::PS256 => {
-            public_jwk_from_encoding_key(
-                kid,
-                alg,
-                &jsonwebtoken::EncodingKey::from_rsa_der(private_pkcs8_der),
-            )?
-        }
-        jsonwebtoken::Algorithm::ES256 => public_jwk_from_encoding_key(
-            kid,
-            alg,
-            &jsonwebtoken::EncodingKey::from_ec_der(private_pkcs8_der),
-        )?,
-        _ => anyhow::bail!("unsupported server signing alg"),
-    };
+    let name =
+        signing_algorithm_name(alg).ok_or_else(|| anyhow!("unsupported server signing alg"))?;
+    let mut jwk = nazo_crypto::signature::public_jwk(alg, private_pkcs8_der)?;
     jwk["kid"] = json!(kid);
     jwk["use"] = json!("sig");
+    jwk["alg"] = json!(name);
     Ok(jwk)
 }
 
-fn public_jwk_from_encoding_key(
-    kid: &str,
-    alg: jsonwebtoken::Algorithm,
-    encoding_key: &jsonwebtoken::EncodingKey,
-) -> anyhow::Result<Value> {
-    let mut jwk = Jwk::from_encoding_key(encoding_key, alg)?;
-    jwk.common.key_id = Some(kid.to_owned());
-    jwk.common.public_key_use = Some(PublicKeyUse::Signature);
-    Ok(serde_json::to_value(jwk)?)
-}
-
-pub fn signing_algorithm_name(alg: jsonwebtoken::Algorithm) -> Option<&'static str> {
+pub fn signing_algorithm_name(alg: Algorithm) -> Option<&'static str> {
     match alg {
-        jsonwebtoken::Algorithm::EdDSA => Some("EdDSA"),
-        jsonwebtoken::Algorithm::RS256 => Some("RS256"),
-        jsonwebtoken::Algorithm::ES256 => Some("ES256"),
-        jsonwebtoken::Algorithm::PS256 => Some("PS256"),
+        Algorithm::EdDSA => Some("EdDSA"),
+        Algorithm::RS256 => Some("RS256"),
+        Algorithm::ES256 => Some("ES256"),
+        Algorithm::PS256 => Some("PS256"),
         _ => None,
     }
 }
 
-pub fn signing_algorithm_from_name(value: &str) -> Option<jsonwebtoken::Algorithm> {
+pub fn signing_algorithm_from_name(value: &str) -> Option<Algorithm> {
     match value {
-        "EdDSA" => Some(jsonwebtoken::Algorithm::EdDSA),
-        "RS256" => Some(jsonwebtoken::Algorithm::RS256),
-        "ES256" => Some(jsonwebtoken::Algorithm::ES256),
-        "PS256" => Some(jsonwebtoken::Algorithm::PS256),
+        "EdDSA" => Some(Algorithm::EdDSA),
+        "RS256" => Some(Algorithm::RS256),
+        "ES256" => Some(Algorithm::ES256),
+        "PS256" => Some(Algorithm::PS256),
         _ => None,
     }
 }
 
-pub(crate) fn key_entry_algorithm(entry: &Value) -> anyhow::Result<jsonwebtoken::Algorithm> {
+pub(crate) fn key_entry_algorithm(entry: &Value) -> anyhow::Result<Algorithm> {
     let value = entry
         .get("alg")
         .and_then(Value::as_str)
@@ -225,27 +167,17 @@ pub(crate) fn key_entry_created_at(entry: &Value) -> anyhow::Result<DateTime<Utc
     Ok(created_at)
 }
 
-pub(crate) fn ed25519_pkcs8_private_der(seed: &[u8; 32]) -> Vec<u8> {
-    let mut der = Vec::with_capacity(48);
-    der.extend_from_slice(&[
-        0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04,
-        0x20,
-    ]);
-    der.extend_from_slice(seed);
-    der
+pub(crate) fn generate_rsa_pkcs8_pem(bits: usize) -> anyhow::Result<Vec<u8>> {
+    let der = nazo_crypto::key_wrap::generate_rsa_pkcs8_der(bits)?;
+    Ok(pem::encode(&pem::Pem::new("PRIVATE KEY", der)).into_bytes())
 }
 
-pub(crate) fn ed25519_seed_from_pkcs8(der: &[u8]) -> Option<[u8; 32]> {
-    const PREFIX: &[u8] = &[
-        0x30, 0x2e, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x04, 0x22, 0x04,
-        0x20,
-    ];
-    if der.len() != PREFIX.len() + 32 || !der.starts_with(PREFIX) {
-        return None;
+pub(crate) fn rsa_pkcs8_from_pem(value: &[u8]) -> anyhow::Result<Vec<u8>> {
+    let pem = pem::parse(value).context("invalid private key PEM")?;
+    if pem.tag() != "PRIVATE KEY" {
+        return Err(anyhow!("RSA private key must use PKCS#8 PRIVATE KEY PEM"));
     }
-    let mut seed = [0u8; 32];
-    seed.copy_from_slice(&der[PREFIX.len()..]);
-    Some(seed)
+    Ok(pem.into_contents())
 }
 
 pub(crate) fn der_to_pem(der: &[u8], label: &str) -> String {

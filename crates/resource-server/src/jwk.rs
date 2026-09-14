@@ -1,5 +1,5 @@
 use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
-use jsonwebtoken::{Algorithm, DecodingKey};
+use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use serde_json::Value;
 
 enum SupportedJwkAlgorithm {
@@ -8,7 +8,7 @@ enum SupportedJwkAlgorithm {
     Ec,
 }
 
-pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
+pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVerificationKey> {
     let (expected_alg, supported_alg) = supported_algorithm(alg)?;
     if key.get("alg").and_then(Value::as_str) != Some(expected_alg) {
         return None;
@@ -35,7 +35,7 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
             if bytes.len() != 32 {
                 return None;
             }
-            DecodingKey::from_ed_components(x).ok()
+            JwtVerificationKey::from_ed_components(x).ok()
         }
         SupportedJwkAlgorithm::Rsa => {
             if key.get("kty").and_then(Value::as_str) != Some("RSA") {
@@ -48,7 +48,7 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
             if modulus.len() < 256 || exponent.is_empty() {
                 return None;
             }
-            DecodingKey::from_rsa_components(n, e).ok()
+            JwtVerificationKey::from_rsa_components(n, e).ok()
         }
         SupportedJwkAlgorithm::Ec => {
             if key.get("kty").and_then(Value::as_str) != Some("EC")
@@ -63,7 +63,7 @@ pub(super) fn decoding_key(key: &Value, alg: Algorithm) -> Option<DecodingKey> {
             if x_bytes.len() != 32 || y_bytes.len() != 32 {
                 return None;
             }
-            DecodingKey::from_ec_components(x, y).ok()
+            JwtVerificationKey::from_ec_components(x, y).ok()
         }
     }
 }

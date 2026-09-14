@@ -193,12 +193,12 @@ impl ExternalKeySigner for CommandExternalKeySigner {
 async fn sign_external_jwt_input(
     external: &CommandExternalKeySigner,
     kid: &str,
-    alg: jsonwebtoken::Algorithm,
+    alg: nazo_crypto::jwt::Algorithm,
     signing_input: &str,
     key_ref: &str,
-) -> jsonwebtoken::errors::Result<Signature> {
-    let alg_name =
-        signing_algorithm_name(alg).ok_or(jsonwebtoken::errors::ErrorKind::InvalidAlgorithm)?;
+) -> anyhow::Result<Signature> {
+    let alg_name = signing_algorithm_name(alg)
+        .ok_or_else(|| anyhow::anyhow!("unsupported signing algorithm"))?;
     let request = json!({
         "version": 1,
         "kid": kid,
@@ -209,13 +209,13 @@ async fn sign_external_jwt_input(
     let deadline = time::Instant::now() + external.timeout;
     let _slot = time::timeout_at(deadline, EXTERNAL_SIGNER_SLOTS.acquire())
         .await
-        .map_err(|_| jwt_provider_error("external signer capacity timeout"))?
-        .map_err(|_| jwt_provider_error("external signer capacity unavailable"))?;
+        .map_err(|_| anyhow::anyhow!("external signer capacity timeout"))?
+        .map_err(|_| anyhow::anyhow!("external signer capacity unavailable"))?;
     let program = external
         .command
         .as_slice()
         .first()
-        .ok_or_else(|| jwt_provider_error("external signer command is empty"))?;
+        .ok_or_else(|| anyhow::anyhow!("external signer command is empty"))?;
     let armed = Arc::new(AtomicBool::new(true));
     let mut command = ProcessCommandWrap::with_new(program, |command| {
         command
@@ -236,19 +236,19 @@ async fn sign_external_jwt_input(
     });
     let mut child = command
         .spawn()
-        .map_err(|error| jwt_provider_error(format!("failed to spawn external signer: {error}")))?;
+        .map_err(|error| anyhow::anyhow!("failed to spawn external signer: {error}"))?;
     let mut stdin = child
         .stdin()
         .take()
-        .ok_or_else(|| jwt_provider_error("external signer stdin unavailable"))?;
+        .ok_or_else(|| anyhow::anyhow!("external signer stdin unavailable"))?;
     let stdout = child
         .stdout()
         .take()
-        .ok_or_else(|| jwt_provider_error("external signer stdout unavailable"))?;
+        .ok_or_else(|| anyhow::anyhow!("external signer stdout unavailable"))?;
     let stderr = child
         .stderr()
         .take()
-        .ok_or_else(|| jwt_provider_error("external signer stderr unavailable"))?;
+        .ok_or_else(|| anyhow::anyhow!("external signer stderr unavailable"))?;
     let mut stdout_task = tokio::spawn(read_limited(stdout, MAX_EXTERNAL_SIGNER_STDOUT_BYTES));
     let mut stderr_task = tokio::spawn(read_limited(stderr, MAX_EXTERNAL_SIGNER_STDERR_BYTES));
     let _reader_abort_guard =
@@ -260,15 +260,15 @@ async fn sign_external_jwt_input(
             stdout_task.abort();
             stderr_task.abort();
             terminate_process_tree(&mut child, &armed).await;
-            return Err(jwt_provider_error(format!(
+            return Err(anyhow::anyhow!(
                 "failed to write external signer request: {error}"
-            )));
+            ));
         }
         Err(ExternalSignerRequestWriteError::TimedOut) => {
             stdout_task.abort();
             stderr_task.abort();
             terminate_process_tree(&mut child, &armed).await;
-            return Err(jwt_provider_error("external signer timed out"));
+            return Err(anyhow::anyhow!("external signer timed out"));
         }
     }
     drop(stdin);
@@ -278,23 +278,21 @@ async fn sign_external_jwt_input(
             Ok(Err(error)) => {
                 stderr_task.abort();
                 terminate_process_tree(&mut child, &armed).await;
-                return Err(jwt_provider_error(format!(
-                    "external signer failed: {error}"
-                )));
+                return Err(anyhow::anyhow!("external signer failed: {error}"));
             }
             Err(error) => {
                 stderr_task.abort();
                 terminate_process_tree(&mut child, &armed).await;
-                return Err(jwt_provider_error(format!(
+                return Err(anyhow::anyhow!(
                     "external signer stdout join failed: {error}"
-                )));
+                ));
             }
         },
         Err(_) => {
             stdout_task.abort();
             stderr_task.abort();
             terminate_process_tree(&mut child, &armed).await;
-            return Err(jwt_provider_error("external signer timed out"));
+            return Err(anyhow::anyhow!("external signer timed out"));
         }
     };
     let _stderr = match time::timeout_at(deadline, &mut stderr_task).await {
@@ -302,22 +300,20 @@ async fn sign_external_jwt_input(
             Ok(Ok(output)) => output,
             Ok(Err(error)) => {
                 terminate_process_tree(&mut child, &armed).await;
-                return Err(jwt_provider_error(format!(
-                    "external signer failed: {error}"
-                )));
+                return Err(anyhow::anyhow!("external signer failed: {error}"));
             }
             Err(error) => {
                 terminate_process_tree(&mut child, &armed).await;
-                return Err(jwt_provider_error(format!(
+                return Err(anyhow::anyhow!(
                     "external signer stderr join failed: {error}"
-                )));
+                ));
             }
         },
         Err(_) => {
             stdout_task.abort();
             stderr_task.abort();
             terminate_process_tree(&mut child, &armed).await;
-            return Err(jwt_provider_error("external signer timed out"));
+            return Err(anyhow::anyhow!("external signer timed out"));
         }
     };
     // Wait only for the raw leader, not the process-group/job wrapper: the latter deliberately
@@ -327,20 +323,20 @@ async fn sign_external_jwt_input(
         Ok(Ok(status)) => status,
         Err(_) => {
             terminate_process_tree(&mut child, &armed).await;
-            return Err(jwt_provider_error("external signer timed out"));
+            return Err(anyhow::anyhow!("external signer timed out"));
         }
         Ok(Err(error)) => {
             terminate_process_tree(&mut child, &armed).await;
-            return Err(jwt_provider_error(format!(
+            return Err(anyhow::anyhow!(
                 "failed to read external signer status: {error}"
-            )));
+            ));
         }
     };
     if !status.success() {
         terminate_process_tree(&mut child, &armed).await;
-        return Err(jwt_provider_error(format!(
+        return Err(anyhow::anyhow!(
             "external signer exited with status {status}"
-        )));
+        ));
     }
     let response: Value = match serde_json::from_slice(&stdout) {
         Ok(response) => response,
@@ -353,7 +349,7 @@ async fn sign_external_jwt_input(
         Some(signature) => signature,
         None => {
             terminate_process_tree(&mut child, &armed).await;
-            return Err(jwt_provider_error(
+            return Err(anyhow::anyhow!(
                 "external signer response missing signature",
             ));
         }
@@ -362,16 +358,14 @@ async fn sign_external_jwt_input(
         Ok(decoded) => decoded,
         Err(error) => {
             terminate_process_tree(&mut child, &armed).await;
-            return Err(jwt_provider_error(format!(
+            return Err(anyhow::anyhow!(
                 "external signer returned invalid signature: {error}"
-            )));
+            ));
         }
     };
     if decoded.is_empty() {
         terminate_process_tree(&mut child, &armed).await;
-        return Err(jwt_provider_error(
-            "external signer returned empty signature",
-        ));
+        return Err(anyhow::anyhow!("external signer returned empty signature",));
     }
     // A signer is not allowed to daemonize: even after a valid response and a normal leader exit,
     // every process in the owned group/job must be terminated and reaped before returning.
@@ -407,10 +401,6 @@ where
         ));
     }
     Ok(output)
-}
-
-fn jwt_provider_error(message: impl Into<String>) -> jsonwebtoken::errors::Error {
-    jsonwebtoken::errors::ErrorKind::Provider(message.into()).into()
 }
 
 #[cfg(test)]

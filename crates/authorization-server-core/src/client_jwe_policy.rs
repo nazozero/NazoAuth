@@ -126,5 +126,5 @@ pub fn valid_p256_jwe_encryption_key(key: &Value) -> bool {
     point[0] = 4;
     point[1..33].copy_from_slice(&x);
     point[33..].copy_from_slice(&y);
-    p256::PublicKey::from_sec1_bytes(&point).is_ok()
+    nazo_crypto::ec::normalize_p256_public_key(&point).is_ok()
 }
