@@ -1,7 +1,9 @@
 use std::sync::Mutex;
 
 use actix_web::{App, body::to_bytes, cookie::Cookie, middleware::from_fn, test, web};
+use nazo_identity::authentication::PasswordLoginResult;
 use nazo_identity::ports::RepositoryError;
+use nazo_oauth_server::contracts::password_login::PasswordLoginFuture;
 use serde_json::Value;
 
 use super::*;

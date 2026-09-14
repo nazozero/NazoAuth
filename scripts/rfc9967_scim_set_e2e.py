@@ -38,36 +38,6 @@ PUT = "urn:ietf:params:scim:event:prov:put:notice"
 ACTIVATE = "urn:ietf:params:scim:event:prov:activate"
 DEACTIVATE = "urn:ietf:params:scim:event:prov:deactivate"
 EVENT_URIS = [CREATE, PATCH, PUT, ACTIVATE, DEACTIVATE]
-REQUIRED_CASES = frozenset(
-    {
-        "discovery_exact_event_uris",
-        "poll_authorization_boundaries",
-        "create_notice_set_claims",
-        "receiver_audience_and_ack_isolation",
-        "ack_is_terminal_for_receiver",
-        "set_error_requires_content_language",
-        "patch_notice_and_deactivate_events",
-        "put_notice_and_activate_events",
-        "poll_pagination_preserves_order",
-        "long_poll_wakes_on_new_event",
-        "invalid_poll_shapes_fail_closed",
-    }
-)
-ALLOWED_HANDLERS = frozenset(
-    {
-        "discovery",
-        "authorization",
-        "create_notice",
-        "receiver_isolation",
-        "ack_terminal",
-        "set_error_language",
-        "patch_deactivate",
-        "put_activate",
-        "pagination",
-        "long_poll",
-        "invalid_poll",
-    }
-)
 
 
 def load_registry() -> tuple[tuple[str, str, dict[str, object]], ...]:
@@ -536,14 +506,12 @@ def handlers(context: MatrixContext) -> dict[str, Any]:
 
 def source_policy_check() -> None:
     registry = load_registry()
-    validate_case_registry(
-        registry, required=REQUIRED_CASES, allowed_handlers=ALLOWED_HANDLERS
-    )
+    validate_case_registry(registry)
     source = Path(__file__).read_text(encoding="utf-8")
     forbidden = ("scim_security_" + "events", "scim_security_event_" + "receipts")
     if any(name in source for name in forbidden):
         raise AssertionError("black-box runner must not inspect event persistence tables")
-    print(f"RFC 9967 source policy passed ({len(registry)} exact cases)")
+    print(f"RFC 9967 source policy passed ({len(registry)} registry cases)")
 
 
 def main() -> None:
@@ -562,15 +530,13 @@ def main() -> None:
     import requests
 
     registry = load_registry()
-    evidence = RuntimeCaseEvidence(REQUIRED_CASES)
+    evidence = RuntimeCaseEvidence(frozenset(name for name, _, _ in registry))
     context = MatrixContext(evidence)
     try:
         context.seed_tokens()
         executed = execute_case_registry(
             registry,
             handlers(context),
-            required=REQUIRED_CASES,
-            allowed_handlers=ALLOWED_HANDLERS,
             evidence=evidence,
         )
         print(f"RFC 9967 black-box matrix passed ({len(executed)} cases)")

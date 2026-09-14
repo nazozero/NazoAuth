@@ -4,6 +4,7 @@ use aes_gcm::{
     aead::{Aead, Payload},
 };
 use nazo_auth::TokenIssuedAuditFields;
+use nazo_persistence::TokenIssuanceResponseKeyError;
 
 // Real PostgreSQL cursor/bind/transaction coverage. Session-local tables keep
 // scale fixtures independent from all application and audit data.

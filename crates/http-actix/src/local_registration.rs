@@ -1,7 +1,3 @@
-#[cfg(test)]
-use nazo_identity::registration::RegisteredAccount;
-#[cfg(test)]
-use nazo_oauth_server::contracts::local_registration::LocalRegistrationFuture;
 use nazo_oauth_server::contracts::local_registration::{
     AuthenticationRateLimit, AuthenticationRateLimitError, LocalRegistrationOperations,
 };

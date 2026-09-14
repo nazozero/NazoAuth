@@ -1,7 +1,10 @@
 use std::sync::Mutex;
 
 use actix_web::{App, body::to_bytes, cookie::Cookie, middleware::from_fn, test, web};
-use nazo_identity::{TenantId, UserId, session::SessionRecord};
+use nazo_identity::{
+    PasskeyLoginBegin, PasskeyRegistrationBegin, TenantId, UserId, session::SessionRecord,
+};
+use nazo_oauth_server::contracts::passkey::PasskeyFuture;
 
 use super::*;
 

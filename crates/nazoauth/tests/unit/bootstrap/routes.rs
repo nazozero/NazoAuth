@@ -37,3 +37,26 @@ async fn controller_slot_list_has_one_control_tenant_route_and_no_admin_get_alia
         "the old GET path must not remain as a compatibility alias"
     );
 }
+
+#[actix_web::test]
+async fn retired_bootstrap_admin_endpoint_stays_unreachable() {
+    let settings = Settings::from_config(&crate::config::ConfigSource::default()).unwrap();
+    let context = nazo_identity::TenantContext::default_system();
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(context))
+            .app_data(web::Data::new(ControlTenantId::new(context.tenant_id)))
+            .configure(|cfg| configure(cfg, &settings, false)),
+    )
+    .await;
+
+    for method in [test::TestRequest::get, test::TestRequest::post] {
+        let response =
+            test::call_service(&app, method().uri("/bootstrap-admin").to_request()).await;
+        assert_eq!(
+            response.status(),
+            StatusCode::NOT_FOUND,
+            "the retired public bootstrap-admin surface must not come back"
+        );
+    }
+}

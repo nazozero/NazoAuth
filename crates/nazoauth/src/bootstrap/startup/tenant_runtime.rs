@@ -71,32 +71,6 @@ impl TenantRuntime {
         }
     }
 
-    #[cfg(test)]
-    pub(super) fn for_test(binding: TenantDirectoryBinding) -> Arc<Self> {
-        Arc::new(Self {
-            binding,
-            assembly: None,
-            lifecycle: Arc::new(Mutex::new(TenantRuntimeLifecycle::default())),
-        })
-    }
-
-    #[cfg(test)]
-    pub(super) fn for_test_reusing(
-        binding: TenantDirectoryBinding,
-        previous: &Arc<Self>,
-    ) -> Arc<Self> {
-        Arc::new(Self {
-            binding,
-            assembly: None,
-            lifecycle: previous.lifecycle.clone(),
-        })
-    }
-
-    #[cfg(test)]
-    pub(super) fn shares_lifecycle_with(&self, other: &Self) -> bool {
-        Arc::ptr_eq(&self.lifecycle, &other.lifecycle)
-    }
-
     pub(super) fn assembly(&self) -> &Arc<ServiceAssembly> {
         self.assembly
             .as_ref()

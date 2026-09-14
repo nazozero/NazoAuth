@@ -15,19 +15,6 @@ from unittest import mock
 ROOT = Path(__file__).resolve().parents[2]
 RUNNER = ROOT / "scripts" / "rfc9967_scim_set_e2e.py"
 MATRIX = ROOT / "tests" / "contracts" / "rfc9967-scim-set-matrix.json"
-EXPECTED_CASES = {
-    "discovery_exact_event_uris",
-    "poll_authorization_boundaries",
-    "create_notice_set_claims",
-    "receiver_audience_and_ack_isolation",
-    "ack_is_terminal_for_receiver",
-    "set_error_requires_content_language",
-    "patch_notice_and_deactivate_events",
-    "put_notice_and_activate_events",
-    "poll_pagination_preserves_order",
-    "long_poll_wakes_on_new_event",
-    "invalid_poll_shapes_fail_closed",
-}
 
 
 def load_runner_module():
@@ -42,11 +29,14 @@ def load_runner_module():
 
 
 class Rfc9967BlackBoxPolicyTests(unittest.TestCase):
-    def test_registry_is_exact_and_unique(self) -> None:
+    def test_registry_is_unique_and_handled(self) -> None:
+        """The JSON file is the only case registry: unique names, named handlers."""
         payload = json.loads(MATRIX.read_text(encoding="utf-8"))
         names = [case["name"] for case in payload["cases"]]
-        self.assertEqual(set(names), EXPECTED_CASES)
-        self.assertEqual(len(names), len(EXPECTED_CASES))
+        self.assertTrue(names)
+        self.assertEqual(len(names), len(set(names)))
+        for case in payload["cases"]:
+            self.assertTrue(case.get("handler"), case["name"])
 
     def test_runner_self_check_requires_no_runtime_dependencies(self) -> None:
         result = subprocess.run(

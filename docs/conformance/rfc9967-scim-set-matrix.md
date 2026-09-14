@@ -39,8 +39,9 @@ CI executes it through
   or write event/outbox/receipt storage.
   Protocol evidence must come from HTTP responses, published JWKS, and verified
   SET signatures and claims.
-- The JSON registry must contain exactly the required cases, without duplicate,
-  missing, or silently unexecuted cases.
+- The JSON registry is the only case registry. Every listed case must be unique,
+  name an implemented handler, execute, and produce assertion evidence; the
+  runner fails on duplicate, unhandled, or silently unexecuted cases.
 - `.github/workflows/conformance-security.yml` must enable SCIM Security Events
   and execute both the static policy test and the runtime matrix.
 

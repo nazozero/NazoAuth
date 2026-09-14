@@ -5,10 +5,7 @@ pub(crate) mod device_config;
 pub(crate) mod dispatch;
 pub(crate) mod issue;
 use actix_web::HttpRequest;
-#[cfg(test)]
-use nazo_http_actix::parse_token_form;
-#[cfg(test)]
-use nazo_oauth_server::contracts::token_forms::{TokenForm, TokenFormError};
+
 use nazo_oauth_server::token::client_auth::ClientAuthRequestFacts;
 #[cfg(test)]
 #[path = "../../tests/unit/http/token/forms.rs"]

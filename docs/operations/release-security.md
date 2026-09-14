@@ -11,8 +11,7 @@ The `conformance-security` workflow runs supply-chain checks for code,
 dependency, migration, script, deployment, container, runtime config, and
 workflow changes:
 
-- `cargo audit` over `Cargo.lock`
-- `cargo deny` using `deny.toml`
+- `cargo deny` (advisories, bans, licenses, sources) using `deny.toml`
 - CycloneDX SBOM generation for Rust dependencies
 - container image build from `Containerfile`
 - Trivy vulnerability scan of the built image
@@ -52,7 +51,7 @@ The `release-security` workflow runs for `v*` tags and manual dispatch:
 - packages `nazo-operator-protocol` once from its unique source, verifies the
   package build, records its digest, and gives the exact `.crate` standard
   build-provenance attestation
-- reruns `cargo audit` and `cargo deny` for the exact tag
+- reruns `cargo deny` (advisories, bans, licenses, sources) for the exact tag
 - builds one `linux/amd64` plus `linux/arm64` OCI index
 - scans the exact OCI archive with Trivy and publishes that archive without a
   second build

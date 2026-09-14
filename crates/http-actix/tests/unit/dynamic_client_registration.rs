@@ -18,6 +18,7 @@ use nazo_auth::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+use super::auth::{bearer_token, parse_bearer};
 use super::*;
 use nazo_identity::TenantContext;
 use nazo_oauth_server::contracts::dynamic_client_registration::{

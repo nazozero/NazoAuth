@@ -10,8 +10,6 @@ use nazo_auth::{
     TokenRepositoryPort, TokenRevocation,
 };
 use nazo_identity::{SubjectClaims, TenantId, UserId, ports::RepositoryError};
-#[cfg(test)]
-use nazo_persistence::TokenIssuanceResponseKeyError;
 use nazo_persistence::{SecurityAuditEvent, TokenIssuanceResponseKeyRing};
 use rand::Rng;
 use uuid::Uuid;

@@ -1,3 +1,4 @@
+use super::desired::next_desired_revision;
 use super::*;
 
 #[test]

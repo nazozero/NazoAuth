@@ -1,0 +1,41 @@
+name: operator-fuzz
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - ".github/workflows/operator-fuzz.yml"
+      - "crates/crypto/**"
+      - "crates/operator-protocol/**"
+      - "fuzz/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain"
+      - "rust-toolchain.toml"
+  schedule:
+    - cron: "23 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  operator-parser-fuzz:
+    name: Operator JWS parser fuzz gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@62ae3a85dbdd2bedbb5819da8ce45635129289a1 # 1.98.0
+
+      - name: Install pinned nightly and cargo-fuzz
+        run: |
+          rustup toolchain install nightly-2026-07-31 --profile minimal
+          cargo +nightly-2026-07-31 install cargo-fuzz --version 0.13.2 --locked
+
+      - name: Fuzz closed operator JWS parser
+        run: cargo +nightly-2026-07-31 fuzz run operator_jws_parser -- -max_total_time=60 -rss_limit_mb=512 -timeout=10

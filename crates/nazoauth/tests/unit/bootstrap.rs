@@ -1,6 +1,9 @@
+use super::transport::DirectTlsReload;
 use super::*;
 use actix_web::http::header;
-use actix_web::{App, HttpRequest, HttpResponse, HttpServer, test as actix_test, web};
+use actix_web::{
+    App, HttpRequest, HttpResponse, HttpServer, middleware::from_fn, test as actix_test, web,
+};
 
 #[path = "bootstrap/client_certificate_proof.rs"]
 mod client_certificate_proof;

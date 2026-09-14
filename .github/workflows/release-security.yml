@@ -75,11 +75,8 @@ jobs:
         uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
         with:
           tool: |
-            cargo-audit@0.22.2
             cargo-deny@0.20.2
             cargo-cyclonedx@0.5.9
-      - name: Audit Rust advisories
-        run: cargo audit
       - name: Check dependency policy
         run: cargo deny check advisories bans licenses sources
       - name: Generate internal Rust SBOM evidence

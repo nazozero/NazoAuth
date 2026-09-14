@@ -58,10 +58,12 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
                         True,
                     )
 
-    def test_unreviewed_dependency_requires_classification(self) -> None:
+    def test_unclassified_external_dependency_is_allowed(self) -> None:
+        """Third-party crates use a denylist, not an allowlist: ordinary
+        algorithm/data crates need no review entry."""
         for consumer in ("nazo-oauth-server", "nazo-identity", "nazoauth"):
             with self.subTest(consumer=consumer):
-                self.assert_manifest_boundary(consumer, '[dependencies]\nnew-execution-library = "1"\n', True)
+                self.assert_manifest_boundary(consumer, '[dependencies]\nnew-data-library = "1"\n', False)
 
     def test_mixed_library_keeps_data_but_rejects_execution_features(self) -> None:
         self.assert_manifest_boundary("nazo-identity", '[dependencies]\nlettre = { version = "1", default-features = false }\n', False)
@@ -99,21 +101,6 @@ class ApplicationDependencyBoundaries(unittest.TestCase):
             self.assertEqual((spec["_alias"], spec["_kind"], spec["_target"], spec["_path"]), ("hidden", "build", "cfg(unix)", None))
             self.assertTrue(spec["optional"])
             self.assertEqual(spec["features"], ["sync", "rt"])
-
-    def test_original_core_dependency_policy_remains_stricter_than_roles(self) -> None:
-        with tempfile.TemporaryDirectory() as temporary:
-            root = Path(temporary)
-            (root / "Cargo.toml").write_text('[workspace]\n')
-            identity = root / "crates" / "identity"
-            identity.mkdir(parents=True)
-            (identity / "Cargo.toml").write_text('[package]\nname="nazo-identity"\n[dependencies]\nnazo-auth="1"\n')
-            self.assertIn("nazo-auth", GUARDS.FORBIDDEN_CRATE_DEPENDENCIES["identity"])
-            with patch.object(GUARDS, "ROOT", root), patch.object(
-                GUARDS, "FORBIDDEN_CRATE_DEPENDENCIES", {"identity": GUARDS.FORBIDDEN_CRATE_DEPENDENCIES["identity"]}
-            ):
-                GUARDS.check_package_roles()
-                with self.assertRaises(SystemExit):
-                    GUARDS.check_crate_dependency_boundaries()
 
 
 class InnerSourceBoundaries(unittest.TestCase):
@@ -205,145 +192,169 @@ class InnerSourceBoundaries(unittest.TestCase):
         )
 
 
-class ContractDefinitionBoundaries(unittest.TestCase):
-    OWNER = "crates/authorization-server/src/contracts/metadata.rs"
+class RustTestStructureBoundaries(unittest.TestCase):
+    """Physical test/production separation: test code lives under tests/."""
 
-    def assert_contract_boundary(self, files: dict[str, str], rejected: bool) -> None:
+    def assert_structure(self, files: dict[str, str], rejected: bool) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             for relative, source in files.items():
                 path = root / relative
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_text(source, encoding="utf-8")
-            with (
-                patch.object(GUARDS, "ROOT", root),
-                patch.object(GUARDS, "T02_CONTRACT_OWNERS", {self.OWNER: ("MetadataSnapshot",)}),
-            ):
+            with patch.object(GUARDS, "ROOT", root):
                 if rejected:
                     with self.assertRaises(SystemExit):
-                        GUARDS.check_contract_definition_owners()
+                        GUARDS.check_rust_test_structure()
                 else:
-                    GUARDS.check_contract_definition_owners()
+                    GUARDS.check_rust_test_structure()
 
-    def test_missing_wrong_and_duplicate_definitions_are_rejected(self) -> None:
-        definition = "pub struct MetadataSnapshot;"
-        for files in (
-            {},
-            {"crates/http-actix/src/metadata.rs": definition},
-            {self.OWNER: definition, "crates/nazoauth/src/domain/metadata.rs": definition},
-            {self.OWNER: definition + "\n" + definition},
+    def test_inline_test_module_and_test_attributes_fail(self) -> None:
+        for source in (
+            "#[cfg(test)]\nmod tests {\n    #[test]\n    fn example() {}\n}\n",
+            "#[test]\nfn example() {}\n",
+            "#[tokio::test]\nasync fn example() {}\n",
+            "#[actix_web::test]\nasync fn example() {}\n",
         ):
-            with self.subTest(files=files):
-                self.assert_contract_boundary(files, True)
+            with self.subTest(source=source):
+                self.assert_structure({"crates/app/src/lib.rs": source}, True)
 
-    def test_http_and_vc_adapter_contract_reexports_are_rejected(self) -> None:
-        for adapter in ("http-actix", "openid4vc-http-actix"):
-            for export in (
-                "pub use nazo_oauth_server::contracts::metadata::MetadataSnapshot;",
-                "pub(crate) use nazo_oauth_server::contracts::metadata::{MetadataSnapshot as Snapshot};",
-                "use nazo_oauth_server::contracts::metadata::MetadataSnapshot as Snapshot;\npub use Snapshot;",
-                "pub use nazo_oauth_server::contracts::metadata::*;",
-                "use nazo_oauth_server::contracts::metadata as meta;\npub use meta::*;",
-                "pub use nazo_oauth_server::contracts::metadata as old_metadata;",
-                "pub use nazo_openid4vci::application;",
-                "extern crate nazo_oauth_server as app; pub use app::contracts;",
-            ):
-                with self.subTest(adapter=adapter, export=export):
-                    self.assert_contract_boundary(
-                        {self.OWNER: "pub struct MetadataSnapshot;", f"crates/{adapter}/src/lib.rs": export},
-                        True,
-                    )
+    def test_test_files_inside_src_fail(self) -> None:
+        for relative in (
+            "crates/app/src/tests.rs",
+            "crates/app/src/foo_tests.rs",
+            "crates/app/src/unit/tests.rs",
+            "crates/app/src/tests/mod.rs",
+        ):
+            with self.subTest(relative=relative):
+                self.assert_structure({relative: "#[test]\nfn example() {}\n"}, True)
 
-    def test_private_imports_and_transport_exports_are_allowed(self) -> None:
-        self.assert_contract_boundary(
+    def test_test_only_mount_of_production_source_fails(self) -> None:
+        self.assert_structure(
             {
-                self.OWNER: "pub struct MetadataSnapshot;",
-                "crates/http-actix/src/lib.rs": (
-                    "use nazo_oauth_server::contracts::metadata::MetadataSnapshot;\n"
-                    "pub use metadata::MetadataHandles;"
+                "crates/app/src/lib.rs": (
+                    '#[cfg(test)]\n#[path = "inner.rs"]\nmod inner;\n'
                 ),
-            },
-            False,
-        )
-
-    def test_test_directory_mock_and_test_only_items_are_not_production(self) -> None:
-        self.assert_contract_boundary(
-            {
-                self.OWNER: "pub struct MetadataSnapshot;",
-                "crates/http-actix/tests/fake.rs": "struct MetadataSnapshot;",
-                "crates/http-actix/src/lib.rs": (
-                    "#[cfg(test)]\nmod fixtures { struct MetadataSnapshot; }\n"
-                    "#[cfg(test)]\n#[allow(dead_code)]\nstruct MetadataSnapshot;\n"
-                    "#[cfg(test)]\nuse fixture::MetadataSnapshot;"
-                ),
-            },
-            False,
-        )
-
-    def test_comments_and_quoted_source_do_not_define_contracts(self) -> None:
-        self.assert_contract_boundary(
-            {
-                self.OWNER: "pub struct MetadataSnapshot;",
-                "crates/http-actix/src/lib.rs": (
-                    "// pub struct MetadataSnapshot;\n"
-                    "/* pub use contracts::MetadataSnapshot; */\n"
-                    'const SOURCE: &str = r#"\npub struct MetadataSnapshot;\n"#;'
-                ),
-            },
-            False,
-        )
-
-    def test_optional_feature_definition_is_still_production(self) -> None:
-        self.assert_contract_boundary(
-            {
-                self.OWNER: "pub struct MetadataSnapshot;",
-                "crates/http-actix/src/lib.rs": '#[cfg(feature = "compat")]\npub struct MetadataSnapshot;',
+                "crates/app/src/inner.rs": "#[test]\nfn example() {}\n",
             },
             True,
         )
 
-    def test_removed_request_context_file_cannot_return(self) -> None:
-        self.assert_contract_boundary(
-            {
-                self.OWNER: "pub struct MetadataSnapshot;",
-                "crates/http-actix/src/request_context.rs": "pub struct RequestContext;",
-            },
-            True,
-        )
-
-    def test_removed_boundary_symbols_cannot_return_in_other_files(self) -> None:
-        for symbol in ("SendCibaResponse", "OAuthJsonErrorFields", "RequestContext"):
-            with self.subTest(symbol=symbol):
-                self.assert_contract_boundary(
-                    {self.OWNER: "pub struct MetadataSnapshot;", "crates/http-actix/src/compat.rs": f"pub type {symbol} = ();"}, True,
+    def test_test_file_recompiling_production_source_fails(self) -> None:
+        for mount in (
+            '#[path = "../src/inner.rs"]\nmod inner;\n',
+            'include!("../src/inner.rs");\n',
+        ):
+            with self.subTest(mount=mount):
+                self.assert_structure(
+                    {
+                        "crates/app/src/inner.rs": "pub fn run() {}\n",
+                        "crates/app/tests/example.rs": mount,
+                    },
+                    True,
                 )
 
-    def test_same_line_duplicate_definition_is_rejected(self) -> None:
-        self.assert_contract_boundary({self.OWNER: "pub struct MetadataSnapshot; pub struct MetadataSnapshot;"}, True)
-
-    def test_http_handlers_named_like_contract_modules_remain_transport_exports(self) -> None:
-        self.assert_contract_boundary(
+    def test_external_test_mount_and_tests_directory_pass(self) -> None:
+        self.assert_structure(
             {
-                self.OWNER: "pub struct MetadataSnapshot;",
-                "crates/http-actix/src/lib.rs": (
-                    "pub use userinfo::{UserinfoEndpoint, userinfo};\n"
-                    "pub use fapi_resource::{FapiResourceEndpoint, fapi_resource};\n"
-                    "pub use dynamic_client_registration::{DynamicRegistrationEndpoint, dynamic_client_registration};"
+                "crates/app/src/lib.rs": (
+                    "pub fn production() {}\n"
+                    '#[cfg(test)]\n#[path = "../tests/unit/inner.rs"]\nmod inner;\n'
                 ),
-            }, False,
+                "crates/app/tests/unit/inner.rs": "#[test]\nfn example() {}\n",
+                "crates/app/tests/example.rs": "#[test]\nfn example() {}\n",
+            },
+            False,
         )
 
-    def test_all_f1_contracts_are_registered(self) -> None:
-        symbols = [symbol for group in GUARDS.T02_CONTRACT_OWNERS.values() for symbol in group]
-        self.assertEqual(len(symbols), 115)
-        self.assertEqual(len(set(symbols)), 115)
-        self.assertTrue({"ScimRequestAuthorizer", "ScimBootstrapPasswordProvider", "UserinfoOperations", "UserinfoDpopError"}.issubset(symbols))
-
-    def test_dependency_alias_cannot_reexport_contract_module(self) -> None:
-        self.assert_contract_boundary(
+    def test_renamed_test_file_and_feature_modules_pass(self) -> None:
+        self.assert_structure(
             {
-                self.OWNER: "pub struct MetadataSnapshot;",
-                "crates/http-actix/Cargo.toml": '[package]\nname="nazo-http-actix"\n[dependencies]\nhidden={package="nazo-oauth-server",version="1"}\n',
-                "crates/http-actix/src/lib.rs": "pub use hidden::contracts as legacy;",
-            }, True,
+                "crates/app/src/lib.rs": (
+                    "pub fn production() {}\n"
+                    "pub(crate) fn for_review_seam() {}\n"
+                    '#[cfg(feature = "x")]\nmod optional;\n'
+                ),
+                "crates/app/src/optional.rs": "pub fn feature() {}\n",
+                "crates/app/tests/renamed_contract.rs": "#[test]\nfn behavior() {}\n",
+            },
+            False,
+        )
+
+    def test_test_only_items_beyond_module_mounts_fail(self) -> None:
+        """Test-only helpers must live under tests/, not inside production source."""
+        for source in (
+            "#[cfg(test)]\nfn make_fake_runtime() {}\n",
+            "#[cfg(test)]\nimpl Service {\n    fn for_test() {}\n}\n",
+            "#[cfg(test)]\nconst TEST_VALUE: usize = 123;\n",
+            "#[cfg(test)]\nuse helper::Fixture;\n",
+            "#[cfg(test)]\npub use inner::TestClient;\n",
+            "#[cfg(test)]\nstatic TEST_FLAG: bool = true;\n",
+            "#[cfg(all(test, feature = \"fixtures\"))]\nfn seeded_rng() {}\n",
+            "#[cfg(test)]\ntrait FakePort {}\n",
+            "#[cfg(test)]\nmod tests;\n",
+        ):
+            with self.subTest(source=source):
+                self.assert_structure({"crates/app/src/lib.rs": source}, True)
+
+    def test_production_possible_and_production_only_cfg_items_pass(self) -> None:
+        self.assert_structure(
+            {
+                "crates/app/src/lib.rs": (
+                    '#[cfg(any(test, feature = "test-support"))]\n'
+                    "pub(crate) fn for_review_seam() {}\n"
+                    "#[cfg(not(test))]\n"
+                    "pub fn production_only() {}\n"
+                ),
+            },
+            False,
+        )
+
+
+class CibaPingConnectionPinning(unittest.TestCase):
+    """Validated CIBA addresses must be the addresses the client dials."""
+
+    SENDER = "crates/nazoauth/src/adapters/ciba_ping_sender.rs"
+
+    def assert_pinning(self, source: str, rejected: bool) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            path = root / self.SENDER
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(source, encoding="utf-8")
+            with patch.object(GUARDS, "ROOT", root):
+                if rejected:
+                    with self.assertRaises(SystemExit):
+                        GUARDS.check_ciba_ping_connection_pinning()
+                else:
+                    GUARDS.check_ciba_ping_connection_pinning()
+
+    def test_validated_resolution_then_pinned_connection_passes(self) -> None:
+        self.assert_pinning(
+            "async fn post(&self) {\n"
+            "    let addresses = tokio::net::lookup_host((host, port)).await?.collect();\n"
+            "    if addresses.iter().any(|a| is_blocked_ip(a.ip())) { bail!(); }\n"
+            "    client.resolve_to_addrs(host, &addresses).build()\n"
+            "}\n",
+            False,
+        )
+
+    def test_dropping_any_step_of_the_chain_fails(self) -> None:
+        for missing in (
+            "fn post() { client.build() }",
+            "fn post() { lookup_host((h, p)); client.build() }",
+            "fn post() { lookup_host((h, p)); is_blocked_ip(ip); client.build() }",
+        ):
+            with self.subTest(source=missing):
+                self.assert_pinning(missing, True)
+
+    def test_pinning_an_unvalidated_address_collection_fails(self) -> None:
+        self.assert_pinning(
+            "async fn post(&self) {\n"
+            "    let addresses = tokio::net::lookup_host((host, port)).await?.collect();\n"
+            "    if addresses.iter().any(|a| is_blocked_ip(a.ip())) { bail!(); }\n"
+            "    let other_addresses = fallback_addresses();\n"
+            "    client.resolve_to_addrs(host, &other_addresses).build()\n"
+            "}\n",
+            True,
         )

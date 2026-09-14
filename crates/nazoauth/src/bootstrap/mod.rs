@@ -56,9 +56,6 @@ use crate::http::token::issue::token_issuance_config;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
 use crate::settings::{Settings, mfa_totp_key_ring, token_issuance_response_key_ring};
 use actix_files::{Files, NamedFile};
-#[cfg(test)]
-#[allow(unused_imports)]
-use actix_web::{App, middleware::from_fn};
 use actix_web::{
     HttpResponse,
     dev::{ServiceRequest, ServiceResponse, fn_service},
@@ -112,8 +109,6 @@ use nazo_oauth_server::token::dispatch::{
 };
 use nazo_oauth_server::token::issue::TokenIssuanceConfig;
 use nazo_openid4vc_http_actix::{CredentialIssuerEndpoint, PresentationEndpoint};
-#[cfg(test)]
-use transport::DirectTlsReload;
 use transport::{direct_tls_listeners, spawn_direct_tls_reloader};
 
 fn ui_static_files(root: PathBuf) -> Files {

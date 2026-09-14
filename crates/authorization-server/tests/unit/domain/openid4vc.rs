@@ -14,9 +14,9 @@ use serde_json::{Value, json};
 use nazo_openid4vci::ProofValidatorPort as _;
 
 use super::Openid4vcProofValidator;
-use super::credential_crypto::mdoc_failed_assessments_accepted;
-use super::credential_crypto::mdoc_holder_key;
-use super::credential_crypto::standard_device_authentication_bytes;
+use super::credential_crypto::mdoc::{
+    mdoc_failed_assessments_accepted, mdoc_holder_key, standard_device_authentication_bytes,
+};
 use super::crypto_helpers::algorithm_name;
 use super::crypto_helpers::cbor_to_json;
 use super::crypto_helpers::decoding_key_trust;

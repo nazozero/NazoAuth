@@ -6,11 +6,14 @@ use actix_web::{
     web::Bytes,
 };
 use nazo_auth::CLIENT_ASSERTION_TYPE_JWT_BEARER;
+use nazo_http_actix::parse_token_form;
 use nazo_http_actix::{
     parse_token_management_form, token_management_form_error,
     token_management_has_conflicting_client_auth,
 };
-use nazo_oauth_server::contracts::token_forms::{TokenManagementFormError, TokenOnlyForm};
+use nazo_oauth_server::contracts::token_forms::{
+    TokenFormError, TokenManagementFormError, TokenOnlyForm,
+};
 use proptest::prelude::*;
 
 fn form_request() -> HttpRequest {

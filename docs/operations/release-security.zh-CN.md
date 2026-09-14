@@ -10,8 +10,7 @@ tag 全部通过后，发布制品才可信。
 `conformance-security` 工作流会对代码、依赖、migration、脚本、部署、容器、
 运行时配置和工作流改动执行供应链检查：
 
-- 对 `Cargo.lock` 运行 `cargo audit`
-- 使用 `deny.toml` 运行 `cargo deny`
+- 使用 `deny.toml` 运行 `cargo deny`（advisories、bans、licenses、sources）
 - 为 Rust 依赖生成 CycloneDX SBOM
 - 使用 `Containerfile` 构建容器镜像
 - 使用 Trivy 扫描实际构建的镜像
@@ -43,7 +42,7 @@ GitHub Actions、容器/Compose 输入、锁定的 Python 输入、精确 Rust s
 - 验证 server 二进制的包版本和 operator protocol 版本
 - 从唯一源码打包一次 `nazo-operator-protocol`，校验包构建与 digest，并为精确
   `.crate` 生成标准 build provenance
-- 对精确 tag 再次运行 `cargo audit` 和 `cargo deny`
+- 对精确 tag 再次运行 `cargo deny`（advisories、bans、licenses、sources）
 - 构建一个同时包含 `linux/amd64` 与 `linux/arm64` 的 OCI index
 - 使用 Trivy 扫描精确 OCI archive，并且不二次构建，直接发布同一 archive
 - 为 server Rust 依赖生成 CycloneDX SBOM

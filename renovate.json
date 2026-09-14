@@ -60,6 +60,18 @@
         "\"(?<depName>[A-Za-z0-9_-]+)(?:\\[[^\\]]+\\])?==(?<currentValue>[^\"]+)\""
       ],
       "datasourceTemplate": "pypi"
+    },
+    {
+      "customType": "regex",
+      "description": "Update version-pinned Debian packages in runtime image install lines",
+      "managerFilePatterns": ["/^Containerfile(\\.release)?$/"],
+      "matchStrings": [
+        "--no-install-recommends[^\\n]*?\\s(?<depName>[a-z0-9][a-z0-9+.-]*)=(?<currentValue>[0-9][^\\s\\\\]*)",
+        "^\\s+(?<depName>[a-z0-9][a-z0-9+.-]*)=(?<currentValue>[0-9][^\\s\\\\]*)\\s*\\\\?$"
+      ],
+      "registryUrlTemplate": "https://deb.debian.org/debian?suite=trixie&components=main&binaryArch=amd64",
+      "datasourceTemplate": "deb",
+      "versioningTemplate": "deb"
     }
   ],
   "packageRules": [

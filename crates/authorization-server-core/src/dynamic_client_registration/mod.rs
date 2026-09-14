@@ -19,10 +19,5 @@ pub use ports::{
 pub use request::{DynamicClientRegistrationRequest, PreparedDynamicClientRegistration};
 
 #[cfg(test)]
-use crate::{ClientPresentationMetadata, OAuthClient};
-#[cfg(test)]
-use policy::negotiate_metadata_choice;
-
-#[cfg(test)]
 #[path = "../../tests/unit/dynamic_client_registration.rs"]
 mod tests;

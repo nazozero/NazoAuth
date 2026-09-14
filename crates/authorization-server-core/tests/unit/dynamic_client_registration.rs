@@ -1,5 +1,7 @@
+use super::policy::negotiate_metadata_choice;
 use super::*;
 use crate::ValidatedClientRegistration;
+use crate::{ClientPresentationMetadata, OAuthClient};
 use serde_json::json;
 use uuid::Uuid;
 

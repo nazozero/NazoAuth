@@ -15,6 +15,28 @@ use nazo_oauth_server::ports::transient_state::{
     TenantDirectoryCachePort, TransientStateError, TransientStateFuture,
 };
 
+impl TenantRuntime {
+    fn for_test(binding: TenantDirectoryBinding) -> Arc<Self> {
+        Arc::new(Self {
+            binding,
+            assembly: None,
+            lifecycle: Arc::new(Mutex::new(TenantRuntimeLifecycle::default())),
+        })
+    }
+
+    fn for_test_reusing(binding: TenantDirectoryBinding, previous: &Arc<Self>) -> Arc<Self> {
+        Arc::new(Self {
+            binding,
+            assembly: None,
+            lifecycle: previous.lifecycle.clone(),
+        })
+    }
+
+    fn shares_lifecycle_with(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.lifecycle, &other.lifecycle)
+    }
+}
+
 fn binding(id: u128, host: &str, issuer: &str) -> TenantDirectoryBinding {
     TenantDirectoryBinding {
         tenant: TenantContext {

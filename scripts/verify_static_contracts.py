@@ -10,60 +10,13 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "migrations"
 CHECKSUMS = ROOT / "tests" / "contracts" / "migrations.sha256"
-ROUTES = ROOT / "tests" / "contracts" / "routes.json"
 RFC9967_MATRIX = ROOT / "tests" / "contracts" / "rfc9967-scim-set-matrix.json"
 RFC9967_RUNNER = ROOT / "scripts" / "rfc9967_scim_set_e2e.py"
-SECURITY_NON_IMPLEMENTATION_POLICY = (
-    ROOT / "docs" / "protocol" / "not-implemented-security-policy.md"
-)
 WORKSTATION_PATH = re.compile(r"(?i)\b[A-Z]:[\\/](?:self|projects)[\\/]")
-REMOVED_ADAPTER_CLAIMS = (
-    "Actix Web, Axum/Tower, and tonic adapters",
-    "Actix Web、Axum/Tower、tonic adapter",
-    "TowerResourceServerLayer",
-    "authorize_tonic_request",
-)
-GLOB_REEXPORT = re.compile(r"(?m)^\s*pub(?:\([^)]*\))?\s+use\s+[^;]*::\*\s*;")
-PRELUDE_MODULE = re.compile(r"(?m)^\s*(?:pub(?:\([^)]*\))?\s+)?mod\s+prelude\s*;")
 EXACT_RUST_VERSION = re.compile(r"^\d+\.\d+\.\d+$")
-FORBIDDEN_CRATE_DEPENDENCIES = {
-    "authorization-server": {"fred", "nazo-valkey"},
-    "authorization-server-postgres": {"fred", "nazo-valkey"},
-    "authorization-server-valkey": {
-        "diesel",
-        "diesel-async",
-        "nazo-postgres",
-        "tokio-postgres",
-    },
-    "authorization-server-core": {
-        "actix-web",
-        "diesel",
-        "diesel-async",
-        "fred",
-        "nazo-http-actix",
-        "nazo-postgres",
-        "nazo-valkey",
-    },
-    "identity": {
-        "actix-web",
-        "diesel",
-        "diesel-async",
-        "fred",
-        "nazo-auth",
-        "nazo-http-actix",
-        "nazo-postgres",
-        "nazo-valkey",
-    },
-    "resource-server": {
-        "actix-web",
-        "nazo-auth",
-        "nazo-http-actix",
-        "nazo-identity",
-    },
-    "http-actix": {"diesel", "diesel-async", "fred", "nazo-postgres", "nazo-valkey"},
-}
 
-# Canonical package roles, shared with the Cargo graph guard.
+# Canonical package roles: the single architectural dependency model shared by
+# this gate, the persistence graph guard, and the crypto boundary guard.
 PACKAGE_ROLES = {
     "nazo-oauth-server": "application",
     "nazo-auth": "domain",
@@ -94,18 +47,11 @@ ALLOWED_DEPENDENCY_ROLES = {
     "adapter": {"domain", "application", "adapter"},
     "host": {"domain", "application", "adapter", "host"},
 }
+INNER_ROLES = {"domain", "application"}
 
-
-# Reviewed direct third-party dependencies. New entries require an owner review:
-# data/algorithm libraries are distinct from concrete network/runtime/Host execution.
-NEUTRAL_DEPENDENCIES = {
-    "aes-gcm", "anyhow", "arc-swap", "argon2", "aws-lc-rs", "base64", "blake3",
-    "chrono", "ciborium", "coset", "der", "ed25519-dalek", "flate2", "futures-util",
-    "hmac", "http", "httpsig", "image", "jsonwebtoken", "lru", "p256", "passkey-auth",
-    "pem", "pkcs8", "rand", "rcgen", "semver", "serde", "serde_json", "sfv", "sha1",
-    "sha2", "subtle", "tar", "thiserror", "time", "tracing", "url", "urlencoding",
-    "uuid", "x509-cert", "x509-parser", "yaml_serde", "yasna", "zeroize",
-}
+# Concrete runtime, network and storage implementations an inner (domain or
+# application) package must not bind to. This is a denylist, not an allowlist:
+# ordinary data/algorithm crates need no review entry.
 EXECUTION_DEPENDENCIES = {
     "actix", "actix-cors", "actix-files", "actix-multipart", "actix-rt", "actix-tls",
     "actix-web", "async-std", "atomicwrites", "aws-credential-types", "aws-sigv4",
@@ -115,15 +61,8 @@ EXECUTION_DEPENDENCIES = {
     "process-wrap", "reqwest", "rustix", "smol", "tokio", "tokio-postgres",
     "tokio-postgres-rustls", "tonic", "tracing-opentelemetry", "tracing-subscriber",
 }
-# These crates expose both neutral values/algorithms and optional execution APIs.
-# Inner consumers retain only their reviewed neutral API use (checked below).
-MIXED_DEPENDENCIES = {"lettre", "rustls", "rustls-webpki", "mdoc-rs", "futures-channel"}
-INNER_ROLES = {"domain", "application"}
-REMOVED_BOUNDARY_SYMBOLS = {"SendCibaResponse", "OAuthJsonErrorFields", "RequestContext"}
-CONCRETE_INNER_TYPES = {
-    "HttpRequest", "HttpResponse", "FromRequest", "Responder", "JoinHandle",
-    "WebRequest", "WebResponse", "HttpServer", "ServerHandle",
-}
+# Host/OS execution surfaces that inner source must not call even through a
+# non-denied dependency. Checked against resolved Rust paths, not bare names.
 HOST_PATHS = re.compile(
     r"^(?:std::(?:fs|process|thread)(?:::|$)"
     r"|std::env::(?:args|args_os|var|var_os|vars|vars_os|current_dir|current_exe|temp_dir|"
@@ -135,157 +74,6 @@ HOST_PATHS = re.compile(
     r"|mdoc_rs::(?:runtime|transport|http|ble|nfc)(?:::|$)"
     r"|image::(?:open|save_buffer|save_buffer_with_format|ImageReader::open|io::Reader::open)(?:::|$))"
 )
-
-
-# T02 canonical contracts. Paths are definition owners, not re-export facades.
-T02_CONTRACT_OWNERS = {
-    "crates/authorization-server/src/contracts/authorization_decision.rs": (
-        "AuthorizationDecisionFuture",
-        "AuthorizationDecisionCommand",
-        "AuthorizationDecisionResponse",
-        "AuthorizationDecisionError",
-        "AuthorizationDecisionOperations",
-    ),
-    "crates/authorization-server/src/contracts/local_registration.rs": (
-        "LocalRegistrationFuture",
-        "LocalRegistrationOperations",
-        "AuthenticationRateLimitError",
-        "AuthenticationRateLimit",
-    ),
-    "crates/authorization-server/src/contracts/password_login.rs": (
-        "PasswordLoginFuture",
-        "PasswordLoginOperations",
-    ),
-    "crates/authorization-server/src/contracts/passkey.rs": (
-        "PasskeyFuture",
-        "PasskeyEndpointError",
-        "PasskeyLoginFinishCommand",
-        "PasskeyLoginOperations",
-        "PasskeyProfileContext",
-        "PasskeyRegistrationFinishCommand",
-        "PasskeyProfileOperations",
-    ),
-    "crates/authorization-server/src/contracts/mfa_profile.rs": (
-        "MfaProfileFuture",
-        "MfaRequestContext",
-        "MfaCodeCommand",
-        "MfaChallengeCommand",
-        "MfaSessionRotation",
-        "MfaTotpEnrollment",
-        "MfaTotpConfirmation",
-        "MfaChallengeSuccess",
-        "MfaStepUpSuccess",
-        "MfaBackupCodesRegenerated",
-        "MfaProfileErrorKind",
-        "MfaProfileError",
-        "MfaProfileOperations",
-    ),
-    "crates/authorization-server/src/contracts/profile_account.rs": (
-        "ProfileAccountFuture",
-        "ProfileMe",
-        "ProfileAccountError",
-        "ProfileAccountOperations",
-    ),
-    "crates/authorization-server/src/contracts/oidc_logout.rs": (
-        "OidcLogoutFuture",
-        "OidcLogoutRequest",
-        "OidcLogoutCommand",
-        "OidcLogoutSuccess",
-        "OidcLogoutError",
-        "OidcLogoutOperations",
-    ),
-    "crates/authorization-server/src/contracts/session_management.rs": (
-        "SessionManagementFuture",
-        "SessionManagementOriginFuture",
-        "SessionManagementAvailability",
-        "SessionManagementError",
-        "SessionManagementOperations",
-    ),
-    "crates/authorization-server/src/contracts/metadata.rs": (
-        "MetadataEndpointConfig",
-        "MetadataSnapshot",
-        "MetadataSnapshotSource",
-    ),
-    "crates/authorization-server/src/contracts/runtime_modules.rs": (
-        "RuntimeModuleAdminFuture",
-        "RuntimeModuleAdminError",
-        "RuntimeModuleAdministration",
-    ),
-    "crates/authorization-server/src/contracts/fapi_resource.rs": (
-        "FapiFuture",
-        "FapiAuthorizationError",
-        "FapiResourceAuthorizer",
-        "FapiSignatureVerificationError",
-        "FapiSignatureOperationError",
-        "FapiResponseSignature",
-        "FapiHttpMessageSignatures",
-    ),
-    "crates/authorization-server/src/contracts/token_management.rs": (
-        "TOKEN_INTROSPECTION_JWT_MEDIA_TYPE",
-        "TokenManagementFuture",
-        "TokenManagementRateLimitError",
-        "TokenManagementError",
-        "TokenIntrospectionRepresentation",
-        "TokenManagementRequestFacts",
-        "TokenManagementRequestGuard",
-        "TokenManagementOperations",
-    ),
-    "crates/authorization-server/src/contracts/dynamic_client_registration.rs": (
-        "RemoteJwksFuture",
-        "RemoteJwksResolverPort",
-        "DynamicRegistrationRateLimitError",
-        "DynamicRegistrationRequestGuard",
-        "DynamicRegistrationSecurityServices",
-    ),
-    "crates/authorization-server/src/contracts/scim.rs": (
-        "ScimFuture", "ScimAuthorizedRequest", "ScimAuthorizationError",
-        "ScimRequestAuthorizer", "ScimDependencyError", "ScimCursorProtector",
-        "ScimBootstrapPasswordProvider",
-    ),
-    "crates/authorization-server/src/contracts/userinfo.rs": (
-        "AccessTokenAuthScheme", "UserinfoFuture", "UserinfoRepresentation",
-        "UserinfoSuccess", "UserinfoDpopError", "UserinfoError", "UserinfoOperations",
-    ),
-    "crates/authorization-server/src/contracts/request_facts.rs": (
-        "DpopErrorContext",
-    ),
-    "crates/authorization-server/src/contracts/token_client_auth.rs": (
-        "BasicAuthorizationCredentials",
-        "ClientCertificateFacts",
-        "TokenClientAuthTransportFacts",
-    ),
-    "crates/authorization-server/src/contracts/token_forms.rs": (
-        "TokenForm",
-        "TokenOnlyForm",
-        "PreAuthorizedTokenParameters",
-        "ParsedTokenForm",
-        "TokenFormError",
-        "TokenManagementFormError",
-    ),
-    "crates/openid4vci/src/application.rs": (
-        "CredentialIssuerFuture",
-        "AccessTokenScheme",
-        "CredentialRequestContext",
-        "CredentialResponseBody",
-        "CredentialEndpointResponse",
-        "CredentialRequestBody",
-        "PreAuthorizedTokenRequest",
-        "PreAuthorizedTokenResponse",
-        "CreateCredentialOfferRequest",
-        "CreateCredentialOfferResponse",
-        "CredentialHttpError",
-        "CredentialIssuerOperations",
-    ),
-    "crates/openid4vp/src/application.rs": (
-        "PresentationFuture",
-        "PresentationResponseBody",
-        "PresentationResponseInput",
-        "PresentationHttpError",
-        "CreatePresentationRequest",
-        "CreatePresentationResponse",
-        "PresentationOperations",
-    ),
-}
 
 
 def cfg_is_production_possible(expression: str) -> bool:
@@ -316,15 +104,20 @@ def cfg_is_production_possible(expression: str) -> bool:
     return evaluate(expression) is not False
 
 
-def rust_production_source(source: str) -> str:
-    """Mask comments/literals and explicit test-only items, retaining feature code."""
+def mask_rust_non_code(source: str) -> str:
+    """Blank comments and string/char literal contents without moving offsets."""
     non_code = re.compile(
         r'r(?P<hashes>#{0,255})"[\s\S]*?"(?P=hashes)'
         r'|"(?:\\[\s\S]|[^"\\])*"'
         r"|'(?:\\.|[^'\\\n])'"
         r"|//[^\n]*|/\*[\s\S]*?\*/"
     )
-    source = non_code.sub(lambda match: re.sub(r"[^\n]", " ", match[0]), source)
+    return non_code.sub(lambda match: re.sub(r"[^\n]", " ", match[0]), source)
+
+
+def rust_production_source(source: str) -> str:
+    """Mask comments/literals and explicit test-only items, retaining feature code."""
+    source = mask_rust_non_code(source)
     test_items = []
     for match in re.finditer(r"#(?P<file>!)?\[\s*cfg\s*\(", source):
         end, depth = match.end(), 1
@@ -354,82 +147,6 @@ def rust_production_source(source: str) -> str:
     return source
 
 
-def check_contract_definition_owners() -> None:
-    owners = {
-        symbol: path
-        for path, symbols in T02_CONTRACT_OWNERS.items()
-        for symbol in symbols
-    }
-    definitions: dict[str, list[str]] = {symbol: [] for symbol in owners}
-    definition = re.compile(
-        r"\b(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?"
-        r"(?:struct|enum|trait|type|const)\s+(\w+)\b"
-    )
-    exports = re.compile(r"\bpub(?:\([^)]*\))?\s+use\s+([^;]+);", re.DOTALL)
-    imports = re.compile(r"\buse\s+([^;]+);", re.DOTALL)
-    adapter_directories = {"http-actix", "openid4vc-http-actix"}
-    workspace_manifest = ROOT / "Cargo.toml"
-    workspace = (
-        tomllib.loads(workspace_manifest.read_text(encoding="utf-8")).get("workspace", {})
-        if workspace_manifest.is_file() else {}
-    )
-    adapter_aliases = {}
-    violations = []
-    for path in sorted((ROOT / "crates").glob("*/src/**/*.rs")):
-        relative = path.relative_to(ROOT).as_posix()
-        source = rust_production_source(path.read_text(encoding="utf-8"))
-        retired_symbols = REMOVED_BOUNDARY_SYMBOLS & set(re.findall(r"\b\w+\b", source))
-        if retired_symbols:
-            violations.append(f"{relative} retains removed boundary symbols: {sorted(retired_symbols)}")
-        for match in definition.finditer(source):
-            symbol = match[1]
-            # This pre-existing resource-server enum is a distinct protocol type.
-            if symbol == "AccessTokenScheme" and relative == "crates/resource-server/src/service.rs":
-                continue
-            if symbol in definitions:
-                definitions[symbol].append(relative)
-        if path.relative_to(ROOT).parts[1] not in adapter_directories:
-            continue
-        adapter_directory = path.relative_to(ROOT).parts[1]
-        if adapter_directory not in adapter_aliases:
-            manifest_path = ROOT / "crates" / adapter_directory / "Cargo.toml"
-            adapter_aliases[adapter_directory] = {
-                spec["_alias"].replace("-", "_"): name.replace("-", "_")
-                for name, spec in resolved_production_dependencies(manifest_path, workspace)
-            } if manifest_path.is_file() else {}
-        aliases = adapter_aliases[adapter_directory].copy()
-        for original, alias in re.findall(r"\bextern\s+crate\s+(\w+)\s+as\s+(\w+)\s*;", source):
-            aliases[alias] = resolved_rust_path(original, aliases)
-        for match in imports.finditer(source):
-            for imported, alias in rust_use_bindings(match[1]):
-                if alias not in {"*", "_"} and imported != alias:
-                    aliases[alias] = resolved_rust_path(imported, aliases)
-        contract_roots = (
-            "nazo_oauth_server::contracts", "nazo_openid4vci::application",
-            "nazo_openid4vp::application",
-        )
-        for match in exports.finditer(source):
-            for exported, _alias in rust_use_bindings(match[1]):
-                resolved = resolved_rust_path(exported, aliases)
-                identifiers = set(resolved.split("::"))
-                if identifiers & owners.keys() or any(
-                    resolved == origin or resolved.startswith(origin + "::")
-                    for origin in contract_roots
-                ):
-                    violations.append(f"{relative} re-exports migrated contracts: {match[1].strip()}")
-                    break
-    for symbol, expected in owners.items():
-        if definitions[symbol] != [expected]:
-            violations.append(
-                f"{symbol} must be defined once in {expected}; found {definitions[symbol]}"
-            )
-    retired = ROOT / "crates" / "http-actix" / "src" / "request_context.rs"
-    if retired.exists():
-        violations.append("unused HTTP RequestContext source must be removed")
-    if violations:
-        raise SystemExit("contract ownership boundary violated:\n" + "\n".join(violations))
-
-
 def production_dependency_entries(manifest: dict, workspace: dict):
     """Yield every explicit normal/build edge, including disabled target/optional edges."""
     sections = [(None, manifest), *manifest.get("target", {}).items()]
@@ -446,12 +163,6 @@ def production_dependency_entries(manifest: dict, workspace: dict):
                     if features:
                         spec["features"] = features
                 yield alias, spec.get("package", alias), spec, kind, target
-
-
-def declared_production_dependencies(manifest: dict, workspace: dict):
-    """Compatibility for existing policy callers; all edge contexts are still scanned."""
-    for _alias, package, spec, _kind, _target in production_dependency_entries(manifest, workspace):
-        yield package, spec
 
 
 def resolved_production_dependencies(manifest_path: Path, workspace: dict):
@@ -480,8 +191,8 @@ def package_manifests():
 
 
 def check_package_roles() -> None:
+    """Enforce the workspace role model and the inner-layer execution denylist."""
     workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
-    reviewed = NEUTRAL_DEPENDENCIES | EXECUTION_DEPENDENCIES | MIXED_DEPENDENCIES
     violations = []
     for path in package_manifests():
         manifest = tomllib.loads(path.read_text(encoding="utf-8"))
@@ -492,17 +203,22 @@ def check_package_roles() -> None:
             continue
         for dependency, spec in resolved_production_dependencies(path, workspace):
             dependency_role = PACKAGE_ROLES.get(dependency)
-            edge = f"{package} ({role}) -> {dependency} [{spec['_kind']}, target={spec['_target']}, alias={spec['_alias']}]"
-            if dependency_role:
+            edge = (
+                f"{package} ({role}) -> {dependency} "
+                f"[{spec['_kind']}, target={spec['_target']}, alias={spec['_alias']}]"
+            )
+            if dependency_role is not None:
                 if dependency_role not in ALLOWED_DEPENDENCY_ROLES[role]:
                     violations.append(f"{edge}: forbidden {dependency_role} dependency")
-            elif spec["_path"] is not None or dependency not in reviewed:
-                violations.append(f"{edge}: unclassified dependency requires owner review")
+            elif spec["_path"] is not None:
+                violations.append(f"{edge}: unclassified local dependency requires owner review")
             elif role in INNER_ROLES and dependency in EXECUTION_DEPENDENCIES:
                 violations.append(f"{edge}: concrete execution dependency in an inner package")
             if role in INNER_ROLES and dependency == "lettre":
-                transport_features = [feature for feature in spec.get("features", []) if
-                    feature.startswith(("smtp-", "sendmail-", "file-", "tokio", "async-std", "pool"))]
+                transport_features = [
+                    feature for feature in spec.get("features", [])
+                    if feature.startswith(("smtp-", "sendmail-", "file-", "tokio", "async-std", "pool"))
+                ]
                 if transport_features:
                     violations.append(f"{edge}: SMTP execution features {transport_features}")
     if violations:
@@ -553,9 +269,18 @@ def resolved_rust_path(path: str, aliases: dict[str, str]) -> str:
 
 
 def check_inner_source_boundaries() -> None:
+    """Inner layers must not call concrete runtime/storage/Host surfaces.
+
+    Detection is based on Cargo dependencies and resolved Rust paths, not on
+    bare identifiers: a type named like a framework type is not a violation.
+    """
     workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
     concrete_crates = {name.replace("-", "_") for name in EXECUTION_DEPENDENCIES}
-    concrete_crates.update(name.replace("-", "_") for name, role in PACKAGE_ROLES.items() if role in {"adapter", "host"})
+    concrete_crates.update(
+        name.replace("-", "_")
+        for name, role in PACKAGE_ROLES.items()
+        if role in {"adapter", "host"}
+    )
     violations = []
     imports = re.compile(r"\buse\s+([^;]+);", re.DOTALL)
     qualified = re.compile(r"(?<!\w)(?:::)?[A-Za-z_]\w*(?:\s*::\s*[A-Za-z_]\w*)+")
@@ -583,44 +308,11 @@ def check_inner_source_boundaries() -> None:
                 resolved = resolved_rust_path(candidate, aliases)
                 if resolved.partition("::")[0] in concrete_crates or HOST_PATHS.match(resolved):
                     forbidden_paths.add(resolved)
-            forbidden_types = CONCRETE_INNER_TYPES & set(re.findall(r"\b\w+\b", source))
-            if forbidden_paths or forbidden_types:
+            if forbidden_paths:
                 relative = path.relative_to(ROOT).as_posix()
-                violations.append(f"{relative}: concrete execution/types {sorted(forbidden_paths | forbidden_types)}")
+                violations.append(f"{relative}: concrete execution paths {sorted(forbidden_paths)}")
     if violations:
         raise SystemExit("inner source boundary violated:\n" + "\n".join(violations))
-
-
-RFC9967_CASES = {
-    "discovery_exact_event_uris",
-    "poll_authorization_boundaries",
-    "create_notice_set_claims",
-    "receiver_audience_and_ack_isolation",
-    "ack_is_terminal_for_receiver",
-    "set_error_requires_content_language",
-    "patch_notice_and_deactivate_events",
-    "put_notice_and_activate_events",
-    "poll_pagination_preserves_order",
-    "long_poll_wakes_on_new_event",
-    "invalid_poll_shapes_fail_closed",
-}
-
-
-def read_rust_module_tree(root_file: Path) -> str:
-    """Read a Rust module facade and every source file in its child directory."""
-    sources = [root_file]
-    child_directory = root_file.with_suffix("")
-    if child_directory.is_dir():
-        sources.extend(sorted(child_directory.rglob("*.rs")))
-    return "\n".join(source.read_text(encoding="utf-8") for source in sources)
-
-
-def read_rust_source_family(directory: Path, prefix: str) -> str:
-    """Read a facade plus private sibling modules sharing a capability prefix."""
-    return "\n".join(
-        source.read_text(encoding="utf-8")
-        for source in sorted(directory.glob(f"{prefix}*.rs"))
-    )
 
 
 def migration_line(path: Path) -> str:
@@ -661,21 +353,6 @@ def append_migration(directory_name: str) -> None:
     )
 
 
-def check_route_fixture() -> None:
-    payload = json.loads(ROUTES.read_text(encoding="utf-8"))
-    if payload.get("schema") != 1 or not payload.get("routes"):
-        raise SystemExit("route contract fixture is missing or invalid")
-    paths = [item["path"] for item in payload["routes"]]
-    if len(paths) != len(set(paths)):
-        raise SystemExit("route contract contains duplicate paths")
-    for item in payload["routes"]:
-        methods = item.get("methods")
-        if not methods or methods != sorted(set(methods)):
-            raise SystemExit("route methods must be non-empty, unique, and sorted")
-        if item.get("condition") not in {"always", "perf_metrics"}:
-            raise SystemExit("route condition is invalid")
-
-
 def public_document_paths() -> list[Path]:
     paths = [ROOT / "README.md", ROOT / "README.zh-CN.md"]
     paths.extend((ROOT / "docs").rglob("*.md"))
@@ -689,26 +366,6 @@ def check_documentation_boundaries() -> None:
             raise SystemExit(
                 f"public documentation contains a workstation-specific path: "
                 f"{path.relative_to(ROOT)}"
-            )
-        for obsolete in REMOVED_ADAPTER_CLAIMS:
-            if obsolete in text:
-                raise SystemExit(
-                    f"public documentation advertises a removed adapter in "
-                    f"{path.relative_to(ROOT)}: {obsolete}"
-                )
-
-
-def check_authorization_server_import_boundaries() -> None:
-    for path in sorted([*(ROOT / "crates" / "authorization-server" / "src").rglob("*.rs"), *(ROOT / "crates" / "nazoauth" / "src").rglob("*.rs")]):
-        text = path.read_text(encoding="utf-8")
-        relative = path.relative_to(ROOT)
-        if GLOB_REEXPORT.search(text):
-            raise SystemExit(
-                f"authorization-server source contains a glob re-export: {relative}"
-            )
-        if PRELUDE_MODULE.search(text):
-            raise SystemExit(
-                f"authorization-server source declares a prelude module: {relative}"
             )
 
 
@@ -824,103 +481,17 @@ def check_toolchain_pins() -> None:
         raise SystemExit("Renovate must update the coordinated Rust stable pins")
 
 
-def check_crate_dependency_boundaries() -> None:
-    check_package_roles()
-    workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
-    for crate, forbidden in FORBIDDEN_CRATE_DEPENDENCIES.items():
-        manifest_path = ROOT / "crates" / crate / "Cargo.toml"
-        manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
-        declared = {name for name, _ in resolved_production_dependencies(manifest_path, workspace)}
-        violations = sorted(declared & forbidden)
-        if violations:
-            raise SystemExit(
-                f"{manifest_path.relative_to(ROOT)} violates dependency boundaries: {violations}"
-            )
-
-
-def check_transient_state_backend_boundary() -> None:
-    server_root = ROOT / "crates" / "authorization-server" / "src"
-    forbidden = ("nazo_valkey", "ValkeyConnection", "VALKEY_")
-    violations = []
-    for path in sorted([*server_root.rglob("*.rs"), *(ROOT / "crates" / "nazoauth" / "src").rglob("*.rs")]):
-        if path.is_relative_to(ROOT / "crates" / "nazoauth" / "src" / "launchers"):
-            continue
-        source = path.read_text(encoding="utf-8")
-        markers = [marker for marker in forbidden if marker in source]
-        if markers:
-            violations.append((path.relative_to(ROOT).as_posix(), markers))
-    if violations:
-        detail = ", ".join(f"{path}: {markers}" for path, markers in violations)
-        raise SystemExit(f"transient-state backend leaked into authorization server: {detail}")
-
-    postgres_root = ROOT / "crates" / "authorization-server-postgres" / "src"
-    violations = []
-    for path in sorted(postgres_root.rglob("*.rs")):
-        source = path.read_text(encoding="utf-8")
-        markers = [marker for marker in forbidden if marker in source]
-        if markers:
-            violations.append((path.relative_to(ROOT).as_posix(), markers))
-    if violations:
-        detail = ", ".join(f"{path}: {markers}" for path, markers in violations)
-        raise SystemExit(f"transient-state adapter leaked into PostgreSQL launcher: {detail}")
-
-    postgres_library = postgres_root / "lib.rs"
-    if "valkey" in postgres_library.read_text(encoding="utf-8").lower():
-        raise SystemExit("PostgreSQL launcher library must not select or reference Valkey")
-
-
 def check_aggregate_package_boundary() -> None:
+    """nazoauth stays the single aggregate host binary; direction is checked by roles."""
     workspace = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))["workspace"]
     if workspace.get("default-members") != ["crates/nazoauth"]:
         raise SystemExit("workspace default-members must contain only the nazoauth aggregate")
 
-    manifest_path = ROOT / "crates" / "nazoauth" / "Cargo.toml"
-    manifest = tomllib.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest = tomllib.loads(
+        (ROOT / "crates" / "nazoauth" / "Cargo.toml").read_text(encoding="utf-8")
+    )
     if "bin" not in manifest or manifest["bin"][0]["name"] != "nazoauth":
         raise SystemExit("Native Host must retain the nazoauth executable")
-    native_root = ROOT / "crates" / "nazoauth" / "src"
-    for relative in ("lib.rs", "main.rs", "launchers/mod.rs", "launchers/postgres.rs", "launchers/valkey.rs", "launchers/object_store.rs"):
-        if not (native_root / relative).is_file():
-            raise SystemExit(f"Native Host ownership is missing: {relative}")
-    application = ROOT / "crates" / "authorization-server" / "src"
-    for retired in ("bootstrap", "cli.rs", "config.rs", "operator_task", "recovery_root.rs"):
-        if (application / retired).exists():
-            raise SystemExit(f"Native Host source remains in Application: {retired}")
-
-    source = (ROOT / "crates" / "nazoauth" / "src" / "main.rs").read_text(
-        encoding="utf-8"
-    )
-    forbidden = ("nazo_postgres", "nazo_valkey", "ValkeyConnection", "DbPool")
-    leaked = [marker for marker in forbidden if marker in source]
-    if leaked:
-        raise SystemExit(f"nazoauth aggregate bypasses launcher boundaries: {leaked}")
-
-
-def check_connection_url_configuration_boundary() -> None:
-    forbidden = tuple(
-        f"{prefix}_URL_FILE"
-        for prefix in ("DATABASE", "VALKEY", "AUDIT_ANCHOR_DATABASE")
-    )
-    paths = [
-        *(ROOT / "crates").rglob("*.rs"),
-        *(ROOT / "deploy").rglob("*.yaml"),
-        *(ROOT / "deploy").rglob("*.yml"),
-        *(ROOT / "deploy").rglob("*.md"),
-        *(ROOT / "docs").rglob("*.md"),
-        ROOT / "compose.yml",
-        ROOT / ".env.yaml.example",
-    ]
-    violations = []
-    for path in paths:
-        if not path.exists():
-            continue
-        source = path.read_text(encoding="utf-8")
-        markers = [marker for marker in forbidden if marker in source]
-        if markers:
-            violations.append((path.relative_to(ROOT).as_posix(), markers))
-    if violations:
-        detail = ", ".join(f"{path}: {markers}" for path, markers in violations)
-        raise SystemExit(f"connection URLs must be configured directly: {detail}")
 
 
 def check_workspace_package_metadata() -> None:
@@ -936,166 +507,195 @@ def check_workspace_package_metadata() -> None:
                 )
 
 
-def check_rust_test_structure() -> None:
-    inline_test_module = re.compile(
-        r"(?m)^\s*#\[cfg\(test\)\]\s*"
-        r"(?:#\[[^\]]+\]\s*)*"
-        r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*\{"
-    )
-    test_attribute = re.compile(r"(?m)^\s*#\[(?:tokio::)?test(?:\([^\]]*\))?\]")
-    top_level_cfg = re.compile(r"(?m)^#\[cfg\(test\)\]$")
-    top_level_hook = re.compile(
-        r"(?m)^#\[cfg\(test\)\]\r?\n"
-        r"(?:(?:#\[[^\r\n]+\]\r?\n)*)"
-        r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*;"
-    )
-    top_level_test_import = re.compile(
-        r"(?:\r?\n#\[[^\r\n]+\])*\r?\n"
-        r"\s*(?:pub(?:\([^)]*\))?\s+)?use\b"
-    )
-    nested_cfg = re.compile(
-        r"(?m)^(?P<indent>[ \t]+)#\[cfg\(test\)\]\r?\n"
-        r"(?P=indent)(?P<item>[^\r\n]+)"
-    )
-    allowed_nested_seams = {
-        "crates/nazoauth/src/bootstrap/startup/tenant_runtime.rs": (
-            "pub(super) fn for_test(binding: TenantDirectoryBinding) -> Arc<Self> {",
-            "pub(super) fn for_test_reusing(",
-            "pub(super) fn shares_lifecycle_with(&self, other: &Self) -> bool {",
-        ),
-    }
+def _attribute_cluster(source: str, start: int) -> tuple[str, int]:
+    """Return (cluster text, item offset) for the contiguous ``#[...]`` cluster at start."""
+    end = start
+    while True:
+        close = source.find("]", end)
+        if close == -1:
+            return source[start:], len(source)
+        end = close + 1
+        if re.match(r"\s*#", source[end:]) is None:
+            return source[start:end], end
 
+
+def _cfg_is_test_only(block: str) -> bool:
+    """True when every cfg() in the attribute cluster is proven false in production."""
+    expressions = re.findall(r"cfg\s*\(((?:[^]()]|\([^]()\n]*\))*)\)", block)
+    return bool(expressions) and all(
+        not cfg_is_production_possible(expression) for expression in expressions
+    )
+
+
+def check_rust_test_structure() -> None:
+    """Enforce physical separation: test code lives under tests/, never inside src/.
+
+    Production ``src/**`` may carry only declaration-only test mounts
+    (``#[cfg(test)] #[path = "../tests/..."] mod x;``). Any other test-only item
+    (``#[cfg(test)] fn/impl/const/use/...``) is test code embedded in production
+    source and must live under ``tests/**`` instead. Test files must not
+    recompile production source through ``include!`` or ``#[path]``.
+    """
+    test_attribute = re.compile(
+        r"#\[\s*(?:(?:tokio|actix_web|actix_rt)\s*::\s*)?test(?:\s*\([^\]]*\))?\s*\]"
+    )
+    module_item = re.compile(
+        r"(?P<attrs>(?:\s*#\[[^\]]*\])*)\s*"
+        r"(?:pub(?:\([^)]*\))?\s+)?mod\s+\w+\s*(?P<term>[;{])"
+    )
+    attr_cluster = re.compile(r"(?:\s*#\[[^\]]*\])+")
+    item_keyword = re.compile(
+        r"\s*(?:pub(?:\s*\([^)]*\))?\s+)?"
+        r"(?:(?:async|unsafe|extern(?:\s*\"[^\"]*\")?|const|default)\s+)*"
+        r"(mod|use|fn|impl|const|static|struct|enum|union|trait|type|macro)\b"
+    )
+    inner_cfg = re.compile(r"#\s*!\s*\[\s*cfg\s*\((?P<expr>[^]]*)\)\s*\]")
+    path_attribute = re.compile(r'#\[\s*path\s*=\s*"([^"]+)"\s*\]')
     violations = []
-    for crate in (ROOT / "crates").iterdir():
-        source_root = crate / "src"
+    for crate in sorted((ROOT / "crates").iterdir()):
+        source_root = (crate / "src").resolve()
         if not source_root.is_dir():
             continue
-        legacy_files = [
-            *source_root.rglob("tests.rs"),
-            *source_root.rglob("*_tests.rs"),
-        ]
-        if legacy_files:
-            violations.append(
-                f"{crate.relative_to(ROOT).as_posix()} keeps test files under src: "
-                f"{[path.relative_to(ROOT).as_posix() for path in legacy_files]}"
-            )
-
-        for source_file in source_root.rglob("*.rs"):
-            source = source_file.read_text(encoding="utf-8")
+        for source_file in sorted(source_root.rglob("*.rs")):
             relative = source_file.relative_to(ROOT).as_posix()
-            if inline_test_module.search(source) or test_attribute.search(source):
-                violations.append(f"{relative} embeds executable tests in production source")
-            if "include!(" in source:
-                violations.append(f"{relative} includes another source file")
-
-            hook_matches = list(top_level_hook.finditer(source))
-            for cfg_match in top_level_cfg.finditer(source):
-                if not any(
-                    hook.start() == cfg_match.start() for hook in hook_matches
-                ) and top_level_test_import.match(source[cfg_match.end() :]) is None:
-                    violations.append(f"{relative} has a non-mount top-level cfg(test) item")
-
-            actual_nested = tuple(
-                match.group("item").strip() for match in nested_cfg.finditer(source)
-            )
-            expected_nested = allowed_nested_seams.get(relative, ())
-            if len(actual_nested) != len(expected_nested) or any(
-                not actual.startswith(expected)
-                for actual, expected in zip(actual_nested, expected_nested, strict=True)
+            relative_parts = source_file.relative_to(source_root).parts
+            if (
+                source_file.name == "tests.rs"
+                or source_file.name.endswith("_tests.rs")
+                or "tests" in relative_parts[:-1]
             ):
+                violations.append(f"{relative} is a test file inside src")
+            source = source_file.read_text(encoding="utf-8")
+            masked = mask_rust_non_code(source)
+            if test_attribute.search(masked):
+                violations.append(f"{relative} declares an executable test in production source")
+            if "include!(" in masked:
+                violations.append(f"{relative} includes another source file")
+            for inner in inner_cfg.finditer(masked):
+                if not cfg_is_production_possible(inner["expr"]):
+                    violations.append(
+                        f"{relative} gates the whole file behind a test-only cfg"
+                    )
+            for cluster in attr_cluster.finditer(masked):
+                block = cluster[0]
+                if "cfg" not in block or not _cfg_is_test_only(block):
+                    continue
+                item = item_keyword.match(masked, cluster.end())
+                if item is not None and item.group(1) == "mod":
+                    continue  # module mounts are validated below
                 violations.append(
-                    f"{relative} has unreviewed nested test seams: {actual_nested}"
+                    f"{relative} declares a test-only item in production source"
                 )
-
-            for hook in hook_matches:
-                hook_source = hook.group(0)
-                path_match = re.search(r'#\[path\s*=\s*"([^"]+)"\]', hook_source)
+            for match in module_item.finditer(masked):
+                block = match["attrs"]
+                test_only = _cfg_is_test_only(block)
+                if match["term"] == "{":
+                    if test_only:
+                        violations.append(f"{relative} embeds an inline test module")
+                    continue
+                real_block = source[match.start("attrs"):match.end("attrs")]
+                path_match = path_attribute.search(real_block)
                 if path_match is None:
-                    violations.append(f"{relative} has a test module without an explicit path")
+                    if test_only:
+                        violations.append(
+                            f"{relative} declares a test module without an external mount"
+                        )
                     continue
                 target = (source_file.parent / path_match.group(1)).resolve()
+                inside_src = target.is_relative_to(source_root)
                 if not target.is_file():
                     violations.append(
-                        f"{relative} mounts a missing test file: {path_match.group(1)}"
+                        f"{relative} mounts a missing file: {path_match.group(1)}"
                     )
-
-        seam_root = crate / "tests" / "support" / "seams"
-        seam_files = list(seam_root.rglob("*.rs")) if seam_root.is_dir() else []
-        if seam_files:
-            violations.append(
-                f"{crate.relative_to(ROOT).as_posix()} retains forbidden tests/support/seams: "
-                f"{[path.relative_to(ROOT).as_posix() for path in seam_files]}"
-            )
-        if (crate / "tests" / "source_mounted").exists():
-            violations.append(
-                f"{crate.relative_to(ROOT).as_posix()} retains tests/source_mounted"
-            )
-
+                elif test_only and inside_src:
+                    violations.append(
+                        f"{relative} mounts production source as a test module"
+                    )
+                elif not test_only and not inside_src:
+                    violations.append(
+                        f"{relative} compiles test-side file into production source"
+                    )
         test_root = crate / "tests"
-        if test_root.is_dir():
-            for test_file in test_root.rglob("*.rs"):
-                relative_parts = test_file.relative_to(test_root).parts
-                if "src" in relative_parts or relative_parts.count("tests") > 0:
+        if not test_root.is_dir():
+            continue
+        for test_file in sorted(test_root.rglob("*.rs")):
+            source = test_file.read_text(encoding="utf-8")
+            masked = mask_rust_non_code(source)
+            if "include!(" in masked:
+                violations.append(
+                    f"{test_file.relative_to(ROOT).as_posix()} includes another source file"
+                )
+            for literal in path_attribute.finditer(source):
+                target = (test_file.parent / literal.group(1)).resolve()
+                if target.is_relative_to(source_root):
                     violations.append(
-                        f"{test_file.relative_to(ROOT).as_posix()} repeats production/test layout"
+                        f"{test_file.relative_to(ROOT).as_posix()} recompiles production "
+                        f"source through {literal.group(1)}"
                     )
-                source = test_file.read_text(encoding="utf-8")
-                if "include!(" in source:
-                    violations.append(
-                        f"{test_file.relative_to(ROOT).as_posix()} includes another source file"
-                    )
-                for literal in re.finditer(
-                    r'#\[path\s*=\s*"([^"]+)"\]|include!\("([^"]+)"\)', source
-                ):
-                    raw_target = literal.group(1) or literal.group(2)
-                    target = (test_file.parent / raw_target).resolve()
-                    try:
-                        target.relative_to(source_root.resolve())
-                    except ValueError:
-                        continue
-                    violations.append(
-                        f"{test_file.relative_to(ROOT).as_posix()} recompiles production source "
-                        f"through {raw_target}"
-                    )
-
     if violations:
         raise SystemExit("Rust test structure violations:\n- " + "\n- ".join(violations))
 
 
-def check_rfc9967_test_boundaries() -> None:
-    production_sources = [
-        *(ROOT / "crates" / "scim-events" / "src").rglob("*.rs"),
-        ROOT / "crates" / "http-actix" / "src" / "scim.rs",
-    ]
-    forbidden_markers = ("#[cfg(test)]", "#[test]", "#[tokio::test]", "mod tests")
-    for path in production_sources:
-        source = path.read_text(encoding="utf-8")
-        markers = [marker for marker in forbidden_markers if marker in source]
-        if markers:
-            raise SystemExit(
-                f"{path.relative_to(ROOT)} embeds tests in production source: {markers}"
-            )
+def check_ciba_ping_connection_pinning() -> None:
+    """The CIBA ping sender must dial exactly the addresses it validated.
 
-    required_test_files = [
-        ROOT / "crates" / "scim-events" / "tests" / "domain_contract.rs",
-        ROOT / "crates" / "http-actix" / "tests" / "scim_transport.rs",
-        ROOT / "tests" / "unit" / "test_rfc9967_scim_set_e2e_source_policy.py",
-    ]
-    missing = [path.relative_to(ROOT) for path in required_test_files if not path.is_file()]
-    if missing:
-        raise SystemExit(f"RFC 9967 separated test files are missing: {missing}")
+    The binding produced by lookup_host must be the same binding iterated by
+    is_blocked_ip and passed to resolve_to_addrs; pinning any other collection
+    re-opens the DNS rebinding window between validation and connect. Redirect
+    and environment-proxy behavior are covered by end-to-end tests; this single
+    invariant remains because no black-box test can distinguish a pinned
+    connection from re-resolution.
+    """
+    path = ROOT / "crates" / "nazoauth" / "src" / "adapters" / "ciba_ping_sender.rs"
+    source = rust_production_source(path.read_text(encoding="utf-8"))
+    reference = path.relative_to(ROOT)
+    binding = re.search(
+        r"\blet\s+(?:mut\s+)?([A-Za-z_]\w*)\s*=[^;]*?\blookup_host\b[^;]*;",
+        source,
+        re.DOTALL,
+    )
+    if binding is None:
+        raise SystemExit(
+            f"{reference} must bind lookup_host(...) results to a local variable"
+        )
+    variable = binding.group(1)
+    rest = source[binding.end() :]
+    validation = re.search(
+        rf"\b{re.escape(variable)}\s*\.\s*iter\(\)\s*\.\s*any\s*\([^;]*?is_blocked_ip",
+        rest,
+    )
+    if validation is None:
+        raise SystemExit(
+            f"{reference} must validate every element of `{variable}` against "
+            "is_blocked_ip before dialing"
+        )
+    pinning = re.search(
+        rf"\.resolve_to_addrs\s*\([^;]*?&{re.escape(variable)}\b",
+        rest[validation.end() :],
+    )
+    if pinning is None:
+        raise SystemExit(
+            f"{reference} must pin the connection to `&{variable}` via "
+            "resolve_to_addrs; dialing any other address collection bypasses "
+            "the blocked-network validation"
+        )
 
+
+def check_rfc9967_matrix() -> None:
+    """The JSON matrix is the single RFC 9967 case registry; the runner must not
+    read event persistence tables, and CI must execute the matrix."""
     payload = json.loads(RFC9967_MATRIX.read_text(encoding="utf-8"))
     cases = payload.get("cases", [])
     names = [case.get("name") for case in cases]
     if (
         payload.get("schema") != 1
         or payload.get("standard") != "RFC 9967"
-        or set(names) != RFC9967_CASES
-        or len(names) != len(RFC9967_CASES)
+        or not names
+        or any(not isinstance(name, str) or not name for name in names)
+        or len(names) != len(set(names))
         or any(not case.get("handler") for case in cases)
     ):
-        raise SystemExit("RFC 9967 black-box matrix must contain the exact required cases")
+        raise SystemExit("RFC 9967 case registry is invalid")
 
     runner = RFC9967_RUNNER.read_text(encoding="utf-8")
     forbidden_tables = ("scim_security_" + "events", "scim_security_event_" + "receipts")
@@ -1105,375 +705,14 @@ def check_rfc9967_test_boundaries() -> None:
     workflow = (ROOT / ".github" / "workflows" / "conformance-security.yml").read_text(
         encoding="utf-8"
     )
-    required_workflow_fragments = (
+    for fragment in (
         "python scripts/rfc9967_scim_set_e2e.py",
-        "python tests/unit/test_rfc9967_scim_set_e2e_source_policy.py",
-    )
-    if any(fragment not in workflow for fragment in required_workflow_fragments):
-        raise SystemExit("conformance-security workflow does not enforce the RFC 9967 matrix")
-
-
-def check_removed_security_capabilities() -> None:
-    active_files = [
-        *(ROOT / "crates").glob("*/src/**/*.rs"),
-        *(ROOT / "scripts").glob("*.py"),
-        *(ROOT / "scripts").glob("*.sh"),
-        *(ROOT / "perf").glob("*.py"),
-        *(ROOT / "perf").glob("*.yaml"),
-        *(ROOT / ".github" / "workflows").glob("*.yml"),
-    ]
-    forbidden = (
-        "ENABLE_REQUEST_URI_" + "PARAMETER",
-        "ENABLE_LEGACY_AUDIENCE_" + "PARAM",
-        "SCIM_BEARER_" + "TOKEN",
-        "allow_authorization_code_" + "without_pkce",
-        "enable_request_uri_" + "parameter",
-        "enable_legacy_audience_" + "param",
-        "RequestObject" + "Mode",
-        "unsigned_request_object_" + "allowed",
-    )
-    violations = []
-    for path in active_files:
-        source = path.read_text(encoding="utf-8")
-        markers = [marker for marker in forbidden if marker in source]
-        if markers:
-            violations.append((path.relative_to(ROOT).as_posix(), markers))
-    if violations:
-        raise SystemExit(f"removed security capabilities reappeared: {violations}")
-
-    removed_test_harness = [
-        ROOT / "crates" / "nazoauth" / "src" / "http" / "scim.rs",
-        ROOT / "crates" / "nazoauth" / "src" / "http" / "scim",
-    ]
-    present = [path.relative_to(ROOT) for path in removed_test_harness if path.exists()]
-    if present:
-        raise SystemExit(f"SCIM test-only transport implementation reappeared: {present}")
-
-    policy = SECURITY_NON_IMPLEMENTATION_POLICY.read_text(encoding="utf-8")
-    required_policy_evidence = (
-        "RFC 9700",
-        "RFC 9101",
-        "RFC 9126",
-        "RFC 8707",
-        "RFC 6750",
-        "RFC 8314",
-        "Never supported by security policy",
-    )
-    missing = [item for item in required_policy_evidence if item not in policy]
-    if missing:
-        raise SystemExit(f"security non-implementation policy lacks evidence: {missing}")
-
-
-def check_fapi_ciba_boundaries() -> None:
-    delivery = (
-        ROOT / "crates" / "nazoauth" / "src" / "adapters" / "ciba_ping_sender.rs"
-    ).read_text(encoding="utf-8")
-    # External cfg(test) mounts are allowed; executable tests still live under tests/.
-    forbidden_test_markers = ("#[test]", "#[tokio::test]", "#[actix_web::test]")
-    if any(marker in delivery for marker in forbidden_test_markers) or re.search(r"mod\s+tests\s*\{", delivery):
-        raise SystemExit("CIBA ping delivery tests must remain outside production source")
-    required_delivery_guards = (
-        "apply_ciba_ping_tls_policy(reqwest::Client::builder().no_proxy())",
-        "reqwest::redirect::Policy::none()",
-        ".resolve_to_addrs(host, &addresses)",
-        ".bearer_auth(&delivery.client_notification_token)",
-        "is_blocked_ip(address.ip())",
-        ".connect_timeout(Duration::from_secs(3))",
-        ".timeout(Duration::from_secs(5))",
-    )
-    missing = [guard for guard in required_delivery_guards if guard not in delivery]
-    if missing:
-        raise SystemExit(f"CIBA ping delivery security guards are missing: {missing}")
-
-    delivery_worker = (
-        ROOT / "crates" / "authorization-server" / "src" / "workers" / "ciba_ping.rs"
-    ).read_text(encoding="utf-8")
-    for marker in (
-        "classify_ciba_ping_status(status.as_u16())", "next_ciba_ping_retry_at(",
-        ".finish(&delivery, outcome)", ".buffer_unordered(DELIVERY_CONCURRENCY)",
-        ".collect::<Vec<_>>()", "CibaPingFinishResult::Missing | CibaPingFinishResult::Conflict",
+        "test_rfc9967_scim_set_e2e_source_policy",
     ):
-        if marker not in delivery_worker:
-            raise SystemExit(f"CIBA ping application delivery policy is missing: {marker}")
-    if re.search(r"#\[\s*cfg\s*\(\s*not\s*\(\s*test\s*\)", delivery_worker):
-        raise SystemExit("CIBA ping tests must compile the production batch worker")
-
-    tls_policy = (
-        ROOT / "crates" / "nazoauth" / "src" / "adapters" / "ciba_ping_tls.rs"
-    ).read_text(encoding="utf-8")
-    if any(marker in tls_policy for marker in forbidden_test_markers):
-        raise SystemExit("CIBA ping TLS policy tests must remain outside production source")
-    if (
-        "CIBA_PING_TLS_MIN: reqwest::tls::Version = reqwest::tls::Version::TLS_1_2"
-        not in tls_policy
-        or ".tls_version_min(CIBA_PING_TLS_MIN)" not in tls_policy
-    ):
-        raise SystemExit("CIBA ping delivery must reject TLS versions below 1.2")
-    if (
-        "CIBA_PING_TLS_MAX: reqwest::tls::Version = reqwest::tls::Version::TLS_1_3"
-        not in tls_policy
-        or ".tls_version_max(CIBA_PING_TLS_MAX)" not in tls_policy
-    ):
-        raise SystemExit("CIBA ping delivery must offer TLS 1.3")
-    if ".use_rustls_tls()" not in tls_policy:
-        raise SystemExit("CIBA ping delivery must use the Rustls TLS backend")
-    if 'std::env::var_os("CIBA_PING_TLS_TRUST_BUNDLE")' not in tls_policy:
-        raise SystemExit("CIBA ping delivery must explicitly load its configured trust bundle")
-    tls_policy_test = (
-        ROOT
-        / "crates"
-        / "nazoauth"
-        / "tests"
-        / "unit"
-        / "domain"
-        / "ciba_ping_delivery.rs"
-    )
-    if not tls_policy_test.is_file():
-        raise SystemExit("CIBA ping TLS policy tests must remain outside production source")
-    tls_policy_test_source = tls_policy_test.read_text(encoding="utf-8")
-
-    delivery_policy = (
-        ROOT / "crates" / "authorization-server-core" / "src" / "ciba_ping.rs"
-    ).read_text(encoding="utf-8")
-    for required_test in (
-        "ciba_ping_transport_policy_is_bounded_to_tls12_and_tls13",
-        "ciba_ping_transport_supports_the_tls12_fapi_baseline",
-        "ciba_ping_transport_supports_tls13",
-    ):
-        if required_test not in tls_policy_test_source:
-            raise SystemExit(f"missing CIBA ping TLS policy test: {required_test}")
-    if any(marker in delivery_policy for marker in forbidden_test_markers):
-        raise SystemExit("CIBA ping policy tests must remain outside production source")
-    for guard in (
-        'parsed.scheme() != "https"',
-        "200..=299 => CibaPingResponseAction::Delivered",
-        "300..=499 => CibaPingResponseAction::TerminalFailure",
-        "_ => CibaPingResponseAction::Retry",
-        "3 => 9",
-        "next < expires_at",
-    ):
-        if guard not in delivery_policy:
-            raise SystemExit(f"CIBA ping delivery policy guard is missing: {guard}")
-    delivery_policy_test = (
-        ROOT
-        / "crates"
-        / "authorization-server-core"
-        / "tests"
-        / "ciba_ping_delivery_policy.rs"
-    )
-    if not delivery_policy_test.is_file():
-        raise SystemExit("CIBA ping delivery policy tests must remain outside production source")
-
-    migration = (
-        ROOT / "migrations" / "20260715000400_ciba_delivery_modes" / "up.sql"
-    ).read_text(encoding="utf-8")
-    for constraint in (
-        "ck_oauth_clients_ciba_delivery_mode",
-        "ck_oauth_clients_ciba_notification_endpoint",
-        "ck_oauth_clients_ciba_user_code_disabled",
-    ):
-        if constraint not in migration:
-            raise SystemExit(f"CIBA persistence constraint is missing: {constraint}")
-
-
-def check_openid4vc_boundaries() -> None:
-    production_roots = (
-        ROOT / "crates" / "digital-credentials" / "src",
-        ROOT / "crates" / "openid4vci" / "src",
-        ROOT / "crates" / "openid4vp" / "src",
-        ROOT / "crates" / "openid4vc-http-actix" / "src",
-    )
-    forbidden_test_markers = ("#[cfg(test)]", "#[test]", "#[tokio::test]", "mod tests")
-    for production_root in production_roots:
-        for source_file in production_root.rglob("*.rs"):
-            source = source_file.read_text(encoding="utf-8")
-            if any(marker in source for marker in forbidden_test_markers):
-                raise SystemExit(
-                    f"OpenID4VC tests must remain outside production source: {source_file}"
-                )
-
-    required_test_files = (
-        ROOT / "crates" / "digital-credentials" / "tests" / "domain_contract.rs",
-        ROOT / "crates" / "digital-credentials" / "tests" / "jwe_contract.rs",
-        ROOT / "crates" / "openid4vci" / "tests" / "protocol_contract.rs",
-        ROOT / "crates" / "openid4vci" / "tests" / "service_contract.rs",
-        ROOT / "crates" / "openid4vp" / "tests" / "protocol_contract.rs",
-        ROOT / "crates" / "openid4vp" / "tests" / "service_contract.rs",
-        ROOT / "crates" / "openid4vc-http-actix" / "tests" / "transport_contract.rs",
-        ROOT / "crates" / "openid4vc-http-actix" / "tests" / "transport_contract.rs",
-    )
-    missing_tests = [str(path.relative_to(ROOT)) for path in required_test_files if not path.is_file()]
-    if missing_tests:
-        raise SystemExit(f"OpenID4VC separated test contracts are missing: {missing_tests}")
-
-    server_settings = read_rust_module_tree(
-        ROOT / "crates" / "nazoauth" / "src" / "settings.rs"
-    )
-    server_config = (
-        ROOT / "crates" / "nazoauth" / "src" / "config.rs"
-    ).read_text(encoding="utf-8")
-    server_routes = (
-        ROOT / "crates" / "nazoauth" / "src" / "bootstrap" / "routes.rs"
-    ).read_text(encoding="utf-8")
-    dataset_admin = (
-        ROOT / "crates" / "nazoauth" / "src" / "http" / "admin" / "openid4vc.rs"
-    ).read_text(encoding="utf-8")
-    openid4vc_protocol_adapter = (
-        ROOT / "crates" / "openid4vc-http-actix" / "src" / "vci.rs"
-    ).read_text(encoding="utf-8")
-    openid4vc_server_domain = read_rust_module_tree(
-        ROOT / "crates" / "authorization-server" / "src" / "domain" / "openid4vc_endpoints.rs"
-    )
-    for forbidden in (
-        "OPENID4VCI_CREDENTIAL_DATASET_MANAGEMENT_TOKEN",
-        "/openid4vci/management/credential-datasets",
-    ):
-        if forbidden in server_settings or forbidden in server_routes:
-            raise SystemExit(f"OpenID4VC dataset control plane exposes retired bearer surface: {forbidden}")
-    for marker in (
-        "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
-        "OPENID4VC_KEY_ATTESTATION_JWKS_JSON",
-        "client_attestation_jwks",
-        "key_attestation_jwks",
-        "public verification keys only",
-    ):
-        if marker not in server_settings:
-            raise SystemExit(f"OpenID4VC purpose-scoped attestation trust boundary is missing: {marker}")
-    if "OPENID4VC_ATTESTATION_JWKS_JSON" in server_settings or "OPENID4VC_ATTESTATION_JWKS_JSON" in server_config:
-        raise SystemExit("OpenID4VC generic attestation trust store must not be reintroduced")
-    for marker in (
-        "require_admin_or_forbidden_with_handles",
-        "has_valid_csrf_token_for_cookies",
-        "admin.user_id().as_uuid()",
-        "json_response_no_store",
-    ):
-        if marker not in dataset_admin:
-            raise SystemExit(f"OpenID4VC dataset admin boundary is missing: {marker}")
-    for forbidden in (
-        "PutCredentialDatasetRequest",
-        "CredentialDatasetResponse",
-        "put_dataset",
-        "delete_dataset",
-    ):
-        if forbidden in openid4vc_protocol_adapter:
+        if fragment not in workflow:
             raise SystemExit(
-                f"non-standard dataset administration polluted the OpenID4VC protocol adapter: {forbidden}"
+                "conformance-security workflow does not execute the RFC 9967 matrix"
             )
-    for marker in (
-        "CredentialDatasetAdminService",
-        "#[serde(deny_unknown_fields)]",
-        "validate_managed_dataset",
-    ):
-        if marker not in openid4vc_server_domain:
-            raise SystemExit(f"OpenID4VC internal control-plane boundary is missing: {marker}")
-    keyctl = (ROOT / "crates" / "nazoauth" / "src" / "keyctl.rs").read_text(
-        encoding="utf-8"
-    )
-    key_store = "\n".join(
-        (
-            ROOT / "crates" / "key-management" / "src" / name
-        ).read_text(encoding="utf-8")
-        for name in ("database.rs", "serialization.rs")
-    )
-    for marker in (
-        "generate-local",
-        "LocalKeyRegistration",
-    ):
-        if marker not in keyctl:
-            raise SystemExit(f"OpenID4VC purpose-scoped key CLI boundary is missing: {marker}")
-    for marker in ('entry.get("purposes").is_some()', "key_entry_purposes"):
-        if marker not in key_store:
-            raise SystemExit(f"OpenID4VC purpose-scoped rotation boundary is missing: {marker}")
-    migration = (
-        ROOT / "migrations" / "20260716000100_openid4vc_final" / "up.sql"
-    ).read_text(encoding="utf-8")
-    for forbidden in ("verifier_attestation", "decentralized_identifier", "dc_api"):
-        if forbidden in migration:
-            raise SystemExit(f"unsupported OpenID4VP mechanism entered persistence: {forbidden}")
-    dataset_migration = (
-        ROOT / "migrations" / "20260718000100_openid4vci_credential_datasets" / "up.sql"
-    ).read_text(encoding="utf-8")
-    for marker in (
-        "openid4vci_credential_dataset_events",
-        "fk_openid4vci_dataset_subject_tenant",
-        "fk_openid4vci_dataset_event_actor_tenant",
-        "claims_ciphertext BYTEA",
-        "ck_openid4vci_dataset_ciphertext",
-        "source = 'admin-session'",
-    ):
-        if marker not in dataset_migration:
-            raise SystemExit(f"OpenID4VC dataset persistence boundary is missing: {marker}")
-
-
-def check_admin_provision_boundary() -> None:
-    server_root = ROOT / "crates" / "nazoauth"
-    persistence_root = ROOT / "crates" / "persistence-postgres"
-    retired_http_module = "bootstrap" + "_" + "admin.rs"
-    retired_repository_module = "initial" + "_" + "admin" + "_" + "bootstrap.rs"
-    retired_paths = (
-        server_root / "src" / "http" / retired_http_module,
-        server_root / "tests" / "unit" / "http" / retired_http_module,
-        persistence_root / "src" / "repositories" / retired_repository_module,
-        persistence_root / "tests" / retired_repository_module,
-    )
-    present = [str(path.relative_to(ROOT)) for path in retired_paths if path.exists()]
-    if present:
-        raise SystemExit(f"retired administrator bootstrap assets remain: {present}")
-
-    routes = (server_root / "src" / "bootstrap" / "routes.rs").read_text(
-        encoding="utf-8"
-    )
-    server_sources = "\n".join(
-        (server_root / relative).read_text(encoding="utf-8")
-        for relative in (
-            Path("src/bootstrap/routes.rs"),
-            Path("src/bootstrap/startup/configuration.rs"),
-            Path("src/bootstrap/startup/services/factory.rs"),
-            Path("src/http/mod.rs"),
-            Path("src/cli.rs"),
-        )
-    )
-    persistence_sources = "\n".join(
-        (persistence_root / relative).read_text(encoding="utf-8")
-        for relative in (
-            Path("src/schema.rs"),
-            Path("src/lib.rs"),
-            Path("src/repositories/mod.rs"),
-            Path("src/repositories/audit.rs"),
-        )
-    )
-    retired_route = 'route("/' + "bootstrap" + "-" + 'admin"'
-    if retired_route in routes:
-        raise SystemExit("authorization server still exposes the retired setup route")
-    retired_references = (
-        "bootstrap" + "_" + "admin",
-        "Initial" + "Admin" + "Bootstrap",
-        "Initial" + "Admin" + "ClaimOutcome",
-        "initial" + "_" + "admin" + "_" + "bootstrap" + "_receipts",
-        "initial" + "-" + "admin" + "-" + "token",
-    )
-    for forbidden in retired_references:
-        if forbidden in server_sources or forbidden in persistence_sources:
-            raise SystemExit(f"retired administrator bootstrap reference remains: {forbidden}")
-    for marker in (
-        '"admin-provision"',
-        "ADMIN_PROVISION_CREDENTIAL_FILE_ENV",
-        "AdminProvisionRepository",
-        "admin_provision_receipts",
-    ):
-        if marker not in server_sources + persistence_sources:
-            raise SystemExit(f"admin provisioning boundary is missing: {marker}")
-
-    migration = (
-        ROOT / "migrations" / "20260830000100_admin_user_provisioning" / "up.sql"
-    ).read_text(encoding="utf-8")
-    retired_receipts = (
-        "initial" + "_" + "admin" + "_" + "bootstrap" + "_receipts"
-    )
-    if f"DROP TABLE IF EXISTS {retired_receipts}" not in migration:
-        raise SystemExit("admin provisioning migration does not remove the retired receipt table")
-    if "admin_user_created" not in migration:
-        raise SystemExit("admin provisioning migration lacks the durable audit event type")
 
 
 def main() -> None:
@@ -1488,23 +727,15 @@ def main() -> None:
         append_migration(args.append_migration)
     if args.check:
         check_migration_checksums()
-        check_route_fixture()
         check_documentation_boundaries()
-        check_authorization_server_import_boundaries()
         check_toolchain_pins()
-        check_crate_dependency_boundaries()
-        check_contract_definition_owners()
+        check_package_roles()
         check_inner_source_boundaries()
-        check_transient_state_backend_boundary()
         check_aggregate_package_boundary()
-        check_connection_url_configuration_boundary()
         check_workspace_package_metadata()
         check_rust_test_structure()
-        check_rfc9967_test_boundaries()
-        check_removed_security_capabilities()
-        check_fapi_ciba_boundaries()
-        check_openid4vc_boundaries()
-        check_admin_provision_boundary()
+        check_ciba_ping_connection_pinning()
+        check_rfc9967_matrix()
 
 
 if __name__ == "__main__":

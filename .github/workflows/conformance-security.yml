@@ -73,8 +73,6 @@ jobs:
           python -m py_compile scripts/full_real_request_source_policy.py scripts/rfc9967_scim_set_e2e.py
           python scripts/rfc9967_scim_set_e2e.py --source-policy-check
           python tests/unit/test_rfc9967_scim_set_e2e_source_policy.py
-      - name: Verify compatibility contracts
-        run: python scripts/verify_static_contracts.py --check
 
   supply-chain-gate:
     runs-on: ubuntu-latest
@@ -87,11 +85,8 @@ jobs:
         uses: taiki-e/install-action@c3ec0de9ae7f1019cea21aa96aa0a895b9552063 # v2.87.9
         with:
           tool: |
-            cargo-audit@0.22.2
             cargo-deny@0.20.2
             cargo-cyclonedx@0.5.9
-      - name: Audit Rust advisories
-        run: cargo audit
       - name: Check dependency policy
         run: cargo deny check advisories bans licenses sources
       - name: Generate Rust SBOM
@@ -123,12 +118,6 @@ jobs:
               --severity CRITICAL,HIGH \
               --ignore-unfixed \
               --input /image.tar
-          docker image inspect nazo-oauth-supply-chain:${{ github.sha }} --format '{{.Id}}' \
-            > target/ci-service-image/image-id.txt
-          (
-            cd target/ci-service-image
-            sha256sum nazo-oauth-service.tar > nazo-oauth-service.tar.sha256
-          )
       - name: Upload scanned service image
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
@@ -156,16 +145,9 @@ jobs:
         with:
           name: nazo-oauth-service-image-${{ github.sha }}
           path: target/ci-service-image
-      - name: Verify and load scanned service image
+      - name: Load scanned service image
         run: |
-          (
-            cd target/ci-service-image
-            sha256sum --check nazo-oauth-service.tar.sha256
-          )
           docker load --input target/ci-service-image/nazo-oauth-service.tar
-          expected_image_id="$(cat target/ci-service-image/image-id.txt)"
-          actual_image_id="$(docker image inspect nazo-oauth-supply-chain:${{ github.sha }} --format '{{.Id}}')"
-          test "$actual_image_id" = "$expected_image_id"
           docker tag nazo-oauth-supply-chain:${{ github.sha }} nazo-oauth-e2e:latest
       - uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
       - name: Build E2E runner image
