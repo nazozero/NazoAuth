@@ -8,14 +8,19 @@
 //! The harness is gated on `NAZO_PERF_HOTPATH=1` and requires
 //! `NAZO_TEST_DATABASE_URL`/`DATABASE_URL`, `NAZO_TEST_VALKEY_URL`/`VALKEY_URL`,
 //! plus `NAZO_PERF_OUTPUT` for the JSONL results file. Optional knobs:
-//! `NAZO_PERF_OPS` (default 10000 measured ops per group-run),
-//! `NAZO_PERF_RUNS` (default 5), `NAZO_PERF_WARMUP` (default 500),
-//! `NAZO_PERF_CONCURRENCIES` (default "1,8,32").
+//! `NAZO_PERF_OPS` (default 2000 measured ops per E2E group-run),
+//! `NAZO_PERF_RUNS` (default 3), `NAZO_PERF_WARMUP` (default 200),
+//! `NAZO_PERF_CONCURRENCIES` (default "1,8,32", E2E only),
+//! `NAZO_PERF_SENS_OPS`/`NAZO_PERF_SENS_WARMUP` (defaults 3000/300,
+//! algorithm-sensitivity phase at fixed concurrency 8).
 //!
 //! One-time inputs (authorization codes) are prepared independently per op —
 //! codes are seeded into Valkey under the same state shape the authorize flow
 //! writes — and refresh/native-SSO chains are bootstrapped through real code
-//! redemptions, so measured successes are never replayed errors.
+//! redemptions, so measured successes are never replayed errors. Subject-bound
+//! paths (userinfo/token-exchange) redeem a fresh subject access token through
+//! a real code redemption before every group-run's warmup; the provisioning
+//! bootstrap token only proves the tenant's signing algorithm.
 
 use std::{
     collections::HashMap,
@@ -97,11 +102,20 @@ struct BenchConfig {
     database_url: String,
     valkey_url: String,
     output: PathBuf,
+    /// Measured ops per E2E group-run.
     ops: usize,
     runs: usize,
+    /// Warmup ops per E2E group-run.
     warmup: usize,
+    /// E2E concurrency levels; the sensitivity phase is fixed at 8.
     concurrencies: Vec<usize>,
+    /// Measured ops per sensitivity group-run (concurrency 8).
+    sens_ops: usize,
+    /// Warmup ops per sensitivity group-run.
+    sens_warmup: usize,
 }
+
+const SENSITIVITY_CONCURRENCY: usize = 8;
 
 fn bench_config() -> Option<BenchConfig> {
     if std::env::var("NAZO_PERF_HOTPATH").as_deref() != Ok("1") {
@@ -129,10 +143,12 @@ fn bench_config() -> Option<BenchConfig> {
         database_url,
         valkey_url,
         output,
-        ops: env_usize("NAZO_PERF_OPS", 10_000),
-        runs: env_usize("NAZO_PERF_RUNS", 5),
-        warmup: env_usize("NAZO_PERF_WARMUP", 500),
+        ops: env_usize("NAZO_PERF_OPS", 2_000),
+        runs: env_usize("NAZO_PERF_RUNS", 3),
+        warmup: env_usize("NAZO_PERF_WARMUP", 200),
         concurrencies,
+        sens_ops: env_usize("NAZO_PERF_SENS_OPS", 3_000),
+        sens_warmup: env_usize("NAZO_PERF_SENS_WARMUP", 300),
     })
 }
 
@@ -236,6 +252,13 @@ impl ServerProcess {
             );
             std::thread::sleep(Duration::from_millis(500));
         }
+    }
+}
+
+impl Drop for ServerProcess {
+    fn drop(&mut self) {
+        let _ = self.child.kill();
+        let _ = self.child.wait();
     }
 }
 
@@ -382,12 +405,61 @@ fn provisioning_request(slug: &str, host: &str, issuer: &str) -> TenantProvision
     }
 }
 
+/// Resources a run must not leave behind: the isolated `perf_hot_*` database
+/// and the bootstrap/server temp directories (config files carry generated
+/// secrets, plus server.log). Declared last on `IssuanceFixture` so it drops
+/// after the server child, connection pool, and stores are gone.
+struct FixtureCleanup {
+    admin_url: String,
+    database_name: String,
+    temp_dirs: Vec<PathBuf>,
+}
+
+/// `Drop` cannot await on the caller's runtime, so the DROP DATABASE runs on
+/// a dedicated thread owning a single-threaded runtime.
+fn drop_isolated_database(admin_url: String, statement: String) {
+    let _ = std::thread::Builder::new()
+        .name("perf-db-cleanup".to_owned())
+        .spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("cleanup runtime should build");
+            runtime.block_on(async move {
+                if let Ok(mut connection) = AsyncPgConnection::establish(&admin_url).await {
+                    let _ = connection.batch_execute(&statement).await;
+                }
+            });
+        })
+        .map(|handle| handle.join());
+}
+
+impl Drop for FixtureCleanup {
+    fn drop(&mut self) {
+        if !self.database_name.is_empty() {
+            drop_isolated_database(
+                self.admin_url.clone(),
+                format!(
+                    "DROP DATABASE IF EXISTS \"{}\" WITH (FORCE)",
+                    self.database_name
+                ),
+            );
+        }
+        for dir in self.temp_dirs.drain(..) {
+            if let Err(error) = std::fs::remove_dir_all(&dir) {
+                eprintln!("perf cleanup could not remove {}: {error}", dir.display());
+            }
+        }
+    }
+}
+
 struct IssuanceFixture {
     server: ServerProcess,
     isolated_url: String,
     pool: nazo_postgres::DbPool,
     state_epoch: Uuid,
     secrets: BenchSecrets,
+    _cleanup: FixtureCleanup,
 }
 
 /// One benchmark tenant whose keyset was seeded with `at_algorithm` as the
@@ -399,9 +471,6 @@ struct AlgorithmTenant {
     issuer: String,
     user_id: Uuid,
     store: AuthorizationStore,
-    /// Bootstrapped access token presented by the userinfo and token-exchange
-    /// paths; issued by this tenant under `at_algorithm_name`.
-    subject_at: String,
 }
 
 async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> IssuanceFixture {
@@ -442,9 +511,15 @@ async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> Issuanc
         drop(role_coordinator);
     }
 
+    let mut cleanup = FixtureCleanup {
+        admin_url: database_url.to_owned(),
+        database_name: database_name.clone(),
+        temp_dirs: Vec::new(),
+    };
     let secrets = BenchSecrets::generate();
 
     let bootstrap_dir = temporary_directory("bootstrap");
+    cleanup.temp_dirs.push(bootstrap_dir.clone());
     let bootstrap_config = bootstrap_dir.join(".env.yaml");
     write_config(
         &bootstrap_config,
@@ -460,6 +535,7 @@ async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> Issuanc
     run_cli("migrate", &bootstrap_config);
 
     let process_dir = temporary_directory("server");
+    cleanup.temp_dirs.push(process_dir.clone());
     let port = free_port();
     let config = process_dir.join(".env.yaml");
     write_config(
@@ -484,6 +560,7 @@ async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> Issuanc
         pool,
         state_epoch,
         secrets,
+        _cleanup: cleanup,
     }
 }
 
@@ -594,16 +671,6 @@ async fn provision_algorithm_tenant(
     seed_client(
         connection,
         &tenant,
-        "bench-web-ps",
-        web_scopes,
-        web_grants,
-        "PS256",
-        pepper,
-    )
-    .await;
-    seed_client(
-        connection,
-        &tenant,
         "bench-sso",
         sso_scopes,
         sso_grants,
@@ -611,22 +678,13 @@ async fn provision_algorithm_tenant(
         pepper,
     )
     .await;
-    seed_client(
-        connection,
-        &tenant,
-        "bench-sso-ps",
-        sso_scopes,
-        sso_grants,
-        "PS256",
-        pepper,
-    )
-    .await;
 
     let store = authorization_store(valkey_url, &tenant, fixture.state_epoch).await;
 
-    // A real bootstrap redemption both yields the reusable subject token for
-    // userinfo/token-exchange and proves the seeded keyset's algorithm is the
-    // one signing — a lost provisioning race fails here, never silently.
+    // A real bootstrap redemption proves the seeded keyset's algorithm is the
+    // one signing — a lost provisioning race fails here, never silently. The
+    // token is not reused: subject-bound paths redeem a fresh one per
+    // group-run.
     let codes = seed_codes(
         &store,
         "bench-web",
@@ -661,14 +719,6 @@ async fn provision_algorithm_tenant(
         issuer,
         user_id,
         store,
-        subject_at: access_token,
-    }
-}
-
-impl Drop for IssuanceFixture {
-    fn drop(&mut self) {
-        let _ = self.server.child.kill();
-        let _ = self.server.child.wait();
     }
 }
 
@@ -1134,7 +1184,6 @@ enum PathKind {
 
 struct BenchPath {
     name: &'static str,
-    tenant: usize,
     algs: String,
     client_id: &'static str,
     needs_mtls: bool,
@@ -1214,231 +1263,308 @@ async fn run_benchmark(bench: BenchConfig) {
         out.flush().expect("record should flush");
     };
 
-    // Full matrix: every grant path under every access-token algorithm, with
-    // the ID-token algorithm dimension where the path issues one.
-    let mut paths = Vec::new();
-    for (tenant_index, tenant) in tenants.iter().enumerate() {
-        let at = tenant.at_algorithm_name;
-        let mut push = |name: &'static str,
-                        id_alg: Option<&'static str>,
-                        client_id: &'static str,
-                        needs_mtls: bool,
-                        kind: PathKind| {
-            paths.push(BenchPath {
-                name,
-                tenant: tenant_index,
-                algs: match id_alg {
-                    Some(id_alg) => format!("at={at},id_token={id_alg}"),
-                    None => format!("at={at}"),
-                },
-                client_id,
-                needs_mtls,
-                kind,
-            });
-        };
-        push(
-            "client_credentials",
-            None,
-            "bench-web",
-            false,
-            PathKind::ClientCredentials,
-        );
-        push(
-            "authorization_code",
-            Some("RS256"),
-            "bench-web",
-            false,
-            PathKind::AuthorizationCode,
-        );
-        push(
-            "authorization_code",
-            Some("PS256"),
-            "bench-web-ps",
-            false,
-            PathKind::AuthorizationCode,
-        );
-        push(
-            "refresh_token",
-            Some("RS256"),
-            "bench-web",
-            false,
-            PathKind::Refresh,
-        );
-        push(
-            "refresh_token",
-            Some("PS256"),
-            "bench-web-ps",
-            false,
-            PathKind::Refresh,
-        );
-        push(
-            "userinfo_pairwise",
-            None,
-            "bench-web",
-            false,
-            PathKind::Userinfo,
-        );
-        push(
-            "token_exchange",
-            None,
-            "bench-web",
-            false,
-            PathKind::TokenExchange,
-        );
-        push(
-            "native_sso_fresh",
-            Some("RS256"),
-            "bench-sso",
-            true,
-            PathKind::NativeSso,
-        );
-        push(
-            "native_sso_fresh",
-            Some("PS256"),
-            "bench-sso-ps",
-            true,
-            PathKind::NativeSso,
-        );
-    }
+    // E2E hot paths on the representative RS256 tenant; ID-token-issuing
+    // paths use the representative RS256 id-token client configuration — no
+    // id-token algorithm cross-product.
+    let rs256_tenant = tenants
+        .iter()
+        .find(|tenant| tenant.at_algorithm_name == "RS256")
+        .expect("the RS256 tenant is provisioned");
+    let e2e_paths = [
+        BenchPath {
+            name: "client_credentials",
+            algs: "at=RS256".to_owned(),
+            client_id: "bench-web",
+            needs_mtls: false,
+            kind: PathKind::ClientCredentials,
+        },
+        BenchPath {
+            name: "authorization_code",
+            algs: "at=RS256,id_token=RS256".to_owned(),
+            client_id: "bench-web",
+            needs_mtls: false,
+            kind: PathKind::AuthorizationCode,
+        },
+        BenchPath {
+            name: "refresh_token",
+            algs: "at=RS256,id_token=RS256".to_owned(),
+            client_id: "bench-web",
+            needs_mtls: false,
+            kind: PathKind::Refresh,
+        },
+        BenchPath {
+            name: "userinfo_pairwise",
+            algs: "at=RS256".to_owned(),
+            client_id: "bench-web",
+            needs_mtls: false,
+            kind: PathKind::Userinfo,
+        },
+        BenchPath {
+            name: "token_exchange",
+            algs: "at=RS256".to_owned(),
+            client_id: "bench-web",
+            needs_mtls: false,
+            kind: PathKind::TokenExchange,
+        },
+        BenchPath {
+            name: "native_sso_fresh",
+            algs: "at=RS256,id_token=RS256".to_owned(),
+            client_id: "bench-sso",
+            needs_mtls: true,
+            kind: PathKind::NativeSso,
+        },
+    ];
 
-    for path in &paths {
-        let tenant = &tenants[path.tenant];
-        let host_for_workers = tenant.host.clone();
-        let mtls_header = path.needs_mtls.then(mtls_client_cert_header);
-        let client_id = path.client_id;
-        let worker_mtls = mtls_header.clone();
-        let make_worker = move |_index: usize| {
-            Worker::new(port, &host_for_workers, client_id, worker_mtls.clone())
-        };
-
+    for path in &e2e_paths {
         for &concurrency in &bench.concurrencies {
-            let warmup_per_worker = bench.warmup.div_ceil(concurrency).max(1);
-            let measured_per_worker = bench.ops.div_ceil(concurrency).max(1);
-
             for run in 0..bench.runs {
-                // Fresh inputs for every run — runs are independent
-                // executions, not continuations of earlier state.
-                let warmup_inputs = prepare_run_inputs(
-                    path,
-                    tenant,
-                    RunInputRequest {
-                        port,
-                        workers: concurrency,
-                        ops_per_worker: warmup_per_worker,
-                        mtls_header: mtls_header.clone(),
+                measure_group_run(
+                    &GroupRun {
+                        path,
+                        tenant: rs256_tenant,
+                        concurrency,
+                        run,
+                        warmup_ops: bench.warmup,
+                        measured_ops: bench.ops,
                     },
+                    &mut connection,
+                    port,
+                    &mut emit,
                 )
                 .await;
-
-                let warmup = execute(
-                    path,
-                    concurrency,
-                    warmup_per_worker,
-                    warmup_inputs,
-                    &make_worker,
-                    &tenant.subject_at,
-                    &tenant.issuer,
-                );
-                assert_eq!(
-                    warmup.errors,
-                    0,
-                    "warmup errors for {} c={concurrency} run={} — fixture broken: {}",
-                    path.name,
-                    run + 1,
-                    warmup.first_error
-                );
-
-                let measured_inputs: Vec<Vec<String>> = match path.kind {
-                    PathKind::AuthorizationCode => {
-                        let codes = seed_codes(
-                            &tenant.store,
-                            path.client_id,
-                            tenant.user_id,
-                            &["openid", "offline_access", "api:read"],
-                            measured_per_worker * concurrency,
-                            None,
-                        )
-                        .await;
-                        split_inputs(codes, concurrency)
-                    }
-                    // Refresh chains / SSO pairs continue from warmup state.
-                    _ => warmup.final_inputs,
-                };
-
-                let before = statement_snapshot(&mut connection).await;
-                let result = execute(
-                    path,
-                    concurrency,
-                    measured_per_worker,
-                    measured_inputs,
-                    &make_worker,
-                    &tenant.subject_at,
-                    &tenant.issuer,
-                );
-                let after = statement_snapshot(&mut connection).await;
-                assert!(
-                    !after.is_empty(),
-                    "pg_stat_statements produced an empty snapshot for {} c={concurrency} run={} \
-                     — SQL-call evidence would be fabricated as zero",
-                    path.name,
-                    run + 1,
-                );
-                let (sql_total, sql_attributed) = statement_delta(&before, &after);
-                let record = GroupRecord {
-                    path: path.name.to_owned(),
-                    signing_algorithms: path.algs.to_owned(),
-                    concurrency,
-                    run: run + 1,
-                    warmup_ops: warmup_per_worker * concurrency,
-                    measured_ops: result.ops,
-                    errors: result.errors,
-                    first_error: result.first_error.clone(),
-                    wall_ms: result.wall_ms,
-                    throughput_ops_s: if result.wall_ms > 0.0 {
-                        result.ops as f64 / (result.wall_ms / 1000.0)
-                    } else {
-                        0.0
-                    },
-                    p50_ms: result.p50_ms,
-                    p95_ms: result.p95_ms,
-                    p99_ms: result.p99_ms,
-                    sql_calls_total: sql_total,
-                    sql_calls_attributed: sql_attributed,
-                    sql_per_op: if result.ops > 0 {
-                        sql_attributed as f64 / result.ops as f64
-                    } else {
-                        0.0
-                    },
-                };
-                emit(&record);
-                // The record is evidence, not a pass: any measured error or
-                // shortfall in successful operations fails the benchmark.
-                assert_eq!(
-                    result.errors,
-                    0,
-                    "{} c={concurrency} run={} recorded {} measured errors: {}",
-                    path.name,
-                    run + 1,
-                    result.errors,
-                    result.first_error
-                );
-                assert_eq!(
-                    result.ops,
-                    measured_per_worker * concurrency,
-                    "{} c={concurrency} run={} measured {} successful ops, expected {}",
-                    path.name,
-                    run + 1,
-                    result.ops,
-                    measured_per_worker * concurrency
-                );
             }
         }
     }
 
-    println!(
-        "benchmark complete; server log at {}",
-        fixture.server.log_path.display()
+    // Algorithm sensitivity: two representative paths (signing via
+    // client_credentials, verification + PG ownership via userinfo) across
+    // all four access-token algorithms at a fixed concurrency.
+    for tenant in &tenants {
+        let at = tenant.at_algorithm_name;
+        let sensitivity_paths = [
+            BenchPath {
+                name: "client_credentials",
+                algs: format!("at={at}"),
+                client_id: "bench-web",
+                needs_mtls: false,
+                kind: PathKind::ClientCredentials,
+            },
+            BenchPath {
+                name: "userinfo_pairwise",
+                algs: format!("at={at}"),
+                client_id: "bench-web",
+                needs_mtls: false,
+                kind: PathKind::Userinfo,
+            },
+        ];
+        for path in &sensitivity_paths {
+            for run in 0..bench.runs {
+                measure_group_run(
+                    &GroupRun {
+                        path,
+                        tenant,
+                        concurrency: SENSITIVITY_CONCURRENCY,
+                        run,
+                        warmup_ops: bench.sens_warmup,
+                        measured_ops: bench.sens_ops,
+                    },
+                    &mut connection,
+                    port,
+                    &mut emit,
+                )
+                .await;
+            }
+        }
+    }
+
+    println!("benchmark complete");
+}
+
+/// One (path, tenant, concurrency, run) measurement group.
+struct GroupRun<'a> {
+    path: &'a BenchPath,
+    tenant: &'a AlgorithmTenant,
+    concurrency: usize,
+    run: usize,
+    warmup_ops: usize,
+    measured_ops: usize,
+}
+
+/// Execute one group: redeem a fresh subject token for subject-bound paths,
+/// warm up, measure, emit the record, and fail the benchmark on any error or
+/// success shortfall.
+async fn measure_group_run(
+    group: &GroupRun<'_>,
+    connection: &mut AsyncPgConnection,
+    port: u16,
+    emit: &mut dyn FnMut(&GroupRecord),
+) {
+    let &GroupRun {
+        path,
+        tenant,
+        concurrency,
+        run,
+        warmup_ops,
+        measured_ops,
+    } = group;
+    // Subject-bound paths present a fresh access token per group-run —
+    // redeemed through the production store + real /token redemption, never
+    // the provisioning bootstrap token.
+    let subject_at = match path.kind {
+        PathKind::Userinfo | PathKind::TokenExchange => {
+            fresh_subject_token(tenant, port, path.client_id).await
+        }
+        _ => String::new(),
+    };
+
+    let host_for_workers = tenant.host.clone();
+    let mtls_header = path.needs_mtls.then(mtls_client_cert_header);
+    let client_id = path.client_id;
+    let worker_mtls = mtls_header.clone();
+    let make_worker =
+        move |_index: usize| Worker::new(port, &host_for_workers, client_id, worker_mtls.clone());
+
+    let warmup_per_worker = warmup_ops.div_ceil(concurrency).max(1);
+    let measured_per_worker = measured_ops.div_ceil(concurrency).max(1);
+
+    // Fresh inputs for every run — runs are independent executions, not
+    // continuations of earlier state.
+    let warmup_inputs = prepare_run_inputs(
+        path,
+        tenant,
+        RunInputRequest {
+            port,
+            workers: concurrency,
+            ops_per_worker: warmup_per_worker,
+            mtls_header: mtls_header.clone(),
+        },
+    )
+    .await;
+
+    let warmup = execute(
+        path,
+        concurrency,
+        warmup_per_worker,
+        warmup_inputs,
+        &make_worker,
+        &subject_at,
+        &tenant.issuer,
     );
+    assert_eq!(
+        warmup.errors,
+        0,
+        "warmup errors for {} c={concurrency} run={} — fixture broken: {}",
+        path.name,
+        run + 1,
+        warmup.first_error
+    );
+
+    let measured_inputs: Vec<Vec<String>> = match path.kind {
+        PathKind::AuthorizationCode => {
+            let codes = seed_codes(
+                &tenant.store,
+                path.client_id,
+                tenant.user_id,
+                &["openid", "offline_access", "api:read"],
+                measured_per_worker * concurrency,
+                None,
+            )
+            .await;
+            split_inputs(codes, concurrency)
+        }
+        // Refresh chains / SSO pairs continue from warmup state.
+        _ => warmup.final_inputs,
+    };
+
+    let before = statement_snapshot(connection).await;
+    let result = execute(
+        path,
+        concurrency,
+        measured_per_worker,
+        measured_inputs,
+        &make_worker,
+        &subject_at,
+        &tenant.issuer,
+    );
+    let after = statement_snapshot(connection).await;
+    assert!(
+        !after.is_empty(),
+        "pg_stat_statements produced an empty snapshot for {} c={concurrency} run={} \
+         — SQL-call evidence would be fabricated as zero",
+        path.name,
+        run + 1,
+    );
+    let (sql_total, sql_attributed) = statement_delta(&before, &after);
+    emit(&GroupRecord {
+        path: path.name.to_owned(),
+        signing_algorithms: path.algs.to_owned(),
+        concurrency,
+        run: run + 1,
+        warmup_ops: warmup_per_worker * concurrency,
+        measured_ops: result.ops,
+        errors: result.errors,
+        first_error: result.first_error.clone(),
+        wall_ms: result.wall_ms,
+        throughput_ops_s: if result.wall_ms > 0.0 {
+            result.ops as f64 / (result.wall_ms / 1000.0)
+        } else {
+            0.0
+        },
+        p50_ms: result.p50_ms,
+        p95_ms: result.p95_ms,
+        p99_ms: result.p99_ms,
+        sql_calls_total: sql_total,
+        sql_calls_attributed: sql_attributed,
+        sql_per_op: if result.ops > 0 {
+            sql_attributed as f64 / result.ops as f64
+        } else {
+            0.0
+        },
+    });
+    // The record is evidence, not a pass: any measured error or shortfall in
+    // successful operations fails the benchmark.
+    assert_eq!(
+        result.errors,
+        0,
+        "{} c={concurrency} run={} recorded {} measured errors: {}",
+        path.name,
+        run + 1,
+        result.errors,
+        result.first_error
+    );
+    assert_eq!(
+        result.ops,
+        measured_per_worker * concurrency,
+        "{} c={concurrency} run={} measured {} successful ops, expected {}",
+        path.name,
+        run + 1,
+        result.ops,
+        measured_per_worker * concurrency
+    );
+}
+
+/// Seed one pending code and redeem it through the real /token exchange —
+/// a fresh subject access token for one group-run.
+async fn fresh_subject_token(tenant: &AlgorithmTenant, port: u16, client_id: &str) -> String {
+    let codes = seed_codes(
+        &tenant.store,
+        client_id,
+        tenant.user_id,
+        &["openid", "api:read"],
+        1,
+        None,
+    )
+    .await;
+    let host = tenant.host.clone();
+    let client_id = client_id.to_owned();
+    let code = codes.into_iter().next().expect("one subject code seeded");
+    tokio::task::block_in_place(move || {
+        let worker = Worker::new(port, &host, &client_id, None);
+        redeem_code(&worker, &code)["access_token"]
+            .as_str()
+            .expect("fresh subject access token")
+            .to_owned()
+    })
 }
 
 struct RunInputRequest {
