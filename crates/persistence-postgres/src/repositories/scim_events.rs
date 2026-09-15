@@ -9,7 +9,7 @@ use nazo_scim_events::{
 };
 use uuid::Uuid;
 
-use crate::DbPool;
+use crate::{DbPool, get_conn};
 
 #[derive(Clone)]
 pub struct ScimEventRepository {
@@ -99,9 +99,7 @@ impl EventStorePort for ScimEventRepository {
         request: &'a ValidatedPollRequest,
     ) -> EventFuture<'a, Result<EventPage, EventStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| EventStoreError::Unavailable)?;
             connection

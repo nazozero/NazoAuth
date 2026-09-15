@@ -14,22 +14,11 @@ struct HolderFixture {
 
 #[allow(unused_variables)]
 impl TokenRepositoryPort for HolderFixture {
-    fn validate_response_key_ring(&self) -> TokenFuture<'_, ()> {
-        panic!("unexpected TokenRepositoryPort::validate_response_key_ring call")
-    }
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
         panic!("unexpected TokenRepositoryPort::commit_token_issuance call")
-    }
-    fn token_issuance_by_grant<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-        grant_key: &'a str,
-    ) -> TokenFuture<'a, Option<TokenIssuanceRecord>> {
-        panic!("unexpected TokenRepositoryPort::token_issuance_by_grant call")
     }
     fn client_by_protocol_id<'a>(
         &'a self,
@@ -59,6 +48,20 @@ impl TokenRepositoryPort for HolderFixture {
         user_id: Uuid,
     ) -> TokenFuture<'_, Option<SubjectClaims>> {
         panic!("unexpected TokenRepositoryPort::active_subject_claims call")
+    }
+    fn active_subject_claims_by_access_token<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        jti: &'a str,
+    ) -> TokenFuture<'a, Option<SubjectClaims>> {
+        panic!("unexpected TokenRepositoryPort::active_subject_claims_by_access_token call")
+    }
+    fn active_subject_id_by_access_token<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        jti: &'a str,
+    ) -> TokenFuture<'a, Option<Uuid>> {
+        panic!("unexpected TokenRepositoryPort::active_subject_id_by_access_token call")
     }
     fn revoke_issued_tokens<'a>(
         &'a self,
@@ -108,22 +111,6 @@ impl TokenStateStorePort for HolderFixture {
         ttl_seconds: u64,
     ) -> TokenFuture<'a, AuthorizationCodeTransitionResult> {
         panic!("unexpected TokenStateStorePort::mark_authorization_code call")
-    }
-    fn store_access_token_subject<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-        user_id: Uuid,
-        ttl_seconds: u64,
-    ) -> TokenFuture<'a, ()> {
-        panic!("unexpected TokenStateStorePort::store_access_token_subject call")
-    }
-    fn load_access_token_subject<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-    ) -> TokenFuture<'a, Option<Uuid>> {
-        panic!("unexpected TokenStateStorePort::load_access_token_subject call")
     }
     fn increment_token_management_rate<'a>(
         &'a self,

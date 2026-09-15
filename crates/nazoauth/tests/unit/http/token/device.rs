@@ -535,7 +535,7 @@ async fn device_token_rejects_client_policy_before_polling_state() {
 }
 
 #[actix_web::test]
-async fn device_code_replay_rejects_a_consumed_code_even_with_a_persisted_response() {
+async fn device_code_replay_rejects_a_consumed_code_after_a_committed_issuance() {
     let Some(state) = live_device_replay_state().await else {
         return;
     };
@@ -547,7 +547,7 @@ async fn device_code_replay_rejects_a_consumed_code_even_with_a_persisted_respon
         nazo_oauth_server::crypto::blake3_hex(&device_code)
     );
 
-    crate::http::token::issue::tests::persist_token_issuance_response_for_test(
+    crate::http::token::issue::tests::persist_consumed_single_use_grant_for_test(
         &state, &client, &grant_key,
     )
     .await;

@@ -299,30 +299,6 @@ pub(crate) fn mfa_totp_key_ring(
     )?))
 }
 
-/// Parses the independent response-envelope key ring used by durable token
-/// issuance recovery. The current key/id pair is mandatory for the running
-/// server; the previous pair is optional only during a bounded rotation
-/// overlap. `Settings::from_config` calls the optional validator so malformed
-/// values fail early, while bootstrap calls this strict function before
-/// constructing the token repository.
-pub(crate) fn token_issuance_response_key_ring(
-    config: &ConfigSource,
-) -> anyhow::Result<nazo_persistence::TokenIssuanceResponseKeyRing> {
-    let current_key = parse_required_32_byte_key(config, "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY")?;
-    let current_id = config.required_string("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID")?;
-    let previous_key =
-        parse_optional_32_byte_key(config, "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY")?;
-    let previous_id = config.optional_string("TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID");
-    if previous_key.is_some() != previous_id.is_some() {
-        bail!(
-            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY and TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID must be configured together"
-        );
-    }
-    let previous = previous_key.zip(previous_id).map(|(key, id)| (id, key));
-    nazo_persistence::TokenIssuanceResponseKeyRing::new(current_id, current_key, previous)
-        .map_err(anyhow::Error::from)
-}
-
 pub(crate) fn signing_key_wrapping_key_ring(
     config: &ConfigSource,
 ) -> anyhow::Result<nazo_key_management::SigningKeyWrappingKeyRing> {
@@ -341,24 +317,6 @@ pub(crate) fn signing_key_wrapping_key_ring(
         previous_key.zip(previous_id).map(|(key, id)| (id, key)),
     )
     .map_err(anyhow::Error::from)
-}
-
-fn validate_optional_token_issuance_response_key_config(
-    config: &ConfigSource,
-) -> anyhow::Result<()> {
-    let current_key = config.optional_string("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY");
-    let current_id = config.optional_string("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID");
-    let previous_key = config.optional_string("TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY");
-    let previous_id = config.optional_string("TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID");
-    if current_key.is_none()
-        && current_id.is_none()
-        && previous_key.is_none()
-        && previous_id.is_none()
-    {
-        return Ok(());
-    }
-    let _ = token_issuance_response_key_ring(config)?;
-    Ok(())
 }
 
 fn parse_required_32_byte_key(

@@ -1,5 +1,4 @@
 use nazo_digital_credentials::EphemeralEncryptionKey;
-use nazo_oauth_server::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator;
 use nazo_oauth_server::domain::openid4vc::{Openid4vcCredentialCrypto, Openid4vcProofValidator};
 use nazo_oauth_server::domain::openid4vc_endpoints::{
     ServerCredentialIssuerOperations, openid4vci_authorization_detail,
@@ -16,12 +15,9 @@ use nazo_openid4vci::{
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use base64::Engine as _;
-use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use diesel::sql_query;
 use diesel::sql_types::{Integer, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
-use ed25519_dalek::{Signer as _, SigningKey};
 use fred::interfaces::ClientLike;
 use nazo_auth::SigningPurpose;
 use nazo_digital_credentials::{VcIssuerTrustPolicy, encrypt_ecdh_es};
@@ -176,33 +172,6 @@ async fn operations(enabled: bool) -> IssuerFixture {
     .await
 }
 
-async fn operations_with_client_attestation(
-    client_attestation: Arc<Openid4vcClientAttestationValidator>,
-) -> IssuerFixture {
-    let pool = invalid_pool();
-    let mut valkey_builder = fred::prelude::Builder::default_centralized();
-    valkey_builder.with_performance_config(|performance: &mut fred::prelude::PerformanceConfig| {
-        performance.default_command_timeout = std::time::Duration::from_millis(100);
-    });
-    valkey_builder.with_connection_config(|connection: &mut fred::prelude::ConnectionConfig| {
-        connection.connection_timeout = std::time::Duration::from_millis(100);
-        connection.internal_command_timeout = std::time::Duration::from_millis(100);
-        connection.max_command_attempts = 1;
-    });
-    let valkey = valkey_builder
-        .build()
-        .expect("valkey fixture should build without connecting");
-    operations_with_inputs_and_attestation(
-        pool,
-        nazo_valkey::test_support::scoped_connection(valkey),
-        true,
-        BTreeMap::from([("unit-config".to_owned(), unit_configuration())]),
-        BTreeSet::new(),
-        Some(client_attestation),
-    )
-    .await
-}
-
 fn unit_configuration() -> CredentialConfiguration {
     CredentialConfiguration {
         format: nazo_digital_credentials::CredentialFormat::SdJwtVc,
@@ -223,36 +192,13 @@ async fn operations_with_inputs(
     configurations: BTreeMap<String, CredentialConfiguration>,
     deferred_configurations: BTreeSet<String>,
 ) -> IssuerFixture {
-    operations_with_inputs_and_attestation(
-        pool,
-        valkey_connection,
-        enabled,
-        configurations,
-        deferred_configurations,
-        None,
-    )
-    .await
-}
-
-async fn operations_with_inputs_and_attestation(
-    pool: nazo_postgres::DbPool,
-    valkey_connection: nazo_valkey::ValkeyConnection,
-    enabled: bool,
-    configurations: BTreeMap<String, CredentialConfiguration>,
-    deferred_configurations: BTreeSet<String>,
-    client_attestation: Option<Arc<Openid4vcClientAttestationValidator>>,
-) -> IssuerFixture {
     let mut settings =
         Settings::from_config(&ConfigSource::default()).expect("unit settings should load");
     settings.endpoint.issuer = "https://issuer.example".to_owned();
     settings.modules.enable_openid4vci_issuer = enabled;
     let keyset = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
     let token_service = Arc::new(ServerTokenService::new(
-        nazo_postgres::TokenIssuanceRepository::new_with_response_key_ring(
-            pool.clone(),
-            nazo_persistence::TokenIssuanceResponseKeyRing::new("unit-current", [0x42; 32], None)
-                .expect("response key ring fixture should be valid"),
-        ),
+        nazo_postgres::TokenIssuanceRepository::new(pool.clone()),
         Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
             &valkey_connection,
         )),
@@ -302,7 +248,6 @@ async fn operations_with_inputs_and_attestation(
         Arc::new(crate::bootstrap::RegistrationSecretHasher),
         crypto,
         proof_validator,
-        client_attestation,
         issuer.clone(),
         configurations,
         deferred_configurations,
@@ -317,69 +262,6 @@ async fn operations_with_inputs_and_attestation(
         request_encryption,
         datasets,
     }
-}
-
-fn configured_client_attestation_fixture()
--> (Arc<Openid4vcClientAttestationValidator>, String, String) {
-    let attester = crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::ES256);
-    let instance = crate::test_support::client_signing_fixture(jsonwebtoken::Algorithm::ES256);
-    let validator = Openid4vcClientAttestationValidator::new(
-        "https://attester.example",
-        json!({"keys": [attester.public_jwk("attester-key")]}),
-    )
-    .expect("static client attestation validator should build");
-    let now = chrono::Utc::now().timestamp();
-    let mut attestation_header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-    attestation_header.typ = Some("oauth-client-attestation+jwt".to_owned());
-    attestation_header.kid = Some("attester-key".to_owned());
-    let attestation = attester.encode_jwt(
-        &attestation_header,
-        &json!({
-            "iss": "https://attester.example",
-            "sub": "wallet-client",
-            "exp": now + 600,
-            "cnf": {"jwk": instance.public_jwk("instance-key")},
-        }),
-    );
-    let mut proof_header = jsonwebtoken::Header::new(jsonwebtoken::Algorithm::ES256);
-    proof_header.typ = Some("oauth-client-attestation-pop+jwt".to_owned());
-    let proof = instance.encode_jwt(
-        &proof_header,
-        &json!({
-            "iss": "wallet-client",
-            "aud": "https://issuer.example",
-            "iat": now,
-            "jti": format!("unit-proof-{}", Uuid::now_v7()),
-        }),
-    );
-    (Arc::new(validator), attestation, proof)
-}
-
-fn valid_dpop_proof(nonce: Option<&str>) -> String {
-    let key = SigningKey::from_bytes(&[7_u8; 32]);
-    let public = URL_SAFE_NO_PAD.encode(key.verifying_key().to_bytes());
-    let mut claims = json!({
-        "htm": "POST",
-        "htu": "https://issuer.example/token",
-        "iat": chrono::Utc::now().timestamp(),
-        "jti": format!("unit-dpop-{}", Uuid::now_v7()),
-    });
-    if let Some(nonce) = nonce {
-        claims["nonce"] = json!(nonce);
-    }
-    let header = json!({
-        "typ": "dpop+jwt",
-        "alg": "EdDSA",
-        "jwk": {"kty": "OKP", "crv": "Ed25519", "x": public},
-    });
-    let encoded_header = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&header).unwrap());
-    let encoded_claims = URL_SAFE_NO_PAD.encode(serde_json::to_vec(&claims).unwrap());
-    let signing_input = format!("{encoded_header}.{encoded_claims}");
-    let signature = key.sign(signing_input.as_bytes());
-    format!(
-        "{signing_input}.{}",
-        URL_SAFE_NO_PAD.encode(signature.to_bytes())
-    )
 }
 
 fn live_configuration(configuration_id: &str) -> (String, CredentialConfiguration) {
@@ -794,10 +676,8 @@ async fn disabled_issuer_rejects_every_mutating_endpoint_before_state_access() {
                 pre_authorized_code: "unit-code".to_owned(),
                 tx_code: None,
                 client_id: None,
-                dpop_proof: None,
-                client_attestation: None,
-                client_attestation_pop: None,
-                request_url: "https://issuer.example/token".to_owned(),
+                dpop_jkt: None,
+                mtls_x5t_s256: None,
             })
             .await
             .expect_err("pre-authorized token disabled"),
@@ -1050,55 +930,15 @@ async fn access_fails_closed_when_revocation_state_is_unavailable() {
 }
 
 #[tokio::test]
-async fn pre_authorized_token_rejects_partial_client_attestation_before_offer_lookup() {
-    let issuer = operations(true).await;
-    let request = |client_attestation: Option<&str>, client_attestation_pop: Option<&str>| {
-        PreAuthorizedTokenRequest {
-            pre_authorized_code: "unit-code".to_owned(),
-            tx_code: None,
-            client_id: None,
-            dpop_proof: None,
-            client_attestation: client_attestation.map(str::to_owned),
-            client_attestation_pop: client_attestation_pop.map(str::to_owned),
-            request_url: "https://issuer.example/token".to_owned(),
-        }
-    };
-
-    let error = issuer
-        .pre_authorized_token(request(Some("attestation"), None))
-        .await
-        .expect_err("partial attestation must be rejected");
-    assert_error(
-        error,
-        400,
-        "invalid_request",
-        "Both client attestation headers are required.",
-    );
-
-    let error = issuer
-        .pre_authorized_token(request(Some("attestation"), Some("proof")))
-        .await
-        .expect_err("attestation without a configured validator must be rejected");
-    assert_error(
-        error,
-        401,
-        "invalid_client_attestation",
-        "Client attestation is not configured.",
-    );
-}
-
-#[tokio::test]
-async fn pre_authorized_token_reaches_offer_state_after_optional_dpop_validation() {
+async fn pre_authorized_token_reaches_offer_state() {
     let issuer = operations(true).await;
     let error = issuer
         .pre_authorized_token(PreAuthorizedTokenRequest {
             pre_authorized_code: "unit-code".to_owned(),
             tx_code: None,
             client_id: None,
-            dpop_proof: None,
-            client_attestation: None,
-            client_attestation_pop: None,
-            request_url: "https://issuer.example/token".to_owned(),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
         })
         .await
         .expect_err("missing offer state should fail at the persistence boundary");
@@ -1191,10 +1031,8 @@ async fn live_immediate_offer_pre_authorized_credential_replay_and_notification(
             pre_authorized_code: pre_authorized_code(&offer),
             tx_code: None,
             client_id: Some("live-wallet".to_owned()),
-            dpop_proof: None,
-            client_attestation: None,
-            client_attestation_pop: None,
-            request_url: "https://issuer.example/token".to_owned(),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
         })
         .await
         .expect("live pre-authorized token should be issued");
@@ -1304,10 +1142,8 @@ async fn live_deferred_credential_claim_response_replay_and_notification() {
             pre_authorized_code: pre_authorized_code(&offer),
             tx_code: None,
             client_id: Some("live-wallet".to_owned()),
-            dpop_proof: None,
-            client_attestation: None,
-            client_attestation_pop: None,
-            request_url: "https://issuer.example/token".to_owned(),
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
         })
         .await
         .expect("live deferred pre-authorized token should be issued");

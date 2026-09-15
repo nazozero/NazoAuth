@@ -12,7 +12,7 @@ use nazo_resource_server::{
 use uuid::Uuid;
 
 use crate::{
-    DbPool,
+    DbPool, get_conn,
     rows::auth::RefreshTokenRow,
     schema::{access_token_revocations, oauth_tokens, recovery_invalidations},
 };
@@ -280,8 +280,7 @@ impl TokenRepository {
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
-        self.pool
-            .get()
+        get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)
     }
@@ -506,15 +505,22 @@ async fn lock_recovery_invalidation_scope(
     Ok(())
 }
 
+/// The advisory key shared by refresh-token writers and the bounded
+/// maintenance reclaim. `pg_try_advisory_xact_lock` users must pass exactly
+/// this key so a maintenance scan never opens a second lock domain.
+pub(super) fn refresh_family_lock_key(family_id: Uuid) -> i64 {
+    let bytes = family_id.as_bytes();
+    let high = i64::from_be_bytes(bytes[..8].try_into().expect("UUID has 16 bytes"));
+    let low = i64::from_be_bytes(bytes[8..].try_into().expect("UUID has 16 bytes"));
+    high ^ low
+}
+
 pub(super) async fn lock_refresh_family(
     connection: &mut AsyncPgConnection,
     family_id: Uuid,
 ) -> diesel::QueryResult<()> {
-    let bytes = family_id.as_bytes();
-    let high = i64::from_be_bytes(bytes[..8].try_into().expect("UUID has 16 bytes"));
-    let low = i64::from_be_bytes(bytes[8..].try_into().expect("UUID has 16 bytes"));
     diesel::sql_query("SELECT pg_advisory_xact_lock($1)")
-        .bind::<diesel::sql_types::BigInt, _>(high ^ low)
+        .bind::<diesel::sql_types::BigInt, _>(refresh_family_lock_key(family_id))
         .execute(connection)
         .await?;
     Ok(())
@@ -560,16 +566,12 @@ async fn compromise_family(
             .filter(oauth_tokens::tenant_id.eq(tenant_id))
             .filter(oauth_tokens::token_family_id.eq(family_id)),
     )
-    .set(oauth_tokens::reuse_detected_at.eq(diesel::dsl::now))
-    .execute(connection)
-    .await?;
-    diesel::update(
-        oauth_tokens::table
-            .filter(oauth_tokens::tenant_id.eq(tenant_id))
-            .filter(oauth_tokens::token_family_id.eq(family_id))
-            .filter(oauth_tokens::revoked_at.is_null()),
-    )
-    .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
+    .set((
+        oauth_tokens::reuse_detected_at.eq(diesel::dsl::now),
+        oauth_tokens::revoked_at.eq(diesel::dsl::sql::<
+            diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>,
+        >("COALESCE(revoked_at, CURRENT_TIMESTAMP)")),
+    ))
     .execute(connection)
     .await?;
     Ok(())

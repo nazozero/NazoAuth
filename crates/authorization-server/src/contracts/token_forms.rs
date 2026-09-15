@@ -48,6 +48,7 @@ pub enum TokenFormError {
     InvalidEncoding,
     DuplicateParameter,
     InvalidResourceParameter,
+    InvalidAudienceParameter,
     MissingGrantType,
 }
 

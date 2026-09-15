@@ -1,5 +1,5 @@
 use crate::{
-    DbPool,
+    DbPool, get_conn,
     schema::{user_mfa_backup_codes, user_mfa_remembered_devices, user_totp_credentials, users},
 };
 use diesel::{ExpressionMethods, QueryDsl, dsl::now};
@@ -42,9 +42,7 @@ impl MfaRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection

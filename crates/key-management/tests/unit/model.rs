@@ -8,10 +8,33 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_auth::{SignRequest, Signer, SigningPurpose};
 
 use super::{
-    KeyGeneration, KeyHandle, KeyManager, KeyRecordStatus, KeySettings, KeyState, ManagedKey,
-    Openid4vcMaterial, Openid4vcPublicMaterial, StoredVerificationKey, TestSigningBehavior,
+    KeyGeneration, KeyHandle, KeyManager, KeyRecordStatus, KeySettings, KeyState,
+    LocalSigningMaterial, ManagedKey, Openid4vcMaterial, Openid4vcPublicMaterial,
+    PreparedVerification, StoredVerificationKey, TestSigningBehavior,
 };
 use crate::{SigningKeyWrappingKeyRing, test_support::MemorySigningKeyRepository};
+
+fn local_test_handle() -> KeyHandle {
+    let algorithm = nazo_crypto::jwt::Algorithm::EdDSA;
+    KeyHandle::Local(Arc::new(
+        LocalSigningMaterial::new(
+            algorithm,
+            nazo_crypto::signature::generate_private_key(algorithm).unwrap(),
+        )
+        .unwrap(),
+    ))
+}
+
+fn prepared_test_verification() -> PreparedVerification {
+    let algorithm = nazo_crypto::jwt::Algorithm::EdDSA;
+    let private = nazo_crypto::signature::generate_private_key(algorithm).unwrap();
+    let jwk = nazo_crypto::signature::public_jwk(algorithm, &private).unwrap();
+    PreparedVerification {
+        algorithm,
+        key: nazo_crypto::jwt::VerificationKey::from_ed_components(jwk["x"].as_str().unwrap())
+            .unwrap(),
+    }
+}
 
 fn database_settings(
     _name: &str,
@@ -43,7 +66,7 @@ fn managed_key(state: KeyState, purposes: &[SigningPurpose]) -> ManagedKey {
         algorithm: "EdDSA".to_owned(),
         purposes: purposes.iter().copied().collect::<BTreeSet<_>>(),
         state,
-        handle: KeyHandle::Local(Vec::new()),
+        handle: local_test_handle(),
     }
 }
 
@@ -55,7 +78,7 @@ fn manager_with_policy(state: KeyState, purposes: &[SigningPurpose]) -> KeyManag
     manager
         .inner
         .generation
-        .store(Arc::new(KeyGeneration::database(loaded)));
+        .store(Arc::new(KeyGeneration::database(loaded).unwrap()));
     manager
 }
 
@@ -150,6 +173,7 @@ fn captured_snapshot_stops_exposing_a_key_after_its_retirement_deadline() {
         verification_keys: vec![super::VerificationKey {
             kid: "expired".to_owned(),
             public_jwk: serde_json::json!({"kid":"expired","alg":"EdDSA"}),
+            prepared: prepared_test_verification(),
             signing_purposes: BTreeSet::new(),
             retire_at: Some(chrono::Utc::now() - chrono::Duration::seconds(1)),
         }],
@@ -381,7 +405,7 @@ fn openid4vc_lease_requires_healthy_complete_matching_material() {
     incomplete
         .inner
         .generation
-        .store(Arc::new(KeyGeneration::database(loaded)));
+        .store(Arc::new(KeyGeneration::database(loaded).unwrap()));
     assert!(incomplete.prepare_openid4vc_signing().is_err());
 
     let mismatched = KeyManager::for_test(jsonwebtoken::Algorithm::ES256);
@@ -418,7 +442,8 @@ async fn expired_database_generation_fails_closed_while_lifecycle_flag_is_still_
         chrono::Duration::days(1),
     ))
     .await;
-    let mut expired = KeyGeneration::database(manager.inner.generation.load().loaded.clone());
+    let mut expired =
+        KeyGeneration::database(manager.inner.generation.load().loaded.clone()).unwrap();
     expired.expires_at = Some(Instant::now() - std::time::Duration::from_secs(1));
     manager.inner.generation.store(Arc::new(expired));
 
@@ -450,12 +475,9 @@ async fn expired_http_lease_cannot_use_old_generation_after_newer_generation_is_
     ))
     .await;
     let mut lease = manager.prepare_http_signing().unwrap();
-    manager
-        .inner
-        .generation
-        .store(Arc::new(KeyGeneration::database(
-            manager.inner.generation.load().loaded.clone(),
-        )));
+    manager.inner.generation.store(Arc::new(
+        KeyGeneration::database(manager.inner.generation.load().loaded.clone()).unwrap(),
+    ));
     Arc::get_mut(&mut lease.generation)
         .expect("lease owns its captured generation")
         .expires_at = Some(Instant::now() - std::time::Duration::from_secs(1));
@@ -564,4 +586,38 @@ async fn external_signing_failure_is_returned_without_successful_signature() {
         .await
         .expect_err("the configured external signer failure must propagate");
     assert_eq!(error, nazo_auth::SignError::SigningFailed);
+}
+
+#[test]
+fn snapshot_publication_rejects_a_managed_key_whose_jwk_cannot_verify() {
+    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+    let mut loaded = manager.inner.generation.load().loaded.clone();
+    loaded.verification_keys[0].public_jwk = serde_json::json!({
+        "kid":"corrupt","alg":"EdDSA","use":"sig",
+        "kty":"OKP","crv":"Ed25519","x":"***"
+    });
+    assert!(super::snapshot_from_loaded(&loaded).is_err());
+    assert!(KeyGeneration::database(loaded).is_err());
+}
+
+#[test]
+fn prepared_verification_accepts_only_absent_or_verify_only_key_ops() {
+    let algorithm = nazo_crypto::jwt::Algorithm::EdDSA;
+    let private = nazo_crypto::signature::generate_private_key(algorithm).unwrap();
+    let mut jwk = nazo_crypto::signature::public_jwk(algorithm, &private).unwrap();
+    jwk["alg"] = serde_json::json!("EdDSA");
+    jwk["use"] = serde_json::json!("sig");
+
+    assert!(super::prepared_verification(&jwk, algorithm).is_some());
+    jwk["key_ops"] = serde_json::json!(["verify"]);
+    assert!(super::prepared_verification(&jwk, algorithm).is_some());
+    for key_ops in [
+        serde_json::json!([]),
+        serde_json::json!(["sign"]),
+        serde_json::json!(["verify", "sign"]),
+        serde_json::json!("verify"),
+    ] {
+        jwk["key_ops"] = key_ops;
+        assert!(super::prepared_verification(&jwk, algorithm).is_none());
+    }
 }

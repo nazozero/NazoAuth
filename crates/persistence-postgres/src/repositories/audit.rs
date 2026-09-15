@@ -17,7 +17,7 @@ use nazo_runtime_modules::{ModuleEventRecord, ModuleEventState, ModuleEventType}
 use uuid::Uuid;
 
 use crate::{
-    DbPool,
+    DbPool, get_conn,
     rows::auth::BackchannelLogoutDeliveryRow,
     schema::{
         backchannel_logout_deliveries, identity_security_events, runtime_module_state_events,
@@ -320,8 +320,7 @@ impl AuditRepository {
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
-        self.pool
-            .get()
+        get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)
     }

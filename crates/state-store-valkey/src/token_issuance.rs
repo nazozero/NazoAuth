@@ -3,7 +3,6 @@ use nazo_auth::{
     AuthorizationCodeBeginResult, AuthorizationCodeState, AuthorizationCodeTransitionResult,
     TokenFuture, TokenPortError, TokenStateStorePort,
 };
-use uuid::Uuid;
 
 use crate::{
     AuthorizationCodeBegin, AuthorizationStore, AuthorizationTransition, Error, ErrorKind,
@@ -67,34 +66,6 @@ impl TokenStateStorePort for TokenIssuanceStateAdapter {
                 .mark_authorization_code(code_hash, replacement, ttl_seconds)
                 .await
                 .map(map_transition)
-                .map_err(map_error)
-        })
-    }
-
-    fn store_access_token_subject<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-        user_id: Uuid,
-        ttl_seconds: u64,
-    ) -> TokenFuture<'a, ()> {
-        Box::pin(async move {
-            self.tokens
-                .store_access_token_subject(tenant_id, jti, user_id, ttl_seconds)
-                .await
-                .map_err(map_error)
-        })
-    }
-
-    fn load_access_token_subject<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-    ) -> TokenFuture<'a, Option<Uuid>> {
-        Box::pin(async move {
-            self.tokens
-                .load_access_token_subject(tenant_id, jti)
-                .await
                 .map_err(map_error)
         })
     }

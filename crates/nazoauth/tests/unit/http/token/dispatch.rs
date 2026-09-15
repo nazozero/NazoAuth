@@ -892,7 +892,12 @@ async fn token_endpoint_rejects_malformed_form_requests_before_client_lookup() {
             Bytes::from_static(
                 b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example%2F%23fragment",
             ),
-            "invalid_target",
+            "invalid_request",
+        ),
+        (
+            token_request("application/x-www-form-urlencoded"),
+            Bytes::from_static(b"grant_type=client_credentials&audience="),
+            "invalid_request",
         ),
         (
             token_request("application/x-www-form-urlencoded"),

@@ -315,7 +315,6 @@ impl Settings {
             })
             .unwrap_or_default();
         let _ = mfa_totp_key_ring(config)?;
-        validate_optional_token_issuance_response_key_config(config)?;
         let enable_directory_openid4vci_issuer = config.bool(
             "ENABLE_DIRECTORY_OPENID4VCI_ISSUER",
             config.bool("ENABLE_OPENID4VCI_ISSUER", false)?,

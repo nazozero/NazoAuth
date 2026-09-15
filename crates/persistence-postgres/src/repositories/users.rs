@@ -1,6 +1,7 @@
 use crate::{
     DbPool,
     convert::identity,
+    get_conn,
     repositories::audit::insert_identity_security_event,
     rows::identity::{AuthenticationIdentityRow, PrincipalRow, PublicAccountRow, SubjectClaimsRow},
     schema::{oauth_tokens, user_client_grants, users},
@@ -35,9 +36,7 @@ impl UserRepository {
         tenant: TenantContext,
         user_id: UserId,
     ) -> Result<Option<Principal>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         users::table
@@ -60,9 +59,7 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         users::table
@@ -83,9 +80,7 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Option<Principal>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         users::table
@@ -106,9 +101,7 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Option<SubjectClaims>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         users::table
@@ -130,9 +123,7 @@ impl UserRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let count = users::table
@@ -151,9 +142,7 @@ impl UserRepository {
         tenant_id: TenantId,
         email: &str,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         users::table
@@ -173,9 +162,7 @@ impl UserRepository {
         tenant_id: TenantId,
         email: &str,
     ) -> Result<Option<AuthenticationIdentity>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         users::table
@@ -192,9 +179,7 @@ impl UserRepository {
     }
 
     pub async fn create(&self, new_user: NewUser) -> Result<PublicAccount, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let row = diesel::insert_into(users::table)
@@ -220,9 +205,7 @@ impl UserRepository {
         user_id: UserId,
         update: ProfileUpdate,
     ) -> Result<PublicAccount, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let profile = update.profile;
@@ -270,9 +253,7 @@ impl UserRepository {
         expected_avatar_url: Option<&str>,
         avatar_url: Option<String>,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let row = diesel::update(
@@ -300,9 +281,7 @@ impl UserRepository {
         limit: i64,
         offset: i64,
     ) -> Result<UserPage, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let total = users::table
@@ -334,9 +313,7 @@ impl UserRepository {
         target_id: UserId,
         update: AdminUserUpdate,
     ) -> Result<AdminUserUpdateOutcome, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         diesel_async::AsyncConnection::transaction::<_, AdminAuthorizedUpdateError, _>(
@@ -477,9 +454,7 @@ impl UserRepository {
                 AdminPolicyError::InvalidRoleLevel,
             ));
         }
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         diesel_async::AsyncConnection::transaction::<_, AdminAuthorizedUpdateError, _>(
@@ -587,9 +562,7 @@ impl UserRepository {
         tenant: TenantContext,
         user_id: UserId,
     ) -> Result<Option<SubjectClaims>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         users::table

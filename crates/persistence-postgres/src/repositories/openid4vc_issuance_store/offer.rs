@@ -9,6 +9,7 @@ use uuid::Uuid;
 use super::super::Openid4vciRepository;
 use super::super::offer::{OfferRow, PreAuthorizedOfferRow, tx_code_matches};
 use super::decode_error;
+use crate::get_conn;
 
 impl Openid4vciRepository {
     pub(super) fn offer_lookup<'a>(
@@ -19,9 +20,7 @@ impl Openid4vciRepository {
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialOffer>, CredentialStoreError>>
     {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let row = sql_query(
@@ -50,9 +49,7 @@ impl Openid4vciRepository {
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAuthorization>, CredentialStoreError>>
     {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             connection.transaction::<Option<CredentialAuthorization>, diesel::result::Error, _>(async move |connection| {

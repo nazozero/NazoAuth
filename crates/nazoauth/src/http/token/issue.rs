@@ -1,6 +1,6 @@
-//! Native configuration assembly and request idempotency extraction.
+//! Native configuration assembly for the token endpoint.
 use crate::settings::Settings;
-use nazo_oauth_server::{crypto::blake3_hex, token::issue::TokenIssuanceConfig};
+use nazo_oauth_server::token::issue::TokenIssuanceConfig;
 use std::collections::BTreeSet;
 pub(crate) fn token_issuance_config(settings: &Settings) -> TokenIssuanceConfig {
     TokenIssuanceConfig {
@@ -31,14 +31,6 @@ pub(crate) fn token_issuance_config(settings: &Settings) -> TokenIssuanceConfig 
         id_token_ttl_seconds: settings.protocol.id_token_ttl_seconds,
         refresh_token_ttl_seconds: settings.protocol.refresh_token_ttl_seconds,
     }
-}
-
-pub(crate) fn request_idempotency_key(req: &actix_web::HttpRequest) -> Option<String> {
-    let value = req.headers().get("idempotency-key")?.to_str().ok()?.trim();
-    if value.is_empty() || value.len() > 256 {
-        return None;
-    }
-    Some(format!("idempotency:{}", blake3_hex(value)))
 }
 
 #[cfg(test)]

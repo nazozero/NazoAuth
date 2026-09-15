@@ -29,6 +29,7 @@ pub struct JwtBearerAssertionClaims {
 pub struct ValidatedJwtBearerAssertion {
     pub subject: String,
     pub jti: String,
+    pub expires_at: chrono::DateTime<chrono::Utc>,
     pub replay_ttl_seconds: u64,
 }
 
@@ -161,9 +162,12 @@ pub fn validate_jwt_bearer_assertion_claims(
     if jti.is_empty() || jti.len() > JWT_BEARER_ASSERTION_MAX_JTI_BYTES {
         return Err(JwtBearerGrantError::InvalidAssertion);
     }
+    let expires_at = chrono::DateTime::from_timestamp(claims.exp, 0)
+        .ok_or(JwtBearerGrantError::InvalidAssertion)?;
     Ok(ValidatedJwtBearerAssertion {
         subject: claims.sub,
         jti: claims.jti,
+        expires_at,
         replay_ttl_seconds: claims
             .exp
             .saturating_sub(policy.now)

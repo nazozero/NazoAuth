@@ -96,9 +96,35 @@ impl LifecycleHealth {
     }
 }
 
+/// Local private material shared by the active handle and the managed key
+/// entry of one generation.
+///
+/// The DER remains because `database_local_private_key_pem` (mdoc export) is a
+/// real consumer; the prepared key serves every request-time signing path so
+/// `EncodingKey` is never rebuilt from DER per request.
+pub(crate) struct LocalSigningMaterial {
+    pub(crate) private_pkcs8_der: Vec<u8>,
+    pub(crate) prepared: nazo_crypto::signature::PreparedSigningKey,
+}
+
+impl LocalSigningMaterial {
+    pub(crate) fn new(
+        algorithm: nazo_crypto::jwt::Algorithm,
+        private_pkcs8_der: Vec<u8>,
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
+            prepared: nazo_crypto::signature::PreparedSigningKey::new(
+                algorithm,
+                &private_pkcs8_der,
+            )?,
+            private_pkcs8_der,
+        })
+    }
+}
+
 #[derive(Clone)]
 pub(crate) enum KeyHandle {
-    Local(Vec<u8>),
+    Local(Arc<LocalSigningMaterial>),
     External { key_ref: String },
 }
 
@@ -110,8 +136,13 @@ pub(crate) struct ExternalSigningKey {
 
 #[derive(Clone)]
 pub(crate) enum ActiveSigningKey {
-    LocalPkcs8Der(Vec<u8>),
+    Local(Arc<LocalSigningMaterial>),
     External(ExternalSigningKey),
+    /// Test-support behavior for exercising the local signing failure path.
+    /// Production material is always a validated `LocalSigningMaterial`; an
+    /// empty placeholder key is not representable.
+    #[cfg(any(test, feature = "test-support"))]
+    FailingForTest,
 }
 
 #[derive(Clone)]
@@ -132,10 +163,23 @@ pub(crate) struct LoadedKeyset {
     pub(crate) openid4vc_material: Option<Openid4vcMaterial>,
 }
 
+/// Verification material prepared once when a generation is published.
+///
+/// `algorithm` is the managed key's validated algorithm; `key` is the opaque
+/// backend verification key decoded from the public JWK components. Snapshot
+/// construction rejects any public JWK that cannot produce this material, so
+/// request-time decoding never rebuilds it.
+#[derive(Clone, Debug)]
+pub(crate) struct PreparedVerification {
+    pub(crate) algorithm: nazo_crypto::jwt::Algorithm,
+    pub(crate) key: nazo_crypto::jwt::VerificationKey,
+}
+
 #[derive(Clone, Debug)]
 pub struct VerificationKey {
     pub kid: String,
     pub public_jwk: Value,
+    pub(crate) prepared: PreparedVerification,
     pub(crate) signing_purposes: BTreeSet<SigningPurpose>,
     pub(crate) retire_at: Option<chrono::DateTime<chrono::Utc>>,
 }
@@ -177,11 +221,8 @@ impl KeySnapshot {
         purpose: SigningPurpose,
         algorithm: nazo_crypto::jwt::Algorithm,
     ) -> Option<&VerificationKey> {
-        let algorithm = crate::serialization::signing_algorithm_name(algorithm)?;
-        let matches = |key: &&VerificationKey| {
-            key.can_sign(purpose)
-                && key.public_jwk.get("alg").and_then(Value::as_str) == Some(algorithm)
-        };
+        let matches =
+            |key: &&VerificationKey| key.can_sign(purpose) && key.prepared.algorithm == algorithm;
         self.verification_key(&self.active_kid)
             .filter(matches)
             .or_else(|| {
@@ -494,7 +535,7 @@ impl LoadedKeyset {
                 kid: &key.managed.kid,
                 algorithm,
                 handle: match &key.managed.handle {
-                    KeyHandle::Local(private_key) => SelectedHandle::Local(private_key),
+                    KeyHandle::Local(material) => SelectedHandle::Local(material.as_ref()),
                     KeyHandle::External { key_ref } => {
                         let _ = key_ref;
                         return None;
@@ -515,7 +556,7 @@ pub(crate) struct SelectedKey<'a> {
 
 pub(crate) enum SelectedHandle<'a> {
     Active(&'a ActiveSigningKey),
-    Local(&'a [u8]),
+    Local(&'a LocalSigningMaterial),
 }
 
 /// Parse a PEM certificate sequence at the key-management boundary. The
@@ -641,7 +682,7 @@ impl KeyManager {
         .await?;
         self.inner
             .generation
-            .store(Arc::new(KeyGeneration::database(loaded)));
+            .store(Arc::new(KeyGeneration::database(loaded)?));
         Ok(())
     }
 
@@ -658,7 +699,7 @@ impl KeyManager {
         .await?;
         self.inner
             .generation
-            .store(Arc::new(KeyGeneration::database(loaded)));
+            .store(Arc::new(KeyGeneration::database(loaded)?));
         Ok(kid)
     }
 
@@ -694,7 +735,7 @@ impl KeyManager {
         .await?;
         self.inner
             .generation
-            .store(Arc::new(KeyGeneration::database(loaded)));
+            .store(Arc::new(KeyGeneration::database(loaded)?));
         Ok(())
     }
 
@@ -725,7 +766,9 @@ impl KeyManager {
         loaded.openid4vc_material = Some(material.into());
         self.inner
             .generation
-            .store(Arc::new(KeyGeneration::database(loaded)));
+            .store(Arc::new(KeyGeneration::database(loaded).expect(
+                "test fixture generation must contain valid key material",
+            )));
     }
 
     /// Pin the currently published OpenID4VC signing key and its matching
@@ -799,11 +842,13 @@ impl KeyManager {
             &material.private_pkcs8_der,
         )
         .expect("test public JWK should derive");
+        let local_material = Arc::new(
+            LocalSigningMaterial::new(algorithm, material.private_pkcs8_der)
+                .expect("test signing material should be usable"),
+        );
         let active_signing_key = match behavior {
-            TestSigningBehavior::Working => {
-                ActiveSigningKey::LocalPkcs8Der(material.private_pkcs8_der.clone())
-            }
-            TestSigningBehavior::Failing => ActiveSigningKey::LocalPkcs8Der(Vec::new()),
+            TestSigningBehavior::Working => ActiveSigningKey::Local(Arc::clone(&local_material)),
+            TestSigningBehavior::Failing => ActiveSigningKey::FailingForTest,
             TestSigningBehavior::ExternalFailure { stderr: _ } => {
                 ActiveSigningKey::External(ExternalSigningKey {
                     key_ref: "kms://test/failure".to_owned(),
@@ -825,7 +870,7 @@ impl KeyManager {
                         .to_owned(),
                     purposes: all_signing_purposes(),
                     state: KeyState::Active,
-                    handle: KeyHandle::Local(material.private_pkcs8_der),
+                    handle: KeyHandle::Local(local_material),
                 },
             }],
             request_object_decryption_key: test_request_object_decryption_key()
@@ -839,7 +884,8 @@ impl KeyManager {
                 &loaded.request_object_decryption_key,
             )
             .expect("test request object encryption JWK");
-        let generation = KeyGeneration::database(loaded);
+        let generation = KeyGeneration::database(loaded)
+            .expect("test keyset must contain valid signing and verification material");
         Self {
             inner: Arc::new(KeyManagerInner {
                 generation: ArcSwap::from_pointee(generation),
@@ -893,13 +939,18 @@ impl KeyManager {
                 .into_iter()
                 .collect(),
                 state: KeyState::Active,
-                handle: KeyHandle::Local(material.private_pkcs8_der),
+                handle: KeyHandle::Local(Arc::new(
+                    LocalSigningMaterial::new(algorithm, material.private_pkcs8_der)
+                        .expect("test auxiliary key material should be usable"),
+                )),
             },
         });
         manager
             .inner
             .generation
-            .store(Arc::new(KeyGeneration::database(loaded)));
+            .store(Arc::new(KeyGeneration::database(loaded).expect(
+                "test auxiliary generation must contain valid key material",
+            )));
         manager
     }
 
@@ -931,7 +982,7 @@ impl KeyManager {
         .await?;
         Ok(Self {
             inner: Arc::new(KeyManagerInner {
-                generation: ArcSwap::from_pointee(KeyGeneration::database(loaded)),
+                generation: ArcSwap::from_pointee(KeyGeneration::database(loaded)?),
                 settings,
                 health: Arc::new(LifecycleHealth::new()),
                 database,
@@ -1005,12 +1056,12 @@ impl KeyManager {
     }
 
     pub async fn refresh(&self) -> anyhow::Result<()> {
-        let result = crate::database::refresh(&self.inner.settings, &self.inner.database).await;
+        let result = crate::database::refresh(&self.inner.settings, &self.inner.database)
+            .await
+            .and_then(KeyGeneration::database);
         match result {
-            Ok(loaded) => {
-                self.inner
-                    .generation
-                    .store(Arc::new(KeyGeneration::database(loaded)));
+            Ok(generation) => {
+                self.inner.generation.store(Arc::new(generation));
                 self.inner.health.mark_success();
                 Ok(())
             }
@@ -1102,12 +1153,17 @@ impl Signer for KeyManager {
 }
 
 async fn sign_selected(selected: &SelectedKey<'_>, input: &[u8]) -> Result<Signature, SignError> {
+    let local_sign = |material: &LocalSigningMaterial| {
+        material
+            .prepared
+            .sign(input)
+            .map(Signature::new)
+            .map_err(|_| SignError::SigningFailed)
+    };
     match &selected.handle {
-        SelectedHandle::Active(ActiveSigningKey::LocalPkcs8Der(private_key)) => {
-            nazo_crypto::signature::sign(selected.algorithm, private_key, input)
-                .map(Signature::new)
-                .map_err(|_| SignError::SigningFailed)
-        }
+        SelectedHandle::Active(ActiveSigningKey::Local(material)) => local_sign(material.as_ref()),
+        #[cfg(any(test, feature = "test-support"))]
+        SelectedHandle::Active(ActiveSigningKey::FailingForTest) => Err(SignError::SigningFailed),
         SelectedHandle::Active(ActiveSigningKey::External(external)) => {
             crate::external::sign_external(
                 external,
@@ -1118,22 +1174,21 @@ async fn sign_selected(selected: &SelectedKey<'_>, input: &[u8]) -> Result<Signa
             )
             .await
         }
-        SelectedHandle::Local(private_key) => {
-            nazo_crypto::signature::sign(selected.algorithm, private_key, input)
-                .map(Signature::new)
-                .map_err(|_| SignError::SigningFailed)
-        }
+        SelectedHandle::Local(material) => local_sign(material),
     }
 }
 
 impl KeyGeneration {
-    fn database(loaded: LoadedKeyset) -> Self {
-        let snapshot = Arc::new(snapshot_from_loaded(&loaded));
-        Self {
+    /// Prepares all per-generation material before publication. A failure
+    /// rejects the whole generation; a partially initialized object is never
+    /// handed to `ArcSwap`.
+    fn database(loaded: LoadedKeyset) -> anyhow::Result<Self> {
+        let snapshot = Arc::new(snapshot_from_loaded(&loaded)?);
+        Ok(Self {
             loaded,
             snapshot,
             expires_at: Some(Instant::now() + DATABASE_MAX_STALE),
-        }
+        })
     }
 
     fn is_expired(&self) -> bool {
@@ -1142,7 +1197,82 @@ impl KeyGeneration {
     }
 }
 
-pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
+/// Build the prepared verification material for a managed key once, at
+/// snapshot/generation construction. Runs the same JWK `alg`/`use`/private-field
+/// checks and component decoding the request-time path previously repeated for
+/// every token; a JWK that cannot produce verification material is rejected.
+fn key_ops_allow_verification(key_ops: Option<&Value>) -> bool {
+    match key_ops {
+        None => true,
+        Some(Value::Array(operations)) => {
+            operations.len() == 1 && operations[0].as_str() == Some("verify")
+        }
+        Some(_) => false,
+    }
+}
+
+fn prepared_verification(
+    public_jwk: &Value,
+    algorithm: nazo_crypto::jwt::Algorithm,
+) -> Option<PreparedVerification> {
+    use nazo_crypto::jwt::VerificationKey as JwtVerificationKey;
+    let algorithm_name = crate::serialization::signing_algorithm_name(algorithm)?;
+    if public_jwk.get("d").is_some()
+        || public_jwk
+            .get("alg")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value != algorithm_name)
+        || public_jwk
+            .get("use")
+            .and_then(Value::as_str)
+            .is_some_and(|value| value != "sig")
+        || !key_ops_allow_verification(public_jwk.get("key_ops"))
+    {
+        return None;
+    }
+    let key = match algorithm {
+        nazo_crypto::jwt::Algorithm::EdDSA
+            if public_jwk.get("kty").and_then(Value::as_str) == Some("OKP")
+                && public_jwk.get("crv").and_then(Value::as_str) == Some("Ed25519") =>
+        {
+            let x = public_jwk.get("x")?.as_str()?;
+            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32 {
+                return None;
+            }
+            JwtVerificationKey::from_ed_components(x).ok()?
+        }
+        nazo_crypto::jwt::Algorithm::RS256 | nazo_crypto::jwt::Algorithm::PS256
+            if public_jwk.get("kty").and_then(Value::as_str) == Some("RSA") =>
+        {
+            let modulus = public_jwk.get("n")?.as_str()?;
+            let exponent = public_jwk.get("e")?.as_str()?;
+            if !nazo_auth::rsa_public_key_components_are_safe(
+                &URL_SAFE_NO_PAD.decode(modulus).ok()?,
+                &URL_SAFE_NO_PAD.decode(exponent).ok()?,
+            ) {
+                return None;
+            }
+            JwtVerificationKey::from_rsa_components(modulus, exponent).ok()?
+        }
+        nazo_crypto::jwt::Algorithm::ES256
+            if public_jwk.get("kty").and_then(Value::as_str) == Some("EC")
+                && public_jwk.get("crv").and_then(Value::as_str) == Some("P-256") =>
+        {
+            let x = public_jwk.get("x")?.as_str()?;
+            let y = public_jwk.get("y")?.as_str()?;
+            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32
+                || URL_SAFE_NO_PAD.decode(y).ok()?.len() != 32
+            {
+                return None;
+            }
+            JwtVerificationKey::from_ec_components(x, y).ok()?
+        }
+        _ => return None,
+    };
+    Some(PreparedVerification { algorithm, key })
+}
+
+pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> anyhow::Result<KeySnapshot> {
     const ORDERED: [nazo_crypto::jwt::Algorithm; 4] = [
         nazo_crypto::jwt::Algorithm::EdDSA,
         nazo_crypto::jwt::Algorithm::RS256,
@@ -1171,16 +1301,26 @@ pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
                     .is_some()
         })
         .collect();
-    KeySnapshot {
-        active_kid: loaded.active_kid.clone(),
-        active_alg: loaded.active_alg,
-        verification_keys: loaded
-            .verification_keys
-            .iter()
-            .filter(|key| key.managed.can_verify())
-            .map(|key| VerificationKey {
+    let verification_keys = loaded
+        .verification_keys
+        .iter()
+        .filter(|key| key.managed.can_verify())
+        .map(|key| {
+            let algorithm =
+                crate::serialization::signing_algorithm_from_name(&key.managed.algorithm)
+                    .ok_or_else(|| {
+                        anyhow::anyhow!("managed key {} has unsupported algorithm", key.managed.kid)
+                    })?;
+            let prepared = prepared_verification(&key.public_jwk, algorithm).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "managed key {} public JWK cannot produce verification material",
+                    key.managed.kid
+                )
+            })?;
+            Ok(VerificationKey {
                 kid: key.managed.kid.clone(),
                 public_jwk: key.public_jwk.clone(),
+                prepared,
                 signing_purposes: if key.managed.state == KeyState::Active {
                     key.managed.purposes.clone()
                 } else {
@@ -1188,11 +1328,16 @@ pub(crate) fn snapshot_from_loaded(loaded: &LoadedKeyset) -> KeySnapshot {
                 },
                 retire_at: key.retire_at,
             })
-            .collect(),
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    Ok(KeySnapshot {
+        active_kid: loaded.active_kid.clone(),
+        active_alg: loaded.active_alg,
+        verification_keys,
         id_token_signing_algorithms,
         response_signing_algorithms,
         request_object_encryption_jwk: loaded.request_object_encryption_jwk.clone(),
-    }
+    })
 }
 
 #[cfg(any(test, feature = "test-support"))]

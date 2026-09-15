@@ -9,7 +9,7 @@ use nazo_openid4vp::{
 use rand::Rng;
 use uuid::Uuid;
 
-use crate::DbPool;
+use crate::{DbPool, get_conn};
 
 #[derive(Clone)]
 pub struct Openid4vpRepository {
@@ -34,9 +34,7 @@ impl Openid4vpRepository {
         idempotency: PresentationCreateIdempotency<'_>,
     ) -> Result<PresentationCreateOutcome, PresentationStoreError> {
         validate_create_idempotency(idempotency)?;
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| PresentationStoreError::Unavailable)?;
         clear_expired_create_request(
@@ -47,9 +45,6 @@ impl Openid4vpRepository {
         )
         .await
         .map_err(|_| PresentationStoreError::Unavailable)?;
-        cleanup_expired_transactions(&mut connection)
-            .await
-            .map_err(|_| PresentationStoreError::Unavailable)?;
         let state_hash = blake3::hash(transaction.request.state.as_bytes())
             .to_hex()
             .to_string();
@@ -135,6 +130,7 @@ impl Openid4vpRepository {
             connection,
             self.tenant_id,
             idempotency.request_jti,
+            Utc::now(),
         )
         .await
         .map_err(|_| PresentationStoreError::Unavailable)?;
@@ -166,20 +162,7 @@ impl PresentationStorePort for Openid4vpRepository {
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
     {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
-                .await
-                .map_err(|_| PresentationStoreError::Unavailable)?;
-            clear_expired_create_request(
-                &mut connection,
-                self.tenant_id,
-                idempotency.request_jti,
-                Utc::now(),
-            )
-            .await
-            .map_err(|_| PresentationStoreError::Unavailable)?;
-            cleanup_expired_transactions(&mut connection)
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
             self.load_idempotent_create(&mut connection, idempotency)
@@ -194,9 +177,7 @@ impl PresentationStorePort for Openid4vpRepository {
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
     {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
             let row = load_presentation(&mut connection, self.tenant_id, transaction_id, now)
@@ -215,9 +196,7 @@ impl PresentationStorePort for Openid4vpRepository {
     ) -> PresentationStoreFuture<'a, Result<Option<PresentationTransaction>, PresentationStoreError>>
     {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
             let Some(mut row) =
@@ -262,9 +241,7 @@ impl PresentationStorePort for Openid4vpRepository {
         now: DateTime<Utc>,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
             let encoded = serde_json::to_vec(result)
@@ -303,9 +280,7 @@ impl PresentationStorePort for Openid4vpRepository {
     ) -> PresentationStoreFuture<'a, Result<Option<StoredPresentation>, PresentationStoreError>>
     {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
             let row = load_presentation(&mut connection, self.tenant_id, transaction_id, now)
@@ -356,23 +331,6 @@ struct PresentationRow {
     expires_at: DateTime<Utc>,
     #[diesel(sql_type = sql_types::Timestamptz)]
     created_at: DateTime<Utc>,
-}
-
-#[derive(QueryableByName)]
-struct CleanupResult {
-    #[diesel(sql_type = sql_types::Integer)]
-    deleted_transactions: i32,
-}
-
-async fn cleanup_expired_transactions(
-    connection: &mut diesel_async::AsyncPgConnection,
-) -> Result<(), diesel::result::Error> {
-    let result =
-        sql_query("SELECT nazo_openid4vp_cleanup_expired_transactions() AS deleted_transactions")
-            .get_result::<CleanupResult>(connection)
-            .await?;
-    debug_assert!((0..=256).contains(&result.deleted_transactions));
-    Ok(())
 }
 
 async fn clear_expired_create_request(
@@ -520,6 +478,7 @@ async fn load_presentation_by_create_request(
     connection: &mut diesel_async::AsyncPgConnection,
     tenant_id: Uuid,
     request_jti: &str,
+    now: DateTime<Utc>,
 ) -> Result<Option<PresentationRow>, diesel::result::Error> {
     sql_query(
         "SELECT id, client_id_prefix, request_method, response_mode, wallet_authorization_endpoint, \
@@ -527,10 +486,12 @@ async fn load_presentation_by_create_request(
          request, request_object, request_uri, openid4vc_trust_policy_binding_id, \
          openid4vc_trust_policy_resource_id, openid4vc_trust_policy_digest, \
          ephemeral_private_key_ciphertext, result_ciphertext, completed_at, expires_at, created_at \
-         FROM openid4vp_transactions WHERE tenant_id = $1 AND create_request_jti = $2",
+         FROM openid4vp_transactions WHERE tenant_id = $1 AND create_request_jti = $2 \
+           AND expires_at > $3",
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Text, _>(request_jti)
+    .bind::<sql_types::Timestamptz, _>(now)
     .get_result(connection)
     .await
     .optional()

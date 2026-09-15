@@ -32,6 +32,66 @@ fn non_ascii_protocol_description_is_replaced() {
     assert_eq!(oauth_error_description("失败"), "Request failed.");
 }
 
+#[test]
+fn oauth_error_description_allows_only_the_rfc_charset() {
+    for byte in 0u8..=127 {
+        let expected = matches!(byte, 0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E);
+        assert_eq!(
+            is_oauth_error_description_byte(byte),
+            expected,
+            "byte {byte:#04x}"
+        );
+    }
+    for byte in 128u8..=255 {
+        assert!(!is_oauth_error_description_byte(byte), "byte {byte:#04x}");
+    }
+}
+
+#[test]
+fn oauth_error_description_replaces_control_quote_backslash_and_unicode() {
+    for description in [
+        "line\nbreak",
+        "carriage\rreturn",
+        "tab\there",
+        "quote\"mark",
+        "back\\slash",
+        "失败",
+    ] {
+        assert_eq!(
+            oauth_error_description(description),
+            "Request failed.",
+            "{description:?}"
+        );
+    }
+    assert_eq!(
+        oauth_error_description("Plain ASCII description!"),
+        "Plain ASCII description!"
+    );
+    assert_eq!(
+        oauth_error_description("symbols #[]^`{|}~"),
+        "symbols #[]^`{|}~"
+    );
+}
+
+#[actix_web::test]
+async fn forbidden_bytes_never_reach_body_or_challenge() {
+    let response = oauth_bearer_error(StatusCode::UNAUTHORIZED, "invalid_token", "bad\n\"desc\"\\");
+    assert_eq!(
+        response
+            .headers()
+            .get(header::WWW_AUTHENTICATE)
+            .unwrap()
+            .to_str()
+            .unwrap(),
+        r#"Bearer error="invalid_token", error_description="Request failed.""#
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .unwrap();
+    let body: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(body["error_description"], "Request failed.");
+}
+
 #[actix_web::test]
 async fn semantic_token_error_preserves_ascii_body_and_basic_challenge() {
     use nazo_oauth_server::contracts::oauth_error::OAuthEndpointError;

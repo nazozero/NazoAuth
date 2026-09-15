@@ -9,6 +9,7 @@ use uuid::Uuid;
 
 use super::Openid4vciRepository;
 use super::crypto::{protect_payload, unprotect_payload};
+use crate::get_conn;
 
 impl Openid4vciRepository {
     pub async fn insert_offer(
@@ -18,9 +19,7 @@ impl Openid4vciRepository {
         pre_authorized_code_hash: Option<&str>,
         tx_code_hash: Option<&str>,
     ) -> Result<(), CredentialStoreError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
         sql_query(
@@ -80,9 +79,7 @@ impl AuthorizationOfferPort for Openid4vciRepository {
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAuthorization>, CredentialStoreError>>
     {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let row = sql_query(

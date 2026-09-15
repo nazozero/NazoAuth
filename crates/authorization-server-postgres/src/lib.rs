@@ -9,8 +9,9 @@ use nazo_postgres::{
     FederationRepository, GrantRepository, MfaRepository, MtlsTrustAnchorRepository,
     OAuthClientRepository, Openid4vciDatasetRepository, Openid4vciRepository, Openid4vpRepository,
     PasskeyRepository, PostgresHealthCheck, PostgresPoolMetrics, RecoveryRootRepository,
-    RuntimeModuleRepository, ScimEventRepository, ScimRepository, TenantDirectoryRepository,
-    TenantResourceRepository, TokenIssuanceRepository, TokenRepository, UserRepository,
+    RuntimeModuleRepository, ScimEventRepository, ScimRepository,
+    SecurityStateMaintenanceRepository, TenantDirectoryRepository, TenantResourceRepository,
+    TokenIssuanceRepository, TokenRepository, UserRepository,
 };
 
 #[derive(Clone)]
@@ -55,6 +56,12 @@ impl ServerPersistenceProvider for PostgresProvider {
         Arc::new(PostgresPoolMetrics)
     }
 
+    fn security_state_maintenance(
+        &self,
+    ) -> Arc<dyn nazo_persistence::SecurityStateMaintenancePort> {
+        Arc::new(SecurityStateMaintenanceRepository::new(self.pool.clone()))
+    }
+
     fn runtime_modules(
         &self,
         tenant_id: uuid::Uuid,
@@ -85,14 +92,8 @@ impl ServerPersistenceProvider for PostgresProvider {
         ))
     }
 
-    fn token_repository(
-        &self,
-        response_keys: nazo_persistence::TokenIssuanceResponseKeyRing,
-    ) -> Arc<dyn nazo_auth::TokenRepositoryPort> {
-        Arc::new(TokenIssuanceRepository::new_with_response_key_ring(
-            self.pool.clone(),
-            response_keys,
-        ))
+    fn token_repository(&self) -> Arc<dyn nazo_auth::TokenRepositoryPort> {
+        Arc::new(TokenIssuanceRepository::new(self.pool.clone()))
     }
 
     fn access_token_revocations(

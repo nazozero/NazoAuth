@@ -54,7 +54,7 @@ use crate::http::token::ciba::ciba_config;
 use crate::http::token::device_config::DeviceHttpConfig;
 use crate::http::token::issue::token_issuance_config;
 use crate::runtime_modules::{RuntimeModules, ServerRuntimeModuleRegistry};
-use crate::settings::{Settings, mfa_totp_key_ring, token_issuance_response_key_ring};
+use crate::settings::{Settings, mfa_totp_key_ring};
 use actix_files::{Files, NamedFile};
 use actix_web::{
     HttpResponse,

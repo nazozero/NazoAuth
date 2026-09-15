@@ -110,10 +110,9 @@ fn tls_server_sequence_with_request_count(
                 "HTTP/1.1 {status} {reason}\r\nContent-Type: {content_type}\r\n{}Connection: close\r\n\r\n",
                 length.unwrap_or_default()
             );
-            stream
+            let _ = stream
                 .write_all(response.as_bytes())
-                .expect("write TLS test headers");
-            stream.write_all(&body).expect("write TLS test body");
+                .and_then(|()| stream.write_all(&body));
         }
     });
     (address, handle, certificate_der, request_count)

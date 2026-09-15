@@ -20,8 +20,8 @@ pub(crate) mod schema;
 mod tenant_resource_executor;
 
 pub use pool::{
-    DbConnection, DbPool, DbPoolMetrics, cleanup_expired_security_state, configure_runtime_role,
-    create_pool, db_pool_metrics, get_conn, health_check, run_pending_migrations,
+    DbConnection, DbPool, DbPoolMetrics, configure_runtime_role, create_pool, db_pool_metrics,
+    get_conn, health_check, run_pending_migrations,
 };
 pub use repositories::{
     AccessRequestRepository, ActiveTenantBoundaryRepository, AdminProvisionError,
@@ -43,17 +43,18 @@ pub use repositories::{
     RecoveryRootRepository, RecoveryRootSummary, RecoveryRotationError, RecoverySubmission,
     RotateControllerKey, RuntimeModuleEventPage, RuntimeModuleRepository, ScimEventRepository,
     ScimRepository, SecurityAuditAnchorHealth, SecurityAuditEvent, SecurityAuditOutboxDelivery,
-    SigningKeysetRepository, StoredControllerSlot, StoredOpenid4vcTrustPolicy, StoredRecoveryRoot,
-    TenantBoundaryDefinition, TenantDirectoryControlRepository, TenantDirectoryRepository,
-    TenantProvisioningRequest, TenantResourceBinding, TenantResourceBindingDeactivate,
-    TenantResourceRepository, TenantResourceState, TenantResourceStateCas, TenantRuntimeStatus,
-    TokenIssuanceRepository, TokenRepository, UserInsert, UserRepository,
-    active_public_client_id_on_connection, append_fresh_security_audit_on_connection,
-    deactivate_client_on_connection, delete_operator_managed_dataset_on_connection,
-    disable_user_on_connection, insert_client_on_connection,
-    insert_operator_managed_trust_anchor_on_connection, insert_user_on_connection,
-    protect_dataset_claims, revoke_operator_managed_trust_anchor_on_connection,
-    unprotect_dataset_claims, upsert_operator_managed_dataset_on_connection,
+    SecurityStateMaintenanceRepository, SigningKeysetRepository, StoredControllerSlot,
+    StoredOpenid4vcTrustPolicy, StoredRecoveryRoot, TenantBoundaryDefinition,
+    TenantDirectoryControlRepository, TenantDirectoryRepository, TenantProvisioningRequest,
+    TenantResourceBinding, TenantResourceBindingDeactivate, TenantResourceRepository,
+    TenantResourceState, TenantResourceStateCas, TenantRuntimeStatus, TokenIssuanceRepository,
+    TokenRepository, UserInsert, UserRepository, active_public_client_id_on_connection,
+    append_fresh_security_audit_on_connection, deactivate_client_on_connection,
+    delete_operator_managed_dataset_on_connection, disable_user_on_connection,
+    insert_client_on_connection, insert_operator_managed_trust_anchor_on_connection,
+    insert_user_on_connection, protect_dataset_claims,
+    revoke_operator_managed_trust_anchor_on_connection, unprotect_dataset_claims,
+    upsert_operator_managed_dataset_on_connection,
 };
 pub use tenant_resource_executor::PostgresTenantResourceExecutor;
 

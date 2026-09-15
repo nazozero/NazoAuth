@@ -1389,6 +1389,22 @@ mod real_userinfo_contract {
             self.calls.lock().unwrap().push("subject");
             self.inner.active_subject_claims(tenant, user)
         }
+        fn active_subject_claims_by_access_token<'a>(
+            &'a self,
+            tenant: Uuid,
+            jti: &'a str,
+        ) -> TokenFuture<'a, Option<SubjectClaims>> {
+            self.calls.lock().unwrap().push("subject");
+            TokenRepositoryPort::active_subject_claims_by_access_token(&self.inner, tenant, jti)
+        }
+        fn active_subject_id_by_access_token<'a>(
+            &'a self,
+            tenant: Uuid,
+            jti: &'a str,
+        ) -> TokenFuture<'a, Option<Uuid>> {
+            self.calls.lock().unwrap().push("subject");
+            TokenRepositoryPort::active_subject_id_by_access_token(&self.inner, tenant, jti)
+        }
         fn client_by_protocol_id<'a>(
             &'a self,
             tenant: Uuid,
@@ -1397,22 +1413,11 @@ mod real_userinfo_contract {
             self.calls.lock().unwrap().push("client");
             self.inner.client_by_protocol_id(tenant, client)
         }
-        fn validate_response_key_ring(&self) -> TokenFuture<'_, ()> {
-            panic!("unexpected key-ring repository call")
-        }
         fn commit_token_issuance<'a>(
             &'a self,
             _: CommitTokenIssuance,
         ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
             panic!("unexpected issuance")
-        }
-        fn token_issuance_by_grant<'a>(
-            &'a self,
-            _: Uuid,
-            _: Uuid,
-            _: &'a str,
-        ) -> TokenFuture<'a, Option<TokenIssuanceRecord>> {
-            panic!("unexpected grant lookup")
         }
         fn refresh_token<'a>(
             &'a self,
@@ -2708,14 +2713,13 @@ mod ciba_device_contract {
         }
     }
     #[actix_web::test]
-    async fn real_persisted_idempotent_issuance_raw_bytes_and_header_difference() {
-        use nazo_auth::{TokenIssuanceMode, TokenRepositoryPort};
+    async fn real_single_use_issuance_rejects_a_consumed_grant_key() {
+        use nazo_auth::TokenIssuanceMode;
         use nazo_oauth_server::token::issue::issue_token_response;
         let (state, client) = ciba_fixture().await;
         let user = Uuid::now_v7();
         insert_ciba_user(&state, user).await;
         let connection = state.valkey_connection();
-        let repository = crate::test_support::token_issuance_repository(state.diesel_db.clone());
         let service = ServerTokenService::new(
             crate::test_support::token_issuance_repository(state.diesel_db.clone()),
             Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(&connection)),
@@ -2769,8 +2773,9 @@ mod ciba_device_contract {
                 &context,
                 &service,
                 &client,
-                TokenIssuanceMode::Idempotent {
+                TokenIssuanceMode::SingleUse {
                     grant_key: grant.clone(),
+                    grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
                 },
                 issue(),
             )
@@ -2779,32 +2784,24 @@ mod ciba_device_contract {
         .await;
         assert_eq!(first.status, 200, "{first:?}");
         assert_eq!(first.headers, json_headers(true, true));
-        let record = repository
-            .token_issuance_by_grant(DEFAULT_TENANT_ID, client.id, &grant)
-            .await
-            .expect("persisted issuance lookup")
-            .expect("issuance exists");
-        assert_eq!(
-            record
-                .response_body
-                .as_deref()
-                .expect("durable response bytes"),
-            first.body.as_slice()
-        );
         let replay = wire(present_token_result(
             issue_token_response(
                 &context,
                 &service,
                 &client,
-                TokenIssuanceMode::Idempotent { grant_key: grant },
+                TokenIssuanceMode::SingleUse {
+                    grant_key: grant,
+                    grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
+                },
                 issue(),
             )
             .await,
         ))
         .await;
-        assert_eq!(replay.status, 200, "{replay:?}");
-        assert_eq!(replay.headers, json_headers(true, false));
-        assert_eq!(replay.body, first.body);
+        assert_eq!(replay.status, 400, "{replay:?}");
+        let replay_body: Value =
+            serde_json::from_slice(&replay.body).expect("replay rejection body should be JSON");
+        assert_eq!(replay_body["error"], "invalid_grant");
         let body: Value = serde_json::from_slice(&first.body).expect("issuance response JSON");
         let access = verify_jwt(
             &state,

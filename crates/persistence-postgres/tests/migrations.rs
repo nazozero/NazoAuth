@@ -22,6 +22,71 @@ fn embedded_migration_head_tracks_latest_directory() {
     );
 }
 
+#[test]
+fn security_state_cleanup_has_one_bounded_definition_and_no_runtime_call() {
+    let migrations = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../migrations");
+    let mut definitions = 0;
+    let mut invocations = 0;
+    for entry in std::fs::read_dir(&migrations)
+        .expect("migration directory should be readable")
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
+    {
+        let up = entry.path().join("up.sql");
+        let Ok(sql) = std::fs::read_to_string(&up) else {
+            continue;
+        };
+        definitions += sql
+            .matches("CREATE FUNCTION nazo_oauth_cleanup_expired_security_state()")
+            .count()
+            + sql
+                .matches("CREATE OR REPLACE FUNCTION nazo_oauth_cleanup_expired_security_state()")
+                .count();
+        // Runtime calls belong to the maintenance worker; migration files may
+        // only define the function.
+        invocations += sql
+            .matches("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
+            .count()
+            + sql
+                .matches("SELECT nazo_oauth_cleanup_expired_security_state()")
+                .count();
+    }
+    assert_eq!(
+        definitions, 1,
+        "the bounded security-state cleanup must be defined exactly once"
+    );
+    assert_eq!(
+        invocations, 0,
+        "migrations must never invoke runtime security-state cleanup"
+    );
+}
+
+#[test]
+fn security_state_cleanup_function_bounds_every_category() {
+    let sql = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../migrations/20260805000500_token_issuance_saga/up.sql"),
+    )
+    .expect("token issuance saga migration should be readable");
+    assert_eq!(
+        sql.matches("LIMIT 256 FOR UPDATE SKIP LOCKED").count(),
+        5,
+        "each cleanup category must select a bounded candidate set under SKIP LOCKED"
+    );
+    for column in [
+        "deleted_issuances",
+        "deleted_access_token_revocations",
+        "deleted_scim_audit_events",
+        "deleted_backchannel_logout_deliveries",
+        "deleted_scim_security_events",
+    ] {
+        assert!(
+            sql.contains(column),
+            "cleanup function must report {column}"
+        );
+    }
+}
+
 const SOCIAL_UP: &str =
     include_str!("../../../migrations/20260712000050_social_federation_provider_type/up.sql");
 const SOCIAL_DOWN: &str =

@@ -1,5 +1,6 @@
 use super::*;
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 pub(super) fn failed_authorization_code_transition_result(
     result: nazo_auth::AuthorizationCodeTransitionResult,

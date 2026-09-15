@@ -215,9 +215,9 @@ pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,
     AuthorizationCodeTransitionResult, CommitTokenIssuance, CommitTokenIssuanceResult,
     IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, IssuedAuthorizationCodeTokens,
-    TokenFuture, TokenInspection, TokenIssuanceMode, TokenIssuanceRecord, TokenIssuedAuditFields,
-    TokenPortError, TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort,
-    TokenStateStorePort, ephemeral_grant_key, validate_sender_constraint,
+    TokenFuture, TokenInspection, TokenIssuanceMode, TokenIssuedAuditFields, TokenPortError,
+    TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort,
+    validate_sender_constraint,
 };
 pub use transaction::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,

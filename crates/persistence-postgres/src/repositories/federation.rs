@@ -1,6 +1,7 @@
 use crate::{
     DbPool,
     convert::identity,
+    get_conn,
     rows::identity::{ExternalIdentityLinkRow, PublicAccountRow},
     schema::{external_identity_links, users},
 };
@@ -26,9 +27,7 @@ impl FederationRepository {
         Self { pool }
     }
     pub async fn insert(&self, link: NewFederationLink) -> Result<FederationLink, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let row = diesel::insert_into(external_identity_links::table)
@@ -52,9 +51,7 @@ impl FederationRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Vec<FederationLink>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         external_identity_links::table
@@ -75,9 +72,7 @@ impl FederationRepository {
         user_id: UserId,
         link_id: uuid::Uuid,
     ) -> Result<Option<FederationLink>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         diesel::delete(
@@ -99,9 +94,7 @@ impl FederationRepository {
         &self,
         login: FederationLogin,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
@@ -147,9 +140,7 @@ impl FederationRepository {
         new_identity: NewFederatedIdentity,
     ) -> Result<PublicAccount, RepositoryError> {
         let retry_login = new_identity.login.clone();
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let result = connection

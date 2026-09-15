@@ -150,6 +150,44 @@ boundary: metadata handlers receive metadata configuration, keys, and the
 capability snapshot; session handlers receive session policy and session
 storage; repositories are injected only into flows that query them.
 
+## Token Issuance and Security State
+
+Token issuance commits through `TokenIssuanceRepository` against one durable
+fence: the `oauth_token_issuances` table. Two modes exist:
+
+- `Fresh` inserts unconditionally — one statement, no fence row content, no
+  request digest, and no stored response.
+- `SingleUse` inserts under a partial unique index on the 32-byte BLAKE3
+  `single_use_key_blake3` fence column and re-checks the verified grant
+  deadline inside the same transaction. The commit reports `Committed`,
+  `AlreadyUsed`, `GrantExpired`, `ClientInactive`, `SubjectInactive`, or
+  `RotationConflict`; a `GrantExpired` result means the transaction rolled
+  back and its connection returns to the pool.
+
+The generic issuance path accepts no `Idempotency-Key`, persists no request
+digest, and stores no encrypted response envelope; there is no generic
+response replay or recovery. One-time consumption remains atomic where the
+protocol requires it — authorization codes, device authorization, JWT Bearer
+assertions, and CIBA consume through the state store — and refresh-token
+rotation keeps its family reuse protection and the bounded lost-response
+recovery. DPoP and mTLS sender constraints and the tenant/client/subject/user
+final checks run inside the commit transaction; the security audit event
+commits with the issuance row.
+
+Access-token ownership is read from PostgreSQL: user-facing and credential
+flows resolve the issuing user through `oauth_token_issuances` rather than a
+Valkey JTI-to-subject projection, keeping the durable store the single source
+of truth. OpenID4VC preauthorized issuance keeps its own storage and is not
+mixed into the generic issuance fence.
+
+Expired security state is reclaimed by a bounded host-owned worker: each
+server process runs one maintenance worker, each batch is capped per
+category, and refresh-token families are processed under the same advisory
+locks writers use. Operational detail lives in
+[ha-operations.md](../operations/ha-operations.md#security-state-maintenance).
+Databases are created by the current migrations; pre-refactor schemas and
+envelope-encrypted response rows have no read-back or upgrade path.
+
 ## Frontend Repository Discovery
 
 The administration UI lives in a separate sibling repository named

@@ -5,6 +5,7 @@ use crate::adapters::{
 use crate::jobs::{
     backchannel_logout::spawn_backchannel_logout_delivery_worker,
     ciba_ping::spawn_ciba_ping_delivery_worker,
+    security_state::spawn_security_state_maintenance_worker,
 };
 use nazo_oauth_server::workers::{
     backchannel_logout::BackchannelLogoutWorker, ciba_ping::CibaPingDeliveryWorker,
@@ -45,6 +46,14 @@ pub(super) fn spawn_backchannel_logout_worker(
     Ok(spawn_backchannel_logout_delivery_worker(Arc::new(
         BackchannelLogoutWorker::from_port(logout_deliveries, sender),
     )))
+}
+
+/// The bounded security-state sweep is process-level state, so the worker is
+/// spawned once here — never inside the Actix factory or a tenant runtime.
+pub(super) fn spawn_security_state_worker(
+    maintenance: Arc<dyn nazo_persistence::SecurityStateMaintenancePort>,
+) -> tokio::task::JoinHandle<()> {
+    spawn_security_state_maintenance_worker(maintenance)
 }
 
 #[cfg(test)]

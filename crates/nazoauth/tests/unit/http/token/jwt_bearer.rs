@@ -440,6 +440,7 @@ async fn jwt_bearer_assertion_jti_replay_is_rejected() {
     let assertion = ValidatedJwtBearerAssertion {
         subject: "client-a".to_owned(),
         jti: format!("jwt-bearer-replay-{}", Uuid::now_v7()),
+        expires_at: chrono::Utc::now() + chrono::Duration::seconds(120),
         replay_ttl_seconds: 120,
     };
 
@@ -453,7 +454,7 @@ async fn jwt_bearer_assertion_jti_replay_is_rejected() {
 }
 
 #[actix_web::test]
-async fn jwt_bearer_replay_rejects_a_consumed_jti_even_with_a_persisted_response() {
+async fn jwt_bearer_replay_rejects_a_consumed_jti_after_a_committed_issuance() {
     let Some(state) = live_jwt_bearer_issuance_state().await else {
         return;
     };
@@ -473,7 +474,7 @@ async fn jwt_bearer_replay_rejects_a_consumed_jti_even_with_a_persisted_response
         .expect("first JWT bearer assertion use should be accepted");
 
     let grant_key = jwt_bearer_grant_key(&validated.jti, None, None);
-    crate::http::token::issue::tests::persist_token_issuance_response_for_test(
+    crate::http::token::issue::tests::persist_consumed_single_use_grant_for_test(
         &state, &client, &grant_key,
     )
     .await;

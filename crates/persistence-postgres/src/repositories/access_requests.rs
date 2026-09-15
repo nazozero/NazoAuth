@@ -13,7 +13,7 @@ use serde_json::json;
 use uuid::Uuid;
 
 use crate::{
-    DbPool,
+    DbPool, get_conn,
     schema::{client_access_requests, oauth_clients, users},
 };
 
@@ -411,8 +411,7 @@ impl AccessRequestRepository {
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
-        self.pool
-            .get()
+        get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)
     }

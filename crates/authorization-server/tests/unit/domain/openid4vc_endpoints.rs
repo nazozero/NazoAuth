@@ -4,10 +4,8 @@ use nazo_openid4vci::CredentialConfiguration;
 use serde_json::{Value, json};
 
 use super::{
-    PutCredentialDatasetRequest,
-    openid4vci::{openid4vci_configuration_id_from_identifier, token_endpoint_dpop_target_uris},
-    openid4vci_authorization_detail,
-    openid4vci_dataset::validate_managed_dataset,
+    PutCredentialDatasetRequest, openid4vci::openid4vci_configuration_id_from_identifier,
+    openid4vci_authorization_detail, openid4vci_dataset::validate_managed_dataset,
 };
 
 fn dataset_configuration(format: CredentialFormat) -> CredentialConfiguration {
@@ -211,24 +209,5 @@ fn managed_mdoc_dataset_rejects_namespace_and_inner_claim_name_bounds() {
             &dataset_request(json!({"org.iso.18013.5.1": {"": "Lovelace"}})),
         )
         .is_err()
-    );
-}
-
-#[test]
-fn vci_token_dpop_targets_include_public_issuer_endpoint() {
-    assert_eq!(
-        token_endpoint_dpop_target_uris("https://issuer.example/", "https://wallet.example/token"),
-        vec!["https://issuer.example/token".to_owned()]
-    );
-    assert_eq!(
-        token_endpoint_dpop_target_uris("https://issuer.example", "https://issuer.example/token"),
-        vec!["https://issuer.example/token".to_owned()]
-    );
-    assert_eq!(
-        token_endpoint_dpop_target_uris(
-            "https://issuer.example",
-            "https://issuer.examplehttps://issuer.example/token"
-        ),
-        vec!["https://issuer.example/token".to_owned()]
     );
 }

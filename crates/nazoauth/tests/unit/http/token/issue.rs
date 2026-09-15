@@ -20,6 +20,147 @@ pub(crate) async fn issue_token_response(
     issue_token_response_with_modules(state, client, issue, state.active_module_snapshot()).await
 }
 
+struct SubjectClaimsProbe {
+    inner: std::sync::Arc<dyn TokenRepositoryPort>,
+    claims_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+}
+
+impl TokenRepositoryPort for SubjectClaimsProbe {
+    fn commit_token_issuance<'a>(
+        &'a self,
+        input: nazo_auth::CommitTokenIssuance,
+    ) -> nazo_auth::TokenFuture<'a, nazo_auth::CommitTokenIssuanceResult> {
+        self.inner.commit_token_issuance(input)
+    }
+
+    fn client_by_protocol_id<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, Option<OAuthClient>> {
+        self.inner.client_by_protocol_id(tenant_id, client_id)
+    }
+
+    fn refresh_token<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        raw_token: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, Option<RefreshToken>> {
+        self.inner.refresh_token(tenant_id, raw_token)
+    }
+
+    fn inspect_lost_response_successor<'a>(
+        &'a self,
+        token: &'a RefreshToken,
+        client_id: Uuid,
+        retry_started_at: DateTime<Utc>,
+    ) -> nazo_auth::TokenFuture<'a, Option<RefreshToken>> {
+        self.inner
+            .inspect_lost_response_successor(token, client_id, retry_started_at)
+    }
+
+    fn active_subject_claims<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        user_id: Uuid,
+    ) -> nazo_auth::TokenFuture<'a, Option<nazo_identity::SubjectClaims>> {
+        self.claims_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.inner.active_subject_claims(tenant_id, user_id)
+    }
+
+    fn active_subject_claims_by_access_token<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        jti: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, Option<nazo_identity::SubjectClaims>> {
+        self.claims_calls
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.inner
+            .active_subject_claims_by_access_token(tenant_id, jti)
+    }
+
+    fn active_subject_id_by_access_token<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        jti: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, Option<Uuid>> {
+        self.inner.active_subject_id_by_access_token(tenant_id, jti)
+    }
+
+    fn revoke_issued_tokens<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        access_token_jti: &'a str,
+        access_token_expires_at: Option<DateTime<Utc>>,
+        refresh_token_family_id: Option<Uuid>,
+    ) -> nazo_auth::TokenFuture<'a, ()> {
+        self.inner.revoke_issued_tokens(
+            tenant_id,
+            client_id,
+            access_token_jti,
+            access_token_expires_at,
+            refresh_token_family_id,
+        )
+    }
+
+    fn access_token_revoked<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        jti: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, bool> {
+        self.inner.access_token_revoked(tenant_id, jti)
+    }
+
+    fn refresh_family_active<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        family_id: Uuid,
+        user_id: Uuid,
+    ) -> nazo_auth::TokenFuture<'a, bool> {
+        self.inner
+            .refresh_family_active(tenant_id, family_id, user_id)
+    }
+
+    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> nazo_auth::TokenFuture<'a, usize> {
+        self.inner.revoke_token(input)
+    }
+}
+
+async fn issue_token_response_with_repository(
+    state: &TestInfrastructure,
+    client: &ClientRow,
+    issue: TokenIssue,
+    repository: std::sync::Arc<dyn TokenRepositoryPort>,
+) -> HttpResponse {
+    let service = ServerTokenService::from_port(
+        repository,
+        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        state.keyset.clone(),
+    );
+    let config = token_issuance_config(state.settings.as_ref());
+    let authorization = test_support::test_authorization_service(state);
+    present_token_result(
+        nazo_oauth_server::token::issue::issue_token_response(
+            &TokenIssuanceContext {
+                config: &config,
+                modules: &state.active_module_snapshot(),
+                authorization: &authorization,
+                security_audit: crate::http::authorization::test_support::test_security_audit(),
+                remote_client_documents: crate::test_support::test_remote_client_documents(),
+            },
+            &service,
+            client,
+            TokenIssuanceMode::Fresh,
+            issue,
+        )
+        .await,
+    )
+}
+
 async fn issue_native_sso_token_response(
     state: &TestInfrastructure,
     client: &ClientRow,
@@ -76,23 +217,7 @@ async fn issue_token_response_with_grant_for_test(
         client,
         TokenIssuanceMode::SingleUse {
             grant_key: grant_key.to_owned(),
-        },
-        issue,
-    )
-    .await
-}
-
-async fn issue_token_response_with_idempotent_grant_for_test(
-    state: &TestInfrastructure,
-    client: &ClientRow,
-    grant_key: &str,
-    issue: TokenIssue,
-) -> HttpResponse {
-    issue_token_response_with_mode_for_test(
-        state,
-        client,
-        TokenIssuanceMode::Idempotent {
-            grant_key: grant_key.to_owned(),
+            grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
         },
         issue,
     )
@@ -105,6 +230,23 @@ async fn issue_token_response_with_mode_for_test(
     mode: TokenIssuanceMode,
     issue: TokenIssue,
 ) -> HttpResponse {
+    issue_token_response_with_mode_and_modules_for_test(
+        state,
+        client,
+        mode,
+        issue,
+        state.active_module_snapshot(),
+    )
+    .await
+}
+
+async fn issue_token_response_with_mode_and_modules_for_test(
+    state: &TestInfrastructure,
+    client: &ClientRow,
+    mode: TokenIssuanceMode,
+    issue: TokenIssue,
+    modules: nazo_runtime_modules::ActiveModuleSnapshot,
+) -> HttpResponse {
     let service = ServerTokenService::new(
         crate::test_support::token_issuance_repository(state.diesel_db.clone()),
         std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
@@ -113,7 +255,6 @@ async fn issue_token_response_with_mode_for_test(
         state.keyset.clone(),
     );
     let config = token_issuance_config(state.settings.as_ref());
-    let modules = state.active_module_snapshot();
     let authorization = test_support::test_authorization_service(state);
     present_token_result(
         nazo_oauth_server::token::issue::issue_token_response(
@@ -205,17 +346,6 @@ async fn wait_for_issuance_commit_lock(
     panic!("timed out waiting for token issuance to block on the principal row lock");
 }
 
-async fn delete_token_issuance(state: &TestInfrastructure, issuance_id: Uuid) {
-    let mut connection = get_conn(&state.diesel_db)
-        .await
-        .expect("issue test database connection should be available for cleanup");
-    sql_query("DELETE FROM oauth_token_issuances WHERE issuance_id = $1")
-        .bind::<SqlUuid, _>(issuance_id)
-        .execute(&mut connection)
-        .await
-        .expect("issue test token issuance cleanup should succeed");
-}
-
 use super::*;
 use actix_web::{
     HttpResponse,
@@ -226,7 +356,6 @@ use actix_web::{
 };
 use nazo_oauth_server::{
     contracts::{oauth_error::OAuthEndpointError, token_endpoint::TokenEndpointSuccess},
-    crypto::blake3_hex,
     domain::{
         oauth::{RefreshTokenPolicy, TokenIssue},
         rows::ClientRow,
@@ -243,7 +372,7 @@ fn present_token_result(result: Result<TokenEndpointSuccess, OAuthEndpointError>
         Err(error) => nazo_http_actix::oauth_endpoint_error_response(error),
     }
 }
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -259,16 +388,16 @@ use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult, TokenIssuanceMode, TokenIssuedAuditFields,
+    CommitTokenIssuance, CommitTokenIssuanceResult, OAuthClient, RefreshToken, TokenIssuanceMode,
+    TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation,
 };
 
 const LIVE_VALKEY_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 
-/// Seed a durable response for endpoint replay tests.  The HTTP handlers under
-/// test must reject a consumed one-time grant even when an old issuance row is
-/// present; this helper represents the response that would have been returned
-/// by the original successful redemption.
-pub(crate) async fn persist_token_issuance_response_for_test(
+/// Seed a durably consumed single-use grant for endpoint replay tests.  The
+/// HTTP handlers under test must reject a consumed one-time grant; this helper
+/// commits the winning issuance row so a later redemption loses the fence.
+pub(crate) async fn persist_consumed_single_use_grant_for_test(
     state: &TestInfrastructure,
     client: &ClientRow,
     grant_key: &str,
@@ -282,24 +411,18 @@ pub(crate) async fn persist_token_issuance_response_for_test(
         state.keyset.clone(),
     );
     let issuance_id = Uuid::now_v7();
-    let request_digest = blake3::hash(format!("test-request-{issuance_id}").as_bytes())
-        .to_hex()
-        .to_string();
-    let response_body =
-        br#"{"access_token":"replay-fixture","token_type":"Bearer","expires_in":300}"#;
     let result = service
         .commit_token_issuance(CommitTokenIssuance {
             issuance_id,
             tenant_id: client.tenant_id,
             client_id: client.id,
             user_id: None,
-            mode: TokenIssuanceMode::Idempotent {
+            mode: TokenIssuanceMode::SingleUse {
                 grant_key: grant_key.to_owned(),
+                grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
             },
-            request_digest,
-            access_token_jti: format!("replay-fixture-{issuance_id}"),
+            access_token_jti: format!("consumed-grant-{issuance_id}"),
             access_token_expires_at: (Utc::now() + chrono::Duration::minutes(5)).timestamp(),
-            response_body: Some(response_body.to_vec()),
             refresh_token: None,
             audit_fields: TokenIssuedAuditFields {
                 client_id: client.client_id.clone(),
@@ -555,19 +678,19 @@ async fn delete_token_issuance_for_grant(
     client: &ClientRow,
     grant_key: &str,
 ) {
-    let service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
-        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
-            &state.valkey_connection(),
-        )),
-        state.keyset.clone(),
-    );
-    if let Ok(Some(record)) = service
-        .token_issuance_by_grant(client.tenant_id, client.id, grant_key)
+    let mut connection = get_conn(&state.diesel_db)
         .await
-    {
-        delete_token_issuance(state, record.issuance_id).await;
-    }
+        .expect("issue test database connection should be available for cleanup");
+    sql_query(
+        "DELETE FROM oauth_token_issuances \
+         WHERE tenant_id = $1 AND client_id = $2 AND single_use_key_blake3 = $3",
+    )
+    .bind::<SqlUuid, _>(client.tenant_id)
+    .bind::<SqlUuid, _>(client.id)
+    .bind::<diesel::sql_types::Binary, _>(blake3::hash(grant_key.as_bytes()).as_bytes().to_vec())
+    .execute(&mut connection)
+    .await
+    .expect("issue test token issuance cleanup should succeed");
 }
 
 fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
@@ -632,30 +755,6 @@ fn token_issue_without_openid() -> TokenIssue {
         issued_token_type: None,
         native_sso: None,
     }
-}
-
-#[test]
-fn request_idempotency_key_trims_and_rejects_invalid_values() {
-    let missing = actix_web::test::TestRequest::get().to_http_request();
-    assert_eq!(request_idempotency_key(&missing), None);
-
-    let blank = actix_web::test::TestRequest::get()
-        .insert_header(("idempotency-key", "   "))
-        .to_http_request();
-    assert_eq!(request_idempotency_key(&blank), None);
-
-    let valid = actix_web::test::TestRequest::get()
-        .insert_header(("idempotency-key", "  stable-grant  "))
-        .to_http_request();
-    let key = request_idempotency_key(&valid).expect("trimmed idempotency key should be accepted");
-    assert!(key.starts_with("idempotency:"));
-    assert_ne!(key, "idempotency:stable-grant");
-
-    let too_long = "x".repeat(257);
-    let too_long_request = actix_web::test::TestRequest::get()
-        .insert_header(("idempotency-key", too_long))
-        .to_http_request();
-    assert_eq!(request_idempotency_key(&too_long_request), None);
 }
 
 #[actix_web::test]
@@ -818,6 +917,65 @@ async fn client_credentials_issue_returns_minimal_bearer_token_response_without_
     );
     assert!(value.get("id_token").is_none());
     assert!(value.get("refresh_token").is_none());
+}
+
+#[actix_web::test]
+async fn non_oidc_user_issuance_skips_subject_claims_and_rechecks_principal_at_commit() {
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
+    let mut client = client_with_grants(&["client_credentials"]);
+    client.client_id = format!("issue-non-oidc-subject-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
+    let user_id = Uuid::now_v7();
+    insert_issue_user(&state, user_id).await;
+    let claims_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let repository = std::sync::Arc::new(SubjectClaimsProbe {
+        inner: std::sync::Arc::new(crate::test_support::token_issuance_repository(
+            state.diesel_db.clone(),
+        )),
+        claims_calls: claims_calls.clone(),
+    });
+    let mut issue = token_issue_without_openid();
+    issue.user_id = Some(user_id);
+    issue.subject = format!("pairwise-subject-{user_id}");
+    issue.include_refresh = false;
+
+    let response =
+        issue_token_response_with_repository(&state, &client, issue, repository.clone()).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        std::sync::atomic::AtomicUsize::load(&claims_calls, std::sync::atomic::Ordering::SeqCst),
+        0,
+        "non-OIDC issuance must not load subject claims"
+    );
+
+    {
+        let mut connection = get_conn(&state.diesel_db)
+            .await
+            .expect("issue test database connection should be available");
+        sql_query("UPDATE users SET is_active = FALSE WHERE tenant_id = $1 AND id = $2")
+            .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+            .bind::<SqlUuid, _>(user_id)
+            .execute(&mut connection)
+            .await
+            .expect("issue test user deactivation should succeed");
+    }
+
+    let mut retry = token_issue_without_openid();
+    retry.user_id = Some(user_id);
+    retry.subject = format!("pairwise-subject-{user_id}");
+    retry.include_refresh = false;
+    let response = issue_token_response_with_repository(&state, &client, retry, repository).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(response).await, "invalid_grant");
+    assert_eq!(
+        std::sync::atomic::AtomicUsize::load(&claims_calls, std::sync::atomic::Ordering::SeqCst),
+        0,
+        "the commit principal recheck must not load subject claims"
+    );
 }
 
 #[actix_web::test]
@@ -1216,128 +1374,35 @@ async fn consumed_authorization_code_marker_failure_returns_error_after_revocati
 }
 
 #[actix_web::test]
-async fn same_idempotent_grant_retry_reuses_the_persisted_response() {
+async fn same_single_use_grant_retry_is_rejected_without_reissuing() {
     let Some(state) = issue_state_with_live_database() else {
         return;
     };
     let mut client = client_with_grants(&["client_credentials"]);
-    client.client_id = format!("idempotent-client-{}", Uuid::now_v7());
+    client.client_id = format!("single-use-client-{}", Uuid::now_v7());
     insert_issue_client(&state, &client).await;
-    let grant_key = format!("idempotent-test-{}", Uuid::now_v7());
+    let grant_key = format!("single-use-test-{}", Uuid::now_v7());
     let mut first_issue = token_issue_without_openid();
     first_issue.include_refresh = false;
-    let first = issue_token_response_with_idempotent_grant_for_test(
-        &state,
-        &client,
-        &grant_key,
-        first_issue,
-    )
-    .await;
+    let first =
+        issue_token_response_with_grant_for_test(&state, &client, &grant_key, first_issue).await;
     assert_eq!(first.status(), StatusCode::OK);
-    let first_body = response_body(first).await;
 
     let mut retry_issue = token_issue_without_openid();
     retry_issue.include_refresh = false;
-    let retry = issue_token_response_with_idempotent_grant_for_test(
-        &state,
-        &client,
-        &grant_key,
-        retry_issue,
-    )
-    .await;
-    assert_eq!(retry.status(), StatusCode::OK);
-    assert_eq!(response_body(retry).await, first_body);
-}
-
-#[actix_web::test]
-#[cfg(any())]
-async fn terminal_issuance_owned_by_another_claim_is_busy() {
-    let Some(state) = issue_state_with_live_database() else {
-        return;
-    };
-    let client = client_with_grants(&["client_credentials"]);
-    let service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
-        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
-            &state.valkey_connection(),
-        )),
-        state.keyset.clone(),
-    );
-    let issuance_id = Uuid::now_v7();
-    let first_owner_id = Uuid::now_v7();
-    let grant_key = format!("terminal-claim-{issuance_id}");
-    let request_digest = blake3::hash(issuance_id.as_bytes()).to_hex().to_string();
-    let expires_at = Utc::now() + chrono::Duration::minutes(5);
-    let response_body = br#"{"access_token":"stable","token_type":"Bearer"}"#;
-    let response_digest = blake3::hash(response_body).to_hex().to_string();
-    let exercise = async {
-        let prepared = service
-            .prepare_token_issuance(PrepareTokenIssuance {
-                issuance_id,
-                tenant_id: client.tenant_id,
-                client_id: client.id,
-                user_id: None,
-                grant_key: grant_key.clone(),
-                request_digest: request_digest.clone(),
-                expires_at,
-            })
-            .await
-            .map_err(|error| format!("terminal claim fixture should prepare: {error}"))?;
-        let first_claim = service
-            .claim_token_issuance(issuance_id, &request_digest, first_owner_id)
-            .await
-            .map_err(|error| format!("first owner should claim issuance: {error}"))?;
-        let signed = service
-            .record_token_issuance_signed(nazo_auth::RecordTokenIssuanceSigned {
-                issuance_id,
-                request_digest: &request_digest,
-                claim_owner_id: first_owner_id,
-                access_token_jti: "terminal-claim-jti",
-                access_token_expires_at: expires_at.timestamp(),
-                response_body,
-                response_digest: &response_digest,
-            })
-            .await
-            .map_err(|error| format!("first owner should persist signed response: {error}"))?;
-        let stored = service
-            .token_issuance_by_grant(client.tenant_id, client.id, &grant_key)
-            .await
-            .map_err(|error| format!("signed issuance lookup should succeed: {error}"))?;
-        let missing = service
-            .token_issuance_by_grant(client.tenant_id, client.id, "missing-grant")
-            .await
-            .map_err(|error| format!("missing issuance lookup should succeed: {error}"))?;
-        let second_claim = service
-            .claim_token_issuance(issuance_id, &request_digest, Uuid::now_v7())
-            .await
-            .map_err(|error| format!("second owner claim should be classified: {error}"))?;
-        Ok::<_, String>((prepared, first_claim, signed, stored, missing, second_claim))
-    }
-    .await;
-
-    delete_token_issuance(&state, issuance_id).await;
-
-    let (prepared, first_claim, signed, stored, missing, second_claim) =
-        exercise.unwrap_or_else(|message| panic!("{message}"));
-    assert!(matches!(prepared, PrepareTokenIssuanceResult::Created(_)));
-    assert_eq!(first_claim, TokenIssuanceClaimResult::Applied);
-    assert_eq!(signed, TokenIssuanceTransitionResult::Applied);
-    let stored = stored.expect("signed issuance should remain recoverable by grant");
-    assert_eq!(stored.issuance_id, issuance_id);
-    assert_eq!(stored.request_digest, request_digest);
-    assert_eq!(stored.phase, TokenIssuancePhase::Signed);
-    assert_eq!(stored.claim_owner_id, Some(first_owner_id));
+    let retry =
+        issue_token_response_with_grant_for_test(&state, &client, &grant_key, retry_issue).await;
+    assert_eq!(retry.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(retry).await, "invalid_grant");
     assert_eq!(
-        stored.response_body.as_deref(),
-        Some(response_body.as_slice())
+        token_issuance_row_count(&state, &client).await,
+        1,
+        "the losing retry must not persist another issuance row"
     );
-    assert!(missing.is_none());
-    assert_eq!(second_claim, TokenIssuanceClaimResult::Busy);
 }
 
 #[actix_web::test]
-#[cfg(any())]
-async fn concurrent_prepared_issuance_recovers_the_winning_response() {
+async fn concurrent_single_use_grants_issue_exactly_one_response() {
     let Some(state) = issue_state_with_live_database_pool_size(4) else {
         return;
     };
@@ -1352,104 +1417,61 @@ async fn concurrent_prepared_issuance_recovers_the_winning_response() {
     let mut second_issue = token_issue_without_openid();
     second_issue.scopes.push("offline_access".to_owned());
     second_issue.include_refresh = true;
-    let request_digest = issuance_request_digest(&client, &first_issue, &grant_key);
 
-    let service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
-        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
-            &state.valkey_connection(),
-        )),
-        state.keyset.clone(),
-    );
-    let prepared = service
-        .prepare_token_issuance(PrepareTokenIssuance {
-            issuance_id: Uuid::now_v7(),
-            tenant_id: client.tenant_id,
-            client_id: client.id,
-            user_id: None,
-            grant_key: grant_key.clone(),
-            request_digest,
-            expires_at: Utc::now() + chrono::Duration::minutes(5),
-        })
-        .await
-        .expect("prepared issuance should be stored");
-    assert!(matches!(prepared, PrepareTokenIssuanceResult::Created(_)));
-
-    let config = token_issuance_config(state.settings.as_ref());
-    let modules = state.active_module_snapshot();
-    let authorization = test_support::test_authorization_service(&state);
-    let context = TokenIssuanceContext {
-        config: &config,
-        modules: &modules,
-        authorization: &authorization,
-        security_audit: crate::http::authorization::test_support::test_security_audit(),
-        remote_client_documents: crate::test_support::test_remote_client_documents(),
-    };
-    let first_future = issue_token_response_with_service_and_grant(
-        &context,
-        &service,
-        &client,
-        Some(&grant_key),
-        first_issue,
-    );
-    let second_future = issue_token_response_with_service_and_grant(
-        &context,
-        &service,
-        &client,
-        Some(&grant_key),
-        second_issue,
-    );
+    let first_future =
+        issue_token_response_with_grant_for_test(&state, &client, &grant_key, first_issue);
+    let second_future =
+        issue_token_response_with_grant_for_test(&state, &client, &grant_key, second_issue);
     let (first, second) = tokio::join!(first_future, second_future);
 
-    assert_eq!(first.status(), StatusCode::OK);
-    assert_eq!(second.status(), StatusCode::OK);
-    assert_eq!(response_body(first).await, response_body(second).await);
+    let statuses = [first.status(), second.status()];
+    assert!(
+        statuses
+            .iter()
+            .filter(|status| **status == StatusCode::OK)
+            .count()
+            == 1
+            && statuses
+                .iter()
+                .filter(|status| **status == StatusCode::BAD_REQUEST)
+                .count()
+                == 1,
+        "exactly one concurrent single-use redemption may win: {statuses:?}"
+    );
+    let loser = if first.status() == StatusCode::BAD_REQUEST {
+        first
+    } else {
+        second
+    };
+    assert_eq!(oauth_error_code(loser).await, "invalid_grant");
     assert_eq!(
         refresh_token_row_count(&state, &client).await,
         initial_refresh_token_rows + 1,
         "one stable grant must persist only one refresh-token row",
     );
+    assert_eq!(
+        token_issuance_row_count(&state, &client).await,
+        1,
+        "one stable grant must persist only one issuance row",
+    );
 }
 
 #[actix_web::test]
-#[cfg(any())]
-async fn prepared_issuance_rejects_a_different_request_digest_for_the_same_grant() {
+async fn single_use_grant_replay_with_a_different_request_is_rejected() {
     let Some(state) = issue_state_with_live_database() else {
         return;
     };
-    let client = client_with_grants(&["client_credentials"]);
-    let grant_key = format!("digest-conflict-{}", Uuid::now_v7());
-    let first_issue = token_issue_without_openid();
-    let request_digest = issuance_request_digest(&client, &first_issue, &grant_key);
-    let service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
-        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
-            &state.valkey_connection(),
-        )),
-        state.keyset.clone(),
-    );
-    let prepared = service
-        .prepare_token_issuance(PrepareTokenIssuance {
-            issuance_id: Uuid::now_v7(),
-            tenant_id: client.tenant_id,
-            client_id: client.id,
-            user_id: None,
-            grant_key: grant_key.clone(),
-            request_digest,
-            expires_at: Utc::now() + chrono::Duration::minutes(5),
-        })
-        .await
-        .expect("initial issuance should prepare");
-    assert!(matches!(prepared, PrepareTokenIssuanceResult::Created(_)));
+    let mut client = client_with_grants(&["client_credentials"]);
+    client.client_id = format!("replay-conflict-client-{}", Uuid::now_v7());
+    let grant_key = format!("replay-conflict-{}", Uuid::now_v7());
+    persist_consumed_single_use_grant_for_test(&state, &client, &grant_key).await;
 
-    let mut conflicting_issue = first_issue;
-    conflicting_issue.subject = "different-subject".to_owned();
+    let mut replay = token_issue_without_openid();
+    replay.subject = "different-subject".to_owned();
     let response =
-        issue_token_response_with_grant_for_test(&state, &client, &grant_key, conflicting_issue)
-            .await;
+        issue_token_response_with_grant_for_test(&state, &client, &grant_key, replay).await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    assert!(!response_body(response).await.is_empty());
     assert_eq!(oauth_error_code(response).await, "invalid_grant");
 }
 
@@ -1597,7 +1619,7 @@ async fn native_sso_issue_requires_a_refresh_session_before_persisting_device_st
 }
 
 #[actix_web::test]
-async fn native_sso_idempotent_retry_rejects_expired_access_with_live_refresh() {
+async fn native_sso_single_use_retry_is_rejected_with_live_refresh() {
     let state = issue_state_with_live_database()
         .expect("Native SSO regression requires PostgreSQL and Valkey");
     state
@@ -1610,26 +1632,6 @@ async fn native_sso_idempotent_retry_rejects_expired_access_with_live_refresh() 
     let user_id = Uuid::now_v7();
     insert_issue_client(&state, &client).await;
     insert_issue_user(&state, user_id).await;
-    let service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
-        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
-            &state.valkey_connection(),
-        )),
-        state.keyset.clone(),
-    );
-    let config = token_issuance_config(state.settings.as_ref());
-    let mut modules = state.active_module_snapshot();
-    modules
-        .accepting
-        .insert(nazo_runtime_modules::ModuleId::NativeSso);
-    let authorization = test_support::test_authorization_service(&state);
-    let context = TokenIssuanceContext {
-        config: &config,
-        modules: &modules,
-        authorization: &authorization,
-        security_audit: crate::http::authorization::test_support::test_security_audit(),
-        remote_client_documents: crate::test_support::test_remote_client_documents(),
-    };
     let grant_key = format!("native-expiry-{}", Uuid::now_v7());
     let issue = || {
         let mut issue = token_issue_with_sid(vec!["sid".to_owned()]);
@@ -1644,56 +1646,38 @@ async fn native_sso_idempotent_retry_rejects_expired_access_with_live_refresh() 
         });
         issue
     };
-    let mode = TokenIssuanceMode::Idempotent {
+    let mut modules = state.active_module_snapshot();
+    modules
+        .accepting
+        .insert(nazo_runtime_modules::ModuleId::NativeSso);
+    let mode = TokenIssuanceMode::SingleUse {
         grant_key: grant_key.clone(),
+        grant_expires_at: Utc::now() + chrono::Duration::minutes(5),
     };
-    let first = present_token_result(
-        nazo_oauth_server::token::issue::issue_token_response(
-            &context,
-            &service,
-            &client,
-            mode.clone(),
-            issue(),
-        )
-        .await,
-    );
+    let first = issue_token_response_with_mode_and_modules_for_test(
+        &state,
+        &client,
+        mode.clone(),
+        issue(),
+        modules.clone(),
+    )
+    .await;
     assert_eq!(first.status(), StatusCode::OK);
-    let first_body = response_body(first).await;
-    let retry = present_token_result(
-        nazo_oauth_server::token::issue::issue_token_response(
-            &context,
-            &service,
-            &client,
-            mode.clone(),
-            issue(),
-        )
-        .await,
-    );
-    assert_eq!(retry.status(), StatusCode::OK);
-    assert_eq!(response_body(retry).await, first_body);
-    let mut connection = get_conn(&state.diesel_db).await.unwrap();
-    let changed = sql_query("UPDATE oauth_token_issuances SET access_token_expires_at = CURRENT_TIMESTAMP WHERE tenant_id = $1 AND client_id = $2 AND grant_key_blake3 = $3 AND expires_at > CURRENT_TIMESTAMP")
-        .bind::<SqlUuid, _>(client.tenant_id).bind::<SqlUuid, _>(client.id)
-        .bind::<Text, _>(blake3_hex(&grant_key)).execute(&mut connection).await.unwrap();
-    assert_eq!(changed, 1);
-    drop(connection);
-    let expired = present_token_result(
-        nazo_oauth_server::token::issue::issue_token_response(
-            &context,
-            &service,
-            &client,
-            mode,
-            issue(),
-        )
-        .await,
-    );
-    assert_eq!(expired.status(), StatusCode::BAD_REQUEST);
-    let body: Value = serde_json::from_slice(&response_body(expired).await).unwrap();
+    let retry = issue_token_response_with_mode_and_modules_for_test(
+        &state,
+        &client,
+        mode,
+        issue(),
+        modules,
+    )
+    .await;
+    assert_eq!(retry.status(), StatusCode::BAD_REQUEST);
+    let body: Value = serde_json::from_slice(&response_body(retry).await).unwrap();
     assert_eq!(
         body.get("error")
             .and_then(serde_json::Value::as_str)
             .expect("OAuth JSON should contain an error code"),
-        "invalid_request"
+        "invalid_grant"
     );
     assert!(body.get("access_token").is_none());
     assert!(body.get("refresh_token").is_none());
@@ -1771,7 +1755,15 @@ async fn authorization_code_marker_failure_revokes_the_issued_access_token() {
     issue.include_refresh = false;
     issue.authorization_code_hash = Some(format!("missing-code-{}", Uuid::now_v7()));
 
-    let response = issue_token_response(&state, &client, issue).await;
+    // The finalize path requires the SingleUse grant key that a real
+    // authorization-code redemption carries.
+    let response = issue_token_response_with_grant_for_test(
+        &state,
+        &client,
+        &format!("grant-{}", Uuid::now_v7()),
+        issue,
+    )
+    .await;
 
     assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
     let value: Value = serde_json::from_slice(&response_body(response).await)
@@ -1824,142 +1816,6 @@ async fn refresh_rotation_conflict_fails_closed_without_returning_credentials() 
 }
 
 #[actix_web::test]
-#[cfg(any())]
-async fn busy_prepared_issuance_fails_closed_after_bounded_wait() {
-    let Some(state) = issue_state_with_live_database() else {
-        return;
-    };
-    let client = client_with_grants(&["client_credentials"]);
-    let grant_key = format!("busy-prepared-{}", Uuid::now_v7());
-    let issue = token_issue_without_openid();
-    let request_digest = issuance_request_digest(&client, &issue, &grant_key);
-    let issuance_id = Uuid::now_v7();
-    let service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
-        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
-            &state.valkey_connection(),
-        )),
-        state.keyset.clone(),
-    );
-    let prepared = service
-        .prepare_token_issuance(PrepareTokenIssuance {
-            issuance_id,
-            tenant_id: client.tenant_id,
-            client_id: client.id,
-            user_id: None,
-            grant_key: grant_key.clone(),
-            request_digest,
-            expires_at: Utc::now() + chrono::Duration::minutes(5),
-        })
-        .await
-        .expect("busy issuance fixture should prepare");
-    assert!(matches!(prepared, PrepareTokenIssuanceResult::Created(_)));
-    assert_eq!(
-        service
-            .claim_token_issuance(
-                issuance_id,
-                &issuance_request_digest(&client, &issue, &grant_key),
-                Uuid::now_v7()
-            )
-            .await
-            .expect("busy issuance fixture should claim"),
-        TokenIssuanceClaimResult::Applied
-    );
-
-    let response =
-        issue_token_response_with_grant_for_test(&state, &client, &grant_key, issue).await;
-    delete_token_issuance(&state, issuance_id).await;
-
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let value: Value = serde_json::from_slice(&response_body(response).await)
-        .expect("OAuth error body should be JSON");
-    assert_eq!(
-        value
-            .get("error")
-            .and_then(serde_json::Value::as_str)
-            .expect("OAuth JSON should contain an error code"),
-        "server_error"
-    );
-    assert_eq!(value["error"], "server_error");
-}
-
-#[actix_web::test]
-#[cfg(any())]
-async fn busy_prepared_issuance_recovers_a_response_persisted_by_the_owner() {
-    let Some(state) = issue_state_with_live_database_pool_size(2) else {
-        return;
-    };
-    let client = client_with_grants(&["client_credentials"]);
-    let grant_key = format!("busy-recovery-{}", Uuid::now_v7());
-    let issue = token_issue_without_openid();
-    let request_digest = issuance_request_digest(&client, &issue, &grant_key);
-    let issuance_id = Uuid::now_v7();
-    let owner_id = Uuid::now_v7();
-    let expires_at = Utc::now() + chrono::Duration::minutes(5);
-    let owner_response_body = br#"{"access_token":"owner-response","token_type":"Bearer"}"#;
-    let response_digest = blake3::hash(owner_response_body).to_hex().to_string();
-    let service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
-        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
-            &state.valkey_connection(),
-        )),
-        state.keyset.clone(),
-    );
-    let prepared = service
-        .prepare_token_issuance(PrepareTokenIssuance {
-            issuance_id,
-            tenant_id: client.tenant_id,
-            client_id: client.id,
-            user_id: None,
-            grant_key: grant_key.clone(),
-            request_digest: request_digest.clone(),
-            expires_at,
-        })
-        .await
-        .expect("busy recovery fixture should prepare");
-    assert!(matches!(prepared, PrepareTokenIssuanceResult::Created(_)));
-    assert_eq!(
-        service
-            .claim_token_issuance(issuance_id, &request_digest, owner_id)
-            .await
-            .expect("busy recovery fixture should claim"),
-        TokenIssuanceClaimResult::Applied
-    );
-
-    let writer_service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
-        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
-            &state.valkey_connection(),
-        )),
-        state.keyset.clone(),
-    );
-    let writer = async {
-        tokio::task::yield_now().await;
-        writer_service
-            .record_token_issuance_signed(nazo_auth::RecordTokenIssuanceSigned {
-                issuance_id,
-                request_digest: &request_digest,
-                claim_owner_id: owner_id,
-                access_token_jti: "owner-jti",
-                access_token_expires_at: expires_at.timestamp(),
-                response_body: owner_response_body,
-                response_digest: &response_digest,
-            })
-            .await
-    };
-    let issuer = issue_token_response_with_grant_for_test(&state, &client, &grant_key, issue);
-    let (response, signed) = tokio::join!(issuer, writer);
-    delete_token_issuance(&state, issuance_id).await;
-
-    assert_eq!(
-        signed.expect("owner should persist the response"),
-        TokenIssuanceTransitionResult::Applied
-    );
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(response_body(response).await, owner_response_body.to_vec());
-}
-
-#[actix_web::test]
 async fn dpop_nonce_failure_is_reported_after_the_issuance_claim() {
     let Some(state) = issue_state_with_live_database_and_disconnected_valkey() else {
         return;
@@ -1972,41 +1828,6 @@ async fn dpop_nonce_failure_is_reported_after_the_issuance_claim() {
     issue.scopes = vec!["accounts".to_owned()];
     issue.include_refresh = false;
     issue.dpop_jkt = Some("dpop-thumbprint".to_owned());
-
-    let response =
-        issue_token_response_with_grant_for_test(&state, &client, &grant_key, issue).await;
-    delete_token_issuance_for_grant(&state, &client, &grant_key).await;
-
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
-    let value: Value = serde_json::from_slice(&response_body(response).await)
-        .expect("OAuth error body should be JSON");
-    assert_eq!(
-        value
-            .get("error")
-            .and_then(serde_json::Value::as_str)
-            .expect("OAuth JSON should contain an error code"),
-        "server_error"
-    );
-    assert_eq!(value["error"], "server_error");
-    assert!(value.get("access_token").is_none());
-}
-
-#[actix_web::test]
-async fn access_token_subject_mapping_failure_fails_closed_before_response_assembly() {
-    let Some(state) = issue_state_with_live_database_and_disconnected_valkey() else {
-        return;
-    };
-    let mut client = client_with_grants(&["client_credentials"]);
-    client.client_id = format!("subject-map-client-{}", Uuid::now_v7());
-    insert_issue_client(&state, &client).await;
-    let user_id = Uuid::now_v7();
-    insert_issue_user(&state, user_id).await;
-    let grant_key = format!("subject-map-error-{}", Uuid::now_v7());
-    let mut issue = token_issue_without_openid();
-    issue.user_id = Some(user_id);
-    issue.subject = "pairwise-subject".to_owned();
-    issue.scopes = vec!["accounts".to_owned()];
-    issue.include_refresh = false;
 
     let response =
         issue_token_response_with_grant_for_test(&state, &client, &grant_key, issue).await;
