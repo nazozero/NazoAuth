@@ -155,8 +155,8 @@ async fn no_store_and_body_helpers_preserve_transport_shapes() {
 proptest! {
     #[test]
     fn oauth_descriptions_preserve_only_rfc_allowed_ascii(
-        allowed in "[\\t\\n\\r !#-\\[\\]-~]{0,128}",
-        disallowed in "[^\\t\\n\\r !#-\\[\\]-~]{1,32}"
+        allowed in "[ !#-\\[\\]-~]{0,128}",
+        disallowed in "[^ !#-\\[\\]-~]{1,32}"
     ) {
         let allowed_description = oauth_error_description(&allowed);
         let disallowed_description = oauth_error_description(&disallowed);
@@ -203,34 +203,6 @@ async fn issued_token_keeps_cache_pragma_and_nonce() {
             .await
             .unwrap(),
         br#"{"access_token":"issued","token_type":"DPoP"}"#.as_slice()
-    );
-}
-
-#[actix_web::test]
-async fn replayed_token_preserves_stored_bytes_without_adding_pragma_or_nonce() {
-    use nazo_oauth_server::contracts::token_endpoint::TokenEndpointSuccess;
-    let stored = b"{ \"token_type\": \"Bearer\", \"access_token\":\"replayed\" }\n".to_vec();
-    let response =
-        nazo_http_actix::token_endpoint_success_response(TokenEndpointSuccess::Replayed {
-            body: stored.clone(),
-        });
-    assert_eq!(response.status(), StatusCode::OK);
-    assert_eq!(
-        response.headers().get(header::CONTENT_TYPE).unwrap(),
-        "application/json"
-    );
-    assert_eq!(
-        response.headers().get(header::CACHE_CONTROL).unwrap(),
-        "no-store"
-    );
-    assert!(response.headers().get(header::PRAGMA).is_none());
-    assert!(response.headers().get("dpop-nonce").is_none());
-    assert_eq!(
-        actix_web::body::to_bytes(response.into_body())
-            .await
-            .unwrap()
-            .as_ref(),
-        stored.as_slice()
     );
 }
 

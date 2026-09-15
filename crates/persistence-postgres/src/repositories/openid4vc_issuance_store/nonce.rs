@@ -4,6 +4,7 @@ use diesel_async::RunQueryDsl;
 use nazo_openid4vci::{CredentialStoreError, CredentialStoreFuture, NonceRecord};
 
 use super::super::Openid4vciRepository;
+use crate::get_conn;
 
 impl Openid4vciRepository {
     pub(super) fn nonce_issue<'a>(
@@ -11,9 +12,7 @@ impl Openid4vciRepository {
         nonce: &'a NonceRecord,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             sql_query(
@@ -36,9 +35,7 @@ impl Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let claim_expires_at = now + chrono::Duration::minutes(5);
@@ -65,9 +62,7 @@ impl Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let changed = sql_query(
@@ -91,9 +86,7 @@ impl Openid4vciRepository {
         _now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let changed = sql_query(

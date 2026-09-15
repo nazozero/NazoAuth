@@ -5,7 +5,7 @@ use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
 use crate::{
-    DbPool,
+    DbPool, get_conn,
     schema::{access_token_revocations, oauth_tokens},
 };
 
@@ -30,9 +30,7 @@ impl AuthorizationRepository {
         access_token_expires_at: Option<DateTime<Utc>>,
         refresh_token_family_id: Option<Uuid>,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection

@@ -50,108 +50,13 @@ impl ServerCredentialIssuerOperations {
                     "Credential issuer is unavailable.",
                 ));
             }
-            let target_uris = token_endpoint_dpop_target_uris(&self.issuer, &request.request_url);
-            let target_uri_refs = target_uris.iter().map(String::as_str).collect::<Vec<_>>();
-            let dpop_jkt = validate_authorization_server_dpop(
-                self.authorization.as_ref(),
-                DpopProofRequest {
-                    proof: request.dpop_proof.as_deref(),
-                    method: "POST",
-                    target_uris: &target_uri_refs,
-                    access_token: None,
-                    expected_jkt: None,
-                },
-                self.dpop_nonce_policy,
-            )
-            .await
-            .map_err(|error| match error {
-                DpopError::UseNonce(nonce) => CredentialHttpError {
-                    status: 400,
-                    error: "use_dpop_nonce",
-                    description: "Credential issuer requires nonce in DPoP proof.",
-                    dpop_nonce: Some(nonce),
-                },
-                DpopError::NonceStoreUnavailable => {
-                    vci_error(503, "server_error", "DPoP nonce validation is unavailable.")
-                }
-                _ => vci_error(400, "invalid_dpop_proof", "DPoP proof is invalid."),
-            })?;
-            let attested = match (
-                request.client_attestation.as_deref(),
-                request.client_attestation_pop.as_deref(),
-            ) {
-                (None, None) => None,
-                (Some(attestation), Some(proof)) => {
-                    let validator = self.client_attestation.as_ref().ok_or_else(|| {
-                        vci_error(
-                            401,
-                            "invalid_client_attestation",
-                            "Client attestation is not configured.",
-                        )
-                    })?;
-                    let validated = validator
-                        .validate_for_client(
-                            attestation,
-                            proof,
-                            &self.issuer,
-                            Utc::now().timestamp(),
-                        )
-                        .await
-                        .map_err(|_| {
-                            vci_error(
-                                401,
-                                "invalid_client_attestation",
-                                "Client attestation is invalid.",
-                            )
-                        })?;
-                    if request
-                        .client_id
-                        .as_deref()
-                        .is_some_and(|client_id| client_id != validated.client_id)
-                    {
-                        return Err(vci_error(
-                            401,
-                            "invalid_client_attestation",
-                            "Client identity does not match the attestation.",
-                        ));
-                    }
-                    let replay_key = format!("client-attestation:{}", validated.client_id);
-                    let fresh = self
-                        .authorization
-                        .consume_private_key_jwt(
-                            &replay_key,
-                            &validated.replay_id,
-                            validated.replay_ttl_seconds,
-                        )
-                        .await
-                        .map_err(|_| {
-                            vci_error(
-                                503,
-                                "server_error",
-                                "Client attestation replay state is unavailable.",
-                            )
-                        })?;
-                    if !fresh {
-                        return Err(vci_error(
-                            401,
-                            "invalid_client_attestation",
-                            "Client attestation proof was replayed.",
-                        ));
-                    }
-                    Some(validated)
-                }
-                _ => {
-                    return Err(vci_error(
-                        400,
-                        "invalid_request",
-                        "Both client attestation headers are required.",
-                    ));
-                }
-            };
-            let client_id = attested
-                .as_ref()
-                .map(|attestation| attestation.client_id.as_str())
-                .or(request.client_id.as_deref())
+            // The dispatcher already ran the strict transport validation:
+            // sender bindings arrive verified and attestation material was
+            // consumed exactly once on the authenticated path.
+            let dpop_jkt = request.dpop_jkt;
+            let client_id = request
+                .client_id
+                .as_deref()
                 .unwrap_or("pre-authorized-wallet");
             let authorization = self
                 .store
@@ -217,7 +122,7 @@ impl ServerCredentialIssuerOperations {
                     userinfo_claim_requests: &[],
                     ttl_seconds: (authorization.expires_at - Utc::now()).num_seconds().max(1),
                     dpop_jkt: dpop_jkt.as_deref(),
-                    mtls_x5t_s256: None,
+                    mtls_x5t_s256: request.mtls_x5t_s256.as_deref(),
                     actor: None,
                 })
                 .await

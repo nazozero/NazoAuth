@@ -1,5 +1,5 @@
 use super::MfaRepository;
-use crate::schema::user_mfa_remembered_devices;
+use crate::{get_conn, schema::user_mfa_remembered_devices};
 use diesel::{ExpressionMethods, OptionalExtension, QueryDsl, dsl::now};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{TenantId, UserId, ports::RepositoryError};
@@ -13,9 +13,7 @@ impl MfaRepository {
         user_agent_hash: Option<&str>,
         at: chrono::DateTime<chrono::Utc>,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let row = user_mfa_remembered_devices::table
@@ -52,9 +50,7 @@ impl MfaRepository {
         user_agent_hash: Option<String>,
         expires_at: chrono::DateTime<chrono::Utc>,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection

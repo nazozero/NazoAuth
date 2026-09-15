@@ -75,3 +75,16 @@ fn refresh_token_validation_rejects_malformed_context_and_audiences() {
     empty_amr.authentication_context.amr.clear();
     assert!(validate_new_refresh_token(&empty_amr).is_err());
 }
+
+#[test]
+fn refresh_family_lock_key_is_the_shared_high_xor_low_formula() {
+    // The maintenance reclaim must try-lock exactly the key writers take with
+    // pg_advisory_xact_lock; a divergent formula would open a second lock
+    // domain and allow a cleanup to race an in-flight rotation.
+    let family_id =
+        Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").expect("uuid should parse");
+    let expected = 0x0011_2233_4455_6677_i64 ^ 0x8899_aabb_ccdd_eeff_u64 as i64;
+    assert_eq!(refresh_family_lock_key(family_id), expected);
+    assert_eq!(refresh_family_lock_key(Uuid::nil()), 0);
+    assert_eq!(refresh_family_lock_key(Uuid::from_u128(u128::MAX)), 0);
+}

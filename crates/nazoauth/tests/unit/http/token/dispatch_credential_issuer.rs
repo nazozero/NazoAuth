@@ -131,9 +131,11 @@ async fn preauthorized_dispatch_binds_authenticated_identity_and_preserves_issue
             assert_eq!(request.tx_code.as_deref(), Some("123456"));
             assert_eq!(
                 request.client_id.as_deref(),
-                authenticated.then_some(client_id.as_str())
+                authenticated.then_some(client_id.as_str()),
+                "only the authenticated identity may reach the operation"
             );
-            assert_eq!(request.request_url, "https://issuer.example/token");
+            assert_eq!(request.dpop_jkt, None);
+            assert_eq!(request.mtls_x5t_s256, None);
         }
     }
     assert_eq!(issuer.requests.lock().unwrap().len(), 4);
@@ -247,8 +249,150 @@ async fn attested_token_dispatch_checks_identity_and_consumes_proof_once() {
         "only the verified, first-use proof may reach issuance"
     );
     assert_eq!(requests[0].client_id.as_deref(), Some(client_id.as_str()));
-    assert_eq!(
-        requests[0].client_attestation.as_deref(),
-        Some(attestation.as_str())
+    assert_eq!(requests[0].dpop_jkt, None);
+    assert_eq!(requests[0].mtls_x5t_s256, None);
+}
+
+#[actix_web::test]
+async fn anonymous_preauthorized_rejects_duplicate_dpop_headers() {
+    let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
+        return;
+    };
+    let issuer = Arc::new(Issuer::default());
+    let request = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .insert_header(("DPoP", "proof-one"))
+        .insert_header(("DPoP", "proof-two"))
+        .to_http_request();
+    let response = token_with_credential_issuer(
+        state.clone(),
+        request,
+        Bytes::from(
+            "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code&pre-authorized_code=accepted-code",
+        ),
+        Arc::new(
+            crate::adapters::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                .unwrap(),
+        ),
+        Openid4vcTokenHandles {
+            credential_issuer: Some(issuer.clone()),
+            client_attestation: None,
+        },
+    )
+    .await;
+    assert_token_error(
+        response,
+        StatusCode::BAD_REQUEST,
+        "invalid_dpop_proof",
+        true,
+    )
+    .await;
+    assert!(
+        issuer.requests.lock().unwrap().is_empty(),
+        "a duplicated DPoP header must never reach the operation"
+    );
+}
+
+#[actix_web::test]
+async fn authenticated_preauthorized_rejects_duplicate_dpop_headers() {
+    let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
+        return;
+    };
+    let client_id = format!("preauth-dpop-dup-{}", Uuid::now_v7());
+    let secret = Uuid::now_v7().to_string();
+    insert_token_client(
+        &state,
+        &client_id,
+        "confidential",
+        "client_secret_post",
+        Some(fixture_secret_hash(&state, &secret)),
+        vec!["authorization_code"],
+        false,
+        false,
+        true,
+    )
+    .await;
+    let issuer = Arc::new(Issuer::default());
+    let request = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .insert_header(("DPoP", "proof-one"))
+        .insert_header(("DPoP", "proof-two"))
+        .to_http_request();
+    let response = token_with_credential_issuer(
+        state.clone(),
+        request,
+        Bytes::from(format!(
+            "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code\
+             &pre-authorized_code=accepted-code&client_id={client_id}&client_secret={secret}"
+        )),
+        Arc::new(
+            crate::adapters::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                .unwrap(),
+        ),
+        Openid4vcTokenHandles {
+            credential_issuer: Some(issuer.clone()),
+            client_attestation: None,
+        },
+    )
+    .await;
+    assert_token_error(
+        response,
+        StatusCode::BAD_REQUEST,
+        "invalid_dpop_proof",
+        true,
+    )
+    .await;
+    assert!(
+        issuer.requests.lock().unwrap().is_empty(),
+        "a duplicated DPoP header must never reach the operation"
+    );
+}
+
+#[actix_web::test]
+async fn partial_or_repeated_attestation_headers_cannot_take_the_anonymous_entry() {
+    let Some(state) = live_token_state(AuthorizationServerProfile::Oauth2Baseline).await else {
+        return;
+    };
+    let issuer = Arc::new(Issuer::default());
+    for headers in [
+        vec![("OAuth-Client-Attestation", "attestation-only")],
+        vec![("OAuth-Client-Attestation-PoP", "pop-only")],
+        vec![
+            ("OAuth-Client-Attestation", "one"),
+            ("OAuth-Client-Attestation", "two"),
+            ("OAuth-Client-Attestation-PoP", "pop"),
+        ],
+    ] {
+        let mut request = actix_web::test::TestRequest::post()
+            .uri("/token")
+            .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"));
+        for (name, value) in headers {
+            // append_header keeps repeated values; insert_header would
+            // silently replace them and never reach the strict-pair error.
+            request = request.append_header((name, value));
+        }
+        let response = token_with_credential_issuer(
+            state.clone(),
+            request.to_http_request(),
+            Bytes::from(
+                "grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Apre-authorized_code&pre-authorized_code=accepted-code",
+            ),
+            Arc::new(
+                crate::adapters::remote_client_documents::RemoteClientDocumentResolver::new(&[])
+                    .unwrap(),
+            ),
+            Openid4vcTokenHandles {
+                credential_issuer: Some(issuer.clone()),
+                client_attestation: None,
+            },
+        )
+        .await;
+        assert_token_error(response, StatusCode::BAD_REQUEST, "invalid_request", false).await;
+    }
+    assert!(
+        issuer.requests.lock().unwrap().is_empty(),
+        "malformed attestation material must never reach the anonymous entry"
     );
 }

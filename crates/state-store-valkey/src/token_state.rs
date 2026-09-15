@@ -1,6 +1,5 @@
 use crate::{Error, ValkeyConnection, command, keys};
 use serde_json::Value;
-use uuid::Uuid;
 #[derive(Clone, Debug)]
 pub struct TokenStateStore {
     connection: ValkeyConnection,
@@ -10,34 +9,6 @@ impl TokenStateStore {
         Self {
             connection: connection.clone(),
         }
-    }
-    pub async fn store_access_token_subject(
-        &self,
-        tenant: Uuid,
-        jti: &str,
-        user: Uuid,
-        ttl: u64,
-    ) -> Result<(), Error> {
-        command::set_ex_string(
-            &self.connection,
-            keys::access_token_subject(tenant, jti),
-            user.to_string(),
-            ttl,
-        )
-        .await
-    }
-    pub async fn load_access_token_subject(
-        &self,
-        tenant: Uuid,
-        jti: &str,
-    ) -> Result<Option<Uuid>, Error> {
-        command::get(&self.connection, keys::access_token_subject(tenant, jti))
-            .await?
-            .map(|raw| {
-                Uuid::parse_str(&raw)
-                    .map_err(|e| Error::protocol(format!("invalid access-token subject: {e}")))
-            })
-            .transpose()
     }
     pub async fn store_native_sso(
         &self,

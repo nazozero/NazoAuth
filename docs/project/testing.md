@@ -113,6 +113,33 @@ Documentation-only changes need source/example/reference checks, not a Rust
 build. A passed unit suite does not replace required HTTP, migration, recovery,
 conformance, deployment, or performance evidence.
 
+Targeted suites with their own entry points:
+
+- `crates/persistence-postgres/tests/token_issuance_atomicity.rs` covers the
+  durable SingleUse fence, concurrent grant consumption, controlled
+  `GrantExpired` rollback (including connection return to the pool), rotation
+  conflicts, and the final schema shape. It needs an isolated PostgreSQL from
+  `NAZO_TEST_DATABASE_URL`/`DATABASE_URL`.
+- `crates/persistence-postgres/tests/security_state_maintenance.rs` covers
+  the bounded maintenance pass against the same isolated database.
+- `crates/nazoauth/tests/token_issuance_simplification.rs` drives the real
+  spawned `nazoauth server` dispatcher against isolated PostgreSQL and Valkey.
+- `crates/nazoauth/tests/token_hotpath_perf.rs` is the opt-in hot-path
+  benchmark: set `NAZO_PERF_HOTPATH=1`, `NAZO_PERF_OUTPUT`, an isolated
+  PostgreSQL with `pg_stat_statements` preloaded
+  (`NAZO_TEST_DATABASE_URL`/`DATABASE_URL`), and `NAZO_TEST_VALKEY_URL`/
+  `VALKEY_URL`. `NAZO_PERF_OPS` (default 10000 measured operations per
+  group-run), `NAZO_PERF_RUNS` (default 5), `NAZO_PERF_WARMUP`, and
+  `NAZO_PERF_CONCURRENCIES` (default `1,8,32`) control the matrix. The
+  benchmark fails when `pg_stat_statements` cannot be read, when a measured
+  group records any error, or when successful operations fall short of the
+  configured count — empty statistics or partial results are never reported
+  as success. One-time inputs are seeded through the owning stores'
+  production APIs, and per-tenant keysets are seeded through the
+  key-management `test-support` harness so every supported access-token
+  signing algorithm is exercised; no production logic is reimplemented in
+  the harness.
+
 Update affected documentation, examples, and index entries when a change
 affects documented behavior, contracts, ownership, configuration, or source
 paths; purely internal or mechanical changes do not require documentation-only

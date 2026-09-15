@@ -105,7 +105,6 @@ pub(super) async fn build(
                     .expect("enabled OpenID4VCI requires crypto")
                     .clone(),
                 proof_validator,
-                client_attestation_validator.clone(),
                 settings.endpoint.issuer.clone(),
                 settings.openid4vc.credential_configurations.clone(),
                 settings

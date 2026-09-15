@@ -215,6 +215,15 @@ async fn poll_and_issue_ciba(
             false,
         ));
     };
+    let Some(grant_expires_at) = chrono::DateTime::from_timestamp(ciba.expires_at, 0) else {
+        tracing::error!("approved CIBA state has an unrepresentable expiry");
+        return Err(OAuthEndpointError::token(
+            ProtocolStatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "CIBA failed.",
+            false,
+        ));
+    };
     let user = match users
         .by_id(
             nazo_identity::TenantId::new(tenant_id).expect("configured CIBA tenant ID is non-nil"),
@@ -266,7 +275,8 @@ async fn poll_and_issue_ciba(
         token_service,
         client,
         TokenIssuanceMode::SingleUse {
-            grant_key: ciba_grant_key.clone(),
+            grant_key: ciba_grant_key,
+            grant_expires_at,
         },
         issue,
     )

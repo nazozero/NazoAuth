@@ -93,7 +93,7 @@ fn token_form_maps_empty_optional_credentials_to_absent_values() {
     let form = parse_token_form(
         &req,
         &Bytes::from_static(
-            b"grant_type=authorization_code&code=&redirect_uri=&code_verifier=&client_id=&client_secret=&client_assertion_type=&client_assertion=&audience=",
+            b"grant_type=authorization_code&code=&redirect_uri=&code_verifier=&client_id=&client_secret=&client_assertion_type=&client_assertion=",
         ),
     )
     .expect("empty optional values should not create credentials");
@@ -267,19 +267,24 @@ fn token_form_accepts_multiple_resource_parameters_as_audiences() {
 }
 
 #[test]
-fn token_form_rejects_duplicate_resource_values() {
+fn token_form_deduplicates_repeated_resource_values() {
     let req = TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
         .to_http_request();
 
-    let result = parse_token_form(
+    let form = parse_token_form(
         &req,
         &Bytes::from_static(
-            b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com&resource=https%3A%2F%2Fapi.example.com",
+            b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com&resource=https%3A%2F%2Fapi.example.com&resource=https%3A%2F%2Fpayments.example.com",
         ),
-    );
+    )
+    .expect("repeated identical resource values deduplicate instead of erroring");
 
-    assert!(matches!(result, Err(TokenFormError::DuplicateParameter)));
+    assert_eq!(
+        form.audiences,
+        vec!["https://api.example.com", "https://payments.example.com"]
+    );
+    assert!(!form.has_audience_param);
 }
 
 #[test]
@@ -300,28 +305,114 @@ fn token_form_rejects_invalid_resource_parameter() {
 }
 
 #[test]
-fn token_form_rejects_conflicting_resource_and_audience() {
+fn token_form_accepts_mixed_resource_and_audience_in_order() {
+    let req = TestRequest::default()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+
+    let form = parse_token_form(
+        &req,
+        &Bytes::from_static(
+            b"grant_type=client_credentials&audience=resource%3A%2F%2Fdefault&resource=https%3A%2F%2Fapi.example.com&audience=logical-name",
+        ),
+    )
+    .expect("mixed audience and resource parameters are a valid RFC 8693 shape");
+
+    assert_eq!(
+        form.audiences,
+        vec![
+            "resource://default",
+            "https://api.example.com",
+            "logical-name"
+        ]
+    );
+    assert!(form.has_audience_param);
+
+    let form = parse_token_form(
+        &req,
+        &Bytes::from_static(
+            b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com&audience=resource%3A%2F%2Fdefault",
+        ),
+    )
+    .expect("resource followed by audience preserves order");
+
+    assert_eq!(
+        form.audiences,
+        vec!["https://api.example.com", "resource://default"]
+    );
+    assert!(form.has_audience_param);
+}
+
+#[test]
+fn token_form_deduplicates_repeated_audience_values() {
+    let req = TestRequest::default()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+
+    let form = parse_token_form(
+        &req,
+        &Bytes::from_static(
+            b"grant_type=client_credentials&audience=api&audience=api&audience=payments&resource=https%3A%2F%2Fapi.example.com&audience=api",
+        ),
+    )
+    .expect("repeated identical audience values deduplicate instead of erroring");
+
+    assert_eq!(
+        form.audiences,
+        vec!["api", "payments", "https://api.example.com"]
+    );
+    assert!(form.has_audience_param);
+}
+
+#[test]
+fn token_form_deduplicates_identical_target_across_resource_and_audience() {
+    let req = TestRequest::default()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+
+    let form = parse_token_form(
+        &req,
+        &Bytes::from_static(
+            b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com&audience=https%3A%2F%2Fapi.example.com",
+        ),
+    )
+    .expect("identical resource and audience values name the same target");
+
+    assert_eq!(form.audiences, vec!["https://api.example.com"]);
+}
+
+#[test]
+fn token_form_rejects_empty_audience_value() {
     let req = TestRequest::default()
         .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
         .to_http_request();
 
     let result = parse_token_form(
         &req,
-        &Bytes::from_static(
-            b"grant_type=client_credentials&audience=resource%3A%2F%2Fdefault&resource=https%3A%2F%2Fapi.example.com",
-        ),
+        &Bytes::from_static(b"grant_type=client_credentials&audience="),
     );
 
-    assert!(matches!(result, Err(TokenFormError::DuplicateParameter)));
+    assert!(matches!(
+        result,
+        Err(TokenFormError::InvalidAudienceParameter)
+    ));
+}
 
-    let result = parse_token_form(
+#[test]
+fn token_form_does_not_mark_resource_as_audience_param() {
+    let req = TestRequest::default()
+        .insert_header((header::CONTENT_TYPE, "application/x-www-form-urlencoded"))
+        .to_http_request();
+
+    let form = parse_token_form(
         &req,
         &Bytes::from_static(
-            b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com&audience=resource%3A%2F%2Fdefault",
+            b"grant_type=client_credentials&resource=https%3A%2F%2Fapi.example.com",
         ),
-    );
+    )
+    .unwrap();
 
-    assert!(matches!(result, Err(TokenFormError::DuplicateParameter)));
+    assert!(!form.has_audience_param);
 }
 
 #[test]

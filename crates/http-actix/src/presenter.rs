@@ -142,10 +142,7 @@ fn oauth_challenge_param(value: &str) -> Cow<'_, str> {
 
 #[doc(hidden)]
 pub fn is_oauth_error_description_byte(byte: u8) -> bool {
-    matches!(
-        byte,
-        0x09 | 0x0A | 0x0D | 0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E
-    )
+    matches!(byte, 0x20..=0x21 | 0x23..=0x5B | 0x5D..=0x7E)
 }
 
 /// Presents the existing OAuth endpoint error policies after semantic decisions.
@@ -243,10 +240,6 @@ pub fn token_endpoint_success_response(
             }
             response
         }
-        TokenEndpointSuccess::Replayed { body } => HttpResponse::Ok()
-            .insert_header((header::CACHE_CONTROL, "no-store"))
-            .content_type("application/json")
-            .body(body),
         TokenEndpointSuccess::PreAuthorized(body) => HttpResponse::Ok()
             .insert_header((header::CACHE_CONTROL, "no-store"))
             .json(body),

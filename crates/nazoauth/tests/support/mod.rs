@@ -171,11 +171,7 @@ pub(crate) fn token_issuance_repository(
     pool: nazo_postgres::DbPool,
 ) -> nazo_postgres::TokenIssuanceRepository {
     initialize_audit_dependencies(&pool);
-    nazo_postgres::TokenIssuanceRepository::new_with_response_key_ring(
-        pool,
-        nazo_persistence::TokenIssuanceResponseKeyRing::new("test-current", [0x11; 32], None)
-            .expect("test response key ring is valid"),
-    )
+    nazo_postgres::TokenIssuanceRepository::new(pool)
 }
 
 pub(crate) fn initialize_audit_dependencies(_pool: &nazo_postgres::DbPool) {

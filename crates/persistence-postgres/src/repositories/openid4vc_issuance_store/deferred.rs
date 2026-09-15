@@ -12,6 +12,7 @@ use super::{
     AccessRow, DeferredRow, NewIssuanceResponse, insert_issuance_response, protect_payload,
     response_encoding_name, unprotect_payload,
 };
+use crate::get_conn;
 
 impl Openid4vciRepository {
     pub(super) fn deferred_store<'a>(
@@ -19,9 +20,7 @@ impl Openid4vciRepository {
         credential: &'a DeferredCredential,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let protected_payload = protect_payload(
@@ -70,9 +69,7 @@ impl Openid4vciRepository {
             let encoding = response_encoding_name(&response.encoding);
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let id = credential.id;
@@ -141,9 +138,7 @@ impl Openid4vciRepository {
                 credential.id,
                 &credential.payload_ciphertext,
             )?;
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let id = credential.id;
@@ -211,9 +206,7 @@ impl Openid4vciRepository {
             let encoding = response_encoding_name(&response.encoding);
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let id = credential.id;
@@ -290,9 +283,7 @@ impl Openid4vciRepository {
     ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>
     {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let claim_expires_at = now + chrono::Duration::minutes(5);
@@ -351,9 +342,7 @@ impl Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let changed = sql_query(
@@ -381,9 +370,7 @@ impl Openid4vciRepository {
         _now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let changed = sql_query(

@@ -8,7 +8,7 @@ use nazo_key_management::{
 };
 use uuid::Uuid;
 
-use crate::{DbConnection, DbPool};
+use crate::{DbConnection, DbPool, get_conn};
 
 #[derive(Clone)]
 pub struct SigningKeysetRepository {
@@ -41,7 +41,7 @@ impl SigningKeysetRepository {
 impl SigningKeyRepository for SigningKeysetRepository {
     fn load(&self) -> SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
         Box::pin(async move {
-            let mut connection = self.pool.get().await?;
+            let mut connection = get_conn(&self.pool).await?;
             self.load_on(&mut connection).await
         })
     }
@@ -55,7 +55,7 @@ impl SigningKeyRepository for SigningKeysetRepository {
                 candidate.revision == 1,
                 "initial signing-key revision must be 1"
             );
-            let mut connection = self.pool.get().await?;
+            let mut connection = get_conn(&self.pool).await?;
             let created = sql_query(
                 "INSERT INTO tenant_signing_keysets \
                  (tenant_id, revision, public_metadata, encrypted_private_material, wrapping_key_id) \
@@ -94,7 +94,7 @@ impl SigningKeyRepository for SigningKeysetRepository {
                     && expected_revision.checked_add(1) == Some(candidate.revision),
                 "signing-key update must advance exactly one revision"
             );
-            let mut connection = self.pool.get().await?;
+            let mut connection = get_conn(&self.pool).await?;
             let updated = sql_query(
                 "UPDATE tenant_signing_keysets SET revision = $2, public_metadata = $3, \
                  encrypted_private_material = $4, wrapping_key_id = $5, updated_at = CURRENT_TIMESTAMP \

@@ -289,7 +289,7 @@ async fn revoke_replayed_authorization_code(
     service: &ServerTokenService,
     client: &ClientRow,
     marker: ConsumedAuthorizationCode,
-) -> Result<bool, OAuthEndpointError> {
+) -> Result<(), OAuthEndpointError> {
     if let Err(error) = revoke_issued_authorization_code_tokens(
         service,
         client,
@@ -307,7 +307,7 @@ async fn revoke_replayed_authorization_code(
             false,
         ));
     }
-    Ok(true)
+    Ok(())
 }
 
 pub async fn token_authorization_code_with_service(
@@ -432,22 +432,11 @@ pub async fn token_authorization_code_with_service(
                         false,
                     ));
                 }
-                match revoke_replayed_authorization_code(token_service, client, marker).await {
-                    Ok(true) => {
-                        return Err(OAuthEndpointError::token(
-                            StatusCode::BAD_REQUEST,
-                            "invalid_grant",
-                            "授权码已被使用，相关令牌已撤销.",
-                            false,
-                        ));
-                    }
-                    Ok(false) => {}
-                    Err(response) => return Err(response),
-                }
+                revoke_replayed_authorization_code(token_service, client, marker).await?;
                 return Err(OAuthEndpointError::token(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
-                    "授权码已被使用.",
+                    "授权码已被使用，相关令牌已撤销.",
                     false,
                 ));
             }
@@ -532,7 +521,8 @@ pub async fn token_authorization_code_with_service(
         token_service,
         client,
         TokenIssuanceMode::SingleUse {
-            grant_key: authorization_code_grant_key.clone(),
+            grant_key: authorization_code_grant_key,
+            grant_expires_at: payload.expires_at,
         },
         token_issue_from_authorization_code(AuthorizationCodeIssueInput {
             payload,

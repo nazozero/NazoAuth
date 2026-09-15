@@ -89,15 +89,6 @@ pub fn client_credentials_issue_request_with_default_audience(
     Ok(ClientCredentialsIssue { scopes, audiences })
 }
 
-pub fn client_credentials_issuance_mode(facts: &TokenRequestFacts<'_>) -> TokenIssuanceMode {
-    facts
-        .idempotency_key
-        .clone()
-        .map_or(TokenIssuanceMode::Fresh, |grant_key| {
-            TokenIssuanceMode::Idempotent { grant_key }
-        })
-}
-
 pub async fn token_client_credentials_with_service(
     token_service: &ServerTokenService,
     authorization_service: &crate::services::ServerAuthorizationService,
@@ -149,12 +140,11 @@ pub async fn token_client_credentials_with_service(
         Ok(issue_request) => issue_request,
         Err(response) => return Err(response),
     };
-    let mode = client_credentials_issuance_mode(facts);
     issue_token_response(
         issuance,
         token_service,
         client,
-        mode,
+        TokenIssuanceMode::Fresh,
         TokenIssue {
             user_id: None,
             subject: client.client_id.clone(),

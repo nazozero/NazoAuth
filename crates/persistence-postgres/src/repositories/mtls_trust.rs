@@ -7,7 +7,7 @@ use nazo_identity::{
 };
 use uuid::Uuid;
 
-use crate::DbPool;
+use crate::{DbPool, get_conn};
 
 const MAX_ACTIVE_TRUST_ANCHORS_PER_CLIENT: i64 = 8;
 const MAX_ACTIVE_TRUST_ANCHORS_PER_TENANT: i64 = 128;
@@ -500,8 +500,7 @@ impl MtlsTrustAnchorRepository {
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
-        self.pool
-            .get()
+        get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)
     }

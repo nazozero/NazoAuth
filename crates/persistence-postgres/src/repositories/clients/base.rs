@@ -1,6 +1,6 @@
 use nazo_identity::ports::RepositoryError;
 
-use crate::DbPool;
+use crate::{DbPool, get_conn};
 
 #[derive(Clone)]
 pub struct OAuthClientRepository {
@@ -16,8 +16,7 @@ impl OAuthClientRepository {
 
 impl OAuthClientRepository {
     pub(super) async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
-        self.pool
-            .get()
+        get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)
     }

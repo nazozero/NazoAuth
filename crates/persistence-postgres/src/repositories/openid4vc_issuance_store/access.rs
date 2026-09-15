@@ -1,5 +1,6 @@
 use super::super::Openid4vciRepository;
 use super::AccessRow;
+use crate::get_conn;
 use chrono::{DateTime, Utc};
 use diesel::{OptionalExtension, sql_query, sql_types};
 use diesel_async::RunQueryDsl;
@@ -12,9 +13,7 @@ impl Openid4vciRepository {
         access: &'a CredentialAccess,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             sql_query(
@@ -52,9 +51,7 @@ impl Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<Option<CredentialAccess>, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let row = sql_query(

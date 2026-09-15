@@ -88,6 +88,35 @@ Operational response:
 - stop rollout or migration automation until the durable store is healthy
 - prefer failover or restore over ad hoc manual row edits during an incident
 
+## Security-State Maintenance
+
+Every server process runs exactly one background maintenance worker owned by
+the host. There is no leader election: each instance runs its own worker, and
+per-family advisory locks plus `FOR UPDATE SKIP LOCKED` keep concurrent
+instances from double-processing the same rows.
+
+- The first batch runs immediately at startup; each subsequent batch starts 60
+  seconds after the previous batch completes.
+- Each batch is bounded: at most 256 expired-state candidates per category and
+  256 refresh-token families per pass. Backlog drains across successive
+  batches, not in one unbounded transaction.
+- Refresh-token leaf reclaim takes the same family advisory lock used by
+  refresh-token writers (`pg_try_advisory_xact_lock`). A family whose lock is
+  held by an active writer is skipped for that pass, and lock-free rows are
+  rechecked inside the reclaim transaction. Families with an active successor
+  are never reclaimed.
+- A failed batch logs a warning; the worker waits for the next interval
+  instead of retrying in a tight loop. The worker is aborted and awaited
+  during shutdown.
+- Covered state: expired consumed grants, consumed token-issuance rows, SCIM
+  security/audit events past retention, completed backchannel-logout
+  deliveries, expired access-token revocations, and expired OpenID4VP
+  presentation requests.
+
+Migrations do not delete expired security state. A fresh database therefore
+needs no cleanup step at deploy time, and an existing deployment must keep at
+least one healthy server process running so the worker can drain the backlog.
+
 ## Valkey High Availability
 
 Production Valkey uses a managed HA Redis-compatible service, Valkey Sentinel

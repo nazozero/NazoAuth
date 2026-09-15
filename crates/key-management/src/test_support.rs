@@ -87,6 +87,27 @@ pub async fn key_manager(settings: KeySettings) -> anyhow::Result<KeyManager> {
     .await
 }
 
+/// Persist a fresh database-backed keyset whose active rotation key uses
+/// `active_algorithm`, through the same payload construction, sealing, and
+/// `create_if_absent` path `load_or_create` uses at startup. Purpose-scoped
+/// protocol keys cover every remaining standard protocol algorithm so the
+/// resulting keyset serves the same signing surface as a startup-created one.
+/// Intended for fixtures that need a non-default active signing algorithm;
+/// the repository row must be written before the tenant runtime first loads.
+pub async fn create_database_keyset(
+    tenant_id: uuid::Uuid,
+    repository: Arc<dyn SigningKeyRepository>,
+    wrapping_keys: &SigningKeyWrappingKeyRing,
+    active_algorithm: nazo_crypto::jwt::Algorithm,
+) -> anyhow::Result<PersistedSigningKeyset> {
+    let payload = crate::database::initial_payload_with_active(active_algorithm)?;
+    let candidate = crate::database::persist_payload(tenant_id, 1, payload, wrapping_keys)?;
+    Ok(match repository.create_if_absent(candidate).await? {
+        SigningKeysetCreateResult::Created(record)
+        | SigningKeysetCreateResult::Existing(record) => record,
+    })
+}
+
 /// Semantic failure fixture; no process execution is involved.
 pub struct FailingExternalKeySigner;
 

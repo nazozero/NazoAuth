@@ -1,5 +1,5 @@
 use crate::{
-    DbPool, convert::identity, rows::identity::PasskeyCredentialRow,
+    DbPool, convert::identity, get_conn, rows::identity::PasskeyCredentialRow,
     schema::user_passkey_credentials,
 };
 use diesel::{
@@ -29,9 +29,7 @@ impl PasskeyRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Vec<PasskeyCredential>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         user_passkey_credentials::table
@@ -53,9 +51,7 @@ impl PasskeyRepository {
         user_id: UserId,
         credential_id: &str,
     ) -> Result<Option<PasskeyCredential>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         user_passkey_credentials::table
@@ -80,9 +76,7 @@ impl PasskeyRepository {
         label: String,
         sign_count: i64,
     ) -> Result<PasskeyCredential, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let row = diesel::insert_into(user_passkey_credentials::table)
@@ -113,9 +107,7 @@ impl PasskeyRepository {
         if expected_sign_count < 0 || (!zero_counter && new_sign_count <= expected_sign_count) {
             return Err(RepositoryError::Conflict);
         }
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         diesel::update(
@@ -148,9 +140,7 @@ impl PasskeyRepository {
         user_id: UserId,
         id: Uuid,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         diesel::delete(

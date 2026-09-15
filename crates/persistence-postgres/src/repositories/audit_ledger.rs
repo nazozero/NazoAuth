@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use nazo_identity::ports::RepositoryError;
 
-use crate::{DbPool, pool::DiscardOnDrop};
+use crate::{DbPool, get_conn, pool::DiscardOnDrop};
 
 /// The maximum JSON payload accepted by the durable audit ledger.
 ///
@@ -254,8 +254,7 @@ impl AuditLedgerRepository {
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
-        self.pool
-            .get()
+        get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)
     }

@@ -589,31 +589,14 @@ async fn mfa_failure_budget_is_session_bound_and_clears_after_success() {
 }
 
 #[tokio::test]
-async fn token_state_preserves_subject_and_native_sso_key_contracts() {
-    let Some((connection, inspector)) = setup().await else {
+async fn token_state_preserves_native_sso_key_contract() {
+    let Some((connection, _)) = setup().await else {
         return;
     };
     let store = TokenStateStore::new(&connection);
     let tenant = uuid::Uuid::from_u128(1);
     let user = uuid::Uuid::from_u128(2);
-    let jti = format!("jti-{}", uuid::Uuid::now_v7());
     let secret = format!("secret-{}", uuid::Uuid::now_v7());
-    store
-        .store_access_token_subject(tenant, &jti, user, 30)
-        .await
-        .unwrap();
-    assert_eq!(
-        store.load_access_token_subject(tenant, &jti).await.unwrap(),
-        Some(user)
-    );
-    let subject_key = nazo_valkey::test_support::state_storage_key(format!(
-        "oauth:access_token:subject:{tenant}:{}",
-        blake3::hash(jti.as_bytes()).to_hex()
-    ));
-    assert_eq!(
-        inspector.get::<String, _>(&subject_key).await.unwrap(),
-        user.to_string()
-    );
     let payload = json!({"tenant_id":tenant,"user_id":user,"sid":"sid"});
     store.store_native_sso(&secret, &payload, 30).await.unwrap();
     assert_eq!(store.load_native_sso(&secret).await.unwrap(), Some(payload));

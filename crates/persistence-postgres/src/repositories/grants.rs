@@ -12,7 +12,7 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    DbPool,
+    DbPool, get_conn,
     schema::{oauth_clients, oauth_tokens, user_client_grants, users},
 };
 
@@ -76,9 +76,7 @@ impl GrantRepository {
         limit: i64,
         offset: i64,
     ) -> Result<AdminGrantPage, AuthorizationPortError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| AuthorizationPortError::Unavailable)?;
         let total = user_client_grants::table
@@ -271,7 +269,7 @@ impl GrantRepository {
         user_id: Uuid,
         client_id: &str,
     ) -> Result<AdminGrantRevocation, AdminGrantRevokeError> {
-        let mut connection = self.pool.get().await.map_err(|_| {
+        let mut connection = get_conn(&self.pool).await.map_err(|_| {
             AdminGrantRevokeError::ClientLookup(AuthorizationPortError::Unavailable)
         })?;
         connection
@@ -337,8 +335,7 @@ impl GrantRepository {
     }
 
     async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
-        self.pool
-            .get()
+        get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)
     }

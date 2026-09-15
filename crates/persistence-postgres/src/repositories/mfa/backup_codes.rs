@@ -1,5 +1,7 @@
 use super::{MfaAuditError, MfaRepository, mfa_event};
-use crate::{repositories::audit::insert_identity_security_event, schema::user_mfa_backup_codes};
+use crate::{
+    get_conn, repositories::audit::insert_identity_security_event, schema::user_mfa_backup_codes,
+};
 use diesel::{ExpressionMethods, QueryDsl, dsl::now};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::{
@@ -14,9 +16,7 @@ impl MfaRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<Vec<BackupCodeCandidate>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let rows = user_mfa_backup_codes::table
@@ -52,9 +52,7 @@ impl MfaRepository {
         user_id: UserId,
         candidate_id: uuid::Uuid,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
@@ -101,9 +99,7 @@ impl MfaRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         insert_identity_security_event(
@@ -125,9 +121,7 @@ impl MfaRepository {
         hashes: Vec<String>,
     ) -> Result<(), RepositoryError> {
         validate_backup_hash_count(&hashes)?;
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection

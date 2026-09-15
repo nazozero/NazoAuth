@@ -21,8 +21,6 @@ The default deployment is same-origin per tenant issuer. `PUBLIC_BASE_URL`
 PUBLIC_BASE_URL=https://auth.example.com
 ISSUER=https://auth.example.com
 CLIENT_SECRET_PEPPER=<random 32+ byte secret>
-TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY=<base64url-encoded 32-byte key>
-TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID=response-2026-08
 ```
 
 After `nazoauth tenant-bootstrap` initializes the directory, an active binding
@@ -47,8 +45,6 @@ SIGNING_KEY_ENCRYPTION_KEY_ID: "deployment-signing-root"
 SIGNING_KEY_ENCRYPTION_KEY_FILE: "/run/secrets/signing-key-encryption-key"
 DATA_DIR: "/var/lib/nazo_oauth"
 CLIENT_SECRET_PEPPER: "<random 32+ byte secret>"
-TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY: "<base64url-encoded 32-byte key>"
-TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID: "response-2026-08"
 RUST_LOG: "info"
 ```
 
@@ -95,8 +91,7 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `CIBA_SECURITY_PROFILE` | `fapi-ciba-id1` | CIBA-specific policy: FAPI-CIBA ID1 with orthogonal poll/ping delivery and private-key/mTLS client authentication, or internal `fapi2-ciba` hardening. Only these canonical values are accepted. |
 | `MFA_TOTP_ENCRYPTION_KEY` / `MFA_TOTP_ENCRYPTION_KEY_ID` | generated under `DATA_DIR/secrets` | Current 32-byte base64url key and derived version id for TOTP seed envelope encryption. Prefer `MFA_TOTP_ENCRYPTION_KEY_FILE` when importing a controlled existing key. |
 | `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY` / `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID` | unset | Optional prior key for decrypting existing encrypted envelopes during a controlled key transition. Startup never scans, encrypts, or re-wraps credential rows. |
-| `TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY` / `_ID` | generated under `DATA_DIR/secrets` | Independent current 32-byte base64url key and derived id for durable OAuth token-response envelopes. Do not derive it from `CLIENT_SECRET_PEPPER`; file injection remains available for controlled rotation. Missing or malformed pairs fail startup. |
-| `TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY` / `_ID` | unset | Optional previous key retained only during a rotation overlap; use `TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_FILE` for file injection. Existing live envelopes decrypt with current or previous; new envelopes always use current. Startup authenticates every live envelope, and expired rows are lazily removed before a grant key is reused. Remove the previous pair only after all rows encrypted with that id have expired and no writer still uses that key id. |
+
 | `OPENID4VC_REVOCATION_POLICY` | `disabled` | `disabled`, `optional`, or `required`. The VP verifier requires `required`. Certificate, trust-anchor, and revocation facts are read from the managed shared signing-key generation, so VP verification performs no network or file I/O. |
 | `OPENID4VC_MDOC_ISSUING_COUNTRY` | unset | Required only when local keyctl generates a certificate for an enabled `mso_mdoc` configuration. Two uppercase ASCII letters, and the generated DS/IACA Subject `C` uses this value. It is not required for externally issued certificate chains. |
 | `SECURITY_AUDIT_REQUIRE_LEAST_PRIVILEGE` | `true` | Reject startup and high-impact administration when the server role is a superuser, can assume a ledger owner/privileged role, has direct ledger table capabilities, or lacks the writer function grants. |
@@ -104,10 +99,7 @@ avatar directory = DATA_DIR + "/tenants/{tenant_uuid}/avatars"
 | `SCIM_EVENT_RETENTION_SECONDS` | `604800` | Per-receiver delivery window and outbox retention; accepted range is 3600–2592000 seconds |
 | `RUST_LOG` | `info` | Tracing filter |
 
-The response key id is not the envelope format. The current format is `v1` and
-is stored separately from `response_key_id`; a format change requires an
-explicit migration. Keep the current and previous key material available for
-the full durable-response recovery window. Managed schema changes run only in
+Managed schema changes run only in
 the signed install, update, or recover lifecycle. An irreversible migration
 requires verified snapshot recovery rather than artifact rollback.
 
@@ -135,7 +127,6 @@ The supported pairs are:
 | `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN` | `DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN_FILE` |
 | `PAIRWISE_SUBJECT_SECRET` | `PAIRWISE_SUBJECT_SECRET_FILE` |
 | `MFA_TOTP_ENCRYPTION_KEY`, `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY` | `MFA_TOTP_ENCRYPTION_KEY_FILE`, `MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_FILE` |
-| `TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY`, `TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY` | `TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_FILE`, `TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_FILE` |
 | `SIGNING_KEY_ENCRYPTION_KEY`, `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY` | `SIGNING_KEY_ENCRYPTION_KEY_FILE`, `SIGNING_KEY_PREVIOUS_ENCRYPTION_KEY_FILE` |
 | `OPENID4VC_DATA_ENCRYPTION_KEY` | `OPENID4VC_DATA_ENCRYPTION_KEY_FILE` |
 | `OPENID4VCI_ISSUER_MANAGEMENT_TOKEN` | `OPENID4VCI_ISSUER_MANAGEMENT_TOKEN_FILE` |

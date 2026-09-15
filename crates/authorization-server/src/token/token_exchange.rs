@@ -478,15 +478,11 @@ pub async fn token_exchange(
         Ok(admission) => admission,
         Err(error) => return Err(token_exchange_admission_error_response(error, form)),
     };
-    let idempotency_key = facts.idempotency_key.clone();
-    let mode = idempotency_key.map_or(TokenIssuanceMode::Fresh, |grant_key| {
-        TokenIssuanceMode::Idempotent { grant_key }
-    });
     issue_token_response(
         issuance,
         token_service,
         client,
-        mode,
+        TokenIssuanceMode::Fresh,
         TokenIssue {
             user_id: validated_subject.user_id,
             subject: validated_subject.subject,

@@ -141,21 +141,37 @@ impl ServerUserinfoOperations {
         }
 
         let scopes = parse_scope(&claims.scope);
-        let user_id = self.access_token_user_id(tenant_id, &claims).await?;
-        if nazo_identity::TenantId::new(tenant_id).is_err()
-            || nazo_identity::UserId::new(user_id).is_err()
+        // A directly carried user UUID uses the ordinary subject read; a
+        // pairwise subject resolves ownership through the issuance row's
+        // users join, which already proves the subject is active inside the
+        // verifier acceptance window.
+        let subject_claims = match claims
+            .user_id
+            .as_deref()
+            .and_then(|value| Uuid::parse_str(value).ok())
         {
+            Some(user_id) => self
+                .token_service
+                .active_subject_claims(tenant_id, user_id)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "failed to load userinfo subject claims");
+                    UserinfoError::QueryUnavailable
+                })?
+                .ok_or(UserinfoError::InactiveSubject)?,
+            None => self
+                .token_service
+                .active_subject_claims_by_access_token(tenant_id, &claims.jti)
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "failed to load userinfo subject claims");
+                    UserinfoError::QueryUnavailable
+                })?
+                .ok_or(UserinfoError::InvalidSubject)?,
+        };
+        if nazo_identity::TenantId::new(tenant_id).is_err() {
             return Err(UserinfoError::InactiveSubject);
         }
-        let subject_claims = self
-            .token_service
-            .active_subject_claims(tenant_id, user_id)
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, "failed to load userinfo subject claims");
-                UserinfoError::QueryUnavailable
-            })?
-            .ok_or(UserinfoError::InactiveSubject)?;
         let mut client = match self
             .token_service
             .client_by_protocol_id(tenant_id, &claims.client_id)
@@ -242,28 +258,6 @@ impl ServerUserinfoOperations {
             }
             (AccessTokenAuthScheme::Bearer, None) => Ok(None),
         }
-    }
-
-    async fn access_token_user_id(
-        &self,
-        tenant_id: Uuid,
-        claims: &Claims,
-    ) -> Result<Uuid, UserinfoError> {
-        if let Some(user_id) = claims
-            .user_id
-            .as_deref()
-            .and_then(|value| Uuid::parse_str(value).ok())
-        {
-            return Ok(user_id);
-        }
-        self.token_service
-            .load_access_token_subject(tenant_id, &claims.jti)
-            .await
-            .map_err(|error| {
-                tracing::warn!(%error, "failed to load access token subject mapping");
-                UserinfoError::QueryUnavailable
-            })?
-            .ok_or(UserinfoError::InvalidSubject)
     }
 
     async fn protect_response(

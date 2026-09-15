@@ -444,6 +444,35 @@ async fn insert_userinfo_user(
     .expect("test user insert should succeed")
 }
 
+async fn insert_issuance_row(
+    state: &Data<TestInfrastructure>,
+    client_row_id: Uuid,
+    user_id: Uuid,
+    access_token_jti: &str,
+) {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        r#"
+        INSERT INTO oauth_token_issuances (
+            issuance_id, tenant_id, client_id, user_id,
+            access_token_jti, access_token_expires_at, retain_until
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $6)
+        "#,
+    )
+    .bind::<SqlUuid, _>(Uuid::now_v7())
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<SqlUuid, _>(client_row_id)
+    .bind::<SqlUuid, _>(user_id)
+    .bind::<Text, _>(access_token_jti)
+    .bind::<Timestamptz, _>(Utc::now() + Duration::minutes(5))
+    .execute(&mut conn)
+    .await
+    .expect("issuance ownership insert should succeed");
+}
+
 async fn revoke_access_token(
     state: &Data<TestInfrastructure>,
     client_row_id: Uuid,
@@ -663,14 +692,12 @@ async fn userinfo_rejects_revoked_access_token_before_subject_lookup() {
 }
 
 #[actix_web::test]
-async fn userinfo_returns_server_error_when_subject_mapping_store_is_unavailable() {
-    let Some(state) = live_userinfo_state().await else {
-        return;
-    };
+async fn userinfo_returns_server_error_when_ownership_lookup_fails() {
+    let state = userinfo_state_with_valid_signing_key_invalid_db();
     let token = signed_userinfo_access_token(
         &state,
         DEFAULT_TENANT_ID,
-        &Uuid::now_v7().to_string(),
+        &format!("pairwise-{}", Uuid::now_v7()),
         None,
         "user",
         &["resource://default".to_owned()],
@@ -679,12 +706,6 @@ async fn userinfo_returns_server_error_when_subject_mapping_store_is_unavailable
         None,
     )
     .await;
-    let state = Data::new(TestInfrastructure {
-        diesel_db: state.diesel_db.clone(),
-        valkey: disconnected_valkey_client(),
-        settings: state.settings.clone(),
-        keyset: state.keyset.clone(),
-    });
 
     let response = userinfo_error_for_token(state, "Bearer", &token.token).await;
 
@@ -861,6 +882,136 @@ async fn userinfo_returns_claims_for_active_user_access_token() {
     let value: Value = serde_json::from_slice(&body).expect("userinfo body should be JSON");
     assert_eq!(value["sub"], user.id.to_string());
     assert_eq!(value["email"], user.email);
+}
+
+#[actix_web::test]
+async fn userinfo_resolves_pairwise_subject_through_issuance_ownership() {
+    let Some(state) = live_userinfo_state().await else {
+        return;
+    };
+    let client_id = format!("userinfo-pairwise-{}", Uuid::now_v7());
+    let client_row_id = insert_userinfo_client(&state, &client_id).await;
+    let user = insert_userinfo_user(&state, true).await;
+    let pairwise_sub = format!("pairwise-{}", Uuid::now_v7());
+    let token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &pairwise_sub,
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned(), "email".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    insert_issuance_row(&state, client_row_id, user.id, &token.jti).await;
+
+    let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("userinfo response body should collect");
+    let value: Value = serde_json::from_slice(&body).expect("userinfo body should be JSON");
+    assert_eq!(value["sub"], pairwise_sub);
+    assert_eq!(value["email"], user.email);
+
+    // A pairwise token whose JTI only exists under another tenant must fail
+    // closed; the ownership JOIN is tenant-scoped with no fallback.
+    let foreign_tenant = Uuid::now_v7();
+    let foreign_realm = Uuid::now_v7();
+    let foreign_org = Uuid::now_v7();
+    let foreign_client = Uuid::now_v7();
+    let foreign_user = Uuid::now_v7();
+    let suffix = foreign_tenant.simple();
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query("INSERT INTO tenants (id, slug, display_name) VALUES ($1, $2, 'Foreign test')")
+        .bind::<SqlUuid, _>(foreign_tenant)
+        .bind::<Text, _>(format!("foreign-{suffix}"))
+        .execute(&mut conn)
+        .await
+        .expect("foreign tenant insert should succeed");
+    sql_query(
+        "INSERT INTO realms (id, tenant_id, slug, display_name)          VALUES ($1, $2, 'default', 'Foreign realm')",
+    )
+    .bind::<SqlUuid, _>(foreign_realm)
+    .bind::<SqlUuid, _>(foreign_tenant)
+    .execute(&mut conn)
+    .await
+    .expect("foreign realm insert should succeed");
+    sql_query(
+        "INSERT INTO organizations (id, tenant_id, slug, display_name)          VALUES ($1, $2, 'default', 'Foreign organization')",
+    )
+    .bind::<SqlUuid, _>(foreign_org)
+    .bind::<SqlUuid, _>(foreign_tenant)
+    .execute(&mut conn)
+    .await
+    .expect("foreign organization insert should succeed");
+    sql_query(
+        "INSERT INTO users (id, tenant_id, realm_id, organization_id, username, email, password_hash)          VALUES ($1, $2, $3, $4, $5, $6, 'test')",
+    )
+    .bind::<SqlUuid, _>(foreign_user)
+    .bind::<SqlUuid, _>(foreign_tenant)
+    .bind::<SqlUuid, _>(foreign_realm)
+    .bind::<SqlUuid, _>(foreign_org)
+    .bind::<Text, _>(format!("foreign-{suffix}"))
+    .bind::<Text, _>(format!("foreign-{suffix}@example.test"))
+    .execute(&mut conn)
+    .await
+    .expect("foreign user insert should succeed");
+    sql_query(
+        r#"INSERT INTO oauth_clients (            id, tenant_id, realm_id, organization_id, client_id, client_name, client_type,            redirect_uris, scopes, grant_types, token_endpoint_auth_method, is_active, security_policy        ) VALUES ($1, $2, $3, $4, $5, 'foreign-client', 'public', '[]'::jsonb, '[]'::jsonb,            '[]'::jsonb, 'none', TRUE, '{"version":1,"assurance":"baseline","require_signed_authorization_request":false,"require_signed_authorization_response":false,"require_signed_introspection_response":false,"session_management":false,"allow_cross_device_flows":false,"allow_confidential_oidc_without_pkce":false}'::jsonb)"#,
+    )
+    .bind::<SqlUuid, _>(foreign_client)
+    .bind::<SqlUuid, _>(foreign_tenant)
+    .bind::<SqlUuid, _>(foreign_realm)
+    .bind::<SqlUuid, _>(foreign_org)
+    .bind::<Text, _>(format!("foreign-client-{suffix}"))
+    .execute(&mut conn)
+    .await
+    .expect("foreign client insert should succeed");
+    let foreign_jti_token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &format!("pairwise-{}", Uuid::now_v7()),
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    sql_query(
+        r#"
+        INSERT INTO oauth_token_issuances (
+            issuance_id, tenant_id, client_id, user_id,
+            access_token_jti, access_token_expires_at, retain_until
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $6)
+        "#,
+    )
+    .bind::<SqlUuid, _>(Uuid::now_v7())
+    .bind::<SqlUuid, _>(foreign_tenant)
+    .bind::<SqlUuid, _>(foreign_client)
+    .bind::<SqlUuid, _>(foreign_user)
+    .bind::<Text, _>(foreign_jti_token.jti.as_str())
+    .bind::<Timestamptz, _>(Utc::now() + Duration::minutes(5))
+    .execute(&mut conn)
+    .await
+    .expect("foreign issuance ownership insert should succeed");
+    drop(conn);
+
+    let response =
+        userinfo_error_for_token(state.clone(), "Bearer", &foreign_jti_token.token).await;
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(response).await.as_deref(),
+        Some("invalid_token")
+    );
 }
 
 #[actix_web::test]

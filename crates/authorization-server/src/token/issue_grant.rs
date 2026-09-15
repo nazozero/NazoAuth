@@ -1,6 +1,7 @@
 use super::*;
 use chrono::{Duration, Utc};
 use nazo_auth::{CommitTokenIssuanceResult, TokenIssuanceMode};
+use uuid::Uuid;
 
 #[allow(clippy::needless_return)]
 pub async fn issue_token_response(
@@ -148,7 +149,9 @@ pub async fn issue_token_response(
             false,
         ));
     }
-    let subject_claims_snapshot = if let Some(user_id) = issue.user_id {
+    // Only OIDC claims construction consumes the subject profile; non-OIDC
+    // user access tokens rely on the commit's principal lock recheck.
+    let subject_claims_snapshot = if issue_includes_openid && let Some(user_id) = issue.user_id {
         match token_service
             .active_subject_claims(client.tenant_id, user_id)
             .await
@@ -190,8 +193,6 @@ pub async fn issue_token_response(
         None
     };
     let issuance_id = Uuid::now_v7();
-    let grant_key = mode.grant_key(issuance_id);
-    let request_digest = issuance_request_digest(client, &issue, &grant_key);
     if let Err(error) = context.security_audit.ensure_storage().await {
         tracing::error!(%error, "token issuance audit preflight failed");
         return Err(OAuthEndpointError::token(
@@ -200,42 +201,6 @@ pub async fn issue_token_response(
             "令牌签发审计存储不可用.",
             false,
         ));
-    }
-    if let TokenIssuanceMode::Idempotent { .. } = &mode {
-        match token_service
-            .token_issuance_by_grant(client.tenant_id, client.id, &grant_key)
-            .await
-        {
-            Ok(Some(record)) if record.request_digest == request_digest => {
-                if let Some(response) = response_from_token_issuance(&record) {
-                    return Ok(response);
-                }
-                return Err(OAuthEndpointError::token(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request",
-                    "幂等令牌签发结果不可恢复.",
-                    false,
-                ));
-            }
-            Ok(Some(_)) => {
-                return Err(OAuthEndpointError::token(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_request",
-                    "幂等令牌签发请求不匹配.",
-                    false,
-                ));
-            }
-            Ok(None) => {}
-            Err(error) => {
-                tracing::warn!(%error, "failed to read idempotent token issuance");
-                return Err(OAuthEndpointError::token(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "令牌签发状态读取失败.",
-                    false,
-                ));
-            }
-        }
     }
     let now = Utc::now();
     let next_dpop_nonce = if issue.dpop_jkt.is_some() {
@@ -300,31 +265,6 @@ pub async fn issue_token_response(
             ));
         }
     };
-    if let Err(error) = persist_access_token_subject_mapping(
-        token_service,
-        context.config.access_token_ttl_seconds,
-        &issued_access_token.jti,
-        client.tenant_id,
-        issue.user_id,
-        &issue.subject,
-    )
-    .await
-    {
-        tracing::warn!(%error, "failed to persist access token subject mapping");
-        mark_failed_authorization_code_if_needed(
-            token_service,
-            issue.authorization_code_hash.as_deref(),
-            "access_token_subject_mapping_failed",
-            auth_code_ttl_seconds,
-        )
-        .await;
-        return Err(OAuthEndpointError::token(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "server_error",
-            "令牌主体状态写入失败.",
-            false,
-        ));
-    }
     let token_type = if issue.dpop_jkt.is_some() {
         "DPoP"
     } else {
@@ -442,13 +382,11 @@ pub async fn issue_token_response(
             client.id_token_encrypted_response_enc.as_deref(),
             "id_token",
         )
-        .and_then(|key| {
-            key.map_or_else(
-                || Ok(signed_id_token.clone()),
-                |key| {
-                    encrypt_compact_jwe(&key, signed_id_token.as_bytes(), JwePayloadKind::NestedJwt)
-                },
-            )
+        .and_then(|key| match key {
+            Some(key) => {
+                encrypt_compact_jwe(&key, signed_id_token.as_bytes(), JwePayloadKind::NestedJwt)
+            }
+            None => Ok(signed_id_token),
         }) {
             Ok(token) => token,
             Err(error) => {
@@ -556,31 +494,29 @@ pub async fn issue_token_response(
         }
         body["device_secret"] = json!(native_sso.device_secret);
     }
-    let response_body = match serde_json::to_vec(&body) {
-        Ok(body) => body,
-        Err(error) => {
-            tracing::warn!(%error, "failed to serialize token issuance response");
-            return Err(OAuthEndpointError::token(
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "server_error",
-                "令牌签发响应序列化失败.",
-                false,
-            ));
+    // The authorization-code branch needs the verified grant key and the
+    // access-token JTI once more after the commit consumes them.
+    let redemption_binding = match &mode {
+        TokenIssuanceMode::SingleUse { grant_key, .. }
+            if issue.authorization_code_hash.is_some() =>
+        {
+            Some(grant_key.clone())
         }
+        _ => None,
     };
-    let response_body_for_commit =
-        matches!(mode, TokenIssuanceMode::Idempotent { .. }).then(|| response_body.clone());
+    let access_token_jti_for_finalize = issue
+        .authorization_code_hash
+        .is_some()
+        .then(|| issued_access_token.jti.clone());
     match token_service
         .commit_token_issuance(nazo_auth::CommitTokenIssuance {
             issuance_id,
             tenant_id: client.tenant_id,
             client_id: client.id,
             user_id: issue.user_id,
-            mode: mode.clone(),
-            request_digest,
-            access_token_jti: issued_access_token.jti.clone(),
+            mode,
+            access_token_jti: issued_access_token.jti,
             access_token_expires_at: issued_access_token.expires_at,
-            response_body: response_body_for_commit,
             refresh_token: refresh_token_to_commit,
             audit_fields: nazo_auth::TokenIssuedAuditFields {
                 client_id: client.client_id.clone(),
@@ -602,8 +538,12 @@ pub async fn issue_token_response(
                     .finalize_authorization_code(nazo_auth::IssuedAuthorizationCodeTokens {
                         client_id: client.id,
                         code_hash,
-                        redemption_binding: &grant_key,
-                        access_token_jti: &issued_access_token.jti,
+                        redemption_binding: redemption_binding
+                            .as_deref()
+                            .expect("authorization code issuance carries its grant key"),
+                        access_token_jti: access_token_jti_for_finalize
+                            .as_deref()
+                            .expect("authorization code issuance carries its access token jti"),
                         access_token_expires_at: issued_access_token.expires_at,
                         refresh_token_family_id,
                         consumed_state_ttl_seconds,
@@ -624,29 +564,27 @@ pub async fn issue_token_response(
                 dpop_nonce: next_dpop_nonce,
             });
         }
-        Ok(CommitTokenIssuanceResult::Existing(record)) => {
-            if let Some(response) = response_from_token_issuance(&record) {
-                return Ok(response);
-            }
-            return Err(OAuthEndpointError::token(
-                StatusCode::BAD_REQUEST,
-                "invalid_request",
-                "幂等令牌签发结果不可恢复.",
-                false,
-            ));
-        }
-        Ok(CommitTokenIssuanceResult::Conflict) => Err(OAuthEndpointError::token(
-            StatusCode::BAD_REQUEST,
-            "invalid_request",
-            "幂等令牌签发请求不匹配.",
-            false,
-        )),
         Ok(CommitTokenIssuanceResult::AlreadyUsed) => Err(OAuthEndpointError::token(
             StatusCode::BAD_REQUEST,
             "invalid_grant",
             "令牌签发授权已使用.",
             false,
         )),
+        Ok(CommitTokenIssuanceResult::GrantExpired) => {
+            mark_failed_authorization_code_if_needed(
+                token_service,
+                issue.authorization_code_hash.as_deref(),
+                "grant_expired",
+                auth_code_ttl_seconds,
+            )
+            .await;
+            Err(OAuthEndpointError::token(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "令牌签发授权已过期.",
+                false,
+            ))
+        }
         Ok(CommitTokenIssuanceResult::ClientInactive) => {
             mark_failed_authorization_code_if_needed(
                 token_service,

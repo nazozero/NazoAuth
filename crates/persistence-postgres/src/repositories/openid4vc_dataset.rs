@@ -5,7 +5,7 @@ use nazo_openid4vci::CredentialStoreError;
 use rand::Rng;
 use uuid::Uuid;
 
-use crate::DbPool;
+use crate::{DbPool, get_conn};
 #[derive(Clone)]
 pub struct Openid4vciDatasetRepository {
     pool: DbPool,
@@ -178,9 +178,7 @@ impl Openid4vciDatasetRepository {
             claims_ciphertext: Vec<u8>,
         }
 
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
         let row = sql_query(
@@ -226,9 +224,7 @@ impl Openid4vciDatasetRepository {
             #[diesel(sql_type = sql_types::Timestamptz)]
             updated_at: DateTime<Utc>,
         }
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
         sql_query(
@@ -280,9 +276,7 @@ impl Openid4vciDatasetRepository {
             credential_configuration_id,
             claims,
         )?;
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
         let affected = sql_query(
@@ -328,9 +322,7 @@ impl Openid4vciDatasetRepository {
         subject_id: Uuid,
         credential_configuration_id: &str,
     ) -> Result<bool, CredentialStoreError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| CredentialStoreError::Unavailable)?;
         sql_query(

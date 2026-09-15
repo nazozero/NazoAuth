@@ -111,14 +111,9 @@ pub fn parse_token_form_with_pre_authorized(
                     .into_iter()
                     .next()
                     .expect("single resource parameter must produce one resource");
-                if seen.contains("audience") {
-                    return Err(TokenFormError::DuplicateParameter);
+                if !form.audiences.iter().any(|existing| existing == &resource) {
+                    form.audiences.push(resource);
                 }
-                seen.insert("resource");
-                if form.audiences.iter().any(|existing| existing == &resource) {
-                    return Err(TokenFormError::DuplicateParameter);
-                }
-                form.audiences.push(resource);
             }
             "grant_type" => {
                 accept_token_parameter_once(&mut seen, "grant_type")?;
@@ -197,14 +192,14 @@ pub fn parse_token_form_with_pre_authorized(
                 form.actor_token_type = non_empty(value.into_owned());
             }
             "audience" => {
-                accept_token_parameter_once(&mut seen, "audience")?;
-                if !form.audiences.is_empty() {
-                    return Err(TokenFormError::DuplicateParameter);
-                }
-                if let Some(value) = non_empty(value.into_owned()) {
-                    form.audiences.push(value);
-                }
                 form.has_audience_param = true;
+                let audience = value.into_owned();
+                if audience.is_empty() {
+                    return Err(TokenFormError::InvalidAudienceParameter);
+                }
+                if !form.audiences.iter().any(|existing| existing == &audience) {
+                    form.audiences.push(audience);
+                }
             }
             "pre-authorized_code" => {
                 if pre_authorized.pre_authorized_code.is_some() || value.is_empty() {

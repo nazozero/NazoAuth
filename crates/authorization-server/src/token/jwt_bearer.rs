@@ -310,7 +310,8 @@ pub async fn token_jwt_bearer_with_service(
         token_service,
         client,
         TokenIssuanceMode::SingleUse {
-            grant_key: jwt_bearer_grant_key.clone(),
+            grant_key: jwt_bearer_grant_key,
+            grant_expires_at: assertion.expires_at,
         },
         TokenIssue {
             user_id: None,

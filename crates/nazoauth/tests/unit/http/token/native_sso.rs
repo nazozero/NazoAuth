@@ -433,7 +433,7 @@ async fn native_sso_exchange_rejects_unbound_inputs_before_secret_store_access()
         state.keyset.clone(),
     );
     let valid_id_token = signed_native_sso_id_token(&state, &state.settings.endpoint.issuer).await;
-    for case in 0..7 {
+    for case in 0..8 {
         let mut modules = state.active_module_snapshot();
         if case != 0 {
             modules
@@ -473,6 +473,10 @@ async fn native_sso_exchange_rejects_unbound_inputs_before_secret_store_access()
             5 => {
                 form.subject_token = Some("invalid-id-token".into());
                 "invalid_grant"
+            }
+            7 => {
+                form.audiences.push("https://other.example".into());
+                "invalid_target"
             }
             _ => "invalid_grant",
         };

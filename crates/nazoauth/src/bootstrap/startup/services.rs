@@ -28,12 +28,15 @@ pub(super) async fn run(
     registry: TenantRuntimeRegistry,
     refresher: Arc<TenantRuntimeRefresher>,
     backchannel_logout_worker: Option<tokio::task::JoinHandle<()>>,
+    security_state_worker: tokio::task::JoinHandle<()>,
 ) -> anyhow::Result<()> {
     let refresh_task = spawn_directory_refresher(refresher.clone());
     let result = factory::run(process, registry).await;
     refresh_task.abort();
     await_aborted_task(refresh_task, "tenant directory refresher").await;
     refresher.shutdown().await;
+    security_state_worker.abort();
+    await_aborted_task(security_state_worker, "security-state maintenance worker").await;
     if let Some(worker) = backchannel_logout_worker {
         worker.abort();
         await_aborted_task(worker, "back-channel logout worker").await;

@@ -1,4 +1,3 @@
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::Utc;
 use nazo_auth::{
     AccessTokenClaimsInput, AccessTokenSignInput, Claims, IdTokenClaimsInput, IdTokenSignInput,
@@ -9,7 +8,6 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{KeyManager, signing_algorithm_from_name};
-use nazo_crypto::jwt::VerificationKey as JwtVerificationKey;
 
 impl TokenSignerPort for KeyManager {
     fn sign_access_token<'a>(
@@ -110,14 +108,14 @@ impl TokenSignerPort for KeyManager {
             else {
                 return Ok(None);
             };
-            let Some(decoding_key) = jwt_verification_key(&key.public_jwk, header.alg) else {
+            if key.prepared.algorithm != header.alg {
                 return Ok(None);
-            };
+            }
             let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
             validation.validate_aud = false;
             validation.set_issuer(&[issuer]);
             let Some(data) =
-                nazo_crypto::jwt::decode::<Claims>(token, &decoding_key, &validation).ok()
+                nazo_crypto::jwt::decode::<Claims>(token, &key.prepared.key, &validation).ok()
             else {
                 return Ok(None);
             };
@@ -142,15 +140,15 @@ impl TokenSignerPort for KeyManager {
             else {
                 return Ok(None);
             };
-            let Some(decoding_key) = jwt_verification_key(&key.public_jwk, header.alg) else {
+            if key.prepared.algorithm != header.alg {
                 return Ok(None);
-            };
+            }
             let mut validation = nazo_crypto::jwt::Validation::new(header.alg);
             validation.validate_aud = false;
             validation.validate_exp = false;
             validation.set_issuer(&[issuer]);
             Ok(
-                nazo_crypto::jwt::decode::<Value>(token, &decoding_key, &validation)
+                nazo_crypto::jwt::decode::<Value>(token, &key.prepared.key, &validation)
                     .ok()
                     .map(|data| data.claims),
             )
@@ -181,64 +179,6 @@ impl TokenSignerPort for KeyManager {
                 .await
                 .map_err(|_| TokenPortError::Unavailable)
         })
-    }
-}
-
-fn jwt_verification_key(
-    key: &Value,
-    algorithm: nazo_crypto::jwt::Algorithm,
-) -> Option<JwtVerificationKey> {
-    let algorithm_name = crate::signing_algorithm_name(algorithm)?;
-    if key.get("d").is_some()
-        || key
-            .get("alg")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value != algorithm_name)
-        || key
-            .get("use")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value != "sig")
-    {
-        return None;
-    }
-    match algorithm {
-        nazo_crypto::jwt::Algorithm::EdDSA
-            if key.get("kty").and_then(Value::as_str) == Some("OKP")
-                && key.get("crv").and_then(Value::as_str) == Some("Ed25519") =>
-        {
-            let x = key.get("x")?.as_str()?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ed_components(x).ok()
-        }
-        nazo_crypto::jwt::Algorithm::RS256 | nazo_crypto::jwt::Algorithm::PS256
-            if key.get("kty").and_then(Value::as_str) == Some("RSA") =>
-        {
-            let modulus = key.get("n")?.as_str()?;
-            let exponent = key.get("e")?.as_str()?;
-            if !nazo_auth::rsa_public_key_components_are_safe(
-                &URL_SAFE_NO_PAD.decode(modulus).ok()?,
-                &URL_SAFE_NO_PAD.decode(exponent).ok()?,
-            ) {
-                return None;
-            }
-            JwtVerificationKey::from_rsa_components(modulus, exponent).ok()
-        }
-        nazo_crypto::jwt::Algorithm::ES256
-            if key.get("kty").and_then(Value::as_str) == Some("EC")
-                && key.get("crv").and_then(Value::as_str) == Some("P-256") =>
-        {
-            let x = key.get("x")?.as_str()?;
-            let y = key.get("y")?.as_str()?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32
-                || URL_SAFE_NO_PAD.decode(y).ok()?.len() != 32
-            {
-                return None;
-            }
-            JwtVerificationKey::from_ec_components(x, y).ok()
-        }
-        _ => None,
     }
 }
 

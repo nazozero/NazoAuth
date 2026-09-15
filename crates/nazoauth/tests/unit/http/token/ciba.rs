@@ -1523,7 +1523,7 @@ async fn ciba_token_approved_state_issues_access_and_id_tokens_for_an_active_use
 }
 
 #[actix_web::test]
-async fn ciba_replay_rejects_a_consumed_auth_req_id_even_with_a_persisted_response() {
+async fn ciba_replay_rejects_a_consumed_auth_req_id_after_a_committed_issuance() {
     let Some(mut state) = live_ciba_replay_state().await else {
         return;
     };
@@ -1539,7 +1539,7 @@ async fn ciba_replay_rejects_a_consumed_auth_req_id_even_with_a_persisted_respon
         Some(ciba_test_mtls_certificate().thumbprint.as_str()),
     );
 
-    crate::http::token::issue::tests::persist_token_issuance_response_for_test(
+    crate::http::token::issue::tests::persist_consumed_single_use_grant_for_test(
         &state, &client, &grant_key,
     )
     .await;

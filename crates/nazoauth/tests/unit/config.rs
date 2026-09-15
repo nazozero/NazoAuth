@@ -348,6 +348,28 @@ fn unknown_yaml_key_is_rejected_with_the_key_name() {
 }
 
 #[test]
+fn retired_token_issuance_response_keys_are_rejected_as_unknown() {
+    for key in [
+        "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
+        "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_FILE",
+        "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID",
+        "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY",
+        "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_FILE",
+        "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID",
+    ] {
+        let path = temp_config_dir("retired_response_key");
+        std::fs::write(path.join(CONFIG_FILE), format!("{key}: x\n")).unwrap();
+        let result = ConfigSource::load_from_dir(&path);
+        let _ = std::fs::remove_dir_all(&path);
+        let error = result.expect_err("retired response keys must fail startup");
+        assert!(
+            error.to_string().contains(key),
+            "rejection should name the retired key {key}: {error}"
+        );
+    }
+}
+
+#[test]
 fn yaml_document_must_be_a_mapping_with_non_empty_string_keys() {
     let sequence = temp_config_dir("yaml_top_level_sequence");
     std::fs::write(sequence.join(CONFIG_FILE), "- ISSUER\n").unwrap();
@@ -420,21 +442,10 @@ fn generated_secrets_are_stable_and_are_lower_precedence_than_explicit_values() 
         "DYNAMIC_CLIENT_REGISTRATION_INITIAL_ACCESS_TOKEN",
         "PAIRWISE_SUBJECT_SECRET",
         "MFA_TOTP_ENCRYPTION_KEY",
-        "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
     ] {
         assert!(first.required_string(key).unwrap().len() >= 32);
         assert_eq!(first.get(key), second.get(key));
     }
-    let response_key = first
-        .required_string("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY")
-        .unwrap();
-    let digest = blake3::hash(response_key.as_bytes()).to_hex().to_string();
-    assert_eq!(
-        first
-            .required_string("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID")
-            .unwrap(),
-        format!("generated-{}", &digest[..16])
-    );
     let mfa_key = first.required_string("MFA_TOTP_ENCRYPTION_KEY").unwrap();
     let mfa_digest = blake3::hash(mfa_key.as_bytes()).to_hex().to_string();
     assert_eq!(
@@ -1072,12 +1083,6 @@ fn canonical_config_keys_are_locked_to_the_reviewed_baseline() {
             "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY",
             "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_FILE",
             "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID",
-            "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
-            "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_FILE",
-            "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID",
-            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY",
-            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_FILE",
-            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID",
             "OPENID4VC_DATA_ENCRYPTION_KEY",
             "OPENID4VC_DATA_ENCRYPTION_KEY_FILE",
             "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",

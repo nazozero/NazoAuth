@@ -12,7 +12,6 @@ pub(super) struct StartupConfiguration {
         nazo_oauth_server::ports::transient_state::ServerTransientStateBindings,
     pub(super) avatar_storage: super::super::ServerAvatarStorageCapability,
     pub(super) settings: Arc<Settings>,
-    pub(super) token_issuance_response_keys: nazo_persistence::TokenIssuanceResponseKeyRing,
     pub(super) control_discovery: web::Data<crate::control_discovery::ControlDiscoveryEndpoint>,
     pub(super) mtls_certificate_source: web::Data<crate::http::mtls::MtlsCertificateSource>,
     pub(super) readiness_dependencies: web::Data<crate::http::well_known::ReadinessDependencies>,
@@ -29,6 +28,7 @@ pub(super) struct StartupRuntime {
     pub(super) registry: TenantRuntimeRegistry,
     pub(super) refresher: Arc<TenantRuntimeRefresher>,
     pub(super) backchannel_logout_worker: Option<tokio::task::JoinHandle<()>>,
+    pub(super) security_state_worker: tokio::task::JoinHandle<()>,
 }
 
 pub(super) async fn load(
@@ -103,7 +103,6 @@ pub(super) async fn load(
         audit_anchor_preflight,
     )?;
 
-    let token_issuance_response_keys = token_issuance_response_key_ring(&config)?;
     let state_backend = transient_state_launcher
         .server_bindings(&config, control_discovery.deployment_id())
         .await
@@ -125,7 +124,6 @@ pub(super) async fn load(
         persistence,
         state_backend,
         avatar_object_store,
-        token_issuance_response_keys,
         control_discovery,
         database_pool_metrics,
         route_settings,
@@ -160,10 +158,18 @@ pub(super) async fn load(
         }
     };
 
+    // Security-state reclamation is also process-wide: one bounded sweep per
+    // interval, coordinated across instances by SKIP LOCKED and the shared
+    // refresh-family advisory lock — no lease table or leader election.
+    let security_state_worker = background::spawn_security_state_worker(
+        process.persistence.provider().security_state_maintenance(),
+    );
+
     Ok(StartupRuntime {
         process,
         registry,
         refresher,
         backchannel_logout_worker,
+        security_state_worker,
     })
 }

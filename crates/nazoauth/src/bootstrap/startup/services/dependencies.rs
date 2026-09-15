@@ -167,14 +167,7 @@ pub(super) async fn build(startup: &StartupConfiguration) -> anyhow::Result<Core
         transient_state.authorization_state(),
         keyset.clone(),
     ));
-    let token_issuance_repository =
-        persistence.token_repository(startup.token_issuance_response_keys.clone());
-    token_issuance_repository
-        .validate_response_key_ring()
-        .await
-        .map_err(|error| {
-            anyhow::anyhow!("token issuance response key-ring preflight failed: {error}")
-        })?;
+    let token_issuance_repository = persistence.token_repository();
     let token_service = web::Data::new(nazo_oauth_server::services::ServerTokenService::from_port(
         token_issuance_repository,
         transient_state.token_state(),

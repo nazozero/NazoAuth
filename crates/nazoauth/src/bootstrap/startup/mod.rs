@@ -25,6 +25,7 @@ pub async fn run(
         startup.registry,
         startup.refresher,
         startup.backchannel_logout_worker,
+        startup.security_state_worker,
     )
     .await
 }
