@@ -1201,6 +1201,16 @@ impl KeyGeneration {
 /// snapshot/generation construction. Runs the same JWK `alg`/`use`/private-field
 /// checks and component decoding the request-time path previously repeated for
 /// every token; a JWK that cannot produce verification material is rejected.
+fn key_ops_allow_verification(key_ops: Option<&Value>) -> bool {
+    match key_ops {
+        None => true,
+        Some(Value::Array(operations)) => {
+            operations.len() == 1 && operations[0].as_str() == Some("verify")
+        }
+        Some(_) => false,
+    }
+}
+
 fn prepared_verification(
     public_jwk: &Value,
     algorithm: nazo_crypto::jwt::Algorithm,
@@ -1216,6 +1226,7 @@ fn prepared_verification(
             .get("use")
             .and_then(Value::as_str)
             .is_some_and(|value| value != "sig")
+        || !key_ops_allow_verification(public_jwk.get("key_ops"))
     {
         return None;
     }

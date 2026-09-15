@@ -351,7 +351,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     grant_expires_at,
                 } => (
                     Some((
-                        blake3::hash(grant_key.as_bytes()).as_bytes().to_vec(),
+                        <[u8; 32]>::from(blake3::hash(grant_key.as_bytes())),
                         *grant_expires_at,
                     )),
                     std::cmp::max(ownership_horizon, *grant_expires_at),
@@ -409,7 +409,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                 .bind::<sql_types::Uuid, _>(input.tenant_id)
                                 .bind::<sql_types::Uuid, _>(input.client_id)
                                 .bind::<sql_types::Nullable<sql_types::Uuid>, _>(input.user_id)
-                                .bind::<sql_types::Binary, _>(digest)
+                                .bind::<sql_types::Binary, _>(digest.as_slice())
                                 .bind::<sql_types::Varchar, _>(input.access_token_jti.as_str())
                                 .bind::<sql_types::Timestamptz, _>(access_token_expires_at)
                                 .bind::<sql_types::Timestamptz, _>(retain_until)
@@ -495,6 +495,8 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     Ok(result)
                 }
                 Err(CommitTransactionError::GrantExpired) => {
+                    // Rollback completed cleanly; the connection is healthy.
+                    guard.return_to_pool();
                     Ok(CommitTokenIssuanceResult::GrantExpired)
                 }
                 Err(CommitTransactionError::Repository(error)) => Err(map_repository_error(error)),

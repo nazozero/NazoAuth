@@ -31,12 +31,15 @@ use chrono::Utc;
 use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection as _,
 };
+use nazo_auth::{AuthorizationCodeState, CodePayload, empty_authorization_details};
 use nazo_identity::{OrganizationId, RealmId, TenantContext, TenantDirectoryBinding, TenantId};
+use nazo_key_management::{SigningKeyWrappingKeyRing, test_support::create_database_keyset};
+use nazo_oauth_server::crypto::{blake3_hex, client_secret_digest, pkce_s256};
 use nazo_postgres::{
-    TenantBoundaryDefinition, TenantDirectoryRepository, TenantProvisioningRequest, create_pool,
-    run_pending_migrations,
+    SigningKeysetRepository, TenantBoundaryDefinition, TenantDirectoryRepository,
+    TenantProvisioningRequest, create_pool, run_pending_migrations,
 };
-use sha2::{Digest as _, Sha256};
+use nazo_valkey::{AuthorizationStore, ValkeyConnection};
 use uuid::Uuid;
 
 const READINESS_WINDOW: Duration = Duration::from_secs(60);
@@ -46,11 +49,12 @@ const MIGRATION_RUNTIME_ROLE: &str = "nazoauth_perf_runtime";
 const CLIENT_SECRET_PEPPER: &str = "perf-hotpath-client-secret-pepper-000";
 const PAIRWISE_SUBJECT_SECRET: &str = "perf-hotpath-pairwise-subject-secret-00000000";
 const CLIENT_SECRET: &str = "perf-hotpath-client-secret";
+/// Test-only wrapping key the fixture configures for every server; the
+/// benchmark reproduces the same ring to pre-seed tenant keysets.
+const SIGNING_KEY_ENCRYPTION_KEY: &str = "QEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEA";
 const PKCE_VERIFIER: &str = "perf-pkce-verifier-0123456789abcdef0123456789abcdef";
-const TENANT_HOST: &str = "perf.example";
-const ISSUER: &str = "https://perf.example";
 /// The system tenant created by `migrate` binds the configured ISSUER host;
-/// it must differ from the benchmark tenant's host so both resolve.
+/// it must differ from every benchmark tenant host so both resolve.
 const SYSTEM_ISSUER: &str = "https://system.perf.example";
 const SYSTEM_HOST: &str = "system.perf.example";
 const DEFAULT_AUDIENCE: &str = "resource://t1";
@@ -150,7 +154,7 @@ CLIENT_IP_HEADER_MODE: "x-forwarded-for"
 CLIENT_SECRET_PEPPER: "{CLIENT_SECRET_PEPPER}"
 PAIRWISE_SUBJECT_SECRET: "{PAIRWISE_SUBJECT_SECRET}"
 SIGNING_KEY_ENCRYPTION_KEY_ID: "perf-signing-root"
-SIGNING_KEY_ENCRYPTION_KEY: "QEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEA"
+SIGNING_KEY_ENCRYPTION_KEY: "{SIGNING_KEY_ENCRYPTION_KEY}"
 COOKIE_SECURE: true
 SESSION_COOKIE_NAME: "perf_session"
 CSRF_COOKIE_NAME: "perf_csrf"
@@ -319,7 +323,7 @@ fn http_status(
     .unwrap_or(0)
 }
 
-fn provisioning_request(slug: &str, host: &str) -> TenantProvisioningRequest {
+fn provisioning_request(slug: &str, host: &str, issuer: &str) -> TenantProvisioningRequest {
     let tenant_id = TenantId::new(Uuid::now_v7()).expect("tenant id is non-nil");
     let realm_id = RealmId::new(Uuid::now_v7()).expect("realm id is non-nil");
     let organization_id = OrganizationId::new(Uuid::now_v7()).expect("organization id is non-nil");
@@ -341,7 +345,7 @@ fn provisioning_request(slug: &str, host: &str) -> TenantProvisioningRequest {
                 organization_id,
             },
             runtime_revision: 1,
-            issuer: ISSUER.to_owned(),
+            issuer: issuer.to_owned(),
             external_host: host.to_owned(),
         },
     }
@@ -350,16 +354,25 @@ fn provisioning_request(slug: &str, host: &str) -> TenantProvisioningRequest {
 struct IssuanceFixture {
     server: ServerProcess,
     isolated_url: String,
-    host: String,
-    tenant: TenantContext,
+    pool: nazo_postgres::DbPool,
     state_epoch: Uuid,
 }
 
-async fn start_issuance_fixture(
-    database_url: &str,
-    valkey_url: &str,
-    slug: &str,
-) -> IssuanceFixture {
+/// One benchmark tenant whose keyset was seeded with `at_algorithm` as the
+/// active signing algorithm, so every grant path on this tenant produces
+/// access tokens under that algorithm.
+struct AlgorithmTenant {
+    at_algorithm_name: &'static str,
+    host: String,
+    issuer: String,
+    user_id: Uuid,
+    store: AuthorizationStore,
+    /// Bootstrapped access token presented by the userinfo and token-exchange
+    /// paths; issued by this tenant under `at_algorithm_name`.
+    subject_at: String,
+}
+
+async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> IssuanceFixture {
     // A per-run state epoch namespaces every Valkey key — the directory
     // snapshot cache and transient grant state — so no earlier benchmark
     // run can poison this fixture's tenant view.
@@ -422,22 +435,70 @@ async fn start_issuance_fixture(
     server.wait_until_ready(SYSTEM_HOST);
 
     let pool = create_pool(isolated_url.clone(), 4).expect("directory pool should build");
-    let repository = TenantDirectoryRepository::new(pool);
+
+    IssuanceFixture {
+        server,
+        isolated_url,
+        pool,
+        state_epoch,
+    }
+}
+
+struct TenantProvisionRequest<'a> {
+    slug: &'a str,
+    host: &'a str,
+    at_algorithm_name: &'static str,
+    at_algorithm: nazo_crypto::jwt::Algorithm,
+}
+
+/// Provision one tenant, seed its signing keyset with `at_algorithm` as the
+/// active rotation key before the tenant runtime first builds, wait for the
+/// runtime to serve, then seed the benchmark clients/user and prove the
+/// effective algorithm from a real bootstrap redemption.
+async fn provision_algorithm_tenant(
+    fixture: &IssuanceFixture,
+    connection: &mut AsyncPgConnection,
+    valkey_url: &str,
+    request: &TenantProvisionRequest<'_>,
+    wrapping_keys: &SigningKeyWrappingKeyRing,
+) -> AlgorithmTenant {
+    let &TenantProvisionRequest {
+        slug,
+        host,
+        at_algorithm_name,
+        at_algorithm,
+    } = request;
+    let repository = TenantDirectoryRepository::new(fixture.pool.clone());
     let revision = repository
         .current_revision()
         .await
         .expect("directory revision should read");
-    let host = TENANT_HOST.to_owned();
-    let request = provisioning_request(slug, &host);
+    let issuer = format!("https://{host}");
+    let request = provisioning_request(slug, host, &issuer);
     let tenant = request.binding.tenant;
     repository
         .provision_tenant_binding(revision, request)
         .await
         .expect("tenant should provision");
+    // The tenant runtime creates its keyset on first load; writing the row
+    // before that load wins deterministically because the directory
+    // reconciler only observes the committed binding after this point.
+    create_database_keyset(
+        tenant.tenant_id.as_uuid(),
+        std::sync::Arc::new(SigningKeysetRepository::for_tenant(
+            fixture.pool.clone(),
+            tenant.tenant_id.as_uuid(),
+        )),
+        wrapping_keys,
+        at_algorithm,
+    )
+    .await
+    .expect("tenant signing keyset should seed");
 
+    let port = fixture.server.port;
     let started = Instant::now();
     loop {
-        if http_status(port, &host, "GET", DISCOVERY_PATH, None, &[]) == 200 {
+        if http_status(port, host, "GET", DISCOVERY_PATH, None, &[]) == 200 {
             break;
         }
         assert!(
@@ -454,7 +515,7 @@ async fn start_issuance_fixture(
     loop {
         let status = http_status(
             port,
-            &host,
+            host,
             "POST",
             "/token",
             Some("grant_type=authorization_code".to_owned()),
@@ -470,12 +531,89 @@ async fn start_issuance_fixture(
         std::thread::sleep(Duration::from_millis(500));
     }
 
-    IssuanceFixture {
-        server,
-        isolated_url,
-        host,
-        tenant,
-        state_epoch,
+    let user_id = Uuid::now_v7();
+    seed_user(connection, &tenant, user_id).await;
+    let web_grants = "[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:token-exchange\"]";
+    let web_scopes = "[\"openid\",\"offline_access\",\"api:read\"]";
+    let sso_grants = "[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:token-exchange\"]";
+    let sso_scopes = "[\"openid\",\"offline_access\",\"device_sso\"]";
+    seed_client(
+        connection,
+        &tenant,
+        "bench-web",
+        web_scopes,
+        web_grants,
+        "RS256",
+    )
+    .await;
+    seed_client(
+        connection,
+        &tenant,
+        "bench-web-ps",
+        web_scopes,
+        web_grants,
+        "PS256",
+    )
+    .await;
+    seed_client(
+        connection,
+        &tenant,
+        "bench-sso",
+        sso_scopes,
+        sso_grants,
+        "RS256",
+    )
+    .await;
+    seed_client(
+        connection,
+        &tenant,
+        "bench-sso-ps",
+        sso_scopes,
+        sso_grants,
+        "PS256",
+    )
+    .await;
+
+    let store = authorization_store(valkey_url, &tenant, fixture.state_epoch).await;
+
+    // A real bootstrap redemption both yields the reusable subject token for
+    // userinfo/token-exchange and proves the seeded keyset's algorithm is the
+    // one signing — a lost provisioning race fails here, never silently.
+    let codes = seed_codes(
+        &store,
+        "bench-web",
+        user_id,
+        &["openid", "api:read"],
+        1,
+        None,
+    )
+    .await;
+    let host_owned = host.to_owned();
+    let access_token = tokio::task::block_in_place(move || {
+        let worker = Worker::new(port, &host_owned, "bench-web", None);
+        redeem_code(&worker, &codes[0])["access_token"]
+            .as_str()
+            .expect("access_token")
+            .to_owned()
+    });
+    assert_eq!(
+        decode_alg(&access_token).as_deref(),
+        Some(at_algorithm_name),
+        "tenant {host} issued its bootstrap access token under the wrong algorithm"
+    );
+    assert_eq!(
+        decode_iss(&access_token),
+        issuer,
+        "tenant {host} issued its bootstrap access token under the wrong issuer"
+    );
+
+    AlgorithmTenant {
+        at_algorithm_name,
+        host: host.to_owned(),
+        issuer,
+        user_id,
+        store,
+        subject_at: access_token,
     }
 }
 
@@ -496,22 +634,6 @@ async fn sql(connection: &mut AsyncPgConnection, statement: &str) {
         .execute(connection)
         .await
         .unwrap_or_else(|error| panic!("statement failed: {error}\n{statement}"));
-}
-
-fn client_secret_hash(secret: &str) -> String {
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use hmac::{Hmac, Mac};
-
-    let salt = Uuid::now_v7().simple().to_string();
-    let mut mac = <Hmac<Sha256> as hmac::KeyInit>::new_from_slice(CLIENT_SECRET_PEPPER.as_bytes())
-        .expect("HMAC accepts any key");
-    mac.update(salt.as_bytes());
-    mac.update(b":");
-    mac.update(secret.as_bytes());
-    format!(
-        "client-secret-v1:{salt}:{}",
-        URL_SAFE_NO_PAD.encode(mac.finalize().into_bytes())
-    )
 }
 
 async fn seed_client(
@@ -543,7 +665,11 @@ async fn seed_client(
             tenant.tenant_id.as_uuid(),
             tenant.realm_id.as_uuid(),
             tenant.organization_id.as_uuid(),
-            client_secret_hash(CLIENT_SECRET),
+            client_secret_digest(
+                CLIENT_SECRET,
+                CLIENT_SECRET_PEPPER,
+                &Uuid::now_v7().simple().to_string(),
+            ),
         ),
     )
     .await;
@@ -568,92 +694,82 @@ async fn seed_user(connection: &mut AsyncPgConnection, tenant: &TenantContext, u
 }
 
 // ---------------------------------------------------------------------------
-// Valkey authorization-code seeding — same namespaced state shape the
-// authorize endpoint persists, so redemption takes the real atomic path.
+// Valkey authorization-code seeding — written through the production
+// AuthorizationStore with the same AuthorizationCodeState shape the authorize
+// endpoint persists, so redemption takes the real atomic path.
 // ---------------------------------------------------------------------------
 
-struct ValkeySeeder {
-    client: fred::prelude::Client,
-    namespace: String,
+async fn authorization_store(
+    valkey_url: &str,
+    tenant: &TenantContext,
+    state_epoch: Uuid,
+) -> AuthorizationStore {
+    let connection = ValkeyConnection::connect(
+        valkey_url,
+        Duration::from_secs(2),
+        DEPLOYMENT_ID,
+        state_epoch,
+        tenant.tenant_id,
+    )
+    .await
+    .expect("tenant-scoped valkey connection should establish");
+    AuthorizationStore::new(&connection)
 }
 
-impl ValkeySeeder {
-    async fn connect(url: &str, tenant: &TenantContext, state_epoch: Uuid) -> Self {
-        let config = fred::prelude::Config::from_url(url).expect("valkey URL should parse");
-        let client = fred::prelude::Builder::from_config(config)
-            .build()
-            .expect("valkey client should build");
-        fred::interfaces::ClientLike::init(&client)
-            .await
-            .expect("valkey client should connect");
-        let namespace = format!(
-            "nazo:state:v1:{DEPLOYMENT_ID}:{state_epoch}:tenant:{}:",
-            tenant.tenant_id.as_uuid()
-        );
-        Self { client, namespace }
+/// Seed `count` pending authorization codes; returns the raw codes in order.
+async fn seed_codes(
+    store: &AuthorizationStore,
+    client_id: &str,
+    user_id: Uuid,
+    scopes: &[&str],
+    count: usize,
+    oidc_sid: Option<&str>,
+) -> Vec<String> {
+    let now = Utc::now();
+    let mut entries = Vec::with_capacity(count);
+    let mut codes = Vec::with_capacity(count);
+    for _ in 0..count {
+        let code = format!("{}.{}", Uuid::now_v7().simple(), Uuid::now_v7().simple());
+        let state = AuthorizationCodeState::Pending {
+            payload: CodePayload {
+                code_id: Uuid::now_v7().to_string(),
+                user_id,
+                client_id: client_id.to_owned(),
+                redirect_uri: "https://app.example/cb".to_owned(),
+                redirect_uri_was_supplied: false,
+                scopes: scopes.iter().map(|scope| scope.to_string()).collect(),
+                resource_indicators: Vec::new(),
+                authorization_details: empty_authorization_details(),
+                nonce: None,
+                auth_time: now.timestamp(),
+                amr: vec!["pwd".to_owned()],
+                oidc_sid: oidc_sid.map(str::to_owned),
+                acr: None,
+                userinfo_claims: Vec::new(),
+                userinfo_claim_requests: Vec::new(),
+                id_token_claims: Vec::new(),
+                id_token_claim_requests: Vec::new(),
+                code_challenge: Some(pkce_s256(PKCE_VERIFIER)),
+                code_challenge_method: Some("S256".to_owned()),
+                dpop_jkt: None,
+                mtls_x5t_s256: None,
+                issued_at: now,
+                expires_at: now + chrono::Duration::seconds(CODE_TTL_SECONDS),
+            },
+        };
+        entries.push((blake3_hex(&code), state));
+        codes.push(code);
     }
-
-    /// Seed `count` pending authorization codes; returns the raw codes in
-    /// order.
-    async fn seed_codes(
-        &self,
-        client_id: &str,
-        user_id: Uuid,
-        scopes: &[&str],
-        count: usize,
-        oidc_sid: Option<&str>,
-    ) -> Vec<String> {
-        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-        use fred::interfaces::KeysInterface;
-        use fred::prelude::Expiration;
-
-        let code_challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(PKCE_VERIFIER.as_bytes()));
-        let scopes_json = serde_json::to_string(
-            &scopes
-                .iter()
-                .map(|scope| scope.to_string())
-                .collect::<Vec<_>>(),
-        )
-        .expect("scopes should serialize");
-        let now = Utc::now();
-        let mut codes = Vec::with_capacity(count);
-        let pipe = self.client.pipeline();
-        for _ in 0..count {
-            let code = format!("{}.{}", Uuid::now_v7().simple(), Uuid::now_v7().simple());
-            let code_id = Uuid::now_v7().to_string();
-            let code_hash = blake3::hash(code.as_bytes()).to_hex().to_string();
-            let sid_field = match oidc_sid {
-                Some(sid) => format!(",\"oidc_sid\":\"{sid}\""),
-                None => String::new(),
-            };
-            let state = format!(
-                "{{\"status\":\"pending\",\"payload\":{{\
-                    \"code_id\":\"{code_id}\",\"user_id\":\"{user_id}\",\"client_id\":\"{client_id}\",\
-                    \"redirect_uri\":\"https://app.example/cb\",\"redirect_uri_was_supplied\":false,\
-                    \"scopes\":{scopes_json},\"authorization_details\":[],\
-                    \"nonce\":null,\"auth_time\":{},\"amr\":[\"pwd\"]{sid_field},\"acr\":null,\
-                    \"code_challenge\":\"{code_challenge}\",\"code_challenge_method\":\"S256\",\
-                    \"issued_at\":\"{}\",\"expires_at\":\"{}\"\
-                }}}}",
-                now.timestamp(),
-                now.to_rfc3339(),
-                (now + chrono::Duration::seconds(CODE_TTL_SECONDS)).to_rfc3339(),
-            );
-            let _: () = pipe
-                .set(
-                    format!("{}oauth:auth_code:{code_hash}", self.namespace),
-                    state,
-                    Some(Expiration::EX(CODE_TTL_SECONDS)),
-                    None,
-                    false,
-                )
-                .await
-                .expect("code seed should queue");
-            codes.push(code);
+    for chunk in entries.chunks(256) {
+        for result in futures_util::future::join_all(chunk.iter().map(|(hash, state)| {
+            store.store_authorization_code_hash(hash, state, CODE_TTL_SECONDS as u64)
+        }))
+        .await
+        {
+            result.expect("authorization code seed should store");
         }
-        let _: Vec<fred::prelude::Value> = pipe.all().await.expect("code seed pipeline should run");
-        codes
     }
+    codes
 }
 
 // ---------------------------------------------------------------------------
@@ -841,7 +957,10 @@ async fn statement_snapshot(connection: &mut AsyncPgConnection) -> StatementSnap
     )
     .load::<Row>(connection)
     .await
-    .unwrap_or_default()
+    .expect(
+        "pg_stat_statements snapshot must load — a failed or missing extension produces \
+         empty statistics that would masquerade as zero SQL work",
+    )
     .into_iter()
     .map(|row| (row.queryid, (row.query, row.calls)))
     .collect()
@@ -907,7 +1026,19 @@ fn decode_iss(jwt: &str) -> String {
         })
         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
         .and_then(|claims| claims["iss"].as_str().map(str::to_owned))
-        .unwrap_or_else(|| ISSUER.to_owned())
+        .expect("issued token payload should decode and carry iss")
+}
+
+fn decode_alg(jwt: &str) -> Option<String> {
+    jwt.split('.')
+        .next()
+        .and_then(|segment| {
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(segment)
+                .ok()
+        })
+        .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok())
+        .and_then(|header| header["alg"].as_str().map(str::to_owned))
 }
 
 fn split_inputs(codes: Vec<String>, workers: usize) -> Vec<Vec<String>> {
@@ -954,7 +1085,8 @@ enum PathKind {
 
 struct BenchPath {
     name: &'static str,
-    algs: &'static str,
+    tenant: usize,
+    algs: String,
     client_id: &'static str,
     needs_mtls: bool,
     kind: PathKind,
@@ -975,9 +1107,8 @@ fn token_hotpath_benchmark() {
 }
 
 async fn run_benchmark(bench: BenchConfig) {
-    let fixture = start_issuance_fixture(&bench.database_url, &bench.valkey_url, "perf").await;
+    let fixture = start_issuance_fixture(&bench.database_url, &bench.valkey_url).await;
     let port = fixture.server.port;
-    let host = fixture.host.clone();
     let mut connection = AsyncPgConnection::establish(&fixture.isolated_url)
         .await
         .expect("perf database should connect");
@@ -988,52 +1119,50 @@ async fn run_benchmark(bench: BenchConfig) {
     .await;
     sql(&mut connection, "SELECT pg_stat_statements_reset()").await;
 
-    let user_id = Uuid::now_v7();
-    seed_user(&mut connection, &fixture.tenant, user_id).await;
+    // The benchmark controls SIGNING_KEY_ENCRYPTION_KEY[_ID]; reproduce the
+    // deployment's wrapping ring so the test can pre-seed each tenant's
+    // keyset through the same payload construction and sealing the server
+    // startup path uses.
+    let wrapping_keys = SigningKeyWrappingKeyRing::new(
+        "perf-signing-root",
+        <[u8; 32]>::try_from(
+            base64::engine::general_purpose::URL_SAFE_NO_PAD
+                .decode(SIGNING_KEY_ENCRYPTION_KEY)
+                .expect("SIGNING_KEY_ENCRYPTION_KEY should decode"),
+        )
+        .expect("SIGNING_KEY_ENCRYPTION_KEY must decode to exactly 32 bytes"),
+        None,
+    )
+    .expect("benchmark wrapping key ring is valid");
 
-    let web_grants = "[\"authorization_code\",\"refresh_token\",\"client_credentials\",\"urn:ietf:params:oauth:grant-type:token-exchange\"]";
-    let web_scopes = "[\"openid\",\"offline_access\",\"api:read\"]";
-    let sso_grants = "[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:token-exchange\"]";
-    let sso_scopes = "[\"openid\",\"offline_access\",\"device_sso\"]";
-    seed_client(
-        &mut connection,
-        &fixture.tenant,
-        "bench-web",
-        web_scopes,
-        web_grants,
-        "RS256",
-    )
-    .await;
-    seed_client(
-        &mut connection,
-        &fixture.tenant,
-        "bench-web-ps",
-        web_scopes,
-        web_grants,
-        "PS256",
-    )
-    .await;
-    seed_client(
-        &mut connection,
-        &fixture.tenant,
-        "bench-sso",
-        sso_scopes,
-        sso_grants,
-        "RS256",
-    )
-    .await;
-    seed_client(
-        &mut connection,
-        &fixture.tenant,
-        "bench-sso-ps",
-        sso_scopes,
-        sso_grants,
-        "PS256",
-    )
-    .await;
-
-    let seeder =
-        ValkeySeeder::connect(&bench.valkey_url, &fixture.tenant, fixture.state_epoch).await;
+    // One tenant per access-token signing algorithm — the access token always
+    // carries the keyset's active algorithm, so algorithm coverage is a
+    // per-tenant property. Each tenant's keyset row is written before its
+    // runtime can build, then proven from a real issued token.
+    let mut tenants = Vec::new();
+    for (name, algorithm) in [
+        ("RS256", nazo_crypto::jwt::Algorithm::RS256),
+        ("PS256", nazo_crypto::jwt::Algorithm::PS256),
+        ("ES256", nazo_crypto::jwt::Algorithm::ES256),
+        ("EdDSA", nazo_crypto::jwt::Algorithm::EdDSA),
+    ] {
+        let host = format!("perf-{}.example", name.to_ascii_lowercase());
+        tenants.push(
+            provision_algorithm_tenant(
+                &fixture,
+                &mut connection,
+                &bench.valkey_url,
+                &TenantProvisionRequest {
+                    slug: &format!("perf-{name}"),
+                    host: &host,
+                    at_algorithm_name: name,
+                    at_algorithm: algorithm,
+                },
+                &wrapping_keys,
+            )
+            .await,
+        );
+    }
 
     let mut out = std::fs::OpenOptions::new()
         .create(true)
@@ -1047,87 +1176,96 @@ async fn run_benchmark(bench: BenchConfig) {
         out.flush().expect("record should flush");
     };
 
-    // --- Reusable inputs bootstrapped through real code redemptions --------
-    let web_codes = seeder
-        .seed_codes("bench-web", user_id, &["openid", "api:read"], 1, None)
-        .await;
-    let user_at_rs = tokio::task::block_in_place(|| {
-        let worker = Worker::new(port, &host, "bench-web", None);
-        redeem_code(&worker, &web_codes[0])["access_token"]
-            .as_str()
-            .expect("access_token")
-            .to_owned()
-    });
-    let issuer_in_tokens = decode_iss(&user_at_rs);
-
-    let paths = [
-        BenchPath {
-            name: "client_credentials",
-            algs: "at=RS256",
-            client_id: "bench-web",
-            needs_mtls: false,
-            kind: PathKind::ClientCredentials,
-        },
-        BenchPath {
-            name: "authorization_code",
-            algs: "at=RS256,id_token=RS256",
-            client_id: "bench-web",
-            needs_mtls: false,
-            kind: PathKind::AuthorizationCode,
-        },
-        BenchPath {
-            name: "authorization_code",
-            algs: "at=RS256,id_token=PS256",
-            client_id: "bench-web-ps",
-            needs_mtls: false,
-            kind: PathKind::AuthorizationCode,
-        },
-        BenchPath {
-            name: "refresh_token",
-            algs: "at=RS256,id_token=RS256",
-            client_id: "bench-web",
-            needs_mtls: false,
-            kind: PathKind::Refresh,
-        },
-        BenchPath {
-            name: "refresh_token",
-            algs: "at=RS256,id_token=PS256",
-            client_id: "bench-web-ps",
-            needs_mtls: false,
-            kind: PathKind::Refresh,
-        },
-        BenchPath {
-            name: "userinfo_pairwise",
-            algs: "at=RS256",
-            client_id: "bench-web",
-            needs_mtls: false,
-            kind: PathKind::Userinfo,
-        },
-        BenchPath {
-            name: "token_exchange",
-            algs: "at=RS256",
-            client_id: "bench-web",
-            needs_mtls: false,
-            kind: PathKind::TokenExchange,
-        },
-        BenchPath {
-            name: "native_sso_fresh",
-            algs: "at=RS256,id_token=RS256",
-            client_id: "bench-sso",
-            needs_mtls: true,
-            kind: PathKind::NativeSso,
-        },
-        BenchPath {
-            name: "native_sso_fresh",
-            algs: "at=RS256,id_token=PS256",
-            client_id: "bench-sso-ps",
-            needs_mtls: true,
-            kind: PathKind::NativeSso,
-        },
-    ];
+    // Full matrix: every grant path under every access-token algorithm, with
+    // the ID-token algorithm dimension where the path issues one.
+    let mut paths = Vec::new();
+    for (tenant_index, tenant) in tenants.iter().enumerate() {
+        let at = tenant.at_algorithm_name;
+        let mut push = |name: &'static str,
+                        id_alg: Option<&'static str>,
+                        client_id: &'static str,
+                        needs_mtls: bool,
+                        kind: PathKind| {
+            paths.push(BenchPath {
+                name,
+                tenant: tenant_index,
+                algs: match id_alg {
+                    Some(id_alg) => format!("at={at},id_token={id_alg}"),
+                    None => format!("at={at}"),
+                },
+                client_id,
+                needs_mtls,
+                kind,
+            });
+        };
+        push(
+            "client_credentials",
+            None,
+            "bench-web",
+            false,
+            PathKind::ClientCredentials,
+        );
+        push(
+            "authorization_code",
+            Some("RS256"),
+            "bench-web",
+            false,
+            PathKind::AuthorizationCode,
+        );
+        push(
+            "authorization_code",
+            Some("PS256"),
+            "bench-web-ps",
+            false,
+            PathKind::AuthorizationCode,
+        );
+        push(
+            "refresh_token",
+            Some("RS256"),
+            "bench-web",
+            false,
+            PathKind::Refresh,
+        );
+        push(
+            "refresh_token",
+            Some("PS256"),
+            "bench-web-ps",
+            false,
+            PathKind::Refresh,
+        );
+        push(
+            "userinfo_pairwise",
+            None,
+            "bench-web",
+            false,
+            PathKind::Userinfo,
+        );
+        push(
+            "token_exchange",
+            None,
+            "bench-web",
+            false,
+            PathKind::TokenExchange,
+        );
+        push(
+            "native_sso_fresh",
+            Some("RS256"),
+            "bench-sso",
+            true,
+            PathKind::NativeSso,
+        );
+        push(
+            "native_sso_fresh",
+            Some("PS256"),
+            "bench-sso-ps",
+            true,
+            PathKind::NativeSso,
+        );
+    }
 
     for path in &paths {
-        let host_for_workers = host.clone();
+        let tenant = &tenants[path.tenant];
+        let host_for_workers = tenant.host.clone();
         let mtls_header = path.needs_mtls.then(mtls_client_cert_header);
         let client_id = path.client_id;
         let worker_mtls = mtls_header.clone();
@@ -1142,13 +1280,11 @@ async fn run_benchmark(bench: BenchConfig) {
             for run in 0..bench.runs {
                 // Fresh inputs for every run — runs are independent
                 // executions, not continuations of earlier state.
-                let (warmup_inputs, subject_at) = prepare_run_inputs(
+                let warmup_inputs = prepare_run_inputs(
                     path,
+                    tenant,
                     RunInputRequest {
-                        seeder: &seeder,
                         port,
-                        host: &host,
-                        user_id,
                         workers: concurrency,
                         ops_per_worker: warmup_per_worker,
                         mtls_header: mtls_header.clone(),
@@ -1162,12 +1298,13 @@ async fn run_benchmark(bench: BenchConfig) {
                     warmup_per_worker,
                     warmup_inputs,
                     &make_worker,
-                    &subject_at,
-                    &issuer_in_tokens,
+                    &tenant.subject_at,
+                    &tenant.issuer,
                 );
-                assert!(
-                    warmup.ops > 0,
-                    "warmup produced no successful ops for {} c={concurrency} run={} — fixture broken: {}",
+                assert_eq!(
+                    warmup.errors,
+                    0,
+                    "warmup errors for {} c={concurrency} run={} — fixture broken: {}",
                     path.name,
                     run + 1,
                     warmup.first_error
@@ -1175,15 +1312,15 @@ async fn run_benchmark(bench: BenchConfig) {
 
                 let measured_inputs: Vec<Vec<String>> = match path.kind {
                     PathKind::AuthorizationCode => {
-                        let codes = seeder
-                            .seed_codes(
-                                path.client_id,
-                                user_id,
-                                &["openid", "offline_access", "api:read"],
-                                measured_per_worker * concurrency,
-                                None,
-                            )
-                            .await;
+                        let codes = seed_codes(
+                            &tenant.store,
+                            path.client_id,
+                            tenant.user_id,
+                            &["openid", "offline_access", "api:read"],
+                            measured_per_worker * concurrency,
+                            None,
+                        )
+                        .await;
                         split_inputs(codes, concurrency)
                     }
                     // Refresh chains / SSO pairs continue from warmup state.
@@ -1197,10 +1334,17 @@ async fn run_benchmark(bench: BenchConfig) {
                     measured_per_worker,
                     measured_inputs,
                     &make_worker,
-                    &subject_at,
-                    &issuer_in_tokens,
+                    &tenant.subject_at,
+                    &tenant.issuer,
                 );
                 let after = statement_snapshot(&mut connection).await;
+                assert!(
+                    !after.is_empty(),
+                    "pg_stat_statements produced an empty snapshot for {} c={concurrency} run={} \
+                     — SQL-call evidence would be fabricated as zero",
+                    path.name,
+                    run + 1,
+                );
                 let (sql_total, sql_attributed) = statement_delta(&before, &after);
                 let record = GroupRecord {
                     path: path.name.to_owned(),
@@ -1229,6 +1373,26 @@ async fn run_benchmark(bench: BenchConfig) {
                     },
                 };
                 emit(&record);
+                // The record is evidence, not a pass: any measured error or
+                // shortfall in successful operations fails the benchmark.
+                assert_eq!(
+                    result.errors,
+                    0,
+                    "{} c={concurrency} run={} recorded {} measured errors: {}",
+                    path.name,
+                    run + 1,
+                    result.errors,
+                    result.first_error
+                );
+                assert_eq!(
+                    result.ops,
+                    measured_per_worker * concurrency,
+                    "{} c={concurrency} run={} measured {} successful ops, expected {}",
+                    path.name,
+                    run + 1,
+                    result.ops,
+                    measured_per_worker * concurrency
+                );
             }
         }
     }
@@ -1239,57 +1403,53 @@ async fn run_benchmark(bench: BenchConfig) {
     );
 }
 
-struct RunInputRequest<'a> {
-    seeder: &'a ValkeySeeder,
+struct RunInputRequest {
     port: u16,
-    host: &'a str,
-    user_id: Uuid,
     workers: usize,
     ops_per_worker: usize,
     mtls_header: Option<String>,
 }
 
-/// Fresh per-run inputs: returns each worker's input slice plus a subject
-/// access token for paths that present one.
+/// Fresh per-run warmup inputs for `path` on `tenant` — one-time grants are
+/// seeded independently per op; refresh/native-SSO chains bootstrap through
+/// real code redemptions. Reusable subject tokens live on the tenant.
 async fn prepare_run_inputs(
     path: &BenchPath,
-    request: RunInputRequest<'_>,
-) -> (Vec<Vec<String>>, String) {
+    tenant: &AlgorithmTenant,
+    request: RunInputRequest,
+) -> Vec<Vec<String>> {
     let RunInputRequest {
-        seeder,
         port,
-        host,
-        user_id,
         workers: concurrency,
         ops_per_worker: warmup_per_worker,
         mtls_header,
     } = request;
     match path.kind {
         PathKind::AuthorizationCode => {
-            let codes = seeder
-                .seed_codes(
-                    path.client_id,
-                    user_id,
-                    &["openid", "offline_access", "api:read"],
-                    warmup_per_worker * concurrency,
-                    None,
-                )
-                .await;
-            (split_inputs(codes, concurrency), String::new())
+            let codes = seed_codes(
+                &tenant.store,
+                path.client_id,
+                tenant.user_id,
+                &["openid", "offline_access", "api:read"],
+                warmup_per_worker * concurrency,
+                None,
+            )
+            .await;
+            split_inputs(codes, concurrency)
         }
         PathKind::Refresh => {
-            let codes = seeder
-                .seed_codes(
-                    path.client_id,
-                    user_id,
-                    &["openid", "offline_access", "api:read"],
-                    concurrency,
-                    None,
-                )
-                .await;
+            let codes = seed_codes(
+                &tenant.store,
+                path.client_id,
+                tenant.user_id,
+                &["openid", "offline_access", "api:read"],
+                concurrency,
+                None,
+            )
+            .await;
             let client_id = path.client_id.to_owned();
-            let host = host.to_owned();
-            let inputs = tokio::task::block_in_place(move || {
+            let host = tenant.host.clone();
+            tokio::task::block_in_place(move || {
                 let worker = Worker::new(port, &host, &client_id, None);
                 codes
                     .iter()
@@ -1302,22 +1462,21 @@ async fn prepare_run_inputs(
                         ]
                     })
                     .collect::<Vec<_>>()
-            });
-            (inputs, String::new())
+            })
         }
         PathKind::NativeSso => {
-            let codes = seeder
-                .seed_codes(
-                    path.client_id,
-                    user_id,
-                    &["openid", "offline_access", DEVICE_SSO_SCOPE],
-                    concurrency,
-                    Some("perf-sso-sid"),
-                )
-                .await;
+            let codes = seed_codes(
+                &tenant.store,
+                path.client_id,
+                tenant.user_id,
+                &["openid", "offline_access", DEVICE_SSO_SCOPE],
+                concurrency,
+                Some("perf-sso-sid"),
+            )
+            .await;
             let client_id = path.client_id.to_owned();
-            let host = host.to_owned();
-            let inputs = tokio::task::block_in_place(move || {
+            let host = tenant.host.clone();
+            tokio::task::block_in_place(move || {
                 // The measured workers present this same certificate — the
                 // sender-constraint binding recorded at bootstrap must match.
                 let worker = Worker::new(port, &host, &client_id, mtls_header);
@@ -1334,25 +1493,11 @@ async fn prepare_run_inputs(
                         ]
                     })
                     .collect::<Vec<_>>()
-            });
-            (inputs, String::new())
+            })
         }
-        PathKind::Userinfo | PathKind::TokenExchange => {
-            let codes = seeder
-                .seed_codes(path.client_id, user_id, &["openid", "api:read"], 1, None)
-                .await;
-            let client_id = path.client_id.to_owned();
-            let host = host.to_owned();
-            let access_token = tokio::task::block_in_place(move || {
-                let worker = Worker::new(port, &host, &client_id, None);
-                redeem_code(&worker, &codes[0])["access_token"]
-                    .as_str()
-                    .expect("access_token")
-                    .to_owned()
-            });
-            (vec![Vec::new(); concurrency], access_token)
+        PathKind::Userinfo | PathKind::TokenExchange | PathKind::ClientCredentials => {
+            vec![Vec::new(); concurrency]
         }
-        PathKind::ClientCredentials => (vec![Vec::new(); concurrency], String::new()),
     }
 }
 

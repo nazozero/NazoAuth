@@ -221,7 +221,11 @@ async fn expired_single_use_grant_rolls_back_everything() {
     };
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
-    let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    // A single-connection pool proves the rolled-back transaction's healthy
+    // connection returns: a discarded connection would leave `available` at
+    // zero, and the follow-up commit could not run on a poisoned one.
+    let pool = create_pool(&database_url, 1).unwrap();
+    let repository = TokenIssuanceRepository::new(pool.clone());
     let raw_token = format!("expired-grant-{}", Uuid::now_v7());
     let token = refresh_token_fixture(&fixture, tenant_id, Uuid::now_v7(), raw_token, None);
     let input = issuance(
@@ -240,6 +244,24 @@ async fn expired_single_use_grant_rolls_back_everything() {
             .await
             .unwrap(),
         CommitTokenIssuanceResult::GrantExpired
+    );
+    assert_eq!(
+        pool.status().available,
+        1,
+        "controlled GrantExpired rollback must return the connection to the pool"
+    );
+    assert_eq!(
+        repository
+            .commit_token_issuance(issuance(
+                &fixture,
+                tenant_id,
+                TokenIssuanceMode::Fresh,
+                None
+            ))
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::Committed,
+        "the pooled connection must still serve commits after the controlled rollback"
     );
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     for (table, clause) in [

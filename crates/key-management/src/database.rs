@@ -387,23 +387,37 @@ where
 }
 
 fn initial_payload() -> anyhow::Result<Value> {
+    initial_payload_with_active(nazo_crypto::jwt::Algorithm::RS256)
+}
+
+/// The `initial_payload` layout with a caller-selected active rotation-key
+/// algorithm; purpose-scoped protocol keys cover every remaining standard
+/// protocol algorithm, matching what `maintain_payload` converges to.
+pub(crate) fn initial_payload_with_active(
+    active_algorithm: nazo_crypto::jwt::Algorithm,
+) -> anyhow::Result<Value> {
     let now = timestamp(Utc::now());
-    let active = local_entry(
+    let active = local_entry(active_algorithm, now.clone(), None::<Vec<SigningPurpose>>)?;
+    let mut keys = vec![active];
+    for algorithm in [
         nazo_crypto::jwt::Algorithm::RS256,
-        now.clone(),
-        None::<Vec<SigningPurpose>>,
-    )?;
-    let protocol = local_entry(
         nazo_crypto::jwt::Algorithm::PS256,
-        now,
-        Some([
-            SigningPurpose::IdToken,
-            SigningPurpose::Jarm,
-            SigningPurpose::Introspection,
-        ]),
-    )?;
+    ] {
+        if algorithm == active_algorithm {
+            continue;
+        }
+        keys.push(local_entry(
+            algorithm,
+            now.clone(),
+            Some([
+                SigningPurpose::IdToken,
+                SigningPurpose::Jarm,
+                SigningPurpose::Introspection,
+            ]),
+        )?);
+    }
     Ok(
-        json!({"schema_version":KEYSET_SCHEMA_VERSION,"active_kid":active["kid"].clone(),"keys":[active,protocol],"request_object_private_pem":URL_SAFE_NO_PAD.encode(crate::serialization::generate_rsa_pkcs8_pem(3072)?)}),
+        json!({"schema_version":KEYSET_SCHEMA_VERSION,"active_kid":keys[0]["kid"].clone(),"keys":keys,"request_object_private_pem":URL_SAFE_NO_PAD.encode(crate::serialization::generate_rsa_pkcs8_pem(3072)?)}),
     )
 }
 fn local_entry(
@@ -567,7 +581,7 @@ fn has_live_protocol_key(
     Ok(false)
 }
 
-fn persist_payload(
+pub(crate) fn persist_payload(
     tenant_id: Uuid,
     revision: i64,
     payload: Value,

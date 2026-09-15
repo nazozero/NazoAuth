@@ -599,3 +599,25 @@ fn snapshot_publication_rejects_a_managed_key_whose_jwk_cannot_verify() {
     assert!(super::snapshot_from_loaded(&loaded).is_err());
     assert!(KeyGeneration::database(loaded).is_err());
 }
+
+#[test]
+fn prepared_verification_accepts_only_absent_or_verify_only_key_ops() {
+    let algorithm = nazo_crypto::jwt::Algorithm::EdDSA;
+    let private = nazo_crypto::signature::generate_private_key(algorithm).unwrap();
+    let mut jwk = nazo_crypto::signature::public_jwk(algorithm, &private).unwrap();
+    jwk["alg"] = serde_json::json!("EdDSA");
+    jwk["use"] = serde_json::json!("sig");
+
+    assert!(super::prepared_verification(&jwk, algorithm).is_some());
+    jwk["key_ops"] = serde_json::json!(["verify"]);
+    assert!(super::prepared_verification(&jwk, algorithm).is_some());
+    for key_ops in [
+        serde_json::json!([]),
+        serde_json::json!(["sign"]),
+        serde_json::json!(["verify", "sign"]),
+        serde_json::json!("verify"),
+    ] {
+        jwk["key_ops"] = key_ops;
+        assert!(super::prepared_verification(&jwk, algorithm).is_none());
+    }
+}
