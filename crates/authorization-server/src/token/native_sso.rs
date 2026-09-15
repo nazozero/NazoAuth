@@ -389,15 +389,11 @@ pub async fn token_native_sso_exchange(
         Ok(binding) => binding,
         Err(response) => return Err(response),
     };
-    let idempotency_key = facts.idempotency_key.clone();
-    let mode = idempotency_key.map_or(TokenIssuanceMode::Fresh, |grant_key| {
-        TokenIssuanceMode::Idempotent { grant_key }
-    });
     issue_token_response(
         issuance,
         token_service,
         client,
-        mode,
+        TokenIssuanceMode::Fresh,
         TokenIssue {
             user_id: Some(secret.user_id),
             subject,

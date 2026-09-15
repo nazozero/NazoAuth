@@ -11,7 +11,7 @@ use nazo_runtime_modules::{
     ModuleStateRepository,
 };
 
-use crate::DbPool;
+use crate::{DbPool, get_conn};
 
 pub type RuntimeModuleEventPage = ModuleEventPage;
 
@@ -38,8 +38,7 @@ impl RuntimeModuleRepository {
     }
 
     pub(super) async fn connection(&self) -> Result<crate::DbConnection, RepositoryError> {
-        self.pool
-            .get()
+        get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)
     }

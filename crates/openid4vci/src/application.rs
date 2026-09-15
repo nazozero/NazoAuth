@@ -47,15 +47,21 @@ pub enum CredentialRequestBody<T> {
     Jwt(String),
 }
 
+/// Internal application command for the pre-authorized token grant.
+///
+/// Callers must supply results that have already been verified by the token
+/// endpoint's authentication and sender-constraint flow: `client_id` is the
+/// authenticated client identity (`None` selects the anonymous
+/// `pre-authorized-wallet` semantics), and `dpop_jkt`/`mtls_x5t_s256` are the
+/// verified sender bindings. Raw proofs and attestation material never enter
+/// this command.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreAuthorizedTokenRequest {
     pub pre_authorized_code: String,
     pub tx_code: Option<String>,
     pub client_id: Option<String>,
-    pub dpop_proof: Option<String>,
-    pub client_attestation: Option<String>,
-    pub client_attestation_pop: Option<String>,
-    pub request_url: String,
+    pub dpop_jkt: Option<String>,
+    pub mtls_x5t_s256: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]

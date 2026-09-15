@@ -14,7 +14,7 @@ use crate::{
     SigningKeysetCreateResult,
     model::{
         ActiveSigningKey, ExternalSigningKey, KeyHandle, KeySettings, KeyState, LoadedKeyset,
-        ManagedKey, StoredVerificationKey,
+        LocalSigningMaterial, ManagedKey, StoredVerificationKey,
     },
     serialization::{
         KEYSET_SCHEMA_VERSION, der_to_pem, external_public_jwk, generate_key_material,
@@ -328,7 +328,7 @@ pub(crate) fn local_private_key_pem(loaded: &LoadedKeyset, kid: &str) -> anyhow:
         .find(|entry| entry.managed.kid == kid)
         .ok_or_else(|| anyhow!("signing key {kid} does not exist"))?;
     match &entry.managed.handle {
-        KeyHandle::Local(der) => Ok(der_to_pem(der, "PRIVATE KEY")),
+        KeyHandle::Local(material) => Ok(der_to_pem(&material.private_pkcs8_der, "PRIVATE KEY")),
         KeyHandle::External { .. } => {
             anyhow::bail!("signing key {kid} has no local private material")
         }
@@ -711,10 +711,15 @@ fn load_payload(
                         "local database key {kid} public metadata does not match private material"
                     );
                 }
+                let material = Arc::new(LocalSigningMaterial::new(algorithm, private).map_err(
+                    |error| {
+                        anyhow!("local database key {kid} signing material is unusable: {error}")
+                    },
+                )?);
                 (
                     public,
-                    KeyHandle::Local(private.clone()),
-                    (kid == active_kid).then_some(ActiveSigningKey::LocalPkcs8Der(private)),
+                    KeyHandle::Local(Arc::clone(&material)),
+                    (kid == active_kid).then_some(ActiveSigningKey::Local(material)),
                 )
             }
             "external-command" => {

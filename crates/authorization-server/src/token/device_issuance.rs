@@ -148,7 +148,8 @@ pub async fn token_device_code_with_service(
                 token_service,
                 client,
                 TokenIssuanceMode::SingleUse {
-                    grant_key: device_grant_key.clone(),
+                    grant_key: device_grant_key,
+                    grant_expires_at: payload.expires_at,
                 },
                 TokenIssue {
                     user_id: Some(approval.user_id),

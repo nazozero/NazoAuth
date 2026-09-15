@@ -1,5 +1,6 @@
 use super::*;
 use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 use crate::domain::client_policy::client_supports_grant;
 pub(super) struct PendingRefreshToken {

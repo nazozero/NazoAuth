@@ -1,5 +1,6 @@
 use super::{MfaAuditError, MfaRepository, map_mfa_error, mfa_event};
 use crate::{
+    get_conn,
     repositories::audit::insert_identity_security_event,
     schema::{user_mfa_backup_codes, user_totp_credentials, users},
 };
@@ -45,9 +46,7 @@ impl MfaRepository {
         user_id: UserId,
     ) -> Result<Option<TotpCredential>, RepositoryError> {
         self.require_totp_keys()?;
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         user_totp_credentials::table
@@ -84,9 +83,7 @@ impl MfaRepository {
         user_id: UserId,
     ) -> Result<Option<TotpEnrollment>, RepositoryError> {
         self.require_totp_keys()?;
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         user_totp_credentials::table
@@ -127,9 +124,7 @@ impl MfaRepository {
     ) -> Result<(), RepositoryError> {
         let (secret_ciphertext, secret_key_id) =
             self.protect_totp_secret(tenant_id, user_id, &secret)?;
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
@@ -190,9 +185,7 @@ impl MfaRepository {
             return Err(RepositoryError::Conflict);
         }
         self.require_totp_keys()?;
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let totp_keys = self.totp_keys.clone();
@@ -303,9 +296,7 @@ impl MfaRepository {
         tenant_id: TenantId,
         user_id: UserId,
     ) -> Result<(), RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         insert_identity_security_event(
@@ -328,9 +319,7 @@ impl MfaRepository {
         timestamp: i64,
     ) -> Result<TotpVerificationOutcome, RepositoryError> {
         self.require_totp_keys()?;
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let totp_keys = self.totp_keys.clone();
@@ -425,9 +414,7 @@ impl MfaRepository {
         step: i64,
     ) -> Result<bool, RepositoryError> {
         self.require_totp_keys()?;
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection

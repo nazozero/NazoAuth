@@ -184,14 +184,6 @@ const SECRET_FILE_INPUTS: &[(&str, &str)] = &[
         "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_FILE",
     ),
     (
-        "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
-        "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_FILE",
-    ),
-    (
-        "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY",
-        "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_FILE",
-    ),
-    (
         "SIGNING_KEY_ENCRYPTION_KEY",
         "SIGNING_KEY_ENCRYPTION_KEY_FILE",
     ),
@@ -288,12 +280,6 @@ const ENV_CONFIG_KEYS: &[&str] = &[
     "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY",
     "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_FILE",
     "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY_ID",
-    "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
-    "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_FILE",
-    "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID",
-    "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY",
-    "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_FILE",
-    "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID",
     "OPENID4VC_DATA_ENCRYPTION_KEY",
     "OPENID4VC_DATA_ENCRYPTION_KEY_FILE",
     "OPENID4VC_CLIENT_ATTESTATION_JWKS_JSON",
@@ -795,23 +781,6 @@ impl ConfigSource {
             )?;
         }
 
-        // Token-issuance response envelopes have their own key ring. Keep a
-        // local development key durable across restarts, but never derive it
-        // from CLIENT_SECRET_PEPPER (the two capabilities rotate separately).
-        self.generate_secret_if_absent(
-            "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
-            "token-issuance-response-encryption-key",
-            32,
-            &secrets_dir,
-        )?;
-        self.derive_key_id_if_absent(
-            "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
-            "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID",
-        );
-        self.derive_key_id_if_absent(
-            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY",
-            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID",
-        );
         self.derive_key_id_if_absent("MFA_TOTP_ENCRYPTION_KEY", "MFA_TOTP_ENCRYPTION_KEY_ID");
         self.derive_key_id_if_absent(
             "MFA_TOTP_PREVIOUS_ENCRYPTION_KEY",

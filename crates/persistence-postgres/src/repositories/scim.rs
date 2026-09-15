@@ -1,6 +1,7 @@
 use crate::{
     DbPool,
     convert::identity,
+    get_conn,
     rows::identity::PublicAccountRow,
     schema::{oauth_tokens, scim_security_events, user_client_grants, users},
 };
@@ -47,9 +48,7 @@ impl ScimRepository {
     }
 
     pub async fn list(&self, query: ScimListQuery) -> Result<UserPage, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let mut count_query = users::table
@@ -103,9 +102,7 @@ impl ScimRepository {
         tenant: TenantContext,
         user_id: UserId,
     ) -> Result<Option<PublicAccount>, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         users::table
@@ -122,9 +119,7 @@ impl ScimRepository {
     }
 
     pub async fn create(&self, new_user: NewScimUser) -> Result<PublicAccount, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let input = new_user.input;
@@ -188,9 +183,7 @@ impl ScimRepository {
         replacement: NormalizedScimUser,
         mutation: MutationContext,
     ) -> Result<PublicAccount, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let event_retention = self.event_retention;
@@ -265,9 +258,7 @@ impl ScimRepository {
         patch: ScimPatch,
         mutation: MutationContext,
     ) -> Result<PublicAccount, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let event_attributes = patch.event_attributes();
@@ -342,9 +333,7 @@ impl ScimRepository {
         user_id: UserId,
         mutation: MutationContext,
     ) -> Result<bool, RepositoryError> {
-        let mut connection = self
-            .pool
-            .get()
+        let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         let event_retention = self.event_retention;

@@ -22,28 +22,13 @@ pub(crate) fn token_request_facts<'a>(
     let headers = req.headers();
     TokenRequestFacts {
         dpop: crate::http::dpop::dpop_request_facts(req),
-        first_dpop_header: headers.get("DPoP").and_then(|v| v.to_str().ok()),
         client_attestation: ClientAttestationFacts {
-            any_header_present: headers.contains_key("OAuth-Client-Attestation")
-                || headers.contains_key("OAuth-Client-Attestation-PoP"),
             strict_pair: crate::http::client_attestation::client_attestation_headers(headers),
-            first_attestation: headers
-                .get("OAuth-Client-Attestation")
-                .and_then(|v| v.to_str().ok()),
-            first_pop: headers
-                .get("OAuth-Client-Attestation-PoP")
-                .and_then(|v| v.to_str().ok()),
         },
         certificate: crate::http::mtls::request_mtls_client_certificate(
             req,
             client_ip.trusted_proxy_cidrs(),
         ),
-        request_target: req
-            .uri()
-            .to_string()
-            .parse()
-            .expect("parsed HTTP request target is valid"),
-        idempotency_key: super::issue::request_idempotency_key(req),
     }
 }
 pub(crate) async fn token_with_service(
@@ -87,8 +72,16 @@ pub(crate) async fn token_with_service(
         Err(TokenFormError::InvalidResourceParameter) => {
             return oauth_token_error(
                 StatusCode::BAD_REQUEST,
-                "invalid_target",
+                "invalid_request",
                 "resource must be an absolute URI without a fragment.",
+                false,
+            );
+        }
+        Err(TokenFormError::InvalidAudienceParameter) => {
+            return oauth_token_error(
+                StatusCode::BAD_REQUEST,
+                "invalid_request",
+                "audience 参数不能为空.",
                 false,
             );
         }

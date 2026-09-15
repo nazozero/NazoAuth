@@ -36,7 +36,6 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 use crate::crypto::{blake3_hex, constant_time_eq, random_urlsafe_token};
-use crate::domain::openid4vc::client_attestation::Openid4vcClientAttestationValidator;
 use crate::domain::openid4vc::{Openid4vcCredentialCrypto, Openid4vcProofValidator};
 use crate::services::{ServerAuthorizationService, ServerTokenService};
 use nazo_identity::ports::SecretHashPort;
@@ -50,10 +49,7 @@ mod offers;
 mod response_tests;
 
 use dataset::Openid4vcDataset;
-pub use dataset::{
-    openid4vci_authorization_detail, openid4vci_configuration_id_from_identifier,
-    token_endpoint_dpop_target_uris,
-};
+pub use dataset::{openid4vci_authorization_detail, openid4vci_configuration_id_from_identifier};
 
 type VciService = CredentialIssuerService<
     Arc<dyn Openid4vciStore>,
@@ -173,7 +169,6 @@ pub struct ServerCredentialIssuerOperations {
     pub(super) configurations: Arc<BTreeMap<String, CredentialConfiguration>>,
     deferred_configurations: Arc<BTreeSet<String>>,
     dpop_nonce_policy: DpopNoncePolicy,
-    client_attestation: Option<Arc<Openid4vcClientAttestationValidator>>,
     pub(super) users: Arc<dyn Openid4vcSubjectStore>,
     pub(super) datasets: Arc<dyn Openid4vciDatasetStore>,
     pub(super) tenant_id: Uuid,
@@ -193,7 +188,6 @@ impl ServerCredentialIssuerOperations {
         tx_code_hasher: Arc<dyn SecretHashPort>,
         crypto: Openid4vcCredentialCrypto,
         proof_validator: Openid4vcProofValidator,
-        client_attestation: Option<Arc<Openid4vcClientAttestationValidator>>,
         issuer: String,
         configurations: BTreeMap<String, CredentialConfiguration>,
         deferred_configurations: BTreeSet<String>,
@@ -226,7 +220,6 @@ impl ServerCredentialIssuerOperations {
             configurations,
             deferred_configurations: Arc::new(deferred_configurations),
             dpop_nonce_policy,
-            client_attestation,
             users,
             datasets,
             tenant_id,
@@ -321,10 +314,34 @@ impl ServerCredentialIssuerOperations {
             .and_then(|value| Uuid::parse_str(value).ok())
             .or_else(|| Uuid::parse_str(&claims.sub).ok())
         {
-            Some(value) => value,
+            Some(value) => {
+                // Directly identified subjects (including standalone
+                // pre-authorized issuance without a Generic issuance row)
+                // keep the explicit active-subject read.
+                if self
+                    .token_service
+                    .active_subject_claims(tenant_id, value)
+                    .await
+                    .map_err(|_| {
+                        vci_error(
+                            503,
+                            "invalid_token",
+                            "Access token subject state is unavailable.",
+                        )
+                    })?
+                    .is_none()
+                {
+                    return Err(vci_error(
+                        401,
+                        "invalid_token",
+                        "Access token subject is inactive.",
+                    ));
+                }
+                value
+            }
             None => self
                 .token_service
-                .load_access_token_subject(tenant_id, &claims.jti)
+                .active_subject_id_by_access_token(tenant_id, &claims.jti)
                 .await
                 .map_err(|_| {
                     vci_error(
@@ -337,25 +354,6 @@ impl ServerCredentialIssuerOperations {
                     vci_error(401, "invalid_token", "Access token subject is invalid.")
                 })?,
         };
-        if self
-            .token_service
-            .active_subject_claims(tenant_id, subject_id)
-            .await
-            .map_err(|_| {
-                vci_error(
-                    503,
-                    "invalid_token",
-                    "Access token subject state is unavailable.",
-                )
-            })?
-            .is_none()
-        {
-            return Err(vci_error(
-                401,
-                "invalid_token",
-                "Access token subject is inactive.",
-            ));
-        }
         let (dpop_jkt, mtls_x5t_s256) = claims
             .cnf
             .as_ref()

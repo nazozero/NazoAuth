@@ -12,6 +12,7 @@ use super::{
     IssuanceResponseRow, NewIssuanceResponse, insert_issuance_response, notification_event,
     protect_payload, response_encoding_name, unprotect_payload,
 };
+use crate::get_conn;
 
 impl Openid4vciRepository {
     pub(super) fn notification_find_response<'a>(
@@ -23,9 +24,7 @@ impl Openid4vciRepository {
     ) -> CredentialStoreFuture<'a, Result<Option<StoredCredentialResponse>, CredentialStoreError>>
     {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let row = sql_query(
@@ -78,9 +77,7 @@ impl Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let notification_id = handle.notification_id.clone();
@@ -128,9 +125,7 @@ impl Openid4vciRepository {
             let body_ciphertext =
                 protect_payload(&self.data_key, response.issuance_id, &response.body)?;
             let encoding = response_encoding_name(&response.encoding);
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let issuance_id = response.issuance_id;
@@ -199,9 +194,7 @@ impl Openid4vciRepository {
             let encoding = response_encoding_name(&response.encoding);
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let issuance_id = response.issuance_id;
@@ -253,9 +246,7 @@ impl Openid4vciRepository {
         now: DateTime<Utc>,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let notification_id = handle.notification_id.clone();
@@ -309,9 +300,7 @@ impl Openid4vciRepository {
             let encoding = response_encoding_name(&response.encoding);
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let issuance_id = response.issuance_id;
@@ -374,9 +363,7 @@ impl Openid4vciRepository {
         notification: &'a IssuanceNotification,
     ) -> CredentialStoreFuture<'a, Result<bool, CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             let changed = sql_query(
@@ -401,9 +388,7 @@ impl Openid4vciRepository {
         handle: &'a NotificationHandle,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async move {
-            let mut connection = self
-                .pool
-                .get()
+            let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
             sql_query(

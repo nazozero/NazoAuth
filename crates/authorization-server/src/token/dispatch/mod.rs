@@ -24,8 +24,7 @@ use crate::token::{DEVICE_CODE_GRANT_TYPE, TOKEN_EXCHANGE_GRANT_TYPE};
 use http::StatusCode;
 use nazo_auth::{
     CLIENT_ASSERTION_TYPE_JWT_BEARER, ClientAuthenticationContext,
-    PresentedClientCredentials as ClientCredentials, token_client_authentication_context,
-    unverified_client_assertion_client_id,
+    PresentedClientCredentials as ClientCredentials, unverified_client_assertion_client_id,
 };
 use nazo_runtime_modules::SnapshotStore;
 use std::sync::Arc;
@@ -39,7 +38,9 @@ use client_auth::{
     validate_token_client_enabled,
 };
 use errors::client_credentials_holder_missing_client_error;
-use pre_authorized::pre_authorized_parameters;
+use pre_authorized::{
+    anonymous_pre_authorized_dpop, execute_pre_authorized, pre_authorized_sender_error,
+};
 
 pub struct TokenEndpointHandles {
     core: TokenCoreHandles,
@@ -100,11 +101,14 @@ impl TokenEndpointHandles {
         let device_service = self.core.device_service.as_ref();
         let runtime_modules = self.runtime_modules.as_ref();
         let form = prepared.parsed.form;
-        let mut pre_authorized = prepared.parsed.pre_authorized;
+        let pre_authorized = prepared.parsed.pre_authorized;
         let auth_facts = prepared.auth;
-        let client_auth_context = token_client_authentication_context(auth_facts.presentation())
-            .expect("prepared token authentication sources were validated");
-        let has_client_attestation_material = facts.client_attestation.any_header_present;
+        let client_auth_context = prepared.client_auth_context;
+        // Only the strict attestation result decides whether attestation
+        // material exists: a malformed or repeated pair must still steer the
+        // request into the authenticated path and fail there.
+        let has_client_attestation_material =
+            !matches!(facts.client_attestation.strict_pair, Ok(None));
         let has_mtls_material = facts.certificate.is_some();
 
         if form.grant_type == nazo_openid4vci::PRE_AUTHORIZED_CODE_GRANT {
@@ -112,12 +116,7 @@ impl TokenEndpointHandles {
                 .has_any_client_auth_material
                 || has_client_attestation_material
                 || has_mtls_material;
-            if preauth_has_authenticated_client_material {
-                // Authenticated OpenID4VCI pre-authorized-code clients must flow
-                // through the shared token endpoint client-authentication path below
-                // so private_key_jwt, mTLS, and client-attestation identities are
-                // verified before they become the issuance client_id.
-            } else {
+            if !preauth_has_authenticated_client_material {
                 let Some(endpoint) = self.openid4vc.credential_issuer.as_ref() else {
                     return Err(OAuthEndpointError::token(
                         StatusCode::BAD_REQUEST,
@@ -126,37 +125,26 @@ impl TokenEndpointHandles {
                         false,
                     ));
                 };
-                let (pre_authorized_code, tx_code) =
-                    match pre_authorized_parameters(&mut pre_authorized) {
-                        Ok(parameters) => parameters,
-                        Err(response) => return Err(response),
-                    };
-                let response = endpoint
-                    .pre_authorized_token(nazo_openid4vci::application::PreAuthorizedTokenRequest {
-                        pre_authorized_code,
-                        tx_code,
-                        client_id: form.client_id.clone(),
-                        dpop_proof: facts.first_dpop_header.map(ToOwned::to_owned),
-                        client_attestation: facts
-                            .client_attestation
-                            .first_attestation
-                            .map(ToOwned::to_owned),
-                        client_attestation_pop: facts
-                            .client_attestation
-                            .first_pop
-                            .map(ToOwned::to_owned),
-                        request_url: format!(
-                            "{}{}",
-                            issuance_config.issuer().trim_end_matches('/'),
-                            facts.request_target
-                        ),
-                    })
-                    .await;
-                return match response {
-                    Ok(response) => Ok(TokenEndpointSuccess::PreAuthorized(response)),
-                    Err(error) => Err(OAuthEndpointError::PreAuthorized(error)),
-                };
+                let dpop_jkt = anonymous_pre_authorized_dpop(
+                    authorization_service,
+                    self.core.security_audit.as_ref(),
+                    issuance_config,
+                    &facts.dpop,
+                )
+                .await?;
+                return execute_pre_authorized(
+                    endpoint.as_ref(),
+                    pre_authorized,
+                    None,
+                    dpop_jkt,
+                    None,
+                )
+                .await;
             }
+            // Authenticated OpenID4VCI pre-authorized-code clients must flow
+            // through the shared token endpoint client-authentication path below
+            // so private_key_jwt, mTLS, and client-attestation identities are
+            // verified before they become the issuance client_id.
         }
 
         if form.grant_type == "password" {
@@ -511,11 +499,14 @@ impl TokenEndpointHandles {
                         false,
                     ));
                 };
-                let (pre_authorized_code, tx_code) =
-                    match pre_authorized_parameters(&mut pre_authorized) {
-                        Ok(parameters) => parameters,
-                        Err(response) => return Err(response),
-                    };
+                let sender = match crate::token::validate_token_sender_constraints(
+                    &issuance, &facts, &client, None, None, None,
+                )
+                .await
+                {
+                    Ok(sender) => sender,
+                    Err(error) => return Err(pre_authorized_sender_error(error)),
+                };
                 if let Err(error) = consume_token_client_assertion_with_authorization_service(
                     authorization_service,
                     &client,
@@ -526,31 +517,14 @@ impl TokenEndpointHandles {
                 {
                     return Err(crate::token::token_client_assertion_error(error));
                 }
-                match endpoint
-                    .pre_authorized_token(nazo_openid4vci::application::PreAuthorizedTokenRequest {
-                        pre_authorized_code,
-                        tx_code,
-                        client_id: Some(client.client_id.clone()),
-                        dpop_proof: facts.first_dpop_header.map(ToOwned::to_owned),
-                        client_attestation: facts
-                            .client_attestation
-                            .first_attestation
-                            .map(ToOwned::to_owned),
-                        client_attestation_pop: facts
-                            .client_attestation
-                            .first_pop
-                            .map(ToOwned::to_owned),
-                        request_url: format!(
-                            "{}{}",
-                            issuance_config.issuer().trim_end_matches('/'),
-                            facts.request_target
-                        ),
-                    })
-                    .await
-                {
-                    Ok(response) => Ok(TokenEndpointSuccess::PreAuthorized(response)),
-                    Err(error) => Err(OAuthEndpointError::PreAuthorized(error)),
-                }
+                execute_pre_authorized(
+                    endpoint.as_ref(),
+                    pre_authorized,
+                    Some(client.client_id.clone()),
+                    sender.dpop_jkt,
+                    sender.mtls_x5t_s256,
+                )
+                .await
             }
             TOKEN_EXCHANGE_GRANT_TYPE => {
                 token_exchange(

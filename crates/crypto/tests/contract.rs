@@ -53,6 +53,15 @@ mod jose {
         0x20,
     ];
 
+    /// Prepares signing material from DER and performs one raw sign call,
+    /// matching the request-time prepared-key usage in production.
+    fn sign_raw(algorithm: Algorithm, private_der: &[u8], message: &[u8]) -> Vec<u8> {
+        signature::PreparedSigningKey::new(algorithm, private_der)
+            .unwrap()
+            .sign(message)
+            .unwrap()
+    }
+
     /// Base64url public-key components (x | n,e | x,y) for a private key.
     fn public_components(algorithm: Algorithm, private_der: &[u8]) -> Vec<String> {
         match algorithm {
@@ -182,7 +191,7 @@ mod jose {
             let key = verification_key(algorithm, &private_der);
             let message = b"eyJhbGci.test-claims";
 
-            let raw = signature::sign(algorithm, &private_der, message).unwrap();
+            let raw = sign_raw(algorithm, &private_der, message);
             if algorithm == Algorithm::ES256 {
                 assert_eq!(raw.len(), 64, "ES256 stays JOSE fixed-width r||s");
             }
@@ -216,7 +225,7 @@ mod jose {
 
             // A signature from a different key must not verify.
             let other_der = signature::generate_private_key(algorithm).unwrap();
-            let other_raw = signature::sign(algorithm, &other_der, message).unwrap();
+            let other_raw = sign_raw(algorithm, &other_der, message);
             assert!(signature::verify(algorithm, &key, message, &other_raw).is_err());
         }
     }
@@ -226,11 +235,11 @@ mod jose {
         let private_der = signature::generate_private_key(Algorithm::EdDSA).unwrap();
         let key = verification_key(Algorithm::EdDSA, &private_der);
         let message = b"proof.signing-input";
-        let raw = signature::sign(Algorithm::EdDSA, &private_der, message).unwrap();
+        let raw = sign_raw(Algorithm::EdDSA, &private_der, message);
 
         // Mismatched content: native verify returns Ok(false); the boundary
         // must surface InvalidSignature, not a generic failure.
-        let wrong = signature::sign(Algorithm::EdDSA, &private_der, b"other").unwrap();
+        let wrong = sign_raw(Algorithm::EdDSA, &private_der, b"other");
         assert!(matches!(
             signature::verify(Algorithm::EdDSA, &key, message, &wrong),
             Err(CryptoError::InvalidSignature)
@@ -258,7 +267,7 @@ mod jose {
 
         // Non-supported algorithms are rejected before touching the backend.
         assert!(matches!(
-            signature::sign(Algorithm::HS256, &private_der, message),
+            signature::PreparedSigningKey::new(Algorithm::HS256, &private_der),
             Err(CryptoError::UnsupportedAlgorithm)
         ));
         assert!(matches!(
@@ -371,7 +380,7 @@ mod jose {
         // The SEC1 constructor feeds SD-JWT leaf keys; it must produce a key
         // that verifies ES256 signatures.
         let es_der = signature::generate_private_key(Algorithm::ES256).unwrap();
-        let es_raw = signature::sign(Algorithm::ES256, &es_der, b"input").unwrap();
+        let es_raw = sign_raw(Algorithm::ES256, &es_der, b"input");
         use p256::pkcs8::DecodePrivateKey as _;
         let secret = p256::SecretKey::from_pkcs8_der(&es_der).unwrap();
         let point =

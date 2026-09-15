@@ -77,7 +77,6 @@ impl OperatorPersistence for PostgresOperatorPersistence {
                 .map_err(|_| anyhow::anyhow!("{MIGRATION_RUNTIME_ROLE_ENV} is required"))?;
             let applied = nazo_postgres::run_pending_migrations(&self.database_url).await?;
             nazo_postgres::configure_runtime_role(&self.database_url, runtime_role.trim()).await?;
-            nazo_postgres::cleanup_expired_security_state(&self.database_url).await?;
             Ok(applied)
         })
     }

@@ -75,6 +75,12 @@ fn jwt_bearer_claims_require_exact_party_audience_time_and_replay_values() {
     .expect("valid assertion");
     assert_eq!(assertion.replay_ttl_seconds, 120);
     assert_eq!(
+        assertion.expires_at,
+        chrono::DateTime::from_timestamp(policy.now + 120, 0)
+            .expect("assertion expiry should be representable"),
+        "the validated grant deadline is the assertion's verified exp"
+    );
+    assert_eq!(
         classify_jwt_bearer_replay(Ok(false)),
         Err(JwtBearerGrantError::ReplayDetected)
     );
@@ -139,6 +145,34 @@ fn token_exchange_type_scope_and_target_policy_is_explicit() {
             exchange_policy(&scopes, &audiences, tenant_id)
         ),
         Err(TokenExchangeError::UnsupportedTokenType)
+    );
+}
+
+#[test]
+fn token_exchange_multi_target_fails_closed_on_any_denied_target() {
+    let scopes = vec!["read".to_owned()];
+    let audiences = vec![
+        "https://api.example".to_owned(),
+        "https://payments.example".to_owned(),
+    ];
+    let tenant_id = Uuid::now_v7();
+    let request = TokenExchangeRequestInput {
+        subject_token: Some("subject-token".to_owned()),
+        subject_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
+        requested_token_type: Some(ACCESS_TOKEN_TYPE.to_owned()),
+        audiences: audiences.clone(),
+        ..TokenExchangeRequestInput::default()
+    };
+
+    let admitted = admit_token_exchange(&request, exchange_policy(&scopes, &audiences, tenant_id))
+        .expect("every requested target is allowed");
+    assert_eq!(admitted.audiences, audiences);
+
+    let mut denied = request;
+    denied.audiences.push("https://denied.example".to_owned());
+    assert_eq!(
+        admit_token_exchange(&denied, exchange_policy(&scopes, &audiences, tenant_id)),
+        Err(TokenExchangeError::InvalidTarget)
     );
 }
 

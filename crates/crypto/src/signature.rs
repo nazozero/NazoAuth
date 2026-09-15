@@ -8,13 +8,54 @@ use p256::pkcs8::EncodePrivateKey as _;
 use crate::CryptoError;
 use crate::jwt::{Algorithm, VerificationKey};
 
-pub fn sign(algorithm: Algorithm, private_der: &[u8], message: &[u8]) -> crate::Result<Vec<u8>> {
-    let key = encoding_key(algorithm, private_der)?;
-    let encoded = jsonwebtoken::crypto::sign(message, &key, algorithm)
-        .map_err(|_| CryptoError::OperationFailed)?;
-    URL_SAFE_NO_PAD
-        .decode(encoded)
-        .map_err(|_| CryptoError::OperationFailed)
+/// Local signing material prepared once per key generation.
+///
+/// The retained `EncodingKey` is `Send + Sync`; the provider's raw signer is
+/// not — the `Box<dyn JwtSigner>` is created inside the synchronous `sign`
+/// call and dropped before it returns, so it never crosses an `await` and is
+/// never shared or cached.
+pub struct PreparedSigningKey {
+    algorithm: Algorithm,
+    key: jsonwebtoken::EncodingKey,
+}
+
+impl PreparedSigningKey {
+    /// Prepares signing material from the existing private-key DER bytes.
+    ///
+    /// Construction asks the provider factory for a signer once to prove this
+    /// material can produce one; the proof signer stays local and is discarded
+    /// immediately. This is stronger than the `EncodingKey::from_*_der` byte
+    /// wrapping, which alone does not validate the key.
+    pub fn new(algorithm: Algorithm, private_der: &[u8]) -> crate::Result<Self> {
+        let key = encoding_key(algorithm, private_der)?;
+        (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.signer_factory)(&algorithm, &key)
+            .map_err(|_| CryptoError::InvalidKey)?;
+        Ok(Self { algorithm, key })
+    }
+
+    /// Signs `message` and returns the raw signature bytes.
+    ///
+    /// Callers that assemble a JWT apply Base64url once at the final assembly
+    /// point; raw-signature consumers keep the `Vec<u8>`.
+    pub fn sign(&self, message: &[u8]) -> crate::Result<Vec<u8>> {
+        let signer = (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.signer_factory)(
+            &self.algorithm,
+            &self.key,
+        )
+        .map_err(|_| CryptoError::InvalidKey)?;
+        signer
+            .try_sign(message)
+            .map_err(|_| CryptoError::OperationFailed)
+    }
+}
+
+impl std::fmt::Debug for PreparedSigningKey {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("PreparedSigningKey")
+            .field("algorithm", &self.algorithm)
+            .finish_non_exhaustive()
+    }
 }
 
 pub fn verify(

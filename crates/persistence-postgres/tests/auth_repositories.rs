@@ -269,10 +269,8 @@ fn refresh_issuance(token: NewRefreshToken) -> CommitTokenIssuance {
         client_id: token.client_id,
         user_id: token.user_id,
         mode: TokenIssuanceMode::Fresh,
-        request_digest: blake3::hash(issuance_id.as_bytes()).to_hex().to_string(),
         access_token_jti: issuance_id.to_string(),
         access_token_expires_at: (token.issued_at + chrono::Duration::minutes(5)).timestamp(),
-        response_body: None,
         audit_fields: TokenIssuedAuditFields {
             client_id: token.authentication_context.audience.clone(),
             subject_hash: blake3::hash(token.subject.as_bytes()).to_hex().to_string(),
@@ -343,8 +341,8 @@ async fn seed_deactivation(database_url: &str, fixture: &FixtureIds, count: usiz
     let user = fixture.user_id;
     let public_id = &fixture.client_public_id;
     connection.batch_execute(&format!(
-        "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, grant_key_blake3, request_digest, access_token_jti, access_token_expires_at, expires_at) \
-         SELECT gen_random_uuid(), '{tenant}', '{client}', '{user}', lpad(n::text,64,'0'), repeat('a',64), '{client}-' || n::text, NOW() + INTERVAL '1 hour', NOW() + INTERVAL '1 hour' FROM generate_series(1,{count}) n; \
+        "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, access_token_jti, access_token_expires_at, retain_until) \
+         SELECT gen_random_uuid(), '{tenant}', '{client}', '{user}', '{client}-' || n::text, NOW() + INTERVAL '1 hour', NOW() + INTERVAL '1 hour' FROM generate_series(1,{count}) n; \
          INSERT INTO openid4vci_access_grants (token_id, token_hash, tenant_id, subject_id, client_id, credential_configuration_ids, credential_identifiers, expires_at) \
          VALUES (gen_random_uuid(), repeat(md5('{client}'),2), '{tenant}', '{user}', '{public_id}', '[\"pid\"]', '[]', NOW() + INTERVAL '1 hour'); \
          INSERT INTO user_client_grants (tenant_id, user_id, client_id, first_authorized_at, last_authorized_at, last_scopes) \
@@ -483,43 +481,25 @@ async fn client_deactivation_is_atomic_across_real_batches_and_repeated_owners()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn idempotent_refresh_issuance_retains_expired_access_without_recovering_or_reissuing() {
+async fn single_use_grant_retry_is_rejected_without_reissuing_or_duplicating_audit() {
     let database_url =
-        database_url().expect("expiry regression requires a live PostgreSQL database");
-    // Startup validates keys across every tenant, so give this retirement
-    // scenario its own database rather than changing unrelated test records.
-    let database_name = format!("issuance_expiry_{}", Uuid::now_v7().simple());
-    let mut coordinator = AsyncPgConnection::establish(&database_url).await.unwrap();
-    sql_query(format!("CREATE DATABASE \"{database_name}\""))
-        .execute(&mut coordinator)
-        .await
-        .unwrap();
-    drop(coordinator);
-    let mut isolated_url = url::Url::parse(&database_url).unwrap();
-    isolated_url.set_path(&format!("/{database_name}"));
-    let database_url = isolated_url.to_string();
+        database_url().expect("single-use regression requires a live PostgreSQL database");
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let token = refresh_token_fixture(
         &fixture,
         tenant_id,
         Uuid::now_v7(),
-        format!("expiry-{}", Uuid::now_v7()),
+        format!("single-use-{}", Uuid::now_v7()),
         None,
     );
-    let refresh_expiry = token.expires_at;
     let family_id = token.family_id;
     let mut input = refresh_issuance(token);
-    let grant_key = format!("expiry-{}", input.issuance_id);
-    input.mode = TokenIssuanceMode::Idempotent {
-        grant_key: grant_key.clone(),
+    input.mode = TokenIssuanceMode::SingleUse {
+        grant_key: format!("grant-{}", input.issuance_id),
+        grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
     };
-    input.response_body =
-        Some(br#"{"access_token":"original","refresh_token":"original-refresh"}"#.to_vec());
-    let repository = TokenIssuanceRepository::new_with_response_key_ring(
-        create_pool(&database_url, 2).unwrap(),
-        nazo_persistence::TokenIssuanceResponseKeyRing::new("test", rand::random(), None).unwrap(),
-    );
+    let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     assert_eq!(
         repository
             .commit_token_issuance(input.clone())
@@ -527,65 +507,26 @@ async fn idempotent_refresh_issuance_retains_expired_access_without_recovering_o
             .unwrap(),
         CommitTokenIssuanceResult::Committed
     );
-    assert_eq!(
-        repository
-            .token_issuance_by_grant(tenant_id, fixture.client_id, &grant_key)
-            .await
-            .unwrap()
-            .unwrap()
-            .response_body,
-        input.response_body
-    );
-    let retired_key_repository = TokenIssuanceRepository::new_with_response_key_ring(
-        create_pool(&database_url, 2).unwrap(),
-        nazo_persistence::TokenIssuanceResponseKeyRing::new("replacement", rand::random(), None)
-            .unwrap(),
-    );
-    assert!(matches!(
-        retired_key_repository.validate_response_key_ring().await,
-        Err(nazo_identity::ports::RepositoryError::Consistency(message))
-            if message.contains("unavailable encryption key")
-    ));
-    assert!(matches!(
-        retired_key_repository
-            .token_issuance_by_grant(tenant_id, fixture.client_id, &grant_key)
-            .await,
-        Err(nazo_auth::TokenPortError::CorruptData)
-    ));
-    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
-    // Advance only the signed access-token expiry. The refresh-backed record
-    // and its original response remain present throughout the retry.
-    sql_query("UPDATE oauth_token_issuances SET access_token_expires_at = CURRENT_TIMESTAMP WHERE issuance_id = $1")
-        .bind::<SqlUuid, _>(input.issuance_id).execute(&mut connection).await.unwrap();
-    retired_key_repository
-        .validate_response_key_ring()
-        .await
-        .unwrap();
-    let expired = retired_key_repository
-        .token_issuance_by_grant(tenant_id, fixture.client_id, &grant_key)
-        .await
-        .unwrap()
-        .unwrap();
-    assert!(expired.response_body.is_none());
-    assert_eq!(
-        expired.access_token_jti.as_deref(),
-        Some(input.access_token_jti.as_str())
-    );
+    // A second commit of the same grant key must lose the fence race without
+    // minting another refresh token or writing another token_issued audit.
     let mut retry = input.clone();
     retry.issuance_id = Uuid::now_v7();
     retry.access_token_jti = retry.issuance_id.to_string();
     retry.refresh_token.as_mut().unwrap().raw_token = format!("loser-{}", retry.issuance_id);
     assert_eq!(
-        retired_key_repository
-            .commit_token_issuance(retry)
-            .await
-            .unwrap(),
-        CommitTokenIssuanceResult::Conflict
+        repository.commit_token_issuance(retry).await.unwrap(),
+        CommitTokenIssuanceResult::AlreadyUsed
     );
-    let retained = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1 AND expires_at = $2 AND response_ciphertext IS NOT NULL")
-        .bind::<SqlUuid, _>(input.issuance_id).bind::<diesel::sql_types::Timestamptz, _>(refresh_expiry)
-        .get_result::<CountRow>(&mut connection).await.unwrap();
-    assert_eq!(retained.count, 1);
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let rows = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE tenant_id = $1 AND client_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(fixture.client_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(rows.count, 1);
     let family = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_tokens WHERE token_family_id = $1 AND revoked_at IS NULL")
         .bind::<SqlUuid, _>(family_id).get_result::<CountRow>(&mut connection).await.unwrap();
     assert_eq!(

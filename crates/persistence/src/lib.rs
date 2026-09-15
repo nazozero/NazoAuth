@@ -8,11 +8,13 @@
 
 pub mod control_plane;
 pub mod directory_control;
+pub mod maintenance;
 pub mod openid4vc;
 pub mod operator;
 pub mod tenant_resources;
 
 pub use control_plane::*;
+pub use maintenance::*;
 pub use openid4vc::*;
 pub use operator::*;
 
@@ -26,106 +28,6 @@ use std::fmt;
 use futures_util::future::BoxFuture;
 use nazo_identity::ports::RepositoryError;
 use nazo_operator_protocol::Openid4vcTrustPolicy;
-
-#[derive(Clone)]
-pub struct TokenIssuanceResponseKeyRing {
-    current: TokenIssuanceResponseKey,
-    previous: Option<TokenIssuanceResponseKey>,
-}
-
-impl fmt::Debug for TokenIssuanceResponseKeyRing {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("TokenIssuanceResponseKeyRing")
-            .field("current_id", &self.current.id)
-            .field(
-                "previous_id",
-                &self.previous.as_ref().map(|key| key.id.as_str()),
-            )
-            .finish_non_exhaustive()
-    }
-}
-
-#[derive(Clone)]
-struct TokenIssuanceResponseKey {
-    id: String,
-    key: [u8; 32],
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum TokenIssuanceResponseKeyError {
-    EmptyId,
-    IdTooLong,
-    DuplicateId,
-}
-
-impl fmt::Display for TokenIssuanceResponseKeyError {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(match self {
-            Self::EmptyId => "token issuance response encryption key id must not be empty",
-            Self::IdTooLong => {
-                "token issuance response encryption key id must be at most 128 bytes"
-            }
-            Self::DuplicateId => "token issuance response current and previous key ids must differ",
-        })
-    }
-}
-
-impl std::error::Error for TokenIssuanceResponseKeyError {}
-
-impl TokenIssuanceResponseKeyRing {
-    pub fn new(
-        current_id: impl Into<String>,
-        current_key: [u8; 32],
-        previous: Option<(String, [u8; 32])>,
-    ) -> Result<Self, TokenIssuanceResponseKeyError> {
-        let current = TokenIssuanceResponseKey::new(current_id.into(), current_key)?;
-        let previous = previous
-            .map(|(id, key)| TokenIssuanceResponseKey::new(id, key))
-            .transpose()?;
-        if previous
-            .as_ref()
-            .is_some_and(|candidate| candidate.id == current.id)
-        {
-            return Err(TokenIssuanceResponseKeyError::DuplicateId);
-        }
-        Ok(Self { current, previous })
-    }
-
-    #[must_use]
-    pub fn current_id(&self) -> &str {
-        &self.current.id
-    }
-
-    #[must_use]
-    pub fn current_key(&self) -> &[u8; 32] {
-        &self.current.key
-    }
-
-    #[must_use]
-    pub fn key_for(&self, id: &str) -> Option<&[u8; 32]> {
-        if self.current.id == id {
-            Some(&self.current.key)
-        } else {
-            self.previous
-                .as_ref()
-                .filter(|key| key.id == id)
-                .map(|key| &key.key)
-        }
-    }
-}
-
-impl TokenIssuanceResponseKey {
-    fn new(id: String, key: [u8; 32]) -> Result<Self, TokenIssuanceResponseKeyError> {
-        if id.trim().is_empty() {
-            return Err(TokenIssuanceResponseKeyError::EmptyId);
-        }
-        if id.len() > 128 {
-            return Err(TokenIssuanceResponseKeyError::IdTooLong);
-        }
-        Ok(Self { id, key })
-    }
-}
 
 pub const MAX_SECURITY_AUDIT_PAYLOAD_BYTES: usize = 64 * 1024;
 
@@ -361,6 +263,10 @@ pub trait DatabaseHealthPort: Send + Sync {
     fn check(&self) -> BoxFuture<'_, Result<(), DatabaseHealthError>>;
 }
 
+/// Counters for the business runtime pool only. `acquire_count` records pool
+/// acquisition *attempts* — every success and every failure counts exactly
+/// once. Migration and other one-off standalone connections are not
+/// instrumented by these counters.
 #[derive(Clone, Copy, Debug, serde::Serialize)]
 pub struct DatabasePoolMetrics {
     pub acquire_count: u64,

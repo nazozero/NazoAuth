@@ -32,6 +32,8 @@ pub trait ServerPersistenceProvider: Send + Sync {
     fn security_audit_ledger(&self) -> Arc<dyn nazo_persistence::SecurityAuditLedger>;
     fn database_health(&self) -> Arc<dyn nazo_persistence::DatabaseHealthPort>;
     fn database_pool_metrics(&self) -> Arc<dyn nazo_persistence::DatabasePoolMetricsPort>;
+    fn security_state_maintenance(&self)
+    -> Arc<dyn nazo_persistence::SecurityStateMaintenancePort>;
     fn runtime_modules(
         &self,
         tenant_id: uuid::Uuid,
@@ -46,10 +48,7 @@ pub trait ServerPersistenceProvider: Send + Sync {
         tenant_id: uuid::Uuid,
     ) -> Arc<dyn AuthorizationRepositoryPort>;
     fn device_grant_repository(&self, tenant_id: uuid::Uuid) -> Arc<dyn DeviceGrantRepositoryPort>;
-    fn token_repository(
-        &self,
-        response_keys: nazo_persistence::TokenIssuanceResponseKeyRing,
-    ) -> Arc<dyn TokenRepositoryPort>;
+    fn token_repository(&self) -> Arc<dyn TokenRepositoryPort>;
     fn access_token_revocations(
         &self,
     ) -> Arc<dyn nazo_resource_server::AccessTokenRevocationLookup>;

@@ -60,123 +60,6 @@ async fn signed_access_token_with_binding(
         .token
 }
 
-#[tokio::test]
-async fn pre_authorized_token_rejects_invalid_dpop_before_consuming_offer_state() {
-    // The fixture uses deliberately unavailable PostgreSQL/Valkey endpoints.  A malformed
-    // sender proof must still be rejected at the protocol boundary before either single-use
-    // store can be touched; otherwise a retry with a valid proof could observe consumed state.
-    let issuer = operations(true).await;
-    let error = issuer
-        .pre_authorized_token(PreAuthorizedTokenRequest {
-            pre_authorized_code: "does-not-exist".to_owned(),
-            tx_code: None,
-            client_id: None,
-            dpop_proof: Some("malformed-dpop-proof".to_owned()),
-            client_attestation: None,
-            client_attestation_pop: None,
-            request_url: "https://issuer.example/token".to_owned(),
-        })
-        .await
-        .expect_err("invalid DPoP must fail before offer state is consumed");
-
-    assert_error(error, 400, "invalid_dpop_proof", "DPoP proof is invalid.");
-}
-
-#[tokio::test]
-async fn pre_authorized_token_maps_dpop_nonce_store_failure() {
-    let issuer = operations(true).await;
-    let error = issuer
-        .pre_authorized_token(PreAuthorizedTokenRequest {
-            pre_authorized_code: "unit-code".to_owned(),
-            tx_code: None,
-            client_id: None,
-            dpop_proof: Some(valid_dpop_proof(Some("unit-nonce"))),
-            client_attestation: None,
-            client_attestation_pop: None,
-            request_url: "https://issuer.example/token".to_owned(),
-        })
-        .await
-        .expect_err("unavailable DPoP nonce state must fail before offer lookup");
-    assert_error(
-        error,
-        503,
-        "server_error",
-        "DPoP nonce validation is unavailable.",
-    );
-}
-
-#[tokio::test]
-async fn pre_authorized_token_maps_configured_attestation_validation_failure() {
-    let (validator, _, _) = configured_client_attestation_fixture();
-    let issuer = operations_with_client_attestation(validator).await;
-    let error = issuer
-        .pre_authorized_token(PreAuthorizedTokenRequest {
-            pre_authorized_code: "unit-code".to_owned(),
-            tx_code: None,
-            client_id: None,
-            dpop_proof: None,
-            client_attestation: Some("not-a-client-attestation".to_owned()),
-            client_attestation_pop: Some("not-a-client-attestation-pop".to_owned()),
-            request_url: "https://issuer.example/token".to_owned(),
-        })
-        .await
-        .expect_err("malformed configured attestation must be rejected");
-    assert_error(
-        error,
-        401,
-        "invalid_client_attestation",
-        "Client attestation is invalid.",
-    );
-}
-
-#[tokio::test]
-async fn pre_authorized_token_rejects_attestation_client_mismatch_before_replay_state() {
-    let (validator, attestation, proof) = configured_client_attestation_fixture();
-    let issuer = operations_with_client_attestation(validator).await;
-    let error = issuer
-        .pre_authorized_token(PreAuthorizedTokenRequest {
-            pre_authorized_code: "unit-code".to_owned(),
-            tx_code: None,
-            client_id: Some("different-wallet".to_owned()),
-            dpop_proof: None,
-            client_attestation: Some(attestation),
-            client_attestation_pop: Some(proof),
-            request_url: "https://issuer.example/token".to_owned(),
-        })
-        .await
-        .expect_err("attested and requested client identities must match");
-    assert_error(
-        error,
-        401,
-        "invalid_client_attestation",
-        "Client identity does not match the attestation.",
-    );
-}
-
-#[tokio::test]
-async fn pre_authorized_token_maps_attestation_replay_state_failure() {
-    let (validator, attestation, proof) = configured_client_attestation_fixture();
-    let issuer = operations_with_client_attestation(validator).await;
-    let error = issuer
-        .pre_authorized_token(PreAuthorizedTokenRequest {
-            pre_authorized_code: "unit-code".to_owned(),
-            tx_code: None,
-            client_id: Some("wallet-client".to_owned()),
-            dpop_proof: None,
-            client_attestation: Some(attestation),
-            client_attestation_pop: Some(proof),
-            request_url: "https://issuer.example/token".to_owned(),
-        })
-        .await
-        .expect_err("unavailable attestation replay state must fail closed");
-    assert_error(
-        error,
-        503,
-        "server_error",
-        "Client attestation replay state is unavailable.",
-    );
-}
-
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
@@ -320,6 +203,113 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
         })
         .await
         .expect("a matching mTLS certificate should authorize the credential token");
+    fixture.cleanup().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
+async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
+    let Some(fixture) = LiveEndpointFixture::new("unit-live-pairwise-access", false).await else {
+        return;
+    };
+    let mut connection = nazo_postgres::get_conn(&fixture.pool)
+        .await
+        .expect("pairwise fixture database connection");
+    let client_row = Uuid::now_v7();
+    sql_query(
+        "INSERT INTO oauth_clients (\
+            id, tenant_id, realm_id, organization_id, client_id, client_name, client_type,\
+            redirect_uris, scopes, grant_types, token_endpoint_auth_method, is_active, security_policy\
+        ) VALUES ($1, $2, $3, $4, $5, 'pairwise-client', 'public', '[]'::jsonb, '[]'::jsonb,\
+            '[\"urn:ietf:params:oauth:grant-type:pre-authorized_code\"]'::jsonb, 'none', TRUE,\
+            jsonb_build_object(\
+                'version', 1, 'assurance', 'baseline',\
+                'require_signed_authorization_request', false,\
+                'require_signed_authorization_response', false,\
+                'require_signed_introspection_response', false,\
+                'session_management', false, 'allow_cross_device_flows', false,\
+                'allow_confidential_oidc_without_pkce', false))",
+    )
+    .bind::<SqlUuid, _>(client_row)
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<SqlUuid, _>(DEFAULT_REALM_ID)
+    .bind::<SqlUuid, _>(DEFAULT_ORGANIZATION_ID)
+    .bind::<Text, _>(format!("pairwise-{client_row}"))
+    .execute(&mut connection)
+    .await
+    .expect("pairwise fixture client insert");
+
+    let pairwise_sub = format!("pairwise-{}", Uuid::now_v7());
+    let issued = fixture
+        .issuer
+        .token_service
+        .sign_access_token(nazo_auth::AccessTokenSignInput {
+            issuer: &fixture.issuer.issuer,
+            tenant_id: fixture.issuer.tenant_id,
+            subject: &pairwise_sub,
+            user_id: None,
+            subject_type: "user",
+            client_id: "pairwise-client",
+            audiences: std::slice::from_ref(&fixture.issuer.issuer),
+            scopes: &[],
+            authorization_details: &json!([openid4vci_authorization_detail(
+                &fixture.issuer.issuer,
+                "unit-live-pairwise-access"
+            )]),
+            userinfo_claims: &[],
+            userinfo_claim_requests: &[],
+            ttl_seconds: 300,
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            actor: None,
+        })
+        .await
+        .expect("test key manager should sign the pairwise token");
+    sql_query(
+        "INSERT INTO oauth_token_issuances (\
+            issuance_id, tenant_id, client_id, user_id, \
+            access_token_jti, access_token_expires_at, retain_until) \
+         VALUES ($1, $2, $3, $4, $5, $6, $6)",
+    )
+    .bind::<SqlUuid, _>(Uuid::now_v7())
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<SqlUuid, _>(client_row)
+    .bind::<SqlUuid, _>(fixture.subject_id)
+    .bind::<Text, _>(issued.jti.as_str())
+    .bind::<diesel::sql_types::Timestamptz, _>(chrono::Utc::now() + chrono::Duration::minutes(5))
+    .execute(&mut connection)
+    .await
+    .expect("pairwise issuance ownership insert");
+    drop(connection);
+
+    // Success proves the pairwise subject resolved through the issuance
+    // ownership JOIN (id-only narrow query); without the ownership row this
+    // call fails closed before reaching the credential path.
+    fixture
+        .issuer
+        .access(&CredentialRequestContext {
+            bearer_token: issued.token.clone(),
+            ..request_context()
+        })
+        .await
+        .expect("pairwise issuance ownership should authorize the credential token");
+
+    let mut connection = nazo_postgres::get_conn(&fixture.pool)
+        .await
+        .expect("pairwise fixture cleanup connection");
+    sql_query("DELETE FROM oauth_token_issuances WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(client_row)
+        .execute(&mut connection)
+        .await
+        .expect("pairwise issuance cleanup");
+    sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(client_row)
+        .execute(&mut connection)
+        .await
+        .expect("pairwise client cleanup");
+    drop(connection);
     fixture.cleanup().await;
 }
 

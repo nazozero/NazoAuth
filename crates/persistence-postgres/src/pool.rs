@@ -55,6 +55,11 @@ static DB_POOL_ACQUIRE_COUNT: AtomicU64 = AtomicU64::new(0);
 static DB_POOL_WAIT_NANOS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static DB_POOL_WAIT_NANOS_MAX: AtomicU64 = AtomicU64::new(0);
 
+/// Business-pool acquisition counters. `acquire_count` is the number of
+/// `get_conn` attempts (success and failure each count once); the wait fields
+/// record the time spent inside `pool.get()` before success or error.
+/// Migration and other standalone connections established outside this pool
+/// do not go through `get_conn` and are not included.
 #[derive(Serialize)]
 pub struct DbPoolMetrics {
     pub acquire_count: u64,
@@ -320,22 +325,4 @@ async fn run_pending_migrations_inner(database_url: &str) -> anyhow::Result<bool
             "migration failed: {migration_error}; advisory lock release failed: {unlock_error}"
         ),
     }
-}
-
-pub async fn cleanup_expired_security_state(database_url: &str) -> anyhow::Result<()> {
-    use diesel_async::RunQueryDsl as _;
-
-    let mut connection = establish_connection(database_url).await?;
-    connection
-        .batch_execute(&format!(
-            "SET SESSION lock_timeout = '25s'; SET SESSION statement_timeout = '{MIGRATION_STATEMENT_TIMEOUT}';"
-        ))
-        .await?;
-    diesel::sql_query("SELECT * FROM nazo_oauth_cleanup_expired_security_state()")
-        .execute(&mut connection)
-        .await?;
-    diesel::sql_query("SELECT nazo_openid4vp_cleanup_expired_transactions()")
-        .execute(&mut connection)
-        .await?;
-    Ok(())
 }

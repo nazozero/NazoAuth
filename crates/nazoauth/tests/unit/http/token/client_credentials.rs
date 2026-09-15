@@ -10,14 +10,11 @@ use nazo_oauth_server::contracts::token_forms::TokenForm;
 use nazo_oauth_server::domain::rows::ClientRow;
 use nazo_oauth_server::services::ServerTokenService;
 use nazo_oauth_server::token::client_credentials::ClientCredentialsIssue;
-use nazo_oauth_server::token::client_credentials::client_credentials_issuance_mode;
 use nazo_oauth_server::token::client_credentials::client_credentials_issue_request_with_default_audience;
 use nazo_oauth_server::token::client_credentials::reject_non_confidential_client_credentials_client;
 use nazo_oauth_server::token::client_credentials::token_client_credentials_with_service;
 use nazo_oauth_server::token::issue::TokenIssuanceContext;
 use serde_json::json;
-
-use nazo_oauth_server::crypto::blake3_hex;
 
 use nazo_identity::DEFAULT_ORGANIZATION_ID;
 
@@ -196,29 +193,26 @@ fn token_request() -> HttpRequest {
 }
 
 #[test]
-fn client_credentials_issuance_mode_is_fresh_or_idempotent_from_request_header() {
-    assert!(matches!(
-        client_credentials_issuance_mode(
-            &crate::http::token::issue::test_support::token_request_facts(
-                &token_request(),
-                &settings(AuthorizationServerProfile::Oauth2Baseline)
-            )
-        ),
-        nazo_auth::TokenIssuanceMode::Fresh
-    ));
-
-    let request = TestRequest::post()
+fn client_credentials_request_facts_ignore_the_idempotency_header() {
+    let settings = settings(AuthorizationServerProfile::Oauth2Baseline);
+    // Generic issuance no longer honors an inbound Idempotency-Key: the token
+    // request facts carry no replay state and client_credentials always
+    // issues a fresh grant.
+    let request = token_request();
+    let plain = crate::http::token::issue::test_support::token_request_facts(&request, &settings);
+    let with_header = TestRequest::post()
         .uri("/token")
         .insert_header(("Idempotency-Key", "client-credentials-test-key"))
         .to_http_request();
-    assert!(matches!(
-        client_credentials_issuance_mode(&crate::http::token::issue::test_support::token_request_facts(&request, &settings(AuthorizationServerProfile::Oauth2Baseline))),
-        nazo_auth::TokenIssuanceMode::Idempotent { ref grant_key }
-            if grant_key == &format!(
-                "idempotency:{}",
-                blake3_hex("client-credentials-test-key")
-            )
-    ));
+    let keyed =
+        crate::http::token::issue::test_support::token_request_facts(&with_header, &settings);
+    assert_eq!(plain.dpop.proof_present, keyed.dpop.proof_present);
+    assert_eq!(plain.certificate.is_some(), keyed.certificate.is_some());
+    assert!(
+        matches!(plain.client_attestation.strict_pair, Ok(None))
+            && matches!(keyed.client_attestation.strict_pair, Ok(None)),
+        "the Idempotency-Key must not produce attestation material"
+    );
 }
 
 #[test]
@@ -388,7 +382,7 @@ async fn token_client_credentials_binds_mtls_thumbprint_from_verified_certificat
     assert_eq!(response.status(), StatusCode::INTERNAL_SERVER_ERROR);
     assert_eq!(oauth_error_code(response).await, "server_error");
 
-    let idempotent_request = TestRequest::post()
+    let retry_request = TestRequest::post()
         .uri("/token")
         .insert_header(("Idempotency-Key", "client-credentials-retry"))
         .app_data(Data::new(crate::http::mtls::MtlsCertificateSource::new(
@@ -397,14 +391,13 @@ async fn token_client_credentials_binds_mtls_thumbprint_from_verified_certificat
         .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
         .insert_header(("client-cert", certificate.header.as_str()))
         .to_http_request();
-    let idempotent_response =
-        token_client_credentials(&state, &idempotent_request, &client, &form(None, &[]), None)
-            .await;
-    assert_eq!(
-        idempotent_response.status(),
-        StatusCode::SERVICE_UNAVAILABLE
-    );
-    assert_eq!(oauth_error_code(idempotent_response).await, "server_error");
+    // Generic Idempotency-Key replay handling was removed: the header is
+    // ignored and a retry is an ordinary fresh request, so it hits the same
+    // signing failure.
+    let retry_response =
+        token_client_credentials(&state, &retry_request, &client, &form(None, &[]), None).await;
+    assert_eq!(retry_response.status(), StatusCode::INTERNAL_SERVER_ERROR);
+    assert_eq!(oauth_error_code(retry_response).await, "server_error");
 }
 
 #[actix_web::test]

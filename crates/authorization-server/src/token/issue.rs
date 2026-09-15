@@ -1,4 +1,4 @@
-//! Token issuance semantics and persisted response recovery.
+//! Token issuance semantics and atomic commit.
 use crate::{
     contracts::{
         oauth_error::OAuthEndpointError, request_facts::DpopErrorContext,
@@ -14,12 +14,10 @@ use crate::{
 };
 use http::StatusCode;
 use nazo_auth::{
-    DpopNoncePolicy, TokenIssuanceRecord, issue_authorization_server_dpop_nonce,
-    normalize_authorization_details,
+    DpopNoncePolicy, issue_authorization_server_dpop_nonce, normalize_authorization_details,
 };
 use nazo_key_management::{signing_algorithm_from_name, signing_algorithm_name};
 use serde_json::{Value, json};
-use uuid::Uuid;
 // 统一 access_token、refresh_token 和 id_token 的响应形状。
 
 mod authorization_code_state;
@@ -233,109 +231,6 @@ fn id_token_signing_alg_for_client(client: &ClientRow) -> nazo_crypto::jwt::Algo
                 nazo_crypto::jwt::Algorithm::RS256
             }
         })
-}
-
-async fn persist_access_token_subject_mapping(
-    service: &ServerTokenService,
-    access_token_ttl_seconds: i64,
-    jti: &str,
-    tenant_id: Uuid,
-    user_id: Option<Uuid>,
-    subject: &str,
-) -> anyhow::Result<()> {
-    let Some(user_id) = user_id else {
-        return Ok(());
-    };
-    if subject == user_id.to_string() {
-        return Ok(());
-    }
-    service
-        .store_access_token_subject(
-            tenant_id,
-            jti,
-            user_id,
-            access_token_ttl_seconds.max(1) as u64,
-        )
-        .await?;
-    Ok(())
-}
-
-fn issuance_request_digest(client: &ClientRow, issue: &TokenIssue, grant_key: &str) -> String {
-    // This digest is deliberately built from the normalized issue, not from
-    // raw form fields.  A retry with a different client, subject, scope,
-    // resource, sender binding or OIDC contract therefore cannot reuse a
-    // response belonging to another logical grant.
-    let refresh_token_policy = match issue.refresh_token_policy {
-        RefreshTokenPolicy::IssueNew => json!({ "kind": "issue_new" }),
-        RefreshTokenPolicy::Rotate {
-            family_id,
-            rotated_from_id,
-        } => json!({
-            "kind": "rotate",
-            "family_id": family_id,
-            "rotated_from_id": rotated_from_id,
-        }),
-        RefreshTokenPolicy::RotateLostResponse {
-            family_id,
-            original_id,
-            successor_id,
-            retry_started_at,
-        } => json!({
-            "kind": "rotate_lost_response",
-            "family_id": family_id,
-            "original_id": original_id,
-            "successor_id": successor_id,
-            "retry_started_at": retry_started_at,
-        }),
-        RefreshTokenPolicy::PreserveExisting => json!({ "kind": "preserve_existing" }),
-    };
-    // Native SSO device secrets are server-generated response material. A retry
-    // reconstructs the normalized issue with fresh secret bytes before looking
-    // up the durable issuance, so binding those bytes would turn a legitimate
-    // idempotent retry into a digest conflict. The session identifier is the
-    // stable flow identity and still separates Native SSO from ordinary grants.
-    let native_sso_sid = issue.native_sso.as_ref().map(|binding| &binding.sid);
-    let material = json!({
-        "client_id": client.id,
-        "tenant_id": client.tenant_id,
-        "grant_key": grant_key,
-        "subject": issue.subject,
-        "user_id": issue.user_id,
-        "scopes": issue.scopes,
-        "audiences": issue.audiences,
-        "authorization_details": issue.authorization_details,
-        "nonce": issue.nonce,
-        "auth_time": issue.auth_time,
-        "amr": issue.amr,
-        "oidc_sid": issue.oidc_sid,
-        "acr": issue.acr,
-        "userinfo_claims": issue.userinfo_claims,
-        "userinfo_claim_requests": issue.userinfo_claim_requests,
-        "id_token_claims": issue.id_token_claims,
-        "id_token_claim_requests": issue.id_token_claim_requests,
-        "refresh_id_token_sid": issue.refresh_id_token_sid,
-        "include_refresh": issue.include_refresh,
-        "refresh_token_policy": refresh_token_policy,
-        "dpop_jkt": issue.dpop_jkt,
-        "refresh_token_dpop_jkt": issue.refresh_token_dpop_jkt,
-        "mtls_x5t_s256": issue.mtls_x5t_s256,
-        "refresh_token_mtls_x5t_s256": issue.refresh_token_mtls_x5t_s256,
-        "refresh_token_client_attestation_jkt": issue.refresh_token_client_attestation_jkt,
-        "refresh_token_scopes": issue.refresh_token_scopes,
-        "authorization_code_hash": issue.authorization_code_hash,
-        "actor": issue.actor,
-        "issued_token_type": issue.issued_token_type,
-        "native_sso_sid": native_sso_sid,
-    });
-    blake3_hex(
-        &serde_json::to_string(&material)
-            .expect("normalized token issue digest payload must serialize"),
-    )
-}
-
-fn response_from_token_issuance(record: &TokenIssuanceRecord) -> Option<TokenEndpointSuccess> {
-    let body = record.response_body.as_ref()?.clone();
-    Some(TokenEndpointSuccess::Replayed { body })
 }
 
 pub use issue_grant::issue_token_response;

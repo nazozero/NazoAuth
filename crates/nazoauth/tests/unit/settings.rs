@@ -934,47 +934,12 @@ fn dynamic_client_registration_initial_access_token_is_optional() {
 }
 
 #[test]
-fn token_issuance_response_key_ring_requires_independent_current_pair() {
-    let missing = ConfigSource::from_pairs_for_test([]);
-    assert!(
-        crate::settings::token_issuance_response_key_ring(&missing)
-            .expect_err("missing response key must fail closed")
-            .to_string()
-            .contains("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY")
-    );
-
-    let valid = ConfigSource::from_pairs_for_test([
-        (
-            "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        ),
-        ("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID", "current"),
-        (
-            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY",
-            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
-        ),
-        (
-            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID",
-            "previous",
-        ),
-    ]);
-    let ring = crate::settings::token_issuance_response_key_ring(&valid)
-        .expect("independent current/previous key ring should parse");
-    assert_eq!(ring.current_id(), "current");
-
-    let duplicate = ConfigSource::from_pairs_for_test([
-        (
-            "TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY",
-            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        ),
-        ("TOKEN_ISSUANCE_RESPONSE_ENCRYPTION_KEY_ID", "same"),
-        (
-            "TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY",
-            "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
-        ),
-        ("TOKEN_ISSUANCE_RESPONSE_PREVIOUS_ENCRYPTION_KEY_ID", "same"),
-    ]);
-    assert!(crate::settings::token_issuance_response_key_ring(&duplicate).is_err());
+fn token_issuance_loads_without_dedicated_response_key_material() {
+    // Generic token issuance no longer persists encrypted responses, so no
+    // response key ring is configured or required.  A configuration that
+    // simply omits the retired keys must load.
+    let config = ConfigSource::from_pairs_for_test([]);
+    Settings::from_config(&config).expect("settings load without response-key material");
 }
 
 #[test]
