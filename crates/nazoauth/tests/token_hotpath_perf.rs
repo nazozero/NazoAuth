@@ -46,12 +46,36 @@ const READINESS_WINDOW: Duration = Duration::from_secs(60);
 const DISCOVERY_PATH: &str = "/.well-known/openid-configuration";
 const DEPLOYMENT_ID: &str = "perf-hotpath";
 const MIGRATION_RUNTIME_ROLE: &str = "nazoauth_perf_runtime";
-const CLIENT_SECRET_PEPPER: &str = "perf-hotpath-client-secret-pepper-000";
-const PAIRWISE_SUBJECT_SECRET: &str = "perf-hotpath-pairwise-subject-secret-00000000";
 const CLIENT_SECRET: &str = "perf-hotpath-client-secret";
-/// Test-only wrapping key the fixture configures for every server; the
-/// benchmark reproduces the same ring to pre-seed tenant keysets.
-const SIGNING_KEY_ENCRYPTION_KEY: &str = "QEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEA";
+
+/// Per-run generated secrets the fixture writes into the spawned server's
+/// config; nothing hard-coded is persisted or checked in. The wrapping ring
+/// is derived once so the test can pre-seed tenant keysets through the same
+/// sealing path the server uses at startup.
+struct BenchSecrets {
+    client_secret_pepper: String,
+    pairwise_subject_secret: String,
+    signing_key_encryption_key: String,
+    wrapping_keys: SigningKeyWrappingKeyRing,
+}
+
+impl BenchSecrets {
+    fn generate() -> Self {
+        let mut material = [0_u8; 32];
+        material[..16].copy_from_slice(Uuid::now_v7().as_bytes());
+        material[16..].copy_from_slice(Uuid::now_v7().as_bytes());
+        let signing_key_encryption_key =
+            base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(material);
+        let wrapping_keys = SigningKeyWrappingKeyRing::new("perf-signing-root", material, None)
+            .expect("generated wrapping key ring is valid");
+        Self {
+            client_secret_pepper: format!("perf-pepper-{}", Uuid::now_v7().simple()),
+            pairwise_subject_secret: format!("perf-pairwise-{}", Uuid::now_v7().simple()),
+            signing_key_encryption_key,
+            wrapping_keys,
+        }
+    }
+}
 const PKCE_VERIFIER: &str = "perf-pkce-verifier-0123456789abcdef0123456789abcdef";
 /// The system tenant created by `migrate` binds the configured ISSUER host;
 /// it must differ from every benchmark tenant host so both resolve.
@@ -137,7 +161,14 @@ fn server_config_yaml(
     valkey_url: &str,
     data_dir: &Path,
     state_epoch: Uuid,
+    secrets: &BenchSecrets,
 ) -> String {
+    let BenchSecrets {
+        client_secret_pepper,
+        pairwise_subject_secret,
+        signing_key_encryption_key,
+        wrapping_keys: _,
+    } = secrets;
     format!(
         r#"BIND: "127.0.0.1:{port}"
 DATA_DIR: "{}"
@@ -151,10 +182,10 @@ TRANSPORT_MODE: "trusted-proxy"
 TRUSTED_PROXY_CIDRS: "127.0.0.1/32"
 MTLS_CERTIFICATE_SOURCE: "rfc9440"
 CLIENT_IP_HEADER_MODE: "x-forwarded-for"
-CLIENT_SECRET_PEPPER: "{CLIENT_SECRET_PEPPER}"
-PAIRWISE_SUBJECT_SECRET: "{PAIRWISE_SUBJECT_SECRET}"
+CLIENT_SECRET_PEPPER: "{client_secret_pepper}"
+PAIRWISE_SUBJECT_SECRET: "{pairwise_subject_secret}"
 SIGNING_KEY_ENCRYPTION_KEY_ID: "perf-signing-root"
-SIGNING_KEY_ENCRYPTION_KEY: "{SIGNING_KEY_ENCRYPTION_KEY}"
+SIGNING_KEY_ENCRYPTION_KEY: "{signing_key_encryption_key}"
 COOKIE_SECURE: true
 SESSION_COOKIE_NAME: "perf_session"
 CSRF_COOKIE_NAME: "perf_csrf"
@@ -356,6 +387,7 @@ struct IssuanceFixture {
     isolated_url: String,
     pool: nazo_postgres::DbPool,
     state_epoch: Uuid,
+    secrets: BenchSecrets,
 }
 
 /// One benchmark tenant whose keyset was seeded with `at_algorithm` as the
@@ -410,6 +442,8 @@ async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> Issuanc
         drop(role_coordinator);
     }
 
+    let secrets = BenchSecrets::generate();
+
     let bootstrap_dir = temporary_directory("bootstrap");
     let bootstrap_config = bootstrap_dir.join(".env.yaml");
     write_config(
@@ -420,6 +454,7 @@ async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> Issuanc
             valkey_url,
             &bootstrap_dir,
             state_epoch,
+            &secrets,
         ),
     );
     run_cli("migrate", &bootstrap_config);
@@ -429,7 +464,14 @@ async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> Issuanc
     let config = process_dir.join(".env.yaml");
     write_config(
         &config,
-        &server_config_yaml(port, &isolated_url, valkey_url, &process_dir, state_epoch),
+        &server_config_yaml(
+            port,
+            &isolated_url,
+            valkey_url,
+            &process_dir,
+            state_epoch,
+            &secrets,
+        ),
     );
     let mut server = spawn_server(&config, port);
     server.wait_until_ready(SYSTEM_HOST);
@@ -441,6 +483,7 @@ async fn start_issuance_fixture(database_url: &str, valkey_url: &str) -> Issuanc
         isolated_url,
         pool,
         state_epoch,
+        secrets,
     }
 }
 
@@ -537,6 +580,7 @@ async fn provision_algorithm_tenant(
     let web_scopes = "[\"openid\",\"offline_access\",\"api:read\"]";
     let sso_grants = "[\"authorization_code\",\"refresh_token\",\"urn:ietf:params:oauth:grant-type:token-exchange\"]";
     let sso_scopes = "[\"openid\",\"offline_access\",\"device_sso\"]";
+    let pepper = &fixture.secrets.client_secret_pepper;
     seed_client(
         connection,
         &tenant,
@@ -544,6 +588,7 @@ async fn provision_algorithm_tenant(
         web_scopes,
         web_grants,
         "RS256",
+        pepper,
     )
     .await;
     seed_client(
@@ -553,6 +598,7 @@ async fn provision_algorithm_tenant(
         web_scopes,
         web_grants,
         "PS256",
+        pepper,
     )
     .await;
     seed_client(
@@ -562,6 +608,7 @@ async fn provision_algorithm_tenant(
         sso_scopes,
         sso_grants,
         "RS256",
+        pepper,
     )
     .await;
     seed_client(
@@ -571,6 +618,7 @@ async fn provision_algorithm_tenant(
         sso_scopes,
         sso_grants,
         "PS256",
+        pepper,
     )
     .await;
 
@@ -643,6 +691,7 @@ async fn seed_client(
     scopes: &str,
     grant_types: &str,
     id_token_alg: &str,
+    client_secret_pepper: &str,
 ) {
     sql(
         connection,
@@ -667,7 +716,7 @@ async fn seed_client(
             tenant.organization_id.as_uuid(),
             client_secret_digest(
                 CLIENT_SECRET,
-                CLIENT_SECRET_PEPPER,
+                client_secret_pepper,
                 &Uuid::now_v7().simple().to_string(),
             ),
         ),
@@ -1119,21 +1168,10 @@ async fn run_benchmark(bench: BenchConfig) {
     .await;
     sql(&mut connection, "SELECT pg_stat_statements_reset()").await;
 
-    // The benchmark controls SIGNING_KEY_ENCRYPTION_KEY[_ID]; reproduce the
-    // deployment's wrapping ring so the test can pre-seed each tenant's
-    // keyset through the same payload construction and sealing the server
-    // startup path uses.
-    let wrapping_keys = SigningKeyWrappingKeyRing::new(
-        "perf-signing-root",
-        <[u8; 32]>::try_from(
-            base64::engine::general_purpose::URL_SAFE_NO_PAD
-                .decode(SIGNING_KEY_ENCRYPTION_KEY)
-                .expect("SIGNING_KEY_ENCRYPTION_KEY should decode"),
-        )
-        .expect("SIGNING_KEY_ENCRYPTION_KEY must decode to exactly 32 bytes"),
-        None,
-    )
-    .expect("benchmark wrapping key ring is valid");
+    // The fixture generated the deployment's wrapping key for the spawned
+    // server; reuse the same ring to pre-seed each tenant's keyset through
+    // the same payload construction and sealing the startup path uses.
+    let wrapping_keys = &fixture.secrets.wrapping_keys;
 
     // One tenant per access-token signing algorithm — the access token always
     // carries the keyset's active algorithm, so algorithm coverage is a
@@ -1158,7 +1196,7 @@ async fn run_benchmark(bench: BenchConfig) {
                     at_algorithm_name: name,
                     at_algorithm: algorithm,
                 },
-                &wrapping_keys,
+                wrapping_keys,
             )
             .await,
         );
