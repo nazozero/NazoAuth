@@ -8,8 +8,8 @@
 - 吞吐（严格 60s 测量窗口，0 错误 0 rollback）：
   - client_credentials：1627 → **4573 ops/s**（c8→c64，~c32 饱和）
   - refresh_token：1017 → **3092 ops/s**（~c32 饱和）
-  - 对比同协议重构前测量（cnb `c44fc1f3`）：cc 264→275、refresh 179→184 ops/s —— **约 17 倍提升**。
-- SQL/op：cc 35.3→**15.0**，refresh 59.5→**28.0** —— 重构约减半每 op 语句数，与吞吐提升同向。
+  - 对比同协议重构前测量（cnb `c44fc1f3`）：cc 264→275、refresh 179→184 ops/s —— **约 17 倍吞吐差异**。注意因果口径：该差异对应的是整个已合并的 issuance/lifecycle 重构包（含审计链解耦、idempotency/response-recovery 删除、RTT 收敛等），wait-event 数据能证明旧实现的审计链行锁是旧瓶颈，但未做单改动的 isolated A/B，不能把 17x 归因于审计链单项。
+- 语句/op（pg_stat_statements，本 dump 均为 top-level，未采到 nested 语句）：cc 35.3→**15.0**、refresh 59.5→**28.0**。**但其中 `SELECT $1` 池回收 ping 占 cc 5.0/op、refresh 7.0/op**——即真实业务 wire RTT 为 cc ~10、refresh ~21（详见 §5.3）。
 - Refresh 的 `pg_advisory_xact_lock`（2/op）依旧 0 等待；family 竞争两轮均被排除。
 
 ## 2. Tested Source & Environment
@@ -35,7 +35,7 @@ PostgreSQL 设置：`track_io_timing=on`、`track_wal_io_timing=on`（ALTER SYST
 
 ## 4. Per-Point Results
 
-| Point | ops | ops/s | p50 | p95 | p99 | err | SQL/op | SQL ms/op | xact/s* | WAL B/op | WAL rec/op | fsync/op | fsync ms/op | pool wait ms |
+| Point | ops | ops/s | p50 | p95 | p99 | err | wire stmt/op † | SQL ms/op | xact/s* | WAL B/op | WAL rec/op | fsync/op | fsync ms/op | pool wait ms |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 | cc-c8 | 97617 | 1627.0 | 4 | 8 | 13 | 0 | 15.05 | 0.43 | 15749 | 1944 | — | 4.2 | 0.50 | 0.08 |
 | cc-c16 | 176035 | 2933.9 | 5 | 8 | 13 | 0 | 15.03 | 0.46 | 28223 | 2018 | — | 4.3 | 0.29 | 0.09 |
@@ -46,7 +46,8 @@ PostgreSQL 设置：`track_io_timing=on`、`track_wal_io_timing=on`（ALTER SYST
 | refresh-c32 | 183220 | 3053.7 | 10 | 15 | 21 | 0 | 28.03 | 1.63 | 41806 | 7461 | — | 5.9 | 0.28 | 0.24 |
 | refresh-c64 | 185522 | 3092.0 | 20 | 29 | 36 | 0 | 28.03 | 1.66 | 39627 | 8128 | — | 5.9 | 0.27 | 1.65 |
 
-\* `xact_commit` 差分含大量 autocommit 单语句事务（`SELECT $1` 探针 ~5/op）；显式 `BEGIN`/`COMMIT` 语句计数恰为 **1.0/op**（两条路径一致）——重构把每 op 收敛到单一事务。
+\* `xact_commit` 差分含大量 autocommit 单语句事务（`SELECT $1` 池 ping，见 §5.3）；显式 `BEGIN`/`COMMIT` 语句计数恰为 **1.0/op**（两条路径一致）——重构把每 op 收敛到单一事务。
+† `wire stmt/op` = pg_stat_statements 窗口差分调用数/op，全部 top-level（本 dump 未出现 nested 语句）。**包含 `SELECT $1` 池回收 ping（cc 5.0/op、refresh 7.0/op）**；纯应用语句为 cc ~10/op、refresh ~21/op。
 
 饱和判据：c32→c64 并发翻倍而吞吐 +0.3%（cc）/ +1.2%（refresh），同时 p50 翻倍——标准排队饱和。两条路径在该 harness 包线内饱和于 ~4.6k / ~3.1k ops/s。
 
@@ -91,18 +92,27 @@ refresh-c64：
 
 特征：所有语句 mean <0.5ms、无单点垄断——时间分散在 15–28 条顺序语句上，每条一次 RTT。
 
+### 5.3 `SELECT $1` 定位：连接池回收 ping（已证实 1:1）
+
+跨全部 8 点，`SELECT $1` calls/op 与 `db_pool.acquire_count`/lifetime-ops 精确一致到三位小数：cc **5.01/op**、refresh **7.01/op**——即**每次 pool checkout 恰好产生一次 `SELECT $1` RTT**。
+
+来源已定位：diesel-async 0.9.2 `ManagerConfig::default()` 使用 `RecyclingMethod::Verified`，每次 checkout 执行 `diesel::select(1)` 验证连接活性。NazoAuth 连接池装配只设置了 `custom_setup`，未覆盖 `recycling_method`。
+
+含义：一个 token 请求因 ~5（cc）/~7（refresh）次独立 `get_conn()` 额外支付同等次数的零业务价值 RTT。切换 `Verified → RecyclingMethod::Fast`（仅检查事务/损坏状态、不发测试查询）理论上可消除这些 RTT——代价是网络闪断等场景下 stale 连接的首次业务查询失败而非 checkout 时拦截。**这是候选优化，需 `Verified` vs `Fast` 的 A/B 复测 + PG 故障恢复验证后再定**，本轮未修改生产代码。
+
 ## 6. 诊断结论（对六个问题的回答，gh main）
 
-1. **写路径现在属于哪一类瓶颈？** —— **round-trip × commit bound**：每 op 的延迟 = 15–28 条顺序 SQL RTT（~0.25ms 级）+ 事务 commit 的 WAL insert/fsync。高并发下 `LWLock|WALWrite`（WAL 缓冲区插入竞争，挂在 COMMIT 上）成为最大等待项；backend 忙率 ~45% 表明 PG 侧仍有富余，瓶颈在**单 op 延迟结构**而非锁或总算力。非 lock bound、非单条 SQL bound、纯 fsync 占比小（0.2–0.7ms/op）。
+1. **写路径现在属于哪一类瓶颈？** —— **两阶段模型**：c8→c32 为**顺序 DB round-trip latency bound**（并发提升有效隐藏等待，吞吐快速上涨）；c32→c64 进入 **WAL/commit serialization bound**（`LWLock|WALWrite` 挂 COMMIT 占活跃等待 43–53%，吞吐走平而延迟翻倍）。非 lock bound、非单条 SQL bound、纯 fsync 占比小（0.2–0.7ms/op）；backend 忙率 ~45% 说明 PG 总算力仍有富余。
 2. **Client Credentials 第一瓶颈**：每 op 15 条顺序 RTT + commit WAL 写路径。
 3. **Refresh 第一瓶颈**：同一 commit 路径，叠加更多 SQL/op（28）与两条相对较重的语句（`oauth_tokens` insert 0.48ms / revoke update 0.42ms）。
 4. **两条路径的共同瓶颈**：`COMMIT` 的 WAL 写/落盘路径 + 顺序 RTT 数量——shared commit-path bound（上一轮的 shared issuance lock 已被重构消除）。
 5. **静态审计发现的冗余 RTT 是否在实际 top path**：在——`persist_security_audit_event`（1–2/op）、`shared_privilege_preflight`（1/op）、`oauth_clients` 多次读取、`SELECT $1` 探针都在 top-by-calls/time；但单条均 <0.2ms，是**可加性成本**而非串行化点。减 RTT 的杠杆现在是线性的：cc 每减 1 条 RTT ≈ 减 ~0.3ms/op 延迟 ≈ 提升上限。
 6. **下一步最值得优化**：
-   - 减少每 op 顺序 SQL 数（cc 15→个位数、refresh 28→~15）：合并 `oauth_clients` 的多次读取为一次、preflight 结果随连接/事务缓存、审计 persist 参数批量化。
-   - refresh 侧：`oauth_tokens` 的 `revoke UPDATE` + `successor INSERT` 可评估合并为单条 CTE；`pg_advisory_xact_lock` 2 次/op 虽瞬时但可省 2 RTT。
-   - `SELECT $1` 探针 5–12 次/op 来源定位（驱动/连接池检查），可在 pool 配置层消除。
-   - WAL 侧：`synchronous_commit` 对可延迟的写入（outbox/审计）分级是结构选项，需语义评审；当前 fsync 本身仅 ~0.2–0.7ms/op，不是第一杠杆。
+   - **首选：`RecyclingMethod::Verified → Fast` A/B**（cc −5 RTT/op、refresh −7 RTT/op，零业务代码改动）+ PG 故障恢复验证（stale 连接行为从 checkout 拦截变为首次业务查询失败，需确认 fail-closed 且恢复正常）。
+   - refresh 侧业务 RTT 合并：`oauth_tokens` 的 parent `SELECT`+revoke `UPDATE` → `UPDATE ... RETURNING`；family `EXISTS`+`INSERT` → conditional `INSERT ... RETURNING`。
+   - `oauth_clients` 多次读取合并为一次（3 条 SELECT → 1）。
+   - audit preflight 每次 op 都执行是**故意的 fail-closed 安全控制，不做结果缓存**；如要省 RTT，方向是把两条 preflight SQL 合并为一条 authoritative 调用。
+   - WAL 侧：`synchronous_commit` 分级属结构选项，需语义评审；当前 fsync 仅 ~0.2–0.7ms/op，非第一杠杆。
 
 ## 7. 口径与限制
 
