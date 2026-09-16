@@ -1,13 +1,13 @@
 #!/bin/bash
 # A/B wait-event matrix: {cc,refresh} x {c8,c32} for one pool-recycling mode.
 # Usage: AB_OUT=<dir under /workspace/perf-results> AB_TAG=<verified|fast> ./wait_ab.sh
-set -u
+set -euo pipefail
 cd /workspace
 OUT=/workspace/perf-results/${AB_OUT:?need AB_OUT}
 rm -rf "$OUT"; mkdir -p "$OUT/sampler" "$OUT/runs"
 rm -f "$OUT/sampler/STOP"
 
-docker rm -f wsab >/dev/null 2>&1
+docker rm -f wsab >/dev/null 2>&1 || true
 docker run -d --name wsab --network nazoauth-perf_perf_net \
   -v "$OUT/sampler:/shared" \
   -v /workspace/perf/wait_sampler.py:/w.py \

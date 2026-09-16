@@ -2,13 +2,13 @@
 # PG wait-event diagnostic matrix: {client_credentials,refresh} x {8,16,32,64}.
 # One shared wait_sampler container auto-segments points on the idle gap between
 # warmup and measure (CAP_MEASURE_START_MS > CAP_WARMUP_MS).
-set -u
+set -euo pipefail
 cd /workspace
 OUT=/workspace/perf-results/waitprobe-matrix
 rm -rf "$OUT"; mkdir -p "$OUT/sampler" "$OUT/runs"
 rm -f "$OUT/sampler/STOP"
 
-docker rm -f wsmatrix >/dev/null 2>&1
+docker rm -f wsmatrix >/dev/null 2>&1 || true
 docker run -d --name wsmatrix --network nazoauth-perf_perf_net \
   -v "$OUT/sampler:/shared" \
   -v /workspace/perf/wait_sampler.py:/w.py \
