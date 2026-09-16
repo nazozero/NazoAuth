@@ -352,8 +352,14 @@ cargo test --locked --workspace --all-features --lib --bins --tests \
   --no-run --message-format=json > "$TEST_OBJECT_MANIFEST"
 # LLVM coverage instrumentation changes scheduler timing. The ordinary
 # code-quality gate owns the 30-second dynamic-directory convergence SLO.
+# token_issuance_simplification spawns a real server per test and waits on
+# the same dynamic-directory convergence, so it is excluded for the same
+# reason; its issuance assertions still run uninstrumented in the gate.
 cargo test --locked --workspace --all-features --lib --bins --tests -- \
-  --skip two_processes_converge_on_lifecycle_mutations_and_survive_cache_failures
+  --skip two_processes_converge_on_lifecycle_mutations_and_survive_cache_failures \
+  --skip device_code_consumes_exactly_once_under_concurrent_polling \
+  --skip expired_device_grant_fails_closed_without_an_issuance_row \
+  --skip repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatcher
 
 # These integration-heavy protocol tests are intentionally excluded from the
 # default workspace run because they require live PostgreSQL and Valkey. This
