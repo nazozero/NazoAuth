@@ -183,14 +183,6 @@ def upsert_users(conn: psycopg.Connection[Any], users: list[dict[str, str]]) -> 
         conn.execute(
             """
             DELETE FROM users
-            WHERE tenant_id = %s::uuid
-              AND (email = %s OR lower(email) = %s OR username = %s)
-            """,
-            (TENANT_ID, email, normalized_email, username),
-        )
-        conn.execute(
-            """
-            DELETE FROM users
             WHERE tenant_id <> %s::uuid
               AND lower(email) = %s
             """,
@@ -203,6 +195,12 @@ def upsert_users(conn: psycopg.Connection[Any], users: list[dict[str, str]]) -> 
                 is_active, email_verified, display_name, role, admin_level
             )
             VALUES (%s, %s, %s, %s, %s, %s, TRUE, TRUE, %s, 'user', 0)
+            ON CONFLICT (tenant_id, lower(email)) DO UPDATE
+            SET username = EXCLUDED.username,
+                password_hash = EXCLUDED.password_hash,
+                display_name = EXCLUDED.display_name,
+                is_active = TRUE,
+                email_verified = TRUE
             """,
             (
                 TENANT_ID,
@@ -216,6 +214,23 @@ def upsert_users(conn: psycopg.Connection[Any], users: list[dict[str, str]]) -> 
         )
 
 
+def client_security_policy(
+    assurance: str,
+    session_management: bool = False,
+    cross_device: bool = False,
+) -> dict[str, Any]:
+    return {
+        "version": 1,
+        "assurance": assurance,
+        "require_signed_authorization_request": False,
+        "require_signed_authorization_response": False,
+        "require_signed_introspection_response": False,
+        "session_management": session_management,
+        "allow_cross_device_flows": cross_device,
+        "allow_confidential_oidc_without_pkce": False,
+    }
+
+
 def upsert_client(
     conn: psycopg.Connection[Any],
     *,
@@ -226,6 +241,7 @@ def upsert_client(
     scopes: list[str],
     secret_hash: str | None,
     jwks: dict[str, Any] | None,
+    security_policy: dict[str, Any] | None = None,
     require_dpop: bool = False,
     require_mtls: bool = False,
     require_par_request_object: bool = False,
@@ -242,12 +258,12 @@ def upsert_client(
             tls_client_auth_cert_sha256, tls_client_auth_subject_dn,
             allow_client_assertion_audience_array,
             allow_client_assertion_endpoint_audience, require_par_request_object,
-            jwks, is_active
+            jwks, is_active, security_policy
         )
         VALUES (
             %s::uuid, %s::uuid, %s::uuid, %s, %s, 'confidential',
             %s, %s, '[]'::jsonb, %s, %s, %s, %s,
-            %s, %s, %s, %s, FALSE, FALSE, %s, %s, TRUE
+            %s, %s, %s, %s, FALSE, FALSE, %s, %s, TRUE, %s
         )
         ON CONFLICT (tenant_id, client_id) DO UPDATE SET
             client_name = EXCLUDED.client_name,
@@ -264,6 +280,7 @@ def upsert_client(
             tls_client_auth_subject_dn = EXCLUDED.tls_client_auth_subject_dn,
             require_par_request_object = EXCLUDED.require_par_request_object,
             jwks = EXCLUDED.jwks,
+            security_policy = EXCLUDED.security_policy,
             is_active = TRUE,
             updated_at = CURRENT_TIMESTAMP
         """,
@@ -285,6 +302,7 @@ def upsert_client(
             tls_subject_dn,
             require_par_request_object,
             Jsonb(jwks) if jwks else None,
+            Jsonb(security_policy or client_security_policy("baseline")),
         ),
     )
 
@@ -292,6 +310,7 @@ def upsert_client(
 def seed_oidc_refresh_tokens(
     conn: psycopg.Connection[Any],
     users: list[dict[str, str]],
+    issuer: str,
 ) -> list[str]:
     client_row = conn.execute(
         """
@@ -335,12 +354,13 @@ def seed_oidc_refresh_tokens(
             INSERT INTO oauth_tokens (
                 tenant_id, refresh_token_blake3, token_family_id, rotated_from_id,
                 client_id, user_id, scopes, audience, authorization_details,
-                issued_at, expires_at, subject, dpop_jkt, mtls_x5t_s256
+                issued_at, expires_at, subject, dpop_jkt, mtls_x5t_s256,
+                oidc_auth_context
             )
             VALUES (
                 %s::uuid, %s, %s, NULL,
                 %s, %s, %s, %s, %s,
-                %s, %s, %s, NULL, NULL
+                %s, %s, %s, NULL, NULL, %s
             )
             """,
             (
@@ -355,6 +375,23 @@ def seed_oidc_refresh_tokens(
                 now,
                 expires_at,
                 str(user_db_id),
+                Jsonb(
+                    {
+                        "version": 1,
+                        "issuer": issuer,
+                        "audience": "perf-oidc-client",
+                        "auth_time": int(now.timestamp()),
+                        "amr": ["pwd"],
+                        "oidc_sid": None,
+                        "id_token_sid": None,
+                        "acr": None,
+                        "nonce": None,
+                        "userinfo_claims": [],
+                        "userinfo_claim_requests": [],
+                        "id_token_claims": [],
+                        "id_token_claim_requests": [],
+                    }
+                ),
             ),
         )
         refresh_tokens.append(raw_refresh_token)
@@ -366,6 +403,11 @@ def seed_logged_in_sessions(
     users: list[dict[str, str]],
 ) -> list[dict[str, str]]:
     valkey_url = os.environ["VALKEY_URL"]
+    deployment_id = os.environ["PERF_DEPLOYMENT_ID"]
+    state_epoch = os.environ["VALKEY_STATE_EPOCH"]
+    state_prefix = (
+        f"nazo:state:v1:{deployment_id}:{state_epoch}:tenant:{TENANT_ID}:"
+    )
     client = redis.Redis.from_url(valkey_url, decode_responses=True)
     now = int(datetime.now(UTC).timestamp())
     sessions: list[dict[str, str]] = []
@@ -391,7 +433,7 @@ def seed_logged_in_sessions(
             "oidc_sid": random_token(),
         }
         client.setex(
-            f"oauth:session:{session_id}",
+            f"{state_prefix}oauth:session:{session_id}",
             SESSION_TTL_SECONDS,
             json.dumps(payload, separators=(",", ":")),
         )
@@ -464,6 +506,12 @@ def seed() -> None:
 
     with psycopg.connect(database_url) as conn:
         conn.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
+        # Seeded refresh tokens reference user rows; clear them before the
+        # delete+insert user upsert so re-seeding stays idempotent.
+        conn.execute(
+            "DELETE FROM oauth_tokens WHERE tenant_id = %s::uuid",
+            (TENANT_ID,),
+        )
         upsert_users(conn, users)
         upsert_client(
             conn,
@@ -480,10 +528,15 @@ def seed() -> None:
             client_id="perf-oidc-client",
             name="Perf OIDC Client",
             auth_method="client_secret_post",
-            grants=["authorization_code", "refresh_token"],
-            scopes=["openid", "profile", "offline_access"],
+            grants=[
+                "authorization_code",
+                "refresh_token",
+                "urn:ietf:params:oauth:grant-type:token-exchange",
+            ],
+            scopes=["openid", "profile", "offline_access", "device_sso"],
             secret_hash=secret_hash,
             jwks=jwks,
+            security_policy=client_security_policy("baseline", session_management=True),
         )
         upsert_client(
             conn,
@@ -494,6 +547,7 @@ def seed() -> None:
             scopes=["openid", "profile", "offline_access"],
             secret_hash=None,
             jwks=jwks,
+            security_policy=client_security_policy("fapi2", session_management=True),
             require_dpop=True,
             require_par_request_object=True,
         )
@@ -510,7 +564,7 @@ def seed() -> None:
             tls_thumbprint=mtls_thumbprint,
             tls_subject_dn="CN=perf-mtls",
         )
-        oidc_refresh_tokens = seed_oidc_refresh_tokens(conn, users)
+        oidc_refresh_tokens = seed_oidc_refresh_tokens(conn, users, issuer)
         logged_in_sessions = seed_logged_in_sessions(conn, users)
         conn.commit()
 

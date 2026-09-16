@@ -2,7 +2,8 @@ use diesel::ConnectionError;
 use diesel_async::{
     AsyncConnection, AsyncMigrationHarness, AsyncPgConnection, SimpleAsyncConnection,
     pooled_connection::{
-        AsyncDieselConnectionManager, ManagerConfig, deadpool::Object, deadpool::Pool,
+        AsyncDieselConnectionManager, ManagerConfig, RecyclingMethod, deadpool::Object,
+        deadpool::Pool,
     },
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
@@ -89,6 +90,7 @@ pub fn create_pool(
 
 fn connection_manager(database_url: String) -> AsyncDieselConnectionManager<AsyncPgConnection> {
     let mut config = ManagerConfig::default();
+    config.recycling_method = RecyclingMethod::Fast;
     config.custom_setup = Box::new(|url| {
         let url = url.to_owned();
         async move { establish_connection(&url).await }.boxed()

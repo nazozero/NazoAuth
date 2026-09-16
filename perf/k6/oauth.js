@@ -1,7 +1,8 @@
 import http from 'k6/http';
-import { check, fail } from 'k6';
+import { check, fail, sleep } from 'k6';
 import exec from 'k6/execution';
 import { SharedArray } from 'k6/data';
+import { Trend, Counter } from 'k6/metrics';
 import encoding from 'k6/encoding';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://nazoauth:8000').replace(/\/$/, '');
@@ -18,12 +19,24 @@ const preAllocatedVus = Number(__ENV.PERF_PRE_ALLOCATED_VUS || __ENV.PERF_FLOW_V
 const maxVus = Number(__ENV.PERF_MAX_VUS || Math.max(preAllocatedVus * 2, preAllocatedVus));
 const iterations = Number(__ENV.PERF_ITERATIONS || '50');
 const testStartedAtMs = Date.now();
+// Tenant routing is Host-header based; PERF_TENANT_HOST pins requests to the
+// seeded tenant while BASE_URL selects the transport address.
+const TENANT_HOST = __ENV.PERF_TENANT_HOST || '';
 const scenarioSteps = {
   token_client_credentials: ['token_client_credentials'],
   mtls_client_credentials: ['mtls_client_credentials'],
   par_signed_request_object: ['par_oidc'],
   metadata_jwks: ['metadata', 'jwks'],
   token_only_client_credentials: ['token_client_credentials'],
+  cap_client_credentials: ['token_client_credentials'],
+  cap_userinfo_pairwise: ['cap_bootstrap', 'userinfo'],
+  cap_refresh_token: ['cap_bootstrap', 'token_refresh'],
+  cap_token_exchange: ['cap_bootstrap', 'token_exchange'],
+  cap_native_sso_fresh: ['cap_bootstrap', 'token_native_sso_fresh'],
+  cap_authorization_code: ['par_oidc', 'authorize', 'authorize_decision', 'token_authorization_code'],
+  cap_mixed: ['cap_bootstrap', 'userinfo', 'token_client_credentials', 'par_oidc',
+    'authorize', 'authorize_decision', 'token_authorization_code', 'token_refresh',
+    'token_exchange', 'token_native_sso_fresh'],
   oidc_cold_login_refresh: [
     'par_oidc',
     'login',
@@ -104,6 +117,11 @@ const scenarioSteps = {
     'fapi_token_authorization_code',
     'fapi_token_refresh',
   ],
+  ciba_private_key_jwt_dpop_poll: [
+    'ciba_backchannel_authentication',
+    'ciba_automated_decision',
+    'ciba_token',
+  ],
 };
 const vectorStride = Math.max(iterations, 100);
 const vectorOffsets = {
@@ -161,7 +179,18 @@ function scenarioOptions(name) {
       exec: name,
     };
   }
-  if (name === 'token_client_credentials' || name === 'mtls_client_credentials') {
+  if (executor === 'ramping-vus') {
+    const stages = JSON.parse(__ENV.PERF_STAGES || '[]').map(([d, t]) => ({ duration: d, target: t }));
+    return {
+      executor: 'ramping-vus',
+      startVUs: 0,
+      stages,
+      gracefulRampDown: '5s',
+      exec: name,
+    };
+  }
+  if (executor === 'constant-vus'
+      || name === 'token_client_credentials' || name === 'mtls_client_credentials') {
     return {
       executor: 'constant-vus',
       vus,
@@ -189,9 +218,13 @@ function requestTags(step, extra = {}) {
   return Object.assign({ flow: scenario, step }, extra);
 }
 
+function tenantHeaders(extra = {}) {
+  return TENANT_HOST ? Object.assign({ Host: TENANT_HOST }, extra) : extra;
+}
+
 function formHeaders(extra = {}, tags = {}) {
   return {
-    headers: Object.assign({ 'Content-Type': 'application/x-www-form-urlencoded' }, extra),
+    headers: tenantHeaders(Object.assign({ 'Content-Type': 'application/x-www-form-urlencoded' }, extra)),
     redirects: 0,
     tags,
   };
@@ -199,9 +232,9 @@ function formHeaders(extra = {}, tags = {}) {
 
 function jsonHeaders(tags = {}) {
   return {
-    headers: {
+    headers: tenantHeaders({
       'Content-Type': 'application/json',
-    },
+    }),
     redirects: 0,
     tags,
   };
@@ -418,7 +451,7 @@ async function clientAssertion(clientId, audience, prefix, alg = 'RS256') {
   return signRs256({}, claims);
 }
 
-async function requestObject(clientId, state, nonce, codeChallenge, dpopJkt) {
+async function requestObject(clientId, state, nonce, codeChallenge, dpopJkt, scopeOverride) {
   const now = nowSeconds();
   const claims = {
     client_id: clientId,
@@ -431,7 +464,7 @@ async function requestObject(clientId, state, nonce, codeChallenge, dpopJkt) {
     jti: uniqueJti('jar'),
     response_type: 'code',
     redirect_uri: secrets.redirect_uri,
-    scope: 'openid profile offline_access',
+    scope: scopeOverride || 'openid profile offline_access',
     state,
     nonce,
     code_challenge: codeChallenge,
@@ -454,6 +487,113 @@ async function dpopProof(method, htu, prefix) {
       jti: uniqueJti(prefix),
     },
   );
+}
+
+async function cibaRequestObject(user) {
+  const now = nowSeconds();
+  return signPs256(
+    {},
+    {
+      iss: secrets.clients.ciba,
+      aud: secrets.issuer,
+      iat: now,
+      nbf: now,
+      exp: now + 240,
+      jti: uniqueJti('ciba-request'),
+      scope: 'openid profile',
+      login_hint: user.email,
+      binding_message: `NazoAuth CIBA ${__VU}-${exec.scenario.iterationInTest}`,
+      acr_values: '1',
+      requested_expiry: 300,
+    },
+  );
+}
+
+async function cibaBackchannelAuthentication(user) {
+  const assertion = await clientAssertion(secrets.clients.ciba, secrets.issuer, 'ciba-backchannel', 'PS256');
+  const request = await cibaRequestObject(user);
+  const response = http.post(
+    `${BASE_URL}/bc-authorize`,
+    form({
+      client_id: secrets.clients.ciba,
+      client_assertion_type: secrets.client_assertion_type,
+      client_assertion: assertion,
+      request,
+    }),
+    formHeaders({}, requestTags('ciba_backchannel_authentication', {
+      endpoint: '/bc-authorize',
+      grant_type: 'urn:openid:params:grant-type:ciba',
+      client_profile: 'ciba-fapi-compatible',
+      client_auth: 'private_key_jwt',
+      request_object: 'signed',
+      delivery_mode: 'poll',
+    })),
+  );
+  check(response, {
+    'ciba backchannel status is 200': (r) => r.status === 200,
+    'ciba auth_req_id returned': (r) => Boolean(r.json('auth_req_id')),
+    'ciba interval returned': (r) => Number(r.json('interval')) > 0,
+  });
+  if (response.status !== 200) {
+    fail(`ciba backchannel failed: ${response.status} ${response.body}`);
+  }
+  return response.json('auth_req_id');
+}
+
+function approveCiba(authReqId) {
+  const response = http.get(
+    `${BASE_URL}/auth/ciba-automated-decision?${form({
+      auth_req_id: authReqId,
+      action: 'approve',
+      decision_token: secrets.ciba_automated_decision_token,
+    })}`,
+    {
+      headers: tenantHeaders(),
+      redirects: 0,
+      tags: requestTags('ciba_automated_decision', {
+        endpoint: '/auth/ciba-automated-decision',
+        grant_type: 'urn:openid:params:grant-type:ciba',
+        decision: 'approve',
+      }),
+    },
+  );
+  check(response, {
+    'ciba automated decision status is 200': (r) => r.status === 200,
+    'ciba automated decision succeeded': (r) => r.json('success') === true,
+  });
+  if (response.status !== 200) {
+    fail(`ciba automated decision failed: ${response.status} ${response.body}`);
+  }
+}
+
+async function cibaToken(authReqId) {
+  const assertion = await clientAssertion(secrets.clients.ciba, secrets.issuer, 'ciba-token', 'PS256');
+  const dpop = await dpopProof('POST', `${secrets.issuer}/token`, 'dpop-ciba-token');
+  const response = http.post(
+    `${BASE_URL}/token`,
+    form({
+      grant_type: 'urn:openid:params:grant-type:ciba',
+      auth_req_id: authReqId,
+      client_assertion_type: secrets.client_assertion_type,
+      client_assertion: assertion,
+    }),
+    formHeaders({ DPoP: dpop }, requestTags('ciba_token', {
+      endpoint: '/token',
+      grant_type: 'urn:openid:params:grant-type:ciba',
+      client_profile: 'ciba-fapi-compatible',
+      client_auth: 'private_key_jwt',
+      sender_constraint: 'dpop',
+      delivery_mode: 'poll',
+    })),
+  );
+  check(response, {
+    'ciba token status is 200': (r) => r.status === 200,
+    'ciba token is DPoP-bound': (r) => r.json('token_type') === 'DPoP',
+    'ciba access token returned': (r) => Boolean(r.json('access_token')),
+  });
+  if (response.status !== 200) {
+    fail(`ciba token failed: ${response.status} ${response.body}`);
+  }
 }
 
 async function oidcPar(v) {
@@ -531,7 +671,7 @@ function authorizePar(clientId, requestUri, user, cacheSession = false) {
   const response = http.get(
     `${BASE_URL}/authorize?${form({ client_id: clientId, request_uri: requestUri })}`,
     {
-      headers: sessionHeaders(),
+      headers: tenantHeaders(sessionHeaders()),
       redirects: 0,
       tags: requestTags('authorize', {
         endpoint: '/authorize',
@@ -542,7 +682,7 @@ function authorizePar(clientId, requestUri, user, cacheSession = false) {
     'authorize returns request id redirect': (r) => r.status === 302 && Boolean(queryParamFromLocation(locationHeader(r), 'request_id')),
   });
   const requestId = queryParamFromLocation(locationHeader(response), 'request_id');
-  if (response.status !== 302 || !requestId) {
+  if ((response.status !== 302 && response.status !== 303) || !requestId) {
     fail(`authorize failed: ${response.status} ${locationHeader(response)} ${response.body}`);
   }
   return requestId;
@@ -562,10 +702,10 @@ function approveAuthorization(requestId, expectedState) {
   );
   const location = locationHeader(response);
   check(response, {
-    'authorization decision returns code redirect': (r) => r.status === 302 && location.includes('code='),
+    'authorization decision returns code redirect': (r) => (r.status === 302 || r.status === 303) && location.includes('code='),
     'authorization state roundtrips': () => location.includes(`state=${encodeURIComponent(expectedState)}`),
   });
-  if (response.status !== 302) {
+  if (response.status !== 302 && response.status !== 303) {
     fail(`authorization decision failed: ${response.status} ${response.body}`);
   }
   return queryParamFromLocation(location, 'code');
@@ -686,6 +826,7 @@ export function metadata_jwks() {
   const metadata = http.get(
     `${BASE_URL}/.well-known/openid-configuration`,
     {
+      headers: tenantHeaders(),
       redirects: 0,
       tags: requestTags('metadata', {
         endpoint: '/.well-known/openid-configuration',
@@ -703,6 +844,7 @@ export function metadata_jwks() {
   const jwks = http.get(
     `${BASE_URL}/jwks.json`,
     {
+      headers: tenantHeaders(),
       redirects: 0,
       tags: requestTags('jwks', {
         endpoint: '/jwks.json',
@@ -962,6 +1104,13 @@ export async function fapi2_logged_in_high_security() {
   }
 }
 
+export async function ciba_private_key_jwt_dpop_poll() {
+  const user = selectedUser(false);
+  const authReqId = await cibaBackchannelAuthentication(user);
+  approveCiba(authReqId);
+  await cibaToken(authReqId);
+}
+
 export async function same_user_refresh_token_rotation() {
   await refreshTokenRotation(true);
 }
@@ -976,4 +1125,328 @@ export async function same_user_authorize_par_session() {
 
 export default function () {
   fail('PERF_SCENARIO must select a named scenario exec function');
+}
+
+// --- capacity/stress scenarios (perf/capacity-stress-20260915) ---
+
+// Warmup/measure split: only ops executed after CAP_WARMUP_MS are recorded into
+// cap_measure_* metrics, so bootstrap/login and ramp noise stay out of percentiles.
+const CAP_WARMUP_MS = Number(__ENV.CAP_WARMUP_MS || '15000');
+// Optional hard-isolated measurement window for diagnostics: warmup ends at
+// CAP_WARMUP_MS, VUs idle through the gap, measurement starts at
+// CAP_MEASURE_START_MS. 0 disables the gap (legacy two-phase mode).
+const CAP_MEASURE_START_MS = Number(__ENV.CAP_MEASURE_START_MS || '0');
+
+function capPhase() {
+  const t = Date.now() - testStartedAtMs;
+  if (CAP_MEASURE_START_MS <= 0) {
+    return t < CAP_WARMUP_MS ? 'warmup' : 'measure';
+  }
+  if (t < CAP_WARMUP_MS) {
+    return 'warmup';
+  }
+  if (t < CAP_MEASURE_START_MS) {
+    return 'gap';
+  }
+  return 'measure';
+}
+const capLatency = new Trend('cap_measure_ms', true);
+const capOps = new Counter('cap_measure_ops');
+const capErrs = new Counter('cap_measure_errors');
+// Per-minute measure buckets (cap_m1_*, cap_m2_*, ...) let steady-state and
+// recovery runs report drift without per-request logs.
+const CAP_BUCKETS = 24;
+const CAP_BUCKET_MS = Number(__ENV.CAP_BUCKET_MS || '60000');
+const capBucketLatency = [];
+const capBucketOps = [];
+const capBucketErrs = [];
+for (let i = 0; i < CAP_BUCKETS; i += 1) {
+  capBucketLatency.push(new Trend(`cap_m${i + 1}_ms`, true));
+  capBucketOps.push(new Counter(`cap_m${i + 1}_ops`));
+  capBucketErrs.push(new Counter(`cap_m${i + 1}_errors`));
+}
+function capBucketIndex() {
+  const elapsed = Date.now() - testStartedAtMs - CAP_WARMUP_MS;
+  const idx = Math.floor(elapsed / CAP_BUCKET_MS);
+  return idx < 0 ? 0 : Math.min(idx, CAP_BUCKETS - 1);
+}
+
+function capWarmedUp() {
+  return Date.now() - testStartedAtMs >= CAP_WARMUP_MS;
+}
+
+async function capRun(prepare, op) {
+  const phase = capPhase();
+  if (phase === 'gap') {
+    sleep(0.2);
+    return;
+  }
+  const measuring = phase === 'measure';
+  try {
+    await prepare();
+  } catch (e) {
+    if (measuring) {
+      capOps.add(1);
+      capErrs.add(1);
+    }
+    return;
+  }
+  if (!measuring) {
+    try {
+      await op();
+    } catch (e) {}
+    return;
+  }
+  const t0 = Date.now();
+  let ok = false;
+  try {
+    ok = await op();
+  } catch (e) {}
+  const idx = capBucketIndex();
+  capLatency.add(Date.now() - t0);
+  capOps.add(1);
+  capBucketLatency[idx].add(Date.now() - t0);
+  capBucketOps[idx].add(1);
+  if (!ok) {
+    capErrs.add(1);
+    capBucketErrs[idx].add(1);
+  }
+}
+
+// Vectors are only consumed during per-VU bootstrap and authorization-code ops;
+// wrapping keeps constant-vus runs from exhausting the fixed pool.
+function capVector() {
+  return vectors[(exec.scenario.iterationInTest + __VU * 7919) % vectors.length];
+}
+
+// One logged-in authorization_code issuance per VU. With sso=true the request
+// adds device_sso scope so the response also carries id_token + device_secret.
+const CAP_SUBJECT_AT_MAX_AGE_MS = 240000;
+
+async function capMintSubjectTokens(withSso, force = false) {
+  if (!force
+      && __VU_STATE.subjectAt
+      && Date.now() - (__VU_STATE.subjectAtMintedAt || 0) < CAP_SUBJECT_AT_MAX_AGE_MS
+      && (!withSso || __VU_STATE.ssoDeviceSecret)) {
+    return;
+  }
+  const user = selectedUser(false);
+  const v = capVector();
+  const request = await requestObject(
+    secrets.clients.oidc, v.oidc_state, v.oidc_nonce, v.oidc_code_challenge, null,
+    withSso ? 'openid profile offline_access device_sso' : null);
+  const parResponse = http.post(
+    `${BASE_URL}/par`,
+    form({ client_id: secrets.clients.oidc, client_secret: secrets.client_secret, request }),
+    formHeaders({}, requestTags('cap_bootstrap', { endpoint: '/par' })),
+  );
+  if (parResponse.status !== 201) {
+    fail(`cap bootstrap PAR failed: ${parResponse.status} ${parResponse.body}`);
+  }
+  const requestId = authorizePar(secrets.clients.oidc, parResponse.json('request_uri'), user, true);
+  if (!requestId) {
+    fail('cap bootstrap authorize failed');
+  }
+  const code = approveAuthorization(requestId, v.oidc_state);
+  const tokens = tokenAuthorizationCode(v, code);
+  __VU_STATE.subjectAt = tokens.access_token;
+  __VU_STATE.subjectAtMintedAt = Date.now();
+  if (tokens.refresh_token) {
+    __VU_STATE.refreshToken = tokens.refresh_token;
+  }
+  if (withSso) {
+    __VU_STATE.ssoIdToken = tokens.id_token;
+    __VU_STATE.ssoDeviceSecret = tokens.device_secret;
+    if (!__VU_STATE.ssoIdToken || !__VU_STATE.ssoDeviceSecret) {
+      fail('cap bootstrap did not return id_token/device_secret');
+    }
+  }
+}
+
+function capUserinfoOp() {
+  const response = http.get(
+    `${BASE_URL}/userinfo`,
+    {
+      headers: tenantHeaders({ Authorization: `Bearer ${__VU_STATE.subjectAt}` }),
+      redirects: 0,
+      tags: requestTags('userinfo', { endpoint: '/userinfo', subject_token: 'access_token' }),
+    },
+  );
+  return check(response, {
+    'userinfo status is 200': (r) => r.status === 200,
+    'userinfo subject returned': (r) => Boolean(r.json('sub')),
+  });
+}
+
+function capClientCredentialsOp() {
+  const response = http.post(
+    `${BASE_URL}/token`,
+    form({
+      grant_type: 'client_credentials',
+      client_id: secrets.clients.client_credentials,
+      client_secret: secrets.client_secret,
+      scope: 'profile',
+    }),
+    formHeaders({}, requestTags('token_client_credentials', {
+      endpoint: '/token', grant_type: 'client_credentials', client_auth: 'client_secret_post',
+    })),
+  );
+  return check(response, { 'client_credentials status is 200': (r) => r.status === 200 });
+}
+
+function capAuthorizationCodeOp() {
+  const user = selectedUser(false);
+  const v = capVector();
+  return (async () => {
+    const requestUri = await oidcPar(v);
+    const requestId = authorizePar(secrets.clients.oidc, requestUri, user, true);
+    if (!requestId) {
+      fail('cap authorize failed');
+    }
+    const code = approveAuthorization(requestId, v.oidc_state);
+    const tokens = tokenAuthorizationCode(v, code);
+    return Boolean(tokens && tokens.access_token);
+  })();
+}
+
+async function capRefreshOp() {
+  if (!__VU_STATE.refreshToken) {
+    if (capPhase() === 'measure') {
+      // Measurement must only rotate: re-minting would mix bootstrap SQL into
+      // the measured statement window. A missing family mid-measure is an
+      // error op.
+      return false;
+    }
+    // A dead/rotated family must not be replayed; mint a fresh one through the
+    // real authorization-code flow instead of reusing the seeded token.
+    await capMintSubjectTokens(false, true);
+  }
+  const response = http.post(
+    `${BASE_URL}/token`,
+    form({
+      grant_type: 'refresh_token',
+      client_id: secrets.clients.oidc,
+      client_secret: secrets.client_secret,
+      refresh_token: __VU_STATE.refreshToken,
+    }),
+    formHeaders({}, requestTags('token_refresh', {
+      endpoint: '/token', grant_type: 'refresh_token', client_profile: 'oidc',
+    })),
+  );
+  const ok = check(response, { 'refresh status is 200': (r) => r.status === 200 });
+  if (response.status === 200 && response.json('refresh_token')) {
+    __VU_STATE.refreshToken = response.json('refresh_token');
+  } else {
+    __VU_STATE.refreshToken = null;
+  }
+  return ok;
+}
+
+function capTokenExchangeOp() {
+  const response = http.post(
+    `${BASE_URL}/token`,
+    form({
+      grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+      client_id: secrets.clients.oidc,
+      client_secret: secrets.client_secret,
+      subject_token_type: 'urn:ietf:params:oauth:token-type:access_token',
+      subject_token: __VU_STATE.subjectAt,
+      audience: 'resource://default',
+      scope: 'profile',
+    }),
+    formHeaders({}, requestTags('token_exchange', {
+      endpoint: '/token', grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+    })),
+  );
+  return check(response, {
+    'token_exchange status is 200': (r) => r.status === 200,
+    'token_exchange access token returned': (r) => Boolean(r.json('access_token')),
+  });
+}
+
+function capNativeSsoOp() {
+  const response = http.post(
+    `${BASE_URL}/token`,
+    form({
+      grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
+      client_id: secrets.clients.oidc,
+      client_secret: secrets.client_secret,
+      subject_token_type: 'urn:ietf:params:oauth:token-type:id_token',
+      subject_token: __VU_STATE.ssoIdToken,
+      actor_token_type: 'urn:openid:params:token-type:device-secret',
+      actor_token: __VU_STATE.ssoDeviceSecret,
+      audience: secrets.issuer,
+    }),
+    formHeaders({}, requestTags('token_native_sso_fresh', {
+      endpoint: '/token', grant_type: 'native_sso_fresh',
+    })),
+  );
+  check(response, {
+    'native_sso status is 200': (r) => r.status === 200,
+    'native_sso device secret returned': (r) => Boolean(r.json('device_secret')),
+  });
+  const ok = response.status === 200;
+  if (ok) {
+    if (response.json('device_secret')) {
+      __VU_STATE.ssoDeviceSecret = response.json('device_secret');
+    }
+    if (response.json('id_token')) {
+      __VU_STATE.ssoIdToken = response.json('id_token');
+    }
+  }
+  return ok;
+}
+
+export async function cap_client_credentials() {
+  await capRun(async () => {}, capClientCredentialsOp);
+}
+
+export async function cap_userinfo_pairwise() {
+  await capRun(async () => capMintSubjectTokens(false), capUserinfoOp);
+}
+
+export async function cap_refresh_token() {
+  await capRun(async () => {}, capRefreshOp);
+}
+
+export async function cap_token_exchange() {
+  await capRun(async () => capMintSubjectTokens(false), capTokenExchangeOp);
+}
+
+export async function cap_native_sso_fresh() {
+  await capRun(async () => capMintSubjectTokens(true), capNativeSsoOp);
+}
+
+// authorization_code capacity: full logged-in PAR->authorize->decision->redeem.
+export async function cap_authorization_code() {
+  await capRun(async () => {}, capAuthorizationCodeOp);
+}
+
+// Synthetic mix: userinfo 30% / client_credentials 25% / authorization_code 15%
+// / refresh_token 15% / token_exchange 10% / native_sso_fresh 5%.
+async function capMixedOp() {
+  const roll = Math.random() * 100;
+  if (roll < 30) {
+    await capMintSubjectTokens(true);
+    return capUserinfoOp();
+  }
+  if (roll < 55) {
+    return capClientCredentialsOp();
+  }
+  if (roll < 70) {
+    return capAuthorizationCodeOp();
+  }
+  if (roll < 85) {
+    return capRefreshOp();
+  }
+  if (roll < 95) {
+    await capMintSubjectTokens(false);
+    return capTokenExchangeOp();
+  }
+  await capMintSubjectTokens(true);
+  return capNativeSsoOp();
+}
+
+export async function cap_mixed() {
+  await capRun(async () => {}, capMixedOp);
 }
