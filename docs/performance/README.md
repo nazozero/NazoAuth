@@ -22,18 +22,20 @@ the current release or an unmeasured deployment.
 | --- | --- | --- |
 | Main matrix | [reports/main](reports/main) | Token-only, OIDC, refresh-only, and FAPI2 logged-in capacity reports. |
 | Extended matrix | [reports/extended](reports/extended) | mTLS, PAR/JAR, introspection, revocation, discovery/JWKS, and same-user contention reports. |
-| Special runs | [reports/special](reports/special) | App CPU experiments and PG wait-event diagnostics with retained raw results. |
+| Special runs | [reports/special](reports/special) | App CPU experiments and PG wait-event diagnostics with retained structured evidence. |
 
 ## Evidence Model
 
 - Markdown summaries and scenario reports live under `docs/performance/`.
-- Structured benchmark results and environment captures live under
+- Compact structured benchmark results and environment captures live under
   [`../../perf/results`](../../perf/results).
 - Benchmark runner instructions live in [`../../perf/README.md`](../../perf/README.md).
-- Scenario reports intentionally keep only a compact evidence table, capacity
-  curve table, and step breakdown. Repeated runner topology belongs in the
-  linked `perf/results/environment-*.md` capture instead of being copied
-  into every report.
+- Retained evidence should be the minimum set needed to reproduce the reported
+  numbers: aggregate results, per-point snapshots, run summaries, environment
+  metadata, and focused failure probes when they materially support a claim.
+- High-frequency sampler streams, transient driver logs, and checksum manifests
+  are run artifacts, not durable Git baselines, when their information is already
+  represented in retained structured results.
 
 ## Common Semantics
 
@@ -56,9 +58,10 @@ the current release or an unmeasured deployment.
 - Put new extended matrix scenario reports under `reports/extended/`.
 - Put one-off CPU, single-instance, or experiment reports under
   `reports/special/`.
-- Keep generated JSON results and environment captures in `perf/results/`.
-  A report without its raw result is not a retained benchmark baseline.
-  Temporary paths in old environment captures describe that run, not a current
+- Keep only compact structured results and environment captures required to
+  verify a retained report in `perf/results/`; do not commit redundant sampler
+  streams, transient logs, or checksum lists by default.
+- Temporary paths in old environment captures describe that run, not a current
   deployment recipe; use `perf/README.md` for current runner commands.
 - Update [performance-capacity-curve.md](performance-capacity-curve.md) and
   the relevant summary file when adding a durable scenario report.

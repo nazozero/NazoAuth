@@ -2,7 +2,7 @@
 
 ## 1. Verdict
 
-**ADOPT FAST** — all acceptance criteria met (see §6).
+**ADOPT FAST** — all acceptance criteria met (see §5).
 
 `ManagerConfig.recycling_method` is the only production-code delta under test
 (`crates/persistence-postgres/src/pool.rs`): `Verified` (default, `SELECT 1`
@@ -14,21 +14,19 @@ ping per checkout) vs `Fast` (transaction/broken-state check only).
   refresh 26.03→19.01. No nested-statement change (cc 0.00, refresh 2.00 both
   modes — refresh's 2 nested/op is the refresh-context validation inside a SQL
   function, not a wire RTT).
-- Throughput: **+5.9% … +22.4%**; latency p50/p95/p99 each improved 1–3ms.
-- Failure semantics: backend termination → **0 failed probes** (dead sockets
-  are detected structurally at checkout, before any business SQL);
-  full PostgreSQL container restart → **2 bounded 503s** per path, recovery
-  <0.3s, no restart, no partial issuance/rotation (failed refresh retried with
-  the same token succeeded → family state atomic).
+- Throughput: **+5.9% … +22.4%**; latency improved or held steady at every reported percentile.
+- Failure semantics: backend termination → **0 failed probes**; full PostgreSQL
+  container restart → **2 bounded 503s** per path, recovery <0.3s, no restart,
+  no partial issuance/rotation.
 
 ## 2. Tested Source
 
 | 项 | 值 |
 |---|---|
 | Base SHA | `9adbb53c`（gh main，PR #211 已合并） |
-| A/B 变量 | `pool.rs`: `config.recycling_method = RecyclingMethod::Fast`（verified 腿 = 未修改默认） |
+| A/B 变量 | `pool.rs`: `config.recycling_method = RecyclingMethod::Fast`（Verified 腿 = 未修改默认） |
 | 环境 | 同一容器化单机栈（PG 18.6 + Valkey 同机）；两腿各自完整 4 点矩阵顺序执行 |
-| 协议 | 15s warmup → gap 排空 → `pg_stat_statements_reset()` + baseline → 60s measure → 排空 → final；activity/locks ~300ms 采样；本轮 `pg_stat_statements` dump 含 `toplevel` 列 |
+| 协议 | 15s warmup → gap 排空 → `pg_stat_statements_reset()` + baseline → 60s measure → 排空 → final；activity/locks ~300ms 采样；`pg_stat_statements` dump 含 `toplevel` 列 |
 
 ## 3. A/B Matrix（每点 15s warmup + 60s measure，0 errors）
 
@@ -43,76 +41,75 @@ ping per checkout) vs `Fast` (transaction/broken-state check only).
 | refresh-c32 | Verified | 2959.4 | — | 10 | 16 | 21 | 26.03 | 2.00 | 7.01 | 7.01 | 0.21 |
 | refresh-c32 | **Fast** | **3258.4** | **+10.1%** | 9 | 15 | 21 | 19.01 | 2.00 | 0.00 | 7.01 | 0.17 |
 
-解释：c8（RTT-latency bound 区间）收益最大——每 op 省 5/7 次 RTT ≈ 1.3–1.8ms/op
-延迟，直接转成吞吐；c32（开始贴近 WAL/commit 饱和）收益收窄但仍有
-+10~12%。两腿 wait 分布形态不变（`LWLock|WALWrite` 仍为首位活跃等待）。
+c8 is primarily RTT-latency bound, so removing 5/7 checkout pings produces the
+largest direct latency benefit. At c32 the workload is closer to WAL/commit
+saturation, so throughput gains narrow but remain material. Wait distributions
+remain qualitatively unchanged (`LWLock|WALWrite` is still the leading active wait).
 
-## 4. 故障语义测试（Fast 构建上执行）
+## 4. Failure Semantics on Fast
 
-### 4.1 `pg_terminate_backend`（杀掉 runtime role 全部 backend）
+### 4.1 `pg_terminate_backend`
 
-- cc 探针（4/s，60s）：21 个 backend 终止 → **0 失败**
-- refresh 探针（mint 独立 family 后每 250ms 轮换）：3 个 backend 终止 →
-  **0 失败**
-- 机制：`pg_terminate_backend` 关闭 socket → tokio-postgres 连接驱动结束 →
-  池内对象在 checkout 时被结构性判死并丢弃，新的物理连接按需建立；
-  `Fast` 不需要 ping 就能发现 socket 级死亡。Verified 的 ping 只对
-  **socket 看似活着但实际已死**（半开 TCP，无 FIN/RST）的场景才有额外价值。
+- cc probe: 21 runtime backends terminated → **0 failures**.
+- refresh probe: 3 runtime backends terminated → **0 failures**.
+- Socket closure is detected by the connection driver; dead pooled objects are
+  discarded and new physical connections are established on demand.
 
-### 4.2 `docker restart postgres`（整个 PG 短暂重启）
+### 4.2 PostgreSQL container restart
 
-| Path | 失败数 | 错误类型 | 恢复时间 | 部分状态 |
-|---|---|---|---|---|
-| cc | 2 | HTTP 503 `server_error` | 末次失败后 0.26s 恢复连续成功 | 无 |
-| refresh | 2 | HTTP 503 `server_error` | 0.27s | 无——失败后同一 refresh_token 重试成功，rotation 原子性保持 |
+| Path | Failures | Error | Recovery | Partial state |
+|---|---:|---|---|---|
+| cc | 2 | HTTP 503 `server_error` | 0.26s after final failure | none |
+| refresh | 2 | HTTP 503 `server_error` | 0.27s | none; retrying the same refresh token succeeds |
 
-失败均有界、fail-closed、无错误成功；连接自动重建；无需重启 NazoAuth。
+Failures are bounded and fail closed; NazoAuth reconnects automatically without restart.
 
-### 4.3 未覆盖边界（如实声明）
+### 4.3 Uncovered boundary
 
-- **静默半开 TCP**（对端消失且无 FIN/RST，如中间设备丢包）未测：Fast 下
-  首个业务 SQL 会失败（有界 1 次失败/op，连接随后被丢弃）；Verified 会在
-  checkout ping 时拦截。本环境（docker bridge 同机）不存在该模式。
-- 池等待本身两种模式都不显著（<0.25ms avg）。
+A silent half-open TCP path with no FIN/RST was not reproduced by the local
+Docker bridge. Under `Fast`, the first real business SQL on such a stale
+connection may fail before the connection is discarded. This is accepted here;
+no transparent token-issuance retry is introduced.
 
-## 5. Acceptance Criteria Checklist
+## 5. Acceptance Criteria
 
-| # | 条件 | 结果 |
+| # | Condition | Result |
 |---|---|---|
-| 1 | SELECT $1/op → ~0 | ✅ 0.00（全部 4 点） |
-| 2 | throughput/latency 有可测收益 | ✅ +5.9%~+22.4%，p50 −1ms |
-| 3 | errors=0 | ✅ 矩阵全点 0 错误 |
-| 4 | stale conn 不产生错误成功 | ✅ terminate 测试 0 失败 |
-| 5 | 所有 DB 失败 fail-closed | ✅ 仅 503 server_error |
-| 6 | 无 partial issuance/rotation | ✅ refresh 失败后同 token 重试成功 |
-| 7 | 坏连接被 discard | ✅ 死连接未再出现业务错误 |
-| 8 | 自动建连恢复 | ✅ <0.3s |
-| 9 | 无需重启 | ✅ app 进程未动 |
-| 10 | 失败数有界 | ✅ restart 2 次/路径 |
+| 1 | `SELECT $1`/op → ~0 | ✅ 0.00 at all four points |
+| 2 | measurable throughput/latency benefit | ✅ +5.9% to +22.4% |
+| 3 | normal A/B errors = 0 | ✅ |
+| 4 | stale connection cannot produce false success | ✅ |
+| 5 | DB failures fail closed | ✅ only bounded 503s observed |
+| 6 | no partial issuance/rotation | ✅ refresh retry with same token succeeds |
+| 7 | broken connection discarded | ✅ |
+| 8 | automatic reconnect | ✅ <0.3s in restart probe |
+| 9 | no NazoAuth restart required | ✅ |
+| 10 | failures bounded | ✅ 2 per path during PG restart |
 
-## 6. 最终结论
+## 6. Conclusion
 
 **ADOPT FAST.**
 
-- 收益：cc +11.6%（c32）/ +22.4%（c8）；refresh +10.1%（c32）/ +5.9%（c8）；
-  每 op 净减 5（cc）/7（refresh）个零业务价值 wire RTT。
-- 代价：半开 TCP 这类"socket 活、对端死"的罕见场景下，stale 连接的首个
-  业务 SQL 失败一次（fail-closed、有界、连接随后被替换）——按任务给定
-  语义这是可接受边界。
-- 不做：透明业务重试（引入幂等/事务复杂度，超出本轮范围）。
+- cc: +11.6% at c32 / +22.4% at c8; removes ~5 zero-business-value wire RTT/op.
+- refresh: +10.1% at c32 / +5.9% at c8; removes ~7 zero-business-value wire RTT/op.
+- Transparent business retries remain intentionally out of scope.
 
-下一步候选（不在本轮实施）：合并 `oauth_clients` 多次读取；refresh 的
-`parent SELECT + revoke UPDATE → UPDATE ... RETURNING`；family
-`EXISTS + INSERT → conditional INSERT`；audit preflight 两 SQL 合一
-（不缓存结果）。
+Next candidates, not implemented here: collapse repeated `oauth_clients` reads;
+refresh `parent SELECT + revoke UPDATE → UPDATE ... RETURNING`; family
+`EXISTS + INSERT → conditional INSERT`; merge audit preflight SQL without caching results.
 
-## 7. Raw Evidence
+## 7. Retained Evidence
 
-- `perf/results/waitprobe-ab-verified-2026-09-16/`、`perf/results/waitprobe-ab-fast-2026-09-16/`：
-  aggregate.json、4 点快照、run summary、activity/locks 原始 JSONL、SHA256SUMS
-- `perf/results/failprobe-2026-09-16/`：cc/refresh × terminate/restart 探针 JSONL
-- 工具：`perf/wait_ab.sh`、`perf/aggregate_ab.py`、`perf/failprobe.py`；
-  `perf/wait_sampler.py` 增加 `toplevel` 列、app `__perf/metrics` 快照
-  （Host 头修正）与持续活跃防误判（`consec_active>=5`）
+The repository keeps only the minimum structured evidence needed to reproduce
+this report:
 
-远端工作目录：`/workspace/perf-results/waitprobe-ab/`、`/workspace/perf-results/failprobe/`。
+- `perf/results/waitprobe-ab-verified-2026-09-16/` and
+  `perf/results/waitprobe-ab-fast-2026-09-16/`: `aggregate.json`, per-point
+  `points/*.json`, `runs/*.summary.json`, and `meta.txt`.
+- `perf/results/failprobe-2026-09-16/`: focused cc/refresh terminate/restart probes.
+- Harness: `perf/wait_ab.sh`, `perf/aggregate_ab.py`, `perf/failprobe.py`, and
+  `perf/wait_sampler.py`.
+
+High-frequency activity/lock streams, transient sampler/driver logs, and checksum
+manifests are intentionally not retained in Git when their information is already
+represented in the structured point/aggregate results.
