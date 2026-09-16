@@ -20,6 +20,7 @@ from seed import seed
 
 
 BASE_URL = os.environ.get("BASE_URL", "http://nazoauth:8000").rstrip("/")
+TENANT_HOST = os.environ.get("PERF_TENANT_HOST", "")
 DATABASE_URL = os.environ["DATABASE_URL"]
 VALKEY_URL = os.environ["VALKEY_URL"]
 RESULTS_DIR = Path(os.environ.get("PERF_RESULTS_DIR", "/results"))
@@ -95,7 +96,10 @@ def wait_for_service() -> None:
     deadline = time.time() + 90
     while time.time() < deadline:
         try:
-            with urlopen(f"{BASE_URL}/health", timeout=2) as response:
+            request = Request(f"{BASE_URL}/health")
+            if TENANT_HOST:
+                request.add_header("Host", TENANT_HOST)
+            with urlopen(request, timeout=2) as response:
                 if response.status == 200:
                     return
         except Exception:
@@ -104,7 +108,10 @@ def wait_for_service() -> None:
 
 
 def get_json_url(url: str) -> dict[str, Any]:
-    request = Request(url, headers={"accept": "application/json"})
+    headers = {"accept": "application/json"}
+    if TENANT_HOST:
+        headers["Host"] = TENANT_HOST
+    request = Request(url, headers=headers)
     with urlopen(request, timeout=5) as response:
         return json.loads(response.read().decode("utf-8"))
 
@@ -390,7 +397,7 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
     failed = failed_metric.get("values", failed_metric)
     reqs = reqs_metric.get("values", reqs_metric)
     dropped = dropped_metric.get("values", dropped_metric)
-    return {
+    brief = {
         "http_reqs": int(reqs.get("count", 0)),
         "rps": round(float(reqs.get("rate", 0)), 3),
         "error_rate": round(k6_error_rate(summary), 6),
@@ -402,6 +409,46 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
             "p99": round(float(duration.get("p(99)", 0)), 3),
         },
     }
+    # Warmup/measure split: cap_* scenarios record post-warmup ops into
+    # cap_measure_* so measured windows exclude bootstrap and ramp traffic.
+    measure_metric = metrics.get("cap_measure_ms", {})
+    if measure_metric:
+        measure = measure_metric.get("values", measure_metric)
+        ops_metric = metrics.get("cap_measure_ops", {})
+        errs_metric = metrics.get("cap_measure_errors", {})
+        ops = ops_metric.get("values", ops_metric)
+        errs = errs_metric.get("values", errs_metric)
+        brief["measure"] = {
+            "ops": int(ops.get("count", 0)),
+            "ops_per_s": round(float(ops.get("rate", 0)), 3),
+            "errors": int(errs.get("count", 0)),
+            "latency_ms": {
+                "p50": round(float(measure.get("med", 0)), 3),
+                "p95": round(float(measure.get("p(95)", 0)), 3),
+                "p99": round(float(measure.get("p(99)", 0)), 3),
+            },
+        }
+        # Per-minute buckets for steady-state drift and recovery evidence.
+        buckets = []
+        for i in range(1, 25):
+            lat = metrics.get(f"cap_m{i}_ms", {}).get("values", {})
+            cnt = metrics.get(f"cap_m{i}_ops", {}).get("values", {})
+            err = metrics.get(f"cap_m{i}_errors", {}).get("values", {})
+            if not cnt.get("count"):
+                continue
+            buckets.append({
+                "bucket": i,
+                "ops": int(cnt.get("count", 0)),
+                "errors": int(err.get("count", 0)),
+                "latency_ms": {
+                    "p50": round(float(lat.get("med", 0)), 3),
+                    "p95": round(float(lat.get("p(95)", 0)), 3),
+                    "p99": round(float(lat.get("p(99)", 0)), 3),
+                },
+            })
+        if buckets:
+            brief["measure"]["buckets"] = buckets
+    return brief
 
 
 def parse_metric_tags(metric_name: str, prefix: str) -> dict[str, str] | None:

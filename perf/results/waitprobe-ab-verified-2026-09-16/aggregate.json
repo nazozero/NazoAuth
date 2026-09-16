@@ -1,0 +1,1318 @@
+{
+ "points": {
+  "cc-c8": {
+   "window_s": 75.05,
+   "ops": 104357,
+   "ops_per_s": 1739.28,
+   "http_reqs_measure": 104357,
+   "errors": 0,
+   "p50": 4.0,
+   "p95": 7.0,
+   "p99": 11.0,
+   "stmt_calls_total": 1570377,
+   "toplevel_calls_per_op": 15.048,
+   "nested_calls_per_op": 0.0,
+   "select1_calls": 524293,
+   "select1_per_op": 5.024,
+   "pool_acquire_delta": 524293,
+   "pool_acquire_per_op": 5.024,
+   "sql_exec_ms_per_op": 0.4,
+   "xact_commit_per_s": 16762.91,
+   "wal_bytes_per_op": 3948.6,
+   "wal_fsync_ms_per_op": 0.479,
+   "wait_active_hist": {
+    "IO|WalSync": 159,
+    "LWLock|WALWrite": 361,
+    "None|None": 192,
+    "Client|ClientRead": 109,
+    "IO|WalWrite": 2,
+    "IO|DataFileExtend": 1
+   },
+   "wait_active_by_qid": {
+    "IO|WalSync|6097083398544187049": 159,
+    "LWLock|WALWrite|6097083398544187049": 357,
+    "None|None|7767790448619321394": 44,
+    "None|None|1128696453630427921": 27,
+    "None|None|6397072144124071468": 39,
+    "None|None|-3579186174929395745": 33,
+    "Client|ClientRead|327112332356189388": 10,
+    "Client|ClientRead|4914488998956313696": 14,
+    "Client|ClientRead|7559284449764764609": 18,
+    "None|None|None": 17,
+    "Client|ClientRead|7767790448619321394": 10,
+    "None|None|7559284449764764609": 3,
+    "Client|ClientRead|-859282481384524542": 10,
+    "Client|ClientRead|None": 11,
+    "LWLock|WALWrite|7767790448619321394": 3,
+    "None|None|4914488998956313696": 9,
+    "Client|ClientRead|-3579186174929395745": 9,
+    "Client|ClientRead|1128696453630427921": 2,
+    "None|None|6097083398544187049": 11,
+    "Client|ClientRead|4854991825702068830": 1,
+    "Client|ClientRead|6397072144124071468": 13,
+    "IO|WalWrite|None": 1,
+    "IO|WalWrite|6097083398544187049": 1,
+    "LWLock|WALWrite|None": 1,
+    "None|None|327112332356189388": 6,
+    "Client|ClientRead|6097083398544187049": 10,
+    "None|None|-1708461756726018533": 2,
+    "Client|ClientRead|-1708461756726018533": 1,
+    "IO|DataFileExtend|7767790448619321394": 1,
+    "None|None|-859282481384524542": 1
+   },
+   "active_rows": 824,
+   "lock_hist": {
+    "relation|AccessShareLock|held": 718,
+    "virtualxid|ExclusiveLock|held": 1203,
+    "transactionid|ExclusiveLock|held": 712,
+    "relation|RowExclusiveLock|held": 2452,
+    "relation|RowShareLock|held": 3217,
+    "spectoken|ExclusiveLock|held": 4,
+    "relation|ShareUpdateExclusiveLock|held": 48
+   },
+   "db_pool_wait_ms_avg": 0.073,
+   "top_sql_by_time": [
+    {
+     "calls": 104357,
+     "ms": 14329.7,
+     "mean_ms": 0.137,
+     "toplevel": true,
+     "queryid": 7767790448619321394,
+     "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+    },
+    {
+     "calls": 104357,
+     "ms": 9678.5,
+     "mean_ms": 0.093,
+     "toplevel": true,
+     "queryid": -3579186174929395745,
+     "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)"
+    },
+    {
+     "calls": 104357,
+     "ms": 8401.2,
+     "mean_ms": 0.081,
+     "toplevel": true,
+     "queryid": 1128696453630427921,
+     "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\") VALUES ("
+    },
+    {
+     "calls": 104357,
+     "ms": 3909.3,
+     "mean_ms": 0.037,
+     "toplevel": true,
+     "queryid": 4914488998956313696,
+     "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli"
+    },
+    {
+     "calls": 104357,
+     "ms": 2327.3,
+     "mean_ms": 0.022,
+     "toplevel": true,
+     "queryid": 327112332356189388,
+     "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 104357,
+     "ms": 1335.0,
+     "mean_ms": 0.013,
+     "toplevel": true,
+     "queryid": -859282481384524542,
+     "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_"
+    },
+    {
+     "calls": 104357,
+     "ms": 1158.2,
+     "mean_ms": 0.011,
+     "toplevel": true,
+     "queryid": 6397072144124071468,
+     "q": "SELECT split_part(client_secret_hash, $6, $7) FROM \"oauth_clients\" WHERE ((((\"oauth_clients\".\"id\" = $1) AND (\"oauth_clients\".\"tenant_id\" = $2)) AND (\"oauth_clie"
+    },
+    {
+     "calls": 524293,
+     "ms": 555.2,
+     "mean_ms": 0.001,
+     "toplevel": true,
+     "queryid": 7559284449764764609,
+     "q": "SELECT $1"
+    },
+    {
+     "calls": 104357,
+     "ms": 363.8,
+     "mean_ms": 0.003,
+     "toplevel": true,
+     "queryid": -1708461756726018533,
+     "q": "SET LOCAL lock_timeout = $1"
+    },
+    {
+     "calls": 104357,
+     "ms": 44.0,
+     "mean_ms": 0.0,
+     "toplevel": true,
+     "queryid": 6097083398544187049,
+     "q": "COMMIT"
+    },
+    {
+     "calls": 104357,
+     "ms": 42.6,
+     "mean_ms": 0.0,
+     "toplevel": true,
+     "queryid": 4854991825702068830,
+     "q": "BEGIN"
+    },
+    {
+     "calls": 1200,
+     "ms": 25.3,
+     "mean_ms": 0.021,
+     "toplevel": true,
+     "queryid": 327599666449656670,
+     "q": "SELECT \"runtime_module_instance_states\".\"tenant_id\", \"runtime_module_instance_states\".\"instance_id\", \"runtime_module_instance_states\".\"module_id\", \"runtime_modu"
+    },
+    {
+     "calls": 1275,
+     "ms": 14.0,
+     "mean_ms": 0.011,
+     "toplevel": true,
+     "queryid": 3867181147013517150,
+     "q": "SELECT \"runtime_module_desired_states\".\"tenant_id\", \"runtime_module_desired_states\".\"module_id\", \"runtime_module_desired_states\".\"desired_mode\", \"runtime_module"
+    },
+    {
+     "calls": 1,
+     "ms": 0.9,
+     "mean_ms": 0.887,
+     "toplevel": true,
+     "queryid": 8964216890200857879,
+     "q": "SELECT nazo_openid4vp_cleanup_expired_transactions() AS deleted_transactions"
+    },
+    {
+     "calls": 1,
+     "ms": 0.9,
+     "mean_ms": 0.865,
+     "toplevel": true,
+     "queryid": -2497389739484336938,
+     "q": "SELECT * FROM nazo_oauth_cleanup_expired_security_state()"
+    }
+   ],
+   "top_sql_by_calls": [
+    {
+     "calls": 524293,
+     "ms": 555.2,
+     "mean_ms": 0.001,
+     "toplevel": true,
+     "queryid": 7559284449764764609,
+     "q": "SELECT $1"
+    },
+    {
+     "calls": 104357,
+     "ms": 14329.7,
+     "mean_ms": 0.137,
+     "toplevel": true,
+     "queryid": 7767790448619321394,
+     "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+    },
+    {
+     "calls": 104357,
+     "ms": 9678.5,
+     "mean_ms": 0.093,
+     "toplevel": true,
+     "queryid": -3579186174929395745,
+     "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)"
+    },
+    {
+     "calls": 104357,
+     "ms": 8401.2,
+     "mean_ms": 0.081,
+     "toplevel": true,
+     "queryid": 1128696453630427921,
+     "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\") VALUES ("
+    },
+    {
+     "calls": 104357,
+     "ms": 3909.3,
+     "mean_ms": 0.037,
+     "toplevel": true,
+     "queryid": 4914488998956313696,
+     "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli"
+    },
+    {
+     "calls": 104357,
+     "ms": 2327.3,
+     "mean_ms": 0.022,
+     "toplevel": true,
+     "queryid": 327112332356189388,
+     "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 104357,
+     "ms": 1335.0,
+     "mean_ms": 0.013,
+     "toplevel": true,
+     "queryid": -859282481384524542,
+     "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_"
+    },
+    {
+     "calls": 104357,
+     "ms": 1158.2,
+     "mean_ms": 0.011,
+     "toplevel": true,
+     "queryid": 6397072144124071468,
+     "q": "SELECT split_part(client_secret_hash, $6, $7) FROM \"oauth_clients\" WHERE ((((\"oauth_clients\".\"id\" = $1) AND (\"oauth_clients\".\"tenant_id\" = $2)) AND (\"oauth_clie"
+    },
+    {
+     "calls": 104357,
+     "ms": 363.8,
+     "mean_ms": 0.003,
+     "toplevel": true,
+     "queryid": -1708461756726018533,
+     "q": "SET LOCAL lock_timeout = $1"
+    },
+    {
+     "calls": 104357,
+     "ms": 44.0,
+     "mean_ms": 0.0,
+     "toplevel": true,
+     "queryid": 6097083398544187049,
+     "q": "COMMIT"
+    },
+    {
+     "calls": 104357,
+     "ms": 42.6,
+     "mean_ms": 0.0,
+     "toplevel": true,
+     "queryid": 4854991825702068830,
+     "q": "BEGIN"
+    },
+    {
+     "calls": 1275,
+     "ms": 14.0,
+     "mean_ms": 0.011,
+     "toplevel": true,
+     "queryid": 3867181147013517150,
+     "q": "SELECT \"runtime_module_desired_states\".\"tenant_id\", \"runtime_module_desired_states\".\"module_id\", \"runtime_module_desired_states\".\"desired_mode\", \"runtime_module"
+    },
+    {
+     "calls": 1200,
+     "ms": 25.3,
+     "mean_ms": 0.021,
+     "toplevel": true,
+     "queryid": 327599666449656670,
+     "q": "SELECT \"runtime_module_instance_states\".\"tenant_id\", \"runtime_module_instance_states\".\"instance_id\", \"runtime_module_instance_states\".\"module_id\", \"runtime_modu"
+    },
+    {
+     "calls": 15,
+     "ms": 0.3,
+     "mean_ms": 0.02,
+     "toplevel": true,
+     "queryid": 4500955875985355274,
+     "q": "SELECT revision\n             FROM tenant_runtime_directory_state\n             WHERE singleton"
+    },
+    {
+     "calls": 15,
+     "ms": 0.2,
+     "mean_ms": 0.014,
+     "toplevel": true,
+     "queryid": -6421484356574917337,
+     "q": "UPDATE backchannel_logout_deliveries\n            SET attempts = attempts + $3, locked_at = CURRENT_TIMESTAMP,\n                updated_at = CURRENT_TIMESTAMP\n   "
+    }
+   ]
+  },
+  "cc-c32": {
+   "window_s": 75.06,
+   "ops": 305400,
+   "ops_per_s": 5090.0,
+   "http_reqs_measure": 305400,
+   "errors": 0,
+   "p50": 6.0,
+   "p95": 10.0,
+   "p99": 16.0,
+   "stmt_calls_total": 4586034,
+   "toplevel_calls_per_op": 15.016,
+   "nested_calls_per_op": 0.0,
+   "select1_calls": 1529511,
+   "select1_per_op": 5.008,
+   "pool_acquire_delta": 1529511,
+   "pool_acquire_per_op": 5.008,
+   "sql_exec_ms_per_op": 0.46,
+   "xact_commit_per_s": 48904.21,
+   "wal_bytes_per_op": 2545.0,
+   "wal_fsync_ms_per_op": 0.183,
+   "wait_active_hist": {
+    "Client|ClientRead": 342,
+    "IO|WalSync": 188,
+    "LWLock|WALWrite": 1923,
+    "None|None": 578,
+    "IO|DataFileExtend": 5,
+    "LWLock|BufferContent": 4,
+    "IO|DataFileWrite": 1,
+    "IO|WalWrite": 1
+   },
+   "wait_active_by_qid": {
+    "Client|ClientRead|327112332356189388": 32,
+    "Client|ClientRead|4914488998956313696": 53,
+    "IO|WalSync|6097083398544187049": 188,
+    "LWLock|WALWrite|6097083398544187049": 1916,
+    "None|None|-3579186174929395745": 78,
+    "None|None|327112332356189388": 12,
+    "None|None|4914488998956313696": 46,
+    "None|None|7767790448619321394": 145,
+    "Client|ClientRead|1128696453630427921": 27,
+    "Client|ClientRead|7767790448619321394": 33,
+    "Client|ClientRead|6097083398544187049": 21,
+    "Client|ClientRead|6397072144124071468": 42,
+    "None|None|None": 53,
+    "Client|ClientRead|None": 46,
+    "Client|ClientRead|-859282481384524542": 25,
+    "None|None|6097083398544187049": 14,
+    "None|None|6397072144124071468": 116,
+    "IO|DataFileExtend|7767790448619321394": 4,
+    "None|None|7559284449764764609": 10,
+    "Client|ClientRead|-3579186174929395745": 24,
+    "Client|ClientRead|7559284449764764609": 36,
+    "None|None|1128696453630427921": 81,
+    "LWLock|WALWrite|None": 4,
+    "None|None|-859282481384524542": 17,
+    "None|None|-1708461756726018533": 5,
+    "Client|ClientRead|4854991825702068830": 2,
+    "LWLock|WALWrite|7767790448619321394": 3,
+    "LWLock|BufferContent|7767790448619321394": 1,
+    "IO|DataFileWrite|7767790448619321394": 1,
+    "None|None|4854991825702068830": 1,
+    "LWLock|BufferContent|1128696453630427921": 3,
+    "IO|WalWrite|6097083398544187049": 1,
+    "IO|DataFileExtend|1128696453630427921": 1,
+    "Client|ClientRead|-1708461756726018533": 1
+   },
+   "active_rows": 3042,
+   "lock_hist": {
+    "relation|AccessShareLock|held": 1554,
+    "virtualxid|ExclusiveLock|held": 3804,
+    "transactionid|ExclusiveLock|held": 2817,
+    "relation|RowExclusiveLock|held": 8362,
+    "relation|RowShareLock|held": 12902,
+    "spectoken|ExclusiveLock|held": 17,
+    "extend|ExclusiveLock|held": 3,
+    "relation|ShareUpdateExclusiveLock|held": 28
+   },
+   "db_pool_wait_ms_avg": 0.204,
+   "top_sql_by_time": [
+    {
+     "calls": 305400,
+     "ms": 49159.2,
+     "mean_ms": 0.161,
+     "toplevel": true,
+     "queryid": 7767790448619321394,
+     "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+    },
+    {
+     "calls": 305400,
+     "ms": 30426.5,
+     "mean_ms": 0.1,
+     "toplevel": true,
+     "queryid": -3579186174929395745,
+     "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)"
+    },
+    {
+     "calls": 305400,
+     "ms": 29441.9,
+     "mean_ms": 0.096,
+     "toplevel": true,
+     "queryid": 1128696453630427921,
+     "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\") VALUES ("
+    },
+    {
+     "calls": 305400,
+     "ms": 12442.5,
+     "mean_ms": 0.041,
+     "toplevel": true,
+     "queryid": 4914488998956313696,
+     "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli"
+    },
+    {
+     "calls": 305400,
+     "ms": 9037.9,
+     "mean_ms": 0.03,
+     "toplevel": true,
+     "queryid": 327112332356189388,
+     "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 305400,
+     "ms": 4035.2,
+     "mean_ms": 0.013,
+     "toplevel": true,
+     "queryid": -859282481384524542,
+     "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_"
+    },
+    {
+     "calls": 305400,
+     "ms": 3692.2,
+     "mean_ms": 0.012,
+     "toplevel": true,
+     "queryid": 6397072144124071468,
+     "q": "SELECT split_part(client_secret_hash, $6, $7) FROM \"oauth_clients\" WHERE ((((\"oauth_clients\".\"id\" = $1) AND (\"oauth_clients\".\"tenant_id\" = $2)) AND (\"oauth_clie"
+    },
+    {
+     "calls": 1529511,
+     "ms": 1536.8,
+     "mean_ms": 0.001,
+     "toplevel": true,
+     "queryid": 7559284449764764609,
+     "q": "SELECT $1"
+    },
+    {
+     "calls": 305400,
+     "ms": 1161.7,
+     "mean_ms": 0.004,
+     "toplevel": true,
+     "queryid": -1708461756726018533,
+     "q": "SET LOCAL lock_timeout = $1"
+    },
+    {
+     "calls": 305400,
+     "ms": 133.4,
+     "mean_ms": 0.0,
+     "toplevel": true,
+     "queryid": 6097083398544187049,
+     "q": "COMMIT"
+    },
+    {
+     "calls": 305400,
+     "ms": 126.6,
+     "mean_ms": 0.0,
+     "toplevel": true,
+     "queryid": 4854991825702068830,
+     "q": "BEGIN"
+    },
+    {
+     "calls": 1200,
+     "ms": 28.0,
+     "mean_ms": 0.023,
+     "toplevel": true,
+     "queryid": 327599666449656670,
+     "q": "SELECT \"runtime_module_instance_states\".\"tenant_id\", \"runtime_module_instance_states\".\"instance_id\", \"runtime_module_instance_states\".\"module_id\", \"runtime_modu"
+    },
+    {
+     "calls": 1275,
+     "ms": 16.2,
+     "mean_ms": 0.013,
+     "toplevel": true,
+     "queryid": 3867181147013517150,
+     "q": "SELECT \"runtime_module_desired_states\".\"tenant_id\", \"runtime_module_desired_states\".\"module_id\", \"runtime_module_desired_states\".\"desired_mode\", \"runtime_module"
+    },
+    {
+     "calls": 2,
+     "ms": 5.1,
+     "mean_ms": 2.552,
+     "toplevel": true,
+     "queryid": -2497389739484336938,
+     "q": "SELECT * FROM nazo_oauth_cleanup_expired_security_state()"
+    },
+    {
+     "calls": 2,
+     "ms": 1.7,
+     "mean_ms": 0.856,
+     "toplevel": false,
+     "queryid": -5075627566397697970,
+     "q": "WITH due AS (\n        SELECT issuance_id FROM oauth_token_issuances\n        WHERE retain_until <= clock_timestamp()\n        ORDER BY retain_until, issuance_id\n "
+    }
+   ],
+   "top_sql_by_calls": [
+    {
+     "calls": 1529511,
+     "ms": 1536.8,
+     "mean_ms": 0.001,
+     "toplevel": true,
+     "queryid": 7559284449764764609,
+     "q": "SELECT $1"
+    },
+    {
+     "calls": 305400,
+     "ms": 49159.2,
+     "mean_ms": 0.161,
+     "toplevel": true,
+     "queryid": 7767790448619321394,
+     "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+    },
+    {
+     "calls": 305400,
+     "ms": 30426.5,
+     "mean_ms": 0.1,
+     "toplevel": true,
+     "queryid": -3579186174929395745,
+     "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)"
+    },
+    {
+     "calls": 305400,
+     "ms": 29441.9,
+     "mean_ms": 0.096,
+     "toplevel": true,
+     "queryid": 1128696453630427921,
+     "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\") VALUES ("
+    },
+    {
+     "calls": 305400,
+     "ms": 12442.5,
+     "mean_ms": 0.041,
+     "toplevel": true,
+     "queryid": 4914488998956313696,
+     "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli"
+    },
+    {
+     "calls": 305400,
+     "ms": 9037.9,
+     "mean_ms": 0.03,
+     "toplevel": true,
+     "queryid": 327112332356189388,
+     "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 305400,
+     "ms": 4035.2,
+     "mean_ms": 0.013,
+     "toplevel": true,
+     "queryid": -859282481384524542,
+     "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_"
+    },
+    {
+     "calls": 305400,
+     "ms": 3692.2,
+     "mean_ms": 0.012,
+     "toplevel": true,
+     "queryid": 6397072144124071468,
+     "q": "SELECT split_part(client_secret_hash, $6, $7) FROM \"oauth_clients\" WHERE ((((\"oauth_clients\".\"id\" = $1) AND (\"oauth_clients\".\"tenant_id\" = $2)) AND (\"oauth_clie"
+    },
+    {
+     "calls": 305400,
+     "ms": 1161.7,
+     "mean_ms": 0.004,
+     "toplevel": true,
+     "queryid": -1708461756726018533,
+     "q": "SET LOCAL lock_timeout = $1"
+    },
+    {
+     "calls": 305400,
+     "ms": 133.4,
+     "mean_ms": 0.0,
+     "toplevel": true,
+     "queryid": 6097083398544187049,
+     "q": "COMMIT"
+    },
+    {
+     "calls": 305400,
+     "ms": 126.6,
+     "mean_ms": 0.0,
+     "toplevel": true,
+     "queryid": 4854991825702068830,
+     "q": "BEGIN"
+    },
+    {
+     "calls": 1275,
+     "ms": 16.2,
+     "mean_ms": 0.013,
+     "toplevel": true,
+     "queryid": 3867181147013517150,
+     "q": "SELECT \"runtime_module_desired_states\".\"tenant_id\", \"runtime_module_desired_states\".\"module_id\", \"runtime_module_desired_states\".\"desired_mode\", \"runtime_module"
+    },
+    {
+     "calls": 1200,
+     "ms": 28.0,
+     "mean_ms": 0.023,
+     "toplevel": true,
+     "queryid": 327599666449656670,
+     "q": "SELECT \"runtime_module_instance_states\".\"tenant_id\", \"runtime_module_instance_states\".\"instance_id\", \"runtime_module_instance_states\".\"module_id\", \"runtime_modu"
+    },
+    {
+     "calls": 15,
+     "ms": 0.3,
+     "mean_ms": 0.023,
+     "toplevel": true,
+     "queryid": 4500955875985355274,
+     "q": "SELECT revision\n             FROM tenant_runtime_directory_state\n             WHERE singleton"
+    },
+    {
+     "calls": 15,
+     "ms": 0.2,
+     "mean_ms": 0.012,
+     "toplevel": true,
+     "queryid": -6421484356574917337,
+     "q": "UPDATE backchannel_logout_deliveries\n            SET attempts = attempts + $3, locked_at = CURRENT_TIMESTAMP,\n                updated_at = CURRENT_TIMESTAMP\n   "
+    }
+   ]
+  },
+  "refresh-c8": {
+   "window_s": 74.8,
+   "ops": 66057,
+   "ops_per_s": 1100.95,
+   "http_reqs_measure": 66057,
+   "errors": 0,
+   "p50": 7.0,
+   "p95": 10.0,
+   "p99": 14.0,
+   "stmt_calls_total": 1854618,
+   "toplevel_calls_per_op": 26.076,
+   "nested_calls_per_op": 2.0,
+   "select1_calls": 464907,
+   "select1_per_op": 7.038,
+   "pool_acquire_delta": 464907,
+   "pool_acquire_per_op": 7.038,
+   "sql_exec_ms_per_op": 1.32,
+   "xact_commit_per_s": 14208.51,
+   "wal_bytes_per_op": 8985.7,
+   "wal_fsync_ms_per_op": 0.643,
+   "wait_active_hist": {
+    "Client|ClientRead": 105,
+    "IO|WalSync": 143,
+    "None|None": 328,
+    "LWLock|WALWrite": 235,
+    "LWLock|BufferContent": 3,
+    "IO|WalWrite": 1
+   },
+   "wait_active_by_qid": {
+    "Client|ClientRead|-8152297345095296909": 6,
+    "IO|WalSync|6097083398544187049": 143,
+    "None|None|6397072144124071468": 23,
+    "None|None|-5933963234262013825": 97,
+    "LWLock|WALWrite|6097083398544187049": 234,
+    "None|None|-162905062686737477": 71,
+    "None|None|1128696453630427921": 20,
+    "None|None|6097083398544187049": 7,
+    "None|None|7767790448619321394": 41,
+    "Client|ClientRead|None": 16,
+    "Client|ClientRead|1109867291558753952": 7,
+    "Client|ClientRead|4914488998956313696": 12,
+    "Client|ClientRead|-3579186174929395745": 4,
+    "Client|ClientRead|6097083398544187049": 9,
+    "LWLock|BufferContent|-162905062686737477": 2,
+    "None|None|-3579186174929395745": 15,
+    "Client|ClientRead|6397072144124071468": 8,
+    "None|None|7559284449764764609": 7,
+    "None|None|None": 10,
+    "None|None|1109867291558753952": 8,
+    "Client|ClientRead|7767790448619321394": 10,
+    "Client|ClientRead|8948169116818787331": 5,
+    "Client|ClientRead|-859282481384524542": 4,
+    "None|None|8948169116818787331": 3,
+    "Client|ClientRead|-5933963234262013825": 1,
+    "Client|ClientRead|275221827254537758": 5,
+    "Client|ClientRead|1128696453630427921": 3,
+    "None|None|275221827254537758": 4,
+    "None|None|4914488998956313696": 8,
+    "None|None|-1708461756726018533": 2,
+    "None|None|327112332356189388": 6,
+    "Client|ClientRead|7559284449764764609": 6,
+    "Client|ClientRead|1097838245962260042": 2,
+    "None|None|1097838245962260042": 3,
+    "Client|ClientRead|327112332356189388": 4,
+    "LWLock|WALWrite|7767790448619321394": 1,
+    "IO|WalWrite|7767790448619321394": 1,
+    "Client|ClientRead|-162905062686737477": 3,
+    "LWLock|BufferContent|-5933963234262013825": 1,
+    "None|None|-859282481384524542": 2,
+    "None|None|-8152297345095296909": 1
+   },
+   "active_rows": 815,
+   "lock_hist": {
+    "relation|RowExclusiveLock|held": 8916,
+    "relation|AccessShareLock|held": 3629,
+    "virtualxid|ExclusiveLock|held": 1268,
+    "relation|ShareUpdateExclusiveLock|held": 38,
+    "transactionid|ExclusiveLock|held": 828,
+    "relation|RowShareLock|held": 5642,
+    "advisory|ExclusiveLock|held": 1504,
+    "extend|ExclusiveLock|held": 4,
+    "spectoken|ExclusiveLock|held": 3
+   },
+   "db_pool_wait_ms_avg": 0.076,
+   "top_sql_by_time": [
+    {
+     "calls": 66057,
+     "ms": 24755.9,
+     "mean_ms": 0.375,
+     "toplevel": true,
+     "queryid": -162905062686737477,
+     "q": "INSERT INTO \"oauth_tokens\" (\"refresh_token_blake3\", \"tenant_id\", \"token_family_id\", \"rotated_from_id\", \"client_id\", \"user_id\", \"scopes\", \"audience\", \"authorizat"
+    },
+    {
+     "calls": 66057,
+     "ms": 22694.7,
+     "mean_ms": 0.344,
+     "toplevel": true,
+     "queryid": -5933963234262013825,
+     "q": "UPDATE \"oauth_tokens\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE (((((\"oauth_tokens\".\"tenant_id\" = $1) AND (\"oauth_tokens\".\"token_family_id\" = $2)) AND (\"oauth_"
+    },
+    {
+     "calls": 132114,
+     "ms": 14179.9,
+     "mean_ms": 0.107,
+     "toplevel": true,
+     "queryid": 7767790448619321394,
+     "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+    },
+    {
+     "calls": 66057,
+     "ms": 6074.5,
+     "mean_ms": 0.092,
+     "toplevel": true,
+     "queryid": 1128696453630427921,
+     "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\") VALUES ("
+    },
+    {
+     "calls": 66057,
+     "ms": 5686.4,
+     "mean_ms": 0.086,
+     "toplevel": true,
+     "queryid": -3579186174929395745,
+     "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)"
+    },
+    {
+     "calls": 132114,
+     "ms": 3347.5,
+     "mean_ms": 0.025,
+     "toplevel": false,
+     "queryid": -7432469565539526474,
+     "q": "SELECT jsonb_typeof(context) = 'object'\n       AND context ?& ARRAY[\n            'version', 'issuer', 'audience', 'auth_time', 'amr', 'oidc_sid',\n            'i"
+    },
+    {
+     "calls": 66057,
+     "ms": 2452.0,
+     "mean_ms": 0.037,
+     "toplevel": true,
+     "queryid": 4914488998956313696,
+     "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli"
+    },
+    {
+     "calls": 66057,
+     "ms": 1699.3,
+     "mean_ms": 0.026,
+     "toplevel": true,
+     "queryid": 8948169116818787331,
+     "q": "SELECT \"oauth_tokens\".\"id\", \"oauth_tokens\".\"tenant_id\", \"oauth_tokens\".\"token_family_id\", \"oauth_tokens\".\"client_id\", \"oauth_tokens\".\"user_id\", \"oauth_tokens\".\""
+    },
+    {
+     "calls": 66057,
+     "ms": 1373.6,
+     "mean_ms": 0.021,
+     "toplevel": true,
+     "queryid": 327112332356189388,
+     "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 66057,
+     "ms": 1196.2,
+     "mean_ms": 0.018,
+     "toplevel": true,
+     "queryid": 1109867291558753952,
+     "q": "SELECT \"oauth_tokens\".\"id\", \"oauth_tokens\".\"tenant_id\", \"oauth_tokens\".\"token_family_id\", \"oauth_tokens\".\"client_id\", \"oauth_tokens\".\"user_id\", \"oauth_tokens\".\""
+    },
+    {
+     "calls": 66057,
+     "ms": 818.9,
+     "mean_ms": 0.012,
+     "toplevel": true,
+     "queryid": -8152297345095296909,
+     "q": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda"
+    },
+    {
+     "calls": 66057,
+     "ms": 767.9,
+     "mean_ms": 0.012,
+     "toplevel": true,
+     "queryid": -859282481384524542,
+     "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_"
+    },
+    {
+     "calls": 66057,
+     "ms": 720.4,
+     "mean_ms": 0.011,
+     "toplevel": true,
+     "queryid": 1097838245962260042,
+     "q": "SELECT \"users\".\"is_active\" FROM \"users\" WHERE ((\"users\".\"tenant_id\" = $1) AND (\"users\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 66057,
+     "ms": 700.0,
+     "mean_ms": 0.011,
+     "toplevel": true,
+     "queryid": 6397072144124071468,
+     "q": "SELECT split_part(client_secret_hash, $6, $7) FROM \"oauth_clients\" WHERE ((((\"oauth_clients\".\"id\" = $1) AND (\"oauth_clients\".\"tenant_id\" = $2)) AND (\"oauth_clie"
+    },
+    {
+     "calls": 464907,
+     "ms": 428.7,
+     "mean_ms": 0.001,
+     "toplevel": true,
+     "queryid": 7559284449764764609,
+     "q": "SELECT $1"
+    }
+   ],
+   "top_sql_by_calls": [
+    {
+     "calls": 464907,
+     "ms": 428.7,
+     "mean_ms": 0.001,
+     "toplevel": true,
+     "queryid": 7559284449764764609,
+     "q": "SELECT $1"
+    },
+    {
+     "calls": 132114,
+     "ms": 14179.9,
+     "mean_ms": 0.107,
+     "toplevel": true,
+     "queryid": 7767790448619321394,
+     "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+    },
+    {
+     "calls": 132114,
+     "ms": 3347.5,
+     "mean_ms": 0.025,
+     "toplevel": false,
+     "queryid": -7432469565539526474,
+     "q": "SELECT jsonb_typeof(context) = 'object'\n       AND context ?& ARRAY[\n            'version', 'issuer', 'audience', 'auth_time', 'amr', 'oidc_sid',\n            'i"
+    },
+    {
+     "calls": 132114,
+     "ms": 208.6,
+     "mean_ms": 0.002,
+     "toplevel": true,
+     "queryid": 275221827254537758,
+     "q": "SELECT pg_advisory_xact_lock($1)"
+    },
+    {
+     "calls": 66057,
+     "ms": 24755.9,
+     "mean_ms": 0.375,
+     "toplevel": true,
+     "queryid": -162905062686737477,
+     "q": "INSERT INTO \"oauth_tokens\" (\"refresh_token_blake3\", \"tenant_id\", \"token_family_id\", \"rotated_from_id\", \"client_id\", \"user_id\", \"scopes\", \"audience\", \"authorizat"
+    },
+    {
+     "calls": 66057,
+     "ms": 22694.7,
+     "mean_ms": 0.344,
+     "toplevel": true,
+     "queryid": -5933963234262013825,
+     "q": "UPDATE \"oauth_tokens\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE (((((\"oauth_tokens\".\"tenant_id\" = $1) AND (\"oauth_tokens\".\"token_family_id\" = $2)) AND (\"oauth_"
+    },
+    {
+     "calls": 66057,
+     "ms": 6074.5,
+     "mean_ms": 0.092,
+     "toplevel": true,
+     "queryid": 1128696453630427921,
+     "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\") VALUES ("
+    },
+    {
+     "calls": 66057,
+     "ms": 5686.4,
+     "mean_ms": 0.086,
+     "toplevel": true,
+     "queryid": -3579186174929395745,
+     "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)"
+    },
+    {
+     "calls": 66057,
+     "ms": 2452.0,
+     "mean_ms": 0.037,
+     "toplevel": true,
+     "queryid": 4914488998956313696,
+     "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli"
+    },
+    {
+     "calls": 66057,
+     "ms": 1699.3,
+     "mean_ms": 0.026,
+     "toplevel": true,
+     "queryid": 8948169116818787331,
+     "q": "SELECT \"oauth_tokens\".\"id\", \"oauth_tokens\".\"tenant_id\", \"oauth_tokens\".\"token_family_id\", \"oauth_tokens\".\"client_id\", \"oauth_tokens\".\"user_id\", \"oauth_tokens\".\""
+    },
+    {
+     "calls": 66057,
+     "ms": 1373.6,
+     "mean_ms": 0.021,
+     "toplevel": true,
+     "queryid": 327112332356189388,
+     "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 66057,
+     "ms": 1196.2,
+     "mean_ms": 0.018,
+     "toplevel": true,
+     "queryid": 1109867291558753952,
+     "q": "SELECT \"oauth_tokens\".\"id\", \"oauth_tokens\".\"tenant_id\", \"oauth_tokens\".\"token_family_id\", \"oauth_tokens\".\"client_id\", \"oauth_tokens\".\"user_id\", \"oauth_tokens\".\""
+    },
+    {
+     "calls": 66057,
+     "ms": 818.9,
+     "mean_ms": 0.012,
+     "toplevel": true,
+     "queryid": -8152297345095296909,
+     "q": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda"
+    },
+    {
+     "calls": 66057,
+     "ms": 767.9,
+     "mean_ms": 0.012,
+     "toplevel": true,
+     "queryid": -859282481384524542,
+     "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_"
+    },
+    {
+     "calls": 66057,
+     "ms": 720.4,
+     "mean_ms": 0.011,
+     "toplevel": true,
+     "queryid": 1097838245962260042,
+     "q": "SELECT \"users\".\"is_active\" FROM \"users\" WHERE ((\"users\".\"tenant_id\" = $1) AND (\"users\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    }
+   ]
+  },
+  "refresh-c32": {
+   "window_s": 75.06,
+   "ops": 177564,
+   "ops_per_s": 2959.4,
+   "http_reqs_measure": 177564,
+   "errors": 0,
+   "p50": 10.0,
+   "p95": 16.0,
+   "p99": 21.0,
+   "stmt_calls_total": 4976814,
+   "toplevel_calls_per_op": 26.028,
+   "nested_calls_per_op": 2.0,
+   "select1_calls": 1245456,
+   "select1_per_op": 7.014,
+   "pool_acquire_delta": 1245456,
+   "pool_acquire_per_op": 7.014,
+   "sql_exec_ms_per_op": 1.68,
+   "xact_commit_per_s": 37925.23,
+   "wal_bytes_per_op": 8054.6,
+   "wal_fsync_ms_per_op": 0.285,
+   "wait_active_hist": {
+    "Client|ClientRead": 378,
+    "LWLock|WALWrite": 1123,
+    "None|None": 1205,
+    "IO|WalSync": 170,
+    "IO|WalWrite": 4,
+    "IO|SlruWrite": 1,
+    "LWLock|BufferContent": 9,
+    "IO|DataFileWrite": 1,
+    "IO|DataFileExtend": 4,
+    "IO|DataFileRead": 1,
+    "IO|DataFilePrefetch": 1
+   },
+   "wait_active_by_qid": {
+    "Client|ClientRead|7767790448619321394": 30,
+    "LWLock|WALWrite|6097083398544187049": 1120,
+    "None|None|-5933963234262013825": 341,
+    "None|None|-162905062686737477": 329,
+    "None|None|1128696453630427921": 71,
+    "None|None|6097083398544187049": 26,
+    "None|None|7767790448619321394": 143,
+    "Client|ClientRead|-3579186174929395745": 13,
+    "Client|ClientRead|275221827254537758": 23,
+    "Client|ClientRead|7559284449764764609": 29,
+    "IO|WalSync|6097083398544187049": 170,
+    "None|None|-3579186174929395745": 64,
+    "None|None|None": 55,
+    "None|None|7559284449764764609": 10,
+    "Client|ClientRead|-162905062686737477": 22,
+    "None|None|-8152297345095296909": 4,
+    "None|None|6397072144124071468": 74,
+    "None|None|8948169116818787331": 7,
+    "Client|ClientRead|-859282481384524542": 22,
+    "Client|ClientRead|1097838245962260042": 18,
+    "Client|ClientRead|6097083398544187049": 23,
+    "None|None|1109867291558753952": 22,
+    "Client|ClientRead|8948169116818787331": 20,
+    "None|None|-859282481384524542": 6,
+    "None|None|275221827254537758": 7,
+    "Client|ClientRead|None": 46,
+    "Client|ClientRead|6397072144124071468": 26,
+    "Client|ClientRead|1109867291558753952": 24,
+    "Client|ClientRead|4914488998956313696": 17,
+    "None|None|4914488998956313696": 22,
+    "Client|ClientRead|-5933963234262013825": 19,
+    "Client|ClientRead|-8152297345095296909": 14,
+    "Client|ClientRead|-1708461756726018533": 4,
+    "Client|ClientRead|4854991825702068830": 1,
+    "None|None|1097838245962260042": 9,
+    "IO|WalWrite|6097083398544187049": 4,
+    "None|None|327112332356189388": 11,
+    "Client|ClientRead|327112332356189388": 15,
+    "IO|SlruWrite|1128696453630427921": 1,
+    "None|None|4854991825702068830": 2,
+    "LWLock|BufferContent|-5933963234262013825": 7,
+    "IO|DataFileWrite|-162905062686737477": 1,
+    "Client|ClientRead|1128696453630427921": 12,
+    "LWLock|BufferContent|1128696453630427921": 1,
+    "None|None|-1708461756726018533": 2,
+    "IO|DataFileExtend|7767790448619321394": 3,
+    "LWLock|BufferContent|6397072144124071468": 1,
+    "LWLock|WALWrite|None": 2,
+    "IO|DataFileRead|-162905062686737477": 1,
+    "IO|DataFileExtend|1128696453630427921": 1,
+    "LWLock|WALWrite|7767790448619321394": 1,
+    "IO|DataFilePrefetch|-5933963234262013825": 1
+   },
+   "active_rows": 2897,
+   "lock_hist": {
+    "relation|AccessShareLock|held": 12154,
+    "virtualxid|ExclusiveLock|held": 3900,
+    "transactionid|ExclusiveLock|held": 3104,
+    "relation|RowShareLock|held": 20940,
+    "relation|RowExclusiveLock|held": 32572,
+    "advisory|ExclusiveLock|held": 5556,
+    "extend|ExclusiveLock|waiting": 1,
+    "extend|ExclusiveLock|held": 3,
+    "spectoken|ExclusiveLock|held": 23,
+    "relation|ShareUpdateExclusiveLock|held": 54
+   },
+   "db_pool_wait_ms_avg": 0.248,
+   "top_sql_by_time": [
+    {
+     "calls": 177564,
+     "ms": 85566.8,
+     "mean_ms": 0.482,
+     "toplevel": true,
+     "queryid": -162905062686737477,
+     "q": "INSERT INTO \"oauth_tokens\" (\"refresh_token_blake3\", \"tenant_id\", \"token_family_id\", \"rotated_from_id\", \"client_id\", \"user_id\", \"scopes\", \"audience\", \"authorizat"
+    },
+    {
+     "calls": 177564,
+     "ms": 74815.2,
+     "mean_ms": 0.421,
+     "toplevel": true,
+     "queryid": -5933963234262013825,
+     "q": "UPDATE \"oauth_tokens\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE (((((\"oauth_tokens\".\"tenant_id\" = $1) AND (\"oauth_tokens\".\"token_family_id\" = $2)) AND (\"oauth_"
+    },
+    {
+     "calls": 355128,
+     "ms": 50631.9,
+     "mean_ms": 0.143,
+     "toplevel": true,
+     "queryid": 7767790448619321394,
+     "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+    },
+    {
+     "calls": 177564,
+     "ms": 21708.5,
+     "mean_ms": 0.122,
+     "toplevel": true,
+     "queryid": 1128696453630427921,
+     "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\") VALUES ("
+    },
+    {
+     "calls": 177564,
+     "ms": 18165.3,
+     "mean_ms": 0.102,
+     "toplevel": true,
+     "queryid": -3579186174929395745,
+     "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)"
+    },
+    {
+     "calls": 355128,
+     "ms": 10779.9,
+     "mean_ms": 0.03,
+     "toplevel": false,
+     "queryid": -7432469565539526474,
+     "q": "SELECT jsonb_typeof(context) = 'object'\n       AND context ?& ARRAY[\n            'version', 'issuer', 'audience', 'auth_time', 'amr', 'oidc_sid',\n            'i"
+    },
+    {
+     "calls": 177564,
+     "ms": 7950.3,
+     "mean_ms": 0.045,
+     "toplevel": true,
+     "queryid": 4914488998956313696,
+     "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli"
+    },
+    {
+     "calls": 177564,
+     "ms": 5379.2,
+     "mean_ms": 0.03,
+     "toplevel": true,
+     "queryid": 8948169116818787331,
+     "q": "SELECT \"oauth_tokens\".\"id\", \"oauth_tokens\".\"tenant_id\", \"oauth_tokens\".\"token_family_id\", \"oauth_tokens\".\"client_id\", \"oauth_tokens\".\"user_id\", \"oauth_tokens\".\""
+    },
+    {
+     "calls": 177564,
+     "ms": 5189.2,
+     "mean_ms": 0.029,
+     "toplevel": true,
+     "queryid": 327112332356189388,
+     "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 177564,
+     "ms": 4516.1,
+     "mean_ms": 0.025,
+     "toplevel": true,
+     "queryid": 1109867291558753952,
+     "q": "SELECT \"oauth_tokens\".\"id\", \"oauth_tokens\".\"tenant_id\", \"oauth_tokens\".\"token_family_id\", \"oauth_tokens\".\"client_id\", \"oauth_tokens\".\"user_id\", \"oauth_tokens\".\""
+    },
+    {
+     "calls": 177564,
+     "ms": 2760.7,
+     "mean_ms": 0.016,
+     "toplevel": true,
+     "queryid": -8152297345095296909,
+     "q": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda"
+    },
+    {
+     "calls": 177564,
+     "ms": 2624.0,
+     "mean_ms": 0.015,
+     "toplevel": true,
+     "queryid": 1097838245962260042,
+     "q": "SELECT \"users\".\"is_active\" FROM \"users\" WHERE ((\"users\".\"tenant_id\" = $1) AND (\"users\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 177564,
+     "ms": 2316.9,
+     "mean_ms": 0.013,
+     "toplevel": true,
+     "queryid": -859282481384524542,
+     "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_"
+    },
+    {
+     "calls": 177564,
+     "ms": 2151.9,
+     "mean_ms": 0.012,
+     "toplevel": true,
+     "queryid": 6397072144124071468,
+     "q": "SELECT split_part(client_secret_hash, $6, $7) FROM \"oauth_clients\" WHERE ((((\"oauth_clients\".\"id\" = $1) AND (\"oauth_clients\".\"tenant_id\" = $2)) AND (\"oauth_clie"
+    },
+    {
+     "calls": 1245456,
+     "ms": 1167.1,
+     "mean_ms": 0.001,
+     "toplevel": true,
+     "queryid": 7559284449764764609,
+     "q": "SELECT $1"
+    }
+   ],
+   "top_sql_by_calls": [
+    {
+     "calls": 1245456,
+     "ms": 1167.1,
+     "mean_ms": 0.001,
+     "toplevel": true,
+     "queryid": 7559284449764764609,
+     "q": "SELECT $1"
+    },
+    {
+     "calls": 355128,
+     "ms": 50631.9,
+     "mean_ms": 0.143,
+     "toplevel": true,
+     "queryid": 7767790448619321394,
+     "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed"
+    },
+    {
+     "calls": 355128,
+     "ms": 10779.9,
+     "mean_ms": 0.03,
+     "toplevel": false,
+     "queryid": -7432469565539526474,
+     "q": "SELECT jsonb_typeof(context) = 'object'\n       AND context ?& ARRAY[\n            'version', 'issuer', 'audience', 'auth_time', 'amr', 'oidc_sid',\n            'i"
+    },
+    {
+     "calls": 355128,
+     "ms": 808.7,
+     "mean_ms": 0.002,
+     "toplevel": true,
+     "queryid": 275221827254537758,
+     "q": "SELECT pg_advisory_xact_lock($1)"
+    },
+    {
+     "calls": 177564,
+     "ms": 85566.8,
+     "mean_ms": 0.482,
+     "toplevel": true,
+     "queryid": -162905062686737477,
+     "q": "INSERT INTO \"oauth_tokens\" (\"refresh_token_blake3\", \"tenant_id\", \"token_family_id\", \"rotated_from_id\", \"client_id\", \"user_id\", \"scopes\", \"audience\", \"authorizat"
+    },
+    {
+     "calls": 177564,
+     "ms": 74815.2,
+     "mean_ms": 0.421,
+     "toplevel": true,
+     "queryid": -5933963234262013825,
+     "q": "UPDATE \"oauth_tokens\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE (((((\"oauth_tokens\".\"tenant_id\" = $1) AND (\"oauth_tokens\".\"token_family_id\" = $2)) AND (\"oauth_"
+    },
+    {
+     "calls": 177564,
+     "ms": 21708.5,
+     "mean_ms": 0.122,
+     "toplevel": true,
+     "queryid": 1128696453630427921,
+     "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\") VALUES ("
+    },
+    {
+     "calls": 177564,
+     "ms": 18165.3,
+     "mean_ms": 0.102,
+     "toplevel": true,
+     "queryid": -3579186174929395745,
+     "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)"
+    },
+    {
+     "calls": 177564,
+     "ms": 7950.3,
+     "mean_ms": 0.045,
+     "toplevel": true,
+     "queryid": 4914488998956313696,
+     "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli"
+    },
+    {
+     "calls": 177564,
+     "ms": 5379.2,
+     "mean_ms": 0.03,
+     "toplevel": true,
+     "queryid": 8948169116818787331,
+     "q": "SELECT \"oauth_tokens\".\"id\", \"oauth_tokens\".\"tenant_id\", \"oauth_tokens\".\"token_family_id\", \"oauth_tokens\".\"client_id\", \"oauth_tokens\".\"user_id\", \"oauth_tokens\".\""
+    },
+    {
+     "calls": 177564,
+     "ms": 5189.2,
+     "mean_ms": 0.029,
+     "toplevel": true,
+     "queryid": 327112332356189388,
+     "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 177564,
+     "ms": 4516.1,
+     "mean_ms": 0.025,
+     "toplevel": true,
+     "queryid": 1109867291558753952,
+     "q": "SELECT \"oauth_tokens\".\"id\", \"oauth_tokens\".\"tenant_id\", \"oauth_tokens\".\"token_family_id\", \"oauth_tokens\".\"client_id\", \"oauth_tokens\".\"user_id\", \"oauth_tokens\".\""
+    },
+    {
+     "calls": 177564,
+     "ms": 2760.7,
+     "mean_ms": 0.016,
+     "toplevel": true,
+     "queryid": -8152297345095296909,
+     "q": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda"
+    },
+    {
+     "calls": 177564,
+     "ms": 2624.0,
+     "mean_ms": 0.015,
+     "toplevel": true,
+     "queryid": 1097838245962260042,
+     "q": "SELECT \"users\".\"is_active\" FROM \"users\" WHERE ((\"users\".\"tenant_id\" = $1) AND (\"users\".\"id\" = $2)) LIMIT $3 FOR SHARE"
+    },
+    {
+     "calls": 177564,
+     "ms": 2316.9,
+     "mean_ms": 0.013,
+     "toplevel": true,
+     "queryid": -859282481384524542,
+     "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_"
+    }
+   ]
+  }
+ }
+}
