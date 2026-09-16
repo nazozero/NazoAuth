@@ -11,6 +11,7 @@ Writes to /shared:
   locks.jsonl        every lock aggregate row
 """
 import json
+import os
 import time
 from pathlib import Path
 
@@ -44,9 +45,9 @@ DB_SQL = "SELECT * FROM pg_stat_database WHERE datname = 'oauth'"
 WAL_SQL = "SELECT * FROM pg_stat_wal"
 IO_SQL = "SELECT * FROM pg_stat_io"
 STMT_SQL = """
-SELECT s.queryid, s.calls, s.total_exec_time, s.mean_exec_time, s.min_exec_time,
-       s.max_exec_time, s.rows, s.shared_blks_read, s.shared_blks_written,
-       left(s.query, 500) AS query
+SELECT s.queryid, s.toplevel, s.calls, s.total_exec_time, s.mean_exec_time,
+       s.min_exec_time, s.max_exec_time, s.rows, s.shared_blks_read,
+       s.shared_blks_written, left(s.query, 500) AS query
 FROM pg_stat_statements s
 WHERE s.userid = (SELECT oid FROM pg_roles WHERE rolname = %s)
 ORDER BY s.total_exec_time DESC
@@ -60,12 +61,26 @@ def rows(cur, sql, params=()):
     return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
+APP_METRICS_URL = os.environ.get("APP_METRICS_URL", "http://nazoauth:8000/__perf/metrics")
+
+
+def app_metrics():
+    try:
+        import urllib.request
+        req = urllib.request.Request(APP_METRICS_URL, headers={"Host": "127.0.0.1:8000"})
+        with urllib.request.urlopen(req, timeout=3) as r:
+            return json.loads(r.read().decode())
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 def snap(cur):
     return {
         "ts": time.time(),
         "pg_stat_database": rows(cur, DB_SQL),
         "pg_stat_wal": rows(cur, WAL_SQL),
         "pg_stat_io": rows(cur, IO_SQL),
+        "app_metrics": app_metrics(),
     }
 
 
@@ -140,9 +155,17 @@ def main():
                 }
                 state = "measuring"
                 resumed = False
+                consec_active = 0
                 print(f"gap detected -> reset, point {seq} baseline @ {ts:.1f}", flush=True)
         elif state == "measuring":
+            # Require sustained activity before arming completion: a single
+            # stray-active sample during the gap (background workers) must not
+            # let a 5s idle tail close the point before real measurement.
             if active > 0:
+                consec_active += 1
+            else:
+                consec_active = 0
+            if consec_active >= 5:
                 resumed = True
             if resumed and idle_for >= IDLE_S:
                 try:
