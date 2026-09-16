@@ -22,7 +22,7 @@ the current release or an unmeasured deployment.
 | --- | --- | --- |
 | Main matrix | [reports/main](reports/main) | Token-only, OIDC, refresh-only, and FAPI2 logged-in capacity reports. |
 | Extended matrix | [reports/extended](reports/extended) | mTLS, PAR/JAR, introspection, revocation, discovery/JWKS, and same-user contention reports. |
-| Special runs | [reports/special](reports/special) | App CPU experiments with retained raw results. |
+| Special runs | [reports/special](reports/special) | App CPU experiments and PG wait-event diagnostics with retained raw results. |
 
 ## Evidence Model
 

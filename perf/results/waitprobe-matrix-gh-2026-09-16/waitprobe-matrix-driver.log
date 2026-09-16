@@ -1,0 +1,18 @@
+deployment=01a0a7dc-24f3-7c02-bb36-f56580d54788
+=== point cc-c8 (cap_client_credentials vus=8) start 01:43:35
+=== point cc-c8 done 01:45:07
+=== point cc-c16 (cap_client_credentials vus=16) start 01:45:15
+=== point cc-c16 done 01:46:48
+=== point cc-c32 (cap_client_credentials vus=32) start 01:46:56
+=== point cc-c32 done 01:48:29
+=== point cc-c64 (cap_client_credentials vus=64) start 01:48:37
+=== point cc-c64 done 01:50:11
+=== point refresh-c8 (cap_refresh_token vus=8) start 01:50:19
+=== point refresh-c8 done 01:51:51
+=== point refresh-c16 (cap_refresh_token vus=16) start 01:51:59
+=== point refresh-c16 done 01:53:33
+=== point refresh-c32 (cap_refresh_token vus=32) start 01:53:41
+=== point refresh-c32 done 01:55:16
+=== point refresh-c64 (cap_refresh_token vus=64) start 01:55:24
+=== point refresh-c64 done 01:57:00
+MATRIX_DONE
