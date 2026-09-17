@@ -45,13 +45,13 @@ services:
       - -euc
       - |
         psql -h postgres -U postgres -d oauth -v ON_ERROR_STOP=1 <<'SQL'
-        DO $$
+        DO $$$$
         BEGIN
           IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nazoauth_perf_runtime') THEN
             CREATE ROLE nazoauth_perf_runtime LOGIN PASSWORD 'runtime' NOSUPERUSER NOBYPASSRLS NOINHERIT;
           END IF;
         END
-        $$;
+        $$$$;
         REVOKE ALL ON DATABASE oauth FROM PUBLIC;
         GRANT CONNECT ON DATABASE oauth TO postgres, nazoauth_perf_runtime;
         REVOKE CREATE ON SCHEMA public FROM PUBLIC;

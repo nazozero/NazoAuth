@@ -66,7 +66,13 @@ def mtls_certificate() -> tuple[str, str]:
         .sign(key, hashes.SHA256())
     )
     der = certificate.public_bytes(serialization.Encoding.DER)
-    return base64.b64encode(der).decode("ascii"), b64url(hashlib.sha256(der).digest())
+    pem = certificate.public_bytes(serialization.Encoding.PEM).decode("ascii")
+    return (
+        base64.b64encode(der).decode("ascii"),
+        b64url(hashlib.sha256(der).digest()),
+        pem,
+        hashlib.sha256(der).hexdigest(),
+    )
 
 
 def pkce_pair() -> tuple[str, str]:
@@ -500,7 +506,7 @@ def seed() -> None:
     ec_key = ec.generate_private_key(ec.SECP256R1())
     dpop_jwk = ec_public_jwk(ec_key, "perf-dpop-es256")
     dpop_jkt = jwk_thumbprint(dpop_jwk)
-    mtls_x5c, mtls_thumbprint = mtls_certificate()
+    mtls_x5c, mtls_thumbprint, mtls_pem, mtls_sha256_hex = mtls_certificate()
     jwks = {"keys": [rsa_jwk, ps256_jwk]}
     secret_hash = hash_client_secret(CLIENT_SECRET)
 
@@ -563,6 +569,49 @@ def seed() -> None:
             require_mtls=True,
             tls_thumbprint=mtls_thumbprint,
             tls_subject_dn="CN=perf-mtls",
+        )
+        # PKI tls_client_auth requires an approved tenant trust anchor. Seed the
+        # generated self-signed leaf directly as an approved anchor so the chain
+        # verifies; requester and approver must be distinct users.
+        conn.execute(
+            """
+            INSERT INTO oauth_client_mtls_trust_anchor_requests
+                (tenant_id, user_id, client_id, certificate_pem,
+                 certificate_sha256, subject_dn, not_before, not_after,
+                 status, resolved_by_user_id, resolved_at)
+            VALUES (
+                %s::uuid,
+                (SELECT id FROM users WHERE tenant_id = %s::uuid ORDER BY id LIMIT 1),
+                (SELECT id FROM oauth_clients WHERE tenant_id = %s::uuid AND client_id = 'perf-mtls-client'),
+                %s, %s, 'CN=perf-mtls', now() - interval '1 hour',
+                now() + interval '30 days', 1,
+                (SELECT id FROM users WHERE tenant_id = %s::uuid ORDER BY id LIMIT 1 OFFSET 1),
+                now()
+            )
+            ON CONFLICT (tenant_id, client_id, certificate_sha256) DO NOTHING
+            """,
+            (TENANT_ID, TENANT_ID, TENANT_ID, mtls_pem, mtls_sha256_hex, TENANT_ID),
+        )
+        # Pre-grant the full perf scope set (incl. device_sso) so cap_* SSO
+        # bootstrap authorizations do not stall on the consent screen.
+        conn.execute(
+            """
+            INSERT INTO user_client_grants
+                (tenant_id, user_id, client_id, first_authorized_at,
+                 last_authorized_at, last_scopes)
+            SELECT u.tenant_id, u.id, c.id, now(), now(),
+                   '["openid","profile","offline_access","device_sso"]'::jsonb
+            FROM users u
+            CROSS JOIN oauth_clients c
+            WHERE u.tenant_id = %s::uuid
+              AND (u.email = %s OR u.email LIKE 'perf-user-%%@example.test')
+              AND c.tenant_id = %s::uuid
+              AND c.client_id = %s
+            ON CONFLICT (tenant_id, user_id, client_id) DO UPDATE SET
+                last_scopes = EXCLUDED.last_scopes,
+                last_authorized_at = now()
+            """,
+            (TENANT_ID, USER_EMAIL, TENANT_ID, "perf-oidc-client"),
         )
         oidc_refresh_tokens = seed_oidc_refresh_tokens(conn, users, issuer)
         logged_in_sessions = seed_logged_in_sessions(conn, users)

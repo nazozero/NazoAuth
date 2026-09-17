@@ -33,6 +33,8 @@ const scenarioSteps = {
   cap_refresh_token: ['cap_bootstrap', 'token_refresh'],
   cap_token_exchange: ['cap_bootstrap', 'token_exchange'],
   cap_native_sso_fresh: ['cap_bootstrap', 'token_native_sso_fresh'],
+  cap_introspect: ['cap_bootstrap', 'introspect'],
+  cap_revoke: ['cap_bootstrap', 'revoke'],
   cap_authorization_code: ['par_oidc', 'authorize', 'authorize_decision', 'token_authorization_code'],
   cap_mixed: ['cap_bootstrap', 'userinfo', 'token_client_credentials', 'par_oidc',
     'authorize', 'authorize_decision', 'token_authorization_code', 'token_refresh',
@@ -1397,6 +1399,61 @@ function capNativeSsoOp() {
   return ok;
 }
 
+async function capIntrospectOp() {
+  if (!__VU_STATE.refreshToken) {
+    await capMintSubjectTokens(false, true);
+  }
+  const response = http.post(
+    `${BASE_URL}/introspect`,
+    form({
+      token: __VU_STATE.refreshToken,
+      client_id: secrets.clients.oidc,
+      client_secret: secrets.client_secret,
+    }),
+    formHeaders({}, requestTags('introspect', {
+      endpoint: '/introspect',
+      token_type: 'opaque_refresh_token',
+      client_profile: 'oidc',
+    })),
+  );
+  return check(response, {
+    'cap introspection status is 200': (r) => r.status === 200,
+    'cap introspection active': (r) => r.json('active') === true,
+  });
+}
+
+async function capRevokeOp() {
+  if (!__VU_STATE.refreshToken) {
+    await capMintSubjectTokens(false, true);
+  }
+  const doomed = __VU_STATE.refreshToken;
+  __VU_STATE.refreshToken = null;
+  const response = http.post(
+    `${BASE_URL}/revoke`,
+    form({
+      token: doomed,
+      client_id: secrets.clients.oidc,
+      client_secret: secrets.client_secret,
+    }),
+    formHeaders({}, requestTags('revoke', {
+      endpoint: '/revoke',
+      token_type: 'opaque_refresh_token',
+      client_profile: 'oidc',
+    })),
+  );
+  return check(response, {
+    'cap revoke status is 200': (r) => r.status === 200,
+  });
+}
+
+export async function cap_introspect() {
+  return capRun(() => capMintSubjectTokens(false), capIntrospectOp);
+}
+
+export async function cap_revoke() {
+  return capRun(() => capMintSubjectTokens(false), capRevokeOp);
+}
+
 export async function cap_client_credentials() {
   await capRun(async () => {}, capClientCredentialsOp);
 }
@@ -1423,11 +1480,12 @@ export async function cap_authorization_code() {
 }
 
 // Synthetic mix: userinfo 30% / client_credentials 25% / authorization_code 15%
-// / refresh_token 15% / token_exchange 10% / native_sso_fresh 5%.
+// / refresh_token 15% / token_exchange 15%. The native_sso module is disabled
+// in the oauth2-baseline perf profile, so the mix stays on enabled grant paths.
 async function capMixedOp() {
   const roll = Math.random() * 100;
   if (roll < 30) {
-    await capMintSubjectTokens(true);
+    await capMintSubjectTokens(false);
     return capUserinfoOp();
   }
   if (roll < 55) {
@@ -1439,12 +1497,8 @@ async function capMixedOp() {
   if (roll < 85) {
     return capRefreshOp();
   }
-  if (roll < 95) {
-    await capMintSubjectTokens(false);
-    return capTokenExchangeOp();
-  }
-  await capMintSubjectTokens(true);
-  return capNativeSsoOp();
+  await capMintSubjectTokens(false);
+  return capTokenExchangeOp();
 }
 
 export async function cap_mixed() {
