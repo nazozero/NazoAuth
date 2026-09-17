@@ -152,42 +152,67 @@ pub async fn issue_token_response(
     // Only OIDC claims construction consumes the subject profile; non-OIDC
     // user access tokens rely on the commit's principal lock recheck.
     let subject_claims_snapshot = if issue_includes_openid && let Some(user_id) = issue.user_id {
-        match token_service
-            .active_subject_claims(client.tenant_id, user_id)
-            .await
-        {
-            Ok(Some(claims)) => Some(claims),
-            Ok(None) => {
-                mark_failed_authorization_code_if_needed(
-                    token_service,
-                    issue.authorization_code_hash.as_deref(),
-                    "token_subject_invalid",
-                    auth_code_ttl_seconds,
-                )
-                .await;
-                return Err(OAuthEndpointError::token(
-                    StatusCode::BAD_REQUEST,
-                    "invalid_grant",
-                    "授权用户不存在或已停用.",
-                    false,
-                ));
+        match issue.prepared_subject.as_ref() {
+            Some(prepared) => {
+                if prepared.tenant_id != client.tenant_id
+                    || prepared.claims.subject.as_uuid() != user_id
+                {
+                    tracing::error!(
+                        "prepared subject snapshot does not match the issuance context"
+                    );
+                    mark_failed_authorization_code_if_needed(
+                        token_service,
+                        issue.authorization_code_hash.as_deref(),
+                        "token_subject_snapshot_mismatch",
+                        auth_code_ttl_seconds,
+                    )
+                    .await;
+                    return Err(OAuthEndpointError::token(
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        "server_error",
+                        "令牌签发失败.",
+                        false,
+                    ));
+                }
+                Some(prepared.claims.clone())
             }
-            Err(error) => {
-                tracing::warn!(?error, "failed to validate token subject before issuance");
-                mark_failed_authorization_code_if_needed(
-                    token_service,
-                    issue.authorization_code_hash.as_deref(),
-                    "token_subject_load_failed",
-                    auth_code_ttl_seconds,
-                )
-                .await;
-                return Err(OAuthEndpointError::token(
-                    StatusCode::SERVICE_UNAVAILABLE,
-                    "server_error",
-                    "授权用户状态加载失败.",
-                    false,
-                ));
-            }
+            None => match token_service
+                .active_subject_claims(client.tenant_id, user_id)
+                .await
+            {
+                Ok(Some(claims)) => Some(claims.clone()),
+                Ok(None) => {
+                    mark_failed_authorization_code_if_needed(
+                        token_service,
+                        issue.authorization_code_hash.as_deref(),
+                        "token_subject_invalid",
+                        auth_code_ttl_seconds,
+                    )
+                    .await;
+                    return Err(OAuthEndpointError::token(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_grant",
+                        "授权用户不存在或已停用.",
+                        false,
+                    ));
+                }
+                Err(error) => {
+                    tracing::warn!(?error, "failed to validate token subject before issuance");
+                    mark_failed_authorization_code_if_needed(
+                        token_service,
+                        issue.authorization_code_hash.as_deref(),
+                        "token_subject_load_failed",
+                        auth_code_ttl_seconds,
+                    )
+                    .await;
+                    return Err(OAuthEndpointError::token(
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        "server_error",
+                        "授权用户状态加载失败.",
+                        false,
+                    ));
+                }
+            },
         }
     } else {
         None

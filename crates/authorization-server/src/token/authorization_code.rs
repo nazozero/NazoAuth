@@ -186,6 +186,7 @@ pub fn token_issue_from_authorization_code(input: AuthorizationCodeIssueInput) -
         .flatten();
     TokenIssue {
         user_id: Some(input.payload.user_id),
+        prepared_subject: None,
         subject: input.subject,
         scopes: input.payload.scopes,
         authorization_details: input.payload.authorization_details,

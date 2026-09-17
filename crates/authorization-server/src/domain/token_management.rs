@@ -129,8 +129,12 @@ impl ServerTokenManagementOperations {
                 basic_challenge: has_basic,
             });
         };
-        let mut client = match self.authorization_service.client_by_id(client_id).await {
-            Ok(Some(client)) => client,
+        let (mut client, secret_salt) = match self
+            .authorization_service
+            .client_authentication_snapshot(client_id)
+            .await
+        {
+            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt),
             Ok(None) => {
                 perform_dummy_client_secret_verification(
                     &credentials,
@@ -161,6 +165,7 @@ impl ServerTokenManagementOperations {
                     &auth_request,
                     &mut client,
                     &credentials,
+                    secret_salt.as_deref(),
                 )
                 .await
             }
@@ -171,6 +176,7 @@ impl ServerTokenManagementOperations {
                     &auth_request,
                     &mut client,
                     &credentials,
+                    secret_salt.as_deref(),
                 )
                 .await
             }

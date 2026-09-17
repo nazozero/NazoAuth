@@ -44,6 +44,7 @@ pub struct PreparedParClient<'a> {
     params: HashMap<String, String>,
     client_id: String,
     client: ClientRow,
+    secret_salt: Option<String>,
     credentials: PresentedClientCredentials,
 }
 pub struct ParRequestFacts<'a> {
@@ -210,8 +211,14 @@ impl<'a> PreparedParParameters<'a> {
                 "客户端认证失败.",
             ));
         }
-        let client = match context.service.client_by_id(&client_id).await {
-            Ok(Some(client)) if client.is_active => client,
+        let (client, secret_salt) = match context
+            .service
+            .client_authentication_snapshot(&client_id)
+            .await
+        {
+            Ok(Some(snapshot)) if snapshot.client.is_active => {
+                (snapshot.client, snapshot.secret_salt)
+            }
             Ok(_) => {
                 crate::token::client_auth::perform_dummy_client_secret_verification(
                     &credentials,
@@ -237,6 +244,7 @@ impl<'a> PreparedParParameters<'a> {
             params,
             client_id,
             client,
+            secret_salt,
             credentials,
         })
     }
@@ -252,6 +260,7 @@ impl PreparedParClient<'_> {
             mut params,
             client_id,
             mut client,
+            secret_salt,
             credentials,
         } = self;
         let context = &context;
@@ -336,6 +345,7 @@ impl PreparedParClient<'_> {
                 &mut client,
                 &credentials,
                 nazo_auth::ClientAuthenticationContext::AllowPublicNone,
+                secret_salt.as_deref(),
             )
             .await
             {

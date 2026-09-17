@@ -153,6 +153,7 @@ pub async fn token_device_code_with_service(
                 },
                 TokenIssue {
                     user_id: Some(approval.user_id),
+                    prepared_subject: None,
                     subject: approval.subject,
                     scopes: payload.scopes,
                     authorization_details: payload.authorization_details,

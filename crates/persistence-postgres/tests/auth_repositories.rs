@@ -1963,3 +1963,1488 @@ async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
         "stale worker must not overwrite terminal state"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Refresh-rotation conflict (DB-005/DB-006) and SELECT EXISTS (DB-010) matrix
+// coverage.  Helpers below stay private to this file and only append.
+//
+// These tests share the database with the gated concurrency tests above: a
+// parked gated transaction can queue trigger DDL ahead of an ordinary commit
+// long enough to trip the 2s lock_timeout inside commit_token_issuance.
+// Serializing the added tests among themselves keeps their combined lock
+// footprint small; `retry_token_infra` absorbs the residual queue waits.
+// ---------------------------------------------------------------------------
+static ROTATION_MATRIX_TEST_LOCK: Mutex<()> = Mutex::const_new(());
+
+/// Field-level description of one directly inserted `oauth_tokens` row.
+struct RawRefreshRow<'a> {
+    tenant_id: Uuid,
+    family_id: Uuid,
+    rotated_from_id: Option<Uuid>,
+    client_id: Uuid,
+    user_id: Option<Uuid>,
+    subject: &'a str,
+    raw_token: &'a str,
+    dpop_jkt: Option<&'a str>,
+    /// Offset from now in seconds; `None` leaves the row unrevoked.
+    revoked_offset_seconds: Option<i32>,
+    /// Offset from now in seconds for `expires_at`.
+    expires_offset_seconds: i32,
+    reuse_detected: bool,
+    context_json: &'a str,
+}
+
+async fn insert_refresh_row(connection: &mut AsyncPgConnection, row: &RawRefreshRow<'_>) -> Uuid {
+    #[derive(QueryableByName)]
+    struct IdRow {
+        #[diesel(sql_type = SqlUuid)]
+        id: Uuid,
+    }
+    sql_query(
+        r#"
+        INSERT INTO oauth_tokens (
+            refresh_token_blake3, tenant_id, token_family_id, rotated_from_id,
+            client_id, user_id, scopes, audience, authorization_details,
+            issued_at, expires_at, revoked_at, reuse_detected_at, subject,
+            dpop_jkt, oidc_auth_context
+        ) VALUES (
+            $1, $2, $3, $4, $5, $6, '["openid", "offline_access"]'::jsonb,
+            '["resource://default"]'::jsonb, '[]'::jsonb,
+            CURRENT_TIMESTAMP,
+            CURRENT_TIMESTAMP + ($7 * INTERVAL '1 second'),
+            CURRENT_TIMESTAMP + ($8 * INTERVAL '1 second'),
+            CASE WHEN $9 THEN CURRENT_TIMESTAMP ELSE NULL END,
+            $10, $11, $12::jsonb
+        ) RETURNING id
+        "#,
+    )
+    .bind::<Text, _>(blake3::hash(row.raw_token.as_bytes()).to_hex().to_string())
+    .bind::<SqlUuid, _>(row.tenant_id)
+    .bind::<SqlUuid, _>(row.family_id)
+    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(row.rotated_from_id)
+    .bind::<SqlUuid, _>(row.client_id)
+    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(row.user_id)
+    .bind::<diesel::sql_types::Integer, _>(row.expires_offset_seconds)
+    .bind::<diesel::sql_types::Nullable<diesel::sql_types::Integer>, _>(row.revoked_offset_seconds)
+    .bind::<diesel::sql_types::Bool, _>(row.reuse_detected)
+    .bind::<Text, _>(row.subject)
+    .bind::<diesel::sql_types::Nullable<Text>, _>(row.dpop_jkt)
+    .bind::<Text, _>(row.context_json)
+    .get_result::<IdRow>(connection)
+    .await
+    .expect("raw refresh token row should insert")
+    .id
+}
+
+/// Default raw-row template for the shared system tenant fixture.
+fn raw_refresh_row<'a>(
+    fixture: &'a FixtureIds,
+    tenant_id: Uuid,
+    family_id: Uuid,
+    raw_token: &'a str,
+    context_json: &'a str,
+) -> RawRefreshRow<'a> {
+    RawRefreshRow {
+        tenant_id,
+        family_id,
+        rotated_from_id: None,
+        client_id: fixture.client_id,
+        user_id: Some(fixture.user_id),
+        subject: "raw-refresh-subject",
+        raw_token,
+        dpop_jkt: None,
+        revoked_offset_seconds: None,
+        expires_offset_seconds: 3600,
+        reuse_detected: false,
+        context_json,
+    }
+}
+
+/// Bounded retry for token-repository calls that may abort on transient
+/// lock-queue timeouts.  The shared test database serializes the gated
+/// concurrency tests' `CREATE`/`DROP TRIGGER` DDL on `oauth_tokens` and
+/// `oauth_token_issuances` behind parked rotation transactions, so an
+/// unrelated commit can hit its 2s `lock_timeout` through no fault of the
+/// path under test.  An `Err` always means the transaction rolled back, so
+/// retrying is safe; business verdicts return immediately and deterministic
+/// failures still surface after the last attempt.
+async fn retry_token_infra<T, Fut>(
+    mut call: impl FnMut() -> Fut,
+) -> Result<T, nazo_auth::TokenPortError>
+where
+    Fut: std::future::Future<Output = Result<T, nazo_auth::TokenPortError>>,
+{
+    let mut last_error = None;
+    for _ in 0..4 {
+        match call().await {
+            Ok(value) => return Ok(value),
+            Err(error) => {
+                last_error = Some(error);
+                tokio::task::yield_now().await;
+            }
+        }
+    }
+    Err(last_error.expect("at least one attempt must run"))
+}
+
+async fn commit_refresh(
+    database_url: &str,
+    token: NewRefreshToken,
+) -> (CommitTokenIssuanceResult, CommitTokenIssuance) {
+    commit_refresh_labeled(database_url, token, "rotation commit").await
+}
+
+async fn commit_refresh_labeled(
+    database_url: &str,
+    token: NewRefreshToken,
+    label: &str,
+) -> (CommitTokenIssuanceResult, CommitTokenIssuance) {
+    let input = refresh_issuance(token);
+    let repository = TokenIssuanceRepository::new(create_pool(database_url, 2).unwrap());
+    let result = retry_token_infra(|| repository.commit_token_issuance(input.clone()))
+        .await
+        .unwrap_or_else(|error| panic!("{label} should return a business result: {error:?}"));
+    (result, input)
+}
+
+/// Durable facts that every ordinary-rotation business conflict must leave
+/// behind: no extra family rows, the losing issuance row deleted, exactly one
+/// `refresh_reuse_detected` audit (pending in the outbox) and no `token_issued`
+/// audit for the losing issuance.
+async fn assert_rotation_conflict_facts(
+    connection: &mut AsyncPgConnection,
+    tenant_id: Uuid,
+    family_id: Uuid,
+    losing: &CommitTokenIssuance,
+    expected_family_rows: i64,
+    expected_compromised_rows: i64,
+    expected_active_rows: i64,
+) {
+    let totals = sql_query(
+        "SELECT \
+            COUNT(*)::bigint AS count, \
+            COUNT(*) FILTER (WHERE reuse_detected_at IS NOT NULL)::bigint AS compromised, \
+            COUNT(*) FILTER (WHERE revoked_at IS NULL)::bigint AS active \
+         FROM oauth_tokens WHERE tenant_id = $1 AND token_family_id = $2",
+    );
+    #[derive(QueryableByName)]
+    struct FamilyCounts {
+        #[diesel(sql_type = BigInt)]
+        count: i64,
+        #[diesel(sql_type = BigInt)]
+        compromised: i64,
+        #[diesel(sql_type = BigInt)]
+        active: i64,
+    }
+    let counts = totals
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(family_id)
+        .get_result::<FamilyCounts>(connection)
+        .await
+        .expect("family counts should load");
+    assert_eq!(counts.count, expected_family_rows, "family row total");
+    assert_eq!(
+        counts.compromised, expected_compromised_rows,
+        "compromise marks reuse_detected_at on every tenant-scoped family row"
+    );
+    assert_eq!(counts.active, expected_active_rows, "active family rows");
+    let issuance = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
+    )
+    .bind::<SqlUuid, _>(losing.issuance_id)
+    .get_result::<CountRow>(connection)
+    .await
+    .expect("losing issuance count should load");
+    assert_eq!(issuance.count, 0, "the losing issuance row must be deleted");
+    let rotated_from_id = losing
+        .refresh_token
+        .as_ref()
+        .expect("conflict fixture carries a refresh token")
+        .rotated_from_id;
+    let source_token_id = losing
+        .refresh_token
+        .as_ref()
+        .and_then(|refresh| refresh.lost_response_retry)
+        .map(|retry| retry.original_id);
+    assert_issuance_audit(
+        connection,
+        losing,
+        &[(
+            "refresh_reuse_detected",
+            "token_replay",
+            json!({
+                "token_family_id": family_id,
+                "rotated_from_id": rotated_from_id,
+                "source_token_id": source_token_id,
+            }),
+        )],
+    )
+    .await;
+}
+
+/// Inserts a complete second tenant (tenant + realm + organization + client)
+/// so a parent row can live outside the acting tenant's scope.
+async fn insert_foreign_tenant_client(connection: &mut AsyncPgConnection) -> (Uuid, Uuid, String) {
+    let tenant_id = Uuid::now_v7();
+    let realm_id = Uuid::now_v7();
+    let organization_id = Uuid::now_v7();
+    let public_id = format!("foreign-tenant-client-{}", Uuid::now_v7().simple());
+    let security_policy = r#"{"version":1,"assurance":"baseline","require_signed_authorization_request":false,"require_signed_authorization_response":false,"require_signed_introspection_response":false,"session_management":false,"allow_cross_device_flows":false,"allow_confidential_oidc_without_pkce":false}"#;
+    #[derive(QueryableByName)]
+    struct ClientRow {
+        #[diesel(sql_type = SqlUuid)]
+        id: Uuid,
+    }
+    let client = sql_query(format!(
+        r#"
+        WITH tenant AS (
+            INSERT INTO tenants (id, slug, display_name)
+            VALUES ('{tenant_id}', 'foreign-{tenant_id}', 'Foreign Tenant')
+        ), realm AS (
+            INSERT INTO realms (id, tenant_id, slug, display_name)
+            VALUES ('{realm_id}', '{tenant_id}', 'foreign', 'Foreign Realm')
+        ), organization AS (
+            INSERT INTO organizations (id, tenant_id, slug, display_name)
+            VALUES ('{organization_id}', '{tenant_id}', 'foreign', 'Foreign Org')
+        )
+        INSERT INTO oauth_clients (
+            tenant_id, realm_id, organization_id, client_id, client_name, client_type,
+            redirect_uris, scopes, grant_types, token_endpoint_auth_method, security_policy
+        ) VALUES (
+            '{tenant_id}', '{realm_id}', '{organization_id}', '{public_id}',
+            'Foreign Tenant Client', 'confidential',
+            '["https://foreign.example/callback"]'::jsonb, '["openid", "offline_access"]'::jsonb,
+            '["authorization_code", "refresh_token"]'::jsonb, 'client_secret_basic',
+            '{security_policy}'::jsonb
+        ) RETURNING id
+        "#,
+    ))
+    .get_result::<ClientRow>(connection)
+    .await
+    .expect("foreign tenant client should insert")
+    .id;
+    (tenant_id, client, public_id)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audit() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let foreign = fixture(&database_url).await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+
+    // Parent id does not exist at all: the conditional update finds zero
+    // rows.  Parent state is staged with direct inserts so only the rotation
+    // under test pays a real commit (raw inserts simply wait out queued DDL
+    // instead of expiring on the transaction lock_timeout).
+    let missing_family = Uuid::now_v7();
+    let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
+    insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            missing_family,
+            &format!("missing-parent-root-{}", Uuid::now_v7()),
+            &context,
+        ),
+    )
+    .await;
+    let (result, losing) = commit_refresh(
+        &database_url,
+        refresh_token_fixture(
+            &fixture,
+            tenant_id,
+            missing_family,
+            format!("missing-parent-child-{}", Uuid::now_v7()),
+            Some(Uuid::now_v7()),
+        ),
+    )
+    .await;
+    assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+    assert_rotation_conflict_facts(&mut connection, tenant_id, missing_family, &losing, 1, 1, 0)
+        .await;
+
+    // Parent already consumed by an earlier rotation: a revoked root plus
+    // the active successor that consumed it.
+    let consumed_family = Uuid::now_v7();
+    let consumed_root_raw = format!("consumed-root-{}", Uuid::now_v7());
+    let mut consumed_root = raw_refresh_row(
+        &fixture,
+        tenant_id,
+        consumed_family,
+        &consumed_root_raw,
+        &context,
+    );
+    consumed_root.revoked_offset_seconds = Some(0);
+    let consumed_root_id = insert_refresh_row(&mut connection, &consumed_root).await;
+    let consumed_child_raw = format!("consumed-first-child-{}", Uuid::now_v7());
+    let mut consumed_first_child = raw_refresh_row(
+        &fixture,
+        tenant_id,
+        consumed_family,
+        &consumed_child_raw,
+        &context,
+    );
+    consumed_first_child.rotated_from_id = Some(consumed_root_id);
+    insert_refresh_row(&mut connection, &consumed_first_child).await;
+    let (result, losing) = commit_refresh(
+        &database_url,
+        refresh_token_fixture(
+            &fixture,
+            tenant_id,
+            consumed_family,
+            format!("consumed-second-child-{}", Uuid::now_v7()),
+            Some(consumed_root_id),
+        ),
+    )
+    .await;
+    assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+    assert_rotation_conflict_facts(
+        &mut connection,
+        tenant_id,
+        consumed_family,
+        &losing,
+        2,
+        2,
+        0,
+    )
+    .await;
+
+    // The parent lives in a different family than the one being rotated into.
+    let source_family = Uuid::now_v7();
+    let other_family_root_id = insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            source_family,
+            &format!("other-family-root-{}", Uuid::now_v7()),
+            &context,
+        ),
+    )
+    .await;
+    let requested_family = Uuid::now_v7();
+    let (result, losing) = commit_refresh(
+        &database_url,
+        refresh_token_fixture(
+            &fixture,
+            tenant_id,
+            requested_family,
+            format!("cross-family-child-{}", Uuid::now_v7()),
+            Some(other_family_root_id),
+        ),
+    )
+    .await;
+    assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+    // The compromise is scoped to the requested family, which has no rows;
+    // the source family stays untouched.
+    assert_rotation_conflict_facts(
+        &mut connection,
+        tenant_id,
+        requested_family,
+        &losing,
+        0,
+        0,
+        0,
+    )
+    .await;
+    let untouched = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE tenant_id = $1 AND token_family_id = $2 \
+           AND revoked_at IS NULL AND reuse_detected_at IS NULL",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(source_family)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        untouched.count, 1,
+        "a family-mismatched parent must not be compromised"
+    );
+
+    // Parent is owned by a different client.
+    let client_family = Uuid::now_v7();
+    let client_root_id = insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            client_family,
+            &format!("client-mismatch-root-{}", Uuid::now_v7()),
+            &context,
+        ),
+    )
+    .await;
+    let mut wrong_client = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        client_family,
+        format!("client-mismatch-child-{}", Uuid::now_v7()),
+        Some(client_root_id),
+    );
+    wrong_client.client_id = foreign.client_id;
+    let (result, losing) = commit_refresh(&database_url, wrong_client).await;
+    assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+    assert_rotation_conflict_facts(&mut connection, tenant_id, client_family, &losing, 1, 1, 0)
+        .await;
+
+    // Parent is owned by a different user.
+    let user_family = Uuid::now_v7();
+    let user_root_id = insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            user_family,
+            &format!("user-mismatch-root-{}", Uuid::now_v7()),
+            &context,
+        ),
+    )
+    .await;
+    let mut wrong_user = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        user_family,
+        format!("user-mismatch-child-{}", Uuid::now_v7()),
+        Some(user_root_id),
+    );
+    wrong_user.user_id = Some(foreign.user_id);
+    wrong_user.subject = foreign.user_id.to_string();
+    let (result, losing) = commit_refresh(&database_url, wrong_user).await;
+    assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+    assert_rotation_conflict_facts(&mut connection, tenant_id, user_family, &losing, 1, 1, 0).await;
+
+    // Parent belongs to a different tenant: the update misses and the
+    // tenant-scoped compromise cannot touch the foreign row.
+    let (foreign_tenant, foreign_client, foreign_public_id) =
+        insert_foreign_tenant_client(&mut connection).await;
+    let foreign_context = refresh_context_json(&foreign_public_id, chrono::Utc::now());
+    let foreign_family = Uuid::now_v7();
+    let foreign_raw = format!("foreign-parent-{}", Uuid::now_v7());
+    let foreign_parent_id = insert_refresh_row(
+        &mut connection,
+        &RawRefreshRow {
+            client_id: foreign_client,
+            user_id: None,
+            subject: &foreign_public_id,
+            ..raw_refresh_row(
+                &fixture,
+                foreign_tenant,
+                foreign_family,
+                &foreign_raw,
+                &foreign_context,
+            )
+        },
+    )
+    .await;
+    let mut cross_tenant = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        foreign_family,
+        format!("cross-tenant-child-{}", Uuid::now_v7()),
+        Some(foreign_parent_id),
+    );
+    cross_tenant.user_id = None;
+    cross_tenant.subject = fixture.client_public_id.clone();
+    let (result, losing) = commit_refresh(&database_url, cross_tenant).await;
+    assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+    assert_rotation_conflict_facts(&mut connection, tenant_id, foreign_family, &losing, 0, 0, 0)
+        .await;
+    let foreign_state = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE id = $1 AND revoked_at IS NULL AND reuse_detected_at IS NULL",
+    )
+    .bind::<SqlUuid, _>(foreign_parent_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        foreign_state.count, 1,
+        "the foreign-tenant parent must survive the conflict untouched"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ordinary_rotation_context_mismatch_commits_compromise_and_reuse_audit() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let family_id = Uuid::now_v7();
+    let root_raw = format!("context-drift-root-{}", Uuid::now_v7());
+    let (result, _) = commit_refresh(
+        &database_url,
+        refresh_token_fixture(&fixture, tenant_id, family_id, root_raw.clone(), None),
+    )
+    .await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let root_id = TokenRepository::new(create_pool(&database_url, 1).unwrap())
+        .by_raw_refresh_token(tenant_id, &root_raw)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+
+    let mut drifting = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        family_id,
+        format!("context-drift-child-{}", Uuid::now_v7()),
+        Some(root_id),
+    );
+    drifting.authentication_context.acr = Some("urn:example:loa2".to_owned());
+    let (result, losing) = commit_refresh(&database_url, drifting).await;
+    // The conditional update returns the row and the Rust-side comparison
+    // fails; the compromise facts commit instead of propagating an error.
+    assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    assert_rotation_conflict_facts(&mut connection, tenant_id, family_id, &losing, 1, 1, 0).await;
+    let persisted_context = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE id = $1 AND oidc_auth_context ->> 'acr' IS NULL",
+    )
+    .bind::<SqlUuid, _>(root_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        persisted_context.count, 1,
+        "the parent's stored context must remain the original one"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let authentication_time = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+
+    // Helper: build the stored context JSON for a claim-request `value`.
+    let context_with_claim = |value: serde_json::Value| {
+        let mut context = serde_json::to_value(refresh_authentication_context(
+            &fixture.client_public_id,
+            authentication_time,
+        ))
+        .unwrap();
+        context["userinfo_claim_requests"] = json!([{"name": "claim", "value": value}]);
+        serde_json::to_string(&context).unwrap()
+    };
+    let claim_for = |value: serde_json::Value| nazo_auth::OidcClaimRequest {
+        name: "claim".to_owned(),
+        essential: false,
+        value: Some(value),
+        values: Vec::new(),
+    };
+
+    // `1` (integer) in the incoming context versus `1.0` (float) in the stored
+    // jsonb: PostgreSQL `=` treats them as equal, serde_json::Value does not.
+    let float_family = Uuid::now_v7();
+    let stored_float = context_with_claim(json!(1.0));
+    let float_parent = insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            float_family,
+            &format!("serde-float-parent-{}", Uuid::now_v7()),
+            &stored_float,
+        ),
+    )
+    .await;
+    let mut float_child = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        float_family,
+        format!("serde-float-child-{}", Uuid::now_v7()),
+        Some(float_parent),
+    );
+    float_child.authentication_context.userinfo_claim_requests = vec![claim_for(json!(1))];
+    let float_input = refresh_issuance(float_child);
+    let incoming_json = serde_json::to_value(
+        &float_input
+            .refresh_token
+            .as_ref()
+            .unwrap()
+            .authentication_context,
+    )
+    .unwrap();
+    #[derive(QueryableByName)]
+    struct BoolRow {
+        #[diesel(sql_type = diesel::sql_types::Bool)]
+        value: bool,
+    }
+    let pg_equal = sql_query(
+        "SELECT (oidc_auth_context = $2::jsonb) AS value FROM oauth_tokens WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(float_parent)
+    .bind::<Text, _>(serde_json::to_string(&incoming_json).unwrap())
+    .get_result::<BoolRow>(&mut connection)
+    .await
+    .unwrap();
+    assert!(
+        pg_equal.value,
+        "jsonb equality must consider 1 and 1.0 equal, so only a Rust-side serde_json::Value compare can reject this rotation"
+    );
+    let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let result = retry_token_infra(|| repository.commit_token_issuance(float_input.clone()))
+        .await
+        .expect("serde-visible context drift must classify as a business conflict");
+    assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+    assert_rotation_conflict_facts(
+        &mut connection,
+        tenant_id,
+        float_family,
+        &float_input,
+        1,
+        1,
+        0,
+    )
+    .await;
+
+    // `null` versus a missing member is likewise serde-visible.
+    let null_family = Uuid::now_v7();
+    let stored_null = context_with_claim(serde_json::Value::Null);
+    let null_parent = insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            null_family,
+            &format!("serde-null-parent-{}", Uuid::now_v7()),
+            &stored_null,
+        ),
+    )
+    .await;
+    let mut null_child = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        null_family,
+        format!("serde-null-child-{}", Uuid::now_v7()),
+        Some(null_parent),
+    );
+    null_child.authentication_context.userinfo_claim_requests = vec![nazo_auth::OidcClaimRequest {
+        name: "claim".to_owned(),
+        essential: false,
+        value: None,
+        values: Vec::new(),
+    }];
+    let (result, losing) = commit_refresh(&database_url, null_child).await;
+    assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
+    assert_rotation_conflict_facts(&mut connection, tenant_id, null_family, &losing, 1, 1, 0).await;
+
+    // The identical semantic context re-serialized stays equal and rotates.
+    let equal_family = Uuid::now_v7();
+    let stored_equal = context_with_claim(json!(1));
+    let equal_parent = insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            equal_family,
+            &format!("serde-equal-parent-{}", Uuid::now_v7()),
+            &stored_equal,
+        ),
+    )
+    .await;
+    let mut equal_child = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        equal_family,
+        format!("serde-equal-child-{}", Uuid::now_v7()),
+        Some(equal_parent),
+    );
+    equal_child.authentication_context.userinfo_claim_requests = vec![claim_for(json!(1))];
+    let (result, _) = commit_refresh(&database_url, equal_child).await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let state = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE token_family_id = $1 AND revoked_at IS NULL AND reuse_detected_at IS NULL",
+    )
+    .bind::<SqlUuid, _>(equal_family)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(state.count, 1, "the equal context must rotate cleanly");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compromise() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let family_id = Uuid::now_v7();
+    let root_raw = format!("race-root-{}", Uuid::now_v7());
+    let (result, _) = commit_refresh(
+        &database_url,
+        refresh_token_fixture(&fixture, tenant_id, family_id, root_raw.clone(), None),
+    )
+    .await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let root_id = TokenRepository::new(create_pool(&database_url, 1).unwrap())
+        .by_raw_refresh_token(tenant_id, &root_raw)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+
+    // Holding the family lock at session level parks each rotation transaction
+    // inside its commit on the same advisory wait — two genuinely in-flight
+    // rotations without adding trigger DDL to the shared tables (queued DDL
+    // elsewhere is what stalls unrelated commits into their lock_timeout).
+    let family_key = family_lock_key(family_id);
+    let mut coordinator = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query("SELECT pg_advisory_lock($1)")
+        .bind::<BigInt, _>(family_key)
+        .execute(&mut coordinator)
+        .await
+        .expect("coordinator should hold the family lock");
+
+    let app_left = format!("rotation-left-{}", Uuid::now_v7().simple());
+    let app_right = format!("rotation-right-{}", Uuid::now_v7().simple());
+    let left_input = refresh_issuance(refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        family_id,
+        format!("race-left-{}", Uuid::now_v7()),
+        Some(root_id),
+    ));
+    let right_input = refresh_issuance(refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        family_id,
+        format!("race-right-{}", Uuid::now_v7()),
+        Some(root_id),
+    ));
+    let left_repository = TokenIssuanceRepository::new(
+        create_pool(tagged_database_url(&database_url, &app_left), 1).unwrap(),
+    );
+    let right_repository = TokenIssuanceRepository::new(
+        create_pool(tagged_database_url(&database_url, &app_right), 1).unwrap(),
+    );
+    let mut left = tokio::spawn({
+        let input = left_input.clone();
+        async move { retry_token_infra(|| left_repository.commit_token_issuance(input.clone())).await }
+    });
+    let mut right = tokio::spawn({
+        let input = right_input.clone();
+        async move { retry_token_infra(|| right_repository.commit_token_issuance(input.clone())).await }
+    });
+    wait_for_lock_wait_or_task(&mut coordinator, &app_left, &mut left).await;
+    wait_for_lock_wait_or_task(&mut coordinator, &app_right, &mut right).await;
+    sql_query("SELECT pg_advisory_unlock($1)")
+        .bind::<BigInt, _>(family_key)
+        .execute(&mut coordinator)
+        .await
+        .expect("coordinator should release the family lock");
+    let left_result = left.await.expect("left rotation should join");
+    let right_result = right.await.expect("right rotation should join");
+
+    let mut committed = 0;
+    let mut loser_input = None;
+    for (result, input) in [(left_result, &left_input), (right_result, &right_input)] {
+        match result {
+            Ok(CommitTokenIssuanceResult::Committed) => committed += 1,
+            Ok(CommitTokenIssuanceResult::RotationConflict) => {
+                loser_input = Some((*input).clone());
+            }
+            other => panic!("unexpected rotation race result {other:?}"),
+        }
+    }
+    assert_eq!(committed, 1, "exactly one rotation may commit");
+    let losing = loser_input.expect("the loser must see the business conflict");
+    // The winner's insert commits, then the loser's compromise revokes every
+    // family row — including the just-committed successor — and its reuse
+    // audit is persisted rather than rolled back.
+    assert_rotation_conflict_facts(&mut coordinator, tenant_id, family_id, &losing, 2, 2, 0).await;
+    let winner_issuance = if losing.issuance_id == left_input.issuance_id {
+        right_input.issuance_id
+    } else {
+        left_input.issuance_id
+    };
+    let kept = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
+    )
+    .bind::<SqlUuid, _>(winner_issuance)
+    .get_result::<CountRow>(&mut coordinator)
+    .await
+    .unwrap();
+    assert_eq!(
+        kept.count, 1,
+        "the winning issuance row must stay committed"
+    );
+}
+
+/// Commits a bound root refresh token and one bound successor, returning the
+/// domain rows needed by the lost-response retry tests.
+async fn bound_rotation_fixture(
+    database_url: &str,
+    fixture: &FixtureIds,
+    tenant_id: Uuid,
+    family_id: Uuid,
+    dpop_jkt: &str,
+) -> (nazo_auth::RefreshToken, nazo_auth::RefreshToken) {
+    let tokens = TokenRepository::new(create_pool(database_url, 2).unwrap());
+    let root_raw = format!("bound-root-{}", Uuid::now_v7());
+    let mut root = refresh_token_fixture(fixture, tenant_id, family_id, root_raw.clone(), None);
+    root.dpop_jkt = Some(dpop_jkt.to_owned());
+    let (result, _) = commit_refresh(database_url, root).await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let successor_raw = format!("bound-successor-{}", Uuid::now_v7());
+    let root_id = tokens
+        .by_raw_refresh_token(tenant_id, &root_raw)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    let mut successor = refresh_token_fixture(
+        fixture,
+        tenant_id,
+        family_id,
+        successor_raw.clone(),
+        Some(root_id),
+    );
+    successor.dpop_jkt = Some(dpop_jkt.to_owned());
+    let (result, _) = commit_refresh(database_url, successor).await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let original = tokens
+        .by_raw_refresh_token(tenant_id, &root_raw)
+        .await
+        .unwrap()
+        .unwrap();
+    let successor = tokens
+        .by_raw_refresh_token(tenant_id, &successor_raw)
+        .await
+        .unwrap()
+        .unwrap();
+    (original, successor)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let family_id = Uuid::now_v7();
+    let dpop_jkt = format!("lost-response-jkt-{}", Uuid::now_v7().simple());
+    let (original, successor) =
+        bound_rotation_fixture(&database_url, &fixture, tenant_id, family_id, &dpop_jkt).await;
+    let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
+
+    // Outer snapshot: the unconsumed successor of the revoked original.
+    let retry_started_at = chrono::Utc::now();
+    let inspected = tokens
+        .inspect_lost_response_successor(&original, fixture.client_id, retry_started_at)
+        .await
+        .expect("outer successor snapshot should load");
+    assert_eq!(
+        inspected.as_ref().map(|token| token.id),
+        Some(successor.id),
+        "the outer snapshot must see the persisted successor"
+    );
+
+    // Hold the family advisory lock so the in-lock recheck cannot run until
+    // the compromise lands — the exact "between the two checks" window.
+    let mut coordinator = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query("SELECT pg_advisory_lock($1)")
+        .bind::<BigInt, _>(family_lock_key(family_id))
+        .execute(&mut coordinator)
+        .await
+        .expect("coordinator should hold the family lock");
+
+    let retry_application = format!("lost-response-retry-{}", Uuid::now_v7().simple());
+    let retry_repository = TokenIssuanceRepository::new(
+        create_pool(tagged_database_url(&database_url, &retry_application), 1).unwrap(),
+    );
+    let mut retry_token = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        family_id,
+        format!("lost-response-next-{}", Uuid::now_v7()),
+        Some(successor.id),
+    );
+    retry_token.dpop_jkt = Some(dpop_jkt.clone());
+    retry_token.lost_response_retry = Some(nazo_auth::LostResponseRetry {
+        original_id: original.id,
+        retry_started_at,
+    });
+    let retry_input = refresh_issuance(retry_token);
+    let mut retry = tokio::spawn({
+        let input = retry_input.clone();
+        async move { retry_token_infra(|| retry_repository.commit_token_issuance(input.clone())).await }
+    });
+    wait_for_lock_wait_or_task(&mut coordinator, &retry_application, &mut retry).await;
+
+    // A concurrent reuse verdict commits while the retry waits for the lock.
+    let mut compromiser = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let marked = sql_query(
+        "UPDATE oauth_tokens SET reuse_detected_at = CURRENT_TIMESTAMP \
+         WHERE tenant_id = $1 AND token_family_id = $2 AND reuse_detected_at IS NULL",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(family_id)
+    .execute(&mut compromiser)
+    .await
+    .expect("the racing compromise should commit");
+    assert!(marked > 0);
+
+    sql_query("SELECT pg_advisory_unlock($1)")
+        .bind::<BigInt, _>(family_lock_key(family_id))
+        .execute(&mut coordinator)
+        .await
+        .expect("coordinator should release the family lock");
+    let result = retry.await.expect("retry task should join");
+    assert_eq!(
+        result.expect("the recheck must classify as a business conflict"),
+        CommitTokenIssuanceResult::RotationConflict,
+        "the in-lock recheck must see the compromise committed after the outer snapshot"
+    );
+    assert_rotation_conflict_facts(
+        &mut coordinator,
+        tenant_id,
+        family_id,
+        &retry_input,
+        2,
+        2,
+        0,
+    )
+    .await;
+}
+
+/// Stages a revoked original refresh row plus `successor_count` successor rows
+/// in a fresh family and returns the original's domain token together with the
+/// inserted successor ids.
+#[allow(clippy::too_many_arguments)]
+async fn stage_lost_response(
+    database_url: &str,
+    fixture: &FixtureIds,
+    tenant_id: Uuid,
+    label: &str,
+    original_revoked_offset_seconds: i32,
+    original_dpop_jkt: Option<&str>,
+    successor_dpop_jkt: Option<&str>,
+    successor_expires_offset_seconds: i32,
+    successor_reuse_detected: bool,
+    successor_count: usize,
+) -> (nazo_auth::RefreshToken, Vec<Uuid>) {
+    let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
+    let family_id = Uuid::now_v7();
+    let original_raw = format!("{label}-original-{}", Uuid::now_v7());
+    let mut connection = AsyncPgConnection::establish(database_url)
+        .await
+        .expect("test database should connect");
+    let mut original_row = raw_refresh_row(fixture, tenant_id, family_id, &original_raw, &context);
+    original_row.revoked_offset_seconds = Some(original_revoked_offset_seconds);
+    original_row.dpop_jkt = original_dpop_jkt;
+    let original_id = insert_refresh_row(&mut connection, &original_row).await;
+    let mut successor_ids = Vec::new();
+    for index in 0..successor_count {
+        let successor_raw = format!("{label}-successor-{index}-{}", Uuid::now_v7());
+        let mut successor_row =
+            raw_refresh_row(fixture, tenant_id, family_id, &successor_raw, &context);
+        successor_row.rotated_from_id = Some(original_id);
+        successor_row.dpop_jkt = successor_dpop_jkt;
+        successor_row.expires_offset_seconds = successor_expires_offset_seconds;
+        successor_row.reuse_detected = successor_reuse_detected;
+        successor_ids.push(insert_refresh_row(&mut connection, &successor_row).await);
+    }
+    let original = TokenRepository::new(create_pool(database_url, 1).unwrap())
+        .by_raw_refresh_token(tenant_id, &original_raw)
+        .await
+        .expect("staged original should load")
+        .expect("staged original should exist");
+    (original, successor_ids)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let tokens = TokenRepository::new(create_pool(&database_url, 4).unwrap());
+    let jkt = "lost-successor-jkt";
+    // The retry timestamp must follow the staged `revoked_at` for the
+    // sixty-second recovery window to be entered at all.
+    let now = || chrono::Utc::now();
+
+    // Zero successors → nothing to recover.
+    let (original, _) = stage_lost_response(
+        &database_url,
+        &fixture,
+        tenant_id,
+        "zero",
+        0,
+        Some(jkt),
+        Some(jkt),
+        3600,
+        false,
+        0,
+    )
+    .await;
+    assert!(
+        tokens
+            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .await
+            .expect("successor lookup should load")
+            .is_none(),
+        "no successor may be reported when none exists"
+    );
+
+    // Exactly one bound, unexpired, unrevoked successor → recovered.
+    let (original, successor_ids) = stage_lost_response(
+        &database_url,
+        &fixture,
+        tenant_id,
+        "one",
+        0,
+        Some(jkt),
+        Some(jkt),
+        3600,
+        false,
+        1,
+    )
+    .await;
+    let recovered = tokens
+        .inspect_lost_response_successor(&original, fixture.client_id, now())
+        .await
+        .expect("successor lookup should load")
+        .expect("exactly one bound successor must be recoverable");
+    assert_eq!(recovered.id, successor_ids[0]);
+
+    // Two competing successors trip the LIMIT 2 + exactly-one constraint.
+    let (original, _) = stage_lost_response(
+        &database_url,
+        &fixture,
+        tenant_id,
+        "two",
+        0,
+        Some(jkt),
+        Some(jkt),
+        3600,
+        false,
+        2,
+    )
+    .await;
+    assert!(
+        tokens
+            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .await
+            .expect("successor lookup should load")
+            .is_none(),
+        "two candidate successors must fail the exactly-one constraint"
+    );
+
+    // An expired successor does not count.
+    let (original, _) = stage_lost_response(
+        &database_url,
+        &fixture,
+        tenant_id,
+        "expired",
+        0,
+        Some(jkt),
+        Some(jkt),
+        -60,
+        false,
+        1,
+    )
+    .await;
+    assert!(
+        tokens
+            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .await
+            .expect("successor lookup should load")
+            .is_none(),
+        "an expired successor must not be recovered"
+    );
+
+    // Without any holder binding on the original there is no successor proof.
+    let (original, _) = stage_lost_response(
+        &database_url,
+        &fixture,
+        tenant_id,
+        "unbound",
+        0,
+        None,
+        Some(jkt),
+        3600,
+        false,
+        1,
+    )
+    .await;
+    assert!(
+        tokens
+            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .await
+            .expect("successor lookup should load")
+            .is_none(),
+        "an unbound original has no recoverable successor"
+    );
+
+    // A successor bound to a different key is not this retry's successor.
+    let (original, _) = stage_lost_response(
+        &database_url,
+        &fixture,
+        tenant_id,
+        "mismatch",
+        0,
+        Some(jkt),
+        Some("a-different-jkt"),
+        3600,
+        false,
+        1,
+    )
+    .await;
+    assert!(
+        tokens
+            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .await
+            .expect("successor lookup should load")
+            .is_none(),
+        "a successor bound to another key must not be recovered"
+    );
+
+    // A client different from the original's owner sees nothing.
+    let (original, _) = stage_lost_response(
+        &database_url,
+        &fixture,
+        tenant_id,
+        "client",
+        0,
+        Some(jkt),
+        Some(jkt),
+        3600,
+        false,
+        1,
+    )
+    .await;
+    assert!(
+        tokens
+            .inspect_lost_response_successor(&original, Uuid::now_v7(), now())
+            .await
+            .expect("successor lookup should load")
+            .is_none(),
+        "a different client id must not recover the successor"
+    );
+
+    // A retry started outside the sixty-second window recovers nothing.
+    let (original, _) = stage_lost_response(
+        &database_url,
+        &fixture,
+        tenant_id,
+        "late",
+        -120,
+        Some(jkt),
+        Some(jkt),
+        3600,
+        false,
+        1,
+    )
+    .await;
+    assert!(
+        tokens
+            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .await
+            .expect("successor lookup should load")
+            .is_none(),
+        "a successor outside the retry window must not be recovered"
+    );
+
+    // A family already flagged for reuse hides the successor entirely.
+    let (original, _) = stage_lost_response(
+        &database_url,
+        &fixture,
+        tenant_id,
+        "compromised",
+        0,
+        Some(jkt),
+        Some(jkt),
+        3600,
+        true,
+        1,
+    )
+    .await;
+    assert!(
+        tokens
+            .inspect_lost_response_successor(&original, fixture.client_id, now())
+            .await
+            .expect("successor lookup should load")
+            .is_none(),
+        "a compromised family must hide every successor"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn rotation_sql_failure_propagates_error_and_rolls_back_instead_of_conflicting() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let family_id = Uuid::now_v7();
+    let root_raw = format!("sql-failure-root-{}", Uuid::now_v7());
+    let (result, _) = commit_refresh(
+        &database_url,
+        refresh_token_fixture(&fixture, tenant_id, family_id, root_raw.clone(), None),
+    )
+    .await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let root_id = TokenRepository::new(create_pool(&database_url, 1).unwrap())
+        .by_raw_refresh_token(tenant_id, &root_raw)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+
+    // Reusing the parent's raw refresh token makes the successor INSERT hit
+    // ux_oauth_tokens_tenant_refresh_token_blake3 — a real constraint
+    // violation after the conditional parent UPDATE has already run.  The
+    // transaction must abort and roll back instead of degrading into a
+    // business conflict.
+    let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let failing = refresh_issuance(refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        family_id,
+        root_raw.clone(),
+        Some(root_id),
+    ));
+    let failing_issuance_id = failing.issuance_id;
+    let result = repository
+        .commit_token_issuance(failing.clone())
+        .await
+        .expect_err("a SQL failure must surface as an error, never a business result");
+    assert_eq!(
+        result,
+        nazo_auth::TokenPortError::Unexpected,
+        "a constraint violation inside rotation is an error, not RotationConflict"
+    );
+    let mut coordinator = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let intact = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE id = $1 AND revoked_at IS NULL AND reuse_detected_at IS NULL",
+    )
+    .bind::<SqlUuid, _>(root_id)
+    .get_result::<CountRow>(&mut coordinator)
+    .await
+    .unwrap();
+    assert_eq!(
+        intact.count, 1,
+        "the parent must stay active and uncompromised"
+    );
+    for (table, clause) in [
+        (
+            "oauth_token_issuances",
+            format!("issuance_id = '{failing_issuance_id}'"),
+        ),
+        (
+            "security_audit_events",
+            format!("payload->>'issuance_id' = '{failing_issuance_id}'"),
+        ),
+        ("oauth_tokens", format!("rotated_from_id = '{root_id}'")),
+    ] {
+        let count = sql_query(format!(
+            "SELECT COUNT(*)::bigint AS count FROM {table} WHERE {clause}"
+        ))
+        .get_result::<CountRow>(&mut coordinator)
+        .await
+        .unwrap();
+        assert_eq!(count.count, 0, "{table} must roll back completely");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn family_active_exists_semantics_cover_cardinality_and_predicates() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let tokens = TokenRepository::new(create_pool(&database_url, 4).unwrap());
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
+
+    // No rows at all.
+    assert!(
+        !tokens
+            .family_active(tenant_id, Uuid::now_v7(), fixture.user_id)
+            .await
+            .expect("empty family state should load")
+    );
+
+    // Many rows with at least one active → true.
+    let many_family = Uuid::now_v7();
+    for (label, revoked, expires) in [
+        ("active", None, 3600),
+        ("revoked", Some(0), 3600),
+        ("expired", None, -60),
+    ] {
+        let raw = format!("exists-many-{label}-{}", Uuid::now_v7());
+        let mut row = raw_refresh_row(&fixture, tenant_id, many_family, &raw, &context);
+        row.revoked_offset_seconds = revoked;
+        row.expires_offset_seconds = expires;
+        insert_refresh_row(&mut connection, &row).await;
+    }
+    assert!(
+        tokens
+            .family_active(tenant_id, many_family, fixture.user_id)
+            .await
+            .expect("multi-row family state should load"),
+        "one unrevoked unexpired row is enough"
+    );
+    // Single active row family.
+    let single_family = Uuid::now_v7();
+    insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            single_family,
+            &format!("exists-single-{}", Uuid::now_v7()),
+            &context,
+        ),
+    )
+    .await;
+    assert!(
+        tokens
+            .family_active(tenant_id, single_family, fixture.user_id)
+            .await
+            .expect("single-row family state should load")
+    );
+    // Tenant and user predicates must both hold.
+    assert!(
+        !tokens
+            .family_active(Uuid::now_v7(), single_family, fixture.user_id)
+            .await
+            .expect("wrong-tenant family state should load"),
+        "a different tenant must not see the family active"
+    );
+    assert!(
+        !tokens
+            .family_active(tenant_id, single_family, Uuid::now_v7())
+            .await
+            .expect("wrong-user family state should load"),
+        "a different user must not see the family active"
+    );
+    // Revoke the single row → false; a family of only expired rows → false.
+    sql_query("UPDATE oauth_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_family_id = $1")
+        .bind::<SqlUuid, _>(single_family)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(
+        !tokens
+            .family_active(tenant_id, single_family, fixture.user_id)
+            .await
+            .expect("revoked family state should load")
+    );
+    let expired_family = Uuid::now_v7();
+    let expired_raw = format!("exists-expired-{}", Uuid::now_v7());
+    let mut expired_row =
+        raw_refresh_row(&fixture, tenant_id, expired_family, &expired_raw, &context);
+    expired_row.expires_offset_seconds = -60;
+    insert_refresh_row(&mut connection, &expired_row).await;
+    assert!(
+        !tokens
+            .family_active(tenant_id, expired_family, fixture.user_id)
+            .await
+            .expect("expired family state should load"),
+        "an unrevoked but expired row is not active"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn access_token_revoked_exists_semantics_ignore_deadline_and_scope() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let tokens = TokenRepository::new(create_pool(&database_url, 2).unwrap());
+    let issuance = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let jti = format!("revoked-jti-{}", Uuid::now_v7());
+
+    assert!(
+        !tokens
+            .access_token_revoked(tenant_id, &jti)
+            .await
+            .expect("unknown jti lookup should load"),
+        "an unknown jti is not revoked"
+    );
+    retry_token_infra(|| {
+        issuance.revoke_token(TokenRevocation {
+            tenant_id,
+            client_id: fixture.client_id,
+            raw_token: "revoked-jti-unused-refresh",
+            access_token: Some(AccessTokenRevocation {
+                jti: jti.clone(),
+                // Already past even after the verifier clock-skew deadline.
+                expires_at: chrono::Utc::now() - chrono::Duration::hours(2),
+            }),
+        })
+    })
+    .await
+    .expect("revocation should commit");
+    assert!(
+        tokens
+            .access_token_revoked(tenant_id, &jti)
+            .await
+            .expect("revoked jti lookup should load"),
+        "a persisted revocation row stays true until cleanup removes it"
+    );
+    assert!(
+        !tokens
+            .access_token_revoked(Uuid::now_v7(), &jti)
+            .await
+            .expect("foreign-tenant lookup should load"),
+        "a revocation never leaks across tenants"
+    );
+    assert!(
+        !tokens
+            .access_token_revoked(tenant_id, "never-issued-jti")
+            .await
+            .expect("other jti lookup should load")
+    );
+
+    // Cleanup deletes the row → the exists check flips back to false.
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    let removed = sql_query(
+        "DELETE FROM access_token_revocations \
+         WHERE tenant_id = $1 AND access_token_jti_blake3 = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<Text, _>(blake3::hash(jti.as_bytes()).to_hex().to_string())
+    .execute(&mut connection)
+    .await
+    .expect("cleanup should delete the revocation row");
+    assert_eq!(removed, 1);
+    assert!(
+        !tokens
+            .access_token_revoked(tenant_id, &jti)
+            .await
+            .expect("post-cleanup lookup should load")
+    );
+}

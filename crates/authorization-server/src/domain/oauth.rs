@@ -26,8 +26,18 @@ pub enum RefreshTokenPolicy {
     PreserveExisting,
 }
 
+/// Request-local subject claims snapshot for grants that already loaded the
+/// active subject once (CIBA). It exists only for this TokenIssue's lifetime:
+/// it is never serialized, persisted, or cached, and it is not the final
+/// authority — the commit still revalidates the principal under its lock.
+pub struct PreparedTokenSubject {
+    pub tenant_id: Uuid,
+    pub claims: nazo_identity::SubjectClaims,
+}
+
 pub struct TokenIssue {
     pub user_id: Option<Uuid>,
+    pub prepared_subject: Option<PreparedTokenSubject>,
     pub subject: String,
     pub scopes: Vec<String>,
     pub authorization_details: Value,

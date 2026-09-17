@@ -353,14 +353,40 @@ async fn call_ciba_token_with_modules_for_test(
     auth_method: &str,
     modules: nazo_runtime_modules::ActiveModuleSnapshot,
 ) -> HttpResponse {
+    let token_service = ServerTokenService::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        state.keyset.clone(),
+    );
+    call_ciba_token_with_prepared_service(
+        state,
+        &token_service,
+        client,
+        form,
+        req,
+        client_assertion,
+        auth_method,
+        modules,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn call_ciba_token_with_prepared_service(
+    state: &TestInfrastructure,
+    token_service: &ServerTokenService,
+    client: &ClientRow,
+    form: TokenForm,
+    req: HttpRequest,
+    client_assertion: Option<&ValidatedClientAssertion>,
+    auth_method: &str,
+    modules: nazo_runtime_modules::ActiveModuleSnapshot,
+) -> HttpResponse {
     let connection = state.valkey_connection();
     let ciba_service = ServerCibaService::new(std::sync::Arc::new(CibaStore::new(&connection)));
     let users = nazo_postgres::UserRepository::new(state.diesel_db.clone());
-    let token_service = ServerTokenService::new(
-        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
-        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(&connection)),
-        state.keyset.clone(),
-    );
     let issuance_config = crate::http::token::issue::token_issuance_config(state.settings.as_ref());
     let ciba_config = ciba_config(state.settings.as_ref());
     let authorization = super::super::issue::test_support::test_authorization_service(state);
@@ -383,7 +409,7 @@ async fn call_ciba_token_with_modules_for_test(
     let facts = crate::http::token::dispatch::token_request_facts(&req, &client_ip);
     let result = token_ciba(
         CibaTokenContext {
-            token_service: &token_service,
+            token_service,
             issuance: &issuance,
             handles: &handles,
             request: &facts,
@@ -1553,3 +1579,248 @@ async fn ciba_replay_rejects_a_consumed_auth_req_id_after_a_committed_issuance()
 }
 
 use nazo_valkey::CibaStore;
+
+/// CB-03: the OIDC subject snapshot read filters `is_active` in SQL, so an
+/// inactive row is rejected as invalid_grant before conversion — even when the
+/// stored role/admin_level combination is corrupt. An ACTIVE row whose
+/// identity conversion fails still propagates as server_error.
+#[actix_web::test]
+async fn ciba_oidc_poll_classifies_inactive_and_corrupt_subject_states() {
+    let Some(mut state) = live_ciba_replay_state().await else {
+        return;
+    };
+    configure_ciba_test_mtls_proxy(&mut state);
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("subject-classification-kid", &key);
+    client.client_id = format!("ciba-subject-class-{}", Uuid::now_v7());
+    client.require_mtls_bound_tokens = true;
+    persist_ciba_test_client(&state, &client).await;
+
+    async fn corrupt(
+        connection: &mut diesel_async::AsyncPgConnection,
+        user_id: Uuid,
+        active: bool,
+    ) {
+        sql_query(
+            "UPDATE users SET is_active = $3, role = 'admin', admin_level = 0 \
+             WHERE tenant_id = $1 AND id = $2",
+        )
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<SqlUuid, _>(user_id)
+        .bind::<Bool, _>(active)
+        .execute(connection)
+        .await
+        .expect("subject fixture corruption should apply");
+    }
+
+    let inactive_corrupt = Uuid::now_v7();
+    insert_ciba_user(&state, inactive_corrupt).await;
+    {
+        let mut connection = get_conn(&state.diesel_db)
+            .await
+            .expect("CIBA test database connection should be available");
+        corrupt(&mut connection, inactive_corrupt, false).await;
+    }
+    let auth_req_id = format!("inactive-corrupt-{}", Uuid::now_v7());
+    store_ciba_state_with_user(
+        &state,
+        &client,
+        &auth_req_id,
+        inactive_corrupt,
+        CibaStatus::Approved,
+    )
+    .await;
+    let response = call_ciba_token_with_mtls_for_test(&state, &client, auth_req_id).await;
+    assert_eq!(
+        (response.status(), oauth_error_code(response).await.as_str()),
+        (StatusCode::BAD_REQUEST, "invalid_grant"),
+        "an inactive subject is filtered before conversion and must report \
+         invalid_grant regardless of corrupt row data"
+    );
+
+    let active_corrupt = Uuid::now_v7();
+    insert_ciba_user(&state, active_corrupt).await;
+    {
+        let mut connection = get_conn(&state.diesel_db)
+            .await
+            .expect("CIBA test database connection should be available");
+        corrupt(&mut connection, active_corrupt, true).await;
+    }
+    let auth_req_id = format!("active-corrupt-{}", Uuid::now_v7());
+    store_ciba_state_with_user(
+        &state,
+        &client,
+        &auth_req_id,
+        active_corrupt,
+        CibaStatus::Approved,
+    )
+    .await;
+    let response = call_ciba_token_with_mtls_for_test(&state, &client, auth_req_id).await;
+    assert_eq!(
+        (response.status(), oauth_error_code(response).await.as_str()),
+        (StatusCode::SERVICE_UNAVAILABLE, "server_error"),
+        "an active subject whose stored identity fails conversion must fail closed"
+    );
+}
+
+/// CB-01/CB-02/CB-06: the approved OIDC CIBA poll+issue path reads the active
+/// subject claims exactly once — the request-local snapshot prepared at the
+/// poll boundary is consumed by shared issuance without a second claims read.
+/// A non-OIDC approved CIBA grant keeps the original `users.by_id` active
+/// check and never touches the OIDC subject-claims read.
+#[actix_web::test]
+async fn ciba_approved_poll_reads_subject_claims_once_for_oidc_and_never_for_plain() {
+    let Some(mut state) = live_ciba_replay_state().await else {
+        return;
+    };
+    configure_ciba_test_mtls_proxy(&mut state);
+    state.keyset =
+        crate::test_support::test_key_manager_with_auxiliary(jsonwebtoken::Algorithm::PS256);
+    let key = client_signing_fixture(jsonwebtoken::Algorithm::PS256);
+    let mut client = ciba_private_key_jwt_client("claims-count-kid", &key);
+    client.client_id = format!("ciba-claims-count-{}", Uuid::now_v7());
+    client.require_mtls_bound_tokens = true;
+    // `insert` persists the fixture's `client.id`, which the issuance commit
+    // uses as the oauth_token_issuances FK — the `upsert` helper does not
+    // write the id column and would leave commit-time FK mismatches.
+    nazo_postgres::OAuthClientRepository::new(state.diesel_db.clone())
+        .insert(&client, None, None)
+        .await
+        .expect("claims-count CIBA client should be stored");
+
+    let counting = crate::test_support::CountingTokenRepository::new(std::sync::Arc::new(
+        crate::test_support::token_issuance_repository(state.diesel_db.clone()),
+    ));
+    let token_service = ServerTokenService::new(
+        counting.clone(),
+        std::sync::Arc::new(nazo_valkey::TokenIssuanceStateAdapter::new(
+            &state.valkey_connection(),
+        )),
+        state.keyset.clone(),
+    );
+
+    let poll = |auth_req_id: String| {
+        let certificate = ciba_test_mtls_certificate();
+        call_ciba_token_with_prepared_service(
+            &state,
+            &token_service,
+            &client,
+            ciba_token_form(auth_req_id),
+            actix_web::test::TestRequest::post()
+                .uri("/token")
+                .app_data(actix_web::web::Data::new(
+                    crate::http::mtls::MtlsCertificateSource::new(
+                        crate::http::mtls::MtlsCertificateSourceMode::Rfc9440,
+                    ),
+                ))
+                .peer_addr("127.0.0.1:12345".parse().expect("peer addr should parse"))
+                .insert_header(("client-cert", certificate.header.as_str()))
+                .to_http_request(),
+            None,
+            "private_key_jwt",
+            state.active_module_snapshot(),
+        )
+    };
+
+    // Baseline: the identical request through the existing helper must issue
+    // before the counting assertions are meaningful.
+    let baseline_user = Uuid::now_v7();
+    insert_ciba_user(&state, baseline_user).await;
+    let baseline_req = format!("oidc-baseline-{}", Uuid::now_v7());
+    store_ciba_state_with_user(
+        &state,
+        &client,
+        &baseline_req,
+        baseline_user,
+        CibaStatus::Approved,
+    )
+    .await;
+    let baseline = call_ciba_token_with_mtls_for_test(&state, &client, baseline_req).await;
+    let status = baseline.status();
+    let body = actix_web::body::to_bytes(baseline.into_body())
+        .await
+        .expect("baseline CIBA response should collect");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "baseline OIDC CIBA should issue: {}",
+        String::from_utf8_lossy(&body)
+    );
+
+    let user_id = Uuid::now_v7();
+    insert_ciba_user(&state, user_id).await;
+    let auth_req_id = format!("oidc-claims-count-{}", Uuid::now_v7());
+    store_ciba_state_with_user(&state, &client, &auth_req_id, user_id, CibaStatus::Approved).await;
+    let response = poll(auth_req_id).await;
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("CIBA response should collect");
+    let value: Value = serde_json::from_slice(&body).expect("CIBA response should be JSON");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "OIDC CIBA should issue: {}",
+        String::from_utf8_lossy(&body)
+    );
+    assert!(value["access_token"].as_str().is_some());
+    assert!(value["id_token"].as_str().is_some());
+    assert_eq!(
+        counting.active_subject_claims_count(),
+        1,
+        "the OIDC poll+issue path must read active subject claims exactly once"
+    );
+
+    // Non-OIDC CIBA: same approved flow minus the openid scope. The poll must
+    // not read OIDC subject claims at all — the plain active-user check in the
+    // CIBA account store path remains the only subject read.
+    let plain_user = Uuid::now_v7();
+    insert_ciba_user(&state, plain_user).await;
+    let plain_req_id = format!("plain-claims-count-{}", Uuid::now_v7());
+    let now = Utc::now().timestamp();
+    CibaStore::new(&state.valkey_connection())
+        .create(
+            &plain_req_id,
+            &CibaRequestState {
+                client_id: client.client_id.clone(),
+                user_id: plain_user,
+                scopes: vec!["profile".to_owned()],
+                audiences: vec!["resource://default".to_owned()],
+                acr: None,
+                authentication_context: Some(CibaAuthenticationContext {
+                    auth_time: now,
+                    amr: vec!["pwd".to_owned()],
+                    oidc_sid: Some(format!("ciba-test-session-{plain_user}")),
+                }),
+                binding_message: None,
+                issued_at: now,
+                status: CibaStatus::Approved,
+                interval_seconds: 5,
+                expires_at: now + 600,
+                retention_expires_at: now + 720,
+                last_poll_at: None,
+                ping_notification: None,
+            },
+        )
+        .await
+        .expect("plain CIBA state should be stored");
+    let response = poll(plain_req_id).await;
+    let status = response.status();
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("CIBA response should collect");
+    let value: Value = serde_json::from_slice(&body).expect("CIBA response should be JSON");
+    assert_eq!(
+        status,
+        StatusCode::OK,
+        "non-OIDC CIBA should issue: {}",
+        String::from_utf8_lossy(&body)
+    );
+    assert!(value["access_token"].as_str().is_some());
+    assert!(value.get("id_token").is_none());
+    assert_eq!(
+        counting.active_subject_claims_count(),
+        1,
+        "the non-OIDC CIBA path must not read OIDC subject claims"
+    );
+}

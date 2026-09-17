@@ -80,9 +80,9 @@ pub use authorization_service::{
     AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
     AuthorizationDecisionAdmissionError, AuthorizationFuture, AuthorizationPortError,
     AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
-    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort, GrantWrite,
-    StoredAuthorizationGrant, pushed_authorization_request_digest,
-    stored_grant_covers_requested_authorization,
+    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort,
+    ClientAuthenticationSnapshot, GrantWrite, StoredAuthorizationGrant,
+    pushed_authorization_request_digest, stored_grant_covers_requested_authorization,
 };
 pub use ciba::{
     CibaAtomicResult, CibaAuthenticationContext, CibaCommittedDecision, CibaCreateFailure,
@@ -153,9 +153,9 @@ pub use extension_grants::{
     JWT_BEARER_ASSERTION_MAX_TTL_SECONDS, JwtBearerAssertionClaims, JwtBearerGrantAdmission,
     JwtBearerGrantError, JwtBearerGrantPolicy, TokenExchangeAdmission, TokenExchangeError,
     TokenExchangePolicy, TokenExchangeRequestInput, TokenExchangeSenderBinding,
-    ValidatedJwtBearerAssertion, ValidatedTokenExchangeSubject, admit_jwt_bearer_grant,
-    admit_token_exchange, token_exchange_actor_claim, token_exchange_issuance_binding,
-    token_exchange_scopes, validate_jwt_bearer_assertion_claims,
+    TokenExchangeSubjectIdentity, ValidatedJwtBearerAssertion, ValidatedTokenExchangeSubject,
+    admit_jwt_bearer_grant, admit_token_exchange, token_exchange_actor_claim,
+    token_exchange_issuance_binding, token_exchange_scopes, validate_jwt_bearer_assertion_claims,
     validate_jwt_bearer_grant_prerequisites, validate_token_exchange_access_token,
     validate_token_exchange_grant_prerequisites, validate_token_exchange_subject,
 };
@@ -217,7 +217,7 @@ pub use token_service::{
     IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, IssuedAuthorizationCodeTokens,
     TokenFuture, TokenInspection, TokenIssuanceMode, TokenIssuedAuditFields, TokenPortError,
     TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort,
-    validate_sender_constraint,
+    UserinfoSnapshot, UserinfoSubjectRef, validate_sender_constraint,
 };
 pub use transaction::{
     AuthorizationCodeState, CodePayload, ConsentPayload, ConsumedAuthorizationCode,

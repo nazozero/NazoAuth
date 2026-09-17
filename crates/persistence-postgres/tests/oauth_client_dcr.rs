@@ -949,3 +949,405 @@ async fn dynamic_registration_store_maps_repository_failures_to_unavailable() {
         DynamicRegistrationDependencyError::Unavailable
     );
 }
+
+/// Secret/credential columns that the replacement `RETURNING` projection and
+/// the decoded record must never carry.
+async fn client_credential_state(pool: &DbPool, id: Uuid) -> serde_json::Value {
+    #[derive(diesel::QueryableByName)]
+    struct RowState {
+        #[diesel(sql_type = diesel::sql_types::Jsonb)]
+        state: serde_json::Value,
+    }
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query(
+        "SELECT to_jsonb(state) AS state FROM (
+             SELECT client_name, client_secret_hash, registration_access_token_blake3,
+                    is_active, redirect_uris, scopes, grant_types, token_endpoint_auth_method
+             FROM oauth_clients WHERE id = $1
+         ) state",
+    )
+    .bind::<SqlUuid, _>(id)
+    .get_result::<RowState>(&mut connection)
+    .await
+    .unwrap()
+    .state
+}
+
+/// DC-01: the client returned by `replace_registration` comes from the
+/// statement's `RETURNING` projection, so it must equal an independent re-read
+/// of the committed row — including fields that became NULL or empty.
+#[tokio::test]
+async fn replace_registration_returns_the_committed_row() {
+    let Some(pool) = test_pool() else {
+        return;
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let mut client = client(TenantContext::default_system());
+    client.jwks_uri = Some("https://client.example/jwks.json".to_owned());
+    client.jwks = Some(serde_json::json!({"keys": [{"kid": "dc01"}]}));
+    client.request_uris = vec!["https://client.example/request.jwt".to_owned()];
+    let initial_token = registration_token(&client, "dc01-initial");
+    let rotated_token = registration_token(&client, "dc01-rotated");
+    let rotated_secret = "client-secret-v1:dc01-salt:dc01-digest";
+    repository
+        .insert(&client, None, Some(initial_token.as_str()))
+        .await
+        .unwrap();
+
+    let mut replacement = client.clone();
+    replacement.registration.client_name = "DC-01 replaced client".to_owned();
+    replacement.jwks_uri = None;
+    replacement.jwks = None;
+    replacement.request_uris = Vec::new();
+    replacement.post_logout_redirect_uris = vec!["https://client.example/out".to_owned()];
+    replacement.initiate_login_uri = Some("https://client.example/login".to_owned());
+    let returned = repository
+        .replace_registration(
+            &replacement,
+            Some(rotated_secret),
+            initial_token.as_str(),
+            Some(rotated_token.as_str()),
+        )
+        .await
+        .unwrap();
+
+    let reread = repository
+        .by_id(client.tenant_id, client.id)
+        .await
+        .unwrap()
+        .expect("the committed client row is re-readable");
+    assert_eq!(
+        serde_json::to_value(&returned.registration).unwrap(),
+        serde_json::to_value(&reread.registration).unwrap(),
+        "the RETURNING client must equal every writable metadata column of the stored row"
+    );
+    assert_eq!(returned.id, reread.id);
+    assert_eq!(returned.tenant_id, reread.tenant_id);
+    assert_eq!(returned.realm_id, reread.realm_id);
+    assert_eq!(returned.organization_id, reread.organization_id);
+    assert_eq!(
+        returned.require_mtls_bound_tokens,
+        reread.require_mtls_bound_tokens
+    );
+    assert_eq!(returned.is_active, reread.is_active);
+    // NULL and empty-collection fields must survive the projection exactly.
+    assert!(reread.jwks_uri.is_none());
+    assert!(reread.jwks.is_none());
+    assert!(reread.request_uris.is_empty());
+    assert_eq!(
+        reread.post_logout_redirect_uris,
+        vec!["https://client.example/out".to_owned()]
+    );
+    // The credential bindings changed through the same single statement.
+    assert_eq!(
+        repository
+            .client_secret_salt(client.tenant_id, client.id)
+            .await
+            .unwrap(),
+        Some("dc01-salt".to_owned())
+    );
+    let state = client_credential_state(&pool, client.id).await;
+    assert_eq!(
+        state["registration_access_token_blake3"].as_str(),
+        Some(rotated_token.as_str())
+    );
+    assert_eq!(state["client_secret_hash"].as_str(), Some(rotated_secret));
+    assert!(
+        repository
+            .by_registration_access_token(
+                client.tenant_id,
+                &client.client_id,
+                rotated_token.as_str()
+            )
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+/// DC-02: every `replace_registration` predicate failure maps to `NotFound`
+/// and leaves the persisted row byte-identical.
+#[tokio::test]
+async fn replace_registration_rejects_stale_predicates_without_writing() {
+    let Some(pool) = test_pool() else {
+        return;
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let client = client(TenantContext::default_system());
+    let initial_token = registration_token(&client, "dc02-initial");
+    let rotated_token = registration_token(&client, "dc02-rotated");
+    let replayed_token = registration_token(&client, "dc02-replayed");
+    repository
+        .insert(&client, None, Some(initial_token.as_str()))
+        .await
+        .unwrap();
+    let baseline = client_credential_state(&pool, client.id).await;
+
+    let mut replacement = client.clone();
+    replacement.registration.client_name = "DC-02 must not persist".to_owned();
+    // A wrong expected token is rejected without writing.
+    assert_eq!(
+        repository
+            .replace_registration(
+                &replacement,
+                None,
+                "dc02-wrong-token",
+                Some(replayed_token.as_str()),
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::NotFound
+    );
+    assert_eq!(client_credential_state(&pool, client.id).await, baseline);
+
+    // A legitimate replace rotates the token once.
+    repository
+        .replace_registration(
+            &replacement,
+            None,
+            initial_token.as_str(),
+            Some(rotated_token.as_str()),
+        )
+        .await
+        .unwrap();
+    let rotated = client_credential_state(&pool, client.id).await;
+    assert_eq!(
+        rotated["registration_access_token_blake3"].as_str(),
+        Some(rotated_token.as_str())
+    );
+
+    // Replaying the previously-rotated old token is rejected without writing.
+    assert_eq!(
+        repository
+            .replace_registration(
+                &replacement,
+                None,
+                initial_token.as_str(),
+                Some(replayed_token.as_str()),
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::NotFound
+    );
+    assert_eq!(client_credential_state(&pool, client.id).await, rotated);
+
+    // A cross-tenant id is rejected without writing the tenant's row.
+    let mut foreign = replacement.clone();
+    foreign.tenant_id = Uuid::now_v7();
+    assert_eq!(
+        repository
+            .replace_registration(
+                &foreign,
+                None,
+                rotated_token.as_str(),
+                Some(replayed_token.as_str()),
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::NotFound
+    );
+    assert_eq!(client_credential_state(&pool, client.id).await, rotated);
+
+    // An inactive client is rejected without resurrecting credentials.
+    repository
+        .deactivate(client.tenant_id, client.id, rotated_token.as_str())
+        .await
+        .unwrap();
+    let deactivated = client_credential_state(&pool, client.id).await;
+    assert_eq!(deactivated["is_active"].as_bool(), Some(false));
+    assert!(deactivated["registration_access_token_blake3"].is_null());
+    assert_eq!(
+        repository
+            .replace_registration(
+                &replacement,
+                None,
+                rotated_token.as_str(),
+                Some(replayed_token.as_str()),
+            )
+            .await
+            .unwrap_err(),
+        RepositoryError::NotFound
+    );
+    assert_eq!(client_credential_state(&pool, client.id).await, deactivated);
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+/// DC-03: two concurrent `replace_registration` calls presenting the same
+/// expected registration token race on the expected-hash predicate; exactly
+/// one commits its rotation.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_replace_registration_on_one_token_rotates_exactly_once() {
+    let Some(pool) = test_pool() else {
+        return;
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let client = client(TenantContext::default_system());
+    let initial_token = registration_token(&client, "dc03-initial");
+    repository
+        .insert(&client, None, Some(initial_token.as_str()))
+        .await
+        .unwrap();
+
+    let spawn_replace = |name: &str, token: &str| {
+        let repository = repository.clone();
+        let mut replacement = client.clone();
+        replacement.registration.client_name = name.to_owned();
+        let expected = initial_token.clone();
+        let rotated = registration_token(&client, token);
+        tokio::spawn(async move {
+            repository
+                .replace_registration(
+                    &replacement,
+                    None,
+                    expected.as_str(),
+                    Some(rotated.as_str()),
+                )
+                .await
+                .map(|client| (client, rotated))
+        })
+    };
+    let first = spawn_replace("DC-03 winner candidate A", "dc03-rotated-a");
+    let second = spawn_replace("DC-03 winner candidate B", "dc03-rotated-b");
+    let (first, second) = tokio::join!(first, second);
+    let outcomes = [first.unwrap(), second.unwrap()];
+    let successes = outcomes.iter().filter(|outcome| outcome.is_ok()).count();
+    let not_found = outcomes
+        .iter()
+        .filter(|outcome| matches!(outcome, Err(RepositoryError::NotFound)))
+        .count();
+    assert_eq!(
+        (successes, not_found),
+        (1, 1),
+        "exactly one replacement may win the expected-hash predicate: {outcomes:?}"
+    );
+    let (_, winner_token) = outcomes
+        .iter()
+        .find_map(|outcome| outcome.as_ref().ok())
+        .expect("one replacement commits");
+
+    // The committed row carries the winner's rotated token and metadata.
+    let state = client_credential_state(&pool, client.id).await;
+    assert_eq!(
+        state["registration_access_token_blake3"].as_str(),
+        Some(winner_token.as_str())
+    );
+    let persisted = repository
+        .by_id(client.tenant_id, client.id)
+        .await
+        .unwrap()
+        .unwrap();
+    let (winner_client, _) = outcomes
+        .iter()
+        .find_map(|outcome| outcome.as_ref().ok())
+        .expect("one replacement commits");
+    assert_eq!(persisted.client_name, winner_client.client_name);
+    assert!(
+        repository
+            .by_registration_access_token(
+                client.tenant_id,
+                &client.client_id,
+                initial_token.as_str()
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert!(
+        repository
+            .by_registration_access_token(
+                client.tenant_id,
+                &client.client_id,
+                winner_token.as_str()
+            )
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+/// DC-05: the `replace_registration` `RETURNING` list and the decoded
+/// `OAuthClientRecord` must not carry secret material.
+#[test]
+fn replace_registration_returning_and_record_exclude_secret_columns() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let mutation = std::fs::read_to_string(manifest.join("src/repositories/clients/mutation.rs"))
+        .expect("client mutation source is readable");
+    let body = mutation
+        .split("pub async fn replace_registration(")
+        .nth(1)
+        .and_then(|source| source.split("pub async fn rotate_credentials(").next())
+        .expect("replace_registration remains present");
+    assert!(
+        body.contains("UPDATE oauth_clients SET")
+            && body.contains("AND registration_access_token_blake3 = $6"),
+        "the single statement must keep the expected-hash compare-and-set predicate"
+    );
+
+    let returning = &body[body
+        .find("RETURNING")
+        .expect("the update returns the stored row")..];
+    let returning = &returning[..returning
+        .find("\"#")
+        .expect("the raw SQL statement terminates")];
+    for forbidden in ["secret", "blake3", "password", "digest", "hash"] {
+        assert!(
+            !returning.contains(forbidden),
+            "the replace_registration RETURNING projection must not select `{forbidden}` columns:\n{returning}"
+        );
+    }
+    assert!(
+        returning.contains("client_id") && returning.contains("security_policy"),
+        "the RETURNING projection stays the full non-secret record"
+    );
+
+    let mapping = std::fs::read_to_string(manifest.join("src/repositories/clients/mapping.rs"))
+        .expect("client mapping source is readable");
+    assert!(
+        mapping.contains("diesel::QueryableByName"),
+        "the client record decodes the RETURNING projection by name"
+    );
+    let record = mapping
+        .split("struct OAuthClientRecord {")
+        .nth(1)
+        .and_then(|source| source.split('}').next())
+        .expect("the client record struct is present");
+    for forbidden in ["secret", "blake3", "password", "digest", "hash"] {
+        assert!(
+            !record.contains(forbidden),
+            "OAuthClientRecord must not carry a `{forbidden}` field:\n{record}"
+        );
+    }
+    for field in [
+        "id",
+        "tenant_id",
+        "realm_id",
+        "organization_id",
+        "client_id",
+        "security_policy",
+    ] {
+        assert!(
+            record.contains(&format!("{field}:")),
+            "OAuthClientRecord keeps the `{field}` column"
+        );
+    }
+}

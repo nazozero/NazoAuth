@@ -154,7 +154,7 @@ impl ServerCredentialIssuerOperations {
                     )
                 })?;
             self.store
-                .upsert_access(
+                .persist_pre_authorized_access(
                     &blake3_hex(&issued.token),
                     &CredentialAccess {
                         token_id,
@@ -166,14 +166,18 @@ impl ServerCredentialIssuerOperations {
                         dpop_jkt: dpop_jkt.clone(),
                         expires_at,
                     },
+                    request.client_id.as_deref(),
                 )
                 .await
-                .map_err(|_| {
-                    vci_error(
+                .map_err(|error| match error {
+                    nazo_openid4vci::CredentialStoreError::ClientInactive => {
+                        vci_error(400, "unauthorized_client", "Credential client is inactive.")
+                    }
+                    _ => vci_error(
                         503,
                         "server_error",
                         "Credential access state is unavailable.",
-                    )
+                    ),
                 })?;
             Ok(PreAuthorizedTokenResponse {
                 access_token: issued.token,

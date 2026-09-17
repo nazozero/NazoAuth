@@ -396,6 +396,7 @@ pub async fn token_native_sso_exchange(
         TokenIssuanceMode::Fresh,
         TokenIssue {
             user_id: Some(secret.user_id),
+            prepared_subject: None,
             subject,
             scopes,
             authorization_details: json!([]),

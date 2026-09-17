@@ -109,6 +109,7 @@ fn ciba_token_issue_allows_refresh_and_binds_refresh_sender_constraint() {
         authentication_context,
         Some("dpop-jkt".to_owned()),
         None,
+        None,
     );
 
     assert!(issue.include_refresh);
@@ -147,6 +148,7 @@ fn ciba_token_issue_transfers_approved_authentication_context() {
         "subject-1".to_owned(),
         ciba,
         authentication_context,
+        None,
         None,
         None,
     );

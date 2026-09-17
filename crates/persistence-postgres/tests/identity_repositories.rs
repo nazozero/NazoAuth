@@ -2445,6 +2445,10 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
     let userinfo =
         std::fs::read_to_string(manifest.join("../authorization-server/src/domain/userinfo.rs"))
             .expect("userinfo domain adapter source is readable");
+    let vci_access = std::fs::read_to_string(
+        manifest.join("../authorization-server/src/domain/openid4vc_endpoints/openid4vci/mod.rs"),
+    )
+    .expect("vci access source is readable");
     let token_issuance =
         std::fs::read_to_string(manifest.join("src/repositories/token_issuance.rs"))
             .expect("token issuance repository source is readable");
@@ -2452,12 +2456,24 @@ fn identity_claim_boundaries_use_narrow_single_snapshot_reads() {
     assert!(users.contains("select(PrincipalRow::as_select())"));
     assert!(users.contains("select(SubjectClaimsRow::as_select())"));
     for source in [&issue, &userinfo] {
-        assert!(source.contains(".active_subject_claims("));
         assert!(!source.contains(".principal_by_tenant_id("));
         assert!(!source.contains(".subject_claims_by_tenant_id("));
         assert!(!source.contains("UserRepository::new"));
     }
+    assert!(issue.contains(".active_subject_claims("));
+    // UserInfo resolves subject and client in one snapshot read; the retired
+    // separate lookups must not reappear.
+    assert!(userinfo.contains(".userinfo_snapshot("));
+    assert!(!userinfo.contains(".active_subject_claims("));
+    assert!(!userinfo.contains(".active_subject_claims_by_access_token("));
+    assert!(!userinfo.contains(".client_by_protocol_id("));
+    // The VCI UUID access branch only needs the narrow principal projection.
+    assert!(vci_access.contains(".active_subject_id("));
+    assert!(!vci_access.contains(".active_subject_claims("));
     assert!(token_issuance.contains(".active_subject_claims_by_tenant_id("));
+    assert!(token_issuance.contains(".active_subject_id_by_tenant_id("));
+    assert!(token_issuance.contains("fn userinfo_snapshot"));
+    assert!(!token_issuance.contains("clients: OAuthClientRepository"));
 }
 
 #[test]
@@ -2479,4 +2495,390 @@ fn client_registration_keeps_plaintext_out_of_protocol_core_and_postgres() {
     assert!(postgres_approval.contains("PreparedClientRegistration"));
     assert!(postgres_approval.contains("client.client_secret_hash.as_deref()"));
     assert!(postgres_approval.contains("client.registration_access_token_blake3.as_deref()"));
+}
+
+/// ID-01: the narrow active-subject read resolves the live principal's user
+/// id, and the token-port adapter forwards to the same read.
+#[tokio::test]
+async fn active_subject_id_by_tenant_id_returns_the_live_principal_subject() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let repository = UserRepository::new(pool.clone());
+    assert_eq!(
+        repository
+            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        Some(user_id.as_uuid())
+    );
+    let issuance = nazo_postgres::TokenIssuanceRepository::new(pool.clone());
+    assert_eq!(
+        nazo_auth::TokenRepositoryPort::active_subject_id(
+            &issuance,
+            tenant.tenant_id.as_uuid(),
+            user_id.as_uuid()
+        )
+        .await
+        .unwrap(),
+        Some(user_id.as_uuid()),
+        "the token port adapter must forward to active_subject_id_by_tenant_id"
+    );
+    cleanup(&pool, user_id).await;
+}
+
+/// ID-01/ID-05: `active_subject_id_by_tenant_id` is a single query filtered on
+/// tenant + user + `is_active` that projects only the seven `PrincipalRow`
+/// columns — no profile, email, username, or credential columns are decoded.
+#[test]
+fn active_subject_id_read_projects_only_the_seven_principal_columns() {
+    let manifest = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let users = std::fs::read_to_string(manifest.join("src/repositories/users.rs"))
+        .expect("user repository source is readable");
+    let body = users
+        .split("pub async fn active_subject_id_by_tenant_id(")
+        .nth(1)
+        .and_then(|source| source.split("pub async fn is_active_by_tenant_id(").next())
+        .expect("active_subject_id_by_tenant_id remains present");
+
+    for required in [
+        ".filter(users::tenant_id.eq(tenant_id.as_uuid()))",
+        ".filter(users::is_active.eq(true))",
+        "PrincipalRow::as_select()",
+        "identity::principal_row",
+        "principal.user_id.as_uuid()",
+    ] {
+        assert!(
+            body.contains(required),
+            "the narrow active-subject read must contain `{required}`"
+        );
+    }
+    for absent in [
+        "realm_id.eq",
+        "organization_id.eq",
+        "SubjectClaimsRow",
+        "PublicAccountRow",
+        "AuthenticationIdentityRow",
+        "username",
+        "email",
+        "password_hash",
+        "display_name",
+        "mfa_enabled",
+        "profile_url",
+    ] {
+        assert!(
+            !body.contains(absent),
+            "the narrow active-subject read must not select `{absent}`"
+        );
+    }
+
+    let rows = std::fs::read_to_string(manifest.join("src/rows/identity.rs"))
+        .expect("identity row source is readable");
+    let record = rows
+        .split("struct PrincipalRow")
+        .nth(1)
+        .and_then(|source| source.split('}').next())
+        .expect("PrincipalRow remains present");
+    for field in [
+        "id",
+        "tenant_id",
+        "realm_id",
+        "organization_id",
+        "is_active",
+        "role",
+        "admin_level",
+    ] {
+        assert!(
+            record.contains(&format!("{field}:")),
+            "PrincipalRow must keep the `{field}` column"
+        );
+    }
+    assert_eq!(
+        record.matches("pub(crate)").count(),
+        7,
+        "PrincipalRow must stay at exactly the seven principal columns:\n{record}"
+    );
+    for absent in [
+        "username",
+        "email",
+        "password",
+        "display_name",
+        "profile_url",
+        "phone_number",
+        "address_",
+        "birthdate",
+        "zoneinfo",
+        "locale",
+        "gender",
+        "avatar",
+        "nickname",
+        "verified",
+        "mfa",
+    ] {
+        assert!(
+            !record.contains(absent),
+            "PrincipalRow must not carry `{absent}`:\n{record}"
+        );
+    }
+
+    // The token-issuance adapter wiring forwards to the same read.
+    let token_issuance =
+        std::fs::read_to_string(manifest.join("src/repositories/token_issuance.rs"))
+            .expect("token issuance repository source is readable");
+    let port = token_issuance
+        .split("fn active_subject_id(")
+        .nth(1)
+        .and_then(|source| source.split("fn active_subject_id_by_access_token(").next())
+        .expect("the TokenRepositoryPort::active_subject_id adapter remains present");
+    assert!(
+        port.contains(".active_subject_id_by_tenant_id("),
+        "the port adapter must forward to UserRepository::active_subject_id_by_tenant_id"
+    );
+}
+
+/// ID-02: a persisted row that violates the role/admin_level invariant fails
+/// the same principal conversion the subject-claims read uses — the narrow
+/// read surfaces `Consistency`, never a live subject id.
+#[tokio::test]
+async fn active_subject_id_fails_closed_on_corrupt_principal_rows() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let repository = UserRepository::new(pool.clone());
+    assert!(
+        repository
+            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    // Same corrupt-row seeding as
+    // `subject_claims_reject_invalid_persisted_role_invariant`, plus the
+    // mirrored invalid combination.
+    for (role, admin_level) in [("admin", 0_i32), ("user", 2_i32)] {
+        let mut connection = get_conn(&pool).await.unwrap();
+        sql_query("UPDATE users SET role = $1, admin_level = $2 WHERE id = $3")
+            .bind::<Text, _>(role)
+            .bind::<diesel::sql_types::Integer, _>(admin_level)
+            .bind::<SqlUuid, _>(user_id.as_uuid())
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        drop(connection);
+
+        let error = repository
+            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, RepositoryError::Consistency(_)),
+            "corrupt ({role}, {admin_level}) must fail conversion, got {error:?}"
+        );
+        let claims_error = repository
+            .subject_claims_by_id(tenant, user_id)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(claims_error, RepositoryError::Consistency(_)),
+            "the subject-claims read must fail the same way, got {claims_error:?}"
+        );
+    }
+    cleanup(&pool, user_id).await;
+}
+
+/// ID-03: inactive, missing, and cross-tenant lookups all resolve to `None`.
+#[tokio::test]
+async fn active_subject_id_is_none_for_inactive_missing_and_cross_tenant_users() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let repository = UserRepository::new(pool.clone());
+    assert!(
+        repository
+            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+            .is_some()
+    );
+
+    let missing = UserId::new(Uuid::now_v7()).unwrap();
+    assert_eq!(
+        repository
+            .active_subject_id_by_tenant_id(tenant.tenant_id, missing)
+            .await
+            .unwrap(),
+        None
+    );
+    let foreign_tenant = TenantId::new(Uuid::now_v7()).unwrap();
+    assert_eq!(
+        repository
+            .active_subject_id_by_tenant_id(foreign_tenant, user_id)
+            .await
+            .unwrap(),
+        None,
+        "a user must never resolve under another tenant"
+    );
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE users SET is_active = false WHERE id = $1")
+        .bind::<SqlUuid, _>(user_id.as_uuid())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    assert_eq!(
+        repository
+            .active_subject_id_by_tenant_id(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+        None
+    );
+    let issuance = nazo_postgres::TokenIssuanceRepository::new(pool.clone());
+    assert_eq!(
+        nazo_auth::TokenRepositoryPort::active_subject_id(
+            &issuance,
+            tenant.tenant_id.as_uuid(),
+            user_id.as_uuid()
+        )
+        .await
+        .unwrap(),
+        None,
+        "the port adapter must also resolve inactive subjects to None"
+    );
+    cleanup(&pool, user_id).await;
+}
+
+/// CA-01/CA-02/CA-07 (PostgreSQL side): `authentication_snapshot` returns the
+/// same client and salt the split `by_client_id` + `client_secret_salt` reads
+/// return, stays tenant-scoped, suppresses the salt for inactive clients, and
+/// `client_secret_salt` keeps serving the DCR path directly.
+#[tokio::test]
+async fn authentication_snapshot_matches_the_split_client_and_salt_reads() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let repository = OAuthClientRepository::new(pool.clone());
+    let client = oauth_client(tenant, format!("ca-snapshot-{}", Uuid::now_v7()));
+    repository
+        .insert(
+            &client,
+            Some("client-secret-v1:ca-salt:ca-digest"),
+            Some("ca-registration-token"),
+        )
+        .await
+        .unwrap();
+    // A second active client with no usable secret verifier exercises the
+    // salt-suppression branch without deactivating anything.
+    let public_client = oauth_client(tenant, format!("ca-public-{}", Uuid::now_v7()));
+    repository.insert(&public_client, None, None).await.unwrap();
+
+    // CA-01: one snapshot equals the two reads it replaces.
+    let (snapshot_client, snapshot_salt) = repository
+        .authentication_snapshot(client.tenant_id, &client.client_id)
+        .await
+        .unwrap()
+        .expect("the registered client resolves a snapshot");
+    let split_client = repository
+        .by_client_id(client.tenant_id, &client.client_id)
+        .await
+        .unwrap()
+        .unwrap();
+    let split_salt = repository
+        .client_secret_salt(client.tenant_id, client.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&snapshot_client.registration).unwrap(),
+        serde_json::to_value(&split_client.registration).unwrap(),
+        "the snapshot client must equal the client_by_id read"
+    );
+    assert_eq!(snapshot_client.id, split_client.id);
+    assert_eq!(snapshot_client.tenant_id, split_client.tenant_id);
+    assert_eq!(snapshot_client.realm_id, split_client.realm_id);
+    assert_eq!(
+        snapshot_client.organization_id,
+        split_client.organization_id
+    );
+    assert_eq!(snapshot_client.is_active, split_client.is_active);
+    // CA-02/CA-07: the snapshot salt is exactly what client_secret_salt reads.
+    assert_eq!(snapshot_salt, split_salt);
+    assert_eq!(split_salt.as_deref(), Some("ca-salt"));
+
+    // The authorization-flow port adapter forwards the same snapshot.
+    let flow = nazo_postgres::AuthorizationFlowRepository::new(pool.clone(), client.tenant_id);
+    let ported = nazo_auth::AuthorizationRepositoryPort::client_authentication_snapshot(
+        &flow,
+        &client.client_id,
+    )
+    .await
+    .unwrap()
+    .expect("the port adapter resolves the same snapshot");
+    assert_eq!(ported.client.id, client.id);
+    assert_eq!(ported.secret_salt.as_deref(), Some("ca-salt"));
+
+    // CA-02: a wrong-tenant lookup resolves nothing on either read.
+    let foreign_tenant = Uuid::now_v7();
+    assert!(
+        repository
+            .authentication_snapshot(foreign_tenant, &client.client_id)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(
+        repository
+            .client_secret_salt(foreign_tenant, client.id)
+            .await
+            .unwrap(),
+        None
+    );
+    // An unknown client id resolves nothing.
+    assert!(
+        repository
+            .authentication_snapshot(client.tenant_id, "no-such-client")
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    // An active client without a versioned secret verifier yields no salt.
+    let (_, public_salt) = repository
+        .authentication_snapshot(public_client.tenant_id, &public_client.client_id)
+        .await
+        .unwrap()
+        .expect("a secret-less client still resolves its metadata");
+    assert_eq!(public_salt, None);
+
+    // An inactive client still returns its row (callers reject it via
+    // `is_active`) but the snapshot suppresses the salt, matching the split
+    // reads: client_secret_salt filters on is_active.
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = false WHERE id = $1")
+        .bind::<SqlUuid, _>(client.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let (inactive_client, inactive_salt) = repository
+        .authentication_snapshot(client.tenant_id, &client.client_id)
+        .await
+        .unwrap()
+        .expect("the snapshot still returns the deactivated client's metadata");
+    assert!(!inactive_client.is_active);
+    assert_eq!(
+        inactive_salt, None,
+        "an inactive client must not leak a usable secret salt"
+    );
+    assert_eq!(
+        repository
+            .client_secret_salt(client.tenant_id, client.id)
+            .await
+            .unwrap(),
+        None
+    );
+
+    cleanup_oauth_client(&pool, client.id).await;
+    cleanup_oauth_client(&pool, public_client.id).await;
+    cleanup(&pool, user_id).await;
 }

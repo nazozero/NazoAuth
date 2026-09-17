@@ -60,11 +60,11 @@ impl AuthorizationRepositoryPort for GrantFailureRepository {
     fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
         self.live.upsert_grant(write)
     }
-    fn client_secret_salt<'a>(
+    fn client_authentication_snapshot<'a>(
         &'a self,
-        client_id: Uuid,
-    ) -> AuthorizationFuture<'a, Option<String>> {
-        self.live.client_secret_salt(client_id)
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientAuthenticationSnapshot>> {
+        self.live.client_authentication_snapshot(client_id)
     }
     fn client_secret_digest_matches<'a>(
         &'a self,

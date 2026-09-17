@@ -465,3 +465,228 @@ async fn duplicate_client_conflict_does_not_report_request_as_processed() {
     );
     cleanup(&pool, user_id).await;
 }
+
+// ---------------------------------------------------------------------------
+// SELECT EXISTS (DB-010 / EXS-03, EXS-04) matrix coverage.
+// ---------------------------------------------------------------------------
+
+#[tokio::test]
+async fn approved_delivery_matches_requires_every_predicate_to_hold() {
+    let Some((pool, tenant, user_id)) = fixture().await else {
+        return;
+    };
+    let repository = AccessRequestRepository::new(pool.clone());
+    let suffix = Uuid::now_v7().simple().to_string();
+    let request = repository
+        .create(new_request(tenant, user_id, &format!("exists-{suffix}")))
+        .await
+        .unwrap();
+    let approved = repository
+        .approve(
+            tenant,
+            request.id,
+            user_id,
+            &prepared_client(tenant, client(&suffix), false),
+        )
+        .await
+        .unwrap();
+
+    // Every predicate holds.
+    assert!(
+        repository
+            .approved_delivery_matches(
+                tenant.tenant_id,
+                user_id,
+                request.id,
+                approved.id,
+                &approved.client_id,
+            )
+            .await
+            .unwrap(),
+        "an approved request with matching bindings must exist"
+    );
+
+    // Flipping each predicate individually must turn the check off.
+    let pending = repository
+        .create(new_request(tenant, user_id, &format!("pending-{suffix}")))
+        .await
+        .unwrap();
+    assert!(
+        !repository
+            .approved_delivery_matches(
+                tenant.tenant_id,
+                user_id,
+                pending.id,
+                approved.id,
+                &approved.client_id,
+            )
+            .await
+            .unwrap(),
+        "a pending request is not an approved delivery"
+    );
+    for (label, flipped_tenant, flipped_user, flipped_request, flipped_approved, flipped_client) in [
+        (
+            "wrong user",
+            tenant.tenant_id,
+            UserId::new(Uuid::now_v7()).unwrap(),
+            request.id,
+            approved.id,
+            approved.client_id.as_str(),
+        ),
+        (
+            "wrong tenant",
+            TenantId::new(Uuid::now_v7()).unwrap(),
+            user_id,
+            request.id,
+            approved.id,
+            approved.client_id.as_str(),
+        ),
+        (
+            "unknown request id",
+            tenant.tenant_id,
+            user_id,
+            Uuid::now_v7(),
+            approved.id,
+            approved.client_id.as_str(),
+        ),
+        (
+            "mismatched approved client id",
+            tenant.tenant_id,
+            user_id,
+            request.id,
+            Uuid::now_v7(),
+            approved.client_id.as_str(),
+        ),
+        (
+            "wrong public client id",
+            tenant.tenant_id,
+            user_id,
+            request.id,
+            approved.id,
+            "wrong-public-client-id",
+        ),
+    ] {
+        assert!(
+            !repository
+                .approved_delivery_matches(
+                    flipped_tenant,
+                    flipped_user,
+                    flipped_request,
+                    flipped_approved,
+                    flipped_client,
+                )
+                .await
+                .unwrap(),
+            "{label} must not match the approved delivery"
+        );
+    }
+
+    // An approved-but-deactivated client is not a delivery target.
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE id = $1")
+        .bind::<SqlUuid, _>(approved.id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert!(
+        !repository
+            .approved_delivery_matches(
+                tenant.tenant_id,
+                user_id,
+                request.id,
+                approved.id,
+                &approved.client_id,
+            )
+            .await
+            .unwrap(),
+        "an inactive client must not satisfy the approved delivery"
+    );
+    drop(connection);
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
+async fn existence_predicates_return_booleans_while_page_keeps_count_semantics() {
+    let Some((pool, tenant, user_id)) = fixture().await else {
+        return;
+    };
+    let repository = AccessRequestRepository::new(pool.clone());
+    let suffix = Uuid::now_v7().simple().to_string();
+    let request = repository
+        .create(new_request(tenant, user_id, &format!("bool-{suffix}")))
+        .await
+        .unwrap();
+    let approved = repository
+        .approve(
+            tenant,
+            request.id,
+            user_id,
+            &prepared_client(tenant, client(&suffix), false),
+        )
+        .await
+        .unwrap();
+
+    // The existence predicate returns a plain boolean, not a count.
+    let exists: bool = repository
+        .approved_delivery_matches(
+            tenant.tenant_id,
+            user_id,
+            request.id,
+            approved.id,
+            &approved.client_id,
+        )
+        .await
+        .unwrap();
+    assert!(exists);
+
+    // An unrelated count query keeps count semantics: three requests for this
+    // user must report total == 3, never a clamped 0/1.  Only one request per
+    // user may stay pending (ux_client_access_requests_user_pending), so the
+    // first two are resolved before the next is created.
+    let first_extra = repository
+        .create(new_request(tenant, user_id, &format!("count-0-{suffix}")))
+        .await
+        .unwrap();
+    repository
+        .reject(tenant.tenant_id, first_extra.id, user_id, "done".to_owned())
+        .await
+        .unwrap();
+    let second_extra = repository
+        .create(new_request(tenant, user_id, &format!("count-1-{suffix}")))
+        .await
+        .unwrap();
+    repository
+        .reject(
+            tenant.tenant_id,
+            second_extra.id,
+            user_id,
+            "done".to_owned(),
+        )
+        .await
+        .unwrap();
+    repository
+        .create(new_request(tenant, user_id, &format!("count-2-{suffix}")))
+        .await
+        .unwrap();
+    // The search term is this test's unique suffix so the count is scoped to
+    // this test's rows even on a shared tenant.
+    let scoped = repository
+        .page(tenant.tenant_id, 10, 0, Some(&suffix), None)
+        .await
+        .unwrap();
+    let total: i64 = scoped.total;
+    assert_eq!(total, 4, "a count query must keep real counts, got {total}");
+    assert_eq!(scoped.items.len(), 4);
+    let pending = repository
+        .page(
+            tenant.tenant_id,
+            10,
+            0,
+            Some(&suffix),
+            Some(AccessRequestStatus::Pending),
+        )
+        .await
+        .unwrap();
+    assert_eq!(pending.total, 1, "only the newest request stays pending");
+    cleanup(&pool, user_id).await;
+}

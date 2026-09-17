@@ -231,8 +231,11 @@ impl TokenEndpointHandles {
                 has_basic,
             ));
         };
-        let mut client = match authorization_service.client_by_id(client_id).await {
-            Ok(Some(client)) => client,
+        let (mut client, secret_salt) = match authorization_service
+            .client_authentication_snapshot(client_id)
+            .await
+        {
+            Ok(Some(snapshot)) => (snapshot.client, snapshot.secret_salt),
             Ok(None) => {
                 perform_dummy_client_secret_verification(
                     &credentials,
@@ -360,6 +363,7 @@ impl TokenEndpointHandles {
                 &mut client,
                 &credentials,
                 ClientAuthenticationContext::AllowPublicNone,
+                secret_salt.as_deref(),
             )
             .await
             {

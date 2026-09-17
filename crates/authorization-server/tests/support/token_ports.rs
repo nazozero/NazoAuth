@@ -20,12 +20,13 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
         panic!("unexpected TokenRepositoryPort::commit_token_issuance call")
     }
-    fn client_by_protocol_id<'a>(
+    fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
+        subject: UserinfoSubjectRef<'a>,
         client_id: &'a str,
-    ) -> TokenFuture<'a, Option<OAuthClient>> {
-        panic!("unexpected TokenRepositoryPort::client_by_protocol_id call")
+    ) -> TokenFuture<'a, Option<UserinfoSnapshot>> {
+        panic!("unexpected TokenRepositoryPort::userinfo_snapshot call")
     }
     fn refresh_token<'a>(
         &'a self,
@@ -49,12 +50,8 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'_, Option<SubjectClaims>> {
         panic!("unexpected TokenRepositoryPort::active_subject_claims call")
     }
-    fn active_subject_claims_by_access_token<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-    ) -> TokenFuture<'a, Option<SubjectClaims>> {
-        panic!("unexpected TokenRepositoryPort::active_subject_claims_by_access_token call")
+    fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>> {
+        panic!("unexpected TokenRepositoryPort::active_subject_id call")
     }
     fn active_subject_id_by_access_token<'a>(
         &'a self,
@@ -153,11 +150,19 @@ impl AuthorizationRepositoryPort for HolderFixture {
     fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
         panic!("unexpected AuthorizationRepositoryPort::upsert_grant call")
     }
-    fn client_secret_salt<'a>(
+    fn client_authentication_snapshot<'a>(
         &'a self,
-        client_id: Uuid,
-    ) -> AuthorizationFuture<'a, Option<String>> {
-        panic!("unexpected AuthorizationRepositoryPort::client_secret_salt call")
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientAuthenticationSnapshot>> {
+        let client = self.client.clone();
+        Box::pin(async move {
+            client.map(|client| {
+                client.map(|client| nazo_auth::ClientAuthenticationSnapshot {
+                    client,
+                    secret_salt: None,
+                })
+            })
+        })
     }
     fn client_secret_digest_matches<'a>(
         &'a self,

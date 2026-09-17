@@ -259,17 +259,33 @@ pub struct IssuedAuthorizationCodeTokens<'a> {
     pub consumed_state_ttl_seconds: u64,
 }
 
+/// How the UserInfo subject read resolves ownership: a directly carried user
+/// UUID, or the access-token JTI joined through its issuance row.
+pub enum UserinfoSubjectRef<'a> {
+    UserId(Uuid),
+    AccessTokenJti(&'a str),
+}
+
+/// One-read UserInfo result. `None` overall means there is no valid subject;
+/// inside `Some`, `client: None` means the subject is valid but the client is
+/// absent — the two absences are deliberately not collapsible into one flag.
+pub struct UserinfoSnapshot {
+    pub subject: SubjectClaims,
+    pub client: Option<OAuthClient>,
+}
+
 pub trait TokenRepositoryPort: Send + Sync {
     fn commit_token_issuance<'a>(
         &'a self,
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult>;
 
-    fn client_by_protocol_id<'a>(
+    fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
+        subject: UserinfoSubjectRef<'a>,
         client_id: &'a str,
-    ) -> TokenFuture<'a, Option<OAuthClient>>;
+    ) -> TokenFuture<'a, Option<UserinfoSnapshot>>;
 
     fn refresh_token<'a>(
         &'a self,
@@ -290,11 +306,7 @@ pub trait TokenRepositoryPort: Send + Sync {
         user_id: Uuid,
     ) -> TokenFuture<'_, Option<SubjectClaims>>;
 
-    fn active_subject_claims_by_access_token<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-    ) -> TokenFuture<'a, Option<SubjectClaims>>;
+    fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>>;
 
     fn active_subject_id_by_access_token<'a>(
         &'a self,
@@ -486,13 +498,14 @@ where
         self.repository.refresh_token(tenant_id, raw_token).await
     }
 
-    pub async fn client_by_protocol_id(
+    pub async fn userinfo_snapshot(
         &self,
         tenant_id: Uuid,
+        subject: UserinfoSubjectRef<'_>,
         client_id: &str,
-    ) -> Result<Option<OAuthClient>, TokenPortError> {
+    ) -> Result<Option<UserinfoSnapshot>, TokenPortError> {
         self.repository
-            .client_by_protocol_id(tenant_id, client_id)
+            .userinfo_snapshot(tenant_id, subject, client_id)
             .await
     }
 
@@ -532,14 +545,12 @@ where
             .await
     }
 
-    pub async fn active_subject_claims_by_access_token(
+    pub async fn active_subject_id(
         &self,
         tenant_id: Uuid,
-        jti: &str,
-    ) -> Result<Option<SubjectClaims>, TokenPortError> {
-        self.repository
-            .active_subject_claims_by_access_token(tenant_id, jti)
-            .await
+        user_id: Uuid,
+    ) -> Result<Option<Uuid>, TokenPortError> {
+        self.repository.active_subject_id(tenant_id, user_id).await
     }
 
     pub async fn active_subject_id_by_access_token(

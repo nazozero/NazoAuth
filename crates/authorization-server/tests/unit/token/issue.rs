@@ -72,6 +72,7 @@ pub(super) fn client_with_grants(grant_types: &[&str]) -> ClientRow {
 fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
     TokenIssue {
         user_id: None,
+        prepared_subject: None,
         subject: "subject-1".to_owned(),
         scopes: vec!["openid".to_owned()],
         authorization_details: json!([]),

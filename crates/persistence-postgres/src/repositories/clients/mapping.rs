@@ -5,9 +5,9 @@ use nazo_identity::ports::RepositoryError;
 use serde_json::Value;
 use uuid::Uuid;
 
-#[derive(Clone, Debug, diesel::Queryable, diesel::Selectable)]
+#[derive(Clone, Debug, diesel::Queryable, diesel::Selectable, diesel::QueryableByName)]
 #[diesel(table_name = crate::schema::oauth_clients)]
-pub(super) struct OAuthClientRecord {
+pub(in crate::repositories) struct OAuthClientRecord {
     id: Uuid,
     tenant_id: Uuid,
     realm_id: Uuid,
@@ -94,7 +94,7 @@ pub(super) fn registered_logout_client(client: OAuthClient) -> RegisteredLogoutC
 }
 
 impl OAuthClientRecord {
-    pub(super) fn into_domain(self) -> Result<OAuthClient, RepositoryError> {
+    pub(in crate::repositories) fn into_domain(self) -> Result<OAuthClient, RepositoryError> {
         Ok(OAuthClient {
             id: self.id,
             tenant_id: self.tenant_id,

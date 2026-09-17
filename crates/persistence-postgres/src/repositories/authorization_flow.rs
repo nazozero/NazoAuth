@@ -97,14 +97,22 @@ impl AuthorizationRepositoryPort for AuthorizationFlowRepository {
         })
     }
 
-    fn client_secret_salt<'a>(
+    fn client_authentication_snapshot<'a>(
         &'a self,
-        client_id: Uuid,
-    ) -> AuthorizationFuture<'a, Option<String>> {
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientAuthenticationSnapshot>> {
         Box::pin(async move {
             self.clients
-                .client_secret_salt(self.tenant_id, client_id)
+                .authentication_snapshot(self.tenant_id, client_id)
                 .await
+                .map(|snapshot| {
+                    snapshot.map(
+                        |(client, secret_salt)| nazo_auth::ClientAuthenticationSnapshot {
+                            client,
+                            secret_salt,
+                        },
+                    )
+                })
                 .map_err(map_repository_error)
         })
     }

@@ -36,6 +36,15 @@ impl CredentialStorePort for Openid4vciRepository {
         self.access_upsert(token_hash, access)
     }
 
+    fn persist_pre_authorized_access<'a>(
+        &'a self,
+        token_hash: &'a str,
+        access: &'a CredentialAccess,
+        registered_client_id: Option<&'a str>,
+    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
+        self.access_persist_pre_authorized(token_hash, access, registered_client_id)
+    }
+
     fn find_response<'a>(
         &'a self,
         issuance_id: Uuid,
@@ -296,6 +305,77 @@ pub(super) struct DeferredRow {
     pub(super) ready_at: DateTime<Utc>,
     #[diesel(sql_type = sql_types::Timestamptz)]
     pub(super) expires_at: DateTime<Utc>,
+}
+
+/// Joined claim row produced by the single `UPDATE deferred ... FROM access
+/// ... RETURNING` statement. The deferred->access `token_id` foreign key is
+/// `NOT NULL` with `ON DELETE CASCADE` and `access_grants.token_id` is the
+/// primary key, so every claimed deferred row joins exactly one access row
+/// and the access columns stay non-optional.
+#[derive(QueryableByName)]
+pub(super) struct DeferredClaimRow {
+    #[diesel(sql_type = sql_types::Uuid)]
+    deferred_id: Uuid,
+    #[diesel(sql_type = sql_types::Text)]
+    deferred_transaction_hash: String,
+    #[diesel(sql_type = sql_types::Uuid)]
+    deferred_token_id: Uuid,
+    #[diesel(sql_type = sql_types::Text)]
+    deferred_configuration_id: String,
+    #[diesel(sql_type = sql_types::Text)]
+    deferred_format: String,
+    #[diesel(sql_type = sql_types::Jsonb)]
+    deferred_holder_bindings: serde_json::Value,
+    #[diesel(sql_type = sql_types::Binary)]
+    deferred_payload_ciphertext: Vec<u8>,
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    deferred_ready_at: DateTime<Utc>,
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    deferred_expires_at: DateTime<Utc>,
+    #[diesel(sql_type = sql_types::Uuid)]
+    access_token_id: Uuid,
+    #[diesel(sql_type = sql_types::Uuid)]
+    access_tenant_id: Uuid,
+    #[diesel(sql_type = sql_types::Uuid)]
+    access_subject_id: Uuid,
+    #[diesel(sql_type = sql_types::Text)]
+    access_client_id: String,
+    #[diesel(sql_type = sql_types::Jsonb)]
+    access_configuration_ids: serde_json::Value,
+    #[diesel(sql_type = sql_types::Jsonb)]
+    access_credential_identifiers: serde_json::Value,
+    #[diesel(sql_type = sql_types::Nullable<sql_types::Text>)]
+    access_dpop_jkt: Option<String>,
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    access_expires_at: DateTime<Utc>,
+}
+
+impl DeferredClaimRow {
+    pub(super) fn into_parts(self) -> (DeferredRow, AccessRow) {
+        (
+            DeferredRow {
+                id: self.deferred_id,
+                transaction_hash: self.deferred_transaction_hash,
+                token_id: self.deferred_token_id,
+                credential_configuration_id: self.deferred_configuration_id,
+                credential_format: self.deferred_format,
+                holder_bindings: self.deferred_holder_bindings,
+                payload_ciphertext: self.deferred_payload_ciphertext,
+                ready_at: self.deferred_ready_at,
+                expires_at: self.deferred_expires_at,
+            },
+            AccessRow {
+                token_id: self.access_token_id,
+                tenant_id: self.access_tenant_id,
+                subject_id: self.access_subject_id,
+                client_id: self.access_client_id,
+                credential_configuration_ids: self.access_configuration_ids,
+                credential_identifiers: self.access_credential_identifiers,
+                dpop_jkt: self.access_dpop_jkt,
+                expires_at: self.access_expires_at,
+            },
+        )
+    }
 }
 
 #[derive(QueryableByName)]
