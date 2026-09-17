@@ -1,161 +1,19 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, Mutex},
-};
+use std::sync::Arc;
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use nazo_auth::SigningPurpose;
 use nazo_key_management::{
-    KeyManager, KeySettings, LocalKeyRegistration, Openid4vcMaterial, PersistedSigningKeyset,
-    SigningKeyRepository, SigningKeyRepositoryFuture, SigningKeyWrappingKeyRing,
-    SigningKeysetCompareAndSwapResult, SigningKeysetCreateResult,
+    KeySettings, LocalKeyRegistration, PersistedSigningKeyset, SigningKeyRepository,
+    SigningKeyWrappingKeyRing,
 };
 use rcgen::{KeyPair, PKCS_ECDSA_P256_SHA256};
-use rustls::pki_types::{CertificateDer, pem::PemObject};
 use uuid::Uuid;
 use x509_parser::der_parser::asn1_rs::Tag;
 
 use super::*;
 
-#[derive(Default)]
-struct MemorySigningKeyRepository(Mutex<Option<PersistedSigningKeyset>>);
-
-impl SigningKeyRepository for MemorySigningKeyRepository {
-    fn load(&self) -> SigningKeyRepositoryFuture<'_, Option<PersistedSigningKeyset>> {
-        Box::pin(async move { Ok(self.0.lock().expect("repository mutex").clone()) })
-    }
-
-    fn create_if_absent(
-        &self,
-        candidate: PersistedSigningKeyset,
-    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCreateResult> {
-        Box::pin(async move {
-            let mut record = self.0.lock().expect("repository mutex");
-            Ok(match record.clone() {
-                Some(existing) => SigningKeysetCreateResult::Existing(existing),
-                None => {
-                    *record = Some(candidate.clone());
-                    SigningKeysetCreateResult::Created(candidate)
-                }
-            })
-        })
-    }
-
-    fn compare_and_swap(
-        &self,
-        expected_revision: i64,
-        candidate: PersistedSigningKeyset,
-    ) -> SigningKeyRepositoryFuture<'_, SigningKeysetCompareAndSwapResult> {
-        Box::pin(async move {
-            let mut record = self.0.lock().expect("repository mutex");
-            let current = record
-                .clone()
-                .ok_or_else(|| anyhow::anyhow!("repository has no keyset"))?;
-            Ok(if current.revision == expected_revision {
-                *record = Some(candidate.clone());
-                SigningKeysetCompareAndSwapResult::Applied(candidate)
-            } else {
-                SigningKeysetCompareAndSwapResult::Conflict(current)
-            })
-        })
-    }
-}
-
-struct MemoryOperatorPersistence {
-    repository: Arc<MemorySigningKeyRepository>,
-}
-
-impl crate::operator_task::OperatorPersistence for MemoryOperatorPersistence {
-    fn signing_key_repository(
-        &self,
-        _tenant_id: Uuid,
-    ) -> Arc<dyn nazo_key_management::SigningKeyRepository> {
-        self.repository.clone()
-    }
-
-    fn controller_registry(&self) -> Arc<dyn nazo_persistence::ControllerRegistryPort> {
-        unimplemented!("keyctl tests do not use the controller registry")
-    }
-
-    fn recovery_invalidations(&self) -> Arc<dyn nazo_persistence::RecoveryInvalidationStore> {
-        unimplemented!("keyctl tests do not use recovery invalidations")
-    }
-
-    fn admin_clients(&self) -> Arc<dyn nazo_auth::AdminClientRepositoryPort> {
-        unimplemented!("keyctl tests do not use admin clients")
-    }
-
-    fn tenant_resource_executor(
-        &self,
-        _tenant: nazo_identity::TenantContext,
-        _data_encryption_key: Option<[u8; 32]>,
-        _preparation: Arc<dyn nazo_persistence::tenant_resources::TenantResourcePreparation>,
-    ) -> Arc<dyn nazo_persistence::tenant_resources::TenantResourceExecutorPort> {
-        unimplemented!("keyctl tests do not use tenant resources")
-    }
-
-    fn tenant_directory_executor(
-        &self,
-    ) -> Arc<dyn nazo_persistence::directory_control::TenantDirectoryControlPort> {
-        unimplemented!("keyctl tests do not use tenant directory execution")
-    }
-
-    fn tenant_directory(&self) -> Arc<dyn nazo_persistence::TenantDirectoryStore> {
-        unimplemented!("keyctl tests do not use tenant directory lookup")
-    }
-
-    fn run_migrations(&self) -> crate::operator_task::OperatorBackendFuture<'_, bool> {
-        unimplemented!("keyctl tests do not run migrations")
-    }
-
-    fn initialize_tenant_directory(
-        &self,
-        _binding: nazo_identity::TenantDirectoryBinding,
-    ) -> crate::operator_task::OperatorBackendFuture<'_, bool> {
-        unimplemented!("keyctl tests do not initialize tenant directories")
-    }
-}
-
-fn temporary_directory(label: &str) -> PathBuf {
-    std::env::temp_dir().join(format!("nazoauth-keyctl-{label}-{}", Uuid::now_v7()))
-}
-
-fn tenant_binding(issuer: &str) -> nazo_identity::TenantDirectoryBinding {
-    let tenant_id = Uuid::now_v7();
-    let realm_id = Uuid::now_v7();
-    let organization_id = Uuid::now_v7();
-    let tenant = nazo_identity::TenantContext {
-        tenant_id: nazo_identity::TenantId::new(tenant_id).expect("tenant id"),
-        realm_id: nazo_identity::RealmId::new(realm_id).expect("realm id"),
-        organization_id: nazo_identity::OrganizationId::new(organization_id)
-            .expect("organization id"),
-    };
-    let host = Url::parse(issuer)
-        .expect("issuer URL")
-        .host_str()
-        .expect("issuer host")
-        .to_owned();
-    nazo_identity::TenantDirectoryBinding {
-        tenant,
-        runtime_revision: 1,
-        issuer: issuer.to_owned(),
-        external_host: host,
-    }
-}
-
-fn database_config(data_dir: &Path) -> ConfigSource {
-    ConfigSource::from_owned_pairs_for_test([
-        ("DATA_DIR".to_owned(), data_dir.display().to_string()),
-        (
-            "SIGNING_KEY_ENCRYPTION_KEY".to_owned(),
-            URL_SAFE_NO_PAD.encode([0x42_u8; 32]),
-        ),
-        (
-            "SIGNING_KEY_ENCRYPTION_KEY_ID".to_owned(),
-            "keyctl-test-root".to_owned(),
-        ),
-    ])
-}
+use super::super::shared::{
+    MemoryOperatorPersistence, MemorySigningKeyRepository, temporary_directory, tenant_binding,
+};
 
 fn mdoc_database_config(data_dir: &Path) -> ConfigSource {
     ConfigSource::from_owned_pairs_for_test([
@@ -409,31 +267,6 @@ async fn write_mdoc_import_fixture(
 }
 
 #[test]
-fn parses_the_closed_purpose_scoped_key_operation() {
-    let options = parse_generate_local(
-        "ES256",
-        &["credential".to_owned(), "presentation_request".to_owned()],
-    )
-    .unwrap();
-    assert_eq!(options.alg, jsonwebtoken::Algorithm::ES256);
-    assert_eq!(options.purposes.len(), 2);
-}
-
-#[test]
-fn rejects_empty_duplicate_or_runtime_signing_purposes() {
-    assert!(parse_generate_local("ES256", &[]).is_err());
-    assert!(
-        parse_generate_local("ES256", &["credential".to_owned(), "credential".to_owned()]).is_err()
-    );
-    assert!(parse_generate_local("ES256", &["access_token".to_owned()]).is_err());
-}
-
-#[test]
-fn rejects_unsupported_algorithms() {
-    assert!(parse_generate_local("none", &["credential".to_owned()]).is_err());
-}
-
-#[test]
 fn database_certificate_profile_requires_the_managed_shape() {
     let config = ConfigSource::default();
     let binding = tenant_binding("https://tenant.example");
@@ -481,97 +314,6 @@ fn database_certificate_profile_requires_the_managed_shape() {
     assert_eq!(
         mdoc_profile.crl_distribution_uri,
         "https://tenant.example/.well-known/mdoc"
-    );
-}
-
-#[tokio::test]
-async fn database_operator_keyctl_roundtrip_keeps_keys_in_the_repository() {
-    let data_dir = temporary_directory("database-roundtrip");
-    let config = database_config(&data_dir);
-    let binding = tenant_binding("http://127.0.0.1:43123");
-    let repository = Arc::new(MemorySigningKeyRepository::default());
-    let persistence = MemoryOperatorPersistence {
-        repository: repository.clone(),
-    };
-
-    let (first_kid, first_revision, certificate_chain) =
-        operator_generate_local_database_for_tenant(
-            &config,
-            &binding,
-            &persistence,
-            "ES256",
-            &["credential".to_owned()],
-        )
-        .await
-        .expect("database local key generation");
-    assert!(!first_kid.is_empty());
-    assert!(
-        first_revision
-            .parse::<i64>()
-            .is_ok_and(|revision| revision > 0)
-    );
-    assert!(certificate_chain.is_none());
-
-    let (second_kid, second_revision, certificate_chain) =
-        operator_generate_local_database_for_tenant(
-            &config,
-            &binding,
-            &persistence,
-            "ES256",
-            &["credential".to_owned()],
-        )
-        .await
-        .expect("repeated database local key generation");
-    assert_eq!(second_kid, first_kid);
-    assert_eq!(second_revision, first_revision);
-    assert!(certificate_chain.is_none());
-
-    let listed_revision = operator_list_database_for_tenant(&config, &binding, &persistence)
-        .await
-        .expect("database key listing");
-    assert_eq!(listed_revision, first_revision);
-    let validated_revision = operator_validate_database_for_tenant(&config, &binding, &persistence)
-        .await
-        .expect("database key validation");
-    assert_eq!(validated_revision, first_revision);
-
-    let external_registration = serde_json::json!({
-        "kty": "EC",
-        "crv": "P-256",
-        "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-        "y": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
-        "kid": "external-key",
-        "use": "sig",
-        "alg": "ES256"
-    });
-    let external_revision = operator_register_external_database_for_tenant(
-        &config,
-        &binding,
-        &persistence,
-        "external-key",
-        "ES256",
-        "kms://unit/external-key",
-        &serde_json::to_vec(&external_registration).unwrap(),
-    )
-    .await
-    .expect("external database key registration");
-    assert_ne!(external_revision, first_revision);
-
-    let persisted = repository
-        .load()
-        .await
-        .expect("repository load")
-        .expect("persisted database keyset");
-    assert!(
-        persisted.public_metadata["keys"]
-            .as_array()
-            .expect("key metadata array")
-            .iter()
-            .any(|key| {
-                key["kid"] == "external-key"
-                    && key["backend"] == "external-command"
-                    && key["key_ref"] == "kms://unit/external-key"
-            })
     );
 }
 
