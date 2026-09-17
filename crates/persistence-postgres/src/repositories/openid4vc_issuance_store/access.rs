@@ -113,10 +113,8 @@ async fn access_persist_registered_on_connection(
                    EXCLUDED.credential_identifiers, \
                    EXCLUDED.dpop_jkt, \
                    EXCLUDED.expires_at) \
-            RETURNING 1 \
          ) \
-         SELECT EXISTS (SELECT 1 FROM active_client) AS client_active, \
-                EXISTS (SELECT 1 FROM upserted) AS changed",
+         SELECT EXISTS (SELECT 1 FROM active_client) AS client_active",
     )
     .bind::<sql_types::Uuid, _>(access.tenant_id)
     .bind::<sql_types::Text, _>(client_id)
@@ -227,7 +225,4 @@ impl Openid4vciRepository {
 struct PersistOutcomeRow {
     #[diesel(sql_type = sql_types::Bool)]
     client_active: bool,
-    #[diesel(sql_type = sql_types::Bool)]
-    #[allow(dead_code)]
-    changed: bool,
 }

@@ -32,9 +32,9 @@ use nazo_openid4vci::{
     CredentialAccess, CredentialStoreError, CredentialStorePort, DeferredCredential,
 };
 use nazo_postgres::{
-    AccessRequestRepository, DbPool, OAuthClientRepository, Openid4vciRepository,
-    TokenIssuanceRepository, TokenRepository, UserRepository, create_pool, db_pool_metrics,
-    get_conn, run_pending_migrations,
+    AccessRequestRepository, AuthorizationRepository, DbPool, OAuthClientRepository,
+    Openid4vciRepository, TokenIssuanceRepository, TokenRepository, UserRepository, create_pool,
+    db_pool_metrics, get_conn, run_pending_migrations,
 };
 use serde_json::json;
 use support::query_counter::{QueryCounter, QuerySnapshot};
@@ -567,6 +567,65 @@ async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update() {
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1, "one pooled checkout for the whole revocation");
     assert_clean(delta);
+    cleanup_seed(&database_url, tenant, &seed).await;
+}
+
+/// RV-09 (replay-compensation short-circuit): without a refresh family,
+/// `AuthorizationRepository::revoke_issued_tokens` needs no transaction — an
+/// expiry-less call is a pure in-memory no-op, and an access-only call is the
+/// single retention upsert on one checkout.
+#[tokio::test]
+async fn rv09_revoke_issued_tokens_short_circuits_without_a_family() {
+    let _serial = SERIAL.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url)
+        .await
+        .expect("migrations should apply");
+    let tenant = TenantContext::default_system();
+    let seed = seed_principal(&database_url, tenant).await;
+    let (pool, counter) = instrumented_pool(&database_url).await;
+    let repository = AuthorizationRepository::new(pool);
+
+    // Neither a revocation fact nor a family: rejected purely in memory — no
+    // connection checkout, no statement.
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.revoke_issued_tokens(
+            tenant.tenant_id.as_uuid(),
+            seed.client.id,
+            "qc-neither-jti",
+            None,
+            None,
+        ),
+    )
+    .await;
+    result.expect("a no-op revocation must succeed");
+    assert_eq!(delta.data_queries, 0);
+    assert_no_transaction(delta);
+    assert_eq!(acquires, 0);
+    assert_clean(delta);
+
+    // Access-only: one `INSERT .. ON CONFLICT DO UPDATE` retention upsert, no
+    // transaction wrapper.
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.revoke_issued_tokens(
+            tenant.tenant_id.as_uuid(),
+            seed.client.id,
+            &format!("qc-access-only-jti-{}", Uuid::now_v7()),
+            Some(Utc::now() + Duration::minutes(5)),
+            None,
+        ),
+    )
+    .await;
+    result.expect("access-only revocation must succeed");
+    assert_eq!(delta.data_queries, 1);
+    assert_no_transaction(delta);
+    assert_eq!(acquires, 1);
+    assert_clean(delta);
+
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 

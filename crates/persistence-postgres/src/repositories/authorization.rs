@@ -45,29 +45,42 @@ impl AuthorizationRepository {
             revoked_at: Utc::now(),
             expires_at: deadline,
         });
+        let Some(family_id) = refresh_token_family_id else {
+            // Without a refresh family there is no multi-statement fence: the
+            // single upsert is already atomic, and an empty input is a no-op
+            // that never touches the pool.
+            let Some(new_revocation) = new_revocation else {
+                return Ok(());
+            };
+            let mut connection = get_conn(&self.pool)
+                .await
+                .map_err(|_| RepositoryError::Unavailable)?;
+            return upsert_access_token_revocations(&mut connection, &[new_revocation])
+                .await
+                .map(|_| ())
+                .map_err(map_error);
+        };
+        // The revocation fact and the refresh-family invalidation must commit
+        // atomically under the shared family lock.
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
         connection
             .transaction::<(), diesel::result::Error, _>(async |connection| {
-                if let Some(family_id) = refresh_token_family_id {
-                    lock_refresh_family(connection, family_id).await?;
-                }
+                lock_refresh_family(connection, family_id).await?;
                 if let Some(new_revocation) = new_revocation {
                     upsert_access_token_revocations(connection, &[new_revocation]).await?;
                 }
-                if let Some(family_id) = refresh_token_family_id {
-                    diesel::update(
-                        oauth_tokens::table
-                            .filter(oauth_tokens::tenant_id.eq(tenant_id))
-                            .filter(oauth_tokens::client_id.eq(client_id))
-                            .filter(oauth_tokens::token_family_id.eq(family_id))
-                            .filter(oauth_tokens::revoked_at.is_null()),
-                    )
-                    .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
-                    .execute(connection)
-                    .await?;
-                }
+                diesel::update(
+                    oauth_tokens::table
+                        .filter(oauth_tokens::tenant_id.eq(tenant_id))
+                        .filter(oauth_tokens::client_id.eq(client_id))
+                        .filter(oauth_tokens::token_family_id.eq(family_id))
+                        .filter(oauth_tokens::revoked_at.is_null()),
+                )
+                .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
+                .execute(connection)
+                .await?;
                 Ok(())
             })
             .await
