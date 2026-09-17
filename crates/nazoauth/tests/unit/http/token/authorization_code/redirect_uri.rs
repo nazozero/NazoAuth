@@ -46,3 +46,28 @@ fn token_redirect_uri_is_still_bound_when_authorization_request_omitted_it() {
         );
     }
 }
+
+#[test]
+fn authorization_code_redirect_uri_matching_preserves_oauth_binding_rules() {
+    let mut supplied = code_payload(true);
+    assert!(redirect_uri_matches_authorization_request(
+        &supplied,
+        Some("https://client.example/callback")
+    ));
+    assert!(!redirect_uri_matches_authorization_request(&supplied, None));
+    assert!(!redirect_uri_matches_authorization_request(
+        &supplied,
+        Some("https://client.example/other")
+    ));
+
+    supplied.redirect_uri_was_supplied = false;
+    assert!(redirect_uri_matches_authorization_request(&supplied, None));
+    assert!(redirect_uri_matches_authorization_request(
+        &supplied,
+        Some("https://client.example/callback")
+    ));
+    assert!(!redirect_uri_matches_authorization_request(
+        &supplied,
+        Some("https://client.example/other")
+    ));
+}

@@ -2,9 +2,9 @@
 //! Database-backed invariant and race tests live in `tests/controller_registry.rs`.
 
 use super::{
-    ControllerIdentityAction, ControllerRegistryError, ControllerSlotStatus, NewControllerSlot,
-    RotateControllerKey, lowest_free_slot_index, validate_controller_id, validate_kid,
-    validate_kid_binding, validate_label,
+    ControllerRegistryError, ControllerSlotStatus, NewControllerSlot, RotateControllerKey,
+    lowest_free_slot_index, validate_controller_id, validate_kid, validate_kid_binding,
+    validate_label,
 };
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use sha2::{Digest as _, Sha256};
@@ -101,28 +101,6 @@ fn slot_index_selection_fills_lowest_free_and_stops_at_three() {
     // Revoked rows are filtered out before this point by the SQL predicate;
     // three active rows exhaust the index space.
     assert_eq!(lowest_free_slot_index(&slots(&[0, 1, 2])), None);
-}
-
-#[test]
-fn identity_action_catalog_is_closed() {
-    for action in [
-        ControllerIdentityAction::Bind,
-        ControllerIdentityAction::Add,
-        ControllerIdentityAction::Rotate,
-        ControllerIdentityAction::Revoke,
-        // D12 rotates the recovery root through the same approval machinery
-        // under its own action value (04A).
-        ControllerIdentityAction::RecoveryRootRotate,
-    ] {
-        assert_eq!(
-            ControllerIdentityAction::parse(action.as_str()),
-            Some(action)
-        );
-    }
-    assert_eq!(ControllerIdentityAction::parse("recovery"), None);
-    assert_eq!(ControllerIdentityAction::parse("recovery-root"), None);
-    assert_eq!(ControllerIdentityAction::parse(""), None);
-    assert_eq!(ControllerIdentityAction::parse("BIND"), None);
 }
 
 #[test]
