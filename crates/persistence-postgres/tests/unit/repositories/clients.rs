@@ -62,8 +62,7 @@ async fn delete_dc04_client(connection: &mut diesel_async::AsyncPgConnection, cl
 
 /// DC-04a: `OAuthClientRecord` derives `QueryableByName` so the
 /// `UPDATE ... RETURNING` decode fails closed on a malformed row — the diesel
-/// error propagates out of the transaction closure instead of yielding a
-/// partial record.
+/// error propagates to the caller instead of yielding a partial record.
 #[tokio::test]
 async fn oauth_client_record_queryable_by_name_rejects_malformed_rows() {
     let Some(url) = dc04_database_url() else {
@@ -95,61 +94,7 @@ async fn oauth_client_record_queryable_by_name_rejects_malformed_rows() {
     );
 }
 
-/// DC-04a: because the `RETURNING` decode runs inside the transaction, a
-/// decode failure aborts the transaction and rolls back the update it carried.
-/// This mirrors `replace_registration`, whose single `UPDATE ... RETURNING`
-/// statement is executed by `.get_result::<OAuthClientRecord>()` inside the
-/// explicit `connection.transaction` closure.
-#[tokio::test]
-async fn record_decode_failure_inside_the_transaction_rolls_back_the_update() {
-    let Some(url) = dc04_database_url() else {
-        return;
-    };
-    let mut connection = diesel_async::AsyncPgConnection::establish(&url)
-        .await
-        .unwrap();
-    let client_id = Uuid::now_v7();
-    insert_dc04_client(&mut connection, client_id).await;
-
-    let outcome = connection
-        .transaction::<(), diesel::result::Error, _>(async |connection| {
-            sql_query("UPDATE oauth_clients SET client_name = 'rolled-back-marker' WHERE id = $1")
-                .bind::<sql_types::Uuid, _>(client_id)
-                .execute(connection)
-                .await?;
-            // Same failure mode as a malformed RETURNING row: the decode error
-            // is returned from the closure, so diesel-async rolls the
-            // transaction back.
-            sql_query("SELECT 'not-a-uuid'::text AS id")
-                .get_result::<OAuthClientRecord>(connection)
-                .await?;
-            Ok(())
-        })
-        .await;
-    assert!(
-        matches!(outcome, Err(diesel::result::Error::DeserializationError(_))),
-        "the decode error must abort the transaction, got {outcome:?}"
-    );
-
-    #[derive(diesel::QueryableByName)]
-    struct PersistedName {
-        #[diesel(sql_type = sql_types::Text)]
-        client_name: String,
-    }
-    let persisted =
-        sql_query("SELECT client_name::text AS client_name FROM oauth_clients WHERE id = $1")
-            .bind::<sql_types::Uuid, _>(client_id)
-            .get_result::<PersistedName>(&mut connection)
-            .await
-            .unwrap();
-    assert_eq!(
-        persisted.client_name, "DC-04 unit client",
-        "a failed record decode inside the transaction must roll back its update"
-    );
-    delete_dc04_client(&mut connection, client_id).await;
-}
-
-/// DC-04b: `into_domain` is the post-commit validation stage — a row can
+/// DC-04b: `into_domain` is the post-statement validation stage — a row can
 /// decode cleanly into `OAuthClientRecord` yet still be rejected by the
 /// domain conversion (here: a JSONB array column holding non-strings passes
 /// the table CHECK and the `Value` decode, but fails `string_array`). Through
@@ -173,7 +118,7 @@ async fn oauth_client_record_into_domain_validates_json_columns_after_decode() {
         .await
         .unwrap();
 
-    // Stage one (in-transaction, mirrors the RETURNING decode) still succeeds.
+    // Stage one (mirrors the RETURNING decode) still succeeds.
     let record = sql_query("SELECT * FROM oauth_clients WHERE id = $1")
         .bind::<sql_types::Uuid, _>(client_id)
         .get_result::<OAuthClientRecord>(&mut connection)
@@ -188,11 +133,11 @@ async fn oauth_client_record_into_domain_validates_json_columns_after_decode() {
     delete_dc04_client(&mut connection, client_id).await;
 }
 
-/// DC-04b: commit boundary — `replace_registration` runs exactly one
-/// `UPDATE ... RETURNING` inside the transaction and converts the decoded
-/// record to the domain client only after the transaction resolves, so a
-/// conversion error can neither resurrect a rejected update nor roll back a
-/// committed one.
+/// DC-04b: `replace_registration` runs exactly one `UPDATE ... RETURNING`
+/// statement — a single statement is already atomic, so no transaction wraps
+/// it — and converts the decoded record to the domain client only after the
+/// statement resolves, so a conversion error can neither resurrect a rejected
+/// update nor hide a committed one.
 #[test]
 fn replace_registration_converts_the_record_after_commit() {
     let source = std::fs::read_to_string(concat!(
@@ -206,27 +151,33 @@ fn replace_registration_converts_the_record_after_commit() {
         .and_then(|source| source.split("pub async fn rotate_credentials(").next())
         .expect("replace_registration remains present");
 
-    let transaction = body
-        .find(".transaction::<OAuthClientRecord")
-        .expect("the update runs inside an explicit transaction");
-    let transaction_end = body
-        .find(".map_err(map_error)?")
-        .expect("transaction errors map before domain conversion");
+    assert!(
+        !body.contains(".transaction"),
+        "a single UPDATE ... RETURNING needs no explicit transaction"
+    );
+    let statement = body
+        .find("UPDATE oauth_clients SET")
+        .expect("the single update statement is present");
     let domain = body
         .rfind("record.into_domain()")
         .expect("the returned record converts to the domain client");
     assert!(
-        transaction < transaction_end && transaction_end < domain,
-        "into_domain must run after the transaction commits, not inside it"
-    );
-    let closure = &body[transaction..transaction_end];
-    assert!(
-        !closure.contains("into_domain"),
-        "the transaction closure must not run domain conversion"
+        statement < domain,
+        "into_domain must run after the statement returns, not before"
     );
     assert!(
-        closure.contains("RETURNING") && closure.contains("get_result::<OAuthClientRecord>"),
-        "the transaction decodes the returned row into the record type"
+        body.contains("RETURNING") && body.contains("get_result::<OAuthClientRecord>"),
+        "the statement decodes the returned row into the record type"
+    );
+    let metadata = body
+        .find("serde_json::json!")
+        .expect("metadata is serialized before the statement runs");
+    let acquire = body
+        .find("self.connection().await?")
+        .expect("the connection is acquired for the statement");
+    assert!(
+        metadata < acquire && acquire < statement,
+        "metadata is constructed before the pooled connection is acquired"
     );
 }
 

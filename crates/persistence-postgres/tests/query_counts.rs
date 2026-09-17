@@ -28,7 +28,9 @@ use nazo_auth::{
 };
 use nazo_digital_credentials::CredentialFormat;
 use nazo_identity::{AccessRequestStatus, TenantContext, TenantId, UserId};
-use nazo_openid4vci::{CredentialAccess, CredentialStorePort, DeferredCredential};
+use nazo_openid4vci::{
+    CredentialAccess, CredentialStoreError, CredentialStorePort, DeferredCredential,
+};
 use nazo_postgres::{
     AccessRequestRepository, DbPool, OAuthClientRepository, Openid4vciRepository,
     TokenIssuanceRepository, TokenRepository, UserRepository, create_pool, db_pool_metrics,
@@ -877,7 +879,7 @@ async fn ui01_userinfo_snapshot_is_single_read_for_both_subject_refs() {
 // ---------------------------------------------------------------------------
 
 /// DC-01: `replace_registration` is a single `UPDATE .. WHERE
-/// registration_access_token_blake3 = expected RETURNING *` inside one
+/// registration_access_token_blake3 = expected RETURNING *` with no wrapping
 /// transaction — the previous UPDATE + SELECT pair is gone.
 #[tokio::test]
 async fn dc01_replace_registration_is_single_update_returning() {
@@ -908,10 +910,10 @@ async fn dc01_replace_registration_is_single_update_returning() {
     assert_eq!(replaced.id, seed.client.id);
     // 1 data statement: UPDATE oauth_clients SET (metadata columns) WHERE
     // id = ? AND registration_access_token_blake3 = ? RETURNING *. The old
-    // implementation followed the UPDATE with a second SELECT.
+    // implementation followed the UPDATE with a second SELECT; the single
+    // statement needs no transaction wrapper.
     assert_eq!(delta.data_queries, 1);
-    assert_eq!(delta.begins, 1);
-    assert_eq!(delta.commits, 1);
+    assert_no_transaction(delta);
     assert_eq!(acquires, 1);
     assert_clean(delta);
     cleanup_seed(&database_url, tenant, &seed).await;
@@ -1139,11 +1141,13 @@ async fn up06_upsert_access_is_one_statement_and_idempotent() {
 // VF-01: pre-authorized access persistence
 // ---------------------------------------------------------------------------
 
-/// VF-01: `persist_pre_authorized_access` wraps the active-client check and
-/// the grant upsert in one transaction on one connection: `SELECT is_active
-/// .. FOR SHARE` then the access upsert — 2 data statements.
+/// VF-01: `persist_pre_authorized_access` folds the active-client `FOR SHARE`
+/// lock and the conditional grant upsert into one CTE statement on one
+/// connection — no wrapping transaction. A `registered_client_id` mismatch is
+/// rejected before any connection is acquired, and the anonymous path is the
+/// same single conditional upsert.
 #[tokio::test]
-async fn vf01_pre_authorized_access_is_lock_plus_upsert_in_one_transaction() {
+async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -1156,7 +1160,6 @@ async fn vf01_pre_authorized_access_is_lock_plus_upsert_in_one_transaction() {
     let (pool, counter) = instrumented_pool(&database_url).await;
     let issuer = Openid4vciRepository::new(pool, [0x53_u8; 32]);
 
-    let token_hash = format!("qc-access-hash-{}", Uuid::now_v7());
     let access = CredentialAccess {
         token_id: Uuid::now_v7(),
         tenant_id: tenant.tenant_id.as_uuid(),
@@ -1168,25 +1171,63 @@ async fn vf01_pre_authorized_access_is_lock_plus_upsert_in_one_transaction() {
         expires_at: Utc::now() + Duration::minutes(10),
     };
 
+    // A registered client id that does not match the access row must be
+    // rejected purely in memory: no connection checkout, no statement.
     let (result, delta, acquires) = measure(
         &counter,
         issuer.persist_pre_authorized_access(
-            &token_hash,
+            &format!("qc-mismatch-{}", Uuid::now_v7()),
+            &access,
+            Some("qc-not-the-registered-client"),
+        ),
+    )
+    .await;
+    assert!(matches!(
+        result,
+        Err(CredentialStoreError::InvalidTransition)
+    ));
+    assert_eq!(delta.data_queries, 0);
+    assert_no_transaction(delta);
+    assert_eq!(acquires, 0);
+    assert_clean(delta);
+
+    // Registered path: 1 data statement — WITH active_client (FOR SHARE) +
+    // conditional upsert + outcome probe in a single CTE.
+    let (result, delta, acquires) = measure(
+        &counter,
+        issuer.persist_pre_authorized_access(
+            &format!("qc-access-hash-{}", Uuid::now_v7()),
             &access,
             Some(seed.client.client_id.as_str()),
         ),
     )
     .await;
-
     result.expect("active-client pre-authorized persist must succeed");
-    // 2 data statements inside one transaction: SELECT is_active FROM
-    // oauth_clients .. FOR SHARE, then the single access-grant upsert. Signing
-    // and token work happen outside this repository call and are not measured.
-    assert_eq!(delta.data_queries, 2);
-    assert_eq!(delta.begins, 1);
-    assert_eq!(delta.commits, 1);
+    assert_eq!(delta.data_queries, 1);
+    assert_no_transaction(delta);
     assert_eq!(acquires, 1);
     assert_clean(delta);
+
+    // Anonymous path: 1 data statement — the plain conditional upsert, no
+    // oauth_clients read.
+    let (result, delta, acquires) = measure(
+        &counter,
+        issuer.persist_pre_authorized_access(
+            &format!("qc-access-hash-{}", Uuid::now_v7()),
+            &CredentialAccess {
+                token_id: Uuid::now_v7(),
+                ..access.clone()
+            },
+            None,
+        ),
+    )
+    .await;
+    result.expect("anonymous pre-authorized persist must succeed");
+    assert_eq!(delta.data_queries, 1);
+    assert_no_transaction(delta);
+    assert_eq!(acquires, 1);
+    assert_clean(delta);
+
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 

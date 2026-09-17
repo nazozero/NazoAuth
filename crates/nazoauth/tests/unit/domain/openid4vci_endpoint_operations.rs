@@ -756,8 +756,16 @@ impl LiveEndpointFixture {
     ) -> Option<Self> {
         let database_url = std::env::var("NAZO_TEST_DATABASE_URL")
             .or_else(|_| std::env::var("DATABASE_URL"))
-            .ok()?;
-        let valkey_url = std::env::var("VALKEY_URL").ok()?;
+            .ok();
+        let valkey_url = std::env::var("VALKEY_URL").ok();
+        if database_url.is_none() || valkey_url.is_none() {
+            assert!(
+                std::env::var_os("CI").is_none(),
+                "CI requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL"
+            );
+            return None;
+        }
+        let (database_url, valkey_url) = (database_url?, valkey_url?);
         nazo_postgres::run_pending_migrations(&database_url)
             .await
             .expect("OpenID4VC endpoint fixture migrations should succeed");
@@ -1504,7 +1512,6 @@ async fn create_offer_rejects_invalid_grant_shapes_and_subject_before_database_s
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_immediate_offer_pre_authorized_credential_replay_and_notification() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-immediate", false).await else {
         return;
@@ -1615,7 +1622,6 @@ async fn live_immediate_offer_pre_authorized_credential_replay_and_notification(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_deferred_credential_claim_response_replay_and_notification() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-deferred", true).await else {
         return;
@@ -1745,7 +1751,6 @@ struct TokenIdRow {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_pre_authorized_uuid_access_resolves_without_generic_issuance_row() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-standalone-access", false).await else {
         return;
@@ -1809,7 +1814,6 @@ async fn live_pre_authorized_uuid_access_resolves_without_generic_issuance_row()
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_pre_authorized_rejects_inactive_subject_after_offer_consumption() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-inactive-subject", false).await else {
         return;
@@ -1872,12 +1876,15 @@ async fn live_pre_authorized_rejects_inactive_subject_after_offer_consumption() 
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_pre_authorized_rejects_client_deactivated_before_persistence() {
     let Some(database_url) = std::env::var("NAZO_TEST_DATABASE_URL")
         .ok()
         .or_else(|| std::env::var("DATABASE_URL").ok())
     else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires NAZO_TEST_DATABASE_URL/DATABASE_URL"
+        );
         return;
     };
     let wrapper_pool =

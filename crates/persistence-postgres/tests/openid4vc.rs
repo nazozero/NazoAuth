@@ -2936,39 +2936,6 @@ fn tagged_openid4vc_database_url(database_url: &str, application_name: &str) -> 
     format!("{database_url}{separator}application_name={application_name}")
 }
 
-async fn wait_for_openid4vc_lock_wait(connection: &mut AsyncPgConnection, application_name: &str) {
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    while std::time::Instant::now() < deadline {
-        let blocked = sql_query(
-            "SELECT COUNT(*)::bigint AS count \
-             FROM pg_stat_activity \
-             WHERE application_name = $1 AND wait_event_type = 'Lock'",
-        )
-        .bind::<Text, _>(application_name)
-        .get_result::<CountRow>(connection)
-        .await
-        .expect("blocked PostgreSQL activity should be observable");
-        if blocked.count > 0 {
-            return;
-        }
-        tokio::task::yield_now().await;
-    }
-    panic!("timed out waiting for lock wait from {application_name}");
-}
-
-async fn wait_for_openid4vc_lock_wait_or_task<T: std::fmt::Debug>(
-    connection: &mut AsyncPgConnection,
-    application_name: &str,
-    task: &mut tokio::task::JoinHandle<T>,
-) {
-    tokio::select! {
-        () = wait_for_openid4vc_lock_wait(connection, application_name) => {}
-        result = task => panic!(
-            "task ended before reaching a PostgreSQL lock wait from {application_name}: {result:?}"
-        ),
-    }
-}
-
 async fn wait_for_openid4vc_blocked_by_or_task<T: std::fmt::Debug>(
     connection: &mut AsyncPgConnection,
     waiter_application_name: &str,
@@ -3057,10 +3024,10 @@ async fn pre_authorized_persist_rejects_a_client_deactivated_after_authenticatio
     delete_openid4vc_subject_and_client(&pool, subject_id, Some(client_uuid)).await;
 }
 
-// VF-03: the persist transaction re-verifies the registered client under a FOR
-// SHARE row lock before writing the grant. A concurrent deactivation must wait
-// for that transaction to commit; the committed deactivation then revokes the
-// freshly written grant through its dependent-cleanup path, so no usable grant
+// VF-03: the single persist statement takes the client's FOR SHARE row lock
+// before the grant write lands. A concurrent deactivation must wait for that
+// statement to commit; the committed deactivation then revokes the freshly
+// written grant through its dependent-cleanup path, so no usable grant
 // survives for a deactivated client.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() {
@@ -3082,15 +3049,36 @@ async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() 
         .to_hex()
         .to_string();
 
-    // Gate connection: a SHARE table lock on the grants table blocks the
-    // RowExclusive grant INSERT but not the client FOR SHARE check, so the
-    // persist transaction is guaranteed to hold the client lock while waiting.
-    let mut gate = AsyncPgConnection::establish(&database_url)
+    // Gate connection: an uncommitted grant row carrying the same token_hash
+    // parks the persist statement's ON CONFLICT speculative insertion after it
+    // has already materialized the active_client CTE and taken the client's
+    // FOR SHARE lock. The gate row uses a stale expires_at so the persist's
+    // DO UPDATE still rewrites the projection once the gate commits.
+    let gate_name = format!("vci-gate-{}", Uuid::now_v7().simple());
+    let mut gate =
+        AsyncPgConnection::establish(&tagged_openid4vc_database_url(&database_url, &gate_name))
+            .await
+            .expect("gate connection should establish");
+    gate.batch_execute("BEGIN")
         .await
-        .expect("gate connection should establish");
-    gate.batch_execute("BEGIN; LOCK TABLE openid4vci_access_grants IN SHARE MODE")
-        .await
-        .expect("grant table gate should lock");
+        .expect("gate transaction should begin");
+    sql_query(
+        "INSERT INTO openid4vci_access_grants \
+         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,dpop_jkt,expires_at) \
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)",
+    )
+    .bind::<SqlUuid, _>(access.token_id)
+    .bind::<Text, _>(&token_hash)
+    .bind::<SqlUuid, _>(access.tenant_id)
+    .bind::<SqlUuid, _>(access.subject_id)
+    .bind::<Text, _>(&access.client_id)
+    .bind::<diesel::sql_types::Jsonb, _>(serde_json::json!(access.configuration_ids))
+    .bind::<diesel::sql_types::Jsonb, _>(serde_json::json!(access.credential_identifiers))
+    .bind::<diesel::sql_types::Nullable<Text>, _>(access.dpop_jkt.as_deref())
+    .bind::<diesel::sql_types::Timestamptz, _>(access.expires_at - Duration::minutes(5))
+    .execute(&mut gate)
+    .await
+    .expect("gate grant row should insert uncommitted");
 
     let persist_name = format!("vci-persist-{}", Uuid::now_v7().simple());
     let persist_repository = Openid4vciRepository::new(
@@ -3113,10 +3101,17 @@ async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() 
     let mut observer = AsyncPgConnection::establish(&database_url)
         .await
         .expect("lock observer should connect");
-    wait_for_openid4vc_lock_wait_or_task(&mut observer, &persist_name, &mut persist_task).await;
+    wait_for_openid4vc_blocked_by_or_task(
+        &mut observer,
+        &persist_name,
+        &gate_name,
+        &mut persist_task,
+    )
+    .await;
 
-    // With the persist transaction parked on the grant INSERT (client FOR
-    // SHARE already held), the real deactivation path must block on it.
+    // With the persist statement parked on the conflicting grant insert
+    // (client FOR SHARE already held), the real deactivation path must block
+    // on it.
     let deactivate_name = format!("vci-deactivate-{}", Uuid::now_v7().simple());
     let deactivate_url = tagged_openid4vc_database_url(&database_url, &deactivate_name);
     let mut deactivate_task = tokio::spawn(async move {
@@ -3140,13 +3135,13 @@ async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() 
 
     gate.batch_execute("COMMIT")
         .await
-        .expect("the grant table gate should commit");
+        .expect("the conflicting gate insert should commit");
 
     tokio::time::timeout(std::time::Duration::from_secs(15), &mut persist_task)
         .await
         .expect("the persist task must finish once the gate commits")
         .expect("persist task should join")
-        .expect("the client was still active inside the persist transaction");
+        .expect("the client was still active inside the persist statement");
     let deactivated =
         tokio::time::timeout(std::time::Duration::from_secs(15), &mut deactivate_task)
             .await
@@ -3166,7 +3161,12 @@ async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() 
 
     let grant = persisted_access_grant(&pool, &token_hash)
         .await
-        .expect("the committed persist must have written the grant");
+        .expect("the committed persist must have left the grant");
+    assert_eq!(
+        grant.expires_at.timestamp_micros(),
+        access.expires_at.timestamp_micros(),
+        "the persist's ON CONFLICT DO UPDATE must have written its projection"
+    );
     assert!(
         grant.revoked_at.is_some(),
         "client deactivation revokes committed grants as dependent cleanup"

@@ -69,9 +69,6 @@ impl Openid4vciRepository {
             let encoding = response_encoding_name(&response.encoding);
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
             let id = credential.id;
             let transaction_hash = credential.transaction_hash.clone();
             let token_id = credential.access.token_id;
@@ -85,6 +82,9 @@ impl Openid4vciRepository {
             let request_digest = response.request_digest.clone();
             let dpop_nonce = response.dpop_nonce.clone();
             let response_expires_at = response.expires_at;
+            let mut connection = get_conn(&self.pool)
+                .await
+                .map_err(|_| CredentialStoreError::Unavailable)?;
             connection
                 .transaction::<(), diesel::result::Error, _>(async move |connection| {
                     sql_query(
@@ -138,9 +138,6 @@ impl Openid4vciRepository {
                 credential.id,
                 &credential.payload_ciphertext,
             )?;
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
             let id = credential.id;
             let transaction_hash = credential.transaction_hash.clone();
             let token_id = credential.access.token_id;
@@ -149,6 +146,9 @@ impl Openid4vciRepository {
             let holder_bindings = serde_json::Value::Array(credential.holder_bindings.clone());
             let ready_at = credential.ready_at;
             let expires_at = credential.expires_at;
+            let mut connection = get_conn(&self.pool)
+                .await
+                .map_err(|_| CredentialStoreError::Unavailable)?;
             connection
                 .transaction::<(), diesel::result::Error, _>(async move |connection| {
                     sql_query(
@@ -206,9 +206,6 @@ impl Openid4vciRepository {
             let encoding = response_encoding_name(&response.encoding);
             let status = i16::try_from(response.status)
                 .map_err(|_| CredentialStoreError::InvalidTransition)?;
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| CredentialStoreError::Unavailable)?;
             let id = credential.id;
             let transaction_hash = credential.transaction_hash.clone();
             let token_id = credential.access.token_id;
@@ -222,6 +219,9 @@ impl Openid4vciRepository {
             let request_digest = response.request_digest.clone();
             let dpop_nonce = response.dpop_nonce.clone();
             let response_expires_at = response.expires_at;
+            let mut connection = get_conn(&self.pool)
+                .await
+                .map_err(|_| CredentialStoreError::Unavailable)?;
             connection
                 .transaction::<(), diesel::result::Error, _>(async move |connection| {
                     sql_query(
@@ -283,11 +283,11 @@ impl Openid4vciRepository {
     ) -> CredentialStoreFuture<'a, Result<Option<DeferredCredentialClaim>, CredentialStoreError>>
     {
         Box::pin(async move {
+            let claim_expires_at = now + chrono::Duration::minutes(5);
+            let claim_id_owned = claim_id.to_owned();
             let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| CredentialStoreError::Unavailable)?;
-            let claim_expires_at = now + chrono::Duration::minutes(5);
-            let claim_id_owned = claim_id.to_owned();
             connection
                 .transaction::<Option<DeferredCredentialClaim>, diesel::result::Error, _>(
                     async move |connection| {

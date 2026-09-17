@@ -37,6 +37,14 @@ impl AuthorizationRepository {
         let revocation_deadline = access_token_expires_at
             .map(access_token_revocation_deadline)
             .transpose()?;
+        let new_revocation = revocation_deadline.map(|deadline| NewAccessTokenRevocation {
+            id: Uuid::now_v7(),
+            access_token_jti_blake3: blake3_hex(access_token_jti),
+            client_id,
+            tenant_id,
+            revoked_at: Utc::now(),
+            expires_at: deadline,
+        });
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
@@ -45,19 +53,8 @@ impl AuthorizationRepository {
                 if let Some(family_id) = refresh_token_family_id {
                     lock_refresh_family(connection, family_id).await?;
                 }
-                if let Some(deadline) = revocation_deadline {
-                    upsert_access_token_revocations(
-                        connection,
-                        &[NewAccessTokenRevocation {
-                            id: Uuid::now_v7(),
-                            access_token_jti_blake3: blake3_hex(access_token_jti),
-                            client_id,
-                            tenant_id,
-                            revoked_at: Utc::now(),
-                            expires_at: deadline,
-                        }],
-                    )
-                    .await?;
+                if let Some(new_revocation) = new_revocation {
+                    upsert_access_token_revocations(connection, &[new_revocation]).await?;
                 }
                 if let Some(family_id) = refresh_token_family_id {
                     diesel::update(

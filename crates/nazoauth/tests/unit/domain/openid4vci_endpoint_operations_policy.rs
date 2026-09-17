@@ -61,7 +61,6 @@ async fn signed_access_token_with_binding(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-dpop-access", false).await else {
         return;
@@ -207,7 +206,6 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-pairwise-access", false).await else {
         return;
@@ -314,7 +312,6 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_offer_enforces_subject_dataset_lifetime_and_transaction_code_policy() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-offer-policy", false).await else {
         return;
@@ -448,7 +445,6 @@ async fn live_offer_enforces_subject_dataset_lifetime_and_transaction_code_polic
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_access_rejects_missing_and_inactive_uuid_subjects() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-subject-check", false).await else {
         return;
@@ -533,12 +529,15 @@ async fn live_access_rejects_missing_and_inactive_uuid_subjects() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_access_fails_closed_when_subject_state_is_unavailable() {
     let Some(database_url) = std::env::var("NAZO_TEST_DATABASE_URL")
         .ok()
         .or_else(|| std::env::var("DATABASE_URL").ok())
     else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires NAZO_TEST_DATABASE_URL/DATABASE_URL"
+        );
         return;
     };
     let outage_pool =

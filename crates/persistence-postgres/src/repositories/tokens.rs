@@ -215,11 +215,12 @@ impl TokenRepository {
         tenant_id: Uuid,
         jti: &str,
     ) -> Result<bool, RepositoryError> {
+        let jti_blake3 = blake3_hex(jti);
         let mut connection = self.connection().await?;
         diesel::select(diesel::dsl::exists(
             access_token_revocations::table
                 .filter(access_token_revocations::tenant_id.eq(tenant_id))
-                .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(jti))),
+                .filter(access_token_revocations::access_token_jti_blake3.eq(jti_blake3)),
         ))
         .get_result::<bool>(&mut connection)
         .await
@@ -241,13 +242,25 @@ impl TokenRepository {
         let revocation_deadline = access_token
             .map(|access_token| access_token_revocation_deadline(access_token.expires_at))
             .transpose()?;
+        let raw_token_blake3 = blake3_hex(raw_token);
+        let new_revocation =
+            access_token
+                .zip(revocation_deadline)
+                .map(|(access_token, deadline)| NewAccessTokenRevocation {
+                    id: Uuid::now_v7(),
+                    access_token_jti_blake3: blake3_hex(&access_token.jti),
+                    client_id,
+                    tenant_id,
+                    revoked_at: Utc::now(),
+                    expires_at: deadline,
+                });
         let mut connection = self.connection().await?;
         connection
             .transaction::<usize, diesel::result::Error, _>(async |connection| {
                 let family_id = oauth_tokens::table
                     .filter(oauth_tokens::tenant_id.eq(tenant_id))
                     .filter(oauth_tokens::client_id.eq(client_id))
-                    .filter(oauth_tokens::refresh_token_blake3.eq(blake3_hex(raw_token)))
+                    .filter(oauth_tokens::refresh_token_blake3.eq(raw_token_blake3))
                     .select(oauth_tokens::token_family_id)
                     .first::<Uuid>(connection)
                     .await
@@ -265,19 +278,8 @@ impl TokenRepository {
                     .execute(connection)
                     .await;
                 }
-                if let (Some(access_token), Some(deadline)) = (access_token, revocation_deadline) {
-                    upsert_access_token_revocations(
-                        connection,
-                        &[NewAccessTokenRevocation {
-                            id: Uuid::now_v7(),
-                            access_token_jti_blake3: blake3_hex(&access_token.jti),
-                            client_id,
-                            tenant_id,
-                            revoked_at: Utc::now(),
-                            expires_at: deadline,
-                        }],
-                    )
-                    .await?;
+                if let Some(new_revocation) = new_revocation {
+                    upsert_access_token_revocations(connection, &[new_revocation]).await?;
                 }
                 Ok(0)
             })

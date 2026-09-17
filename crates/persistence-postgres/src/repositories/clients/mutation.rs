@@ -278,7 +278,6 @@ impl OAuthClientRepository {
         expected_registration_access_token_blake3: &str,
         new_registration_access_token_blake3: Option<&str>,
     ) -> Result<OAuthClient, RepositoryError> {
-        let mut connection = self.connection().await?;
         let mut metadata = serde_json::json!({
             "client_name": client.client_name,
             "client_type": client.client_type,
@@ -381,9 +380,8 @@ impl OAuthClientRepository {
             "security_policy".to_owned(),
             serde_json::json!(&client.security_policy),
         );
-        let record = connection
-            .transaction::<OAuthClientRecord, diesel::result::Error, _>(async move |connection| {
-                diesel::sql_query(
+        let mut connection = self.connection().await?;
+        let record = diesel::sql_query(
                     r#"
             UPDATE oauth_clients SET
                 client_name = $3->>'client_name',
@@ -486,10 +484,8 @@ impl OAuthClientRepository {
                 .bind::<diesel::sql_types::VarChar, _>(
                     expected_registration_access_token_blake3,
                 )
-                .get_result::<OAuthClientRecord>(connection)
+                .get_result::<OAuthClientRecord>(&mut connection)
                 .await
-            })
-            .await
             .map_err(map_error)?;
         record.into_domain()
     }
