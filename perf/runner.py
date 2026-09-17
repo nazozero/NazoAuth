@@ -833,7 +833,8 @@ def main() -> None:
     wait_for_service()
     ensure_vector_capacity()
     ensure_user_capacity()
-    seed()
+    if os.environ.get("PERF_SKIP_SEED") != "1":
+        seed()
     results = []
     for profile, scenarios in selected_profiles().items():
         for scenario in scenarios:

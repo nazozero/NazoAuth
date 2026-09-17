@@ -1,0 +1,60 @@
+running (1h45m59.0s), 24/24 VUs, 22461301 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h45m59.0s/2h40m0s
+
+running (1h46m00.0s), 24/24 VUs, 22464552 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h46m00.0s/2h40m0s
+
+running (1h46m01.0s), 24/24 VUs, 22468004 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h46m01.0s/2h40m0s
+
+running (1h46m02.0s), 24/24 VUs, 22471004 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h46m02.0s/2h40m0s
+
+running (1h46m03.0s), 24/24 VUs, 22473718 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h46m03.0s/2h40m0s
+
+running (1h46m04.0s), 24/24 VUs, 22476431 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h46m04.0s/2h40m0s
+
+running (1h46m05.0s), 24/24 VUs, 22479086 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h46m05.0s/2h40m0s
+
+running (1h46m06.0s), 24/24 VUs, 22481807 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h46m06.0s/2h40m0s
+
+running (1h46m07.0s), 24/24 VUs, 22482541 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h46m07.1s/2h40m0s
+
+running (1h46m15.5s), 24/24 VUs, 22482541 complete and 0 interrupted iterations
+cap_mixed   [  66% ] 24 VUs  1h46m16.1s/2h40m0s
+
+running (1h46m27.8s), 24/24 VUs, 22482541 complete and 0 interrupted iterations
+cap_mixed   [  67% ] 24 VUs  1h46m35.3s/2h40m0s
+
+running (1h46m39.5s), 24/24 VUs, 22482541 complete and 0 interrupted iterations
+cap_mixed   [  67% ] 24 VUs  1h46m40.9s/2h40m0s
+
+running (1h47m02.5s), 24/24 VUs, 22482541 complete and 0 interrupted iterations
+cap_mixed   [  67% ] 24 VUs  1h47m08.8s/2h40m0s
+
+running (1h47m16.0s), 24/24 VUs, 22482541 complete and 0 interrupted iterations
+cap_mixed   [  67% ] 24 VUs  1h47m16.0s/2h40m0s
+
+running (1h47m53.4s), 24/24 VUs, 22482541 complete and 0 interrupted iterations
+cap_mixed   [  67% ] 24 VUs  1h47m53.7s/2h40m0s
+
+running (1h47m53.7s), 24/24 VUs, 22482541 complete and 0 interrupted iterations
+cap_mixed   [  67% ] 24 VUs  1h47m53.7s/2h40m0s
+PERF_VECTOR_COUNT=1000 is below the replay-safe minimum; using 1200 flow vectors
+seeded 256 perf users, clients, and 1200 flow vectors (scenario=cap_mixed, rate=0/s)
+Traceback (most recent call last):
+  File "/perf/runner.py", line 847, in <module>
+    main()
+    ~~~~^^
+  File "/perf/runner.py", line 841, in main
+    results.append(run_scenario(profile, scenario))
+                   ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/perf/runner.py", line 536, in run_scenario
+    raise RuntimeError(f"k6 scenario failed before writing summary: {profile}/{scenario}")
+RuntimeError: k6 scenario failed before writing summary: capacity/cap_mixed
+

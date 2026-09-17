@@ -1,0 +1,3992 @@
+[
+ {
+  "ts": 1789674538,
+  "pg": {
+   "backends": 33,
+   "active": 1,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 86276708,
+   "xact_rollback": 2165,
+   "blks_read": 2148971,
+   "blks_hit": 589497551,
+   "tup_ret": 919480437,
+   "tup_ins": 14994466,
+   "tup_upd": 1006578,
+   "tup_del": 810134,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 120309757,
+   "hits": 56451350,
+   "miss": 1335029,
+   "exp": 4215204,
+   "mem": 793558792,
+   "clients": 2,
+   "keys": 1503958
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789674598,
+  "pg": {
+   "backends": 33,
+   "active": 12,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 88098105,
+   "xact_rollback": 2165,
+   "blks_read": 2213898,
+   "blks_hit": 609551604,
+   "tup_ret": 924486519,
+   "tup_ins": 15775976,
+   "tup_upd": 1079159,
+   "tup_del": 855915,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 121950973,
+   "hits": 57253731,
+   "miss": 1335151,
+   "exp": 4228863,
+   "mem": 827860736,
+   "clients": 2,
+   "keys": 1562475
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789674658,
+  "pg": {
+   "backends": 33,
+   "active": 15,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 89942163,
+   "xact_rollback": 2165,
+   "blks_read": 2453768,
+   "blks_hit": 629490629,
+   "tup_ret": 929451640,
+   "tup_ins": 16566682,
+   "tup_upd": 1151877,
+   "tup_del": 856202,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 123613103,
+   "hits": 58066460,
+   "miss": 1335273,
+   "exp": 4313908,
+   "mem": 838375560,
+   "clients": 2,
+   "keys": 1550321
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789674718,
+  "pg": {
+   "backends": 33,
+   "active": 13,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 91674183,
+   "xact_rollback": 2165,
+   "blks_read": 2563772,
+   "blks_hit": 648020570,
+   "tup_ret": 934079535,
+   "tup_ins": 17309936,
+   "tup_upd": 1220053,
+   "tup_del": 856472,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 125175207,
+   "hits": 58829063,
+   "miss": 1336187,
+   "exp": 4536973,
+   "mem": 801634920,
+   "clients": 2,
+   "keys": 1396222
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789674778,
+  "pg": {
+   "backends": 33,
+   "active": 10,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 93348188,
+   "xact_rollback": 2165,
+   "blks_read": 2761010,
+   "blks_hit": 666095792,
+   "tup_ret": 938556525,
+   "tup_ins": 18029289,
+   "tup_upd": 1285810,
+   "tup_del": 856742,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 126677055,
+   "hits": 59563366,
+   "miss": 1336323,
+   "exp": 4784316,
+   "mem": 757269752,
+   "clients": 2,
+   "keys": 1214842
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789674838,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 95029836,
+   "xact_rollback": 2165,
+   "blks_read": 3011240,
+   "blks_hit": 684287274,
+   "tup_ret": 943077753,
+   "tup_ins": 18752945,
+   "tup_upd": 1351578,
+   "tup_del": 857025,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 128183118,
+   "hits": 60299799,
+   "miss": 1336445,
+   "exp": 4826993,
+   "mem": 778560536,
+   "clients": 2,
+   "keys": 1238123
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789674898,
+  "pg": {
+   "backends": 33,
+   "active": 18,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 96686577,
+   "xact_rollback": 2165,
+   "blks_read": 3230734,
+   "blks_hit": 702222765,
+   "tup_ret": 947514596,
+   "tup_ins": 19466273,
+   "tup_upd": 1416690,
+   "tup_del": 857295,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 129665986,
+   "hits": 61024908,
+   "miss": 1336566,
+   "exp": 4855439,
+   "mem": 803712520,
+   "clients": 2,
+   "keys": 1274532
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789674959,
+  "pg": {
+   "backends": 33,
+   "active": 15,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 98371089,
+   "xact_rollback": 2165,
+   "blks_read": 3396829,
+   "blks_hit": 720390096,
+   "tup_ret": 952021090,
+   "tup_ins": 20192053,
+   "tup_upd": 1482781,
+   "tup_del": 857565,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 131173737,
+   "hits": 61762175,
+   "miss": 1336689,
+   "exp": 4877954,
+   "mem": 831316568,
+   "clients": 2,
+   "keys": 1318013
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675019,
+  "pg": {
+   "backends": 33,
+   "active": 15,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 100014477,
+   "xact_rollback": 2165,
+   "blks_read": 3731540,
+   "blks_hit": 738179706,
+   "tup_ret": 956441025,
+   "tup_ins": 20898102,
+   "tup_upd": 1547043,
+   "tup_del": 857848,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 132647759,
+   "hits": 62482941,
+   "miss": 1336811,
+   "exp": 4902962,
+   "mem": 857307712,
+   "clients": 2,
+   "keys": 1357558
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675079,
+  "pg": {
+   "backends": 33,
+   "active": 15,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 101696053,
+   "xact_rollback": 2165,
+   "blks_read": 3909784,
+   "blks_hit": 756304774,
+   "tup_ret": 960940259,
+   "tup_ins": 21622287,
+   "tup_upd": 1613119,
+   "tup_del": 858118,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 134155791,
+   "hits": 63220307,
+   "miss": 1336933,
+   "exp": 4925573,
+   "mem": 884891656,
+   "clients": 2,
+   "keys": 1401086
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675139,
+  "pg": {
+   "backends": 33,
+   "active": 11,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 103371270,
+   "xact_rollback": 2165,
+   "blks_read": 4152259,
+   "blks_hit": 774401496,
+   "tup_ret": 965425678,
+   "tup_ins": 22342570,
+   "tup_upd": 1678897,
+   "tup_del": 858389,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 135657425,
+   "hits": 63954562,
+   "miss": 1337055,
+   "exp": 4948543,
+   "mem": 912195680,
+   "clients": 2,
+   "keys": 1443937
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675199,
+  "pg": {
+   "backends": 33,
+   "active": 15,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 105051470,
+   "xact_rollback": 2165,
+   "blks_read": 4353394,
+   "blks_hit": 792524853,
+   "tup_ret": 969923344,
+   "tup_ins": 23066615,
+   "tup_upd": 1744859,
+   "tup_del": 858660,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 137160203,
+   "hits": 64689417,
+   "miss": 1337177,
+   "exp": 4973735,
+   "mem": 938658184,
+   "clients": 2,
+   "keys": 1484432
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675259,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 106681345,
+   "xact_rollback": 2165,
+   "blks_read": 4697135,
+   "blks_hit": 810158453,
+   "tup_ret": 974314720,
+   "tup_ins": 23766125,
+   "tup_upd": 1808803,
+   "tup_del": 858944,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 138619617,
+   "hits": 65403050,
+   "miss": 1337300,
+   "exp": 4995139,
+   "mem": 965374056,
+   "clients": 2,
+   "keys": 1526873
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675319,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 108325200,
+   "xact_rollback": 2165,
+   "blks_read": 4864640,
+   "blks_hit": 827834293,
+   "tup_ret": 978707038,
+   "tup_ins": 24473070,
+   "tup_upd": 1873359,
+   "tup_del": 859201,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 140093125,
+   "hits": 66123575,
+   "miss": 1337423,
+   "exp": 5020851,
+   "mem": 990961608,
+   "clients": 2,
+   "keys": 1565629
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675379,
+  "pg": {
+   "backends": 33,
+   "active": 13,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 109952270,
+   "xact_rollback": 2165,
+   "blks_read": 5126051,
+   "blks_hit": 845437708,
+   "tup_ret": 983076846,
+   "tup_ins": 25172781,
+   "tup_upd": 1937555,
+   "tup_del": 859472,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 141548664,
+   "hits": 66835336,
+   "miss": 1337546,
+   "exp": 5049804,
+   "mem": 1014952040,
+   "clients": 2,
+   "keys": 1600256
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675439,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 111588721,
+   "xact_rollback": 2165,
+   "blks_read": 5315807,
+   "blks_hit": 863038211,
+   "tup_ret": 987449014,
+   "tup_ins": 25876687,
+   "tup_upd": 2001742,
+   "tup_del": 859729,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 143013213,
+   "hits": 67551501,
+   "miss": 1337671,
+   "exp": 5085936,
+   "mem": 1036701984,
+   "clients": 2,
+   "keys": 1628107
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675499,
+  "pg": {
+   "backends": 33,
+   "active": 14,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 113185797,
+   "xact_rollback": 2165,
+   "blks_read": 5643171,
+   "blks_hit": 880303295,
+   "tup_ret": 991742963,
+   "tup_ins": 26562264,
+   "tup_upd": 2064532,
+   "tup_del": 860008,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 144447858,
+   "hits": 68252986,
+   "miss": 1337794,
+   "exp": 5122482,
+   "mem": 1057768224,
+   "clients": 2,
+   "keys": 1654478
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675560,
+  "pg": {
+   "backends": 33,
+   "active": 15,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 114818288,
+   "xact_rollback": 2165,
+   "blks_read": 5856421,
+   "blks_hit": 897890238,
+   "tup_ret": 996114940,
+   "tup_ins": 27265287,
+   "tup_upd": 2128777,
+   "tup_del": 860271,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 145905516,
+   "hits": 68965793,
+   "miss": 1337917,
+   "exp": 5155510,
+   "mem": 1080427248,
+   "clients": 2,
+   "keys": 1685088
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675620,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 116389238,
+   "xact_rollback": 2165,
+   "blks_read": 6130304,
+   "blks_hit": 914871439,
+   "tup_ret": 1000329428,
+   "tup_ins": 27941430,
+   "tup_upd": 2190456,
+   "tup_del": 860543,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 147309943,
+   "hits": 69652575,
+   "miss": 1338040,
+   "exp": 5188743,
+   "mem": 1101745368,
+   "clients": 2,
+   "keys": 1713134
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675680,
+  "pg": {
+   "backends": 33,
+   "active": 7,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 118009712,
+   "xact_rollback": 2165,
+   "blks_read": 6335126,
+   "blks_hit": 932328821,
+   "tup_ret": 1004663771,
+   "tup_ins": 28638582,
+   "tup_upd": 2254431,
+   "tup_del": 860800,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 148762134,
+   "hits": 70362653,
+   "miss": 1338163,
+   "exp": 5220002,
+   "mem": 1125023256,
+   "clients": 2,
+   "keys": 1745505
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675740,
+  "pg": {
+   "backends": 33,
+   "active": 11,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 119632860,
+   "xact_rollback": 2165,
+   "blks_read": 6613127,
+   "blks_hit": 949851286,
+   "tup_ret": 1009015771,
+   "tup_ins": 29336012,
+   "tup_upd": 2318270,
+   "tup_del": 861073,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 150216378,
+   "hits": 71073769,
+   "miss": 1338286,
+   "exp": 5250569,
+   "mem": 1148504440,
+   "clients": 2,
+   "keys": 1778519
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675800,
+  "pg": {
+   "backends": 33,
+   "active": 13,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 121270710,
+   "xact_rollback": 2165,
+   "blks_read": 6880444,
+   "blks_hit": 967494790,
+   "tup_ret": 1013402749,
+   "tup_ins": 30039830,
+   "tup_upd": 2382787,
+   "tup_del": 861337,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 151684285,
+   "hits": 71791524,
+   "miss": 1338409,
+   "exp": 5279269,
+   "mem": 1173064824,
+   "clients": 2,
+   "keys": 1814155
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675860,
+  "pg": {
+   "backends": 33,
+   "active": 9,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 122882047,
+   "xact_rollback": 2165,
+   "blks_read": 7236261,
+   "blks_hit": 984921377,
+   "tup_ret": 1017725284,
+   "tup_ins": 30731604,
+   "tup_upd": 2445973,
+   "tup_del": 861615,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 153130389,
+   "hits": 72498631,
+   "miss": 1338532,
+   "exp": 5306949,
+   "mem": 1233543088,
+   "clients": 2,
+   "keys": 1849809
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675920,
+  "pg": {
+   "backends": 33,
+   "active": 11,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 124516498,
+   "xact_rollback": 2165,
+   "blks_read": 7473107,
+   "blks_hit": 1002513260,
+   "tup_ret": 1022089359,
+   "tup_ins": 31435244,
+   "tup_upd": 2509924,
+   "tup_del": 861872,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 154591530,
+   "hits": 73213134,
+   "miss": 1338654,
+   "exp": 5326455,
+   "mem": 1243172056,
+   "clients": 2,
+   "keys": 1894132
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789675980,
+  "pg": {
+   "backends": 33,
+   "active": 20,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 126153452,
+   "xact_rollback": 2165,
+   "blks_read": 7798687,
+   "blks_hit": 1020191657,
+   "tup_ret": 1026471767,
+   "tup_ins": 32138138,
+   "tup_upd": 2574216,
+   "tup_del": 862144,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 156063814,
+   "hits": 73933008,
+   "miss": 1338777,
+   "exp": 5348887,
+   "mem": 1269577360,
+   "clients": 2,
+   "keys": 1936326
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676040,
+  "pg": {
+   "backends": 33,
+   "active": 12,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 127807334,
+   "xact_rollback": 2165,
+   "blks_read": 8047428,
+   "blks_hit": 1038113187,
+   "tup_ret": 1030888994,
+   "tup_ins": 32850008,
+   "tup_upd": 2639146,
+   "tup_del": 862401,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 157543543,
+   "hits": 74656587,
+   "miss": 1338900,
+   "exp": 5369832,
+   "mem": 1296483216,
+   "clients": 2,
+   "keys": 1980079
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676100,
+  "pg": {
+   "backends": 33,
+   "active": 17,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 129421257,
+   "xact_rollback": 2165,
+   "blks_read": 8457908,
+   "blks_hit": 1056229418,
+   "tup_ret": 1035230650,
+   "tup_ins": 33543049,
+   "tup_upd": 2702481,
+   "tup_del": 862680,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 158988106,
+   "hits": 75362971,
+   "miss": 1339023,
+   "exp": 5391305,
+   "mem": 1322391936,
+   "clients": 2,
+   "keys": 2021744
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676161,
+  "pg": {
+   "backends": 33,
+   "active": 14,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 131057744,
+   "xact_rollback": 2165,
+   "blks_read": 8706963,
+   "blks_hit": 1074462379,
+   "tup_ret": 1039604176,
+   "tup_ins": 34246413,
+   "tup_upd": 2766566,
+   "tup_del": 862937,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 160453077,
+   "hits": 76079366,
+   "miss": 1339146,
+   "exp": 5413614,
+   "mem": 1348422000,
+   "clients": 2,
+   "keys": 2063352
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676221,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 132666020,
+   "xact_rollback": 2165,
+   "blks_read": 9057386,
+   "blks_hit": 1092461019,
+   "tup_ret": 1043909705,
+   "tup_ins": 34937168,
+   "tup_upd": 2829562,
+   "tup_del": 863200,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 161892649,
+   "hits": 76783313,
+   "miss": 1339269,
+   "exp": 5435340,
+   "mem": 1374143408,
+   "clients": 2,
+   "keys": 2104537
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676281,
+  "pg": {
+   "backends": 33,
+   "active": 17,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 134295465,
+   "xact_rollback": 2165,
+   "blks_read": 9342574,
+   "blks_hit": 1110634480,
+   "tup_ret": 1048269911,
+   "tup_ins": 35636333,
+   "tup_upd": 2893366,
+   "tup_del": 863472,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 163357504,
+   "hits": 77499552,
+   "miss": 1339392,
+   "exp": 5458567,
+   "mem": 1400100504,
+   "clients": 2,
+   "keys": 2145619
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676341,
+  "pg": {
+   "backends": 33,
+   "active": 6,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 135888373,
+   "xact_rollback": 2165,
+   "blks_read": 9676764,
+   "blks_hit": 1128463477,
+   "tup_ret": 1052527220,
+   "tup_ins": 36319219,
+   "tup_upd": 2955912,
+   "tup_del": 863729,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 164786390,
+   "hits": 78198212,
+   "miss": 1339515,
+   "exp": 5481906,
+   "mem": 1425168024,
+   "clients": 2,
+   "keys": 2184952
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676401,
+  "pg": {
+   "backends": 33,
+   "active": 13,
+   "idle_in_tx": 4
+  },
+  "pg_db": {
+   "xact_commit": 137531727,
+   "xact_rollback": 2165,
+   "blks_read": 9950988,
+   "blks_hit": 1146832129,
+   "tup_ret": 1056919492,
+   "tup_ins": 37026242,
+   "tup_upd": 3020483,
+   "tup_del": 863986,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 166258079,
+   "hits": 78917849,
+   "miss": 1339638,
+   "exp": 5507382,
+   "mem": 1450474784,
+   "clients": 2,
+   "keys": 2223863
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676461,
+  "pg": {
+   "backends": 33,
+   "active": 21,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 139149383,
+   "xact_rollback": 2165,
+   "blks_read": 10370318,
+   "blks_hit": 1164988821,
+   "tup_ret": 1061271867,
+   "tup_ins": 37720732,
+   "tup_upd": 3083997,
+   "tup_del": 864265,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 167705289,
+   "hits": 79625534,
+   "miss": 1339761,
+   "exp": 5532968,
+   "mem": 1475156776,
+   "clients": 2,
+   "keys": 2261512
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676521,
+  "pg": {
+   "backends": 33,
+   "active": 5,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 140791053,
+   "xact_rollback": 2165,
+   "blks_read": 10641141,
+   "blks_hit": 1183334043,
+   "tup_ret": 1065660189,
+   "tup_ins": 38427596,
+   "tup_upd": 3148551,
+   "tup_del": 864522,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 169175494,
+   "hits": 80344468,
+   "miss": 1339884,
+   "exp": 5560144,
+   "mem": 1499814680,
+   "clients": 2,
+   "keys": 2298574
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676581,
+  "pg": {
+   "backends": 33,
+   "active": 18,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 142385870,
+   "xact_rollback": 2165,
+   "blks_read": 11033998,
+   "blks_hit": 1201231715,
+   "tup_ret": 1069930390,
+   "tup_ins": 39112109,
+   "tup_upd": 3211229,
+   "tup_del": 864785,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 170604201,
+   "hits": 81043057,
+   "miss": 1340007,
+   "exp": 5588764,
+   "mem": 1523194176,
+   "clients": 2,
+   "keys": 2332557
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676641,
+  "pg": {
+   "backends": 33,
+   "active": 8,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 144027699,
+   "xact_rollback": 2165,
+   "blks_read": 11342585,
+   "blks_hit": 1219578482,
+   "tup_ret": 1074329814,
+   "tup_ins": 39818501,
+   "tup_upd": 3275575,
+   "tup_del": 865057,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 172070305,
+   "hits": 81760005,
+   "miss": 1340130,
+   "exp": 5617865,
+   "mem": 1547104248,
+   "clients": 2,
+   "keys": 2367426
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676701,
+  "pg": {
+   "backends": 33,
+   "active": 8,
+   "idle_in_tx": 6
+  },
+  "pg_db": {
+   "xact_commit": 145620011,
+   "xact_rollback": 2165,
+   "blks_read": 11685048,
+   "blks_hit": 1237389647,
+   "tup_ret": 1078583699,
+   "tup_ins": 40502336,
+   "tup_upd": 3337914,
+   "tup_del": 865314,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 173497766,
+   "hits": 82458005,
+   "miss": 1340253,
+   "exp": 5651457,
+   "mem": 1568772944,
+   "clients": 2,
+   "keys": 2396308
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676762,
+  "pg": {
+   "backends": 33,
+   "active": 18,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 147259982,
+   "xact_rollback": 2165,
+   "blks_read": 11982870,
+   "blks_hit": 1255675898,
+   "tup_ret": 1082960898,
+   "tup_ins": 41206729,
+   "tup_upd": 3402086,
+   "tup_del": 865571,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 174964556,
+   "hits": 83175238,
+   "miss": 1340376,
+   "exp": 5683012,
+   "mem": 1592011888,
+   "clients": 2,
+   "keys": 2428949
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676822,
+  "pg": {
+   "backends": 33,
+   "active": 14,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 148883620,
+   "xact_rollback": 2165,
+   "blks_read": 12413644,
+   "blks_hit": 1273921714,
+   "tup_ret": 1087322440,
+   "tup_ins": 41903568,
+   "tup_upd": 3466058,
+   "tup_del": 865850,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 176420780,
+   "hits": 83887278,
+   "miss": 1340498,
+   "exp": 5712884,
+   "mem": 1615636608,
+   "clients": 2,
+   "keys": 2462933
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676882,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 150507044,
+   "xact_rollback": 2165,
+   "blks_read": 12746709,
+   "blks_hit": 1292070651,
+   "tup_ret": 1091661132,
+   "tup_ins": 42601450,
+   "tup_upd": 3529833,
+   "tup_del": 866107,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 177875413,
+   "hits": 84598551,
+   "miss": 1340621,
+   "exp": 5745785,
+   "mem": 1638191368,
+   "clients": 2,
+   "keys": 2493747
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789676942,
+  "pg": {
+   "backends": 33,
+   "active": 13,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 152138922,
+   "xact_rollback": 2165,
+   "blks_read": 13108713,
+   "blks_hit": 1310352660,
+   "tup_ret": 1096025283,
+   "tup_ins": 43303143,
+   "tup_upd": 3593966,
+   "tup_del": 866364,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 179337702,
+   "hits": 85313580,
+   "miss": 1340744,
+   "exp": 5776751,
+   "mem": 1661562872,
+   "clients": 2,
+   "keys": 2526805
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677002,
+  "pg": {
+   "backends": 33,
+   "active": 15,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 153791897,
+   "xact_rollback": 2165,
+   "blks_read": 13469982,
+   "blks_hit": 1328858583,
+   "tup_ret": 1100462288,
+   "tup_ins": 44014409,
+   "tup_upd": 3658968,
+   "tup_del": 866642,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 180817714,
+   "hits": 86037306,
+   "miss": 1340867,
+   "exp": 5807725,
+   "mem": 1685287696,
+   "clients": 2,
+   "keys": 2560513
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677062,
+  "pg": {
+   "backends": 33,
+   "active": 13,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 155365056,
+   "xact_rollback": 2165,
+   "blks_read": 13845003,
+   "blks_hit": 1346490855,
+   "tup_ret": 1104669597,
+   "tup_ins": 44689582,
+   "tup_upd": 3720882,
+   "tup_del": 866899,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 182229161,
+   "hits": 86727466,
+   "miss": 1340990,
+   "exp": 5838274,
+   "mem": 1707655320,
+   "clients": 2,
+   "keys": 2591758
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677122,
+  "pg": {
+   "backends": 33,
+   "active": 14,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 156985681,
+   "xact_rollback": 2165,
+   "blks_read": 14171141,
+   "blks_hit": 1364601562,
+   "tup_ret": 1109000136,
+   "tup_ins": 45386274,
+   "tup_upd": 3784513,
+   "tup_del": 867156,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 183679827,
+   "hits": 87436841,
+   "miss": 1341113,
+   "exp": 5869507,
+   "mem": 1730645000,
+   "clients": 2,
+   "keys": 2623917
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677182,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 158606982,
+   "xact_rollback": 2165,
+   "blks_read": 14545485,
+   "blks_hit": 1382767489,
+   "tup_ret": 1113336143,
+   "tup_ins": 46082982,
+   "tup_upd": 3848331,
+   "tup_del": 867413,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 185135442,
+   "hits": 88148597,
+   "miss": 1341236,
+   "exp": 5899668,
+   "mem": 1754215672,
+   "clients": 2,
+   "keys": 2657509
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677242,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 160237927,
+   "xact_rollback": 2165,
+   "blks_read": 14903747,
+   "blks_hit": 1400997627,
+   "tup_ret": 1117703181,
+   "tup_ins": 46782999,
+   "tup_upd": 3912408,
+   "tup_del": 867685,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 186601213,
+   "hits": 88865279,
+   "miss": 1341359,
+   "exp": 5927408,
+   "mem": 1778945680,
+   "clients": 2,
+   "keys": 2694136
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677302,
+  "pg": {
+   "backends": 33,
+   "active": 12,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 161859712,
+   "xact_rollback": 2165,
+   "blks_read": 15346796,
+   "blks_hit": 1419259377,
+   "tup_ret": 1122054578,
+   "tup_ins": 47479016,
+   "tup_upd": 3976159,
+   "tup_del": 867949,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 188051604,
+   "hits": 89574494,
+   "miss": 1341482,
+   "exp": 5955845,
+   "mem": 1802970256,
+   "clients": 2,
+   "keys": 2729194
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677363,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 163472890,
+   "xact_rollback": 2165,
+   "blks_read": 15687537,
+   "blks_hit": 1437365289,
+   "tup_ret": 1126365951,
+   "tup_ins": 48171758,
+   "tup_upd": 4039669,
+   "tup_del": 868206,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 189498848,
+   "hits": 90282147,
+   "miss": 1341605,
+   "exp": 5984290,
+   "mem": 1826930624,
+   "clients": 2,
+   "keys": 2764156
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677423,
+  "pg": {
+   "backends": 33,
+   "active": 13,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 165076926,
+   "xact_rollback": 2165,
+   "blks_read": 16085990,
+   "blks_hit": 1455445658,
+   "tup_ret": 1130657118,
+   "tup_ins": 48861053,
+   "tup_upd": 4103056,
+   "tup_del": 868463,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 190939776,
+   "hits": 90986701,
+   "miss": 1341728,
+   "exp": 6011970,
+   "mem": 1851098536,
+   "clients": 2,
+   "keys": 2799686
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677483,
+  "pg": {
+   "backends": 33,
+   "active": 7,
+   "idle_in_tx": 4
+  },
+  "pg_db": {
+   "xact_commit": 166719444,
+   "xact_rollback": 2165,
+   "blks_read": 16475914,
+   "blks_hit": 1473896714,
+   "tup_ret": 1135064234,
+   "tup_ins": 49566473,
+   "tup_upd": 4167540,
+   "tup_del": 868741,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 192412749,
+   "hits": 91706938,
+   "miss": 1341851,
+   "exp": 6038003,
+   "mem": 1876526704,
+   "clients": 2,
+   "keys": 2838200
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677543,
+  "pg": {
+   "backends": 33,
+   "active": 14,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 168310357,
+   "xact_rollback": 2165,
+   "blks_read": 16871025,
+   "blks_hit": 1491822569,
+   "tup_ret": 1139321415,
+   "tup_ins": 50250822,
+   "tup_upd": 4230205,
+   "tup_del": 868998,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 193837264,
+   "hits": 92403525,
+   "miss": 1341974,
+   "exp": 6064567,
+   "mem": 1900564896,
+   "clients": 2,
+   "keys": 2873873
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677603,
+  "pg": {
+   "backends": 33,
+   "active": 10,
+   "idle_in_tx": 5
+  },
+  "pg_db": {
+   "xact_commit": 169950693,
+   "xact_rollback": 2165,
+   "blks_read": 17218177,
+   "blks_hit": 1510212782,
+   "tup_ret": 1143702677,
+   "tup_ins": 50955098,
+   "tup_upd": 4294612,
+   "tup_del": 869255,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 195308765,
+   "hits": 93123028,
+   "miss": 1342097,
+   "exp": 6086801,
+   "mem": 1927299568,
+   "clients": 2,
+   "keys": 2916183
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677663,
+  "pg": {
+   "backends": 33,
+   "active": 17,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 171565880,
+   "xact_rollback": 2165,
+   "blks_read": 17640440,
+   "blks_hit": 1528381151,
+   "tup_ret": 1148023092,
+   "tup_ins": 51648015,
+   "tup_upd": 4358104,
+   "tup_del": 869512,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 196758617,
+   "hits": 93831986,
+   "miss": 1342220,
+   "exp": 6110854,
+   "mem": 1952841648,
+   "clients": 2,
+   "keys": 2955562
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677723,
+  "pg": {
+   "backends": 33,
+   "active": 14,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 173215596,
+   "xact_rollback": 2165,
+   "blks_read": 18015185,
+   "blks_hit": 1546919468,
+   "tup_ret": 1152445883,
+   "tup_ins": 52358173,
+   "tup_upd": 4422907,
+   "tup_del": 869784,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 198225636,
+   "hits": 94549385,
+   "miss": 1342342,
+   "exp": 6134859,
+   "mem": 1978715104,
+   "clients": 2,
+   "keys": 2995535
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677783,
+  "pg": {
+   "backends": 33,
+   "active": 15,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 174850660,
+   "xact_rollback": 2165,
+   "blks_read": 18498059,
+   "blks_hit": 1565383769,
+   "tup_ret": 1156847416,
+   "tup_ins": 53059455,
+   "tup_upd": 4487282,
+   "tup_del": 870048,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 199702168,
+   "hits": 95271337,
+   "miss": 1342465,
+   "exp": 6159310,
+   "mem": 2004880112,
+   "clients": 2,
+   "keys": 3035902
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677843,
+  "pg": {
+   "backends": 33,
+   "active": 18,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 176480255,
+   "xact_rollback": 2165,
+   "blks_read": 18850003,
+   "blks_hit": 1583648466,
+   "tup_ret": 1161200924,
+   "tup_ins": 53760011,
+   "tup_upd": 4551159,
+   "tup_del": 870305,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 201161751,
+   "hits": 95985056,
+   "miss": 1342588,
+   "exp": 6182842,
+   "mem": 2030840592,
+   "clients": 2,
+   "keys": 3076206
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677903,
+  "pg": {
+   "backends": 34,
+   "active": 18,
+   "idle_in_tx": 6
+  },
+  "pg_db": {
+   "xact_commit": 178104018,
+   "xact_rollback": 2165,
+   "blks_read": 18944344,
+   "blks_hit": 1601737792,
+   "tup_ret": 1165538178,
+   "tup_ins": 54459429,
+   "tup_upd": 4615013,
+   "tup_del": 870561,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 202614121,
+   "hits": 96695293,
+   "miss": 1342711,
+   "exp": 6207558,
+   "mem": 2056147960,
+   "clients": 2,
+   "keys": 3114837
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789677964,
+  "pg": {
+   "backends": 34,
+   "active": 26,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 179669636,
+   "xact_rollback": 2165,
+   "blks_read": 19392921,
+   "blks_hit": 1619373856,
+   "tup_ret": 1169725517,
+   "tup_ins": 55130557,
+   "tup_upd": 4676474,
+   "tup_del": 870818,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 204017120,
+   "hits": 97381338,
+   "miss": 1342834,
+   "exp": 6233316,
+   "mem": 2080034184,
+   "clients": 2,
+   "keys": 3150458
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678024,
+  "pg": {
+   "backends": 34,
+   "active": 10,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 181265784,
+   "xact_rollback": 2165,
+   "blks_read": 19793276,
+   "blks_hit": 1637282997,
+   "tup_ret": 1173997016,
+   "tup_ins": 55815676,
+   "tup_upd": 4738947,
+   "tup_del": 871090,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 205447521,
+   "hits": 98080754,
+   "miss": 1342957,
+   "exp": 6261166,
+   "mem": 2103934312,
+   "clients": 2,
+   "keys": 3185290
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678084,
+  "pg": {
+   "backends": 34,
+   "active": 12,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 182845161,
+   "xact_rollback": 2165,
+   "blks_read": 20245295,
+   "blks_hit": 1655117752,
+   "tup_ret": 1178233910,
+   "tup_ins": 56494315,
+   "tup_upd": 4800942,
+   "tup_del": 871353,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 206862957,
+   "hits": 98772883,
+   "miss": 1343080,
+   "exp": 6288616,
+   "mem": 2127565176,
+   "clients": 2,
+   "keys": 3219753
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678144,
+  "pg": {
+   "backends": 34,
+   "active": 12,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 184453488,
+   "xact_rollback": 2165,
+   "blks_read": 20608636,
+   "blks_hit": 1673265592,
+   "tup_ret": 1182524622,
+   "tup_ins": 57185201,
+   "tup_upd": 4864005,
+   "tup_del": 871610,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 208302559,
+   "hits": 99476797,
+   "miss": 1343203,
+   "exp": 6316165,
+   "mem": 2151794104,
+   "clients": 2,
+   "keys": 3255306
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678204,
+  "pg": {
+   "backends": 34,
+   "active": 15,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 186053504,
+   "xact_rollback": 2165,
+   "blks_read": 21050237,
+   "blks_hit": 1691417710,
+   "tup_ret": 1186800554,
+   "tup_ins": 57872664,
+   "tup_upd": 4926988,
+   "tup_del": 871867,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 209737796,
+   "hits": 100178584,
+   "miss": 1343326,
+   "exp": 6342851,
+   "mem": 2176234464,
+   "clients": 2,
+   "keys": 3291510
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678264,
+  "pg": {
+   "backends": 34,
+   "active": 23,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 187697287,
+   "xact_rollback": 2165,
+   "blks_read": 21440545,
+   "blks_hit": 1709947067,
+   "tup_ret": 1191185760,
+   "tup_ins": 58577403,
+   "tup_upd": 4991220,
+   "tup_del": 872124,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 211211084,
+   "hits": 100898957,
+   "miss": 1343449,
+   "exp": 6372583,
+   "mem": 2200567184,
+   "clients": 2,
+   "keys": 3326404
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678324,
+  "pg": {
+   "backends": 34,
+   "active": 11,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 189307638,
+   "xact_rollback": 2165,
+   "blks_read": 21905627,
+   "blks_hit": 1728205128,
+   "tup_ret": 1195496317,
+   "tup_ins": 59269513,
+   "tup_upd": 5054289,
+   "tup_del": 872396,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 212651291,
+   "hits": 101603210,
+   "miss": 1343572,
+   "exp": 6400209,
+   "mem": 2224714416,
+   "clients": 2,
+   "keys": 3361727
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678384,
+  "pg": {
+   "backends": 34,
+   "active": 21,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 190925224,
+   "xact_rollback": 2165,
+   "blks_read": 22353772,
+   "blks_hit": 1746721168,
+   "tup_ret": 1199868673,
+   "tup_ins": 59966904,
+   "tup_upd": 5117837,
+   "tup_del": 872660,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 214097340,
+   "hits": 102310337,
+   "miss": 1343695,
+   "exp": 6427623,
+   "mem": 2249057632,
+   "clients": 2,
+   "keys": 3397463
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678444,
+  "pg": {
+   "backends": 34,
+   "active": 13,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 192527403,
+   "xact_rollback": 2165,
+   "blks_read": 22797999,
+   "blks_hit": 1764940616,
+   "tup_ret": 1204150672,
+   "tup_ins": 60655854,
+   "tup_upd": 5180679,
+   "tup_del": 872917,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 215532831,
+   "hits": 103012268,
+   "miss": 1343818,
+   "exp": 6453838,
+   "mem": 2273612992,
+   "clients": 2,
+   "keys": 3434057
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678504,
+  "pg": {
+   "backends": 34,
+   "active": 15,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 194140921,
+   "xact_rollback": 2165,
+   "blks_read": 23200504,
+   "blks_hit": 1783222042,
+   "tup_ret": 1208457211,
+   "tup_ins": 61348605,
+   "tup_upd": 5243830,
+   "tup_del": 873174,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 216978831,
+   "hits": 103719312,
+   "miss": 1343941,
+   "exp": 6483113,
+   "mem": 2297409896,
+   "clients": 2,
+   "keys": 3468166
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678565,
+  "pg": {
+   "backends": 34,
+   "active": 21,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 195773922,
+   "xact_rollback": 2165,
+   "blks_read": 23669571,
+   "blks_hit": 1801813729,
+   "tup_ret": 1212824969,
+   "tup_ins": 62050720,
+   "tup_upd": 5308114,
+   "tup_del": 873431,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 218444885,
+   "hits": 104436165,
+   "miss": 1344064,
+   "exp": 6509261,
+   "mem": 2322762360,
+   "clients": 2,
+   "keys": 3506267
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678625,
+  "pg": {
+   "backends": 34,
+   "active": 7,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 197391668,
+   "xact_rollback": 2165,
+   "blks_read": 24089103,
+   "blks_hit": 1820176167,
+   "tup_ret": 1217159459,
+   "tup_ins": 62746879,
+   "tup_upd": 5371577,
+   "tup_del": 873703,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 219891981,
+   "hits": 105143785,
+   "miss": 1344186,
+   "exp": 6537197,
+   "mem": 2346989584,
+   "clients": 2,
+   "keys": 3541597
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678685,
+  "pg": {
+   "backends": 34,
+   "active": 11,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 198991891,
+   "xact_rollback": 2165,
+   "blks_read": 24581246,
+   "blks_hit": 1838403272,
+   "tup_ret": 1221454282,
+   "tup_ins": 63435142,
+   "tup_upd": 5434054,
+   "tup_del": 873966,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 221325327,
+   "hits": 105844697,
+   "miss": 1344309,
+   "exp": 6566317,
+   "mem": 2370452560,
+   "clients": 2,
+   "keys": 3575079
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678745,
+  "pg": {
+   "backends": 34,
+   "active": 23,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 200649863,
+   "xact_rollback": 2165,
+   "blks_read": 24991922,
+   "blks_hit": 1857196936,
+   "tup_ret": 1225880783,
+   "tup_ins": 64147652,
+   "tup_upd": 5499279,
+   "tup_del": 874223,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 222811754,
+   "hits": 106571485,
+   "miss": 1344432,
+   "exp": 6596329,
+   "mem": 2395018912,
+   "clients": 2,
+   "keys": 3610325
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678805,
+  "pg": {
+   "backends": 34,
+   "active": 11,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 202216472,
+   "xact_rollback": 2165,
+   "blks_read": 25477211,
+   "blks_hit": 1875034899,
+   "tup_ret": 1230069800,
+   "tup_ins": 64820417,
+   "tup_upd": 5560766,
+   "tup_del": 874480,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 224216073,
+   "hits": 107258137,
+   "miss": 1344555,
+   "exp": 6626960,
+   "mem": 2417436976,
+   "clients": 2,
+   "keys": 3641272
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678865,
+  "pg": {
+   "backends": 34,
+   "active": 12,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 203790899,
+   "xact_rollback": 2165,
+   "blks_read": 25875943,
+   "blks_hit": 1892855887,
+   "tup_ret": 1234274798,
+   "tup_ins": 65496123,
+   "tup_upd": 5622612,
+   "tup_del": 874737,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 225629190,
+   "hits": 107949081,
+   "miss": 1344678,
+   "exp": 6655692,
+   "mem": 2566985352,
+   "clients": 2,
+   "keys": 3674545
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678925,
+  "pg": {
+   "backends": 34,
+   "active": 21,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 205352374,
+   "xact_rollback": 2165,
+   "blks_read": 26354707,
+   "blks_hit": 1910629768,
+   "tup_ret": 1238447486,
+   "tup_ins": 66166996,
+   "tup_upd": 5683939,
+   "tup_del": 874994,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 227028399,
+   "hits": 108633231,
+   "miss": 1344801,
+   "exp": 6685311,
+   "mem": 2500649872,
+   "clients": 2,
+   "keys": 3706304
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789678985,
+  "pg": {
+   "backends": 34,
+   "active": 22,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 207002641,
+   "xact_rollback": 2165,
+   "blks_read": 26853526,
+   "blks_hit": 1929826875,
+   "tup_ret": 1243044859,
+   "tup_ins": 66876620,
+   "tup_upd": 5748737,
+   "tup_del": 875273,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 228502894,
+   "hits": 109354264,
+   "miss": 1344924,
+   "exp": 6708042,
+   "mem": 2526875312,
+   "clients": 2,
+   "keys": 3747978
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679045,
+  "pg": {
+   "backends": 34,
+   "active": 15,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 208582995,
+   "xact_rollback": 2165,
+   "blks_read": 27348521,
+   "blks_hit": 1947835426,
+   "tup_ret": 1247276313,
+   "tup_ins": 67556135,
+   "tup_upd": 5810942,
+   "tup_del": 875530,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 229921093,
+   "hits": 110047748,
+   "miss": 1345047,
+   "exp": 6732775,
+   "mem": 2551202752,
+   "clients": 2,
+   "keys": 3785265
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679105,
+  "pg": {
+   "backends": 34,
+   "active": 13,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 210179421,
+   "xact_rollback": 2165,
+   "blks_read": 27774549,
+   "blks_hit": 1965943915,
+   "tup_ret": 1251542150,
+   "tup_ins": 68242896,
+   "tup_upd": 5873569,
+   "tup_del": 875787,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 231347756,
+   "hits": 110745382,
+   "miss": 1345170,
+   "exp": 6757111,
+   "mem": 2575785552,
+   "clients": 2,
+   "keys": 3823279
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679166,
+  "pg": {
+   "backends": 34,
+   "active": 26,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 211806219,
+   "xact_rollback": 2165,
+   "blks_read": 28260519,
+   "blks_hit": 1984438586,
+   "tup_ret": 1255895612,
+   "tup_ins": 68942012,
+   "tup_upd": 5937447,
+   "tup_del": 876044,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 232805597,
+   "hits": 111458263,
+   "miss": 1345293,
+   "exp": 6781342,
+   "mem": 2601131872,
+   "clients": 2,
+   "keys": 3862759
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679226,
+  "pg": {
+   "backends": 34,
+   "active": 26,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 213401852,
+   "xact_rollback": 2165,
+   "blks_read": 28680498,
+   "blks_hit": 2002535165,
+   "tup_ret": 1260157280,
+   "tup_ins": 69627503,
+   "tup_upd": 6000391,
+   "tup_del": 876301,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 234237946,
+   "hits": 112158584,
+   "miss": 1345416,
+   "exp": 6805800,
+   "mem": 2625975752,
+   "clients": 2,
+   "keys": 3901268
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679286,
+  "pg": {
+   "backends": 34,
+   "active": 10,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 214981944,
+   "xact_rollback": 2165,
+   "blks_read": 29206686,
+   "blks_hit": 2020519733,
+   "tup_ret": 1264381063,
+   "tup_ins": 70305377,
+   "tup_upd": 6062221,
+   "tup_del": 876558,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 235655808,
+   "hits": 112851883,
+   "miss": 1345539,
+   "exp": 6829918,
+   "mem": 2650472672,
+   "clients": 2,
+   "keys": 3939233
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679346,
+  "pg": {
+   "backends": 34,
+   "active": 15,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 216623251,
+   "xact_rollback": 2165,
+   "blks_read": 29695628,
+   "blks_hit": 2039209365,
+   "tup_ret": 1268808992,
+   "tup_ins": 71010057,
+   "tup_upd": 6126751,
+   "tup_del": 876836,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 237128571,
+   "hits": 113572016,
+   "miss": 1345662,
+   "exp": 6854226,
+   "mem": 2676153056,
+   "clients": 2,
+   "keys": 3979463
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679406,
+  "pg": {
+   "backends": 34,
+   "active": 12,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 218200284,
+   "xact_rollback": 2165,
+   "blks_read": 30193322,
+   "blks_hit": 2057175984,
+   "tup_ret": 1273025968,
+   "tup_ins": 71687766,
+   "tup_upd": 6188886,
+   "tup_del": 877093,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 238543191,
+   "hits": 114263702,
+   "miss": 1345785,
+   "exp": 6880218,
+   "mem": 2700019520,
+   "clients": 2,
+   "keys": 4015529
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679466,
+  "pg": {
+   "backends": 34,
+   "active": 23,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 219820112,
+   "xact_rollback": 2165,
+   "blks_read": 30640189,
+   "blks_hit": 2075522107,
+   "tup_ret": 1277356790,
+   "tup_ins": 72383039,
+   "tup_upd": 6252308,
+   "tup_del": 877350,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 239993499,
+   "hits": 114972889,
+   "miss": 1345908,
+   "exp": 6905507,
+   "mem": 2724803888,
+   "clients": 2,
+   "keys": 4053651
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679526,
+  "pg": {
+   "backends": 34,
+   "active": 17,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 221383727,
+   "xact_rollback": 2165,
+   "blks_read": 31144786,
+   "blks_hit": 2093295678,
+   "tup_ret": 1281536892,
+   "tup_ins": 73053252,
+   "tup_upd": 6313697,
+   "tup_del": 877607,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 241398936,
+   "hits": 115660072,
+   "miss": 1346030,
+   "exp": 6929334,
+   "mem": 2749194880,
+   "clients": 2,
+   "keys": 4091522
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679586,
+  "pg": {
+   "backends": 34,
+   "active": 21,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 222966328,
+   "xact_rollback": 2165,
+   "blks_read": 31605746,
+   "blks_hit": 2111232249,
+   "tup_ret": 1285765045,
+   "tup_ins": 73732659,
+   "tup_upd": 6375543,
+   "tup_del": 877864,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 242816853,
+   "hits": 116353425,
+   "miss": 1346153,
+   "exp": 6954972,
+   "mem": 2773102344,
+   "clients": 2,
+   "keys": 4127868
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679646,
+  "pg": {
+   "backends": 34,
+   "active": 16,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 224586918,
+   "xact_rollback": 2165,
+   "blks_read": 32193978,
+   "blks_hit": 2130086558,
+   "tup_ret": 1290253983,
+   "tup_ins": 74428514,
+   "tup_upd": 6439314,
+   "tup_del": 878128,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 244270503,
+   "hits": 117064240,
+   "miss": 1346276,
+   "exp": 6980499,
+   "mem": 2797914440,
+   "clients": 2,
+   "keys": 4165932
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679706,
+  "pg": {
+   "backends": 34,
+   "active": 13,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 226177275,
+   "xact_rollback": 2165,
+   "blks_read": 32669245,
+   "blks_hit": 2148155084,
+   "tup_ret": 1294517275,
+   "tup_ins": 75112880,
+   "tup_upd": 6501654,
+   "tup_del": 878400,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 245691627,
+   "hits": 117759189,
+   "miss": 1346399,
+   "exp": 7006298,
+   "mem": 2821809192,
+   "clients": 2,
+   "keys": 4202134
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679767,
+  "pg": {
+   "backends": 34,
+   "active": 13,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 227806693,
+   "xact_rollback": 2165,
+   "blks_read": 33189378,
+   "blks_hit": 2166683088,
+   "tup_ret": 1298875452,
+   "tup_ins": 75811716,
+   "tup_upd": 6565823,
+   "tup_del": 878657,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 247157609,
+   "hits": 118475969,
+   "miss": 1346522,
+   "exp": 7034361,
+   "mem": 2846229656,
+   "clients": 2,
+   "keys": 4238473
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679827,
+  "pg": {
+   "backends": 34,
+   "active": 14,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 229407336,
+   "xact_rollback": 2165,
+   "blks_read": 33664850,
+   "blks_hit": 2184841761,
+   "tup_ret": 1303151359,
+   "tup_ins": 76498861,
+   "tup_upd": 6628664,
+   "tup_del": 878914,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 248595651,
+   "hits": 119179094,
+   "miss": 1346645,
+   "exp": 7058142,
+   "mem": 2871392960,
+   "clients": 2,
+   "keys": 4277831
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679887,
+  "pg": {
+   "backends": 34,
+   "active": 14,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 230995306,
+   "xact_rollback": 2165,
+   "blks_read": 34208359,
+   "blks_hit": 2202905494,
+   "tup_ret": 1307392289,
+   "tup_ins": 77179175,
+   "tup_upd": 6691012,
+   "tup_del": 879171,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 250027228,
+   "hits": 119879012,
+   "miss": 1346768,
+   "exp": 7083966,
+   "mem": 2895844848,
+   "clients": 2,
+   "keys": 4315033
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789679947,
+  "pg": {
+   "backends": 33,
+   "active": 14,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 232657024,
+   "xact_rollback": 2165,
+   "blks_read": 34825376,
+   "blks_hit": 2221873465,
+   "tup_ret": 1311836959,
+   "tup_ins": 77892315,
+   "tup_upd": 6756277,
+   "tup_del": 879429,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 251518807,
+   "hits": 120608322,
+   "miss": 1346891,
+   "exp": 7108815,
+   "mem": 2921897728,
+   "clients": 2,
+   "keys": 4355662
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680007,
+  "pg": {
+   "backends": 34,
+   "active": 19,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 234259871,
+   "xact_rollback": 2165,
+   "blks_read": 34924159,
+   "blks_hit": 2239905565,
+   "tup_ret": 1316109918,
+   "tup_ins": 78581053,
+   "tup_upd": 6819309,
+   "tup_del": 879685,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 252956900,
+   "hits": 121311478,
+   "miss": 1347014,
+   "exp": 7134961,
+   "mem": 2946287256,
+   "clients": 2,
+   "keys": 4392627
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680067,
+  "pg": {
+   "backends": 34,
+   "active": 15,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 235882496,
+   "xact_rollback": 2165,
+   "blks_read": 35476338,
+   "blks_hit": 2258490596,
+   "tup_ret": 1320513049,
+   "tup_ins": 79276676,
+   "tup_upd": 6883016,
+   "tup_del": 879948,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 254415291,
+   "hits": 122024560,
+   "miss": 1347137,
+   "exp": 7160346,
+   "mem": 2971431272,
+   "clients": 2,
+   "keys": 4431259
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680127,
+  "pg": {
+   "backends": 33,
+   "active": 18,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 237452908,
+   "xact_rollback": 2165,
+   "blks_read": 36151152,
+   "blks_hit": 2276489671,
+   "tup_ret": 1324731745,
+   "tup_ins": 79950657,
+   "tup_upd": 6944612,
+   "tup_del": 880221,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 255825482,
+   "hits": 122714082,
+   "miss": 1347260,
+   "exp": 7185147,
+   "mem": 2995621032,
+   "clients": 2,
+   "keys": 4468300
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680187,
+  "pg": {
+   "backends": 34,
+   "active": 16,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 239106687,
+   "xact_rollback": 2165,
+   "blks_read": 36253322,
+   "blks_hit": 2295092812,
+   "tup_ret": 1329142879,
+   "tup_ins": 80661922,
+   "tup_upd": 7009551,
+   "tup_del": 880477,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 257307607,
+   "hits": 123438790,
+   "miss": 1347383,
+   "exp": 7209364,
+   "mem": 3021658464,
+   "clients": 2,
+   "keys": 4509061
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680247,
+  "pg": {
+   "backends": 34,
+   "active": 14,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 240657572,
+   "xact_rollback": 2165,
+   "blks_read": 36838852,
+   "blks_hit": 2312780548,
+   "tup_ret": 1333287559,
+   "tup_ins": 81326164,
+   "tup_upd": 7070447,
+   "tup_del": 880734,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 258701356,
+   "hits": 124120239,
+   "miss": 1347506,
+   "exp": 7236544,
+   "mem": 3044775208,
+   "clients": 2,
+   "keys": 4543133
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680308,
+  "pg": {
+   "backends": 33,
+   "active": 8,
+   "idle_in_tx": 4
+  },
+  "pg_db": {
+   "xact_commit": 242295800,
+   "xact_rollback": 2165,
+   "blks_read": 37528510,
+   "blks_hit": 2331549232,
+   "tup_ret": 1337674490,
+   "tup_ins": 82029929,
+   "tup_upd": 7134715,
+   "tup_del": 880992,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 260165373,
+   "hits": 124836147,
+   "miss": 1347629,
+   "exp": 7263140,
+   "mem": 3069490408,
+   "clients": 2,
+   "keys": 4580479
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680368,
+  "pg": {
+   "backends": 34,
+   "active": 8,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 243891655,
+   "xact_rollback": 2165,
+   "blks_read": 37627100,
+   "blks_hit": 2349495888,
+   "tup_ret": 1341929714,
+   "tup_ins": 82716978,
+   "tup_upd": 7197100,
+   "tup_del": 881248,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 261591161,
+   "hits": 125533386,
+   "miss": 1347752,
+   "exp": 7290927,
+   "mem": 3092903000,
+   "clients": 2,
+   "keys": 4614881
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680428,
+  "pg": {
+   "backends": 34,
+   "active": 11,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 245480725,
+   "xact_rollback": 2165,
+   "blks_read": 38212701,
+   "blks_hit": 2368133831,
+   "tup_ret": 1346379310,
+   "tup_ins": 83399661,
+   "tup_upd": 7259295,
+   "tup_del": 881512,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 263011744,
+   "hits": 126228038,
+   "miss": 1347875,
+   "exp": 7319183,
+   "mem": 3116105680,
+   "clients": 2,
+   "keys": 4648734
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680488,
+  "pg": {
+   "backends": 33,
+   "active": 10,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 247108247,
+   "xact_rollback": 2165,
+   "blks_read": 38923920,
+   "blks_hit": 2386988267,
+   "tup_ret": 1350847609,
+   "tup_ins": 84098368,
+   "tup_upd": 7323059,
+   "tup_del": 881785,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 264469302,
+   "hits": 126940747,
+   "miss": 1347998,
+   "exp": 7346575,
+   "mem": 3140508400,
+   "clients": 2,
+   "keys": 4685183
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680548,
+  "pg": {
+   "backends": 34,
+   "active": 16,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 248707424,
+   "xact_rollback": 2165,
+   "blks_read": 39023058,
+   "blks_hit": 2404982117,
+   "tup_ret": 1355110939,
+   "tup_ins": 84786600,
+   "tup_upd": 7385711,
+   "tup_del": 882041,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 265897984,
+   "hits": 127639365,
+   "miss": 1348121,
+   "exp": 7374043,
+   "mem": 3164173608,
+   "clients": 2,
+   "keys": 4720147
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680608,
+  "pg": {
+   "backends": 34,
+   "active": 24,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 250305837,
+   "xact_rollback": 2165,
+   "blks_read": 39644099,
+   "blks_hit": 2423246456,
+   "tup_ret": 1359390128,
+   "tup_ins": 85472407,
+   "tup_upd": 7448627,
+   "tup_del": 882298,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 267336280,
+   "hits": 128342636,
+   "miss": 1348244,
+   "exp": 7401841,
+   "mem": 3188059752,
+   "clients": 2,
+   "keys": 4755406
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680618,
+  "pg": {
+   "backends": 33,
+   "active": 18,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 250562328,
+   "xact_rollback": 2165,
+   "blks_read": 40084605,
+   "blks_hit": 2426277437,
+   "tup_ret": 1360082875,
+   "tup_ins": 85581883,
+   "tup_upd": 7458772,
+   "tup_del": 882299,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 267566789,
+   "hits": 128455341,
+   "miss": 1348264,
+   "exp": 7406188,
+   "mem": 3191946192,
+   "clients": 2,
+   "keys": 4761193
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680628,
+  "pg": {
+   "backends": 33,
+   "active": 11,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 250832219,
+   "xact_rollback": 2165,
+   "blks_read": 40111158,
+   "blks_hit": 2429352810,
+   "tup_ret": 1360803977,
+   "tup_ins": 85698185,
+   "tup_upd": 7469444,
+   "tup_del": 882299,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 267809416,
+   "hits": 128573983,
+   "miss": 1348285,
+   "exp": 7411008,
+   "mem": 3195923752,
+   "clients": 2,
+   "keys": 4766979
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680638,
+  "pg": {
+   "backends": 33,
+   "active": 18,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 251112916,
+   "xact_rollback": 2165,
+   "blks_read": 40128947,
+   "blks_hit": 2432500274,
+   "tup_ret": 1361551494,
+   "tup_ins": 85818786,
+   "tup_upd": 7480316,
+   "tup_del": 882299,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 268060715,
+   "hits": 128696872,
+   "miss": 1348305,
+   "exp": 7415441,
+   "mem": 3200195512,
+   "clients": 2,
+   "keys": 4773515
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680648,
+  "pg": {
+   "backends": 34,
+   "active": 14,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 251391748,
+   "xact_rollback": 2165,
+   "blks_read": 40146330,
+   "blks_hit": 2435645975,
+   "tup_ret": 1362295190,
+   "tup_ins": 85938924,
+   "tup_upd": 7491385,
+   "tup_del": 882299,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 268311052,
+   "hits": 128819268,
+   "miss": 1348325,
+   "exp": 7419791,
+   "mem": 3204549080,
+   "clients": 2,
+   "keys": 4780180
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680658,
+  "pg": {
+   "backends": 34,
+   "active": 17,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 251597889,
+   "xact_rollback": 2165,
+   "blks_read": 40159494,
+   "blks_hit": 2437979505,
+   "tup_ret": 1362850159,
+   "tup_ins": 86028034,
+   "tup_upd": 7499489,
+   "tup_del": 882555,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 268494135,
+   "hits": 128908796,
+   "miss": 1348345,
+   "exp": 7424738,
+   "mem": 3207098384,
+   "clients": 2,
+   "keys": 4783222
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680668,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 251861099,
+   "xact_rollback": 2165,
+   "blks_read": 40338821,
+   "blks_hit": 2441079853,
+   "tup_ret": 1363554723,
+   "tup_ins": 86140549,
+   "tup_upd": 7509805,
+   "tup_del": 882556,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 268729653,
+   "hits": 129023963,
+   "miss": 1348367,
+   "exp": 7429682,
+   "mem": 3210878088,
+   "clients": 2,
+   "keys": 4788555
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680678,
+  "pg": {
+   "backends": 33,
+   "active": 14,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 252134898,
+   "xact_rollback": 2165,
+   "blks_read": 40356098,
+   "blks_hit": 2444166458,
+   "tup_ret": 1364284717,
+   "tup_ins": 86258444,
+   "tup_upd": 7520602,
+   "tup_del": 882556,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 268974843,
+   "hits": 129143848,
+   "miss": 1348387,
+   "exp": 7435254,
+   "mem": 3214675704,
+   "clients": 2,
+   "keys": 4793752
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680688,
+  "pg": {
+   "backends": 33,
+   "active": 12,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 252407709,
+   "xact_rollback": 2165,
+   "blks_read": 40373008,
+   "blks_hit": 2447231556,
+   "tup_ret": 1365010824,
+   "tup_ins": 86375724,
+   "tup_upd": 7531219,
+   "tup_del": 882556,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 269220200,
+   "hits": 129263815,
+   "miss": 1348408,
+   "exp": 7439602,
+   "mem": 3218886728,
+   "clients": 2,
+   "keys": 4800177
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680698,
+  "pg": {
+   "backends": 33,
+   "active": 17,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 252683732,
+   "xact_rollback": 2165,
+   "blks_read": 40390134,
+   "blks_hit": 2450341015,
+   "tup_ret": 1365745901,
+   "tup_ins": 86494712,
+   "tup_upd": 7542078,
+   "tup_del": 882556,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 269467179,
+   "hits": 129384585,
+   "miss": 1348428,
+   "exp": 7443994,
+   "mem": 3223099512,
+   "clients": 2,
+   "keys": 4806592
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680708,
+  "pg": {
+   "backends": 34,
+   "active": 19,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 252959790,
+   "xact_rollback": 2165,
+   "blks_read": 40407211,
+   "blks_hit": 2453454089,
+   "tup_ret": 1366482342,
+   "tup_ins": 86613880,
+   "tup_upd": 7552904,
+   "tup_del": 882556,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 269711115,
+   "hits": 129503884,
+   "miss": 1348448,
+   "exp": 7448553,
+   "mem": 3227155288,
+   "clients": 2,
+   "keys": 4812635
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680718,
+  "pg": {
+   "backends": 34,
+   "active": 10,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 253229346,
+   "xact_rollback": 2165,
+   "blks_read": 40424775,
+   "blks_hit": 2456505320,
+   "tup_ret": 1367204773,
+   "tup_ins": 86730275,
+   "tup_upd": 7563654,
+   "tup_del": 882812,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 269954026,
+   "hits": 129622665,
+   "miss": 1348468,
+   "exp": 7453573,
+   "mem": 3231075224,
+   "clients": 2,
+   "keys": 4818242
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680728,
+  "pg": {
+   "backends": 34,
+   "active": 10,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 253493310,
+   "xact_rollback": 2165,
+   "blks_read": 40441583,
+   "blks_hit": 2459462575,
+   "tup_ret": 1367909959,
+   "tup_ins": 86843288,
+   "tup_upd": 7573978,
+   "tup_del": 882812,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 270189948,
+   "hits": 129738036,
+   "miss": 1348490,
+   "exp": 7459057,
+   "mem": 3234660104,
+   "clients": 2,
+   "keys": 4823048
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680738,
+  "pg": {
+   "backends": 33,
+   "active": 8,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 253755305,
+   "xact_rollback": 2165,
+   "blks_read": 40868438,
+   "blks_hit": 2462540833,
+   "tup_ret": 1368619051,
+   "tup_ins": 86955828,
+   "tup_upd": 7584386,
+   "tup_del": 882813,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 270425093,
+   "hits": 129853023,
+   "miss": 1348510,
+   "exp": 7463748,
+   "mem": 3238488008,
+   "clients": 2,
+   "keys": 4828626
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680748,
+  "pg": {
+   "backends": 33,
+   "active": 18,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 254026404,
+   "xact_rollback": 2165,
+   "blks_read": 40897671,
+   "blks_hit": 2465650855,
+   "tup_ret": 1369344008,
+   "tup_ins": 87072649,
+   "tup_upd": 7595154,
+   "tup_del": 882813,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 270668715,
+   "hits": 129972149,
+   "miss": 1348531,
+   "exp": 7468001,
+   "mem": 3242668296,
+   "clients": 2,
+   "keys": 4835023
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680758,
+  "pg": {
+   "backends": 33,
+   "active": 22,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 254306743,
+   "xact_rollback": 2165,
+   "blks_read": 40922399,
+   "blks_hit": 2468833615,
+   "tup_ret": 1370090641,
+   "tup_ins": 87193425,
+   "tup_upd": 7606139,
+   "tup_del": 882813,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 270918328,
+   "hits": 130094215,
+   "miss": 1348551,
+   "exp": 7472278,
+   "mem": 3246983992,
+   "clients": 2,
+   "keys": 4841649
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680768,
+  "pg": {
+   "backends": 34,
+   "active": 13,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 254583729,
+   "xact_rollback": 2165,
+   "blks_read": 40940029,
+   "blks_hit": 2471955668,
+   "tup_ret": 1370829090,
+   "tup_ins": 87312714,
+   "tup_upd": 7617066,
+   "tup_del": 882813,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 271165473,
+   "hits": 130215056,
+   "miss": 1348571,
+   "exp": 7476555,
+   "mem": 3251258200,
+   "clients": 2,
+   "keys": 4848216
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680778,
+  "pg": {
+   "backends": 34,
+   "active": 17,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 254808612,
+   "xact_rollback": 2165,
+   "blks_read": 40954650,
+   "blks_hit": 2474495994,
+   "tup_ret": 1371428113,
+   "tup_ins": 87409794,
+   "tup_upd": 7625882,
+   "tup_del": 883069,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 271363853,
+   "hits": 130312053,
+   "miss": 1348591,
+   "exp": 7480958,
+   "mem": 3254372072,
+   "clients": 2,
+   "keys": 4852530
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680789,
+  "pg": {
+   "backends": 34,
+   "active": 11,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 255052857,
+   "xact_rollback": 2165,
+   "blks_read": 40969990,
+   "blks_hit": 2477245813,
+   "tup_ret": 1372078810,
+   "tup_ins": 87514734,
+   "tup_upd": 7635550,
+   "tup_del": 883069,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 271585753,
+   "hits": 130420523,
+   "miss": 1348613,
+   "exp": 7486171,
+   "mem": 3257804984,
+   "clients": 2,
+   "keys": 4857132
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680799,
+  "pg": {
+   "backends": 34,
+   "active": 16,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 255308586,
+   "xact_rollback": 2165,
+   "blks_read": 40989635,
+   "blks_hit": 2480138528,
+   "tup_ret": 1372767907,
+   "tup_ins": 87624655,
+   "tup_upd": 7645575,
+   "tup_del": 883069,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 271812983,
+   "hits": 130531657,
+   "miss": 1348633,
+   "exp": 7490602,
+   "mem": 3261521576,
+   "clients": 2,
+   "keys": 4862561
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680809,
+  "pg": {
+   "backends": 34,
+   "active": 13,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 255555280,
+   "xact_rollback": 2165,
+   "blks_read": 41018701,
+   "blks_hit": 2482939679,
+   "tup_ret": 1373427029,
+   "tup_ins": 87729502,
+   "tup_upd": 7655215,
+   "tup_del": 883069,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 272036066,
+   "hits": 130640718,
+   "miss": 1348654,
+   "exp": 7494569,
+   "mem": 3265369848,
+   "clients": 2,
+   "keys": 4868443
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680819,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 255822618,
+   "xact_rollback": 2165,
+   "blks_read": 41541375,
+   "blks_hit": 2486160097,
+   "tup_ret": 1374142799,
+   "tup_ins": 87844586,
+   "tup_upd": 7665739,
+   "tup_del": 883070,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 272278216,
+   "hits": 130759120,
+   "miss": 1348674,
+   "exp": 7498827,
+   "mem": 3269543320,
+   "clients": 2,
+   "keys": 4874804
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680829,
+  "pg": {
+   "backends": 34,
+   "active": 14,
+   "idle_in_tx": 3
+  },
+  "pg_db": {
+   "xact_commit": 256092586,
+   "xact_rollback": 2165,
+   "blks_read": 41557982,
+   "blks_hit": 2489206494,
+   "tup_ret": 1374863949,
+   "tup_ins": 87961513,
+   "tup_upd": 7676291,
+   "tup_del": 883070,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 272517303,
+   "hits": 130876060,
+   "miss": 1348694,
+   "exp": 7504094,
+   "mem": 3273230232,
+   "clients": 2,
+   "keys": 4879874
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680839,
+  "pg": {
+   "backends": 34,
+   "active": 19,
+   "idle_in_tx": 2
+  },
+  "pg_db": {
+   "xact_commit": 256350755,
+   "xact_rollback": 2165,
+   "blks_read": 41574928,
+   "blks_hit": 2492108834,
+   "tup_ret": 1375556697,
+   "tup_ins": 88072198,
+   "tup_upd": 7686430,
+   "tup_del": 883326,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 272750561,
+   "hits": 130990109,
+   "miss": 1348714,
+   "exp": 7508992,
+   "mem": 3276994552,
+   "clients": 2,
+   "keys": 4885223
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680849,
+  "pg": {
+   "backends": 33,
+   "active": 11,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 256617141,
+   "xact_rollback": 2165,
+   "blks_read": 41742531,
+   "blks_hit": 2495554411,
+   "tup_ret": 1376434585,
+   "tup_ins": 88186830,
+   "tup_upd": 7696907,
+   "tup_del": 883333,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 272988518,
+   "hits": 131106471,
+   "miss": 1348736,
+   "exp": 7514205,
+   "mem": 3280723400,
+   "clients": 2,
+   "keys": 4890398
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680859,
+  "pg": {
+   "backends": 33,
+   "active": 9,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 256888420,
+   "xact_rollback": 2165,
+   "blks_read": 41759468,
+   "blks_hit": 2498610611,
+   "tup_ret": 1377157693,
+   "tup_ins": 88303949,
+   "tup_upd": 7707550,
+   "tup_del": 883333,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 273230259,
+   "hits": 131224688,
+   "miss": 1348756,
+   "exp": 7519557,
+   "mem": 3284477736,
+   "clients": 2,
+   "keys": 4895583
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680869,
+  "pg": {
+   "backends": 33,
+   "active": 14,
+   "idle_in_tx": 1
+  },
+  "pg_db": {
+   "xact_commit": 257159665,
+   "xact_rollback": 2165,
+   "blks_read": 41776559,
+   "blks_hit": 2501671755,
+   "tup_ret": 1377880351,
+   "tup_ins": 88421024,
+   "tup_upd": 7718235,
+   "tup_del": 883333,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 273473852,
+   "hits": 131343795,
+   "miss": 1348777,
+   "exp": 7525389,
+   "mem": 3288159512,
+   "clients": 2,
+   "keys": 4900431
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680879,
+  "pg": {
+   "backends": 33,
+   "active": 16,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 257432521,
+   "xact_rollback": 2165,
+   "blks_read": 41793484,
+   "blks_hit": 2504739114,
+   "tup_ret": 1378606795,
+   "tup_ins": 88538562,
+   "tup_upd": 7728848,
+   "tup_del": 883333,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 273718043,
+   "hits": 131463204,
+   "miss": 1348797,
+   "exp": 7529302,
+   "mem": 3292465208,
+   "clients": 2,
+   "keys": 4907186
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680889,
+  "pg": {
+   "backends": 34,
+   "active": 15,
+   "idle_in_tx": 7
+  },
+  "pg_db": {
+   "xact_commit": 257705146,
+   "xact_rollback": 2165,
+   "blks_read": 41810488,
+   "blks_hit": 2507798540,
+   "tup_ret": 1379331293,
+   "tup_ins": 88655841,
+   "tup_upd": 7739428,
+   "tup_del": 883333,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 273960361,
+   "hits": 131581706,
+   "miss": 1348817,
+   "exp": 7533320,
+   "mem": 3296688728,
+   "clients": 2,
+   "keys": 4913737
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680899,
+  "pg": {
+   "backends": 34,
+   "active": 14,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 257965327,
+   "xact_rollback": 2165,
+   "blks_read": 41827457,
+   "blks_hit": 2510730555,
+   "tup_ret": 1380025682,
+   "tup_ins": 88767807,
+   "tup_upd": 7749678,
+   "tup_del": 883589,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 274196257,
+   "hits": 131697032,
+   "miss": 1348837,
+   "exp": 7538510,
+   "mem": 3300449016,
+   "clients": 2,
+   "keys": 4918965
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789680909,
+  "pg": {
+   "backends": 34,
+   "active": 2,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 258128906,
+   "xact_rollback": 2165,
+   "blks_read": 41837734,
+   "blks_hit": 2512569478,
+   "tup_ret": 1380461649,
+   "tup_ins": 88838113,
+   "tup_upd": 7756089,
+   "tup_del": 883589,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 274328233,
+   "hits": 131761536,
+   "miss": 1348867,
+   "exp": 7541195,
+   "mem": 3302630528,
+   "clients": 4,
+   "keys": 4922089
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ },
+ {
+  "ts": 1789681228,
+  "pg": {
+   "backends": 35,
+   "active": 3,
+   "idle_in_tx": 0
+  },
+  "pg_db": {
+   "xact_commit": 258137260,
+   "xact_rollback": 2165,
+   "blks_read": 41838188,
+   "blks_hit": 2512702172,
+   "tup_ret": 1380471866,
+   "tup_ins": 88846043,
+   "tup_upd": 7756089,
+   "tup_del": 884101,
+   "deadlocks": 381,
+   "temp_bytes": 0
+  },
+  "vk": {
+   "cmd": 274328310,
+   "hits": 131761552,
+   "miss": 1348890,
+   "exp": 7549777,
+   "mem": 3299739504,
+   "clients": 2,
+   "keys": 4913507
+  },
+  "app_err": "HTTP Error 404: Not Found"
+ }
+]

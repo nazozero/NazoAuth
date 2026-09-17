@@ -1,0 +1,156 @@
+{
+ "cap_authorization_code-c128": {
+  "app_cpu": 6.99,
+  "app_rss_mb": 131.0,
+  "pg_cpu": 6.18,
+  "pg_rss_mb": 4308.9,
+  "vk_cpu": 0.77,
+  "vk_rss_mb": 428.3,
+  "run_cpu": -4.19,
+  "run_rss_mb": 89.2,
+  "n": 40
+ },
+ "cap_authorization_code-c16": {
+  "app_cpu": 3.17,
+  "app_rss_mb": 127.2,
+  "pg_cpu": 3.07,
+  "pg_rss_mb": 4290.2,
+  "vk_cpu": 0.44,
+  "vk_rss_mb": 99.1,
+  "run_cpu": -0.68,
+  "run_rss_mb": 88.1,
+  "n": 40
+ },
+ "cap_authorization_code-c4": {
+  "app_cpu": 1.45,
+  "app_rss_mb": 122.7,
+  "pg_cpu": 1.41,
+  "pg_rss_mb": 4283.8,
+  "vk_cpu": 0.15,
+  "vk_rss_mb": 33.6,
+  "run_cpu": -1.21,
+  "run_rss_mb": 32.5,
+  "n": 41
+ },
+ "cap_client_credentials-c128": {
+  "app_cpu": 9.7,
+  "app_rss_mb": 122.8,
+  "pg_cpu": 7.48,
+  "pg_rss_mb": 4061.2,
+  "vk_cpu": 0.12,
+  "vk_rss_mb": 11.2,
+  "run_cpu": 2.26,
+  "run_rss_mb": 372.6,
+  "n": 23
+ },
+ "cap_native_sso_fresh-c4": {
+  "app_cpu": 1.97,
+  "app_rss_mb": 131.3,
+  "pg_cpu": 1.51,
+  "pg_rss_mb": 4352.4,
+  "vk_cpu": 0.08,
+  "vk_rss_mb": 438.6,
+  "run_cpu": -9.65,
+  "run_rss_mb": 88.6,
+  "n": 40
+ },
+ "cap_refresh_token-c128": {
+  "app_cpu": 9.02,
+  "app_rss_mb": 122.7,
+  "pg_cpu": 8.99,
+  "pg_rss_mb": 4410.3,
+  "vk_cpu": 0.08,
+  "vk_rss_mb": 11.9,
+  "run_cpu": 0.1,
+  "run_rss_mb": 382.8,
+  "n": 40
+ },
+ "cap_refresh_token-c32": {
+  "app_cpu": 8.67,
+  "app_rss_mb": 122.8,
+  "pg_cpu": 8.87,
+  "pg_rss_mb": 4143.0,
+  "vk_cpu": 0.07,
+  "vk_rss_mb": 11.5,
+  "run_cpu": -0.38,
+  "run_rss_mb": 21.9,
+  "n": 39
+ },
+ "cap_refresh_token-c64": {
+  "app_cpu": 9.73,
+  "app_rss_mb": 122.8,
+  "pg_cpu": 9.63,
+  "pg_rss_mb": 4378.5,
+  "vk_cpu": 0.08,
+  "vk_rss_mb": 11.5,
+  "run_cpu": 0.17,
+  "run_rss_mb": 245.4,
+  "n": 39
+ },
+ "cap_refresh_token-c8": {
+  "app_cpu": 3.82,
+  "app_rss_mb": 122.7,
+  "pg_cpu": 3.7,
+  "pg_rss_mb": 4093.1,
+  "vk_cpu": 0.04,
+  "vk_rss_mb": 11.4,
+  "run_cpu": -1.61,
+  "run_rss_mb": 91.2,
+  "n": 40
+ },
+ "cap_token_exchange-c128": {
+  "app_cpu": 9.61,
+  "app_rss_mb": 131.2,
+  "pg_cpu": 7.3,
+  "pg_rss_mb": 4445.9,
+  "vk_cpu": 0.12,
+  "vk_rss_mb": 374.5,
+  "run_cpu": -1.9,
+  "run_rss_mb": 0.0,
+  "n": 40
+ },
+ "cap_userinfo_pairwise-c128": {
+  "app_cpu": 12.77,
+  "app_rss_mb": 131.2,
+  "pg_cpu": 8.56,
+  "pg_rss_mb": 4349.8,
+  "vk_cpu": 0.0,
+  "vk_rss_mb": 331.6,
+  "run_cpu": -9.23,
+  "run_rss_mb": 88.6,
+  "n": 39
+ },
+ "cap_userinfo_pairwise-c32": {
+  "app_cpu": 10.01,
+  "app_rss_mb": 131.2,
+  "pg_cpu": 7.3,
+  "pg_rss_mb": 4346.5,
+  "vk_cpu": 0.0,
+  "vk_rss_mb": 331.4,
+  "run_cpu": -2.14,
+  "run_rss_mb": 89.7,
+  "n": 40
+ },
+ "cap_userinfo_pairwise-c64": {
+  "app_cpu": 13.03,
+  "app_rss_mb": 131.2,
+  "pg_cpu": 8.58,
+  "pg_rss_mb": 4348.6,
+  "vk_cpu": 0.0,
+  "vk_rss_mb": 331.5,
+  "run_cpu": -7.66,
+  "run_rss_mb": 0.0,
+  "n": 40
+ },
+ "cap_userinfo_pairwise-c8": {
+  "app_cpu": 4.01,
+  "app_rss_mb": 131.3,
+  "pg_cpu": 3.07,
+  "pg_rss_mb": 4343.0,
+  "vk_cpu": 0.02,
+  "vk_rss_mb": 331.3,
+  "run_cpu": -1.89,
+  "run_rss_mb": 88.2,
+  "n": 40
+ }
+}

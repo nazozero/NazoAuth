@@ -1,0 +1,1082 @@
+[
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/health",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: public endpoint"
+ },
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/live",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: public endpoint"
+ },
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/startup",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: public endpoint"
+ },
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/jwks.json",
+  "status": 200,
+  "note": "",
+  "classification": "load: metadata_jwks"
+ },
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/.well-known/openid-configuration",
+  "status": 200,
+  "note": "",
+  "classification": "load: metadata_jwks"
+ },
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/.well-known/oauth-authorization-server",
+  "status": 200,
+  "note": "",
+  "classification": "load: metadata_jwks (same surface)"
+ },
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/.well-known/oauth-protected-resource",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: public endpoint"
+ },
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/.well-known/mdoc/d69bc3d1-d345-4880-9247-982dcfff6af9.crl",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/.well-known/openid-credential-issuer",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "discovery",
+  "method": "POST",
+  "path": "/.well-known/nazoauth-control",
+  "status": 400,
+  "note": "control-tenant only",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "discovery",
+  "method": "GET",
+  "path": "/__perf/metrics",
+  "status": 200,
+  "note": "control-tenant only",
+  "classification": "smoke only: public endpoint"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/authorize",
+  "status": 400,
+  "note": "",
+  "classification": "load: cap_authorization_code + cold-login steps"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/authorize",
+  "status": 400,
+  "note": "",
+  "classification": "load: cap_authorization_code + cold-login steps"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/authorize/client-presentation",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/authorize/consent",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/authorize/decision",
+  "status": 415,
+  "note": "",
+  "classification": "load: cap_authorization_code steps"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/par",
+  "status": 400,
+  "note": "",
+  "classification": "load: cap_authorization_code/fapi2/cold-login steps"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/bc-authorize",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/ciba/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": "redirect",
+  "note": "302->ciba UI page",
+  "classification": "smoke only: browser UI redirect"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/device_authorization",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/device",
+  "status": "redirect",
+  "note": "302->device UI page",
+  "classification": "smoke only: browser UI redirect"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/device/verification",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: public endpoint"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/device/decision",
+  "status": 415,
+  "note": "",
+  "classification": "smoke only: registered, requires specific content-type"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/token",
+  "status": 400,
+  "note": "",
+  "classification": "load: cc/refresh/authcode/exchange/native-sso/mTLS/fapi2 via cap_*+ladder"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/logout",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: session-terminating, low-frequency"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/logout",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: session-terminating, low-frequency"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/check_session",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: iframe HTML"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/check_session/status",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: session poll"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/revoke",
+  "status": 400,
+  "note": "",
+  "classification": "load: revoke_refresh_token"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/introspect",
+  "status": 400,
+  "note": "",
+  "classification": "load: introspect_opaque_refresh_token"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/fapi/resource",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: needs DPoP-bound AT per call; covered via fapi2 token path"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/fapi/resource",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: needs DPoP-bound AT per call; covered via fapi2 token path"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/userinfo",
+  "status": 401,
+  "note": "",
+  "classification": "load: cap_userinfo_pairwise"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/userinfo",
+  "status": 401,
+  "note": "",
+  "classification": "load: cap_userinfo_pairwise"
+ },
+ {
+  "group": "oauth",
+  "method": "POST",
+  "path": "/register",
+  "status": 404,
+  "note": "DCR",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "oauth",
+  "method": "GET",
+  "path": "/register/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "oauth",
+  "method": "PUT",
+  "path": "/register/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "oauth",
+  "method": "DELETE",
+  "path": "/register/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "scim",
+  "method": "GET",
+  "path": "/scim/v2/ServiceProviderConfig",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "scim",
+  "method": "GET",
+  "path": "/scim/v2/Schemas",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "scim",
+  "method": "GET",
+  "path": "/scim/v2/ResourceTypes",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "scim",
+  "method": "POST",
+  "path": "/scim/v2/SecurityEvents",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "scim",
+  "method": "GET",
+  "path": "/scim/v2/Users",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "scim",
+  "method": "POST",
+  "path": "/scim/v2/Users",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "scim",
+  "method": "GET",
+  "path": "/scim/v2/Users/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "scim",
+  "method": "PUT",
+  "path": "/scim/v2/Users/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "scim",
+  "method": "PATCH",
+  "path": "/scim/v2/Users/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "scim",
+  "method": "DELETE",
+  "path": "/scim/v2/Users/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/captcha-config",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: public endpoint"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/send-code",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/register",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/login",
+  "status": 415,
+  "note": "",
+  "classification": "load: oidc_cold_login_refresh (Argon2 lane)"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/federation/providers",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: public endpoint"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/federation/saml/acs",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/federation/d69bc3d1-d345-4880-9247-982dcfff6af9/start",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/federation/d69bc3d1-d345-4880-9247-982dcfff6af9/callback",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/passkey/begin",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/passkey/finish",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/mfa/verify",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/csrf",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/me",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "PATCH",
+  "path": "/auth/me",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/me/passkeys",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/passkeys/registration/begin",
+  "status": 401,
+  "note": "corrected path",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/passkeys/registration/finish",
+  "status": 400,
+  "note": "corrected path",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "DELETE",
+  "path": "/auth/me/passkeys/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/mfa/totp/begin",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/mfa/totp/confirm",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/mfa/step-up",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/mfa/backup-codes/regenerate",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/mfa/disable",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/avatar",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/me/avatar",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "DELETE",
+  "path": "/auth/me/avatar",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/me/avatar/uploads",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/avatar/uploads",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/avatar/uploads/d69bc3d1-d345-4880-9247-982dcfff6af9/complete",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/me/applications",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/me/federation/links",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "DELETE",
+  "path": "/auth/me/federation/links/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/me/access-requests",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/access-requests",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/me/mtls-trust-requests",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/mtls-trust-requests",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/me/access-delivery",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "GET",
+  "path": "/auth/ciba/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 401,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/ciba/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "auth",
+  "method": "POST",
+  "path": "/auth/logout",
+  "status": 200,
+  "note": "",
+  "classification": "smoke only: public endpoint"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/users",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/users",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "PATCH",
+  "path": "/admin/users/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "PATCH",
+  "path": "/admin/tenants/d69bc3d1-d345-4880-9247-982dcfff6af9/users/d69bc3d1-d345-4880-9247-982dcfff6af9/admin",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/clients",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/clients",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/clients/templates",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/clients/x",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "PATCH",
+  "path": "/admin/clients/x",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/federation/providers",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/grants",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/grants/revoke",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/access-requests",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/access-requests/d69bc3d1-d345-4880-9247-982dcfff6af9/approve",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/access-requests/d69bc3d1-d345-4880-9247-982dcfff6af9/reject",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/mtls-trust-requests",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/mtls-trust-anchors.pem",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/mtls-trust-requests/d69bc3d1-d345-4880-9247-982dcfff6af9/approve",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/mtls-trust-requests/d69bc3d1-d345-4880-9247-982dcfff6af9/reject",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/mtls-trust-requests/d69bc3d1-d345-4880-9247-982dcfff6af9/revoke",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/runtime-modules",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/runtime-modules/events",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "PATCH",
+  "path": "/admin/runtime-modules/x",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/controller-registry/slots",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/controller-registry/slots/rotate",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/controller-registry/slots/revoke",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/controller-registry/approvals",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/controller-registry/recovery-root",
+  "status": 403,
+  "note": "",
+  "classification": "smoke only: auth/admin-gated"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/controller-registry/recovery-root/approvals",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "POST",
+  "path": "/admin/controller-registry/recovery-root/rotate",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "admin",
+  "method": "GET",
+  "path": "/admin/openid4vci/credential-datasets/d69bc3d1-d345-4880-9247-982dcfff6af9/cfg",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "admin",
+  "method": "PUT",
+  "path": "/admin/openid4vci/credential-datasets/d69bc3d1-d345-4880-9247-982dcfff6af9/cfg",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "admin",
+  "method": "DELETE",
+  "path": "/admin/openid4vci/credential-datasets/d69bc3d1-d345-4880-9247-982dcfff6af9/cfg",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "recovery",
+  "method": "POST",
+  "path": "/controller-recovery/challenges",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "recovery",
+  "method": "POST",
+  "path": "/controller-recovery/recover",
+  "status": 400,
+  "note": "",
+  "classification": "smoke only: registered, rejected empty/invalid payload"
+ },
+ {
+  "group": "openid4vc",
+  "method": "POST",
+  "path": "/openid4vci/offers",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "GET",
+  "path": "/openid4vci/offers/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "POST",
+  "path": "/openid4vci/nonce",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "POST",
+  "path": "/openid4vci/credential",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "POST",
+  "path": "/openid4vci/deferred_credential",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "POST",
+  "path": "/openid4vci/notification",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "GET",
+  "path": "/openid4vp/complete/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "POST",
+  "path": "/openid4vp/presentations",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "GET",
+  "path": "/openid4vp/request/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "POST",
+  "path": "/openid4vp/request/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "POST",
+  "path": "/openid4vp/response/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ },
+ {
+  "group": "openid4vc",
+  "method": "GET",
+  "path": "/openid4vp/result/d69bc3d1-d345-4880-9247-982dcfff6af9",
+  "status": 404,
+  "note": "",
+  "classification": "NOT LOAD TESTED: 404 in this deployment (module/feature gated or resource-missing)"
+ }
+]

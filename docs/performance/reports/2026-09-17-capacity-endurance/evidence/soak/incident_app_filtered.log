@@ -1,0 +1,38 @@
+[2m2026-09-17T21:35:08.941234Z[0m [33m WARN[0m [2mnazo_oauth_server::token::authorization_code[0m[2m:[0m failed to atomically consume authorization code [3merror[0m[2m=[0mUnavailable
+[2m2026-09-17T21:35:08.953901Z[0m [33m WARN[0m [2mnazo_oauth_server::authorization::jar[0m[2m:[0m failed to store request object jti [3mdependency[0m[2m=[0mUnavailable
+[2m2026-09-17T21:35:08.969344Z[0m [33m WARN[0m [2mnazoauth::http::authorization::par[0m[2m:[0m PAR request rejected http_status=503 oauth_error=server_error
+[2m2026-09-17T21:35:08.973969Z[0m [33m WARN[0m [2mnazo_oauth_server::authorization::jar[0m[2m:[0m failed to store request object jti [3mdependency[0m[2m=[0mUnavailable
+[2m2026-09-17T21:35:08.974058Z[0m [33m WARN[0m [2mnazoauth::http::authorization::par[0m[2m:[0m PAR request rejected http_status=503 oauth_error=server_error
+[2m2026-09-17T21:35:08.931972Z[0m [33m WARN[0m [2mnazo_oauth_server::authorization::request::flow[0m[2m:[0m failed to resolve authorization request user [3merror[0m[2m=[0mrepository unavailable
+[2m2026-09-17T21:35:08.931966Z[0m [33m WARN[0m [2mnazo_oauth_server::token::authorization_code[0m[2m:[0m failed to read authorization code before dpop validation [3merror[0m[2m=[0mUnavailable
+[2m2026-09-17T21:35:08.936810Z[0m [33m WARN[0m [2mnazo_oauth_server::authorization::jar[0m[2m:[0m failed to store request object jti [3mdependency[0m[2m=[0mUnavailable
+[2m2026-09-17T21:35:09.007029Z[0m [33m WARN[0m [2mnazo_oauth_server::token::authorization_code[0m[2m:[0m failed to atomically consume authorization code [3merror[0m[2m=[0mUnavailable
+[2m2026-09-17T21:35:10.174408Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:35:12.962006Z[0m [33m WARN[0m [2mnazoauth::http::authorization::par[0m[2m:[0m PAR request rejected http_status=503 oauth_error=server_error
+[2m2026-09-17T21:35:13.535572Z[0m [33m WARN[0m [2mnazo_oauth_server::authorization::jar[0m[2m:[0m failed to store request object jti [3mdependency[0m[2m=[0mUnavailable
+[2m2026-09-17T21:35:15.944038Z[0m [33m WARN[0m [2mnazoauth::http::authorization::par[0m[2m:[0m PAR request rejected http_status=503 oauth_error=server_error
+[2m2026-09-17T21:35:15.958548Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:35:18.476807Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:35:25.656131Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:35:31.237929Z[0m [33m WARN[0m [2mnazoauth::bootstrap::startup::tenant_runtime[0m[2m:[0m tenant directory cache update failed after local publish [3merror[0m[2m=[0mtransient state is unavailable
+[2m2026-09-17T21:35:31.318279Z[0m [33m WARN[0m [2mnazo_oauth_server::token::dispatch::rate_limit[0m[2m:[0m token rate limit increment failed [3merror[0m[2m=[0mauthorization dependency unavailable
+[2m2026-09-17T21:35:31.237929Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:35:34.248108Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:35:43.321303Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:35:58.436256Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:36:11.482279Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:36:07.519240Z[0m [33m WARN[0m [2mnazoauth::bootstrap::startup::tenant_runtime[0m[2m:[0m tenant directory cache update failed after local publish [3merror[0m[2m=[0mtransient state is unavailable
+[2m2026-09-17T21:36:14.569657Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:36:16.692289Z[0m [33m WARN[0m [2mnazo_oauth_server::token::dispatch::rate_limit[0m[2m:[0m token rate limit increment failed [3merror[0m[2m=[0mauthorization dependency unavailable
+[2m2026-09-17T21:36:23.079637Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:36:31.732354Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:36:41.191476Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:36:45.695244Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:36:52.893256Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:36:58.164353Z[0m [33m WARN[0m [2mnazoauth::bootstrap::startup::tenant_runtime[0m[2m:[0m tenant directory cache update failed after local publish [3merror[0m[2m=[0mtransient state is unavailable
+[2m2026-09-17T21:37:01.210696Z[0m [33m WARN[0m [2mnazo_oauth_server::token::dispatch::rate_limit[0m[2m:[0m token rate limit increment failed [3merror[0m[2m=[0mauthorization dependency unavailable
+[2m2026-09-17T21:37:01.065808Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:37:17.693542Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:38:01.122855Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:38:58.348098Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries
+[2m2026-09-17T21:39:59.996156Z[0m [33m WARN[0m [2mnazoauth::jobs::ciba_ping[0m[2m:[0m CIBA ping delivery worker failed [3merror[0m[2m=[0mfailed to claim CIBA ping deliveries

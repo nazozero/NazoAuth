@@ -1,0 +1,61 @@
+{
+ "run_id": "20260917-3ff5030e-cnb-soak",
+ "deployment_id": "01a0b080-7bd7-7990-b1bd-8f4d94792a8d",
+ "started_utc": "2026-09-17T19:48:58Z",
+ "main_scenario": "cap_mixed",
+ "vus": 24,
+ "planned_duration_s": 9600,
+ "stable_window_s": 6370,
+ "completed_iterations_before_incident": 22482541,
+ "approx_ops_per_s": 3530,
+ "incident": {
+  "onset_utc": "2026-09-17T21:35:08Z",
+  "first_503_probe": "2026-09-17T21:35:24Z",
+  "recovery_probe": "2026-09-17T21:40:48Z",
+  "duration_s": 324,
+  "classification": "infrastructure dependency-stall; postgres and valkey marked Unavailable simultaneously; sampler psycopg.connect hung 21:35:09-21:40:28; one probe hung 206.7s",
+  "app_errors": [
+   "repository unavailable",
+   "transient state is unavailable",
+   "failed to store request object jti",
+   "PAR 503",
+   "failed to claim CIBA ping deliveries"
+  ],
+  "post_recovery": "app healthy, probe 200/6-8ms; post-incident cap_mixed c8 rerun: 2208 ops/s 0 errors"
+ },
+ "runner_exit_utc": "2026-09-17T21:40:24Z",
+ "probe": {
+  "samples": 214,
+  "healthy_ms_range": [
+   5.0,
+   8.8
+  ],
+  "incident_rows": [
+   {
+    "t": "21:35:24",
+    "ms": 7587.9,
+    "status": 503
+   },
+   {
+    "t": "21:36:02",
+    "ms": 15144.3,
+    "status": -1
+   },
+   {
+    "t": "21:36:51",
+    "ms": 206706.0,
+    "status": -1
+   }
+  ]
+ },
+ "app_rss_kb": {
+  "min": 120192,
+  "max": 138612,
+  "start": 138516,
+  "end": 126216
+ },
+ "runner_rss_kb_max": 95736084,
+ "pg_deadlocks": 381,
+ "pg_tup_ins": 88900000,
+ "notes": "sidecars (argon2 c=6, metadata, fapi2 r=30) ran without preserved summaries; pg checkpoints every 15s under write load; audit.persistence queue_full errors under sustained throughput"
+}

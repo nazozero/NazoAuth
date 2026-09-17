@@ -1,0 +1,20 @@
+soak start 2026-09-17T19:48:57Z DEPID=01a0b080-7bd7-7990-b1bd-8f4d94792a8d
+ Container soak-sampler Creating 
+ Container soak-sampler Created 
+a3aaf0c6a2abb23a86c7d5ed3ef38f4ec26d7858809ed7e91cf8bea604848a94
+sampler started 19:48:58
+main cap_mixed c=24 started pid=291989 19:48:58
+ Container soak-argon2 Creating 
+ Container soak-argon2 Created 
+ceb650723022b76378a98966108b050b9ea484b1076baa5869a7e6f032e4d962
+argon2 sidecar started 19:50:58
+ Container soak-meta Creating 
+ Container soak-meta Created 
+f2a40d3ce073986c8f2f72e3f3d0f263df63af9069ad2a907e5837e31185fccf
+meta sidecar started 19:50:58
+ Container soak-fapi Creating 
+ Container soak-fapi Created 
+1a4fc8641f9fc86a26520fe404e43d762e98c0de8691eab3b155d8104420fe38
+fapi sidecar started 19:50:59
+main finished 21:40:24
+SOAK_DONE 2026-09-17T21:40:37Z
