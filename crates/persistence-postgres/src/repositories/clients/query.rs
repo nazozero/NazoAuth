@@ -181,6 +181,34 @@ impl OAuthClientRepository {
             .collect())
     }
 
+    /// Loads the client row together with the salt derived from its stored
+    /// secret verifier so authentication needs no second metadata read. The
+    /// salt stays `None` for inactive clients and for verifiers that do not
+    /// use the versioned salted format.
+    pub async fn authentication_snapshot(
+        &self,
+        tenant_id: Uuid,
+        client_id: &str,
+    ) -> Result<Option<(OAuthClient, Option<String>)>, RepositoryError> {
+        let mut connection = self.connection().await?;
+        oauth_clients::table
+            .filter(oauth_clients::tenant_id.eq(tenant_id))
+            .filter(oauth_clients::client_id.eq(client_id))
+            .select((
+                OAuthClientRecord::as_select(),
+                diesel::dsl::sql::<diesel::sql_types::Nullable<diesel::sql_types::Text>>(
+                    "CASE WHEN is_active AND client_secret_hash LIKE 'client-secret-v1:%:%' \
+                     THEN split_part(client_secret_hash, ':', 2) END",
+                ),
+            ))
+            .first::<(OAuthClientRecord, Option<String>)>(&mut connection)
+            .await
+            .optional()
+            .map_err(map_error)?
+            .map(|(record, secret_salt)| record.into_domain().map(|client| (client, secret_salt)))
+            .transpose()
+    }
+
     /// Returns only the non-secret salt needed to derive a candidate digest.
     pub async fn client_secret_salt(
         &self,

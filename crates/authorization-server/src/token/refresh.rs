@@ -342,6 +342,7 @@ pub async fn token_refresh_with_service(
         TokenIssuanceMode::Fresh,
         TokenIssue {
             user_id: token.user_id,
+            prepared_subject: None,
             subject: token.subject,
             scopes,
             authorization_details: token.authorization_details,

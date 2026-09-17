@@ -195,11 +195,24 @@ pub enum AuthorizationRateDimension {
     TokenManagement,
 }
 
+/// Client metadata together with the salt derived from its stored secret
+/// verifier. Authentication loads both in one read; `secret_salt` is absent
+/// when the client has no usable secret verifier or is inactive.
+#[derive(Clone, Debug)]
+pub struct ClientAuthenticationSnapshot {
+    pub client: OAuthClient,
+    pub secret_salt: Option<String>,
+}
+
 pub trait AuthorizationRepositoryPort: Send + Sync {
     fn client_by_id<'a>(
         &'a self,
         client_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<OAuthClient>>;
+    fn client_authentication_snapshot<'a>(
+        &'a self,
+        client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<ClientAuthenticationSnapshot>>;
     fn mtls_trust_anchor_bundle(&self, client_id: Uuid) -> AuthorizationFuture<'_, String>;
     fn grant<'a>(
         &'a self,
@@ -207,8 +220,6 @@ pub trait AuthorizationRepositoryPort: Send + Sync {
         client_id: Uuid,
     ) -> AuthorizationFuture<'a, Option<StoredAuthorizationGrant>>;
     fn upsert_grant<'a>(&'a self, write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()>;
-    fn client_secret_salt<'a>(&'a self, client_id: Uuid)
-    -> AuthorizationFuture<'a, Option<String>>;
     fn client_secret_digest_matches<'a>(
         &'a self,
         client_id: Uuid,
@@ -528,11 +539,13 @@ where
         self.repository.client_by_id(client_id).await
     }
 
-    pub async fn client_secret_salt(
+    pub async fn client_authentication_snapshot(
         &self,
-        client_id: Uuid,
-    ) -> Result<Option<String>, AuthorizationPortError> {
-        self.repository.client_secret_salt(client_id).await
+        client_id: &str,
+    ) -> Result<Option<ClientAuthenticationSnapshot>, AuthorizationPortError> {
+        self.repository
+            .client_authentication_snapshot(client_id)
+            .await
     }
 
     pub async fn mtls_trust_anchor_bundle(

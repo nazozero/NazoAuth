@@ -127,6 +127,19 @@ pub trait CredentialStorePort: Send + Sync {
         access: &'a CredentialAccess,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
 
+    /// Persist a pre-authorized access grant. When `registered_client_id` is
+    /// present the implementation must re-verify that registered client is
+    /// still active under a `FOR SHARE` lock in the same transaction as the
+    /// grant write, so a client deactivation cannot slip between the earlier
+    /// authentication check and the grant becoming usable. Anonymous grants
+    /// carry no registered client and skip the lock entirely.
+    fn persist_pre_authorized_access<'a>(
+        &'a self,
+        token_hash: &'a str,
+        access: &'a CredentialAccess,
+        registered_client_id: Option<&'a str>,
+    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>>;
+
     fn offer<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -309,4 +322,6 @@ pub enum CredentialStoreError {
     Unavailable,
     #[error("credential store rejected an invalid transition")]
     InvalidTransition,
+    #[error("credential client is inactive")]
+    ClientInactive,
 }

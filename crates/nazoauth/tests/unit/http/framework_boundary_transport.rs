@@ -1389,13 +1389,26 @@ mod real_userinfo_contract {
             self.calls.lock().unwrap().push("subject");
             self.inner.active_subject_claims(tenant, user)
         }
-        fn active_subject_claims_by_access_token<'a>(
+        fn userinfo_snapshot<'a>(
             &'a self,
             tenant: Uuid,
-            jti: &'a str,
-        ) -> TokenFuture<'a, Option<SubjectClaims>> {
+            subject: UserinfoSubjectRef<'a>,
+            client: &'a str,
+        ) -> TokenFuture<'a, Option<UserinfoSnapshot>> {
+            // The combined read resolves subject and client in one statement;
+            // record both observations so the endpoint-level call-order
+            // assertions keep their shape.
             self.calls.lock().unwrap().push("subject");
-            TokenRepositoryPort::active_subject_claims_by_access_token(&self.inner, tenant, jti)
+            self.calls.lock().unwrap().push("client");
+            TokenRepositoryPort::userinfo_snapshot(&self.inner, tenant, subject, client)
+        }
+        fn active_subject_id<'a>(
+            &'a self,
+            tenant: Uuid,
+            user: Uuid,
+        ) -> TokenFuture<'a, Option<Uuid>> {
+            self.calls.lock().unwrap().push("subject");
+            TokenRepositoryPort::active_subject_id(&self.inner, tenant, user)
         }
         fn active_subject_id_by_access_token<'a>(
             &'a self,
@@ -1404,14 +1417,6 @@ mod real_userinfo_contract {
         ) -> TokenFuture<'a, Option<Uuid>> {
             self.calls.lock().unwrap().push("subject");
             TokenRepositoryPort::active_subject_id_by_access_token(&self.inner, tenant, jti)
-        }
-        fn client_by_protocol_id<'a>(
-            &'a self,
-            tenant: Uuid,
-            client: &'a str,
-        ) -> TokenFuture<'a, Option<OAuthClient>> {
-            self.calls.lock().unwrap().push("client");
-            self.inner.client_by_protocol_id(tenant, client)
         }
         fn commit_token_issuance<'a>(
             &'a self,
@@ -2740,6 +2745,7 @@ mod ciba_device_contract {
         let auth_time = Utc::now().timestamp();
         let issue = || nazo_oauth_server::domain::oauth::TokenIssue {
             user_id: Some(user),
+            prepared_subject: None,
             subject: user.to_string(),
             scopes: vec!["openid".into()],
             authorization_details: json!([]),
@@ -3496,7 +3502,8 @@ mod mtls_real_boundary {
                 &facts,
                 &mut client,
                 &credentials,
-                context
+                context,
+                None
             )
             .await,
             Err(TokenManagementClientAuthError::InvalidClient)
@@ -3530,7 +3537,8 @@ mod mtls_real_boundary {
                 &facts,
                 &mut client,
                 &credentials,
-                context
+                context,
+                None
             )
             .await
             .is_ok()
@@ -3543,7 +3551,8 @@ mod mtls_real_boundary {
                 &absent_facts,
                 &mut client,
                 &credentials,
-                context
+                context,
+                None
             )
             .await,
             Err(TokenManagementClientAuthError::InvalidClient)
@@ -3580,7 +3589,8 @@ mod mtls_real_boundary {
                     &facts,
                     &mut client,
                     &credentials,
-                    context
+                    context,
+                    None
                 )
                 .await,
                 Err(TokenManagementClientAuthError::InvalidClient)

@@ -17,6 +17,10 @@ use crate::{
     schema::{access_token_revocations, oauth_tokens, recovery_invalidations},
 };
 
+use super::access_token_revocation::{
+    NewAccessTokenRevocation, access_token_revocation_deadline, upsert_access_token_revocations,
+};
+
 const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 60;
 
 #[derive(Clone)]
@@ -193,17 +197,17 @@ impl TokenRepository {
         user_id: Uuid,
     ) -> Result<bool, RepositoryError> {
         let mut connection = self.connection().await?;
-        oauth_tokens::table
-            .filter(oauth_tokens::tenant_id.eq(tenant_id))
-            .filter(oauth_tokens::token_family_id.eq(family_id))
-            .filter(oauth_tokens::user_id.eq(user_id))
-            .filter(oauth_tokens::revoked_at.is_null())
-            .filter(oauth_tokens::expires_at.gt(Utc::now()))
-            .select(diesel::dsl::count_star())
-            .first::<i64>(&mut connection)
-            .await
-            .map(|count| count > 0)
-            .map_err(map_error)
+        diesel::select(diesel::dsl::exists(
+            oauth_tokens::table
+                .filter(oauth_tokens::tenant_id.eq(tenant_id))
+                .filter(oauth_tokens::token_family_id.eq(family_id))
+                .filter(oauth_tokens::user_id.eq(user_id))
+                .filter(oauth_tokens::revoked_at.is_null())
+                .filter(oauth_tokens::expires_at.gt(Utc::now())),
+        ))
+        .get_result::<bool>(&mut connection)
+        .await
+        .map_err(map_error)
     }
 
     pub async fn access_token_revoked(
@@ -212,14 +216,14 @@ impl TokenRepository {
         jti: &str,
     ) -> Result<bool, RepositoryError> {
         let mut connection = self.connection().await?;
-        access_token_revocations::table
-            .filter(access_token_revocations::tenant_id.eq(tenant_id))
-            .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(jti)))
-            .select(diesel::dsl::count_star())
-            .first::<i64>(&mut connection)
-            .await
-            .map(|count| count > 0)
-            .map_err(map_error)
+        diesel::select(diesel::dsl::exists(
+            access_token_revocations::table
+                .filter(access_token_revocations::tenant_id.eq(tenant_id))
+                .filter(access_token_revocations::access_token_jti_blake3.eq(blake3_hex(jti))),
+        ))
+        .get_result::<bool>(&mut connection)
+        .await
+        .map_err(map_error)
     }
 
     /// Revokes a refresh-token family or records an access-token JTI in one transaction.
@@ -231,6 +235,12 @@ impl TokenRepository {
         raw_token: &str,
         access_token: Option<&nazo_auth::AccessTokenRevocation>,
     ) -> Result<usize, RepositoryError> {
+        // The revocation fact covers the token's full verifier acceptance
+        // window; plain input conversion happens before a connection or
+        // transaction is acquired.
+        let revocation_deadline = access_token
+            .map(|access_token| access_token_revocation_deadline(access_token.expires_at))
+            .transpose()?;
         let mut connection = self.connection().await?;
         connection
             .transaction::<usize, diesel::result::Error, _>(async |connection| {
@@ -255,23 +265,19 @@ impl TokenRepository {
                     .execute(connection)
                     .await;
                 }
-                if let Some(access_token) = access_token {
-                    diesel::insert_into(access_token_revocations::table)
-                        .values((
-                            access_token_revocations::access_token_jti_blake3
-                                .eq(blake3_hex(&access_token.jti)),
-                            access_token_revocations::tenant_id.eq(tenant_id),
-                            access_token_revocations::client_id.eq(client_id),
-                            access_token_revocations::revoked_at.eq(Utc::now()),
-                            access_token_revocations::expires_at.eq(access_token.expires_at),
-                        ))
-                        .on_conflict((
-                            access_token_revocations::tenant_id,
-                            access_token_revocations::access_token_jti_blake3,
-                        ))
-                        .do_nothing()
-                        .execute(connection)
-                        .await?;
+                if let (Some(access_token), Some(deadline)) = (access_token, revocation_deadline) {
+                    upsert_access_token_revocations(
+                        connection,
+                        &[NewAccessTokenRevocation {
+                            id: Uuid::now_v7(),
+                            access_token_jti_blake3: blake3_hex(&access_token.jti),
+                            client_id,
+                            tenant_id,
+                            revoked_at: Utc::now(),
+                            expires_at: deadline,
+                        }],
+                    )
+                    .await?;
                 }
                 Ok(0)
             })
@@ -363,23 +369,27 @@ async fn persist_refresh_token_inner(
     lock_refresh_grant_scope(connection, token.tenant_id, token.user_id, token.client_id).await?;
     lock_refresh_family(connection, token.family_id).await?;
     if let Some(rotated_from_id) = token.rotated_from_id {
-        let parent = load_family_token(
-            connection,
-            token.tenant_id,
-            token.family_id,
-            token.user_id,
-            token.client_id,
-            rotated_from_id,
-        )
-        .await?;
-        if !matches!(
-            parent.as_ref(),
-            Some(parent) if parent.oidc_auth_context == authentication_context
-        ) {
-            compromise_family(connection, token.tenant_id, token.family_id).await?;
-            return Ok(RefreshTokenPersistResult::RotationConflict);
-        }
+        // Lost-response recovery keeps its own reads: the parent context
+        // comparison, the original-token load and the in-lock successor check
+        // are independent safety points and must not be collapsed into the
+        // conditional update below.
         if let Some(retry) = token.lost_response_retry {
+            let parent = load_family_token(
+                connection,
+                token.tenant_id,
+                token.family_id,
+                token.user_id,
+                token.client_id,
+                rotated_from_id,
+            )
+            .await?;
+            if !matches!(
+                parent.as_ref(),
+                Some(parent) if parent.oidc_auth_context == authentication_context
+            ) {
+                compromise_family(connection, token.tenant_id, token.family_id).await?;
+                return Ok(RefreshTokenPersistResult::RotationConflict);
+            }
             let original = load_family_token(
                 connection,
                 token.tenant_id,
@@ -406,18 +416,25 @@ async fn persist_refresh_token_inner(
                 return Ok(RefreshTokenPersistResult::RotationConflict);
             }
         }
-        let rotated = diesel::update(
+        // Revoke the parent and return its unmodified authentication context
+        // in one statement. A context mismatch or a missing/already-revoked
+        // parent still compromises the whole family, matching the previous
+        // load-then-compare ordering's final state.
+        let rotated_context = diesel::update(
             oauth_tokens::table
                 .filter(oauth_tokens::tenant_id.eq(token.tenant_id))
                 .filter(oauth_tokens::token_family_id.eq(token.family_id))
+                .filter(oauth_tokens::user_id.is_not_distinct_from(token.user_id))
                 .filter(oauth_tokens::client_id.eq(token.client_id))
                 .filter(oauth_tokens::id.eq(rotated_from_id))
                 .filter(oauth_tokens::revoked_at.is_null()),
         )
         .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
-        .execute(connection)
-        .await?;
-        if rotated == 0 {
+        .returning(oauth_tokens::oidc_auth_context)
+        .get_result::<serde_json::Value>(connection)
+        .await
+        .optional()?;
+        if rotated_context.as_ref() != Some(&authentication_context) {
             compromise_family(connection, token.tenant_id, token.family_id).await?;
             return Ok(RefreshTokenPersistResult::RotationConflict);
         }
@@ -593,16 +610,10 @@ async fn lost_response_successor(
     if elapsed < Duration::zero() || elapsed > Duration::seconds(LOST_REFRESH_TOKEN_RETRY_SECONDS) {
         return Ok(None);
     }
-    let reuse_count = oauth_tokens::table
-        .filter(oauth_tokens::tenant_id.eq(token.tenant_id))
-        .filter(oauth_tokens::token_family_id.eq(token.token_family_id))
-        .filter(oauth_tokens::reuse_detected_at.is_not_null())
-        .select(diesel::dsl::count_star())
-        .first::<i64>(connection)
-        .await?;
-    if reuse_count != 0 {
-        return Ok(None);
-    }
+    // The family-compromise check rides on the successor read as a NOT EXISTS
+    // subquery against a separate alias; any compromised row in the family
+    // still rejects recovery while the successor predicates stay unchanged.
+    let compromised = diesel::alias!(oauth_tokens as compromised_tokens);
     let mut successors = oauth_tokens::table
         .filter(oauth_tokens::tenant_id.eq(token.tenant_id))
         .filter(oauth_tokens::token_family_id.eq(token.token_family_id))
@@ -616,6 +627,24 @@ async fn lost_response_successor(
         )
         .filter(oauth_tokens::revoked_at.is_null())
         .filter(oauth_tokens::expires_at.gt(now))
+        .filter(diesel::dsl::not(diesel::dsl::exists(
+            compromised
+                .filter(
+                    compromised
+                        .field(oauth_tokens::tenant_id)
+                        .eq(token.tenant_id),
+                )
+                .filter(
+                    compromised
+                        .field(oauth_tokens::token_family_id)
+                        .eq(token.token_family_id),
+                )
+                .filter(
+                    compromised
+                        .field(oauth_tokens::reuse_detected_at)
+                        .is_not_null(),
+                ),
+        )))
         .select(RefreshTokenRow::as_select())
         .limit(2)
         .load::<RefreshTokenRow>(connection)

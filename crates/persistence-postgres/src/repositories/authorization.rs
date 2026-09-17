@@ -4,12 +4,14 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
-use crate::{
-    DbPool, get_conn,
-    schema::{access_token_revocations, oauth_tokens},
-};
+use crate::{DbPool, get_conn, schema::oauth_tokens};
 
-use super::tokens::lock_refresh_family;
+use super::{
+    access_token_revocation::{
+        NewAccessTokenRevocation, access_token_revocation_deadline, upsert_access_token_revocations,
+    },
+    tokens::lock_refresh_family,
+};
 
 #[derive(Clone)]
 pub struct AuthorizationRepository {
@@ -30,6 +32,11 @@ impl AuthorizationRepository {
         access_token_expires_at: Option<DateTime<Utc>>,
         refresh_token_family_id: Option<Uuid>,
     ) -> Result<(), RepositoryError> {
+        // `access_token_expires_at` is the token's verified exp; the stored
+        // fact keeps covering it through the maximum verifier clock skew.
+        let revocation_deadline = access_token_expires_at
+            .map(access_token_revocation_deadline)
+            .transpose()?;
         let mut connection = get_conn(&self.pool)
             .await
             .map_err(|_| RepositoryError::Unavailable)?;
@@ -38,23 +45,19 @@ impl AuthorizationRepository {
                 if let Some(family_id) = refresh_token_family_id {
                     lock_refresh_family(connection, family_id).await?;
                 }
-                if let Some(access_token_expires_at) = access_token_expires_at {
-                    diesel::insert_into(access_token_revocations::table)
-                        .values((
-                            access_token_revocations::access_token_jti_blake3
-                                .eq(blake3_hex(access_token_jti)),
-                            access_token_revocations::tenant_id.eq(tenant_id),
-                            access_token_revocations::client_id.eq(client_id),
-                            access_token_revocations::revoked_at.eq(Utc::now()),
-                            access_token_revocations::expires_at.eq(access_token_expires_at),
-                        ))
-                        .on_conflict((
-                            access_token_revocations::tenant_id,
-                            access_token_revocations::access_token_jti_blake3,
-                        ))
-                        .do_nothing()
-                        .execute(connection)
-                        .await?;
+                if let Some(deadline) = revocation_deadline {
+                    upsert_access_token_revocations(
+                        connection,
+                        &[NewAccessTokenRevocation {
+                            id: Uuid::now_v7(),
+                            access_token_jti_blake3: blake3_hex(access_token_jti),
+                            client_id,
+                            tenant_id,
+                            revoked_at: Utc::now(),
+                            expires_at: deadline,
+                        }],
+                    )
+                    .await?;
                 }
                 if let Some(family_id) = refresh_token_family_id {
                     diesel::update(

@@ -1,10 +1,10 @@
 use argon2::{Argon2, PasswordHasher};
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
-    QueryableByName, sql_query,
+    OptionalExtension, QueryableByName, sql_query,
     sql_types::{BigInt, Binary, Text, Uuid as SqlUuid},
 };
-use diesel_async::RunQueryDsl;
+use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
 use nazo_digital_credentials::{CredentialFormat, CredentialQuery, DcqlQuery};
 use nazo_openid4vci::{
     AuthorizationCodeGrant, AuthorizationOfferPort, CredentialAccess, CredentialOfferGrants,
@@ -2671,4 +2671,1721 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
         .execute(&mut connection)
         .await
         .unwrap();
+}
+
+// ===========================================================================
+// DB-014 (VF), DB-012 (UP) and DB-009 (DF) matrix coverage.
+// ===========================================================================
+
+fn openid4vc_boundary_ids() -> (Uuid, Uuid, Uuid) {
+    (
+        Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap(),
+        Uuid::parse_str("00000000-0000-0000-0000-000000000002").unwrap(),
+        Uuid::parse_str("00000000-0000-0000-0000-000000000003").unwrap(),
+    )
+}
+
+fn openid4vc_access_fixture(
+    tenant_id: Uuid,
+    subject_id: Uuid,
+    client_id: &str,
+    expires_in: Duration,
+) -> CredentialAccess {
+    CredentialAccess {
+        token_id: Uuid::now_v7(),
+        tenant_id,
+        subject_id,
+        client_id: client_id.to_owned(),
+        configuration_ids: vec!["pid".to_owned()],
+        credential_identifiers: Vec::new(),
+        dpop_jkt: None,
+        expires_at: DateTime::from_timestamp_micros((Utc::now() + expires_in).timestamp_micros())
+            .expect("access expiry must fit the timestamp range"),
+    }
+}
+
+fn openid4vc_deferred_fixture(
+    access: &CredentialAccess,
+    tag: &str,
+    ready_in: Duration,
+    lifetime: Duration,
+) -> DeferredCredential {
+    let base = DateTime::from_timestamp_micros(Utc::now().timestamp_micros())
+        .expect("claim base must fit the timestamp range");
+    let ready_at = base + ready_in;
+    DeferredCredential {
+        id: Uuid::now_v7(),
+        transaction_hash: blake3::hash(format!("{tag}-{}", Uuid::now_v7()).as_bytes())
+            .to_hex()
+            .to_string(),
+        access: access.clone(),
+        configuration_id: "pid".to_owned(),
+        format: CredentialFormat::SdJwtVc,
+        holder_bindings: vec![serde_json::json!({"jwk":{"kid": format!("{tag}-holder")}})],
+        payload_ciphertext: format!("{tag}-payload").into_bytes(),
+        ready_at,
+        expires_at: ready_at + lifetime,
+    }
+}
+
+async fn insert_openid4vc_subject(
+    pool: &nazo_postgres::DbPool,
+    tenant_id: Uuid,
+    tag: &str,
+) -> Uuid {
+    let (_, realm_id, organization_id) = openid4vc_boundary_ids();
+    let subject_id = Uuid::now_v7();
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query(
+        "INSERT INTO users (id,tenant_id,realm_id,organization_id,username,email,password_hash) \
+         VALUES ($1,$2,$3,$4,$5,$6,'test')",
+    )
+    .bind::<SqlUuid, _>(subject_id)
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(realm_id)
+    .bind::<SqlUuid, _>(organization_id)
+    .bind::<Text, _>(format!("{tag}-{subject_id}"))
+    .bind::<Text, _>(format!("{tag}-{subject_id}@example.test"))
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    subject_id
+}
+
+/// Inserts an active OAuth client row under the shared test tenant and returns
+/// its database uuid; the `client_id` column remains the public protocol id
+/// that `persist_pre_authorized_access` re-verifies.
+async fn insert_openid4vc_client(pool: &nazo_postgres::DbPool, client_id: &str) -> Uuid {
+    let (tenant_id, realm_id, organization_id) = openid4vc_boundary_ids();
+    let id = Uuid::now_v7();
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query(
+        "INSERT INTO oauth_clients (\
+             id, tenant_id, realm_id, organization_id, client_id, client_name, client_type, \
+             redirect_uris, scopes, grant_types, token_endpoint_auth_method, security_policy) \
+         VALUES ($1,$2,$3,$4,$5,'OpenID4VC persist test','public',\
+             '[]'::jsonb,'[\"openid\"]'::jsonb,\
+             '[\"urn:ietf:params:oauth:grant-type:pre-authorized_code\"]'::jsonb,'none',$6)",
+    )
+    .bind::<SqlUuid, _>(id)
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<SqlUuid, _>(realm_id)
+    .bind::<SqlUuid, _>(organization_id)
+    .bind::<Text, _>(client_id)
+    .bind::<diesel::sql_types::Jsonb, _>(serde_json::json!({
+        "version": 1,
+        "assurance": "baseline",
+        "require_signed_authorization_request": false,
+        "require_signed_authorization_response": false,
+        "require_signed_introspection_response": false,
+        "session_management": false,
+        "allow_cross_device_flows": false,
+        "allow_confidential_oidc_without_pkce": false
+    }))
+    .execute(&mut connection)
+    .await
+    .expect("test oauth client should insert");
+    id
+}
+
+/// Removes the client plus its dependent revocation rows (deactivation writes
+/// `access_token_revocations` that FK back to the client) and the subject,
+/// whose delete cascades the access grants, deferred transactions and
+/// notification rows created by the test.
+async fn delete_openid4vc_subject_and_client(
+    pool: &nazo_postgres::DbPool,
+    subject_id: Uuid,
+    client_uuid: Option<Uuid>,
+) {
+    let mut connection = get_conn(pool).await.unwrap();
+    if let Some(client_uuid) = client_uuid {
+        sql_query("DELETE FROM access_token_revocations WHERE client_id = $1")
+            .bind::<SqlUuid, _>(client_uuid)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+        sql_query("DELETE FROM oauth_clients WHERE id = $1")
+            .bind::<SqlUuid, _>(client_uuid)
+            .execute(&mut connection)
+            .await
+            .unwrap();
+    }
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(subject_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[derive(QueryableByName)]
+struct PersistedAccessGrantRow {
+    #[diesel(sql_type = SqlUuid)]
+    token_id: Uuid,
+    #[diesel(sql_type = Text)]
+    token_hash: String,
+    #[diesel(sql_type = SqlUuid)]
+    tenant_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    subject_id: Uuid,
+    #[diesel(sql_type = Text)]
+    client_id: String,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    credential_configuration_ids: serde_json::Value,
+    #[diesel(sql_type = diesel::sql_types::Jsonb)]
+    credential_identifiers: serde_json::Value,
+    #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
+    dpop_jkt: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+    expires_at: DateTime<Utc>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
+    revoked_at: Option<DateTime<Utc>>,
+    #[diesel(sql_type = Text)]
+    xmin: String,
+}
+
+async fn persisted_access_grant(
+    pool: &nazo_postgres::DbPool,
+    token_hash: &str,
+) -> Option<PersistedAccessGrantRow> {
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query(
+        "SELECT token_id, token_hash, tenant_id, subject_id, client_id, \
+                credential_configuration_ids, credential_identifiers, dpop_jkt, \
+                expires_at, revoked_at, xmin::text AS xmin \
+         FROM openid4vci_access_grants WHERE token_hash = $1",
+    )
+    .bind::<Text, _>(token_hash)
+    .get_result::<PersistedAccessGrantRow>(&mut connection)
+    .await
+    .optional()
+    .unwrap()
+}
+
+fn assert_persisted_access_grant(
+    row: &PersistedAccessGrantRow,
+    token_hash: &str,
+    access: &CredentialAccess,
+) {
+    assert_eq!(row.token_id, access.token_id, "token_id must stay stable");
+    assert_eq!(row.token_hash, token_hash);
+    assert_eq!(
+        row.tenant_id, access.tenant_id,
+        "tenant_id must stay stable"
+    );
+    assert_eq!(
+        row.subject_id, access.subject_id,
+        "subject_id must stay stable"
+    );
+    assert_eq!(
+        row.client_id, access.client_id,
+        "client_id must stay stable"
+    );
+    assert_eq!(
+        row.credential_configuration_ids,
+        serde_json::json!(access.configuration_ids),
+        "credential_configuration_ids projection mismatch"
+    );
+    assert_eq!(
+        row.credential_identifiers,
+        serde_json::json!(access.credential_identifiers),
+        "credential_identifiers projection mismatch"
+    );
+    assert_eq!(row.dpop_jkt.as_deref(), access.dpop_jkt.as_deref());
+    assert_eq!(
+        row.expires_at.timestamp_micros(),
+        access.expires_at.timestamp_micros()
+    );
+}
+
+#[derive(QueryableByName)]
+struct DeferredLeaseRow {
+    #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
+    claim_id: Option<String>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
+    claim_expires_at: Option<DateTime<Utc>>,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
+    consumed_at: Option<DateTime<Utc>>,
+}
+
+async fn deferred_lease_row(pool: &nazo_postgres::DbPool, deferred_id: Uuid) -> DeferredLeaseRow {
+    let mut connection = get_conn(pool).await.unwrap();
+    sql_query(
+        "SELECT claim_id, claim_expires_at, consumed_at \
+         FROM openid4vci_deferred_transactions WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(deferred_id)
+    .get_result::<DeferredLeaseRow>(&mut connection)
+    .await
+    .unwrap()
+}
+
+#[derive(QueryableByName)]
+struct ClientActiveRow {
+    #[diesel(sql_type = diesel::sql_types::Bool)]
+    is_active: bool,
+}
+
+#[derive(QueryableByName)]
+struct TextValueRow {
+    #[diesel(sql_type = Text)]
+    value: String,
+}
+
+fn tagged_openid4vc_database_url(database_url: &str, application_name: &str) -> String {
+    let separator = if database_url.contains('?') { '&' } else { '?' };
+    format!("{database_url}{separator}application_name={application_name}")
+}
+
+async fn wait_for_openid4vc_lock_wait(connection: &mut AsyncPgConnection, application_name: &str) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    while std::time::Instant::now() < deadline {
+        let blocked = sql_query(
+            "SELECT COUNT(*)::bigint AS count \
+             FROM pg_stat_activity \
+             WHERE application_name = $1 AND wait_event_type = 'Lock'",
+        )
+        .bind::<Text, _>(application_name)
+        .get_result::<CountRow>(connection)
+        .await
+        .expect("blocked PostgreSQL activity should be observable");
+        if blocked.count > 0 {
+            return;
+        }
+        tokio::task::yield_now().await;
+    }
+    panic!("timed out waiting for lock wait from {application_name}");
+}
+
+async fn wait_for_openid4vc_lock_wait_or_task<T: std::fmt::Debug>(
+    connection: &mut AsyncPgConnection,
+    application_name: &str,
+    task: &mut tokio::task::JoinHandle<T>,
+) {
+    tokio::select! {
+        () = wait_for_openid4vc_lock_wait(connection, application_name) => {}
+        result = task => panic!(
+            "task ended before reaching a PostgreSQL lock wait from {application_name}: {result:?}"
+        ),
+    }
+}
+
+async fn wait_for_openid4vc_blocked_by_or_task<T: std::fmt::Debug>(
+    connection: &mut AsyncPgConnection,
+    waiter_application_name: &str,
+    blocker_application_name: &str,
+    task: &mut tokio::task::JoinHandle<T>,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    let wait = async {
+        while std::time::Instant::now() < deadline {
+            let blocked = sql_query(
+                "SELECT COUNT(*)::bigint AS count \
+                 FROM pg_stat_activity AS waiter \
+                 WHERE waiter.application_name = $1 \
+                   AND waiter.wait_event_type = 'Lock' \
+                   AND EXISTS ( \
+                       SELECT 1 FROM pg_stat_activity AS blocker \
+                       WHERE blocker.application_name = $2 \
+                         AND blocker.pid = ANY (pg_blocking_pids(waiter.pid)))",
+            )
+            .bind::<Text, _>(waiter_application_name)
+            .bind::<Text, _>(blocker_application_name)
+            .get_result::<CountRow>(connection)
+            .await
+            .expect("blocking PostgreSQL activity should be observable");
+            if blocked.count > 0 {
+                return;
+            }
+            tokio::task::yield_now().await;
+        }
+        panic!(
+            "timed out waiting for {waiter_application_name} to block on {blocker_application_name}"
+        );
+    };
+    tokio::select! {
+        () = wait => {}
+        result = task => panic!(
+            "task ended before {waiter_application_name} blocked on {blocker_application_name}: {result:?}"
+        ),
+    }
+}
+
+// VF-02: a registered client deactivated after the token request was
+// authenticated must fail the grant persistence with ClientInactive, and no
+// grant row may be written.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pre_authorized_persist_rejects_a_client_deactivated_after_authentication() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-vf02").await;
+    let client_id = format!("openid4vc-vf02-{}", Uuid::now_v7().simple());
+    let client_uuid = insert_openid4vc_client(&pool, &client_id).await;
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    let deactivated = connection
+        .transaction::<bool, diesel::result::Error, _>(async |connection| {
+            nazo_postgres::deactivate_client_on_connection(connection, tenant_id, client_uuid).await
+        })
+        .await
+        .expect("client deactivation should commit");
+    assert!(deactivated, "the seeded client must start active");
+    drop(connection);
+
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x61_u8; 32]);
+    let access = openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    assert_eq!(
+        issuer
+            .persist_pre_authorized_access(&token_hash, &access, Some(&client_id))
+            .await,
+        Err(CredentialStoreError::ClientInactive),
+        "a registered client deactivated after authentication must fail closed"
+    );
+    assert!(
+        persisted_access_grant(&pool, &token_hash).await.is_none(),
+        "a rejected persist must not write the access grant"
+    );
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, Some(client_uuid)).await;
+}
+
+// VF-03: the persist transaction re-verifies the registered client under a FOR
+// SHARE row lock before writing the grant. A concurrent deactivation must wait
+// for that transaction to commit; the committed deactivation then revokes the
+// freshly written grant through its dependent-cleanup path, so no usable grant
+// survives for a deactivated client.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn pre_authorized_persist_holds_the_client_lock_until_deactivation_wins() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-vf03").await;
+    let client_id = format!("openid4vc-vf03-{}", Uuid::now_v7().simple());
+    let client_uuid = insert_openid4vc_client(&pool, &client_id).await;
+
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x62_u8; 32]);
+    let access = openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+
+    // Gate connection: a SHARE table lock on the grants table blocks the
+    // RowExclusive grant INSERT but not the client FOR SHARE check, so the
+    // persist transaction is guaranteed to hold the client lock while waiting.
+    let mut gate = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("gate connection should establish");
+    gate.batch_execute("BEGIN; LOCK TABLE openid4vci_access_grants IN SHARE MODE")
+        .await
+        .expect("grant table gate should lock");
+
+    let persist_name = format!("vci-persist-{}", Uuid::now_v7().simple());
+    let persist_repository = Openid4vciRepository::new(
+        create_pool(
+            tagged_openid4vc_database_url(&database_url, &persist_name),
+            1,
+        )
+        .unwrap(),
+        [0x62_u8; 32],
+    );
+    let persist_access = access.clone();
+    let persist_hash = token_hash.clone();
+    let persist_client_id = client_id.clone();
+    let mut persist_task = tokio::spawn(async move {
+        persist_repository
+            .persist_pre_authorized_access(&persist_hash, &persist_access, Some(&persist_client_id))
+            .await
+    });
+
+    let mut observer = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("lock observer should connect");
+    wait_for_openid4vc_lock_wait_or_task(&mut observer, &persist_name, &mut persist_task).await;
+
+    // With the persist transaction parked on the grant INSERT (client FOR
+    // SHARE already held), the real deactivation path must block on it.
+    let deactivate_name = format!("vci-deactivate-{}", Uuid::now_v7().simple());
+    let deactivate_url = tagged_openid4vc_database_url(&database_url, &deactivate_name);
+    let mut deactivate_task = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&deactivate_url)
+            .await
+            .expect("deactivation connection should establish");
+        connection
+            .transaction::<bool, diesel::result::Error, _>(async |connection| {
+                nazo_postgres::deactivate_client_on_connection(connection, tenant_id, client_uuid)
+                    .await
+            })
+            .await
+    });
+    wait_for_openid4vc_blocked_by_or_task(
+        &mut observer,
+        &deactivate_name,
+        &persist_name,
+        &mut deactivate_task,
+    )
+    .await;
+
+    gate.batch_execute("COMMIT")
+        .await
+        .expect("the grant table gate should commit");
+
+    tokio::time::timeout(std::time::Duration::from_secs(15), &mut persist_task)
+        .await
+        .expect("the persist task must finish once the gate commits")
+        .expect("persist task should join")
+        .expect("the client was still active inside the persist transaction");
+    let deactivated =
+        tokio::time::timeout(std::time::Duration::from_secs(15), &mut deactivate_task)
+            .await
+            .expect("the deactivation task must finish once the persist commits")
+            .expect("deactivation task should join")
+            .expect("deactivation transaction should commit");
+    assert!(deactivated, "the registered client must deactivate");
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    let client = sql_query("SELECT is_active FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(client_uuid)
+        .get_result::<ClientActiveRow>(&mut connection)
+        .await
+        .unwrap();
+    assert!(!client.is_active, "the committed deactivation must persist");
+    drop(connection);
+
+    let grant = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the committed persist must have written the grant");
+    assert!(
+        grant.revoked_at.is_some(),
+        "client deactivation revokes committed grants as dependent cleanup"
+    );
+    assert!(
+        issuer
+            .resolve_access(&token_hash, Utc::now())
+            .await
+            .unwrap()
+            .is_none(),
+        "a revoked grant must not resolve"
+    );
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, Some(client_uuid)).await;
+}
+
+// VF-04: an anonymous pre-authorized grant carries no registered client, so
+// the persist path must not touch oauth_clients — it succeeds even when the
+// access's client_id names an inactive client row.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn anonymous_pre_authorized_persist_never_reads_client_rows() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-vf04").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x63_u8; 32]);
+
+    // The production anonymous fallback (offers.rs) resolves to the literal
+    // "pre-authorized-wallet" client id with no registered client at all.
+    let anonymous = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "pre-authorized-wallet",
+        Duration::minutes(10),
+    );
+    let anonymous_hash = blake3::hash(anonymous.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer
+        .persist_pre_authorized_access(&anonymous_hash, &anonymous, None)
+        .await
+        .expect("anonymous persist must not consult oauth_clients");
+    let anonymous_row = persisted_access_grant(&pool, &anonymous_hash)
+        .await
+        .expect("the anonymous grant must persist");
+    assert_persisted_access_grant(&anonymous_row, &anonymous_hash, &anonymous);
+
+    // A grant whose access.client_id names an *inactive* registered client
+    // still succeeds with registered_client_id = None, proving no lookup ran.
+    let inactive_client_id = format!("openid4vc-vf04-{}", Uuid::now_v7().simple());
+    let inactive_client_uuid = insert_openid4vc_client(&pool, &inactive_client_id).await;
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE id = $1")
+        .bind::<SqlUuid, _>(inactive_client_uuid)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let mut impersonating = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        &inactive_client_id,
+        Duration::minutes(10),
+    );
+    impersonating.token_id = Uuid::now_v7();
+    let impersonating_hash = blake3::hash(impersonating.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer
+        .persist_pre_authorized_access(&impersonating_hash, &impersonating, None)
+        .await
+        .expect(
+            "registered_client_id = None must skip the client check even when \
+             the access client id names an inactive client",
+        );
+    let impersonating_row = persisted_access_grant(&pool, &impersonating_hash)
+        .await
+        .expect("the anonymous grant must persist");
+    assert_persisted_access_grant(&impersonating_row, &impersonating_hash, &impersonating);
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, Some(inactive_client_uuid)).await;
+}
+
+// VF-05: a mismatched registered client id is rejected before any SQL runs;
+// a matching-but-inactive client is a distinct ClientInactive failure; a
+// matching active client succeeds.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn pre_authorized_persist_distinguishes_mismatched_and_inactive_clients() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-vf05").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x64_u8; 32]);
+
+    let client_id = format!("openid4vc-vf05-{}", Uuid::now_v7().simple());
+
+    // Mismatch: rejected before touching the database, so no client row is
+    // needed and no grant may appear.
+    let mismatch =
+        openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
+    let mismatch_hash = blake3::hash(mismatch.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    assert_eq!(
+        issuer
+            .persist_pre_authorized_access(
+                &mismatch_hash,
+                &mismatch,
+                Some("other-registered-client")
+            )
+            .await,
+        Err(CredentialStoreError::InvalidTransition),
+        "a registered client id that differs from the grant client must fail before SQL"
+    );
+    assert!(
+        persisted_access_grant(&pool, &mismatch_hash)
+            .await
+            .is_none(),
+        "a mismatched persist must not write the access grant"
+    );
+
+    // Matching-but-inactive: rejected by the FOR SHARE re-check.
+    let inactive_uuid = insert_openid4vc_client(&pool, &client_id).await;
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE id = $1")
+        .bind::<SqlUuid, _>(inactive_uuid)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let inactive =
+        openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
+    let inactive_hash = blake3::hash(inactive.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    assert_eq!(
+        issuer
+            .persist_pre_authorized_access(&inactive_hash, &inactive, Some(&client_id))
+            .await,
+        Err(CredentialStoreError::ClientInactive),
+        "a matching-but-inactive registered client must fail closed"
+    );
+    assert!(
+        persisted_access_grant(&pool, &inactive_hash)
+            .await
+            .is_none(),
+        "an inactive-client persist must not write the access grant"
+    );
+
+    // Positive control: a matching active client persists the grant.
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = TRUE WHERE id = $1")
+        .bind::<SqlUuid, _>(inactive_uuid)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+    let active = openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
+    let active_hash = blake3::hash(active.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer
+        .persist_pre_authorized_access(&active_hash, &active, Some(&client_id))
+        .await
+        .expect("an active matching client must persist the grant");
+    let active_row = persisted_access_grant(&pool, &active_hash)
+        .await
+        .expect("the grant must persist");
+    assert_persisted_access_grant(&active_row, &active_hash, &active);
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, Some(inactive_uuid)).await;
+}
+
+// VF-07: the shared upsert body never touches revoked_at; a revoked grant
+// stays revoked through both the plain upsert and the pre-authorized persist.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn revoked_access_grants_stay_revoked_through_every_persist_path() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-vf07").await;
+    let client_id = format!("openid4vc-vf07-{}", Uuid::now_v7().simple());
+    let client_uuid = insert_openid4vc_client(&pool, &client_id).await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x65_u8; 32]);
+
+    // Plain upsert path.
+    let upserted =
+        openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
+    let upserted_hash = blake3::hash(upserted.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer
+        .upsert_access(&upserted_hash, &upserted)
+        .await
+        .unwrap();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_access_grants SET revoked_at = CURRENT_TIMESTAMP WHERE token_id = $1",
+    )
+    .bind::<SqlUuid, _>(upserted.token_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    let mut mutated = upserted.clone();
+    mutated.configuration_ids = vec!["pid".to_owned(), "alt".to_owned()];
+    issuer
+        .upsert_access(&upserted_hash, &mutated)
+        .await
+        .expect("the projection update on a revoked grant is still Ok");
+    let row = persisted_access_grant(&pool, &upserted_hash)
+        .await
+        .expect("the grant row remains");
+    assert!(
+        row.revoked_at.is_some(),
+        "the upsert must not resurrect a revoked grant"
+    );
+    assert!(
+        issuer
+            .resolve_access(&upserted_hash, Utc::now())
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    // Pre-authorized persist path with a registered (still active) client.
+    let persisted =
+        openid4vc_access_fixture(tenant_id, subject_id, &client_id, Duration::minutes(10));
+    let persisted_hash = blake3::hash(persisted.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer
+        .persist_pre_authorized_access(&persisted_hash, &persisted, Some(&client_id))
+        .await
+        .unwrap();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_access_grants SET revoked_at = CURRENT_TIMESTAMP WHERE token_id = $1",
+    )
+    .bind::<SqlUuid, _>(persisted.token_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    let mut repersisted = persisted.clone();
+    repersisted.dpop_jkt = Some("openid4vc-vf07-dpop-thumbprint".to_owned());
+    issuer
+        .persist_pre_authorized_access(&persisted_hash, &repersisted, Some(&client_id))
+        .await
+        .expect("the pre-authorized persist on a revoked grant is still Ok");
+    let row = persisted_access_grant(&pool, &persisted_hash)
+        .await
+        .expect("the grant row remains");
+    assert!(
+        row.revoked_at.is_some(),
+        "the pre-authorized persist must not resurrect a revoked grant"
+    );
+    assert_eq!(
+        row.dpop_jkt.as_deref(),
+        repersisted.dpop_jkt.as_deref(),
+        "the mutable projection still updates"
+    );
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, Some(client_uuid)).await;
+}
+
+// UP-01: an identical upsert is a successful no-op — the IS DISTINCT FROM
+// guard must not create a new row version.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn identical_access_upsert_leaves_the_row_version_untouched() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up01").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x66_u8; 32]);
+    let access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-up01-wallet",
+        Duration::minutes(10),
+    );
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let before = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the grant must exist");
+    issuer
+        .upsert_access(&token_hash, &access)
+        .await
+        .expect("an identical upsert must succeed");
+    let after = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the grant must remain");
+    assert_eq!(
+        after.xmin, before.xmin,
+        "an identical upsert must not write a new row version"
+    );
+    assert_persisted_access_grant(&after, &token_hash, &access);
+    assert!(after.revoked_at.is_none());
+
+    issuer
+        .upsert_access(&token_hash, &access)
+        .await
+        .expect("repeated identical upserts stay idempotent");
+    let third = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the grant must remain");
+    assert_eq!(third.xmin, before.xmin);
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// UP-02: each of the four mutable projection columns updates independently,
+// including dpop_jkt NULL -> value -> NULL.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn access_upsert_updates_each_mutable_projection_column() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up02").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x67_u8; 32]);
+    let mut access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-up02-wallet",
+        Duration::minutes(10),
+    );
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let mut previous = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the grant must exist");
+
+    access.configuration_ids.push("alternate".to_owned());
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let row = persisted_access_grant(&pool, &token_hash).await.unwrap();
+    assert_ne!(
+        row.xmin, previous.xmin,
+        "a changed credential_configuration_ids must write a new row version"
+    );
+    assert_persisted_access_grant(&row, &token_hash, &access);
+    previous = row;
+
+    access
+        .credential_identifiers
+        .push(nazo_openid4vci::CredentialIdentifier("pid-1".to_owned()));
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let row = persisted_access_grant(&pool, &token_hash).await.unwrap();
+    assert_ne!(
+        row.xmin, previous.xmin,
+        "a changed credential_identifiers must write a new row version"
+    );
+    assert_persisted_access_grant(&row, &token_hash, &access);
+    previous = row;
+
+    access.dpop_jkt = Some("openid4vc-up02-dpop-thumbprint".to_owned());
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let row = persisted_access_grant(&pool, &token_hash).await.unwrap();
+    assert_ne!(
+        row.xmin, previous.xmin,
+        "dpop_jkt NULL -> Some must write a new row version"
+    );
+    assert_persisted_access_grant(&row, &token_hash, &access);
+    previous = row;
+
+    access.dpop_jkt = None;
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let row = persisted_access_grant(&pool, &token_hash).await.unwrap();
+    assert_ne!(
+        row.xmin, previous.xmin,
+        "dpop_jkt Some -> NULL must write a new row version"
+    );
+    assert_persisted_access_grant(&row, &token_hash, &access);
+    previous = row;
+
+    access.expires_at += Duration::minutes(5);
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let row = persisted_access_grant(&pool, &token_hash).await.unwrap();
+    assert_ne!(
+        row.xmin, previous.xmin,
+        "a changed expires_at must write a new row version"
+    );
+    assert_persisted_access_grant(&row, &token_hash, &access);
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// UP-03: an upsert that loses the token_hash conflict but mismatches any
+// persisted identity column is a no-op that still reports success — the
+// discarded candidate row is never visible and its foreign keys are never
+// checked.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn access_upsert_conflict_with_a_different_identity_is_a_noop() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up03").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x68_u8; 32]);
+    let access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-up03-wallet",
+        Duration::minutes(10),
+    );
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let original = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the grant must exist");
+
+    let flips: Vec<(&str, CredentialAccess)> = vec![
+        (
+            "token_id",
+            CredentialAccess {
+                token_id: Uuid::now_v7(),
+                ..access.clone()
+            },
+        ),
+        (
+            "tenant_id",
+            CredentialAccess {
+                tenant_id: Uuid::now_v7(),
+                ..access.clone()
+            },
+        ),
+        (
+            "subject_id",
+            CredentialAccess {
+                subject_id: Uuid::now_v7(),
+                ..access.clone()
+            },
+        ),
+        (
+            "client_id",
+            CredentialAccess {
+                client_id: format!("openid4vc-up03-other-{}", Uuid::now_v7().simple()),
+                ..access.clone()
+            },
+        ),
+    ];
+    for (field, flipped) in flips {
+        issuer
+            .upsert_access(&token_hash, &flipped)
+            .await
+            .unwrap_or_else(|error| panic!("a {field} flip must still report success: {error}"));
+        let row = persisted_access_grant(&pool, &token_hash)
+            .await
+            .expect("the original grant row must remain");
+        assert_eq!(
+            row.xmin, original.xmin,
+            "a {field} flip must not update the persisted row"
+        );
+        assert_persisted_access_grant(&row, &token_hash, &access);
+    }
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// UP-04: the update column list never names revoked_at, so a changed
+// projection on a revoked grant cannot resurrect it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn access_upsert_preserves_the_revocation_marker() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up04").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x69_u8; 32]);
+    let access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-up04-wallet",
+        Duration::minutes(10),
+    );
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query(
+        "UPDATE openid4vci_access_grants SET revoked_at = CURRENT_TIMESTAMP WHERE token_id = $1",
+    )
+    .bind::<SqlUuid, _>(access.token_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    drop(connection);
+    let revoked = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the grant must exist");
+    let revoked_at = revoked.revoked_at.expect("the grant must be revoked");
+
+    let mut mutated = access.clone();
+    mutated
+        .credential_identifiers
+        .push(nazo_openid4vci::CredentialIdentifier("pid-9".to_owned()));
+    issuer
+        .upsert_access(&token_hash, &mutated)
+        .await
+        .expect("a projection update on a revoked grant is still Ok");
+    let row = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the grant row must remain");
+    assert_eq!(
+        row.revoked_at.map(|value| value.timestamp_micros()),
+        Some(revoked_at.timestamp_micros()),
+        "the upsert must not resurrect or rewrite the revocation marker"
+    );
+    assert_ne!(
+        row.xmin, revoked.xmin,
+        "the changed projection still produces an update"
+    );
+    assert!(
+        issuer
+            .resolve_access(&token_hash, Utc::now())
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// UP-05: persist_pre_authorized_access(None) is exactly the shared upsert body
+// — it must produce the identical row shape as upsert_access.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn anonymous_pre_authorized_persist_writes_the_upsert_row_shape() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up05").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x6a_u8; 32]);
+
+    let mut via_upsert = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-up05-wallet",
+        Duration::minutes(10),
+    );
+    via_upsert
+        .credential_identifiers
+        .push(nazo_openid4vci::CredentialIdentifier("pid-1".to_owned()));
+    via_upsert.dpop_jkt = Some("openid4vc-up05-dpop-thumbprint".to_owned());
+    let upsert_hash = blake3::hash(via_upsert.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer
+        .upsert_access(&upsert_hash, &via_upsert)
+        .await
+        .unwrap();
+
+    let mut via_persist = via_upsert.clone();
+    via_persist.token_id = Uuid::now_v7();
+    let persist_hash = blake3::hash(via_persist.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer
+        .persist_pre_authorized_access(&persist_hash, &via_persist, None)
+        .await
+        .unwrap();
+
+    let upsert_row = persisted_access_grant(&pool, &upsert_hash)
+        .await
+        .expect("the upsert grant must exist");
+    let persist_row = persisted_access_grant(&pool, &persist_hash)
+        .await
+        .expect("the persist grant must exist");
+    assert_persisted_access_grant(&persist_row, &persist_hash, &via_persist);
+    for (expected, actual) in [
+        (upsert_row.tenant_id, persist_row.tenant_id),
+        (upsert_row.subject_id, persist_row.subject_id),
+    ] {
+        assert_eq!(expected, actual);
+    }
+    assert_eq!(upsert_row.client_id, persist_row.client_id);
+    assert_eq!(
+        upsert_row.credential_configuration_ids,
+        persist_row.credential_configuration_ids
+    );
+    assert_eq!(
+        upsert_row.credential_identifiers,
+        persist_row.credential_identifiers
+    );
+    assert_eq!(upsert_row.dpop_jkt, persist_row.dpop_jkt);
+    assert_eq!(upsert_row.expires_at, persist_row.expires_at);
+    assert!(persist_row.revoked_at.is_none());
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// UP-06: two concurrent identical upserts on separate pools both succeed, the
+// row count stays one, and the existing row version is never rewritten.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_identical_access_upserts_are_noops() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-up06").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x6b_u8; 32]);
+    let access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-up06-wallet",
+        Duration::minutes(10),
+    );
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+
+    // Pre-existing row: both writers take the conflict path and must no-op.
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let before = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the grant must exist");
+    let issuer_a = Openid4vciRepository::new(create_pool(&database_url, 1).unwrap(), [0x6b_u8; 32]);
+    let issuer_b = Openid4vciRepository::new(create_pool(&database_url, 1).unwrap(), [0x6b_u8; 32]);
+    let (first, second) = tokio::join!(
+        issuer_a.upsert_access(&token_hash, &access),
+        issuer_b.upsert_access(&token_hash, &access)
+    );
+    first.expect("first concurrent upsert must succeed without retry");
+    second.expect("second concurrent upsert must succeed without retry");
+    let after = persisted_access_grant(&pool, &token_hash)
+        .await
+        .expect("the grant must remain");
+    assert_eq!(
+        after.xmin, before.xmin,
+        "concurrent identical upserts must not rewrite the row"
+    );
+    assert_persisted_access_grant(&after, &token_hash, &access);
+
+    // Fresh row: the speculative-insert race still yields exactly one row.
+    let fresh = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-up06-wallet",
+        Duration::minutes(10),
+    );
+    let fresh_hash = blake3::hash(fresh.token_id.as_bytes()).to_hex().to_string();
+    let (first, second) = tokio::join!(
+        issuer_a.upsert_access(&fresh_hash, &fresh),
+        issuer_b.upsert_access(&fresh_hash, &fresh)
+    );
+    first.expect("first racing insert must succeed without retry");
+    second.expect("second racing insert must succeed without retry");
+    let mut connection = get_conn(&pool).await.unwrap();
+    let count = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_hash = $1",
+    )
+    .bind::<Text, _>(&fresh_hash)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        count.count, 1,
+        "the racing upserts must persist exactly one row"
+    );
+    drop(connection);
+    let fresh_row = persisted_access_grant(&pool, &fresh_hash)
+        .await
+        .expect("the raced grant must exist");
+    assert_persisted_access_grant(&fresh_row, &fresh_hash, &fresh);
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// DF-01: the claim returns the deferred and joined access domain data in one
+// statement and writes the lease.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deferred_claim_returns_joined_domain_state_and_writes_the_lease() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df01").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x6c_u8; 32]);
+    let mut access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-df01-wallet",
+        Duration::minutes(30),
+    );
+    access.configuration_ids.push("secondary".to_owned());
+    access
+        .credential_identifiers
+        .push(nazo_openid4vci::CredentialIdentifier("pid-1".to_owned()));
+    access.dpop_jkt = Some("openid4vc-df01-dpop-thumbprint".to_owned());
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let deferred = openid4vc_deferred_fixture(
+        &access,
+        "openid4vc-df01",
+        Duration::seconds(1),
+        Duration::minutes(30),
+    );
+    issuer.store_deferred(&deferred).await.unwrap();
+
+    let claim_now = deferred.ready_at;
+    let claim = issuer
+        .claim_ready_deferred(
+            &deferred.transaction_hash,
+            access.token_id,
+            "df01-claim",
+            claim_now,
+        )
+        .await
+        .unwrap()
+        .expect("a ready deferred transaction must be claimable");
+    assert_eq!(claim.claim_id, "df01-claim");
+    assert_eq!(
+        claim.credential, deferred,
+        "the claim must return the full domain row"
+    );
+
+    let lease = deferred_lease_row(&pool, deferred.id).await;
+    assert_eq!(lease.claim_id.as_deref(), Some("df01-claim"));
+    assert_eq!(
+        lease
+            .claim_expires_at
+            .expect("the lease must record its expiry")
+            .timestamp(),
+        (claim_now + Duration::minutes(5)).timestamp(),
+        "the claim lease is five minutes from the supplied clock"
+    );
+    assert!(lease.consumed_at.is_none());
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// DF-02: every non-claimable branch returns None and leaves the row untouched.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deferred_claim_rejects_unclaimable_rows_without_leasing() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df02").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x6d_u8; 32]);
+    let access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-df02-wallet",
+        Duration::minutes(30),
+    );
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+
+    // Unknown transaction hash.
+    assert!(
+        issuer
+            .claim_ready_deferred(
+                blake3::hash(b"openid4vc-df02-missing").to_hex().as_ref(),
+                access.token_id,
+                "missing",
+                Utc::now(),
+            )
+            .await
+            .unwrap()
+            .is_none()
+    );
+
+    // ready_at still in the future.
+    let unready = openid4vc_deferred_fixture(
+        &access,
+        "openid4vc-df02-unready",
+        Duration::seconds(30),
+        Duration::minutes(30),
+    );
+    issuer.store_deferred(&unready).await.unwrap();
+    assert!(
+        issuer
+            .claim_ready_deferred(
+                &unready.transaction_hash,
+                access.token_id,
+                "early",
+                Utc::now()
+            )
+            .await
+            .unwrap()
+            .is_none(),
+        "a not-yet-ready deferred must not be claimable"
+    );
+    let lease = deferred_lease_row(&pool, unready.id).await;
+    assert!(lease.claim_id.is_none() && lease.claim_expires_at.is_none());
+    assert!(lease.consumed_at.is_none());
+
+    // expires_at in the past relative to the supplied clock.
+    let expired = openid4vc_deferred_fixture(
+        &access,
+        "openid4vc-df02-expired",
+        Duration::seconds(1),
+        Duration::seconds(10),
+    );
+    issuer.store_deferred(&expired).await.unwrap();
+    assert!(
+        issuer
+            .claim_ready_deferred(
+                &expired.transaction_hash,
+                access.token_id,
+                "late",
+                expired.expires_at + Duration::seconds(1),
+            )
+            .await
+            .unwrap()
+            .is_none(),
+        "an expired deferred must not be claimable"
+    );
+    let lease = deferred_lease_row(&pool, expired.id).await;
+    assert!(lease.claim_id.is_none() && lease.claim_expires_at.is_none());
+    assert!(lease.consumed_at.is_none());
+
+    // Already claimed and still inside its lease.
+    let leased = openid4vc_deferred_fixture(
+        &access,
+        "openid4vc-df02-leased",
+        Duration::seconds(1),
+        Duration::minutes(30),
+    );
+    issuer.store_deferred(&leased).await.unwrap();
+    assert!(
+        issuer
+            .claim_ready_deferred(
+                &leased.transaction_hash,
+                access.token_id,
+                "first-owner",
+                leased.ready_at,
+            )
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        issuer
+            .claim_ready_deferred(
+                &leased.transaction_hash,
+                access.token_id,
+                "second-owner",
+                leased.ready_at + Duration::minutes(1),
+            )
+            .await
+            .unwrap()
+            .is_none(),
+        "a live lease must reject a competing claimant"
+    );
+    let lease = deferred_lease_row(&pool, leased.id).await;
+    assert_eq!(lease.claim_id.as_deref(), Some("first-owner"));
+
+    // Already consumed.
+    let consumed = openid4vc_deferred_fixture(
+        &access,
+        "openid4vc-df02-consumed",
+        Duration::seconds(1),
+        Duration::minutes(30),
+    );
+    issuer.store_deferred(&consumed).await.unwrap();
+    assert!(
+        issuer
+            .claim_ready_deferred(
+                &consumed.transaction_hash,
+                access.token_id,
+                "consumer",
+                consumed.ready_at,
+            )
+            .await
+            .unwrap()
+            .is_some()
+    );
+    assert!(
+        issuer
+            .finalize_deferred(
+                &consumed.transaction_hash,
+                access.token_id,
+                "consumer",
+                consumed.ready_at,
+            )
+            .await
+            .unwrap()
+    );
+    assert!(
+        issuer
+            .claim_ready_deferred(
+                &consumed.transaction_hash,
+                access.token_id,
+                "replay",
+                consumed.ready_at,
+            )
+            .await
+            .unwrap()
+            .is_none(),
+        "a consumed deferred must not be claimable"
+    );
+    let lease = deferred_lease_row(&pool, consumed.id).await;
+    assert!(lease.claim_id.is_none() && lease.claim_expires_at.is_none());
+    assert!(lease.consumed_at.is_some());
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// DF-03: concurrent claimants on one deferred row get exactly one winner; once
+// the winner's lease expires the loser can claim it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_deferred_claims_lease_to_one_owner() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df03").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x6e_u8; 32]);
+    let access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-df03-wallet",
+        Duration::minutes(60),
+    );
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let deferred = openid4vc_deferred_fixture(
+        &access,
+        "openid4vc-df03",
+        Duration::seconds(1),
+        Duration::minutes(30),
+    );
+    issuer.store_deferred(&deferred).await.unwrap();
+
+    let claim_now = deferred.ready_at;
+    let issuer_a = Openid4vciRepository::new(create_pool(&database_url, 1).unwrap(), [0x6e_u8; 32]);
+    let issuer_b = Openid4vciRepository::new(create_pool(&database_url, 1).unwrap(), [0x6e_u8; 32]);
+    let (claim_a, claim_b) = tokio::join!(
+        issuer_a.claim_ready_deferred(
+            &deferred.transaction_hash,
+            access.token_id,
+            "df03-a",
+            claim_now,
+        ),
+        issuer_b.claim_ready_deferred(
+            &deferred.transaction_hash,
+            access.token_id,
+            "df03-b",
+            claim_now,
+        ),
+    );
+    let claim_a = claim_a.expect("claimant a must not error");
+    let claim_b = claim_b.expect("claimant b must not error");
+    let winners = [&claim_a, &claim_b]
+        .iter()
+        .filter(|claim| claim.is_some())
+        .count();
+    assert_eq!(
+        winners, 1,
+        "exactly one concurrent claimant must win the lease"
+    );
+    if let Some(claim) = &claim_a {
+        assert_eq!(claim.claim_id, "df03-a");
+    }
+    if let Some(claim) = &claim_b {
+        assert_eq!(claim.claim_id, "df03-b");
+    }
+
+    // The lease expires five minutes after claim_now; a later clock lets the
+    // losing claimant (or any retry) reclaim without sleeping.
+    let reclaim_now = claim_now + Duration::minutes(6);
+    let reclaim = issuer
+        .claim_ready_deferred(
+            &deferred.transaction_hash,
+            access.token_id,
+            "df03-reclaim",
+            reclaim_now,
+        )
+        .await
+        .unwrap()
+        .expect("an expired lease must be reclaimable");
+    assert_eq!(reclaim.claim_id, "df03-reclaim");
+    let lease = deferred_lease_row(&pool, deferred.id).await;
+    assert_eq!(lease.claim_id.as_deref(), Some("df03-reclaim"));
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// DF-04: the join used by deferred_claim_ready is guaranteed by the schema —
+// deferred.token_id is NOT NULL, FKs to openid4vci_access_grants(token_id)
+// with ON DELETE CASCADE, and access.token_id is the primary key. No orphan
+// fixtures: the schema forbids them.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deferred_access_join_is_guaranteed_by_the_schema() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 1).unwrap();
+    let mut connection = get_conn(&pool).await.unwrap();
+
+    let nullable = sql_query(
+        "SELECT is_nullable AS value FROM information_schema.columns \
+         WHERE table_schema = current_schema() \
+           AND table_name = 'openid4vci_deferred_transactions' AND column_name = 'token_id'",
+    )
+    .get_result::<TextValueRow>(&mut connection)
+    .await
+    .expect("the deferred token_id column must exist");
+    assert_eq!(nullable.value, "NO", "deferred.token_id must be NOT NULL");
+
+    let delete_rule = sql_query(
+        "SELECT rc.delete_rule AS value \
+         FROM information_schema.referential_constraints rc \
+         JOIN information_schema.key_column_usage kcu \
+           ON kcu.constraint_name = rc.constraint_name \
+          AND kcu.constraint_schema = rc.constraint_schema \
+         JOIN information_schema.constraint_column_usage ccu \
+           ON ccu.constraint_name = rc.unique_constraint_name \
+          AND ccu.constraint_schema = rc.unique_constraint_schema \
+         WHERE kcu.table_schema = current_schema() \
+           AND kcu.table_name = 'openid4vci_deferred_transactions' \
+           AND kcu.column_name = 'token_id' \
+           AND ccu.table_name = 'openid4vci_access_grants' \
+           AND ccu.column_name = 'token_id'",
+    )
+    .get_result::<TextValueRow>(&mut connection)
+    .await
+    .expect("the deferred token_id foreign key must exist");
+    assert_eq!(delete_rule.value, "CASCADE", "the FK must cascade deletes");
+
+    let primary_key = sql_query(
+        "SELECT COUNT(*)::bigint AS count \
+         FROM information_schema.table_constraints tc \
+         JOIN information_schema.key_column_usage kcu \
+           ON kcu.constraint_name = tc.constraint_name \
+          AND kcu.constraint_schema = tc.constraint_schema \
+         WHERE tc.table_schema = current_schema() \
+           AND tc.table_name = 'openid4vci_access_grants' \
+           AND tc.constraint_type = 'PRIMARY KEY' AND kcu.column_name = 'token_id'",
+    )
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        primary_key.count, 1,
+        "access_grants.token_id must be the primary key so the join is unique"
+    );
+    drop(connection);
+}
+
+// DF-05: a corrupt payload fails the claim with an error, and the lease write
+// inside the same transaction is rolled back.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn corrupt_deferred_payload_rolls_back_the_claim_lease() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df05").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x6f_u8; 32]);
+    let access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-df05-wallet",
+        Duration::minutes(30),
+    );
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let deferred = openid4vc_deferred_fixture(
+        &access,
+        "openid4vc-df05",
+        Duration::seconds(1),
+        Duration::minutes(30),
+    );
+    issuer.store_deferred(&deferred).await.unwrap();
+
+    let mut connection = get_conn(&pool).await.unwrap();
+    sql_query("UPDATE openid4vci_deferred_transactions SET payload_ciphertext = $2 WHERE id = $1")
+        .bind::<SqlUuid, _>(deferred.id)
+        .bind::<Binary, _>(b"not-a-valid-aead-frame".to_vec())
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    drop(connection);
+
+    assert_eq!(
+        issuer
+            .claim_ready_deferred(
+                &deferred.transaction_hash,
+                access.token_id,
+                "df05-claim",
+                deferred.ready_at,
+            )
+            .await,
+        Err(CredentialStoreError::Unavailable),
+        "a corrupt payload must fail the whole claim"
+    );
+    let lease = deferred_lease_row(&pool, deferred.id).await;
+    assert!(
+        lease.claim_id.is_none() && lease.claim_expires_at.is_none(),
+        "the lease write must roll back with the failed decode"
+    );
+    assert!(lease.consumed_at.is_none());
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
+}
+
+// DF-06: a NULL dpop_jkt access column is legal — the claim decodes it back to
+// None; the remaining access columns are NOT NULL by construction.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn deferred_claim_supports_grants_without_dpop_binding() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .unwrap();
+    let pool = create_pool(&database_url, 4).unwrap();
+    let (tenant_id, ..) = openid4vc_boundary_ids();
+    let subject_id = insert_openid4vc_subject(&pool, tenant_id, "openid4vc-df06").await;
+    let issuer = Openid4vciRepository::new(pool.clone(), [0x70_u8; 32]);
+    let access = openid4vc_access_fixture(
+        tenant_id,
+        subject_id,
+        "openid4vc-df06-wallet",
+        Duration::minutes(30),
+    );
+    assert!(access.dpop_jkt.is_none());
+    let token_hash = blake3::hash(access.token_id.as_bytes())
+        .to_hex()
+        .to_string();
+    issuer.upsert_access(&token_hash, &access).await.unwrap();
+    let deferred = openid4vc_deferred_fixture(
+        &access,
+        "openid4vc-df06",
+        Duration::seconds(1),
+        Duration::minutes(30),
+    );
+    issuer.store_deferred(&deferred).await.unwrap();
+
+    let claim = issuer
+        .claim_ready_deferred(
+            &deferred.transaction_hash,
+            access.token_id,
+            "df06-claim",
+            deferred.ready_at,
+        )
+        .await
+        .unwrap()
+        .expect("a NULL dpop_jkt grant must not block the deferred claim");
+    assert!(claim.credential.access.dpop_jkt.is_none());
+    assert_eq!(claim.credential.access, access);
+
+    delete_openid4vc_subject_and_client(&pool, subject_id, None).await;
 }

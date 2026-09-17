@@ -121,6 +121,32 @@ async fn call_userinfo(
     nazo_http_actix::userinfo(endpoint, req, body).await
 }
 
+async fn call_userinfo_with_resolver(
+    state: Data<TestInfrastructure>,
+    resolver: Arc<
+        dyn nazo_oauth_server::contracts::dynamic_client_registration::RemoteJwksResolverPort,
+    >,
+    req: HttpRequest,
+    body: Bytes,
+) -> HttpResponse {
+    let endpoint = Data::new(UserinfoEndpoint::new(
+        Arc::new(ServerUserinfoOperations::new(
+            Arc::new(userinfo_token_service(&state)),
+            UserinfoHandles::new(
+                Arc::new(nazo_valkey::ReplayStore::new(&state.valkey_connection())),
+                crate::http::authorization::test_support::test_security_audit_arc(),
+                state.keyset.clone(),
+                userinfo_config(state.settings.as_ref()),
+                resolver,
+            ),
+        )),
+        Arc::new(crate::http::mtls::ServerMtlsThumbprintExtractor::new(
+            state.settings.endpoint.trusted_proxy_cidrs.clone(),
+        )),
+    ));
+    nazo_http_actix::userinfo(endpoint, req, body).await
+}
+
 fn userinfo_audience_allowed(settings: &Settings, audience: &Value) -> bool {
     userinfo_config(settings).audience_allowed(audience)
 }
@@ -546,12 +572,12 @@ async fn userinfo_error_for_token(
     call_userinfo(state, req, Bytes::new()).await
 }
 
-async fn userinfo_response_for_active_user(
-    state: Data<TestInfrastructure>,
+async fn signed_active_user_token(
+    state: &Data<TestInfrastructure>,
     user: &DatabaseUserFixture,
     client_id: &str,
-) -> HttpResponse {
-    let token = make_jwt(
+) -> IssuedAccessToken {
+    make_jwt(
         &state.keyset,
         &state.settings.endpoint.issuer,
         AccessTokenJwtInput {
@@ -572,12 +598,49 @@ async fn userinfo_response_for_active_user(
         },
     )
     .await
-    .expect("access token should sign");
+    .expect("access token should sign")
+}
+
+async fn userinfo_response_for_active_user(
+    state: Data<TestInfrastructure>,
+    user: &DatabaseUserFixture,
+    client_id: &str,
+) -> HttpResponse {
+    let token = signed_active_user_token(&state, user, client_id).await;
     let req = actix_web::test::TestRequest::get()
         .uri("/userinfo")
         .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
         .to_http_request();
     call_userinfo(state, req, Bytes::new()).await
+}
+
+async fn deactivate_userinfo_client(state: &Data<TestInfrastructure>, client_id: &str) {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<Text, _>(client_id)
+        .execute(&mut conn)
+        .await
+        .expect("test client deactivation should succeed");
+}
+
+async fn set_userinfo_client_jwks_uri(
+    state: &Data<TestInfrastructure>,
+    client_id: &str,
+    jwks_uri: &str,
+) {
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query("UPDATE oauth_clients SET jwks_uri = $3 WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<Text, _>(client_id)
+        .bind::<Text, _>(jwks_uri)
+        .execute(&mut conn)
+        .await
+        .expect("test client jwks_uri update should succeed");
 }
 
 async fn oauth_error_code(response: actix_web::HttpResponse) -> Option<String> {
@@ -1391,6 +1454,276 @@ async fn userinfo_rejects_mtls_bound_token_with_mismatched_verified_certificate(
     assert_eq!(
         oauth_error_code(response).await.as_deref(),
         Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_reports_missing_subject_before_client_state() {
+    let Some(state) = live_userinfo_state().await else {
+        return;
+    };
+    let client_id = format!("userinfo-precedence-{}", Uuid::now_v7());
+    insert_userinfo_client(&state, &client_id).await;
+    deactivate_userinfo_client(&state, &client_id).await;
+    // The subject does not exist and the client row is inactive; the
+    // combined snapshot read can only resolve a subject first, so the 401
+    // subject failure must be reported instead of the 503 client failure.
+    let missing_subject = Uuid::now_v7();
+    let token = make_jwt(
+        &state.keyset,
+        &state.settings.endpoint.issuer,
+        AccessTokenJwtInput {
+            tenant_id: DEFAULT_TENANT_ID,
+            subject: &missing_subject.to_string(),
+            user_id: Some(missing_subject),
+            subject_type: "user",
+            client_id: &client_id,
+            audiences: &["resource://default".to_owned()],
+            scopes: &["openid".to_owned()],
+            authorization_details: &json!([]),
+            userinfo_claims: &[],
+            userinfo_claim_requests: &[],
+            ttl: 300,
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            actor: None,
+        },
+    )
+    .await
+    .expect("access token should sign");
+
+    let response = userinfo_error_for_token(state.clone(), "Bearer", &token.token).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::WWW_AUTHENTICATE)
+            .and_then(|value| value.to_str().ok()),
+        Some(r#"Bearer error="invalid_token", error_description="Request failed.""#)
+    );
+    assert_eq!(
+        oauth_error_code(response).await.as_deref(),
+        Some("invalid_token")
+    );
+
+    // The pairwise/JTI branch keeps the same precedence: a subject that
+    // resolves through issuance ownership is missing when no issuance row
+    // exists, and that subject failure still precedes the client state (the
+    // token's "userinfo-client" client_id is not registered at all).
+    let pairwise_sub = format!("pairwise-{}", Uuid::now_v7());
+    let jti_token = signed_userinfo_access_token(
+        &state,
+        DEFAULT_TENANT_ID,
+        &pairwise_sub,
+        None,
+        "user",
+        &["resource://default".to_owned()],
+        &["openid".to_owned()],
+        None,
+        None,
+    )
+    .await;
+    let response = userinfo_error_for_token(state, "Bearer", &jti_token.token).await;
+
+    assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+    assert_eq!(
+        oauth_error_code(response).await.as_deref(),
+        Some("invalid_token")
+    );
+}
+
+#[actix_web::test]
+async fn userinfo_returns_server_error_for_missing_or_inactive_client_mapping() {
+    let Some(state) = live_userinfo_state().await else {
+        return;
+    };
+    let user = insert_userinfo_user(&state, true).await;
+    let absent_client = format!("userinfo-absent-{}", Uuid::now_v7());
+    let disabled_client = format!("userinfo-disabled-{}", Uuid::now_v7());
+    insert_userinfo_client(&state, &disabled_client).await;
+    deactivate_userinfo_client(&state, &disabled_client).await;
+
+    // Both a client row that never existed and a deactivated client row
+    // resolve to the same ClientUnavailable mapping on the wire.
+    for client_id in [absent_client, disabled_client] {
+        let token = signed_active_user_token(&state, &user, &client_id).await;
+        let req = actix_web::test::TestRequest::get()
+            .uri("/userinfo")
+            .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+            .to_http_request();
+        let response = call_userinfo(state.clone(), req, Bytes::new()).await;
+
+        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(
+            response
+                .headers()
+                .get(header::WWW_AUTHENTICATE)
+                .and_then(|value| value.to_str().ok()),
+            Some(r#"Bearer error="server_error", error_description="Request failed.""#)
+        );
+        let body = actix_web::body::to_bytes(response.into_body())
+            .await
+            .expect("userinfo error body should collect");
+        let value: Value = serde_json::from_slice(&body).expect("userinfo error body is JSON");
+        assert_eq!(
+            value,
+            json!({"error": "server_error", "error_description": "Request failed."})
+        );
+    }
+}
+
+#[actix_web::test]
+async fn userinfo_returns_server_error_when_client_record_cannot_be_converted() {
+    let Some(state) = live_userinfo_state().await else {
+        return;
+    };
+    let client_id = format!("userinfo-corrupt-{}", Uuid::now_v7());
+    insert_userinfo_client(&state, &client_id).await;
+    // Corrupt the client scopes so the snapshot's into_domain conversion
+    // fails after the subject read already succeeded. security_policy has a
+    // strict shape check at the schema level; the jsonb array columns do not.
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query(
+        "UPDATE oauth_clients SET scopes = '[5]'::jsonb WHERE tenant_id = $1 AND client_id = $2",
+    )
+    .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+    .bind::<Text, _>(&client_id)
+    .execute(&mut conn)
+    .await
+    .expect("test client security_policy corruption should succeed");
+    drop(conn);
+    let user = insert_userinfo_user(&state, true).await;
+
+    let response = userinfo_response_for_active_user(state.clone(), &user, &client_id).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        oauth_error_code(response).await.as_deref(),
+        Some("server_error")
+    );
+
+    // The corrupt row must not outlive the test: shared-database scans such as
+    // OAuthClientRepository::page decode every client in the tenant.
+    let mut conn = get_conn(&state.diesel_db)
+        .await
+        .expect("database connection should be available");
+    sql_query("DELETE FROM oauth_clients WHERE tenant_id = $1 AND client_id = $2")
+        .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+        .bind::<Text, _>(&client_id)
+        .execute(&mut conn)
+        .await
+        .expect("corrupt test client cleanup should succeed");
+}
+
+#[actix_web::test]
+async fn userinfo_refreshes_remote_jwks_for_encrypted_response() {
+    let Some(state) = live_userinfo_state().await else {
+        return;
+    };
+    let client_id = format!("userinfo-remote-jwks-{}", Uuid::now_v7());
+    insert_userinfo_client(&state, &client_id).await;
+    let (private_key, public_jwk) = rsa_userinfo_jwe_keypair("userinfo-remote");
+    let jwks_uri = "https://client.example/userinfo-jwks";
+    // The stored jwks stays empty so only the remotely resolved document can
+    // carry the response-encryption key.
+    update_userinfo_crypto_policy(
+        &state,
+        &client_id,
+        None,
+        Some("RSA-OAEP-256"),
+        Some("A256GCM"),
+        Some(json!({"keys": []})),
+    )
+    .await;
+    set_userinfo_client_jwks_uri(&state, &client_id, jwks_uri).await;
+    let user = insert_userinfo_user(&state, true).await;
+    let token = signed_active_user_token(&state, &user, &client_id).await;
+
+    let resolver = crate::test_support::CountingJwksResolver::with_document(
+        jwks_uri,
+        json!({"keys": [public_jwk]}),
+    );
+    let calls = resolver.clone();
+    let req = actix_web::test::TestRequest::get()
+        .uri("/userinfo")
+        .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+        .to_http_request();
+    let response =
+        call_userinfo_with_resolver(state.clone(), Arc::new(resolver), req, Bytes::new()).await;
+
+    assert_eq!(
+        calls.calls(),
+        1,
+        "an encrypted UserInfo response must refresh the client jwks_uri once"
+    );
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(
+        response
+            .headers()
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok()),
+        Some("application/jwt")
+    );
+    let body = actix_web::body::to_bytes(response.into_body())
+        .await
+        .expect("encrypted UserInfo body should collect");
+    let (protected, plaintext) = decrypt_userinfo_jwe(
+        &private_key,
+        std::str::from_utf8(&body).expect("encrypted UserInfo body should be UTF-8"),
+    );
+    assert_eq!(protected["alg"], "RSA-OAEP-256");
+    assert_eq!(protected["enc"], "A256GCM");
+    assert_eq!(protected["kid"], "userinfo-remote");
+    let claims: Value = serde_json::from_str(&plaintext).expect("JWE claims should be JSON");
+    assert_eq!(claims["sub"], user.id.to_string());
+    assert_eq!(claims["email"], user.email);
+}
+
+#[actix_web::test]
+async fn userinfo_remote_jwks_failure_never_falls_back_to_stored_keys() {
+    let Some(state) = live_userinfo_state().await else {
+        return;
+    };
+    let client_id = format!("userinfo-remote-failure-{}", Uuid::now_v7());
+    insert_userinfo_client(&state, &client_id).await;
+    let (_private_key, public_jwk) = rsa_userinfo_jwe_keypair("userinfo-remote-fallback");
+    // A valid stored key exists; the unreachable remote document must not be
+    // replaced by it when the refresh fails.
+    update_userinfo_crypto_policy(
+        &state,
+        &client_id,
+        None,
+        Some("RSA-OAEP-256"),
+        Some("A256GCM"),
+        Some(json!({"keys": [public_jwk]})),
+    )
+    .await;
+    set_userinfo_client_jwks_uri(
+        &state,
+        &client_id,
+        "https://client.example/userinfo-jwks-down",
+    )
+    .await;
+    let user = insert_userinfo_user(&state, true).await;
+    let token = signed_active_user_token(&state, &user, &client_id).await;
+
+    let resolver =
+        crate::test_support::CountingJwksResolver::with_failure("remote JWKS unavailable");
+    let calls = resolver.clone();
+    let req = actix_web::test::TestRequest::get()
+        .uri("/userinfo")
+        .insert_header((header::AUTHORIZATION, format!("Bearer {}", token.token)))
+        .to_http_request();
+    let response = call_userinfo_with_resolver(state, Arc::new(resolver), req, Bytes::new()).await;
+
+    assert_eq!(calls.calls(), 1);
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(
+        oauth_error_code(response).await.as_deref(),
+        Some("server_error")
     );
 }
 

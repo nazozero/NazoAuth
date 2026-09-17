@@ -315,6 +315,7 @@ pub async fn token_jwt_bearer_with_service(
         },
         TokenIssue {
             user_id: None,
+            prepared_subject: None,
             subject: assertion.subject,
             scopes: admission.scopes,
             authorization_details: json!([]),

@@ -110,8 +110,13 @@ impl DeviceDecisionHandles {
                 "客户端认证失败.",
             ));
         }
-        let mut client = match authorization_service.client_by_id(client_id).await {
-            Ok(Some(client)) if client.is_active => client,
+        let (mut client, secret_salt) = match authorization_service
+            .client_authentication_snapshot(client_id)
+            .await
+        {
+            Ok(Some(snapshot)) if snapshot.client.is_active => {
+                (snapshot.client, snapshot.secret_salt)
+            }
             Ok(_) => {
                 crate::token::client_auth::perform_dummy_client_secret_verification(
                     &credentials,
@@ -140,6 +145,7 @@ impl DeviceDecisionHandles {
             &credentials,
             self.remote_jwks.as_ref(),
             self.audit.as_ref(),
+            secret_salt.as_deref(),
         )
         .await?;
         if !client.security_policy.allow_cross_device_flows {
@@ -430,6 +436,7 @@ pub fn device_authorization_request_payload(
     })
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn authenticate_device_authorization_client(
     authorization_service: &ServerAuthorizationService,
     config: &DeviceConfig,
@@ -438,6 +445,7 @@ async fn authenticate_device_authorization_client(
     credentials: &ClientCredentials,
     remote_client_documents: &dyn RemoteJwksResolverPort,
     security_audit: &dyn crate::ports::audit::SecurityAudit,
+    secret_salt: Option<&str>,
 ) -> Result<(), OAuthEndpointError> {
     let assertion = authenticate_client_with_dependencies(
         authorization_service,
@@ -454,6 +462,7 @@ async fn authenticate_device_authorization_client(
         client,
         credentials,
         ClientAuthenticationContext::AllowPublicNone,
+        secret_salt,
     )
     .await
     .map_err(token_management_auth_error)?;

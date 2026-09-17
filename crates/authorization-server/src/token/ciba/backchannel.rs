@@ -42,6 +42,7 @@ pub struct PreparedCibaClient {
     form: BackchannelAuthenticationForm,
     credentials: PresentedClientCredentials,
     client: ClientRow,
+    secret_salt: Option<String>,
 }
 enum GuardedCibaCreation {
     Created(String),
@@ -83,8 +84,13 @@ impl CibaApplication {
                 "客户端认证失败.",
             ));
         };
-        let client = match authorization_service.client_by_id(client_id).await {
-            Ok(Some(client)) if client.is_active => client,
+        let (client, secret_salt) = match authorization_service
+            .client_authentication_snapshot(client_id)
+            .await
+        {
+            Ok(Some(snapshot)) if snapshot.client.is_active => {
+                (snapshot.client, snapshot.secret_salt)
+            }
             Ok(_) => {
                 crate::token::client_auth::perform_dummy_client_secret_verification(
                     &credentials,
@@ -109,6 +115,7 @@ impl CibaApplication {
             form,
             credentials,
             client,
+            secret_salt,
         })
     }
     pub async fn create(
@@ -121,6 +128,7 @@ impl CibaApplication {
             mut form,
             credentials,
             mut client,
+            secret_salt,
         } = prepared;
         let authorization_service = &self.authorization;
         let ciba_service = &self.handles.service;
@@ -143,6 +151,7 @@ impl CibaApplication {
             &mut client,
             &credentials,
             ClientAuthenticationContext::ConfidentialOnly,
+            secret_salt.as_deref(),
         )
         .await
         {

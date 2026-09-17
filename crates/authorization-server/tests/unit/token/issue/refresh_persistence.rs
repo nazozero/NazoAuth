@@ -18,6 +18,7 @@ fn rotated_refresh_token_preserves_the_original_scope_authorization() {
 fn openid_issue() -> TokenIssue {
     TokenIssue {
         user_id: Some(Uuid::now_v7()),
+        prepared_subject: None,
         subject: "subject-1".to_owned(),
         scopes: vec!["openid".to_owned()],
         authorization_details: json!([]),

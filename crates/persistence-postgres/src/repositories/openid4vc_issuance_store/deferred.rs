@@ -9,7 +9,7 @@ use uuid::Uuid;
 
 use super::super::Openid4vciRepository;
 use super::{
-    AccessRow, DeferredRow, NewIssuanceResponse, insert_issuance_response, protect_payload,
+    DeferredClaimRow, NewIssuanceResponse, insert_issuance_response, protect_payload,
     response_encoding_name, unprotect_payload,
 };
 use crate::get_conn;
@@ -291,33 +291,52 @@ impl Openid4vciRepository {
             connection
                 .transaction::<Option<DeferredCredentialClaim>, diesel::result::Error, _>(
                     async move |connection| {
+                        // The NOT NULL deferred.token_id -> access_grants.token_id
+                        // FK with ON DELETE CASCADE plus the access primary key
+                        // guarantee at most one access row per claimed deferred
+                        // row, so the FROM join needs no LEFT JOIN and no
+                        // orphan branch.
                         let row = sql_query(
-                            "UPDATE openid4vci_deferred_transactions \
+                            "UPDATE openid4vci_deferred_transactions AS deferred \
                              SET claim_id = $3, claim_expires_at = $4 \
-                             WHERE transaction_hash = $1 AND token_id = $2 AND consumed_at IS NULL \
-                               AND ready_at <= $5 AND expires_at > $5 \
-                               AND (claim_id IS NULL OR claim_expires_at <= $5) \
-                             RETURNING id, transaction_hash, token_id, credential_configuration_id, \
-                               credential_format, holder_bindings, payload_ciphertext, ready_at, expires_at",
+                             FROM openid4vci_access_grants AS access \
+                             WHERE deferred.transaction_hash = $1 AND deferred.token_id = $2 \
+                               AND deferred.consumed_at IS NULL \
+                               AND deferred.ready_at <= $5 AND deferred.expires_at > $5 \
+                               AND (deferred.claim_id IS NULL OR deferred.claim_expires_at <= $5) \
+                               AND access.token_id = deferred.token_id \
+                             RETURNING \
+                               deferred.id AS deferred_id, \
+                               deferred.transaction_hash AS deferred_transaction_hash, \
+                               deferred.token_id AS deferred_token_id, \
+                               deferred.credential_configuration_id AS deferred_configuration_id, \
+                               deferred.credential_format AS deferred_format, \
+                               deferred.holder_bindings AS deferred_holder_bindings, \
+                               deferred.payload_ciphertext AS deferred_payload_ciphertext, \
+                               deferred.ready_at AS deferred_ready_at, \
+                               deferred.expires_at AS deferred_expires_at, \
+                               access.token_id AS access_token_id, \
+                               access.tenant_id AS access_tenant_id, \
+                               access.subject_id AS access_subject_id, \
+                               access.client_id AS access_client_id, \
+                               access.credential_configuration_ids AS access_configuration_ids, \
+                               access.credential_identifiers AS access_credential_identifiers, \
+                               access.dpop_jkt AS access_dpop_jkt, \
+                               access.expires_at AS access_expires_at",
                         )
                         .bind::<sql_types::Text, _>(transaction_hash)
                         .bind::<sql_types::Uuid, _>(token_id)
                         .bind::<sql_types::Text, _>(claim_id)
                         .bind::<sql_types::Timestamptz, _>(claim_expires_at)
                         .bind::<sql_types::Timestamptz, _>(now)
-                        .get_result::<DeferredRow>(connection)
+                        .get_result::<DeferredClaimRow>(connection)
                         .await
                         .optional()?;
-                        let Some(row) = row else { return Ok(None); };
-                        let access = sql_query(
-                            "SELECT token_id, tenant_id, subject_id, client_id, credential_configuration_ids, \
-                             credential_identifiers, dpop_jkt, expires_at FROM openid4vci_access_grants \
-                             WHERE token_id = $1",
-                        )
-                        .bind::<sql_types::Uuid, _>(token_id)
-                        .get_result::<AccessRow>(connection)
-                        .await?;
-                        let mut deferred = row.into_domain(access.try_into()? )?;
+                        let Some(row) = row else {
+                            return Ok(None);
+                        };
+                        let (deferred_row, access_row) = row.into_parts();
+                        let mut deferred = deferred_row.into_domain(access_row.try_into()?)?;
                         deferred.payload_ciphertext = unprotect_payload(
                             &self.data_key,
                             deferred.id,

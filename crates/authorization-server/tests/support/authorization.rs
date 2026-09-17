@@ -89,21 +89,25 @@ impl AuthorizationRepositoryPort for Ports {
     fn upsert_grant<'a>(&'a self, _write: GrantWrite<'a>) -> AuthorizationFuture<'a, ()> {
         panic!("unexpected AuthorizationRepositoryPort::upsert_grant call")
     }
-    fn client_secret_salt<'a>(
+    fn client_authentication_snapshot<'a>(
         &'a self,
-        _client_id: Uuid,
-    ) -> AuthorizationFuture<'a, Option<String>> {
-        self.record("secret_salt");
-        Box::pin(async {
-            Ok(Some(
-                self.client_secret
-                    .lock()
-                    .unwrap()
-                    .as_ref()
-                    .expect("secret lookup must be configured")
-                    .0
-                    .clone(),
-            ))
+        _client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<nazo_auth::ClientAuthenticationSnapshot>> {
+        self.record("client");
+        let client = self.client.clone();
+        let salt = self
+            .client_secret
+            .lock()
+            .unwrap()
+            .as_ref()
+            .map(|secret| secret.0.clone());
+        Box::pin(async move {
+            client.map(|client| {
+                client.map(|client| nazo_auth::ClientAuthenticationSnapshot {
+                    client,
+                    secret_salt: salt,
+                })
+            })
         })
     }
     fn client_secret_digest_matches<'a>(

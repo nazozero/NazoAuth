@@ -383,7 +383,7 @@ impl OAuthClientRepository {
         );
         let record = connection
             .transaction::<OAuthClientRecord, diesel::result::Error, _>(async move |connection| {
-                let changed = diesel::sql_query(
+                diesel::sql_query(
                     r#"
             UPDATE oauth_clients SET
                 client_name = $3->>'client_name',
@@ -444,6 +444,34 @@ impl OAuthClientRepository {
                 updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = $1 AND id = $2 AND is_active = TRUE
               AND registration_access_token_blake3 = $6
+            RETURNING
+                id, tenant_id, realm_id, organization_id, client_id, client_name,
+                client_type, redirect_uris, scopes, allowed_audiences, grant_types,
+                token_endpoint_auth_method, require_dpop_bound_tokens,
+                require_mtls_bound_tokens, tls_client_auth_subject_dn,
+                tls_client_auth_cert_sha256, tls_client_auth_san_dns,
+                tls_client_auth_san_uri, tls_client_auth_san_ip,
+                tls_client_auth_san_email, allow_client_assertion_audience_array,
+                allow_client_assertion_endpoint_audience, require_par_request_object,
+                is_active, jwks_uri, jwks, request_uris, initiate_login_uri,
+                logo_uri, policy_uri, tos_uri, id_token_signed_response_alg,
+                id_token_encrypted_response_alg, id_token_encrypted_response_enc,
+                request_object_signing_alg, request_object_encryption_alg,
+                request_object_encryption_enc, token_endpoint_auth_signing_alg,
+                introspection_signed_response_alg,
+                introspection_encrypted_response_alg,
+                introspection_encrypted_response_enc, userinfo_signed_response_alg,
+                userinfo_encrypted_response_alg, userinfo_encrypted_response_enc,
+                authorization_signed_response_alg,
+                authorization_encrypted_response_alg,
+                authorization_encrypted_response_enc, post_logout_redirect_uris,
+                backchannel_logout_uri, backchannel_logout_session_required,
+                backchannel_token_delivery_mode,
+                backchannel_client_notification_endpoint,
+                backchannel_authentication_request_signing_alg,
+                backchannel_user_code_parameter, frontchannel_logout_uri,
+                frontchannel_logout_session_required, subject_type,
+                sector_identifier_uri, sector_identifier_host, security_policy
             "#,
                 )
                 .bind::<diesel::sql_types::Uuid, _>(client.tenant_id)
@@ -458,17 +486,8 @@ impl OAuthClientRepository {
                 .bind::<diesel::sql_types::VarChar, _>(
                     expected_registration_access_token_blake3,
                 )
-                .execute(connection)
-                .await?;
-                if changed != 1 {
-                    return Err(diesel::result::Error::NotFound);
-                }
-                oauth_clients::table
-                    .filter(oauth_clients::tenant_id.eq(client.tenant_id))
-                    .filter(oauth_clients::id.eq(client.id))
-                    .select(OAuthClientRecord::as_select())
-                    .first::<OAuthClientRecord>(connection)
-                    .await
+                .get_result::<OAuthClientRecord>(connection)
+                .await
             })
             .await
             .map_err(map_error)?;

@@ -317,10 +317,11 @@ impl ServerCredentialIssuerOperations {
             Some(value) => {
                 // Directly identified subjects (including standalone
                 // pre-authorized issuance without a Generic issuance row)
-                // keep the explicit active-subject read.
+                // keep the explicit active-subject read; only the narrow
+                // principal projection is needed here.
                 if self
                     .token_service
-                    .active_subject_claims(tenant_id, value)
+                    .active_subject_id(tenant_id, value)
                     .await
                     .map_err(|_| {
                         vci_error(

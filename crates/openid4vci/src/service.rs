@@ -24,6 +24,16 @@ where
         self.as_ref().upsert_access(token_hash, access)
     }
 
+    fn persist_pre_authorized_access<'a>(
+        &'a self,
+        token_hash: &'a str,
+        access: &'a CredentialAccess,
+        registered_client_id: Option<&'a str>,
+    ) -> crate::CredentialStoreFuture<'a, Result<(), crate::CredentialStoreError>> {
+        self.as_ref()
+            .persist_pre_authorized_access(token_hash, access, registered_client_id)
+    }
+
     fn offer<'a>(
         &'a self,
         tenant_id: Uuid,
