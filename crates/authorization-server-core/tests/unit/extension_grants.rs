@@ -38,7 +38,7 @@ fn access_claims(tenant_id: Uuid) -> Claims {
         sub: "subject".to_owned(),
         tenant_id: tenant_id.to_string(),
         user_id: Some(Uuid::nil().to_string()),
-        subject_type: "public".to_owned(),
+        subject_type: "user".to_owned(),
         aud: json!("https://api.example"),
         client_id: "client".to_owned(),
         scope: "openid read write".to_owned(),
@@ -238,6 +238,68 @@ fn dual_subject_binding_and_sender_binding_conversion_fail_closed() {
             },
             dpop_policy,
         ),
+        Err(TokenExchangeError::InvalidGrant)
+    );
+}
+
+#[test]
+fn exchange_subject_identity_table_separates_user_and_client() {
+    let scopes = vec!["read".to_owned()];
+    let audiences = vec!["https://api.example".to_owned()];
+    let tenant_id = Uuid::now_v7();
+    let policy = exchange_policy(&scopes, &audiences, tenant_id);
+
+    let mut claims = access_claims(tenant_id);
+    claims.user_id = None;
+    assert_eq!(
+        validate_token_exchange_subject(&claims, Some("read"), policy)
+            .expect("pairwise user subject")
+            .identity,
+        TokenExchangeSubjectIdentity::User {
+            public_user_id: None
+        }
+    );
+
+    let mut claims = access_claims(tenant_id);
+    claims.user_id = None;
+    claims.subject_type = "client".to_owned();
+    assert_eq!(
+        validate_token_exchange_subject(&claims, Some("read"), policy)
+            .expect("client subject")
+            .identity,
+        TokenExchangeSubjectIdentity::Client
+    );
+
+    let mut claims = access_claims(tenant_id);
+    claims.user_id = Some(Uuid::now_v7().to_string());
+    claims.subject_type = "client".to_owned();
+    assert_eq!(
+        validate_token_exchange_subject(&claims, Some("read"), policy),
+        Err(TokenExchangeError::InvalidGrant),
+        "client tokens must not carry a user boundary"
+    );
+
+    let mut claims = access_claims(tenant_id);
+    claims.user_id = Some("not-a-uuid".to_owned());
+    assert_eq!(
+        validate_token_exchange_subject(&claims, Some("read"), policy),
+        Err(TokenExchangeError::InvalidGrant),
+        "user tokens with an unparseable user_id fail closed"
+    );
+
+    let mut claims = access_claims(tenant_id);
+    claims.subject_type = "service-account".to_owned();
+    assert_eq!(
+        validate_token_exchange_subject(&claims, Some("read"), policy),
+        Err(TokenExchangeError::InvalidGrant),
+        "unknown subject types must not degrade to client issuance"
+    );
+
+    let mut claims = access_claims(tenant_id);
+    claims.subject_type = "client".to_owned();
+    claims.user_id = Some("also-not-a-uuid".to_owned());
+    assert_eq!(
+        validate_token_exchange_subject(&claims, Some("read"), policy),
         Err(TokenExchangeError::InvalidGrant)
     );
 }

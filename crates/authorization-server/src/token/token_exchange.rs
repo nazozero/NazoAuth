@@ -30,10 +30,10 @@ use nazo_auth::DpopError;
 
 use nazo_auth::{
     Claims, PresentedSenderConstraint, TokenExchangeError, TokenExchangePolicy,
-    TokenExchangeRequestInput, TokenExchangeSenderBinding, TokenIssuanceMode, admit_token_exchange,
-    parse_scope, token_exchange_actor_claim, token_exchange_issuance_binding,
-    validate_token_exchange_access_token, validate_token_exchange_grant_prerequisites,
-    validate_token_exchange_subject,
+    TokenExchangeRequestInput, TokenExchangeSenderBinding, TokenExchangeSubjectIdentity,
+    TokenIssuanceMode, admit_token_exchange, parse_scope, token_exchange_actor_claim,
+    token_exchange_issuance_binding, validate_token_exchange_access_token,
+    validate_token_exchange_grant_prerequisites, validate_token_exchange_subject,
 };
 use serde_json::{Value, json};
 use uuid::Uuid;
@@ -478,13 +478,45 @@ pub async fn token_exchange(
         Ok(admission) => admission,
         Err(error) => return Err(token_exchange_admission_error_response(error, form)),
     };
+    let user_id = match validated_subject.identity {
+        TokenExchangeSubjectIdentity::User {
+            public_user_id: Some(user_id),
+        } => Some(user_id),
+        TokenExchangeSubjectIdentity::User {
+            public_user_id: None,
+        } => match token_service
+            .active_subject_id_by_access_token(client.tenant_id, &subject.jti)
+            .await
+        {
+            Ok(Some(user_id)) => Some(user_id),
+            Ok(None) => {
+                return Err(OAuthEndpointError::token(
+                    StatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "token exchange subject has no resolvable user boundary.",
+                    false,
+                ));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to resolve token exchange subject owner");
+                return Err(OAuthEndpointError::token(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "token exchange subject state is unavailable.",
+                    false,
+                ));
+            }
+        },
+        TokenExchangeSubjectIdentity::Client => None,
+    };
     issue_token_response(
         issuance,
         token_service,
         client,
         TokenIssuanceMode::Fresh,
         TokenIssue {
-            user_id: validated_subject.user_id,
+            user_id,
+            prepared_subject: None,
             subject: validated_subject.subject,
             scopes: validated_subject.scopes,
             authorization_details: json!([]),

@@ -5,9 +5,9 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, OAuthClient, RefreshToken,
+    CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshToken,
     RefreshTokenPersistResult, TokenFuture, TokenIssuanceMode, TokenPortError, TokenRepositoryPort,
-    TokenRevocation,
+    TokenRevocation, UserinfoSnapshot,
 };
 use nazo_identity::{SubjectClaims, TenantId, UserId, ports::RepositoryError};
 use nazo_persistence::SecurityAuditEvent;
@@ -17,25 +17,16 @@ use uuid::Uuid;
 use crate::{
     DbPool, get_conn,
     pool::DiscardOnDrop,
-    schema::{access_token_revocations, oauth_clients, oauth_token_issuances, users},
+    schema::{oauth_clients, oauth_token_issuances, users},
 };
 
 use super::{
-    AuthorizationRepository, OAuthClientRepository, TokenRepository, UserRepository,
+    AuthorizationRepository, TokenRepository, UserRepository,
+    access_token_revocation::{NewAccessTokenRevocation, upsert_access_token_revocations},
     audit_ledger::append_fresh_security_audit_on_connection,
+    clients::OAuthClientRecord,
 };
 use crate::{convert::identity, rows::identity::SubjectClaimsRow};
-
-#[derive(diesel::Insertable)]
-#[diesel(table_name = access_token_revocations)]
-struct NewAccessTokenRevocation {
-    id: Uuid,
-    access_token_jti_blake3: String,
-    client_id: Uuid,
-    tenant_id: Uuid,
-    revoked_at: DateTime<Utc>,
-    expires_at: DateTime<Utc>,
-}
 
 #[derive(QueryableByName)]
 struct OwnedAccessTokenRow {
@@ -55,9 +46,9 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
 ) -> Result<usize, diesel::result::Error> {
     debug_assert!(client_id.is_some() || user_id.is_some());
     let now = Utc::now();
-    // The generic issuance branch covers the maximum verifier acceptance
-    // window (exp + clock skew); the OpenID4VCI grant branch keeps its own
-    // expiry semantics.
+    // Both sources store the full retention deadline (exp + maximum verifier
+    // clock skew) so the revocation fact outlives every still-acceptable
+    // presentation of the revoked token.
     sql_query(
         "DECLARE nazo_owner_token_revocations NO SCROLL CURSOR WITHOUT HOLD FOR \
          SELECT issuance.client_id, issuance.access_token_jti, \
@@ -68,10 +59,11 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
            AND ($2::uuid IS NULL OR issuance.client_id = $2) \
            AND ($3::uuid IS NULL OR issuance.user_id = $3) \
          UNION ALL \
-         SELECT client.id AS client_id, grant_row.token_id::text AS access_token_jti, grant_row.expires_at \
+         SELECT client.id AS client_id, grant_row.token_id::text AS access_token_jti, \
+                grant_row.expires_at + $5 * interval '1 second' AS expires_at \
          FROM openid4vci_access_grants AS grant_row \
          JOIN oauth_clients AS client ON client.tenant_id = grant_row.tenant_id AND client.client_id = grant_row.client_id \
-         WHERE grant_row.tenant_id = $1 AND grant_row.revoked_at IS NULL AND grant_row.expires_at > $4 \
+         WHERE grant_row.tenant_id = $1 AND grant_row.revoked_at IS NULL AND grant_row.expires_at > $4 - $5 * interval '1 second' \
            AND ($2::uuid IS NULL OR client.id = $2) \
            AND ($3::uuid IS NULL OR grant_row.subject_id = $3)",
     )
@@ -82,7 +74,7 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
     .bind::<sql_types::Integer, _>(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as i32)
     .execute(connection)
     .await?;
-    let mut inserted = 0;
+    let mut affected = 0;
     loop {
         let rows = sql_query("FETCH FORWARD 512 FROM nazo_owner_token_revocations")
             .load::<OwnedAccessTokenRow>(connection)
@@ -90,28 +82,44 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
         if rows.is_empty() {
             break;
         }
-        let revocations = rows
-            .into_iter()
-            .map(|row| NewAccessTokenRevocation {
-                id: Uuid::now_v7(),
-                access_token_jti_blake3: blake3::hash(row.access_token_jti.as_bytes())
-                    .to_hex()
-                    .to_string(),
-                client_id: row.client_id,
-                tenant_id,
-                revoked_at: now,
-                expires_at: row.expires_at,
-            })
-            .collect::<Vec<_>>();
-        inserted += diesel::insert_into(access_token_revocations::table)
-            .values(&revocations)
-            .on_conflict((
-                access_token_revocations::tenant_id,
-                access_token_revocations::access_token_jti_blake3,
-            ))
-            .do_nothing()
-            .execute(connection)
-            .await?;
+        // A single INSERT ... ON CONFLICT command must not touch the same
+        // authority key twice; deduplicate inside the batch, keeping the
+        // longest deadline and rejecting contradictory ownership.
+        let mut deduplicated = std::collections::BTreeMap::new();
+        for row in rows {
+            let jti_digest = blake3::hash(row.access_token_jti.as_bytes())
+                .to_hex()
+                .to_string();
+            let key = (tenant_id, jti_digest.clone());
+            match deduplicated.entry(key) {
+                std::collections::btree_map::Entry::Vacant(entry) => {
+                    entry.insert(NewAccessTokenRevocation {
+                        id: Uuid::now_v7(),
+                        access_token_jti_blake3: jti_digest,
+                        client_id: row.client_id,
+                        tenant_id,
+                        revoked_at: now,
+                        expires_at: row.expires_at,
+                    });
+                }
+                std::collections::btree_map::Entry::Occupied(mut entry) => {
+                    let existing: &mut NewAccessTokenRevocation = entry.get_mut();
+                    if existing.client_id != row.client_id {
+                        return Err(diesel::result::Error::DeserializationError(Box::new(
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidData,
+                                "conflicting access-token revocation ownership",
+                            ),
+                        )));
+                    }
+                    if row.expires_at > existing.expires_at {
+                        existing.expires_at = row.expires_at;
+                    }
+                }
+            }
+        }
+        let revocations: Vec<NewAccessTokenRevocation> = deduplicated.into_values().collect();
+        affected += upsert_access_token_revocations(connection, &revocations).await?;
     }
     sql_query("CLOSE nazo_owner_token_revocations")
         .execute(connection)
@@ -130,7 +138,7 @@ pub(crate) async fn revoke_access_tokens_for_owner_on_connection(
     .bind::<sql_types::Timestamptz, _>(now)
     .execute(connection)
     .await?;
-    Ok(inserted)
+    Ok(affected)
 }
 
 /// PostgreSQL transaction boundary used by authorization-code and refresh-token issuance.
@@ -140,7 +148,6 @@ pub struct TokenIssuanceRepository {
     tokens: TokenRepository,
     authorization: AuthorizationRepository,
     users: UserRepository,
-    clients: OAuthClientRepository,
 }
 
 impl TokenIssuanceRepository {
@@ -150,7 +157,6 @@ impl TokenIssuanceRepository {
             pool: pool.clone(),
             tokens: TokenRepository::new(pool.clone()),
             authorization: AuthorizationRepository::new(pool.clone()),
-            clients: OAuthClientRepository::new(pool.clone()),
             users: UserRepository::new(pool),
         }
     }
@@ -161,39 +167,72 @@ impl TokenIssuanceRepository {
             .map_err(|_| RepositoryError::Unavailable)
     }
 
-    /// Ownership lookup for a verified access-token JTI: joins the issuance
-    /// row to its still-active subject inside the verifier's maximum
-    /// acceptance window.  `(tenant_id, access_token_jti)` is unique, so a
-    /// multi-row result is a consistency error rather than a LIMIT 1 pick.
-    pub async fn active_subject_claims_by_access_token(
+    /// One-read UserInfo snapshot: resolve the active subject by user UUID or
+    /// by access-token JTI through its issuance row, and LEFT JOIN the
+    /// already-verified protocol client id in the same statement. The client
+    /// join carries no `is_active` or WHERE filtering — the original
+    /// `into_domain` conversion and the caller's inactive decision keep their
+    /// order. Conversion runs subject-first so corrupt client data cannot
+    /// mask a user-side consistency error.
+    pub async fn userinfo_snapshot(
         &self,
         tenant_id: Uuid,
-        jti: &str,
-    ) -> Result<Option<SubjectClaims>, RepositoryError> {
+        subject: nazo_auth::UserinfoSubjectRef<'_>,
+        client_id: &str,
+    ) -> Result<Option<UserinfoSnapshot>, RepositoryError> {
         let mut connection = self.connection().await?;
-        let horizon = Utc::now() - chrono::Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
-        users::table
-            .inner_join(
-                oauth_token_issuances::table.on(users::id
-                    .nullable()
-                    .eq(oauth_token_issuances::user_id)
-                    .and(users::tenant_id.eq(oauth_token_issuances::tenant_id))),
-            )
-            .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
-            .filter(oauth_token_issuances::access_token_jti.eq(jti))
-            .filter(oauth_token_issuances::access_token_expires_at.gt(horizon))
-            .filter(users::is_active.eq(true))
-            .select(SubjectClaimsRow::as_select())
-            .get_result(&mut connection)
-            .await
-            .optional()
-            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
-            .map(identity::active_subject_claims)
-            .transpose()
-            .map_err(|error| RepositoryError::Consistency(error.0))
+        let client_join = oauth_clients::table.on(oauth_clients::tenant_id
+            .eq(users::tenant_id)
+            .and(oauth_clients::client_id.eq(client_id)));
+        let row = match subject {
+            nazo_auth::UserinfoSubjectRef::UserId(user_id) => users::table
+                .filter(users::id.eq(user_id))
+                .filter(users::tenant_id.eq(tenant_id))
+                .filter(users::is_active.eq(true))
+                .left_join(client_join)
+                .select((
+                    SubjectClaimsRow::as_select(),
+                    Option::<OAuthClientRecord>::as_select(),
+                ))
+                .first::<(SubjectClaimsRow, Option<OAuthClientRecord>)>(&mut connection)
+                .await
+                .optional()
+                .map_err(|error| RepositoryError::Unexpected(error.to_string()))?,
+            nazo_auth::UserinfoSubjectRef::AccessTokenJti(jti) => {
+                let horizon =
+                    Utc::now() - chrono::Duration::seconds(MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
+                users::table
+                    .inner_join(
+                        oauth_token_issuances::table.on(users::id
+                            .nullable()
+                            .eq(oauth_token_issuances::user_id)
+                            .and(users::tenant_id.eq(oauth_token_issuances::tenant_id))),
+                    )
+                    .left_join(client_join)
+                    .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
+                    .filter(oauth_token_issuances::access_token_jti.eq(jti))
+                    .filter(oauth_token_issuances::access_token_expires_at.gt(horizon))
+                    .filter(users::is_active.eq(true))
+                    .select((
+                        SubjectClaimsRow::as_select(),
+                        Option::<OAuthClientRecord>::as_select(),
+                    ))
+                    .first::<(SubjectClaimsRow, Option<OAuthClientRecord>)>(&mut connection)
+                    .await
+                    .optional()
+                    .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
+            }
+        };
+        let Some((claims_row, client_row)) = row else {
+            return Ok(None);
+        };
+        let subject = identity::active_subject_claims(claims_row)
+            .map_err(|error| RepositoryError::Consistency(error.0))?;
+        let client = client_row.map(OAuthClientRecord::into_domain).transpose()?;
+        Ok(Some(UserinfoSnapshot { subject, client }))
     }
 
-    /// Same ownership lookup when only the subject identifier is needed; the
+    /// Ownership lookup for a verified access-token JTI: joins the issuance
     /// join already proves the user is active inside the acceptance window.
     pub async fn active_subject_id_by_access_token(
         &self,
@@ -504,14 +543,14 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             }
         })
     }
-    fn client_by_protocol_id<'a>(
+    fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
+        subject: nazo_auth::UserinfoSubjectRef<'a>,
         client_id: &'a str,
-    ) -> TokenFuture<'a, Option<OAuthClient>> {
+    ) -> TokenFuture<'a, Option<UserinfoSnapshot>> {
         Box::pin(async move {
-            self.clients
-                .by_client_id(tenant_id, client_id)
+            TokenIssuanceRepository::userinfo_snapshot(self, tenant_id, subject, client_id)
                 .await
                 .map_err(map_repository_error)
         })
@@ -555,13 +594,12 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                 .map_err(map_repository_error)
         })
     }
-    fn active_subject_claims_by_access_token<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-    ) -> TokenFuture<'a, Option<SubjectClaims>> {
+    fn active_subject_id(&self, tenant_id: Uuid, user_id: Uuid) -> TokenFuture<'_, Option<Uuid>> {
         Box::pin(async move {
-            TokenIssuanceRepository::active_subject_claims_by_access_token(self, tenant_id, jti)
+            let tenant_id = TenantId::new(tenant_id).map_err(|_| TokenPortError::CorruptData)?;
+            let user_id = UserId::new(user_id).map_err(|_| TokenPortError::CorruptData)?;
+            self.users
+                .active_subject_id_by_tenant_id(tenant_id, user_id)
                 .await
                 .map_err(map_repository_error)
         })

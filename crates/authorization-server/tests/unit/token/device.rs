@@ -150,6 +150,7 @@ fn device_client_authentication_accepts_registered_public_none_and_rejects_secre
                 &credentials,
                 &resolver,
                 &Dependencies,
+                None,
             )
             .await
             .is_ok()
@@ -167,6 +168,7 @@ fn device_client_authentication_accepts_registered_public_none_and_rejects_secre
             &credentials,
             &resolver,
             &Dependencies,
+            None,
         )
         .await
         .expect_err("public clients cannot present a secret");

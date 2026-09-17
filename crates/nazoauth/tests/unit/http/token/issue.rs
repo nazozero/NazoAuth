@@ -20,114 +20,6 @@ pub(crate) async fn issue_token_response(
     issue_token_response_with_modules(state, client, issue, state.active_module_snapshot()).await
 }
 
-struct SubjectClaimsProbe {
-    inner: std::sync::Arc<dyn TokenRepositoryPort>,
-    claims_calls: std::sync::Arc<std::sync::atomic::AtomicUsize>,
-}
-
-impl TokenRepositoryPort for SubjectClaimsProbe {
-    fn commit_token_issuance<'a>(
-        &'a self,
-        input: nazo_auth::CommitTokenIssuance,
-    ) -> nazo_auth::TokenFuture<'a, nazo_auth::CommitTokenIssuanceResult> {
-        self.inner.commit_token_issuance(input)
-    }
-
-    fn client_by_protocol_id<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        client_id: &'a str,
-    ) -> nazo_auth::TokenFuture<'a, Option<OAuthClient>> {
-        self.inner.client_by_protocol_id(tenant_id, client_id)
-    }
-
-    fn refresh_token<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        raw_token: &'a str,
-    ) -> nazo_auth::TokenFuture<'a, Option<RefreshToken>> {
-        self.inner.refresh_token(tenant_id, raw_token)
-    }
-
-    fn inspect_lost_response_successor<'a>(
-        &'a self,
-        token: &'a RefreshToken,
-        client_id: Uuid,
-        retry_started_at: DateTime<Utc>,
-    ) -> nazo_auth::TokenFuture<'a, Option<RefreshToken>> {
-        self.inner
-            .inspect_lost_response_successor(token, client_id, retry_started_at)
-    }
-
-    fn active_subject_claims<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        user_id: Uuid,
-    ) -> nazo_auth::TokenFuture<'a, Option<nazo_identity::SubjectClaims>> {
-        self.claims_calls
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.inner.active_subject_claims(tenant_id, user_id)
-    }
-
-    fn active_subject_claims_by_access_token<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-    ) -> nazo_auth::TokenFuture<'a, Option<nazo_identity::SubjectClaims>> {
-        self.claims_calls
-            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-        self.inner
-            .active_subject_claims_by_access_token(tenant_id, jti)
-    }
-
-    fn active_subject_id_by_access_token<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-    ) -> nazo_auth::TokenFuture<'a, Option<Uuid>> {
-        self.inner.active_subject_id_by_access_token(tenant_id, jti)
-    }
-
-    fn revoke_issued_tokens<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        client_id: Uuid,
-        access_token_jti: &'a str,
-        access_token_expires_at: Option<DateTime<Utc>>,
-        refresh_token_family_id: Option<Uuid>,
-    ) -> nazo_auth::TokenFuture<'a, ()> {
-        self.inner.revoke_issued_tokens(
-            tenant_id,
-            client_id,
-            access_token_jti,
-            access_token_expires_at,
-            refresh_token_family_id,
-        )
-    }
-
-    fn access_token_revoked<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        jti: &'a str,
-    ) -> nazo_auth::TokenFuture<'a, bool> {
-        self.inner.access_token_revoked(tenant_id, jti)
-    }
-
-    fn refresh_family_active<'a>(
-        &'a self,
-        tenant_id: Uuid,
-        family_id: Uuid,
-        user_id: Uuid,
-    ) -> nazo_auth::TokenFuture<'a, bool> {
-        self.inner
-            .refresh_family_active(tenant_id, family_id, user_id)
-    }
-
-    fn revoke_token<'a>(&'a self, input: TokenRevocation<'a>) -> nazo_auth::TokenFuture<'a, usize> {
-        self.inner.revoke_token(input)
-    }
-}
-
 async fn issue_token_response_with_repository(
     state: &TestInfrastructure,
     client: &ClientRow,
@@ -372,7 +264,7 @@ fn present_token_result(result: Result<TokenEndpointSuccess, OAuthEndpointError>
         Err(error) => nazo_http_actix::oauth_endpoint_error_response(error),
     }
 }
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use std::sync::Arc;
 use std::time::Duration as StdDuration;
 
@@ -388,8 +280,8 @@ use fred::prelude::{
     Builder as ValkeyBuilder, Config as ValkeyConfig, ConnectionConfig, PerformanceConfig,
 };
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult, OAuthClient, RefreshToken, TokenIssuanceMode,
-    TokenIssuedAuditFields, TokenRepositoryPort, TokenRevocation,
+    CommitTokenIssuance, CommitTokenIssuanceResult, TokenIssuanceMode, TokenIssuedAuditFields,
+    TokenRepositoryPort,
 };
 
 const LIVE_VALKEY_TIMEOUT: StdDuration = StdDuration::from_secs(5);
@@ -696,6 +588,7 @@ async fn delete_token_issuance_for_grant(
 fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
     TokenIssue {
         user_id: None,
+        prepared_subject: None,
         subject: "subject-1".to_owned(),
         scopes: vec!["openid".to_owned()],
         authorization_details: json!([]),
@@ -728,6 +621,7 @@ fn token_issue_with_sid(id_token_claims: Vec<String>) -> TokenIssue {
 fn token_issue_without_openid() -> TokenIssue {
     TokenIssue {
         user_id: None,
+        prepared_subject: None,
         subject: "subject-1".to_owned(),
         scopes: vec!["accounts".to_owned()],
         authorization_details: json!([]),
@@ -929,13 +823,11 @@ async fn non_oidc_user_issuance_skips_subject_claims_and_rechecks_principal_at_c
     insert_issue_client(&state, &client).await;
     let user_id = Uuid::now_v7();
     insert_issue_user(&state, user_id).await;
-    let claims_calls = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-    let repository = std::sync::Arc::new(SubjectClaimsProbe {
-        inner: std::sync::Arc::new(crate::test_support::token_issuance_repository(
+    let repository = std::sync::Arc::new(crate::test_support::CountingTokenRepository::new(
+        std::sync::Arc::new(crate::test_support::token_issuance_repository(
             state.diesel_db.clone(),
         )),
-        claims_calls: claims_calls.clone(),
-    });
+    ));
     let mut issue = token_issue_without_openid();
     issue.user_id = Some(user_id);
     issue.subject = format!("pairwise-subject-{user_id}");
@@ -946,7 +838,7 @@ async fn non_oidc_user_issuance_skips_subject_claims_and_rechecks_principal_at_c
 
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(
-        std::sync::atomic::AtomicUsize::load(&claims_calls, std::sync::atomic::Ordering::SeqCst),
+        repository.subject_data_reads(),
         0,
         "non-OIDC issuance must not load subject claims"
     );
@@ -967,12 +859,13 @@ async fn non_oidc_user_issuance_skips_subject_claims_and_rechecks_principal_at_c
     retry.user_id = Some(user_id);
     retry.subject = format!("pairwise-subject-{user_id}");
     retry.include_refresh = false;
-    let response = issue_token_response_with_repository(&state, &client, retry, repository).await;
+    let response =
+        issue_token_response_with_repository(&state, &client, retry, repository.clone()).await;
 
     assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     assert_eq!(oauth_error_code(response).await, "invalid_grant");
     assert_eq!(
-        std::sync::atomic::AtomicUsize::load(&claims_calls, std::sync::atomic::Ordering::SeqCst),
+        repository.subject_data_reads(),
         0,
         "the commit principal recheck must not load subject claims"
     );

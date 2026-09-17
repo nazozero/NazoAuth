@@ -61,7 +61,6 @@ async fn signed_access_token_with_binding(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-dpop-access", false).await else {
         return;
@@ -207,7 +206,6 @@ async fn live_access_enforces_dpop_binding_and_validates_presented_proof() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-pairwise-access", false).await else {
         return;
@@ -314,7 +312,6 @@ async fn live_access_resolves_pairwise_subject_through_issuance_ownership() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "requires NAZO_TEST_DATABASE_URL/DATABASE_URL and VALKEY_URL; run explicitly with --ignored"]
 async fn live_offer_enforces_subject_dataset_lifetime_and_transaction_code_policy() {
     let Some(fixture) = LiveEndpointFixture::new("unit-live-offer-policy", false).await else {
         return;
@@ -443,6 +440,180 @@ async fn live_offer_enforces_subject_dataset_lifetime_and_transaction_code_polic
         404,
         "invalid_request",
         "Credential offer was not found.",
+    );
+    fixture.cleanup().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_access_rejects_missing_and_inactive_uuid_subjects() {
+    let Some(fixture) = LiveEndpointFixture::new("unit-live-subject-check", false).await else {
+        return;
+    };
+
+    // Tokens carry the credential authorization detail so the subject check
+    // is the only failing gate in this test.
+    let authorization_details = json!([openid4vci_authorization_detail(
+        &fixture.issuer.issuer,
+        "unit-live-subject-check"
+    )]);
+    // A UUID subject with no user row resolves through the direct-subject read
+    // and must fail closed with the inactive-subject mapping.
+    let missing_subject = Uuid::now_v7();
+    let missing_token = signed_access_token_with_binding(
+        &fixture.issuer,
+        missing_subject,
+        None,
+        None,
+        authorization_details.clone(),
+    )
+    .await;
+    let error = fixture
+        .issuer
+        .access(&CredentialRequestContext {
+            bearer_token: missing_token,
+            ..request_context()
+        })
+        .await
+        .expect_err("a token for an absent subject must be rejected");
+    assert_error(
+        error,
+        401,
+        "invalid_token",
+        "Access token subject is inactive.",
+    );
+
+    // The active subject resolves before deactivation.
+    let subject_token = signed_access_token_with_binding(
+        &fixture.issuer,
+        fixture.subject_id,
+        None,
+        None,
+        authorization_details,
+    )
+    .await;
+    fixture
+        .issuer
+        .access(&CredentialRequestContext {
+            bearer_token: subject_token.clone(),
+            ..request_context()
+        })
+        .await
+        .expect("an active subject should resolve");
+
+    // Deactivating the user between signing and presentation closes the grant.
+    let mut connection = nazo_postgres::get_conn(&fixture.pool)
+        .await
+        .expect("subject-check fixture database connection");
+    sql_query("UPDATE users SET is_active = FALSE WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.subject_id)
+        .execute(&mut connection)
+        .await
+        .expect("subject-check fixture user update");
+    drop(connection);
+
+    let error = fixture
+        .issuer
+        .access(&CredentialRequestContext {
+            bearer_token: subject_token,
+            ..request_context()
+        })
+        .await
+        .expect_err("a deactivated subject must be rejected");
+    assert_error(
+        error,
+        401,
+        "invalid_token",
+        "Access token subject is inactive.",
+    );
+    fixture.cleanup().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn live_access_fails_closed_when_subject_state_is_unavailable() {
+    let Some(database_url) = std::env::var("NAZO_TEST_DATABASE_URL")
+        .ok()
+        .or_else(|| std::env::var("DATABASE_URL").ok())
+    else {
+        assert!(
+            std::env::var_os("CI").is_none(),
+            "CI requires NAZO_TEST_DATABASE_URL/DATABASE_URL"
+        );
+        return;
+    };
+    let outage_pool =
+        nazo_postgres::create_pool(database_url, 2).expect("subject outage pool should build");
+    let token_repository: Arc<dyn TokenRepositoryPort> = Arc::new(SubjectStateOutage {
+        inner: Arc::new(nazo_postgres::TokenIssuanceRepository::new(outage_pool)),
+    });
+    let Some(fixture) = LiveEndpointFixture::new_with_overrides(
+        "unit-live-subject-outage",
+        false,
+        None,
+        Some(token_repository),
+    )
+    .await
+    else {
+        return;
+    };
+
+    // UUID branch: the direct active-subject read fails -> 503 subject state.
+    let subject_token = signed_access_token(&fixture.issuer, fixture.subject_id, None).await;
+    let error = fixture
+        .issuer
+        .access(&CredentialRequestContext {
+            bearer_token: subject_token,
+            ..request_context()
+        })
+        .await
+        .expect_err("an unreadable subject state must fail closed");
+    assert_error(
+        error,
+        503,
+        "invalid_token",
+        "Access token subject state is unavailable.",
+    );
+
+    // JTI branch: the issuance-ownership subject read fails -> the same 503.
+    let pairwise_sub = format!("pairwise-{}", Uuid::now_v7());
+    let pairwise_token = fixture
+        .issuer
+        .token_service
+        .sign_access_token(nazo_auth::AccessTokenSignInput {
+            issuer: &fixture.issuer.issuer,
+            tenant_id: fixture.issuer.tenant_id,
+            subject: &pairwise_sub,
+            user_id: None,
+            subject_type: "user",
+            client_id: "unit-client",
+            audiences: std::slice::from_ref(&fixture.issuer.issuer),
+            scopes: &[],
+            authorization_details: &json!([openid4vci_authorization_detail(
+                &fixture.issuer.issuer,
+                "unit-live-subject-outage"
+            )]),
+            userinfo_claims: &[],
+            userinfo_claim_requests: &[],
+            ttl_seconds: 300,
+            dpop_jkt: None,
+            mtls_x5t_s256: None,
+            actor: None,
+        })
+        .await
+        .expect("test key manager should sign the outage pairwise token")
+        .token;
+    let error = fixture
+        .issuer
+        .access(&CredentialRequestContext {
+            bearer_token: pairwise_token,
+            ..request_context()
+        })
+        .await
+        .expect_err("an unreadable issuance-ownership state must fail closed");
+    assert_error(
+        error,
+        503,
+        "invalid_token",
+        "Access token subject state is unavailable.",
     );
     fixture.cleanup().await;
 }

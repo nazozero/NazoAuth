@@ -1,9 +1,13 @@
+use chrono::{Duration, Utc};
 use diesel::{
     QueryableByName, sql_query,
-    sql_types::{BigInt, Text},
+    sql_types::{BigInt, Bool, Text},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use nazo_postgres::get_conn;
 use uuid::Uuid;
+
+mod support;
 
 #[test]
 fn embedded_migration_head_tracks_latest_directory() {
@@ -136,6 +140,10 @@ const PUSHED_REQUESTS_POLICY_UP: &str = include_str!(
 const PUSHED_REQUESTS_POLICY_DOWN: &str = include_str!(
     "../../../migrations/20260913000100_client_security_policy_pushed_requests/down.sql"
 );
+const ACCESS_TOKEN_REVOCATION_RETENTION_UP: &str =
+    include_str!("../../../migrations/20260916135732_access_token_revocation_retention/up.sql");
+const ACCESS_TOKEN_REVOCATION_RETENTION_DOWN: &str =
+    include_str!("../../../migrations/20260916135732_access_token_revocation_retention/down.sql");
 
 #[derive(QueryableByName)]
 struct ProviderType {
@@ -1442,4 +1450,390 @@ async fn pushed_requests_policy_downgrade_fails_closed_on_required_clients() {
         ))
         .await
         .expect("test schema should drop");
+}
+
+/// RV-09 — the retention migration is pinned to the verifier's maximum
+/// clock-skew constant and its downgrade can never shorten a stored fact.
+#[test]
+fn access_token_revocation_retention_sql_pins_the_verifier_skew_window() {
+    assert_eq!(
+        nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS,
+        60,
+        "the backfill window must stay in lockstep with the verifier constant"
+    );
+    assert_eq!(
+        ACCESS_TOKEN_REVOCATION_RETENTION_UP
+            .matches("INTERVAL '60 seconds'")
+            .count(),
+        2,
+        "the migration must pad expires_at by exactly the skew window and gate \
+         on the same window"
+    );
+    assert!(
+        ACCESS_TOKEN_REVOCATION_RETENTION_UP.contains("UPDATE access_token_revocations")
+            && ACCESS_TOKEN_REVOCATION_RETENTION_UP
+                .contains("expires_at = expires_at + INTERVAL '60 seconds'"),
+        "the backfill must only extend existing deadlines"
+    );
+    // The downgrade is a deliberate no-op: it must not shorten any stored
+    // retention deadline.
+    for forbidden in ["UPDATE", "expires_at", "INTERVAL"] {
+        assert!(
+            !ACCESS_TOKEN_REVOCATION_RETENTION_DOWN.contains(forbidden),
+            "down.sql must never shorten a stored deadline, found {forbidden}"
+        );
+    }
+    assert!(ACCESS_TOKEN_REVOCATION_RETENTION_DOWN.contains("SELECT 1"));
+    // There is no per-table runtime-role grant list to extend: the runtime
+    // role receives blanket DML on every public table, which already covers
+    // access_token_revocations. The isolated-schema test below exercises the
+    // same INSERT/UPDATE path the runtime role uses.
+    assert!(
+        include_str!("../src/pool.rs")
+            .contains("GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public"),
+        "runtime-role DML coverage for access_token_revocations rides on the \
+         blanket public-table grant"
+    );
+}
+
+/// RV-08 — real upgrade path: a schema sitting at the version before the
+/// retention migration (the migration is data-only, so removing its ledger
+/// row reproduces that state exactly) gains the new migration through the
+/// real `run_pending_migrations` runner. Rows written under the old semantics
+/// (expires_at = bare verified exp) gain exactly one skew window, only while
+/// they can still fall inside a verifier's acceptance window, and a second
+/// runner pass reports nothing pending and extends nothing further.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn access_token_revocation_retention_backfill_extends_only_live_windows() {
+    #[derive(QueryableByName)]
+    struct ExpiryRow {
+        #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+        expires_at: chrono::DateTime<chrono::Utc>,
+    }
+    async fn expiry_of(
+        connection: &mut AsyncPgConnection,
+        id: Uuid,
+    ) -> chrono::DateTime<chrono::Utc> {
+        sql_query("SELECT expires_at FROM access_token_revocations WHERE id = $1")
+            .bind::<diesel::sql_types::Uuid, _>(id)
+            .get_result::<ExpiryRow>(connection)
+            .await
+            .expect("stored deadline should be readable")
+            .expires_at
+    }
+
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let schema = format!("access_revocation_retention_{}", Uuid::now_v7().simple());
+    let mut bootstrap = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+    bootstrap
+        .batch_execute(&format!("CREATE SCHEMA \"{schema}\";"))
+        .await
+        .expect("isolated schema should create");
+    drop(bootstrap);
+    let isolated_url = support::schema_database_url(&database_url, &schema);
+    support::run_isolated_application_migrations(&isolated_url).await;
+
+    let mut connection = AsyncPgConnection::establish(&isolated_url)
+        .await
+        .expect("isolated test database should connect");
+
+    // Rewind the ledger to the version before the retention migration. The
+    // migration is a pure data UPDATE, so the pre-upgrade state is identical
+    // apart from this row.
+    sql_query("DELETE FROM __diesel_schema_migrations WHERE version = '20260916135732'")
+        .execute(&mut connection)
+        .await
+        .expect("the retention ledger row should rewind");
+
+    let client_id = Uuid::now_v7();
+    sql_query(format!(
+        r#"
+        INSERT INTO oauth_clients (
+            id, client_id, client_name, client_type, redirect_uris, scopes, grant_types,
+            token_endpoint_auth_method, security_policy
+        ) VALUES (
+            '{client_id}', 'retention-migration-client', 'Retention Migration Test',
+            'confidential', '["https://client.example/callback"]'::jsonb,
+            '["openid"]'::jsonb, '["authorization_code"]'::jsonb,
+            'client_secret_basic',
+            '{{"version":1,"assurance":"baseline","require_signed_authorization_request":false,"require_signed_authorization_response":false,"require_signed_introspection_response":false,"session_management":false,"allow_cross_device_flows":false,"allow_confidential_oidc_without_pkce":false}}'::jsonb
+        )
+        "#
+    ))
+    .execute(&mut connection)
+    .await
+    .expect("client fixture should insert");
+
+    // Rows written under the old semantics: expires_at held the bare verified
+    // exp. One still inside the acceptance window, two already beyond it.
+    let eligible = Uuid::now_v7();
+    let stale = Uuid::now_v7();
+    let ancient = Uuid::now_v7();
+    sql_query(
+        "INSERT INTO access_token_revocations \
+             (id, access_token_jti_blake3, client_id, tenant_id, revoked_at, expires_at) \
+         VALUES \
+             ($1, 'backfill-eligible', $4, '00000000-0000-0000-0000-000000000001', \
+              CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
+              CURRENT_TIMESTAMP - INTERVAL '30 seconds'), \
+             ($2, 'backfill-stale', $4, '00000000-0000-0000-0000-000000000001', \
+              CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
+              CURRENT_TIMESTAMP - INTERVAL '90 seconds'), \
+             ($3, 'backfill-ancient', $4, '00000000-0000-0000-0000-000000000001', \
+              CURRENT_TIMESTAMP - INTERVAL '2 minutes', \
+              CURRENT_TIMESTAMP - INTERVAL '2 hours')",
+    )
+    .bind::<diesel::sql_types::Uuid, _>(eligible)
+    .bind::<diesel::sql_types::Uuid, _>(stale)
+    .bind::<diesel::sql_types::Uuid, _>(ancient)
+    .bind::<diesel::sql_types::Uuid, _>(client_id)
+    .execute(&mut connection)
+    .await
+    .expect("pre-migration revocation fixtures should insert");
+
+    let mut before = std::collections::BTreeMap::new();
+    for id in [eligible, stale, ancient] {
+        before.insert(id, expiry_of(&mut connection, id).await);
+    }
+
+    // The real migration runner applies the pending retention migration once.
+    assert!(
+        nazo_postgres::run_pending_migrations(&isolated_url)
+            .await
+            .expect("the upgrade run should succeed"),
+        "the rewound retention migration must be pending and applied"
+    );
+    for id in [eligible, stale, ancient] {
+        let after = expiry_of(&mut connection, id).await;
+        let before = before[&id];
+        if id == eligible {
+            assert_eq!(
+                after.signed_duration_since(before),
+                chrono::Duration::seconds(60),
+                "a row still inside the acceptance window gains one skew window"
+            );
+        } else {
+            assert_eq!(
+                after, before,
+                "rows whose window already closed must stay untouched"
+            );
+        }
+    }
+
+    // The migration ledger is the re-run guard: a second runner pass reports
+    // nothing pending and must not extend the deadline again.
+    assert!(
+        !nazo_postgres::run_pending_migrations(&isolated_url)
+            .await
+            .expect("the ledger re-check should succeed"),
+        "the migration ledger must prevent the backfill from running twice"
+    );
+    assert_eq!(
+        expiry_of(&mut connection, eligible).await,
+        before[&eligible] + chrono::Duration::seconds(60),
+        "a second migration run must not extend the deadline again"
+    );
+
+    // The downgrade is a no-op and never shortens stored deadlines.
+    connection
+        .batch_execute(ACCESS_TOKEN_REVOCATION_RETENTION_DOWN)
+        .await
+        .expect("the downgrade statement should apply");
+    for id in [eligible, stale, ancient] {
+        let after_down = expiry_of(&mut connection, id).await;
+        let expected = if id == eligible {
+            before[&id] + chrono::Duration::seconds(60)
+        } else {
+            before[&id]
+        };
+        assert_eq!(after_down, expected, "down.sql must leave deadlines intact");
+    }
+
+    connection
+        .batch_execute(&format!(
+            "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"
+        ))
+        .await
+        .expect("isolated schema should drop");
+}
+
+/// RV-09 — a full migration run on an empty schema succeeds and the ledger
+/// records it, and the *actual* runtime role (a NOSUPERUSER role granted DML
+/// through `configure_runtime_role`, activated via the connection `role`
+/// option exactly like production) executes the revocation write path:
+/// INSERT on a fresh authority key, then ON CONFLICT DO UPDATE with GREATEST
+/// on the same `(tenant_id, access_token_jti_blake3)` key.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn empty_schema_migration_run_leaves_revocation_retention_applied_and_writable() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let schema = format!("access_revocation_baseline_{}", Uuid::now_v7().simple());
+    let mut bootstrap = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+    bootstrap
+        .batch_execute(&format!("CREATE SCHEMA \"{schema}\";"))
+        .await
+        .expect("isolated schema should create");
+    drop(bootstrap);
+    let isolated_url = support::schema_database_url(&database_url, &schema);
+    support::run_isolated_application_migrations(&isolated_url).await;
+
+    let mut connection = AsyncPgConnection::establish(&isolated_url)
+        .await
+        .expect("isolated test database should connect");
+    let table = sql_query(
+        "SELECT table_name FROM information_schema.tables \
+         WHERE table_schema = current_schema() AND table_name = 'access_token_revocations'",
+    )
+    .load::<RuntimeTable>(&mut connection)
+    .await
+    .expect("table catalog should be readable");
+    assert_eq!(
+        table.len(),
+        1,
+        "an empty schema must reach the current revocation-table shape"
+    );
+    assert!(
+        !nazo_postgres::run_pending_migrations(&isolated_url)
+            .await
+            .expect("the ledger re-check should succeed"),
+        "a second migration run must report nothing pending"
+    );
+    connection
+        .batch_execute(&format!(
+            "SET search_path TO public; DROP SCHEMA \"{schema}\" CASCADE;"
+        ))
+        .await
+        .expect("isolated schema should drop");
+
+    // Exercise the write path under the real runtime role, not the lifecycle
+    // role: the session `role` option makes every statement run with the
+    // runtime role's privileges on the migrated public schema.
+    let runtime_role = format!("rv09_runtime_{}", Uuid::now_v7().simple());
+    let mut lifecycle = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect for role preparation");
+    lifecycle
+        .batch_execute(&format!(
+            "SELECT pg_advisory_lock(564196923451771043);\
+             DO $$ BEGIN \
+               IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = '{runtime_role}') THEN \
+                 CREATE ROLE \"{runtime_role}\" NOSUPERUSER NOBYPASSRLS NOINHERIT; \
+               END IF; \
+             END $$;\
+             SELECT pg_advisory_unlock(564196923451771043);"
+        ))
+        .await
+        .expect("migration runtime role fixture should exist");
+    nazo_postgres::configure_runtime_role(&database_url, &runtime_role)
+        .await
+        .expect("runtime role grants should configure");
+
+    let separator = if database_url.contains('?') { '&' } else { '?' };
+    let runtime_url = format!("{database_url}{separator}options=-crole%3D{runtime_role}");
+    let runtime_pool =
+        nazo_postgres::create_pool(runtime_url, 2).expect("runtime-role pool should build");
+
+    #[derive(QueryableByName)]
+    struct SessionRole {
+        #[diesel(sql_type = Text)]
+        role_name: String,
+        #[diesel(sql_type = Bool)]
+        superuser: bool,
+    }
+    #[derive(QueryableByName)]
+    struct ExpiryDeadline {
+        #[diesel(sql_type = diesel::sql_types::Timestamptz)]
+        expires_at: chrono::DateTime<chrono::Utc>,
+    }
+
+    // Prove the session really runs as the non-superuser runtime role.
+    let mut runtime_connection = get_conn(&runtime_pool)
+        .await
+        .expect("runtime-role connection should come from the pool");
+    let identity = sql_query(
+        "SELECT current_user AS role_name, \
+                (SELECT rolsuper FROM pg_roles WHERE rolname = current_user) AS superuser",
+    )
+    .get_result::<SessionRole>(&mut runtime_connection)
+    .await
+    .expect("session role should be readable");
+    assert_eq!(identity.role_name, runtime_role);
+    assert!(
+        !identity.superuser,
+        "the runtime role must not be a superuser"
+    );
+
+    let client_id = Uuid::now_v7();
+    let protocol_client_id = format!("rv09-runtime-{}", Uuid::now_v7().simple());
+    sql_query(format!(
+        r#"
+        INSERT INTO oauth_clients (
+            id, client_id, client_name, client_type, redirect_uris, scopes, grant_types,
+            token_endpoint_auth_method, security_policy
+        ) VALUES (
+            '{client_id}', '{protocol_client_id}', 'Retention Runtime Role Test',
+            'confidential', '["https://client.example/callback"]'::jsonb,
+            '["openid"]'::jsonb, '["authorization_code"]'::jsonb,
+            'client_secret_basic',
+            '{{"version":1,"assurance":"baseline","require_signed_authorization_request":false,"require_signed_authorization_response":false,"require_signed_introspection_response":false,"session_management":false,"allow_cross_device_flows":false,"allow_confidential_oidc_without_pkce":false}}'::jsonb
+        )
+        "#
+    ))
+    .execute(&mut runtime_connection)
+    .await
+    .expect("the runtime role must hold INSERT on oauth_clients");
+    drop(runtime_connection);
+
+    // The production revocation path: the first call INSERTs the fact, the
+    // second call on the same authority key takes ON CONFLICT DO UPDATE and
+    // only GREATEST-extends the retention deadline.
+    let repository = nazo_postgres::AuthorizationRepository::new(runtime_pool.clone());
+    let tenant_id = Uuid::from_u128(1);
+    let jti = format!("rv09-jti-{}", Uuid::now_v7());
+    let first_exp = Utc::now() + Duration::minutes(30);
+    let second_exp = Utc::now() + Duration::minutes(90);
+    repository
+        .revoke_issued_tokens(tenant_id, client_id, &jti, Some(first_exp), None)
+        .await
+        .expect("runtime role must execute the revocation insert");
+    repository
+        .revoke_issued_tokens(tenant_id, client_id, &jti, Some(second_exp), None)
+        .await
+        .expect("runtime role must execute the conflicting upsert");
+
+    let rows = sql_query(
+        "SELECT expires_at FROM access_token_revocations \
+         WHERE tenant_id = $1 AND access_token_jti_blake3 = $2",
+    )
+    .bind::<diesel::sql_types::Uuid, _>(tenant_id)
+    .bind::<Text, _>(blake3::hash(jti.as_bytes()).to_hex().to_string())
+    .load::<ExpiryDeadline>(&mut lifecycle)
+    .await
+    .expect("stored revocation should be readable");
+    assert_eq!(rows.len(), 1, "one authority key must hold exactly one row");
+    // timestamptz stores microseconds; the bound value truncates the
+    // sub-microsecond part of `second_exp`.
+    let skew = Duration::seconds(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS);
+    let stored_delta = rows[0].expires_at.signed_duration_since(second_exp);
+    assert!(
+        stored_delta >= skew - Duration::seconds(1) && stored_delta < skew + Duration::seconds(1),
+        "the conflicting write must extend the deadline to the later exp + skew, got {stored_delta:?}"
+    );
+
+    drop(runtime_pool);
+    lifecycle
+        .batch_execute(&format!(
+            "DELETE FROM access_token_revocations WHERE client_id = '{client_id}';\
+             DELETE FROM oauth_clients WHERE id = '{client_id}';\
+             DROP OWNED BY \"{runtime_role}\" CASCADE; DROP ROLE \"{runtime_role}\";"
+        ))
+        .await
+        .expect("runtime-role fixtures should clean up");
 }

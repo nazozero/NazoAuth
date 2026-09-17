@@ -144,45 +144,38 @@ impl ServerUserinfoOperations {
         // A directly carried user UUID uses the ordinary subject read; a
         // pairwise subject resolves ownership through the issuance row's
         // users join, which already proves the subject is active inside the
-        // verifier acceptance window.
-        let subject_claims = match claims
+        // verifier acceptance window. The subject read and the client read
+        // are one combined snapshot query.
+        let (subject_ref, missing_subject) = match claims
             .user_id
             .as_deref()
             .and_then(|value| Uuid::parse_str(value).ok())
         {
-            Some(user_id) => self
-                .token_service
-                .active_subject_claims(tenant_id, user_id)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(%error, "failed to load userinfo subject claims");
-                    UserinfoError::QueryUnavailable
-                })?
-                .ok_or(UserinfoError::InactiveSubject)?,
-            None => self
-                .token_service
-                .active_subject_claims_by_access_token(tenant_id, &claims.jti)
-                .await
-                .map_err(|error| {
-                    tracing::warn!(%error, "failed to load userinfo subject claims");
-                    UserinfoError::QueryUnavailable
-                })?
-                .ok_or(UserinfoError::InvalidSubject)?,
+            Some(user_id) => (
+                nazo_auth::UserinfoSubjectRef::UserId(user_id),
+                UserinfoError::InactiveSubject,
+            ),
+            None => (
+                nazo_auth::UserinfoSubjectRef::AccessTokenJti(&claims.jti),
+                UserinfoError::InvalidSubject,
+            ),
         };
+        let snapshot = self
+            .token_service
+            .userinfo_snapshot(tenant_id, subject_ref, &claims.client_id)
+            .await
+            .map_err(|error| {
+                tracing::warn!(%error, "failed to load userinfo snapshot");
+                UserinfoError::QueryUnavailable
+            })?
+            .ok_or(missing_subject)?;
+        let subject_claims = snapshot.subject;
         if nazo_identity::TenantId::new(tenant_id).is_err() {
             return Err(UserinfoError::InactiveSubject);
         }
-        let mut client = match self
-            .token_service
-            .client_by_protocol_id(tenant_id, &claims.client_id)
-            .await
-        {
-            Ok(Some(client)) if client.is_active => client,
-            Ok(_) => return Err(UserinfoError::ClientUnavailable),
-            Err(error) => {
-                tracing::warn!(%error, "failed to load userinfo client response policy");
-                return Err(UserinfoError::QueryUnavailable);
-            }
+        let mut client = match snapshot.client {
+            Some(client) if client.is_active => client,
+            _ => return Err(UserinfoError::ClientUnavailable),
         };
         let response_claims = oidc_user_claims(
             &subject_claims,

@@ -147,6 +147,7 @@ pub async fn token_client_credentials_with_service(
         TokenIssuanceMode::Fresh,
         TokenIssue {
             user_id: None,
+            prepared_subject: None,
             subject: client.client_id.clone(),
             scopes: issue_request.scopes,
             authorization_details: json!([]),

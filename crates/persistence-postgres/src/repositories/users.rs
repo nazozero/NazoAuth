@@ -118,6 +118,32 @@ impl UserRepository {
             .map_err(|error| RepositoryError::Consistency(error.0))
     }
 
+    /// Narrow active-principal read: same tenant, same user, `is_active`, and
+    /// only the seven principal columns. Deliberately not the count-only
+    /// `is_active_by_tenant_id` — the principal conversion still fails closed
+    /// on corrupt identity data instead of reporting a live subject.
+    pub async fn active_subject_id_by_tenant_id(
+        &self,
+        tenant_id: TenantId,
+        user_id: UserId,
+    ) -> Result<Option<Uuid>, RepositoryError> {
+        let mut connection = get_conn(&self.pool)
+            .await
+            .map_err(|_| RepositoryError::Unavailable)?;
+        users::table
+            .find(user_id.as_uuid())
+            .filter(users::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(users::is_active.eq(true))
+            .select(PrincipalRow::as_select())
+            .first(&mut connection)
+            .await
+            .optional()
+            .map_err(|error| RepositoryError::Unexpected(error.to_string()))?
+            .map(|row| identity::principal_row(row).map(|principal| principal.user_id.as_uuid()))
+            .transpose()
+            .map_err(|error| RepositoryError::Consistency(error.0))
+    }
+
     pub async fn is_active_by_tenant_id(
         &self,
         tenant_id: TenantId,

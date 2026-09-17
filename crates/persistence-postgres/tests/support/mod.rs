@@ -1,3 +1,5 @@
+pub mod query_counter;
+
 use diesel::{migration::CREATE_MIGRATIONS_TABLE, sql_query, sql_types::Text};
 use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,

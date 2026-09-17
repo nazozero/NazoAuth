@@ -57,10 +57,10 @@ impl AuthorizationRepositoryPort for FakeRepository {
         Box::pin(async move { error.map_or(Ok(()), Err) })
     }
 
-    fn client_secret_salt<'a>(
+    fn client_authentication_snapshot<'a>(
         &'a self,
-        _client_id: Uuid,
-    ) -> AuthorizationFuture<'a, Option<String>> {
+        _client_id: &'a str,
+    ) -> AuthorizationFuture<'a, Option<crate::ClientAuthenticationSnapshot>> {
         Box::pin(async { Ok(None) })
     }
 

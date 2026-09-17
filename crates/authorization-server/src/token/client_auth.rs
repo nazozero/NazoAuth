@@ -109,6 +109,7 @@ pub async fn authenticate_introspection_client_with_dependencies(
     request: &ClientAuthRequestFacts,
     client: &mut ClientRow,
     credentials: &ClientCredentials,
+    secret_salt: Option<&str>,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
         service,
@@ -117,6 +118,7 @@ pub async fn authenticate_introspection_client_with_dependencies(
         client,
         credentials,
         ClientAuthenticationContext::ConfidentialOnly,
+        secret_salt,
     )
     .await?;
     consume_token_management_client_assertion_with_authorization_service(
@@ -141,6 +143,7 @@ pub async fn authenticate_revocation_client_with_dependencies(
     request: &ClientAuthRequestFacts,
     client: &mut ClientRow,
     credentials: &ClientCredentials,
+    secret_salt: Option<&str>,
 ) -> Result<(), TokenManagementClientAuthError> {
     let assertion = authenticate_client_with_dependencies(
         service,
@@ -149,6 +152,7 @@ pub async fn authenticate_revocation_client_with_dependencies(
         client,
         credentials,
         ClientAuthenticationContext::AllowPublicNone,
+        secret_salt,
     )
     .await?;
     consume_token_management_client_assertion_with_authorization_service(
@@ -167,6 +171,7 @@ pub async fn authenticate_client_with_dependencies(
     client: &mut ClientRow,
     credentials: &ClientCredentials,
     context: ClientAuthenticationContext,
+    secret_salt: Option<&str>,
 ) -> Result<Option<ValidatedClientAssertion>, TokenManagementClientAuthError> {
     let requirement =
         client_authentication_requirement(client, credentials, context).map_err(|error| {
@@ -216,22 +221,21 @@ pub async fn authenticate_client_with_dependencies(
             })
         }
         ClientAuthenticationRequirement::ClientSecret { secret, .. } => {
-            let secret_match = match service.client_secret_salt(client.id).await {
-                Ok(Some(salt)) => {
+            let secret_match = match secret_salt {
+                Some(salt) => {
                     let candidate_digest =
-                        client_secret_digest(secret, config.client_secret_pepper, &salt);
+                        client_secret_digest(secret, config.client_secret_pepper, salt);
                     service
                         .client_secret_digest_matches(client.id, &candidate_digest)
                         .await
                 }
-                Ok(None) => {
+                None => {
                     perform_dummy_client_secret_verification(
                         credentials,
                         config.client_secret_pepper,
                     );
                     Ok(false)
                 }
-                Err(error) => Err(error),
             };
             if client_secret_auth_result(secret_match)? {
                 Ok(None)

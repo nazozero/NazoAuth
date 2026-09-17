@@ -355,10 +355,20 @@ pub enum TokenExchangeSenderBinding {
     MutualTls(String),
 }
 
+/// Internal subject ownership recovered from a verified exchange subject
+/// token. `User::public_user_id` carries the public UUID only when the token
+/// itself discloses it; pairwise subjects keep their internal owner hidden and
+/// are resolved by the application through the issuance record.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TokenExchangeSubjectIdentity {
+    User { public_user_id: Option<Uuid> },
+    Client,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatedTokenExchangeSubject {
     pub subject: String,
-    pub user_id: Option<Uuid>,
+    pub identity: TokenExchangeSubjectIdentity,
     pub scopes: Vec<String>,
     pub sender_binding: TokenExchangeSenderBinding,
 }
@@ -385,12 +395,21 @@ pub fn validate_token_exchange_subject(
     if claims.client_id != policy.client_id {
         return Err(TokenExchangeError::InvalidGrant);
     }
-    let user_id = claims
-        .user_id
-        .as_deref()
-        .map(str::parse::<Uuid>)
-        .transpose()
-        .map_err(|_| TokenExchangeError::InvalidGrant)?;
+    let identity = match claims.subject_type.as_str() {
+        "user" => match claims.user_id.as_deref() {
+            None => TokenExchangeSubjectIdentity::User {
+                public_user_id: None,
+            },
+            Some(raw) => TokenExchangeSubjectIdentity::User {
+                public_user_id: Some(
+                    raw.parse::<Uuid>()
+                        .map_err(|_| TokenExchangeError::InvalidGrant)?,
+                ),
+            },
+        },
+        "client" if claims.user_id.is_none() => TokenExchangeSubjectIdentity::Client,
+        _ => return Err(TokenExchangeError::InvalidGrant),
+    };
     let scopes = token_exchange_scopes(policy.allowed_scopes, &claims.scope, requested_scope)?;
     let sender_binding = match claims.cnf.as_ref() {
         None => TokenExchangeSenderBinding::Bearer,
@@ -402,7 +421,7 @@ pub fn validate_token_exchange_subject(
     };
     Ok(ValidatedTokenExchangeSubject {
         subject: claims.sub.clone(),
-        user_id,
+        identity,
         scopes,
         sender_binding,
     })

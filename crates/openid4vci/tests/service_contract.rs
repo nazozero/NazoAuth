@@ -20,6 +20,8 @@ use nazo_openid4vci::{
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+type PersistedPreAuthorizedAccess = (String, CredentialAccess, Option<String>);
+
 #[derive(Clone, Default)]
 struct RecordingStore {
     nonce_claimed: Arc<Mutex<bool>>,
@@ -29,6 +31,8 @@ struct RecordingStore {
     deferred: Arc<Mutex<Vec<DeferredCredential>>>,
     responses: Arc<Mutex<Vec<StoredCredentialResponse>>>,
     commit_success: Arc<Mutex<Option<bool>>>,
+    pre_authorized_persists: Arc<Mutex<Vec<PersistedPreAuthorizedAccess>>>,
+    pre_authorized_result: Arc<Mutex<Option<CredentialStoreError>>>,
 }
 
 impl RecordingStore {
@@ -63,6 +67,24 @@ impl CredentialStorePort for RecordingStore {
         _: &'a CredentialAccess,
     ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
         Box::pin(async { Ok(()) })
+    }
+    fn persist_pre_authorized_access<'a>(
+        &'a self,
+        token_hash: &'a str,
+        access: &'a CredentialAccess,
+        registered_client_id: Option<&'a str>,
+    ) -> CredentialStoreFuture<'a, Result<(), CredentialStoreError>> {
+        Box::pin(async move {
+            self.pre_authorized_persists.lock().unwrap().push((
+                token_hash.to_owned(),
+                access.clone(),
+                registered_client_id.map(str::to_owned),
+            ));
+            match *self.pre_authorized_result.lock().unwrap() {
+                Some(error) => Err(error),
+                None => Ok(()),
+            }
+        })
     }
     fn offer<'a>(
         &'a self,
@@ -1543,4 +1565,61 @@ async fn doctype_is_used_when_vct_is_absent() {
         .await
         .unwrap();
     assert_eq!(pending.response.credentials.as_ref().unwrap().len(), 1);
+}
+
+// Contract coverage: the port records and forwards
+// persist_pre_authorized_access arguments — including the optional registered
+// client id — and the Arc<T> blanket impl propagates store errors unchanged.
+#[tokio::test]
+async fn persist_pre_authorized_access_forwards_arguments_and_errors() {
+    let store = Arc::new(RecordingStore::default());
+    let access = CredentialAccess {
+        token_id: Uuid::now_v7(),
+        tenant_id: Uuid::now_v7(),
+        subject_id: Uuid::now_v7(),
+        client_id: "registered-wallet".to_owned(),
+        configuration_ids: vec!["pid".to_owned()],
+        credential_identifiers: vec![CredentialIdentifier("pid-1".to_owned())],
+        dpop_jkt: Some("dpop-thumbprint".to_owned()),
+        expires_at: Utc::now() + Duration::minutes(10),
+    };
+
+    // Call through Arc<RecordingStore> so the blanket
+    // `impl CredentialStorePort for Arc<T>` forwards into the recording impl.
+    CredentialStorePort::persist_pre_authorized_access(
+        &store,
+        "token-hash-a",
+        &access,
+        Some("registered-wallet"),
+    )
+    .await
+    .unwrap();
+    CredentialStorePort::persist_pre_authorized_access(&store, "token-hash-b", &access, None)
+        .await
+        .unwrap();
+
+    {
+        let calls = store.pre_authorized_persists.lock().unwrap();
+        assert_eq!(calls.len(), 2);
+        assert_eq!(calls[0].0, "token-hash-a");
+        assert_eq!(calls[0].1, access);
+        assert_eq!(calls[0].2.as_deref(), Some("registered-wallet"));
+        assert_eq!(calls[1].0, "token-hash-b");
+        assert_eq!(calls[1].1, access);
+        assert_eq!(calls[1].2, None);
+    }
+
+    *store.pre_authorized_result.lock().unwrap() = Some(CredentialStoreError::ClientInactive);
+    assert_eq!(
+        CredentialStorePort::persist_pre_authorized_access(
+            &store,
+            "token-hash-c",
+            &access,
+            Some("registered-wallet"),
+        )
+        .await,
+        Err(CredentialStoreError::ClientInactive),
+        "the Arc<T> forwarding impl must propagate ClientInactive unchanged"
+    );
+    assert_eq!(store.pre_authorized_persists.lock().unwrap().len(), 3);
 }

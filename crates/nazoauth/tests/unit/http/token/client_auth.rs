@@ -42,6 +42,7 @@ pub(crate) async fn verify_confidential_client(
         &mut client,
         credentials,
         ClientAuthenticationContext::ConfidentialOnly,
+        None,
     )
     .await;
     result.map_err(|error| match error {
@@ -81,6 +82,7 @@ async fn verify_confidential_client_with_resolver(
         &mut client,
         credentials,
         ClientAuthenticationContext::ConfidentialOnly,
+        None,
     )
     .await
 }
@@ -686,6 +688,7 @@ async fn introspection_and_revocation_wrappers_preserve_public_client_policy() {
         &request,
         &mut public_client,
         &credentials,
+        None,
     )
     .await
     .expect_err("introspection must reject public-client credentials");
@@ -700,6 +703,7 @@ async fn introspection_and_revocation_wrappers_preserve_public_client_policy() {
         &request,
         &mut public_client,
         &credentials,
+        None,
     )
     .await;
     assert!(

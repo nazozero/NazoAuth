@@ -1,4 +1,5 @@
 mod access_requests;
+mod access_token_revocation;
 mod admin_provision;
 mod audit;
 mod audit_ledger;

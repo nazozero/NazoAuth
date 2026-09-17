@@ -26,6 +26,11 @@ use uuid::Uuid;
 
 const SYSTEM_TENANT: Uuid = Uuid::from_u128(1);
 
+/// `cleanup_batch` sweeps expired security state globally. Sibling tests each
+/// seed their own fixtures but share that single sweep, so their batches must
+/// not interleave with one another's.
+static CLEANUP_BATCH_GATE: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(1);
+
 fn database_url() -> Option<String> {
     let url = std::env::var("NAZO_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("DATABASE_URL"))
@@ -200,6 +205,10 @@ async fn expired_issuances_are_reclaimed_in_bounded_batches() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
     let tag = Uuid::now_v7().simple().to_string();
     // The shared test database accumulates expired issuances from other
@@ -269,6 +278,10 @@ async fn natural_expiry_refresh_leaf_reclaimed_without_revocation() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
     let family_id = Uuid::now_v7();
     // Naturally expired, never marked revoked: revoked_at stays NULL.
@@ -298,6 +311,10 @@ async fn active_successor_blocks_ancestor_reclaim() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
     let family_id = Uuid::now_v7();
     let parent = insert_refresh_leaf(
@@ -335,6 +352,10 @@ async fn three_generation_family_reclaims_leaves_first_over_cycles() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
     let family_id = Uuid::now_v7();
     let expired = Utc::now() - Duration::hours(2);
@@ -371,6 +392,10 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
     let locked_family = Uuid::now_v7();
     let free_family = Uuid::now_v7();
@@ -442,6 +467,10 @@ async fn concurrent_batches_do_not_deadlock_or_double_count() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
     let expired = Utc::now() - Duration::hours(2);
     let mut families = Vec::new();
@@ -469,6 +498,10 @@ async fn cancelled_batch_leaves_no_open_transaction_on_pooled_connection() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
     let expired = Utc::now() - Duration::hours(2);
     let gated_family = Uuid::now_v7();
@@ -581,6 +614,10 @@ async fn openid4vp_find_never_deletes_and_create_only_clears_the_same_key() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
     nazo_postgres::run_pending_migrations(&database_url)
         .await
         .expect("migrations should apply");
@@ -743,6 +780,10 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
     let Some(database_url) = database_url() else {
         return;
     };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
     // Clear expired rows left by other suites so the single bounded batch
     // below provably reaches this fixture's rows.

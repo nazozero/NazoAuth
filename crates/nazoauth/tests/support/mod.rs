@@ -8,6 +8,11 @@ pub(crate) mod client_auth_keys;
 #[allow(unused_imports)]
 pub(crate) use client_auth_keys::CountingJwksResolver;
 
+#[path = "counting_ports.rs"]
+pub(crate) mod counting_ports;
+#[allow(unused_imports)]
+pub(crate) use counting_ports::{CountingAuthorizationRepository, CountingTokenRepository};
+
 #[path = "domain/database_user_fixture.rs"]
 mod database_user_fixture;
 pub(crate) use database_user_fixture::{

@@ -224,31 +224,66 @@ async fn poll_and_issue_ciba(
             false,
         ));
     };
-    let user = match users
-        .by_id(
-            nazo_identity::TenantId::new(tenant_id).expect("configured CIBA tenant ID is non-nil"),
-            nazo_identity::UserId::new(ciba.user_id).expect("persisted CIBA user ID is non-nil"),
-        )
-        .await
-    {
-        Ok(Some(user)) if user.principal.active => user,
-        Ok(_) => {
-            return Err(OAuthEndpointError::token(
-                ProtocolStatusCode::BAD_REQUEST,
-                "invalid_grant",
-                "CIBA user is unavailable.",
-                false,
-            ));
+    // OIDC grants read the active subject claims once here and carry that
+    // request-local snapshot into shared issuance. The snapshot is not the
+    // final authority: the commit still revalidates the principal under its
+    // lock. Non-OIDC CIBA grants keep the original active-user check.
+    let prepared_subject = if ciba.scopes.iter().any(|scope| scope == "openid") {
+        match token_service
+            .active_subject_claims(tenant_id, ciba.user_id)
+            .await
+        {
+            Ok(Some(claims)) => {
+                Some(crate::domain::oauth::PreparedTokenSubject { tenant_id, claims })
+            }
+            Ok(None) => {
+                return Err(OAuthEndpointError::token(
+                    ProtocolStatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "CIBA user is unavailable.",
+                    false,
+                ));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to load CIBA subject claims");
+                return Err(OAuthEndpointError::token(
+                    ProtocolStatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "CIBA failed.",
+                    false,
+                ));
+            }
         }
-        Err(error) => {
-            tracing::warn!(%error, "failed to load CIBA user");
-            return Err(OAuthEndpointError::token(
-                ProtocolStatusCode::SERVICE_UNAVAILABLE,
-                "server_error",
-                "CIBA failed.",
-                false,
-            ));
-        }
+    } else {
+        match users
+            .by_id(
+                nazo_identity::TenantId::new(tenant_id)
+                    .expect("configured CIBA tenant ID is non-nil"),
+                nazo_identity::UserId::new(ciba.user_id)
+                    .expect("persisted CIBA user ID is non-nil"),
+            )
+            .await
+        {
+            Ok(Some(user)) if user.principal.active => user,
+            Ok(_) => {
+                return Err(OAuthEndpointError::token(
+                    ProtocolStatusCode::BAD_REQUEST,
+                    "invalid_grant",
+                    "CIBA user is unavailable.",
+                    false,
+                ));
+            }
+            Err(error) => {
+                tracing::warn!(%error, "failed to load CIBA user");
+                return Err(OAuthEndpointError::token(
+                    ProtocolStatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "CIBA failed.",
+                    false,
+                ));
+            }
+        };
+        None
     };
     let subject = match ciba_subject_for_client(issuance.config, ciba.user_id, client) {
         Ok(subject) => subject,
@@ -263,12 +298,13 @@ async fn poll_and_issue_ciba(
         }
     };
     let issue = ciba_token_issue(
-        user.id(),
+        ciba.user_id,
         subject,
         *ciba,
         authentication_context,
         dpop_jkt,
         mtls_x5t_s256,
+        prepared_subject,
     );
     issue_token_response(
         issuance,
@@ -304,9 +340,11 @@ fn ciba_token_issue(
     authentication_context: CibaAuthenticationContext,
     dpop_jkt: Option<String>,
     mtls_x5t_s256: Option<String>,
+    prepared_subject: Option<crate::domain::oauth::PreparedTokenSubject>,
 ) -> TokenIssue {
     TokenIssue {
         user_id: Some(user_id),
+        prepared_subject,
         subject,
         scopes: ciba.scopes,
         authorization_details: json!([]),
