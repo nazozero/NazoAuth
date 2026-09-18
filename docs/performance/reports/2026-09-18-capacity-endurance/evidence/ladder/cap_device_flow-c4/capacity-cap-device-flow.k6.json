@@ -1,0 +1,347 @@
+{
+    "root_group": {
+        "checks": {
+            "device_authorization 200": {
+                "passes": 13421,
+                "fails": 0,
+                "name": "device_authorization 200",
+                "path": "::device_authorization 200",
+                "id": "7c2e0e7d40b43dd7c373844dae967919"
+            },
+            "device_verification 200": {
+                "name": "device_verification 200",
+                "path": "::device_verification 200",
+                "id": "51d6d53ab33955a9891cc225bd0f98e6",
+                "passes": 13421,
+                "fails": 0
+            },
+            "device_decision 200": {
+                "name": "device_decision 200",
+                "path": "::device_decision 200",
+                "id": "abf71a76445a9a927462a6606a19510a",
+                "passes": 13421,
+                "fails": 0
+            },
+            "device token 200": {
+                "id": "1caf5a1a11910d9861ab402c28f009e4",
+                "passes": 13421,
+                "fails": 0,
+                "name": "device token 200",
+                "path": "::device token 200"
+            }
+        },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {}
+    },
+    "metrics": {
+        "http_req_duration": {
+            "avg": 3.2115704685381297,
+            "med": 2.6787225,
+            "p(50)": 2.6787225,
+            "p(90)": 6.996868000000003,
+            "p(95)": 8.193087499999999,
+            "p(99)": 11.477840029999982,
+            "max": 56.947391,
+            "min": 0.093778,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "err_classified{step:device_verification}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "iteration_duration": {
+            "avg": 13.400696706430166,
+            "med": 12.563538,
+            "p(50)": 12.563538,
+            "p(90)": 18.590708,
+            "p(95)": 20.597255,
+            "p(99)": 25.307775199999988,
+            "max": 67.533112,
+            "min": 6.612047
+        },
+        "checks": {
+            "passes": 53684,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "iterations": {
+            "count": 13421,
+            "rate": 298.2067123557569
+        },
+        "http_req_sending": {
+            "p(99)": 0.04932666999999991,
+            "max": 0.511849,
+            "min": 0.00156,
+            "avg": 0.009970063817897244,
+            "med": 0.007494499999999999,
+            "p(50)": 0.007494499999999999,
+            "p(90)": 0.01755,
+            "p(95)": 0.02492
+        },
+        "http_req_duration{step:device_authorization}": {
+            "max": 7.679515,
+            "min": 0.555479,
+            "avg": 1.146172030251094,
+            "med": 0.969819,
+            "p(50)": 0.969819,
+            "p(90)": 1.815961,
+            "p(95)": 2.079855,
+            "p(99)": 2.640825199999993,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "cap_measure_ops": {
+            "count": 10362,
+            "rate": 230.2375347165154
+        },
+        "http_req_failed{step:device_authorization}": {
+            "passes": 0,
+            "fails": 13421,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "cap_m1_ms": {
+            "p(50)": 12,
+            "p(90)": 18,
+            "p(95)": 20,
+            "p(99)": 24,
+            "max": 68,
+            "min": 6,
+            "avg": 12.704014668982822,
+            "med": 12
+        },
+        "http_reqs{step:token_device_code}": {
+            "count": 13421,
+            "rate": 298.2067123557569,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{step:token_device_code}": {
+            "max": 50.711375,
+            "min": 3.201211,
+            "avg": 5.8940686323671905,
+            "med": 5.427073,
+            "p(50)": 5.427073,
+            "p(90)": 8.188253,
+            "p(95)": 9.175551,
+            "p(99)": 12.221044199999987,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "vus": {
+            "value": 4,
+            "min": 4,
+            "max": 4
+        },
+        "http_req_connecting": {
+            "med": 0,
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0.189307,
+            "min": 0,
+            "avg": 0.000010152708441993891
+        },
+        "http_req_duration{expected_response:true}": {
+            "p(50)": 2.6787225,
+            "p(90)": 6.996868000000003,
+            "p(95)": 8.193087499999999,
+            "p(99)": 11.477840029999982,
+            "max": 56.947391,
+            "min": 0.093778,
+            "avg": 3.2115704685381297,
+            "med": 2.6787225
+        },
+        "cap_measure_ms": {
+            "avg": 12.696583671105964,
+            "med": 12,
+            "p(50)": 12,
+            "p(90)": 18,
+            "p(95)": 20,
+            "p(99)": 24,
+            "max": 68,
+            "min": 6
+        },
+        "http_reqs{step:device_authorization}": {
+            "count": 13421,
+            "rate": 298.2067123557569,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_blocked": {
+            "p(50)": 0.00165,
+            "p(90)": 0.003559,
+            "p(95)": 0.005159849999999998,
+            "p(99)": 0.010499,
+            "max": 0.733394,
+            "min": 0.00047,
+            "avg": 0.002211448569406163,
+            "med": 0.00165
+        },
+        "http_req_duration{step:device_decision}": {
+            "min": 2.143953,
+            "avg": 5.558448577155201,
+            "med": 5.013561,
+            "p(50)": 5.013561,
+            "p(90)": 8.197313,
+            "p(95)": 9.819098,
+            "p(99)": 13.907929999999995,
+            "max": 56.947391,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_tls_handshaking": {
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "min": 0,
+            "avg": 0,
+            "med": 0
+        },
+        "http_req_failed{step:device_verification}": {
+            "passes": 0,
+            "fails": 13421,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_duration{step:device_verification}": {
+            "min": 0.093778,
+            "avg": 0.24759263437895845,
+            "med": 0.204496,
+            "p(50)": 0.204496,
+            "p(90)": 0.406581,
+            "p(95)": 0.494239,
+            "p(99)": 0.7080007999999999,
+            "max": 1.943528,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_failed{step:token_device_code}": {
+            "fails": 13421,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "err_classified": {
+            "count": 0,
+            "rate": 0
+        },
+        "http_req_receiving": {
+            "avg": 0.03103234704940006,
+            "med": 0.02419,
+            "p(50)": 0.02419,
+            "p(90)": 0.05600600000000005,
+            "p(95)": 0.07851649999999999,
+            "p(99)": 0.1329763699999999,
+            "max": 0.831282,
+            "min": 0.00404
+        },
+        "http_req_failed{step:device_decision}": {
+            "passes": 0,
+            "fails": 13421,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "err_classified{step:device_decision}": {
+            "rate": 0,
+            "count": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "cap_m1_ops": {
+            "count": 10362,
+            "rate": 230.2375347165154
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 53684,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "err_classified{step:token_device_code}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_waiting": {
+            "p(99)": 11.422576299999998,
+            "max": 56.913601,
+            "min": 0.076199,
+            "avg": 3.1705680576708155,
+            "med": 2.623994,
+            "p(50)": 2.623994,
+            "p(90)": 6.938257300000001,
+            "p(95)": 8.134329999999999
+        },
+        "data_received": {
+            "count": 57612786,
+            "rate": 1280122.1595049384
+        },
+        "http_reqs{step:device_verification}": {
+            "count": 13421,
+            "rate": 298.2067123557569,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "data_sent": {
+            "count": 16132042,
+            "rate": 358444.4682516198
+        },
+        "http_reqs": {
+            "count": 53684,
+            "rate": 1192.8268494230276
+        },
+        "err_classified{step:device_authorization}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "vus_max": {
+            "value": 4,
+            "min": 4,
+            "max": 4
+        },
+        "http_reqs{step:device_decision}": {
+            "count": 13421,
+            "rate": 298.2067123557569,
+            "thresholds": {
+                "count>=0": false
+            }
+        }
+    }
+}

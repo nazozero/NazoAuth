@@ -1,0 +1,30 @@
+{
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:authorize_decision}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:par_oidc}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:authorize}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:token_refresh}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:login}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:token_authorization_code}": {
+  "rate": 0,
+  "count": 0
+ }
+}

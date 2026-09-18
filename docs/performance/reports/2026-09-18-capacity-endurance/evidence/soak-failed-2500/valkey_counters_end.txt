@@ -1,0 +1,6 @@
+total_commands_processed:156023384
+expired_keys:3845674
+expired_stale_perc:0.00
+expired_time_cap_reached_count:19
+keyspace_hits:78421433
+keyspace_misses:218870

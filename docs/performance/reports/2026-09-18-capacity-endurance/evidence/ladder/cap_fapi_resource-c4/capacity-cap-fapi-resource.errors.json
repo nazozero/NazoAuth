@@ -1,0 +1,18 @@
+{
+ "err_classified{step:fapi_resource_get}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:fapi_resource_post}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:cap_bootstrap}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ }
+}

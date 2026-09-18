@@ -1,0 +1,120 @@
+cap_mixed   [ 100% ] 018/256 VUs  1h59m34.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m35.9s), 016/256 VUs, 14313845 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 016/256 VUs  1h59m35.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m36.9s), 013/256 VUs, 14315848 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 013/256 VUs  1h59m36.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m37.9s), 009/256 VUs, 14317852 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 009/256 VUs  1h59m37.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m38.9s), 015/256 VUs, 14319846 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 015/256 VUs  1h59m38.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m39.9s), 022/256 VUs, 14321839 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 022/256 VUs  1h59m39.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m40.9s), 009/256 VUs, 14323853 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 009/256 VUs  1h59m40.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m41.9s), 008/256 VUs, 14325853 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 008/256 VUs  1h59m41.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m42.9s), 008/256 VUs, 14327853 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 008/256 VUs  1h59m42.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m43.9s), 012/256 VUs, 14329850 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 012/256 VUs  1h59m43.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m44.9s), 013/256 VUs, 14331848 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 013/256 VUs  1h59m44.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m45.9s), 010/256 VUs, 14333851 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 010/256 VUs  1h59m45.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m46.9s), 011/256 VUs, 14335851 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 011/256 VUs  1h59m46.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m47.9s), 017/256 VUs, 14337845 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 017/256 VUs  1h59m47.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m48.9s), 017/256 VUs, 14339844 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 017/256 VUs  1h59m48.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m49.9s), 011/256 VUs, 14341850 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 011/256 VUs  1h59m49.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m50.9s), 010/256 VUs, 14343852 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 010/256 VUs  1h59m50.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m51.9s), 011/256 VUs, 14345851 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 011/256 VUs  1h59m51.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m52.9s), 009/256 VUs, 14347852 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 009/256 VUs  1h59m52.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m53.9s), 013/256 VUs, 14349849 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 013/256 VUs  1h59m53.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m54.9s), 008/256 VUs, 14351853 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 008/256 VUs  1h59m54.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m55.9s), 017/256 VUs, 14353845 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 017/256 VUs  1h59m55.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m56.9s), 018/256 VUs, 14355843 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 018/256 VUs  1h59m56.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m57.9s), 013/256 VUs, 14357848 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 013/256 VUs  1h59m57.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m58.9s), 011/256 VUs, 14359850 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 011/256 VUs  1h59m58.9s/2h0m0s  2000.00 iters/s
+
+running (1h59m59.9s), 022/256 VUs, 14361840 complete and 0 interrupted iterations
+cap_mixed   [ 100% ] 022/256 VUs  1h59m59.9s/2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+
+running (2h00m00.0s), 000/256 VUs, 14361983 complete and 0 interrupted iterations
+cap_mixed ✓ [ 100% ] 000/256 VUs  2h0m0s  2000.00 iters/s
+seeded 256 perf users, clients, and 1000 flow vectors (scenario=cap_mixed, rate=2000/s)
+capacity/cap_mixed: status=target_miss rps=2896.683 p95=14.745ms errors=0.0 db_calls=274295158

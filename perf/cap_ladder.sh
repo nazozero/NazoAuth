@@ -1,5 +1,6 @@
 #!/bin/bash
 # Capacity ladder orchestrator for perf/capacity-stress-20260915.
+DID=${PERF_DEPLOYMENT_ID:-$(docker exec nazoauth-perf-valkey-1 valkey-cli keys "nazo:state:v1:*:tenant:*" 2>/dev/null | head -1 | cut -d: -f4)}
 # Usage: cap_ladder.sh <scenario> [concurrency list] [duration] [warmup_ms]
 set -u
 cd /workspace
@@ -20,7 +21,7 @@ for c in $LEVELS; do
     -v "$d":/out \
     -e PERF_RESULTS_DIR=/out \
     -e PERF_REPORT_PATH=/out/report.md \
-    -e PERF_TENANT_HOST=127.0.0.1:8000 -e PERF_DEPLOYMENT_ID=01a0a547-ec73-7383-ab7f-f2e49b373a08 \
+    -e PERF_TENANT_HOST=127.0.0.1:8000 -e PERF_DEPLOYMENT_ID=${DID:-01a0a547-ec73-7383-ab7f-f2e49b373a08} \
     -e PERF_PROFILE=capacity -e PERF_SCENARIO="$SCEN" \
     -e PERF_EXECUTOR=constant-vus -e PERF_VUS="$c" \
     -e PERF_FLOW_VUS="$c" -e PERF_PRE_ALLOCATED_VUS="$c" -e PERF_MAX_VUS="$c" \

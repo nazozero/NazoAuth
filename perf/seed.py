@@ -514,11 +514,60 @@ def seed() -> None:
         conn.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
         # Seeded refresh tokens reference user rows; clear them before the
         # delete+insert user upsert so re-seeding stays idempotent.
-        conn.execute(
-            "DELETE FROM oauth_tokens WHERE tenant_id = %s::uuid",
-            (TENANT_ID,),
-        )
+        # Refresh-token rotation chains self-reference via rotated_from_id;
+        # detach the links before the delete so reseeding stays idempotent.
+        # A concurrent soak keeps minting rotated tokens, so lock the table
+        # to make the detach+delete atomic against live writers.
+        with conn.transaction():
+            conn.execute("LOCK TABLE oauth_tokens IN ACCESS EXCLUSIVE MODE")
+            conn.execute(
+                "UPDATE oauth_tokens SET rotated_from_id = NULL WHERE tenant_id = %s::uuid",
+                (TENANT_ID,),
+            )
+            conn.execute(
+                "DELETE FROM oauth_tokens WHERE tenant_id = %s::uuid",
+                (TENANT_ID,),
+            )
         upsert_users(conn, users)
+        # Administrator user for admin-plane read endpoints (admin_level>0).
+        conn.execute(
+            """
+            INSERT INTO users (
+                tenant_id, realm_id, organization_id, username, email, password_hash,
+                is_active, email_verified, display_name, role, admin_level
+            )
+            VALUES (%s, %s, %s, 'perf_admin', 'perf-admin@example.test', %s,
+                    TRUE, TRUE, 'Perf Admin', 'admin', 2)
+            ON CONFLICT (tenant_id, lower(email)) DO UPDATE
+            SET admin_level = 2, role = 'admin', is_active = TRUE
+            """,
+            (TENANT_ID, REALM_ID, ORGANIZATION_ID, hash_secret(USER_PASSWORD)),
+        )
+        upsert_client(
+            conn,
+            client_id="perf-ciba-client",
+            name="Perf CIBA Client",
+            auth_method="private_key_jwt",
+            require_dpop=True,
+            grants=["urn:openid:params:grant-type:ciba"],
+            scopes=["openid", "profile"],
+            secret_hash=None,
+            jwks=jwks,
+            security_policy=client_security_policy(
+                "fapi2", session_management=True, cross_device=True),
+        )
+        upsert_client(
+            conn,
+            client_id="perf-device-client",
+            name="Perf Device Client",
+            auth_method="client_secret_post",
+            grants=["urn:ietf:params:oauth:grant-type:device_code"],
+            scopes=["openid", "profile"],
+            secret_hash=secret_hash,
+            jwks=None,
+            security_policy=client_security_policy(
+                "baseline", session_management=True, cross_device=True),
+        )
         upsert_client(
             conn,
             client_id="perf-client-credentials",
@@ -574,6 +623,10 @@ def seed() -> None:
         # generated self-signed leaf directly as an approved anchor so the chain
         # verifies; requester and approver must be distinct users.
         conn.execute(
+            "DELETE FROM oauth_client_mtls_trust_anchor_requests WHERE tenant_id = %s::uuid",
+            (TENANT_ID,),
+        )
+        conn.execute(
             """
             INSERT INTO oauth_client_mtls_trust_anchor_requests
                 (tenant_id, user_id, client_id, certificate_pem,
@@ -613,6 +666,25 @@ def seed() -> None:
             """,
             (TENANT_ID, USER_EMAIL, TENANT_ID, "perf-oidc-client"),
         )
+        scim_token = f"perf-scim-{random_token()}"
+        conn.execute(
+            """
+            INSERT INTO scim_tokens (tenant_id, token_hash, label, scopes)
+            VALUES (%s::uuid, %s, 'perf-benchmark',
+                    '["scim:read","scim:write"]'::jsonb)
+            ON CONFLICT (token_hash) DO NOTHING
+            """,
+            (TENANT_ID, blake3(scim_token.encode()).hexdigest()),
+        )
+        scim_user_id = conn.execute(
+            """
+            SELECT id FROM users
+            WHERE tenant_id = %s::uuid AND lower(email) = %s
+            """,
+            (TENANT_ID, USER_EMAIL.lower()),
+        ).fetchone()[0]
+        admin_sessions = seed_logged_in_sessions(
+            conn, [{"email": "perf-admin@example.test"}])
         oidc_refresh_tokens = seed_oidc_refresh_tokens(conn, users, issuer)
         logged_in_sessions = seed_logged_in_sessions(conn, users)
         conn.commit()
@@ -623,6 +695,9 @@ def seed() -> None:
         "user": users[0],
         "users": users,
         "logged_in_sessions": logged_in_sessions,
+        "admin_session": admin_sessions[0],
+        "scim_token": scim_token,
+        "scim_user_id": str(scim_user_id),
         "client_assertion_type": CLIENT_ASSERTION_TYPE,
         "client_secret": CLIENT_SECRET,
         "oidc_refresh_tokens": oidc_refresh_tokens,
@@ -632,6 +707,8 @@ def seed() -> None:
             "oidc": "perf-oidc-client",
             "fapi": "perf-fapi-private-jwt-dpop-client",
             "mtls": "perf-mtls-client",
+                "device": "perf-device-client",
+                "ciba": "perf-ciba-client",
         },
         "dpop_jkt": dpop_jkt,
         "private_jwk": rsa_private_jwk(rsa_key, rsa_kid),

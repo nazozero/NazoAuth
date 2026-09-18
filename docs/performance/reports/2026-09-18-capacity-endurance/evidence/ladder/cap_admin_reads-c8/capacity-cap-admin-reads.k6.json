@@ -1,0 +1,599 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "admin_client_templates 200": {
+                    "name": "admin_client_templates 200",
+                    "path": "::admin_client_templates 200",
+                    "id": "1bba16b2358e52349278ce73146d3616",
+                    "passes": 14405,
+                    "fails": 0
+                },
+                "admin_runtime_module_events 200": {
+                    "name": "admin_runtime_module_events 200",
+                    "path": "::admin_runtime_module_events 200",
+                    "id": "5ec6cbc61bd2ce3b46f832974e46dc82",
+                    "passes": 5728,
+                    "fails": 0
+                },
+                "admin_users 200": {
+                    "passes": 25756,
+                    "fails": 0,
+                    "name": "admin_users 200",
+                    "path": "::admin_users 200",
+                    "id": "82b5b0dbe1bb15ae31b1dbf3660c3eea"
+                },
+                "admin_mtls_trust_anchors 200": {
+                    "id": "b3b7463b458c893740df822d2ce8d84b",
+                    "passes": 11474,
+                    "fails": 0,
+                    "name": "admin_mtls_trust_anchors 200",
+                    "path": "::admin_mtls_trust_anchors 200"
+                },
+                "admin_mtls_trust_requests 200": {
+                    "passes": 14088,
+                    "fails": 0,
+                    "name": "admin_mtls_trust_requests 200",
+                    "path": "::admin_mtls_trust_requests 200",
+                    "id": "c5e0277ffab5727fc2526440c6eaccaf"
+                },
+                "admin_clients 200": {
+                    "name": "admin_clients 200",
+                    "path": "::admin_clients 200",
+                    "id": "079496264633f988bf9ee0d64c2b76b4",
+                    "passes": 22891,
+                    "fails": 0
+                },
+                "admin_federation_providers 200": {
+                    "fails": 0,
+                    "name": "admin_federation_providers 200",
+                    "path": "::admin_federation_providers 200",
+                    "id": "5453e69775bf1bc0e24c9fe3024bddec",
+                    "passes": 8477
+                },
+                "admin_grants 200": {
+                    "fails": 0,
+                    "name": "admin_grants 200",
+                    "path": "::admin_grants 200",
+                    "id": "d7a4c3738c77b87da421cbb6458ec072",
+                    "passes": 14337
+                },
+                "admin_access_requests 200": {
+                    "passes": 14327,
+                    "fails": 0,
+                    "name": "admin_access_requests 200",
+                    "path": "::admin_access_requests 200",
+                    "id": "4688c4cbbc13088b37ca24c6c1c3d3e5"
+                },
+                "admin_runtime_modules 200": {
+                    "name": "admin_runtime_modules 200",
+                    "path": "::admin_runtime_modules 200",
+                    "id": "0d826e0d8d21b55cfc033857e7ad5ad7",
+                    "passes": 11663,
+                    "fails": 0
+                }
+            }
+    },
+    "metrics": {
+        "http_req_failed{step:admin_users}": {
+            "passes": 0,
+            "fails": 25756,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_blocked": {
+            "p(95)": 0.00543,
+            "p(99)": 0.008794949999999895,
+            "max": 22.936027,
+            "min": 0.000509,
+            "avg": 0.0036393965671413786,
+            "med": 0.002,
+            "p(50)": 0.002,
+            "p(90)": 0.00395
+        },
+        "http_reqs{step:admin_mtls_trust_anchors}": {
+            "count": 11474,
+            "rate": 254.96287254626358,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_sending": {
+            "p(90)": 0.013344499999999999,
+            "p(95)": 0.01902,
+            "p(99)": 0.04156749999999919,
+            "max": 6.406032,
+            "min": 0.0014,
+            "avg": 0.00934170311430354,
+            "med": 0.006289,
+            "p(50)": 0.006289
+        },
+        "http_reqs{step:admin_grants}": {
+            "count": 14337,
+            "rate": 318.5813756053496,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "err_classified{step:admin_client_templates}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{step:admin_clients}": {
+            "max": 34.326873,
+            "min": 0.48676,
+            "avg": 2.541085455943379,
+            "med": 1.326532,
+            "p(50)": 1.326532,
+            "p(90)": 5.781876,
+            "p(95)": 8.350070500000001,
+            "p(99)": 14.057590899999997,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_reqs{step:admin_access_requests}": {
+            "count": 14327,
+            "rate": 318.3591663735679,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{step:admin_runtime_modules}": {
+            "p(50)": 1.142556,
+            "p(90)": 5.613974000000002,
+            "p(95)": 8.304876999999998,
+            "p(99)": 13.892891219999973,
+            "max": 28.043528,
+            "min": 0.409311,
+            "avg": 2.370893008059683,
+            "med": 1.142556,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "err_classified{step:admin_runtime_module_events}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "iterations": {
+            "count": 143146,
+            "rate": 3180.836269261587
+        },
+        "err_classified{step:admin_users}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{step:admin_mtls_trust_anchors}": {
+            "p(90)": 5.693844000000002,
+            "p(95)": 8.108854500000005,
+            "p(99)": 13.541324500000005,
+            "max": 38.851316,
+            "min": 0.695165,
+            "avg": 2.5960956140840237,
+            "med": 1.4471384999999999,
+            "p(50)": 1.4471384999999999,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "err_classified{step:admin_clients}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_failed{step:admin_access_requests}": {
+            "passes": 0,
+            "fails": 14327,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "cap_m1_ms": {
+            "p(95)": 8,
+            "p(99)": 14,
+            "max": 42,
+            "min": 0,
+            "avg": 2.457497422509766,
+            "med": 1,
+            "p(50)": 1,
+            "p(90)": 6
+        },
+        "err_classified{step:admin_access_requests}": {
+            "rate": 0,
+            "count": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{step:admin_runtime_module_events}": {
+            "max": 21.748903,
+            "min": 0.378702,
+            "avg": 2.254114294343576,
+            "med": 1.0625825,
+            "p(50)": 1.0625825,
+            "p(90)": 5.399646000000001,
+            "p(95)": 8.08790535,
+            "p(99)": 13.560782999999995,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "med": 0,
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "min": 0
+        },
+        "http_reqs{step:admin_mtls_trust_requests}": {
+            "count": 14088,
+            "rate": 313.04836573398654,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_failed{step:admin_mtls_trust_anchors}": {
+            "passes": 0,
+            "fails": 11474,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_failed{step:admin_runtime_modules}": {
+            "passes": 0,
+            "fails": 11663,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "vus": {
+            "min": 8,
+            "max": 8,
+            "value": 8
+        },
+        "err_classified{step:admin_mtls_trust_requests}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "err_classified{step:admin_federation_providers}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_reqs": {
+            "count": 143146,
+            "rate": 3180.836269261587
+        },
+        "http_req_failed{step:admin_client_templates}": {
+            "passes": 0,
+            "fails": 14405,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_duration{step:admin_mtls_trust_requests}": {
+            "med": 2.024606,
+            "p(50)": 2.024606,
+            "p(90)": 7.105106700000002,
+            "p(95)": 10.263896349999998,
+            "p(99)": 17.745613699999982,
+            "max": 29.38144,
+            "min": 0.998149,
+            "avg": 3.407118381672361,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_failed{step:admin_clients}": {
+            "passes": 0,
+            "fails": 22891,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_failed{step:admin_runtime_module_events}": {
+            "passes": 0,
+            "fails": 5728,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_connecting": {
+            "min": 0,
+            "avg": 0.00003156121721878362,
+            "med": 0,
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 1.049467
+        },
+        "cap_measure_ops": {
+            "count": 105723,
+            "rate": 2349.262661165123
+        },
+        "http_req_failed{step:admin_federation_providers}": {
+            "passes": 0,
+            "fails": 8477,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "checks": {
+            "passes": 143146,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "http_req_waiting": {
+            "p(90)": 5.3879545,
+            "p(95)": 7.885471000000001,
+            "p(99)": 13.74441249999994,
+            "max": 38.810826,
+            "min": 0.123477,
+            "avg": 2.307143863712601,
+            "med": 1.234988,
+            "p(50)": 1.234988
+        },
+        "http_req_duration{step:admin_access_requests}": {
+            "p(95)": 7.6913996999999945,
+            "p(99)": 13.218802139999996,
+            "max": 24.303328,
+            "min": 0.297093,
+            "avg": 2.068123978920922,
+            "med": 0.90953,
+            "p(50)": 0.90953,
+            "p(90)": 5.095310999999999,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "cap_measure_ms": {
+            "min": 0,
+            "avg": 2.450233156456022,
+            "med": 1,
+            "p(50)": 1,
+            "p(90)": 6,
+            "p(95)": 8,
+            "p(99)": 14,
+            "max": 42
+        },
+        "err_classified{step:admin_mtls_trust_anchors}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{step:admin_grants}": {
+            "med": 1.488089,
+            "p(50)": 1.488089,
+            "p(90)": 5.856947999999999,
+            "p(95)": 8.510225999999996,
+            "p(99)": 13.936135919999979,
+            "max": 25.963752,
+            "min": 0.577818,
+            "avg": 2.653758609193003,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_duration{step:admin_federation_providers}": {
+            "avg": 1.3870606639141196,
+            "med": 0.535839,
+            "p(50)": 0.535839,
+            "p(90)": 3.8303780000000014,
+            "p(95)": 5.595139999999999,
+            "p(99)": 8.971577359999996,
+            "max": 18.842885,
+            "min": 0.131638,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_reqs{step:admin_clients}": {
+            "count": 22891,
+            "rate": 508.6591524713718,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "iteration_duration": {
+            "med": 1.4116345,
+            "p(50)": 1.4116345,
+            "p(90)": 5.671602999999999,
+            "p(95)": 8.1959615,
+            "p(99)": 14.044665949999992,
+            "max": 42.284682,
+            "min": 0.170587,
+            "avg": 2.5054546589286697
+        },
+        "err_classified{step:admin_runtime_modules}": {
+            "rate": 0,
+            "count": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 143146,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_reqs{step:admin_runtime_modules}": {
+            "count": 11663,
+            "rate": 259.1626270269367,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_reqs{step:admin_client_templates}": {
+            "count": 14405,
+            "rate": 320.09239838146476,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_failed{step:admin_grants}": {
+            "passes": 0,
+            "fails": 14337,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "err_classified": {
+            "count": 0,
+            "rate": 0
+        },
+        "http_req_receiving": {
+            "p(90)": 0.062198,
+            "p(95)": 0.094418,
+            "p(99)": 0.24801249999999941,
+            "max": 17.522443,
+            "min": 0.00591,
+            "avg": 0.04443108242633382,
+            "med": 0.02946,
+            "p(50)": 0.02946
+        },
+        "http_req_failed{step:admin_mtls_trust_requests}": {
+            "passes": 0,
+            "fails": 14088,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_duration{step:admin_users}": {
+            "avg": 2.4058348046280615,
+            "med": 1.195225,
+            "p(50)": 1.195225,
+            "p(90)": 5.595549999999999,
+            "p(95)": 8.199166499999999,
+            "p(99)": 14.032956450000007,
+            "max": 23.220971,
+            "min": 0.44016,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "err_classified{step:admin_grants}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration": {
+            "max": 38.851316,
+            "min": 0.131638,
+            "avg": 2.360916649253207,
+            "med": 1.283398,
+            "p(50)": 1.283398,
+            "p(90)": 5.472082,
+            "p(95)": 7.970894,
+            "p(99)": 13.82103699999996,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_reqs{step:admin_runtime_module_events}": {
+            "rate": 127.28144796452831,
+            "count": 5728,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{step:admin_client_templates}": {
+            "p(50)": 0.552628,
+            "p(90)": 3.8883270000000003,
+            "p(95)": 5.312857999999997,
+            "p(99)": 8.878091199999995,
+            "max": 23.151453,
+            "min": 0.169866,
+            "avg": 1.3910216544255485,
+            "med": 0.552628,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_duration{expected_response:true}": {
+            "p(99)": 13.82103699999996,
+            "max": 38.851316,
+            "min": 0.131638,
+            "avg": 2.360916649253207,
+            "med": 1.283398,
+            "p(50)": 1.283398,
+            "p(90)": 5.472082,
+            "p(95)": 7.970894
+        },
+        "data_sent": {
+            "rate": 705357.5200727892,
+            "count": 31742944
+        },
+        "data_received": {
+            "count": 992526003,
+            "rate": 22054844.064994022
+        },
+        "cap_m1_ops": {
+            "count": 105723,
+            "rate": 2349.262661165123
+        },
+        "http_reqs{step:admin_users}": {
+            "count": 25756,
+            "rate": 572.3220973768141,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_reqs{step:admin_federation_providers}": {
+            "count": 8477,
+            "rate": 188.3667657813035,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "vus_max": {
+            "min": 8,
+            "max": 8,
+            "value": 8
+        }
+    }
+}

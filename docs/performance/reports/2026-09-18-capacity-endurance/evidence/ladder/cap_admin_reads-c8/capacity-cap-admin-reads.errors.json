@@ -1,0 +1,46 @@
+{
+ "err_classified{step:admin_mtls_trust_anchors}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:admin_runtime_modules}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:admin_grants}": {
+  "rate": 0,
+  "count": 0
+ },
+ "err_classified{step:admin_client_templates}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:admin_runtime_module_events}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:admin_users}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:admin_clients}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:admin_access_requests}": {
+  "rate": 0,
+  "count": 0
+ },
+ "err_classified{step:admin_mtls_trust_requests}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:admin_federation_providers}": {
+  "count": 0,
+  "rate": 0
+ }
+}

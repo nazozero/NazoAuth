@@ -1,0 +1,38 @@
+{
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:check_session_status}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:me_passkeys}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:auth_csrf}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:me_mtls_trust_requests}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:auth_me}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:me_access_requests}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:me_federation_links}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:me_applications}": {
+  "count": 0,
+  "rate": 0
+ }
+}

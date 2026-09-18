@@ -478,6 +478,51 @@ def metric_by_step(summary: dict[str, Any], metric_name: str) -> dict[str, dict[
     return result
 
 
+def error_breakdown_from_file(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    detail = json.loads(path.read_text(encoding="utf-8"))
+    rows = []
+    for key, values in detail.items():
+        tags = parse_metric_tags(key, "err_classified")
+        if not tags:
+            continue
+        count = int(values.get("count", 0))
+        if count == 0:
+            continue
+        rows.append(
+            {
+                "step": tags.get("step", "unknown"),
+                "status": tags.get("status", "?"),
+                "err": tags.get("err", "?"),
+                "count": count,
+            }
+        )
+    rows.sort(key=lambda r: -r["count"])
+    return rows
+
+
+def k6_error_breakdown(summary: dict[str, Any]) -> list[dict[str, Any]]:
+    rows = []
+    for key, metric in summary.get("metrics", {}).items():
+        tags = parse_metric_tags(key, "err_classified")
+        if not tags:
+            continue
+        count = int(metric.get("values", metric).get("count", 0))
+        if count == 0:
+            continue
+        rows.append(
+            {
+                "step": tags.get("step", "unknown"),
+                "status": tags.get("status", "?"),
+                "err": tags.get("err", "?"),
+                "count": count,
+            }
+        )
+    rows.sort(key=lambda r: -r["count"])
+    return rows
+
+
 def k6_step_brief(summary: dict[str, Any]) -> list[dict[str, Any]]:
     durations = metric_by_step(summary, "http_req_duration")
     reqs = metric_by_step(summary, "http_reqs")
@@ -509,6 +554,7 @@ def k6_step_brief(summary: dict[str, Any]) -> list[dict[str, Any]]:
 def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     safe_name = f"{profile}-{scenario}".replace("_", "-")
     k6_summary_path = RESULTS_DIR / f"{safe_name}.k6.json"
+    err_detail_path = RESULTS_DIR / f"{safe_name}.errors.json"
     combined_path = RESULTS_DIR / f"{safe_name}.summary.json"
     reset_pg_stats()
     valkey_before = valkey_stats()
@@ -516,11 +562,13 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     env = os.environ.copy()
     env["PERF_PROFILE"] = profile
     env["PERF_SCENARIO"] = scenario
+    env["PERF_SUMMARY_EXPORT"] = str(k6_summary_path)
+    env["PERF_ERR_DETAIL"] = str(err_detail_path)
     command = [
         "k6",
         "run",
         *(
-            ["--log-output", "file=/dev/null"]
+            ["--log-output", f"file={RESULTS_DIR / (safe_name + '.k6log')}"]
             if os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate"
             else []
         ),
@@ -543,8 +591,14 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         raise RuntimeError(f"k6 scenario produced zero HTTP requests: {profile}/{scenario}")
     db_pool_before = app_before["db_pool"]
     db_pool_after = app_after["db_pool"]
-    acquire_delta = db_pool_after["acquire_count"] - db_pool_before["acquire_count"]
-    wait_delta = db_pool_after["wait_nanos_total"] - db_pool_before["wait_nanos_total"]
+    acquire_raw = db_pool_after["acquire_count"] - db_pool_before["acquire_count"]
+    wait_raw = db_pool_after["wait_nanos_total"] - db_pool_before["wait_nanos_total"]
+    # A negative delta means the app process restarted (counter reset) or was
+    # replaced mid-run; report the clamped value and flag it instead of
+    # averaging a meaningless negative into aggregates.
+    pool_counter_reset = acquire_raw < 0 or wait_raw < 0
+    acquire_delta = max(acquire_raw, 0)
+    wait_delta = max(wait_raw, 0)
     k6 = k6_brief(k6_summary)
     target_rate = int(os.environ.get("PERF_RATE", "0") or 0)
     target_miss = (
@@ -565,11 +619,14 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         "k6_exit_code": completed.returncode,
         "k6": k6,
         "steps": k6_step_brief(k6_summary),
+        "error_breakdown": k6_error_breakdown(k6_summary)
+        or error_breakdown_from_file(err_detail_path),
         "postgres": {
             **pg,
             "statements_per_http_request": round(pg["statement_calls"] / http_reqs, 3) if http_reqs else 0,
         },
         "db_pool": {
+            "counter_reset": pool_counter_reset,
             "acquire_count": acquire_delta,
             "wait_ms_total": round(wait_delta / 1_000_000, 3),
             "wait_ms_avg": round(wait_delta / acquire_delta / 1_000_000, 3) if acquire_delta else 0,
@@ -802,9 +859,21 @@ def ensure_vector_capacity() -> None:
         else:
             scheduled_iterations = rate * duration
             boundary_cushion = max(rate, 1)
-            minimum = offset + max(scheduled_iterations + boundary_cushion, VECTOR_STRIDE_FLOOR)
+            # vectors are replayable crypto material; cap the pool slice so
+            # long arrival-rate runs reuse a bounded pool instead of seeding
+            # one vector per scheduled iteration.
+            minimum = offset + max(min(scheduled_iterations + boundary_cushion, 48000), VECTOR_STRIDE_FLOOR)
     else:
-        minimum = max(iterations, VECTOR_STRIDE_FLOOR) * VECTOR_STRIDE_MULTIPLIER
+        offset = VECTOR_OFFSET_MULTIPLIERS.get(scenario, 0) * vector_stride
+        if offset:
+            # VU-based executors cannot predict iteration counts; bound the
+            # pool by a conservative per-VU iteration estimate so vectorized
+            # scenarios cannot exhaust the offset segment mid-run.
+            vus = int(os.environ.get("PERF_MAX_VUS") or os.environ.get("PERF_VUS") or 8)
+            scheduled = vus * duration * 25
+            minimum = offset + max(scheduled, max(iterations, VECTOR_STRIDE_FLOOR) * VECTOR_STRIDE_MULTIPLIER)
+        else:
+            minimum = max(iterations, VECTOR_STRIDE_FLOOR) * VECTOR_STRIDE_MULTIPLIER
     if requested < minimum:
         os.environ["PERF_VECTOR_COUNT"] = str(minimum)
         print(

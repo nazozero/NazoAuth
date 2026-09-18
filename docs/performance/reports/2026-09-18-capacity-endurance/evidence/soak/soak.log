@@ -1,0 +1,42 @@
+soak start 2026-09-18T04:06:32Z DEPID=01a0b22e-f95c-7212-8ec4-43a7c3f2ced7 RATE=2500 DUR=7200s
+ Container soak-sampler Creating 
+ Container soak-sampler Created 
+abd1ceaf366061a70e6db1566604a6f7821649742c2523465f2a3628def8c049
+sampler started 04:06:32
+runner rss sampler started pid=1448158 04:06:32
+main cap_mixed arrival=2500ops/s started pid=1448164 04:06:32
+ Container soak-argon2 Creating 
+ Container soak-argon2 Created 
+42dd138ab8070fadecc58a6023cc89f9486a0851d869dee6a61d31b168b7e35f
+argon2 sidecar arrival=8/s started 04:08:33
+ Container soak-meta Creating 
+ Container soak-meta Created 
+e180efb136fb3cc5588ed58190c02748bbd84f2953dbfcad50caafcd06bd559a
+meta sidecar arrival=200/s started 04:08:33
+ Container soak-fapi Creating 
+ Container soak-fapi Created 
+44a920a0697a901228ef6a9c5728af5cfa02c8a990a3d83c7c945d916b5e064b
+fapi sidecar arrival=30/s started 04:08:34
+main finished 06:06:50
+SOAK_DONE 2026-09-18T06:07:01Z
+soak start 2026-09-18T06:42:52Z DEPID=01a0b22e-f95c-7212-8ec4-43a7c3f2ced7 RATE=2000 DUR=7200s
+ Container soak-sampler Creating 
+ Container soak-sampler Created 
+25c8356f42bac38df3c314f60dfe4dcc5db9732effeabb100f6e6a9fcc2d1084
+sampler started 06:42:53
+runner rss sampler started pid=2267246 06:42:53
+main cap_mixed arrival=2000ops/s started pid=2267249 06:42:53
+ Container soak-argon2 Creating 
+ Container soak-argon2 Created 
+06a5b1783b61c1a764df36f126e8c114fed2859103961e0a05c72e573c5040e6
+argon2 sidecar arrival=8/s started 06:44:53
+ Container soak-meta Creating 
+ Container soak-meta Created 
+49d004151ab72470cbbce4609ec740abde810e7c77f30b8703fca9a797878138
+meta sidecar arrival=200/s started 06:44:54
+ Container soak-fapi Creating 
+ Container soak-fapi Created 
+f0572540d5e1299a0fd57de298b6e93128bd7899c4b3924b34f5d8488abf6fdc
+fapi sidecar arrival=30/s started 06:44:54
+main finished 08:43:12
+SOAK_DONE 2026-09-18T08:43:22Z

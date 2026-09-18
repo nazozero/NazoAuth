@@ -1,0 +1,382 @@
+{
+    "root_group": {
+        "checks": {
+            "ciba bc status is 200": {
+                "name": "ciba bc status is 200",
+                "path": "::ciba bc status is 200",
+                "id": "f031c7ce37cc37b9ec7bdd12bc3556d6",
+                "passes": 31153,
+                "fails": 0
+            },
+            "ciba auth_req_id returned": {
+                "path": "::ciba auth_req_id returned",
+                "id": "94e2216f48870506514086cee0a77d0e",
+                "passes": 31153,
+                "fails": 0,
+                "name": "ciba auth_req_id returned"
+            },
+            "ciba interval returned": {
+                "name": "ciba interval returned",
+                "path": "::ciba interval returned",
+                "id": "21799a36a4b0936ccc9eb393d2aecf58",
+                "passes": 31153,
+                "fails": 0
+            },
+            "ciba decision view status is 200": {
+                "path": "::ciba decision view status is 200",
+                "id": "761e2291fce7f71a8b1d87f4b236a8d5",
+                "passes": 31153,
+                "fails": 0,
+                "name": "ciba decision view status is 200"
+            },
+            "ciba user decision status is 200": {
+                "name": "ciba user decision status is 200",
+                "path": "::ciba user decision status is 200",
+                "id": "12f3785247219f7951b48f4040b05e4a",
+                "passes": 31153,
+                "fails": 0
+            },
+            "ciba user decision succeeded": {
+                "name": "ciba user decision succeeded",
+                "path": "::ciba user decision succeeded",
+                "id": "5516392924fcdb6bd9e386369573809f",
+                "passes": 31153,
+                "fails": 0
+            },
+            "ciba token status is 200": {
+                "path": "::ciba token status is 200",
+                "id": "13555625c721baff61cacaba3bb09832",
+                "passes": 31153,
+                "fails": 0,
+                "name": "ciba token status is 200"
+            },
+            "ciba token is DPoP-bound": {
+                "name": "ciba token is DPoP-bound",
+                "path": "::ciba token is DPoP-bound",
+                "id": "faffce3ed3a3adefe8403e667433b270",
+                "passes": 31153,
+                "fails": 0
+            },
+            "ciba access token returned": {
+                "name": "ciba access token returned",
+                "path": "::ciba access token returned",
+                "id": "e631ea0ed2bdae1cf22993c3ec330a84",
+                "passes": 31153,
+                "fails": 0
+            }
+        },
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {}
+    },
+    "metrics": {
+        "cap_m1_ops": {
+            "count": 22723,
+            "rate": 504.7749270639133
+        },
+        "http_reqs": {
+            "count": 124612,
+            "rate": 2768.1649963159953
+        },
+        "checks": {
+            "passes": 280377,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "err_classified{step:ciba_backchannel_authentication}": {
+            "rate": 0,
+            "count": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_failed{step:ciba_backchannel_authentication}": {
+            "passes": 0,
+            "fails": 31153,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_duration{step:ciba_backchannel_authentication}": {
+            "p(95)": 8.036886599999999,
+            "p(99)": 12.37153692,
+            "max": 96.227342,
+            "min": 1.793821,
+            "avg": 4.709128963759505,
+            "med": 4.251498,
+            "p(50)": 4.251498,
+            "p(90)": 6.727194999999999,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_duration{step:ciba_user_decision_view}": {
+            "p(90)": 1.2845881999999997,
+            "p(95)": 1.5526949999999997,
+            "p(99)": 2.4017391999999997,
+            "max": 5.831514,
+            "min": 0.332633,
+            "avg": 0.8582933358585051,
+            "med": 0.752484,
+            "p(50)": 0.752484,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_duration": {
+            "max": 97.087654,
+            "min": 0.332633,
+            "avg": 4.229337133502367,
+            "med": 3.805863,
+            "p(50)": 3.805863,
+            "p(90)": 8.019041000000001,
+            "p(95)": 9.3111325,
+            "p(99)": 12.978544,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_receiving": {
+            "p(90)": 0.067928,
+            "p(95)": 0.100278,
+            "p(99)": 0.2164486899999997,
+            "max": 1.800891,
+            "min": 0.00595,
+            "avg": 0.043061830899110656,
+            "med": 0.033859,
+            "p(50)": 0.033859
+        },
+        "data_sent": {
+            "count": 142232502,
+            "rate": 3159591.639447604
+        },
+        "http_req_sending": {
+            "p(99)": 0.08065379999999987,
+            "max": 1.266043,
+            "min": 0.00206,
+            "avg": 0.015077142939684712,
+            "med": 0.01102,
+            "p(50)": 0.01102,
+            "p(90)": 0.02345,
+            "p(95)": 0.032659
+        },
+        "cap_measure_ms": {
+            "max": 118,
+            "min": 13,
+            "avg": 23.17642916868371,
+            "med": 22,
+            "p(50)": 22,
+            "p(90)": 29,
+            "p(95)": 32,
+            "p(99)": 40
+        },
+        "http_req_blocked": {
+            "p(90)": 0.00499,
+            "p(95)": 0.0067,
+            "p(99)": 0.013239889999999999,
+            "max": 2.235591,
+            "min": 0.00049,
+            "avg": 0.0033881674317079477,
+            "med": 0.002609,
+            "p(50)": 0.002609
+        },
+        "http_req_connecting": {
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0.655196,
+            "min": 0,
+            "avg": 0.0000448923057169454,
+            "med": 0,
+            "p(50)": 0
+        },
+        "http_req_failed{step:ciba_user_decision_view}": {
+            "fails": 31153,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_reqs{step:ciba_user_decision_view}": {
+            "count": 31153,
+            "rate": 692.0412490789988,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "iteration_duration": {
+            "avg": 23.102187507816247,
+            "med": 22.366167,
+            "p(50)": 22.366167,
+            "p(90)": 29.015603199999997,
+            "p(95)": 31.516111999999996,
+            "p(99)": 39.157742199999994,
+            "max": 118.617459,
+            "min": 13.048988
+        },
+        "err_classified{step:ciba_user_decision}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{step:ciba_token}": {
+            "avg": 7.558436644689164,
+            "med": 7.093036,
+            "p(50)": 7.093036,
+            "p(90)": 10.105382,
+            "p(95)": 11.412329599999996,
+            "p(99)": 15.727125319999999,
+            "max": 97.087654,
+            "min": 3.974604,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_duration{step:ciba_user_decision}": {
+            "p(90)": 5.633348000000001,
+            "p(95)": 6.8181984,
+            "p(99)": 10.820916119999994,
+            "max": 76.481319,
+            "min": 1.293422,
+            "avg": 3.7914895897024525,
+            "med": 3.344438,
+            "p(50)": 3.344438,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "data_received": {
+            "count": 136670704,
+            "rate": 3036040.3398923418
+        },
+        "cap_m1_ms": {
+            "p(50)": 22,
+            "p(90)": 29,
+            "p(95)": 32,
+            "p(99)": 40,
+            "max": 118,
+            "min": 13,
+            "avg": 23.18558288958324,
+            "med": 22
+        },
+        "err_classified": {
+            "count": 0,
+            "rate": 0
+        },
+        "cap_measure_ops": {
+            "count": 22723,
+            "rate": 504.7749270639133
+        },
+        "http_req_failed{step:ciba_token}": {
+            "fails": 31153,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "err_classified{step:ciba_token}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "vus_max": {
+            "min": 16,
+            "max": 16,
+            "value": 16
+        },
+        "http_reqs{step:ciba_backchannel_authentication}": {
+            "count": 31153,
+            "rate": 692.0412490789988,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_reqs{step:ciba_user_decision}": {
+            "count": 31153,
+            "rate": 692.0412490789988,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_failed{step:ciba_user_decision}": {
+            "passes": 0,
+            "fails": 31153,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "err_classified{step:ciba_user_decision_view}": {
+            "rate": 0,
+            "count": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "vus": {
+            "min": 16,
+            "max": 16,
+            "value": 16
+        },
+        "http_req_waiting": {
+            "avg": 4.171198159663571,
+            "med": 3.747134,
+            "p(50)": 3.747134,
+            "p(90)": 7.943277900000002,
+            "p(95)": 9.232217499999999,
+            "p(99)": 12.884439789999998,
+            "max": 96.983876,
+            "min": 0.318023
+        },
+        "http_reqs{step:ciba_token}": {
+            "count": 31153,
+            "rate": 692.0412490789988,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "iterations": {
+            "count": 31153,
+            "rate": 692.0412490789988
+        },
+        "http_req_failed": {
+            "fails": 124612,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "med": 0,
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "min": 0
+        },
+        "http_req_duration{expected_response:true}": {
+            "p(50)": 3.805863,
+            "p(90)": 8.019041000000001,
+            "p(95)": 9.3111325,
+            "p(99)": 12.978544,
+            "max": 97.087654,
+            "min": 0.332633,
+            "avg": 4.229337133502367,
+            "med": 3.805863
+        }
+    }
+}

@@ -1,0 +1,34 @@
+{
+ "err_classified{step:startup}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:perf_metrics}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:federation_providers}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:health}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:live}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:captcha_config}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:oauth_protected_resource}": {
+  "count": 0,
+  "rate": 0
+ }
+}

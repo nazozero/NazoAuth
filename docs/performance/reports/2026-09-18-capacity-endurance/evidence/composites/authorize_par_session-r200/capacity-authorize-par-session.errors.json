@@ -1,0 +1,18 @@
+{
+ "err_classified{step:login}": {
+  "count": 6672,
+  "rate": 147.4145714313461
+ },
+ "err_classified{step:authorize}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:par_oidc}": {
+  "rate": 0,
+  "count": 0
+ },
+ "err_classified": {
+  "count": 6672,
+  "rate": 147.4145714313461
+ }
+}

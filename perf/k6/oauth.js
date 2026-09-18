@@ -121,9 +121,26 @@ const scenarioSteps = {
   ],
   ciba_private_key_jwt_dpop_poll: [
     'ciba_backchannel_authentication',
-    'ciba_automated_decision',
+    'ciba_user_decision_view',
+    'ciba_user_decision',
     'ciba_token',
   ],
+  cap_session_reads: ['auth_me', 'auth_csrf', 'me_passkeys', 'me_applications',
+    'me_federation_links', 'me_access_requests', 'me_mtls_trust_requests',
+    'check_session_status'],
+  cap_admin_reads: ['admin_users', 'admin_clients', 'admin_client_templates',
+    'admin_grants', 'admin_access_requests', 'admin_mtls_trust_requests',
+    'admin_mtls_trust_anchors', 'admin_runtime_modules',
+    'admin_federation_providers', 'admin_runtime_module_events'],
+  cap_scim_reads: ['scim_spc', 'scim_schemas', 'scim_resourcetypes',
+    'scim_users', 'scim_user'],
+  cap_fapi_resource: ['cap_bootstrap', 'fapi_resource_get', 'fapi_resource_post'],
+  cap_device_flow: ['device_authorization', 'device_verification',
+    'device_decision', 'token_device_code'],
+  cap_ciba_flow: ['ciba_backchannel_authentication', 'ciba_user_decision_view',
+    'ciba_user_decision', 'ciba_token'],
+  cap_public_reads: ['health', 'live', 'startup', 'captcha_config',
+    'federation_providers', 'oauth_protected_resource', 'perf_metrics'],
 };
 const vectorStride = Math.max(iterations, 100);
 const vectorOffsets = {
@@ -145,6 +162,11 @@ const vectorOffsets = {
 
 export const options = {
   summaryTrendStats: ['min', 'avg', 'med', 'p(50)', 'p(90)', 'p(95)', 'p(99)', 'max'],
+  // Bound metric series: exclude url/iter/vu so per-request unique query
+  // strings (request_uri, jti, auth_req_id) cannot grow k6 RSS unboundedly.
+  systemTags: ['check', 'error', 'error_code', 'expected_response', 'group',
+    'method', 'name', 'proto', 'scenario', 'service', 'status', 'subproto',
+    'tls_version'],
   scenarios: {
     [scenario]: scenarioOptions(scenario),
   },
@@ -161,6 +183,7 @@ function thresholds() {
     base[`http_req_duration{step:${step}}`] = ['p(99)<5000'];
     base[`http_req_failed{step:${step}}`] = ['rate<0.01'];
     base[`http_reqs{step:${step}}`] = ['count>=0'];
+    base[`err_classified{step:${step}}`] = ['count>=0'];
   }
   return base;
 }
@@ -217,7 +240,70 @@ function form(data) {
 }
 
 function requestTags(step, extra = {}) {
-  return Object.assign({ flow: scenario, step }, extra);
+  return Object.assign({ flow: scenario, step, name: step }, extra);
+}
+
+// Error classification (2026-09-17 methodology round): every failed response
+// is counted once with bounded tags {step,status,err} so saturation causes are
+// attributable (HTTP status, OAuth error code, timeout, limiter rejection).
+const errClassified = new Counter('err_classified');
+
+function classifyError(res) {
+  if (!res) {
+    return 'no_response';
+  }
+  if (res.status === 0) {
+    return res.error_code ? `k6_error_${res.error_code}` : 'transport_timeout';
+  }
+  let err = '';
+  try {
+    err = res.json('error') || '';
+  } catch (e) {}
+  if (!err) {
+    const match = String(res.body || '').match(/[?&]error=([a-zA-Z0-9_]+)/);
+    if (match) {
+      err = match[1];
+    }
+  }
+  if (!err && res.status === 302) {
+    const loc = String((res.headers && (res.headers.Location || res.headers.location)) || '');
+    const match = loc.match(/[?&]error=([a-zA-Z0-9_]+)/);
+    if (match) {
+      err = match[1];
+    }
+  }
+  if (err) {
+    return `oauth_${err}`;
+  }
+  if (res.status === 429) {
+    return 'rate_limited';
+  }
+  return `http_${res.status}`;
+}
+
+function checkErr(res, conds, stepHint) {
+  const ok = check(res, conds);
+  if (!ok) {
+    // res.request.tags is not populated in k6 v2; derive the step from the
+    // check name ("<step> <condition>") unless the caller passes it.
+    const name = Object.keys(conds)[0] || '';
+    const step = stepHint || (res && res.request && res.request.tags && res.request.tags.step)
+      || (name.includes(' ') ? name.slice(0, name.indexOf(' ')) : name) || 'unknown';
+    const err = classifyError(res);
+    errClassified.add(1, {
+      step,
+      status: String(res ? res.status : 0),
+      err,
+    });
+    // bounded per-VU failure log: preserves status/error-body evidence in
+    // run.log so saturation causes are attributable without unbounded volume.
+    if ((__VU_STATE.errLogged || 0) < 40) {
+      __VU_STATE.errLogged = (__VU_STATE.errLogged || 0) + 1;
+      const body = res && res.body ? String(res.body).slice(0, 160).replace(/\s+/g, ' ') : '';
+      console.log(`ERR_SAMPLE step=${step} status=${res ? res.status : 0} err=${err} body=${body}`);
+    }
+  }
+  return ok;
 }
 
 function tenantHeaders(extra = {}) {
@@ -263,10 +349,11 @@ function vector() {
     const elapsedSeconds = Math.max(0, Math.floor((Date.now() - testStartedAtMs) / 1000));
     relativeIndex = elapsedSeconds * rate + (exec.scenario.iterationInTest % rate);
   }
-  const index = offset + relativeIndex;
-  if (index >= vectors.length) {
-    fail(`flow vector pool exhausted at index ${index}; raise PERF_VECTOR_COUNT`);
+  const slice = vectors.length - offset;
+  if (slice <= 0) {
+    fail(`flow vector pool smaller than scenario offset ${offset}; raise PERF_VECTOR_COUNT`);
   }
+  const index = offset + (relativeIndex % slice);
   return vectors[index];
 }
 
@@ -331,7 +418,7 @@ function ensureUserSession(user, cacheSession = false) {
       auth_context: 'password',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'login status is 200': (r) => r.status === 200,
     'login csrf cookie returned': (r) => Boolean(r.cookies.nazo_oauth_csrf && r.cookies.nazo_oauth_csrf.length),
   });
@@ -514,6 +601,7 @@ async function cibaRequestObject(user) {
 async function cibaBackchannelAuthentication(user) {
   const assertion = await clientAssertion(secrets.clients.ciba, secrets.issuer, 'ciba-backchannel', 'PS256');
   const request = await cibaRequestObject(user);
+  const dpop = await dpopProof('POST', `${secrets.issuer}/bc-authorize`, 'dpop-ciba-bc');
   const response = http.post(
     `${BASE_URL}/bc-authorize`,
     form({
@@ -522,7 +610,7 @@ async function cibaBackchannelAuthentication(user) {
       client_assertion: assertion,
       request,
     }),
-    formHeaders({}, requestTags('ciba_backchannel_authentication', {
+    formHeaders({ DPoP: dpop }, requestTags('ciba_backchannel_authentication', {
       endpoint: '/bc-authorize',
       grant_type: 'urn:openid:params:grant-type:ciba',
       client_profile: 'ciba-fapi-compatible',
@@ -531,8 +619,8 @@ async function cibaBackchannelAuthentication(user) {
       delivery_mode: 'poll',
     })),
   );
-  check(response, {
-    'ciba backchannel status is 200': (r) => r.status === 200,
+  checkErr(response, {
+    'ciba bc status is 200': (r) => r.status === 200,
     'ciba auth_req_id returned': (r) => Boolean(r.json('auth_req_id')),
     'ciba interval returned': (r) => Number(r.json('interval')) > 0,
   });
@@ -543,28 +631,37 @@ async function cibaBackchannelAuthentication(user) {
 }
 
 function approveCiba(authReqId) {
-  const response = http.get(
-    `${BASE_URL}/auth/ciba-automated-decision?${form({
-      auth_req_id: authReqId,
-      action: 'approve',
-      decision_token: secrets.ciba_automated_decision_token,
-    })}`,
+  // Real user decision endpoints: GET /auth/ciba/{id} then POST decision with
+  // the session + CSRF cookies of the hinted user.
+  const view = http.get(
+    `${BASE_URL}/auth/ciba/${authReqId}`,
     {
-      headers: tenantHeaders(),
+      headers: tenantHeaders(sessionHeaders()),
       redirects: 0,
-      tags: requestTags('ciba_automated_decision', {
-        endpoint: '/auth/ciba-automated-decision',
-        grant_type: 'urn:openid:params:grant-type:ciba',
-        decision: 'approve',
-      }),
+      tags: requestTags('ciba_user_decision_view', { endpoint: '/auth/ciba/{id}' }),
     },
   );
-  check(response, {
-    'ciba automated decision status is 200': (r) => r.status === 200,
-    'ciba automated decision succeeded': (r) => r.json('success') === true,
+  checkErr(view, {
+    'ciba decision view status is 200': (r) => r.status === 200,
   });
-  if (response.status !== 200) {
-    fail(`ciba automated decision failed: ${response.status} ${response.body}`);
+  if (view.status !== 200) {
+    fail(`ciba decision view failed: ${view.status} ${view.body}`);
+  }
+  const res = http.post(
+    `${BASE_URL}/auth/ciba/${authReqId}`,
+    JSON.stringify({ decision: 'approve', csrf_token: __VU_STATE.csrf }),
+    {
+      headers: tenantHeaders(Object.assign({ 'Content-Type': 'application/json' }, sessionHeaders())),
+      redirects: 0,
+      tags: requestTags('ciba_user_decision', { endpoint: '/auth/ciba/{id}', decision: 'approve' }),
+    },
+  );
+  checkErr(res, {
+    'ciba user decision status is 200': (r) => r.status === 200,
+    'ciba user decision succeeded': (r) => r.json('success') === true,
+  });
+  if (res.status !== 200) {
+    fail(`ciba user decision failed: ${res.status} ${res.body}`);
   }
 }
 
@@ -588,7 +685,7 @@ async function cibaToken(authReqId) {
       delivery_mode: 'poll',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'ciba token status is 200': (r) => r.status === 200,
     'ciba token is DPoP-bound': (r) => r.json('token_type') === 'DPoP',
     'ciba access token returned': (r) => Boolean(r.json('access_token')),
@@ -620,7 +717,7 @@ async function oidcPar(v) {
       request_object: 'jar',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'oidc PAR status is 201': (r) => r.status === 201,
     'oidc PAR request_uri returned': (r) => Boolean(r.json('request_uri')),
   });
@@ -656,7 +753,7 @@ async function fapiPar(v) {
       sender_constraint: 'dpop',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'fapi PAR status is 201': (r) => r.status === 201,
     'fapi PAR request_uri returned': (r) => Boolean(r.json('request_uri')),
   });
@@ -680,7 +777,7 @@ function authorizePar(clientId, requestUri, user, cacheSession = false) {
       }),
     },
   );
-  check(response, {
+  checkErr(response, {
     'authorize returns request id redirect': (r) => r.status === 302 && Boolean(queryParamFromLocation(locationHeader(r), 'request_id')),
   });
   const requestId = queryParamFromLocation(locationHeader(response), 'request_id');
@@ -703,7 +800,7 @@ function approveAuthorization(requestId, expectedState) {
     })),
   );
   const location = locationHeader(response);
-  check(response, {
+  checkErr(response, {
     'authorization decision returns code redirect': (r) => (r.status === 302 || r.status === 303) && location.includes('code='),
     'authorization state roundtrips': () => location.includes(`state=${encodeURIComponent(expectedState)}`),
   });
@@ -730,7 +827,7 @@ function tokenAuthorizationCode(v, code) {
       client_profile: 'oidc',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'authorization_code token status is 200': (r) => r.status === 200,
     'authorization_code refresh token returned': (r) => Boolean(r.json('refresh_token')),
   });
@@ -761,7 +858,7 @@ async function fapiTokenAuthorizationCode(v, code) {
       sender_constraint: 'dpop',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'fapi authorization_code token status is 200': (r) => r.status === 200,
     'fapi token is DPoP-bound': (r) => r.json('token_type') === 'DPoP',
     'fapi refresh token returned': (r) => Boolean(r.json('refresh_token')),
@@ -787,7 +884,7 @@ export function token_client_credentials() {
       client_auth: 'client_secret_post',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'client_credentials status is 200': (r) => r.status === 200,
     'client_credentials access token returned': (r) => Boolean(r.json('access_token')),
   });
@@ -814,7 +911,7 @@ export function mtls_client_credentials() {
       sender_constraint: 'mtls',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'mtls client_credentials status is 200': (r) => r.status === 200,
     'mtls client_credentials access token returned': (r) => Boolean(r.json('access_token')),
   });
@@ -835,7 +932,7 @@ export function metadata_jwks() {
       }),
     },
   );
-  check(metadata, {
+  checkErr(metadata, {
     'metadata status is 200': (r) => r.status === 200,
     'metadata issuer returned': (r) => Boolean(r.json('issuer')),
   });
@@ -853,7 +950,7 @@ export function metadata_jwks() {
       }),
     },
   );
-  check(jwks, {
+  checkErr(jwks, {
     'jwks status is 200': (r) => r.status === 200,
     'jwks keys returned': (r) => Array.isArray(r.json('keys')),
   });
@@ -885,7 +982,7 @@ async function introspectOpaqueRefreshToken(sharedUser) {
       client_profile: 'oidc',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'refresh token introspection status is 200': (r) => r.status === 200,
     'refresh token introspection active': (r) => r.json('active') === true,
   });
@@ -919,7 +1016,7 @@ async function refreshTokenRotation(sharedUser) {
       client_profile: 'oidc',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'refresh_token rotation status is 200': (r) => r.status === 200,
     'refresh_token rotation returns new refresh token': (r) => Boolean(r.json('refresh_token')),
   });
@@ -952,7 +1049,7 @@ export async function revoke_refresh_token() {
       client_profile: 'oidc',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'refresh token revoke status is 200': (r) => r.status === 200,
   });
   if (response.status !== 200) {
@@ -1000,7 +1097,7 @@ export async function oidc_refresh_only() {
       load_model: 'refresh_only',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'refresh-only rotation status is 200': (r) => r.status === 200,
     'refresh-only rotation returns new refresh token': (r) => Boolean(r.json('refresh_token')),
   });
@@ -1056,7 +1153,7 @@ export async function fapi2_par_jar_private_key_jwt_dpop() {
       sender_constraint: 'dpop',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'fapi DPoP refresh status is 200': (r) => r.status === 200,
     'fapi DPoP refresh returns DPoP token': (r) => r.json('token_type') === 'DPoP',
   });
@@ -1097,7 +1194,7 @@ export async function fapi2_logged_in_high_security() {
       sender_constraint: 'dpop',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'fapi logged-in DPoP refresh status is 200': (r) => r.status === 200,
     'fapi logged-in DPoP refresh returns DPoP token': (r) => r.json('token_type') === 'DPoP',
   });
@@ -1274,7 +1371,7 @@ function capUserinfoOp() {
       tags: requestTags('userinfo', { endpoint: '/userinfo', subject_token: 'access_token' }),
     },
   );
-  return check(response, {
+  return checkErr(response, {
     'userinfo status is 200': (r) => r.status === 200,
     'userinfo subject returned': (r) => Boolean(r.json('sub')),
   });
@@ -1293,7 +1390,7 @@ function capClientCredentialsOp() {
       endpoint: '/token', grant_type: 'client_credentials', client_auth: 'client_secret_post',
     })),
   );
-  return check(response, { 'client_credentials status is 200': (r) => r.status === 200 });
+  return checkErr(response, { 'client_credentials status is 200': (r) => r.status === 200 });
 }
 
 function capAuthorizationCodeOp() {
@@ -1335,7 +1432,7 @@ async function capRefreshOp() {
       endpoint: '/token', grant_type: 'refresh_token', client_profile: 'oidc',
     })),
   );
-  const ok = check(response, { 'refresh status is 200': (r) => r.status === 200 });
+  const ok = checkErr(response, { 'refresh status is 200': (r) => r.status === 200 });
   if (response.status === 200 && response.json('refresh_token')) {
     __VU_STATE.refreshToken = response.json('refresh_token');
   } else {
@@ -1360,7 +1457,7 @@ function capTokenExchangeOp() {
       endpoint: '/token', grant_type: 'urn:ietf:params:oauth:grant-type:token-exchange',
     })),
   );
-  return check(response, {
+  return checkErr(response, {
     'token_exchange status is 200': (r) => r.status === 200,
     'token_exchange access token returned': (r) => Boolean(r.json('access_token')),
   });
@@ -1383,7 +1480,7 @@ function capNativeSsoOp() {
       endpoint: '/token', grant_type: 'native_sso_fresh',
     })),
   );
-  check(response, {
+  checkErr(response, {
     'native_sso status is 200': (r) => r.status === 200,
     'native_sso device secret returned': (r) => Boolean(r.json('device_secret')),
   });
@@ -1416,7 +1513,7 @@ async function capIntrospectOp() {
       client_profile: 'oidc',
     })),
   );
-  return check(response, {
+  return checkErr(response, {
     'cap introspection status is 200': (r) => r.status === 200,
     'cap introspection active': (r) => r.json('active') === true,
   });
@@ -1441,7 +1538,7 @@ async function capRevokeOp() {
       client_profile: 'oidc',
     })),
   );
-  return check(response, {
+  return checkErr(response, {
     'cap revoke status is 200': (r) => r.status === 200,
   });
 }
@@ -1503,4 +1600,345 @@ async function capMixedOp() {
 
 export async function cap_mixed() {
   await capRun(async () => {}, capMixedOp);
+}
+
+
+// --- extended endpoint coverage (2026-09-17 methodology round) ---
+
+function sessionGet(path, step, extra = {}) {
+  return http.get(
+    `${BASE_URL}${path}`,
+    {
+      headers: tenantHeaders(sessionHeaders()),
+      redirects: 0,
+      tags: requestTags(step, Object.assign({ endpoint: path }, extra)),
+    },
+  );
+}
+
+function useSession(session) {
+  if (!session) {
+    fail('required session fixture missing from secrets');
+  }
+  __VU_STATE.cookieHeader = session.cookie_header;
+  __VU_STATE.csrf = session.csrf_token;
+}
+
+function capSessionReadsOp() {
+  useSession(selectedLoggedInSession());
+  const roll = Math.random() * 100;
+  if (roll < 22) {
+    return checkErr(sessionGet('/auth/me', 'auth_me'), { 'auth_me 200': (r) => r.status === 200 });
+  }
+  if (roll < 34) {
+    return checkErr(sessionGet('/auth/csrf', 'auth_csrf'), { 'auth_csrf 200': (r) => r.status === 200 });
+  }
+  if (roll < 46) {
+    return checkErr(sessionGet('/auth/me/passkeys', 'me_passkeys'), { 'me_passkeys 200': (r) => r.status === 200 });
+  }
+  if (roll < 60) {
+    return checkErr(sessionGet('/auth/me/applications', 'me_applications'), { 'me_applications 200': (r) => r.status === 200 });
+  }
+  if (roll < 72) {
+    return checkErr(sessionGet('/auth/me/federation/links', 'me_federation_links'), { 'me_federation_links 200': (r) => r.status === 200 });
+  }
+  if (roll < 84) {
+    return checkErr(sessionGet('/auth/me/access-requests', 'me_access_requests'), { 'me_access_requests 200': (r) => r.status === 200 });
+  }
+  if (roll < 94) {
+    return checkErr(sessionGet('/auth/me/mtls-trust-requests', 'me_mtls_trust_requests'), { 'me_mtls_trust_requests 200': (r) => r.status === 200 });
+  }
+  return checkErr(sessionGet(`/check_session/status?client_id=${secrets.clients.oidc}&origin=${encodeURIComponent(secrets.issuer)}&session_state=perf`, 'check_session_status'), { 'check_session_status 200': (r) => r.status === 200 });
+}
+
+export async function cap_session_reads() {
+  await capRun(async () => {}, capSessionReadsOp);
+}
+
+function capAdminReadsOp() {
+  useSession(secrets.admin_session);
+  const roll = Math.random() * 100;
+  if (roll < 18) {
+    return checkErr(sessionGet('/admin/users', 'admin_users'), { 'admin_users 200': (r) => r.status === 200 });
+  }
+  if (roll < 34) {
+    return checkErr(sessionGet('/admin/clients', 'admin_clients'), { 'admin_clients 200': (r) => r.status === 200 });
+  }
+  if (roll < 44) {
+    return checkErr(sessionGet('/admin/clients/templates', 'admin_client_templates'), { 'admin_client_templates 200': (r) => r.status === 200 });
+  }
+  if (roll < 54) {
+    return checkErr(sessionGet('/admin/grants', 'admin_grants'), { 'admin_grants 200': (r) => r.status === 200 });
+  }
+  if (roll < 64) {
+    return checkErr(sessionGet('/admin/access-requests', 'admin_access_requests'), { 'admin_access_requests 200': (r) => r.status === 200 });
+  }
+  if (roll < 74) {
+    return checkErr(sessionGet('/admin/mtls-trust-requests', 'admin_mtls_trust_requests'), { 'admin_mtls_trust_requests 200': (r) => r.status === 200 });
+  }
+  if (roll < 82) {
+    return checkErr(sessionGet('/admin/mtls-trust-anchors.pem', 'admin_mtls_trust_anchors'), { 'admin_mtls_trust_anchors 200': (r) => r.status === 200 });
+  }
+  if (roll < 90) {
+    return checkErr(sessionGet('/admin/runtime-modules', 'admin_runtime_modules'), { 'admin_runtime_modules 200': (r) => r.status === 200 });
+  }
+  if (roll < 96) {
+    return checkErr(sessionGet('/admin/federation/providers', 'admin_federation_providers'), { 'admin_federation_providers 200': (r) => r.status === 200 });
+  }
+  return checkErr(sessionGet('/admin/runtime-modules/events', 'admin_runtime_module_events'), { 'admin_runtime_module_events 200': (r) => r.status === 200 });
+}
+
+export async function cap_admin_reads() {
+  await capRun(async () => {}, capAdminReadsOp);
+}
+
+function scimGet(path, step) {
+  return http.get(
+    `${BASE_URL}${path}`,
+    {
+      headers: tenantHeaders({ Authorization: `Bearer ${secrets.scim_token}` }),
+      redirects: 0,
+      tags: requestTags(step, { endpoint: path }),
+    },
+  );
+}
+
+function capScimReadsOp() {
+  const roll = Math.random() * 100;
+  if (roll < 20) {
+    return checkErr(scimGet('/scim/v2/ServiceProviderConfig', 'scim_spc'), { 'scim_spc 200': (r) => r.status === 200 });
+  }
+  if (roll < 38) {
+    return checkErr(scimGet('/scim/v2/Schemas', 'scim_schemas'), { 'scim_schemas 200': (r) => r.status === 200 });
+  }
+  if (roll < 52) {
+    return checkErr(scimGet('/scim/v2/ResourceTypes', 'scim_resourcetypes'), { 'scim_resourcetypes 200': (r) => r.status === 200 });
+  }
+  if (roll < 84) {
+    return checkErr(scimGet('/scim/v2/Users?count=10', 'scim_users'), { 'scim_users 200': (r) => r.status === 200 });
+  }
+  return checkErr(scimGet(`/scim/v2/Users/${secrets.scim_user_id}`, 'scim_user'), { 'scim_user 200': (r) => r.status === 200 });
+}
+
+export async function cap_scim_reads() {
+  await capRun(async () => {}, capScimReadsOp);
+}
+
+// /fapi/resource needs a DPoP-bound access token plus a DPoP proof carrying
+// the ath hash; mint once per VU through the FAPI client_credentials grant.
+async function capMintFapiResourceToken() {
+  if (__VU_STATE.fapiAt && Date.now() - (__VU_STATE.fapiAtMintedAt || 0) < 240000) {
+    return;
+  }
+  const assertion = await clientAssertion(secrets.clients.fapi, secrets.issuer, 'fapi-resource-cc', 'PS256');
+  const dpop = await dpopProof('POST', `${secrets.issuer}/token`, 'dpop-fapi-resource-token');
+  const response = http.post(
+    `${BASE_URL}/token`,
+    form({
+      grant_type: 'client_credentials',
+      client_id: secrets.clients.fapi,
+      client_assertion_type: secrets.client_assertion_type,
+      client_assertion: assertion,
+      scope: 'profile',
+      resource: 'resource://default',
+    }),
+    formHeaders({ DPoP: dpop }, requestTags('cap_bootstrap', {
+      endpoint: '/token', grant_type: 'client_credentials', client_profile: 'fapi2', sender_constraint: 'dpop',
+    })),
+  );
+  if (!checkErr(response, { 'fapi resource token bootstrap 200': (r) => r.status === 200 })) {
+    fail(`fapi resource token bootstrap failed: ${response.status} ${response.body}`);
+  }
+  __VU_STATE.fapiAt = response.json('access_token');
+  __VU_STATE.fapiAtMintedAt = Date.now();
+}
+
+async function dpopAth(accessToken) {
+  const digest = await crypto.subtle.digest('SHA-256', asciiBytes(accessToken).buffer);
+  return encoding.b64encode(new Uint8Array(digest), 'rawurl');
+}
+
+async function fapiResourceRequest(method, path, step, nonce) {
+  const htu = `${secrets.issuer}${path}`;
+  const at = __VU_STATE.fapiAt;
+  const ath = await dpopAth(at);
+  const claims = {
+    htm: method,
+    htu,
+    iat: nowSeconds(),
+    jti: uniqueJti(`dpop-${step}`),
+    ath,
+  };
+  if (nonce) {
+    claims.nonce = nonce;
+  }
+  const proof = await signEs256({ typ: 'dpop+jwt', jwk: secrets.dpop_public_jwk }, claims);
+  const params = {
+    headers: tenantHeaders({
+      Authorization: `DPoP ${at}`,
+      DPoP: proof,
+      'Content-Type': 'application/json',
+    }),
+    redirects: 0,
+    tags: requestTags(step, { endpoint: path }),
+  };
+  return method === 'GET'
+    ? http.get(`${BASE_URL}${path}`, params)
+    : http.post(`${BASE_URL}${path}`, '{}', params);
+}
+
+async function capFapiResourceOp() {
+  await capMintFapiResourceToken();
+  const usePost = Math.random() < 0.4;
+  const method = usePost ? 'POST' : 'GET';
+  const step = usePost ? 'fapi_resource_post' : 'fapi_resource_get';
+  let response = await fapiResourceRequest(method, '/fapi/resource', step, null);
+  if (response.status === 401) {
+    const nonce = response.headers['DPoP-Nonce'] || response.headers['dpop-nonce'];
+    if (nonce) {
+      response = await fapiResourceRequest(method, '/fapi/resource', step, nonce);
+    }
+  }
+  return checkErr(response, {
+    [`${step} 200`]: (r) => r.status === 200 && Boolean(r.json('sub')),
+  });
+}
+
+export async function cap_fapi_resource() {
+  await capRun(async () => {}, capFapiResourceOp);
+}
+
+async function capDeviceFlowOp() {
+  const session = selectedLoggedInSession();
+  const authz = http.post(
+    `${BASE_URL}/device_authorization`,
+    form({
+      client_id: secrets.clients.device,
+      client_secret: secrets.client_secret,
+      scope: 'openid profile',
+    }),
+    formHeaders({}, requestTags('device_authorization', {
+      endpoint: '/device_authorization', client_profile: 'device',
+    })),
+  );
+  if (!checkErr(authz, {
+    'device_authorization 200': (r) => r.status === 200 && Boolean(r.json('device_code')),
+  })) {
+    return false;
+  }
+  const userCode = authz.json('user_code');
+  const deviceCode = authz.json('device_code');
+  useSession(session);
+  const view = http.get(
+    `${BASE_URL}/device/verification?${form({ user_code: userCode })}`,
+    {
+      headers: tenantHeaders(sessionHeaders()),
+      redirects: 0,
+      tags: requestTags('device_verification', { endpoint: '/device/verification' }),
+    },
+  );
+  checkErr(view, { 'device_verification 200': (r) => r.status === 200 });
+  const decision = http.post(
+    `${BASE_URL}/device/decision`,
+    form({ user_code: userCode, decision: 'approve', csrf_token: __VU_STATE.csrf }),
+    formHeaders(sessionHeaders(), requestTags('device_decision', {
+      endpoint: '/device/decision', decision: 'approve',
+    })),
+  );
+  if (!checkErr(decision, { 'device_decision 200': (r) => r.status === 200 })) {
+    return false;
+  }
+  const token = http.post(
+    `${BASE_URL}/token`,
+    form({
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+      device_code: deviceCode,
+      client_id: secrets.clients.device,
+      client_secret: secrets.client_secret,
+    }),
+    formHeaders({}, requestTags('token_device_code', {
+      endpoint: '/token', grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
+    })),
+  );
+  return checkErr(token, {
+    'device token 200': (r) => r.status === 200 && Boolean(r.json('access_token')),
+  });
+}
+
+export async function cap_device_flow() {
+  await capRun(async () => {}, capDeviceFlowOp);
+}
+
+async function capCibaFlowOp() {
+  useSession(selectedLoggedInSession());
+  const user = selectedUser(false);
+  const authReqId = await cibaBackchannelAuthentication(user);
+  approveCiba(authReqId);
+  await cibaToken(authReqId);
+  return true;
+}
+
+export async function cap_ciba_flow() {
+  await capRun(async () => {}, capCibaFlowOp);
+}
+
+function publicGet(path, step) {
+  return http.get(
+    `${BASE_URL}${path}`,
+    {
+      headers: tenantHeaders(),
+      redirects: 0,
+      tags: requestTags(step, { endpoint: path }),
+    },
+  );
+}
+
+function capPublicReadsOp() {
+  const roll = Math.random() * 100;
+  if (roll < 16) {
+    return checkErr(publicGet('/health', 'health'), { 'health 200': (r) => r.status === 200 });
+  }
+  if (roll < 30) {
+    return checkErr(publicGet('/live', 'live'), { 'live 200': (r) => r.status === 200 });
+  }
+  if (roll < 42) {
+    return checkErr(publicGet('/startup', 'startup'), { 'startup 200': (r) => r.status === 200 });
+  }
+  if (roll < 56) {
+    return checkErr(publicGet('/auth/captcha-config', 'captcha_config'), { 'captcha_config 200': (r) => r.status === 200 });
+  }
+  if (roll < 72) {
+    return checkErr(publicGet('/auth/federation/providers', 'federation_providers'), { 'federation_providers 200': (r) => r.status === 200 });
+  }
+  if (roll < 88) {
+    return checkErr(publicGet('/.well-known/oauth-protected-resource', 'oauth_protected_resource'), { 'opr 200': (r) => r.status === 200 });
+  }
+  return checkErr(publicGet('/__perf/metrics', 'perf_metrics'), { 'perf_metrics 200': (r) => r.status === 200 });
+}
+
+export async function cap_public_reads() {
+  await capRun(async () => {}, capPublicReadsOp);
+}
+
+// handleSummary writes the k6 summary object to PERF_SUMMARY_EXPORT (the same
+// {root_group, metrics, ...} shape --summary-export produces) so tagged
+// err_classified subseries survive into the evidence bundle; a dedicated
+// err-classification file is written alongside for the runner/report.
+export function handleSummary(data) {
+  const outputs = {};
+  const summaryPath = __ENV.PERF_SUMMARY_EXPORT;
+  if (summaryPath) {
+    outputs[summaryPath] = JSON.stringify(data);
+  }
+  const errPath = __ENV.PERF_ERR_DETAIL;
+  if (errPath) {
+    const detail = {};
+    for (const name of Object.keys(data.metrics || {})) {
+      if (name === 'err_classified' || name.startsWith('err_classified{') || name.startsWith('err_cls_')) {
+        detail[name] = data.metrics[name].values;
+      }
+    }
+    outputs[errPath] = JSON.stringify(detail, null, 1);
+  }
+  return outputs;
 }

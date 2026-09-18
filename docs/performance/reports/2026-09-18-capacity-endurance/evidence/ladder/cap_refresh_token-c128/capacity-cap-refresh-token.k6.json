@@ -1,0 +1,291 @@
+{
+    "metrics": {
+        "vus_max": {
+            "value": 128,
+            "min": 128,
+            "max": 128
+        },
+        "http_req_failed{step:token_refresh}": {
+            "passes": 0,
+            "fails": 133523,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "cap_measure_ms": {
+            "p(90)": 50,
+            "p(95)": 54,
+            "p(99)": 69,
+            "max": 121,
+            "min": 26,
+            "avg": 42.38258039893136,
+            "med": 41,
+            "p(50)": 41
+        },
+        "iterations": {
+            "count": 133523,
+            "rate": 2965.296006401439
+        },
+        "data_received": {
+            "count": 355383172,
+            "rate": 7892395.322707516
+        },
+        "err_classified{step:cap_bootstrap}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration": {
+            "avg": 42.70699850797162,
+            "med": 41.588411,
+            "p(50)": 41.588411,
+            "p(90)": 50.591313,
+            "p(95)": 54.317122999999924,
+            "p(99)": 69.30735220000003,
+            "max": 119.944429,
+            "min": 2.436167,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_failed{step:cap_bootstrap}": {
+            "fails": 128,
+            "passes": 0,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "data_sent": {
+            "count": 45184170,
+            "rate": 1003455.8754189444
+        },
+        "iteration_duration": {
+            "p(50)": 41.859486,
+            "p(90)": 50.9210502,
+            "p(95)": 54.72242199999998,
+            "p(99)": 71.64439979999995,
+            "max": 225.331102,
+            "min": 11.674928,
+            "avg": 43.13187118442504,
+            "med": 41.859486
+        },
+        "http_req_sending": {
+            "p(90)": 0.01781,
+            "p(95)": 0.02189,
+            "p(99)": 0.03424966000000001,
+            "max": 8.299741,
+            "min": 0.00368,
+            "avg": 0.01352996571790876,
+            "med": 0.012129,
+            "p(50)": 0.012129
+        },
+        "http_reqs": {
+            "rate": 2976.6665684415184,
+            "count": 134035
+        },
+        "cap_m1_ms": {
+            "p(50)": 41,
+            "p(90)": 50,
+            "p(95)": 54,
+            "p(99)": 69,
+            "max": 121,
+            "min": 26,
+            "avg": 42.391900849687644,
+            "med": 41
+        },
+        "err_classified": {
+            "count": 0,
+            "rate": 0
+        },
+        "cap_measure_ops": {
+            "count": 99566,
+            "rate": 2211.1745704737436
+        },
+        "http_req_blocked": {
+            "p(95)": 0.00479,
+            "p(99)": 0.00748,
+            "max": 50.91765,
+            "min": 0.0007,
+            "avg": 0.010630017913234925,
+            "med": 0.002919,
+            "p(50)": 0.002919,
+            "p(90)": 0.00407
+        },
+        "cap_m1_ops": {
+            "count": 99566,
+            "rate": 2211.1745704737436
+        },
+        "http_req_duration{step:token_refresh}": {
+            "p(50)": 41.607081,
+            "p(90)": 50.61766480000001,
+            "p(95)": 54.342153999999994,
+            "p(99)": 69.36830698,
+            "max": 119.944429,
+            "min": 11.430753,
+            "avg": 42.785467919976156,
+            "med": 41.607081,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "vus": {
+            "value": 128,
+            "min": 128,
+            "max": 128
+        },
+        "http_reqs{step:cap_bootstrap}": {
+            "count": 128,
+            "rate": 2.842640510019878,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_duration{expected_response:true}": {
+            "max": 119.944429,
+            "min": 2.436167,
+            "avg": 42.70699850797162,
+            "med": 41.588411,
+            "p(50)": 41.588411,
+            "p(90)": 50.591313,
+            "p(95)": 54.317122999999924,
+            "p(99)": 69.30735220000003
+        },
+        "http_reqs{step:token_refresh}": {
+            "count": 133523,
+            "rate": 2965.296006401439,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "checks": {
+            "passes": 134163,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "http_req_receiving": {
+            "p(99)": 0.116077,
+            "max": 6.754174,
+            "min": 0.01365,
+            "avg": 0.04523469343081984,
+            "med": 0.041989,
+            "p(50)": 0.041989,
+            "p(90)": 0.059089,
+            "p(95)": 0.071659
+        },
+        "http_req_tls_handshaking": {
+            "avg": 0,
+            "med": 0,
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "min": 0
+        },
+        "err_classified{step:token_refresh}": {
+            "rate": 0,
+            "count": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 134035,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_waiting": {
+            "p(95)": 54.2578093,
+            "p(99)": 69.23297206000004,
+            "max": 119.89095,
+            "min": 2.32463,
+            "avg": 42.64823384882295,
+            "med": 41.530202,
+            "p(50)": 41.530202,
+            "p(90)": 50.528058400000006
+        },
+        "http_req_connecting": {
+            "med": 0,
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 50.783014,
+            "min": 0,
+            "avg": 0.007309527757675236
+        },
+        "http_req_duration{step:cap_bootstrap}": {
+            "p(50)": 8.9917455,
+            "p(90)": 10.312154,
+            "p(95)": 19.979896999999937,
+            "p(99)": 23.1262586,
+            "max": 23.353926,
+            "min": 3.281719,
+            "avg": 8.3774420859375,
+            "med": 8.9917455,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        }
+    },
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "authorize returns request id redirect": {
+                    "passes": 128,
+                    "fails": 0,
+                    "name": "authorize returns request id redirect",
+                    "path": "::authorize returns request id redirect",
+                    "id": "ce2c3629f8c1a416d100b43238a357f0"
+                },
+                "authorization decision returns code redirect": {
+                    "name": "authorization decision returns code redirect",
+                    "path": "::authorization decision returns code redirect",
+                    "id": "da70d186de7fd2da290024065b9619b5",
+                    "passes": 128,
+                    "fails": 0
+                },
+                "authorization state roundtrips": {
+                    "path": "::authorization state roundtrips",
+                    "id": "7e72d2315f2443560dcaf6c259f3ce22",
+                    "passes": 128,
+                    "fails": 0,
+                    "name": "authorization state roundtrips"
+                },
+                "authorization_code token status is 200": {
+                    "name": "authorization_code token status is 200",
+                    "path": "::authorization_code token status is 200",
+                    "id": "cd0039bce084712e3af3351bdd2518ff",
+                    "passes": 128,
+                    "fails": 0
+                },
+                "authorization_code refresh token returned": {
+                    "name": "authorization_code refresh token returned",
+                    "path": "::authorization_code refresh token returned",
+                    "id": "0faf5a668702ff625afae7d98b2985cc",
+                    "passes": 128,
+                    "fails": 0
+                },
+                "refresh status is 200": {
+                    "id": "21d24baef4f41f912314735161302e15",
+                    "passes": 133523,
+                    "fails": 0,
+                    "name": "refresh status is 200",
+                    "path": "::refresh status is 200"
+                }
+            }
+    }
+}

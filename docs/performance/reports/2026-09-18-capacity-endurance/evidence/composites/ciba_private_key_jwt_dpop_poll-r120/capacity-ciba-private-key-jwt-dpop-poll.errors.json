@@ -1,0 +1,22 @@
+{
+ "err_classified{step:ciba_user_decision_view}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 5401,
+  "rate": 119.99077223818288
+ },
+ "err_classified{step:ciba_backchannel_authentication}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:ciba_user_decision}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:ciba_token}": {
+  "rate": 0,
+  "count": 0
+ }
+}

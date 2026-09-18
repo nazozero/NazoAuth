@@ -1,0 +1,305 @@
+{
+    "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+                "fapi resource token bootstrap 200": {
+                    "name": "fapi resource token bootstrap 200",
+                    "path": "::fapi resource token bootstrap 200",
+                    "id": "4dfe9527ad1691e8f182a90c0401655d",
+                    "passes": 16,
+                    "fails": 0
+                },
+                "fapi_resource_get 200": {
+                    "id": "47efc4ccc54d35feb67458c8e625e740",
+                    "passes": 211492,
+                    "fails": 0,
+                    "name": "fapi_resource_get 200",
+                    "path": "::fapi_resource_get 200"
+                },
+                "fapi_resource_post 200": {
+                    "id": "0be05f3802d30f1076b9360ff32f7f30",
+                    "passes": 140571,
+                    "fails": 0,
+                    "name": "fapi_resource_post 200",
+                    "path": "::fapi_resource_post 200"
+                }
+            }
+    },
+    "metrics": {
+        "http_req_duration{expected_response:true}": {
+            "avg": 0.7164850756165498,
+            "med": 0.568487,
+            "p(50)": 0.568487,
+            "p(90)": 1.1791362,
+            "p(95)": 1.5519389999999995,
+            "p(99)": 2.6133262,
+            "max": 24.27903,
+            "min": 0.239515
+        },
+        "vus_max": {
+            "value": 16,
+            "min": 16,
+            "max": 16
+        },
+        "http_reqs{step:fapi_resource_get}": {
+            "count": 211492,
+            "rate": 4699.657337355462,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "data_sent": {
+            "count": 637621172,
+            "rate": 14168862.271116586
+        },
+        "http_req_tls_handshaking": {
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0,
+            "min": 0,
+            "avg": 0,
+            "med": 0
+        },
+        "http_req_duration{step:fapi_resource_get}": {
+            "max": 14.084768,
+            "min": 0.256104,
+            "avg": 0.7128813438617045,
+            "med": 0.565568,
+            "p(50)": 0.565568,
+            "p(90)": 1.1745449,
+            "p(95)": 1.5460814999999999,
+            "p(99)": 2.5907420999999995,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_reqs{step:cap_bootstrap}": {
+            "count": 16,
+            "rate": 0.3555430815240642,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "err_classified{step:fapi_resource_get}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_reqs{step:fapi_resource_post}": {
+            "count": 140571,
+            "rate": 3123.690407057452,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_waiting": {
+            "avg": 0.6620778061741813,
+            "med": 0.521859,
+            "p(50)": 0.521859,
+            "p(90)": 1.0899290000000001,
+            "p(95)": 1.4630319999999992,
+            "p(99)": 2.506286579999997,
+            "max": 24.231621,
+            "min": 0.217585
+        },
+        "http_req_failed{step:fapi_resource_get}": {
+            "passes": 0,
+            "fails": 211492,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_reqs": {
+            "count": 352079,
+            "rate": 7823.703287494438
+        },
+        "cap_measure_ms": {
+            "min": 0,
+            "avg": 1.9379813523489806,
+            "med": 2,
+            "p(50)": 2,
+            "p(90)": 3,
+            "p(95)": 4,
+            "p(99)": 5,
+            "max": 26
+        },
+        "http_req_receiving": {
+            "p(90)": 0.04984080000000011,
+            "p(95)": 0.07889809999999997,
+            "p(99)": 0.33972497999999973,
+            "max": 6.814164,
+            "min": 0.00744,
+            "avg": 0.040246612197830864,
+            "med": 0.02733,
+            "p(50)": 0.02733
+        },
+        "http_req_blocked": {
+            "max": 7.682555,
+            "min": 0.0008,
+            "avg": 0.003273186514959808,
+            "med": 0.00261,
+            "p(50)": 0.00261,
+            "p(90)": 0.00428,
+            "p(95)": 0.0052,
+            "p(99)": 0.01011
+        },
+        "err_classified{step:fapi_resource_post}": {
+            "rate": 0,
+            "count": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "cap_measure_ops": {
+            "count": 266307,
+            "rate": 5917.725713214311
+        },
+        "err_classified{step:cap_bootstrap}": {
+            "count": 0,
+            "rate": 0,
+            "thresholds": {
+                "count>=0": false
+            }
+        },
+        "http_req_sending": {
+            "p(50)": 0.010089,
+            "p(90)": 0.01947,
+            "p(95)": 0.026339099999999976,
+            "p(99)": 0.08374239999999944,
+            "max": 7.741464,
+            "min": 0.003109,
+            "avg": 0.01416065724454015,
+            "med": 0.010089
+        },
+        "http_req_failed{step:cap_bootstrap}": {
+            "passes": 0,
+            "fails": 16,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "http_req_failed": {
+            "passes": 0,
+            "fails": 352079,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        },
+        "iterations": {
+            "count": 352063,
+            "rate": 7823.347744412914
+        },
+        "http_req_duration": {
+            "max": 24.27903,
+            "min": 0.239515,
+            "avg": 0.7164850756165498,
+            "med": 0.568487,
+            "p(50)": 0.568487,
+            "p(90)": 1.1791362,
+            "p(95)": 1.5519389999999995,
+            "p(99)": 2.6133262,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "cap_m1_ms": {
+            "p(90)": 3,
+            "p(95)": 4,
+            "p(99)": 5,
+            "max": 26,
+            "min": 0,
+            "avg": 1.9452098517875984,
+            "med": 2,
+            "p(50)": 2
+        },
+        "iteration_duration": {
+            "min": 0.89452,
+            "avg": 2.035589674657657,
+            "med": 1.693073,
+            "p(50)": 1.693073,
+            "p(90)": 3.2523099999999996,
+            "p(95)": 3.7675299,
+            "p(99)": 5.069201580000001,
+            "max": 25.294668
+        },
+        "http_req_connecting": {
+            "avg": 0.000009480386504165259,
+            "med": 0,
+            "p(50)": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0,
+            "max": 0.656775,
+            "min": 0
+        },
+        "err_classified": {
+            "count": 0,
+            "rate": 0
+        },
+        "checks": {
+            "passes": 352079,
+            "fails": 0,
+            "thresholds": {
+                "rate>0.99": false
+            },
+            "value": 1
+        },
+        "data_received": {
+            "rate": 4733730.164151486,
+            "count": 213025331
+        },
+        "vus": {
+            "value": 16,
+            "min": 16,
+            "max": 16
+        },
+        "cap_m1_ops": {
+            "count": 266307,
+            "rate": 5917.725713214311
+        },
+        "http_req_duration{step:fapi_resource_post}": {
+            "max": 24.27903,
+            "min": 0.239515,
+            "avg": 0.7213008577373726,
+            "med": 0.572658,
+            "p(50)": 0.572658,
+            "p(90)": 1.185025,
+            "p(95)": 1.5597865,
+            "p(99)": 2.6350639999999768,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_duration{step:cap_bootstrap}": {
+            "p(99)": 7.636602099999999,
+            "max": 7.810753,
+            "min": 4.66713,
+            "avg": 6.0415555625,
+            "med": 5.9913665,
+            "p(50)": 5.9913665,
+            "p(90)": 6.635317499999999,
+            "p(95)": 6.9399985,
+            "thresholds": {
+                "p(99)<5000": false
+            }
+        },
+        "http_req_failed{step:fapi_resource_post}": {
+            "passes": 0,
+            "fails": 140571,
+            "thresholds": {
+                "rate<0.01": false
+            },
+            "value": 0
+        }
+    }
+}

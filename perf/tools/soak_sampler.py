@@ -21,7 +21,8 @@ while True:
                    "keys":(ks.get("db0") or {}).get("keys",0)}
     except Exception as e: row["vk_err"]=str(e)[:120]
     try:
-        with urllib.request.urlopen(APP,timeout=5) as resp:
+        req = urllib.request.Request(APP, headers={"Host": "127.0.0.1"})
+        with urllib.request.urlopen(req, timeout=5) as resp:
             pm=json.load(resp)
         p=pm["db_pool"]; row["pool"]={"acq":p["acquire_count"],"wait_ns":p["wait_nanos_total"],"wait_max_ns":p["wait_nanos_max"]}
     except Exception as e: row["app_err"]=str(e)[:120]

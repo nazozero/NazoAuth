@@ -1,0 +1,14 @@
+{
+ "err_classified{step:cap_bootstrap}": {
+  "rate": 0,
+  "count": 0
+ },
+ "err_classified{step:token_native_sso_fresh}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 52583,
+  "rate": 1168.439961608113
+ }
+}

@@ -1,0 +1,169 @@
+[
+  {
+    "profile": "capacity",
+    "scenario": "cap_scim_reads",
+    "elapsed_seconds": 46.874,
+    "status": "passed",
+    "k6_exit_code": 0,
+    "k6": {
+      "http_reqs": 22738,
+      "rps": 504.913,
+      "error_rate": 0.0,
+      "dropped_iterations": 0,
+      "dropped_iterations_rate": 0.0,
+      "latency_ms": {
+        "p50": 16.448,
+        "p95": 108.009,
+        "p99": 185.008
+      },
+      "measure": {
+        "ops": 16751,
+        "ops_per_s": 371.968,
+        "errors": 0,
+        "latency_ms": {
+          "p50": 17.0,
+          "p95": 108.0,
+          "p99": 181.5
+        }
+      }
+    },
+    "steps": [
+      {
+        "step": "scim_resourcetypes",
+        "http_reqs": 3175,
+        "rps": 70.503,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 16.685,
+          "p95": 111.938,
+          "p99": 198.274
+        }
+      },
+      {
+        "step": "scim_schemas",
+        "http_reqs": 4047,
+        "rps": 89.867,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 16.888,
+          "p95": 109.538,
+          "p99": 185.956
+        }
+      },
+      {
+        "step": "scim_spc",
+        "http_reqs": 4485,
+        "rps": 99.593,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 16.448,
+          "p95": 105.388,
+          "p99": 177.299
+        }
+      },
+      {
+        "step": "scim_user",
+        "http_reqs": 3705,
+        "rps": 82.272,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 15.753,
+          "p95": 107.208,
+          "p99": 172.993
+        }
+      },
+      {
+        "step": "scim_users",
+        "http_reqs": 7326,
+        "rps": 162.679,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 16.442,
+          "p95": 108.27,
+          "p99": 186.642
+        }
+      }
+    ],
+    "error_breakdown": [],
+    "postgres": {
+      "statement_calls": 270061,
+      "total_statement_ms": 665210.954,
+      "mean_statement_ms": 2.463,
+      "rows": 290753,
+      "database_bytes": 7650866879,
+      "statements_per_http_request": 11.877
+    },
+    "db_pool": {
+      "counter_reset": false,
+      "acquire_count": 80818,
+      "wait_ms_total": 161.139,
+      "wait_ms_avg": 0.002,
+      "wait_ms_max_observed_process_lifetime": 334.128
+    },
+    "valkey": {
+      "keyspace_hits": 47,
+      "keyspace_misses": 94,
+      "commands_processed": 248,
+      "expired_keys": 13471,
+      "db0_keys": -13471
+    },
+    "containers": {
+      "by_container": {
+        "nazoauth-perf-nazoauth-1": {
+          "service": "nazoauth",
+          "samples": 15,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth-perf-postgres-1": {
+          "service": "postgres",
+          "samples": 15,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth-perf-valkey-1": {
+          "service": "valkey",
+          "samples": 15,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      },
+      "by_service": {
+        "nazoauth": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "valkey": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "postgres": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      }
+    },
+    "load_model": {
+      "executor": "constant-vus",
+      "target_rate": 0,
+      "duration": "45s",
+      "app_replicas": 1,
+      "observed_app_instances": 1
+    }
+  }
+]

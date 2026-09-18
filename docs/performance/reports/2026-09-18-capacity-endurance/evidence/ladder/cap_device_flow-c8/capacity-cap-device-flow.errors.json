@@ -1,0 +1,22 @@
+{
+ "err_classified{step:device_verification}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 23,
+  "rate": 0.510965369980173
+ },
+ "err_classified{step:device_authorization}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:device_decision}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:token_device_code}": {
+  "rate": 0,
+  "count": 0
+ }
+}

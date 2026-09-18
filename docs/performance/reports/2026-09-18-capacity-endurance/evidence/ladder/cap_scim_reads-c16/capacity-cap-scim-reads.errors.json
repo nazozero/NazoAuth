@@ -1,0 +1,26 @@
+{
+ "err_classified{step:scim_schemas}": {
+  "rate": 0,
+  "count": 0
+ },
+ "err_classified{step:scim_users}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:scim_user}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:scim_resourcetypes}": {
+  "rate": 0,
+  "count": 0
+ },
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:scim_spc}": {
+  "count": 0,
+  "rate": 0
+ }
+}

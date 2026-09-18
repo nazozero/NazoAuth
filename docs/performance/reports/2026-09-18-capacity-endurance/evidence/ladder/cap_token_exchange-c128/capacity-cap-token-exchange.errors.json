@@ -1,0 +1,14 @@
+{
+ "err_classified{step:token_exchange}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:cap_bootstrap}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ }
+}

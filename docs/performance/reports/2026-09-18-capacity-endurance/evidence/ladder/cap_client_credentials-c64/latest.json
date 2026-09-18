@@ -1,0 +1,125 @@
+[
+  {
+    "profile": "capacity",
+    "scenario": "cap_client_credentials",
+    "elapsed_seconds": 47.212,
+    "status": "passed",
+    "k6_exit_code": 0,
+    "k6": {
+      "http_reqs": 224037,
+      "rps": 4977.108,
+      "error_rate": 0.0,
+      "dropped_iterations": 0,
+      "dropped_iterations_rate": 0.0,
+      "latency_ms": {
+        "p50": 11.979,
+        "p95": 18.238,
+        "p99": 24.345
+      },
+      "measure": {
+        "ops": 170112,
+        "ops_per_s": 3779.134,
+        "errors": 0,
+        "latency_ms": {
+          "p50": 12.0,
+          "p95": 18.0,
+          "p99": 23.0
+        }
+      }
+    },
+    "steps": [
+      {
+        "step": "token_client_credentials",
+        "http_reqs": 224037,
+        "rps": 4977.108,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 11.979,
+          "p95": 18.238,
+          "p99": 24.345
+        }
+      }
+    ],
+    "error_breakdown": [],
+    "postgres": {
+      "statement_calls": 3362165,
+      "total_statement_ms": 161718.735,
+      "mean_statement_ms": 0.048,
+      "rows": 2690038,
+      "database_bytes": 3038205631,
+      "statements_per_http_request": 15.007
+    },
+    "db_pool": {
+      "counter_reset": false,
+      "acquire_count": 897718,
+      "wait_ms_total": 1483711.36,
+      "wait_ms_avg": 1.653,
+      "wait_ms_max_observed_process_lifetime": 334.128
+    },
+    "valkey": {
+      "keyspace_hits": 448120,
+      "keyspace_misses": 95,
+      "commands_processed": 896397,
+      "expired_keys": 3199,
+      "db0_keys": -3198
+    },
+    "containers": {
+      "by_container": {
+        "nazoauth-perf-nazoauth-1": {
+          "service": "nazoauth",
+          "samples": 15,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth-perf-postgres-1": {
+          "service": "postgres",
+          "samples": 15,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth-perf-valkey-1": {
+          "service": "valkey",
+          "samples": 15,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      },
+      "by_service": {
+        "postgres": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "valkey": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      }
+    },
+    "load_model": {
+      "executor": "constant-vus",
+      "target_rate": 0,
+      "duration": "45s",
+      "app_replicas": 1,
+      "observed_app_instances": 1
+    }
+  }
+]
