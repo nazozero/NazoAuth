@@ -22,6 +22,7 @@ for d in sorted(glob.glob("/workspace/perf-results/ladder/*")):
         "dropped_iterations":k.get("dropped_iterations"),
         "load_model":s.get("load_model"),
         "postgres":s.get("postgres"),"db_pool":s.get("db_pool"),"valkey":s.get("valkey"),
+        "error_breakdown":s.get("error_breakdown"),
         "steps":[{ "step":x["step"],"rps":x["rps"],"error_rate":x["error_rate"],
                    "p50":x["latency_ms"].get("p50"),"p95":x["latency_ms"].get("p95"),"p99":x["latency_ms"].get("p99")}
                  for x in s.get("steps",[])]}
