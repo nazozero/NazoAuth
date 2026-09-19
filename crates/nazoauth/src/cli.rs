@@ -372,6 +372,7 @@ fn admin_provision_rejection_for_error(
 
 async fn run_audit_anchor_worker(launcher: &dyn PersistenceLauncher) -> anyhow::Result<()> {
     let config = ConfigSource::load_for_audit_anchor_worker()?;
+    let _observability = crate::bootstrap::observability::init(&config)?;
     let (database_url, database_max_connections, worker_config) =
         crate::adapters::audit_anchor::worker_config_from_source(&config)?;
     let repository = launcher

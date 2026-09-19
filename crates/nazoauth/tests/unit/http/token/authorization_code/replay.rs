@@ -83,7 +83,6 @@ async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reu
         access_token_jti: format!("access-jti-{}", Uuid::now_v7()),
         access_token_expires_at: Utc::now().timestamp() + 300,
         refresh_token_family_id: Some(family_id),
-        consumed_at: Utc::now(),
     };
     fixture
         .store_code_state(
@@ -127,7 +126,6 @@ async fn token_authorization_code_replay_revokes_previous_tokens_and_rejects_reu
                     access_token_jti: "access-jti-2".to_owned(),
                     access_token_expires_at: Utc::now().timestamp() + 300,
                     refresh_token_family_id: None,
-                    consumed_at: Utc::now(),
                 },
             },
         )
@@ -188,7 +186,6 @@ async fn token_authorization_code_replay_fails_closed_when_token_revocation_erro
                     access_token_jti: format!("access-jti-{}", Uuid::now_v7()),
                     access_token_expires_at: Utc::now().timestamp() + 300,
                     refresh_token_family_id: Some(Uuid::now_v7()),
-                    consumed_at: Utc::now(),
                 },
             },
         )

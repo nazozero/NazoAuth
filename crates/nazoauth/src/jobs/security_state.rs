@@ -1,8 +1,8 @@
 //! Bounded security-state maintenance scheduling.
 //!
 //! One process-level worker owns periodic reclamation. Each cycle runs bounded
-//! batches (generic cleanup, refresh-token family reclaim, presentation and
-//! audit-outbox cleanup inside the port) until the batch reports no saturated
+//! batches (generic cleanup, refresh-token family reclaim and presentation
+//! cleanup inside the port) until the batch reports no saturated
 //! category, the catch-up budget is exhausted, or a failure occurs; then it
 //! waits the fixed interval. A failure is logged and the next interval runs;
 //! there is no fast retry loop and no leader election — PostgreSQL
@@ -40,7 +40,6 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                             logout_deliveries = counts.logout_deliveries,
                             scim_security_events = counts.scim_security_events,
                             presentations = counts.presentations,
-                            audit_outbox_rows = counts.audit_outbox_rows,
                             saturated = counts.saturated,
                             batch = batches,
                             elapsed_ms = started.elapsed().as_millis() as u64,

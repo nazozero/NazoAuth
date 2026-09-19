@@ -5,7 +5,7 @@ mod authentication_services;
 mod cors;
 mod federation_services;
 mod object_store;
-mod observability;
+pub(crate) mod observability;
 mod passkey_services;
 mod profile_services;
 mod registration_services;

@@ -190,7 +190,7 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
          FOR EACH ROW EXECUTE FUNCTION public.reject_test_chain_entry();", rejected.event_id
     )).await.unwrap();
     assert!(exporter.claim_due(256, 60).await.is_err());
-    let failed_state = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox WHERE event_id IN ($1, $2) AND attempts = 0 AND locked_at IS NULL AND exported_at IS NULL")
+    let failed_state = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox WHERE event_id IN ($1, $2) AND attempts = 0 AND locked_at IS NULL")
         .bind::<SqlUuid, _>(good.event_id).bind::<SqlUuid, _>(rejected.event_id)
         .get_result::<Count>(&mut owner).await.unwrap();
     assert_eq!(

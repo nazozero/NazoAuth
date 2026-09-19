@@ -257,7 +257,6 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                      FROM {quoted_role};\
                      GRANT EXECUTE ON FUNCTION \
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
-                         public.nazo_cleanup_exported_security_audit_outbox(), \
                          public.nazo_security_audit_shared_anchor_health(), \
                          public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
                      TO {quoted_role};"

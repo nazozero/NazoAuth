@@ -11,7 +11,6 @@ fn authorization_code_replay_requires_same_client_and_exact_redemption_binding()
         access_token_jti: "access-jti".to_owned(),
         access_token_expires_at: Utc::now().timestamp() + 300,
         refresh_token_family_id: None,
-        consumed_at: Utc::now(),
     };
 
     assert!(replay_matches_original_redemption(

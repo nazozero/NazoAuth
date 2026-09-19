@@ -50,7 +50,10 @@ The worker authenticates the exact JSON body with HMAC-SHA-256 in
 `X-Nazo-Audit-Signature: sha256=<base64url>` (unpadded). The separate
 `X-Nazo-Audit-Sent-At` header is not covered by this MAC. Only a 2xx response acknowledges
 the outbox row; an idempotent receiver must return 2xx for a replay rather than
-an ambiguous conflict response.
+an ambiguous conflict response. Acknowledgement deletes the delivery row in the
+same transaction that advances the anchor checkpoint — the accepted checkpoint
+and the immutable event/chain records are the durable evidence, so no delivered
+row is retained and no separate sweeper reclaims it.
 Transport and non-success responses are rescheduled from one second up to
 300 seconds with exponential backoff. Claim, acknowledgement, and rescheduling
 are fenced by the expected delivery attempt, so an expired claimant cannot
