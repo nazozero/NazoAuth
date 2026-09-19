@@ -10,7 +10,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRepositoryPort, ClientAuthenticationSnapshot,
     CommitTokenIssuance, CommitTokenIssuanceResult, GrantWrite, OAuthClient, RefreshToken,
-    StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort, TokenRevocation,
+    SingleUseRedemption, StoredAuthorizationGrant, TokenFuture, TokenRepositoryPort,
+    TokenRevocation,
 };
 use uuid::Uuid;
 
@@ -75,6 +76,15 @@ impl TokenRepositoryPort for CountingTokenRepository {
         self.inner.commit_token_issuance(input)
     }
 
+    fn single_use_redemption<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        grant_key: &'a str,
+    ) -> TokenFuture<'a, Option<SingleUseRedemption>> {
+        self.inner
+            .single_use_redemption(tenant_id, client_id, grant_key)
+    }
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,

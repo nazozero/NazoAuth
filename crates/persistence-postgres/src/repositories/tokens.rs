@@ -21,7 +21,7 @@ use super::access_token_revocation::{
     NewAccessTokenRevocation, access_token_revocation_deadline, upsert_access_token_revocations,
 };
 
-const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 60;
+pub(crate) const LOST_REFRESH_TOKEN_RETRY_SECONDS: i64 = 60;
 
 #[derive(Clone)]
 pub struct TokenRepository {
@@ -687,6 +687,7 @@ fn row_from_domain(token: &RefreshToken) -> Result<RefreshTokenRow, RepositoryEr
         mtls_x5t_s256: token.mtls_x5t_s256.clone(),
         client_attestation_jkt: token.client_attestation_jkt.clone(),
         oidc_auth_context,
+        sparsified_at: None,
     })
 }
 

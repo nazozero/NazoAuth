@@ -214,8 +214,8 @@ pub use token_endpoint::{
 pub use token_service::{
     AccessTokenRevocation, AccessTokenSignInput, AuthorizationCodeBeginResult,
     AuthorizationCodeTransitionResult, CommitTokenIssuance, CommitTokenIssuanceResult,
-    IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, IssuedAuthorizationCodeTokens,
-    TokenFuture, TokenInspection, TokenIssuanceMode, TokenIssuedAuditFields, TokenPortError,
+    IdTokenSignInput, IntrospectionSignInput, IssuedAccessToken, SingleUseRedemption, TokenFuture,
+    TokenInspection, TokenIssuanceMode, TokenIssuedAuditFields, TokenPortError,
     TokenRepositoryPort, TokenRevocation, TokenService, TokenSignerPort, TokenStateStorePort,
     UserinfoSnapshot, UserinfoSubjectRef, validate_sender_constraint,
 };

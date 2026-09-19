@@ -11,7 +11,7 @@ timeout, and partial-outage rules for both.
 | Store | State | Loss impact | Recovery expectation |
 | --- | --- | --- | --- |
 | PostgreSQL | users, clients, grants, refresh tokens, access-token revocation state, client metadata, audit-relevant durable rows | durable account, client, token, and grant state can be lost or rolled back | restore from tested backups or promote a consistent replica |
-| Valkey | sessions, authorization codes and consumed-code replay markers, PAR handles, DPoP proof replay keys, client assertion replay keys, rate-limit counters, consent transaction state | in-flight browser/API transactions fail; replay/rate controls must not silently weaken | fail closed for security-sensitive paths; restart transactions after recovery |
+| Valkey | sessions, authorization codes, PAR handles, DPoP proof replay keys, client assertion replay keys, rate-limit counters, consent transaction state | in-flight browser/API transactions fail; replay/rate controls must not silently weaken | fail closed for security-sensitive paths; restart transactions after recovery |
 | PostgreSQL signing-key generation + deployment wrapping root | active, prepublished, and retained token-signing private/public keys plus request-object recipient | issued tokens can become unverifiable or signing continuity can break | restore the matching encrypted row and wrapping root before serving traffic |
 | Configured avatar storage | tenant-isolated local files or S3-compatible objects | profile media can be lost or desynchronized from PostgreSQL metadata | restore objects and metadata consistently; independent local disks are not shared storage |
 
@@ -105,6 +105,12 @@ instances from double-processing the same rows.
   held by an active writer is skipped for that pass, and lock-free rows are
   rechecked inside the reclaim transaction. Families with an active successor
   are never reclaimed.
+- Inside still-live families, members that are expired and past the
+  lost-response window (60 s after revocation) are rewritten to a terminal
+  stub in bounded batches: payload columns are tombstoned, the chain edge is
+  unlinked, and only the hash-to-family mapping is retained so reuse
+  detection and family compromise keep working until the family itself is
+  reclaimed.
 - A failed batch logs a warning; the worker waits for the next interval
   instead of retrying in a tight loop. The worker is aborted and awaited
   during shutdown.
@@ -149,7 +155,7 @@ When Valkey is unavailable or times out:
 | Area | Expected behavior |
 | --- | --- |
 | Sessions | authenticated profile/admin flows fail or require re-login; session lookup must not be bypassed |
-| Authorization codes and consumed-code markers | code creation, lookup, and replay protection fail closed; the marker retains a replay revocation basis only for the configured access-token TTL or original refresh-token TTL |
+| Authorization codes | code creation, lookup, and single-use transitions fail closed; consumed-code replay evidence lives on the PostgreSQL issuance row, so a Valkey loss cannot weaken replay protection — it only fails outstanding redemptions |
 | PAR | pushed request storage and lookup fail closed; authorization requests must not fall back to unsigned or unpushed parameters in FAPI/PAR-required profiles |
 | DPoP replay cache | proof replay checks fail closed; a token must not be issued or accepted without replay state when the profile requires it |
 | `private_key_jwt` replay cache | assertion `jti` storage failures reject the assertion |

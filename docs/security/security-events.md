@@ -9,7 +9,7 @@ implements their storage. A structured log line alone is not a durable receipt.
 
 | Path | Guarantee |
 | --- | --- |
-| `audit_event` | Validates fields, logs `target="audit"`, then tries a bounded 4,096-entry in-process queue. The worker retries the oldest append from 100 ms up to 5 s indefinitely. Queue saturation/disconnection is reported as `target="audit.persistence"`, `persistence_status="not_queued"`. Queued events can be lost on process exit before persistence. |
+| `audit_event` | Validates fields, logs `target="audit"`, then tries a bounded 4,096-entry in-process queue. The worker retries the oldest append from 100 ms up to 5 s indefinitely. Queue saturation/disconnection is reported as `target="audit.persistence"`, `persistence_status="not_queued"` — or `"dropped_required"` when the dropped event belongs to the required evidence class. Queued events can be lost on process exit before persistence. Required-class events emitted through this path additionally log `persistence_status="misrouted_required"` (once per event name per process): they should use `audit_event_required` or a transactional append instead. |
 | `audit_event_required` | Awaits ledger append before logging `persistence_status="durable"` and `event_id`; append failure propagates to the caller. This does not put a separate business mutation in the same transaction. |
 | Transactional repository append | Token issuance, refresh rotation/reuse handling, and tenant directory/resource operations append their owned audit event with the corresponding durable mutation in one database transaction. |
 | External anchor worker | Exports only committed ledger events through the durable outbox. Receiver acceptance, retry ordering, freshness, and remaining trust limits are specified in [audit anchoring](audit-anchor.md). |
@@ -57,6 +57,18 @@ and token IDs still require access control and a retention policy.
 Event names and categories use lowercase ASCII words separated by `_`. Keep
 this table synchronized with `AUDIT_EVENT_DEFINITIONS` when changing a producer.
 An allowed name is vocabulary, not proof that a particular operation emitted it.
+Each definition also carries an evidence class: `required` marks security
+evidence whose durable persistence must not silently fail (intents, decisions,
+mutations, replay detections, issuance); `telemetry` marks best-effort
+operational signal. The class governs routing checks and the
+`misrouted_required`/`dropped_required` statuses above, not filtering — both
+classes reach the durable sink. Only these events are telemetry:
+`ciba_authorization_started`, `device_authorization_started`,
+`dynamic_client_configuration_read`, `federation_login_success`,
+`login_failure`, `login_success`, `mfa_challenge_failure`,
+`mfa_challenge_success`, `mfa_step_up_success`, `passkey_login_failure`,
+`passkey_login_success`, `scim_token_used`. An unlisted or unknown event name
+is treated as required, never as telemetry.
 
 | Category | Events |
 | --- | --- |

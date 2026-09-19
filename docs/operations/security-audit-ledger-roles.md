@@ -31,7 +31,9 @@ REVOKE ALL ON TABLE
     public.security_audit_chain_state,
     public.security_audit_events,
     public.security_audit_chain_entries,
-    public.security_audit_event_outbox
+    public.security_audit_event_outbox,
+    public.security_audit_archive,
+    public.security_audit_archive_state
 FROM nazoauth_audit_writer, nazoauth_audit_exporter;
 GRANT USAGE ON SCHEMA public TO nazoauth_audit_writer, nazoauth_audit_exporter;
 ```
@@ -81,10 +83,16 @@ TO nazoauth_audit_exporter;
 exporter grant: unblocking a permanently rejected batch is an owner/operator
 action after the receiver contract is reconciled.
 
+`public.nazo_archive_security_audit_prefix(bigint, timestamptz)` is granted to
+the maintenance writer role (the server-writer role in the managed layout): it
+moves only the delivered, contiguous, aged-out chain prefix into the archive
+and is the only permitted delete path on the ledger tables. It is not part of
+the exporter grant set.
+
 If one process intentionally performs both jobs, grant both function sets to
 one pre-created role and record that exception in the deployment inventory.
 Never grant `SELECT`, `INSERT`, `UPDATE`, `DELETE`, `TRUNCATE`, `REFERENCES`, or
-`TRIGGER` on any of the four tables to that combined role. Runtime login roles
+`TRIGGER` on any of the six ledger/archive tables to that combined role. Runtime login roles
 must not be members of the migration owner, a superuser role, or any role that
 can acquire those privileges through `SET ROLE`.
 

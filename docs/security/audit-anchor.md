@@ -99,6 +99,36 @@ retries and on a non-empty blocked reason. There is no skip/DLQ operation
 because skipping would make a later external chain look complete when it is
 not.
 
+## Online retention and archive
+
+The hot ledger (`security_audit_events` + `security_audit_chain_entries`)
+keeps a one-hour online window of delivered evidence. The security-state
+maintenance worker calls `nazo_archive_security_audit_prefix` in bounded
+batches (256 rows) to move the eligible prefix into the immutable
+`security_audit_archive` table. A row is eligible only when it is at or below
+the acknowledged anchor (`anchor_sequence` — delivered *and* receipt-verified)
+and its `occurred_at` is older than one hour. The function serializes on the
+chain-state row against claims/acks, stops at the first sequence gap or
+ineligible row so the archive is always a contiguous chain prefix, verifies
+the boundary link against `security_audit_archive_state` plus every interior
+link, and fails closed on a mismatch. An in-flight batch is above the anchor
+by construction, so in-delivery evidence can never be archived out from under
+the exporter.
+
+The archive is the durable record for aged-out evidence: each row keeps the
+event payload plus its `previous_hash`/`event_hash` link, so the archived
+prefix verifies standalone against the stored watermark, and the still-hot
+suffix continues to verify because the first hot row's `previous_hash` equals
+the last archived `event_hash`. The same append-only triggers protect the
+archive; the archival function is the only permitted delete path on the
+ledger tables and is gated by a session flag inside its own transaction —
+application roles hold no DELETE privilege on any ledger table.
+
+Events that are never exported — or newer than the online window — stay in
+the hot tables. With the exporter disabled there is no receiver acknowledgement
+and therefore no archival: the local ledger remains the system of record and
+its retention is an operator decision outside this mechanism.
+
 Recommended production separation:
 
 * pre-create distinct lifecycle, server-writer, and exporter database roles;

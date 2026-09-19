@@ -22,6 +22,12 @@ pub struct CleanupBatchResult {
     pub logout_deliveries: u64,
     pub scim_security_events: u64,
     pub presentations: u64,
+    /// Expired, long-revoked refresh members rewritten to their terminal stub
+    /// (payload tombstoned, chain edge unlinked) inside still-live families.
+    pub sparsified_refresh_members: u64,
+    /// Delivered audit-ledger events older than the online window moved into
+    /// `security_audit_archive` as a contiguous chain prefix.
+    pub archived_audit_events: u64,
     /// `true` when a category or candidate scan hit its per-batch budget, so
     /// another batch probably has deletable work. Callers use it to keep
     /// draining backlog instead of waiting a full interval.

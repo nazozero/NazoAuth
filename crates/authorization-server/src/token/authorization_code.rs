@@ -22,7 +22,7 @@ use nazo_auth::DpopError;
 use http::StatusCode;
 
 use chrono::Utc;
-use nazo_auth::TokenIssuanceMode;
+use nazo_auth::{SingleUseRedemption, TokenIssuanceMode};
 
 use serde_json::json;
 
@@ -166,6 +166,55 @@ fn replay_matches_original_redemption(
             .is_some_and(|expected| {
                 constant_time_eq(expected.as_bytes(), redemption_binding.as_bytes())
             })
+}
+
+/// Durable replay evidence: a code entry that is absent or still leased in
+/// the state store may already be committed behind the single-use fence.
+/// The fence lookup key is the redemption binding itself, so a returned row
+/// proves the replay carries the original proofs and may revoke directly.
+async fn committed_single_use_redemption(
+    token_service: &ServerTokenService,
+    client: &ClientRow,
+    grant_key: &str,
+) -> Result<Option<SingleUseRedemption>, OAuthEndpointError> {
+    token_service
+        .single_use_redemption(client.tenant_id, client.id, grant_key)
+        .await
+        .map_err(|error| {
+            tracing::warn!(%error, "failed to read single-use grant redemption");
+            OAuthEndpointError::token(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权码校验失败.",
+                false,
+            )
+        })
+}
+
+async fn revoke_replayed_redemption(
+    token_service: &ServerTokenService,
+    client: &ClientRow,
+    redemption: &SingleUseRedemption,
+) -> Result<(), OAuthEndpointError> {
+    if let Err(error) = token_service
+        .revoke_issued_tokens(
+            client.tenant_id,
+            client.id,
+            &redemption.access_token_jti,
+            Some(redemption.access_token_expires_at),
+            redemption.refresh_token_family_id,
+        )
+        .await
+    {
+        tracing::warn!(%error, "failed to revoke tokens after authorization code replay");
+        return Err(OAuthEndpointError::token(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "授权码重放撤销失败.",
+            false,
+        ));
+    }
+    Ok(())
 }
 
 pub struct AuthorizationCodeIssueInput {
@@ -442,6 +491,24 @@ pub async fn token_authorization_code_with_service(
                 ));
             }
             Ok(AuthorizationCodeConsumption::Busy) => {
+                // A leased entry can outlive its commit when the post-commit
+                // cleanup raced; the durable fence decides whether this is a
+                // completed redemption replay or a genuinely in-flight grant.
+                if let Some(redemption) = committed_single_use_redemption(
+                    token_service,
+                    client,
+                    &authorization_code_grant_key,
+                )
+                .await?
+                {
+                    revoke_replayed_redemption(token_service, client, &redemption).await?;
+                    return Err(OAuthEndpointError::token(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_grant",
+                        "授权码已被使用，相关令牌已撤销.",
+                        false,
+                    ));
+                }
                 return Err(OAuthEndpointError::token(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",
@@ -458,6 +525,24 @@ pub async fn token_authorization_code_with_service(
                 ));
             }
             Ok(AuthorizationCodeConsumption::Missing) => {
+                // Missing from the state store does not prove the code was
+                // never redeemed: the consumed evidence lives on the durable
+                // single-use fence, which the replay lookup reads here.
+                if let Some(redemption) = committed_single_use_redemption(
+                    token_service,
+                    client,
+                    &authorization_code_grant_key,
+                )
+                .await?
+                {
+                    revoke_replayed_redemption(token_service, client, &redemption).await?;
+                    return Err(OAuthEndpointError::token(
+                        StatusCode::BAD_REQUEST,
+                        "invalid_grant",
+                        "授权码已被使用，相关令牌已撤销.",
+                        false,
+                    ));
+                }
                 return Err(OAuthEndpointError::token(
                     StatusCode::BAD_REQUEST,
                     "invalid_grant",

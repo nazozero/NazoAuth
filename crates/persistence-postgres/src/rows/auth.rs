@@ -37,6 +37,8 @@ pub(crate) struct RefreshTokenRow {
     pub(crate) client_attestation_jkt: Option<String>,
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     pub(crate) oidc_auth_context: Value,
+    #[diesel(sql_type = diesel::sql_types::Nullable<diesel::sql_types::Timestamptz>)]
+    pub(crate) sparsified_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Clone, Debug, diesel::QueryableByName)]

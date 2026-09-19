@@ -240,7 +240,9 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.security_audit_chain_state, \
                          public.security_audit_events, \
                          public.security_audit_chain_entries, \
-                         public.security_audit_event_outbox \
+                         public.security_audit_event_outbox, \
+                         public.security_audit_archive, \
+                         public.security_audit_archive_state \
                      FROM {quoted_role};\
                      REVOKE ALL ON FUNCTION \
                          public.nazo_reject_security_audit_event_mutation(), \
@@ -257,12 +259,14 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.nazo_observe_security_audit_anchor(TEXT), \
                          public.nazo_record_security_audit_genesis(TEXT, BYTEA), \
                          public.nazo_security_audit_shared_anchor_health(), \
-                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
+                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN), \
+                         public.nazo_archive_security_audit_prefix(BIGINT, TIMESTAMPTZ) \
                      FROM {quoted_role};\
                      GRANT EXECUTE ON FUNCTION \
                          public.nazo_persist_security_audit_event(UUID, TEXT, TEXT, JSONB, TIMESTAMPTZ), \
                          public.nazo_security_audit_shared_anchor_health(), \
-                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN) \
+                         public.nazo_security_audit_shared_privilege_preflight(BOOLEAN, BOOLEAN, BOOLEAN), \
+                         public.nazo_archive_security_audit_prefix(BIGINT, TIMESTAMPTZ) \
                      TO {quoted_role};"
                 ))
                 .await?;

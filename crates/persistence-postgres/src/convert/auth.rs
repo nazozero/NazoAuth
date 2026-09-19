@@ -24,21 +24,26 @@ impl TryFrom<RefreshTokenRow> for RefreshToken {
             mtls_x5t_s256: row.mtls_x5t_s256,
             client_attestation_jkt: row.client_attestation_jkt,
             authentication_context: {
-                let context =
-                    serde_json::from_value::<nazo_auth::RefreshTokenAuthenticationContext>(
-                        row.oidc_auth_context,
-                    )
+                if row.sparsified_at.is_some() {
+                    // Terminal stub: payload columns are tombstones; the row
+                    // only carries hash-to-family reuse evidence.
+                    nazo_auth::RefreshTokenAuthenticationContext::terminal_stub()
+                } else {
+                    let context = serde_json::from_value::<
+                        nazo_auth::RefreshTokenAuthenticationContext,
+                    >(row.oidc_auth_context)
                     .map_err(|error| {
                         RepositoryError::Unexpected(format!(
                             "invalid refresh token authentication context: {error}"
                         ))
                     })?;
-                if !context.is_well_formed() {
-                    return Err(RepositoryError::Unexpected(
-                        "invalid refresh token authentication context".to_owned(),
-                    ));
+                    if !context.is_well_formed() {
+                        return Err(RepositoryError::Unexpected(
+                            "invalid refresh token authentication context".to_owned(),
+                        ));
+                    }
+                    context
                 }
-                context
             },
         })
     }

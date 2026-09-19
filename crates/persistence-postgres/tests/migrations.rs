@@ -776,13 +776,14 @@ async fn pending_migrations_create_all_runtime_module_state_tables() {
     // The runtime-module migration establishes its clean-install baseline once
     // per schema. Other integration tests deliberately mutate the shared
     // default schema, so this assertion needs its own fresh migration ledger.
-    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 6] = [
+    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 7] = [
         "20260805000100",
         "20260905000100",
         "20260909000100",
         "20260919000100",
         "20260919000200",
         "20260920000100",
+        "20260923000100",
     ];
     nazo_postgres::run_pending_migrations(&database_url)
         .await

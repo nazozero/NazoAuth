@@ -1,7 +1,7 @@
 //! 结构化安全审计日志。
 
 use std::{
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
     time::Duration,
 };
 
@@ -66,75 +66,319 @@ const SENSITIVE_FIELD_NAMES: &[&str] = &[
     "client_assertion",
 ];
 
-const AUDIT_EVENT_DEFINITIONS: &[(&str, &str)] = &[
-    ("admin_mutation_intent", "administration"),
-    ("controller_identity_approval_issued", "administration"),
-    ("controller_slot_created", "administration"),
-    ("controller_slot_revoked", "administration"),
-    ("controller_slot_rotated", "administration"),
-    ("admin_user_created", "administration"),
-    ("admin_user_updated", "administration"),
-    ("admin_grant_revoked", "administration"),
-    ("admin_access_request_rejected", "administration"),
-    ("authorization_approved", "authorization"),
-    ("authorization_denied", "authorization"),
-    ("authorization_decision_intent", "authorization"),
-    ("authorization_prompt_none_approved", "authorization"),
-    ("ciba_authorization_approved", "authorization"),
-    ("ciba_authorization_denied", "authorization"),
-    ("ciba_authorization_started", "authorization"),
-    ("ciba_authorization_intent", "authorization"),
-    ("ciba_decision_intent", "authorization"),
-    ("device_authorization_approved", "authorization"),
-    ("device_authorization_denied", "authorization"),
-    ("device_authorization_started", "authorization"),
-    ("device_decision_intent", "authorization"),
-    ("client_assertion_replay_detected", "credential_replay"),
-    ("client_created", "client_lifecycle"),
-    ("client_updated", "client_lifecycle"),
-    ("dynamic_client_configuration_read", "client_lifecycle"),
-    ("dynamic_client_configuration_updated", "client_lifecycle"),
-    ("dynamic_client_deleted", "client_lifecycle"),
-    ("dynamic_client_registered", "client_lifecycle"),
-    ("dpop_replay_detected", "credential_replay"),
-    ("external_identity_linked", "identity_lifecycle"),
-    ("external_identity_relink_denied", "identity_lifecycle"),
-    ("external_identity_unlinked", "identity_lifecycle"),
-    ("federation_login_success", "authentication"),
-    ("federation_provider_mismatch_rejected", "credential_replay"),
-    ("federation_saml_replay_rejected", "credential_replay"),
-    ("login_failure", "authentication"),
-    ("login_success", "authentication"),
-    ("mfa_backup_codes_regenerated", "authentication"),
-    ("mfa_challenge_failure", "authentication"),
-    ("mfa_challenge_success", "authentication"),
-    ("mfa_disabled", "authentication"),
-    ("mfa_step_up_success", "authentication"),
-    ("mfa_totp_enabled", "authentication"),
-    ("oidc_logout", "session_lifecycle"),
+/// Audit evidence class: `Required` events are security evidence whose
+/// durable persistence must not silently fail; `Telemetry` events are
+/// best-effort operational signal. The class is metadata for routing checks
+/// and observability, not a filter — both classes reach the durable sink.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AuditEventClass {
+    Required,
+    Telemetry,
+}
+
+const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
+    (
+        "admin_mutation_intent",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "controller_identity_approval_issued",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "controller_slot_created",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "controller_slot_revoked",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "controller_slot_rotated",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "admin_user_created",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "admin_user_updated",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "admin_grant_revoked",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "admin_access_request_rejected",
+        "administration",
+        AuditEventClass::Required,
+    ),
+    (
+        "authorization_approved",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "authorization_denied",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "authorization_decision_intent",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "authorization_prompt_none_approved",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "ciba_authorization_approved",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "ciba_authorization_denied",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "ciba_authorization_started",
+        "authorization",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "ciba_authorization_intent",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "ciba_decision_intent",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "device_authorization_approved",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "device_authorization_denied",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "device_authorization_started",
+        "authorization",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "device_decision_intent",
+        "authorization",
+        AuditEventClass::Required,
+    ),
+    (
+        "client_assertion_replay_detected",
+        "credential_replay",
+        AuditEventClass::Required,
+    ),
+    (
+        "client_created",
+        "client_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "client_updated",
+        "client_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "dynamic_client_configuration_read",
+        "client_lifecycle",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "dynamic_client_configuration_updated",
+        "client_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "dynamic_client_deleted",
+        "client_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "dynamic_client_registered",
+        "client_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "dpop_replay_detected",
+        "credential_replay",
+        AuditEventClass::Required,
+    ),
+    (
+        "external_identity_linked",
+        "identity_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "external_identity_relink_denied",
+        "identity_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "external_identity_unlinked",
+        "identity_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "federation_login_success",
+        "authentication",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "federation_provider_mismatch_rejected",
+        "credential_replay",
+        AuditEventClass::Required,
+    ),
+    (
+        "federation_saml_replay_rejected",
+        "credential_replay",
+        AuditEventClass::Required,
+    ),
+    (
+        "login_failure",
+        "authentication",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "login_success",
+        "authentication",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "mfa_backup_codes_regenerated",
+        "authentication",
+        AuditEventClass::Required,
+    ),
+    (
+        "mfa_challenge_failure",
+        "authentication",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "mfa_challenge_success",
+        "authentication",
+        AuditEventClass::Telemetry,
+    ),
+    ("mfa_disabled", "authentication", AuditEventClass::Required),
+    (
+        "mfa_step_up_success",
+        "authentication",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "mfa_totp_enabled",
+        "authentication",
+        AuditEventClass::Required,
+    ),
+    (
+        "oidc_logout",
+        "session_lifecycle",
+        AuditEventClass::Required,
+    ),
     (
         "openid4vci_credential_dataset_deleted",
         "credential_lifecycle",
+        AuditEventClass::Required,
     ),
     (
         "openid4vci_credential_dataset_updated",
         "credential_lifecycle",
+        AuditEventClass::Required,
     ),
-    ("mtls_trust_anchor_approved", "trust_lifecycle"),
-    ("mtls_trust_bundle_exported", "trust_lifecycle"),
-    ("mtls_trust_anchor_rejected", "trust_lifecycle"),
-    ("mtls_trust_anchor_requested", "trust_lifecycle"),
-    ("mtls_trust_anchor_revoked", "trust_lifecycle"),
-    ("passkey_login_failure", "authentication"),
-    ("passkey_login_success", "authentication"),
-    ("passkey_registered", "authentication"),
-    ("passkey_registration_rejected", "authentication"),
-    ("refresh_reuse_detected", "token_replay"),
-    ("scim_token_denied", "provisioning"),
-    ("scim_token_used", "provisioning"),
-    ("token_issued", "token_lifecycle"),
-    ("token_issuance_intent", "token_lifecycle"),
-    ("token_revoked", "token_lifecycle"),
+    (
+        "mtls_trust_anchor_approved",
+        "trust_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "mtls_trust_bundle_exported",
+        "trust_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "mtls_trust_anchor_rejected",
+        "trust_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "mtls_trust_anchor_requested",
+        "trust_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "mtls_trust_anchor_revoked",
+        "trust_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "passkey_login_failure",
+        "authentication",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "passkey_login_success",
+        "authentication",
+        AuditEventClass::Telemetry,
+    ),
+    (
+        "passkey_registered",
+        "authentication",
+        AuditEventClass::Required,
+    ),
+    (
+        "passkey_registration_rejected",
+        "authentication",
+        AuditEventClass::Required,
+    ),
+    (
+        "refresh_reuse_detected",
+        "token_replay",
+        AuditEventClass::Required,
+    ),
+    (
+        "scim_token_denied",
+        "provisioning",
+        AuditEventClass::Required,
+    ),
+    (
+        "scim_token_used",
+        "provisioning",
+        AuditEventClass::Telemetry,
+    ),
+    ("token_issued", "token_lifecycle", AuditEventClass::Required),
+    (
+        "token_issuance_intent",
+        "token_lifecycle",
+        AuditEventClass::Required,
+    ),
+    (
+        "token_revoked",
+        "token_lifecycle",
+        AuditEventClass::Required,
+    ),
 ];
 
 const AUDIT_QUEUE_CAPACITY: usize = 4096;
@@ -360,6 +604,27 @@ fn enqueue_event(event: &str, queued: Result<QueuedAuditEvent, &'static str>) {
         );
         return;
     };
+    let required_class = audit_event_is_required(event);
+    if required_class {
+        // Required evidence should go through `audit_event_required` or a
+        // transactional append; the best-effort queue can drop on saturation.
+        // Warn once per event name so a high-rate event cannot flood logs.
+        static MISROUTED_REQUIRED_SEEN: OnceLock<Mutex<std::collections::HashSet<String>>> =
+            OnceLock::new();
+        let first_seen = MISROUTED_REQUIRED_SEEN
+            .get_or_init(|| Mutex::new(std::collections::HashSet::new()))
+            .lock()
+            .map(|mut seen| seen.insert(event.to_owned()))
+            .unwrap_or(false);
+        if first_seen {
+            tracing::warn!(
+                target: "audit.persistence",
+                event,
+                persistence_status = "misrouted_required",
+                "required-class audit event emitted through best-effort queue"
+            );
+        }
+    }
     if let Err(error) = sink.try_send(queued) {
         let reason = match error {
             mpsc::error::TrySendError::Full(_) => "queue_full",
@@ -368,7 +633,7 @@ fn enqueue_event(event: &str, queued: Result<QueuedAuditEvent, &'static str>) {
         tracing::error!(
             target: "audit.persistence",
             event,
-            persistence_status = "not_queued",
+            persistence_status = if required_class { "dropped_required" } else { "not_queued" },
             reason,
             "security audit event could not enter durable sink"
         );
@@ -434,7 +699,16 @@ fn prepare_event_for_tenant(
 fn audit_event_category(event: &str) -> Option<&'static str> {
     AUDIT_EVENT_DEFINITIONS
         .iter()
-        .find_map(|(name, category)| (*name == event).then_some(*category))
+        .find_map(|(name, category, _)| (*name == event).then_some(*category))
+}
+
+fn audit_event_is_required(event: &str) -> bool {
+    AUDIT_EVENT_DEFINITIONS
+        .iter()
+        .find_map(|(name, _, class)| {
+            (*name == event).then_some(matches!(class, AuditEventClass::Required))
+        })
+        .unwrap_or(true)
 }
 
 fn audit_event_name_valid(event: &str) -> bool {

@@ -20,6 +20,14 @@ impl TokenRepositoryPort for HolderFixture {
     ) -> TokenFuture<'a, CommitTokenIssuanceResult> {
         panic!("unexpected TokenRepositoryPort::commit_token_issuance call")
     }
+    fn single_use_redemption<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        grant_key: &'a str,
+    ) -> TokenFuture<'a, Option<SingleUseRedemption>> {
+        panic!("unexpected TokenRepositoryPort::single_use_redemption call")
+    }
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,
@@ -108,6 +116,9 @@ impl TokenStateStorePort for HolderFixture {
         ttl_seconds: u64,
     ) -> TokenFuture<'a, AuthorizationCodeTransitionResult> {
         panic!("unexpected TokenStateStorePort::mark_authorization_code call")
+    }
+    fn delete_authorization_code<'a>(&'a self, code_hash: &'a str) -> TokenFuture<'a, ()> {
+        panic!("unexpected TokenStateStorePort::delete_authorization_code call")
     }
     fn increment_token_management_rate<'a>(
         &'a self,

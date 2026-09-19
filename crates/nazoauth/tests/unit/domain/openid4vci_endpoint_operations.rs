@@ -24,8 +24,8 @@ use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use nazo_auth::SigningPurpose;
 use nazo_auth::{
-    CommitTokenIssuance, CommitTokenIssuanceResult, RefreshToken, TokenPortError,
-    TokenRepositoryPort, TokenRevocation,
+    CommitTokenIssuance, CommitTokenIssuanceResult, RefreshToken, SingleUseRedemption,
+    TokenPortError, TokenRepositoryPort, TokenRevocation,
 };
 use nazo_digital_credentials::{VcIssuerTrustPolicy, encrypt_ecdh_es};
 use nazo_key_management::{
@@ -328,6 +328,15 @@ impl TokenRepositoryPort for SubjectStateOutage {
         self.inner.commit_token_issuance(input)
     }
 
+    fn single_use_redemption<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        grant_key: &'a str,
+    ) -> nazo_auth::TokenFuture<'a, Option<SingleUseRedemption>> {
+        self.inner
+            .single_use_redemption(tenant_id, client_id, grant_key)
+    }
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,

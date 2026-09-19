@@ -69,7 +69,7 @@ fn audit_fields_can_remove_sensitive_material() {
 
 #[test]
 fn audit_event_names_are_allowlisted_and_siem_ready() {
-    for (name, category) in AUDIT_EVENT_DEFINITIONS {
+    for (name, category, _) in AUDIT_EVENT_DEFINITIONS {
         assert!(audit_event_name_valid(name));
         assert_eq!(audit_event_category(name), Some(*category));
         assert!(audit_event_name_valid(category));
@@ -363,4 +363,37 @@ fn explicitly_bound_audit_captures_tenant_without_request_scope() {
     )
     .unwrap();
     assert_eq!(queued.payload["tenant_id"], json!(tenant));
+}
+
+#[test]
+fn audit_event_definitions_pin_required_and_telemetry_classes() {
+    for (name, _, class) in AUDIT_EVENT_DEFINITIONS {
+        // Intents, decisions, mutations, replay detections, and lifecycle
+        // changes are required evidence; starts and routine auth telemetry
+        // are the only events allowed on the droppable path.
+        let telemetry = matches!(
+            *name,
+            "ciba_authorization_started"
+                | "device_authorization_started"
+                | "dynamic_client_configuration_read"
+                | "federation_login_success"
+                | "login_failure"
+                | "login_success"
+                | "mfa_challenge_failure"
+                | "mfa_challenge_success"
+                | "mfa_step_up_success"
+                | "passkey_login_failure"
+                | "passkey_login_success"
+                | "scim_token_used"
+        );
+        assert_eq!(
+            matches!(class, AuditEventClass::Telemetry),
+            telemetry,
+            "unexpected class for {name}"
+        );
+    }
+    assert!(audit_event_is_required("token_issued"));
+    assert!(!audit_event_is_required("login_success"));
+    // Unknown names default to required: fail closed on taxonomy gaps.
+    assert!(audit_event_is_required("unlisted_future_event"));
 }

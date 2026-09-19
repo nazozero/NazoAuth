@@ -50,8 +50,7 @@ pub(super) async fn send_batch(
     batch: &SecurityAuditBatch,
 ) -> Result<PushOutcome, AnchorPushError> {
     let deployment_id = &config.preflight.deployment_id;
-    let body =
-        batch_body(deployment_id, batch).map_err(|_| AnchorPushError::Serialize)?;
+    let body = batch_body(deployment_id, batch).map_err(|_| AnchorPushError::Serialize)?;
     let signature = sign_body(&config.auth_secret, &body);
     let sent_at = Utc::now().to_rfc3339();
     let response = client
@@ -92,8 +91,7 @@ pub(super) async fn send_genesis_checkpoint(
     head_hash: &[u8],
 ) -> Result<PushOutcome, AnchorPushError> {
     let deployment_id = &config.preflight.deployment_id;
-    let body = genesis_body(deployment_id, head_hash)
-        .map_err(|_| AnchorPushError::Serialize)?;
+    let body = genesis_body(deployment_id, head_hash).map_err(|_| AnchorPushError::Serialize)?;
     let signature = sign_body(&config.auth_secret, &body);
     let sent_at = Utc::now().to_rfc3339();
     let response = client

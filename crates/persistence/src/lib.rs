@@ -229,7 +229,12 @@ where
         max_envelope_bytes: i64,
         lock_timeout_seconds: i32,
     ) -> BoxFuture<'a, Result<SecurityAuditBatchClaim, RepositoryError>> {
-        (**self).claim_batch(deployment_id, limit, max_envelope_bytes, lock_timeout_seconds)
+        (**self).claim_batch(
+            deployment_id,
+            limit,
+            max_envelope_bytes,
+            lock_timeout_seconds,
+        )
     }
 
     fn ack_batch<'a>(

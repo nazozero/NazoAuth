@@ -205,6 +205,15 @@ mod real_userinfo_contract {
             self.calls.lock().unwrap().push("subject");
             self.inner.active_subject_claims(tenant, user)
         }
+        fn single_use_redemption<'a>(
+            &'a self,
+            tenant_id: Uuid,
+            client_id: Uuid,
+            grant_key: &'a str,
+        ) -> TokenFuture<'a, Option<SingleUseRedemption>> {
+            self.inner
+                .single_use_redemption(tenant_id, client_id, grant_key)
+        }
         fn userinfo_snapshot<'a>(
             &'a self,
             tenant: Uuid,

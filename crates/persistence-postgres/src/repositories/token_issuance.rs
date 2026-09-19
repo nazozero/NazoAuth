@@ -6,8 +6,8 @@ use diesel::{
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_auth::{
     CommitTokenIssuance, CommitTokenIssuanceResult, NewRefreshToken, RefreshToken,
-    RefreshTokenPersistResult, TokenFuture, TokenIssuanceMode, TokenPortError, TokenRepositoryPort,
-    TokenRevocation, UserinfoSnapshot,
+    RefreshTokenPersistResult, SingleUseRedemption, TokenFuture, TokenIssuanceMode, TokenPortError,
+    TokenRepositoryPort, TokenRevocation, UserinfoSnapshot,
 };
 use nazo_identity::{SubjectClaims, TenantId, UserId, ports::RepositoryError};
 use nazo_persistence::SecurityAuditEvent;
@@ -418,6 +418,10 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                         oauth_token_issuances::access_token_expires_at
                                             .eq(access_token_expires_at),
                                         oauth_token_issuances::retain_until.eq(retain_until),
+                                        oauth_token_issuances::refresh_token_family_id.eq(input
+                                            .refresh_token
+                                            .as_ref()
+                                            .map(|refresh| refresh.family_id)),
                                     ))
                                     .execute(connection)
                                     .await?;
@@ -427,12 +431,13 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                     "INSERT INTO oauth_token_issuances (\
                                          issuance_id, tenant_id, client_id, user_id, \
                                          single_use_key_blake3, access_token_jti, \
-                                         access_token_expires_at, retain_until) \
-                                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8) \
+                                         access_token_expires_at, retain_until, \
+                                         refresh_token_family_id) \
+                                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
                                      ON CONFLICT (tenant_id, client_id, single_use_key_blake3) \
                                        WHERE single_use_key_blake3 IS NOT NULL \
                                      DO NOTHING \
-                                     RETURNING (clock_timestamp() < $9) AS grant_valid",
+                                     RETURNING (clock_timestamp() < $10) AS grant_valid",
                                 )
                                 .bind::<sql_types::Uuid, _>(input.issuance_id)
                                 .bind::<sql_types::Uuid, _>(input.tenant_id)
@@ -442,6 +447,12 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                                 .bind::<sql_types::Varchar, _>(input.access_token_jti.as_str())
                                 .bind::<sql_types::Timestamptz, _>(access_token_expires_at)
                                 .bind::<sql_types::Timestamptz, _>(retain_until)
+                                .bind::<sql_types::Nullable<sql_types::Uuid>, _>(
+                                    input
+                                        .refresh_token
+                                        .as_ref()
+                                        .map(|refresh| refresh.family_id),
+                                )
                                 .bind::<sql_types::Timestamptz, _>(grant_expires_at)
                                 .get_result::<SingleUseInsertRow>(connection)
                                 .await
@@ -516,6 +527,41 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
             }
         })
     }
+    fn single_use_redemption<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        grant_key: &'a str,
+    ) -> TokenFuture<'a, Option<SingleUseRedemption>> {
+        Box::pin(async move {
+            let digest = blake3::hash(grant_key.as_bytes());
+            let row = oauth_token_issuances::table
+                .filter(oauth_token_issuances::tenant_id.eq(tenant_id))
+                .filter(oauth_token_issuances::client_id.eq(client_id))
+                .filter(oauth_token_issuances::single_use_key_blake3.eq(digest.as_bytes().to_vec()))
+                .select((
+                    oauth_token_issuances::access_token_jti,
+                    oauth_token_issuances::access_token_expires_at,
+                    oauth_token_issuances::refresh_token_family_id,
+                ))
+                .first::<(String, DateTime<Utc>, Option<Uuid>)>(
+                    &mut self.connection().await.map_err(map_repository_error)?,
+                )
+                .await
+                .optional()
+                .map_err(map_diesel_error)?;
+            Ok(row.map(
+                |(access_token_jti, access_token_expires_at, refresh_token_family_id)| {
+                    SingleUseRedemption {
+                        access_token_jti,
+                        access_token_expires_at,
+                        refresh_token_family_id,
+                    }
+                },
+            ))
+        })
+    }
+
     fn userinfo_snapshot<'a>(
         &'a self,
         tenant_id: Uuid,

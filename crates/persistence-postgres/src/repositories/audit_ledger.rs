@@ -7,6 +7,7 @@ use nazo_identity::ports::RepositoryError;
 
 use crate::{DbPool, get_conn, pool::DiscardOnDrop};
 
+use nazo_persistence::audit_chain::{security_audit_batch_digest, security_audit_event_hash};
 /// The maximum JSON payload accepted by the durable audit ledger.
 ///
 /// Audit events deliberately contain identifiers and hashes, not bearer
@@ -15,10 +16,9 @@ use crate::{DbPool, get_conn, pool::DiscardOnDrop};
 /// programming mistake.
 pub use nazo_persistence::{
     MAX_SECURITY_AUDIT_PAYLOAD_BYTES, SecurityAuditAnchorHealth, SecurityAuditBatch,
-    SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditBatchLease,
-    SecurityAuditEvent, SecurityAuditOutboxDelivery,
+    SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditBatchLease, SecurityAuditEvent,
+    SecurityAuditOutboxDelivery,
 };
-use nazo_persistence::audit_chain::{security_audit_batch_digest, security_audit_event_hash};
 
 /// Headroom below the configured envelope bound so framing fields and the
 /// batch header can never push a committed batch past the wire limit.
@@ -198,8 +198,15 @@ impl AuditLedgerRepository {
                     return claim_inflight(connection, &head, &deployment_id, lock_timeout_seconds)
                         .await;
                 }
-                claim_fresh(connection, &head, &deployment_id, limit, max_envelope_bytes, lock_timeout_seconds)
-                    .await
+                claim_fresh(
+                    connection,
+                    &head,
+                    &deployment_id,
+                    limit,
+                    max_envelope_bytes,
+                    lock_timeout_seconds,
+                )
+                .await
             })
             .await
             .map_err(map_error);
@@ -241,16 +248,15 @@ impl AuditLedgerRepository {
         blocked: bool,
     ) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
-        let result = sql_query(
-            "SELECT public.nazo_fail_security_audit_batch($1, $2, $3, $4) AS changed",
-        )
-        .bind::<diesel::sql_types::BigInt, _>(generation)
-        .bind::<diesel::sql_types::Timestamptz, _>(available_at)
-        .bind::<diesel::sql_types::Text, _>(last_error)
-        .bind::<diesel::sql_types::Bool, _>(blocked)
-        .get_result::<AuditMutationRow>(&mut connection)
-        .await
-        .map_err(map_error)?;
+        let result =
+            sql_query("SELECT public.nazo_fail_security_audit_batch($1, $2, $3, $4) AS changed")
+                .bind::<diesel::sql_types::BigInt, _>(generation)
+                .bind::<diesel::sql_types::Timestamptz, _>(available_at)
+                .bind::<diesel::sql_types::Text, _>(last_error)
+                .bind::<diesel::sql_types::Bool, _>(blocked)
+                .get_result::<AuditMutationRow>(&mut connection)
+                .await
+                .map_err(map_error)?;
         if result.changed {
             return Ok(());
         }
@@ -332,9 +338,10 @@ async fn claim_inflight(
     }
     let members_form_prefix = rows.len() == expected_count
         && first_sequence + expected_count as i64 - 1 == last_sequence
-        && rows.iter().enumerate().all(|(offset, row)| {
-            row.sequence == Some(first_sequence + offset as i64)
-        });
+        && rows
+            .iter()
+            .enumerate()
+            .all(|(offset, row)| row.sequence == Some(first_sequence + offset as i64));
     if !members_form_prefix {
         return Err(invariant_error(
             "security audit batch members no longer form the committed prefix",
@@ -386,18 +393,21 @@ async fn claim_inflight(
         &event_hashes,
     )
     .to_vec();
-    if head.batch_digest.as_deref().is_some_and(|stored| stored != digest.as_slice()) {
+    if head
+        .batch_digest
+        .as_deref()
+        .is_some_and(|stored| stored != digest.as_slice())
+    {
         return Err(invariant_error(
             "security audit batch content changed under the lease",
         ));
     }
-    let generation = sql_query(
-        "SELECT public.nazo_reclaim_security_audit_batch($1, $2) AS generation",
-    )
-    .bind::<diesel::sql_types::Binary, _>(&digest)
-    .bind::<diesel::sql_types::Integer, _>(lock_timeout_seconds)
-    .get_result::<AuditGenerationRow>(connection)
-    .await?;
+    let generation =
+        sql_query("SELECT public.nazo_reclaim_security_audit_batch($1, $2) AS generation")
+            .bind::<diesel::sql_types::Binary, _>(&digest)
+            .bind::<diesel::sql_types::Integer, _>(lock_timeout_seconds)
+            .get_result::<AuditGenerationRow>(connection)
+            .await?;
     Ok(SecurityAuditBatchClaim::Claimed(SecurityAuditBatch {
         generation: generation.generation,
         first_sequence,
@@ -444,31 +454,32 @@ async fn claim_fresh(
         if !deliveries.is_empty() && used_bytes + cost > budget {
             break;
         }
-        let (sequence, previous_hash, event_hash) = match (row.sequence, row.previous_hash, row.event_hash) {
-            (Some(sequence), Some(previous_hash), Some(event_hash)) => {
-                (sequence, previous_hash, event_hash)
-            }
-            (None, None, None) => {
-                next_sequence = next_sequence
-                    .checked_add(1)
-                    .ok_or_else(|| invariant_error("security audit sequence overflow"))?;
-                let event_hash = security_audit_event_hash(
-                    next_sequence,
-                    &next_hash,
-                    row.event_id,
-                    &row.event_type,
-                    &row.event_category,
-                    row.occurred_at,
-                    row.payload_canonical.as_bytes(),
-                )
-                .to_vec();
-                let previous_hash = std::mem::replace(&mut next_hash, event_hash.clone());
-                new_event_ids.push(row.event_id);
-                new_event_hashes.push(event_hash.clone());
-                (next_sequence, previous_hash, event_hash)
-            }
-            _ => return Err(invariant_error("security audit chain entry is incomplete")),
-        };
+        let (sequence, previous_hash, event_hash) =
+            match (row.sequence, row.previous_hash, row.event_hash) {
+                (Some(sequence), Some(previous_hash), Some(event_hash)) => {
+                    (sequence, previous_hash, event_hash)
+                }
+                (None, None, None) => {
+                    next_sequence = next_sequence
+                        .checked_add(1)
+                        .ok_or_else(|| invariant_error("security audit sequence overflow"))?;
+                    let event_hash = security_audit_event_hash(
+                        next_sequence,
+                        &next_hash,
+                        row.event_id,
+                        &row.event_type,
+                        &row.event_category,
+                        row.occurred_at,
+                        row.payload_canonical.as_bytes(),
+                    )
+                    .to_vec();
+                    let previous_hash = std::mem::replace(&mut next_hash, event_hash.clone());
+                    new_event_ids.push(row.event_id);
+                    new_event_hashes.push(event_hash.clone());
+                    (next_sequence, previous_hash, event_hash)
+                }
+                _ => return Err(invariant_error("security audit chain entry is incomplete")),
+            };
         used_bytes += cost;
         deliveries.push(SecurityAuditOutboxDelivery {
             event_id: row.event_id,
@@ -517,16 +528,15 @@ async fn claim_fresh(
         &event_hashes,
     )
     .to_vec();
-    let generation = sql_query(
-        "SELECT public.nazo_open_security_audit_batch($1, $2, $3, $4, $5) AS generation",
-    )
-    .bind::<diesel::sql_types::BigInt, _>(first.sequence)
-    .bind::<diesel::sql_types::BigInt, _>(last.sequence)
-    .bind::<diesel::sql_types::Integer, _>(deliveries.len() as i32)
-    .bind::<diesel::sql_types::Binary, _>(&digest)
-    .bind::<diesel::sql_types::Integer, _>(lock_timeout_seconds)
-    .get_result::<AuditGenerationRow>(connection)
-    .await?;
+    let generation =
+        sql_query("SELECT public.nazo_open_security_audit_batch($1, $2, $3, $4, $5) AS generation")
+            .bind::<diesel::sql_types::BigInt, _>(first.sequence)
+            .bind::<diesel::sql_types::BigInt, _>(last.sequence)
+            .bind::<diesel::sql_types::Integer, _>(deliveries.len() as i32)
+            .bind::<diesel::sql_types::Binary, _>(&digest)
+            .bind::<diesel::sql_types::Integer, _>(lock_timeout_seconds)
+            .get_result::<AuditGenerationRow>(connection)
+            .await?;
     Ok(SecurityAuditBatchClaim::Claimed(SecurityAuditBatch {
         generation: generation.generation,
         first_sequence: first.sequence,
@@ -625,8 +635,9 @@ struct SecurityAuditAnchorHealthRow {
 
 impl From<SecurityAuditAnchorHealthRow> for SecurityAuditAnchorHealth {
     fn from(row: SecurityAuditAnchorHealthRow) -> Self {
-        let batch = row.batch_last_sequence.map(|last_sequence| {
-            SecurityAuditBatchLease {
+        let batch = row
+            .batch_last_sequence
+            .map(|last_sequence| SecurityAuditBatchLease {
                 first_sequence: row.batch_first_sequence.unwrap_or_default(),
                 last_sequence,
                 event_count: i64::from(row.batch_event_count.unwrap_or_default()),
@@ -636,8 +647,7 @@ impl From<SecurityAuditAnchorHealthRow> for SecurityAuditAnchorHealth {
                 locked_until: row.batch_locked_until,
                 last_error: row.batch_last_error,
                 blocked_reason: row.batch_blocked_reason,
-            }
-        });
+            });
         Self {
             head_sequence: row.head_sequence,
             head_hash: row.head_hash,

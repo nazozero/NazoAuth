@@ -70,6 +70,16 @@ impl TokenStateStorePort for TokenIssuanceStateAdapter {
         })
     }
 
+    fn delete_authorization_code<'a>(&'a self, code_hash: &'a str) -> TokenFuture<'a, ()> {
+        Box::pin(async move {
+            self.authorization
+                .delete_authorization_code_hash(code_hash)
+                .await
+                .map(|_| ())
+                .map_err(map_error)
+        })
+    }
+
     fn increment_token_management_rate<'a>(
         &'a self,
         subject: &'a str,

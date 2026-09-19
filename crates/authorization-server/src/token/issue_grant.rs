@@ -529,10 +529,6 @@ pub async fn issue_token_response(
         }
         _ => None,
     };
-    let access_token_jti_for_finalize = issue
-        .authorization_code_hash
-        .is_some()
-        .then(|| issued_access_token.jti.clone());
     match token_service
         .commit_token_issuance(nazo_auth::CommitTokenIssuance {
             issuance_id,
@@ -553,48 +549,77 @@ pub async fn issue_token_response(
         .await
     {
         Ok(CommitTokenIssuanceResult::Committed) => {
-            if let Some(code_hash) = issue.authorization_code_hash.as_deref() {
-                let consumed_state_ttl_seconds = consumed_authorization_code_ttl_seconds(
-                    context.config.access_token_ttl_seconds,
-                    context.config.refresh_token_ttl_seconds,
-                    refresh_token_family_id,
-                );
-                if let Err(error) = token_service
-                    .finalize_authorization_code(nazo_auth::IssuedAuthorizationCodeTokens {
-                        client_id: client.id,
-                        code_hash,
-                        redemption_binding: redemption_binding
-                            .as_deref()
-                            .expect("authorization code issuance carries its grant key"),
-                        access_token_jti: access_token_jti_for_finalize
-                            .as_deref()
-                            .expect("authorization code issuance carries its access token jti"),
-                        access_token_expires_at: issued_access_token.expires_at,
-                        refresh_token_family_id,
-                        consumed_state_ttl_seconds,
-                    })
-                    .await
-                {
-                    tracing::warn!(%error, issuance_id = %issuance_id, "failed to finalize authorization code after token commit");
-                    return Err(OAuthEndpointError::token(
-                        StatusCode::SERVICE_UNAVAILABLE,
-                        "server_error",
-                        "授权码兑换状态写入失败.",
-                        false,
-                    ));
-                }
+            // The committed issuance row is the authoritative consumed
+            // state; the state-store entry is dropped without retaining a
+            // long-lived consumed marker.
+            if let Some(code_hash) = issue.authorization_code_hash.as_deref()
+                && let Err(error) = token_service.finalize_authorization_code(code_hash).await
+            {
+                tracing::warn!(%error, issuance_id = %issuance_id, "failed to drop consumed authorization code state");
             }
             return Ok(TokenEndpointSuccess::Issued {
                 body,
                 dpop_nonce: next_dpop_nonce,
             });
         }
-        Ok(CommitTokenIssuanceResult::AlreadyUsed) => Err(OAuthEndpointError::token(
-            StatusCode::BAD_REQUEST,
-            "invalid_grant",
-            "令牌签发授权已使用.",
-            false,
-        )),
+        Ok(CommitTokenIssuanceResult::AlreadyUsed) => {
+            // The fence rejected the insert because this exact redemption
+            // already committed; the state store may have lost the entry, so
+            // revoke through the committed issuance row like a replay.
+            if let Some(grant_key) = redemption_binding.as_deref() {
+                match token_service
+                    .single_use_redemption(client.tenant_id, client.id, grant_key)
+                    .await
+                {
+                    Ok(Some(redemption)) => {
+                        if let Err(error) = revoke_issued_authorization_code_tokens(
+                            token_service,
+                            client,
+                            &redemption.access_token_jti,
+                            redemption.access_token_expires_at.timestamp(),
+                            redemption.refresh_token_family_id,
+                        )
+                        .await
+                        {
+                            tracing::warn!(%error, "failed to revoke tokens after single-use grant replay");
+                            return Err(OAuthEndpointError::token(
+                                StatusCode::SERVICE_UNAVAILABLE,
+                                "server_error",
+                                "授权码重放撤销失败.",
+                                false,
+                            ));
+                        }
+                        return Err(OAuthEndpointError::token(
+                            StatusCode::BAD_REQUEST,
+                            "invalid_grant",
+                            "授权码已被使用，相关令牌已撤销.",
+                            false,
+                        ));
+                    }
+                    Ok(None) => {
+                        tracing::warn!(
+                            issuance_id = %issuance_id,
+                            "single-use fence conflict without a committed redemption row"
+                        );
+                    }
+                    Err(error) => {
+                        tracing::warn!(%error, "failed to read single-use grant redemption");
+                        return Err(OAuthEndpointError::token(
+                            StatusCode::SERVICE_UNAVAILABLE,
+                            "server_error",
+                            "授权码校验失败.",
+                            false,
+                        ));
+                    }
+                }
+            }
+            Err(OAuthEndpointError::token(
+                StatusCode::BAD_REQUEST,
+                "invalid_grant",
+                "令牌签发授权已使用.",
+                false,
+            ))
+        }
         Ok(CommitTokenIssuanceResult::GrantExpired) => {
             mark_failed_authorization_code_if_needed(
                 token_service,

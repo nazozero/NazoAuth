@@ -207,18 +207,23 @@ backup and matching recovery tools for an existing deployment.
 
 ## Authorization-code replay state
 
-A consumed authorization-code marker is Valkey security state, not a disposable
-cache entry. It retains the redemption binding, issued access-token identity and
-expiry, and the optional refresh-token family so a later matching replay can
-revoke the issued access token and refresh family.
+A redeemed authorization code's replay evidence is durable PostgreSQL state on
+the `oauth_token_issuances` row that the redemption committed: the single-use
+fence key (a digest of the redemption binding), the issued access-token identity
+and expiry, and the refresh-token family when one was issued. A later replay
+resolves the same fence key — which itself proves the request carries the
+original proofs — and revokes the recorded access token and refresh family.
 
-The marker keeps the access-token TTL used at the original exchange when no
-refresh token was issued. When that exchange issued a refresh token, it keeps
-that exchange's refresh-token TTL instead. Expiry changes this one marker to
-`Missing`; it cannot revive the authorization code. Each refresh successor has
-its own relative TTL, so the marker does not attempt to retain an unbounded
-refresh family forever. Do not shorten these configured TTLs below the lifetime
-of credentials that a replay must still be able to revoke.
+Valkey retains only the short-lived entry for an in-flight code: `Pending`
+payload and the `Consuming` lease, bounded by the authorization-code TTL. Once
+the issuance commit lands, the entry is deleted; a failed redemption keeps a
+`Failed` marker only until the code would have expired anyway. The durable
+fence (`retain_until`) bounds replay evidence to the access-token acceptance
+window extended by the grant deadline, so consumed-code state does not grow
+with refresh-token lifetimes.
+
+Markers written by versions before the ledger-backed replay are still honored
+for their configured TTL during upgrades; new redemptions do not create them.
 
 ## Composable capability defaults
 
