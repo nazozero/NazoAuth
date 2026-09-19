@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
-use nazo_persistence::{SecurityAuditAnchorHealth, SecurityAuditOutboxDelivery};
+use nazo_persistence::{SecurityAuditAnchorHealth, SecurityAuditBatch};
 
 use super::protocol::encode_hash;
 
@@ -23,11 +23,16 @@ impl AnchorCheckpoint {
         })
     }
 
-    pub(super) fn from_delivery(delivery: &SecurityAuditOutboxDelivery) -> Self {
+    pub(super) fn from_batch(batch: &SecurityAuditBatch) -> Self {
+        let occurred_at = batch
+            .deliveries
+            .last()
+            .map(|delivery| delivery.occurred_at)
+            .unwrap_or_else(Utc::now);
         Self {
-            sequence: delivery.sequence,
-            hash: encode_hash(&delivery.event_hash),
-            occurred_at: delivery.occurred_at,
+            sequence: batch.last_sequence,
+            hash: encode_hash(&batch.last_hash),
+            occurred_at,
             anchored_at: Utc::now(),
         }
     }

@@ -555,7 +555,7 @@ async fn assert_issuance_audit(
     input: &CommitTokenIssuance,
     expected: &[(&str, &str, serde_json::Value)],
 ) {
-    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, (o.attempts = 0 AND o.locked_at IS NULL) AS pending_outbox FROM security_audit_events e JOIN security_audit_event_outbox o USING(event_id) WHERE e.payload->>'issuance_id' = $1 ORDER BY e.occurred_at, e.event_id")
+    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, true AS pending_outbox FROM security_audit_events e JOIN security_audit_event_outbox o USING(event_id) WHERE e.payload->>'issuance_id' = $1 ORDER BY e.occurred_at, e.event_id")
         .bind::<Text, _>(input.issuance_id.to_string()).load::<IssuanceAuditRow>(connection).await.unwrap();
     assert_eq!(rows.len(), expected.len());
     for (row, (event_type, category, fields)) in rows.iter().zip(expected) {

@@ -2,12 +2,12 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use chrono::{Duration as ChronoDuration, Utc};
-use nazo_persistence::{SecurityAuditExporter, SecurityAuditOutboxDelivery};
+use nazo_persistence::{SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditExporter};
 
 use super::{
     AuditAnchorWorkerConfig,
     status::AnchorCheckpoint,
-    transport::{send_checkpoint, send_genesis_checkpoint},
+    transport::{PushOutcome, send_batch, send_genesis_checkpoint},
 };
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(300);
@@ -35,9 +35,17 @@ where
         .check_available()
         .await
         .map_err(|_| anyhow::anyhow!("audit anchor exporter capability preflight failed"))?;
-    let client = reqwest::Client::builder()
+    let mut client_builder = reqwest::Client::builder()
         .timeout(config.request_timeout)
-        .redirect(reqwest::redirect::Policy::none())
+        .redirect(reqwest::redirect::Policy::none());
+    if let Some(pem) = &config.ca_bundle_pem {
+        for certificate in reqwest::Certificate::from_pem_bundle(pem)
+            .context("AUDIT_ANCHOR_CA_BUNDLE is not a valid PEM bundle")?
+        {
+            client_builder = client_builder.add_root_certificate(certificate);
+        }
+    }
+    let client = client_builder
         .build()
         .context("failed to build audit anchor HTTP client")?;
     tracing::info!(
@@ -49,9 +57,12 @@ where
     );
 
     let mut last_anchored = None;
+    let mut last_blocked = None;
 
     loop {
-        match run_iteration(&repository, &client, &config, &mut last_anchored).await {
+        match run_iteration(&repository, &client, &config, &mut last_anchored, &mut last_blocked)
+            .await
+        {
             IterationOutcome::Retry(delay) | IterationOutcome::Poll(delay) => {
                 tokio::time::sleep(delay).await;
             }
@@ -68,6 +79,7 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
     client: &reqwest::Client,
     config: &AuditAnchorWorkerConfig,
     last_anchored: &mut Option<AnchorCheckpoint>,
+    last_blocked: &mut Option<String>,
 ) -> IterationOutcome {
     let snapshot = match repository.anchor_health().await {
         Ok(snapshot) => snapshot,
@@ -97,7 +109,7 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
             .is_some_and(|checkpoint| checkpoint.sequence == 0 && checkpoint.hash == expected_hash);
         if !genesis_is_current {
             match send_genesis_checkpoint(client, config, &snapshot.head_hash).await {
-                Ok(checkpoint) => {
+                Ok(PushOutcome::Accepted { .. }) => {
                     if let Err(error) = repository
                         .record_genesis(&config.preflight.deployment_id, &snapshot.head_hash)
                         .await
@@ -105,7 +117,15 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
                         tracing::warn!(target: "audit.anchor", error_kind = %error_kind(&error), "audit anchor genesis acknowledgement could not be persisted");
                         return IterationOutcome::Retry(retry_delay(1));
                     }
-                    *last_anchored = Some(checkpoint);
+                    *last_anchored = Some(AnchorCheckpoint::genesis(expected_hash));
+                }
+                Ok(PushOutcome::Rejected { reason, .. }) => {
+                    tracing::warn!(
+                        target: "audit.anchor",
+                        reject_reason = %reason,
+                        "audit anchor genesis checkpoint was rejected by the receiver"
+                    );
+                    return IterationOutcome::Retry(retry_delay(1));
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -119,104 +139,148 @@ pub(super) async fn run_iteration<R: AuditAnchorRepository + ?Sized>(
         }
     }
 
-    let deliveries = match repository
-        .claim_due(config.batch_size, config.lock_timeout_seconds)
+    let batch = match repository
+        .claim_batch(
+            &config.preflight.deployment_id,
+            config.batch_size,
+            config.max_envelope_bytes,
+            config.lock_timeout_seconds,
+        )
         .await
     {
-        Ok(deliveries) => deliveries,
+        Ok(SecurityAuditBatchClaim::Empty) | Ok(SecurityAuditBatchClaim::Busy) => {
+            return IterationOutcome::Poll(config.poll_interval);
+        }
+        Ok(SecurityAuditBatchClaim::Blocked { reason }) => {
+            if last_blocked.as_deref() != Some(reason.as_str()) {
+                tracing::error!(
+                    target: "audit.anchor",
+                    reject_reason = %reason,
+                    "audit batch is blocked on a permanent receiver rejection; operator reconciliation required"
+                );
+                *last_blocked = Some(reason);
+            }
+            return IterationOutcome::Poll(config.poll_interval);
+        }
+        Ok(SecurityAuditBatchClaim::Claimed(batch)) => {
+            *last_blocked = None;
+            batch
+        }
         Err(error) => {
             tracing::warn!(
                 target: "audit.anchor",
                 error_kind = %error_kind(&error),
-                "audit anchor outbox claim failed"
+                "audit anchor batch claim failed"
             );
             return IterationOutcome::Retry(retry_delay(1));
         }
     };
-    if deliveries.is_empty() {
-        return IterationOutcome::Poll(config.poll_interval);
-    }
 
-    for (index, delivery) in deliveries.iter().enumerate() {
-        match send_checkpoint(client, config, delivery).await {
-            Ok(()) => match repository
-                .mark_exported(
-                    delivery.event_id,
-                    delivery.attempts,
-                    &config.preflight.deployment_id,
-                )
-                .await
-            {
+    let attempt = batch.attempts;
+    match send_batch(client, config, &batch).await {
+        Ok(PushOutcome::Accepted { duplicate }) => {
+            let ack = SecurityAuditBatchAck {
+                generation: batch.generation,
+                deployment_id: config.preflight.deployment_id.clone(),
+                first_sequence: batch.first_sequence,
+                last_sequence: batch.last_sequence,
+                event_count: batch.event_count(),
+                last_hash: batch.last_hash.clone(),
+                batch_digest: batch.digest.clone(),
+            };
+            match repository.ack_batch(ack).await {
                 Ok(()) => {
-                    *last_anchored = Some(AnchorCheckpoint::from_delivery(delivery));
+                    *last_anchored = Some(AnchorCheckpoint::from_batch(&batch));
                     tracing::info!(
                         target: "audit.anchor",
-                        event_id = %delivery.event_id,
-                        sequence = delivery.sequence,
-                        anchor_lag_seconds = delivery_lag_seconds(delivery),
-                        status = "anchored",
-                        "audit ledger checkpoint accepted by independent sink"
+                        first_sequence = batch.first_sequence,
+                        last_sequence = batch.last_sequence,
+                        event_count = batch.event_count(),
+                        duplicate,
+                        attempts = batch.attempts,
+                        anchor_lag_seconds = batch_lag_seconds(&batch),
+                        "audit batch anchored by independent receiver"
                     );
+                    IterationOutcome::Continue
                 }
                 Err(error) => {
-                    let delay = retry_delay(delivery.attempts);
-                    reschedule_claimed(
-                        repository,
-                        &deliveries[index..],
-                        delay,
-                        "ack_database_error",
-                    )
-                    .await;
+                    let delay = retry_delay(attempt);
+                    release_lease(repository, &batch, delay, "ack_database_error", false).await;
                     tracing::warn!(
                         target: "audit.anchor",
-                        event_id = %delivery.event_id,
-                        sequence = delivery.sequence,
+                        last_sequence = batch.last_sequence,
                         error_kind = %error_kind(&error),
-                        "audit anchor acknowledgement failed; retrying idempotently"
+                        "audit batch acknowledgement failed; batch will be redelivered idempotently"
                     );
-                    break;
+                    IterationOutcome::Retry(delay)
                 }
-            },
-            Err(error) => {
-                let delay = retry_delay(delivery.attempts);
-                reschedule_claimed(repository, &deliveries[index..], delay, error.code()).await;
-                tracing::warn!(
-                    target: "audit.anchor",
-                    event_id = %delivery.event_id,
-                    sequence = delivery.sequence,
-                    error_kind = error.code(),
-                    retry_after_seconds = delay.as_secs(),
-                    "audit checkpoint push failed; durable retry scheduled"
-                );
-                break;
             }
         }
+        Ok(PushOutcome::Rejected { reason, permanent }) => {
+            if permanent {
+                release_lease(repository, &batch, Duration::ZERO, &reason, true).await;
+                tracing::error!(
+                    target: "audit.anchor",
+                    first_sequence = batch.first_sequence,
+                    last_sequence = batch.last_sequence,
+                    reject_reason = %reason,
+                    "audit batch permanently rejected; operator reconciliation required"
+                );
+                *last_blocked = Some(reason);
+                IterationOutcome::Poll(config.poll_interval)
+            } else {
+                let delay = retry_delay(attempt);
+                release_lease(repository, &batch, delay, &reason, false).await;
+                tracing::warn!(
+                    target: "audit.anchor",
+                    first_sequence = batch.first_sequence,
+                    last_sequence = batch.last_sequence,
+                    reject_reason = %reason,
+                    retry_after_seconds = delay.as_secs(),
+                    "audit batch rejected; durable retry scheduled"
+                );
+                IterationOutcome::Retry(delay)
+            }
+        }
+        Err(error) => {
+            let delay = retry_delay(attempt);
+            release_lease(repository, &batch, delay, error.code(), false).await;
+            tracing::warn!(
+                target: "audit.anchor",
+                first_sequence = batch.first_sequence,
+                last_sequence = batch.last_sequence,
+                error_kind = error.code(),
+                retry_after_seconds = delay.as_secs(),
+                "audit batch push failed; durable retry scheduled"
+            );
+            IterationOutcome::Retry(delay)
+        }
     }
-
-    IterationOutcome::Continue
 }
 
-async fn reschedule_claimed<R: AuditAnchorRepository + ?Sized>(
+/// Release the committed batch lease so the identical range is re-claimed
+/// after the backoff. A stale generation means another exporter owns the
+/// batch now, which is safe to ignore.
+async fn release_lease<R: AuditAnchorRepository + ?Sized>(
     repository: &R,
-    deliveries: &[SecurityAuditOutboxDelivery],
+    batch: &SecurityAuditBatch,
     delay: Duration,
     reason: &str,
+    blocked: bool,
 ) {
     let available_at = Utc::now()
         + ChronoDuration::from_std(delay).unwrap_or_else(|_| ChronoDuration::seconds(300));
-    for delivery in deliveries {
-        if let Err(error) = repository
-            .reschedule(delivery.event_id, delivery.attempts, available_at, reason)
-            .await
-        {
-            tracing::error!(
-                target: "audit.anchor",
-                event_id = %delivery.event_id,
-                sequence = delivery.sequence,
-                error_kind = %error_kind(&error),
-                "failed to reschedule audit anchor delivery"
-            );
-        }
+    let bounded_reason: String = reason.chars().take(128).collect();
+    if let Err(error) = repository
+        .fail_batch(batch.generation, available_at, &bounded_reason, blocked)
+        .await
+    {
+        tracing::warn!(
+            target: "audit.anchor",
+            last_sequence = batch.last_sequence,
+            error_kind = %error_kind(&error),
+            "failed to release audit batch lease"
+        );
     }
 }
 
@@ -225,11 +289,15 @@ pub(super) fn retry_delay(attempts: i32) -> Duration {
     let seconds = 2_u64
         .saturating_pow(exponent)
         .min(MAX_RETRY_DELAY.as_secs());
-    Duration::from_secs(seconds)
+    Duration::from_secs(seconds.max(1))
 }
 
-pub(super) fn delivery_lag_seconds(delivery: &SecurityAuditOutboxDelivery) -> i64 {
-    (Utc::now() - delivery.occurred_at).num_seconds().max(0)
+pub(super) fn batch_lag_seconds(batch: &SecurityAuditBatch) -> i64 {
+    batch
+        .deliveries
+        .first()
+        .map(|delivery| (Utc::now() - delivery.occurred_at).num_seconds().max(0))
+        .unwrap_or(0)
 }
 
 fn error_kind<T>(_error: &T) -> &'static str {

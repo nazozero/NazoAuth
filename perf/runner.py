@@ -397,12 +397,24 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
     failed = failed_metric.get("values", failed_metric)
     reqs = reqs_metric.get("values", reqs_metric)
     dropped = dropped_metric.get("values", dropped_metric)
+    iters_metric = metrics.get("iterations", {})
+    iters = iters_metric.get("values", iters_metric)
+    dropped_count = int(dropped.get("count", 0))
+    # k6's dropped_iterations.rate is drops PER SECOND, not a fraction.
+    # drop_fraction is computed in the same arrival cohort:
+    # scheduled ≈ started + dropped; completed iterations are `iterations`.
+    started_count = int(iters.get("count", 0))
+    scheduled_count = started_count + dropped_count
     brief = {
         "http_reqs": int(reqs.get("count", 0)),
         "rps": round(float(reqs.get("rate", 0)), 3),
         "error_rate": round(k6_error_rate(summary), 6),
-        "dropped_iterations": int(dropped.get("count", 0)),
-        "dropped_iterations_rate": round(float(dropped.get("rate", 0)), 3),
+        "iterations_completed": started_count,
+        "dropped_iterations": dropped_count,
+        "dropped_per_s": round(float(dropped.get("rate", 0)), 3),
+        "drop_fraction": round(dropped_count / scheduled_count, 6)
+        if scheduled_count else 0.0,
+        "scheduled_estimate": scheduled_count,
         "latency_ms": {
             "p50": round(float(duration.get("med", 0)), 3),
             "p95": round(float(duration.get("p(95)", 0)), 3),

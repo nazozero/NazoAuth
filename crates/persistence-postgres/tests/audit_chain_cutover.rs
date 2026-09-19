@@ -1,9 +1,10 @@
 use chrono::Utc;
 use diesel::{
     QueryableByName, sql_query,
-    sql_types::{BigInt, Binary, Bool, Text, Uuid as SqlUuid},
+    sql_types::{BigInt, Binary, Bool, Nullable, Text, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
+use nazo_persistence::{SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim};
 use nazo_postgres::{AuditLedgerRepository, SecurityAuditEvent, create_pool};
 use serde_json::json;
 use uuid::Uuid;
@@ -14,6 +15,12 @@ const SHARED: &str =
     include_str!("../../../migrations/20260905000100_shared_audit_anchor_state/up.sql");
 const CUTOVER: &str =
     include_str!("../../../migrations/20260909000100_exporter_owned_audit_chain/up.sql");
+const EXPORTED_RETENTION: &str =
+    include_str!("../../../migrations/20260919000100_audit_outbox_exported_retention/up.sql");
+const ACK_DELETE: &str =
+    include_str!("../../../migrations/20260919000200_audit_outbox_ack_delete/up.sql");
+const BATCH_DELIVERY: &str =
+    include_str!("../../../migrations/20260920000100_audit_anchor_batch_delivery/up.sql");
 
 #[derive(QueryableByName)]
 struct Count {
@@ -25,6 +32,12 @@ struct Count {
 struct Allowed {
     #[diesel(sql_type = Bool)]
     value: bool,
+}
+
+#[derive(QueryableByName)]
+struct MaybeBigInt {
+    #[diesel(sql_type = Nullable<BigInt>)]
+    value: Option<i64>,
 }
 
 #[derive(QueryableByName)]
@@ -45,6 +58,39 @@ fn event() -> SecurityAuditEvent {
         payload: json!({"tenant_id": Uuid::now_v7()}),
         occurred_at: Utc::now(),
     }
+}
+
+fn batch_ack(batch: &SecurityAuditBatch) -> SecurityAuditBatchAck {
+    SecurityAuditBatchAck {
+        generation: batch.generation,
+        deployment_id: "cutover-test".to_owned(),
+        first_sequence: batch.first_sequence,
+        last_sequence: batch.last_sequence,
+        event_count: batch.event_count(),
+        last_hash: batch.last_hash.clone(),
+        batch_digest: batch.digest.clone(),
+    }
+}
+
+async fn claim_batch(repository: &AuditLedgerRepository) -> SecurityAuditBatchClaim {
+    repository
+        .claim_batch("cutover-test", 256, 1024 * 1024, 60)
+        .await
+        .expect("audit batch claim should succeed")
+}
+
+async fn claim_or_panic(repository: &AuditLedgerRepository) -> SecurityAuditBatch {
+    match claim_batch(repository).await {
+        SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected a claimed batch, got {other:?}"),
+    }
+}
+
+async fn ack(repository: &AuditLedgerRepository, batch: &SecurityAuditBatch) {
+    repository
+        .ack_batch(batch_ack(batch))
+        .await
+        .expect("the claimed batch should be acknowledged");
 }
 
 #[tokio::test]
@@ -86,19 +132,23 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
              public.nazo_observe_security_audit_anchor(TEXT), public.nazo_record_security_audit_genesis(TEXT,BYTEA), \
              public.nazo_reschedule_security_audit_event(UUID,INTEGER,TIMESTAMPTZ,TEXT) TO {exporter_role};"
     )).await.unwrap();
-    owner
-        .transaction::<_, diesel::result::Error, _>(async |connection| {
-            connection.batch_execute(CUTOVER).await
-        })
-        .await
-        .unwrap();
+    // Migrations that stage upgrade grants on pg_temp tables must run in one
+    // transaction, matching the Diesel migration runner.
+    for migration in [CUTOVER, EXPORTED_RETENTION, ACK_DELETE, BATCH_DELIVERY] {
+        owner
+            .transaction::<_, diesel::result::Error, _>(async |connection| {
+                connection.batch_execute(migration).await
+            })
+            .await
+            .unwrap();
+    }
 
     let preserved = sql_query("SELECT sequence, previous_hash, event_hash FROM public.security_audit_chain_entries WHERE event_id = $1")
         .bind::<SqlUuid, _>(historical).get_result::<ChainEntry>(&mut owner).await.unwrap();
     assert_eq!(preserved.sequence, 1);
     assert_eq!(preserved.previous_hash, vec![0; 32]);
     assert_eq!(preserved.event_hash, vec![0x11; 32]);
-    let removed = sql_query("SELECT to_regprocedure('public.nazo_append_security_audit_event(uuid,text,text,jsonb,timestamptz,bytea,bytea)') IS NULL AND to_regprocedure('public.nazo_ack_security_audit_event(uuid,integer)') IS NULL AS value")
+    let removed = sql_query("SELECT to_regprocedure('public.nazo_append_security_audit_event(uuid,text,text,jsonb,timestamptz,bytea,bytea)') IS NULL AND to_regprocedure('public.nazo_claim_security_audit_events(bigint,integer)') IS NULL AND to_regprocedure('public.nazo_ack_security_audit_event(uuid,integer,text)') IS NULL AND to_regprocedure('public.nazo_reschedule_security_audit_event(uuid,integer,timestamptz,text)') IS NULL AS value")
         .get_result::<Allowed>(&mut owner).await.unwrap();
     assert!(removed.value);
 
@@ -155,13 +205,47 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
     .await
     .expect("unrelated writer transactions must not share a chain lock")
     .unwrap();
-    let claimed = exporter.claim_due(256, 60).await.unwrap();
-    assert_eq!(claimed.len(), 3);
-    assert_eq!(claimed[0].event_id, historical);
-    assert_eq!(claimed[1].event_id, committed.event_id);
-    assert_eq!(claimed[2].event_id, independent.event_id);
-    assert_eq!(claimed[1].previous_hash, claimed[0].event_hash);
-    assert_eq!(claimed[2].previous_hash, claimed[1].event_hash);
+    // The cutover migration wraps already-chained-but-unacknowledged rows
+    // into the initial committed batch, so the historical event is exported
+    // first; the freshly committed events follow in the next batch.
+    let mut delivered = Vec::new();
+    loop {
+        match claim_batch(&exporter).await {
+            SecurityAuditBatchClaim::Claimed(batch) => {
+                // A second concurrent claim while the lease is held is fenced.
+                assert!(matches!(
+                    claim_batch(&exporter).await,
+                    SecurityAuditBatchClaim::Busy
+                ));
+                assert_eq!(batch.first_sequence, batch.deliveries[0].sequence);
+                assert_eq!(
+                    batch.last_sequence,
+                    batch.deliveries.last().unwrap().sequence
+                );
+                delivered.extend(batch.deliveries.iter().map(|delivery| {
+                    (
+                        delivery.event_id,
+                        delivery.sequence,
+                        delivery.previous_hash.clone(),
+                        delivery.event_hash.clone(),
+                    )
+                }));
+                ack(&exporter, &batch).await;
+            }
+            SecurityAuditBatchClaim::Busy => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            SecurityAuditBatchClaim::Blocked { reason } => {
+                panic!("unexpected blocked batch: {reason}")
+            }
+            SecurityAuditBatchClaim::Empty => break,
+        }
+    }
+    assert_eq!(
+        delivered.iter().map(|row| row.0).collect::<Vec<_>>(),
+        vec![historical, committed.event_id, independent.event_id]
+    );
+    assert!(delivered.windows(2).all(|pair| pair[1].2 == pair[0].3));
     writer_connection.batch_execute("ROLLBACK").await.unwrap();
     let absent = sql_query(
         "SELECT count(*)::bigint AS value FROM public.security_audit_events WHERE event_id = $1",
@@ -171,13 +255,6 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
     .await
     .unwrap();
     assert_eq!(absent.value, 0);
-
-    for delivery in claimed {
-        exporter
-            .mark_exported(delivery.event_id, delivery.attempts, "cutover-test")
-            .await
-            .unwrap();
-    }
     let head_before_failure = exporter.anchor_health().await.unwrap().head_sequence;
     let good = event();
     let rejected = event();
@@ -189,44 +266,78 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
          CREATE TRIGGER reject_test_chain_entry BEFORE INSERT ON public.security_audit_chain_entries \
          FOR EACH ROW EXECUTE FUNCTION public.reject_test_chain_entry();", rejected.event_id
     )).await.unwrap();
-    assert!(exporter.claim_due(256, 60).await.is_err());
-    let failed_state = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox WHERE event_id IN ($1, $2) AND attempts = 0 AND locked_at IS NULL")
+    assert!(
+        exporter
+            .claim_batch("cutover-test", 256, 1024 * 1024, 60)
+            .await
+            .is_err()
+    );
+    let failed_state = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox WHERE event_id IN ($1, $2)")
         .bind::<SqlUuid, _>(good.event_id).bind::<SqlUuid, _>(rejected.event_id)
         .get_result::<Count>(&mut owner).await.unwrap();
     assert_eq!(
         failed_state.value, 2,
         "a chaining failure must roll back every claim in its batch"
     );
+    let open_batch = sql_query("SELECT batch_last_sequence AS value FROM public.security_audit_chain_state WHERE singleton")
+        .get_result::<MaybeBigInt>(&mut owner).await.unwrap();
+    assert_eq!(
+        open_batch.value, None,
+        "a failed claim must not leave a committed batch lease"
+    );
     assert_eq!(
         exporter.anchor_health().await.unwrap().head_sequence,
         head_before_failure
     );
     owner.batch_execute("DROP TRIGGER reject_test_chain_entry ON public.security_audit_chain_entries; DROP FUNCTION public.reject_test_chain_entry()").await.unwrap();
-    let (first, second) = tokio::join!(exporter.claim_due(256, 60), exporter.claim_due(256, 60));
-    let first = first.unwrap();
-    let second = second.unwrap();
+
+    // Concurrent claims are fenced by the control row: exactly one exporter
+    // opens the batch, the other observes Busy.
+    let (first, second) = tokio::join!(claim_batch(&exporter), claim_batch(&exporter));
+    let claimed_count = [&first, &second]
+        .iter()
+        .filter(|claim| matches!(claim, SecurityAuditBatchClaim::Claimed(_)))
+        .count();
     assert_eq!(
-        first.len() + second.len(),
-        2,
+        claimed_count, 1,
         "concurrent exporters must not duplicate an active claim"
     );
-    let deliveries = if first.is_empty() { second } else { first };
-    assert_eq!(deliveries[0].sequence, head_before_failure + 1);
-    assert_eq!(deliveries[1].sequence, head_before_failure + 2);
-    for delivery in &deliveries {
-        exporter
-            .reschedule(delivery.event_id, delivery.attempts, Utc::now(), "retry")
-            .await
-            .unwrap();
-    }
-    let retried = exporter.claim_due(256, 60).await.unwrap();
-    for (original, retry) in deliveries.iter().zip(&retried) {
-        assert_eq!(original.event_id, retry.event_id);
-        assert_eq!(original.sequence, retry.sequence);
-        assert_eq!(original.event_hash, retry.event_hash);
-        assert_eq!(original.previous_hash, retry.previous_hash);
-        assert_eq!(retry.attempts, original.attempts + 1);
-    }
+    let deliveries = match (first, second) {
+        (SecurityAuditBatchClaim::Claimed(batch), _) => batch,
+        (_, SecurityAuditBatchClaim::Claimed(batch)) => batch,
+        _ => unreachable!(),
+    };
+    assert_eq!(deliveries.deliveries.len(), 2);
+    assert_eq!(deliveries.first_sequence, head_before_failure + 1);
+    assert_eq!(deliveries.last_sequence, head_before_failure + 2);
+    exporter
+        .fail_batch(
+            deliveries.generation,
+            Utc::now() - chrono::Duration::seconds(1),
+            "retry",
+            false,
+        )
+        .await
+        .unwrap();
+    let retried = claim_or_panic(&exporter).await;
+    assert_eq!(retried.first_sequence, deliveries.first_sequence);
+    assert_eq!(retried.last_sequence, deliveries.last_sequence);
+    assert_eq!(retried.digest, deliveries.digest);
+    assert_eq!(retried.attempts, deliveries.attempts + 1);
+    assert!(retried.generation > deliveries.generation);
+    assert_eq!(
+        retried
+            .deliveries
+            .iter()
+            .map(|delivery| (delivery.event_id, delivery.sequence))
+            .collect::<Vec<_>>(),
+        deliveries
+            .deliveries
+            .iter()
+            .map(|delivery| (delivery.event_id, delivery.sequence))
+            .collect::<Vec<_>>(),
+        "a re-claimed batch must return the identical committed range"
+    );
     assert_eq!(
         exporter.anchor_health().await.unwrap().head_sequence,
         head_before_failure + 2
@@ -250,12 +361,42 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
             .is_err()
     );
 
-    for delivery in retried {
-        exporter
-            .mark_exported(delivery.event_id, delivery.attempts, "cutover-test")
+    // A permanently rejected batch blocks further claims until the owner
+    // reconciles and unblocks it; the exporter role cannot unblock itself.
+    ack(&exporter, &retried).await;
+    let blocked_event = event();
+    writer.append(blocked_event.clone()).await.unwrap();
+    let blocked = claim_or_panic(&exporter).await;
+    exporter
+        .fail_batch(
+            blocked.generation,
+            Utc::now(),
+            "receiver_chain_mismatch",
+            true,
+        )
+        .await
+        .unwrap();
+    assert!(matches!(
+        claim_batch(&exporter).await,
+        SecurityAuditBatchClaim::Blocked { .. }
+    ));
+    let mut exporter_connection = AsyncPgConnection::establish(&exporter_url).await.unwrap();
+    assert!(
+        sql_query("SELECT public.nazo_unblock_security_audit_batch()")
+            .execute(&mut exporter_connection)
             .await
-            .unwrap();
-    }
+            .is_err(),
+        "the exporter role must not unblock a permanently rejected batch"
+    );
+    sql_query("SELECT public.nazo_unblock_security_audit_batch()")
+        .execute(&mut owner)
+        .await
+        .expect("the owner can reconcile and unblock a rejected batch");
+    let reconciled = claim_or_panic(&exporter).await;
+    assert_eq!(reconciled.first_sequence, blocked.first_sequence);
+    assert_eq!(reconciled.digest, blocked.digest);
+    ack(&exporter, &reconciled).await;
+
     cancellation_and_lost_result(&mut owner, &writer, &exporter_url).await;
 
     drop((
@@ -302,7 +443,11 @@ async fn cancellation_and_lost_result(
         .await
         .unwrap();
     let task_repository = exporter.clone();
-    let task = tokio::spawn(async move { task_repository.claim_due(256, 60).await });
+    let task = tokio::spawn(async move {
+        task_repository
+            .claim_batch("cutover-test", 256, 1024 * 1024, 60)
+            .await
+    });
     tokio::time::timeout(std::time::Duration::from_secs(10), async {
         loop {
             let waiting = sql_query("SELECT count(*)::bigint AS value FROM pg_stat_activity WHERE application_name = $1 AND wait_event = 'advisory'")
@@ -321,51 +466,65 @@ async fn cancellation_and_lost_result(
     // from that pool: recycling a returned connection must not be the cleanup.
     owner.batch_execute("SET statement_timeout = '2s'; BEGIN; SELECT * FROM public.nazo_security_audit_chain_head_for_update(); COMMIT").await
         .expect("an independent connection must acquire the head after cancellation");
-    let unchanged = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox o WHERE event_id = $1 AND attempts = 0 AND locked_at IS NULL AND NOT EXISTS (SELECT 1 FROM public.security_audit_chain_entries c WHERE c.event_id = o.event_id)")
+    let unchanged = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox o WHERE event_id = $1 AND NOT EXISTS (SELECT 1 FROM public.security_audit_chain_entries c WHERE c.event_id = o.event_id)")
         .bind::<SqlUuid, _>(pending.event_id).get_result::<Count>(owner).await.unwrap();
     assert_eq!(
         unchanged.value, 1,
-        "cancelled claim must leave raw event without claim or chain mutations"
+        "cancelled claim must leave the raw event without chain or batch mutations"
     );
+    let open_batch = sql_query("SELECT batch_last_sequence AS value FROM public.security_audit_chain_state WHERE singleton")
+        .get_result::<MaybeBigInt>(owner).await.unwrap();
+    assert_eq!(open_batch.value, None);
     owner.batch_execute("DROP TRIGGER gate_test_chain ON public.security_audit_chain_entries; DROP FUNCTION public.gate_test_chain(); SET statement_timeout = 0").await.unwrap();
     assert_eq!(
         exporter.anchor_health().await.unwrap().head_sequence,
         before
     );
 
-    let committed = exporter.claim_due(256, 60).await.unwrap();
-    assert_eq!(committed.len(), 1);
+    let committed = claim_or_panic(&exporter).await;
+    assert_eq!(committed.deliveries.len(), 1);
+    assert_eq!(committed.deliveries[0].event_id, pending.event_id);
     let identity = (
-        committed[0].event_id,
-        committed[0].sequence,
-        committed[0].previous_hash.clone(),
-        committed[0].event_hash.clone(),
-        committed[0].attempts,
+        committed.first_sequence,
+        committed.last_sequence,
+        committed.digest.clone(),
+        committed.attempts,
     );
-    drop(committed); // A successful COMMIT whose result never reaches the caller.
-    sql_query("UPDATE public.security_audit_event_outbox SET locked_at = CURRENT_TIMESTAMP - INTERVAL '61 seconds' WHERE event_id = $1")
-        .bind::<SqlUuid, _>(pending.event_id).execute(owner).await.unwrap();
-    let reclaimed = exporter.claim_due(256, 60).await.unwrap();
-    assert_eq!(reclaimed.len(), 1);
-    let retry = &reclaimed[0];
+    // A successful COMMIT whose result never reaches the caller: expire the
+    // lease so the identical committed range is re-claimed under a newer
+    // fencing generation.
+    sql_query("UPDATE public.security_audit_chain_state SET batch_locked_until = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE singleton")
+        .execute(owner).await.unwrap();
+    let reclaimed = claim_or_panic(&exporter).await;
+    assert_eq!(reclaimed.deliveries.len(), 1);
+    assert_eq!(reclaimed.deliveries[0].event_id, pending.event_id);
     assert_eq!(
         (
-            retry.event_id,
-            retry.sequence,
-            retry.previous_hash.clone(),
-            retry.event_hash.clone(),
-            retry.attempts
+            reclaimed.first_sequence,
+            reclaimed.last_sequence,
+            reclaimed.digest.clone(),
+            reclaimed.attempts,
         ),
-        (
-            identity.0,
-            identity.1,
-            identity.2,
-            identity.3,
-            identity.4 + 1
-        )
+        identity,
+        "a re-claimed batch must return the identical committed range"
+    );
+    assert!(
+        reclaimed.generation > committed.generation,
+        "re-claim must fence with a newer generation"
     );
     assert_eq!(
         exporter.anchor_health().await.unwrap().head_sequence,
         before + 1
     );
+    // The stale generation can neither ack nor fail the batch.
+    let mut stale = batch_ack(&committed);
+    stale.generation = committed.generation;
+    assert!(exporter.ack_batch(stale).await.is_err());
+    assert!(
+        exporter
+            .fail_batch(committed.generation, Utc::now(), "stale", false)
+            .await
+            .is_err()
+    );
+    ack(&exporter, &reclaimed).await;
 }

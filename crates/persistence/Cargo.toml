@@ -8,6 +8,7 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 base64.workspace = true
+blake3.workspace = true
 chrono.workspace = true
 futures-util.workspace = true
 nazo-auth.workspace = true

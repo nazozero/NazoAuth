@@ -6,6 +6,7 @@
 //! It deliberately does not expose SQL, connections, transactions, rows, or a
 //! generic CRUD interface. Database adapters implement these focused ports.
 
+pub mod audit_chain;
 pub mod control_plane;
 pub mod directory_control;
 pub mod maintenance;
@@ -57,7 +58,14 @@ pub trait SecurityAuditLedger: Send + Sync {
 pub struct SecurityAuditAnchorHealth {
     pub head_sequence: i64,
     pub head_hash: Vec<u8>,
-    pub pending_count: i64,
+    /// Exact pending/non-pending signal; the backlog size is only an estimate
+    /// so health checks never scan the whole outbox.
+    pub pending_exists: bool,
+    pub pending_estimate: i64,
+    /// Legacy residual: chained rows below the anchor that the retired
+    /// protocol could leave behind. They can never be claimed again, so a
+    /// required deployment must treat their presence as an inconsistency.
+    pub pending_orphan_exists: bool,
     pub oldest_pending_occurred_at: Option<chrono::DateTime<chrono::Utc>>,
     pub last_exported_sequence: Option<i64>,
     pub last_exported_hash: Option<Vec<u8>>,
@@ -65,6 +73,21 @@ pub struct SecurityAuditAnchorHealth {
     pub last_exported_at: Option<chrono::DateTime<chrono::Utc>>,
     pub deployment_id: Option<String>,
     pub observed_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub batch: Option<SecurityAuditBatchLease>,
+}
+
+/// Read-only projection of the committed in-flight batch lease.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SecurityAuditBatchLease {
+    pub first_sequence: i64,
+    pub last_sequence: i64,
+    pub event_count: i64,
+    pub generation: i64,
+    pub attempts: i32,
+    pub available_at: Option<chrono::DateTime<chrono::Utc>>,
+    pub locked_until: Option<chrono::DateTime<chrono::Utc>>,
+    pub last_error: Option<String>,
+    pub blocked_reason: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -73,15 +96,67 @@ pub struct SecurityAuditOutboxDelivery {
     pub sequence: i64,
     pub event_type: String,
     pub event_category: String,
-    pub payload: serde_json::Value,
+    /// Exact `jsonb::text` bytes used by the chain hash and the wire envelope.
+    pub payload_canonical: String,
     pub occurred_at: chrono::DateTime<chrono::Utc>,
     pub previous_hash: Vec<u8>,
     pub event_hash: Vec<u8>,
-    pub attempts: i32,
 }
 
-/// Exporter-only security-ledger capability. Implementations must fence claims
-/// and compare the expected attempt revision on acknowledgement/reschedule.
+/// One committed in-flight batch: a fixed contiguous chain range with a
+/// content digest and a fencing generation. Bounds never change until the
+/// batch is acknowledged; only the generation moves on re-claim.
+#[derive(Clone, Debug)]
+pub struct SecurityAuditBatch {
+    pub generation: i64,
+    pub first_sequence: i64,
+    pub last_sequence: i64,
+    /// Chain hash immediately before `first_sequence`.
+    pub previous_hash: Vec<u8>,
+    /// Chain hash of the last event in the batch.
+    pub last_hash: Vec<u8>,
+    pub digest: Vec<u8>,
+    pub attempts: i32,
+    pub deliveries: Vec<SecurityAuditOutboxDelivery>,
+}
+
+impl SecurityAuditBatch {
+    pub fn event_count(&self) -> i64 {
+        self.deliveries.len() as i64
+    }
+}
+
+/// Result of a batch claim under the chain control lock.
+#[derive(Clone, Debug)]
+pub enum SecurityAuditBatchClaim {
+    /// No pending events.
+    Empty,
+    /// A batch is in flight but locked or backing off.
+    Busy,
+    /// A batch is blocked on a permanent receiver rejection and needs an
+    /// operator to reconcile and unblock it.
+    Blocked { reason: String },
+    /// A new or re-claimed in-flight batch owned by this caller's generation.
+    Claimed(SecurityAuditBatch),
+}
+
+/// Receiver-bound acknowledgement for a committed batch. Every field must
+/// match the committed lease and the signed receipt before the database
+/// deletes members and advances the anchor.
+#[derive(Clone, Debug)]
+pub struct SecurityAuditBatchAck {
+    pub generation: i64,
+    pub deployment_id: String,
+    pub first_sequence: i64,
+    pub last_sequence: i64,
+    pub event_count: i64,
+    pub last_hash: Vec<u8>,
+    pub batch_digest: Vec<u8>,
+}
+
+/// Exporter-only security-ledger capability. Implementations must fence
+/// claims by generation and only delete batch members inside the same
+/// transaction that advances the durable anchor checkpoint.
 pub trait SecurityAuditExporter: Send + Sync {
     fn check_available(&self) -> BoxFuture<'_, Result<(), RepositoryError>>;
 
@@ -98,25 +173,25 @@ pub trait SecurityAuditExporter: Send + Sync {
         head_hash: &'a [u8],
     ) -> BoxFuture<'a, Result<(), RepositoryError>>;
 
-    fn claim_due(
-        &self,
-        limit: i64,
-        lock_timeout_seconds: i32,
-    ) -> BoxFuture<'_, Result<Vec<SecurityAuditOutboxDelivery>, RepositoryError>>;
-
-    fn mark_exported<'a>(
+    fn claim_batch<'a>(
         &'a self,
-        event_id: uuid::Uuid,
-        expected_attempts: i32,
         deployment_id: &'a str,
+        limit: i64,
+        max_envelope_bytes: i64,
+        lock_timeout_seconds: i32,
+    ) -> BoxFuture<'a, Result<SecurityAuditBatchClaim, RepositoryError>>;
+
+    fn ack_batch<'a>(
+        &'a self,
+        ack: SecurityAuditBatchAck,
     ) -> BoxFuture<'a, Result<(), RepositoryError>>;
 
-    fn reschedule<'a>(
+    fn fail_batch<'a>(
         &'a self,
-        event_id: uuid::Uuid,
-        expected_attempts: i32,
+        generation: i64,
         available_at: chrono::DateTime<chrono::Utc>,
         last_error: &'a str,
+        blocked: bool,
     ) -> BoxFuture<'a, Result<(), RepositoryError>>;
 }
 
@@ -147,31 +222,31 @@ where
         (**self).record_genesis(deployment_id, head_hash)
     }
 
-    fn claim_due(
-        &self,
-        limit: i64,
-        lock_timeout_seconds: i32,
-    ) -> BoxFuture<'_, Result<Vec<SecurityAuditOutboxDelivery>, RepositoryError>> {
-        (**self).claim_due(limit, lock_timeout_seconds)
-    }
-
-    fn mark_exported<'a>(
+    fn claim_batch<'a>(
         &'a self,
-        event_id: uuid::Uuid,
-        expected_attempts: i32,
         deployment_id: &'a str,
-    ) -> BoxFuture<'a, Result<(), RepositoryError>> {
-        (**self).mark_exported(event_id, expected_attempts, deployment_id)
+        limit: i64,
+        max_envelope_bytes: i64,
+        lock_timeout_seconds: i32,
+    ) -> BoxFuture<'a, Result<SecurityAuditBatchClaim, RepositoryError>> {
+        (**self).claim_batch(deployment_id, limit, max_envelope_bytes, lock_timeout_seconds)
     }
 
-    fn reschedule<'a>(
+    fn ack_batch<'a>(
         &'a self,
-        event_id: uuid::Uuid,
-        expected_attempts: i32,
+        ack: SecurityAuditBatchAck,
+    ) -> BoxFuture<'a, Result<(), RepositoryError>> {
+        (**self).ack_batch(ack)
+    }
+
+    fn fail_batch<'a>(
+        &'a self,
+        generation: i64,
         available_at: chrono::DateTime<chrono::Utc>,
         last_error: &'a str,
+        blocked: bool,
     ) -> BoxFuture<'a, Result<(), RepositoryError>> {
-        (**self).reschedule(event_id, expected_attempts, available_at, last_error)
+        (**self).fail_batch(generation, available_at, last_error, blocked)
     }
 }
 
