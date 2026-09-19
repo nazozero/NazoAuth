@@ -4,9 +4,11 @@
 //! 1. `nazo_oauth_cleanup_expired_security_state()` — issuances, access-token
 //!    revocations, SCIM audit events, backchannel logout deliveries and SCIM
 //!    security events (256 rows each).
-//! 2. Refresh-token leaf reclaim — fully expired families, per-family
+//! 2. Refresh-token family reclaim — fully expired families, per-family
 //!    transactions under the shared advisory key (`family → token`).
 //! 3. `nazo_openid4vp_cleanup_expired_transactions()` — expired presentations.
+//! 4. `nazo_cleanup_exported_security_audit_outbox()` — exported audit-outbox
+//!    delivery rows past their short observability grace period.
 //!
 //! There is no second family lock domain and no grant-scope lock here; a
 //! writer holding the family advisory lock causes that family to be skipped
@@ -56,7 +58,13 @@ struct PresentationCleanupCount {
 }
 
 #[derive(QueryableByName)]
-struct ExpiredLeafCandidate {
+struct AuditOutboxCleanupCount {
+    #[diesel(sql_type = sql_types::Integer)]
+    deleted: i32,
+}
+
+#[derive(QueryableByName)]
+struct ExpiredFamilyCandidate {
     #[diesel(sql_type = sql_types::Uuid)]
     tenant_id: Uuid,
     #[diesel(sql_type = sql_types::Uuid)]
@@ -95,48 +103,62 @@ impl SecurityStateMaintenanceRepository {
         Ok(count.deleted_transactions.max(0) as u64)
     }
 
-    /// Reclaim expired refresh-token leaves whose whole family is expired.
+    /// Reclaim exported audit-outbox delivery rows past their grace period.
     ///
-    /// Candidates: expired leaf rows (no child) in families with no unexpired
-    /// member. One short transaction per family; `pg_try_advisory_xact_lock`
-    /// shares the writer key so an active rotation skips the family. The
-    /// no-unexpired-member recheck inside the lock closes the race where a
-    /// new successor was committed after the candidate scan.
-    async fn reclaim_refresh_token_leaves(&self) -> Result<u64, RepositoryError> {
+    /// The outbox row is delivery bookkeeping for the exporter; the immutable
+    /// `security_audit_events` record remains the evidence. Runtime roles hold
+    /// no direct outbox privilege, so reclamation goes through the
+    /// `SECURITY DEFINER` function owned by the migration owner.
+    async fn audit_outbox_cleanup(&self) -> Result<u64, RepositoryError> {
+        let mut connection = self.connection().await?;
+        let count = sql_query(
+            "SELECT public.nazo_cleanup_exported_security_audit_outbox() AS deleted",
+        )
+        .get_result::<AuditOutboxCleanupCount>(&mut connection)
+        .await
+        .map_err(map_error)?;
+        Ok(count.deleted.max(0) as u64)
+    }
+
+    /// Reclaim refresh-token rows in families whose whole membership expired.
+    ///
+    /// Candidates are distinct families with no unexpired member, oldest
+    /// family expiry first. One short transaction per family:
+    /// `pg_try_advisory_xact_lock` shares the writer key so an active rotation
+    /// skips the family, the no-unexpired-member recheck inside the lock
+    /// closes the race where a new successor was committed after the scan, and
+    /// the unlink step clears `rotated_from_id` references into the family so
+    /// a bounded delete can remove every expired member in one pass instead of
+    /// peeling one leaf per round.
+    async fn reclaim_expired_refresh_families(&self) -> Result<(u64, bool), RepositoryError> {
         let cutoff = Utc::now();
         let mut scan = self.connection().await?;
-        let candidates = sql_query(
+        // The NOT EXISTS must inspect the whole family, so it stays outside
+        // the expired-member prefilter: a family with any unexpired member is
+        // never a candidate. The in-lock recheck below still guards the race
+        // where a successor commits after this scan.
+        let families = sql_query(
             "SELECT target.tenant_id, target.token_family_id \
              FROM oauth_tokens AS target \
              WHERE target.expires_at <= $1 \
                AND NOT EXISTS ( \
-                   SELECT 1 FROM oauth_tokens AS child \
-                   WHERE child.rotated_from_id = target.id) \
-               AND NOT EXISTS ( \
                    SELECT 1 FROM oauth_tokens AS member \
                    WHERE member.token_family_id = target.token_family_id \
                      AND member.expires_at > $1) \
-             ORDER BY target.expires_at, target.id \
-             LIMIT 256",
+             GROUP BY target.tenant_id, target.token_family_id \
+             ORDER BY MIN(target.expires_at), target.token_family_id \
+             LIMIT $2",
         )
         .bind::<sql_types::Timestamptz, _>(cutoff)
-        .load::<ExpiredLeafCandidate>(&mut scan)
+        .bind::<sql_types::BigInt, _>(FAMILY_LIMIT_PER_ROUND as i64)
+        .load::<ExpiredFamilyCandidate>(&mut scan)
         .await
         .map_err(map_error)?;
+        let scan_saturated = families.len() >= FAMILY_LIMIT_PER_ROUND;
         drop(scan);
 
-        let mut families: Vec<(Uuid, Uuid)> = Vec::new();
-        for candidate in candidates {
-            let key = (candidate.tenant_id, candidate.token_family_id);
-            if !families.contains(&key) {
-                if families.len() >= FAMILY_LIMIT_PER_ROUND {
-                    break;
-                }
-                families.push(key);
-            }
-        }
         if families.is_empty() {
-            return Ok(0);
+            return Ok((0, scan_saturated));
         }
 
         // One guarded connection carries every short family transaction. A
@@ -145,7 +167,9 @@ impl SecurityStateMaintenanceRepository {
         // transaction.
         let mut guard = DiscardOnDrop(Some(self.connection().await?));
         let mut deleted = 0_u64;
-        for (tenant_id, family_id) in families {
+        for candidate in &families {
+            let tenant_id = candidate.tenant_id;
+            let family_id = candidate.token_family_id;
             let remaining = CLEANUP_BATCH_LIMIT.saturating_sub(deleted as i64);
             if remaining <= 0 {
                 break;
@@ -173,19 +197,31 @@ impl SecurityStateMaintenanceRepository {
                     if !still_expired.flag {
                         return Ok(0);
                     }
+                    // Unlink every reference into this family before deleting;
+                    // `rotated_from_id` is a non-deferrable foreign key, so a
+                    // whole-family delete fails while any row still points at
+                    // a doomed member. Rotation only links inside a family and
+                    // holds this advisory key, so under the lock the set of
+                    // inbound references is fixed.
+                    sql_query(
+                        "UPDATE oauth_tokens SET rotated_from_id = NULL \
+                         WHERE rotated_from_id IN ( \
+                             SELECT id FROM oauth_tokens \
+                             WHERE token_family_id = $1)",
+                    )
+                    .bind::<sql_types::Uuid, _>(family_id)
+                    .execute(connection)
+                    .await?;
                     let removed = sql_query(
-                        "WITH leaf AS ( \
+                        "WITH doomed AS ( \
                              SELECT id FROM oauth_tokens \
                              WHERE tenant_id = $1 AND token_family_id = $2 \
                                AND expires_at <= $3 \
-                               AND NOT EXISTS ( \
-                                   SELECT 1 FROM oauth_tokens AS child \
-                                   WHERE child.rotated_from_id = oauth_tokens.id) \
                              ORDER BY expires_at, id \
                              LIMIT $4 FOR UPDATE SKIP LOCKED \
                          ) \
                          DELETE FROM oauth_tokens AS target \
-                         USING leaf WHERE target.id = leaf.id",
+                         USING doomed WHERE target.id = doomed.id",
                     )
                     .bind::<sql_types::Uuid, _>(tenant_id)
                     .bind::<sql_types::Uuid, _>(family_id)
@@ -206,7 +242,10 @@ impl SecurityStateMaintenanceRepository {
             }
         }
         guard.return_to_pool();
-        Ok(deleted)
+        // The scan limit means more families may wait; the row budget means
+        // visited families or unvisited candidates still hold expired rows.
+        let saturated = scan_saturated || deleted >= CLEANUP_BATCH_LIMIT as u64;
+        Ok((deleted, saturated))
     }
 
     async fn connection(&self) -> Result<DbConnection, RepositoryError> {
@@ -220,8 +259,19 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
     fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
         Box::pin(async move {
             let generic = self.generic_cleanup().await?;
-            let refresh_tokens = self.reclaim_refresh_token_leaves().await?;
+            let (refresh_tokens, refresh_saturated) =
+                self.reclaim_expired_refresh_families().await?;
             let presentations = self.presentation_cleanup().await?;
+            let audit_outbox_rows = self.audit_outbox_cleanup().await?;
+            let saturated = refresh_saturated
+                || i64::from(generic.deleted_issuances) >= CLEANUP_BATCH_LIMIT
+                || i64::from(generic.deleted_access_token_revocations) >= CLEANUP_BATCH_LIMIT
+                || i64::from(generic.deleted_scim_audit_events) >= CLEANUP_BATCH_LIMIT
+                || i64::from(generic.deleted_backchannel_logout_deliveries)
+                    >= CLEANUP_BATCH_LIMIT
+                || i64::from(generic.deleted_scim_security_events) >= CLEANUP_BATCH_LIMIT
+                || presentations >= CLEANUP_BATCH_LIMIT as u64
+                || audit_outbox_rows >= CLEANUP_BATCH_LIMIT as u64;
             Ok(CleanupBatchResult {
                 issuances: generic.deleted_issuances.max(0) as u64,
                 refresh_tokens,
@@ -230,6 +280,8 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                 logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,
                 scim_security_events: generic.deleted_scim_security_events.max(0) as u64,
                 presentations,
+                audit_outbox_rows,
+                saturated,
             })
         })
     }

@@ -27,11 +27,7 @@ struct ZeroDatabasePoolMetrics;
 
 impl nazo_persistence::DatabasePoolMetricsPort for ZeroDatabasePoolMetrics {
     fn snapshot(&self) -> nazo_persistence::DatabasePoolMetrics {
-        nazo_persistence::DatabasePoolMetrics {
-            acquire_count: 0,
-            wait_nanos_total: 0,
-            wait_nanos_max: 0,
-        }
+        nazo_persistence::DatabasePoolMetrics::default()
     }
 }
 
