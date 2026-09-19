@@ -71,7 +71,7 @@ services:
     command:
       - sh
       - -c
-      - python /scripts/ensure_runtime_keyset.py --key-dir /var/lib/nazo_oauth/keys --active-alg RS256 --required-alg PS256 && touch /tmp/keyset-ready && tail -f /dev/null
+      - python /scripts/ensure_runtime_keyset.py --key-dir /var/lib/nazo_oauth/keys --active-alg RS256 --required-alg PS256 && chown 10001:10001 /var/lib/nazo_oauth && touch /tmp/keyset-ready && tail -f /dev/null
     healthcheck:
       test: ["CMD-SHELL", "test -f /tmp/keyset-ready"]
       interval: 2s
@@ -93,6 +93,30 @@ services:
     depends_on:
       migrate:
         condition: service_healthy
+    networks:
+      perf_net:
+
+  # Audit-anchor export pair for the endurance soak. Both are launched via
+  # `docker compose run` from perf/tools/soak_run.sh once the deployment id
+  # is known, so they intentionally carry no depends_on / static secret env.
+  audit-receiver:
+    build:
+      context: .
+      dockerfile: perf/audit-anchor-receiver/Containerfile
+    volumes:
+      - audit_receiver_data:/data
+      - ./perf-results/anchor-tls:/run/anchor-tls:ro
+    networks:
+      perf_net:
+
+  audit-worker:
+    build:
+      context: .
+      dockerfile: Containerfile
+      target: perf-runtime
+    volumes:
+      - ./perf-results/anchor-tls:/run/anchor-tls:ro
+    command: ["nazoauth", "audit-anchor-worker"]
     networks:
       perf_net:
 
@@ -173,6 +197,7 @@ volumes:
   perf_runtime:
   perf_results:
   perf_state:
+  audit_receiver_data:
 
 networks:
   perf_net:

@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+# Reference audit-anchor receiver for benchmark evidence. Standalone crate
+# (own workspace); build context is the repository root so the same pinned
+# rust toolchain as the product image is used.
+FROM docker.io/library/rust:1.98.0-slim@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27 AS build
+WORKDIR /app
+COPY perf/audit-anchor-receiver/Cargo.toml perf/audit-anchor-receiver/Cargo.lock ./
+COPY perf/audit-anchor-receiver/src ./src
+RUN --mount=type=cache,id=anchor-receiver-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,id=anchor-receiver-target,target=/app/target,sharing=locked \
+    cargo build --release --locked \
+    && install -Dm755 target/release/nazo-audit-anchor-receiver /out/nazo-audit-anchor-receiver
+
+FROM docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+COPY --from=build /out/nazo-audit-anchor-receiver /usr/local/bin/nazo-audit-anchor-receiver
+ENTRYPOINT ["nazo-audit-anchor-receiver"]

@@ -21,7 +21,7 @@ LOG=$OUT/soak.log
 DUR_MAIN=${SOAK_DURATION:-14400s}
 DUR_SIDE=${SOAK_SIDE_DURATION:-14200s}
 RATE=${SOAK_RATE:?SOAK_RATE required (0.75 x C_valid for this host)}
-DEPID=$(docker exec nazoauth-perf-valkey-1 valkey-cli keys 'nazo:state:v1:*' | head -1 | cut -d: -f4)
+DEPID=$(docker exec nazoauth-perf-valkey-1 valkey-cli keys 'nazo:state:v1:*' | awk -F: 'NR==1{print $4}')
 TOOLS=/workspace/perf/tools
 PGC="docker exec -i nazoauth-perf-postgres-1 psql -X -v ON_ERROR_STOP=1 -U postgres -d oauth"
 MANIFEST=$OUT/manifest.txt
@@ -80,6 +80,88 @@ echo "sampler started $(date -u +%H:%M:%S)" >>"$LOG"
 RSSPID=$!
 echo "runner rss sampler pid=$RSSPID $(date -u +%H:%M:%S)" >>"$LOG"
 
+# ---------------- audit anchor export (optional mode, live evidence) ---
+AUDIT_ENABLED=${SOAK_AUDIT:-1}
+AUDITPID=""
+if [ "$AUDIT_ENABLED" = "1" ]; then
+  # `compose run` registers the *container* name as the network alias, not
+  # the service name, so the receiver certificate is issued per run.
+  RCV_NAME="soak-anchor-rcv-$RUN_ID"
+  TLS_DIR=/workspace/perf-results/anchor-tls/$RUN_ID
+  mkdir -p "$TLS_DIR"
+  openssl req -x509 -newkey rsa:2048 -nodes -days 2 \
+    -keyout "$TLS_DIR/receiver.key" -out "$TLS_DIR/receiver.crt" \
+    -subj "/CN=$RCV_NAME" \
+    -addext "basicConstraints=CA:FALSE" \
+    -addext "extendedKeyUsage=serverAuth" \
+    -addext "subjectAltName=DNS:$RCV_NAME" >/dev/null 2>&1
+  ANCHOR_TOKEN=$(openssl rand -hex 32)
+  ANCHOR_SEED=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')
+  # Dedicated least-privilege exporter role for the worker connection.
+  docker exec -i nazoauth-perf-postgres-1 psql -X -v ON_ERROR_STOP=1 \
+    -U postgres -d oauth </dev/null <<'SQL'
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'nazoauth_perf_exporter') THEN
+    CREATE ROLE nazoauth_perf_exporter LOGIN PASSWORD 'exporter' NOSUPERUSER NOBYPASSRLS NOINHERIT;
+  END IF;
+END $$;
+GRANT CONNECT ON DATABASE oauth TO nazoauth_perf_exporter;
+GRANT USAGE ON SCHEMA public TO nazoauth_perf_exporter;
+GRANT EXECUTE ON FUNCTION
+  public.nazo_security_audit_shared_privilege_preflight(BOOLEAN,BOOLEAN,BOOLEAN),
+  public.nazo_persist_security_audit_event(UUID,TEXT,TEXT,JSONB,TIMESTAMPTZ),
+  public.nazo_security_audit_chain_head_for_update(),
+  public.nazo_security_audit_batch_members(),
+  public.nazo_claim_security_audit_pending(BIGINT),
+  public.nazo_open_security_audit_batch(BIGINT,BIGINT,INTEGER,BYTEA,INTEGER),
+  public.nazo_reclaim_security_audit_batch(BYTEA,INTEGER),
+  public.nazo_append_security_audit_chain(BIGINT,BYTEA,UUID[],BYTEA[]),
+  public.nazo_ack_security_audit_batch(BIGINT,BIGINT,BIGINT,INTEGER,BYTEA,BYTEA,TEXT),
+  public.nazo_fail_security_audit_batch(BIGINT,TIMESTAMPTZ,TEXT,BOOLEAN),
+  public.nazo_observe_security_audit_anchor(TEXT),
+  public.nazo_record_security_audit_genesis(TEXT,BYTEA),
+  public.nazo_security_audit_shared_anchor_health()
+TO nazoauth_perf_exporter;
+SQL
+  docker compose -f docker-compose.perf.yml run -d --name "$RCV_NAME" --no-deps \
+    -e ANCHOR_RECEIVER_LISTEN=0.0.0.0:9443 \
+    -e ANCHOR_RECEIVER_TLS_CERT="/run/anchor-tls/$RUN_ID/receiver.crt" \
+    -e ANCHOR_RECEIVER_TLS_KEY="/run/anchor-tls/$RUN_ID/receiver.key" \
+    -e ANCHOR_RECEIVER_DEPLOYMENT="$DEPID" \
+    -e ANCHOR_RECEIVER_TOKEN="$ANCHOR_TOKEN" \
+    -e ANCHOR_RECEIVER_SIGNING_KEY="$ANCHOR_SEED" \
+    -e ANCHOR_RECEIVER_DATA_DIR=/data \
+    audit-receiver >>"$LOG" 2>&1
+  sleep 3
+  VERIFY_KEY=$(docker logs "soak-anchor-rcv-$RUN_ID" 2>&1 | awk -F'pubkey=' 'NF>1{split($2,a,/[ \t]/); print a[1]; exit}')
+  [ -n "$VERIFY_KEY" ] || { echo "FATAL: audit receiver pubkey unavailable" >>"$LOG"; exit 1; }
+  docker compose -f docker-compose.perf.yml run -d --name "soak-anchor-worker-$RUN_ID" --no-deps \
+    -e AUDIT_ANCHOR_MODE=optional \
+    -e DEPLOYMENT_ID="$DEPID" \
+    -e AUDIT_ANCHOR_URL="https://$RCV_NAME:9443/checkpoint" \
+    -e AUDIT_ANCHOR_TOKEN="$ANCHOR_TOKEN" \
+    -e AUDIT_ANCHOR_RECEIPT_VERIFY_KEY="$VERIFY_KEY" \
+    -e AUDIT_ANCHOR_CA_BUNDLE="/run/anchor-tls/$RUN_ID/receiver.crt" \
+    -e AUDIT_ANCHOR_DATABASE_URL=postgresql://nazoauth_perf_exporter:exporter@postgres:5432/oauth \
+    -e AUDIT_ANCHOR_POLL_INTERVAL_SECONDS=2 \
+    -e AUDIT_ANCHOR_BATCH_SIZE=256 \
+    audit-worker >>"$LOG" 2>&1
+  echo "audit anchor worker+receiver started depid=$DEPID $(date -u +%H:%M:%S)" >>"$LOG"
+  (
+    while :; do
+      ts=$(date -u +%FT%TZ)
+      row=$(docker exec -i nazoauth-perf-postgres-1 psql -X -A -t \
+        -U postgres -d oauth </dev/null \
+        -c "SELECT pending_estimate, anchor_sequence, (batch_blocked_reason IS NOT NULL) FROM public.nazo_security_audit_shared_anchor_health()" 2>/dev/null || echo ERR)
+      echo "{\"ts\":\"$ts\",\"health\":\"$row\"}" >> "$OUT/audit-health.jsonl"
+      sleep 60
+    done
+  ) &
+  AUDITPID=$!
+  echo "audit health sampler pid=$AUDITPID $(date -u +%H:%M:%S)" >>"$LOG"
+fi
+
 # ---------------- main load --------------------------------------------
 docker compose -f docker-compose.perf.yml run --rm --no-deps \
   -v "$OUT/main":/out \
@@ -120,6 +202,30 @@ wait $MAINPID
 echo "main finished $(date -u +%H:%M:%S)" >>"$LOG"
 docker stop "soak-argon2-$RUN_ID" "soak-meta-$RUN_ID" "soak-fapi-$RUN_ID" "soak-sampler-$RUN_ID" >/dev/null 2>&1 || true
 kill $RSSPID 2>/dev/null || true
+[ -n "${AUDITPID:-}" ] && kill "$AUDITPID" 2>/dev/null || true
+
+# ---------------- audit receiver evidence ------------------------------
+# Keep worker running briefly so the outbox drains, then snapshot receiver
+# counters and the final chain head for the report's integrity section.
+if [ "${AUDIT_ENABLED:-0}" = "1" ]; then
+  sleep 30
+  docker compose -f docker-compose.perf.yml run --rm --no-deps \
+    -v "/workspace/perf-results/anchor-tls:/run/anchor-tls:ro" \
+    -e TOKEN="$ANCHOR_TOKEN" -e RCV_NAME="$RCV_NAME" -e RUN_ID="$RUN_ID" \
+    --entrypoint python3 \
+    perf -c '
+import json, os, ssl, urllib.request
+ctx = ssl.create_default_context(cafile="/run/anchor-tls/" + os.environ["RUN_ID"] + "/receiver.crt")
+req = urllib.request.Request("https://" + os.environ["RCV_NAME"] + ":9443/__state")
+req.add_header("Authorization", "Bearer " + os.environ["TOKEN"])
+print(urllib.request.urlopen(req, context=ctx, timeout=10).read().decode())
+' > "$OUT/audit-receiver-state.json" 2>>"$LOG" \
+    || echo "WARN: receiver state capture failed" >>"$LOG"
+  docker logs "soak-anchor-rcv-$RUN_ID" > "$OUT/audit-receiver.log" 2>&1 || true
+  docker logs "soak-anchor-worker-$RUN_ID" > "$OUT/audit-worker.log" 2>&1 || true
+  docker stop "soak-anchor-worker-$RUN_ID" "soak-anchor-rcv-$RUN_ID" >/dev/null 2>&1 || true
+  docker rm "soak-anchor-worker-$RUN_ID" "soak-anchor-rcv-$RUN_ID" >/dev/null 2>&1 || true
+fi
 
 # ---------------- sampler output + validation ---------------------------
 docker cp "soak-sampler-$RUN_ID":/tmp/soak-metrics.jsonl "$OUT/soak-metrics.jsonl" 2>/dev/null \
