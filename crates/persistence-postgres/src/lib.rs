@@ -215,14 +215,8 @@ impl nazo_persistence::SecurityAuditExporter for AuditLedgerRepository {
     ) -> futures_util::future::BoxFuture<'a, Result<(), nazo_identity::ports::RepositoryError>>
     {
         Box::pin(async move {
-            AuditLedgerRepository::fail_batch(
-                self,
-                generation,
-                available_at,
-                last_error,
-                blocked,
-            )
-            .await
+            AuditLedgerRepository::fail_batch(self, generation, available_at, last_error, blocked)
+                .await
         })
     }
 }

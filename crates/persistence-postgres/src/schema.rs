@@ -239,6 +239,7 @@ diesel::table! {
         mtls_x5t_s256 -> Nullable<Varchar>,
         client_attestation_jkt -> Nullable<Varchar>,
         oidc_auth_context -> Jsonb,
+        sparsified_at -> Nullable<Timestamptz>,
     }
 }
 
@@ -252,6 +253,7 @@ diesel::table! {
         access_token_jti -> Varchar,
         access_token_expires_at -> Timestamptz,
         retain_until -> Timestamptz,
+        refresh_token_family_id -> Nullable<Uuid>,
     }
 }
 
@@ -501,6 +503,29 @@ diesel::table! {
 }
 
 diesel::table! {
+    security_audit_archive (event_id) {
+        event_id -> Uuid,
+        sequence -> Int8,
+        event_type -> Varchar,
+        event_category -> Varchar,
+        payload -> Jsonb,
+        occurred_at -> Timestamptz,
+        previous_hash -> Binary,
+        event_hash -> Binary,
+        archived_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    security_audit_archive_state (singleton) {
+        singleton -> Bool,
+        last_archived_sequence -> Int8,
+        last_archived_hash -> Binary,
+        updated_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
     security_audit_event_outbox (event_id) {
         event_id -> Uuid,
         attempts -> Int4,
@@ -559,5 +584,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     security_audit_chain_state,
     security_audit_chain_entries,
     security_audit_events,
-    security_audit_event_outbox
+    security_audit_event_outbox,
+    security_audit_archive,
+    security_audit_archive_state
 );

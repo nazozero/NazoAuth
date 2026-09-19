@@ -16,9 +16,8 @@ use chrono::{Duration as ChronoDuration, Utc};
 use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
 use nazo_identity::ports::{RepositoryError, RepositoryFuture};
 use nazo_persistence::{
-    SecurityAuditAnchorHealth, SecurityAuditBatch, SecurityAuditBatchAck,
-    SecurityAuditBatchClaim, SecurityAuditBatchLease, SecurityAuditOutboxDelivery,
-    audit_chain::security_audit_batch_digest,
+    SecurityAuditAnchorHealth, SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim,
+    SecurityAuditBatchLease, SecurityAuditOutboxDelivery, audit_chain::security_audit_batch_digest,
 };
 use nazo_postgres::AuditLedgerRepository;
 use serde_json::{Value, json};
@@ -339,9 +338,7 @@ impl AuditAnchorRepository for ScriptedRepository {
                 .expect("scripted repository mutex is not poisoned")
                 .push((generation, last_error, blocked));
             if self.fail_call_fails {
-                Err(RepositoryError::Unexpected(
-                    "fail_batch failed".to_owned(),
-                ))
+                Err(RepositoryError::Unexpected("fail_batch failed".to_owned()))
             } else {
                 Ok(())
             }
@@ -492,19 +489,23 @@ async fn worker_iteration_anchors_genesis_before_polling_empty_outbox() {
     let receipt = accepted_genesis_receipt(&snapshot.head_hash);
     let (endpoint, server) = local_anchor_endpoint_with_body(200, receipt).await;
     let config = iteration_config(endpoint);
-    let repository = ScriptedRepository::with_health(
-        Ok(snapshot),
-        Ok(SecurityAuditBatchClaim::Empty),
-    )
-    .with_observation(Err(repository_error(
-        "an incomplete checkpoint must not be observed",
-    )));
+    let repository =
+        ScriptedRepository::with_health(Ok(snapshot), Ok(SecurityAuditBatchClaim::Empty))
+            .with_observation(Err(repository_error(
+                "an incomplete checkpoint must not be observed",
+            )));
     let client = test_client();
     let mut last_anchored = None;
     let mut last_blocked = None;
 
-    let outcome =
-        run_iteration(&repository, &client, &config, &mut last_anchored, &mut last_blocked).await;
+    let outcome = run_iteration(
+        &repository,
+        &client,
+        &config,
+        &mut last_anchored,
+        &mut last_blocked,
+    )
+    .await;
 
     assert_eq!(outcome, IterationOutcome::Poll(config.poll_interval));
     let checkpoint = last_anchored.expect("genesis checkpoint is retained");
@@ -517,9 +518,10 @@ async fn worker_iteration_anchors_genesis_before_polling_empty_outbox() {
         .expect("request has headers");
     let headers = String::from_utf8_lossy(&request[..header_end]);
     let body: Value = serde_json::from_slice(&request[header_end + 4..]).unwrap();
-    assert!(header_value(&headers, "idempotency-key").is_some_and(|key| {
-        key.starts_with("genesis:deployment-1:")
-    }));
+    assert!(
+        header_value(&headers, "idempotency-key")
+            .is_some_and(|key| { key.starts_with("genesis:deployment-1:") })
+    );
     assert_eq!(body["checkpoint_kind"], "genesis");
     assert_eq!(body["sequence"], 0);
     assert_eq!(
@@ -537,10 +539,8 @@ async fn worker_iteration_anchors_genesis_before_polling_empty_outbox() {
 async fn worker_iteration_retries_failed_genesis_without_claiming_deliveries() {
     let (endpoint, server) = local_anchor_endpoint(503).await;
     let config = iteration_config(endpoint);
-    let repository = ScriptedRepository::with_health(
-        Ok(genesis_snapshot()),
-        Ok(SecurityAuditBatchClaim::Empty),
-    );
+    let repository =
+        ScriptedRepository::with_health(Ok(genesis_snapshot()), Ok(SecurityAuditBatchClaim::Empty));
     let mut last_anchored = None;
 
     let outcome = run_iteration(
@@ -584,10 +584,8 @@ async fn worker_iteration_retries_genesis_rejection_and_bad_receipts() {
     );
     let (endpoint, server) = local_anchor_endpoint_with_body(200, rejected).await;
     let config = iteration_config(endpoint);
-    let repository = ScriptedRepository::with_health(
-        Ok(snapshot.clone()),
-        Ok(SecurityAuditBatchClaim::Empty),
-    );
+    let repository =
+        ScriptedRepository::with_health(Ok(snapshot.clone()), Ok(SecurityAuditBatchClaim::Empty));
     let mut last_anchored = None;
     let outcome = run_iteration(
         &repository,
@@ -602,12 +600,9 @@ async fn worker_iteration_retries_genesis_rejection_and_bad_receipts() {
     assert!(repository.acked().is_empty());
     server.await.expect("rejected genesis endpoint completes");
 
-    let (endpoint, server) =
-        local_anchor_endpoint_with_body(200, b"not-json".to_vec()).await;
-    let repository = ScriptedRepository::with_health(
-        Ok(snapshot),
-        Ok(SecurityAuditBatchClaim::Empty),
-    );
+    let (endpoint, server) = local_anchor_endpoint_with_body(200, b"not-json".to_vec()).await;
+    let repository =
+        ScriptedRepository::with_health(Ok(snapshot), Ok(SecurityAuditBatchClaim::Empty));
     let outcome = run_iteration(
         &repository,
         &test_client(),
@@ -617,18 +612,18 @@ async fn worker_iteration_retries_genesis_rejection_and_bad_receipts() {
     )
     .await;
     assert_eq!(outcome, IterationOutcome::Retry(Duration::from_secs(1)));
-    server.await.expect("bad-receipt genesis endpoint completes");
+    server
+        .await
+        .expect("bad-receipt genesis endpoint completes");
 }
 
 #[tokio::test]
 async fn worker_iteration_retries_database_observation_and_genesis_failures() {
     let config =
         iteration_config(Url::parse("https://unused-anchor.example.test/checkpoint").unwrap());
-    let observation_failure = ScriptedRepository::with_health(
-        Ok(health_snapshot()),
-        Ok(SecurityAuditBatchClaim::Empty),
-    )
-    .with_observation(Err(repository_error("observation failed")));
+    let observation_failure =
+        ScriptedRepository::with_health(Ok(health_snapshot()), Ok(SecurityAuditBatchClaim::Empty))
+            .with_observation(Err(repository_error("observation failed")));
     assert_eq!(
         run_iteration(
             &observation_failure,
@@ -645,11 +640,9 @@ async fn worker_iteration_retries_database_observation_and_genesis_failures() {
     let receipt = accepted_genesis_receipt(&snapshot.head_hash);
     let (endpoint, server) = local_anchor_endpoint_with_body(200, receipt).await;
     let config = iteration_config(endpoint);
-    let genesis_failure = ScriptedRepository::with_health(
-        Ok(snapshot),
-        Ok(SecurityAuditBatchClaim::Empty),
-    )
-    .with_genesis_record(Err(repository_error("genesis record failed")));
+    let genesis_failure =
+        ScriptedRepository::with_health(Ok(snapshot), Ok(SecurityAuditBatchClaim::Empty))
+            .with_genesis_record(Err(repository_error("genesis record failed")));
     let mut last_anchored = None;
     assert_eq!(
         run_iteration(
@@ -672,10 +665,8 @@ async fn worker_iteration_reuses_current_genesis_and_tolerates_health_publish_fa
         iteration_config(Url::parse("https://unused-anchor.example.test/checkpoint").unwrap());
     let snapshot = genesis_snapshot();
     let expected = AnchorCheckpoint::genesis(encode_hash(&snapshot.head_hash));
-    let repository = ScriptedRepository::with_health(
-        Ok(snapshot),
-        Ok(SecurityAuditBatchClaim::Empty),
-    );
+    let repository =
+        ScriptedRepository::with_health(Ok(snapshot), Ok(SecurityAuditBatchClaim::Empty));
     let mut last_anchored = Some(expected.clone());
 
     let outcome = run_iteration(
@@ -705,14 +696,7 @@ async fn worker_iteration_pushes_batch_and_acknowledges_it() {
     let client = test_client();
     let mut last_anchored = None;
 
-    let outcome = run_iteration(
-        &repository,
-        &client,
-        &config,
-        &mut last_anchored,
-        &mut None,
-    )
-    .await;
+    let outcome = run_iteration(&repository, &client, &config, &mut last_anchored, &mut None).await;
 
     assert_eq!(outcome, IterationOutcome::Continue);
     let acked = repository.acked();
@@ -753,14 +737,7 @@ async fn worker_iteration_acknowledges_duplicate_receipt_after_response_loss() {
     )
     .with_acknowledgement(Ok(()));
 
-    let outcome = run_iteration(
-        &repository,
-        &test_client(),
-        &config,
-        &mut None,
-        &mut None,
-    )
-    .await;
+    let outcome = run_iteration(&repository, &test_client(), &config, &mut None, &mut None).await;
 
     assert_eq!(outcome, IterationOutcome::Continue);
     assert_eq!(repository.acked().len(), 1);
@@ -780,14 +757,7 @@ async fn worker_iteration_reschedules_http_failures() {
     let client = test_client();
     let mut last_anchored = None;
 
-    let outcome = run_iteration(
-        &repository,
-        &client,
-        &config,
-        &mut last_anchored,
-        &mut None,
-    )
-    .await;
+    let outcome = run_iteration(&repository, &client, &config, &mut last_anchored, &mut None).await;
 
     assert_eq!(outcome, IterationOutcome::Retry(Duration::from_secs(1)));
     assert!(repository.acked().is_empty());
@@ -829,24 +799,20 @@ async fn worker_iteration_reschedules_invalid_receipts_without_acknowledging() {
             &SigningKey::from_bytes(&[77; 32]),
         ),
     ] {
-        let (endpoint, server) =
-            local_anchor_endpoint_with_body(200, response_body).await;
+        let (endpoint, server) = local_anchor_endpoint_with_body(200, response_body).await;
         let config = iteration_config(endpoint);
         let batch = batch(vec![delivery(7)]);
         let repository = ScriptedRepository::with_health(
             Ok(health_snapshot()),
             Ok(SecurityAuditBatchClaim::Claimed(batch.clone())),
         );
-        let outcome = run_iteration(
-            &repository,
-            &test_client(),
-            &config,
-            &mut None,
-            &mut None,
-        )
-        .await;
+        let outcome =
+            run_iteration(&repository, &test_client(), &config, &mut None, &mut None).await;
         assert_eq!(outcome, IterationOutcome::Retry(Duration::from_secs(1)));
-        assert!(repository.acked().is_empty(), "invalid receipt must never ack");
+        assert!(
+            repository.acked().is_empty(),
+            "invalid receipt must never ack"
+        );
         assert_eq!(
             repository.failures(),
             vec![(batch.generation, "invalid_receipt".to_owned(), false)]
@@ -972,14 +938,7 @@ async fn worker_iteration_reschedules_ack_failure() {
     let client = test_client();
     let mut last_anchored = None;
 
-    let outcome = run_iteration(
-        &repository,
-        &client,
-        &config,
-        &mut last_anchored,
-        &mut None,
-    )
-    .await;
+    let outcome = run_iteration(&repository, &client, &config, &mut last_anchored, &mut None).await;
 
     assert_eq!(outcome, IterationOutcome::Retry(Duration::from_secs(1)));
     assert!(repository.acked().is_empty());
@@ -1041,10 +1000,8 @@ async fn worker_iteration_retries_health_and_claim_failures() {
         IterationOutcome::Retry(Duration::from_secs(1))
     );
 
-    let busy = ScriptedRepository::with_health(
-        Ok(health_snapshot()),
-        Ok(SecurityAuditBatchClaim::Busy),
-    );
+    let busy =
+        ScriptedRepository::with_health(Ok(health_snapshot()), Ok(SecurityAuditBatchClaim::Busy));
     assert_eq!(
         run_iteration(&busy, &client, &config, &mut None, &mut None).await,
         IterationOutcome::Poll(config.poll_interval)
@@ -1145,12 +1102,14 @@ fn receipt_verification_requires_signature_schema_and_binding() {
 
     let mut tampered: Value = serde_json::from_slice(&good).unwrap();
     tampered["event_count"] = json!(2);
-    assert!(verify_receipt(
-        &serde_json::to_vec(&tampered).unwrap(),
-        &test_verify_key(),
-        &expectation
-    )
-    .is_err());
+    assert!(
+        verify_receipt(
+            &serde_json::to_vec(&tampered).unwrap(),
+            &test_verify_key(),
+            &expectation
+        )
+        .is_err()
+    );
 
     let rejected = signed_receipt(
         "rejected",
@@ -1603,24 +1562,36 @@ async fn batch_transport_classifies_http_statuses_disconnects_and_2xx_without_re
         (300, "http_other"),
     ] {
         let (endpoint, server) = local_anchor_endpoint(status).await;
-        let result = send_batch(&client, &valid_worker_config(endpoint), &batch(vec![delivery(7)]))
-            .await
-            .expect_err("non-success response is an error");
+        let result = send_batch(
+            &client,
+            &valid_worker_config(endpoint),
+            &batch(vec![delivery(7)]),
+        )
+        .await
+        .expect_err("non-success response is an error");
         assert_eq!(result.code(), expected_code, "status {status}");
         server.await.expect("local endpoint completes");
     }
 
     let (endpoint, server) = local_disconnect_endpoint().await;
-    let result = send_batch(&client, &valid_worker_config(endpoint), &batch(vec![delivery(7)]))
-        .await
-        .expect_err("closed endpoint is a transport error");
+    let result = send_batch(
+        &client,
+        &valid_worker_config(endpoint),
+        &batch(vec![delivery(7)]),
+    )
+    .await
+    .expect_err("closed endpoint is a transport error");
     assert_eq!(result.code(), "transport_error");
     server.await.expect("disconnect endpoint completes");
 
     let (endpoint, server) = local_anchor_endpoint_with_body(202, b"{}".to_vec()).await;
-    let result = send_batch(&client, &valid_worker_config(endpoint), &batch(vec![delivery(7)]))
-        .await
-        .expect_err("a bare 2xx without a signed receipt is not an acknowledgement");
+    let result = send_batch(
+        &client,
+        &valid_worker_config(endpoint),
+        &batch(vec![delivery(7)]),
+    )
+    .await
+    .expect_err("a bare 2xx without a signed receipt is not an acknowledgement");
     assert_eq!(result.code(), "invalid_receipt");
     server.await.expect("bare 2xx endpoint completes");
 }
@@ -1631,7 +1602,9 @@ async fn repeated_genesis_calls_emit_stable_body_signature_and_idempotency_key()
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
         .await
         .expect("loopback listener binds");
-    let address = listener.local_addr().expect("loopback address is available");
+    let address = listener
+        .local_addr()
+        .expect("loopback address is available");
     let receipt_for_server = receipt.clone();
     let server = tokio::spawn(async move {
         let mut requests = Vec::new();

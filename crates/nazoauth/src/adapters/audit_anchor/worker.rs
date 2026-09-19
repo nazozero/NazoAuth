@@ -2,7 +2,9 @@ use std::time::Duration;
 
 use anyhow::Context as _;
 use chrono::{Duration as ChronoDuration, Utc};
-use nazo_persistence::{SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditExporter};
+use nazo_persistence::{
+    SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditExporter,
+};
 
 use super::{
     AuditAnchorWorkerConfig,
@@ -60,8 +62,14 @@ where
     let mut last_blocked = None;
 
     loop {
-        match run_iteration(&repository, &client, &config, &mut last_anchored, &mut last_blocked)
-            .await
+        match run_iteration(
+            &repository,
+            &client,
+            &config,
+            &mut last_anchored,
+            &mut last_blocked,
+        )
+        .await
         {
             IterationOutcome::Retry(delay) | IterationOutcome::Poll(delay) => {
                 tokio::time::sleep(delay).await;

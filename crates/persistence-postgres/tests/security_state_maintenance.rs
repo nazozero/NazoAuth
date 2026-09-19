@@ -1506,3 +1506,383 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
         assert_eq!(left, 0);
     }
 }
+
+/// A member becomes a terminal stub only once it is expired AND past the
+/// lost-response window; live family members and recently revoked members
+/// keep their full payload, and the stub still resolves through the token
+/// repository for reuse detection.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn terminal_members_sparsify_without_touching_live_or_recently_revoked_members() {
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+
+    let family_id = Uuid::now_v7();
+    let now = Utc::now();
+    let long_revoked = now - Duration::seconds(120);
+    let within_window = now - Duration::seconds(30);
+
+    let dead_parent = insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        family_id,
+        None,
+        now - Duration::minutes(10),
+    )
+    .await;
+    let dead_child = insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        family_id,
+        Some(dead_parent),
+        now - Duration::minutes(5),
+    )
+    .await;
+    // Recently revoked member: expired but still inside the lost-response
+    // window — the stub projection must not touch it yet.
+    let recent = insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        family_id,
+        Some(dead_child),
+        now - Duration::minutes(1),
+    )
+    .await;
+    // Live tip keeps the family active.
+    let live = insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        family_id,
+        Some(recent),
+        now + Duration::hours(1),
+    )
+    .await;
+    sql_query("UPDATE oauth_tokens SET revoked_at = $1 WHERE id = ANY($2)")
+        .bind::<Timestamptz, _>(long_revoked)
+        .bind::<sql_types::Array<SqlUuid>, _>(vec![dead_parent, dead_child])
+        .execute(&mut connection)
+        .await
+        .expect("backdated revocation should apply");
+    sql_query("UPDATE oauth_tokens SET revoked_at = $1 WHERE id = $2")
+        .bind::<Timestamptz, _>(within_window)
+        .bind::<SqlUuid, _>(recent)
+        .execute(&mut connection)
+        .await
+        .expect("recent revocation should apply");
+
+    let repository = SecurityStateMaintenanceRepository::new(
+        create_pool(&database_url, 2).expect("pool should build"),
+    );
+    let batch = repository
+        .cleanup_batch()
+        .await
+        .expect("cleanup batch should succeed");
+    assert_eq!(batch.sparsified_refresh_members, 2);
+
+    #[derive(QueryableByName)]
+    struct SparseRow {
+        #[diesel(sql_type = SqlUuid)]
+        id: Uuid,
+        #[diesel(sql_type = diesel::sql_types::Nullable<Timestamptz>)]
+        sparsified_at: Option<DateTime<Utc>>,
+        #[diesel(sql_type = diesel::sql_types::Nullable<SqlUuid>)]
+        rotated_from_id: Option<Uuid>,
+        #[diesel(sql_type = sql_types::Jsonb)]
+        oidc_auth_context: serde_json::Value,
+    }
+    let rows = sql_query(
+        "SELECT id, sparsified_at, rotated_from_id, oidc_auth_context          FROM oauth_tokens WHERE token_family_id = $1 ORDER BY issued_at",
+    )
+    .bind::<SqlUuid, _>(family_id)
+    .load::<SparseRow>(&mut connection)
+    .await
+    .expect("family rows should load");
+    assert_eq!(rows.len(), 4, "sparsify must never delete members");
+
+    let by_id = |id: Uuid| rows.iter().find(|row| row.id == id).unwrap();
+    for dead in [dead_parent, dead_child] {
+        let row = by_id(dead);
+        assert!(row.sparsified_at.is_some(), "dead member should be sparse");
+        assert_eq!(row.rotated_from_id, None, "stub chain edge must unlink");
+        assert_eq!(row.oidc_auth_context, serde_json::Value::Null);
+    }
+    let recent_row = by_id(recent);
+    assert!(
+        recent_row.sparsified_at.is_none(),
+        "a revocation inside the lost-response window must stay complete"
+    );
+    assert_eq!(recent_row.rotated_from_id, Some(dead_child));
+    let live_row = by_id(live);
+    assert!(live_row.sparsified_at.is_none());
+    assert_eq!(live_row.rotated_from_id, Some(recent));
+
+    // The family is still live, so no member may be reclaimed.
+    assert_eq!(family_row_count(&mut connection, family_id).await, 4);
+}
+
+#[derive(QueryableByName)]
+struct SeqRow {
+    #[diesel(sql_type = BigInt)]
+    seq: i64,
+}
+
+async fn insert_audit_event_at(
+    connection: &mut AsyncPgConnection,
+    event_id: Uuid,
+    occurred_at: DateTime<Utc>,
+) {
+    sql_query(
+        "SELECT public.nazo_persist_security_audit_event(\
+             $1, 'test_event', 'test', '{}'::jsonb, $2)",
+    )
+    .bind::<SqlUuid, _>(event_id)
+    .bind::<Timestamptz, _>(occurred_at)
+    .execute(connection)
+    .await
+    .expect("audit event fixture should insert");
+}
+
+async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64, i64) {
+    let events = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events")
+        .get_result::<CountRow>(connection)
+        .await
+        .expect("events count should query")
+        .count;
+    let chain = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_chain_entries")
+        .get_result::<CountRow>(connection)
+        .await
+        .expect("chain count should query")
+        .count;
+    let archive = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_archive")
+        .get_result::<CountRow>(connection)
+        .await
+        .expect("archive count should query")
+        .count;
+    (events, chain, archive)
+}
+
+async fn archive_prefix(connection: &mut AsyncPgConnection, limit: i64) -> i64 {
+    sql_query(
+        "SELECT public.nazo_archive_security_audit_prefix(\
+             $1, clock_timestamp() - interval '1 hour') AS count",
+    )
+    .bind::<BigInt, _>(limit)
+    .get_result::<CountRow>(connection)
+    .await
+    .expect("archive function should run")
+    .count
+}
+
+/// The online-window archive only moves the delivered, contiguous chain
+/// prefix: acked-and-old rows leave the hot tables in sequence order, the
+/// archive keeps their full payload plus chain link, recent or unacked rows
+/// stay put, and the append-only guard still rejects direct deletes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exported_audit_prefix_archives_contiguously_and_stays_verifiable() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
+    let (_fixture, mut connection) = fixture(&database_url).await;
+    let repository =
+        nazo_postgres::AuditLedgerRepository::new(create_pool(&database_url, 2).unwrap());
+    let deployment_id: String = sql_query(
+        "SELECT anchor_deployment_id::text AS deployment \
+         FROM security_audit_chain_state WHERE singleton",
+    )
+    .get_result::<DeploymentRow>(&mut connection)
+    .await
+    .expect("anchor deployment should read")
+    .deployment
+    .unwrap_or_else(|| "maint-dep".to_owned());
+
+    // Drain residual pending rows so the fixture owns the committed prefix.
+    loop {
+        match repository
+            .claim_batch(&deployment_id, 256, 1024 * 1024, 60)
+            .await
+            .expect("residual batches should be claimable")
+        {
+            nazo_persistence::SecurityAuditBatchClaim::Claimed(batch) => {
+                ack_batch(&repository, &batch, batch.generation, &deployment_id)
+                    .await
+                    .expect("residual batch should be acknowledged");
+            }
+            nazo_persistence::SecurityAuditBatchClaim::Busy => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            nazo_persistence::SecurityAuditBatchClaim::Blocked { reason } => {
+                panic!("residual blocked batch: {reason}");
+            }
+            nazo_persistence::SecurityAuditBatchClaim::Empty => break,
+        }
+    }
+
+    // Backdate every committed event past the online window. The fixture runs
+    // as the migration owner, so replica mode can rewrite fixture timestamps;
+    // application roles can never do this — the trigger still guards them.
+    connection
+        .batch_execute("SET session_replication_role = 'replica'")
+        .await
+        .expect("replica mode should set for fixture backdating");
+    sql_query(
+        "UPDATE security_audit_events SET occurred_at = clock_timestamp() - interval '2 hours'",
+    )
+    .execute(&mut connection)
+    .await
+    .expect("fixture backdating should apply");
+    connection
+        .batch_execute("SET session_replication_role = 'origin'")
+        .await
+        .expect("replica mode should reset");
+
+    // Three fresh events inside the online window; claim+ack moves the anchor
+    // past them while their age keeps them ineligible.
+    let recent_ids: Vec<Uuid> = (0..3).map(|_| Uuid::now_v7()).collect();
+    for event_id in &recent_ids {
+        insert_audit_event(&mut connection, *event_id).await;
+    }
+    let batch = match repository
+        .claim_batch(&deployment_id, 256, 1024 * 1024, 60)
+        .await
+        .expect("the pending events should form a claimable batch")
+    {
+        nazo_persistence::SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected a claimed batch, got {other:?}"),
+    };
+    let recent_first_sequence = batch.first_sequence;
+    ack_batch(&repository, &batch, batch.generation, &deployment_id)
+        .await
+        .expect("the batch should acknowledge");
+
+    // One old event claimed (chain entry exists) but never acknowledged:
+    // its sequence sits above the anchor and must block the prefix.
+    let unacked_old = Uuid::now_v7();
+    insert_audit_event_at(
+        &mut connection,
+        unacked_old,
+        Utc::now() - Duration::hours(2),
+    )
+    .await;
+    let pending_batch = match repository
+        .claim_batch(&deployment_id, 256, 1024 * 1024, 60)
+        .await
+        .expect("the unacked event should claim")
+    {
+        nazo_persistence::SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected a claimed batch, got {other:?}"),
+    };
+    repository
+        .fail_batch(pending_batch.generation, Utc::now(), "test-hold", false)
+        .await
+        .expect("batch should return to pending");
+
+    let (events_before, chain_before, archive_before) = audit_counts(&mut connection).await;
+    let watermark_before: i64 = sql_query(
+        "SELECT last_archived_sequence AS seq FROM security_audit_archive_state WHERE singleton",
+    )
+    .get_result::<SeqRow>(&mut connection)
+    .await
+    .expect("archive watermark should read")
+    .seq;
+
+    // The append-only guard still rejects a direct delete without the
+    // archival session flag.
+    let rejected = sql_query("DELETE FROM security_audit_events WHERE true")
+        .execute(&mut connection)
+        .await;
+    assert!(rejected.is_err(), "append-only guard must reject deletes");
+
+    // Bounded first pass: limit 2 archives at most 2.
+    let first_pass = archive_prefix(&mut connection, 2).await;
+    assert!(first_pass > 0 && first_pass <= 2, "pass respects the bound");
+    let mut archived = first_pass;
+    loop {
+        let moved = archive_prefix(&mut connection, 256).await;
+        archived += moved;
+        if moved == 0 {
+            break;
+        }
+    }
+    // The prefix stopped before the three recent events: they were claimed
+    // contiguously at recent_first_sequence, so the boundary is there.
+    assert_eq!(
+        watermark_before + archived,
+        recent_first_sequence - 1,
+        "archive stops at the first ineligible row"
+    );
+
+    let (events_after, chain_after, archive_after) = audit_counts(&mut connection).await;
+    assert_eq!(
+        events_before - events_after,
+        archived,
+        "archived rows leave security_audit_events"
+    );
+    assert_eq!(
+        chain_before - chain_after,
+        archived,
+        "archived rows leave security_audit_chain_entries"
+    );
+    assert_eq!(
+        archive_after - archive_before,
+        archived,
+        "archive gains exactly the moved rows"
+    );
+
+    // The archive is a contiguous, chain-verifiable prefix.
+    let watermark_after: i64 = sql_query(
+        "SELECT last_archived_sequence AS seq FROM security_audit_archive_state WHERE singleton",
+    )
+    .get_result::<SeqRow>(&mut connection)
+    .await
+    .expect("archive watermark should read")
+    .seq;
+    assert_eq!(watermark_after, recent_first_sequence - 1);
+    let archive_rows = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_archive")
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .expect("archive count should read")
+        .count;
+    assert_eq!(
+        archive_rows, watermark_after,
+        "archive prefix has no sequence gaps"
+    );
+    let broken_links = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM security_audit_archive AS cur \
+         JOIN security_audit_archive AS prior ON prior.sequence = cur.sequence - 1 \
+         WHERE cur.previous_hash <> prior.event_hash",
+    )
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("chain check should query")
+    .count;
+    assert_eq!(broken_links, 0, "archived prefix must chain cleanly");
+
+    // Recent acked events and the unacked old event stay in the hot tables.
+    for event_id in &recent_ids {
+        let kept = sql_query(
+            "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_id = $1",
+        )
+        .bind::<SqlUuid, _>(*event_id)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .expect("recent event should query")
+        .count;
+        assert_eq!(kept, 1, "events inside the online window stay hot");
+    }
+    let kept_unacked = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_id = $1",
+    )
+    .bind::<SqlUuid, _>(unacked_old)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("unacked event should query")
+    .count;
+    assert_eq!(kept_unacked, 1, "unacked events are never archived");
+}

@@ -3442,3 +3442,75 @@ async fn access_token_revoked_exists_semantics_ignore_deadline_and_scope() {
             .expect("post-cleanup lookup should load")
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn single_use_redemption_reads_back_committed_replay_evidence() {
+    let database_url = database_url()
+        .expect("single-use redemption regression requires a live PostgreSQL database");
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
+
+    let grant_key = format!("authorization_code:{}", Uuid::now_v7());
+    let token = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        Uuid::now_v7(),
+        format!("redemption-{}", Uuid::now_v7()),
+        None,
+    );
+    let family_id = token.family_id;
+    let mut input = refresh_issuance(token);
+    input.mode = TokenIssuanceMode::SingleUse {
+        grant_key: grant_key.clone(),
+        grant_expires_at: chrono::Utc::now() + chrono::Duration::minutes(5),
+    };
+    assert_eq!(
+        repository
+            .commit_token_issuance(input.clone())
+            .await
+            .unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+
+    let redemption = repository
+        .single_use_redemption(tenant_id, fixture.client_id, &grant_key)
+        .await
+        .unwrap()
+        .expect("committed single-use grant must return replay evidence");
+    assert_eq!(redemption.access_token_jti, input.access_token_jti);
+    assert_eq!(redemption.refresh_token_family_id, Some(family_id));
+    assert_eq!(
+        redemption.access_token_expires_at.timestamp(),
+        input.access_token_expires_at
+    );
+
+    // Fresh issuances carry no single-use fence and must not resolve.
+    let fresh = refresh_issuance(refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        Uuid::now_v7(),
+        format!("fresh-{}", Uuid::now_v7()),
+        None,
+    ));
+    assert_eq!(
+        repository.commit_token_issuance(fresh).await.unwrap(),
+        CommitTokenIssuanceResult::Committed
+    );
+    assert!(
+        repository
+            .single_use_redemption(tenant_id, fixture.client_id, "authorization_code:unknown")
+            .await
+            .unwrap()
+            .is_none(),
+        "an unknown grant key must not resolve to any redemption"
+    );
+    assert!(
+        repository
+            .single_use_redemption(Uuid::now_v7(), fixture.client_id, &grant_key)
+            .await
+            .unwrap()
+            .is_none(),
+        "another tenant must not resolve the redemption"
+    );
+}

@@ -5,21 +5,23 @@ use diesel_async::{
     AsyncConnection as _, AsyncPgConnection, RunQueryDsl as _, SimpleAsyncConnection as _,
 };
 
-const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 6] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 7] = [
     "20260805000100",
     "20260905000100",
     "20260909000100",
     "20260919000100",
     "20260919000200",
     "20260920000100",
+    "20260923000100",
 ];
-const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 6] = [
+const PUBLIC_SECURITY_AUDIT_MIGRATIONS: [&str; 7] = [
     include_str!("../../../../migrations/20260805000100_security_audit_ledger/up.sql"),
     include_str!("../../../../migrations/20260905000100_shared_audit_anchor_state/up.sql"),
     include_str!("../../../../migrations/20260909000100_exporter_owned_audit_chain/up.sql"),
     include_str!("../../../../migrations/20260919000100_audit_outbox_exported_retention/up.sql"),
     include_str!("../../../../migrations/20260919000200_audit_outbox_ack_delete/up.sql"),
     include_str!("../../../../migrations/20260920000100_audit_anchor_batch_delivery/up.sql"),
+    include_str!("../../../../migrations/20260923000100_security_audit_online_archive/up.sql"),
 ];
 
 pub fn schema_database_url(base: &str, schema: &str) -> String {

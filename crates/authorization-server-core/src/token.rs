@@ -56,6 +56,30 @@ impl RefreshTokenAuthenticationContext {
                 .is_none_or(|sid| !sid.trim().is_empty())
             && self.acr.as_deref().is_none_or(|acr| !acr.trim().is_empty())
     }
+
+    /// Placeholder for a terminally sparsified refresh row. Deliberately not
+    /// well-formed: sparse members are always expired and revoked, so the
+    /// token endpoint rejects them on expiry before this value is consulted.
+    /// It exists so row-to-domain conversion stays total instead of failing
+    /// closed on a deliberately tombstoned payload.
+    #[must_use]
+    pub fn terminal_stub() -> Self {
+        Self {
+            version: Self::CURRENT_VERSION,
+            issuer: String::new(),
+            audience: String::new(),
+            auth_time: 0,
+            amr: Vec::new(),
+            oidc_sid: None,
+            id_token_sid: None,
+            acr: None,
+            nonce: None,
+            userinfo_claims: Vec::new(),
+            userinfo_claim_requests: Vec::new(),
+            id_token_claims: Vec::new(),
+            id_token_claim_requests: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]

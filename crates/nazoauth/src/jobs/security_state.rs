@@ -40,6 +40,8 @@ pub(crate) fn spawn_security_state_maintenance_worker(
                             logout_deliveries = counts.logout_deliveries,
                             scim_security_events = counts.scim_security_events,
                             presentations = counts.presentations,
+                            sparsified_refresh_members = counts.sparsified_refresh_members,
+                            archived_audit_events = counts.archived_audit_events,
                             saturated = counts.saturated,
                             batch = batches,
                             elapsed_ms = started.elapsed().as_millis() as u64,

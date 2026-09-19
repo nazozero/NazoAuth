@@ -168,8 +168,7 @@ pub(crate) fn worker_config_from_source(
             source.parse("AUDIT_ANCHOR_REQUEST_TIMEOUT_SECONDS", 10_u64)?,
         ),
         batch_size: source.parse("AUDIT_ANCHOR_BATCH_SIZE", 64_i64)?,
-        max_envelope_bytes: source
-            .parse("AUDIT_ANCHOR_MAX_ENVELOPE_BYTES", MAX_ENVELOPE_BYTES)?,
+        max_envelope_bytes: source.parse("AUDIT_ANCHOR_MAX_ENVELOPE_BYTES", MAX_ENVELOPE_BYTES)?,
         lock_timeout_seconds: source.parse("AUDIT_ANCHOR_LOCK_TIMEOUT_SECONDS", 60_i32)?,
     };
     config.validate()?;

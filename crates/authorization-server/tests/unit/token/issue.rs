@@ -161,46 +161,6 @@ fn failed_authorization_code_transition_is_idempotent_only_for_terminal_or_missi
 }
 
 #[test]
-fn consumed_authorization_code_marker_lives_as_long_as_issued_credentials() {
-    let refresh_family_id = Uuid::now_v7();
-
-    assert_eq!(
-        authorization_code_state::consumed_authorization_code_ttl_seconds(
-            300,
-            2_592_000,
-            Some(refresh_family_id),
-        ),
-        2_592_000,
-        "authorization code replay marker must not expire before the refresh token family"
-    );
-
-    assert_eq!(
-        authorization_code_state::consumed_authorization_code_ttl_seconds(300, 2_592_000, None),
-        300,
-        "without a refresh token family the marker only needs to cover the access token lifetime"
-    );
-}
-
-#[test]
-fn consumed_authorization_code_marker_ttl_fails_closed_for_non_positive_settings() {
-    assert_eq!(
-        authorization_code_state::consumed_authorization_code_ttl_seconds(0, 2_592_000, None),
-        1,
-        "zero access-token TTL settings must still leave a replay marker"
-    );
-
-    assert_eq!(
-        authorization_code_state::consumed_authorization_code_ttl_seconds(
-            300,
-            -10,
-            Some(Uuid::now_v7())
-        ),
-        1,
-        "invalid refresh-token TTL settings must not produce an absent or already-expired marker"
-    );
-}
-
-#[test]
 fn id_token_sid_is_omitted_unless_explicitly_requested() {
     let client = client_with_grants(&["authorization_code"]);
     let issue = token_issue_with_sid(Vec::new());

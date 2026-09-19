@@ -15,15 +15,19 @@
 | State | Status | Evidence |
 |---|---|---|
 | AUDIT | PASS (carried from 41b0a197 report) | `docs/performance/reports/2026-09-19-state-minimization/report.md` |
-| IMPLEMENTATION | IN_PROGRESS | this file |
-| LIVE_REGRESSION | NOT_RUN | — |
+| IMPLEMENTATION | PASS | A1–A6 landed; migrations `20260921000100`, `20260922000100`, `20260923000100`; `state-chains.md` |
+| LIVE_REGRESSION | PASS | nazo-postgres full suite ~283 green on live PG18+Valkey8; nazo-oauth-server 296, nazo-valkey 14, nazo-auth 158, nazo-persistence 5, nazoauth lib 1291; audit fault-injection 22/22 |
 | FORMAL_BENCHMARK | NOT_RUN | — |
 | DEPLOYMENT_WORM_VERIFICATION | NOT_RUN (requires trusted retention infra) | — |
 | ONLINE_RETENTION_ACCEPTANCE | NOT_RUN | — |
 
 ## Phase A work items
 
-A1 evidence-chain tooling · A2 batch exporter protocol + reference receiver ·
-A3 auth-code issuance-row consumption · A4 sparse family terminal state ·
-A5 audit taxonomy + online retention/archive + required-mode admission ·
-A6 remaining state chains + regression gate
+| Item | Status | Evidence |
+| --- | --- | --- |
+| A1 evidence-chain tooling | DONE | `perf/tools/ledger.sql`, `soak_run.sh`, `vkledger.py` — live-validated against PostgreSQL 18 + Valkey 8 |
+| A2 batch exporter protocol + reference receiver | DONE `4a1e1a1a` | PG integration (28 audit/ledger tests) + fault-injection regression 22/22 |
+| A3 auth-code issuance-row consumption | DONE | `single_use_redemption` PG fence + Valkey delete-on-commit; auth_repositories + replay suite green |
+| A4 sparse family terminal state | DONE | migration `20260922000100`; `security_state_maintenance` sparse/60s-window cases green |
+| A5 audit taxonomy + online retention/archive + required admission | DONE | migration `20260923000100` (`security_audit_archive` + `nazo_archive_security_audit_prefix`); taxonomy classes in `AUDIT_EVENT_DEFINITIONS`; required-mode admission unchanged (`ensure_audit_storage` gates admin + issuance) |
+| A6 remaining state chains + regression gate | DONE | `state-chains.md` inventory; full `nazo-postgres` integration suite green on live PG18 |

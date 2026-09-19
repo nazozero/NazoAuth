@@ -6,8 +6,8 @@ use serde_json::Value;
 use uuid::Uuid;
 
 use crate::{
-    AuthorizationCodeState, Claims, CodePayload, ConfirmationClaims, ConsumedAuthorizationCode,
-    NewRefreshToken, OAuthClient, OidcClaimRequest, RefreshToken,
+    AuthorizationCodeState, Claims, CodePayload, ConfirmationClaims, NewRefreshToken, OAuthClient,
+    OidcClaimRequest, RefreshToken,
 };
 
 pub type TokenFuture<'a, T> = Pin<Box<dyn Future<Output = Result<T, TokenPortError>> + Send + 'a>>;
@@ -114,6 +114,17 @@ pub enum CommitTokenIssuanceResult {
     SubjectInactive,
     /// Refresh-token reuse was detected and intentionally committed as a compromise.
     RotationConflict,
+}
+
+/// Durable replay evidence read back through the single-use grant fence.
+/// Present only for committed single-use redemptions; the lookup key itself
+/// is the redemption binding, so a returned row already proves the replay
+/// carries the exact same proofs as the original redemption.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SingleUseRedemption {
+    pub access_token_jti: String,
+    pub access_token_expires_at: DateTime<Utc>,
+    pub refresh_token_family_id: Option<Uuid>,
 }
 
 pub struct AccessTokenSignInput<'a> {
@@ -249,16 +260,6 @@ pub struct TokenRevocation<'a> {
     pub access_token: Option<AccessTokenRevocation>,
 }
 
-pub struct IssuedAuthorizationCodeTokens<'a> {
-    pub client_id: Uuid,
-    pub code_hash: &'a str,
-    pub redemption_binding: &'a str,
-    pub access_token_jti: &'a str,
-    pub access_token_expires_at: i64,
-    pub refresh_token_family_id: Option<Uuid>,
-    pub consumed_state_ttl_seconds: u64,
-}
-
 /// How the UserInfo subject read resolves ownership: a directly carried user
 /// UUID, or the access-token JTI joined through its issuance row.
 pub enum UserinfoSubjectRef<'a> {
@@ -279,6 +280,17 @@ pub trait TokenRepositoryPort: Send + Sync {
         &'a self,
         input: CommitTokenIssuance,
     ) -> TokenFuture<'a, CommitTokenIssuanceResult>;
+
+    /// Reads the committed issuance row behind a single-use grant fence.
+    /// `grant_key` is the verified redemption binding; a returned row proves
+    /// the original redemption used the same proofs, so callers may revoke
+    /// the recorded tokens without a second binding comparison.
+    fn single_use_redemption<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_id: Uuid,
+        grant_key: &'a str,
+    ) -> TokenFuture<'a, Option<SingleUseRedemption>>;
 
     fn userinfo_snapshot<'a>(
         &'a self,
@@ -354,6 +366,12 @@ pub trait TokenStateStorePort: Send + Sync {
         ttl_seconds: u64,
     ) -> TokenFuture<'a, AuthorizationCodeTransitionResult>;
 
+    /// Drops the short-lived authorization-code entry once its durable
+    /// outcome is committed to the issuance ledger. Consumption evidence is
+    /// not retained in the state store; replay detection reads the
+    /// single-use fence instead.
+    fn delete_authorization_code<'a>(&'a self, code_hash: &'a str) -> TokenFuture<'a, ()>;
+
     fn increment_token_management_rate<'a>(
         &'a self,
         subject: &'a str,
@@ -398,6 +416,10 @@ where
     ) -> TokenFuture<'a, AuthorizationCodeTransitionResult> {
         self.as_ref()
             .mark_authorization_code(code_hash, replacement, ttl_seconds)
+    }
+
+    fn delete_authorization_code<'a>(&'a self, code_hash: &'a str) -> TokenFuture<'a, ()> {
+        self.as_ref().delete_authorization_code(code_hash)
     }
 
     fn increment_token_management_rate<'a>(
@@ -636,28 +658,26 @@ where
             .await
     }
 
-    pub async fn finalize_authorization_code(
+    /// Drops the short-lived code entry after the issuance commit. The
+    /// committed issuance row is the authoritative consumed state; replay
+    /// evidence is served by `single_use_redemption`, not by a state-store
+    /// marker, so a delete failure only leaves an entry that ages out with
+    /// the code TTL — callers log it rather than failing the redemption.
+    pub async fn finalize_authorization_code(&self, code_hash: &str) -> Result<(), TokenPortError> {
+        self.state.delete_authorization_code(code_hash).await
+    }
+
+    /// Replay evidence for a single-use grant: the committed issuance row
+    /// behind the verified redemption binding.
+    pub async fn single_use_redemption(
         &self,
-        issued: IssuedAuthorizationCodeTokens<'_>,
-    ) -> Result<(), TokenPortError> {
-        let marker = AuthorizationCodeState::Consumed {
-            marker: ConsumedAuthorizationCode {
-                client_id: issued.client_id,
-                redemption_binding: Some(issued.redemption_binding.to_owned()),
-                access_token_jti: issued.access_token_jti.to_owned(),
-                access_token_expires_at: issued.access_token_expires_at,
-                refresh_token_family_id: issued.refresh_token_family_id,
-            },
-        };
-        match self
-            .state
-            .mark_authorization_code(issued.code_hash, &marker, issued.consumed_state_ttl_seconds)
+        tenant_id: Uuid,
+        client_id: Uuid,
+        grant_key: &str,
+    ) -> Result<Option<SingleUseRedemption>, TokenPortError> {
+        self.repository
+            .single_use_redemption(tenant_id, client_id, grant_key)
             .await
-        {
-            Ok(AuthorizationCodeTransitionResult::Applied) => Ok(()),
-            Ok(_) => Err(TokenPortError::Conflict),
-            Err(error) => Err(error),
-        }
     }
 
     pub async fn sign_access_token(

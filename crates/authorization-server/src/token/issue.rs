@@ -130,9 +130,7 @@ impl TokenIssuanceContext<'_> {
     }
 }
 
-use authorization_code_state::{
-    consumed_authorization_code_ttl_seconds, mark_failed_authorization_code_if_needed,
-};
+use authorization_code_state::mark_failed_authorization_code_if_needed;
 pub use authorization_code_state::{
     mark_failed_authorization_code, revoke_issued_authorization_code_tokens,
 };

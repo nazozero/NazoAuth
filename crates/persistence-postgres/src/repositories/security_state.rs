@@ -7,6 +7,8 @@
 //! 2. Refresh-token family reclaim — fully expired families, per-family
 //!    transactions under the shared advisory key (`family → token`).
 //! 3. `nazo_openid4vp_cleanup_expired_transactions()` — expired presentations.
+//! 4. `nazo_archive_security_audit_prefix()` — delivered audit-chain prefix
+//!    older than the online window moves to the immutable archive.
 //!
 //! There is no second family lock domain and no grant-scope lock here; a
 //! writer holding the family advisory lock causes that family to be skipped
@@ -32,6 +34,16 @@ use super::tokens::refresh_family_lock_key;
 const CLEANUP_BATCH_LIMIT: i64 = 256;
 /// Maximum distinct refresh families visited in one batch.
 const FAMILY_LIMIT_PER_ROUND: usize = 256;
+
+/// A rotated member becomes a terminal stub only after the lost-response
+/// successor edge can no longer matter: retries resolve the direct successor
+/// within `LOST_REFRESH_TOKEN_RETRY_SECONDS` of the parent's revocation.
+const TERMINAL_SPARSE_GRACE_SECONDS: i64 = super::tokens::LOST_REFRESH_TOKEN_RETRY_SECONDS;
+
+/// Online retention for delivered audit evidence. Events the exporter has
+/// delivered and the receiver has acknowledged stay queryable in the hot
+/// ledger for this window, then move to `security_audit_archive`.
+const AUDIT_ONLINE_RETENTION_SECONDS: i64 = 3600;
 
 #[derive(Clone)]
 pub struct SecurityStateMaintenanceRepository {
@@ -67,6 +79,12 @@ struct ExpiredFamilyCandidate {
 }
 
 #[derive(QueryableByName)]
+struct ArchivedAuditCount {
+    #[diesel(sql_type = sql_types::BigInt)]
+    archived: i64,
+}
+
+#[derive(QueryableByName)]
 struct FlagRow {
     #[diesel(sql_type = sql_types::Bool)]
     flag: bool,
@@ -96,6 +114,53 @@ impl SecurityStateMaintenanceRepository {
         .map_err(map_error)?;
         debug_assert!((0..=CLEANUP_BATCH_LIMIT as i32).contains(&count.deleted_transactions));
         Ok(count.deleted_transactions.max(0) as u64)
+    }
+
+    /// Rewrite dead members of still-live families to their terminal stub.
+    ///
+    /// A member qualifies only when it is expired AND its revocation is older
+    /// than the lost-response window: it can never again be a rotation parent
+    /// (rotation requires an unrevoked row), a lost-response successor (the
+    /// successor must be unrevoked and unexpired), or a usable presentation
+    /// (the endpoint rejects expired tokens before consulting context). The
+    /// stub keeps only the hash-to-family mapping so reuse detection and
+    /// family compromise still resolve; `rotated_from_id` is cleared so dead
+    /// chains stop contributing traversal edges. Bounded, SKIP LOCKED, and
+    /// independent of the family advisory lock because every candidate is a
+    /// row no writer can legally transition.
+    async fn sparsify_terminal_refresh_members(&self) -> Result<(u64, bool), RepositoryError> {
+        let now = Utc::now();
+        let grace_horizon = now - chrono::Duration::seconds(TERMINAL_SPARSE_GRACE_SECONDS);
+        let mut connection = self.connection().await?;
+        let rewritten = sql_query(
+            "WITH candidates AS (                  SELECT id FROM oauth_tokens                  WHERE sparsified_at IS NULL                    AND revoked_at IS NOT NULL                    AND revoked_at <= $1                    AND expires_at <= $2                  ORDER BY expires_at, id                  LIMIT $3                  FOR UPDATE SKIP LOCKED              )              UPDATE oauth_tokens AS target              SET rotated_from_id = NULL,                  scopes = '[]'::jsonb,                  audience = '[]'::jsonb,                  authorization_details = '[]'::jsonb,                  subject = '',                  oidc_auth_context = 'null'::jsonb,                  dpop_jkt = NULL,                  mtls_x5t_s256 = NULL,                  client_attestation_jkt = NULL,                  sparsified_at = $2              FROM candidates              WHERE target.id = candidates.id",
+        )
+        .bind::<sql_types::Timestamptz, _>(grace_horizon)
+        .bind::<sql_types::Timestamptz, _>(now)
+        .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
+        .execute(&mut connection)
+        .await
+        .map_err(map_error)?;
+        Ok((rewritten as u64, rewritten as i64 >= CLEANUP_BATCH_LIMIT))
+    }
+
+    /// Archive the delivered audit-chain prefix that aged out of the online
+    /// window. The SQL function enforces contiguity, delivery (`sequence <=
+    /// anchor_sequence`), and the age cutoff, and refuses to run on a broken
+    /// chain boundary, so a saturated return here only means more backlog.
+    async fn archive_exported_audit_prefix(&self) -> Result<(u64, bool), RepositoryError> {
+        let cutoff = Utc::now() - chrono::Duration::seconds(AUDIT_ONLINE_RETENTION_SECONDS);
+        let mut connection = self.connection().await?;
+        let archived = sql_query("SELECT nazo_archive_security_audit_prefix($1, $2) AS archived")
+            .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
+            .bind::<sql_types::Timestamptz, _>(cutoff)
+            .get_result::<ArchivedAuditCount>(&mut connection)
+            .await
+            .map_err(map_error)?;
+        Ok((
+            archived.archived.max(0) as u64,
+            archived.archived >= CLEANUP_BATCH_LIMIT,
+        ))
     }
 
     /// Reclaim refresh-token rows in families whose whole membership expired.
@@ -308,8 +373,14 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
             let generic = self.generic_cleanup().await?;
             let (refresh_tokens, refresh_saturated) =
                 self.reclaim_expired_refresh_families().await?;
+            let (sparsified_refresh_members, sparse_saturated) =
+                self.sparsify_terminal_refresh_members().await?;
             let presentations = self.presentation_cleanup().await?;
+            let (archived_audit_events, archive_saturated) =
+                self.archive_exported_audit_prefix().await?;
             let saturated = refresh_saturated
+                || sparse_saturated
+                || archive_saturated
                 || i64::from(generic.deleted_issuances) >= CLEANUP_BATCH_LIMIT
                 || i64::from(generic.deleted_access_token_revocations) >= CLEANUP_BATCH_LIMIT
                 || i64::from(generic.deleted_scim_audit_events) >= CLEANUP_BATCH_LIMIT
@@ -324,6 +395,8 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                 logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,
                 scim_security_events: generic.deleted_scim_security_events.max(0) as u64,
                 presentations,
+                sparsified_refresh_members,
+                archived_audit_events,
                 saturated,
             })
         })

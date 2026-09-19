@@ -19,19 +19,6 @@ pub(super) fn failed_authorization_code_transition_result(
     }
 }
 
-pub(super) fn consumed_authorization_code_ttl_seconds(
-    access_token_ttl_seconds: i64,
-    refresh_token_ttl_seconds: i64,
-    refresh_token_family_id: Option<Uuid>,
-) -> u64 {
-    let ttl_seconds = if refresh_token_family_id.is_some() {
-        refresh_token_ttl_seconds
-    } else {
-        access_token_ttl_seconds
-    };
-    ttl_seconds.max(1) as u64
-}
-
 pub async fn mark_failed_authorization_code(
     service: &ServerTokenService,
     code_hash: &str,

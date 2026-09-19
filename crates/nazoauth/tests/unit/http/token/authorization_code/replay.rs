@@ -305,3 +305,59 @@ async fn token_authorization_code_reports_busy_failed_and_missing_states() {
     assert_eq!(malformed_response.status(), StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(oauth_error_code(malformed_response).await, "server_error");
 }
+
+/// After the short-lived code entry is gone, an exact replay must still be
+/// detected through the committed single-use issuance row and revoke the
+/// tokens the original redemption produced.
+#[actix_web::test]
+async fn token_authorization_code_replay_reads_back_committed_issuance_evidence() {
+    let Some(fixture) = LiveAuthorizationCodeFixture::new().await else {
+        return;
+    };
+    let client = live_client(&format!("client-ledger-replay-{}", Uuid::now_v7()));
+    fixture.insert_client(&client).await;
+    let family_id = Uuid::now_v7();
+    fixture.insert_refresh_token(&client, family_id).await;
+
+    let code = format!("code-{}", Uuid::now_v7());
+    let access_token_jti = format!("access-jti-{}", Uuid::now_v7());
+    let grant_key =
+        authorization_code_grant_key(&blake3_hex(&code), &form_for_code(&code), None, None, None);
+    fixture
+        .insert_single_use_issuance(&client, &grant_key, &access_token_jti, Some(family_id))
+        .await;
+
+    let req = actix_web::test::TestRequest::post()
+        .uri("/token")
+        .to_http_request();
+    let response =
+        token_authorization_code(&fixture.state, &req, &client, &form_for_code(&code), None).await;
+    let (status, body) = token_json_body(response).await;
+
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"], "invalid_grant");
+    assert_eq!(
+        fixture
+            .access_token_revocation_count(&client, &access_token_jti)
+            .await,
+        1,
+        "ledger-backed replay must revoke the access token the redemption issued"
+    );
+    assert!(
+        fixture
+            .refresh_token_revoked_at(&client, family_id)
+            .await
+            .is_some(),
+        "ledger-backed replay must revoke the refresh token family"
+    );
+
+    // A replay carrying different proofs must not resolve the fence: the
+    // grant key binds the redemption to its exact request, so a divergent
+    // request is rejected as unknown rather than revoking another grant.
+    let mut divergent = form_for_code(&code);
+    divergent.scope = Some("openid email".to_owned());
+    let divergent_response =
+        token_authorization_code(&fixture.state, &req, &client, &divergent, None).await;
+    assert_eq!(divergent_response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(oauth_error_code(divergent_response).await, "invalid_grant");
+}

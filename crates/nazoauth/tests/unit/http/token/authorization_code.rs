@@ -70,7 +70,7 @@ use crate::schema::{access_token_revocations, oauth_tokens};
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use diesel::prelude::*;
 use diesel::sql_query;
-use diesel::sql_types::{Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
+use diesel::sql_types::{Binary, Bool, Jsonb, Nullable, Text, Uuid as SqlUuid};
 use diesel_async::RunQueryDsl;
 use fred::interfaces::ClientLike;
 use fred::prelude::{
@@ -442,6 +442,41 @@ impl LiveAuthorizationCodeFixture {
             .get_result::<i64>(&mut conn)
             .await
             .expect("access token revocation count should load")
+    }
+
+    /// Committed single-use redemption evidence without any state-store
+    /// entry — the shape the replay path reads once the short-lived
+    /// authorization-code key is gone.
+    async fn insert_single_use_issuance(
+        &self,
+        client: &ClientRow,
+        grant_key: &str,
+        access_token_jti: &str,
+        refresh_token_family_id: Option<Uuid>,
+    ) {
+        let mut conn = get_conn(&self.state.diesel_db)
+            .await
+            .expect("database connection");
+        sql_query(
+            r#"
+            INSERT INTO oauth_token_issuances (
+                issuance_id, tenant_id, client_id, user_id,
+                single_use_key_blake3, access_token_jti,
+                access_token_expires_at, retain_until, refresh_token_family_id
+            )
+            VALUES ($1, $2, $3, NULL, $4, $5, now() + interval '5 minutes',
+                    now() + interval '1 day', $6)
+            "#,
+        )
+        .bind::<SqlUuid, _>(Uuid::now_v7())
+        .bind::<SqlUuid, _>(client.tenant_id)
+        .bind::<SqlUuid, _>(client.id)
+        .bind::<Binary, _>(blake3::hash(grant_key.as_bytes()).as_bytes().to_vec())
+        .bind::<Text, _>(access_token_jti)
+        .bind::<Nullable<SqlUuid>, _>(refresh_token_family_id)
+        .execute(&mut conn)
+        .await
+        .expect("single-use issuance row should insert");
     }
 
     async fn refresh_token_revoked_at(

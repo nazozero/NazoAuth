@@ -48,7 +48,7 @@ Update this model when one of those invariants or its implementation changes.
 
 | Threat | Current control | Limit or operational responsibility |
 | --- | --- | --- |
-| Authorization code theft and replay | Client/redirect binding, PKCE S256, short pending-code lifetime, atomic transient-state transitions, and durable issuance identity with consumed-code revocation. | Consumed-code evidence lasts for the issued access-token or initial refresh-token lifetime, not every future extension of a refresh family. |
+| Authorization code theft and replay | Client/redirect binding, PKCE S256, short pending-code lifetime, atomic transient-state transitions, and durable issuance identity with consumed-code revocation. | Consumed-code evidence is the durable issuance row's single-use fence, retained until the access-token acceptance window plus the grant deadline close — not for the refresh family's lifetime. |
 | Principal disabled or changed during issuance | The durable issuance transaction locks and checks the relevant principal before commit. | A preceding HTTP or cache check does not replace that transaction boundary. |
 | Lost token response or refresh reuse | Encrypted durable issuance response, exact issuance identity, token-family state, and reuse handling. | Follow the selected profile's rotation policy and [refresh-token contract](../protocol/refresh-token-rotation.md); FAPI2 does not imply routine rotation. |
 | Redirect mix-up or signed-request replay | Exact redirect and issuer validation, signed request validation, and replay checks for supported request-object and assertion claims. | Required claims depend on the selected profile; do not infer a universal mandatory JAR `jti` policy. |
