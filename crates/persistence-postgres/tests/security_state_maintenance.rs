@@ -1,12 +1,13 @@
 //! Bounded security-state maintenance coverage.
 //!
-//! One `cleanup_batch` performs at most 256 deletions per category. Refresh
-//! reclaim removes every expired member of a fully expired family under the
-//! shared family advisory key — references into the family are unlinked
-//! inside the lock so the self-FK cannot block a whole-family delete — and
-//! never touches a family that still has an unexpired member. OpenID4VP reads
-//! are pure selects; the global presentation sweep belongs exclusively to
-//! this worker.
+//! One `cleanup_batch` performs at most 256 row modifications per category.
+//! Refresh reclaim works on `(tenant_id, token_family_id)` authorities under
+//! the shared family advisory key: each batch deletes a bounded
+//! descendant-first slice and unlinks at most as many inbound references as
+//! the budget allows, so a fully expired family drains across batches without
+//! ever touching a family that still has an unexpired member — or a
+//! same-named family in another tenant. OpenID4VP reads are pure selects; the
+//! global presentation sweep belongs exclusively to this worker.
 
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
@@ -63,6 +64,12 @@ struct FlagRow {
 }
 
 #[derive(QueryableByName)]
+struct DeploymentRow {
+    #[diesel(sql_type = diesel::sql_types::Nullable<Text>)]
+    deployment: Option<String>,
+}
+
+#[derive(QueryableByName)]
 struct FixtureIds {
     #[diesel(sql_type = SqlUuid)]
     user_id: Uuid,
@@ -70,6 +77,16 @@ struct FixtureIds {
     client_id: Uuid,
     #[diesel(sql_type = Text)]
     client_public_id: String,
+}
+
+#[derive(QueryableByName)]
+struct TenantFixtureRow {
+    #[diesel(sql_type = SqlUuid)]
+    tenant_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    user_id: Uuid,
+    #[diesel(sql_type = SqlUuid)]
+    client_id: Uuid,
 }
 
 async fn fixture(database_url: &str) -> (FixtureIds, AsyncPgConnection) {
@@ -118,6 +135,30 @@ async fn insert_refresh_leaf(
     rotated_from_id: Option<Uuid>,
     expires_at: DateTime<Utc>,
 ) -> Uuid {
+    insert_refresh_leaf_in_tenant(
+        connection,
+        fixture,
+        SYSTEM_TENANT,
+        fixture.client_id,
+        fixture.user_id,
+        family_id,
+        rotated_from_id,
+        expires_at,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn insert_refresh_leaf_in_tenant(
+    connection: &mut AsyncPgConnection,
+    fixture: &FixtureIds,
+    tenant_id: Uuid,
+    client_id: Uuid,
+    user_id: Uuid,
+    family_id: Uuid,
+    rotated_from_id: Option<Uuid>,
+    expires_at: DateTime<Utc>,
+) -> Uuid {
     let id = Uuid::now_v7();
     let token_hash = Uuid::now_v7().simple().to_string().repeat(2);
     sql_query(
@@ -130,12 +171,12 @@ async fn insert_refresh_leaf(
              $8, $9, $10, $11::jsonb)",
     )
     .bind::<SqlUuid, _>(id)
-    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(tenant_id)
     .bind::<Text, _>(token_hash)
     .bind::<SqlUuid, _>(family_id)
     .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(rotated_from_id)
-    .bind::<SqlUuid, _>(fixture.client_id)
-    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(fixture.user_id))
+    .bind::<SqlUuid, _>(client_id)
+    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(user_id))
     .bind::<Timestamptz, _>(expires_at - Duration::hours(1))
     .bind::<Timestamptz, _>(expires_at)
     .bind::<Text, _>(fixture.user_id.to_string())
@@ -1009,8 +1050,72 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
     }
 }
 
+async fn insert_audit_event(connection: &mut AsyncPgConnection, event_id: Uuid) {
+    sql_query(
+        "INSERT INTO security_audit_events \
+             (event_id, event_type, event_category, payload, occurred_at) \
+         VALUES ($1, 'test_event', 'test', '{}'::jsonb, clock_timestamp())",
+    )
+    .bind::<SqlUuid, _>(event_id)
+    .execute(connection)
+    .await
+    .expect("audit event fixture should insert");
+}
+
+async fn insert_chain_entry(connection: &mut AsyncPgConnection, event_id: Uuid, sequence: i64) {
+    sql_query(
+        "INSERT INTO security_audit_chain_entries \
+             (event_id, sequence, previous_hash, event_hash) \
+         VALUES ($1, \
+             (SELECT COALESCE(MAX(sequence), 0) FROM security_audit_chain_entries) + $2, \
+             decode(md5($3::text) || md5($4::text), 'hex'), \
+             decode(md5($4::text) || md5($3::text), 'hex'))",
+    )
+    .bind::<SqlUuid, _>(event_id)
+    .bind::<BigInt, _>(sequence)
+    .bind::<Text, _>(format!("prev-{event_id}"))
+    .bind::<Text, _>(format!("hash-{event_id}"))
+    .execute(connection)
+    .await
+    .expect("chain entry fixture should insert");
+}
+
+async fn outbox_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64 {
+    sql_query(
+        "SELECT COUNT(*)::bigint AS count \
+         FROM security_audit_event_outbox WHERE event_id = $1",
+    )
+    .bind::<SqlUuid, _>(event_id)
+    .get_result::<CountRow>(connection)
+    .await
+    .expect("outbox count should query")
+    .count
+}
+
+async fn ack_event(connection: &mut AsyncPgConnection, event_id: Uuid, attempts: i32) -> bool {
+    // The shared anchor may already be bound to a deployment by sibling
+    // audit tests; adopt whichever identity the singleton carries, or bind a
+    // fresh one through this acknowledgement when it is still unbound.
+    let deployment: Option<String> = sql_query(
+        "SELECT anchor_deployment_id::text AS deployment \
+         FROM security_audit_chain_state WHERE singleton",
+    )
+    .get_result::<DeploymentRow>(connection)
+    .await
+    .expect("anchor deployment should read")
+    .deployment;
+    sql_query("SELECT public.nazo_ack_security_audit_event($1, $2, $3) AS flag")
+        .bind::<SqlUuid, _>(event_id)
+        .bind::<sql_types::Integer, _>(attempts)
+        .bind::<Text, _>(deployment.unwrap_or_else(|| "maint-dep".to_owned()))
+        .get_result::<FlagRow>(connection)
+        .await
+        .expect("ack call should execute")
+        .flag
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn exported_audit_outbox_rows_reclaim_only_past_grace() {
+async fn audit_outbox_ack_deletes_delivery_row_atomically() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1019,79 +1124,75 @@ async fn exported_audit_outbox_rows_reclaim_only_past_grace() {
         .await
         .expect("cleanup-batch test gate should remain open");
     let (_fixture, mut connection) = fixture(&database_url).await;
-    // Clear delivery rows other suites already exported past the grace window
-    // so this test's counts are deterministic.
-    sql_query(
-        "DELETE FROM security_audit_event_outbox \
-         WHERE exported_at IS NOT NULL \
-           AND exported_at <= clock_timestamp() - INTERVAL '1 day'",
-    )
-    .execute(&mut connection)
-    .await
-    .expect("stale exported outbox rows should clear");
+    // No anchor is bound yet: the first successful acknowledgement binds the
+    // deployment identity and every checkpoint field atomically, which is
+    // exactly what ck_security_audit_anchor_checkpoint_complete requires.
 
-    let stale_event = Uuid::now_v7();
-    let fresh_event = Uuid::now_v7();
-    let pending_event = Uuid::now_v7();
-    // Event facts carry no chain columns; the exporter-owned chain entries
-    // live in security_audit_chain_entries.
-    for event_id in [stale_event, fresh_event, pending_event] {
-        sql_query(
-            "INSERT INTO security_audit_events                  (event_id, event_type, event_category, payload, occurred_at)              VALUES ($1, 'test_event', 'test', '{}'::jsonb, clock_timestamp())",
-        )
-        .bind::<SqlUuid, _>(event_id)
-        .execute(&mut connection)
-        .await
-        .expect("audit event fixture should insert");
+    let acked = Uuid::now_v7();
+    let pending = Uuid::now_v7();
+    let rescheduled = Uuid::now_v7();
+    let stale_claim = Uuid::now_v7();
+    for event_id in [acked, pending, rescheduled, stale_claim] {
+        insert_audit_event(&mut connection, event_id).await;
     }
-    let stale_export = Utc::now() - Duration::days(2);
-    let fresh_export = Utc::now();
-    for (event_id, exported_at) in [
-        (stale_event, Some(stale_export)),
-        (fresh_event, Some(fresh_export)),
-        (pending_event, None),
+    insert_chain_entry(&mut connection, acked, 9_000_001).await;
+    insert_chain_entry(&mut connection, pending, 9_000_002).await;
+    insert_chain_entry(&mut connection, rescheduled, 9_000_003).await;
+    insert_chain_entry(&mut connection, stale_claim, 9_000_004).await;
+    // Locked, claimed deliveries for acked/rescheduled/stale_claim; pending is
+    // a fresh unclaimed row.
+    for (event_id, locked) in [
+        (acked, true),
+        (pending, false),
+        (rescheduled, true),
+        (stale_claim, true),
     ] {
         sql_query(
             "INSERT INTO security_audit_event_outbox \
-                 (event_id, attempts, available_at, locked_at, exported_at) \
-             VALUES ($1, 1, clock_timestamp(), NULL, $2)",
+                 (event_id, attempts, available_at, locked_at) \
+             VALUES ($1, 1, clock_timestamp(), CASE WHEN $2 THEN clock_timestamp() END)",
         )
         .bind::<SqlUuid, _>(event_id)
-        .bind::<sql_types::Nullable<Timestamptz>, _>(exported_at)
+        .bind::<sql_types::Bool, _>(locked)
         .execute(&mut connection)
         .await
         .expect("outbox fixture should insert");
     }
 
-    let maintenance =
-        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
-    let result = maintenance
-        .cleanup_batch()
-        .await
-        .expect("cleanup batch should succeed");
-    assert!(
-        result.audit_outbox_rows >= 1,
-        "the exported-past-grace outbox row must be reclaimed"
-    );
+    // ACK on a locked claim deletes the delivery row and advances the anchor.
+    assert!(ack_event(&mut connection, acked, 1).await);
+    assert_eq!(outbox_count(&mut connection, acked).await, 0);
+    // Repeating the acknowledgement is a stale claim, not a duplicate delete.
+    assert!(!ack_event(&mut connection, acked, 1).await);
 
-    for (event_id, expected, label) in [
-        (stale_event, 0_i64, "exported past grace must be deleted"),
-        (fresh_event, 1, "freshly exported rows stay inside the grace window"),
-        (pending_event, 1, "pending delivery rows are never reclaimed"),
-    ] {
-        let row = sql_query(
-            "SELECT COUNT(*)::bigint AS count \
-             FROM security_audit_event_outbox WHERE event_id = $1",
-        )
-        .bind::<SqlUuid, _>(event_id)
-        .get_result::<CountRow>(&mut connection)
-        .await
-        .expect("outbox count should query");
-        assert_eq!(row.count, expected, "{label}");
-    }
+    // Pending (unclaimed) rows can never be acknowledged or deleted.
+    assert!(!ack_event(&mut connection, pending, 1).await);
+    assert_eq!(outbox_count(&mut connection, pending).await, 1);
 
-    // The evidence records themselves are immutable and must remain.
-    for event_id in [stale_event, fresh_event, pending_event] {
+    // A rescheduled row leaves the locked state; the stale claim cannot ack
+    // it and the row stays pending for the next claim.
+    let rescheduled_ok = sql_query(
+        "SELECT public.nazo_reschedule_security_audit_event(\
+             $1, 1, clock_timestamp() + INTERVAL '30 seconds', 'probe') AS flag",
+    )
+    .bind::<SqlUuid, _>(rescheduled)
+    .get_result::<FlagRow>(&mut connection)
+    .await
+    .expect("reschedule should execute")
+    .flag;
+    assert!(rescheduled_ok);
+    assert!(!ack_event(&mut connection, rescheduled, 1).await);
+    assert_eq!(outbox_count(&mut connection, rescheduled).await, 1);
+
+    // A wrong attempt fence is rejected without touching the row.
+    assert!(!ack_event(&mut connection, stale_claim, 99).await);
+    assert_eq!(outbox_count(&mut connection, stale_claim).await, 1);
+    // The fenced acknowledgement still works for the live claim.
+    assert!(ack_event(&mut connection, stale_claim, 1).await);
+    assert_eq!(outbox_count(&mut connection, stale_claim).await, 0);
+
+    // Evidence rows and chain entries are immutable and must all remain.
+    for event_id in [acked, pending, rescheduled, stale_claim] {
         let row = sql_query(
             "SELECT COUNT(*)::bigint AS count \
              FROM security_audit_events WHERE event_id = $1",
@@ -1101,5 +1202,308 @@ async fn exported_audit_outbox_rows_reclaim_only_past_grace() {
         .await
         .expect("event count should query");
         assert_eq!(row.count, 1, "audit evidence must never be reclaimed");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn reclaim_scopes_family_authority_to_tenant() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+    let family_id = Uuid::now_v7();
+    let past = Utc::now() - Duration::hours(1);
+    let future = Utc::now() + Duration::hours(1);
+
+    // Tenant B gets a real tenant/user/client triple: tenant_id on
+    // oauth_tokens is a hard foreign key, not a label.
+    let suffix = Uuid::now_v7().simple().to_string();
+    let tenant_b = sql_query(format!(
+        "WITH t AS ( \
+             INSERT INTO tenants (slug, display_name) \
+             VALUES ('tenant-b-{suffix}', 'Tenant B') RETURNING id \
+         ), r AS ( \
+             INSERT INTO realms (tenant_id, slug, display_name) \
+             SELECT id, 'realm-b-{suffix}', 'Realm B' FROM t RETURNING id \
+         ), o AS ( \
+             INSERT INTO organizations (tenant_id, slug, display_name) \
+             SELECT id, 'org-b-{suffix}', 'Org B' FROM t RETURNING id \
+         ), u AS ( \
+             INSERT INTO users (tenant_id, realm_id, organization_id, username, email, password_hash) \
+             SELECT t.id, r.id, o.id, 'tb-{suffix}', 'tb-{suffix}@example.test', 'test-only-hash' \
+             FROM t, r, o RETURNING id, tenant_id \
+         ), c AS ( \
+             INSERT INTO oauth_clients ( \
+                 tenant_id, realm_id, organization_id, client_id, client_name, client_type, redirect_uris, \
+                 scopes, grant_types, token_endpoint_auth_method, security_policy) \
+             SELECT t.id, r.id, o.id, 'tbc-{suffix}', 'Tenant B Client', 'confidential', \
+                 '[\"https://client.example/callback\"]'::jsonb, \
+                 '[\"openid\", \"offline_access\"]'::jsonb, \
+                 '[\"authorization_code\", \"refresh_token\"]'::jsonb, \
+                 'client_secret_basic', \
+                 '{{\"version\":1,\"assurance\":\"baseline\",\"require_signed_authorization_request\":false,\"require_signed_authorization_response\":false,\"require_signed_introspection_response\":false,\"session_management\":false,\"allow_cross_device_flows\":false,\"allow_confidential_oidc_without_pkce\":false}}'::jsonb \
+             FROM t, r, o RETURNING id, tenant_id \
+         ) \
+         SELECT t.id AS tenant_id, u.id AS user_id, c.id AS client_id FROM t, u, c"
+    ))
+    .get_result::<TenantFixtureRow>(&mut connection)
+    .await
+    .expect("tenant-B fixture should insert");
+
+    // Tenant A: two expired members of family X (a chain).
+    let a_parent = insert_refresh_leaf_in_tenant(
+        &mut connection,
+        &fixture,
+        SYSTEM_TENANT,
+        fixture.client_id,
+        fixture.user_id,
+        family_id,
+        None,
+        past,
+    )
+    .await;
+    insert_refresh_leaf_in_tenant(
+        &mut connection,
+        &fixture,
+        SYSTEM_TENANT,
+        fixture.client_id,
+        fixture.user_id,
+        family_id,
+        Some(a_parent),
+        past,
+    )
+    .await;
+    // Tenant B: the same family id, one expired member linked to an active
+    // successor — the family stays live and must never be touched.
+    let b_parent = insert_refresh_leaf_in_tenant(
+        &mut connection,
+        &fixture,
+        tenant_b.tenant_id,
+        tenant_b.client_id,
+        tenant_b.user_id,
+        family_id,
+        None,
+        past,
+    )
+    .await;
+    let b_active = insert_refresh_leaf_in_tenant(
+        &mut connection,
+        &fixture,
+        tenant_b.tenant_id,
+        tenant_b.client_id,
+        tenant_b.user_id,
+        family_id,
+        Some(b_parent),
+        future,
+    )
+    .await;
+
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    maintenance
+        .cleanup_batch()
+        .await
+        .expect("cleanup batch should succeed");
+
+    let a_left = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(family_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("tenant-A count should query")
+    .count;
+    assert_eq!(a_left, 0, "tenant-A expired family must be reclaimed");
+
+    let b_rows = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_b.tenant_id)
+    .bind::<SqlUuid, _>(family_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("tenant-B count should query")
+    .count;
+    assert_eq!(b_rows, 2, "tenant-B family must be untouched");
+
+    // Tenant B's parent link must survive — the unlink is tenant-scoped.
+    let b_link = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE id = $1 AND rotated_from_id = $2",
+    )
+    .bind::<SqlUuid, _>(b_active)
+    .bind::<SqlUuid, _>(b_parent)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("tenant-B link should query")
+    .count;
+    assert_eq!(b_link, 1, "tenant-B rotated_from_id must not be cleared");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn large_family_reclaim_stays_bounded_per_batch() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+    let chain_family = Uuid::now_v7();
+    let star_family = Uuid::now_v7();
+    let past = Utc::now() - Duration::hours(2);
+    let ctx = serde_json::to_value(RefreshTokenAuthenticationContext {
+        version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
+        issuer: "https://issuer.example".to_owned(),
+        audience: fixture.client_public_id.clone(),
+        auth_time: (past - Duration::hours(1)).timestamp() - 1,
+        amr: vec!["pwd".to_owned()],
+        oidc_sid: None,
+        id_token_sid: None,
+        acr: None,
+        nonce: None,
+        userinfo_claims: Vec::new(),
+        userinfo_claim_requests: Vec::new(),
+        id_token_claims: Vec::new(),
+        id_token_claim_requests: Vec::new(),
+    })
+    .expect("refresh auth context should serialize");
+
+    // A 10,000-member expired chain: each row's rotated_from_id is the
+    // previous row's id. issued_at increases along the chain so the bounded
+    // descendant-first delete peels 256 members per batch without unlinks.
+    sql_query(
+        "WITH RECURSIVE chain AS ( \
+             SELECT 1 AS depth, gen_random_uuid() AS id, NULL::uuid AS parent \
+             UNION ALL \
+             SELECT depth + 1, gen_random_uuid(), id FROM chain WHERE depth < 10000 \
+         ) \
+         INSERT INTO oauth_tokens (\
+             id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id, \
+             client_id, user_id, scopes, audience, authorization_details, \
+             issued_at, expires_at, subject, oidc_auth_context) \
+         SELECT id, $1, md5(id::text) || md5(id::text), $2, parent, $3, $4, \
+             '[\"openid\"]'::jsonb, '[\"resource://default\"]'::jsonb, '[]'::jsonb, \
+             $5 + (depth * INTERVAL '1 millisecond'), $6, $7, $8::jsonb \
+         FROM chain",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(chain_family)
+    .bind::<SqlUuid, _>(fixture.client_id)
+    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(fixture.user_id))
+    .bind::<Timestamptz, _>(past)
+    .bind::<Timestamptz, _>(past + Duration::hours(1))
+    .bind::<Text, _>(fixture.user_id.to_string())
+    .bind::<sql_types::Jsonb, _>(ctx.clone())
+    .execute(&mut connection)
+    .await
+    .expect("large chain fixture should insert");
+
+    // Anomaly star: a parent whose issued_at is newer than all 1,000 expired
+    // children. The bounded unlink can only detach `remaining` children per
+    // batch, so the parent waits for a later batch instead of forcing one
+    // giant UPDATE.
+    let star_parent = insert_refresh_leaf_in_tenant(
+        &mut connection,
+        &fixture,
+        SYSTEM_TENANT,
+        fixture.client_id,
+        fixture.user_id,
+        star_family,
+        None,
+        past,
+    )
+    .await;
+    sql_query(
+        "WITH kids AS ( \
+             SELECT generate_series(1, 1000) AS seq, gen_random_uuid() AS id \
+         ) \
+         INSERT INTO oauth_tokens (\
+             id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id, \
+             client_id, user_id, scopes, audience, authorization_details, \
+             issued_at, expires_at, subject, oidc_auth_context) \
+         SELECT id, $1, md5(id::text) || md5(id::text), $2, $3, $4, $5, \
+             '[\"openid\"]'::jsonb, '[\"resource://default\"]'::jsonb, '[]'::jsonb, \
+             $6 - (seq * INTERVAL '1 millisecond'), $7, $8, $9::jsonb \
+         FROM kids",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(star_family)
+    .bind::<SqlUuid, _>(star_parent)
+    .bind::<SqlUuid, _>(fixture.client_id)
+    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(fixture.user_id))
+    .bind::<Timestamptz, _>(past)
+    .bind::<Timestamptz, _>(past + Duration::minutes(30))
+    .bind::<Text, _>(fixture.user_id.to_string())
+    .bind::<sql_types::Jsonb, _>(ctx)
+    .execute(&mut connection)
+    .await
+    .expect("star fixture should insert");
+    // The star parent sorts youngest by issued_at so it lands inside the
+    // first doomed slice while most of its children stay outside.
+    sql_query("UPDATE oauth_tokens SET issued_at = $1 WHERE id = $2")
+        .bind::<Timestamptz, _>(past + Duration::hours(2))
+        .bind::<SqlUuid, _>(star_parent)
+        .execute(&mut connection)
+        .await
+        .expect("star parent issued_at should update");
+
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 4).unwrap());
+    // `refresh_tokens` is a per-batch total across every scanned family, so
+    // boundedness is asserted per batch while per-family correctness is
+    // checked on the residual row counts afterwards.
+    let mut total = 0_u64;
+    for round in 0..512_u32 {
+        let result = maintenance
+            .cleanup_batch()
+            .await
+            .expect("cleanup batch should succeed");
+        assert!(
+            result.refresh_tokens <= 256,
+            "one batch must never exceed the 256-row budget"
+        );
+        total += result.refresh_tokens;
+        if !result.saturated && result.refresh_tokens == 0 {
+            break;
+        }
+        assert!(round < 511, "family reclaim must converge, not stall");
+    }
+    let residual = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+         WHERE tenant_id = $1 AND token_family_id = ANY($2)",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<sql_types::Array<SqlUuid>, _>(vec![chain_family, star_family])
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("residual count should query")
+    .count;
+    assert!(
+        total >= 11_001,
+        "the whole expired state must drain across bounded batches (residual={residual})"
+    );
+    for family in [chain_family, star_family] {
+        let left = sql_query(
+            "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+             WHERE tenant_id = $1 AND token_family_id = $2",
+        )
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(family)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .expect("family count should query")
+        .count;
+        assert_eq!(left, 0);
     }
 }

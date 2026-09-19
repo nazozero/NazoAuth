@@ -22,8 +22,6 @@ pub struct CleanupBatchResult {
     pub logout_deliveries: u64,
     pub scim_security_events: u64,
     pub presentations: u64,
-    /// Exported audit-outbox delivery rows reclaimed by this batch.
-    pub audit_outbox_rows: u64,
     /// `true` when a category or candidate scan hit its per-batch budget, so
     /// another batch probably has deletable work. Callers use it to keep
     /// draining backlog instead of waiting a full interval.

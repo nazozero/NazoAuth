@@ -1,0 +1,24 @@
+soak start 2026-09-19T09:58:12Z RUN_ID=soak-2h RATE=2000 DUR=7200s
+DEPID=01a0b7d8-9fde-7590-ad63-b1d3b33ff378 IMAGE=sha256:98ff0a2aba58a00cb1237989997e877ec0a1e5dee6c729d97090965b104e84a1 GIT=df536d791f92f634b9d44a1ed0037f74a1c069e7
+ 833983
+
+proc sampler pid=744609 09:58:13
+ Container soak-2h-sampler Creating 
+ Container soak-2h-sampler Created 
+bd330ed978617b6352c0d3b988df3a7068a88c4b2d6ede6e1be4783149a90bc7
+sampler started 09:58:14
+main cap_mixed arrival=2000ops/s started pid=744869 09:58:14
+ Container soak-2h-argon2 Creating 
+ Container soak-2h-argon2 Created 
+8edfee2c88a732252b31be66db16d0f6501db0a39db7d48e3f809be4d128c068
+argon2 sidecar started 10:00:14
+ Container soak-2h-meta Creating 
+ Container soak-2h-meta Created 
+3b6fed3515298cbce187a5d963b2cc03195e675da467fbbcd5a599aaaef8a615
+meta sidecar started 10:00:15
+ Container soak-2h-fapi Creating 
+ Container soak-2h-fapi Created 
+3fb5a3ca69dff7bed9e49cb1c7f3de3822db8b5b531fae17872f8bbcbef2d19a
+fapi sidecar started 10:00:15
+main finished 11:58:30
+SOAK_DONE 2026-09-19T11:58:44Z

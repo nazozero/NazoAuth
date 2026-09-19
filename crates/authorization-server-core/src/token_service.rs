@@ -647,7 +647,6 @@ where
                 access_token_jti: issued.access_token_jti.to_owned(),
                 access_token_expires_at: issued.access_token_expires_at,
                 refresh_token_family_id: issued.refresh_token_family_id,
-                consumed_at: Utc::now(),
             },
         };
         match self

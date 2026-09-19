@@ -7,12 +7,13 @@
 //! 2. Refresh-token family reclaim — fully expired families, per-family
 //!    transactions under the shared advisory key (`family → token`).
 //! 3. `nazo_openid4vp_cleanup_expired_transactions()` — expired presentations.
-//! 4. `nazo_cleanup_exported_security_audit_outbox()` — exported audit-outbox
-//!    delivery rows past their short observability grace period.
 //!
 //! There is no second family lock domain and no grant-scope lock here; a
 //! writer holding the family advisory lock causes that family to be skipped
-//! this round and reclaimed on a later one.
+//! this round and reclaimed on a later one. Audit-outbox delivery rows are
+//! not a maintenance category: the exporter's ACK deletes its own row in the
+//! same transaction that advances the durable anchor checkpoint, so nothing
+//! accumulates for a sweeper to reclaim.
 
 use chrono::Utc;
 use diesel::{QueryableByName, sql_query, sql_types};
@@ -58,12 +59,6 @@ struct PresentationCleanupCount {
 }
 
 #[derive(QueryableByName)]
-struct AuditOutboxCleanupCount {
-    #[diesel(sql_type = sql_types::Integer)]
-    deleted: i32,
-}
-
-#[derive(QueryableByName)]
 struct ExpiredFamilyCandidate {
     #[diesel(sql_type = sql_types::Uuid)]
     tenant_id: Uuid,
@@ -103,47 +98,34 @@ impl SecurityStateMaintenanceRepository {
         Ok(count.deleted_transactions.max(0) as u64)
     }
 
-    /// Reclaim exported audit-outbox delivery rows past their grace period.
-    ///
-    /// The outbox row is delivery bookkeeping for the exporter; the immutable
-    /// `security_audit_events` record remains the evidence. Runtime roles hold
-    /// no direct outbox privilege, so reclamation goes through the
-    /// `SECURITY DEFINER` function owned by the migration owner.
-    async fn audit_outbox_cleanup(&self) -> Result<u64, RepositoryError> {
-        let mut connection = self.connection().await?;
-        let count = sql_query(
-            "SELECT public.nazo_cleanup_exported_security_audit_outbox() AS deleted",
-        )
-        .get_result::<AuditOutboxCleanupCount>(&mut connection)
-        .await
-        .map_err(map_error)?;
-        Ok(count.deleted.max(0) as u64)
-    }
-
     /// Reclaim refresh-token rows in families whose whole membership expired.
     ///
-    /// Candidates are distinct families with no unexpired member, oldest
-    /// family expiry first. One short transaction per family:
-    /// `pg_try_advisory_xact_lock` shares the writer key so an active rotation
-    /// skips the family, the no-unexpired-member recheck inside the lock
-    /// closes the race where a new successor was committed after the scan, and
-    /// the unlink step clears `rotated_from_id` references into the family so
-    /// a bounded delete can remove every expired member in one pass instead of
-    /// peeling one leaf per round.
+    /// Candidates are distinct `(tenant_id, token_family_id)` families with no
+    /// unexpired member — the tenant is part of the family authority boundary
+    /// because `token_family_id` is only unique per tenant. One short
+    /// transaction per family: `pg_try_advisory_xact_lock` shares the writer
+    /// key so an active rotation skips the family, the tenant-scoped
+    /// no-unexpired-member recheck inside the lock closes the race where a
+    /// new successor was committed after the scan, and each batch deletes a
+    /// bounded descendant-closed slice of the family instead of unlinking the
+    /// whole family up front.
     async fn reclaim_expired_refresh_families(&self) -> Result<(u64, bool), RepositoryError> {
         let cutoff = Utc::now();
         let mut scan = self.connection().await?;
-        // The NOT EXISTS must inspect the whole family, so it stays outside
-        // the expired-member prefilter: a family with any unexpired member is
-        // never a candidate. The in-lock recheck below still guards the race
-        // where a successor commits after this scan.
+        // The NOT EXISTS must inspect the whole family within the same tenant,
+        // so it stays outside the expired-member prefilter: a family with any
+        // unexpired member is never a candidate, and an identically named
+        // family in another tenant cannot suppress or satisfy the check. The
+        // in-lock recheck below still guards the race where a successor
+        // commits after this scan.
         let families = sql_query(
             "SELECT target.tenant_id, target.token_family_id \
              FROM oauth_tokens AS target \
              WHERE target.expires_at <= $1 \
                AND NOT EXISTS ( \
                    SELECT 1 FROM oauth_tokens AS member \
-                   WHERE member.token_family_id = target.token_family_id \
+                   WHERE member.tenant_id = target.tenant_id \
+                     AND member.token_family_id = target.token_family_id \
                      AND member.expires_at > $1) \
              GROUP BY target.tenant_id, target.token_family_id \
              ORDER BY MIN(target.expires_at), target.token_family_id \
@@ -177,6 +159,11 @@ impl SecurityStateMaintenanceRepository {
             let outcome = guard
                 .connection()
                 .transaction::<u64, diesel::result::Error, _>(async |connection| {
+                    // The advisory key spans family ids without a tenant
+                    // component: writers and maintenance share one lock domain
+                    // so a same-named family in another tenant only serializes,
+                    // never leaks. Keeping the key unchanged avoids opening a
+                    // second lock domain for any writer.
                     let locked = sql_query("SELECT pg_try_advisory_xact_lock($1) AS flag")
                         .bind::<sql_types::BigInt, _>(refresh_family_lock_key(family_id))
                         .get_result::<FlagRow>(connection)
@@ -187,9 +174,11 @@ impl SecurityStateMaintenanceRepository {
                     let still_expired = sql_query(
                         "SELECT NOT EXISTS ( \
                              SELECT 1 FROM oauth_tokens \
-                             WHERE token_family_id = $1 \
-                               AND expires_at > $2) AS flag",
+                             WHERE tenant_id = $1 \
+                               AND token_family_id = $2 \
+                               AND expires_at > $3) AS flag",
                     )
+                    .bind::<sql_types::Uuid, _>(tenant_id)
                     .bind::<sql_types::Uuid, _>(family_id)
                     .bind::<sql_types::Timestamptz, _>(cutoff)
                     .get_result::<FlagRow>(connection)
@@ -197,31 +186,89 @@ impl SecurityStateMaintenanceRepository {
                     if !still_expired.flag {
                         return Ok(0);
                     }
-                    // Unlink every reference into this family before deleting;
-                    // `rotated_from_id` is a non-deferrable foreign key, so a
-                    // whole-family delete fails while any row still points at
-                    // a doomed member. Rotation only links inside a family and
-                    // holds this advisory key, so under the lock the set of
-                    // inbound references is fixed.
+                    // Bounded descendant-first reclaim, two statements inside
+                    // the family lock. First a bounded unlink clears
+                    // `rotated_from_id` on up to `remaining` members outside
+                    // the delete slice that still reference into it — a
+                    // separate statement so the delete below can actually see
+                    // which referrers survived. Then a closed-set delete
+                    // removes up to `remaining` doomed rows: `blocked` marks
+                    // every doomed member that a surviving referrer still
+                    // points at (directly, or transitively through another
+                    // blocked member), so the deleted slice is always
+                    // descendant-closed and the self-FK can never dangle.
+                    // Every batch performs at most `remaining` UPDATEs plus
+                    // `remaining` DELETEs regardless of family size.
+                    //
+                    // Candidate ordering guarantees progress: newest rows
+                    // first keeps long chains draining ~`remaining` rows per
+                    // batch (children always outlive their parent's issued_at
+                    // in real data), and the leaf-existence tiebreak ensures
+                    // the top slice always contains at least one referrerless
+                    // member even under pathological timestamp ties, so a
+                    // batch can never select 256 permanently-blocked rows.
                     sql_query(
-                        "UPDATE oauth_tokens SET rotated_from_id = NULL \
-                         WHERE rotated_from_id IN ( \
-                             SELECT id FROM oauth_tokens \
-                             WHERE token_family_id = $1)",
+                        "WITH doomed AS ( \
+                             SELECT target.id FROM oauth_tokens AS target \
+                             WHERE target.tenant_id = $1 AND target.token_family_id = $2 \
+                               AND target.expires_at <= $3 \
+                             ORDER BY target.issued_at DESC, \
+                                 EXISTS ( \
+                                     SELECT 1 FROM oauth_tokens AS child \
+                                     WHERE child.tenant_id = $1 \
+                                       AND child.token_family_id = $2 \
+                                       AND child.rotated_from_id = target.id), \
+                                 target.id DESC \
+                             LIMIT $4 FOR UPDATE SKIP LOCKED \
+                         ), outside_refs AS ( \
+                             SELECT orphan.id FROM oauth_tokens AS orphan \
+                             WHERE orphan.tenant_id = $1 \
+                               AND orphan.token_family_id = $2 \
+                               AND orphan.rotated_from_id IN (SELECT id FROM doomed) \
+                               AND orphan.id NOT IN (SELECT id FROM doomed) \
+                             LIMIT $4 FOR UPDATE SKIP LOCKED \
+                         ) \
+                         UPDATE oauth_tokens AS orphan \
+                         SET rotated_from_id = NULL \
+                         FROM outside_refs \
+                         WHERE orphan.id = outside_refs.id",
                     )
+                    .bind::<sql_types::Uuid, _>(tenant_id)
                     .bind::<sql_types::Uuid, _>(family_id)
+                    .bind::<sql_types::Timestamptz, _>(cutoff)
+                    .bind::<sql_types::BigInt, _>(remaining)
                     .execute(connection)
                     .await?;
                     let removed = sql_query(
-                        "WITH doomed AS ( \
-                             SELECT id FROM oauth_tokens \
-                             WHERE tenant_id = $1 AND token_family_id = $2 \
-                               AND expires_at <= $3 \
-                             ORDER BY expires_at, id \
+                        "WITH RECURSIVE doomed AS ( \
+                             SELECT target.id FROM oauth_tokens AS target \
+                             WHERE target.tenant_id = $1 AND target.token_family_id = $2 \
+                               AND target.expires_at <= $3 \
+                             ORDER BY target.issued_at DESC, \
+                                 EXISTS ( \
+                                     SELECT 1 FROM oauth_tokens AS child \
+                                     WHERE child.tenant_id = $1 \
+                                       AND child.token_family_id = $2 \
+                                       AND child.rotated_from_id = target.id), \
+                                 target.id DESC \
                              LIMIT $4 FOR UPDATE SKIP LOCKED \
+                         ), blocked(id) AS ( \
+                             SELECT d.id FROM doomed AS d \
+                             WHERE EXISTS ( \
+                                 SELECT 1 FROM oauth_tokens AS referrer \
+                                 WHERE referrer.rotated_from_id = d.id \
+                                   AND referrer.id NOT IN (SELECT id FROM doomed)) \
+                             UNION \
+                             SELECT target.id FROM oauth_tokens AS target \
+                             JOIN oauth_tokens AS child \
+                               ON child.rotated_from_id = target.id \
+                             JOIN blocked ON blocked.id = child.id \
+                             WHERE target.id IN (SELECT id FROM doomed) \
                          ) \
                          DELETE FROM oauth_tokens AS target \
-                         USING doomed WHERE target.id = doomed.id",
+                         USING doomed \
+                         WHERE target.id = doomed.id \
+                           AND target.id NOT IN (SELECT id FROM blocked)",
                     )
                     .bind::<sql_types::Uuid, _>(tenant_id)
                     .bind::<sql_types::Uuid, _>(family_id)
@@ -262,16 +309,13 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
             let (refresh_tokens, refresh_saturated) =
                 self.reclaim_expired_refresh_families().await?;
             let presentations = self.presentation_cleanup().await?;
-            let audit_outbox_rows = self.audit_outbox_cleanup().await?;
             let saturated = refresh_saturated
                 || i64::from(generic.deleted_issuances) >= CLEANUP_BATCH_LIMIT
                 || i64::from(generic.deleted_access_token_revocations) >= CLEANUP_BATCH_LIMIT
                 || i64::from(generic.deleted_scim_audit_events) >= CLEANUP_BATCH_LIMIT
-                || i64::from(generic.deleted_backchannel_logout_deliveries)
-                    >= CLEANUP_BATCH_LIMIT
+                || i64::from(generic.deleted_backchannel_logout_deliveries) >= CLEANUP_BATCH_LIMIT
                 || i64::from(generic.deleted_scim_security_events) >= CLEANUP_BATCH_LIMIT
-                || presentations >= CLEANUP_BATCH_LIMIT as u64
-                || audit_outbox_rows >= CLEANUP_BATCH_LIMIT as u64;
+                || presentations >= CLEANUP_BATCH_LIMIT as u64;
             Ok(CleanupBatchResult {
                 issuances: generic.deleted_issuances.max(0) as u64,
                 refresh_tokens,
@@ -280,7 +324,6 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                 logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,
                 scim_security_events: generic.deleted_scim_security_events.max(0) as u64,
                 presentations,
-                audit_outbox_rows,
                 saturated,
             })
         })

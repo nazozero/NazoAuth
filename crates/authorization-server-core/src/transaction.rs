@@ -148,5 +148,4 @@ pub struct ConsumedAuthorizationCode {
     pub access_token_jti: String,
     pub access_token_expires_at: i64,
     pub refresh_token_family_id: Option<Uuid>,
-    pub consumed_at: DateTime<Utc>,
 }

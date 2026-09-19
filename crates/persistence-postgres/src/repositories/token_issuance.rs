@@ -305,9 +305,13 @@ fn validate_commit_input(input: &CommitTokenIssuance) -> Result<(), RepositoryEr
     Ok(())
 }
 
+/// One durable audit event per committed issuance. A rotation is the same
+/// logical operation, so its `rotated_from_id` fact rides on this event
+/// instead of producing a second ledger row — the two facts share the
+/// issuance identity and transaction either way.
 fn token_issued_audit_event(
     input: &CommitTokenIssuance,
-    refresh_family_id: Option<Uuid>,
+    refresh: Option<&NewRefreshToken>,
 ) -> SecurityAuditEvent {
     SecurityAuditEvent {
         event_id: Uuid::now_v7(),
@@ -317,23 +321,9 @@ fn token_issued_audit_event(
             "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION, "tenant_id": input.tenant_id, "issuance_id": input.issuance_id,
             "event_category": "token_lifecycle", "user_id": input.user_id,
             "client_id": input.audit_fields.client_id, "subject_hash": input.audit_fields.subject_hash, "scope": input.audit_fields.scope,
-            "audience": input.audit_fields.audience, "access_token_jti": input.access_token_jti, "refresh_token_family_id": refresh_family_id,
-        }),
-        occurred_at: Utc::now(),
-    }
-}
-fn refresh_rotated_audit_event(
-    input: &CommitTokenIssuance,
-    refresh: &NewRefreshToken,
-) -> SecurityAuditEvent {
-    SecurityAuditEvent {
-        event_id: Uuid::now_v7(),
-        event_type: "refresh_rotated".to_owned(),
-        event_category: "token_lifecycle".to_owned(),
-        payload: serde_json::json!({
-            "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION, "tenant_id": input.tenant_id, "issuance_id": input.issuance_id,
-            "event_category": "token_lifecycle",
-            "client_id": input.audit_fields.client_id, "token_family_id": refresh.family_id, "rotated_from_id": refresh.rotated_from_id,
+            "audience": input.audit_fields.audience, "access_token_jti": input.access_token_jti,
+            "refresh_token_family_id": refresh.map(|refresh| refresh.family_id),
+            "rotated_from_id": refresh.and_then(|refresh| refresh.rotated_from_id),
         }),
         occurred_at: Utc::now(),
     }
@@ -504,26 +494,9 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                         }
                         append_fresh_security_audit_on_connection(
                             connection,
-                            &token_issued_audit_event(
-                                &input,
-                                input
-                                    .refresh_token
-                                    .as_ref()
-                                    .map(|refresh| refresh.family_id),
-                            ),
+                            &token_issued_audit_event(&input, input.refresh_token.as_ref()),
                         )
                         .await?;
-                        if let Some(refresh) = input
-                            .refresh_token
-                            .as_ref()
-                            .filter(|refresh| refresh.rotated_from_id.is_some())
-                        {
-                            append_fresh_security_audit_on_connection(
-                                connection,
-                                &refresh_rotated_audit_event(&input, refresh),
-                            )
-                            .await?;
-                        }
                         Ok(CommitTokenIssuanceResult::Committed)
                     },
                 )

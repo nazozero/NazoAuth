@@ -130,7 +130,6 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str)] = &[
     ("passkey_registered", "authentication"),
     ("passkey_registration_rejected", "authentication"),
     ("refresh_reuse_detected", "token_replay"),
-    ("refresh_rotated", "token_lifecycle"),
     ("scim_token_denied", "provisioning"),
     ("scim_token_used", "provisioning"),
     ("token_issued", "token_lifecycle"),

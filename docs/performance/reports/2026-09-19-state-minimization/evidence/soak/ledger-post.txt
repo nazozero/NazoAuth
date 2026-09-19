@@ -1,0 +1,25 @@
+psql:/dev/stdin:15: ERROR:  column reference "relname" is ambiguous
+LINE 1: SELECT 'TABLE_SIZE' AS section, relname,
+                                        ^
+  section   |              t               |    v     
+------------+------------------------------+----------
+ ROW_COUNTS | security_audit_chain_entries | 279541
+ ROW_COUNTS | oauth_token_issuances        | 497743
+ ROW_COUNTS | oauth_tokens                 | 5459208
+ ROW_COUNTS | security_audit_event_outbox  | 15346013
+ ROW_COUNTS | security_audit_events        | 36822420
+(5 rows)
+
+     section     |          t           |    v     |            oldest             
+-----------------+----------------------+----------+-------------------------------
+ EXPIRED_BACKLOG | oauth_tokens_expired | 0        | -
+ EXPIRED_BACKLOG | issuances_due        | 29306    | 2026-09-19 11:58:24+00
+ EXPIRED_BACKLOG | outbox_pending       | 15346012 | 2026-09-19 09:59:17.584341+00
+ EXPIRED_BACKLOG | revocations_due      | 0        | -
+(4 rows)
+
+ section | pending_export | anchor_sequence |  events  | chain_entries 
+---------+----------------+-----------------+----------+---------------
+ AUDIT   |       15346012 |        81279305 | 36822420 |        279541
+(1 row)
+

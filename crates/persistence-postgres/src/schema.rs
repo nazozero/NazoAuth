@@ -506,7 +506,6 @@ diesel::table! {
         attempts -> Int4,
         available_at -> Timestamptz,
         locked_at -> Nullable<Timestamptz>,
-        exported_at -> Nullable<Timestamptz>,
         last_error -> Nullable<Text>,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,

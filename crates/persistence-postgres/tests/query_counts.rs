@@ -742,7 +742,7 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         result.expect("rotation should commit"),
         CommitTokenIssuanceResult::Committed
     );
-    // 10 data statements inside the single commit transaction:
+    // 9 data statements inside the single commit transaction:
     //   SET LOCAL lock_timeout
     //   SELECT is_active FROM oauth_clients .. FOR SHARE
     //   SELECT is_active FROM users .. FOR SHARE          (user_id is Some)
@@ -752,10 +752,10 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
     //   UPDATE oauth_tokens SET revoked_at .. RETURNING oidc_auth_context
     //   INSERT INTO oauth_tokens                           (successor)
     //   SELECT nazo_persist_security_audit_event(..)       (token_issued)
-    //   SELECT nazo_persist_security_audit_event(..)       (refresh_rotated)
     // The parent row is revoked with RETURNING oidc_auth_context instead of a
-    // separate SELECT — that removed read is the RF-01 remediation.
-    assert_eq!(delta.data_queries, 10);
+    // separate SELECT — that removed read is the RF-01 remediation. A rotation
+    // emits one audit event: rotated_from_id rides on token_issued.
+    assert_eq!(delta.data_queries, 9);
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1, "the whole saga runs on one pooled checkout");

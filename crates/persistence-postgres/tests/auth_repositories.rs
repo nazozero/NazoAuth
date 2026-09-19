@@ -555,7 +555,7 @@ async fn assert_issuance_audit(
     input: &CommitTokenIssuance,
     expected: &[(&str, &str, serde_json::Value)],
 ) {
-    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, (o.attempts = 0 AND o.exported_at IS NULL) AS pending_outbox FROM security_audit_events e JOIN security_audit_event_outbox o USING(event_id) WHERE e.payload->>'issuance_id' = $1 ORDER BY e.occurred_at, e.event_id")
+    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, (o.attempts = 0 AND o.locked_at IS NULL) AS pending_outbox FROM security_audit_events e JOIN security_audit_event_outbox o USING(event_id) WHERE e.payload->>'issuance_id' = $1 ORDER BY e.occurred_at, e.event_id")
         .bind::<Text, _>(input.issuance_id.to_string()).load::<IssuanceAuditRow>(connection).await.unwrap();
     assert_eq!(rows.len(), expected.len());
     for (row, (event_type, category, fields)) in rows.iter().zip(expected) {
@@ -585,6 +585,7 @@ fn issued_audit_fields(input: &CommitTokenIssuance) -> serde_json::Value {
         "audience": input.audit_fields.audience,
         "access_token_jti": input.access_token_jti,
         "refresh_token_family_id": input.refresh_token.as_ref().map(|token| token.family_id),
+        "rotated_from_id": input.refresh_token.as_ref().and_then(|token| token.rotated_from_id),
     })
 }
 
@@ -667,18 +668,11 @@ async fn issuance_commits_complete_audit_payloads_and_outbox_for_users_rotation_
     assert_issuance_audit(
         &mut connection,
         &rotated,
-        &[
-            (
-                "token_issued",
-                "token_lifecycle",
-                issued_audit_fields(&rotated),
-            ),
-            (
-                "refresh_rotated",
-                "token_lifecycle",
-                json!({"token_family_id": source.family_id, "rotated_from_id": source_id}),
-            ),
-        ],
+        &[(
+            "token_issued",
+            "token_lifecycle",
+            issued_audit_fields(&rotated),
+        )],
     )
     .await;
     let mut reuse = rotated;

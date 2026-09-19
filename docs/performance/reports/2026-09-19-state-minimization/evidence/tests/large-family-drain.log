@@ -1,0 +1,31 @@
+    Updating git repository `https://github.com/nazozero/actix-web`
+    Updating git repository `https://github.com/nazozero/mdoc-rs`
+   Compiling nazo-postgres v0.2.16 (/app/crates/persistence-postgres)
+    Finished `release` profile [optimized] target(s) in 20.25s
+     Running tests/security_state_maintenance.rs (target/release/deps/security_state_maintenance-7c8807a5076742b8)
+
+running 13 tests
+test audit_outbox_ack_deletes_delivery_row_atomically ... ok
+test active_successor_blocks_ancestor_reclaim ... ok
+test cancelled_batch_leaves_no_open_transaction_on_pooled_connection ... ok
+test expired_issuances_are_reclaimed_in_bounded_batches ... ok
+test natural_expiry_refresh_leaf_reclaimed_without_revocation ... ok
+test concurrent_batches_do_not_deadlock_or_double_count ... ok
+test large_family_reclaim_stays_bounded_per_batch has been running for over 60 seconds
+test openid4vp_find_never_deletes_and_create_only_clears_the_same_key has been running for over 60 seconds
+test oversized_family_drains_across_bounded_batches_and_reports_saturation has been running for over 60 seconds
+test reclaim_scopes_family_authority_to_tenant has been running for over 60 seconds
+test revocations_and_scim_and_logout_categories_keep_their_retention has been running for over 60 seconds
+test three_generation_family_reclaims_whole_chain_in_one_batch has been running for over 60 seconds
+test writer_family_lock_skips_locked_family_and_recheck_blocks_late_successor has been running for over 60 seconds
+large-family drain: total_deleted=11001 residual=0
+test large_family_reclaim_stays_bounded_per_batch ... ok
+test oversized_family_drains_across_bounded_batches_and_reports_saturation ... ok
+test three_generation_family_reclaims_whole_chain_in_one_batch ... ok
+test openid4vp_find_never_deletes_and_create_only_clears_the_same_key ... ok
+test revocations_and_scim_and_logout_categories_keep_their_retention ... ok
+test writer_family_lock_skips_locked_family_and_recheck_blocks_late_successor ... ok
+test reclaim_scopes_family_authority_to_tenant ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 94.89s
+

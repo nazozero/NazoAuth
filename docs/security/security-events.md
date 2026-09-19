@@ -69,15 +69,18 @@ An allowed name is vocabulary, not proof that a particular operation emitted it.
 | `identity_lifecycle` | `external_identity_linked`, `external_identity_relink_denied`, `external_identity_unlinked` |
 | `provisioning` | `scim_token_denied`, `scim_token_used` |
 | `session_lifecycle` | `oidc_logout` |
-| `token_lifecycle` | `refresh_rotated`, `token_issued`, `token_issuance_intent`, `token_revoked` |
+| `token_lifecycle` | `token_issued`, `token_issuance_intent`, `token_revoked` |
 | `token_replay` | `refresh_reuse_detected` |
 | `trust_lifecycle` | `mtls_trust_anchor_approved`, `mtls_trust_bundle_exported`, `mtls_trust_anchor_rejected`, `mtls_trust_anchor_requested`, `mtls_trust_anchor_revoked` |
 
 ## Repository-owned events and separate stores
 
 The [token issuance repository](../../crates/persistence-postgres/src/repositories/token_issuance.rs)
-writes `token_issued`, `refresh_rotated`, and `refresh_reuse_detected` with its
-issuance/tenant identity. The [directory control repository](../../crates/persistence-postgres/src/repositories/directory_control.rs)
+writes `token_issued` and `refresh_reuse_detected` with its
+issuance/tenant identity. One committed issuance produces exactly one durable
+event: a rotation carries `rotated_from_id` and `refresh_token_family_id` on
+`token_issued` rather than a separate event, so routine flows stay at one
+ledger row per logical operation. The [directory control repository](../../crates/persistence-postgres/src/repositories/directory_control.rs)
 writes `tenant_directory_{operation}` with category `tenant_directory`; the
 [tenant resource executor](../../crates/persistence-postgres/src/tenant_resource_executor.rs)
 writes `tenant_resource_{operation}` with category `tenant_resource`. These

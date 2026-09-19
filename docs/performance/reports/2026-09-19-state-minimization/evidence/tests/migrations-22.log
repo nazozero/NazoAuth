@@ -1,0 +1,44 @@
+    Updating git repository `https://github.com/nazozero/actix-web`
+    Updating git repository `https://github.com/nazozero/mdoc-rs`
+   Compiling nazo-postgres v0.2.16 (/app/crates/persistence-postgres)
+    Finished `release` profile [optimized] target(s) in 1m 26s
+     Running tests/access_token_retention.rs (target/release/deps/access_token_retention-67df9690198f7c3c)
+
+running 6 tests
+test replay_compensation_writes_padded_deadline_and_missing_expiry_skips_the_access_fact ... ok
+test owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window ... ok
+test maintenance_reclaims_revocation_facts_once_the_padded_deadline_passes ... ok
+test revocation_deadline_is_monotonic_across_writer_orderings ... ok
+test revoked_access_token_within_skew_survives_cleanup_until_its_padded_deadline ... ok
+test conflicting_owner_revocation_rolls_back_and_other_tenants_are_unaffected ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s
+
+     Running tests/migrations.rs (target/release/deps/migrations-751c671c80d086d4)
+
+running 22 tests
+test access_token_revocation_retention_sql_pins_the_verifier_skew_window ... ok
+test embedded_migration_head_tracks_latest_directory ... ok
+test recovery_receipt_migration_binds_exact_retry_to_immutable_result ... ok
+test recovery_allocation_proof_migration_hard_cuts_unsigned_pending_state ... ok
+test recovery_root_key_history_backfills_current_keys_and_refuses_downgrade ... ok
+test recovery_root_migration_pins_kdf_ttl_uniqueness_and_fail_closed_downgrade ... ok
+test security_state_cleanup_function_bounds_every_category ... ok
+test persisted_security_state_cut_removes_every_legacy_authority ... ok
+test security_state_cleanup_has_one_bounded_definition_and_no_runtime_call ... ok
+test openid4vp_expiry_cleanup_query_is_indexable ... ok
+test social_provider_type_migration_preserves_existing_rows_and_has_safe_down_policy ... ok
+test oidc_logout_idempotency_migration_is_additive_partial_and_reversible ... ok
+test pushed_requests_policy_downgrade_fails_closed_on_required_clients ... ok
+test tenant_resource_provenance_cut_keeps_one_deterministic_binding_and_rejects_ambiguity ... ok
+test identity_security_event_migration_is_additive_redacted_and_round_trips ... ok
+test totp_invalid_audit_migration_extends_and_restores_the_closed_catalog ... ok
+test runtime_module_state_migration_enforces_catalogs_and_round_trips ... ok
+test persisted_security_state_cut_executes_fail_closed_and_establishes_current_invariants ... ok
+test access_token_revocation_retention_backfill_extends_only_live_windows ... ok
+test pending_migrations_create_tenant_scoped_signing_keyset_storage ... ok
+test pending_migrations_create_all_runtime_module_state_tables ... ok
+test empty_schema_migration_run_leaves_revocation_retention_applied_and_writable ... ok
+
+test result: ok. 22 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.00s
+

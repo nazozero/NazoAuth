@@ -304,10 +304,12 @@ fn audit_events_cover_issuance_rotation_and_reuse_shapes() {
         original_id: Uuid::now_v7(),
         retry_started_at: Utc::now(),
     });
-    let rotated = refresh_rotated_audit_event(&input, &refresh);
-    assert_eq!(rotated.event_type, "refresh_rotated");
+    // A rotation is the same logical issuance: the rotated_from_id fact rides
+    // on the single token_issued event instead of a second ledger row.
+    let rotated = token_issued_audit_event(&input, Some(&refresh));
+    assert_eq!(rotated.event_type, "token_issued");
     assert_eq!(
-        rotated.payload["token_family_id"],
+        rotated.payload["refresh_token_family_id"],
         serde_json::json!(refresh.family_id)
     );
     assert_eq!(
