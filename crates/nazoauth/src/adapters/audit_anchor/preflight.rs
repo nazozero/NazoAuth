@@ -54,13 +54,25 @@ pub(super) fn validate_health(
         .last_exported_hash
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("audit anchor status has no last checkpoint hash"))?;
+    if status.pending_orphan_exists {
+        anyhow::bail!(
+            "audit anchor has undeliverable ledger rows below the checkpoint; operator reconciliation required"
+        );
+    }
+    if status
+        .batch
+        .as_ref()
+        .is_some_and(|batch| batch.blocked_reason.is_some())
+    {
+        anyhow::bail!("audit batch is blocked on a permanent receiver rejection");
+    }
     if sequence > status.head_sequence
         || (sequence == status.head_sequence && hash != status.head_hash)
-        || (status.pending_count == 0 && sequence != status.head_sequence)
+        || (!status.pending_exists && sequence != status.head_sequence)
     {
         anyhow::bail!("audit anchor checkpoint does not match the ledger state");
     }
-    if status.pending_count == 0 {
+    if !status.pending_exists {
         return Ok(());
     }
     let oldest = status

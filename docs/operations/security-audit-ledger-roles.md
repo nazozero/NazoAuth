@@ -56,22 +56,30 @@ GRANT EXECUTE ON FUNCTION
 TO nazoauth_audit_writer;
 ```
 
-The exporter chains committed events, acknowledges outbox rows, and refreshes
-the checkpoint. It cannot create raw events:
+The exporter chains committed events, holds the single batch lease, and
+acknowledges delivered batches atomically with the checkpoint. It cannot
+create raw events:
 
 ```sql
 GRANT EXECUTE ON FUNCTION
     public.nazo_security_audit_shared_privilege_preflight(boolean, boolean, boolean),
-    public.nazo_claim_security_audit_events(bigint, integer),
     public.nazo_security_audit_chain_head_for_update(),
+    public.nazo_security_audit_batch_members(),
+    public.nazo_claim_security_audit_pending(bigint),
+    public.nazo_open_security_audit_batch(bigint, bigint, integer, bytea, integer),
+    public.nazo_reclaim_security_audit_batch(bytea, integer),
     public.nazo_append_security_audit_chain(bigint, bytea, uuid[], bytea[]),
-    public.nazo_ack_security_audit_event(uuid, integer, text),
+    public.nazo_ack_security_audit_batch(bigint, bigint, bigint, integer, bytea, bytea, text),
+    public.nazo_fail_security_audit_batch(bigint, timestamptz, text, boolean),
     public.nazo_observe_security_audit_anchor(text),
     public.nazo_record_security_audit_genesis(text, bytea),
-    public.nazo_reschedule_security_audit_event(uuid, integer, timestamptz, text),
     public.nazo_security_audit_shared_anchor_health()
 TO nazoauth_audit_exporter;
 ```
+
+`public.nazo_unblock_security_audit_batch()` is deliberately excluded from the
+exporter grant: unblocking a permanently rejected batch is an owner/operator
+action after the receiver contract is reconciled.
 
 If one process intentionally performs both jobs, grant both function sets to
 one pre-created role and record that exception in the deployment inventory.
@@ -135,3 +143,19 @@ The down migration intentionally refuses destructive reversal. Roll back by
 stopping both processes and restoring the complete pre-cutover database and
 matching binaries. Reconcile the receiver's immutable checkpoint with that
 restore before resuming export; never erase externally accepted history.
+
+## Batch-delivery cutover
+
+`20260920000100_audit_anchor_batch_delivery` replaces per-event delivery rows
+with one chain-level batch lease. It is again a coordinated cutover: stop
+writers and exporters, back up, apply as the migration owner, then start the
+new worker. The migration wraps any still-unacknowledged chained prefix into
+the initial in-flight batch so its first claim continues exactly where the old
+protocol left off; legacy scheduling columns and the three per-event exporter
+functions are removed. Update exporter grants to the batch function list above
+before restarting workers.
+
+Blocked batches (`batch_blocked_reason`) are operator-visible through
+`nazo_security_audit_shared_anchor_health()` and released only by the owner
+calling `nazo_unblock_security_audit_batch()` after the receiver contract is
+reconciled.

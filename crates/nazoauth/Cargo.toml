@@ -84,11 +84,11 @@ x509-parser = { workspace = true }
 yaml_serde = "0.10.4"
 yasna = { workspace = true }
 zeroize = { workspace = true }
+ed25519-dalek = { workspace = true }
 
 [dev-dependencies]
 argon2 = { workspace = true }
 aws-lc-rs = { workspace = true }
-ed25519-dalek = { workspace = true }
 jsonwebtoken = { workspace = true, features = ["aws_lc_rs"] }
 p256 = { workspace = true, features = ["ecdsa", "pkcs8"] }
 rcgen = { workspace = true }

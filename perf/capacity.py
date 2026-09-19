@@ -235,7 +235,12 @@ def normalized_status(item: dict[str, Any]) -> str:
     target_rate = int(item.get("target_rate", 0) or 0)
     k6 = result.get("k6", {})
     dropped = int(k6.get("dropped_iterations", 0) or 0)
-    if target_rate > 0 and (float(k6.get("rps", 0)) < target_rate * 0.99 or dropped > 0):
+    completed = int(k6.get("iterations_completed", 0) or 0)
+    scheduled = completed + dropped
+    drop_fraction = dropped / scheduled if scheduled else 0.0
+    # B4 pass band: unexpected failures = 0 handled elsewhere; arrival drops
+    # tolerated only up to 0.1% of the arrival cohort.
+    if target_rate > 0 and (float(k6.get("rps", 0)) < target_rate * 0.99 or drop_fraction > 0.001):
         return "target_miss"
     return current
 
@@ -246,7 +251,8 @@ def normalize_result_statuses(results: list[dict[str, Any]]) -> None:
         if isinstance(result, dict):
             result["status"] = normalized_status(item)
             result.setdefault("k6", {}).setdefault("dropped_iterations", 0)
-            result["k6"].setdefault("dropped_iterations_rate", 0)
+            result["k6"].setdefault("dropped_per_s", 0)
+            result["k6"].setdefault("drop_fraction", 0)
             result["k6"]["target_rps_ratio"] = round(target_ratio(result, int(item.get("target_rate", 0) or 0)), 6)
 
 

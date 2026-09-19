@@ -154,22 +154,7 @@ impl nazo_persistence::SecurityAuditExporter for AuditLedgerRepository {
         '_,
         Result<nazo_persistence::SecurityAuditAnchorHealth, nazo_identity::ports::RepositoryError>,
     > {
-        Box::pin(async move {
-            AuditLedgerRepository::anchor_health(self)
-                .await
-                .map(|health| nazo_persistence::SecurityAuditAnchorHealth {
-                    head_sequence: health.head_sequence,
-                    head_hash: health.head_hash,
-                    pending_count: health.pending_count,
-                    oldest_pending_occurred_at: health.oldest_pending_occurred_at,
-                    last_exported_sequence: health.last_exported_sequence,
-                    last_exported_hash: health.last_exported_hash,
-                    last_exported_occurred_at: health.last_exported_occurred_at,
-                    last_exported_at: health.last_exported_at,
-                    deployment_id: health.deployment_id,
-                    observed_at: health.observed_at,
-                })
-        })
+        Box::pin(async move { AuditLedgerRepository::anchor_health(self).await })
     }
 
     fn observe_anchor<'a>(
@@ -191,67 +176,51 @@ impl nazo_persistence::SecurityAuditExporter for AuditLedgerRepository {
         })
     }
 
-    fn claim_due(
-        &self,
+    fn claim_batch<'a>(
+        &'a self,
+        deployment_id: &'a str,
         limit: i64,
+        max_envelope_bytes: i64,
         lock_timeout_seconds: i32,
     ) -> futures_util::future::BoxFuture<
-        '_,
-        Result<
-            Vec<nazo_persistence::SecurityAuditOutboxDelivery>,
-            nazo_identity::ports::RepositoryError,
-        >,
+        'a,
+        Result<nazo_persistence::SecurityAuditBatchClaim, nazo_identity::ports::RepositoryError>,
     > {
         Box::pin(async move {
-            AuditLedgerRepository::claim_due(self, limit, lock_timeout_seconds)
-                .await
-                .map(|deliveries| {
-                    deliveries
-                        .into_iter()
-                        .map(|delivery| nazo_persistence::SecurityAuditOutboxDelivery {
-                            event_id: delivery.event_id,
-                            sequence: delivery.sequence,
-                            event_type: delivery.event_type,
-                            event_category: delivery.event_category,
-                            payload: delivery.payload,
-                            occurred_at: delivery.occurred_at,
-                            previous_hash: delivery.previous_hash,
-                            event_hash: delivery.event_hash,
-                            attempts: delivery.attempts,
-                        })
-                        .collect()
-                })
+            AuditLedgerRepository::claim_batch(
+                self,
+                deployment_id,
+                limit,
+                max_envelope_bytes,
+                lock_timeout_seconds,
+            )
+            .await
         })
     }
 
-    fn mark_exported<'a>(
+    fn ack_batch<'a>(
         &'a self,
-        event_id: uuid::Uuid,
-        expected_attempts: i32,
-        deployment_id: &'a str,
+        ack: nazo_persistence::SecurityAuditBatchAck,
     ) -> futures_util::future::BoxFuture<'a, Result<(), nazo_identity::ports::RepositoryError>>
     {
-        Box::pin(async move {
-            AuditLedgerRepository::mark_exported(self, event_id, expected_attempts, deployment_id)
-                .await
-        })
+        Box::pin(async move { AuditLedgerRepository::ack_batch(self, ack).await })
     }
 
-    fn reschedule<'a>(
+    fn fail_batch<'a>(
         &'a self,
-        event_id: uuid::Uuid,
-        expected_attempts: i32,
+        generation: i64,
         available_at: chrono::DateTime<chrono::Utc>,
         last_error: &'a str,
+        blocked: bool,
     ) -> futures_util::future::BoxFuture<'a, Result<(), nazo_identity::ports::RepositoryError>>
     {
         Box::pin(async move {
-            AuditLedgerRepository::reschedule(
+            AuditLedgerRepository::fail_batch(
                 self,
-                event_id,
-                expected_attempts,
+                generation,
                 available_at,
                 last_error,
+                blocked,
             )
             .await
         })

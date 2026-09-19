@@ -1052,32 +1052,13 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
 
 async fn insert_audit_event(connection: &mut AsyncPgConnection, event_id: Uuid) {
     sql_query(
-        "INSERT INTO security_audit_events \
-             (event_id, event_type, event_category, payload, occurred_at) \
-         VALUES ($1, 'test_event', 'test', '{}'::jsonb, clock_timestamp())",
+        "SELECT public.nazo_persist_security_audit_event(\
+             $1, 'test_event', 'test', '{}'::jsonb, clock_timestamp())",
     )
     .bind::<SqlUuid, _>(event_id)
     .execute(connection)
     .await
     .expect("audit event fixture should insert");
-}
-
-async fn insert_chain_entry(connection: &mut AsyncPgConnection, event_id: Uuid, sequence: i64) {
-    sql_query(
-        "INSERT INTO security_audit_chain_entries \
-             (event_id, sequence, previous_hash, event_hash) \
-         VALUES ($1, \
-             (SELECT COALESCE(MAX(sequence), 0) FROM security_audit_chain_entries) + $2, \
-             decode(md5($3::text) || md5($4::text), 'hex'), \
-             decode(md5($4::text) || md5($3::text), 'hex'))",
-    )
-    .bind::<SqlUuid, _>(event_id)
-    .bind::<BigInt, _>(sequence)
-    .bind::<Text, _>(format!("prev-{event_id}"))
-    .bind::<Text, _>(format!("hash-{event_id}"))
-    .execute(connection)
-    .await
-    .expect("chain entry fixture should insert");
 }
 
 async fn outbox_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64 {
@@ -1092,30 +1073,28 @@ async fn outbox_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64
     .count
 }
 
-async fn ack_event(connection: &mut AsyncPgConnection, event_id: Uuid, attempts: i32) -> bool {
-    // The shared anchor may already be bound to a deployment by sibling
-    // audit tests; adopt whichever identity the singleton carries, or bind a
-    // fresh one through this acknowledgement when it is still unbound.
-    let deployment: Option<String> = sql_query(
-        "SELECT anchor_deployment_id::text AS deployment \
-         FROM security_audit_chain_state WHERE singleton",
-    )
-    .get_result::<DeploymentRow>(connection)
-    .await
-    .expect("anchor deployment should read")
-    .deployment;
-    sql_query("SELECT public.nazo_ack_security_audit_event($1, $2, $3) AS flag")
-        .bind::<SqlUuid, _>(event_id)
-        .bind::<sql_types::Integer, _>(attempts)
-        .bind::<Text, _>(deployment.unwrap_or_else(|| "maint-dep".to_owned()))
-        .get_result::<FlagRow>(connection)
+/// Acknowledge the whole committed batch through the real exporter path.
+async fn ack_batch(
+    repository: &nazo_postgres::AuditLedgerRepository,
+    batch: &nazo_persistence::SecurityAuditBatch,
+    generation: i64,
+    deployment_id: &str,
+) -> Result<(), nazo_identity::ports::RepositoryError> {
+    repository
+        .ack_batch(nazo_persistence::SecurityAuditBatchAck {
+            generation,
+            deployment_id: deployment_id.to_owned(),
+            first_sequence: batch.first_sequence,
+            last_sequence: batch.last_sequence,
+            event_count: batch.event_count(),
+            last_hash: batch.last_hash.clone(),
+            batch_digest: batch.digest.clone(),
+        })
         .await
-        .expect("ack call should execute")
-        .flag
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn audit_outbox_ack_deletes_delivery_row_atomically() {
+async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1124,75 +1103,95 @@ async fn audit_outbox_ack_deletes_delivery_row_atomically() {
         .await
         .expect("cleanup-batch test gate should remain open");
     let (_fixture, mut connection) = fixture(&database_url).await;
-    // No anchor is bound yet: the first successful acknowledgement binds the
-    // deployment identity and every checkpoint field atomically, which is
-    // exactly what ck_security_audit_anchor_checkpoint_complete requires.
-
-    let acked = Uuid::now_v7();
-    let pending = Uuid::now_v7();
-    let rescheduled = Uuid::now_v7();
-    let stale_claim = Uuid::now_v7();
-    for event_id in [acked, pending, rescheduled, stale_claim] {
-        insert_audit_event(&mut connection, event_id).await;
-    }
-    insert_chain_entry(&mut connection, acked, 9_000_001).await;
-    insert_chain_entry(&mut connection, pending, 9_000_002).await;
-    insert_chain_entry(&mut connection, rescheduled, 9_000_003).await;
-    insert_chain_entry(&mut connection, stale_claim, 9_000_004).await;
-    // Locked, claimed deliveries for acked/rescheduled/stale_claim; pending is
-    // a fresh unclaimed row.
-    for (event_id, locked) in [
-        (acked, true),
-        (pending, false),
-        (rescheduled, true),
-        (stale_claim, true),
-    ] {
-        sql_query(
-            "INSERT INTO security_audit_event_outbox \
-                 (event_id, attempts, available_at, locked_at) \
-             VALUES ($1, 1, clock_timestamp(), CASE WHEN $2 THEN clock_timestamp() END)",
-        )
-        .bind::<SqlUuid, _>(event_id)
-        .bind::<sql_types::Bool, _>(locked)
-        .execute(&mut connection)
-        .await
-        .expect("outbox fixture should insert");
-    }
-
-    // ACK on a locked claim deletes the delivery row and advances the anchor.
-    assert!(ack_event(&mut connection, acked, 1).await);
-    assert_eq!(outbox_count(&mut connection, acked).await, 0);
-    // Repeating the acknowledgement is a stale claim, not a duplicate delete.
-    assert!(!ack_event(&mut connection, acked, 1).await);
-
-    // Pending (unclaimed) rows can never be acknowledged or deleted.
-    assert!(!ack_event(&mut connection, pending, 1).await);
-    assert_eq!(outbox_count(&mut connection, pending).await, 1);
-
-    // A rescheduled row leaves the locked state; the stale claim cannot ack
-    // it and the row stays pending for the next claim.
-    let rescheduled_ok = sql_query(
-        "SELECT public.nazo_reschedule_security_audit_event(\
-             $1, 1, clock_timestamp() + INTERVAL '30 seconds', 'probe') AS flag",
+    let repository =
+        nazo_postgres::AuditLedgerRepository::new(create_pool(&database_url, 2).unwrap());
+    let deployment_id: String = sql_query(
+        "SELECT anchor_deployment_id::text AS deployment \
+         FROM security_audit_chain_state WHERE singleton",
     )
-    .bind::<SqlUuid, _>(rescheduled)
-    .get_result::<FlagRow>(&mut connection)
+    .get_result::<DeploymentRow>(&mut connection)
     .await
-    .expect("reschedule should execute")
-    .flag;
-    assert!(rescheduled_ok);
-    assert!(!ack_event(&mut connection, rescheduled, 1).await);
-    assert_eq!(outbox_count(&mut connection, rescheduled).await, 1);
+    .expect("anchor deployment should read")
+    .deployment
+    .unwrap_or_else(|| "maint-dep".to_owned());
 
-    // A wrong attempt fence is rejected without touching the row.
-    assert!(!ack_event(&mut connection, stale_claim, 99).await);
-    assert_eq!(outbox_count(&mut connection, stale_claim).await, 1);
-    // The fenced acknowledgement still works for the live claim.
-    assert!(ack_event(&mut connection, stale_claim, 1).await);
-    assert_eq!(outbox_count(&mut connection, stale_claim).await, 0);
+    // Drain any residual pending rows left by sibling tests so the fixture
+    // owns the whole committed prefix.
+    loop {
+        match repository
+            .claim_batch(&deployment_id, 256, 1024 * 1024, 60)
+            .await
+            .expect("residual batches should be claimable")
+        {
+            nazo_persistence::SecurityAuditBatchClaim::Claimed(batch) => {
+                ack_batch(&repository, &batch, batch.generation, &deployment_id)
+                    .await
+                    .expect("residual batch should be acknowledged");
+            }
+            nazo_persistence::SecurityAuditBatchClaim::Busy => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            nazo_persistence::SecurityAuditBatchClaim::Blocked { reason } => {
+                panic!("residual blocked batch: {reason}");
+            }
+            nazo_persistence::SecurityAuditBatchClaim::Empty => break,
+        }
+    }
+
+    let first = Uuid::now_v7();
+    let second = Uuid::now_v7();
+    for event_id in [first, second] {
+        insert_audit_event(&mut connection, event_id).await;
+        assert_eq!(outbox_count(&mut connection, event_id).await, 1);
+    }
+
+    let batch = match repository
+        .claim_batch(&deployment_id, 256, 1024 * 1024, 60)
+        .await
+        .expect("the pending events should form a claimable batch")
+    {
+        nazo_persistence::SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected a claimed batch, got {other:?}"),
+    };
+    assert_eq!(
+        batch
+            .deliveries
+            .iter()
+            .map(|delivery| delivery.event_id)
+            .collect::<Vec<_>>(),
+        vec![first, second]
+    );
+
+    // A stale generation ack deletes nothing and fails closed.
+    assert!(matches!(
+        ack_batch(&repository, &batch, batch.generation + 1, &deployment_id).await,
+        Err(nazo_identity::ports::RepositoryError::Consistency(_))
+    ));
+    assert_eq!(outbox_count(&mut connection, first).await, 1);
+    assert_eq!(outbox_count(&mut connection, second).await, 1);
+
+    // The live generation ack deletes every member row and advances the
+    // anchor in the same transaction.
+    ack_batch(&repository, &batch, batch.generation, &deployment_id)
+        .await
+        .expect("the committed batch should acknowledge");
+    assert_eq!(outbox_count(&mut connection, first).await, 0);
+    assert_eq!(outbox_count(&mut connection, second).await, 0);
+    assert!(matches!(
+        repository
+            .claim_batch(&deployment_id, 256, 1024 * 1024, 60)
+            .await
+            .expect("an empty outbox should report Empty"),
+        nazo_persistence::SecurityAuditBatchClaim::Empty
+    ));
+    // Repeating the settled acknowledgement is a stale claim, not a duplicate.
+    assert!(matches!(
+        ack_batch(&repository, &batch, batch.generation, &deployment_id).await,
+        Err(nazo_identity::ports::RepositoryError::Consistency(_))
+    ));
 
     // Evidence rows and chain entries are immutable and must all remain.
-    for event_id in [acked, pending, rescheduled, stale_claim] {
+    for event_id in [first, second] {
         let row = sql_query(
             "SELECT COUNT(*)::bigint AS count \
              FROM security_audit_events WHERE event_id = $1",

@@ -1,9 +1,12 @@
 use std::sync::Arc;
 
-use chrono::{Duration, Utc};
+use chrono::Utc;
 use diesel::{QueryableByName, sql_query, sql_types::Uuid as SqlUuid};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_identity::ports::RepositoryError;
+use nazo_persistence::{
+    SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditExporter,
+};
 use nazo_postgres::{
     AuditLedgerRepository, MAX_SECURITY_AUDIT_PAYLOAD_BYTES, SecurityAuditEvent, create_pool,
     run_pending_migrations,
@@ -19,6 +22,10 @@ const AUDIT_LEDGER_DOWN: &str =
     include_str!("../../../migrations/20260805000100_security_audit_ledger/down.sql");
 const SHARED_ANCHOR_UP: &str =
     include_str!("../../../migrations/20260905000100_shared_audit_anchor_state/up.sql");
+const BATCH_DELIVERY_UP: &str =
+    include_str!("../../../migrations/20260920000100_audit_anchor_batch_delivery/up.sql");
+const BATCH_DELIVERY_DOWN: &str =
+    include_str!("../../../migrations/20260920000100_audit_anchor_batch_delivery/down.sql");
 
 #[test]
 fn audit_ledger_migration_is_append_only_and_has_durable_outbox() {
@@ -65,11 +72,49 @@ fn shared_anchor_migration_persists_checkpoint_without_a_local_file() {
         "anchor_deployment_id",
         "nazo_observe_security_audit_anchor",
         "nazo_record_security_audit_genesis",
-        "nazo_ack_security_audit_event",
         "nazo_security_audit_shared_anchor_health",
         "nazo_security_audit_shared_privilege_preflight",
     ] {
         assert!(SHARED_ANCHOR_UP.contains(required), "missing {required}");
+    }
+}
+
+#[test]
+fn batch_delivery_migration_fences_one_batch_and_retires_per_event_state() {
+    for required in [
+        "batch_generation BIGINT NOT NULL DEFAULT 0",
+        "ck_security_audit_batch_shape",
+        "nazo_security_audit_batch_members",
+        "nazo_claim_security_audit_pending",
+        "nazo_open_security_audit_batch",
+        "nazo_reclaim_security_audit_batch",
+        "nazo_ack_security_audit_batch",
+        "nazo_fail_security_audit_batch",
+        "nazo_unblock_security_audit_batch",
+        "pending_orphan_exists",
+        "DROP FUNCTION public.nazo_claim_security_audit_events",
+        "DROP FUNCTION public.nazo_ack_security_audit_event",
+        "DROP FUNCTION public.nazo_reschedule_security_audit_event",
+        "DROP COLUMN attempts",
+        "DROP COLUMN available_at",
+        "DROP COLUMN locked_at",
+        "DROP COLUMN last_error",
+    ] {
+        assert!(BATCH_DELIVERY_UP.contains(required), "missing {required}");
+    }
+    for required in [
+        "DROP FUNCTION public.nazo_security_audit_batch_members",
+        "DROP FUNCTION public.nazo_claim_security_audit_pending",
+        "DROP FUNCTION public.nazo_open_security_audit_batch",
+        "DROP FUNCTION public.nazo_reclaim_security_audit_batch",
+        "DROP FUNCTION public.nazo_ack_security_audit_batch",
+        "DROP FUNCTION public.nazo_fail_security_audit_batch",
+        "DROP FUNCTION public.nazo_unblock_security_audit_batch",
+        "nazo_claim_security_audit_events",
+        "nazo_ack_security_audit_event",
+        "nazo_reschedule_security_audit_event",
+    ] {
+        assert!(BATCH_DELIVERY_DOWN.contains(required), "missing {required}");
     }
 }
 
@@ -87,6 +132,44 @@ struct EventHashRow {
     event_hash: Vec<u8>,
 }
 
+fn batch_ack(batch: &SecurityAuditBatch) -> SecurityAuditBatchAck {
+    SecurityAuditBatchAck {
+        generation: batch.generation,
+        deployment_id: "test-deployment".to_owned(),
+        first_sequence: batch.first_sequence,
+        last_sequence: batch.last_sequence,
+        event_count: batch.event_count(),
+        last_hash: batch.last_hash.clone(),
+        batch_digest: batch.digest.clone(),
+    }
+}
+
+async fn drain_outbox(repository: &AuditLedgerRepository) {
+    loop {
+        match repository
+            .claim_batch("test-deployment", 256, 1024 * 1024, 60)
+            .await
+            .expect("existing audit batches should be claimable")
+        {
+            SecurityAuditBatchClaim::Claimed(batch) => {
+                // A committed batch whose lease is still held cannot be acked by
+                // a concurrent claim; the lease is owned by this caller.
+                repository
+                    .ack_batch(batch_ack(&batch))
+                    .await
+                    .expect("existing audit batch should be drainable");
+            }
+            SecurityAuditBatchClaim::Busy => {
+                tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            }
+            SecurityAuditBatchClaim::Blocked { reason } => {
+                panic!("drain cannot proceed past a blocked batch: {reason}");
+            }
+            SecurityAuditBatchClaim::Empty => break,
+        }
+    }
+}
+
 #[tokio::test]
 async fn audit_ledger_append_is_chained_and_outboxed() {
     let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
@@ -102,7 +185,7 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
         .anchor_health()
         .await
         .expect("initial shared anchor health should be readable");
-    let genesis = nazo_persistence::SecurityAuditExporter::record_genesis(
+    let genesis = SecurityAuditExporter::record_genesis(
         &repository,
         "test-deployment",
         &initial_health.head_hash,
@@ -113,24 +196,10 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
     } else {
         assert!(matches!(genesis, Err(RepositoryError::Consistency(_))));
     }
-    nazo_persistence::SecurityAuditExporter::observe_anchor(&repository, "test-deployment")
+    SecurityAuditExporter::observe_anchor(&repository, "test-deployment")
         .await
         .expect("the exporter should observe the complete shared anchor");
-    loop {
-        let existing = repository
-            .claim_due(256, 60)
-            .await
-            .expect("existing audit deliveries should be claimable");
-        if existing.is_empty() {
-            break;
-        }
-        for delivery in existing {
-            repository
-                .mark_exported(delivery.event_id, delivery.attempts, "test-deployment")
-                .await
-                .expect("existing audit delivery should be drainable");
-        }
-    }
+    drain_outbox(&repository).await;
     let first_id = Uuid::now_v7();
     let second_id = Uuid::now_v7();
     repository
@@ -158,16 +227,27 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
         pending_health.head_sequence, initial_health.head_sequence,
         "writer commits must not extend the global chain"
     );
-    assert_eq!(pending_health.pending_count, 2);
-    let claimed = repository
-        .claim_due(10, 60)
+    assert!(pending_health.pending_exists);
+    let claimed = match repository
+        .claim_batch("test-deployment", 10, 1024 * 1024, 60)
         .await
-        .expect("audit outbox should claim");
-    assert_eq!(claimed.len(), 2);
-    assert_eq!(claimed[0].event_id, first_id);
-    assert_eq!(claimed[1].event_id, second_id);
-    assert_eq!(claimed[1].sequence, claimed[0].sequence + 1);
-    let second_sequence = claimed[1].sequence;
+        .expect("audit outbox should claim")
+    {
+        SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected a claimed batch, got {other:?}"),
+    };
+    assert_eq!(claimed.deliveries.len(), 2);
+    assert_eq!(claimed.deliveries[0].event_id, first_id);
+    assert_eq!(claimed.deliveries[1].event_id, second_id);
+    assert_eq!(
+        claimed.deliveries[1].sequence,
+        claimed.deliveries[0].sequence + 1
+    );
+    assert_eq!(claimed.first_sequence, claimed.deliveries[0].sequence);
+    assert_eq!(claimed.last_sequence, claimed.deliveries[1].sequence);
+    assert_eq!(claimed.digest.len(), 32);
+    assert_eq!(claimed.attempts, 0);
+    let second_sequence = claimed.last_sequence;
 
     let mut connection = AsyncPgConnection::establish(&database_url)
         .await
@@ -187,21 +267,10 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
     .expect("second audit previous hash should be readable");
     assert_eq!(second_previous.event_hash, previous.event_hash);
 
-    let first_delivery = claimed
-        .iter()
-        .find(|delivery| delivery.event_id == first_id)
-        .expect("first event should have an outbox row");
-    assert_eq!(first_delivery.event_id, first_id);
-    for delivery in claimed {
-        nazo_persistence::SecurityAuditExporter::mark_exported(
-            &repository,
-            delivery.event_id,
-            delivery.attempts,
-            "test-deployment",
-        )
+    repository
+        .ack_batch(batch_ack(&claimed))
         .await
-        .expect("every claimed audit event should be marked as exported");
-    }
+        .expect("every claimed audit batch should be acknowledged");
 
     let health = repository
         .anchor_health()
@@ -209,6 +278,9 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
         .expect("audit anchor health should be readable through its function");
     assert!(health.head_sequence >= second_sequence);
     assert_eq!(health.head_hash.len(), 32);
+    assert!(!health.pending_exists);
+    assert!(!health.pending_orphan_exists);
+    assert!(health.batch.is_none());
     assert_eq!(health.last_exported_sequence, Some(health.head_sequence));
     assert_eq!(
         health.last_exported_hash.as_deref(),
@@ -238,7 +310,7 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
 }
 
 #[tokio::test]
-async fn audit_ledger_rejects_invalid_events_and_enforces_claim_fencing() {
+async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
     let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -248,21 +320,7 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_claim_fencing() {
         .expect("audit ledger migration should apply");
     let pool = create_pool(database_url.clone(), 2).expect("audit pool should create");
     let repository = AuditLedgerRepository::new(pool);
-    loop {
-        let existing = repository
-            .claim_due(256, 60)
-            .await
-            .expect("existing audit deliveries should be claimable");
-        if existing.is_empty() {
-            break;
-        }
-        for delivery in existing {
-            repository
-                .mark_exported(delivery.event_id, delivery.attempts, "test-deployment")
-                .await
-                .expect("existing audit delivery should be drainable");
-        }
-    }
+    drain_outbox(&repository).await;
 
     for event in [
         SecurityAuditEvent {
@@ -318,7 +376,17 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_claim_fencing() {
     ));
     for (limit, lock_timeout_seconds) in [(0, 60), (257, 60), (1, 0), (1, 3_601)] {
         assert!(matches!(
-            repository.claim_due(limit, lock_timeout_seconds).await,
+            repository
+                .claim_batch("test-deployment", limit, 1024 * 1024, lock_timeout_seconds)
+                .await,
+            Err(RepositoryError::Unexpected(_))
+        ));
+    }
+    for max_envelope_bytes in [0, 64 * 1024, 2 * 1024 * 1024] {
+        assert!(matches!(
+            repository
+                .claim_batch("test-deployment", 1, max_envelope_bytes, 60)
+                .await,
             Err(RepositoryError::Unexpected(_))
         ));
     }
@@ -346,60 +414,78 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_claim_fencing() {
         Err(RepositoryError::Unexpected(_))
     ));
 
-    let first_delivery = repository
-        .claim_due(10, 60)
+    let first = match repository
+        .claim_batch("test-deployment", 10, 1024 * 1024, 60)
         .await
         .expect("the appended audit event should be claimable")
-        .into_iter()
-        .find(|delivery| delivery.event_id == event_id)
-        .expect("the appended audit event should have an outbox claim");
+    {
+        SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected a claimed batch, got {other:?}"),
+    };
+    assert!(
+        first
+            .deliveries
+            .iter()
+            .any(|delivery| delivery.event_id == event_id),
+        "the appended audit event should be inside the claimed batch"
+    );
+    // A held lease cannot be claimed or acknowledged under a moved generation.
+    let mut stale_ack = batch_ack(&first);
+    stale_ack.generation += 1;
     assert!(matches!(
-        repository
-            .mark_exported(event_id, first_delivery.attempts + 1, "test-deployment")
-            .await,
+        repository.ack_batch(stale_ack).await,
         Err(RepositoryError::Consistency(_))
     ));
     repository
-        .reschedule(
-            event_id,
-            first_delivery.attempts,
-            Utc::now() - Duration::seconds(1),
+        .fail_batch(
+            first.generation,
+            Utc::now() - chrono::Duration::seconds(1),
             "temporary exporter failure",
+            false,
         )
         .await
-        .expect("a current claim should be reschedulable");
-    let second_delivery = repository
-        .claim_due(10, 60)
+        .expect("a current batch should be reschedulable");
+    let second = match repository
+        .claim_batch("test-deployment", 10, 1024 * 1024, 60)
         .await
-        .expect("a rescheduled event should be claimable again")
-        .into_iter()
-        .find(|delivery| delivery.event_id == event_id)
-        .expect("the rescheduled event should be reclaimed");
-    assert_eq!(second_delivery.attempts, first_delivery.attempts + 1);
-    assert_eq!(second_delivery.sequence, first_delivery.sequence);
-    assert_eq!(second_delivery.previous_hash, first_delivery.previous_hash);
-    assert_eq!(second_delivery.event_hash, first_delivery.event_hash);
-    repository
-        .mark_exported(event_id, second_delivery.attempts, "test-deployment")
-        .await
-        .expect("the current claim should be acknowledged");
+        .expect("a rescheduled batch should be claimable again")
+    {
+        SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected a reclaimed batch, got {other:?}"),
+    };
+    assert_eq!(second.attempts, first.attempts + 1);
+    assert!(second.generation > first.generation);
+    assert_eq!(second.first_sequence, first.first_sequence);
+    assert_eq!(second.last_sequence, first.last_sequence);
+    assert_eq!(second.digest, first.digest);
+    assert_eq!(second.deliveries.len(), first.deliveries.len());
+    // The stale generation can no longer settle or reschedule the batch.
     assert!(matches!(
-        repository
-            .mark_exported(event_id, second_delivery.attempts, "test-deployment")
-            .await,
+        repository.ack_batch(batch_ack(&first)).await,
+        Err(RepositoryError::Consistency(_))
+    ));
+    repository
+        .ack_batch(batch_ack(&second))
+        .await
+        .expect("the current batch should be acknowledged");
+    assert!(matches!(
+        repository.ack_batch(batch_ack(&second)).await,
         Err(RepositoryError::Consistency(_))
     ));
     assert!(matches!(
         repository
-            .reschedule(
-                event_id,
-                second_delivery.attempts,
+            .fail_batch(
+                second.generation,
                 Utc::now(),
                 "late exporter failure",
+                false,
             )
             .await,
         Err(RepositoryError::Consistency(_))
     ));
+    let health = repository.anchor_health().await.unwrap();
+    assert!(health.batch.is_none());
+    assert!(!health.pending_exists);
     let freshness = repository
         .anchor_health()
         .await

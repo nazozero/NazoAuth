@@ -1,11 +1,15 @@
 use std::time::Duration;
 
 use anyhow::bail;
+use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use ed25519_dalek::VerifyingKey;
 use url::Url;
 
 use crate::config::ConfigSource;
 
 pub(super) const MAX_BATCH_SIZE: i64 = 256;
+pub(super) const MIN_ENVELOPE_BYTES: i64 = 128 * 1024;
+pub(super) const MAX_ENVELOPE_BYTES: i64 = 1024 * 1024;
 const MAX_DEPLOYMENT_ID_BYTES: usize = 255;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -61,9 +65,17 @@ pub(crate) struct AuditAnchorWorkerConfig {
     pub(crate) preflight: AuditAnchorPreflightConfig,
     pub(crate) endpoint: Url,
     pub(crate) auth_secret: Vec<u8>,
+    /// Public half of the receiver's receipt signing key. The exporter can
+    /// verify receipts but can never forge one, so a durable acknowledgement
+    /// always requires the receiver's private key.
+    pub(crate) receipt_verify_key: VerifyingKey,
+    /// Additional PEM trust anchors for the receiver endpoint, e.g. a private
+    /// PKI. The public web PKI still applies.
+    pub(crate) ca_bundle_pem: Option<Vec<u8>>,
     pub(crate) poll_interval: Duration,
     pub(crate) request_timeout: Duration,
     pub(crate) batch_size: i64,
+    pub(crate) max_envelope_bytes: i64,
     pub(crate) lock_timeout_seconds: i32,
 }
 
@@ -94,6 +106,11 @@ impl AuditAnchorWorkerConfig {
         }
         if !(1..=MAX_BATCH_SIZE).contains(&self.batch_size) {
             bail!("AUDIT_ANCHOR_BATCH_SIZE must be between 1 and {MAX_BATCH_SIZE}");
+        }
+        if !(MIN_ENVELOPE_BYTES..=MAX_ENVELOPE_BYTES).contains(&self.max_envelope_bytes) {
+            bail!(
+                "AUDIT_ANCHOR_MAX_ENVELOPE_BYTES must be between {MIN_ENVELOPE_BYTES} and {MAX_ENVELOPE_BYTES}"
+            );
         }
         if !(1..=3_600).contains(&self.lock_timeout_seconds) {
             bail!("AUDIT_ANCHOR_LOCK_TIMEOUT_SECONDS must be between 1 and 3600");
@@ -131,6 +148,19 @@ pub(crate) fn worker_config_from_source(
         preflight,
         endpoint,
         auth_secret: source.required_string("AUDIT_ANCHOR_TOKEN")?.into_bytes(),
+        receipt_verify_key: parse_receipt_verify_key(
+            &source.required_string("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY")?,
+        )?,
+        ca_bundle_pem: {
+            let path = source.string("AUDIT_ANCHOR_CA_BUNDLE", "");
+            if path.is_empty() {
+                None
+            } else {
+                Some(std::fs::read(&path).map_err(|error| {
+                    anyhow::anyhow!("AUDIT_ANCHOR_CA_BUNDLE at {path} cannot be read: {error}")
+                })?)
+            }
+        },
         poll_interval: Duration::from_secs(
             source.parse("AUDIT_ANCHOR_POLL_INTERVAL_SECONDS", 5_u64)?,
         ),
@@ -138,6 +168,8 @@ pub(crate) fn worker_config_from_source(
             source.parse("AUDIT_ANCHOR_REQUEST_TIMEOUT_SECONDS", 10_u64)?,
         ),
         batch_size: source.parse("AUDIT_ANCHOR_BATCH_SIZE", 64_i64)?,
+        max_envelope_bytes: source
+            .parse("AUDIT_ANCHOR_MAX_ENVELOPE_BYTES", MAX_ENVELOPE_BYTES)?,
         lock_timeout_seconds: source.parse("AUDIT_ANCHOR_LOCK_TIMEOUT_SECONDS", 60_i32)?,
     };
     config.validate()?;
@@ -148,6 +180,28 @@ pub(crate) fn worker_config_from_source(
         bail!("AUDIT_ANCHOR_DATABASE_MAX_CONNECTIONS must be greater than zero");
     }
     Ok((database_url, database_max_connections, config))
+}
+
+fn parse_receipt_verify_key(value: &str) -> anyhow::Result<VerifyingKey> {
+    let decoded = URL_SAFE_NO_PAD
+        .decode(value.trim())
+        .or_else(|_| hex_decode(value.trim()))
+        .map_err(|_| anyhow::anyhow!("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY must be base64 or hex"))?;
+    let bytes: [u8; 32] = decoded
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY must be 32 bytes"))?;
+    VerifyingKey::from_bytes(&bytes)
+        .map_err(|_| anyhow::anyhow!("AUDIT_ANCHOR_RECEIPT_VERIFY_KEY is not a valid Ed25519 key"))
+}
+
+fn hex_decode(value: &str) -> Result<Vec<u8>, ()> {
+    if value.len() % 2 != 0 || !value.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(());
+    }
+    (0..value.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&value[index..index + 2], 16).map_err(|_| ()))
+        .collect()
 }
 
 pub(super) fn validate_deployment_id(value: &str) -> anyhow::Result<()> {
