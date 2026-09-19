@@ -115,3 +115,47 @@ async fn abort_cancels_inflight_batch_and_await_finishes() {
     tokio::time::advance(INTERVAL * 3).await;
     assert_eq!(store.calls.load(Ordering::SeqCst), 1);
 }
+
+#[tokio::test(start_paused = true)]
+async fn saturated_batches_drain_immediately_until_unsaturated() {
+    struct Saturating {
+        calls: AtomicUsize,
+        rounds: usize,
+    }
+    impl SecurityStateMaintenancePort for Saturating {
+        fn cleanup_batch(&self) -> SecurityStateMaintenanceFuture<'_, CleanupBatchResult> {
+            Box::pin(async move {
+                let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
+                Ok(CleanupBatchResult {
+                    saturated: call % self.rounds != 0,
+                    ..CleanupBatchResult::default()
+                })
+            })
+        }
+    }
+    let saturating = Arc::new(Saturating {
+        calls: AtomicUsize::new(0),
+        rounds: 5,
+    });
+    let handle = spawn_security_state_maintenance_worker(saturating.clone());
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(
+        saturating.calls.load(Ordering::SeqCst),
+        5,
+        "a saturated batch must be followed by another batch inside the same \
+         cycle until the port reports no remaining backlog"
+    );
+    // After the backlog drains, the worker waits the maintenance interval.
+    tokio::time::advance(INTERVAL - std::time::Duration::from_millis(1)).await;
+    tokio::task::yield_now().await;
+    assert_eq!(saturating.calls.load(Ordering::SeqCst), 5);
+    tokio::time::advance(std::time::Duration::from_millis(1)).await;
+    for _ in 0..10 {
+        tokio::task::yield_now().await;
+    }
+    assert_eq!(saturating.calls.load(Ordering::SeqCst), 10);
+    handle.abort();
+    assert!(handle.await.unwrap_err().is_cancelled());
+}

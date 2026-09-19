@@ -1,10 +1,12 @@
 //! Bounded security-state maintenance coverage.
 //!
 //! One `cleanup_batch` performs at most 256 deletions per category. Refresh
-//! reclaim walks leaves only, under the shared family advisory key, and never
-//! touches a family that still has an unexpired member. OpenID4VP reads are
-//! pure selects; the global presentation sweep belongs exclusively to this
-//! worker.
+//! reclaim removes every expired member of a fully expired family under the
+//! shared family advisory key — references into the family are unlinked
+//! inside the lock so the self-FK cannot block a whole-family delete — and
+//! never touches a family that still has an unexpired member. OpenID4VP reads
+//! are pure selects; the global presentation sweep belongs exclusively to
+//! this worker.
 
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
@@ -159,6 +161,24 @@ async fn insert_refresh_leaf(
     .await
     .expect("refresh leaf fixture should insert");
     id
+}
+
+/// Expired `oauth_tokens` rows cannot be deleted while any `rotated_from_id`
+/// still references them; the helper unlinks inbound references first, the
+/// same ordering the production reclaim uses inside the family lock.
+async fn clear_expired_tokens(connection: &mut AsyncPgConnection) {
+    sql_query(
+        "UPDATE oauth_tokens SET rotated_from_id = NULL \
+         WHERE rotated_from_id IN ( \
+             SELECT id FROM oauth_tokens WHERE expires_at <= CURRENT_TIMESTAMP)",
+    )
+    .execute(connection)
+    .await
+    .expect("expired token unlink should succeed");
+    sql_query("DELETE FROM oauth_tokens WHERE expires_at <= CURRENT_TIMESTAMP")
+        .execute(connection)
+        .await
+        .expect("expired token clear should succeed");
 }
 
 async fn family_row_count(connection: &mut AsyncPgConnection, family_id: Uuid) -> i64 {
@@ -348,7 +368,7 @@ async fn active_successor_blocks_ancestor_reclaim() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn three_generation_family_reclaims_leaves_first_over_cycles() {
+async fn three_generation_family_reclaims_whole_chain_in_one_batch() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -357,6 +377,9 @@ async fn three_generation_family_reclaims_leaves_first_over_cycles() {
         .await
         .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
+    // Clear expired token rows left by other suites so this family's batch
+    // placement is deterministic.
+    clear_expired_tokens(&mut connection).await;
     let family_id = Uuid::now_v7();
     let expired = Utc::now() - Duration::hours(2);
     let grandparent =
@@ -373,18 +396,70 @@ async fn three_generation_family_reclaims_leaves_first_over_cycles() {
 
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
-    for expected_remaining in [2_i64, 1, 0] {
-        maintenance
-            .cleanup_batch()
-            .await
-            .expect("cleanup batch should succeed");
-        assert_eq!(
-            family_row_count(&mut connection, family_id).await,
-            expected_remaining,
-            "only the current leaf may be reclaimed per cycle; the self-FK \
-             ancestry chain must stay intact until each node becomes a leaf"
+    let result = maintenance
+        .cleanup_batch()
+        .await
+        .expect("cleanup batch should succeed");
+    assert!(
+        result.refresh_tokens >= 3,
+        "a fully expired family must release every member in one batch, got {}",
+        result.refresh_tokens
+    );
+    assert_eq!(
+        family_row_count(&mut connection, family_id).await,
+        0,
+        "the unlink step must let the whole chain leave in one batch; the \
+         self-FK can no longer force one leaf per cycle"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn oversized_family_drains_across_bounded_batches_and_reports_saturation() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+    let family_id = Uuid::now_v7();
+    let expired = Utc::now() - Duration::hours(2);
+    // 300 expired members exceed the 256-row batch budget, so the family must
+    // drain over two batches and the first must report saturation.
+    let mut previous = None;
+    for _ in 0..300 {
+        previous = Some(
+            insert_refresh_leaf(&mut connection, &fixture, family_id, previous, expired).await,
         );
     }
+
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let first = maintenance
+        .cleanup_batch()
+        .await
+        .expect("first cleanup batch should succeed");
+    assert!(
+        first.saturated,
+        "hitting the 256-row budget must mark the batch saturated"
+    );
+    assert_eq!(
+        family_row_count(&mut connection, family_id).await,
+        300 - 256,
+        "one batch may delete at most 256 refresh rows"
+    );
+    let second = maintenance
+        .cleanup_batch()
+        .await
+        .expect("second cleanup batch should succeed");
+    assert_eq!(
+        family_row_count(&mut connection, family_id).await,
+        0,
+        "the follow-up batch must finish the partially reclaimed family"
+    );
+    assert!(second.refresh_tokens >= 44);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -931,5 +1006,100 @@ async fn revocations_and_scim_and_logout_categories_keep_their_retention() {
         .await
         .expect("expired row count should query");
         assert_eq!(gone.count, 0, "expired rows must be reclaimed ({table})");
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn exported_audit_outbox_rows_reclaim_only_past_grace() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE
+        .acquire()
+        .await
+        .expect("cleanup-batch test gate should remain open");
+    let (_fixture, mut connection) = fixture(&database_url).await;
+    // Clear delivery rows other suites already exported past the grace window
+    // so this test's counts are deterministic.
+    sql_query(
+        "DELETE FROM security_audit_event_outbox \
+         WHERE exported_at IS NOT NULL \
+           AND exported_at <= clock_timestamp() - INTERVAL '1 day'",
+    )
+    .execute(&mut connection)
+    .await
+    .expect("stale exported outbox rows should clear");
+
+    let stale_event = Uuid::now_v7();
+    let fresh_event = Uuid::now_v7();
+    let pending_event = Uuid::now_v7();
+    // Event facts carry no chain columns; the exporter-owned chain entries
+    // live in security_audit_chain_entries.
+    for event_id in [stale_event, fresh_event, pending_event] {
+        sql_query(
+            "INSERT INTO security_audit_events                  (event_id, event_type, event_category, payload, occurred_at)              VALUES ($1, 'test_event', 'test', '{}'::jsonb, clock_timestamp())",
+        )
+        .bind::<SqlUuid, _>(event_id)
+        .execute(&mut connection)
+        .await
+        .expect("audit event fixture should insert");
+    }
+    let stale_export = Utc::now() - Duration::days(2);
+    let fresh_export = Utc::now();
+    for (event_id, exported_at) in [
+        (stale_event, Some(stale_export)),
+        (fresh_event, Some(fresh_export)),
+        (pending_event, None),
+    ] {
+        sql_query(
+            "INSERT INTO security_audit_event_outbox \
+                 (event_id, attempts, available_at, locked_at, exported_at) \
+             VALUES ($1, 1, clock_timestamp(), NULL, $2)",
+        )
+        .bind::<SqlUuid, _>(event_id)
+        .bind::<sql_types::Nullable<Timestamptz>, _>(exported_at)
+        .execute(&mut connection)
+        .await
+        .expect("outbox fixture should insert");
+    }
+
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let result = maintenance
+        .cleanup_batch()
+        .await
+        .expect("cleanup batch should succeed");
+    assert!(
+        result.audit_outbox_rows >= 1,
+        "the exported-past-grace outbox row must be reclaimed"
+    );
+
+    for (event_id, expected, label) in [
+        (stale_event, 0_i64, "exported past grace must be deleted"),
+        (fresh_event, 1, "freshly exported rows stay inside the grace window"),
+        (pending_event, 1, "pending delivery rows are never reclaimed"),
+    ] {
+        let row = sql_query(
+            "SELECT COUNT(*)::bigint AS count \
+             FROM security_audit_event_outbox WHERE event_id = $1",
+        )
+        .bind::<SqlUuid, _>(event_id)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .expect("outbox count should query");
+        assert_eq!(row.count, expected, "{label}");
+    }
+
+    // The evidence records themselves are immutable and must remain.
+    for event_id in [stale_event, fresh_event, pending_event] {
+        let row = sql_query(
+            "SELECT COUNT(*)::bigint AS count \
+             FROM security_audit_events WHERE event_id = $1",
+        )
+        .bind::<SqlUuid, _>(event_id)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .expect("event count should query");
+        assert_eq!(row.count, 1, "audit evidence must never be reclaimed");
     }
 }

@@ -1,0 +1,80 @@
+    Finished `release` profile [optimized] target(s) in 5.10s
+     Running tests/access_token_retention.rs (target/release/deps/access_token_retention-67df9690198f7c3c)
+
+running 6 tests
+test maintenance_reclaims_revocation_facts_once_the_padded_deadline_passes ... ok
+test conflicting_owner_revocation_rolls_back_and_other_tenants_are_unaffected ... ok
+test owner_revocation_covers_oauth_and_vci_sources_inside_the_skew_window ... ok
+test replay_compensation_writes_padded_deadline_and_missing_expiry_skips_the_access_fact ... ok
+test revoked_access_token_within_skew_survives_cleanup_until_its_padded_deadline ... ok
+test revocation_deadline_is_monotonic_across_writer_orderings ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.76s
+
+     Running tests/audit_chain_cutover.rs (target/release/deps/audit_chain_cutover-fea025f5a7a2485d)
+
+running 1 test
+test audit_cutover_preserves_history_and_moves_chain_authority_to_exporter ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/audit_ledger.rs (target/release/deps/audit_ledger-89dee119af0bf9bc)
+
+running 4 tests
+test audit_ledger_migration_is_append_only_and_has_durable_outbox ... ok
+test shared_anchor_migration_persists_checkpoint_without_a_local_file ... ok
+test audit_ledger_append_is_chained_and_outboxed ... ok
+test audit_ledger_rejects_invalid_events_and_enforces_claim_fencing ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/auth_repositories.rs (target/release/deps/auth_repositories-eb655ed467a3d379)
+
+running 27 tests
+test server_auth_callers_do_not_query_diesel_or_auth_tables ... ok
+test audit_repository_records_scim_use_and_drives_logout_outbox ... ok
+test stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery ... ok
+test backchannel_logout_fanout_rolls_back_when_any_delivery_is_invalid ... ok
+test client_deactivation_waits_for_issuance_and_revokes_committed_credentials ... ok
+test refresh_token_authentication_context_round_trips_and_rejects_invalid_values ... ok
+test issuance_waits_for_principal_deactivation_and_rechecks_the_committed_state ... ok
+test access_token_revoked_exists_semantics_ignore_deadline_and_scope ... ok
+test grants_upsert_cover_and_revoke_tokens_atomically ... ok
+test refresh_token_client_attestation_binding_round_trips ... ok
+test authorization_replay_waits_for_concurrent_refresh_rotation_before_compensation ... ok
+test authorization_code_replay_compensation_revokes_both_token_kinds ... ok
+test token_management_revocation_is_client_scoped_idempotent_and_serializes_family ... ok
+test refresh_family_requires_one_root_and_matching_direct_parent_context ... ok
+test refresh_rotation_reuse_compromises_the_whole_family ... ok
+test grant_revoke_waits_for_concurrent_refresh_rotation_before_revoking_family ... ok
+test single_use_grant_retry_is_rejected_without_reissuing_or_duplicating_audit ... ok
+test lost_response_retry_rechecks_family_compromise_under_the_family_lock ... ok
+test lost_response_successor_requires_exactly_one_bound_unexpired_successor ... ok
+test client_deactivation_is_atomic_across_real_batches_and_repeated_owners ... ok
+test ordinary_rotation_context_compare_uses_serde_value_semantics ... ok
+test issuance_commits_complete_audit_payloads_and_outbox_for_users_rotation_and_reuse ... ok
+test ordinary_rotation_context_mismatch_commits_compromise_and_reuse_audit ... ok
+test family_active_exists_semantics_cover_cardinality_and_predicates ... ok
+test concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compromise ... ok
+test ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audit ... ok
+test rotation_sql_failure_propagates_error_and_rolls_back_instead_of_conflicting ... ok
+
+test result: ok. 27 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 25.48s
+
+     Running tests/mtls_trust.rs (target/release/deps/mtls_trust-ba22f30218b2a098)
+
+running 1 test
+test mtls_trust_lifecycle_is_owned_two_person_current_and_revocable ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.33s
+
+     Running tests/token_issuance_atomicity.rs (target/release/deps/token_issuance_atomicity-632a64ccea98104b)
+
+running 4 tests
+test final_issuance_schema_is_created_directly_without_legacy_state ... ok
+test rotation_conflict_deletes_only_the_losing_issuance ... ok
+test concurrent_single_use_commits_commit_exactly_once ... ok
+test expired_single_use_grant_rolls_back_everything ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.56s
+

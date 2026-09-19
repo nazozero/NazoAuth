@@ -53,7 +53,7 @@ impl ServerPersistenceProvider for PostgresProvider {
     }
 
     fn database_pool_metrics(&self) -> Arc<dyn nazo_persistence::DatabasePoolMetricsPort> {
-        Arc::new(PostgresPoolMetrics)
+        Arc::new(PostgresPoolMetrics::new(self.pool.clone()))
     }
 
     fn security_state_maintenance(

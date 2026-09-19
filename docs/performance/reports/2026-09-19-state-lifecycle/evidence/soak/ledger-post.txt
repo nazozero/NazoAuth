@@ -1,0 +1,26 @@
+psql:/tmp/ledger.sql:15: ERROR:  column reference "relname" is ambiguous
+LINE 1: SELECT 'TABLE_SIZE' AS section, relname,
+                                        ^
+  section   |              t               |    v     
+------------+------------------------------+----------
+ ROW_COUNTS | security_audit_chain_entries | 0
+ ROW_COUNTS | oauth_token_issuances        | 308783
+ ROW_COUNTS | security_audit_event_outbox  | 18527758
+ ROW_COUNTS | security_audit_events        | 18527759
+ ROW_COUNTS | oauth_tokens                 | 64
+(5 rows)
+
+     section     |           t           |    v     |            oldest             
+-----------------+-----------------------+----------+-------------------------------
+ EXPIRED_BACKLOG | oauth_tokens_expired  | 0        | -
+ EXPIRED_BACKLOG | issuances_due         | 207753   | 2026-09-19 06:55:11+00
+ EXPIRED_BACKLOG | outbox_pending        | 18527760 | 2026-09-19 04:23:52.245489+00
+ EXPIRED_BACKLOG | outbox_exported_grace | 0        | -
+ EXPIRED_BACKLOG | revocations_due       | 6        | 2026-09-19 07:01:01+00
+(5 rows)
+
+ section | pending_export | exported_rows |  events  | chain_entries 
+---------+----------------+---------------+----------+---------------
+ AUDIT   |       18527760 |             1 | 18527762 |             0
+(1 row)
+

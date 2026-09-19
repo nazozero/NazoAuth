@@ -1,0 +1,16 @@
+
+running 11 tests
+test expired_issuances_are_reclaimed_in_bounded_batches ... ok
+test cancelled_batch_leaves_no_open_transaction_on_pooled_connection ... ok
+test exported_audit_outbox_rows_reclaim_only_past_grace ... ok
+test concurrent_batches_do_not_deadlock_or_double_count ... ok
+test openid4vp_find_never_deletes_and_create_only_clears_the_same_key ... ok
+test natural_expiry_refresh_leaf_reclaimed_without_revocation ... ok
+test active_successor_blocks_ancestor_reclaim ... ok
+test oversized_family_drains_across_bounded_batches_and_reports_saturation ... ok
+test writer_family_lock_skips_locked_family_and_recheck_blocks_late_successor ... ok
+test three_generation_family_reclaims_whole_chain_in_one_batch ... ok
+test revocations_and_scim_and_logout_categories_keep_their_retention ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.83s
+

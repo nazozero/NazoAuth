@@ -267,11 +267,17 @@ pub trait DatabaseHealthPort: Send + Sync {
 /// acquisition *attempts* — every success and every failure counts exactly
 /// once. Migration and other one-off standalone connections are not
 /// instrumented by these counters.
-#[derive(Clone, Copy, Debug, serde::Serialize)]
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
 pub struct DatabasePoolMetrics {
     pub acquire_count: u64,
     pub wait_nanos_total: u64,
     pub wait_nanos_max: u64,
+    /// Live pool state at snapshot time: total connections owned by the pool,
+    /// currently idle connections, and acquisitions waiting for a connection.
+    /// `None` when the backend cannot report live state.
+    pub connections: Option<u64>,
+    pub idle_connections: Option<u64>,
+    pub waiting_acquisitions: Option<u64>,
 }
 
 /// Backend-neutral pool telemetry exposed by the optional performance endpoint.
