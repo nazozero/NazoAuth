@@ -6,7 +6,7 @@
 | BASE_SHA | `41b0a197db41b099179f4e1fdb3ed01ba5d69471` (GitHub `main` at task start; = historical audit baseline) |
 | TEST_SOURCE_SHA | `6e3a352c33b1abfa3c0a4aa72d0b32fe3f1e8174` (Phase A frozen source; regression evidence above ran against this tree) |
 | REPORT_SHA | *(final report commit)* |
-| T0 | *(Phase B start — sync of frozen source to new bench host)* |
+| T0 | 2026-09-19T20:55:26Z (RUN_ID=`statemin-v2-soak-8h`, 1800 ops/s cap_mixed, 8 h, audit anchor live) |
 | Bench host | `cnb-g6o-1k2t4ter2-001.85006e8b…iq8@cnb.space` — 64 CPU / 128 GiB / 256G+512G disk / kernel 5.4.241 / docker 29.6.2 |
 | Old host | *retired — not used* |
 

@@ -118,11 +118,14 @@ UNION ALL SELECT 'EXPIRED_BACKLOG','issuances_due',count(*)::text,
        COALESCE(min(retain_until AT TIME ZONE 'utc')::text,'-')
 FROM oauth_token_issuances WHERE retain_until <= now()
 UNION ALL SELECT 'EXPIRED_BACKLOG','outbox_pending',count(*)::text,
-       COALESCE(min(available_at AT TIME ZONE 'utc')::text,'-')
+       COALESCE(min(occurred_at AT TIME ZONE 'utc')::text,'-')
 FROM security_audit_event_outbox
-UNION ALL SELECT 'EXPIRED_BACKLOG','outbox_due_unclaimed',count(*)::text,
-       COALESCE(min(available_at AT TIME ZONE 'utc')::text,'-')
-FROM security_audit_event_outbox WHERE available_at <= now() AND locked_at IS NULL
+UNION ALL SELECT 'EXPIRED_BACKLOG','audit_batch_in_flight',(batch_first_sequence IS NOT NULL)::text,
+       COALESCE((batch_locked_until AT TIME ZONE 'utc')::text,'-')
+FROM security_audit_chain_state
+UNION ALL SELECT 'EXPIRED_BACKLOG','audit_batch_blocked',(batch_blocked_reason IS NOT NULL)::text,
+       COALESCE(batch_blocked_reason,'-')
+FROM security_audit_chain_state
 UNION ALL SELECT 'EXPIRED_BACKLOG','revocations_due',count(*)::text,
        COALESCE(min(expires_at AT TIME ZONE 'utc')::text,'-')
 FROM access_token_revocations WHERE expires_at <= now();
@@ -130,18 +133,26 @@ FROM access_token_revocations WHERE expires_at <= now();
 -- ============================ AUDIT (KV) ===============================
 SELECT 'AUDIT', 'ledger', 'pending_export',
        (SELECT count(*)::text FROM security_audit_event_outbox)
-UNION ALL SELECT 'AUDIT','ledger','in_flight_claims',
-       (SELECT count(*)::text FROM security_audit_event_outbox WHERE locked_at IS NOT NULL)
+UNION ALL SELECT 'AUDIT','ledger','in_flight_batch_events',
+       (SELECT COALESCE(batch_event_count,0)::text FROM security_audit_chain_state)
+UNION ALL SELECT 'AUDIT','ledger','batch_generation',
+       (SELECT batch_generation::text FROM security_audit_chain_state)
+UNION ALL SELECT 'AUDIT','ledger','batch_attempts',
+       (SELECT batch_attempts::text FROM security_audit_chain_state)
 UNION ALL SELECT 'AUDIT','ledger','events',
        (SELECT count(*)::text FROM security_audit_events)
 UNION ALL SELECT 'AUDIT','ledger','chain_entries',
        (SELECT count(*)::text FROM security_audit_chain_entries)
+UNION ALL SELECT 'AUDIT','ledger','archive_events',
+       (SELECT count(*)::text FROM security_audit_archive)
+UNION ALL SELECT 'AUDIT','ledger','archive_watermark',
+       (SELECT last_archived_sequence::text FROM security_audit_archive_state)
 UNION ALL SELECT 'AUDIT','ledger','anchor_sequence',
        (SELECT anchor_sequence::text FROM security_audit_chain_state)
 UNION ALL SELECT 'AUDIT','ledger','chain_head',
        (SELECT last_sequence::text FROM security_audit_chain_state)
 UNION ALL SELECT 'AUDIT','ledger','oldest_pending_age_s',
-       (SELECT COALESCE(extract(epoch FROM now()-min(available_at))::bigint::text,'-')
+       (SELECT COALESCE(extract(epoch FROM now()-min(occurred_at))::bigint::text,'-')
         FROM security_audit_event_outbox);
 
 -- ============================ WAL (KV) =================================
