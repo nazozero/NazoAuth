@@ -1,7 +1,7 @@
 # Audit Delivery-Scoped Retention — Post-Soak Correction Report
 
 - **BASE_SHA**: `b5ee3139` (remote-verified on `origin` GitHub + `cnb` before work began)
-- **IMPLEMENTATION_SHA**: `72572eba` (local, pending push authorization)
+- **IMPLEMENTATION_SHA**: `72572eba` (last code change); report+evidence commit `63efa404`; local `main`, push pending authorization
 - **TEST_SOURCE_SHA of the prior soak**: `6e3a352c` — the 8h run's binary; distinct from report/bookkeeping commits
 - **Fixture**: prior soak's live database — 11.88M undelivered audit events, anchor `41,586,901`, receiver checkpoint seeded to match
 - **Scope**: correct the exporter cliff and write amplification found by `statemin-v2-soak-8h-r2`; 10-minute isolated diagnostics + one 30-minute integrated short test. No capacity re-test.

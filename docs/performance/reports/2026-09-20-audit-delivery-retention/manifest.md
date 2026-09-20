@@ -5,7 +5,7 @@
 | RUN_ID | `statemin-fix-int30-r1` (integrated) · `fapi10m-r2` (FAPI) · `auditA2-claim-10m` / archive-only / `auditC-both-10m` (diagnostics) |
 | BASE_SHA | `b5ee3139` — remote `origin` (GitHub) and `cnb` `main` both read at this SHA before work; no remote drift was overwritten |
 | PRIOR_TEST_SOURCE_SHA | `6e3a352c` — the binary the 8h soak actually ran; report commit `b5ee3139` is bookkeeping, not the tested source |
-| IMPLEMENTATION_SHA | `19a77140` → `9b9654d0` → `d427343f` → `881df787` → `72572eba` (local `main`; push pending user authorization) |
+| IMPLEMENTATION_SHA | `19a77140` → `9b9654d0` → `d427343f` → `881df787` → `72572eba` (code chain); REPORT_SHA=`63efa404` (this report+evidence). Local `main`; push pending user authorization |
 | Window | diagnostics + drain 2026-09-20 ~12:00–15:24Z; integrated 14:53:33–15:23:57Z |
 | Bench host | `cnb-pqg-1k2u7i4nd-001.049d8344…6m8@cnb.space`, docker compose `nazoauth-perf`, PG 18 / 128 MB shared_buffers |
 | Fixture | prior soak DB: 11.88M undelivered audit events, receiver checkpoint seeded to anchor `41,586,901`; `oauth_tokens` TRUNCATEd before seeding (fixture cleanup, not a product path) |
