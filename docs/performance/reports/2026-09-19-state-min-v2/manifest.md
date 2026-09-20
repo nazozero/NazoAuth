@@ -5,7 +5,7 @@
 | RUN_ID | 20260919-state-min-v2 |
 | BASE_SHA | `41b0a197db41b099179f4e1fdb3ed01ba5d69471` (GitHub `main` at task start; = historical audit baseline) |
 | TEST_SOURCE_SHA | `6e3a352c33b1abfa3c0a4aa72d0b32fe3f1e8174` (Phase A frozen source; regression evidence above ran against this tree) |
-| REPORT_SHA | *(final report commit)* |
+| REPORT_SHA | `9f1e86bb` (report + evidence commit; this manifest line lands in a bookkeeping commit on top) |
 | T0 | 2026-09-20T02:06:52Z (RUN_ID=`statemin-v2-soak-8h-r2`, 1800 ops/s cap_mixed, 8 h, audit anchor live) |
 | Bench host | `cnb-pqg-1k2u7i4nd-001.049d8344…6m8@cnb.space` — 64 CPU / 128 GiB / kernel 5.4.241-class host / docker compose v5.3.1 |
 | Old host | `cnb-g6o-1k2t4ter2-001…iq8@cnb.space` — first attempt `statemin-v2-soak-8h` (T0 2026-09-19T20:55:26Z) ran cleanly to ~3h32m/22.9M iters, then the host was destroyed by an abnormal shutdown; all containers and in-flight evidence were lost. Run restarted on the new host under `statemin-v2-soak-8h-r2`; capacity re-probed on the new host (600–2400 ops/s clean, C_valid≈2400) before the restart. |
