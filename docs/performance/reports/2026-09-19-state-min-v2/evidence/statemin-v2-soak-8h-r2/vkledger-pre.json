@@ -1,0 +1,47 @@
+{
+ "census_exact": {
+  "oauth:session": 1312,
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 1313,
+  "evicted_keys": 0,
+  "expired_keys": 66046,
+  "keyspace_hits": 1407520,
+  "keyspace_misses": 3896,
+  "mem_fragmentation_ratio": 5.83,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 2096512,
+  "used_memory_rss": 12230656
+ },
+ "keys_seen": 1313,
+ "mem_bytes_sampled": {
+  "oauth:session": 177408,
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "statemin-v2-soak-8h-r2",
+  "sample_per_cat": 400,
+  "sampled_at": 1789870013,
+  "scan_ms": 5,
+  "script_sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b"
+ },
+ "sampled_per_cat": {
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 1313,
+ "ttl_buckets_sampled": {
+  "oauth:session|470m+": 85,
+  "oauth:session|472m+": 137,
+  "oauth:session|473m+": 139,
+  "oauth:session|474m+": 39,
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

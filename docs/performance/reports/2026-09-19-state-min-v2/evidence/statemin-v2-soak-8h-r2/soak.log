@@ -1,0 +1,50 @@
+RUN_ID=statemin-v2-soak-8h-r2
+DEPID=01a0bc83-76c9-76b0-a39b-2c10df6544df RATE=1800 DUR_MAIN=28800s DUR_SIDE=28600s
+start_utc=2026-09-20T02:06:52Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql 16abf20912a6f3fb3d4fdaa2bafc4d87acab79194d4ba0a062f3dd4b8189ac2b
+sha256 soak_sampler.py 3f2534d264b500fef6371c6311d1147db2dd3fe8f11d14a7dbf98f68b7f3f1b3
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py ccd14fd8188d0fed8169f33fe62b11e03a9d7c37b8d5b15a750b6ccf5dfc8f89
+sha256 soak_run.sh d7e657550564132bf11d4fb04e654da5b0ed093497651daca01886261dfca9ea
+--- container-side digests ---
+sampler unavailable
+soak start 2026-09-20T02:06:52Z RUN_ID=statemin-v2-soak-8h-r2 RATE=1800
+ledger pre 02:06:52
+check /workspace/perf-results/statemin-v2-soak-8h-r2/ledger-pre.txt: PASS
+vkledger pre: keys=1313 dbsize=1313
+ Container soak-sampler-statemin-v2-soak-8h-r2 Creating 
+ Container soak-sampler-statemin-v2-soak-8h-r2 Created 
+8464d48ae0a5aeb07fcc674455a170156193ac98c61842deee200a6b4a7f95af
+sampler started 02:06:53
+runner rss sampler pid=5800 02:06:53
+ Container soak-anchor-rcv-statemin-v2-soak-8h-r2 Creating 
+ Container soak-anchor-rcv-statemin-v2-soak-8h-r2 Created 
+e076f2730f7cf530cf41ecd23d4501bfcae0404190886522dd8ce4935c16199e
+ Container soak-anchor-worker-statemin-v2-soak-8h-r2 Creating 
+ Container soak-anchor-worker-statemin-v2-soak-8h-r2 Created 
+d98fd3c24c2d7acc2453cebd42a90df278e2e6c188668742c8ac6bdd0f90a9aa
+audit anchor worker+receiver started depid=01a0bc83-76c9-76b0-a39b-2c10df6544df 02:06:57
+audit health sampler pid=6058 02:06:57
+main cap_mixed arrival=1800ops/s pid=6061 02:06:57
+ Container soak-argon2-statemin-v2-soak-8h-r2 Creating 
+ Container soak-argon2-statemin-v2-soak-8h-r2 Created 
+dd713f41f8a87df8a7ffe6a746f218f9eff375c089e851d9474992246abcbdc7
+argon2 sidecar arrival=8/s started 02:08:57
+ Container soak-meta-statemin-v2-soak-8h-r2 Creating 
+ Container soak-meta-statemin-v2-soak-8h-r2 Created 
+fc602bce56d5b4000996c4dc5ba2ab24d8376c3cd939cc54e731355aa76a9de7
+meta sidecar arrival=200/s started 02:08:58
+ Container soak-fapi-statemin-v2-soak-8h-r2 Creating 
+ Container soak-fapi-statemin-v2-soak-8h-r2 Created 
+5854a6fb744b06c23cca47b3ee870866c2b83d10be6178d659e7d23b8ecd72b0
+fapi sidecar arrival=30/s started 02:08:58
+main finished 10:08:08
+time="2026-09-20T18:08:48+08:00" level=warning msg="Found orphan containers (soak-fapi-statemin-v2-soak-8h-r2, soak-meta-statemin-v2-soak-8h-r2, soak-argon2-statemin-v2-soak-8h-r2, soak-sampler-statemin-v2-soak-8h-r2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container nazoauth-perf-perf-run-0352a1805ebc Creating 
+ Container nazoauth-perf-perf-run-0352a1805ebc Created 
+sampler /workspace/perf-results/statemin-v2-soak-8h-r2/soak-metrics.jsonl: PASS (2885 rows)
+ledger post 10:09:00
+check /workspace/perf-results/statemin-v2-soak-8h-r2/ledger-post.txt: PASS
+end_utc=2026-09-20T10:09:09Z
+SOAK_DONE RUN_ID=statemin-v2-soak-8h-r2 2026-09-20T10:09:09Z
