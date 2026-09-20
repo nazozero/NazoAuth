@@ -194,6 +194,7 @@ for side in argon2 meta fapi; do
     -e PERF_PRE_ALLOCATED_VUS=$PV -e PERF_MAX_VUS=$MV \
     -e PERF_DURATION="$DUR_SIDE" -e CAP_WARMUP_MS=15000 \
     -e PERF_USER_COUNT=$UC \
+    -e PERF_VECTOR_COUNT=${PERF_VECTOR_COUNT:-2000} \
     perf >>"$LOG" 2>&1
   echo "$side sidecar arrival=$SR/s started $(date -u +%H:%M:%S)" >>"$LOG"
 done
