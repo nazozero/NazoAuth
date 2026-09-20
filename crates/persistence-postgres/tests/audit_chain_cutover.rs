@@ -21,6 +21,8 @@ const ACK_DELETE: &str =
     include_str!("../../../migrations/20260919000200_audit_outbox_ack_delete/up.sql");
 const BATCH_DELIVERY: &str =
     include_str!("../../../migrations/20260920000100_audit_anchor_batch_delivery/up.sql");
+const DELIVERY_RETENTION: &str =
+    include_str!("../../../migrations/20260924000100_audit_delivery_scoped_retention/up.sql");
 
 #[derive(QueryableByName)]
 struct Count {
@@ -134,7 +136,13 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
     )).await.unwrap();
     // Migrations that stage upgrade grants on pg_temp tables must run in one
     // transaction, matching the Diesel migration runner.
-    for migration in [CUTOVER, EXPORTED_RETENTION, ACK_DELETE, BATCH_DELIVERY] {
+    for migration in [
+        CUTOVER,
+        EXPORTED_RETENTION,
+        ACK_DELETE,
+        BATCH_DELIVERY,
+        DELIVERY_RETENTION,
+    ] {
         owner
             .transaction::<_, diesel::result::Error, _>(async |connection| {
                 connection.batch_execute(migration).await
