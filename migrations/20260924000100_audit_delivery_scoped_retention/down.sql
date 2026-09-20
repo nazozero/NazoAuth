@@ -4,6 +4,19 @@
 -- delivery-scoped acks cannot be re-materialized — the receiver is their
 -- only remaining copy, which is the intended durable store either way.
 
+ALTER TABLE public.security_audit_event_outbox
+    RESET (autovacuum_vacuum_scale_factor,
+           autovacuum_vacuum_threshold,
+           autovacuum_vacuum_cost_delay);
+ALTER TABLE public.security_audit_events
+    RESET (autovacuum_vacuum_scale_factor,
+           autovacuum_vacuum_threshold,
+           autovacuum_vacuum_cost_delay);
+ALTER TABLE public.security_audit_chain_entries
+    RESET (autovacuum_vacuum_scale_factor,
+           autovacuum_vacuum_threshold,
+           autovacuum_vacuum_cost_delay);
+
 CREATE TABLE public.security_audit_archive (
     event_id UUID NOT NULL,
     sequence BIGINT NOT NULL,

@@ -278,3 +278,22 @@ DROP TABLE IF EXISTS public.security_audit_archive;
 DROP TABLE IF EXISTS public.security_audit_archive_state;
 DROP INDEX IF EXISTS public.idx_security_audit_events_occurred_at;
 DROP INDEX IF EXISTS public.idx_security_audit_events_type_occurred_at;
+
+-- Queue-discipline vacuuming: ack deletes at the head of
+-- idx_security_audit_outbox_order, so the default scale factor (20% of a
+-- multi-million-row backlog) lets a dead prefix accumulate between vacuums
+-- and every ordered claim/oldest-pending probe must walk it. Bounded
+-- thresholds keep the dead prefix small; the probes themselves kill entries
+-- between visits, so this is a lifecycle bound, not a throughput knob.
+ALTER TABLE public.security_audit_event_outbox
+    SET (autovacuum_vacuum_scale_factor = 0,
+         autovacuum_vacuum_threshold = 2000,
+         autovacuum_vacuum_cost_delay = 0);
+ALTER TABLE public.security_audit_events
+    SET (autovacuum_vacuum_scale_factor = 0,
+         autovacuum_vacuum_threshold = 10000,
+         autovacuum_vacuum_cost_delay = 0);
+ALTER TABLE public.security_audit_chain_entries
+    SET (autovacuum_vacuum_scale_factor = 0,
+         autovacuum_vacuum_threshold = 500,
+         autovacuum_vacuum_cost_delay = 0);
