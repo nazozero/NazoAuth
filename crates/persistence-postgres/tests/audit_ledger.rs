@@ -133,13 +133,19 @@ fn delivery_scoped_retention_migration_reclaims_at_ack_and_drops_archive() {
         "DROP TABLE IF EXISTS public.security_audit_archive",
         "DROP TABLE IF EXISTS public.security_audit_archive_state",
     ] {
-        assert!(DELIVERY_RETENTION_UP.contains(required), "missing {required}");
+        assert!(
+            DELIVERY_RETENTION_UP.contains(required),
+            "missing {required}"
+        );
     }
     for required in [
         "CREATE TABLE public.security_audit_archive",
         "nazo_archive_security_audit_prefix",
     ] {
-        assert!(DELIVERY_RETENTION_DOWN.contains(required), "missing {required}");
+        assert!(
+            DELIVERY_RETENTION_DOWN.contains(required),
+            "missing {required}"
+        );
     }
 }
 
