@@ -1,0 +1,64 @@
+{
+ "census_exact": {
+  "oauth:dpop": 7969,
+  "oauth:jar": 14546,
+  "oauth:session": 3714,
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 26228,
+  "evicted_keys": 0,
+  "expired_keys": 251305,
+  "keyspace_hits": 3720657,
+  "keyspace_misses": 8207,
+  "mem_fragmentation_ratio": 4.47,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 13261080,
+  "used_memory_rss": 69500928
+ },
+ "keys_seen": 26230,
+ "mem_bytes_sampled": {
+  "oauth:dpop": 121280,
+  "oauth:jar": 127360,
+  "oauth:session": 177920,
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "oauth:dpop": 400,
+  "oauth:jar": 398,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "statemin-final-soak-6h-r1",
+  "sample_per_cat": 400,
+  "sampled_at": 1789922684,
+  "scan_ms": 76,
+  "script_sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b"
+ },
+ "sampled_per_cat": {
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 26230,
+ "ttl_buckets_sampled": {
+  "oauth:dpop|0m+": 362,
+  "oauth:dpop|1m+": 38,
+  "oauth:jar|0m+": 398,
+  "oauth:jar|gone": 2,
+  "oauth:session|466m+": 53,
+  "oauth:session|468m+": 9,
+  "oauth:session|469m+": 44,
+  "oauth:session|470m+": 55,
+  "oauth:session|471m+": 64,
+  "oauth:session|472m+": 49,
+  "oauth:session|473m+": 46,
+  "oauth:session|474m+": 51,
+  "oauth:session|475m+": 29,
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}
