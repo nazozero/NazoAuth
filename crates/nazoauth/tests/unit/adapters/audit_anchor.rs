@@ -109,6 +109,7 @@ fn batch(deliveries: Vec<SecurityAuditOutboxDelivery>) -> SecurityAuditBatch {
 }
 
 /// Build a signed receipt body exactly as the reference receiver would.
+#[allow(clippy::too_many_arguments)]
 fn signed_receipt(
     status: &str,
     kind: &str,

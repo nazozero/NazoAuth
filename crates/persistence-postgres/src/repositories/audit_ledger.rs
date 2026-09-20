@@ -374,8 +374,8 @@ async fn claim_inflight(
         });
     }
     let previous_hash = deliveries
-        .iter()
-        .next()
+        .as_slice()
+        .first()
         .map(|delivery| delivery.previous_hash.clone())
         .ok_or_else(|| invariant_error("security audit batch has no first member"))?;
     let last_hash = deliveries
@@ -506,7 +506,7 @@ async fn claim_fresh(
             .execute(connection)
             .await?;
     }
-    let first = deliveries.iter().next().expect("non-empty batch");
+    let first = deliveries.as_slice().first().expect("non-empty batch");
     let last = deliveries.iter().next_back().expect("non-empty batch");
     let event_hashes: Vec<[u8; 32]> = deliveries
         .iter()

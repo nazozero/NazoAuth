@@ -68,9 +68,9 @@ acceptance; `duplicate` acknowledges an already-persisted identical batch; a
 `rejected` receipt with `permanent=true` blocks the batch until an operator
 runs `nazo_unblock_security_audit_batch()`, while a transient rejection or any
 missing/invalid receipt reschedules it. Acknowledgement deletes the batch's
-delivery rows in the same transaction that advances the anchor checkpoint —
-the accepted checkpoint and the immutable event/chain records are the durable
-evidence, so no delivered row is retained and no separate sweeper reclaims it.
+outbox, chain-entry, and event rows in the same transaction that advances
+the anchor checkpoint — the accepted checkpoint is the durable evidence, so
+no delivered row is retained and no separate sweeper reclaims it.
 Transport and transient failures are rescheduled with bounded backoff. Claim,
 acknowledgement, and failure release are fenced by the batch generation, so an
 expired or stale worker cannot mutate a newer claim. The response body is
@@ -99,35 +99,33 @@ retries and on a non-empty blocked reason. There is no skip/DLQ operation
 because skipping would make a later external chain look complete when it is
 not.
 
-## Online retention and archive
+## Retention
 
-The hot ledger (`security_audit_events` + `security_audit_chain_entries`)
-keeps a one-hour online window of delivered evidence. The security-state
-maintenance worker calls `nazo_archive_security_audit_prefix` in bounded
-batches (256 rows) to move the eligible prefix into the immutable
-`security_audit_archive` table. A row is eligible only when it is at or below
-the acknowledged anchor (`anchor_sequence` — delivered *and* receipt-verified)
-and its `occurred_at` is older than one hour. The function serializes on the
-chain-state row against claims/acks, stops at the first sequence gap or
-ineligible row so the archive is always a contiguous chain prefix, verifies
-the boundary link against `security_audit_archive_state` plus every interior
-link, and fails closed on a mismatch. An in-flight batch is above the anchor
-by construction, so in-delivery evidence can never be archived out from under
-the exporter.
+Delivery is the retention boundary. The acknowledgement transaction that
+advances the durable anchor also removes the batch's rows from
+`security_audit_event_outbox`, `security_audit_chain_entries`, and
+`security_audit_events`. The receiver already holds the complete, verified,
+independently persisted history, so the OLTP database keeps no second copy
+and there is no archival sweep: delivered audit state is bounded by the
+in-flight batch, not by a clock.
 
-The archive is the durable record for aged-out evidence: each row keeps the
-event payload plus its `previous_hash`/`event_hash` link, so the archived
-prefix verifies standalone against the stored watermark, and the still-hot
-suffix continues to verify because the first hot row's `previous_hash` equals
-the last archived `event_hash`. The same append-only triggers protect the
-archive; the archival function is the only permitted delete path on the
-ledger tables and is gated by a session flag inside its own transaction —
-application roles hold no DELETE privilege on any ledger table.
+An empty chain after full delivery is a valid chain. The singleton chain
+state retains the head sequence/hash and the anchor checkpoint; the append
+path accepts `last_sequence = anchor_sequence` as a fully delivered head
+while still demanding the head row whenever undelivered entries exist.
+Health reporting treats that state as `chain_valid` with no orphans.
 
-Events that are never exported — or newer than the online window — stay in
-the hot tables. With the exporter disabled there is no receiver acknowledgement
-and therefore no archival: the local ledger remains the system of record and
-its retention is an operator decision outside this mechanism.
+Only undelivered state is retained: pending events — unchained, or chained
+but unacknowledged — stay in the hot tables and fail closed. The append-only
+triggers still reject direct UPDATE/DELETE on the ledger; the
+acknowledgement function is the only permitted delete path and is gated by
+the transaction-local `nazo.audit_reclaim` permit inside its own
+transaction — application roles hold no DELETE privilege on any ledger
+table.
+
+With the exporter disabled there is no receiver acknowledgement and
+therefore no reclaim: the local ledger remains the system of record and its
+retention is an operator decision outside this mechanism.
 
 Recommended production separation:
 

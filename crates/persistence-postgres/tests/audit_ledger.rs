@@ -26,6 +26,10 @@ const BATCH_DELIVERY_UP: &str =
     include_str!("../../../migrations/20260920000100_audit_anchor_batch_delivery/up.sql");
 const BATCH_DELIVERY_DOWN: &str =
     include_str!("../../../migrations/20260920000100_audit_anchor_batch_delivery/down.sql");
+const DELIVERY_RETENTION_UP: &str =
+    include_str!("../../../migrations/20260924000100_audit_delivery_scoped_retention/up.sql");
+const DELIVERY_RETENTION_DOWN: &str =
+    include_str!("../../../migrations/20260924000100_audit_delivery_scoped_retention/down.sql");
 
 #[test]
 fn audit_ledger_migration_is_append_only_and_has_durable_outbox() {
@@ -115,6 +119,27 @@ fn batch_delivery_migration_fences_one_batch_and_retires_per_event_state() {
         "nazo_reschedule_security_audit_event",
     ] {
         assert!(BATCH_DELIVERY_DOWN.contains(required), "missing {required}");
+    }
+}
+
+#[test]
+fn delivery_scoped_retention_migration_reclaims_at_ack_and_drops_archive() {
+    for required in [
+        "nazo.audit_reclaim",
+        "DELETE FROM public.security_audit_event_outbox",
+        "DELETE FROM public.security_audit_chain_entries",
+        "DELETE FROM public.security_audit_events",
+        "DROP FUNCTION IF EXISTS public.nazo_archive_security_audit_prefix(BIGINT, TIMESTAMPTZ)",
+        "DROP TABLE IF EXISTS public.security_audit_archive",
+        "DROP TABLE IF EXISTS public.security_audit_archive_state",
+    ] {
+        assert!(DELIVERY_RETENTION_UP.contains(required), "missing {required}");
+    }
+    for required in [
+        "CREATE TABLE public.security_audit_archive",
+        "nazo_archive_security_audit_prefix",
+    ] {
+        assert!(DELIVERY_RETENTION_DOWN.contains(required), "missing {required}");
     }
 }
 
@@ -298,9 +323,22 @@ async fn audit_ledger_append_is_chained_and_outboxed() {
         .expect("another instance should read the shared audit checkpoint");
     assert_eq!(restarted_health, health);
 
+    // The acknowledged pair was reclaimed with the batch; a fresh unacked
+    // event is the row the append-only guard must still protect.
+    let third_id = Uuid::now_v7();
+    repository
+        .append(SecurityAuditEvent {
+            event_id: third_id,
+            event_type: "token_issued".to_owned(),
+            event_category: "token_lifecycle".to_owned(),
+            payload: json!({"subject_hash": "third"}),
+            occurred_at: Utc::now(),
+        })
+        .await
+        .expect("third audit event should append");
     let mutation =
         sql_query("UPDATE security_audit_events SET event_type = event_type WHERE event_id = $1")
-            .bind::<SqlUuid, _>(first_id)
+            .bind::<SqlUuid, _>(third_id)
             .execute(&mut connection)
             .await;
     assert!(

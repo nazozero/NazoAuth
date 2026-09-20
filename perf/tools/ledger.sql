@@ -143,10 +143,6 @@ UNION ALL SELECT 'AUDIT','ledger','events',
        (SELECT count(*)::text FROM security_audit_events)
 UNION ALL SELECT 'AUDIT','ledger','chain_entries',
        (SELECT count(*)::text FROM security_audit_chain_entries)
-UNION ALL SELECT 'AUDIT','ledger','archive_events',
-       (SELECT count(*)::text FROM security_audit_archive)
-UNION ALL SELECT 'AUDIT','ledger','archive_watermark',
-       (SELECT last_archived_sequence::text FROM security_audit_archive_state)
 UNION ALL SELECT 'AUDIT','ledger','anchor_sequence',
        (SELECT anchor_sequence::text FROM security_audit_chain_state)
 UNION ALL SELECT 'AUDIT','ledger','chain_head',

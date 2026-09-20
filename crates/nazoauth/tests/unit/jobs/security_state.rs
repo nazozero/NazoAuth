@@ -127,7 +127,7 @@ async fn saturated_batches_drain_immediately_until_unsaturated() {
             Box::pin(async move {
                 let call = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
                 Ok(CleanupBatchResult {
-                    saturated: call % self.rounds != 0,
+                    saturated: !call.is_multiple_of(self.rounds),
                     ..CleanupBatchResult::default()
                 })
             })

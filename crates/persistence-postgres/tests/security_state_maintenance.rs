@@ -1190,7 +1190,9 @@ async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
         Err(nazo_identity::ports::RepositoryError::Consistency(_))
     ));
 
-    // Evidence rows and chain entries are immutable and must all remain.
+    // The acknowledgement already reclaimed every delivered copy: the
+    // receiver is the durable audit store, so the OLTP event, chain-entry
+    // and outbox rows for this batch are gone.
     for event_id in [first, second] {
         let row = sql_query(
             "SELECT COUNT(*)::bigint AS count \
@@ -1200,7 +1202,19 @@ async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
         .get_result::<CountRow>(&mut connection)
         .await
         .expect("event count should query");
-        assert_eq!(row.count, 1, "audit evidence must never be reclaimed");
+        assert_eq!(row.count, 0, "delivered events are reclaimed at ack");
+        let chain = sql_query(
+            "SELECT COUNT(*)::bigint AS count \
+             FROM security_audit_chain_entries WHERE event_id = $1",
+        )
+        .bind::<SqlUuid, _>(event_id)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .expect("chain count should query");
+        assert_eq!(
+            chain.count, 0,
+            "delivered chain entries are reclaimed at ack"
+        );
     }
 }
 
@@ -1623,28 +1637,6 @@ async fn terminal_members_sparsify_without_touching_live_or_recently_revoked_mem
     assert_eq!(family_row_count(&mut connection, family_id).await, 4);
 }
 
-#[derive(QueryableByName)]
-struct SeqRow {
-    #[diesel(sql_type = BigInt)]
-    seq: i64,
-}
-
-async fn insert_audit_event_at(
-    connection: &mut AsyncPgConnection,
-    event_id: Uuid,
-    occurred_at: DateTime<Utc>,
-) {
-    sql_query(
-        "SELECT public.nazo_persist_security_audit_event(\
-             $1, 'test_event', 'test', '{}'::jsonb, $2)",
-    )
-    .bind::<SqlUuid, _>(event_id)
-    .bind::<Timestamptz, _>(occurred_at)
-    .execute(connection)
-    .await
-    .expect("audit event fixture should insert");
-}
-
 async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64, i64) {
     let events = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events")
         .get_result::<CountRow>(connection)
@@ -1656,32 +1648,44 @@ async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64, i64) {
         .await
         .expect("chain count should query")
         .count;
-    let archive = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_archive")
+    let outbox = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_event_outbox")
         .get_result::<CountRow>(connection)
         .await
-        .expect("archive count should query")
+        .expect("outbox count should query")
         .count;
-    (events, chain, archive)
+    (events, chain, outbox)
 }
 
-async fn archive_prefix(connection: &mut AsyncPgConnection, limit: i64) -> i64 {
+async fn event_row_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64 {
     sql_query(
-        "SELECT public.nazo_archive_security_audit_prefix(\
-             $1, clock_timestamp() - interval '1 hour') AS count",
+        "SELECT COUNT(*)::bigint AS count \
+         FROM security_audit_events WHERE event_id = $1",
     )
-    .bind::<BigInt, _>(limit)
+    .bind::<SqlUuid, _>(event_id)
     .get_result::<CountRow>(connection)
     .await
-    .expect("archive function should run")
+    .expect("event count should query")
     .count
 }
 
-/// The online-window archive only moves the delivered, contiguous chain
-/// prefix: acked-and-old rows leave the hot tables in sequence order, the
-/// archive keeps their full payload plus chain link, recent or unacked rows
-/// stay put, and the append-only guard still rejects direct deletes.
+async fn chain_row_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64 {
+    sql_query(
+        "SELECT COUNT(*)::bigint AS count \
+         FROM security_audit_chain_entries WHERE event_id = $1",
+    )
+    .bind::<SqlUuid, _>(event_id)
+    .get_result::<CountRow>(connection)
+    .await
+    .expect("chain count should query")
+    .count
+}
+
+/// Acknowledgement is the only retention boundary: it reclaims the delivered
+/// event, chain-entry and outbox rows in the same transaction that advances
+/// the anchor, an unacknowledged event keeps all three rows, and the
+/// append-only guard still rejects deletes without the reclaim permit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn exported_audit_prefix_archives_contiguously_and_stays_verifiable() {
+async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1724,28 +1728,10 @@ async fn exported_audit_prefix_archives_contiguously_and_stays_verifiable() {
         }
     }
 
-    // Backdate every committed event past the online window. The fixture runs
-    // as the migration owner, so replica mode can rewrite fixture timestamps;
-    // application roles can never do this — the trigger still guards them.
-    connection
-        .batch_execute("SET session_replication_role = 'replica'")
-        .await
-        .expect("replica mode should set for fixture backdating");
-    sql_query(
-        "UPDATE security_audit_events SET occurred_at = clock_timestamp() - interval '2 hours'",
-    )
-    .execute(&mut connection)
-    .await
-    .expect("fixture backdating should apply");
-    connection
-        .batch_execute("SET session_replication_role = 'origin'")
-        .await
-        .expect("replica mode should reset");
-
-    // Three fresh events inside the online window; claim+ack moves the anchor
-    // past them while their age keeps them ineligible.
-    let recent_ids: Vec<Uuid> = (0..3).map(|_| Uuid::now_v7()).collect();
-    for event_id in &recent_ids {
+    // Two events claimed and acknowledged: all three delivery copies leave in
+    // the ack transaction, and the anchor lands on the batch tail.
+    let acked_ids: Vec<Uuid> = (0..2).map(|_| Uuid::now_v7()).collect();
+    for event_id in &acked_ids {
         insert_audit_event(&mut connection, *event_id).await;
     }
     let batch = match repository
@@ -1756,20 +1742,46 @@ async fn exported_audit_prefix_archives_contiguously_and_stays_verifiable() {
         nazo_persistence::SecurityAuditBatchClaim::Claimed(batch) => batch,
         other => panic!("expected a claimed batch, got {other:?}"),
     };
-    let recent_first_sequence = batch.first_sequence;
+    let (events_before, chain_before, outbox_before) = audit_counts(&mut connection).await;
     ack_batch(&repository, &batch, batch.generation, &deployment_id)
         .await
         .expect("the batch should acknowledge");
+    let (events_after, chain_after, outbox_after) = audit_counts(&mut connection).await;
+    assert_eq!(
+        events_before - events_after,
+        2,
+        "acked events leave security_audit_events"
+    );
+    assert_eq!(
+        chain_before - chain_after,
+        2,
+        "acked chain entries leave security_audit_chain_entries"
+    );
+    assert_eq!(
+        outbox_before - outbox_after,
+        2,
+        "acked outbox rows leave security_audit_event_outbox"
+    );
+    for event_id in &acked_ids {
+        assert_eq!(event_row_count(&mut connection, *event_id).await, 0);
+        assert_eq!(chain_row_count(&mut connection, *event_id).await, 0);
+        assert_eq!(outbox_count(&mut connection, *event_id).await, 0);
+    }
 
-    // One old event claimed (chain entry exists) but never acknowledged:
-    // its sequence sits above the anchor and must block the prefix.
-    let unacked_old = Uuid::now_v7();
-    insert_audit_event_at(
-        &mut connection,
-        unacked_old,
-        Utc::now() - Duration::hours(2),
-    )
-    .await;
+    // A fully delivered chain is still a valid chain: head reads through
+    // `WHERE chain_valid`, so this returning a row at all proves the empty
+    // post-delivery chain is accepted, with the anchor at the head.
+    let health = repository
+        .anchor_health()
+        .await
+        .expect("a fully delivered ledger must stay healthy");
+    assert_eq!(health.last_exported_sequence, Some(health.head_sequence));
+    assert!(!health.pending_orphan_exists);
+
+    // One event claimed (chain entry exists) but never acknowledged keeps all
+    // three rows until its batch is delivered.
+    let unacked = Uuid::now_v7();
+    insert_audit_event(&mut connection, unacked).await;
     let pending_batch = match repository
         .claim_batch(&deployment_id, 256, 1024 * 1024, 60)
         .await
@@ -1782,107 +1794,25 @@ async fn exported_audit_prefix_archives_contiguously_and_stays_verifiable() {
         .fail_batch(pending_batch.generation, Utc::now(), "test-hold", false)
         .await
         .expect("batch should return to pending");
+    assert_eq!(event_row_count(&mut connection, unacked).await, 1);
+    assert_eq!(chain_row_count(&mut connection, unacked).await, 1);
+    assert_eq!(outbox_count(&mut connection, unacked).await, 1);
 
-    let (events_before, chain_before, archive_before) = audit_counts(&mut connection).await;
-    let watermark_before: i64 = sql_query(
-        "SELECT last_archived_sequence AS seq FROM security_audit_archive_state WHERE singleton",
-    )
-    .get_result::<SeqRow>(&mut connection)
-    .await
-    .expect("archive watermark should read")
-    .seq;
-
-    // The append-only guard still rejects a direct delete without the
-    // archival session flag.
+    // The append-only guard still rejects direct deletes — both with no
+    // permit and under the retired archive permit name.
     let rejected = sql_query("DELETE FROM security_audit_events WHERE true")
         .execute(&mut connection)
         .await;
     assert!(rejected.is_err(), "append-only guard must reject deletes");
-
-    // Bounded first pass: limit 2 archives at most 2.
-    let first_pass = archive_prefix(&mut connection, 2).await;
-    assert!(first_pass > 0 && first_pass <= 2, "pass respects the bound");
-    let mut archived = first_pass;
-    loop {
-        let moved = archive_prefix(&mut connection, 256).await;
-        archived += moved;
-        if moved == 0 {
-            break;
-        }
-    }
-    // The prefix stopped before the three recent events: they were claimed
-    // contiguously at recent_first_sequence, so the boundary is there.
-    assert_eq!(
-        watermark_before + archived,
-        recent_first_sequence - 1,
-        "archive stops at the first ineligible row"
-    );
-
-    let (events_after, chain_after, archive_after) = audit_counts(&mut connection).await;
-    assert_eq!(
-        events_before - events_after,
-        archived,
-        "archived rows leave security_audit_events"
-    );
-    assert_eq!(
-        chain_before - chain_after,
-        archived,
-        "archived rows leave security_audit_chain_entries"
-    );
-    assert_eq!(
-        archive_after - archive_before,
-        archived,
-        "archive gains exactly the moved rows"
-    );
-
-    // The archive is a contiguous, chain-verifiable prefix.
-    let watermark_after: i64 = sql_query(
-        "SELECT last_archived_sequence AS seq FROM security_audit_archive_state WHERE singleton",
-    )
-    .get_result::<SeqRow>(&mut connection)
-    .await
-    .expect("archive watermark should read")
-    .seq;
-    assert_eq!(watermark_after, recent_first_sequence - 1);
-    let archive_rows = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_archive")
-        .get_result::<CountRow>(&mut connection)
+    connection
+        .batch_execute("SET nazo.audit_archive = 'on'")
         .await
-        .expect("archive count should read")
-        .count;
-    assert_eq!(
-        archive_rows, watermark_after,
-        "archive prefix has no sequence gaps"
+        .expect("retired permit name should still set");
+    let retired = sql_query("DELETE FROM security_audit_events WHERE true")
+        .execute(&mut connection)
+        .await;
+    assert!(
+        retired.is_err(),
+        "the retired archive permit must not authorize deletes"
     );
-    let broken_links = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM security_audit_archive AS cur \
-         JOIN security_audit_archive AS prior ON prior.sequence = cur.sequence - 1 \
-         WHERE cur.previous_hash <> prior.event_hash",
-    )
-    .get_result::<CountRow>(&mut connection)
-    .await
-    .expect("chain check should query")
-    .count;
-    assert_eq!(broken_links, 0, "archived prefix must chain cleanly");
-
-    // Recent acked events and the unacked old event stay in the hot tables.
-    for event_id in &recent_ids {
-        let kept = sql_query(
-            "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_id = $1",
-        )
-        .bind::<SqlUuid, _>(*event_id)
-        .get_result::<CountRow>(&mut connection)
-        .await
-        .expect("recent event should query")
-        .count;
-        assert_eq!(kept, 1, "events inside the online window stay hot");
-    }
-    let kept_unacked = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM security_audit_events WHERE event_id = $1",
-    )
-    .bind::<SqlUuid, _>(unacked_old)
-    .get_result::<CountRow>(&mut connection)
-    .await
-    .expect("unacked event should query")
-    .count;
-    assert_eq!(kept_unacked, 1, "unacked events are never archived");
 }
