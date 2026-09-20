@@ -717,6 +717,15 @@ def seed() -> None:
         "dpop_public_jwk": dpop_jwk,
     }
     (state_dir / "secrets.json").write_text(json.dumps(secrets_doc, indent=2), encoding="utf-8")
+    # Concurrent scenarios share this pool by absolute offset; a seed that
+    # runs for a non-vectorized scenario must never shrink the pool below
+    # what an earlier, larger seed established for its siblings.
+    existing_vectors = state_dir / "vectors.json"
+    if existing_vectors.exists():
+        try:
+            vector_count = max(vector_count, len(json.loads(existing_vectors.read_text())))
+        except (OSError, ValueError):
+            pass
     vectors = prepare_vectors(
         count=vector_count,
         issuer=issuer,
