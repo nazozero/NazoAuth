@@ -1,0 +1,12 @@
+RUN_ID=statemin-fix-int30-r1
+DEPID=01a0bc83-76c9-76b0-a39b-2c10df6544df RATE=1800 DUR_MAIN=1800s DUR_SIDE=1700s
+start_utc=2026-09-20T14:53:33Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql bd7a669eac6db63aab862a3ff6f31d257ea76ad05a9a0433e7278a095a648b11
+sha256 soak_sampler.py 3f2534d264b500fef6371c6311d1147db2dd3fe8f11d14a7dbf98f68b7f3f1b3
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py ccd14fd8188d0fed8169f33fe62b11e03a9d7c37b8d5b15a750b6ccf5dfc8f89
+sha256 soak_run.sh d7e657550564132bf11d4fb04e654da5b0ed093497651daca01886261dfca9ea
+--- container-side digests ---
+sampler unavailable
+end_utc=2026-09-20T15:23:57Z
