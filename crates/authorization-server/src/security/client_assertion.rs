@@ -73,17 +73,26 @@ pub async fn consume_private_key_jwt_with_authorization_service(
     {
         Ok(true) => Ok(()),
         Ok(false) => {
-            audit.record(
-                "client_assertion_replay_detected",
-                crate::ports::audit::audit_fields(&[
-                    ("client_id", serde_json::json!(client.client_id)),
-                    (
-                        "jti_hash",
-                        serde_json::json!(crate::crypto::blake3_hex(assertion.jti())),
-                    ),
-                    ("kid", serde_json::json!(assertion.kid())),
-                ]),
-            );
+            // A replay detection is Required evidence: the durable record must
+            // commit before the rejection is returned, so an audit outage fails
+            // closed instead of silently dropping the fact.
+            audit
+                .record_required(
+                    "client_assertion_replay_detected",
+                    crate::ports::audit::audit_fields(&[
+                        ("client_id", serde_json::json!(client.client_id)),
+                        (
+                            "jti_hash",
+                            serde_json::json!(crate::crypto::blake3_hex(assertion.jti())),
+                        ),
+                        ("kid", serde_json::json!(assertion.kid())),
+                    ]),
+                )
+                .await
+                .map_err(|error| {
+                    tracing::error!(%error, "client assertion replay audit failed");
+                    ClientAssertionError::StoreUnavailable
+                })?;
             Err(ClientAssertionError::ReplayDetected)
         }
         Err(error) => {

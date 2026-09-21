@@ -298,15 +298,21 @@ impl TokenManagementOperations for ServerTokenManagementOperations {
                     tracing::warn!(%error, "failed to revoke token");
                     TokenManagementError::RevocationUnavailable
                 })?;
-            self.audit.record(
-                "token_revoked",
-                audit_fields(&[
-                    ("client_id", json!(client.client_id)),
-                    ("token_hash", json!(blake3_hex(&form.token))),
-                    ("updated", json!(updated)),
-                    ("source_ip_hash", json!(blake3_hex(&request.source_ip))),
-                ]),
-            );
+            self.audit
+                .record_required(
+                    "token_revoked",
+                    audit_fields(&[
+                        ("client_id", json!(client.client_id)),
+                        ("token_hash", json!(blake3_hex(&form.token))),
+                        ("updated", json!(updated)),
+                        ("source_ip_hash", json!(blake3_hex(&request.source_ip))),
+                    ]),
+                )
+                .await
+                .map_err(|error| {
+                    tracing::warn!(%error, "token revocation audit append failed");
+                    TokenManagementError::RevocationUnavailable
+                })?;
             Ok(())
         })
     }

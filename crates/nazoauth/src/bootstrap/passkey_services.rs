@@ -15,49 +15,43 @@ impl TracingPasskeyAudit {
     }
 }
 
-impl nazo_identity::ports::PasskeyAuditPort for TracingPasskeyAudit {
-    fn record(&self, event: nazo_identity::PasskeyAuditEvent) {
+impl TracingPasskeyAudit {
+    fn map(
+        event: nazo_identity::PasskeyAuditEvent,
+    ) -> (&'static str, serde_json::Map<String, serde_json::Value>) {
         match event {
-            nazo_identity::PasskeyAuditEvent::LoginFailureEmail { email, reason } => {
-                self.audit.record(
-                    "passkey_login_failure",
-                    audit_fields(&[
-                        ("email_hash", json!(blake3_hex(&email))),
-                        ("reason", json!(reason.as_str())),
-                    ]),
-                )
-            }
-            nazo_identity::PasskeyAuditEvent::LoginFailureUser { user_id, reason } => {
-                self.audit.record(
-                    "passkey_login_failure",
-                    audit_fields(&[
-                        ("user_id", json!(user_id.as_uuid())),
-                        ("reason", json!(reason.as_str())),
-                    ]),
-                )
-            }
-            nazo_identity::PasskeyAuditEvent::LoginSuccess { user_id, source_ip } => {
-                self.audit.record(
-                    "passkey_login_success",
-                    audit_fields(&[
-                        ("user_id", json!(user_id.as_uuid())),
-                        ("source_ip_hash", json!(blake3_hex(&source_ip))),
-                    ]),
-                )
-            }
-            nazo_identity::PasskeyAuditEvent::RegistrationRejected { user_id, reason } => {
-                self.audit.record(
-                    "passkey_registration_rejected",
-                    audit_fields(&[
-                        ("user_id", json!(user_id.as_uuid())),
-                        ("reason", json!(reason.as_str())),
-                    ]),
-                );
-            }
+            nazo_identity::PasskeyAuditEvent::LoginFailureEmail { email, reason } => (
+                "passkey_login_failure",
+                audit_fields(&[
+                    ("email_hash", json!(blake3_hex(&email))),
+                    ("reason", json!(reason.as_str())),
+                ]),
+            ),
+            nazo_identity::PasskeyAuditEvent::LoginFailureUser { user_id, reason } => (
+                "passkey_login_failure",
+                audit_fields(&[
+                    ("user_id", json!(user_id.as_uuid())),
+                    ("reason", json!(reason.as_str())),
+                ]),
+            ),
+            nazo_identity::PasskeyAuditEvent::LoginSuccess { user_id, source_ip } => (
+                "passkey_login_success",
+                audit_fields(&[
+                    ("user_id", json!(user_id.as_uuid())),
+                    ("source_ip_hash", json!(blake3_hex(&source_ip))),
+                ]),
+            ),
+            nazo_identity::PasskeyAuditEvent::RegistrationRejected { user_id, reason } => (
+                "passkey_registration_rejected",
+                audit_fields(&[
+                    ("user_id", json!(user_id.as_uuid())),
+                    ("reason", json!(reason.as_str())),
+                ]),
+            ),
             nazo_identity::PasskeyAuditEvent::Registered {
                 user_id,
                 credential_id,
-            } => self.audit.record(
+            } => (
                 "passkey_registered",
                 audit_fields(&[
                     ("user_id", json!(user_id.as_uuid())),
@@ -65,5 +59,28 @@ impl nazo_identity::ports::PasskeyAuditPort for TracingPasskeyAudit {
                 ]),
             ),
         }
+    }
+}
+
+impl nazo_identity::ports::PasskeyAuditPort for TracingPasskeyAudit {
+    fn record(&self, event: nazo_identity::PasskeyAuditEvent) {
+        let (name, fields) = Self::map(event);
+        self.audit.record(name, fields);
+    }
+
+    fn record_required<'a>(
+        &'a self,
+        event: nazo_identity::PasskeyAuditEvent,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            let (name, fields) = Self::map(event);
+            self.audit
+                .record_required(name, fields)
+                .await
+                .map_err(|error| {
+                    tracing::error!(%error, event = name, "required passkey audit append failed");
+                    nazo_identity::ports::RepositoryError::Unavailable
+                })
+        })
     }
 }

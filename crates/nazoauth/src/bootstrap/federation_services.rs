@@ -45,14 +45,16 @@ impl TracingFederationAudit {
     }
 }
 
-impl nazo_identity::ports::FederationAuditPort for TracingFederationAudit {
-    fn record(&self, event: nazo_identity::FederationAuditEvent) {
+impl TracingFederationAudit {
+    fn map(
+        event: nazo_identity::FederationAuditEvent,
+    ) -> (&'static str, serde_json::Map<String, serde_json::Value>) {
         match event {
             nazo_identity::FederationAuditEvent::RelinkDenied {
                 provider_type,
                 provider_id,
                 email,
-            } => self.audit.record(
+            } => (
                 "external_identity_relink_denied",
                 audit_fields(&[
                     ("provider_type", json!(provider_type)),
@@ -64,7 +66,7 @@ impl nazo_identity::ports::FederationAuditPort for TracingFederationAudit {
                 user_id,
                 provider_type,
                 provider_id,
-            } => self.audit.record(
+            } => (
                 "external_identity_linked",
                 audit_fields(&[
                     ("user_id", json!(user_id.as_uuid())),
@@ -76,7 +78,7 @@ impl nazo_identity::ports::FederationAuditPort for TracingFederationAudit {
                 user_id,
                 method,
                 source_ip,
-            } => self.audit.record(
+            } => (
                 "federation_login_success",
                 audit_fields(&[
                     ("user_id", json!(user_id.as_uuid())),
@@ -87,16 +89,39 @@ impl nazo_identity::ports::FederationAuditPort for TracingFederationAudit {
             nazo_identity::FederationAuditEvent::ProviderMismatchRejected {
                 expected_provider_id,
                 actual_provider_id,
-            } => self.audit.record(
+            } => (
                 "federation_provider_mismatch_rejected",
                 audit_fields(&[
                     ("expected_provider_id", json!(expected_provider_id)),
                     ("actual_provider_id", json!(actual_provider_id)),
                 ]),
             ),
-            nazo_identity::FederationAuditEvent::SamlReplayRejected => self
-                .audit
-                .record("federation_saml_replay_rejected", serde_json::Map::new()),
+            nazo_identity::FederationAuditEvent::SamlReplayRejected => {
+                ("federation_saml_replay_rejected", serde_json::Map::new())
+            }
         }
+    }
+}
+
+impl nazo_identity::ports::FederationAuditPort for TracingFederationAudit {
+    fn record(&self, event: nazo_identity::FederationAuditEvent) {
+        let (name, fields) = Self::map(event);
+        self.audit.record(name, fields);
+    }
+
+    fn record_required<'a>(
+        &'a self,
+        event: nazo_identity::FederationAuditEvent,
+    ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
+        Box::pin(async move {
+            let (name, fields) = Self::map(event);
+            self.audit
+                .record_required(name, fields)
+                .await
+                .map_err(|error| {
+                    tracing::error!(%error, event = name, "required federation audit append failed");
+                    nazo_identity::ports::RepositoryError::Unavailable
+                })
+        })
     }
 }

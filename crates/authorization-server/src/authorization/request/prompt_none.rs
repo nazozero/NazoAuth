@@ -67,6 +67,49 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
         session_management_allowed,
         ttl_seconds,
     };
+    // A prompt=none approval is still a decision: the durable Required intent
+    // commits before the PAR consume/code store, carrying only validated
+    // request facts — never token or credential material.
+    let mut intent_fields = audit_fields(&[
+        ("request_id_hash", json!(blake3_hex(&payload.request_id))),
+        ("user_id", json!(payload.user_id)),
+        ("client_id", json!(payload.client_id.clone())),
+        ("decision", json!("approve")),
+        ("decision_source", json!("prompt_none")),
+        ("scope", json!(payload.scopes.join(" "))),
+        ("source_ip_hash", json!(blake3_hex(facts.source_ip))),
+    ]);
+    if !payload.resource_indicators.is_empty() {
+        intent_fields.insert(
+            "resource_digest".to_owned(),
+            json!(blake3_hex(&payload.resource_indicators.join("\u{1f}"))),
+        );
+    }
+    if payload
+        .authorization_details
+        .as_array()
+        .is_some_and(|details| !details.is_empty())
+    {
+        intent_fields.insert(
+            "authorization_details_digest".to_owned(),
+            json!(blake3_hex(&payload.authorization_details.to_string())),
+        );
+    }
+    if let Some(digest) = payload.pushed_request_digest.as_deref() {
+        intent_fields.insert("pushed_request_digest".to_owned(), json!(digest));
+    }
+    context
+        .security_audit
+        .record_required("authorization_decision_intent", intent_fields)
+        .await
+        .map_err(|error| {
+            tracing::error!(%error, "prompt=none decision audit intent failed");
+            OAuthEndpointError::json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权决策审计记录失败.",
+            )
+        })?;
     if let Some(request_uri) = payload.pushed_request_uri.as_deref() {
         match consume_pushed_authorization_request_with_context(context, request_uri).await {
             Ok(()) => {}

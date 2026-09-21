@@ -287,7 +287,8 @@ fn error_response(
         ),
         OidcLogoutError::SigningUnavailable
         | OidcLogoutError::OutboxUnavailable
-        | OidcLogoutError::SessionDeleteUnavailable => (
+        | OidcLogoutError::SessionDeleteUnavailable
+        | OidcLogoutError::AuditUnavailable => (
             StatusCode::SERVICE_UNAVAILABLE,
             "server_error",
             "back-channel logout persistence failed.",

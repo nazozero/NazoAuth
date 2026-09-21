@@ -36,15 +36,24 @@ where
     )
     .await;
     if let Err(DpopError::ReplayDetected(event)) = &result {
-        audit.record(
-            "dpop_replay_detected",
-            [
-                ("jti_hash".to_owned(), json!(event.jti_hash)),
-                ("kid".to_owned(), json!(event.key_id)),
-            ]
-            .into_iter()
-            .collect(),
-        );
+        // Required evidence: the replay detection must be durable before the
+        // rejection is returned; an audit outage fails closed instead of
+        // silently dropping the fact.
+        if let Err(error) = audit
+            .record_required(
+                "dpop_replay_detected",
+                [
+                    ("jti_hash".to_owned(), json!(event.jti_hash)),
+                    ("kid".to_owned(), json!(event.key_id)),
+                ]
+                .into_iter()
+                .collect(),
+            )
+            .await
+        {
+            tracing::error!(%error, "DPoP replay audit failed");
+            return Err(DpopError::NonceStoreUnavailable);
+        }
     }
     result
 }

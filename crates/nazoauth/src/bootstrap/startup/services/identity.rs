@@ -159,6 +159,7 @@ pub(super) async fn build(
                 .map(Into::into),
         },
         runtime_registry.snapshot_store(),
+        core.security_audit.clone(),
     );
     let oidc_logout = web::Data::new(OidcLogoutEndpoint::new(
         Arc::new(oidc_logout_operations),
@@ -322,6 +323,7 @@ pub(super) async fn build(
             identity_session_service.clone(),
             authentication_rate_limit.clone(),
             mfa_attempt_throttle,
+            core.security_audit.clone(),
             identity_settings.rate_limit.mfa_failure_window_seconds,
             identity_settings.rate_limit.mfa_failure_max_attempts,
             settings.endpoint.issuer.as_str(),

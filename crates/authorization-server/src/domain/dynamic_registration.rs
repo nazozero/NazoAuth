@@ -131,7 +131,9 @@ impl DynamicRegistrationApplication {
             .await
             .map_err(|_| server_error("Dynamic client registration failed."))?;
         self.request_guard
-            .audit("dynamic_client_registered", &client, source_ip);
+            .audit_required("dynamic_client_registered", &client, source_ip)
+            .await
+            .map_err(|_| server_error("Dynamic client registration failed."))?;
         Ok(DynamicRegistrationResult::Created(
             DynamicRegistrationResponse {
                 client,
@@ -239,7 +241,9 @@ impl DynamicRegistrationApplication {
             }
         };
         self.request_guard
-            .audit("dynamic_client_configuration_updated", &client, source_ip);
+            .audit_required("dynamic_client_configuration_updated", &client, source_ip)
+            .await
+            .map_err(|_| server_error("Client configuration update failed."))?;
         Ok(DynamicRegistrationResult::Updated(
             DynamicRegistrationResponse {
                 client,
@@ -275,7 +279,9 @@ impl DynamicRegistrationApplication {
             }
         }
         self.request_guard
-            .audit("dynamic_client_deleted", &current, source_ip);
+            .audit_required("dynamic_client_deleted", &current, source_ip)
+            .await
+            .map_err(|_| server_error("Client deletion failed."))?;
         Ok(DynamicRegistrationResult::Deleted)
     }
 
@@ -543,5 +549,35 @@ impl DynamicRegistrationRequestGuard for ServerDynamicRegistrationRequestGuard {
                 ("source_ip_hash", json!(blake3_hex(source_ip))),
             ]),
         );
+    }
+
+    fn audit_required<'a>(
+        &'a self,
+        event: &'static str,
+        client: &'a nazo_auth::OAuthClient,
+        source_ip: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>
+    {
+        Box::pin(async move {
+            self.audit
+                .record_required(
+                    event,
+                    audit_fields(&[
+                        ("client_id", json!(client.client_id)),
+                        ("client_type", json!(client.client_type)),
+                        ("grant_types", json!(client.grant_types)),
+                        (
+                            "token_endpoint_auth_method",
+                            json!(client.token_endpoint_auth_method),
+                        ),
+                        ("source_ip_hash", json!(blake3_hex(source_ip))),
+                    ]),
+                )
+                .await
+                .map_err(|error| {
+                    tracing::error!(%error, event, "dynamic registration audit append failed");
+                    DynamicRegistrationRateLimitError::Unavailable
+                })
+        })
     }
 }

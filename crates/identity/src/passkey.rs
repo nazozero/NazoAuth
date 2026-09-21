@@ -478,27 +478,35 @@ where
             .map_err(ceremony_read_error)?
             .ok_or(PasskeyError::CeremonyExpired)?;
         if stored.user_id != account.user_id() || stored.tenant_id != account.tenant().tenant_id {
-            self.audit.record(PasskeyAuditEvent::RegistrationRejected {
-                user_id: account.user_id(),
-                reason: PasskeyAuditReason::CeremonyUserMismatch,
-            });
+            // Required rejection evidence is durable before the rejection
+            // returns; an audit outage fails closed as a dependency error.
+            self.audit
+                .record_required(PasskeyAuditEvent::RegistrationRejected {
+                    user_id: account.user_id(),
+                    reason: PasskeyAuditReason::CeremonyUserMismatch,
+                })
+                .await
+                .map_err(PasskeyError::State)?;
             return Err(PasskeyError::CeremonyMismatch);
         }
-        let credential = self
-            .webauthn
-            .finish_registration(&stored.state, &response)
-            .map_err(|error| {
+        let credential = match self.webauthn.finish_registration(&stored.state, &response) {
+            Ok(credential) => credential,
+            Err(error) => {
                 tracing::debug!(
                     error = ?error,
                     user_id = %account.user_id().as_uuid(),
                     "passkey attestation verification failed"
                 );
-                self.audit.record(PasskeyAuditEvent::RegistrationRejected {
-                    user_id: account.user_id(),
-                    reason: PasskeyAuditReason::InvalidAttestation,
-                });
-                PasskeyError::RegistrationFailed
-            })?;
+                self.audit
+                    .record_required(PasskeyAuditEvent::RegistrationRejected {
+                        user_id: account.user_id(),
+                        reason: PasskeyAuditReason::InvalidAttestation,
+                    })
+                    .await
+                    .map_err(PasskeyError::State)?;
+                return Err(PasskeyError::RegistrationFailed);
+            }
+        };
         let credential_id = credential.id.to_b64url();
         let sign_count = i64::from(credential.counter);
         let credential_json = serde_json::to_value(credential).map_err(|_| {
@@ -521,10 +529,13 @@ where
                 RepositoryError::Conflict => PasskeyError::AlreadyRegistered,
                 error => PasskeyError::State(error),
             })?;
-        self.audit.record(PasskeyAuditEvent::Registered {
-            user_id: account.user_id(),
-            credential_id: row.id,
-        });
+        self.audit
+            .record_required(PasskeyAuditEvent::Registered {
+                user_id: account.user_id(),
+                credential_id: row.id,
+            })
+            .await
+            .map_err(PasskeyError::State)?;
         Ok(row)
     }
 
