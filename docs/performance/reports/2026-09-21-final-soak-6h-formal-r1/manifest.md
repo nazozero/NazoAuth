@@ -66,4 +66,4 @@ All runtime files verified byte-identical to `dffffa32` content before start (sh
 
 ## REPORT_SHA
 
-To be filled after commit of this report directory.
+`b27dd323cccfd8473352850bd29971bdce043b4e` (report+evidence commit; tested source unchanged at `dffffa32`)
