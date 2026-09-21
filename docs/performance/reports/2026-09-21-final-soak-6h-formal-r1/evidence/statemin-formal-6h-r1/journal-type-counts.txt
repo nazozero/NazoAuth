@@ -1,0 +1,6 @@
+6644524 event_type":"authorization_approved
+6644524 event_type":"authorization_decision_intent
+ 171028 event_type":"login_success
+28753152 event_type":"token_issued
+---
+1230987

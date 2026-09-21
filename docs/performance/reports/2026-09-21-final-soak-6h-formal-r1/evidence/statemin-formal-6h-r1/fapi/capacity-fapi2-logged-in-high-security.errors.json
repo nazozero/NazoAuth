@@ -1,0 +1,26 @@
+{
+ "err_classified{step:fapi_token_authorization_code}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:par_fapi}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:fapi_token_refresh}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:authorize_decision}": {
+  "rate": 0,
+  "count": 0
+ },
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:authorize}": {
+  "count": 0,
+  "rate": 0
+ }
+}
