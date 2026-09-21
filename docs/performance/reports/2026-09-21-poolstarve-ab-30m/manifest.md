@@ -3,7 +3,7 @@
 Date: 2026-09-21
 TESTED_SOURCE_SHA: `dffffa32` (unchanged; diagnostic-only, no business code touched)
 PARENT_REPORT: `2026-09-21-final-soak-6h-formal-r1` (FORMAL_SOAK=FAIL, drops 0.4122%)
-REPORT_SHA: `<to be filled on commit>`
+REPORT_SHA: `d04de825`
 
 ## Runs
 
