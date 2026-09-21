@@ -54,6 +54,19 @@ def main():
                         "count(*) FILTER(WHERE state=%s) "
                         "FROM pg_stat_activity",
                         ("active", "idle in transaction")).fetchone()))
+                row["xact"] = dict(zip(
+                    ["oldest_xact_age_s", "xmin_lag_xids",
+                     "xacts_over_60s", "xacts_over_300s"],
+                    c.execute(
+                        "SELECT COALESCE(max(extract(epoch FROM now()"
+                        "-xact_start))::bigint,-1),"
+                        "COALESCE(max(txid_current()-backend_xmin),-1),"
+                        "count(*) FILTER(WHERE xact_start<now()"
+                        "-interval '60 seconds'),"
+                        "count(*) FILTER(WHERE xact_start<now()"
+                        "-interval '300 seconds') "
+                        "FROM pg_stat_activity WHERE xact_start IS NOT NULL"
+                        " AND pid<>pg_backend_pid()").fetchone()))
                 row["pg_db"] = dict(zip(
                     ["xact_commit", "xact_rollback", "blks_read", "blks_hit",
                      "tup_ret", "tup_ins", "tup_upd", "tup_del",

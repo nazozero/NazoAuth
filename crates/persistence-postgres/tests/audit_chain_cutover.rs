@@ -23,6 +23,8 @@ const BATCH_DELIVERY: &str =
     include_str!("../../../migrations/20260920000100_audit_anchor_batch_delivery/up.sql");
 const DELIVERY_RETENTION: &str =
     include_str!("../../../migrations/20260924000100_audit_delivery_scoped_retention/up.sql");
+const BOUNDED_CLAIM: &str =
+    include_str!("../../../migrations/20260925000100_audit_claim_bounded_scan/up.sql");
 
 #[derive(QueryableByName)]
 struct Count {
@@ -82,9 +84,20 @@ async fn claim_batch(repository: &AuditLedgerRepository) -> SecurityAuditBatchCl
 }
 
 async fn claim_or_panic(repository: &AuditLedgerRepository) -> SecurityAuditBatch {
-    match claim_batch(repository).await {
-        SecurityAuditBatchClaim::Claimed(batch) => batch,
-        other => panic!("expected a claimed batch, got {other:?}"),
+    // Lease timestamps are stamped by the database clock, which can run ahead
+    // of this host's clock by a few seconds; a just-released batch can read as
+    // transiently Busy inside the skew window. Real fencing regressions are
+    // asserted through claim_batch/join! call sites and a stuck lease still
+    // fails here once the deadline expires.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+    loop {
+        match claim_batch(repository).await {
+            SecurityAuditBatchClaim::Claimed(batch) => break batch,
+            SecurityAuditBatchClaim::Busy if std::time::Instant::now() < deadline => {
+                tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+            }
+            other => panic!("expected a claimed batch, got {other:?}"),
+        }
     }
 }
 
@@ -142,6 +155,7 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
         ACK_DELETE,
         BATCH_DELIVERY,
         DELIVERY_RETENTION,
+        BOUNDED_CLAIM,
     ] {
         owner
             .transaction::<_, diesel::result::Error, _>(async |connection| {
