@@ -161,7 +161,7 @@ FROM pg_stat_activity
 WHERE xact_start IS NOT NULL AND pid <> pg_backend_pid()
 UNION ALL
 SELECT 'XACT_HORIZON', 'activity', 'xmin_lag_xids',
-       COALESCE(max(txid_current() - backend_xmin)::text, '-')
+       COALESCE(max(age(backend_xmin))::text, '-')
 FROM pg_stat_activity
 WHERE backend_xmin IS NOT NULL AND pid <> pg_backend_pid()
 UNION ALL
