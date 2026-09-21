@@ -156,7 +156,7 @@ SQL
         -c "SELECT pending_estimate, anchor_sequence, (batch_blocked_reason IS NOT NULL) FROM public.nazo_security_audit_shared_anchor_health()" 2>/dev/null || echo ERR)
       horizon=$(docker exec -i nazoauth-perf-postgres-1 psql -X -A -t \
         -U postgres -d oauth </dev/null \
-        -c "SELECT COALESCE(max(extract(epoch FROM now()-xact_start))::bigint,-1), COALESCE(max(txid_current()-backend_xmin),-1) FROM pg_stat_activity WHERE xact_start IS NOT NULL" 2>/dev/null || echo ERR)
+        -c "SELECT COALESCE(max(extract(epoch FROM now()-xact_start))::bigint,-1), COALESCE(max(age(backend_xmin)),-1) FROM pg_stat_activity WHERE xact_start IS NOT NULL" 2>/dev/null || echo ERR)
       echo "{\"ts\":\"$ts\",\"health\":\"$row\",\"horizon\":\"$horizon\"}" >> "$OUT/audit-health.jsonl"
       sleep 60
     done
