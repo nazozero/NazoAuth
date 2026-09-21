@@ -551,7 +551,7 @@ async fn foreign_user_cannot_consume_an_observed_consent_async() {
 
     assert!(matches!(
         service
-            .admit_user_decision("request-1", Uuid::from_u128(11))
+            .preview_user_decision("request-1", Uuid::from_u128(11))
             .await,
         Err(AuthorizationDecisionAdmissionError::UserMismatch)
     ));
@@ -570,9 +570,19 @@ async fn concurrent_consent_admission_has_exactly_one_winner_async() {
     *store.0.consent.lock().unwrap() = Some(consent(owner, None));
     let service = service(FakeRepository::default(), store.clone());
 
+    // Both previews observe the same state non-destructively; the
+    // compare-and-delete consume is what serializes the single winner.
+    let first = service
+        .preview_user_decision("request-1", owner)
+        .await
+        .unwrap();
+    let second = service
+        .preview_user_decision("request-1", owner)
+        .await
+        .unwrap();
     let (first, second) = futures_util::join!(
-        service.admit_user_decision("request-1", owner),
-        service.admit_user_decision("request-1", owner),
+        service.consume_user_decision("request-1", &first),
+        service.consume_user_decision("request-1", &second),
     );
     let results = [first, second];
     assert_eq!(results.iter().filter(|result| result.is_ok()).count(), 1);
@@ -588,7 +598,7 @@ async fn concurrent_consent_admission_has_exactly_one_winner_async() {
             .count(),
         1
     );
-    assert_eq!(store.0.consent_takes.load(Ordering::Relaxed), 1);
+    assert_eq!(store.0.consent_takes.load(Ordering::Relaxed), 2);
 }
 
 #[test]
@@ -604,8 +614,12 @@ async fn consent_replacement_between_load_and_claim_is_preserved_async() {
     *store.0.replace_consent_after_load.lock().unwrap() = Some(consent(replacement_owner, None));
     let service = service(FakeRepository::default(), store.clone());
 
+    let preview = service
+        .preview_user_decision("request-1", owner)
+        .await
+        .unwrap();
     assert!(matches!(
-        service.admit_user_decision("request-1", owner).await,
+        service.consume_user_decision("request-1", &preview).await,
         Err(AuthorizationDecisionAdmissionError::ConsentMissing)
     ));
     let retained = store.0.consent.lock().unwrap().clone().unwrap();
@@ -625,14 +639,18 @@ async fn admitted_consent_consumes_its_par_handle_once_async() {
     *store.0.pushed.lock().unwrap() = Some(pushed());
     let service = service(FakeRepository::default(), store.clone());
 
-    let admitted = service
-        .admit_user_decision("request-1", owner)
+    let preview = service
+        .preview_user_decision("request-1", owner)
         .await
         .unwrap();
     assert_eq!(
-        admitted.pushed_request_uri.as_deref(),
+        preview.consent.pushed_request_uri.as_deref(),
         Some("request-uri-1")
     );
+    service
+        .consume_user_decision("request-1", &preview)
+        .await
+        .unwrap();
     assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 1);
     assert!(store.0.pushed.lock().unwrap().is_none());
 }
@@ -651,16 +669,18 @@ async fn missing_par_error_retains_consumed_consent_for_protocol_redirect_async(
     let service = service(FakeRepository::default(), store.clone());
 
     let error = service
-        .admit_user_decision("request-1", owner)
+        .preview_user_decision("request-1", owner)
         .await
         .unwrap_err();
     let AuthorizationDecisionAdmissionError::PushedRequestMissing(consent) = error else {
-        panic!("missing PAR must retain the consumed consent payload")
+        panic!("missing PAR must still return the consent payload for the redirect")
     };
     assert_eq!(consent.redirect_uri, "https://client.example/callback");
     assert_eq!(consent.state.as_deref(), Some("state-1"));
-    assert_eq!(store.0.consent_takes.load(Ordering::Relaxed), 1);
+    // The preview is non-destructive: neither consent nor PAR was consumed.
+    assert_eq!(store.0.consent_takes.load(Ordering::Relaxed), 0);
     assert_eq!(store.0.pushed_takes.load(Ordering::Relaxed), 0);
+    assert!(store.0.consent.lock().unwrap().is_some());
 }
 
 #[test]
@@ -682,8 +702,12 @@ async fn par_replacement_between_load_and_claim_is_preserved_async() {
     *store.0.replace_pushed_after_load.lock().unwrap() = Some(replacement.clone());
     let service = service(FakeRepository::default(), store.clone());
 
+    let preview = service
+        .preview_user_decision("request-1", owner)
+        .await
+        .unwrap();
     let error = service
-        .admit_user_decision("request-1", owner)
+        .consume_user_decision("request-1", &preview)
         .await
         .unwrap_err();
     assert!(matches!(

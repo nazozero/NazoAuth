@@ -80,6 +80,7 @@ pub enum MfaProfileErrorKind {
     RememberDeviceFailed,
     BackupCodesFailed,
     DisableFailed,
+    AuditUnavailable,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

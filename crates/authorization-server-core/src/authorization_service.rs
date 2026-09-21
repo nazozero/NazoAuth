@@ -54,6 +54,15 @@ pub struct GrantWrite<'a> {
     pub authorization_details: &'a Value,
 }
 
+/// The exact consent/pushed-request state a decision preview observed. The
+/// durable decision-intent record describes this snapshot, and
+/// `consume_user_decision` only consumes it if it is still stored unchanged.
+#[derive(Clone, Debug)]
+pub struct ConsentAdmissionPreview {
+    pub consent: ConsentPayload,
+    pub pushed_request: Option<PushedAuthorizationRequest>,
+}
+
 #[derive(Clone, Debug)]
 pub enum AuthorizationDecisionAdmissionError {
     ConsentMissing,
@@ -601,19 +610,22 @@ where
         Ok(())
     }
 
-    /// Atomically claims a consent transaction for the authenticated user and,
-    /// when present, consumes its PAR handle before the caller can issue a code.
+    /// Loads and validates a consent transaction for the authenticated user
+    /// without deleting any state. The returned snapshot is the exact state a
+    /// later `consume_user_decision` must still observe: the compare-and-delete
+    /// claims only that snapshot, so a replaced consent or pushed request fails
+    /// instead of consuming replacement data.
     ///
-    /// The non-consuming read intentionally precedes the atomic take. It prevents
-    /// a user who learns another user's opaque request id from invalidating that
-    /// transaction. The compare-and-delete then claims only the exact observed
-    /// payload, so a replacement between the read and claim remains intact.
-    pub async fn admit_user_decision(
+    /// Splitting the read from the consume gives the caller a window to write
+    /// the durable decision-intent evidence *before* the destructive consume,
+    /// which is what makes the audit record a real atomic boundary instead of
+    /// a post-mutation append.
+    pub async fn preview_user_decision(
         &self,
         request_id: &str,
         user_id: Uuid,
-    ) -> Result<ConsentPayload, AuthorizationDecisionAdmissionError> {
-        let observed = match self.state.load_consent(request_id).await {
+    ) -> Result<ConsentAdmissionPreview, AuthorizationDecisionAdmissionError> {
+        let consent = match self.state.load_consent(request_id).await {
             Ok(Some(consent)) => consent,
             Ok(None) => return Err(AuthorizationDecisionAdmissionError::ConsentMissing),
             Err(AuthorizationPortError::CorruptData) => {
@@ -625,25 +637,11 @@ where
                 ));
             }
         };
-        if observed.user_id != user_id {
+        if consent.user_id != user_id {
             return Err(AuthorizationDecisionAdmissionError::UserMismatch);
         }
 
-        let consent = observed;
-        match self
-            .state
-            .compare_and_delete_consent(request_id, &consent)
-            .await
-        {
-            Ok(true) => {}
-            Ok(false) => return Err(AuthorizationDecisionAdmissionError::ConsentMissing),
-            Err(error) => {
-                return Err(AuthorizationDecisionAdmissionError::ConsentReadFailed(
-                    error,
-                ));
-            }
-        }
-
+        let mut pushed_request = None;
         if let Some(request_uri) = consent.pushed_request_uri.as_deref() {
             let pushed = match self.state.load_par(request_uri).await {
                 Ok(Some(pushed)) => pushed,
@@ -680,11 +678,44 @@ where
                     ));
                 }
             }
-            match self
-                .state
-                .compare_and_delete_par(request_uri, &pushed)
-                .await
-            {
+            pushed_request = Some(pushed);
+        }
+        Ok(ConsentAdmissionPreview {
+            consent,
+            pushed_request,
+        })
+    }
+
+    /// Consumes exactly the state a `preview_user_decision` returned. Each
+    /// compare-and-delete fails when the stored row no longer matches the
+    /// previewed snapshot, so a concurrently replaced consent or pushed request
+    /// is never consumed.
+    pub async fn consume_user_decision(
+        &self,
+        request_id: &str,
+        preview: &ConsentAdmissionPreview,
+    ) -> Result<(), AuthorizationDecisionAdmissionError> {
+        let consent = preview.consent.clone();
+        match self
+            .state
+            .compare_and_delete_consent(request_id, &consent)
+            .await
+        {
+            Ok(true) => {}
+            Ok(false) => return Err(AuthorizationDecisionAdmissionError::ConsentMissing),
+            Err(error) => {
+                return Err(AuthorizationDecisionAdmissionError::ConsentReadFailed(
+                    error,
+                ));
+            }
+        }
+
+        if let Some(pushed) = preview.pushed_request.as_ref() {
+            let request_uri = consent
+                .pushed_request_uri
+                .as_deref()
+                .expect("a previewed pushed request implies its consent uri");
+            match self.state.compare_and_delete_par(request_uri, pushed).await {
                 Ok(true) => {}
                 Ok(false) => {
                     return Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(
@@ -701,7 +732,7 @@ where
                 }
             }
         }
-        Ok(consent)
+        Ok(())
     }
 
     /// Commits an approved consent using the existing cross-store ordering:

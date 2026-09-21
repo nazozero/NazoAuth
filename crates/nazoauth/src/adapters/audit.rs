@@ -125,12 +125,12 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
     (
         "authorization_approved",
         "authorization",
-        AuditEventClass::Required,
+        AuditEventClass::Telemetry,
     ),
     (
         "authorization_denied",
         "authorization",
-        AuditEventClass::Required,
+        AuditEventClass::Telemetry,
     ),
     (
         "authorization_decision_intent",
@@ -140,17 +140,17 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
     (
         "authorization_prompt_none_approved",
         "authorization",
-        AuditEventClass::Required,
+        AuditEventClass::Telemetry,
     ),
     (
         "ciba_authorization_approved",
         "authorization",
-        AuditEventClass::Required,
+        AuditEventClass::Telemetry,
     ),
     (
         "ciba_authorization_denied",
         "authorization",
-        AuditEventClass::Required,
+        AuditEventClass::Telemetry,
     ),
     (
         "ciba_authorization_started",
@@ -170,12 +170,12 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
     (
         "device_authorization_approved",
         "authorization",
-        AuditEventClass::Required,
+        AuditEventClass::Telemetry,
     ),
     (
         "device_authorization_denied",
         "authorization",
-        AuditEventClass::Required,
+        AuditEventClass::Telemetry,
     ),
     (
         "device_authorization_started",
@@ -369,6 +369,10 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
         AuditEventClass::Telemetry,
     ),
     ("token_issued", "token_lifecycle", AuditEventClass::Required),
+    // Retired intent marker: issuance commits the token row and `token_issued`
+    // in one transaction, so no producer emits this.  It stays defined as
+    // Required so any future accidental emission fails closed instead of
+    // reaching the best-effort queue as an unknown event.
     (
         "token_issuance_intent",
         "token_lifecycle",
@@ -563,14 +567,6 @@ async fn append_required_event(
         "security audit event"
     );
     Ok(())
-}
-
-/// Emit a best-effort audit event for low-risk telemetry. Queue saturation is
-/// intentionally not retried on the request path; the loss is emitted as a
-/// structured `audit.persistence` error. High-impact management actions must
-/// use [`ensure_audit_storage`] and [`audit_event_required`] instead.
-pub(crate) fn audit_event(event: &str, fields: serde_json::Map<String, serde_json::Value>) {
-    enqueue_event(event, prepare_event(event, fields));
 }
 
 fn enqueue_event(event: &str, queued: Result<QueuedAuditEvent, &'static str>) {

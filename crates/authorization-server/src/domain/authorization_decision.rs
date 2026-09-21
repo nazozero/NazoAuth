@@ -92,28 +92,15 @@ impl ServerAuthorizationDecisionOperations {
             UserAuthorizationDecision::Approve => "approve",
             UserAuthorizationDecision::Deny => "deny",
         };
-        self.security_audit
-            .record_required(
-                "authorization_decision_intent",
-                audit_fields(&[
-                    ("request_id_hash", json!(blake3_hex(&command.request_id))),
-                    ("user_id", json!(session.user().id())),
-                    ("decision", json!(decision)),
-                    ("source_ip_hash", json!(blake3_hex(&command.source_ip))),
-                ]),
-            )
-            .await
-            .map_err(|error| {
-                tracing::error!(%error, "authorization decision audit intent failed");
-                AuthorizationDecisionError::AuditUnavailable
-            })?;
 
-        let payload = match self
+        // 1. Non-destructive preview: consent + PAR are loaded and validated,
+        //    nothing is consumed yet.
+        let preview = match self
             .service
-            .admit_user_decision(&command.request_id, session.user().id())
+            .preview_user_decision(&command.request_id, session.user().id())
             .await
         {
-            Ok(payload) => payload,
+            Ok(preview) => preview,
             Err(
                 AuthorizationDecisionAdmissionError::ConsentMissing
                 | AuthorizationDecisionAdmissionError::ConsentMalformed,
@@ -147,9 +134,102 @@ impl ServerAuthorizationDecisionOperations {
             }
         };
 
-        // The intent above is the fail-closed evidence boundary. The outcome
-        // remains best-effort because consent/PAR state and the audit ledger
-        // are separate stores and cannot commit atomically here.
+        let establishes_oidc_login = preview.consent.scopes.iter().any(|scope| scope == "openid");
+        if establishes_oidc_login && preview.consent.oidc_sid.as_deref() != Some(session.oidc_sid())
+        {
+            tracing::warn!("authorization consent is not bound to the current OP browser session");
+            return Err(AuthorizationDecisionError::ConsentInvalid);
+        }
+
+        // 2. The durable Required evidence carries the validated preview facts
+        //    and commits before any destructive consume or business mutation.
+        //    It never carries tokens, codes, secrets, or credential material.
+        let mut intent_fields = audit_fields(&[
+            ("request_id_hash", json!(blake3_hex(&command.request_id))),
+            ("user_id", json!(session.user().id())),
+            ("client_id", json!(preview.consent.client_id.clone())),
+            ("decision", json!(decision)),
+            ("scope", json!(preview.consent.scopes.join(" "))),
+            ("source_ip_hash", json!(blake3_hex(&command.source_ip))),
+        ]);
+        if !preview.consent.resource_indicators.is_empty() {
+            intent_fields.insert(
+                "resource_digest".to_owned(),
+                json!(blake3_hex(
+                    &preview.consent.resource_indicators.join("\u{1f}")
+                )),
+            );
+        }
+        if preview
+            .consent
+            .authorization_details
+            .as_array()
+            .is_some_and(|details| !details.is_empty())
+        {
+            intent_fields.insert(
+                "authorization_details_digest".to_owned(),
+                json!(blake3_hex(
+                    &preview.consent.authorization_details.to_string()
+                )),
+            );
+        }
+        if let Some(digest) = preview.consent.pushed_request_digest.as_deref() {
+            intent_fields.insert("pushed_request_digest".to_owned(), json!(digest));
+        }
+        self.security_audit
+            .record_required("authorization_decision_intent", intent_fields)
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "authorization decision audit intent failed");
+                AuthorizationDecisionError::AuditUnavailable
+            })?;
+
+        // 3. Consume only the exact previewed state: a concurrently replaced
+        //    consent or pushed request fails the compare-and-delete instead of
+        //    being consumed.
+        match self
+            .service
+            .consume_user_decision(&command.request_id, &preview)
+            .await
+        {
+            Ok(()) => {}
+            Err(
+                AuthorizationDecisionAdmissionError::ConsentMissing
+                | AuthorizationDecisionAdmissionError::ConsentMalformed,
+            ) => return Err(AuthorizationDecisionError::ConsentInvalid),
+            Err(AuthorizationDecisionAdmissionError::ConsentReadFailed(error)) => {
+                tracing::warn!(%error, "failed to claim authorization consent state");
+                return Err(AuthorizationDecisionError::ConsentReadUnavailable);
+            }
+            Err(AuthorizationDecisionAdmissionError::UserMismatch) => {
+                return Err(AuthorizationDecisionError::UserMismatch);
+            }
+            Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(consent)) => {
+                return self
+                    .response_location(&consent, None, Some("invalid_request_uri"), None)
+                    .await;
+            }
+            Err(AuthorizationDecisionAdmissionError::PushedRequestMalformed(consent)) => {
+                tracing::warn!("PAR payload is malformed while claiming authorization consent");
+                return self
+                    .response_location(&consent, None, Some("server_error"), None)
+                    .await;
+            }
+            Err(AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
+                consent,
+                source,
+            }) => {
+                tracing::warn!(%source, "failed to claim consent-bound PAR state");
+                return self
+                    .response_location(&consent, None, Some("server_error"), None)
+                    .await;
+            }
+        }
+
+        // The intent above is the sole Required evidence for this decision; the
+        // outcome below is Telemetry because consent/PAR state and the audit
+        // ledger are separate stores that cannot commit atomically here.
+        let payload = preview.consent;
         if command.decision == UserAuthorizationDecision::Deny {
             record_decision_audit(
                 self.security_audit.as_ref(),
@@ -160,12 +240,6 @@ impl ServerAuthorizationDecisionOperations {
             return self
                 .response_location(&payload, None, Some("access_denied"), None)
                 .await;
-        }
-
-        let establishes_oidc_login = payload.scopes.iter().any(|scope| scope == "openid");
-        if establishes_oidc_login && payload.oidc_sid.as_deref() != Some(session.oidc_sid()) {
-            tracing::warn!("authorization consent is not bound to the current OP browser session");
-            return Err(AuthorizationDecisionError::ConsentInvalid);
         }
 
         let now = Utc::now();

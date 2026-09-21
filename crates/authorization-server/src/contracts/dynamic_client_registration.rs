@@ -27,6 +27,16 @@ pub trait DynamicRegistrationRequestGuard: Send + Sync {
     ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>;
 
     fn audit(&self, event: &'static str, client: &OAuthClient, source_ip: &str);
+
+    /// Durable append for Required-class lifecycle events. Unlike `audit`,
+    /// which is best-effort telemetry, a failure here must propagate so the
+    /// caller fails closed instead of losing required evidence.
+    fn audit_required<'a>(
+        &'a self,
+        event: &'static str,
+        client: &'a OAuthClient,
+        source_ip: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>;
 }
 
 #[derive(Clone)]

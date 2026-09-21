@@ -121,22 +121,30 @@ impl ServerScimRequestAuthorizer {
         );
     }
 
-    fn audit_denied(
+    async fn audit_denied(
         &self,
         ip_hash: &str,
         required_scope: ScimRequiredScope,
         reason: &str,
         token_id: Option<uuid::Uuid>,
-    ) {
-        self.audit.record(
-            "scim_token_denied",
-            audit_fields(&[
-                ("token_id", serde_json::json!(token_id)),
-                ("scope", serde_json::json!(required_scope.as_str())),
-                ("reason", serde_json::json!(reason)),
-                ("ip_hash", serde_json::json!(ip_hash)),
-            ]),
-        );
+    ) -> Result<(), ScimAuthorizationError> {
+        // Denial evidence is Required: it must be durable before the rejection
+        // is returned, so an audit outage fails closed as BackendUnavailable.
+        self.audit
+            .record_required(
+                "scim_token_denied",
+                audit_fields(&[
+                    ("token_id", serde_json::json!(token_id)),
+                    ("scope", serde_json::json!(required_scope.as_str())),
+                    ("reason", serde_json::json!(reason)),
+                    ("ip_hash", serde_json::json!(ip_hash)),
+                ]),
+            )
+            .await
+            .map_err(|error| {
+                tracing::error!(%error, "SCIM denial audit append failed");
+                ScimAuthorizationError::BackendUnavailable
+            })
     }
 }
 
@@ -155,17 +163,20 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                 return Err(ScimAuthorizationError::Disabled);
             }
             let Some(token) = token else {
-                self.audit_denied(&ip_hash, required_scope, "missing_bearer", None);
+                self.audit_denied(&ip_hash, required_scope, "missing_bearer", None)
+                    .await?;
                 return Err(ScimAuthorizationError::MissingBearer);
             };
             let credential = match self.credential(token).await {
                 Ok(credential) => credential,
                 Err(ScimAuthorizationError::InvalidBearer) => {
-                    self.audit_denied(&ip_hash, required_scope, "invalid_token", None);
+                    self.audit_denied(&ip_hash, required_scope, "invalid_token", None)
+                        .await?;
                     return Err(ScimAuthorizationError::InvalidBearer);
                 }
                 Err(ScimAuthorizationError::TenantMismatch) => {
-                    self.audit_denied(&ip_hash, required_scope, "tenant_mismatch", None);
+                    self.audit_denied(&ip_hash, required_scope, "tenant_mismatch", None)
+                        .await?;
                     return Err(ScimAuthorizationError::TenantMismatch);
                 }
                 Err(error) => return Err(error),
@@ -176,7 +187,8 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                     required_scope,
                     "insufficient_scope",
                     credential.token_id,
-                );
+                )
+                .await?;
                 return Err(ScimAuthorizationError::InsufficientScope);
             }
             if credential.tenant != self.tenant {
@@ -185,7 +197,8 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                     required_scope,
                     "tenant_mismatch",
                     credential.token_id,
-                );
+                )
+                .await?;
                 return Err(ScimAuthorizationError::TenantMismatch);
             }
             self.record_use(ip_hash, user_agent_hash, required_scope, &credential)

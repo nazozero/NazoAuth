@@ -284,6 +284,16 @@ impl DynamicRegistrationRequestGuard for Guard {
     fn audit(&self, event: &'static str, _client: &OAuthClient, _ip: &str) {
         self.events.lock().unwrap().push(event);
     }
+    fn audit_required<'a>(
+        &'a self,
+        event: &'static str,
+        _client: &'a OAuthClient,
+        _ip: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>
+    {
+        self.events.lock().unwrap().push(event);
+        Box::pin(async move { Ok(()) })
+    }
 }
 fn application(store: Arc<Store>, guard: Arc<Guard>) -> DynamicRegistrationApplication {
     DynamicRegistrationApplication::new(

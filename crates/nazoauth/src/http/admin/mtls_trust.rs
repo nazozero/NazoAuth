@@ -14,7 +14,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use uuid::Uuid;
 
-use crate::adapters::audit::audit_event;
+use crate::adapters::audit::audit_event_required;
 use crate::http::admin::persist_required_audit_or_unavailable;
 use crate::http::admin::require_durable_audit_or_unavailable;
 use crate::http::sessions::AdminSessionHandles;
@@ -306,14 +306,25 @@ pub(crate) async fn admin_mtls_trust_bundle(
         Ok(bundle) => {
             let bundle_sha256 = sha256_hex(bundle.as_bytes());
             let certificate_count = bundle.matches("-----BEGIN CERTIFICATE-----").count();
-            audit_event(
+            // Required disclosure evidence: the export must be durable before
+            // the bundle leaves; an audit outage fails closed with 503.
+            if let Err(error) = audit_event_required(
                 "mtls_trust_bundle_exported",
                 audit_fields(&[
                     ("admin_user_id", serde_json::json!(admin.id())),
                     ("bundle_sha256", serde_json::json!(bundle_sha256)),
                     ("certificate_count", serde_json::json!(certificate_count)),
                 ]),
-            );
+            )
+            .await
+            {
+                tracing::error!(%error, "mTLS trust bundle export audit failed");
+                return oauth_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "server_error",
+                    "信任锚导出审计失败.",
+                );
+            }
             HttpResponse::Ok()
                 .insert_header((header::CONTENT_TYPE, "application/x-pem-file"))
                 .insert_header((header::CACHE_CONTROL, "no-store"))

@@ -14,9 +14,11 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::crypto::jwt_decoding_key_from_jwk;
+use crate::ports::audit::{SecurityAudit, audit_fields};
 use crate::sessions::SessionResolver;
 use nazo_key_management::signing_algorithm_name;
 use nazo_runtime_modules::SnapshotStore;
+use serde_json::json;
 
 #[derive(Clone)]
 pub struct OidcLogoutConfig {
@@ -35,6 +37,7 @@ pub struct OidcLogoutHandles {
     keys: KeyManager,
     config: OidcLogoutConfig,
     snapshots: Arc<SnapshotStore>,
+    audit: Arc<dyn SecurityAudit>,
 }
 
 impl OidcLogoutHandles {
@@ -45,6 +48,7 @@ impl OidcLogoutHandles {
         keys: KeyManager,
         config: OidcLogoutConfig,
         snapshots: Arc<SnapshotStore>,
+        audit: Arc<dyn SecurityAudit>,
     ) -> Self {
         let service = LogoutService::new(
             clients,
@@ -62,6 +66,7 @@ impl OidcLogoutHandles {
             keys,
             config,
             snapshots,
+            audit,
         }
     }
 
@@ -192,6 +197,7 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                     .to_hex()
                     .to_string()
             });
+            let audit_client_id = command.request.client_id.clone();
             let execution = self
                 .service
                 .execute(LogoutInput {
@@ -224,6 +230,26 @@ impl OidcLogoutOperations for OidcLogoutHandles {
                 .as_ref()
                 .ok()
                 .and_then(|execution| execution.operation_key.clone());
+            if execution.is_ok() {
+                // Durable required evidence for the authorized logout is
+                // persisted before the irreversible session delete: an
+                // append failure aborts the logout while the session can
+                // still be retried instead of completing unaudited.
+                let mut fields = audit_fields(&[
+                    ("operation_key", json!(operation_key)),
+                    ("client_id", json!(audit_client_id)),
+                ]);
+                if let Some(subject_hash) = subject_hash.as_ref() {
+                    fields.insert("subject_hash".to_owned(), json!(subject_hash));
+                }
+                self.audit
+                    .record_required("oidc_logout", fields)
+                    .await
+                    .map_err(|error| {
+                        tracing::warn!(%error, "required oidc logout audit append failed");
+                        OidcLogoutError::AuditUnavailable
+                    })?;
+            }
             let success = finalize_logout_execution(execution, command.session_id, |session_id| {
                 let sessions = self.sessions.clone();
                 async move {

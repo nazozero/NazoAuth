@@ -425,6 +425,11 @@ fn error_response(
             "server_error",
             "请求失败.",
         ),
+        MfaProfileErrorKind::AuditUnavailable => authorization_error_response(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "server_error",
+            "请求失败.",
+        ),
     };
     if let Some(retry_after_seconds) = error.retry_after_seconds
         && let Ok(value) = header::HeaderValue::from_str(&retry_after_seconds.to_string())

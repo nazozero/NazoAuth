@@ -166,7 +166,14 @@ pub trait FederationPasswordHasherPort: Send + Sync {
 }
 
 pub trait FederationAuditPort: Send + Sync {
+    /// Best-effort telemetry: fire-and-forget, never awaited.
     fn record(&self, event: crate::federation::FederationAuditEvent);
+    /// Durable Required evidence: the caller awaits the append and fails
+    /// closed on error, so a required fact is never silently dropped.
+    fn record_required<'a>(
+        &'a self,
+        event: crate::federation::FederationAuditEvent,
+    ) -> RepositoryFuture<'a, ()>;
 }
 
 impl<T: FederationPasswordHasherPort + ?Sized> FederationPasswordHasherPort for std::sync::Arc<T> {
@@ -178,5 +185,12 @@ impl<T: FederationPasswordHasherPort + ?Sized> FederationPasswordHasherPort for 
 impl<T: FederationAuditPort + ?Sized> FederationAuditPort for std::sync::Arc<T> {
     fn record(&self, event: crate::federation::FederationAuditEvent) {
         self.as_ref().record(event);
+    }
+
+    fn record_required<'a>(
+        &'a self,
+        event: crate::federation::FederationAuditEvent,
+    ) -> RepositoryFuture<'a, ()> {
+        self.as_ref().record_required(event)
     }
 }

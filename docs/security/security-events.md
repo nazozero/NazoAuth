@@ -63,12 +63,15 @@ mutations, replay detections, issuance); `telemetry` marks best-effort
 operational signal. The class governs routing checks and the
 `misrouted_required`/`dropped_required` statuses above, not filtering — both
 classes reach the durable sink. Only these events are telemetry:
-`ciba_authorization_started`, `device_authorization_started`,
-`dynamic_client_configuration_read`, `federation_login_success`,
-`login_failure`, `login_success`, `mfa_challenge_failure`,
-`mfa_challenge_success`, `mfa_step_up_success`, `passkey_login_failure`,
-`passkey_login_success`, `scim_token_used`. An unlisted or unknown event name
-is treated as required, never as telemetry.
+`authorization_approved`, `authorization_denied`,
+`authorization_prompt_none_approved`, `ciba_authorization_approved`,
+`ciba_authorization_denied`, `ciba_authorization_started`,
+`device_authorization_approved`, `device_authorization_denied`,
+`device_authorization_started`, `dynamic_client_configuration_read`,
+`federation_login_success`, `login_failure`, `login_success`,
+`mfa_challenge_failure`, `mfa_challenge_success`, `mfa_step_up_success`,
+`passkey_login_failure`, `passkey_login_success`, `scim_token_used`. An
+unlisted or unknown event name is treated as required, never as telemetry.
 
 | Category | Events |
 | --- | --- |

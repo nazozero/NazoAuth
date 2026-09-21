@@ -295,6 +295,16 @@ impl DynamicRegistrationRequestGuard for FakeGuard {
     }
 
     fn audit(&self, _event: &'static str, _client: &OAuthClient, _source_ip: &str) {}
+
+    fn audit_required<'a>(
+        &'a self,
+        _event: &'static str,
+        _client: &'a OAuthClient,
+        _source_ip: &'a str,
+    ) -> Pin<Box<dyn Future<Output = Result<(), DynamicRegistrationRateLimitError>> + Send + 'a>>
+    {
+        Box::pin(async move { Ok(()) })
+    }
 }
 
 fn endpoint(enabled: bool) -> DynamicRegistrationEndpoint {

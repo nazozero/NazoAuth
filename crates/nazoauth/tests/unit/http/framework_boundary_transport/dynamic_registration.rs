@@ -221,6 +221,21 @@ impl nazo_oauth_server::contracts::dynamic_client_registration::DynamicRegistrat
         Box::pin(async { Ok(()) })
     }
     fn audit(&self, _event: &'static str, _client: &nazo_auth::OAuthClient, _source_ip: &str) {}
+    fn audit_required<'a>(
+        &'a self,
+        _event: &'static str,
+        _client: &'a nazo_auth::OAuthClient,
+        _source_ip: &'a str,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<(), nazo_oauth_server::contracts::dynamic_client_registration::DynamicRegistrationRateLimitError>,
+                > + Send
+                + 'a,
+        >,
+    >{
+        Box::pin(async { Ok(()) })
+    }
 }
 
 fn cas_registration_endpoint(

@@ -137,11 +137,25 @@ where
 }
 
 pub trait PasskeyAuditPort: Send + Sync {
+    /// Best-effort telemetry: fire-and-forget, never awaited.
     fn record(&self, event: crate::passkey::PasskeyAuditEvent);
+    /// Durable Required evidence: the caller awaits the append and fails
+    /// closed on error, so a required fact is never silently dropped.
+    fn record_required<'a>(
+        &'a self,
+        event: crate::passkey::PasskeyAuditEvent,
+    ) -> RepositoryFuture<'a, ()>;
 }
 
 impl<T: PasskeyAuditPort + ?Sized> PasskeyAuditPort for std::sync::Arc<T> {
     fn record(&self, event: crate::passkey::PasskeyAuditEvent) {
         self.as_ref().record(event);
+    }
+
+    fn record_required<'a>(
+        &'a self,
+        event: crate::passkey::PasskeyAuditEvent,
+    ) -> RepositoryFuture<'a, ()> {
+        self.as_ref().record_required(event)
     }
 }

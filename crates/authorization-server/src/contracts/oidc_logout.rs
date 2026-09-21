@@ -41,6 +41,7 @@ pub enum OidcLogoutError {
     SigningUnavailable,
     OutboxUnavailable,
     SessionDeleteUnavailable,
+    AuditUnavailable,
 }
 
 pub trait OidcLogoutOperations: Send + Sync {

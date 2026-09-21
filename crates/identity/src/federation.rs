@@ -208,11 +208,15 @@ where
         if let Some(actual_provider_id) = &stored.provider_id
             && actual_provider_id != expected_provider_id
         {
+            // Required rejection evidence: durable before the rejection
+            // returns; an audit outage fails closed as a dependency error.
             self.audit
-                .record(FederationAuditEvent::ProviderMismatchRejected {
+                .record_required(FederationAuditEvent::ProviderMismatchRejected {
                     expected_provider_id: expected_provider_id.to_owned(),
                     actual_provider_id: actual_provider_id.clone(),
-                });
+                })
+                .await
+                .map_err(FederationError::State)?;
             return Err(FederationError::ProviderMismatch);
         }
         self.ensure_fresh(stored.created_at, now)?;
@@ -258,10 +262,12 @@ where
             .ok_or(FederationError::StateExpired)?;
         if stored.provider_id != expected_provider_id {
             self.audit
-                .record(FederationAuditEvent::ProviderMismatchRejected {
+                .record_required(FederationAuditEvent::ProviderMismatchRejected {
                     expected_provider_id: expected_provider_id.to_owned(),
                     actual_provider_id: stored.provider_id,
-                });
+                })
+                .await
+                .map_err(FederationError::State)?;
             return Err(FederationError::ProviderMismatch);
         }
         self.ensure_fresh(stored.created_at, now)?;
@@ -285,7 +291,10 @@ where
         {
             Ok(())
         } else {
-            self.audit.record(FederationAuditEvent::SamlReplayRejected);
+            self.audit
+                .record_required(FederationAuditEvent::SamlReplayRejected)
+                .await
+                .map_err(FederationError::State)?;
             Err(FederationError::SamlReplay)
         }
     }
@@ -363,11 +372,14 @@ where
             .map_err(FederationError::Account)?
             .is_some()
         {
-            self.audit.record(FederationAuditEvent::RelinkDenied {
-                provider_type: identity.provider_type,
-                provider_id: identity.provider_id,
-                email,
-            });
+            self.audit
+                .record_required(FederationAuditEvent::RelinkDenied {
+                    provider_type: identity.provider_type,
+                    provider_id: identity.provider_id,
+                    email,
+                })
+                .await
+                .map_err(FederationError::State)?;
             return Err(FederationError::LoginFailed);
         }
         let password_hash = self
@@ -385,11 +397,14 @@ where
             })
             .await
             .map_err(FederationError::Account)?;
-        self.audit.record(FederationAuditEvent::IdentityLinked {
-            user_id: account.user_id(),
-            provider_type: identity.provider_type,
-            provider_id: identity.provider_id,
-        });
+        self.audit
+            .record_required(FederationAuditEvent::IdentityLinked {
+                user_id: account.user_id(),
+                provider_type: identity.provider_type,
+                provider_id: identity.provider_id,
+            })
+            .await
+            .map_err(FederationError::State)?;
         Ok(account)
     }
 

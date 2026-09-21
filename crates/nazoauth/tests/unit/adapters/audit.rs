@@ -286,8 +286,9 @@ fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
     // a state change without pretending to be a protocol E2E test.
     let authorization =
         include_str!("../../../../authorization-server/src/domain/authorization_decision.rs");
-    assert_source_order(authorization, ".ensure_storage()", "record_required(");
-    assert_source_order(authorization, "record_required(", "admit_user_decision(");
+    assert_source_order(authorization, ".ensure_storage()", "preview_user_decision(");
+    assert_source_order(authorization, "preview_user_decision(", "record_required(");
+    assert_source_order(authorization, "record_required(", "consume_user_decision(");
     assert!(authorization.contains("AuthorizationDecisionError::AuditUnavailable"));
 
     let device = include_str!("../../../../authorization-server/src/token/device.rs");
@@ -373,7 +374,14 @@ fn audit_event_definitions_pin_required_and_telemetry_classes() {
         // are the only events allowed on the droppable path.
         let telemetry = matches!(
             *name,
-            "ciba_authorization_started"
+            "authorization_approved"
+                | "authorization_denied"
+                | "authorization_prompt_none_approved"
+                | "ciba_authorization_approved"
+                | "ciba_authorization_denied"
+                | "ciba_authorization_started"
+                | "device_authorization_approved"
+                | "device_authorization_denied"
                 | "device_authorization_started"
                 | "dynamic_client_configuration_read"
                 | "federation_login_success"

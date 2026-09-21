@@ -90,11 +90,21 @@ impl PasskeyAuditPort for RecordingPorts {
     fn record(&self, event: PasskeyAuditEvent) {
         self.record(Call::Passkey(event));
     }
+
+    fn record_required<'a>(&'a self, event: PasskeyAuditEvent) -> RepositoryFuture<'a, ()> {
+        self.record(Call::Passkey(event));
+        Box::pin(async { Ok(()) })
+    }
 }
 
 impl FederationAuditPort for RecordingPorts {
     fn record(&self, event: FederationAuditEvent) {
         self.record(Call::Federation(event));
+    }
+
+    fn record_required<'a>(&'a self, event: FederationAuditEvent) -> RepositoryFuture<'a, ()> {
+        self.record(Call::Federation(event));
+        Box::pin(async { Ok(()) })
     }
 }
 
