@@ -151,6 +151,43 @@ UNION ALL SELECT 'AUDIT','ledger','oldest_pending_age_s',
        (SELECT COALESCE(extract(epoch FROM now()-min(occurred_at))::bigint::text,'-')
         FROM security_audit_event_outbox);
 
+-- ============================ XACT_HORIZON ============================
+-- MVCC horizon diagnostics: a long transaction pins backend_xmin and makes
+-- vacuum unable to reclaim queue-head deletes, which is how dead index
+-- prefixes accumulate under the audit outbox order index. Boundary snapshot.
+SELECT 'XACT_HORIZON', 'activity', 'oldest_xact_age_s',
+       COALESCE(max(extract(epoch FROM now() - xact_start))::bigint::text, '-')
+FROM pg_stat_activity
+WHERE xact_start IS NOT NULL AND pid <> pg_backend_pid()
+UNION ALL
+SELECT 'XACT_HORIZON', 'activity', 'xmin_lag_xids',
+       COALESCE(max(txid_current() - backend_xmin)::text, '-')
+FROM pg_stat_activity
+WHERE backend_xmin IS NOT NULL AND pid <> pg_backend_pid()
+UNION ALL
+SELECT 'XACT_HORIZON', 'activity', 'xacts_over_60s',
+       count(*)::text
+FROM pg_stat_activity
+WHERE xact_start IS NOT NULL AND xact_start < now() - interval '60 seconds'
+  AND pid <> pg_backend_pid()
+UNION ALL
+SELECT 'XACT_HORIZON', 'activity', 'xacts_over_300s',
+       count(*)::text
+FROM pg_stat_activity
+WHERE xact_start IS NOT NULL AND xact_start < now() - interval '300 seconds'
+  AND pid <> pg_backend_pid()
+UNION ALL
+SELECT 'XACT_HORIZON', 'activity', 'idle_in_xact_over_60s',
+       count(*)::text
+FROM pg_stat_activity
+WHERE state = 'idle in transaction'
+  AND xact_start IS NOT NULL
+  AND xact_start < now() - interval '60 seconds'
+  AND pid <> pg_backend_pid()
+UNION ALL
+SELECT 'XACT_HORIZON', 'prepared', 'prepared_xacts', count(*)::text
+FROM pg_prepared_xacts;
+
 -- ============================ WAL (KV) =================================
 SELECT 'WAL', 'stats', 'wal_records', wal_records::text FROM pg_stat_wal
 UNION ALL SELECT 'WAL','stats','wal_fpi', wal_fpi::text FROM pg_stat_wal

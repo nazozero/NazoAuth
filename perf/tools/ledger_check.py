@@ -119,7 +119,7 @@ def parse_ledger(path, failures):
                 {"status": cols[1] if len(cols) > 1 else "?",
                  "ts": cols[2] if len(cols) > 2 else "?"})
         elif sec in ("WAL", "BGWRITER", "CHECKPOINTER", "IO", "DB_TOTAL",
-                     "ACTIVITY", "AUDIT", "TOP_STATEMENTS"):
+                     "ACTIVITY", "AUDIT", "XACT_HORIZON", "TOP_STATEMENTS"):
             if len(cols) >= 4:
                 secs.setdefault(sec, []).append(
                     {"kind": cols[1], "key": cols[2], "value": cols[3]})

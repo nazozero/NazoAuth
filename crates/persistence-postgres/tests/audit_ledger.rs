@@ -544,3 +544,308 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
         .await
         .expect("exporter preflight should accept the isolated test database");
 }
+
+const BOUNDED_CLAIM_UP: &str =
+    include_str!("../../../migrations/20260925000100_audit_claim_bounded_scan/up.sql");
+const BOUNDED_CLAIM_DOWN: &str =
+    include_str!("../../../migrations/20260925000100_audit_claim_bounded_scan/down.sql");
+
+#[test]
+fn bounded_claim_migration_materializes_identities_before_joining() {
+    for required in [
+        "WITH chained AS MATERIALIZED",
+        "ORDER BY chain.sequence",
+        "IF v_claimed > 0 THEN RETURN",
+        "WITH pending AS MATERIALIZED",
+        "ORDER BY outbox.occurred_at, outbox.event_id",
+        "autovacuum_analyze_scale_factor = 0",
+        "autovacuum_analyze_threshold = 500",
+        // Plan pinning is structural: without statistics a table estimates
+        // near-empty and a backlog-proportional scan + sort can win on cost.
+        // The claim must be index-driven at any statistics state.
+        "SET enable_seqscan = off",
+        "SET enable_bitmapscan = off",
+    ] {
+        assert!(BOUNDED_CLAIM_UP.contains(required), "missing {required}");
+    }
+    // The hot-path candidate read must not re-prove the chain/outbox
+    // invariant: no anti-join, no offset, no unbounded sortable output.
+    let branch_two = BOUNDED_CLAIM_UP
+        .split("WITH pending AS MATERIALIZED")
+        .nth(1)
+        .expect("pending branch exists");
+    assert!(!branch_two.contains("NOT EXISTS"));
+    assert!(!BOUNDED_CLAIM_UP.contains("OFFSET"));
+    for required in [
+        "NOT EXISTS",
+        "CREATE OR REPLACE FUNCTION public.nazo_claim_security_audit_pending",
+        "RESET (autovacuum_analyze_scale_factor, autovacuum_analyze_threshold)",
+    ] {
+        assert!(BOUNDED_CLAIM_DOWN.contains(required), "missing {required}");
+    }
+}
+
+async fn explain_plan(connection: &mut AsyncPgConnection, query: &str) -> String {
+    #[derive(QueryableByName)]
+    struct PlanRow {
+        #[diesel(sql_type = diesel::sql_types::Text)]
+        nazo_test_explain: String,
+    }
+    sql_query(
+        "CREATE OR REPLACE FUNCTION pg_temp.nazo_test_explain(q TEXT) \
+         RETURNS SETOF TEXT LANGUAGE plpgsql AS $$ \
+         DECLARE r RECORD; BEGIN \
+           FOR r IN EXECUTE q LOOP RETURN NEXT r.\"QUERY PLAN\"; END LOOP; \
+         END $$",
+    )
+    .execute(connection)
+    .await
+    .expect("explain helper should install");
+    sql_query(format!(
+        "SELECT nazo_test_explain FROM pg_temp.nazo_test_explain(\
+         'EXPLAIN (ANALYZE, FORMAT TEXT) {}')",
+        query.replace('\'', "''")
+    ))
+    .load::<PlanRow>(connection)
+    .await
+    .expect("explain should run")
+    .into_iter()
+    .map(|row| row.nazo_test_explain)
+    .collect::<Vec<_>>()
+    .join("\n")
+}
+
+fn assert_bounded_claim_plan(plan: &str) {
+    // A quicksort over at most 256 materialized identities is bounded and
+    // acceptable; what must never appear is a table scan of the audit
+    // relations or a spill to disk (external merge / temp blocks).
+    assert!(
+        !plan.contains("Seq Scan on public.security_audit")
+            && !plan.contains("Seq Scan on security_audit")
+            && !plan.contains("external merge")
+            && !plan.contains("Temp Read Blocks")
+            && !plan.contains("temp Written Blocks")
+            && !plan.contains("Temp File"),
+        "claim plan must stay index-bounded without scans or spills:\n{plan}"
+    );
+    assert!(
+        plan.contains("Index Scan") || plan.contains("Index Only Scan"),
+        "claim plan must drive from the ordering index:\n{plan}"
+    );
+}
+
+const CHAINED_CLAIM_QUERY: &str = "\
+    WITH chained AS MATERIALIZED (
+        SELECT chain.event_id, chain.sequence, chain.previous_hash, chain.event_hash
+        FROM public.security_audit_chain_entries AS chain
+        WHERE chain.sequence > 0
+        ORDER BY chain.sequence
+        LIMIT 256
+    )
+    SELECT event.event_id, chained.sequence, event.event_type::TEXT,
+           event.event_category::TEXT, event.payload::TEXT, event.occurred_at,
+           chained.previous_hash, chained.event_hash
+    FROM chained
+    JOIN public.security_audit_event_outbox AS outbox
+        ON outbox.event_id = chained.event_id
+    JOIN public.security_audit_events AS event
+        ON event.event_id = chained.event_id
+    ORDER BY chained.sequence";
+
+const PENDING_CLAIM_QUERY: &str = "\
+    WITH pending AS MATERIALIZED (
+        SELECT outbox.event_id, outbox.occurred_at
+        FROM public.security_audit_event_outbox AS outbox
+        ORDER BY outbox.occurred_at, outbox.event_id
+        LIMIT 256
+    )
+    SELECT event.event_id, NULL::BIGINT, event.event_type::TEXT,
+           event.event_category::TEXT, event.payload::TEXT, event.occurred_at,
+           NULL::BYTEA, NULL::BYTEA
+    FROM pending
+    JOIN public.security_audit_events AS event
+        ON event.event_id = pending.event_id
+    ORDER BY pending.occurred_at, pending.event_id";
+
+const CLAIM_ROWS_QUERY: &str =
+    "SELECT count(*) AS value FROM public.nazo_claim_security_audit_pending(256)";
+
+#[derive(QueryableByName)]
+struct BigCount {
+    #[diesel(sql_type = diesel::sql_types::BigInt)]
+    value: i64,
+}
+
+#[tokio::test]
+async fn audit_claim_is_bounded_without_planner_statistics() {
+    let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url)
+        .await
+        .expect("audit ledger migration should apply");
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("fixture connection should establish");
+    sql_query("SET nazo.audit_reclaim = 'on'")
+        .execute(&mut connection)
+        .await
+        .expect("fixture cleanup must be permitted");
+    for pending_rows in [0_i64, 10_000, 1_000_000, 15_000_000] {
+        for cleanup in [
+            "DELETE FROM public.security_audit_event_outbox",
+            "DELETE FROM public.security_audit_chain_entries",
+            "DELETE FROM public.security_audit_events",
+        ] {
+            sql_query(cleanup)
+                .execute(&mut connection)
+                .await
+                .expect("fixture cleanup should delete prior rows");
+        }
+        if pending_rows > 0 {
+            let started = std::time::Instant::now();
+            sql_query(format!(
+                "INSERT INTO public.security_audit_events \
+                     (event_id, event_type, event_category, payload, occurred_at) \
+                 SELECT gen_random_uuid(), 'token_issued', 'token_lifecycle', \
+                        jsonb_build_object('fixture', 'cold_claim', 'g', g), \
+                        '2026-01-01'::timestamptz + (g || ' microseconds')::interval \
+                 FROM generate_series(1, {pending_rows}) AS g"
+            ))
+            .execute(&mut connection)
+            .await
+            .expect("fixture events should insert");
+            sql_query(
+                "INSERT INTO public.security_audit_event_outbox (event_id, occurred_at) \
+                 SELECT event_id, occurred_at FROM public.security_audit_events \
+                 WHERE payload->>'fixture' = 'cold_claim'",
+            )
+            .execute(&mut connection)
+            .await
+            .expect("fixture outbox rows should insert");
+            eprintln!(
+                "seeded {pending_rows} pending rows in {:?}",
+                started.elapsed()
+            );
+        }
+        // Planner statistics are deliberately absent or stale here: the claim
+        // must stay bounded regardless of what the planner believes.
+        for analyzed in [false, true] {
+            if analyzed {
+                sql_query("ANALYZE public.security_audit_event_outbox, public.security_audit_events, public.security_audit_chain_entries")
+                    .execute(&mut connection)
+                    .await
+                    .expect("analyze should run");
+            }
+            // Standalone inner-query plans run under the same planner pinning
+            // the function applies to itself, so they mirror the production
+            // claim shape. The real function call below runs under default
+            // GUCs and relies on its own SET clauses.
+            sql_query("SET enable_seqscan = off")
+                .execute(&mut connection)
+                .await
+                .expect("plan pinning should apply");
+            sql_query("SET enable_bitmapscan = off")
+                .execute(&mut connection)
+                .await
+                .expect("plan pinning should apply");
+            let chained_plan = explain_plan(&mut connection, CHAINED_CLAIM_QUERY).await;
+            assert_bounded_claim_plan(&chained_plan);
+            let pending_plan = explain_plan(&mut connection, PENDING_CLAIM_QUERY).await;
+            assert_bounded_claim_plan(&pending_plan);
+            sql_query("RESET enable_seqscan")
+                .execute(&mut connection)
+                .await
+                .expect("plan pinning should reset");
+            sql_query("RESET enable_bitmapscan")
+                .execute(&mut connection)
+                .await
+                .expect("plan pinning should reset");
+            let started = std::time::Instant::now();
+            let claimed = sql_query(CLAIM_ROWS_QUERY)
+                .get_result::<BigCount>(&mut connection)
+                .await
+                .expect("claim should execute")
+                .value;
+            let elapsed = started.elapsed();
+            assert!(claimed <= 256, "claim returned {claimed} rows");
+            assert_eq!(
+                claimed,
+                pending_rows.min(256),
+                "claim should return the bounded prefix"
+            );
+            assert!(
+                elapsed < std::time::Duration::from_secs(30),
+                "claim at {pending_rows} pending rows (analyzed={analyzed}) took {elapsed:?}"
+            );
+            eprintln!(
+                "pending={pending_rows} analyzed={analyzed} claimed={claimed} elapsed={elapsed:?}"
+            );
+        }
+        if pending_rows == 10_000 {
+            // A committed batch leaves chained prefix rows in the outbox. The
+            // claim must return that prefix exclusively — never mixed with the
+            // unchained arrivals behind it.
+            let pool = create_pool(database_url.clone(), 2).expect("audit pool should create");
+            let repository = AuditLedgerRepository::new(pool);
+            let health = repository
+                .anchor_health()
+                .await
+                .expect("anchor health should be readable");
+            if health.head_sequence == 0 {
+                SecurityAuditExporter::record_genesis(
+                    &repository,
+                    "test-deployment",
+                    &health.head_hash,
+                )
+                .await
+                .expect("genesis should record");
+            }
+            SecurityAuditExporter::observe_anchor(&repository, "test-deployment")
+                .await
+                .expect("exporter should observe the shared anchor");
+            let batch = match repository
+                .claim_batch("test-deployment", 256, 1024 * 1024, 60)
+                .await
+                .expect("pending fixture should be claimable")
+            {
+                SecurityAuditBatchClaim::Claimed(batch) => batch,
+                other => panic!("expected a claimed batch, got {other:?}"),
+            };
+            #[derive(QueryableByName)]
+            struct ChainedCount {
+                #[diesel(sql_type = diesel::sql_types::BigInt)]
+                value: i64,
+            }
+            let chained = sql_query(
+                "SELECT count(*) AS value \
+                 FROM public.nazo_claim_security_audit_pending(256) \
+                 WHERE sequence IS NOT NULL",
+            )
+            .get_result::<ChainedCount>(&mut connection)
+            .await
+            .expect("claim should execute")
+            .value;
+            assert_eq!(
+                chained,
+                batch.event_count(),
+                "a chained prefix must claim exclusively"
+            );
+            repository
+                .ack_batch(batch_ack(&batch))
+                .await
+                .expect("fixture batch should ack");
+        }
+    }
+    for cleanup in [
+        "DELETE FROM public.security_audit_event_outbox",
+        "DELETE FROM public.security_audit_chain_entries",
+        "DELETE FROM public.security_audit_events",
+    ] {
+        sql_query(cleanup)
+            .execute(&mut connection)
+            .await
+            .expect("fixture cleanup should delete prior rows");
+    }
+}
