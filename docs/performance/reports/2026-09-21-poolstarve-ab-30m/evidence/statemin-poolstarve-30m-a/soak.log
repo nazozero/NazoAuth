@@ -1,0 +1,54 @@
+RUN_ID=statemin-poolstarve-30m-a
+DEPID=01a0c41f-73af-7a23-897c-e89fc0759de5 RATE=1800 DUR_MAIN=1800s DUR_SIDE=1600s
+start_utc=2026-09-21T13:21:44Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql 8710ccd62fdcf97e23b21113faf2cc5c0fa75b0e5ae0399bafde32fd2bafc4d4
+sha256 soak_sampler.py 5f973dcf051178cf58355c68138f2032c4b6761ef4a58bb73d9b22fbb9e9f16f
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py a91dc5ae2254a860794533a0deb8833162f020841b32026036f9f89a2965711a
+sha256 soak_run.sh ca2074a6f9464d5090734775fcba1344b170e29a32730f756d7714ea1153a436
+--- container-side digests ---
+sampler unavailable
+soak start 2026-09-21T13:21:44Z RUN_ID=statemin-poolstarve-30m-a RATE=1800
+ledger pre 13:21:44
+check /workspace/perf-results/statemin-poolstarve-30m-a/ledger-pre.txt: PASS
+vkledger pre: keys=1 dbsize=1
+ Volume nazoauth-perf_perf_state Creating 
+ Volume nazoauth-perf_perf_state Created 
+ Container soak-sampler-statemin-poolstarve-30m-a Creating 
+ Container soak-sampler-statemin-poolstarve-30m-a Created 
+7a089338a3da126bc46966eab80bc4155f958cad893d7d0faf1a474f86614bf3
+sampler started 13:21:45
+runner rss sampler pid=323953 13:21:45
+ Volume nazoauth-perf_audit_receiver_data Creating 
+ Volume nazoauth-perf_audit_receiver_data Created 
+ Container soak-anchor-rcv-statemin-poolstarve-30m-a Creating 
+ Container soak-anchor-rcv-statemin-poolstarve-30m-a Created 
+0f59bfb1578c61a4a2b35f7bda96e2fed382df6f399cc051bbc04fcca341daa5
+ Container soak-anchor-worker-statemin-poolstarve-30m-a Creating 
+ Container soak-anchor-worker-statemin-poolstarve-30m-a Created 
+15d5388cd9540eb937cc66ea4738f4d825275bb865e5aa34f0d1a02293418f74
+audit anchor worker+receiver started depid=01a0c41f-73af-7a23-897c-e89fc0759de5 13:21:49
+audit health sampler pid=324209 13:21:49
+main cap_mixed arrival=1800ops/s pid=324212 13:21:49
+ Container soak-argon2-statemin-poolstarve-30m-a Creating 
+ Container soak-argon2-statemin-poolstarve-30m-a Created 
+c0369449b89caadc1ece734516804952feed6c9ef7aa4cfe1bd805d4ab37fba9
+argon2 sidecar arrival=8/s started 13:23:50
+ Container soak-meta-statemin-poolstarve-30m-a Creating 
+ Container soak-meta-statemin-poolstarve-30m-a Created 
+0ff38b3047ca1965ed7f27872377a3b61303aea835a7c2135f07855e5dd3114e
+meta sidecar arrival=200/s started 13:23:50
+ Container soak-fapi-statemin-poolstarve-30m-a Creating 
+ Container soak-fapi-statemin-poolstarve-30m-a Created 
+0dca97154e2a0ac21db91bd14c1d26e11714fc36d2516805073b32643603142e
+fapi sidecar arrival=30/s started 13:23:50
+main finished 13:51:56
+time="2026-09-21T21:52:36+08:00" level=warning msg="Found orphan containers (soak-fapi-statemin-poolstarve-30m-a, soak-meta-statemin-poolstarve-30m-a, soak-argon2-statemin-poolstarve-30m-a, soak-sampler-statemin-poolstarve-30m-a) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container nazoauth-perf-perf-run-cd35e461b243 Creating 
+ Container nazoauth-perf-perf-run-cd35e461b243 Created 
+sampler /workspace/perf-results/statemin-poolstarve-30m-a/soak-metrics.jsonl: PASS (182 rows)
+ledger post 13:52:47
+check /workspace/perf-results/statemin-poolstarve-30m-a/ledger-post.txt: PASS
+end_utc=2026-09-21T13:52:49Z
+SOAK_DONE RUN_ID=statemin-poolstarve-30m-a 2026-09-21T13:52:49Z

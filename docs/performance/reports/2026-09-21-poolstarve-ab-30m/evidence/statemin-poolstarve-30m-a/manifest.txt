@@ -1,0 +1,12 @@
+RUN_ID=statemin-poolstarve-30m-a
+DEPID=01a0c41f-73af-7a23-897c-e89fc0759de5 RATE=1800 DUR_MAIN=1800s DUR_SIDE=1600s
+start_utc=2026-09-21T13:21:44Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql 8710ccd62fdcf97e23b21113faf2cc5c0fa75b0e5ae0399bafde32fd2bafc4d4
+sha256 soak_sampler.py 5f973dcf051178cf58355c68138f2032c4b6761ef4a58bb73d9b22fbb9e9f16f
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py a91dc5ae2254a860794533a0deb8833162f020841b32026036f9f89a2965711a
+sha256 soak_run.sh ca2074a6f9464d5090734775fcba1344b170e29a32730f756d7714ea1153a436
+--- container-side digests ---
+sampler unavailable
+end_utc=2026-09-21T13:52:49Z

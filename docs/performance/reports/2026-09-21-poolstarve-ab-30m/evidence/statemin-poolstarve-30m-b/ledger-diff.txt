@@ -1,0 +1,203 @@
+WAL              stats/wal_records                            delta                  58963→113228391  +113169428
+WAL              stats/wal_fpi                                delta                  2228→302360  +300132
+WAL              stats/wal_bytes                              delta                  17463076→13673357710  +13655894634
+WAL              stats/wal_buffers_full                       delta                  34→21815  +21781
+WAL              waldir/files                                 delta                  2→280  +278 (gauge)
+WAL              waldir/bytes                                 delta                  33554432→4697620480  +4664066048 (gauge)
+BGWRITER         bgwriter/buffers_clean                       delta                  0→616127  +616127
+BGWRITER         bgwriter/maxwritten_clean                    delta                  0→4818  +4818
+BGWRITER         bgwriter/buffers_alloc                       delta                  1416→1548654  +1547238
+CHECKPOINTER     checkpointer/num_timed                       delta                  0→6  +6
+CHECKPOINTER     checkpointer/write_time                      delta                  11→1346643  +1346632
+CHECKPOINTER     checkpointer/sync_time                       delta                  8→923  +915
+CHECKPOINTER     checkpointer/buffers_written                 delta                  943→8442  +7499
+CHECKPOINTER     checkpointer/num_done                        delta                  0→5  +5 (gauge)
+CHECKPOINTER     checkpointer/slru_written                    delta                  3→585  +582 (gauge)
+IO               client backend/writes                        delta                  161→2238867  +2238706
+IO               autovacuum worker/writes                     delta                  23→382  +359
+IO               background worker/writes                     delta                  0→21781  +21781
+IO               checkpointer/writes                          delta                  1→7  +6
+IO               walwriter/writes                             delta                  14→824  +810
+IO               client backend/write_time                    delta                  1.852→30113.25  +30111.398
+IO               autovacuum worker/write_time                 delta                  0.234→12.676  +12.442
+IO               background worker/write_time                 delta                  0→39.177  +39.177
+IO               checkpointer/write_time                      delta                  0→0.131  +0.131
+IO               walwriter/write_time                         delta                  0.271→12.204  +11.933
+IO               client backend/fsyncs                        delta                  125→2236402  +2236277
+IO               autovacuum worker/fsyncs                     delta                  23→371  +348
+IO               background worker/fsyncs                     delta                  0→11  +11
+IO               checkpointer/fsyncs                          delta                  1→7  +6
+IO               walwriter/fsyncs                             delta                  13→822  +809
+IO               client backend/fsync_time                    delta                  183.71→1532591.938  +1532408.2280000001
+IO               autovacuum worker/fsync_time                 delta                  35.224000000000004→576.254  +541.03
+IO               background worker/fsync_time                 delta                  0→129.895  +129.895
+IO               checkpointer/fsync_time                      delta                  0→10.13  +10.13
+IO               walwriter/fsync_time                         delta                  13.406→509.045  +495.639
+DB_TOTAL         db/db_bytes                                  delta                  12236479→1627641535  +1615405056 (gauge)
+DB_TOTAL         db/xact_commit                               delta                  2236→27509951  +27507715
+DB_TOTAL         db/tup_returned                              delta                  171840→500942078  +500770238
+DB_TOTAL         db/tup_fetched                               delta                  150478→340142904  +339992426
+DB_TOTAL         db/tup_inserted                              delta                  8172→13940682  +13932510
+DB_TOTAL         db/tup_updated                               delta                  1179→1409129  +1407950
+DB_TOTAL         db/tup_deleted                               delta                  1366→12472514  +12471148
+DB_TOTAL         db/blk_read_time                             delta                  5.564→8591.253  +8585.689
+DB_TOTAL         db/blk_write_time                            delta                  1.893→8884.794  +8882.901
+AUDIT            ledger/batch_generation                      delta                  0→119742  +119742 (gauge)
+AUDIT            ledger/chain_head                            delta                  0→3497869  +3497869 (gauge)
+ACTIVITY         backends/total                               delta                  5→26  +21 (gauge)
+RELATION_BYTES   public.oauth_tokens/upd                      delta                  0→499537  +499537
+RELATION_BYTES   public.oauth_tokens/autovac                  delta                  0→12  +12
+RELATION_BYTES   public.oauth_tokens/ins                      delta                  0→1047169  +1047169
+RELATION_BYTES   public.oauth_tokens/heap_aux                 delta                  0→262144  +262144 (gauge)
+RELATION_BYTES   public.oauth_tokens/dead_est                 delta                  0→86804  +86804 (gauge)
+RELATION_BYTES   public.oauth_tokens/user_indexes_total       delta                  81920→444465152  +444383232 (gauge)
+RELATION_BYTES   public.oauth_tokens/live_est                 delta                  0→1046907  +1046907 (gauge)
+RELATION_BYTES   public.oauth_tokens/heap_main                delta                  0→883318784  +883318784 (gauge)
+RELATION_BYTES   public.oauth_tokens/total                    delta                  90112→1328054272  +1327964160 (gauge)
+RELATION_BYTES   public.oauth_token_issuances/del             delta                  0→1976812  +1976812
+RELATION_BYTES   public.oauth_token_issuances/autovac         delta                  0→20  +20
+RELATION_BYTES   public.oauth_token_issuances/ins             delta                  0→2390317  +2390317
+RELATION_BYTES   public.oauth_token_issuances/heap_aux        delta                  0→57344  +57344 (gauge)
+RELATION_BYTES   public.oauth_token_issuances/user_indexes_to delta                  40960→135217152  +135176192 (gauge)
+RELATION_BYTES   public.oauth_token_issuances/live_est        delta                  0→413505  +413505 (gauge)
+RELATION_BYTES   public.oauth_token_issuances/heap_main       delta                  0→108363776  +108363776 (gauge)
+RELATION_BYTES   public.oauth_token_issuances/total           delta                  49152→243646464  +243597312 (gauge)
+RELATION_BYTES   public.security_audit_chain_entries/del      delta                  0→3497869  +3497869
+RELATION_BYTES   public.security_audit_chain_entries/autovac  delta                  0→31  +31
+RELATION_BYTES   public.security_audit_chain_entries/ins      delta                  0→3497869  +3497869
+RELATION_BYTES   public.security_audit_chain_entries/heap_aux delta                  0→16384  +16384 (gauge)
+RELATION_BYTES   public.security_audit_chain_entries/user_ind delta                  24576→25460736  +25436160 (gauge)
+RELATION_BYTES   public.security_audit_chain_entries/total    delta                  32768→25485312  +25452544 (gauge)
+RELATION_BYTES   public.security_audit_event_outbox/del       delta                  0→3497869  +3497869
+RELATION_BYTES   public.security_audit_event_outbox/autovac   delta                  0→31  +31
+RELATION_BYTES   public.security_audit_event_outbox/ins       delta                  0→3497869  +3497869
+RELATION_BYTES   public.security_audit_event_outbox/heap_aux  delta                  0→16384  +16384 (gauge)
+RELATION_BYTES   public.security_audit_event_outbox/user_inde delta                  16384→7757824  +7741440 (gauge)
+RELATION_BYTES   public.security_audit_event_outbox/total     delta                  24576→7782400  +7757824 (gauge)
+RELATION_BYTES   public.security_audit_events/del             delta                  0→3497869  +3497869
+RELATION_BYTES   public.security_audit_events/autovac         delta                  0→31  +31
+RELATION_BYTES   public.security_audit_events/ins             delta                  0→3497869  +3497869
+RELATION_BYTES   public.security_audit_events/heap_aux        delta                  0→16384  +16384 (gauge)
+RELATION_BYTES   public.security_audit_events/user_indexes_to delta                  8192→6275072  +6266880 (gauge)
+RELATION_BYTES   public.security_audit_events/total           delta                  16384→6299648  +6283264 (gauge)
+RELATION_BYTES   public.user_client_grants/upd                delta                  0→547344  +547344
+RELATION_BYTES   public.user_client_grants/autovac            delta                  0→31  +31
+RELATION_BYTES   public.user_client_grants/ins                delta                  0→288  +288
+RELATION_BYTES   public.user_client_grants/heap_aux           delta                  0→32768  +32768 (gauge)
+RELATION_BYTES   public.user_client_grants/user_indexes_total delta                  49152→2670592  +2621440 (gauge)
+RELATION_BYTES   public.user_client_grants/live_est           delta                  0→288  +288 (gauge)
+RELATION_BYTES   public.user_client_grants/heap_main          delta                  0→851968  +851968 (gauge)
+RELATION_BYTES   public.user_client_grants/total              delta                  57344→3563520  +3506176 (gauge)
+RELATION_BYTES   public.users/ins                             delta                  0→257  +257
+RELATION_BYTES   public.users/heap_aux                        delta                  0→24576  +24576 (gauge)
+RELATION_BYTES   public.users/user_indexes_total              delta                  57344→221184  +163840 (gauge)
+RELATION_BYTES   public.users/live_est                        delta                  0→257  +257 (gauge)
+RELATION_BYTES   public.users/heap_main                       delta                  0→81920  +81920 (gauge)
+RELATION_BYTES   public.users/total                           delta                  65536→335872  +270336 (gauge)
+RELATION_BYTES   public.security_audit_chain_state/upd        delta                  0→359228  +359228
+RELATION_BYTES   public.security_audit_chain_state/autovac    delta                  0→14  +14
+RELATION_BYTES   public.security_audit_chain_state/hot_upd    delta                  0→359005  +359005
+RELATION_BYTES   public.security_audit_chain_state/heap_aux   delta                  0→32768  +32768 (gauge)
+RELATION_BYTES   public.security_audit_chain_state/dead_est   delta                  0→18  +18 (gauge)
+RELATION_BYTES   public.security_audit_chain_state/heap_main  delta                  8192→114688  +106496 (gauge)
+RELATION_BYTES   public.security_audit_chain_state/total      delta                  32768→172032  +139264 (gauge)
+RELATION_BYTES   public.oauth_clients/ins                     delta                  0→6  +6
+RELATION_BYTES   public.oauth_clients/user_indexes_total      delta                  65536→122880  +57344 (gauge)
+RELATION_BYTES   public.oauth_clients/live_est                delta                  0→6  +6 (gauge)
+RELATION_BYTES   public.oauth_clients/heap_main               delta                  0→8192  +8192 (gauge)
+RELATION_BYTES   public.oauth_clients/total                   delta                  73728→139264  +65536 (gauge)
+RELATION_BYTES   public.oauth_client_mtls_trust_anchor_reques delta                  0→1  +1
+RELATION_BYTES   public.oauth_client_mtls_trust_anchor_reques delta                  49152→98304  +49152 (gauge)
+RELATION_BYTES   public.oauth_client_mtls_trust_anchor_reques delta                  0→1  +1 (gauge)
+RELATION_BYTES   public.oauth_client_mtls_trust_anchor_reques delta                  0→8192  +8192 (gauge)
+RELATION_BYTES   public.oauth_client_mtls_trust_anchor_reques delta                  57344→114688  +57344 (gauge)
+RELATION_BYTES   public.scim_tokens/ins                       delta                  0→1  +1
+RELATION_BYTES   public.scim_tokens/user_indexes_total        delta                  32768→57344  +24576 (gauge)
+RELATION_BYTES   public.scim_tokens/live_est                  delta                  0→1  +1 (gauge)
+RELATION_BYTES   public.scim_tokens/heap_main                 delta                  0→8192  +8192 (gauge)
+RELATION_BYTES   public.scim_tokens/total                     delta                  40960→73728  +32768 (gauge)
+INDEX_DETAIL     __diesel_schema_migrations_pkey/idx_scan     delta                  1→2  +1
+INDEX_DETAIL     ux_access_token_revocations_tenant_jti_blake delta                  0→1457295  +1457295
+INDEX_DETAIL     idx_backchannel_logout_deliveries_due/idx_sc delta                  10→383  +373
+INDEX_DETAIL     oauth_client_mtls_trust_anchor_requests_pkey delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     ix_mtls_trust_anchor_requester_created/index delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     ix_mtls_trust_anchor_status_created/idx_scan delta                  0→1  +1
+INDEX_DETAIL     ix_mtls_trust_anchor_status_created/index_by delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     ix_mtls_trust_anchor_active_bundle/index_byt delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     ux_mtls_trust_anchor_client_certificate/idx_ delta                  0→1  +1
+INDEX_DETAIL     ux_mtls_trust_anchor_client_certificate/inde delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     uq_mtls_trust_anchor_request_tenant/index_by delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     uq_oauth_clients_tenant_internal_public_id/i delta                  0→13626328  +13626328
+INDEX_DETAIL     uq_oauth_clients_tenant_internal_public_id/i delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     ux_oauth_clients_tenant_client_id/idx_scan   delta                  0→6  +6
+INDEX_DETAIL     ux_oauth_clients_tenant_client_id/index_byte delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     uq_oauth_clients_id_tenant/idx_scan          delta                  0→1047457  +1047457
+INDEX_DETAIL     uq_oauth_clients_id_tenant/index_bytes       delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     oauth_clients_pkey/index_bytes               delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     ix_oauth_clients_created_at_desc/index_bytes delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     uq_oauth_clients_tenant_internal_id/index_by delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     ix_oauth_clients_tenant_id/index_bytes       delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     oauth_token_issuances_tenant_jti_idx/index_b delta                  8192→55107584  +55099392 (gauge)
+INDEX_DETAIL     oauth_token_issuances_retention_idx/idx_scan delta                  0→7738  +7738
+INDEX_DETAIL     oauth_token_issuances_retention_idx/index_by delta                  8192→28917760  +28909568 (gauge)
+INDEX_DETAIL     oauth_token_issuances_single_use_key_idx/idx delta                  0→547376  +547376
+INDEX_DETAIL     oauth_token_issuances_single_use_key_idx/ind delta                  8192→22650880  +22642688 (gauge)
+INDEX_DETAIL     oauth_token_issuances_pkey/idx_scan          delta                  0→1977976  +1977976
+INDEX_DETAIL     oauth_token_issuances_pkey/index_bytes       delta                  8192→22421504  +22413312 (gauge)
+INDEX_DETAIL     ix_oauth_token_issuances_tenant_user/index_b delta                  8192→6012928  +6004736 (gauge)
+INDEX_DETAIL     ux_oauth_tokens_tenant_refresh_token_blake3/ delta                  0→546920  +546920
+INDEX_DETAIL     ux_oauth_tokens_tenant_refresh_token_blake3/ delta                  8192→167370752  +167362560 (gauge)
+INDEX_DETAIL     ix_oauth_tokens_tenant_family/idx_scan       delta                  0→536445  +536445
+INDEX_DETAIL     ix_oauth_tokens_tenant_family/index_bytes    delta                  8192→56909824  +56901632 (gauge)
+INDEX_DETAIL     ix_oauth_tokens_tenant_family_active/idx_sca delta                  0→14933  +14933
+INDEX_DETAIL     ix_oauth_tokens_tenant_family_active/index_b delta                  8192→52559872  +52551680 (gauge)
+INDEX_DETAIL     oauth_tokens_pkey/idx_scan                   delta                  0→986448  +986448
+INDEX_DETAIL     oauth_tokens_pkey/index_bytes                delta                  8192→39854080  +39845888 (gauge)
+INDEX_DETAIL     ix_oauth_tokens_expires_at/idx_scan          delta                  0→38690  +38690
+INDEX_DETAIL     ix_oauth_tokens_expires_at/index_bytes       delta                  8192→35872768  +35864576 (gauge)
+INDEX_DETAIL     ix_oauth_tokens_rotated_from_id/index_bytes  delta                  8192→32628736  +32620544 (gauge)
+INDEX_DETAIL     ix_oauth_tokens_terminal_sparse/idx_scan     delta                  1→2  +1
+INDEX_DETAIL     ix_oauth_tokens_terminal_sparse/index_bytes  delta                  8192→32366592  +32358400 (gauge)
+INDEX_DETAIL     ix_oauth_tokens_tenant_id/idx_scan           delta                  0→11634  +11634
+INDEX_DETAIL     ix_oauth_tokens_tenant_id/index_bytes        delta                  8192→11517952  +11509760 (gauge)
+INDEX_DETAIL     ix_oauth_tokens_user_id/index_bytes          delta                  8192→9011200  +9003008 (gauge)
+INDEX_DETAIL     ix_oauth_tokens_tenant_user_client_active/id delta                  0→13087  +13087
+INDEX_DETAIL     ix_oauth_tokens_tenant_user_client_active/in delta                  8192→6373376  +6365184 (gauge)
+INDEX_DETAIL     idx_runtime_module_instance_states_module_st delta                  847→30662  +29815
+INDEX_DETAIL     uq_scim_tokens_token_hash/idx_scan           delta                  0→1  +1
+INDEX_DETAIL     uq_scim_tokens_token_hash/index_bytes        delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     ix_scim_tokens_tenant_active/index_bytes     delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     scim_tokens_pkey/index_bytes                 delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     security_audit_chain_entries_event_hash_key/ delta                  0→3114  +3114
+INDEX_DETAIL     security_audit_chain_entries_event_hash_key/ delta                  8192→17383424  +17375232 (gauge)
+INDEX_DETAIL     security_audit_chain_entries_pkey/idx_scan   delta                  0→3574988  +3574988
+INDEX_DETAIL     security_audit_chain_entries_pkey/index_byte delta                  8192→7733248  +7725056 (gauge)
+INDEX_DETAIL     security_audit_chain_entries_sequence_key/id delta                  0→1014289  +1014289
+INDEX_DETAIL     security_audit_chain_entries_sequence_key/in delta                  8192→270336  +262144 (gauge)
+INDEX_DETAIL     security_audit_chain_state_pkey/idx_scan     delta                  0→995445  +995445
+INDEX_DETAIL     security_audit_event_outbox_pkey/idx_scan    delta                  0→6422355  +6422355
+INDEX_DETAIL     security_audit_event_outbox_pkey/index_bytes delta                  8192→7225344  +7217152 (gauge)
+INDEX_DETAIL     idx_security_audit_outbox_order/idx_scan     delta                  1→1384067  +1384066
+INDEX_DETAIL     idx_security_audit_outbox_order/index_bytes  delta                  8192→483328  +475136 (gauge)
+INDEX_DETAIL     security_audit_events_pkey/idx_scan          delta                  0→14511927  +14511927
+INDEX_DETAIL     security_audit_events_pkey/index_bytes       delta                  8192→6250496  +6242304 (gauge)
+INDEX_DETAIL     tenant_runtime_directory_state_pkey/idx_scan delta                  14→386  +372
+INDEX_DETAIL     ix_user_client_grants_user_last_authorized/i delta                  8192→1556480  +1548288 (gauge)
+INDEX_DETAIL     ix_user_client_grants_last_authorized_at/ind delta                  8192→835584  +827392 (gauge)
+INDEX_DETAIL     uq_user_client_grants_tenant_user_client/idx delta                  0→547720  +547720
+INDEX_DETAIL     uq_user_client_grants_tenant_user_client/ind delta                  8192→65536  +57344 (gauge)
+INDEX_DETAIL     ix_user_client_grants_user_id/index_bytes    delta                  8192→57344  +49152 (gauge)
+INDEX_DETAIL     ix_user_client_grants_tenant_id/index_bytes  delta                  8192→40960  +32768 (gauge)
+INDEX_DETAIL     user_client_grants_pkey/index_bytes          delta                  8192→40960  +32768 (gauge)
+INDEX_DETAIL     ux_users_tenant_email_lower/idx_scan         delta                  0→258  +258
+INDEX_DETAIL     ux_users_tenant_email_lower/index_bytes      delta                  8192→49152  +40960 (gauge)
+INDEX_DETAIL     ux_users_tenant_email/idx_scan               delta                  0→12800  +12800
+INDEX_DETAIL     ux_users_tenant_email/index_bytes            delta                  8192→49152  +40960 (gauge)
+INDEX_DETAIL     ux_users_tenant_username/index_bytes         delta                  8192→40960  +32768 (gauge)
+INDEX_DETAIL     uq_users_id_tenant/index_bytes               delta                  8192→32768  +24576 (gauge)
+INDEX_DETAIL     ix_users_created_at_desc/index_bytes         delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     ix_users_tenant_id/idx_scan                  delta                  0→183977  +183977
+INDEX_DETAIL     ix_users_tenant_id/index_bytes               delta                  8192→16384  +8192 (gauge)
+INDEX_DETAIL     users_pkey/idx_scan                          delta                  0→8246497  +8246497
+INDEX_DETAIL     users_pkey/index_bytes                       delta                  8192→16384  +8192 (gauge)
+diff: PASS (no counter regressions)
