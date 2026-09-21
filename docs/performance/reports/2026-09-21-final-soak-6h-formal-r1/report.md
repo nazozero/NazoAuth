@@ -24,7 +24,7 @@ See `manifest.md` for the frozen-identity table. Headlines:
 | Metric | Value |
 |---|---|
 | Configured target | 1800 logical iterations/s × 21600s |
-| Scheduled (estimate) | 38,800,039 |
+| Scheduled | 38,880,039 (= 38,719,764 completed + 160,275 dropped; runner's emitted `scheduled_estimate` field read 38,800,039 — runner-side estimate defect, corrected here) |
 | Completed iterations | 38,719,764 |
 | Dropped iterations | **160,275 (0.4122%)** |
 | Measured successful logical ops | 38,669,819 |
