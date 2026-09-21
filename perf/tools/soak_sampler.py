@@ -60,7 +60,7 @@ def main():
                     c.execute(
                         "SELECT COALESCE(max(extract(epoch FROM now()"
                         "-xact_start))::bigint,-1),"
-                        "COALESCE(max(txid_current()-backend_xmin),-1),"
+                        "COALESCE(max(age(backend_xmin)),-1),"
                         "count(*) FILTER(WHERE xact_start<now()"
                         "-interval '60 seconds'),"
                         "count(*) FILTER(WHERE xact_start<now()"
