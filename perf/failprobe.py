@@ -53,12 +53,11 @@ def cc_probe(t0):
 
 
 def mint_family():
-    """Insert one oauth_tokens row like seed.py; return raw refresh token."""
+    """Insert one refresh family (contract + family row); return raw token."""
     import secrets as pysec, psycopg
     from blake3 import blake3
     from datetime import datetime, timedelta, timezone
     raw = "rt-abtest-" + pysec.token_urlsafe(32)
-    h = blake3(raw.encode()).hexdigest()
     dsn = os.environ["DATABASE_URL"]
     with psycopg.connect(dsn) as conn:
         row = conn.execute(
@@ -69,22 +68,40 @@ def mint_family():
         ).fetchone()
         cid, uid = row
         now = datetime.now(timezone.utc)
-        ctx = {"version": 1, "issuer": "http://127.0.0.1:8000",
-               "audience": "perf-oidc-client", "auth_time": int(now.timestamp()),
-               "amr": ["pwd"], "oidc_sid": None, "id_token_sid": None,
-               "acr": None, "nonce": None, "userinfo_claims": [],
-               "userinfo_claim_requests": [], "id_token_claims": [],
-               "id_token_claim_requests": []}
+        # Byte-identical to the Rust RefreshContract canonical serialization:
+        # struct field order, compact separators, nonce/id_token_sid stripped.
+        contract = {
+            "subject": str(uid),
+            "scopes": ["openid", "profile", "offline_access"],
+            "audiences": ["resource://default"],
+            "authorization_details": [],
+            "authentication_context": {
+                "version": 1, "issuer": "http://127.0.0.1:8000",
+                "audience": "perf-oidc-client", "auth_time": int(now.timestamp()),
+                "amr": ["pwd"], "oidc_sid": None, "id_token_sid": None,
+                "acr": None, "nonce": None, "userinfo_claims": [],
+                "userinfo_claim_requests": [], "id_token_claims": [],
+                "id_token_claim_requests": []},
+        }
+        digest = blake3(
+            json.dumps(contract, separators=(",", ":"),
+                       ensure_ascii=False).encode("utf-8")).digest()
         conn.execute(
-            "INSERT INTO oauth_tokens (tenant_id, refresh_token_blake3, token_family_id,"
-            " rotated_from_id, client_id, user_id, scopes, audience,"
-            " authorization_details, issued_at, expires_at, subject, dpop_jkt,"
-            " mtls_x5t_s256, oidc_auth_context) VALUES"
-            " ('00000000-0000-0000-0000-000000000001'::uuid, %s, gen_random_uuid(), NULL,"
-            " %s, %s, %s::jsonb, %s::jsonb, '[]'::jsonb, %s, %s, %s, NULL, NULL, %s::jsonb)",
-            (h, cid, uid, json.dumps(["openid", "profile", "offline_access"]),
+            "INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)"
+            " VALUES ('00000000-0000-0000-0000-000000000001'::uuid, %s, %s::jsonb)"
+            " ON CONFLICT (tenant_id, contract_blake3) DO NOTHING",
+            (digest, json.dumps(contract, separators=(",", ":"),
+                                ensure_ascii=False)))
+        conn.execute(
+            "INSERT INTO oauth_refresh_families (tenant_id, token_family_id,"
+            " client_id, user_id, contract_blake3, current_member_id,"
+            " current_token_blake3, current_audience, current_issued_at,"
+            " current_expires_at, created_at) VALUES"
+            " ('00000000-0000-0000-0000-000000000001'::uuid, gen_random_uuid(),"
+            " %s, %s, %s, gen_random_uuid(), %s, %s::jsonb, %s, %s, %s)",
+            (cid, uid, digest, blake3(raw.encode()).digest(),
              json.dumps(["resource://default"]), now,
-             now + timedelta(days=30), str(uid), json.dumps(ctx)))
+             now + timedelta(days=30), now))
         conn.commit()
     return raw
 

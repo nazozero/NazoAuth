@@ -103,17 +103,83 @@ ORDER BY t.relname, pg_relation_size(i.oid) DESC;
 -- ============================ ROW_COUNTS ===============================
 -- Exact counts are BOUNDARY-ONLY evidence (load stopped). Never on a hot
 -- sampling cadence or per exporter batch.
-SELECT 'ROW_COUNTS', 'oauth_tokens', count(*)::text FROM oauth_tokens
+SELECT 'ROW_COUNTS', 'oauth_refresh_families', count(*)::text FROM oauth_refresh_families
+UNION ALL SELECT 'ROW_COUNTS','oauth_refresh_spent_tokens',count(*)::text FROM oauth_refresh_spent_tokens
+UNION ALL SELECT 'ROW_COUNTS','oauth_refresh_contracts',count(*)::text FROM oauth_refresh_contracts
 UNION ALL SELECT 'ROW_COUNTS','oauth_token_issuances',count(*)::text FROM oauth_token_issuances
 UNION ALL SELECT 'ROW_COUNTS','security_audit_events',count(*)::text FROM security_audit_events
 UNION ALL SELECT 'ROW_COUNTS','security_audit_event_outbox',count(*)::text FROM security_audit_event_outbox
 UNION ALL SELECT 'ROW_COUNTS','security_audit_chain_entries',count(*)::text FROM security_audit_chain_entries
 UNION ALL SELECT 'ROW_COUNTS','access_token_revocations',count(*)::text FROM access_token_revocations;
 
+-- ============================ REFRESH_MODEL ============================
+-- Refresh-state cardinality ledger. `live` = unrevoked, uncompromised and
+-- unexpired. The active-family cap is a hard invariant: max_per_scope must
+-- never exceed 10 for a user-bound scope.
+SELECT 'REFRESH_MODEL', 'families', 'rows_total',
+       count(*)::text FROM oauth_refresh_families
+UNION ALL SELECT 'REFRESH_MODEL','families','live',
+       count(*)::text FROM oauth_refresh_families
+       WHERE revoked_at IS NULL AND reuse_detected_at IS NULL
+         AND current_expires_at > now()
+UNION ALL SELECT 'REFRESH_MODEL','families','live_user_bound',
+       count(*)::text FROM oauth_refresh_families
+       WHERE user_id IS NOT NULL AND revoked_at IS NULL
+         AND reuse_detected_at IS NULL AND current_expires_at > now()
+UNION ALL SELECT 'REFRESH_MODEL','families','machine',
+       count(*)::text FROM oauth_refresh_families WHERE user_id IS NULL
+UNION ALL SELECT 'REFRESH_MODEL','families','revoked',
+       count(*)::text FROM oauth_refresh_families WHERE revoked_at IS NOT NULL
+UNION ALL SELECT 'REFRESH_MODEL','families','compromised',
+       count(*)::text FROM oauth_refresh_families WHERE reuse_detected_at IS NOT NULL
+UNION ALL SELECT 'REFRESH_MODEL','families','max_active_per_scope',
+       COALESCE((SELECT max(cnt)::text FROM (
+         SELECT count(*) AS cnt FROM oauth_refresh_families
+         WHERE user_id IS NOT NULL AND revoked_at IS NULL
+           AND reuse_detected_at IS NULL AND current_expires_at > now()
+         GROUP BY tenant_id, user_id, client_id) s),'0')
+UNION ALL SELECT 'REFRESH_MODEL','spent','rows_total',
+       count(*)::text FROM oauth_refresh_spent_tokens
+UNION ALL SELECT 'REFRESH_MODEL','contracts','rows_total',
+       count(*)::text FROM oauth_refresh_contracts
+UNION ALL SELECT 'REFRESH_MODEL','contracts','referenced',
+       count(*)::text FROM oauth_refresh_contracts c
+       WHERE EXISTS (SELECT 1 FROM oauth_refresh_families f
+                     WHERE f.tenant_id=c.tenant_id
+                       AND f.contract_blake3=c.contract_blake3)
+UNION ALL SELECT 'REFRESH_MODEL','families','inserted_cumulative',
+       n_tup_ins::text FROM pg_stat_user_tables
+       WHERE relname='oauth_refresh_families'
+UNION ALL SELECT 'REFRESH_MODEL','families','deleted_cumulative',
+       n_tup_del::text FROM pg_stat_user_tables
+       WHERE relname='oauth_refresh_families'
+UNION ALL SELECT 'REFRESH_MODEL','spent','inserted_cumulative',
+       n_tup_ins::text FROM pg_stat_user_tables
+       WHERE relname='oauth_refresh_spent_tokens'
+UNION ALL SELECT 'REFRESH_MODEL','spent','deleted_cumulative',
+       n_tup_del::text FROM pg_stat_user_tables
+       WHERE relname='oauth_refresh_spent_tokens'
+UNION ALL SELECT 'REFRESH_MODEL','spent','max_per_family',
+       COALESCE((SELECT max(cnt)::text FROM (
+         SELECT count(*) AS cnt FROM oauth_refresh_spent_tokens
+         GROUP BY tenant_id, token_family_id) s),'0')
+UNION ALL SELECT 'REFRESH_MODEL','audit','capacity_retired_pending',
+       count(*)::text FROM security_audit_events
+       WHERE event_type = 'refresh_family_capacity_retired';
+
 -- ============================ EXPIRED_BACKLOG ==========================
-SELECT 'EXPIRED_BACKLOG', 'oauth_tokens_expired', count(*)::text,
+SELECT 'EXPIRED_BACKLOG', 'refresh_families_expired', count(*)::text,
+       COALESCE(min(current_expires_at AT TIME ZONE 'utc')::text,'-')
+FROM oauth_refresh_families WHERE current_expires_at <= now()
+UNION ALL SELECT 'EXPIRED_BACKLOG','spent_proofs_due',count(*)::text,
        COALESCE(min(expires_at AT TIME ZONE 'utc')::text,'-')
-FROM oauth_tokens WHERE expires_at <= now()
+FROM oauth_refresh_spent_tokens WHERE expires_at <= now()
+UNION ALL SELECT 'EXPIRED_BACKLOG','contracts_unreferenced',count(*)::text,
+       '-'
+FROM oauth_refresh_contracts c
+WHERE NOT EXISTS (SELECT 1 FROM oauth_refresh_families f
+                  WHERE f.tenant_id=c.tenant_id
+                    AND f.contract_blake3=c.contract_blake3)
 UNION ALL SELECT 'EXPIRED_BACKLOG','issuances_due',count(*)::text,
        COALESCE(min(retain_until AT TIME ZONE 'utc')::text,'-')
 FROM oauth_token_issuances WHERE retain_until <= now()

@@ -23,12 +23,14 @@ import re
 import sys
 
 REQUIRED_SECTIONS = [
-    "META", "RELATION_BYTES", "INDEX_DETAIL", "ROW_COUNTS",
+    "META", "RELATION_BYTES", "INDEX_DETAIL", "ROW_COUNTS", "REFRESH_MODEL",
     "EXPIRED_BACKLOG", "AUDIT", "WAL", "BGWRITER", "CHECKPOINTER",
     "IO", "DB_TOTAL", "ACTIVITY", "TOP_STATEMENTS", "DONE",
 ]
 BASE_RELATIONS = [
-    "public.oauth_tokens",
+    "public.oauth_refresh_families",
+    "public.oauth_refresh_spent_tokens",
+    "public.oauth_refresh_contracts",
     "public.oauth_token_issuances",
     "public.security_audit_events",
     "public.security_audit_event_outbox",
@@ -119,7 +121,8 @@ def parse_ledger(path, failures):
                 {"status": cols[1] if len(cols) > 1 else "?",
                  "ts": cols[2] if len(cols) > 2 else "?"})
         elif sec in ("WAL", "BGWRITER", "CHECKPOINTER", "IO", "DB_TOTAL",
-                     "ACTIVITY", "AUDIT", "XACT_HORIZON", "TOP_STATEMENTS"):
+                     "ACTIVITY", "AUDIT", "XACT_HORIZON", "TOP_STATEMENTS",
+                     "REFRESH_MODEL"):
             if len(cols) >= 4:
                 secs.setdefault(sec, []).append(
                     {"kind": cols[1], "key": cols[2], "value": cols[3]})
@@ -314,13 +317,16 @@ def selftest():
         " META | sampled_at | 2026-09-19",
         " META | server_version_num | 180000",
         " META | schema_version | 20260919000200",
-        " RELATION_BYTES | 1 | public.oauth_tokens | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+        " RELATION_BYTES | 1 | public.oauth_refresh_families | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+        " RELATION_BYTES | 6 | public.oauth_refresh_spent_tokens | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+        " RELATION_BYTES | 7 | public.oauth_refresh_contracts | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
         " RELATION_BYTES | 2 | public.oauth_token_issuances | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
         " RELATION_BYTES | 3 | public.security_audit_events | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
         " RELATION_BYTES | 4 | public.security_audit_event_outbox | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
         " RELATION_BYTES | 5 | public.security_audit_chain_entries | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
         " INDEX_DETAIL | 9 | public.x | x_idx | 8 | 0 | CREATE INDEX",
         " ROW_COUNTS | x | 1",
+        kv("REFRESH_MODEL", "families", ("live", 0), ("max_active_per_scope", 0)),
         " EXPIRED_BACKLOG | x | 0 | -",
         kv("AUDIT", "ledger", ("pending_export", 0), ("events", 1),
            ("chain_entries", 1), ("anchor_sequence", 1), ("chain_head", 1)),
@@ -358,7 +364,7 @@ def selftest():
     run("nosection.txt", "\n".join(
         ln for ln in good_ledger.splitlines() if not ln.startswith(" WAL |")), 2)
     run("nodone.txt", good_ledger.replace(" DONE | complete | 2026-09-19\n", ""), 2)
-    run("badrel.txt", good_ledger.replace("public.oauth_tokens", "public.renamed_thing"), 2)
+    run("badrel.txt", good_ledger.replace("public.oauth_refresh_families", "public.renamed_thing"), 2)
 
     total += 1
     pre = os.path.join(d, "pre.txt")
