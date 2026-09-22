@@ -167,8 +167,11 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
     # Successful rate is measured over the post-warmup window only: the k6
     # counter rate divides by total elapsed, which systematically under-reads
     # by warmup_ms/elapsed.
+    # Measure window = point duration minus the 15s warmup; using
+    # elapsed_seconds would fold k6 startup/teardown into the divisor and
+    # systematically under-read the attained rate by ~1%.
     warmup_s = 15.0
-    window_s = max(1.0, float(summary.get("elapsed_seconds", duration_s)) - warmup_s)
+    window_s = max(1.0, duration_s - warmup_s)
     ops = _count(metrics_raw, "cap_measure_ops")
     measure_errors = _count(metrics_raw, "cap_measure_errors")
     measured_ops_s = ops / window_s if ops else float(measure.get("ops_per_s", 0) or 0)
