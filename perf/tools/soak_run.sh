@@ -226,11 +226,12 @@ echo "main cap_mixed arrival=${RATE}ops/s pid=$MAINPID $(date -u +%H:%M:%S)" >>"
 
 sleep 120
 
-for side in argon2 meta fapi; do
+for side in argon2 meta fapi refresh; do
   case $side in
-    argon2) SC=oidc_cold_login_refresh;      SR=8;   PV=8;  MV=16; UC=64 ;;
-    meta)   SC=metadata_jwks;              SR=200; PV=16; MV=32; UC=64 ;;
-    fapi)   SC=fapi2_logged_in_high_security; SR=30; PV=32; MV=64; UC=128 ;;
+    argon2)  SC=oidc_cold_login_refresh;      SR=8;   PV=8;   MV=16;  UC=64 ;;
+    meta)    SC=metadata_jwks;              SR=200; PV=16;  MV=32;  UC=64 ;;
+    fapi)    SC=fapi2_logged_in_high_security; SR=30; PV=32;  MV=64;  UC=128 ;;
+    refresh) SC=cap_refresh_token;          SR=${SOAK_REFRESH_RATE:-600}; PV=64; MV=128; UC=256 ;;
   esac
   docker compose -f docker-compose.perf.yml run -d --name "soak-$side-$RUN_ID" --no-deps \
     -v "$OUT/$side":/out \
@@ -249,7 +250,7 @@ done
 
 wait $MAINPID
 echo "main finished $(date -u +%H:%M:%S)" >>"$LOG"
-docker stop "soak-argon2-$RUN_ID" "soak-meta-$RUN_ID" "soak-fapi-$RUN_ID" "soak-sampler-$RUN_ID" >/dev/null 2>&1 || true
+docker stop "soak-argon2-$RUN_ID" "soak-meta-$RUN_ID" "soak-fapi-$RUN_ID" "soak-refresh-$RUN_ID" "soak-sampler-$RUN_ID" >/dev/null 2>&1 || true
 kill $RSSPID 2>/dev/null || true
 [ -n "${AUDITPID:-}" ] && kill "$AUDITPID" 2>/dev/null || true
 
@@ -279,7 +280,7 @@ fi
 # ---------------- sampler output + validation ---------------------------
 docker cp "soak-sampler-$RUN_ID":/tmp/soak-metrics.jsonl "$OUT/soak-metrics.jsonl" 2>/dev/null \
   || echo "WARN: sampler jsonl unavailable" >>"$LOG"
-docker rm "soak-argon2-$RUN_ID" "soak-meta-$RUN_ID" "soak-fapi-$RUN_ID" "soak-sampler-$RUN_ID" >/dev/null 2>&1 || true
+docker rm "soak-argon2-$RUN_ID" "soak-meta-$RUN_ID" "soak-fapi-$RUN_ID" "soak-refresh-$RUN_ID" "soak-sampler-$RUN_ID" >/dev/null 2>&1 || true
 if [ -s "$OUT/soak-metrics.jsonl" ]; then
   python3 "$TOOLS/ledger_check.py" sampler "$OUT/soak-metrics.jsonl" --run-id "$RUN_ID" >>"$LOG" \
     || echo "SAMPLER_VALIDATION_FAILED" >>"$LOG"
