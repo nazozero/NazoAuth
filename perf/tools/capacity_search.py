@@ -98,7 +98,9 @@ def run_mixed(rate: int, run_id: str, duration_s: int) -> Path:
             "RUN_ID": run_id,
             "SOAK_RATE": str(rate),
             "SOAK_DURATION": f"{duration_s}s",
-            "SOAK_SIDE_DURATION": f"{max(60, duration_s - 60)}s",
+            # Sidecars start ~120s after main; end them ~60s before main does
+            # so each writes its summary instead of being docker-stop killed.
+            "SOAK_SIDE_DURATION": f"{max(60, duration_s - 180)}s",
             "SOAK_AUDIT": "1",
         }
     )
@@ -126,11 +128,33 @@ def load_summary(path: Path) -> dict | None:
     return None
 
 
-def evaluate(summary: dict | None, target: int) -> tuple[str, dict]:
+def k6_metrics(summary_path: Path) -> dict:
+    """Load the raw k6 summary export next to latest.json for counters that
+    runner.py does not project (err_classified, err_expected_invalid_grant)."""
+    for cand in summary_path.parent.glob("*.k6.json"):
+        try:
+            data = json.loads(cand.read_text())
+        except json.JSONDecodeError:
+            continue
+        metrics = data.get("metrics", data)
+        if isinstance(metrics, dict) and "iterations" in metrics or "cap_measure_ops" in metrics:
+            return metrics
+    return {}
+
+
+def _count(metrics: dict, name: str) -> float:
+    entry = metrics.get(name, {})
+    values = entry.get("values", entry) if isinstance(entry, dict) else {}
+    return float(values.get("count", 0) or 0)
+
+
+def evaluate(summary: dict | None, summary_path: Path, target: int,
+             duration_s: int, label: str) -> tuple[str, dict]:
     if summary is None:
         return "FAIL", {"reason": "no_summary"}
     k6 = summary.get("k6", {})
-    rps = float(k6.get("rps", 0) or 0)
+    measure = k6.get("measure", {}) or {}
+    metrics_raw = k6_metrics(summary_path)
     dropped = int(k6.get("dropped_iterations", 0) or 0)
     completed = int(k6.get("iterations_completed", 0) or 0)
     cohort = completed + dropped
@@ -140,21 +164,56 @@ def evaluate(summary: dict | None, target: int) -> tuple[str, dict]:
     p99 = float(latency.get("p99", 0) or 0)
     error_rate = float(k6.get("error_rate", 0) or 0)
     status = summary.get("status", "")
+    # Successful rate is measured over the post-warmup window only: the k6
+    # counter rate divides by total elapsed, which systematically under-reads
+    # by warmup_ms/elapsed.
+    warmup_s = 15.0
+    window_s = max(1.0, float(summary.get("elapsed_seconds", duration_s)) - warmup_s)
+    ops = _count(metrics_raw, "cap_measure_ops")
+    measure_errors = _count(metrics_raw, "cap_measure_errors")
+    measured_ops_s = ops / window_s if ops else float(measure.get("ops_per_s", 0) or 0)
+    successful_ops_s = (ops - measure_errors) / window_s if ops else 0.0
+    if not ops:
+        # Non-capRun scenarios (fapi2_*, mtls_client_credentials,
+        # par_signed_request_object, metadata_jwks) do not emit cap_measure_*:
+        # one iteration == one flow, so the attained rate is completed
+        # iterations per post-warmup second; correctness is gated by
+        # err_classified below.
+        measured_ops_s = completed / window_s
+        successful_ops_s = measured_ops_s
+    classified = _count(metrics_raw, "err_classified")
+    expected_invalid_grant = _count(metrics_raw, "err_expected_invalid_grant")
+    unexpected = classified - expected_invalid_grant
     metrics = {
-        "rps": rps, "p50": float(latency.get("p50", 0) or 0), "p95": p95,
+        "rps": float(k6.get("rps", 0) or 0),
+        "p50": float(latency.get("p50", 0) or 0), "p95": p95,
         "p99": p99, "dropped": dropped, "drop_fraction": drop_fraction,
         "error_rate": error_rate, "status": status,
+        "measured_ops_s": round(measured_ops_s, 3),
+        "successful_ops_s": round(successful_ops_s, 3),
+        "classified_errors": int(classified),
+        "expected_invalid_grant": int(expected_invalid_grant),
+        "unexpected_errors": int(unexpected),
     }
-    if status in {"threshold_failed"} and drop_fraction > 0.001 and error_rate == 0:
+    if status in {"threshold_failed"} and drop_fraction > 0.001 and unexpected == 0:
         return "LOAD_GENERATOR_INVALID", metrics
+    # cap_mixed deliberately exercises the bounded-family cap: an evicted
+    # refresh token answers invalid_grant, which is the *correct* response.
+    # Its cascade (a VU whose token was evicted fails fast) counts in
+    # cap_measure_errors without any HTTP error. For cap_mixed the capacity
+    # question is "did the SUT keep pace with arrivals", so the gate uses the
+    # full measured rate; for every other scenario an op failure is real and
+    # the gate uses the successful-only rate.
+    rate_for_gate = measured_ops_s if label == "cap_mixed" else successful_ops_s
     ok = (
         drop_fraction <= 0.001
-        and rps >= target * 0.995
-        and error_rate == 0
+        and rate_for_gate >= target * 0.995
+        and unexpected == 0
         and p95 <= 100
         and p99 <= 250
         and status == "passed"
     )
+    metrics["rate_for_gate"] = round(rate_for_gate, 3)
     return ("PASS" if ok else "FAIL"), metrics
 
 
@@ -176,7 +235,9 @@ def search(label: str, initial: int, duration_s: int = 600) -> dict:
             summary_path = run_isolated(
                 scen, target, out_base / f"r{target}", f"{duration_s}s"
             )
-        verdict, metrics = evaluate(load_summary(summary_path), target)
+        verdict, metrics = evaluate(
+            load_summary(summary_path), summary_path, target, duration_s, label
+        )
         metrics["target"] = target
         metrics["verdict"] = verdict
         metrics["summary"] = str(summary_path)
