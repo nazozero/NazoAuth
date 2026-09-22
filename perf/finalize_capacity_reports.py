@@ -55,7 +55,7 @@ def read_text(path: Path) -> str:
 
 
 def cpuset_for_suffix(suffix: str) -> str:
-    text = read_text(RESULTS / f"docker-compose.cpuset-dev-{suffix}.yml")
+    text = read_text(RESULTS / ".run" / f"docker-compose.cpuset-dev-{suffix}.yml")
     match = re.search(r"cpuset:\s*[\"']?([^\"'\n]+)", text)
     return match.group(1).strip() if match else "unrestricted"
 
@@ -93,7 +93,7 @@ def evidence_block(*, suffix: str, scenario: str) -> str:
         ("Duration per point", DURATION),
         ("App instance stages", f"{INSTANCES} NazoAuth replica(s)"),
         ("Target rates", SCENARIO_RATES.get(scenario, "custom")),
-        ("Results JSON", f"[perf/results/capacity-dev-{suffix}.json](../../../../perf/results/capacity-dev-{suffix}.json)"),
+        ("Results JSON", f"[perf/results/data/dev/{suffix}.json](../../../../perf/results/data/dev/{suffix}.json)"),
     ]
     return "## Evidence\n\n" + markdown_table(rows) + "\n\n"
 
@@ -112,7 +112,7 @@ def insert_evidence(source: str, evidence: str) -> str:
 
 
 def finalize_report(*, capacity, suffix: str, scenario: str, require_complete: bool) -> None:
-    results_path = RESULTS / f"capacity-dev-{suffix}.json"
+    results_path = RESULTS / "data" / "dev" / f"{suffix}.json"
     report_path = DOCS / f"performance-capacity-curve-dev-{suffix}.md"
     if not results_path.exists():
         print(f"skip {suffix}: missing {results_path}")

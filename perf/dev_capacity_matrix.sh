@@ -2,9 +2,9 @@
 set -eu
 
 cd /workspace
-mkdir -p docs/performance/archive/dev perf/results
-children_file="perf/results/dev-capacity-children.txt"
-cpusets_file="perf/results/dev-capacity-cpusets.txt"
+mkdir -p docs/performance/archive/dev perf/results/.run
+children_file="perf/results/.run/dev-capacity-children.txt"
+cpusets_file="perf/results/.run/dev-capacity-cpusets.txt"
 : >"${children_file}"
 
 printf 'dev capacity matrix started %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
@@ -78,7 +78,7 @@ run_child() {
   scenario="$1"
   suffix="$2"
   cpu_set="$3"
-  log_path="perf/results/dev-capacity-${suffix}.log"
+  log_path="perf/results/.run/dev-capacity-${suffix}.log"
   printf 'starting %s on CPUs %s -> %s\n' "${scenario}" "${cpu_set}" "${log_path}"
   (
     export CAPACITY_SCENARIOS="${scenario}"

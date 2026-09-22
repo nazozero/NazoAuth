@@ -15,7 +15,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parent.parent
 RESULTS_DIR = ROOT / "perf" / "results"
-DEFAULT_CAPACITY_RESULTS = RESULTS_DIR / "capacity-latest.json"
+DEFAULT_CAPACITY_RESULTS = RESULTS_DIR / "data" / "capacity" / "latest.json"
 DEFAULT_CAPACITY_REPORT = ROOT / "docs" / "performance" / "performance-capacity-curve.md"
 CHECKPOINT_LOCK = RESULTS_DIR / ".capacity-checkpoint.lock"
 
