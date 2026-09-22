@@ -1,0 +1,52 @@
+RUN_ID=20260922-refreshmin-10m-v2
+DEPID=01a0c5a8-206b-7320-b495-bf890b09a256 RATE=1800 DUR_MAIN=600s DUR_SIDE=560s
+start_utc=2026-09-21T20:29:17Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql 24b9cb3fe8c249b9e65dacceb0e8e8b1da8ff29512c3e795e7bcea43f1ddabf2
+sha256 soak_sampler.py b377f7b4aa16bee1e35e8b93af5989607ac1e127c28b50159e0f555c80cbf221
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py aacf367b5458c42d83c8c17c187895f53aca54113b7dad5e69c2b7722c64fcd8
+sha256 soak_run.sh ca2074a6f9464d5090734775fcba1344b170e29a32730f756d7714ea1153a436
+--- container-side digests ---
+sampler unavailable
+soak start 2026-09-21T20:29:17Z RUN_ID=20260922-refreshmin-10m-v2 RATE=1800
+ledger pre 20:29:17
+check /workspace/perf-results/20260922-refreshmin-10m-v2/ledger-pre.txt: PASS
+vkledger pre: keys=258 dbsize=258
+ Container soak-sampler-20260922-refreshmin-10m-v2 Creating 
+ Container soak-sampler-20260922-refreshmin-10m-v2 Created 
+ec5c7538926965c327e56c27e5d5384e279a7413bb90344f01a4d0d59ec39c18
+sampler started 20:29:18
+runner rss sampler pid=12976 20:29:18
+ Volume nazoauth-perf_audit_receiver_data Creating 
+ Volume nazoauth-perf_audit_receiver_data Created 
+ Container soak-anchor-rcv-20260922-refreshmin-10m-v2 Creating 
+ Container soak-anchor-rcv-20260922-refreshmin-10m-v2 Created 
+6000d8ae9405019e6fdc1a09ef7986ad24ea5181d9c252db85d7850a51c8937c
+ Container soak-anchor-worker-20260922-refreshmin-10m-v2 Creating 
+ Container soak-anchor-worker-20260922-refreshmin-10m-v2 Created 
+0d8e97a44fc9568a2296bd202b9db67244c2dca17e1286695670c039914cd039
+audit anchor worker+receiver started depid=01a0c5a8-206b-7320-b495-bf890b09a256 20:29:23
+audit health sampler pid=13235 20:29:23
+main cap_mixed arrival=1800ops/s pid=13239 20:29:23
+ Container soak-argon2-20260922-refreshmin-10m-v2 Creating 
+ Container soak-argon2-20260922-refreshmin-10m-v2 Created 
+b8ea9dfe7af533ae8a2861a22ee897c925a99a13049cdbae65848f861bedabbe
+argon2 sidecar arrival=8/s started 20:31:23
+ Container soak-meta-20260922-refreshmin-10m-v2 Creating 
+ Container soak-meta-20260922-refreshmin-10m-v2 Created 
+651ebe15daa5052adc4f9acb96f126b051587434344cde3be99de303887ae60f
+meta sidecar arrival=200/s started 20:31:24
+ Container soak-fapi-20260922-refreshmin-10m-v2 Creating 
+ Container soak-fapi-20260922-refreshmin-10m-v2 Created 
+adcefcb750971a6013ff52d2f1d0f821c6279a834c74cfe66bdf1b3785f34bfb
+fapi sidecar arrival=30/s started 20:31:24
+main finished 20:39:26
+time="2026-09-22T04:40:07+08:00" level=warning msg="Found orphan containers (soak-fapi-20260922-refreshmin-10m-v2, soak-meta-20260922-refreshmin-10m-v2, soak-argon2-20260922-refreshmin-10m-v2, soak-sampler-20260922-refreshmin-10m-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container nazoauth-perf-perf-run-322ca0d281bc Creating 
+ Container nazoauth-perf-perf-run-322ca0d281bc Created 
+sampler /workspace/perf-results/20260922-refreshmin-10m-v2/soak-metrics.jsonl: PASS (62 rows)
+ledger post 20:40:18
+check /workspace/perf-results/20260922-refreshmin-10m-v2/ledger-post.txt: PASS
+end_utc=2026-09-21T20:40:19Z
+SOAK_DONE RUN_ID=20260922-refreshmin-10m-v2 2026-09-21T20:40:19Z

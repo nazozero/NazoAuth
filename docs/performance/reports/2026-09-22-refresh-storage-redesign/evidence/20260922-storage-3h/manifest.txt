@@ -1,0 +1,12 @@
+RUN_ID=20260922-storage-3h
+DEPID=01a0c608-3576-7fe1-904c-675dbc851f3f RATE=1800 DUR_MAIN=10800s DUR_SIDE=10700s
+start_utc=2026-09-21T22:20:57Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql 24b9cb3fe8c249b9e65dacceb0e8e8b1da8ff29512c3e795e7bcea43f1ddabf2
+sha256 soak_sampler.py b377f7b4aa16bee1e35e8b93af5989607ac1e127c28b50159e0f555c80cbf221
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py aacf367b5458c42d83c8c17c187895f53aca54113b7dad5e69c2b7722c64fcd8
+sha256 soak_run.sh b330e1af399a1889fb4987ed66d32f083977656e3bd08130a9890384af91b6e8
+--- container-side digests ---
+sampler unavailable
+end_utc=2026-09-22T01:22:23Z

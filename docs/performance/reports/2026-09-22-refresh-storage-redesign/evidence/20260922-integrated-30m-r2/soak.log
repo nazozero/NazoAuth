@@ -1,0 +1,56 @@
+RUN_ID=20260922-integrated-30m-r2
+DEPID=01a0c5a8-206b-7320-b495-bf890b09a256 RATE=1800 DUR_MAIN=1800s DUR_SIDE=1780s
+start_utc=2026-09-21T21:26:17Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql 24b9cb3fe8c249b9e65dacceb0e8e8b1da8ff29512c3e795e7bcea43f1ddabf2
+sha256 soak_sampler.py b377f7b4aa16bee1e35e8b93af5989607ac1e127c28b50159e0f555c80cbf221
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py aacf367b5458c42d83c8c17c187895f53aca54113b7dad5e69c2b7722c64fcd8
+sha256 soak_run.sh ca2074a6f9464d5090734775fcba1344b170e29a32730f756d7714ea1153a436
+--- container-side digests ---
+sampler unavailable
+soak start 2026-09-21T21:26:17Z RUN_ID=20260922-integrated-30m-r2 RATE=1800
+ledger pre 21:26:17
+check /workspace/perf-results/20260922-integrated-30m-r2/ledger-pre.txt: PASS
+vkledger pre: keys=18768 dbsize=18768
+time="2026-09-22T05:26:18+08:00" level=warning msg="Found orphan containers (soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container soak-sampler-20260922-integrated-30m-r2 Creating 
+ Container soak-sampler-20260922-integrated-30m-r2 Created 
+3e10b8677c8f674ff4f4e27ab56f4f2eb692a70b1f78beda7858c4dc7bfad387
+sampler started 21:26:18
+runner rss sampler pid=52373 21:26:18
+time="2026-09-22T05:26:18+08:00" level=warning msg="Found orphan containers (soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container soak-anchor-rcv-20260922-integrated-30m-r2 Creating 
+ Container soak-anchor-rcv-20260922-integrated-30m-r2 Created 
+078dba803b3e15bac8ecf600e74960a62898a75b0828d8b868b3ed325a47d8d8
+time="2026-09-22T05:26:21+08:00" level=warning msg="Found orphan containers (soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container soak-anchor-worker-20260922-integrated-30m-r2 Creating 
+ Container soak-anchor-worker-20260922-integrated-30m-r2 Created 
+3a1037b8ac7f42401d13e021184a7a22e9429de3a2e13c844a4360bc09a9da28
+audit anchor worker+receiver started depid=01a0c5a8-206b-7320-b495-bf890b09a256 21:26:22
+audit health sampler pid=52633 21:26:22
+main cap_mixed arrival=1800ops/s pid=52636 21:26:22
+time="2026-09-22T05:28:22+08:00" level=warning msg="Found orphan containers (soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container soak-argon2-20260922-integrated-30m-r2 Creating 
+ Container soak-argon2-20260922-integrated-30m-r2 Created 
+fae80027ee004d9dbca3065242db55b2c3b2c2fa5945c2fdc7fe7b88461de6e4
+argon2 sidecar arrival=8/s started 21:28:22
+time="2026-09-22T05:28:22+08:00" level=warning msg="Found orphan containers (soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container soak-meta-20260922-integrated-30m-r2 Creating 
+ Container soak-meta-20260922-integrated-30m-r2 Created 
+ea564458af83ee09098691fb13097fded501674f652d677c7ee2c487288b1e27
+meta sidecar arrival=200/s started 21:28:23
+time="2026-09-22T05:28:23+08:00" level=warning msg="Found orphan containers (soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container soak-fapi-20260922-integrated-30m-r2 Creating 
+ Container soak-fapi-20260922-integrated-30m-r2 Created 
+67ea6cee9cd899300fda3890da3bb40e55829996a2f9e132c4cfc6cd7b1eb649
+fapi sidecar arrival=30/s started 21:28:23
+main finished 21:56:29
+time="2026-09-22T05:57:10+08:00" level=warning msg="Found orphan containers (soak-fapi-20260922-integrated-30m-r2, soak-meta-20260922-integrated-30m-r2, soak-argon2-20260922-integrated-30m-r2, soak-sampler-20260922-integrated-30m-r2, soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container nazoauth-perf-perf-run-5b69eb0797be Creating 
+ Container nazoauth-perf-perf-run-5b69eb0797be Created 
+sampler /workspace/perf-results/20260922-integrated-30m-r2/soak-metrics.jsonl: PASS (182 rows)
+ledger post 21:57:21
+check /workspace/perf-results/20260922-integrated-30m-r2/ledger-post.txt: PASS
+end_utc=2026-09-21T21:57:22Z
+SOAK_DONE RUN_ID=20260922-integrated-30m-r2 2026-09-21T21:57:22Z

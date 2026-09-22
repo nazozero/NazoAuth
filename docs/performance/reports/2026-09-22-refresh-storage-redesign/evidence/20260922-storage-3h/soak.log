@@ -1,0 +1,50 @@
+RUN_ID=20260922-storage-3h
+DEPID=01a0c608-3576-7fe1-904c-675dbc851f3f RATE=1800 DUR_MAIN=10800s DUR_SIDE=10700s
+start_utc=2026-09-21T22:20:57Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql 24b9cb3fe8c249b9e65dacceb0e8e8b1da8ff29512c3e795e7bcea43f1ddabf2
+sha256 soak_sampler.py b377f7b4aa16bee1e35e8b93af5989607ac1e127c28b50159e0f555c80cbf221
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py aacf367b5458c42d83c8c17c187895f53aca54113b7dad5e69c2b7722c64fcd8
+sha256 soak_run.sh b330e1af399a1889fb4987ed66d32f083977656e3bd08130a9890384af91b6e8
+--- container-side digests ---
+sampler unavailable
+soak start 2026-09-21T22:20:57Z RUN_ID=20260922-storage-3h RATE=1800
+ledger pre 22:20:57
+check /workspace/perf-results/20260922-storage-3h/ledger-pre.txt: PASS
+vkledger pre: keys=565 dbsize=565
+ Container soak-sampler-20260922-storage-3h Creating 
+ Container soak-sampler-20260922-storage-3h Created 
+74da38a3620a9bda194549f222d859ebd67b13a5e45e1de3b4460c454c570174
+sampler started 22:20:59
+runner rss sampler pid=84021 22:20:59
+ Container soak-anchor-rcv-20260922-storage-3h Creating 
+ Container soak-anchor-rcv-20260922-storage-3h Created 
+d623a3b5267313429200e6ac29a915086ad674b9d566d1caac508b2944a98dfe
+ Container soak-anchor-worker-20260922-storage-3h Creating 
+ Container soak-anchor-worker-20260922-storage-3h Created 
+fb7610bf9ca69fe4caf5fe77393b59fd3e642d8d70d85999f3d32a8e9d96b94c
+audit anchor worker+receiver started depid=01a0c608-3576-7fe1-904c-675dbc851f3f 22:21:03
+audit health sampler pid=84304 22:21:03
+main cap_mixed arrival=1800ops/s pid=84309 22:21:03
+ Container soak-argon2-20260922-storage-3h Creating 
+ Container soak-argon2-20260922-storage-3h Created 
+759eb455462a2293f824a974aef6688f0e1041854b84c0a712665dba1ac73722
+argon2 sidecar arrival=8/s started 22:23:04
+ Container soak-meta-20260922-storage-3h Creating 
+ Container soak-meta-20260922-storage-3h Created 
+7a96c618feb77704d5cc236e02d533f91554087bfdd1342e69d30d819fa8d57c
+meta sidecar arrival=200/s started 22:23:04
+ Container soak-fapi-20260922-storage-3h Creating 
+ Container soak-fapi-20260922-storage-3h Created 
+4e946013ffa23587da9e781e8045b6990800131bbac40adf219ca0eb972e0dd7
+fapi sidecar arrival=30/s started 22:23:05
+main finished 01:21:29
+time="2026-09-22T09:22:10+08:00" level=warning msg="Found orphan containers (soak-fapi-20260922-storage-3h, soak-meta-20260922-storage-3h, soak-argon2-20260922-storage-3h, soak-refresh-3h, soak-sampler-20260922-storage-3h) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container nazoauth-perf-perf-run-69a90b8b0a5d Creating 
+ Container nazoauth-perf-perf-run-69a90b8b0a5d Created 
+sampler /workspace/perf-results/20260922-storage-3h/soak-metrics.jsonl: PASS (1079 rows)
+ledger post 01:22:21
+check /workspace/perf-results/20260922-storage-3h/ledger-post.txt: PASS
+end_utc=2026-09-22T01:22:23Z
+SOAK_DONE RUN_ID=20260922-storage-3h 2026-09-22T01:22:23Z

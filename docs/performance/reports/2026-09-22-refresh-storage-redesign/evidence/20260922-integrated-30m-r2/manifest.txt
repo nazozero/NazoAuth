@@ -1,0 +1,12 @@
+RUN_ID=20260922-integrated-30m-r2
+DEPID=01a0c5a8-206b-7320-b495-bf890b09a256 RATE=1800 DUR_MAIN=1800s DUR_SIDE=1780s
+start_utc=2026-09-21T21:26:17Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql 24b9cb3fe8c249b9e65dacceb0e8e8b1da8ff29512c3e795e7bcea43f1ddabf2
+sha256 soak_sampler.py b377f7b4aa16bee1e35e8b93af5989607ac1e127c28b50159e0f555c80cbf221
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py aacf367b5458c42d83c8c17c187895f53aca54113b7dad5e69c2b7722c64fcd8
+sha256 soak_run.sh ca2074a6f9464d5090734775fcba1344b170e29a32730f756d7714ea1153a436
+--- container-side digests ---
+sampler unavailable
+end_utc=2026-09-21T21:57:22Z

@@ -1,0 +1,9 @@
+argon2 alive attempt=1
+meta alive attempt=1
+fapi alive attempt=1
+argon2 alive attempt=2
+meta alive attempt=2
+fapi alive attempt=2
+argon2 alive attempt=3
+meta alive attempt=3
+fapi alive attempt=3

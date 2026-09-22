@@ -41,7 +41,9 @@ REPORT_SHA: `d04de825`
 - `evidence/statemin-poolstarve-30m-{a,b}/` — k6 summaries (main + 3 sidecars),
   ledger pre/post/diff, audit-receiver-state.json, audit-health.jsonl,
   vkledger pre/post, soak.log, manifest.txt
-- `evidence/observer/obs-run{A,B}.jsonl` — 1s observer raw samples
+- `evidence/observer/obs-run{A,B}-compact.jsonl` — 1s observer samples with
+  per-backend rows folded into wait/state histograms and `disk`/`io` counters
+  kept every 30s (raw pair removed during evidence minimization)
 - `evidence/observer/obs1s.py` — observer source (digest above)
 
 ## Verdict

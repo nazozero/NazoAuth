@@ -1,0 +1,1693 @@
+META|run_id|20260922-storage-3h
+META|phase|pre
+META|sampled_at|2026-09-21 22:20:57.737245
+META|server_version_num|180006
+META|server_version|PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+META|database|oauth
+META|schema_version|20260926000100
+META|pg_stat_statements_track|all
+META|db_stats_reset|
+RELATION_BYTES|18516|public.oauth_refresh_contracts|417792|32768|81920|8192|540672|256|0|570|0|0|314|0|1|540672
+RELATION_BYTES|18535|public.oauth_refresh_families|147456|32768|294912|8192|483328|256|0|612|51|0|356|0|2|483328
+RELATION_BYTES|16394|public.users|155648|32768|262144|8192|458752|257|0|257|257|0|0|0|1|458752
+RELATION_BYTES|17706|public.security_audit_events|319488|24576|32768|8192|385024|479|0|479|0|0|0|0|0|385024
+RELATION_BYTES|16496|public.user_client_grants|98304|32768|221184|8192|360448|256|0|256|356|0|0|0|2|360448
+RELATION_BYTES|17805|public.oauth_token_issuances|73728|24576|114688|8192|221184|201|0|201|0|0|0|0|0|221184
+RELATION_BYTES|16426|public.oauth_clients|16384|24576|122880|8192|172032|6|6|6|6|1|0|0|0|172032
+RELATION_BYTES|17733|public.security_audit_event_outbox|40960|24576|73728|8192|147456|479|0|479|0|0|0|0|0|147456
+RELATION_BYTES|17138|public.runtime_module_state_events|24576|24576|57344|8192|114688|41|16|41|16|16|0|0|0|114688
+RELATION_BYTES|17552|public.oauth_client_mtls_trust_anchor_requests|8192|0|98304|8192|114688|1|1|2|0|0|1|0|0|114688
+RELATION_BYTES|18374|public.tenant_signing_keysets|8192|0|16384|57344|81920|1|0|1|0|0|0|0|0|81920
+RELATION_BYTES|16683|public.organizations|8192|0|65536|0|73728|1|0|1|0|0|0|0|0|73728
+RELATION_BYTES|16660|public.realms|8192|0|65536|0|73728|1|0|1|0|0|0|0|0|73728
+RELATION_BYTES|16994|public.scim_tokens|8192|0|57344|8192|73728|2|0|2|0|0|0|0|0|73728
+RELATION_BYTES|16548|public.client_access_requests|0|0|65536|8192|73728|0|0|0|0|0|0|0|0|73728
+RELATION_BYTES|18281|public.tenant_runtime_bindings|8192|0|49152|8192|65536|1|0|1|0|0|0|0|0|65536
+RELATION_BYTES|18581|public.oauth_refresh_spent_tokens|8192|0|49152|8192|65536|0|51|51|0|0|51|0|0|65536
+RELATION_BYTES|17119|public.runtime_module_instance_states|8192|0|49152|0|57344|16|9|16|9|0|0|0|0|57344
+RELATION_BYTES|17168|public.identity_security_events|0|0|49152|0|49152|0|0|0|0|0|0|0|0|49152
+RELATION_BYTES|17097|public.runtime_module_desired_states|8192|0|32768|8192|49152|16|16|16|16|16|0|0|0|49152
+RELATION_BYTES|17949|public.openid4vc_trust_policies|0|0|40960|8192|49152|0|0|0|0|0|0|0|0|49152
+RELATION_BYTES|17431|public.openid4vp_transactions|0|0|40960|8192|49152|0|0|0|0|0|0|0|0|49152
+RELATION_BYTES|17380|public.openid4vci_deferred_transactions|0|0|32768|8192|40960|0|0|0|0|0|0|0|0|40960
+RELATION_BYTES|16643|public.tenants|8192|0|32768|0|40960|1|0|1|0|0|0|0|0|40960
+RELATION_BYTES|17304|public.openid4vci_offers|0|0|32768|8192|40960|0|0|0|0|0|0|0|0|40960
+RELATION_BYTES|17064|public.backchannel_logout_deliveries|0|0|32768|8192|40960|0|0|0|0|0|0|0|0|40960
+RELATION_BYTES|16931|public.user_passkey_credentials|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|16867|public.user_totp_credentials|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17911|public.tenant_resource_bindings|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17693|public.security_audit_chain_state|8192|0|16384|8192|32768|1|0|1|0|0|0|0|0|32768
+RELATION_BYTES|18111|public.controller_recovery_challenges|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|18040|public.controller_registry_slots|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|16961|public.external_identity_links|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17334|public.openid4vci_access_grants|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|16528|public.access_token_revocations|0|0|32768|0|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17024|public.scim_audit_events|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|18407|public.security_audit_chain_entries|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17212|public.scim_security_events|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17989|public.openid4vc_trust_policy_clients|0|0|32768|0|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|17777|public.openid4vci_issuance_responses|0|0|24576|8192|32768|0|0|0|0|0|0|0|0|32768
+RELATION_BYTES|16386|public.__diesel_schema_migrations|8192|0|16384|0|24576|84|0|84|0|0|0|0|0|24576
+RELATION_BYTES|17614|public.oauth_client_mtls_trust_anchor_events|0|0|16384|8192|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|17368|public.openid4vci_nonces|0|0|24576|0|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|17486|public.openid4vci_credential_datasets|0|0|16384|8192|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|18268|public.tenant_runtime_directory_state|8192|0|16384|0|24576|1|1|1|1|1|0|0|0|24576
+RELATION_BYTES|17517|public.openid4vci_credential_dataset_events|0|0|24576|0|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|16910|public.user_mfa_remembered_devices|0|0|24576|0|24576|0|0|0|0|0|0|0|0|24576
+RELATION_BYTES|18070|public.controller_identity_approvals|0|0|16384|0|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|17236|public.scim_security_event_receipts|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18324|public.tenant_directory_control_operations|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|17281|public.openid4vci_credential_configurations|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18206|public.controller_recovery_root_key_history|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18154|public.tenant_resource_control_operations|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18090|public.controller_recovery_roots|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|17410|public.openid4vci_notifications|0|0|8192|8192|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|16891|public.user_mfa_backup_codes|0|0|16384|0|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18236|public.admin_provision_receipts|0|0|16384|0|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|18176|public.recovery_invalidations|0|0|16384|0|16384|0|0|0|0|0|0|0|0|16384
+RELATION_BYTES|17850|public.tenant_resource_states|0|0|8192|0|8192|0|0|0|0|0|0|0|0|8192
+INDEX_DETAIL|16392|public.__diesel_schema_migrations|__diesel_schema_migrations_pkey|16384|0|CREATE UNIQUE INDEX __diesel_schema_migrations_pkey ON public.__diesel_schema_migrations USING btree (version)
+INDEX_DETAIL|16547|public.access_token_revocations|ix_access_token_revocations_expires_at|8192|0|CREATE INDEX ix_access_token_revocations_expires_at ON public.access_token_revocations USING btree (expires_at)
+INDEX_DETAIL|16821|public.access_token_revocations|ix_access_token_revocations_tenant_id|8192|0|CREATE INDEX ix_access_token_revocations_tenant_id ON public.access_token_revocations USING btree (tenant_id)
+INDEX_DETAIL|16813|public.access_token_revocations|ux_access_token_revocations_tenant_jti_blake3|8192|0|CREATE UNIQUE INDEX ux_access_token_revocations_tenant_jti_blake3 ON public.access_token_revocations USING btree (tenant_id, access_token_jti_blake3)
+INDEX_DETAIL|16538|public.access_token_revocations|access_token_revocations_pkey|8192|0|CREATE UNIQUE INDEX access_token_revocations_pkey ON public.access_token_revocations USING btree (id)
+INDEX_DETAIL|18247|public.admin_provision_receipts|admin_provision_receipts_pkey|8192|0|CREATE UNIQUE INDEX admin_provision_receipts_pkey ON public.admin_provision_receipts USING btree (operation_id)
+INDEX_DETAIL|18259|public.admin_provision_receipts|uq_admin_provision_receipts_user|8192|0|CREATE UNIQUE INDEX uq_admin_provision_receipts_user ON public.admin_provision_receipts USING btree (user_id)
+INDEX_DETAIL|17087|public.backchannel_logout_deliveries|backchannel_logout_deliveries_pkey|8192|0|CREATE UNIQUE INDEX backchannel_logout_deliveries_pkey ON public.backchannel_logout_deliveries USING btree (id)
+INDEX_DETAIL|17207|public.backchannel_logout_deliveries|uq_backchannel_logout_operation_client|8192|0|CREATE UNIQUE INDEX uq_backchannel_logout_operation_client ON public.backchannel_logout_deliveries USING btree (tenant_id, operation_key, client_id) WHERE (operation_key IS NOT NULL)
+INDEX_DETAIL|17095|public.backchannel_logout_deliveries|idx_backchannel_logout_deliveries_client|8192|0|CREATE INDEX idx_backchannel_logout_deliveries_client ON public.backchannel_logout_deliveries USING btree (tenant_id, client_id, created_at)
+INDEX_DETAIL|17094|public.backchannel_logout_deliveries|idx_backchannel_logout_deliveries_due|8192|87|CREATE INDEX idx_backchannel_logout_deliveries_due ON public.backchannel_logout_deliveries USING btree (next_attempt_at, created_at) WHERE ((delivered_at IS NULL) AND (failed_at IS NULL))
+INDEX_DETAIL|16583|public.client_access_requests|ix_client_access_requests_user_id|8192|0|CREATE INDEX ix_client_access_requests_user_id ON public.client_access_requests USING btree (user_id)
+INDEX_DETAIL|16822|public.client_access_requests|ix_client_access_requests_tenant_id|8192|0|CREATE INDEX ix_client_access_requests_tenant_id ON public.client_access_requests USING btree (tenant_id)
+INDEX_DETAIL|16816|public.client_access_requests|ux_client_access_requests_tenant_user_pending|8192|0|CREATE UNIQUE INDEX ux_client_access_requests_tenant_user_pending ON public.client_access_requests USING btree (tenant_id, user_id) WHERE (status = 0)
+INDEX_DETAIL|16566|public.client_access_requests|client_access_requests_pkey|8192|0|CREATE UNIQUE INDEX client_access_requests_pkey ON public.client_access_requests USING btree (id)
+INDEX_DETAIL|16584|public.client_access_requests|ix_client_access_requests_status|8192|0|CREATE INDEX ix_client_access_requests_status ON public.client_access_requests USING btree (status)
+INDEX_DETAIL|16585|public.client_access_requests|ix_client_access_requests_user_created_at|8192|0|CREATE INDEX ix_client_access_requests_user_created_at ON public.client_access_requests USING btree (user_id, created_at DESC)
+INDEX_DETAIL|16586|public.client_access_requests|ix_client_access_requests_status_created_at|8192|0|CREATE INDEX ix_client_access_requests_status_created_at ON public.client_access_requests USING btree (status, created_at DESC)
+INDEX_DETAIL|16587|public.client_access_requests|ix_client_access_requests_created_at|8192|0|CREATE INDEX ix_client_access_requests_created_at ON public.client_access_requests USING btree (created_at DESC)
+INDEX_DETAIL|18089|public.controller_identity_approvals|ux_controller_identity_approvals_token_hash|8192|0|CREATE UNIQUE INDEX ux_controller_identity_approvals_token_hash ON public.controller_identity_approvals USING btree (token_hash)
+INDEX_DETAIL|18087|public.controller_identity_approvals|pk_controller_identity_approvals|8192|0|CREATE UNIQUE INDEX pk_controller_identity_approvals ON public.controller_identity_approvals USING btree (approval_id)
+INDEX_DETAIL|18137|public.controller_recovery_challenges|pk_controller_recovery_challenges|8192|0|CREATE UNIQUE INDEX pk_controller_recovery_challenges ON public.controller_recovery_challenges USING btree (challenge_id)
+INDEX_DETAIL|18144|public.controller_recovery_challenges|ux_controller_recovery_challenges_pending_per_deployment|8192|1|CREATE UNIQUE INDEX ux_controller_recovery_challenges_pending_per_deployment ON public.controller_recovery_challenges USING btree (deployment_id) WHERE (consumed_at IS NULL)
+INDEX_DETAIL|18204|public.controller_recovery_challenges|uq_controller_recovery_challenges_allocation_nonce|8192|0|CREATE UNIQUE INDEX uq_controller_recovery_challenges_allocation_nonce ON public.controller_recovery_challenges USING btree (deployment_id, allocation_nonce)
+INDEX_DETAIL|18216|public.controller_recovery_root_key_history|pk_controller_recovery_root_key_history|8192|0|CREATE UNIQUE INDEX pk_controller_recovery_root_key_history ON public.controller_recovery_root_key_history USING btree (deployment_id, recovery_public_key)
+INDEX_DETAIL|18109|public.controller_recovery_roots|pk_controller_recovery_roots|8192|0|CREATE UNIQUE INDEX pk_controller_recovery_roots ON public.controller_recovery_roots USING btree (deployment_id)
+INDEX_DETAIL|18069|public.controller_registry_slots|ux_controller_registry_slots_active_slot_index|8192|0|CREATE UNIQUE INDEX ux_controller_registry_slots_active_slot_index ON public.controller_registry_slots USING btree (deployment_id, slot_index) WHERE ((status)::text = 'active'::text)
+INDEX_DETAIL|18066|public.controller_registry_slots|pk_controller_registry_slots|8192|0|CREATE UNIQUE INDEX pk_controller_registry_slots ON public.controller_registry_slots USING btree (deployment_id, controller_id)
+INDEX_DETAIL|18068|public.controller_registry_slots|ux_controller_registry_slots_deployment_kid|8192|0|CREATE UNIQUE INDEX ux_controller_registry_slots_deployment_kid ON public.controller_registry_slots USING btree (deployment_id, kid)
+INDEX_DETAIL|16983|public.external_identity_links|external_identity_links_pkey|8192|0|CREATE UNIQUE INDEX external_identity_links_pkey ON public.external_identity_links USING btree (id)
+INDEX_DETAIL|16991|public.external_identity_links|ix_external_identity_links_tenant_user|8192|0|CREATE INDEX ix_external_identity_links_tenant_user ON public.external_identity_links USING btree (tenant_id, user_id)
+INDEX_DETAIL|16990|public.external_identity_links|ux_external_identity_links_tenant_provider_subject|8192|0|CREATE UNIQUE INDEX ux_external_identity_links_tenant_provider_subject ON public.external_identity_links USING btree (tenant_id, provider_type, provider_id, subject)
+INDEX_DETAIL|18260|public.identity_security_events|uq_identity_security_event_bootstrap_request|8192|0|CREATE UNIQUE INDEX uq_identity_security_event_bootstrap_request ON public.identity_security_events USING btree (request_id) WHERE ((event_type)::text = 'initial_admin_bootstrap'::text)
+INDEX_DETAIL|18267|public.identity_security_events|uq_identity_security_event_admin_provision_request|8192|0|CREATE UNIQUE INDEX uq_identity_security_event_admin_provision_request ON public.identity_security_events USING btree (request_id) WHERE ((event_type)::text = 'admin_user_created'::text)
+INDEX_DETAIL|17205|public.identity_security_events|idx_identity_security_events_target_time|8192|0|CREATE INDEX idx_identity_security_events_target_time ON public.identity_security_events USING btree (target_user_id, occurred_at DESC) WHERE (target_user_id IS NOT NULL)
+INDEX_DETAIL|17204|public.identity_security_events|idx_identity_security_events_actor_time|8192|0|CREATE INDEX idx_identity_security_events_actor_time ON public.identity_security_events USING btree (actor_id, occurred_at DESC) WHERE (actor_id IS NOT NULL)
+INDEX_DETAIL|17186|public.identity_security_events|identity_security_events_pkey|8192|0|CREATE UNIQUE INDEX identity_security_events_pkey ON public.identity_security_events USING btree (id)
+INDEX_DETAIL|17203|public.identity_security_events|idx_identity_security_events_tenant_time|8192|0|CREATE INDEX idx_identity_security_events_tenant_time ON public.identity_security_events USING btree (tenant_id, occurred_at DESC)
+INDEX_DETAIL|17629|public.oauth_client_mtls_trust_anchor_events|oauth_client_mtls_trust_anchor_events_pkey|8192|0|CREATE UNIQUE INDEX oauth_client_mtls_trust_anchor_events_pkey ON public.oauth_client_mtls_trust_anchor_events USING btree (id)
+INDEX_DETAIL|17641|public.oauth_client_mtls_trust_anchor_events|ix_mtls_trust_anchor_events_request_created|8192|1|CREATE INDEX ix_mtls_trust_anchor_events_request_created ON public.oauth_client_mtls_trust_anchor_events USING btree (tenant_id, request_id, created_at, id)
+INDEX_DETAIL|17580|public.oauth_client_mtls_trust_anchor_requests|oauth_client_mtls_trust_anchor_requests_pkey|16384|0|CREATE UNIQUE INDEX oauth_client_mtls_trust_anchor_requests_pkey ON public.oauth_client_mtls_trust_anchor_requests USING btree (id)
+INDEX_DETAIL|17611|public.oauth_client_mtls_trust_anchor_requests|ix_mtls_trust_anchor_requester_created|16384|0|CREATE INDEX ix_mtls_trust_anchor_requester_created ON public.oauth_client_mtls_trust_anchor_requests USING btree (tenant_id, user_id, created_at DESC)
+INDEX_DETAIL|17612|public.oauth_client_mtls_trust_anchor_requests|ix_mtls_trust_anchor_status_created|16384|3|CREATE INDEX ix_mtls_trust_anchor_status_created ON public.oauth_client_mtls_trust_anchor_requests USING btree (tenant_id, status, created_at DESC)
+INDEX_DETAIL|17613|public.oauth_client_mtls_trust_anchor_requests|ix_mtls_trust_anchor_active_bundle|16384|0|CREATE INDEX ix_mtls_trust_anchor_active_bundle ON public.oauth_client_mtls_trust_anchor_requests USING btree (tenant_id, certificate_sha256) WHERE (status = 1)
+INDEX_DETAIL|17582|public.oauth_client_mtls_trust_anchor_requests|ux_mtls_trust_anchor_client_certificate|16384|2|CREATE UNIQUE INDEX ux_mtls_trust_anchor_client_certificate ON public.oauth_client_mtls_trust_anchor_requests USING btree (tenant_id, client_id, certificate_sha256)
+INDEX_DETAIL|17584|public.oauth_client_mtls_trust_anchor_requests|uq_mtls_trust_anchor_request_tenant|16384|0|CREATE UNIQUE INDEX uq_mtls_trust_anchor_request_tenant ON public.oauth_client_mtls_trust_anchor_requests USING btree (id, tenant_id)
+INDEX_DETAIL|16825|public.oauth_clients|uq_oauth_clients_id_tenant|16384|257|CREATE UNIQUE INDEX uq_oauth_clients_id_tenant ON public.oauth_clients USING btree (id, tenant_id)
+INDEX_DETAIL|16818|public.oauth_clients|ix_oauth_clients_tenant_id|16384|0|CREATE INDEX ix_oauth_clients_tenant_id ON public.oauth_clients USING btree (tenant_id)
+INDEX_DETAIL|17947|public.oauth_clients|uq_oauth_clients_tenant_internal_id|16384|0|CREATE UNIQUE INDEX uq_oauth_clients_tenant_internal_id ON public.oauth_clients USING btree (tenant_id, id)
+INDEX_DETAIL|16457|public.oauth_clients|ix_oauth_clients_created_at_desc|16384|0|CREATE INDEX ix_oauth_clients_created_at_desc ON public.oauth_clients USING btree (created_at DESC)
+INDEX_DETAIL|18034|public.oauth_clients|uq_oauth_clients_tenant_internal_public_id|16384|2477|CREATE UNIQUE INDEX uq_oauth_clients_tenant_internal_public_id ON public.oauth_clients USING btree (tenant_id, id, client_id)
+INDEX_DETAIL|16454|public.oauth_clients|oauth_clients_pkey|16384|0|CREATE UNIQUE INDEX oauth_clients_pkey ON public.oauth_clients USING btree (id)
+INDEX_DETAIL|16808|public.oauth_clients|ux_oauth_clients_tenant_client_id|16384|12|CREATE UNIQUE INDEX ux_oauth_clients_tenant_client_id ON public.oauth_clients USING btree (tenant_id, client_id)
+INDEX_DETAIL|17061|public.oauth_clients|ux_oauth_clients_registration_access_token_blake3|8192|0|CREATE UNIQUE INDEX ux_oauth_clients_registration_access_token_blake3 ON public.oauth_clients USING btree (registration_access_token_blake3) WHERE (registration_access_token_blake3 IS NOT NULL)
+INDEX_DETAIL|18528|public.oauth_refresh_contracts|pk_oauth_refresh_contracts|81920|1619|CREATE UNIQUE INDEX pk_oauth_refresh_contracts ON public.oauth_refresh_contracts USING btree (tenant_id, contract_blake3)
+INDEX_DETAIL|18578|public.oauth_refresh_families|ix_orf_scope_active|106496|1|CREATE INDEX ix_orf_scope_active ON public.oauth_refresh_families USING btree (tenant_id, user_id, client_id, current_issued_at, token_family_id) WHERE (revoked_at IS NULL)
+INDEX_DETAIL|18556|public.oauth_refresh_families|ux_oauth_refresh_families_current_digest|90112|454|CREATE UNIQUE INDEX ux_oauth_refresh_families_current_digest ON public.oauth_refresh_families USING btree (tenant_id, current_token_blake3)
+INDEX_DETAIL|18554|public.oauth_refresh_families|pk_oauth_refresh_families|65536|3|CREATE UNIQUE INDEX pk_oauth_refresh_families ON public.oauth_refresh_families USING btree (tenant_id, token_family_id)
+INDEX_DETAIL|18580|public.oauth_refresh_families|ix_orf_expires|16384|11|CREATE INDEX ix_orf_expires ON public.oauth_refresh_families USING btree (current_expires_at)
+INDEX_DETAIL|18579|public.oauth_refresh_families|ix_orf_client_active|16384|128|CREATE INDEX ix_orf_client_active ON public.oauth_refresh_families USING btree (tenant_id, client_id) WHERE (revoked_at IS NULL)
+INDEX_DETAIL|18595|public.oauth_refresh_spent_tokens|pk_oauth_refresh_spent_tokens|16384|50|CREATE UNIQUE INDEX pk_oauth_refresh_spent_tokens ON public.oauth_refresh_spent_tokens USING btree (tenant_id, refresh_token_blake3)
+INDEX_DETAIL|18602|public.oauth_refresh_spent_tokens|ix_orst_family|16384|128|CREATE INDEX ix_orst_family ON public.oauth_refresh_spent_tokens USING btree (tenant_id, token_family_id)
+INDEX_DETAIL|18603|public.oauth_refresh_spent_tokens|ix_orst_expires|16384|5|CREATE INDEX ix_orst_expires ON public.oauth_refresh_spent_tokens USING btree (expires_at)
+INDEX_DETAIL|17835|public.oauth_token_issuances|oauth_token_issuances_single_use_key_idx|32768|100|CREATE UNIQUE INDEX oauth_token_issuances_single_use_key_idx ON public.oauth_token_issuances USING btree (tenant_id, client_id, single_use_key_blake3) WHERE (single_use_key_blake3 IS NOT NULL)
+INDEX_DETAIL|17836|public.oauth_token_issuances|oauth_token_issuances_tenant_jti_idx|32768|0|CREATE UNIQUE INDEX oauth_token_issuances_tenant_jti_idx ON public.oauth_token_issuances USING btree (tenant_id, access_token_jti)
+INDEX_DETAIL|17837|public.oauth_token_issuances|oauth_token_issuances_retention_idx|16384|0|CREATE INDEX oauth_token_issuances_retention_idx ON public.oauth_token_issuances USING btree (retain_until, issuance_id)
+INDEX_DETAIL|17838|public.oauth_token_issuances|ix_oauth_token_issuances_tenant_user|16384|0|CREATE INDEX ix_oauth_token_issuances_tenant_user ON public.oauth_token_issuances USING btree (tenant_id, user_id) WHERE (user_id IS NOT NULL)
+INDEX_DETAIL|17818|public.oauth_token_issuances|oauth_token_issuances_pkey|16384|8|CREATE UNIQUE INDEX oauth_token_issuances_pkey ON public.oauth_token_issuances USING btree (issuance_id)
+INDEX_DETAIL|17985|public.openid4vc_trust_policies|ix_openid4vc_trust_policies_tenant_active|8192|0|CREATE INDEX ix_openid4vc_trust_policies_tenant_active ON public.openid4vc_trust_policies USING btree (tenant_id, active, updated_at DESC)
+INDEX_DETAIL|17986|public.openid4vc_trust_policies|ix_openid4vc_trust_policies_resource_history|8192|0|CREATE INDEX ix_openid4vc_trust_policies_resource_history ON public.openid4vc_trust_policies USING btree (tenant_id, resource_id, resource_digest, created_at DESC)
+INDEX_DETAIL|17975|public.openid4vc_trust_policies|openid4vc_trust_policies_pkey|8192|0|CREATE UNIQUE INDEX openid4vc_trust_policies_pkey ON public.openid4vc_trust_policies USING btree (id)
+INDEX_DETAIL|17977|public.openid4vc_trust_policies|uq_openid4vc_trust_policy_tenant_binding|8192|0|CREATE UNIQUE INDEX uq_openid4vc_trust_policy_tenant_binding ON public.openid4vc_trust_policies USING btree (tenant_id, id)
+INDEX_DETAIL|17984|public.openid4vc_trust_policies|uq_openid4vc_trust_policy_active|8192|0|CREATE UNIQUE INDEX uq_openid4vc_trust_policy_active ON public.openid4vc_trust_policies USING btree (tenant_id, resource_id) WHERE active
+INDEX_DETAIL|18018|public.openid4vc_trust_policy_clients|ix_openid4vc_trust_policy_clients_policy|8192|0|CREATE INDEX ix_openid4vc_trust_policy_clients_policy ON public.openid4vc_trust_policy_clients USING btree (tenant_id, policy_id, active)
+INDEX_DETAIL|18005|public.openid4vc_trust_policy_clients|uq_openid4vc_trust_policy_client_history|8192|0|CREATE UNIQUE INDEX uq_openid4vc_trust_policy_client_history ON public.openid4vc_trust_policy_clients USING btree (policy_id, oauth_client_id)
+INDEX_DETAIL|18003|public.openid4vc_trust_policy_clients|openid4vc_trust_policy_clients_pkey|8192|0|CREATE UNIQUE INDEX openid4vc_trust_policy_clients_pkey ON public.openid4vc_trust_policy_clients USING btree (id)
+INDEX_DETAIL|18017|public.openid4vc_trust_policy_clients|uq_openid4vc_trust_policy_client_active|8192|0|CREATE UNIQUE INDEX uq_openid4vc_trust_policy_client_active ON public.openid4vc_trust_policy_clients USING btree (tenant_id, oauth_client_id) WHERE active
+INDEX_DETAIL|17355|public.openid4vci_access_grants|openid4vci_access_grants_token_hash_key|8192|0|CREATE UNIQUE INDEX openid4vci_access_grants_token_hash_key ON public.openid4vci_access_grants USING btree (token_hash)
+INDEX_DETAIL|17367|public.openid4vci_access_grants|ix_openid4vci_access_expiry|8192|0|CREATE INDEX ix_openid4vci_access_expiry ON public.openid4vci_access_grants USING btree (expires_at)
+INDEX_DETAIL|17353|public.openid4vci_access_grants|openid4vci_access_grants_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_access_grants_pkey ON public.openid4vci_access_grants USING btree (token_id)
+INDEX_DETAIL|17297|public.openid4vci_credential_configurations|openid4vci_credential_configurations_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_credential_configurations_pkey ON public.openid4vci_credential_configurations USING btree (tenant_id, id)
+INDEX_DETAIL|17550|public.openid4vci_credential_dataset_events|ix_openid4vci_credential_dataset_events_subject|8192|0|CREATE INDEX ix_openid4vci_credential_dataset_events_subject ON public.openid4vci_credential_dataset_events USING btree (tenant_id, subject_id, credential_configuration_id, created_at DESC)
+INDEX_DETAIL|17551|public.openid4vci_credential_dataset_events|ix_openid4vci_credential_dataset_events_actor|8192|0|CREATE INDEX ix_openid4vci_credential_dataset_events_actor ON public.openid4vci_credential_dataset_events USING btree (tenant_id, actor_user_id, created_at DESC)
+INDEX_DETAIL|17533|public.openid4vci_credential_dataset_events|openid4vci_credential_dataset_events_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_credential_dataset_events_pkey ON public.openid4vci_credential_dataset_events USING btree (id)
+INDEX_DETAIL|17516|public.openid4vci_credential_datasets|ix_openid4vci_credential_datasets_validity|8192|0|CREATE INDEX ix_openid4vci_credential_datasets_validity ON public.openid4vci_credential_datasets USING btree (tenant_id, subject_id, valid_until)
+INDEX_DETAIL|17504|public.openid4vci_credential_datasets|openid4vci_credential_datasets_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_credential_datasets_pkey ON public.openid4vci_credential_datasets USING btree (tenant_id, subject_id, credential_configuration_id)
+INDEX_DETAIL|17402|public.openid4vci_deferred_transactions|openid4vci_deferred_transactions_transaction_hash_key|8192|0|CREATE UNIQUE INDEX openid4vci_deferred_transactions_transaction_hash_key ON public.openid4vci_deferred_transactions USING btree (transaction_hash)
+INDEX_DETAIL|17409|public.openid4vci_deferred_transactions|ix_openid4vci_deferred_expiry|8192|0|CREATE INDEX ix_openid4vci_deferred_expiry ON public.openid4vci_deferred_transactions USING btree (expires_at)
+INDEX_DETAIL|17400|public.openid4vci_deferred_transactions|openid4vci_deferred_transactions_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_deferred_transactions_pkey ON public.openid4vci_deferred_transactions USING btree (id)
+INDEX_DETAIL|17776|public.openid4vci_deferred_transactions|ix_openid4vci_deferred_claim_expiry|8192|0|CREATE INDEX ix_openid4vci_deferred_claim_expiry ON public.openid4vci_deferred_transactions USING btree (claim_expires_at) WHERE (claim_id IS NOT NULL)
+INDEX_DETAIL|17795|public.openid4vci_issuance_responses|openid4vci_issuance_responses_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_issuance_responses_pkey ON public.openid4vci_issuance_responses USING btree (issuance_id)
+INDEX_DETAIL|17797|public.openid4vci_issuance_responses|uq_openid4vci_issuance_response_request|8192|0|CREATE UNIQUE INDEX uq_openid4vci_issuance_response_request ON public.openid4vci_issuance_responses USING btree (token_id, request_digest)
+INDEX_DETAIL|17804|public.openid4vci_issuance_responses|ix_openid4vci_issuance_response_expiry|8192|0|CREATE INDEX ix_openid4vci_issuance_response_expiry ON public.openid4vci_issuance_responses USING btree (expires_at)
+INDEX_DETAIL|17379|public.openid4vci_nonces|ix_openid4vci_nonce_expiry|8192|0|CREATE INDEX ix_openid4vci_nonce_expiry ON public.openid4vci_nonces USING btree (expires_at)
+INDEX_DETAIL|17377|public.openid4vci_nonces|openid4vci_nonces_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_nonces_pkey ON public.openid4vci_nonces USING btree (nonce_hash)
+INDEX_DETAIL|17775|public.openid4vci_nonces|ix_openid4vci_nonce_claim_expiry|8192|0|CREATE INDEX ix_openid4vci_nonce_claim_expiry ON public.openid4vci_nonces USING btree (claim_expires_at) WHERE (claim_id IS NOT NULL)
+INDEX_DETAIL|17424|public.openid4vci_notifications|openid4vci_notifications_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_notifications_pkey ON public.openid4vci_notifications USING btree (notification_id)
+INDEX_DETAIL|17333|public.openid4vci_offers|ix_openid4vci_offer_expiry|8192|0|CREATE INDEX ix_openid4vci_offer_expiry ON public.openid4vci_offers USING btree (expires_at)
+INDEX_DETAIL|17332|public.openid4vci_offers|ux_openid4vci_offer_pre_authorized_code_hash|8192|0|CREATE UNIQUE INDEX ux_openid4vci_offer_pre_authorized_code_hash ON public.openid4vci_offers USING btree (pre_authorized_code_hash) WHERE (pre_authorized_code_hash IS NOT NULL)
+INDEX_DETAIL|17331|public.openid4vci_offers|ux_openid4vci_offer_issuer_state_hash|8192|0|CREATE UNIQUE INDEX ux_openid4vci_offer_issuer_state_hash ON public.openid4vci_offers USING btree (issuer_state_hash) WHERE (issuer_state_hash IS NOT NULL)
+INDEX_DETAIL|17319|public.openid4vci_offers|openid4vci_offers_pkey|8192|0|CREATE UNIQUE INDEX openid4vci_offers_pkey ON public.openid4vci_offers USING btree (id)
+INDEX_DETAIL|17468|public.openid4vp_transactions|ux_openid4vp_create_request_jti|8192|0|CREATE UNIQUE INDEX ux_openid4vp_create_request_jti ON public.openid4vp_transactions USING btree (tenant_id, create_request_jti)
+INDEX_DETAIL|18027|public.openid4vp_transactions|ix_openid4vp_transactions_openid4vc_trust_policy|8192|0|CREATE INDEX ix_openid4vp_transactions_openid4vc_trust_policy ON public.openid4vp_transactions USING btree (tenant_id, openid4vc_trust_policy_binding_id) WHERE (openid4vc_trust_policy_binding_id IS NOT NULL)
+INDEX_DETAIL|17460|public.openid4vp_transactions|openid4vp_transactions_state_hash_key|8192|0|CREATE UNIQUE INDEX openid4vp_transactions_state_hash_key ON public.openid4vp_transactions USING btree (state_hash)
+INDEX_DETAIL|17467|public.openid4vp_transactions|ix_openid4vp_transaction_expiry|8192|0|CREATE INDEX ix_openid4vp_transaction_expiry ON public.openid4vp_transactions USING btree (expires_at)
+INDEX_DETAIL|17458|public.openid4vp_transactions|openid4vp_transactions_pkey|8192|0|CREATE UNIQUE INDEX openid4vp_transactions_pkey ON public.openid4vp_transactions USING btree (id)
+INDEX_DETAIL|16713|public.organizations|uq_organizations_id_tenant|16384|0|CREATE UNIQUE INDEX uq_organizations_id_tenant ON public.organizations USING btree (id, tenant_id)
+INDEX_DETAIL|16699|public.organizations|organizations_pkey|16384|1|CREATE UNIQUE INDEX organizations_pkey ON public.organizations USING btree (id)
+INDEX_DETAIL|16708|public.organizations|ux_organizations_tenant_slug_lower|16384|0|CREATE UNIQUE INDEX ux_organizations_tenant_slug_lower ON public.organizations USING btree (tenant_id, lower((slug)::text))
+INDEX_DETAIL|16710|public.organizations|ix_organizations_tenant_id|16384|0|CREATE INDEX ix_organizations_tenant_id ON public.organizations USING btree (tenant_id)
+INDEX_DETAIL|16709|public.realms|ix_realms_tenant_id|16384|0|CREATE INDEX ix_realms_tenant_id ON public.realms USING btree (tenant_id)
+INDEX_DETAIL|16711|public.realms|uq_realms_id_tenant|16384|0|CREATE UNIQUE INDEX uq_realms_id_tenant ON public.realms USING btree (id, tenant_id)
+INDEX_DETAIL|16707|public.realms|ux_realms_tenant_slug_lower|16384|0|CREATE UNIQUE INDEX ux_realms_tenant_slug_lower ON public.realms USING btree (tenant_id, lower((slug)::text))
+INDEX_DETAIL|16676|public.realms|realms_pkey|16384|1|CREATE UNIQUE INDEX realms_pkey ON public.realms USING btree (id)
+INDEX_DETAIL|18189|public.recovery_invalidations|recovery_invalidations_pkey|8192|0|CREATE UNIQUE INDEX recovery_invalidations_pkey ON public.recovery_invalidations USING btree (operation_id)
+INDEX_DETAIL|18191|public.recovery_invalidations|uq_recovery_invalidations_tenant_epoch|8192|0|CREATE UNIQUE INDEX uq_recovery_invalidations_tenant_epoch ON public.recovery_invalidations USING btree (tenant_id, state_epoch)
+INDEX_DETAIL|17118|public.runtime_module_desired_states|idx_runtime_module_desired_states_updated_at|16384|0|CREATE INDEX idx_runtime_module_desired_states_updated_at ON public.runtime_module_desired_states USING btree (updated_at DESC)
+INDEX_DETAIL|18349|public.runtime_module_desired_states|runtime_module_desired_states_pkey|16384|32|CREATE UNIQUE INDEX runtime_module_desired_states_pkey ON public.runtime_module_desired_states USING btree (tenant_id, module_id)
+INDEX_DETAIL|18370|public.runtime_module_instance_states|idx_runtime_module_instance_states_module_state|16384|7012|CREATE INDEX idx_runtime_module_instance_states_module_state ON public.runtime_module_instance_states USING btree (tenant_id, module_id, actual_state)
+INDEX_DETAIL|17136|public.runtime_module_instance_states|idx_runtime_module_instance_states_updated_at|16384|0|CREATE INDEX idx_runtime_module_instance_states_updated_at ON public.runtime_module_instance_states USING btree (updated_at DESC)
+INDEX_DETAIL|18357|public.runtime_module_instance_states|runtime_module_instance_states_pkey|16384|0|CREATE UNIQUE INDEX runtime_module_instance_states_pkey ON public.runtime_module_instance_states USING btree (tenant_id, instance_id, module_id)
+INDEX_DETAIL|17158|public.runtime_module_state_events|runtime_module_state_events_pkey|16384|0|CREATE UNIQUE INDEX runtime_module_state_events_pkey ON public.runtime_module_state_events USING btree (event_id)
+INDEX_DETAIL|18372|public.runtime_module_state_events|idx_runtime_module_state_events_module_time|16384|0|CREATE INDEX idx_runtime_module_state_events_module_time ON public.runtime_module_state_events USING btree (tenant_id, module_id, occurred_at DESC, event_id DESC)
+INDEX_DETAIL|18371|public.runtime_module_state_events|idx_runtime_module_state_events_occurred_at|16384|0|CREATE INDEX idx_runtime_module_state_events_occurred_at ON public.runtime_module_state_events USING btree (tenant_id, occurred_at DESC, event_id DESC)
+INDEX_DETAIL|18373|public.runtime_module_state_events|idx_runtime_module_state_events_actor_time|8192|0|CREATE INDEX idx_runtime_module_state_events_actor_time ON public.runtime_module_state_events USING btree (tenant_id, actor_id, occurred_at DESC) WHERE (actor_id IS NOT NULL)
+INDEX_DETAIL|17039|public.scim_audit_events|scim_audit_events_pkey|8192|0|CREATE UNIQUE INDEX scim_audit_events_pkey ON public.scim_audit_events USING btree (id)
+INDEX_DETAIL|17051|public.scim_audit_events|ix_scim_audit_events_token_time|8192|0|CREATE INDEX ix_scim_audit_events_token_time ON public.scim_audit_events USING btree (scim_token_id, created_at DESC)
+INDEX_DETAIL|17052|public.scim_audit_events|ix_scim_audit_events_tenant_time|8192|0|CREATE INDEX ix_scim_audit_events_tenant_time ON public.scim_audit_events USING btree (tenant_id, created_at DESC)
+INDEX_DETAIL|17248|public.scim_security_event_receipts|scim_security_event_receipts_pkey|8192|0|CREATE UNIQUE INDEX scim_security_event_receipts_pkey ON public.scim_security_event_receipts USING btree (event_id, scim_token_id)
+INDEX_DETAIL|17235|public.scim_security_events|ix_scim_security_events_expiry|8192|0|CREATE INDEX ix_scim_security_events_expiry ON public.scim_security_events USING btree (expires_at)
+INDEX_DETAIL|17234|public.scim_security_events|ix_scim_security_events_tenant_poll|8192|0|CREATE INDEX ix_scim_security_events_tenant_poll ON public.scim_security_events USING btree (tenant_id, occurred_at, id)
+INDEX_DETAIL|17227|public.scim_security_events|scim_security_events_pkey|8192|0|CREATE UNIQUE INDEX scim_security_events_pkey ON public.scim_security_events USING btree (id)
+INDEX_DETAIL|17015|public.scim_tokens|uq_scim_tokens_token_hash|16384|2|CREATE UNIQUE INDEX uq_scim_tokens_token_hash ON public.scim_tokens USING btree (token_hash)
+INDEX_DETAIL|17013|public.scim_tokens|scim_tokens_pkey|16384|0|CREATE UNIQUE INDEX scim_tokens_pkey ON public.scim_tokens USING btree (id)
+INDEX_DETAIL|17022|public.scim_tokens|ix_scim_tokens_tenant_active|16384|0|CREATE INDEX ix_scim_tokens_tenant_active ON public.scim_tokens USING btree (tenant_id) WHERE (revoked_at IS NULL)
+INDEX_DETAIL|17023|public.scim_tokens|ix_scim_tokens_expires_at|8192|0|CREATE INDEX ix_scim_tokens_expires_at ON public.scim_tokens USING btree (expires_at) WHERE (expires_at IS NOT NULL)
+INDEX_DETAIL|18423|public.security_audit_chain_entries|security_audit_chain_entries_event_hash_key|8192|0|CREATE UNIQUE INDEX security_audit_chain_entries_event_hash_key ON public.security_audit_chain_entries USING btree (event_hash)
+INDEX_DETAIL|18419|public.security_audit_chain_entries|security_audit_chain_entries_pkey|8192|0|CREATE UNIQUE INDEX security_audit_chain_entries_pkey ON public.security_audit_chain_entries USING btree (event_id)
+INDEX_DETAIL|18421|public.security_audit_chain_entries|security_audit_chain_entries_sequence_key|8192|0|CREATE UNIQUE INDEX security_audit_chain_entries_sequence_key ON public.security_audit_chain_entries USING btree (sequence)
+INDEX_DETAIL|17704|public.security_audit_chain_state|security_audit_chain_state_pkey|16384|0|CREATE UNIQUE INDEX security_audit_chain_state_pkey ON public.security_audit_chain_state USING btree (singleton)
+INDEX_DETAIL|18451|public.security_audit_event_outbox|idx_security_audit_outbox_order|40960|0|CREATE INDEX idx_security_audit_outbox_order ON public.security_audit_event_outbox USING btree (occurred_at, event_id)
+INDEX_DETAIL|17749|public.security_audit_event_outbox|security_audit_event_outbox_pkey|32768|0|CREATE UNIQUE INDEX security_audit_event_outbox_pkey ON public.security_audit_event_outbox USING btree (event_id)
+INDEX_DETAIL|17725|public.security_audit_events|security_audit_events_pkey|32768|958|CREATE UNIQUE INDEX security_audit_events_pkey ON public.security_audit_events USING btree (event_id)
+INDEX_DETAIL|18336|public.tenant_directory_control_operations|tenant_directory_control_operations_pkey|8192|0|CREATE UNIQUE INDEX tenant_directory_control_operations_pkey ON public.tenant_directory_control_operations USING btree (operation_id)
+INDEX_DETAIL|17936|public.tenant_resource_bindings|tenant_resource_bindings_pkey|8192|0|CREATE UNIQUE INDEX tenant_resource_bindings_pkey ON public.tenant_resource_bindings USING btree (id)
+INDEX_DETAIL|18200|public.tenant_resource_bindings|uq_tenant_resource_binding_identity|8192|262|CREATE UNIQUE INDEX uq_tenant_resource_binding_identity ON public.tenant_resource_bindings USING btree (tenant_id, resource_kind, resource_id)
+INDEX_DETAIL|17946|public.tenant_resource_bindings|ix_tenant_resource_bindings_tenant_kind|8192|0|CREATE INDEX ix_tenant_resource_bindings_tenant_kind ON public.tenant_resource_bindings USING btree (tenant_id, resource_kind, active, updated_at DESC)
+INDEX_DETAIL|18167|public.tenant_resource_control_operations|tenant_resource_control_operations_pkey|8192|0|CREATE UNIQUE INDEX tenant_resource_control_operations_pkey ON public.tenant_resource_control_operations USING btree (operation_id)
+INDEX_DETAIL|17861|public.tenant_resource_states|tenant_resource_states_pkey|8192|0|CREATE UNIQUE INDEX tenant_resource_states_pkey ON public.tenant_resource_states USING btree (tenant_id)
+INDEX_DETAIL|18301|public.tenant_runtime_bindings|uq_tenant_runtime_binding_host|16384|0|CREATE UNIQUE INDEX uq_tenant_runtime_binding_host ON public.tenant_runtime_bindings USING btree (external_host)
+INDEX_DETAIL|18299|public.tenant_runtime_bindings|uq_tenant_runtime_binding_issuer|16384|0|CREATE UNIQUE INDEX uq_tenant_runtime_binding_issuer ON public.tenant_runtime_bindings USING btree (issuer)
+INDEX_DETAIL|18297|public.tenant_runtime_bindings|tenant_runtime_bindings_pkey|16384|2|CREATE UNIQUE INDEX tenant_runtime_bindings_pkey ON public.tenant_runtime_bindings USING btree (tenant_id)
+INDEX_DETAIL|18279|public.tenant_runtime_directory_state|tenant_runtime_directory_state_pkey|16384|91|CREATE UNIQUE INDEX tenant_runtime_directory_state_pkey ON public.tenant_runtime_directory_state USING btree (singleton)
+INDEX_DETAIL|18389|public.tenant_signing_keysets|tenant_signing_keysets_pkey|16384|3|CREATE UNIQUE INDEX tenant_signing_keysets_pkey ON public.tenant_signing_keysets USING btree (tenant_id)
+INDEX_DETAIL|16658|public.tenants|tenants_pkey|16384|3|CREATE UNIQUE INDEX tenants_pkey ON public.tenants USING btree (id)
+INDEX_DETAIL|16706|public.tenants|ux_tenants_slug_lower|16384|0|CREATE UNIQUE INDEX ux_tenants_slug_lower ON public.tenants USING btree (lower((slug)::text))
+INDEX_DETAIL|16814|public.user_client_grants|uq_user_client_grants_tenant_user_client|57344|612|CREATE UNIQUE INDEX uq_user_client_grants_tenant_user_client ON public.user_client_grants USING btree (tenant_id, user_id, client_id)
+INDEX_DETAIL|16527|public.user_client_grants|ix_user_client_grants_user_last_authorized|49152|0|CREATE INDEX ix_user_client_grants_user_last_authorized ON public.user_client_grants USING btree (user_id, last_authorized_at DESC)
+INDEX_DETAIL|16511|public.user_client_grants|user_client_grants_pkey|40960|0|CREATE UNIQUE INDEX user_client_grants_pkey ON public.user_client_grants USING btree (id)
+INDEX_DETAIL|16525|public.user_client_grants|ix_user_client_grants_user_id|40960|0|CREATE INDEX ix_user_client_grants_user_id ON public.user_client_grants USING btree (user_id)
+INDEX_DETAIL|16820|public.user_client_grants|ix_user_client_grants_tenant_id|16384|0|CREATE INDEX ix_user_client_grants_tenant_id ON public.user_client_grants USING btree (tenant_id)
+INDEX_DETAIL|16526|public.user_client_grants|ix_user_client_grants_last_authorized_at|16384|0|CREATE INDEX ix_user_client_grants_last_authorized_at ON public.user_client_grants USING btree (last_authorized_at)
+INDEX_DETAIL|16902|public.user_mfa_backup_codes|user_mfa_backup_codes_pkey|8192|0|CREATE UNIQUE INDEX user_mfa_backup_codes_pkey ON public.user_mfa_backup_codes USING btree (id)
+INDEX_DETAIL|16909|public.user_mfa_backup_codes|ix_user_mfa_backup_codes_tenant_user_active|8192|0|CREATE INDEX ix_user_mfa_backup_codes_tenant_user_active ON public.user_mfa_backup_codes USING btree (tenant_id, user_id) WHERE (used_at IS NULL)
+INDEX_DETAIL|16930|public.user_mfa_remembered_devices|ix_user_mfa_remembered_devices_tenant_user_active|8192|0|CREATE INDEX ix_user_mfa_remembered_devices_tenant_user_active ON public.user_mfa_remembered_devices USING btree (tenant_id, user_id, expires_at)
+INDEX_DETAIL|16922|public.user_mfa_remembered_devices|user_mfa_remembered_devices_pkey|8192|0|CREATE UNIQUE INDEX user_mfa_remembered_devices_pkey ON public.user_mfa_remembered_devices USING btree (id)
+INDEX_DETAIL|16929|public.user_mfa_remembered_devices|ux_user_mfa_remembered_devices_tenant_token|8192|0|CREATE UNIQUE INDEX ux_user_mfa_remembered_devices_tenant_token ON public.user_mfa_remembered_devices USING btree (tenant_id, token_hash)
+INDEX_DETAIL|16960|public.user_passkey_credentials|ix_user_passkey_credentials_tenant_user|8192|0|CREATE INDEX ix_user_passkey_credentials_tenant_user ON public.user_passkey_credentials USING btree (tenant_id, user_id)
+INDEX_DETAIL|16959|public.user_passkey_credentials|ux_user_passkey_credentials_tenant_credential|8192|0|CREATE UNIQUE INDEX ux_user_passkey_credentials_tenant_credential ON public.user_passkey_credentials USING btree (tenant_id, credential_id)
+INDEX_DETAIL|16952|public.user_passkey_credentials|user_passkey_credentials_pkey|8192|0|CREATE UNIQUE INDEX user_passkey_credentials_pkey ON public.user_passkey_credentials USING btree (id)
+INDEX_DETAIL|16889|public.user_totp_credentials|ux_user_totp_credentials_tenant_user|8192|0|CREATE UNIQUE INDEX ux_user_totp_credentials_tenant_user ON public.user_totp_credentials USING btree (tenant_id, user_id)
+INDEX_DETAIL|16882|public.user_totp_credentials|user_totp_credentials_pkey|8192|0|CREATE UNIQUE INDEX user_totp_credentials_pkey ON public.user_totp_credentials USING btree (id)
+INDEX_DETAIL|16890|public.user_totp_credentials|ix_user_totp_credentials_user|8192|0|CREATE INDEX ix_user_totp_credentials_user ON public.user_totp_credentials USING btree (user_id)
+INDEX_DETAIL|16807|public.users|ux_users_tenant_email_lower|49152|1713|CREATE UNIQUE INDEX ux_users_tenant_email_lower ON public.users USING btree (tenant_id, lower((email)::text))
+INDEX_DETAIL|16806|public.users|ux_users_tenant_email|49152|0|CREATE UNIQUE INDEX ux_users_tenant_email ON public.users USING btree (tenant_id, email)
+INDEX_DETAIL|16805|public.users|ux_users_tenant_username|49152|0|CREATE UNIQUE INDEX ux_users_tenant_username ON public.users USING btree (tenant_id, username)
+INDEX_DETAIL|16823|public.users|uq_users_id_tenant|40960|262|CREATE UNIQUE INDEX uq_users_id_tenant ON public.users USING btree (id, tenant_id)
+INDEX_DETAIL|16420|public.users|users_pkey|40960|261|CREATE UNIQUE INDEX users_pkey ON public.users USING btree (id)
+INDEX_DETAIL|16425|public.users|ix_users_created_at_desc|16384|0|CREATE INDEX ix_users_created_at_desc ON public.users USING btree (created_at DESC)
+INDEX_DETAIL|16817|public.users|ix_users_tenant_id|16384|1881|CREATE INDEX ix_users_tenant_id ON public.users USING btree (tenant_id)
+ROW_COUNTS|oauth_refresh_families|256
+ROW_COUNTS|oauth_refresh_spent_tokens|0
+ROW_COUNTS|oauth_refresh_contracts|256
+ROW_COUNTS|oauth_token_issuances|201
+ROW_COUNTS|security_audit_events|479
+ROW_COUNTS|security_audit_event_outbox|479
+ROW_COUNTS|security_audit_chain_entries|0
+ROW_COUNTS|access_token_revocations|0
+REFRESH_MODEL|families|rows_total|256
+REFRESH_MODEL|families|live|256
+REFRESH_MODEL|families|live_user_bound|256
+REFRESH_MODEL|families|machine|0
+REFRESH_MODEL|families|revoked|0
+REFRESH_MODEL|families|compromised|0
+REFRESH_MODEL|families|max_active_per_scope|1
+REFRESH_MODEL|spent|rows_total|0
+REFRESH_MODEL|contracts|rows_total|256
+REFRESH_MODEL|contracts|referenced|256
+REFRESH_MODEL|families|inserted_cumulative|612
+REFRESH_MODEL|families|deleted_cumulative|356
+REFRESH_MODEL|spent|inserted_cumulative|51
+REFRESH_MODEL|spent|deleted_cumulative|51
+REFRESH_MODEL|spent|max_per_family|0
+REFRESH_MODEL|audit|capacity_retired_pending|28
+EXPIRED_BACKLOG|refresh_families_expired|0|-
+EXPIRED_BACKLOG|spent_proofs_due|0|-
+EXPIRED_BACKLOG|contracts_unreferenced|0|-
+EXPIRED_BACKLOG|issuances_due|150|2026-09-21 22:20:54
+EXPIRED_BACKLOG|outbox_pending|479|2026-09-21 22:14:54.317934
+EXPIRED_BACKLOG|audit_batch_in_flight|false|-
+EXPIRED_BACKLOG|audit_batch_blocked|false|-
+EXPIRED_BACKLOG|revocations_due|0|-
+AUDIT|ledger|pending_export|479
+AUDIT|ledger|in_flight_batch_events|0
+AUDIT|ledger|batch_generation|0
+AUDIT|ledger|batch_attempts|0
+AUDIT|ledger|events|479
+AUDIT|ledger|chain_entries|0
+AUDIT|ledger|anchor_sequence|
+AUDIT|ledger|chain_head|0
+AUDIT|ledger|oldest_pending_age_s|363
+XACT_HORIZON|activity|oldest_xact_age_s|-
+XACT_HORIZON|activity|xmin_lag_xids|-
+XACT_HORIZON|activity|xacts_over_60s|0
+XACT_HORIZON|activity|xacts_over_300s|0
+XACT_HORIZON|activity|idle_in_xact_over_60s|0
+XACT_HORIZON|prepared|prepared_xacts|0
+WAL|stats|wal_records|85708
+WAL|stats|wal_fpi|2495
+WAL|stats|wal_bytes|22265004
+WAL|stats|wal_buffers_full|34
+WAL|stats|stats_reset|2026-09-21 22:13:33.3435
+WAL|position|lsn|0/2568290
+WAL|position|sampled_at|2026-09-21 22:20:57.776207
+WAL|waldir|files|2
+WAL|waldir|bytes|33554432
+WAL|waldir|newest|2026-09-21 22:20:54
+WAL|archiver|archived_count|0
+WAL|archiver|failed_count|0
+WAL|archiver|last_archived_wal|-
+WAL|archiver|stats_reset|2026-09-21 22:13:33.3435
+WAL|replication_slots|count|0
+WAL|replication_slots|retained_bytes|0
+WAL|replication_slots|names|-
+BGWRITER|bgwriter|buffers_clean|0
+BGWRITER|bgwriter|maxwritten_clean|0
+BGWRITER|bgwriter|buffers_alloc|1775
+BGWRITER|bgwriter|stats_reset|2026-09-21 22:13:33.3435
+CHECKPOINTER|checkpointer|num_timed|1
+CHECKPOINTER|checkpointer|num_requested|1
+CHECKPOINTER|checkpointer|restartpoints_timed|0
+CHECKPOINTER|checkpointer|restartpoints_req|0
+CHECKPOINTER|checkpointer|restartpoints_done|0
+CHECKPOINTER|checkpointer|write_time|82832
+CHECKPOINTER|checkpointer|sync_time|20
+CHECKPOINTER|checkpointer|buffers_written|1772
+CHECKPOINTER|checkpointer|stats_reset|2026-09-21 22:13:33.3435
+CHECKPOINTER|checkpointer|num_done|1
+CHECKPOINTER|checkpointer|slru_written|7
+IO|client backend|reads|277
+IO|client backend|reads|0
+IO|client backend|reads|0
+IO|client backend|reads|671
+IO|client backend|reads|0
+IO|client backend|reads|0
+IO|client backend|reads|
+IO|client backend|reads|0
+IO|autovacuum launcher|reads|0
+IO|autovacuum launcher|reads|0
+IO|autovacuum launcher|reads|1
+IO|autovacuum launcher|reads|
+IO|autovacuum launcher|reads|
+IO|autovacuum worker|reads|0
+IO|autovacuum worker|reads|0
+IO|autovacuum worker|reads|190
+IO|autovacuum worker|reads|60
+IO|autovacuum worker|reads|
+IO|autovacuum worker|reads|
+IO|background worker|reads|0
+IO|background worker|reads|0
+IO|background worker|reads|0
+IO|background worker|reads|0
+IO|background worker|reads|0
+IO|background worker|reads|0
+IO|background worker|reads|
+IO|background worker|reads|0
+IO|walsender|reads|0
+IO|walsender|reads|0
+IO|walsender|reads|0
+IO|walsender|reads|0
+IO|walsender|reads|0
+IO|walsender|reads|0
+IO|walsender|reads|
+IO|walsender|reads|0
+IO|slotsync worker|reads|0
+IO|slotsync worker|reads|0
+IO|slotsync worker|reads|0
+IO|slotsync worker|reads|0
+IO|slotsync worker|reads|0
+IO|slotsync worker|reads|0
+IO|slotsync worker|reads|
+IO|slotsync worker|reads|0
+IO|standalone backend|reads|0
+IO|standalone backend|reads|0
+IO|standalone backend|reads|0
+IO|standalone backend|reads|479
+IO|standalone backend|reads|8
+IO|standalone backend|reads|
+IO|standalone backend|reads|3
+IO|background writer|reads|
+IO|background writer|reads|
+IO|background writer|reads|
+IO|background writer|reads|
+IO|checkpointer|reads|
+IO|checkpointer|reads|
+IO|checkpointer|reads|
+IO|checkpointer|reads|0
+IO|io worker|reads|0
+IO|io worker|reads|0
+IO|io worker|reads|0
+IO|io worker|reads|0
+IO|io worker|reads|0
+IO|io worker|reads|0
+IO|io worker|reads|
+IO|io worker|reads|0
+IO|startup|reads|0
+IO|startup|reads|0
+IO|startup|reads|0
+IO|startup|reads|0
+IO|startup|reads|0
+IO|startup|reads|
+IO|startup|reads|4
+IO|walreceiver|reads|
+IO|walreceiver|reads|
+IO|walsummarizer|reads|
+IO|walsummarizer|reads|0
+IO|walwriter|reads|
+IO|walwriter|reads|
+IO|client backend|read_time|6.202
+IO|client backend|read_time|0
+IO|client backend|read_time|0
+IO|client backend|read_time|5.715
+IO|client backend|read_time|0
+IO|client backend|read_time|0
+IO|client backend|read_time|
+IO|client backend|read_time|0
+IO|autovacuum launcher|read_time|0
+IO|autovacuum launcher|read_time|0
+IO|autovacuum launcher|read_time|0.077
+IO|autovacuum launcher|read_time|
+IO|autovacuum launcher|read_time|
+IO|autovacuum worker|read_time|0
+IO|autovacuum worker|read_time|0
+IO|autovacuum worker|read_time|2.211
+IO|autovacuum worker|read_time|1.5150000000000001
+IO|autovacuum worker|read_time|
+IO|autovacuum worker|read_time|
+IO|background worker|read_time|0
+IO|background worker|read_time|0
+IO|background worker|read_time|0
+IO|background worker|read_time|0
+IO|background worker|read_time|0
+IO|background worker|read_time|0
+IO|background worker|read_time|
+IO|background worker|read_time|0
+IO|walsender|read_time|0
+IO|walsender|read_time|0
+IO|walsender|read_time|0
+IO|walsender|read_time|0
+IO|walsender|read_time|0
+IO|walsender|read_time|0
+IO|walsender|read_time|
+IO|walsender|read_time|0
+IO|slotsync worker|read_time|0
+IO|slotsync worker|read_time|0
+IO|slotsync worker|read_time|0
+IO|slotsync worker|read_time|0
+IO|slotsync worker|read_time|0
+IO|slotsync worker|read_time|0
+IO|slotsync worker|read_time|
+IO|slotsync worker|read_time|0
+IO|standalone backend|read_time|0
+IO|standalone backend|read_time|0
+IO|standalone backend|read_time|0
+IO|standalone backend|read_time|0
+IO|standalone backend|read_time|0
+IO|standalone backend|read_time|
+IO|standalone backend|read_time|0
+IO|background writer|read_time|
+IO|background writer|read_time|
+IO|background writer|read_time|
+IO|background writer|read_time|
+IO|checkpointer|read_time|
+IO|checkpointer|read_time|
+IO|checkpointer|read_time|
+IO|checkpointer|read_time|0
+IO|io worker|read_time|0
+IO|io worker|read_time|0
+IO|io worker|read_time|0
+IO|io worker|read_time|0
+IO|io worker|read_time|0
+IO|io worker|read_time|0
+IO|io worker|read_time|
+IO|io worker|read_time|0
+IO|startup|read_time|0
+IO|startup|read_time|0
+IO|startup|read_time|0
+IO|startup|read_time|0
+IO|startup|read_time|0
+IO|startup|read_time|
+IO|startup|read_time|0
+IO|walreceiver|read_time|
+IO|walreceiver|read_time|
+IO|walsummarizer|read_time|
+IO|walsummarizer|read_time|0
+IO|walwriter|read_time|
+IO|walwriter|read_time|
+IO|client backend|writes|0
+IO|client backend|writes|0
+IO|client backend|writes|0
+IO|client backend|writes|0
+IO|client backend|writes|0
+IO|client backend|writes|0
+IO|client backend|writes|1
+IO|client backend|writes|522
+IO|autovacuum launcher|writes|0
+IO|autovacuum launcher|writes|0
+IO|autovacuum launcher|writes|0
+IO|autovacuum launcher|writes|0
+IO|autovacuum launcher|writes|0
+IO|autovacuum worker|writes|0
+IO|autovacuum worker|writes|0
+IO|autovacuum worker|writes|0
+IO|autovacuum worker|writes|0
+IO|autovacuum worker|writes|0
+IO|autovacuum worker|writes|32
+IO|background worker|writes|0
+IO|background worker|writes|0
+IO|background worker|writes|0
+IO|background worker|writes|0
+IO|background worker|writes|0
+IO|background worker|writes|0
+IO|background worker|writes|0
+IO|background worker|writes|0
+IO|walsender|writes|0
+IO|walsender|writes|0
+IO|walsender|writes|0
+IO|walsender|writes|0
+IO|walsender|writes|0
+IO|walsender|writes|0
+IO|walsender|writes|0
+IO|walsender|writes|0
+IO|slotsync worker|writes|0
+IO|slotsync worker|writes|0
+IO|slotsync worker|writes|0
+IO|slotsync worker|writes|0
+IO|slotsync worker|writes|0
+IO|slotsync worker|writes|0
+IO|slotsync worker|writes|0
+IO|slotsync worker|writes|0
+IO|standalone backend|writes|0
+IO|standalone backend|writes|0
+IO|standalone backend|writes|0
+IO|standalone backend|writes|1038
+IO|standalone backend|writes|0
+IO|standalone backend|writes|1
+IO|standalone backend|writes|760
+IO|background writer|writes|0
+IO|background writer|writes|0
+IO|background writer|writes|0
+IO|background writer|writes|0
+IO|checkpointer|writes|0
+IO|checkpointer|writes|1772
+IO|checkpointer|writes|0
+IO|checkpointer|writes|2
+IO|io worker|writes|0
+IO|io worker|writes|0
+IO|io worker|writes|0
+IO|io worker|writes|0
+IO|io worker|writes|0
+IO|io worker|writes|0
+IO|io worker|writes|0
+IO|io worker|writes|0
+IO|startup|writes|0
+IO|startup|writes|0
+IO|startup|writes|0
+IO|startup|writes|0
+IO|startup|writes|0
+IO|startup|writes|0
+IO|startup|writes|0
+IO|walreceiver|writes|0
+IO|walreceiver|writes|0
+IO|walsummarizer|writes|0
+IO|walsummarizer|writes|0
+IO|walwriter|writes|0
+IO|walwriter|writes|34
+IO|client backend|write_time|0
+IO|client backend|write_time|0
+IO|client backend|write_time|0
+IO|client backend|write_time|0
+IO|client backend|write_time|0
+IO|client backend|write_time|0
+IO|client backend|write_time|0
+IO|client backend|write_time|0
+IO|autovacuum launcher|write_time|0
+IO|autovacuum launcher|write_time|0
+IO|autovacuum launcher|write_time|0
+IO|autovacuum launcher|write_time|0
+IO|autovacuum launcher|write_time|0
+IO|autovacuum worker|write_time|0
+IO|autovacuum worker|write_time|0
+IO|autovacuum worker|write_time|0
+IO|autovacuum worker|write_time|0
+IO|autovacuum worker|write_time|0
+IO|autovacuum worker|write_time|0
+IO|background worker|write_time|0
+IO|background worker|write_time|0
+IO|background worker|write_time|0
+IO|background worker|write_time|0
+IO|background worker|write_time|0
+IO|background worker|write_time|0
+IO|background worker|write_time|0
+IO|background worker|write_time|0
+IO|walsender|write_time|0
+IO|walsender|write_time|0
+IO|walsender|write_time|0
+IO|walsender|write_time|0
+IO|walsender|write_time|0
+IO|walsender|write_time|0
+IO|walsender|write_time|0
+IO|walsender|write_time|0
+IO|slotsync worker|write_time|0
+IO|slotsync worker|write_time|0
+IO|slotsync worker|write_time|0
+IO|slotsync worker|write_time|0
+IO|slotsync worker|write_time|0
+IO|slotsync worker|write_time|0
+IO|slotsync worker|write_time|0
+IO|slotsync worker|write_time|0
+IO|standalone backend|write_time|0
+IO|standalone backend|write_time|0
+IO|standalone backend|write_time|0
+IO|standalone backend|write_time|0
+IO|standalone backend|write_time|0
+IO|standalone backend|write_time|0
+IO|standalone backend|write_time|0
+IO|background writer|write_time|0
+IO|background writer|write_time|0
+IO|background writer|write_time|0
+IO|background writer|write_time|0
+IO|checkpointer|write_time|0
+IO|checkpointer|write_time|18.009
+IO|checkpointer|write_time|0
+IO|checkpointer|write_time|0
+IO|io worker|write_time|0
+IO|io worker|write_time|0
+IO|io worker|write_time|0
+IO|io worker|write_time|0
+IO|io worker|write_time|0
+IO|io worker|write_time|0
+IO|io worker|write_time|0
+IO|io worker|write_time|0
+IO|startup|write_time|0
+IO|startup|write_time|0
+IO|startup|write_time|0
+IO|startup|write_time|0
+IO|startup|write_time|0
+IO|startup|write_time|0
+IO|startup|write_time|0
+IO|walreceiver|write_time|0
+IO|walreceiver|write_time|0
+IO|walsummarizer|write_time|0
+IO|walsummarizer|write_time|0
+IO|walwriter|write_time|0
+IO|walwriter|write_time|0
+IO|client backend|writebacks|0
+IO|client backend|writebacks|0
+IO|client backend|writebacks|0
+IO|client backend|writebacks|0
+IO|client backend|writebacks|0
+IO|client backend|writebacks|
+IO|client backend|writebacks|
+IO|client backend|writebacks|
+IO|autovacuum launcher|writebacks|0
+IO|autovacuum launcher|writebacks|0
+IO|autovacuum launcher|writebacks|0
+IO|autovacuum launcher|writebacks|
+IO|autovacuum launcher|writebacks|
+IO|autovacuum worker|writebacks|0
+IO|autovacuum worker|writebacks|0
+IO|autovacuum worker|writebacks|0
+IO|autovacuum worker|writebacks|0
+IO|autovacuum worker|writebacks|
+IO|autovacuum worker|writebacks|
+IO|background worker|writebacks|0
+IO|background worker|writebacks|0
+IO|background worker|writebacks|0
+IO|background worker|writebacks|0
+IO|background worker|writebacks|0
+IO|background worker|writebacks|
+IO|background worker|writebacks|
+IO|background worker|writebacks|
+IO|walsender|writebacks|0
+IO|walsender|writebacks|0
+IO|walsender|writebacks|0
+IO|walsender|writebacks|0
+IO|walsender|writebacks|0
+IO|walsender|writebacks|
+IO|walsender|writebacks|
+IO|walsender|writebacks|
+IO|slotsync worker|writebacks|0
+IO|slotsync worker|writebacks|0
+IO|slotsync worker|writebacks|0
+IO|slotsync worker|writebacks|0
+IO|slotsync worker|writebacks|0
+IO|slotsync worker|writebacks|
+IO|slotsync worker|writebacks|
+IO|slotsync worker|writebacks|
+IO|standalone backend|writebacks|0
+IO|standalone backend|writebacks|0
+IO|standalone backend|writebacks|0
+IO|standalone backend|writebacks|0
+IO|standalone backend|writebacks|0
+IO|standalone backend|writebacks|
+IO|standalone backend|writebacks|
+IO|background writer|writebacks|0
+IO|background writer|writebacks|0
+IO|background writer|writebacks|
+IO|background writer|writebacks|
+IO|checkpointer|writebacks|0
+IO|checkpointer|writebacks|1772
+IO|checkpointer|writebacks|
+IO|checkpointer|writebacks|
+IO|io worker|writebacks|0
+IO|io worker|writebacks|0
+IO|io worker|writebacks|0
+IO|io worker|writebacks|0
+IO|io worker|writebacks|0
+IO|io worker|writebacks|
+IO|io worker|writebacks|
+IO|io worker|writebacks|
+IO|startup|writebacks|0
+IO|startup|writebacks|0
+IO|startup|writebacks|0
+IO|startup|writebacks|0
+IO|startup|writebacks|0
+IO|startup|writebacks|
+IO|startup|writebacks|
+IO|walreceiver|writebacks|
+IO|walreceiver|writebacks|
+IO|walsummarizer|writebacks|
+IO|walsummarizer|writebacks|
+IO|walwriter|writebacks|
+IO|walwriter|writebacks|
+IO|client backend|writeback_time|0
+IO|client backend|writeback_time|0
+IO|client backend|writeback_time|0
+IO|client backend|writeback_time|0
+IO|client backend|writeback_time|0
+IO|client backend|writeback_time|
+IO|client backend|writeback_time|
+IO|client backend|writeback_time|
+IO|autovacuum launcher|writeback_time|0
+IO|autovacuum launcher|writeback_time|0
+IO|autovacuum launcher|writeback_time|0
+IO|autovacuum launcher|writeback_time|
+IO|autovacuum launcher|writeback_time|
+IO|autovacuum worker|writeback_time|0
+IO|autovacuum worker|writeback_time|0
+IO|autovacuum worker|writeback_time|0
+IO|autovacuum worker|writeback_time|0
+IO|autovacuum worker|writeback_time|
+IO|autovacuum worker|writeback_time|
+IO|background worker|writeback_time|0
+IO|background worker|writeback_time|0
+IO|background worker|writeback_time|0
+IO|background worker|writeback_time|0
+IO|background worker|writeback_time|0
+IO|background worker|writeback_time|
+IO|background worker|writeback_time|
+IO|background worker|writeback_time|
+IO|walsender|writeback_time|0
+IO|walsender|writeback_time|0
+IO|walsender|writeback_time|0
+IO|walsender|writeback_time|0
+IO|walsender|writeback_time|0
+IO|walsender|writeback_time|
+IO|walsender|writeback_time|
+IO|walsender|writeback_time|
+IO|slotsync worker|writeback_time|0
+IO|slotsync worker|writeback_time|0
+IO|slotsync worker|writeback_time|0
+IO|slotsync worker|writeback_time|0
+IO|slotsync worker|writeback_time|0
+IO|slotsync worker|writeback_time|
+IO|slotsync worker|writeback_time|
+IO|slotsync worker|writeback_time|
+IO|standalone backend|writeback_time|0
+IO|standalone backend|writeback_time|0
+IO|standalone backend|writeback_time|0
+IO|standalone backend|writeback_time|0
+IO|standalone backend|writeback_time|0
+IO|standalone backend|writeback_time|
+IO|standalone backend|writeback_time|
+IO|background writer|writeback_time|0
+IO|background writer|writeback_time|0
+IO|background writer|writeback_time|
+IO|background writer|writeback_time|
+IO|checkpointer|writeback_time|0
+IO|checkpointer|writeback_time|8.326
+IO|checkpointer|writeback_time|
+IO|checkpointer|writeback_time|
+IO|io worker|writeback_time|0
+IO|io worker|writeback_time|0
+IO|io worker|writeback_time|0
+IO|io worker|writeback_time|0
+IO|io worker|writeback_time|0
+IO|io worker|writeback_time|
+IO|io worker|writeback_time|
+IO|io worker|writeback_time|
+IO|startup|writeback_time|0
+IO|startup|writeback_time|0
+IO|startup|writeback_time|0
+IO|startup|writeback_time|0
+IO|startup|writeback_time|0
+IO|startup|writeback_time|
+IO|startup|writeback_time|
+IO|walreceiver|writeback_time|
+IO|walreceiver|writeback_time|
+IO|walsummarizer|writeback_time|
+IO|walsummarizer|writeback_time|
+IO|walwriter|writeback_time|
+IO|walwriter|writeback_time|
+IO|client backend|extends|
+IO|client backend|extends|0
+IO|client backend|extends|0
+IO|client backend|extends|593
+IO|client backend|extends|0
+IO|client backend|extends|0
+IO|client backend|extends|
+IO|client backend|extends|
+IO|autovacuum launcher|extends|
+IO|autovacuum launcher|extends|
+IO|autovacuum launcher|extends|
+IO|autovacuum launcher|extends|
+IO|autovacuum launcher|extends|
+IO|autovacuum worker|extends|
+IO|autovacuum worker|extends|0
+IO|autovacuum worker|extends|31
+IO|autovacuum worker|extends|0
+IO|autovacuum worker|extends|
+IO|autovacuum worker|extends|
+IO|background worker|extends|
+IO|background worker|extends|0
+IO|background worker|extends|0
+IO|background worker|extends|0
+IO|background worker|extends|0
+IO|background worker|extends|0
+IO|background worker|extends|
+IO|background worker|extends|
+IO|walsender|extends|
+IO|walsender|extends|0
+IO|walsender|extends|0
+IO|walsender|extends|0
+IO|walsender|extends|0
+IO|walsender|extends|0
+IO|walsender|extends|
+IO|walsender|extends|
+IO|slotsync worker|extends|
+IO|slotsync worker|extends|0
+IO|slotsync worker|extends|0
+IO|slotsync worker|extends|0
+IO|slotsync worker|extends|0
+IO|slotsync worker|extends|0
+IO|slotsync worker|extends|
+IO|slotsync worker|extends|
+IO|standalone backend|extends|
+IO|standalone backend|extends|1
+IO|standalone backend|extends|0
+IO|standalone backend|extends|598
+IO|standalone backend|extends|0
+IO|standalone backend|extends|
+IO|standalone backend|extends|
+IO|background writer|extends|
+IO|background writer|extends|
+IO|background writer|extends|
+IO|background writer|extends|
+IO|checkpointer|extends|
+IO|checkpointer|extends|
+IO|checkpointer|extends|
+IO|checkpointer|extends|
+IO|io worker|extends|
+IO|io worker|extends|0
+IO|io worker|extends|0
+IO|io worker|extends|0
+IO|io worker|extends|0
+IO|io worker|extends|0
+IO|io worker|extends|
+IO|io worker|extends|
+IO|startup|extends|
+IO|startup|extends|0
+IO|startup|extends|0
+IO|startup|extends|0
+IO|startup|extends|0
+IO|startup|extends|
+IO|startup|extends|
+IO|walreceiver|extends|
+IO|walreceiver|extends|
+IO|walsummarizer|extends|
+IO|walsummarizer|extends|
+IO|walwriter|extends|
+IO|walwriter|extends|
+IO|client backend|extend_time|
+IO|client backend|extend_time|0
+IO|client backend|extend_time|0
+IO|client backend|extend_time|4.79
+IO|client backend|extend_time|0
+IO|client backend|extend_time|0
+IO|client backend|extend_time|
+IO|client backend|extend_time|
+IO|autovacuum launcher|extend_time|
+IO|autovacuum launcher|extend_time|
+IO|autovacuum launcher|extend_time|
+IO|autovacuum launcher|extend_time|
+IO|autovacuum launcher|extend_time|
+IO|autovacuum worker|extend_time|
+IO|autovacuum worker|extend_time|0
+IO|autovacuum worker|extend_time|0.318
+IO|autovacuum worker|extend_time|0
+IO|autovacuum worker|extend_time|
+IO|autovacuum worker|extend_time|
+IO|background worker|extend_time|
+IO|background worker|extend_time|0
+IO|background worker|extend_time|0
+IO|background worker|extend_time|0
+IO|background worker|extend_time|0
+IO|background worker|extend_time|0
+IO|background worker|extend_time|
+IO|background worker|extend_time|
+IO|walsender|extend_time|
+IO|walsender|extend_time|0
+IO|walsender|extend_time|0
+IO|walsender|extend_time|0
+IO|walsender|extend_time|0
+IO|walsender|extend_time|0
+IO|walsender|extend_time|
+IO|walsender|extend_time|
+IO|slotsync worker|extend_time|
+IO|slotsync worker|extend_time|0
+IO|slotsync worker|extend_time|0
+IO|slotsync worker|extend_time|0
+IO|slotsync worker|extend_time|0
+IO|slotsync worker|extend_time|0
+IO|slotsync worker|extend_time|
+IO|slotsync worker|extend_time|
+IO|standalone backend|extend_time|
+IO|standalone backend|extend_time|0
+IO|standalone backend|extend_time|0
+IO|standalone backend|extend_time|0
+IO|standalone backend|extend_time|0
+IO|standalone backend|extend_time|
+IO|standalone backend|extend_time|
+IO|background writer|extend_time|
+IO|background writer|extend_time|
+IO|background writer|extend_time|
+IO|background writer|extend_time|
+IO|checkpointer|extend_time|
+IO|checkpointer|extend_time|
+IO|checkpointer|extend_time|
+IO|checkpointer|extend_time|
+IO|io worker|extend_time|
+IO|io worker|extend_time|0
+IO|io worker|extend_time|0
+IO|io worker|extend_time|0
+IO|io worker|extend_time|0
+IO|io worker|extend_time|0
+IO|io worker|extend_time|
+IO|io worker|extend_time|
+IO|startup|extend_time|
+IO|startup|extend_time|0
+IO|startup|extend_time|0
+IO|startup|extend_time|0
+IO|startup|extend_time|0
+IO|startup|extend_time|
+IO|startup|extend_time|
+IO|walreceiver|extend_time|
+IO|walreceiver|extend_time|
+IO|walsummarizer|extend_time|
+IO|walsummarizer|extend_time|
+IO|walwriter|extend_time|
+IO|walwriter|extend_time|
+IO|client backend|hits|14
+IO|client backend|hits|0
+IO|client backend|hits|0
+IO|client backend|hits|398122
+IO|client backend|hits|0
+IO|client backend|hits|0
+IO|client backend|hits|
+IO|client backend|hits|
+IO|autovacuum launcher|hits|0
+IO|autovacuum launcher|hits|0
+IO|autovacuum launcher|hits|0
+IO|autovacuum launcher|hits|
+IO|autovacuum launcher|hits|
+IO|autovacuum worker|hits|0
+IO|autovacuum worker|hits|0
+IO|autovacuum worker|hits|20860
+IO|autovacuum worker|hits|1279
+IO|autovacuum worker|hits|
+IO|autovacuum worker|hits|
+IO|background worker|hits|0
+IO|background worker|hits|0
+IO|background worker|hits|0
+IO|background worker|hits|0
+IO|background worker|hits|0
+IO|background worker|hits|0
+IO|background worker|hits|
+IO|background worker|hits|
+IO|walsender|hits|0
+IO|walsender|hits|0
+IO|walsender|hits|0
+IO|walsender|hits|0
+IO|walsender|hits|0
+IO|walsender|hits|0
+IO|walsender|hits|
+IO|walsender|hits|
+IO|slotsync worker|hits|0
+IO|slotsync worker|hits|0
+IO|slotsync worker|hits|0
+IO|slotsync worker|hits|0
+IO|slotsync worker|hits|0
+IO|slotsync worker|hits|0
+IO|slotsync worker|hits|
+IO|slotsync worker|hits|
+IO|standalone backend|hits|0
+IO|standalone backend|hits|7
+IO|standalone backend|hits|0
+IO|standalone backend|hits|93201
+IO|standalone backend|hits|932
+IO|standalone backend|hits|
+IO|standalone backend|hits|
+IO|background writer|hits|
+IO|background writer|hits|
+IO|background writer|hits|
+IO|background writer|hits|
+IO|checkpointer|hits|
+IO|checkpointer|hits|
+IO|checkpointer|hits|
+IO|checkpointer|hits|
+IO|io worker|hits|0
+IO|io worker|hits|0
+IO|io worker|hits|0
+IO|io worker|hits|0
+IO|io worker|hits|0
+IO|io worker|hits|0
+IO|io worker|hits|
+IO|io worker|hits|
+IO|startup|hits|0
+IO|startup|hits|0
+IO|startup|hits|0
+IO|startup|hits|0
+IO|startup|hits|0
+IO|startup|hits|
+IO|startup|hits|
+IO|walreceiver|hits|
+IO|walreceiver|hits|
+IO|walsummarizer|hits|
+IO|walsummarizer|hits|
+IO|walwriter|hits|
+IO|walwriter|hits|
+IO|client backend|evictions|0
+IO|client backend|evictions|0
+IO|client backend|evictions|0
+IO|client backend|evictions|0
+IO|client backend|evictions|0
+IO|client backend|evictions|0
+IO|client backend|evictions|
+IO|client backend|evictions|
+IO|autovacuum launcher|evictions|0
+IO|autovacuum launcher|evictions|0
+IO|autovacuum launcher|evictions|0
+IO|autovacuum launcher|evictions|
+IO|autovacuum launcher|evictions|
+IO|autovacuum worker|evictions|0
+IO|autovacuum worker|evictions|0
+IO|autovacuum worker|evictions|0
+IO|autovacuum worker|evictions|0
+IO|autovacuum worker|evictions|
+IO|autovacuum worker|evictions|
+IO|background worker|evictions|0
+IO|background worker|evictions|0
+IO|background worker|evictions|0
+IO|background worker|evictions|0
+IO|background worker|evictions|0
+IO|background worker|evictions|0
+IO|background worker|evictions|
+IO|background worker|evictions|
+IO|walsender|evictions|0
+IO|walsender|evictions|0
+IO|walsender|evictions|0
+IO|walsender|evictions|0
+IO|walsender|evictions|0
+IO|walsender|evictions|0
+IO|walsender|evictions|
+IO|walsender|evictions|
+IO|slotsync worker|evictions|0
+IO|slotsync worker|evictions|0
+IO|slotsync worker|evictions|0
+IO|slotsync worker|evictions|0
+IO|slotsync worker|evictions|0
+IO|slotsync worker|evictions|0
+IO|slotsync worker|evictions|
+IO|slotsync worker|evictions|
+IO|standalone backend|evictions|0
+IO|standalone backend|evictions|0
+IO|standalone backend|evictions|0
+IO|standalone backend|evictions|0
+IO|standalone backend|evictions|0
+IO|standalone backend|evictions|
+IO|standalone backend|evictions|
+IO|background writer|evictions|
+IO|background writer|evictions|
+IO|background writer|evictions|
+IO|background writer|evictions|
+IO|checkpointer|evictions|
+IO|checkpointer|evictions|
+IO|checkpointer|evictions|
+IO|checkpointer|evictions|
+IO|io worker|evictions|0
+IO|io worker|evictions|0
+IO|io worker|evictions|0
+IO|io worker|evictions|0
+IO|io worker|evictions|0
+IO|io worker|evictions|0
+IO|io worker|evictions|
+IO|io worker|evictions|
+IO|startup|evictions|0
+IO|startup|evictions|0
+IO|startup|evictions|0
+IO|startup|evictions|0
+IO|startup|evictions|0
+IO|startup|evictions|
+IO|startup|evictions|
+IO|walreceiver|evictions|
+IO|walreceiver|evictions|
+IO|walsummarizer|evictions|
+IO|walsummarizer|evictions|
+IO|walwriter|evictions|
+IO|walwriter|evictions|
+IO|client backend|reuses|8
+IO|client backend|reuses|0
+IO|client backend|reuses|
+IO|client backend|reuses|
+IO|client backend|reuses|0
+IO|client backend|reuses|
+IO|client backend|reuses|
+IO|client backend|reuses|
+IO|autovacuum launcher|reuses|0
+IO|autovacuum launcher|reuses|
+IO|autovacuum launcher|reuses|
+IO|autovacuum launcher|reuses|
+IO|autovacuum launcher|reuses|
+IO|autovacuum worker|reuses|0
+IO|autovacuum worker|reuses|
+IO|autovacuum worker|reuses|
+IO|autovacuum worker|reuses|0
+IO|autovacuum worker|reuses|
+IO|autovacuum worker|reuses|
+IO|background worker|reuses|0
+IO|background worker|reuses|0
+IO|background worker|reuses|
+IO|background worker|reuses|
+IO|background worker|reuses|0
+IO|background worker|reuses|
+IO|background worker|reuses|
+IO|background worker|reuses|
+IO|walsender|reuses|0
+IO|walsender|reuses|0
+IO|walsender|reuses|
+IO|walsender|reuses|
+IO|walsender|reuses|0
+IO|walsender|reuses|
+IO|walsender|reuses|
+IO|walsender|reuses|
+IO|slotsync worker|reuses|0
+IO|slotsync worker|reuses|0
+IO|slotsync worker|reuses|
+IO|slotsync worker|reuses|
+IO|slotsync worker|reuses|0
+IO|slotsync worker|reuses|
+IO|slotsync worker|reuses|
+IO|slotsync worker|reuses|
+IO|standalone backend|reuses|0
+IO|standalone backend|reuses|0
+IO|standalone backend|reuses|
+IO|standalone backend|reuses|
+IO|standalone backend|reuses|0
+IO|standalone backend|reuses|
+IO|standalone backend|reuses|
+IO|background writer|reuses|
+IO|background writer|reuses|
+IO|background writer|reuses|
+IO|background writer|reuses|
+IO|checkpointer|reuses|
+IO|checkpointer|reuses|
+IO|checkpointer|reuses|
+IO|checkpointer|reuses|
+IO|io worker|reuses|0
+IO|io worker|reuses|0
+IO|io worker|reuses|
+IO|io worker|reuses|
+IO|io worker|reuses|0
+IO|io worker|reuses|
+IO|io worker|reuses|
+IO|io worker|reuses|
+IO|startup|reuses|0
+IO|startup|reuses|0
+IO|startup|reuses|
+IO|startup|reuses|
+IO|startup|reuses|0
+IO|startup|reuses|
+IO|startup|reuses|
+IO|walreceiver|reuses|
+IO|walreceiver|reuses|
+IO|walsummarizer|reuses|
+IO|walsummarizer|reuses|
+IO|walwriter|reuses|
+IO|walwriter|reuses|
+IO|client backend|fsyncs|
+IO|client backend|fsyncs|
+IO|client backend|fsyncs|0
+IO|client backend|fsyncs|0
+IO|client backend|fsyncs|
+IO|client backend|fsyncs|
+IO|client backend|fsyncs|1
+IO|client backend|fsyncs|486
+IO|autovacuum launcher|fsyncs|
+IO|autovacuum launcher|fsyncs|0
+IO|autovacuum launcher|fsyncs|0
+IO|autovacuum launcher|fsyncs|0
+IO|autovacuum launcher|fsyncs|0
+IO|autovacuum worker|fsyncs|
+IO|autovacuum worker|fsyncs|0
+IO|autovacuum worker|fsyncs|0
+IO|autovacuum worker|fsyncs|
+IO|autovacuum worker|fsyncs|0
+IO|autovacuum worker|fsyncs|32
+IO|background worker|fsyncs|
+IO|background worker|fsyncs|
+IO|background worker|fsyncs|0
+IO|background worker|fsyncs|0
+IO|background worker|fsyncs|
+IO|background worker|fsyncs|
+IO|background worker|fsyncs|0
+IO|background worker|fsyncs|0
+IO|walsender|fsyncs|
+IO|walsender|fsyncs|
+IO|walsender|fsyncs|0
+IO|walsender|fsyncs|0
+IO|walsender|fsyncs|
+IO|walsender|fsyncs|
+IO|walsender|fsyncs|0
+IO|walsender|fsyncs|0
+IO|slotsync worker|fsyncs|
+IO|slotsync worker|fsyncs|
+IO|slotsync worker|fsyncs|0
+IO|slotsync worker|fsyncs|0
+IO|slotsync worker|fsyncs|
+IO|slotsync worker|fsyncs|
+IO|slotsync worker|fsyncs|0
+IO|slotsync worker|fsyncs|0
+IO|standalone backend|fsyncs|
+IO|standalone backend|fsyncs|
+IO|standalone backend|fsyncs|0
+IO|standalone backend|fsyncs|0
+IO|standalone backend|fsyncs|
+IO|standalone backend|fsyncs|1
+IO|standalone backend|fsyncs|0
+IO|background writer|fsyncs|0
+IO|background writer|fsyncs|0
+IO|background writer|fsyncs|0
+IO|background writer|fsyncs|0
+IO|checkpointer|fsyncs|0
+IO|checkpointer|fsyncs|802
+IO|checkpointer|fsyncs|0
+IO|checkpointer|fsyncs|2
+IO|io worker|fsyncs|
+IO|io worker|fsyncs|
+IO|io worker|fsyncs|0
+IO|io worker|fsyncs|0
+IO|io worker|fsyncs|
+IO|io worker|fsyncs|
+IO|io worker|fsyncs|0
+IO|io worker|fsyncs|0
+IO|startup|fsyncs|
+IO|startup|fsyncs|
+IO|startup|fsyncs|0
+IO|startup|fsyncs|0
+IO|startup|fsyncs|
+IO|startup|fsyncs|0
+IO|startup|fsyncs|0
+IO|walreceiver|fsyncs|0
+IO|walreceiver|fsyncs|0
+IO|walsummarizer|fsyncs|0
+IO|walsummarizer|fsyncs|0
+IO|walwriter|fsyncs|0
+IO|walwriter|fsyncs|32
+IO|client backend|fsync_time|
+IO|client backend|fsync_time|
+IO|client backend|fsync_time|0
+IO|client backend|fsync_time|0
+IO|client backend|fsync_time|
+IO|client backend|fsync_time|
+IO|client backend|fsync_time|0
+IO|client backend|fsync_time|0
+IO|autovacuum launcher|fsync_time|
+IO|autovacuum launcher|fsync_time|0
+IO|autovacuum launcher|fsync_time|0
+IO|autovacuum launcher|fsync_time|0
+IO|autovacuum launcher|fsync_time|0
+IO|autovacuum worker|fsync_time|
+IO|autovacuum worker|fsync_time|0
+IO|autovacuum worker|fsync_time|0
+IO|autovacuum worker|fsync_time|
+IO|autovacuum worker|fsync_time|0
+IO|autovacuum worker|fsync_time|0
+IO|background worker|fsync_time|
+IO|background worker|fsync_time|
+IO|background worker|fsync_time|0
+IO|background worker|fsync_time|0
+IO|background worker|fsync_time|
+IO|background worker|fsync_time|
+IO|background worker|fsync_time|0
+IO|background worker|fsync_time|0
+IO|walsender|fsync_time|
+IO|walsender|fsync_time|
+IO|walsender|fsync_time|0
+IO|walsender|fsync_time|0
+IO|walsender|fsync_time|
+IO|walsender|fsync_time|
+IO|walsender|fsync_time|0
+IO|walsender|fsync_time|0
+IO|slotsync worker|fsync_time|
+IO|slotsync worker|fsync_time|
+IO|slotsync worker|fsync_time|0
+IO|slotsync worker|fsync_time|0
+IO|slotsync worker|fsync_time|
+IO|slotsync worker|fsync_time|
+IO|slotsync worker|fsync_time|0
+IO|slotsync worker|fsync_time|0
+IO|standalone backend|fsync_time|
+IO|standalone backend|fsync_time|
+IO|standalone backend|fsync_time|0
+IO|standalone backend|fsync_time|0
+IO|standalone backend|fsync_time|
+IO|standalone backend|fsync_time|0
+IO|standalone backend|fsync_time|0
+IO|background writer|fsync_time|0
+IO|background writer|fsync_time|0
+IO|background writer|fsync_time|0
+IO|background writer|fsync_time|0
+IO|checkpointer|fsync_time|0
+IO|checkpointer|fsync_time|16.768
+IO|checkpointer|fsync_time|0
+IO|checkpointer|fsync_time|0
+IO|io worker|fsync_time|
+IO|io worker|fsync_time|
+IO|io worker|fsync_time|0
+IO|io worker|fsync_time|0
+IO|io worker|fsync_time|
+IO|io worker|fsync_time|
+IO|io worker|fsync_time|0
+IO|io worker|fsync_time|0
+IO|startup|fsync_time|
+IO|startup|fsync_time|
+IO|startup|fsync_time|0
+IO|startup|fsync_time|0
+IO|startup|fsync_time|
+IO|startup|fsync_time|0
+IO|startup|fsync_time|0
+IO|walreceiver|fsync_time|0
+IO|walreceiver|fsync_time|0
+IO|walsummarizer|fsync_time|0
+IO|walsummarizer|fsync_time|0
+IO|walwriter|fsync_time|0
+IO|walwriter|fsync_time|0
+DB_TOTAL|db|db_bytes|14931647
+DB_TOTAL|db|temp_bytes|0
+DB_TOTAL|db|temp_files|0
+DB_TOTAL|db|xact_commit|18864
+DB_TOTAL|db|xact_rollback|5
+DB_TOTAL|db|tup_returned|641197
+DB_TOTAL|db|tup_fetched|502064
+DB_TOTAL|db|tup_inserted|11604
+DB_TOTAL|db|tup_updated|1937
+DB_TOTAL|db|tup_deleted|2415
+DB_TOTAL|db|deadlocks|0
+DB_TOTAL|db|blk_read_time|5.108
+DB_TOTAL|db|blk_write_time|4.726
+DB_TOTAL|db|stats_reset|
+ACTIVITY|backends|total|10
+ACTIVITY|backends|active|1
+ACTIVITY|backends|idle_in_tx|0
+ACTIVITY|backends|lock_waiting|0
+TOP_STATEMENTS|327599666449656670|calls|4656
+TOP_STATEMENTS|3867181147013517150|calls|4947
+TOP_STATEMENTS|-2436087183235826827|calls|256
+TOP_STATEMENTS|-8186815385500962442|calls|256
+TOP_STATEMENTS|4853810572633038225|calls|256
+TOP_STATEMENTS|-8824788839042052302|calls|1
+TOP_STATEMENTS|7019628274609906428|calls|1
+TOP_STATEMENTS|3193276759072834283|calls|5
+TOP_STATEMENTS|-2182206566908618211|calls|1
+TOP_STATEMENTS|6697580890275869146|calls|2
+TOP_STATEMENTS|2939817420941947816|calls|6
+TOP_STATEMENTS|-659379263930854130|calls|5
+TOP_STATEMENTS|7069696701630184062|calls|542
+TOP_STATEMENTS|-7602699173612363938|calls|514
+TOP_STATEMENTS|4500955875985355274|calls|59
+TOP_STATEMENTS|8425379238971144491|calls|1
+TOP_STATEMENTS|-354564363792443243|calls|256
+TOP_STATEMENTS|-6570954527227515144|calls|286
+TOP_STATEMENTS|4375303120003040442|calls|22
+TOP_STATEMENTS|1978390624132223685|calls|259
+TOP_STATEMENTS|8290667273201477087|calls|258
+TOP_STATEMENTS|3175560230803026983|calls|516
+TOP_STATEMENTS|-6421484356574917337|calls|59
+TOP_STATEMENTS|3045061800950875676|calls|1
+TOP_STATEMENTS|-8036502462814838469|calls|262
+TOP_STATEMENTS|-189834805381950481|calls|1
+TOP_STATEMENTS|-8509193350030884028|calls|1
+TOP_STATEMENTS|-6520716032698243160|calls|1
+TOP_STATEMENTS|6376800314651963318|calls|1
+TOP_STATEMENTS|3453106762841261166|calls|328
+TOP_STATEMENTS|2529200348057660570|calls|5
+TOP_STATEMENTS|-5141182974964984631|calls|3
+TOP_STATEMENTS|-3982802711012393414|calls|1
+TOP_STATEMENTS|-1231275493859611259|calls|1
+TOP_STATEMENTS|-2887139335912015367|calls|1
+TOP_STATEMENTS|-5075627566397697970|calls|5
+TOP_STATEMENTS|-859282481384524542|calls|22
+TOP_STATEMENTS|-7314465495322628439|calls|1
+TOP_STATEMENTS|-2964386963526952398|calls|1
+TOP_STATEMENTS|4887728233015081304|calls|1
+TOP_STATEMENTS|327599666449656670|rows|4656
+TOP_STATEMENTS|3867181147013517150|rows|4947
+TOP_STATEMENTS|-2436087183235826827|rows|256
+TOP_STATEMENTS|-8186815385500962442|rows|256
+TOP_STATEMENTS|4853810572633038225|rows|256
+TOP_STATEMENTS|-8824788839042052302|rows|59
+TOP_STATEMENTS|7019628274609906428|rows|180
+TOP_STATEMENTS|3193276759072834283|rows|5
+TOP_STATEMENTS|-2182206566908618211|rows|256
+TOP_STATEMENTS|6697580890275869146|rows|286
+TOP_STATEMENTS|2939817420941947816|rows|6
+TOP_STATEMENTS|-659379263930854130|rows|5
+TOP_STATEMENTS|7069696701630184062|rows|256
+TOP_STATEMENTS|-7602699173612363938|rows|514
+TOP_STATEMENTS|4500955875985355274|rows|59
+TOP_STATEMENTS|8425379238971144491|rows|328
+TOP_STATEMENTS|-354564363792443243|rows|0
+TOP_STATEMENTS|-6570954527227515144|rows|0
+TOP_STATEMENTS|4375303120003040442|rows|22
+TOP_STATEMENTS|1978390624132223685|rows|259
+TOP_STATEMENTS|8290667273201477087|rows|258
+TOP_STATEMENTS|3175560230803026983|rows|516
+TOP_STATEMENTS|-6421484356574917337|rows|0
+TOP_STATEMENTS|3045061800950875676|rows|1
+TOP_STATEMENTS|-8036502462814838469|rows|262
+TOP_STATEMENTS|-189834805381950481|rows|14
+TOP_STATEMENTS|-8509193350030884028|rows|1027
+TOP_STATEMENTS|-6520716032698243160|rows|16
+TOP_STATEMENTS|6376800314651963318|rows|1
+TOP_STATEMENTS|3453106762841261166|rows|31
+TOP_STATEMENTS|2529200348057660570|rows|0
+TOP_STATEMENTS|-5141182974964984631|rows|912
+TOP_STATEMENTS|-3982802711012393414|rows|0
+TOP_STATEMENTS|-1231275493859611259|rows|1
+TOP_STATEMENTS|-2887139335912015367|rows|1
+TOP_STATEMENTS|-5075627566397697970|rows|0
+TOP_STATEMENTS|-859282481384524542|rows|22
+TOP_STATEMENTS|-7314465495322628439|rows|12
+TOP_STATEMENTS|-2964386963526952398|rows|6
+TOP_STATEMENTS|4887728233015081304|rows|1
+TOP_STATEMENTS|327599666449656670|total_exec_time|100.75758199999976
+TOP_STATEMENTS|3867181147013517150|total_exec_time|52.89511800000006
+TOP_STATEMENTS|-2436087183235826827|total_exec_time|40.17802100000002
+TOP_STATEMENTS|-8186815385500962442|total_exec_time|22.64281299999998
+TOP_STATEMENTS|4853810572633038225|total_exec_time|15.211638000000008
+TOP_STATEMENTS|-8824788839042052302|total_exec_time|12.879092
+TOP_STATEMENTS|7019628274609906428|total_exec_time|7.456939
+TOP_STATEMENTS|3193276759072834283|total_exec_time|6.837553
+TOP_STATEMENTS|-2182206566908618211|total_exec_time|4.7491069999999995
+TOP_STATEMENTS|6697580890275869146|total_exec_time|4.459434000000001
+TOP_STATEMENTS|2939817420941947816|total_exec_time|3.22635
+TOP_STATEMENTS|-659379263930854130|total_exec_time|3.1904220000000003
+TOP_STATEMENTS|7069696701630184062|total_exec_time|2.4128659999999984
+TOP_STATEMENTS|-7602699173612363938|total_exec_time|2.325598000000001
+TOP_STATEMENTS|4500955875985355274|total_exec_time|1.9298590000000009
+TOP_STATEMENTS|8425379238971144491|total_exec_time|1.851251
+TOP_STATEMENTS|-354564363792443243|total_exec_time|1.5884439999999995
+TOP_STATEMENTS|-6570954527227515144|total_exec_time|1.4473349999999996
+TOP_STATEMENTS|4375303120003040442|total_exec_time|1.0298899999999998
+TOP_STATEMENTS|1978390624132223685|total_exec_time|1.028147
+TOP_STATEMENTS|8290667273201477087|total_exec_time|1.0089409999999994
+TOP_STATEMENTS|3175560230803026983|total_exec_time|0.9943869999999997
+TOP_STATEMENTS|-6421484356574917337|total_exec_time|0.877194
+TOP_STATEMENTS|3045061800950875676|total_exec_time|0.842032
+TOP_STATEMENTS|-8036502462814838469|total_exec_time|0.8046750000000001
+TOP_STATEMENTS|-189834805381950481|total_exec_time|0.798824
+TOP_STATEMENTS|-8509193350030884028|total_exec_time|0.748583
+TOP_STATEMENTS|-6520716032698243160|total_exec_time|0.7223040000000001
+TOP_STATEMENTS|6376800314651963318|total_exec_time|0.669346
+TOP_STATEMENTS|3453106762841261166|total_exec_time|0.6291629999999997
+TOP_STATEMENTS|2529200348057660570|total_exec_time|0.4297810000000001
+TOP_STATEMENTS|-5141182974964984631|total_exec_time|0.404521
+TOP_STATEMENTS|-3982802711012393414|total_exec_time|0.393131
+TOP_STATEMENTS|-1231275493859611259|total_exec_time|0.342752
+TOP_STATEMENTS|-2887139335912015367|total_exec_time|0.326663
+TOP_STATEMENTS|-5075627566397697970|total_exec_time|0.318882
+TOP_STATEMENTS|-859282481384524542|total_exec_time|0.28659300000000004
+TOP_STATEMENTS|-7314465495322628439|total_exec_time|0.243505
+TOP_STATEMENTS|-2964386963526952398|total_exec_time|0.238225
+TOP_STATEMENTS|4887728233015081304|total_exec_time|0.237665
+TOP_STATEMENTS|327599666449656670|shared_blks_read|0
+TOP_STATEMENTS|3867181147013517150|shared_blks_read|0
+TOP_STATEMENTS|-2436087183235826827|shared_blks_read|0
+TOP_STATEMENTS|-8186815385500962442|shared_blks_read|1
+TOP_STATEMENTS|4853810572633038225|shared_blks_read|0
+TOP_STATEMENTS|-8824788839042052302|shared_blks_read|0
+TOP_STATEMENTS|7019628274609906428|shared_blks_read|0
+TOP_STATEMENTS|3193276759072834283|shared_blks_read|0
+TOP_STATEMENTS|-2182206566908618211|shared_blks_read|0
+TOP_STATEMENTS|6697580890275869146|shared_blks_read|0
+TOP_STATEMENTS|2939817420941947816|shared_blks_read|0
+TOP_STATEMENTS|-659379263930854130|shared_blks_read|0
+TOP_STATEMENTS|7069696701630184062|shared_blks_read|0
+TOP_STATEMENTS|-7602699173612363938|shared_blks_read|0
+TOP_STATEMENTS|4500955875985355274|shared_blks_read|0
+TOP_STATEMENTS|8425379238971144491|shared_blks_read|0
+TOP_STATEMENTS|-354564363792443243|shared_blks_read|0
+TOP_STATEMENTS|-6570954527227515144|shared_blks_read|0
+TOP_STATEMENTS|4375303120003040442|shared_blks_read|0
+TOP_STATEMENTS|1978390624132223685|shared_blks_read|0
+TOP_STATEMENTS|8290667273201477087|shared_blks_read|0
+TOP_STATEMENTS|3175560230803026983|shared_blks_read|0
+TOP_STATEMENTS|-6421484356574917337|shared_blks_read|0
+TOP_STATEMENTS|3045061800950875676|shared_blks_read|0
+TOP_STATEMENTS|-8036502462814838469|shared_blks_read|0
+TOP_STATEMENTS|-189834805381950481|shared_blks_read|0
+TOP_STATEMENTS|-8509193350030884028|shared_blks_read|0
+TOP_STATEMENTS|-6520716032698243160|shared_blks_read|0
+TOP_STATEMENTS|6376800314651963318|shared_blks_read|0
+TOP_STATEMENTS|3453106762841261166|shared_blks_read|0
+TOP_STATEMENTS|2529200348057660570|shared_blks_read|0
+TOP_STATEMENTS|-5141182974964984631|shared_blks_read|0
+TOP_STATEMENTS|-3982802711012393414|shared_blks_read|0
+TOP_STATEMENTS|-1231275493859611259|shared_blks_read|2
+TOP_STATEMENTS|-2887139335912015367|shared_blks_read|0
+TOP_STATEMENTS|-5075627566397697970|shared_blks_read|0
+TOP_STATEMENTS|-859282481384524542|shared_blks_read|0
+TOP_STATEMENTS|-7314465495322628439|shared_blks_read|0
+TOP_STATEMENTS|-2964386963526952398|shared_blks_read|0
+TOP_STATEMENTS|4887728233015081304|shared_blks_read|0
+TOP_STATEMENTS|327599666449656670|shared_blks_written|0
+TOP_STATEMENTS|3867181147013517150|shared_blks_written|0
+TOP_STATEMENTS|-2436087183235826827|shared_blks_written|24
+TOP_STATEMENTS|-8186815385500962442|shared_blks_written|14
+TOP_STATEMENTS|4853810572633038225|shared_blks_written|13
+TOP_STATEMENTS|-8824788839042052302|shared_blks_written|0
+TOP_STATEMENTS|7019628274609906428|shared_blks_written|0
+TOP_STATEMENTS|3193276759072834283|shared_blks_written|0
+TOP_STATEMENTS|-2182206566908618211|shared_blks_written|15
+TOP_STATEMENTS|6697580890275869146|shared_blks_written|0
+TOP_STATEMENTS|2939817420941947816|shared_blks_written|4
+TOP_STATEMENTS|-659379263930854130|shared_blks_written|0
+TOP_STATEMENTS|7069696701630184062|shared_blks_written|0
+TOP_STATEMENTS|-7602699173612363938|shared_blks_written|0
+TOP_STATEMENTS|4500955875985355274|shared_blks_written|0
+TOP_STATEMENTS|8425379238971144491|shared_blks_written|0
+TOP_STATEMENTS|-354564363792443243|shared_blks_written|0
+TOP_STATEMENTS|-6570954527227515144|shared_blks_written|0
+TOP_STATEMENTS|4375303120003040442|shared_blks_written|0
+TOP_STATEMENTS|1978390624132223685|shared_blks_written|0
+TOP_STATEMENTS|8290667273201477087|shared_blks_written|0
+TOP_STATEMENTS|3175560230803026983|shared_blks_written|0
+TOP_STATEMENTS|-6421484356574917337|shared_blks_written|0
+TOP_STATEMENTS|3045061800950875676|shared_blks_written|0
+TOP_STATEMENTS|-8036502462814838469|shared_blks_written|0
+TOP_STATEMENTS|-189834805381950481|shared_blks_written|0
+TOP_STATEMENTS|-8509193350030884028|shared_blks_written|0
+TOP_STATEMENTS|-6520716032698243160|shared_blks_written|0
+TOP_STATEMENTS|6376800314651963318|shared_blks_written|0
+TOP_STATEMENTS|3453106762841261166|shared_blks_written|0
+TOP_STATEMENTS|2529200348057660570|shared_blks_written|0
+TOP_STATEMENTS|-5141182974964984631|shared_blks_written|0
+TOP_STATEMENTS|-3982802711012393414|shared_blks_written|0
+TOP_STATEMENTS|-1231275493859611259|shared_blks_written|0
+TOP_STATEMENTS|-2887139335912015367|shared_blks_written|0
+TOP_STATEMENTS|-5075627566397697970|shared_blks_written|0
+TOP_STATEMENTS|-859282481384524542|shared_blks_written|0
+TOP_STATEMENTS|-7314465495322628439|shared_blks_written|0
+TOP_STATEMENTS|-2964386963526952398|shared_blks_written|0
+TOP_STATEMENTS|4887728233015081304|shared_blks_written|0
+TOP_STATEMENTS|327599666449656670|temp_blks_read|0
+TOP_STATEMENTS|3867181147013517150|temp_blks_read|0
+TOP_STATEMENTS|-2436087183235826827|temp_blks_read|0
+TOP_STATEMENTS|-8186815385500962442|temp_blks_read|0
+TOP_STATEMENTS|4853810572633038225|temp_blks_read|0
+TOP_STATEMENTS|-8824788839042052302|temp_blks_read|0
+TOP_STATEMENTS|7019628274609906428|temp_blks_read|0
+TOP_STATEMENTS|3193276759072834283|temp_blks_read|0
+TOP_STATEMENTS|-2182206566908618211|temp_blks_read|0
+TOP_STATEMENTS|6697580890275869146|temp_blks_read|0
+TOP_STATEMENTS|2939817420941947816|temp_blks_read|0
+TOP_STATEMENTS|-659379263930854130|temp_blks_read|0
+TOP_STATEMENTS|7069696701630184062|temp_blks_read|0
+TOP_STATEMENTS|-7602699173612363938|temp_blks_read|0
+TOP_STATEMENTS|4500955875985355274|temp_blks_read|0
+TOP_STATEMENTS|8425379238971144491|temp_blks_read|0
+TOP_STATEMENTS|-354564363792443243|temp_blks_read|0
+TOP_STATEMENTS|-6570954527227515144|temp_blks_read|0
+TOP_STATEMENTS|4375303120003040442|temp_blks_read|0
+TOP_STATEMENTS|1978390624132223685|temp_blks_read|0
+TOP_STATEMENTS|8290667273201477087|temp_blks_read|0
+TOP_STATEMENTS|3175560230803026983|temp_blks_read|0
+TOP_STATEMENTS|-6421484356574917337|temp_blks_read|0
+TOP_STATEMENTS|3045061800950875676|temp_blks_read|0
+TOP_STATEMENTS|-8036502462814838469|temp_blks_read|0
+TOP_STATEMENTS|-189834805381950481|temp_blks_read|0
+TOP_STATEMENTS|-8509193350030884028|temp_blks_read|0
+TOP_STATEMENTS|-6520716032698243160|temp_blks_read|0
+TOP_STATEMENTS|6376800314651963318|temp_blks_read|0
+TOP_STATEMENTS|3453106762841261166|temp_blks_read|0
+TOP_STATEMENTS|2529200348057660570|temp_blks_read|0
+TOP_STATEMENTS|-5141182974964984631|temp_blks_read|0
+TOP_STATEMENTS|-3982802711012393414|temp_blks_read|0
+TOP_STATEMENTS|-1231275493859611259|temp_blks_read|0
+TOP_STATEMENTS|-2887139335912015367|temp_blks_read|0
+TOP_STATEMENTS|-5075627566397697970|temp_blks_read|0
+TOP_STATEMENTS|-859282481384524542|temp_blks_read|0
+TOP_STATEMENTS|-7314465495322628439|temp_blks_read|0
+TOP_STATEMENTS|-2964386963526952398|temp_blks_read|0
+TOP_STATEMENTS|4887728233015081304|temp_blks_read|0
+TOP_STATEMENTS|327599666449656670|temp_blks_written|0
+TOP_STATEMENTS|3867181147013517150|temp_blks_written|0
+TOP_STATEMENTS|-2436087183235826827|temp_blks_written|0
+TOP_STATEMENTS|-8186815385500962442|temp_blks_written|0
+TOP_STATEMENTS|4853810572633038225|temp_blks_written|0
+TOP_STATEMENTS|-8824788839042052302|temp_blks_written|0
+TOP_STATEMENTS|7019628274609906428|temp_blks_written|0
+TOP_STATEMENTS|3193276759072834283|temp_blks_written|0
+TOP_STATEMENTS|-2182206566908618211|temp_blks_written|0
+TOP_STATEMENTS|6697580890275869146|temp_blks_written|0
+TOP_STATEMENTS|2939817420941947816|temp_blks_written|0
+TOP_STATEMENTS|-659379263930854130|temp_blks_written|0
+TOP_STATEMENTS|7069696701630184062|temp_blks_written|0
+TOP_STATEMENTS|-7602699173612363938|temp_blks_written|0
+TOP_STATEMENTS|4500955875985355274|temp_blks_written|0
+TOP_STATEMENTS|8425379238971144491|temp_blks_written|0
+TOP_STATEMENTS|-354564363792443243|temp_blks_written|0
+TOP_STATEMENTS|-6570954527227515144|temp_blks_written|0
+TOP_STATEMENTS|4375303120003040442|temp_blks_written|0
+TOP_STATEMENTS|1978390624132223685|temp_blks_written|0
+TOP_STATEMENTS|8290667273201477087|temp_blks_written|0
+TOP_STATEMENTS|3175560230803026983|temp_blks_written|0
+TOP_STATEMENTS|-6421484356574917337|temp_blks_written|0
+TOP_STATEMENTS|3045061800950875676|temp_blks_written|0
+TOP_STATEMENTS|-8036502462814838469|temp_blks_written|0
+TOP_STATEMENTS|-189834805381950481|temp_blks_written|0
+TOP_STATEMENTS|-8509193350030884028|temp_blks_written|0
+TOP_STATEMENTS|-6520716032698243160|temp_blks_written|0
+TOP_STATEMENTS|6376800314651963318|temp_blks_written|0
+TOP_STATEMENTS|3453106762841261166|temp_blks_written|0
+TOP_STATEMENTS|2529200348057660570|temp_blks_written|0
+TOP_STATEMENTS|-5141182974964984631|temp_blks_written|0
+TOP_STATEMENTS|-3982802711012393414|temp_blks_written|0
+TOP_STATEMENTS|-1231275493859611259|temp_blks_written|0
+TOP_STATEMENTS|-2887139335912015367|temp_blks_written|0
+TOP_STATEMENTS|-5075627566397697970|temp_blks_written|0
+TOP_STATEMENTS|-859282481384524542|temp_blks_written|0
+TOP_STATEMENTS|-7314465495322628439|temp_blks_written|0
+TOP_STATEMENTS|-2964386963526952398|temp_blks_written|0
+TOP_STATEMENTS|4887728233015081304|temp_blks_written|0
+TOP_STATEMENTS|327599666449656670|query_head|SELECT "runtime_module_instance_states"."tenant_id", "runtime_module_instance_states"."instance_id", "runtime_module_instance_states"."module_id", "runtime_modu
+TOP_STATEMENTS|3867181147013517150|query_head|SELECT "runtime_module_desired_states"."tenant_id", "runtime_module_desired_states"."module_id", "runtime_module_desired_states"."desired_mode", "runtime_module
+TOP_STATEMENTS|-2436087183235826827|query_head|INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)             VALUES ($1::uuid, $2, $3)             ON CONFLICT (tenant_id, contract_bl
+TOP_STATEMENTS|-8186815385500962442|query_head|INSERT INTO users (                 tenant_id, realm_id, organization_id, username, email, password_hash,                 is_active, email_verified, display_nam
+TOP_STATEMENTS|4853810572633038225|query_head|INSERT INTO oauth_refresh_families (                 tenant_id, token_family_id, client_id, user_id, contract_blake3,                 current_member_id, current
+TOP_STATEMENTS|-8824788839042052302|query_head|WITH rels AS (   SELECT c.oid, n.nspname, c.relname, c.reltoastrelid   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace   WHERE n.nspname = $1 AND 
+TOP_STATEMENTS|7019628274609906428|query_head|SELECT $1, i.oid::text, tn.nspname   $2   t.relname,        i.relname, pg_relation_size(i.oid)::text,        COALESCE(s.idx_scan,$3)::text,        regexp_repl
+TOP_STATEMENTS|3193276759072834283|query_head|SELECT * FROM nazo_oauth_cleanup_expired_security_state()
+TOP_STATEMENTS|-2182206566908618211|query_head|INSERT INTO user_client_grants                 (tenant_id, user_id, client_id, first_authorized_at,                  last_authorized_at, last_scopes)           
+TOP_STATEMENTS|6697580890275869146|query_head|DELETE FROM oauth_refresh_contracts AS c                 WHERE c.tenant_id = $1::uuid                   AND NOT EXISTS (                       SELECT $2 FROM oa
+TOP_STATEMENTS|2939817420941947816|query_head|INSERT INTO oauth_clients (             tenant_id, realm_id, organization_id, client_id, client_name, client_type,             client_secret_hash, redirect_uris
+TOP_STATEMENTS|-659379263930854130|query_head|SELECT nazo_openid4vp_cleanup_expired_transactions() AS deleted_transactions
+TOP_STATEMENTS|7069696701630184062|query_head|SELECT $3 FROM ONLY "public"."oauth_refresh_contracts" x WHERE "tenant_id" OPERATOR(pg_catalog.=) $1 AND "contract_blake3" OPERATOR(pg_catalog.=) $2 FOR KEY SHA
+TOP_STATEMENTS|-7602699173612363938|query_head|SELECT id FROM users             WHERE tenant_id = $1::uuid AND lower(email) = $2
+TOP_STATEMENTS|4500955875985355274|query_head|SELECT revision              FROM tenant_runtime_directory_state              WHERE singleton
+TOP_STATEMENTS|8425379238971144491|query_head|DELETE FROM oauth_refresh_families WHERE tenant_id = $1::uuid
+TOP_STATEMENTS|-354564363792443243|query_head|DELETE FROM users             WHERE tenant_id <> $1::uuid               AND lower(email) = $2
+TOP_STATEMENTS|-6570954527227515144|query_head|SELECT $3 FROM ONLY "public"."oauth_refresh_families" x WHERE $1 OPERATOR(pg_catalog.=) "tenant_id" AND $2 OPERATOR(pg_catalog.=) "contract_blake3" FOR KEY SHAR
+TOP_STATEMENTS|4375303120003040442|query_head|SELECT "oauth_clients"."id", "oauth_clients"."tenant_id", "oauth_clients"."realm_id", "oauth_clients"."organization_id", "oauth_clients"."client_id", "oauth_cli
+TOP_STATEMENTS|1978390624132223685|query_head|SELECT $3 FROM ONLY "public"."users" x WHERE "id" OPERATOR(pg_catalog.=) $1 AND "tenant_id" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x
+TOP_STATEMENTS|8290667273201477087|query_head|SELECT 1 FROM ONLY "public"."oauth_clients" x WHERE "id" OPERATOR(pg_catalog.=) $1 AND "tenant_id" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x
+TOP_STATEMENTS|3175560230803026983|query_head|SELECT 1 FROM ONLY "public"."tenants" x WHERE "id" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x
+TOP_STATEMENTS|-6421484356574917337|query_head|UPDATE backchannel_logout_deliveries             SET attempts = attempts + $3, locked_at = CURRENT_TIMESTAMP,                 updated_at = CURRENT_TIMESTAMP    
+TOP_STATEMENTS|3045061800950875676|query_head|SELECT pg_database_size(current_database())
+TOP_STATEMENTS|-8036502462814838469|query_head|EXISTS (         SELECT $18         FROM tenant_resource_bindings binding         WHERE binding.tenant_id = OLD.tenant_id           AND binding.resource_kind = 
+TOP_STATEMENTS|-189834805381950481|query_head|SELECT $1,$2,$3, pg_database_size(current_database())::text UNION ALL SELECT $4,$5,$6, temp_bytes::text FROM pg_stat_database WHERE datname=current_database() U
+TOP_STATEMENTS|-8509193350030884028|query_head|SELECT $1, backend_type, $2, reads::text FROM pg_stat_io UNION ALL SELECT $3, backend_type, $4, read_time::text FROM pg_stat_io UNION ALL SELECT $5, backend_typ
+TOP_STATEMENTS|-6520716032698243160|query_head|SELECT $1, $2, $3,        count(*)::text FROM oauth_refresh_families UNION ALL SELECT $4,$5,$6,        count(*)::text FROM oauth_refresh_families        WHERE r
+TOP_STATEMENTS|6376800314651963318|query_head|INSERT INTO oauth_client_mtls_trust_anchor_requests                 (tenant_id, user_id, client_id, certificate_pem,                  certificate_sha256, subjec
+TOP_STATEMENTS|3453106762841261166|query_head|DELETE FROM ONLY "public"."oauth_refresh_spent_tokens" WHERE $1 OPERATOR(pg_catalog.=) "tenant_id" AND $2 OPERATOR(pg_catalog.=) "token_family_id"
+TOP_STATEMENTS|2529200348057660570|query_head|WITH due AS ( SELECT c.tenant_id, c.contract_blake3 FROM oauth_refresh_contracts AS c WHERE c.created_at < CURRENT_TIMESTAMP - make_interval(secs => $2) AND NOT
+TOP_STATEMENTS|-5141182974964984631|query_head|SELECT current_token_blake3 FROM oauth_refresh_families
+TOP_STATEMENTS|-3982802711012393414|query_head|WITH rels AS (   SELECT c.oid, n.nspname, c.relname, pg_partition_root(c.oid) AS root_oid   FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace   WHER
+TOP_STATEMENTS|-1231275493859611259|query_head|DELETE FROM oauth_client_mtls_trust_anchor_requests WHERE tenant_id = $1::uuid
+TOP_STATEMENTS|-2887139335912015367|query_head|INSERT INTO "oauth_token_issuances" ("issuance_id", "tenant_id", "client_id", "user_id", "access_token_jti", "access_token_expires_at", "retain_until", "refresh
+TOP_STATEMENTS|-5075627566397697970|query_head|WITH due AS (         SELECT issuance_id FROM oauth_token_issuances         WHERE retain_until <= clock_timestamp()         ORDER BY retain_until, issuance_id  
+TOP_STATEMENTS|-859282481384524542|query_head|SELECT EXISTS (SELECT "oauth_clients"."id", "oauth_clients"."tenant_id", "oauth_clients"."realm_id", "oauth_clients"."organization_id", "oauth_clients"."client_
+TOP_STATEMENTS|-7314465495322628439|query_head|SELECT u.email, count(*) FROM oauth_refresh_families f JOIN users u ON u.id=f.user_id GROUP BY u.email ORDER BY count(*) DESC LIMIT $1
+TOP_STATEMENTS|-2964386963526952398|query_head|SELECT $1, $2, $3,        COALESCE(max(extract($4 FROM now() - xact_start))::bigint::text, $5) FROM pg_stat_activity WHERE xact_start IS NOT NULL AND pid <> pg_
+TOP_STATEMENTS|4887728233015081304|query_head|SELECT count(*), min(occurred_at), max(occurred_at) FROM security_audit_events WHERE event_type=$1
+DONE|complete|2026-09-21 22:20:57.78641

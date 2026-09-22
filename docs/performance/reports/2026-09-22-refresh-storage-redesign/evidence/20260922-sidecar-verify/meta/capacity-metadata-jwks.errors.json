@@ -1,0 +1,14 @@
+{
+ "err_classified{step:metadata}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:jwks}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ }
+}

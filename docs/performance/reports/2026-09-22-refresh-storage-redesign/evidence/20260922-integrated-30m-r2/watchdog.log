@@ -1,0 +1,15 @@
+WATCHDOG argon2 silent at 21:30:58 - restarting
+time="2026-09-22T05:30:59+08:00" level=warning msg="Found orphan containers (soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container soak-argon2-20260922-integrated-30m-r2 Creating 
+ Container soak-argon2-20260922-integrated-30m-r2 Created 
+34181d98af922af5f30917f2f183099b945e61b131cf4b42b631ab46d2b242ae
+WATCHDOG meta silent at 21:30:59 - restarting
+time="2026-09-22T05:30:59+08:00" level=warning msg="Found orphan containers (soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container soak-meta-20260922-integrated-30m-r2 Creating 
+ Container soak-meta-20260922-integrated-30m-r2 Created 
+c7771356b66dcbb45a76bc7f6a3473d9808b20e8b8be559978db1d2ef145aa24
+WATCHDOG fapi silent at 21:31:00 - restarting
+time="2026-09-22T05:31:00+08:00" level=warning msg="Found orphan containers (soak-refresh-30m, soak-refresh-v2) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container soak-fapi-20260922-integrated-30m-r2 Creating 
+ Container soak-fapi-20260922-integrated-30m-r2 Created 
+966cf598c049f6253df1bc17921647191ba53aa2dbad58345b597a7cbbd0268c

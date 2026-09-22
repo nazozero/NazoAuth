@@ -170,8 +170,11 @@ safe when `peak WAL rate × 300s × factor ≤ 1GB`. Same discipline applies to
 
 - `evidence/statemin-poolstarve-30m-{a,b}/` — harness summaries, ledgers,
   receiver state, soak logs, manifests.
-- `evidence/observer/obs-run{A,B}.jsonl` — 1-second observer raw samples
-  (pg_stat_activity per-backend, locks, checkpointer/WAL/IO deltas, diskstats,
-  pool counters, xact/xmin).
+- `evidence/observer/obs-run{A,B}-compact.jsonl` — 1-second observer samples
+  compacted during evidence minimization: all scalar series at full 1s
+  resolution (pg_stat_activity state/wait histograms, locks, checkpointer/WAL
+  deltas, pool counters, xact/xmin); cumulative `disk`/`io` counters kept
+  every 30s; per-backend `rows` arrays folded into `state_hist`/`wait_hist`.
+  The 32MB raw pair was removed.
 - `evidence/observer/obs1s.py` — observer source, sha256
   `b7366b224671e82bf7c0756b89227df8019fe39ab97515fbbab19c450b621270`.

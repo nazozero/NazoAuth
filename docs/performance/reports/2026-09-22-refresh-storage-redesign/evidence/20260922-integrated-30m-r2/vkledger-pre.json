@@ -1,0 +1,93 @@
+{
+ "census_exact": {
+  "oauth:jar": 121,
+  "oauth:session": 18646,
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 18768,
+  "evicted_keys": 0,
+  "expired_keys": 668213,
+  "keyspace_hits": 16520912,
+  "keyspace_misses": 42367,
+  "mem_fragmentation_ratio": 2.16,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 11846528,
+  "used_memory_rss": 25620480
+ },
+ "keys_seen": 18768,
+ "mem_bytes_sampled": {
+  "oauth:jar": 38720,
+  "oauth:session": 178624,
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "oauth:jar": 121,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "20260922-integrated-30m-r2",
+  "sample_per_cat": 400,
+  "sampled_at": 1790025977,
+  "scan_ms": 44,
+  "script_sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b"
+ },
+ "sampled_per_cat": {
+  "oauth:jar": 121,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 18768,
+ "ttl_buckets_sampled": {
+  "oauth:jar|1m+": 109,
+  "oauth:jar|2m+": 12,
+  "oauth:session|422m+": 6,
+  "oauth:session|423m+": 4,
+  "oauth:session|425m+": 10,
+  "oauth:session|426m+": 5,
+  "oauth:session|427m+": 11,
+  "oauth:session|428m+": 8,
+  "oauth:session|429m+": 15,
+  "oauth:session|430m+": 14,
+  "oauth:session|431m+": 13,
+  "oauth:session|432m+": 11,
+  "oauth:session|433m+": 3,
+  "oauth:session|437m+": 5,
+  "oauth:session|439m+": 3,
+  "oauth:session|440m+": 9,
+  "oauth:session|441m+": 9,
+  "oauth:session|442m+": 7,
+  "oauth:session|443m+": 8,
+  "oauth:session|444m+": 11,
+  "oauth:session|445m+": 9,
+  "oauth:session|446m+": 11,
+  "oauth:session|447m+": 12,
+  "oauth:session|448m+": 12,
+  "oauth:session|449m+": 12,
+  "oauth:session|450m+": 10,
+  "oauth:session|451m+": 9,
+  "oauth:session|452m+": 7,
+  "oauth:session|453m+": 14,
+  "oauth:session|454m+": 13,
+  "oauth:session|455m+": 13,
+  "oauth:session|456m+": 13,
+  "oauth:session|457m+": 1,
+  "oauth:session|458m+": 12,
+  "oauth:session|459m+": 11,
+  "oauth:session|460m+": 9,
+  "oauth:session|461m+": 13,
+  "oauth:session|462m+": 6,
+  "oauth:session|463m+": 11,
+  "oauth:session|464m+": 16,
+  "oauth:session|465m+": 7,
+  "oauth:session|466m+": 11,
+  "oauth:session|467m+": 7,
+  "oauth:session|468m+": 1,
+  "oauth:session|477m+": 3,
+  "oauth:session|479m+": 5,
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

@@ -1,0 +1,46 @@
+{
+ "err_classified{step:token_exchange}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:userinfo}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:authorize}": {
+  "rate": 0,
+  "count": 0
+ },
+ "err_classified{step:token_client_credentials}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:token_authorization_code}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:par_oidc}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:authorize_decision}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:cap_bootstrap}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified": {
+  "count": 3432,
+  "rate": 0.31777720627565703
+ },
+ "err_classified{step:token_native_sso_fresh}": {
+  "count": 0,
+  "rate": 0
+ },
+ "err_classified{step:token_refresh}": {
+  "count": 0,
+  "rate": 0
+ }
+}

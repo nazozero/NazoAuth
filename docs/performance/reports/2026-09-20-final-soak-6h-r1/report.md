@@ -36,7 +36,7 @@ The exporter's first `nazo_claim_security_audit_pending` at 16:46:02Z ran **11m3
 
 ## Defect B — Required-class audit events on the best-effort queue (pre-existing misroute)
 
-`authorization_approved` is classed `Required` in `AUDIT_EVENT_DEFINITIONS` but `record_decision_audit()` emits it via `SecurityAudit::record()` — the bounded (4,096) in-process `try_send` queue. Each persist sag (~35–40 min cadence, correlated with outbox sawtooth peaks at 20:29/20:44/21:04/22:30Z) filled the queue within ~2 s and dropped required evidence while the business grant succeeded (HTTP-invisible). Hourly distribution: 17h 29,181 / 18h 3,891 / 19h 4,953 / 20h 32,836 / 21h 11,111 / 22h 14,417 = **96,389** + one `misrouted_required` warning. `evidence/app-audit-drops.log` is the verbatim extract.
+`authorization_approved` is classed `Required` in `AUDIT_EVENT_DEFINITIONS` but `record_decision_audit()` emits it via `SecurityAudit::record()` — the bounded (4,096) in-process `try_send` queue. Each persist sag (~35–40 min cadence, correlated with outbox sawtooth peaks at 20:29/20:44/21:04/22:30Z) filled the queue within ~2 s and dropped required evidence while the business grant succeeded (HTTP-invisible). Hourly distribution: 17h 29,181 / 18h 3,891 / 19h 4,953 / 20h 32,836 / 21h 11,111 / 22h 14,417 = **96,389** + one `misrouted_required` warning. `evidence/statemin-final-soak-6h-r1/app-audit-drops-hourly.txt` is the retained per-hour census; the verbatim 26MB per-event extract was removed during evidence minimization (the census above is the complete derived record).
 
 ## Chain of causation for the gate misses
 
@@ -46,7 +46,7 @@ cold-start no-stats → claim wedge 12min holding xmin → unreclaimable dead pr
 
 - Delivery-scoped retention itself is validated (zero online audit residue, exact anchor↔receiver convergence, bounded WAL/DML) — the cliff mechanism is gone.
 - The failures are: (a) a plan-stability gap at cold start, (b) a Required/Telemetry routing defect, (c) their cascade into the drops/errors gates.
-- Raw evidence preserved byte-for-byte under `evidence/`; derived extracts (`app-audit-drops*.log`, `main-vu-saturation.txt`, `argon2/errors-extract.log`) are additive captures, originals untouched.
+- Compact evidence retained under `evidence/` (sampler streams, ledgers, summaries, censuses); bulky verbatim extracts (`app-audit-drops.log`, `main/run.log`) and the superseded `final-rehearsal-10m-r1/` pre-run were removed during evidence minimization — conclusions are carried by the retained aggregates.
 
 ## Disposition
 
