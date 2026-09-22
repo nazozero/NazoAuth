@@ -72,6 +72,7 @@ services:
         REVOKE ALL ON DATABASE oauth FROM PUBLIC;
         GRANT CONNECT ON DATABASE oauth TO postgres, nazoauth_perf_runtime;
         REVOKE CREATE ON SCHEMA public FROM PUBLIC;
+        CREATE EXTENSION IF NOT EXISTS pg_stat_statements;
         SQL
     depends_on:
       postgres:

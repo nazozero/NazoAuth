@@ -231,7 +231,7 @@ for side in argon2 meta fapi refresh; do
     argon2)  SC=oidc_cold_login_refresh;      SR=8;   PV=8;   MV=16;  UC=64 ;;
     meta)    SC=metadata_jwks;              SR=200; PV=16;  MV=32;  UC=64 ;;
     fapi)    SC=fapi2_logged_in_high_security; SR=30; PV=32;  MV=64;  UC=128 ;;
-    refresh) SC=cap_refresh_token;          SR=${SOAK_REFRESH_RATE:-600}; PV=64; MV=128; UC=256 ;;
+    refresh) SC=cap_refresh_token;          SR=${SOAK_REFRESH_RATE:-600}; PV=64; MV=256; UC=256 ;;
   esac
   docker compose -f docker-compose.perf.yml run -d --name "soak-$side-$RUN_ID" --no-deps \
     -v "$OUT/$side":/out \
