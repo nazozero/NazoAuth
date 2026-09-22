@@ -13,18 +13,14 @@ capacity statement for the current release or another deployment.
 - [主容量矩阵测试总结](summaries/performance-capacity-main-summary.md)
 - [扩展容量矩阵测试总结](summaries/performance-capacity-extended-summary.md)
 - 各场景详细报告：`docs/performance/reports/**/*.md`
-- 原始结构化结果：`perf/results/capacity-*.json`
-- 测试环境记录：`perf/results/environment-*.md`
+- 原始结构化结果：`perf/results/data/capacity/*.json` 与 `perf/results/data/extended/*.json`
+- 测试环境记录：`perf/results/environments/*.md`
 
 ## 总览表
 
 | 来源 | 场景 | 通过阶段 | 最高通过阶段 | HTTP RPS | p95 ms | p99 ms | 错误率 | 首个未通过阶段 |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| 主矩阵 / 短测 | [Token-only: client_credentials 短测](reports/main/performance-capacity-curve-token-only-short.md) | 9/9 | 4x / 5000 flow/s | 4999.963 | 2.768 | 5.893 | 0.0000% | - |
 | 主矩阵 / 短测 | [OIDC: 冷登录 + 刷新短测](reports/main/performance-capacity-curve-oidc-cold-login-short.md) | 8/9 | 4x / 64 flow/s | 383.814 | 152.931 | 171.195 | 0.0000% | 1x / 64 flow/s / threshold_failed |
-| 主矩阵 / 短测 | [OIDC: 已登录授权码短测](reports/main/performance-capacity-curve-oidc-logged-in-short.md) | 9/9 | 4x / 64 flow/s | 256.429 | 5.433 | 7.338 | 0.0000% | - |
-| 主矩阵 / 短测 | [OIDC: 仅刷新令牌轮换短测](reports/main/performance-capacity-curve-oidc-refresh-only-short.md) | 9/9 | 4x / 1000 flow/s | 999.986 | 8.825 | 15.197 | 0.0000% | - |
-| 主矩阵 / 短测 | [FAPI2: 已登录高安全短测](reports/main/performance-capacity-curve-fapi2-logged-in-high-security-short.md) | 9/9 | 4x / 64 flow/s | 320.415 | 7.274 | 9.604 | 0.0000% | - |
 | 主矩阵 / 长测 | [Token-only: client_credentials](reports/main/performance-capacity-curve-token-only.md) | 15/15 | 4x / 10000 flow/s | 9972.883 | 4.439 | 32.441 | 0.0000% | - |
 | 主矩阵 / 长测 | [OIDC: 已登录授权码](reports/main/performance-capacity-curve-oidc-logged-in.md) | 15/15 | 4x / 256 flow/s | 1023.732 | 6.805 | 12.307 | 0.0269% | - |
 | 主矩阵 / 长测 | [OIDC: 仅刷新令牌轮换](reports/main/performance-capacity-curve-oidc-refresh-only.md) | 15/15 | 4x / 2000 flow/s | 1996.388 | 13.778 | 56.414 | 0.0000% | - |

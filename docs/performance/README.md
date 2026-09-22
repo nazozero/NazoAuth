@@ -29,7 +29,9 @@ the current release or an unmeasured deployment.
 
 - Markdown summaries and scenario reports live under `docs/performance/`.
 - Compact structured benchmark results and environment captures live under
-  [`../../perf/results`](../../perf/results).
+  [`../../perf/results`](../../perf/results/) (`data/` for machine-readable
+  results, `environments/` for run environment captures, `diagnostics/` for
+  retained root-cause evidence — see `perf/results/README.md`).
 - Benchmark runner instructions live in [`../../perf/README.md`](../../perf/README.md).
 - Retained evidence should be the minimum set needed to reproduce the reported
   numbers: aggregate results, per-point snapshots, run summaries, environment

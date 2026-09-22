@@ -19,7 +19,7 @@ case "${REPORT_SUFFIX}" in
   app-cpu-*|single-instance-*) REPORT="docs/performance/reports/special/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
   *) REPORT="docs/performance/reports/main/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
 esac
-ENV_REPORT="perf/results/environment-${REPORT_SUFFIX}.md"
+ENV_REPORT="perf/results/environments/${REPORT_SUFFIX}.md"
 export CAPACITY_ENV_REPORT_PATH="${ENV_REPORT}"
 if [ "${CNB_CAPACITY_COMMIT:-1}" = "0" ]; then
   export CAPACITY_CHECKPOINT_COMMIT="${CAPACITY_CHECKPOINT_COMMIT:-0}"
@@ -29,7 +29,12 @@ fi
 COMPOSE_PROJECT_NAME="$(printf 'nazoauth-%s-%s' "${CNB_BUILD_ID:-local}" "${REPORT_SUFFIX}" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9_-' '-' | cut -c1-63)"
 export COMPOSE_PROJECT_NAME
 
-mkdir -p "$(dirname "${REPORT}")" perf/results
+mkdir -p "$(dirname "${REPORT}")" "$(dirname "${ENV_REPORT}")" perf/results/.run
+case "${REPORT_SUFFIX}" in
+  extended-*) RESULTS_JSON="perf/results/data/extended/${REPORT_SUFFIX#extended-}.json" ;;
+  dev-*) RESULTS_JSON="perf/results/data/dev/${REPORT_SUFFIX#dev-}.json" ;;
+  *) RESULTS_JSON="perf/results/data/capacity/${REPORT_SUFFIX}.json" ;;
+esac
 
 APP_CPUSET="${PERF_APP_CPUSET:-}"
 INFRA_CPUSET="${PERF_INFRA_CPUSET:-}"
@@ -54,7 +59,7 @@ write_service_override() {
 }
 
 if [ -n "${APP_CPUSET}" ] || [ -n "${INFRA_CPUSET}" ] || [ -n "${APP_CPUS}" ] || [ -n "${APP_TASKSET}" ]; then
-  PERF_COMPOSE_OVERRIDE="perf/results/docker-compose.cpuset-${REPORT_SUFFIX}.yml"
+  PERF_COMPOSE_OVERRIDE="perf/results/.run/docker-compose.cpuset-${REPORT_SUFFIX}.yml"
   export PERF_COMPOSE_OVERRIDE
   {
     echo "services:"
@@ -175,7 +180,7 @@ if [ -n "${RATES}" ]; then
     --rates "${RATES}" \
     --max-vus "${MAX_VUS}" \
     --report-path "${REPORT}" \
-    --results-path "perf/results/capacity-${REPORT_SUFFIX}.json"
+    --results-path "${RESULTS_JSON}"
 else
   python3 perf/capacity.py \
     --duration "${DURATION}" \
@@ -183,7 +188,7 @@ else
     --scenarios "${SCENARIOS}" \
     --max-vus "${MAX_VUS}" \
     --report-path "${REPORT}" \
-    --results-path "perf/results/capacity-${REPORT_SUFFIX}.json"
+    --results-path "${RESULTS_JSON}"
 fi
 status=$?
 set -e
@@ -207,8 +212,13 @@ for line in env_source.splitlines():
     if len(cells) == 2:
         fields[cells[0]] = cells[1]
 
-suffix = env_path.stem.removeprefix("environment-")
-results_path = Path("perf") / "results" / f"capacity-{suffix}.json"
+suffix = env_path.stem
+if suffix.startswith("extended-"):
+    results_path = Path("perf") / "results" / "data" / "extended" / f"{suffix.removeprefix('extended-')}.json"
+elif suffix.startswith("dev-"):
+    results_path = Path("perf") / "results" / "data" / "dev" / f"{suffix.removeprefix('dev-')}.json"
+else:
+    results_path = Path("perf") / "results" / "data" / "capacity" / f"{suffix}.json"
 report_dir = target_path.parent
 env_link = Path(os.path.relpath(env_path, report_dir)).as_posix()
 results_link = Path(os.path.relpath(results_path, report_dir)).as_posix()

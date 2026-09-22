@@ -6,9 +6,9 @@ echo "extended capacity matrix bootstrap started $(date -u '+%Y-%m-%dT%H:%M:%SZ'
 install_capacity_dependencies
 docker compose version >/dev/null
 
-mkdir -p docs/performance perf/results
-children_file="perf/results/cnb-extended-capacity-children.txt"
-cpusets_file="perf/results/cnb-extended-capacity-cpusets.txt"
+mkdir -p docs/performance perf/results/.run perf/results/data/extended perf/results/environments
+children_file="perf/results/.run/cnb-extended-capacity-children.txt"
+cpusets_file="perf/results/.run/cnb-extended-capacity-cpusets.txt"
 : >"${children_file}"
 
 python3 - "${PERF_CPU_RESERVE:-4}" "${EXTENDED_CAPACITY_GROUPS:-9}" >"${cpusets_file}" <<'PY'
@@ -87,8 +87,8 @@ extended_report_path() {
 commit_extended_report() {
   suffix="$1"
   report="$(extended_report_path "${suffix}")"
-  results="perf/results/capacity-extended-${suffix}.json"
-  env_report="perf/results/environment-extended-${suffix}.md"
+  results="perf/results/data/extended/${suffix}.json"
+  env_report="perf/results/environments/extended-${suffix}.md"
   if [ ! -f "${report}" ]; then
     echo "extended capacity report not found for ${suffix}: ${report}"
     return 0
@@ -110,7 +110,7 @@ run_extended_child() {
   suffix="$2"
   rates="$3"
   cpu_set="$4"
-  log_path="perf/results/cnb-extended-capacity-${suffix}.log"
+  log_path="perf/results/.run/cnb-extended-capacity-${suffix}.log"
 
   echo "starting extended capacity scenario ${scenario} rates=${rates} on CPUs ${cpu_set} -> ${log_path}"
   (

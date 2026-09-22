@@ -168,6 +168,9 @@ jobs:
       - name: Test crypto boundary guard
         run: python -m unittest discover -s scripts -p 'test_crypto_boundary.py'
 
+      - name: Verify perf results layout
+        run: python scripts/check_perf_results_layout.py
+
       - name: Format
         run: cargo fmt --check
 

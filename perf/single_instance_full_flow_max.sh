@@ -7,9 +7,9 @@ if [ "${CNB_CAPACITY_SKIP_BOOTSTRAP:-0}" != "1" ]; then
   docker compose version >/dev/null
 fi
 
-mkdir -p docs/performance perf/results
+mkdir -p docs/performance perf/results/.run
 
-cpusets_file="perf/results/single-instance-full-flow-max-cpusets.txt"
+cpusets_file="perf/results/.run/single-instance-full-flow-max-cpusets.txt"
 python3 - "${SINGLE_INSTANCE_MAX_CPU_RESERVE:-0}" >"${cpusets_file}" <<'PY'
 import sys
 from pathlib import Path
@@ -90,6 +90,6 @@ echo "max_vus=${max_vus}"
 echo "app_cpuset=${PERF_APP_CPUSET}"
 echo "infra_cpuset=${PERF_INFRA_CPUSET}"
 echo "report=docs/performance/reports/special/performance-capacity-curve-${suffix}.md"
-echo "results=perf/results/capacity-${suffix}.json"
+echo "results=perf/results/data/capacity/${suffix}.json"
 
 ./perf/run_capacity.sh

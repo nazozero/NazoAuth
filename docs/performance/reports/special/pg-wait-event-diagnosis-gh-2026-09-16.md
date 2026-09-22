@@ -113,6 +113,6 @@ The subsequent isolated A/B (`pool-recycling-fast-ab-2026-09-16.md`) validates t
 
 ## 8. Retained Evidence
 
-`perf/results/waitprobe-matrix-gh-2026-09-16/` retains `aggregate.json`, per-point `points/*.json`, `runs/*.summary.json`, and `meta.txt`. These structured files contain the baseline/final PG snapshots and aggregated wait/lock/statement data needed to review the conclusions.
+`perf/results/diagnostics/waitprobe-matrix-gh-2026-09-16/` retains `aggregate.json`, per-point `points/*.json`, `runs/*.summary.json`, and `meta.txt`. These structured files contain the baseline/final PG snapshots and aggregated wait/lock/statement data needed to review the conclusions.
 
 High-frequency activity/lock streams, transient sampler/driver logs, and checksum manifests are intentionally not retained in Git when their information is already represented in the structured point/aggregate results.

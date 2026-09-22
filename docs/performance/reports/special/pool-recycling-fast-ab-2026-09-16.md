@@ -103,10 +103,10 @@ refresh `parent SELECT + revoke UPDATE → UPDATE ... RETURNING`; family
 The repository keeps only the minimum structured evidence needed to reproduce
 this report:
 
-- `perf/results/waitprobe-ab-verified-2026-09-16/` and
-  `perf/results/waitprobe-ab-fast-2026-09-16/`: `aggregate.json`, per-point
+- `perf/results/diagnostics/waitprobe-ab-verified-2026-09-16/` and
+  `perf/results/diagnostics/waitprobe-ab-fast-2026-09-16/`: `aggregate.json`, per-point
   `points/*.json`, `runs/*.summary.json`, and `meta.txt`.
-- `perf/results/failprobe-2026-09-16/`: focused cc/refresh terminate/restart probes.
+- `perf/results/diagnostics/failprobe-2026-09-16/`: focused cc/refresh terminate/restart probes.
 - Harness: `perf/wait_ab.sh`, `perf/aggregate_ab.py`, `perf/failprobe.py`, and
   `perf/wait_sampler.py`.
 
