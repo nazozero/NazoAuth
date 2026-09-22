@@ -165,10 +165,12 @@ async fn remove_rotation_insert_gate(
     trigger: &str,
     function: &str,
 ) {
-    sql_query(format!("DROP TRIGGER {trigger} ON oauth_refresh_spent_tokens"))
-        .execute(&mut *connection)
-        .await
-        .expect("rotation insert gate trigger should be removed");
+    sql_query(format!(
+        "DROP TRIGGER {trigger} ON oauth_refresh_spent_tokens"
+    ))
+    .execute(&mut *connection)
+    .await
+    .expect("rotation insert gate trigger should be removed");
     sql_query(format!("DROP FUNCTION {function}()"))
         .execute(&mut *connection)
         .await
@@ -2325,8 +2327,16 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     )
     .await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, missing_family, &losing, 1, true, false)
-        .await;
+    assert_rotation_conflict_facts(
+        &mut connection,
+        tenant_id,
+        missing_family,
+        &losing,
+        1,
+        true,
+        false,
+    )
+    .await;
 
     // Parent already consumed by an earlier rotation: a revoked root plus
     // the active successor that consumed it.
@@ -2450,8 +2460,16 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     wrong_client.client_id = foreign.client_id;
     let (result, losing) = commit_refresh(&database_url, wrong_client).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, client_family, &losing, 1, true, false)
-        .await;
+    assert_rotation_conflict_facts(
+        &mut connection,
+        tenant_id,
+        client_family,
+        &losing,
+        1,
+        true,
+        false,
+    )
+    .await;
 
     // Parent is owned by a different user.
     let user_family = Uuid::now_v7();
@@ -2477,7 +2495,16 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     wrong_user.subject = foreign.user_id.to_string();
     let (result, losing) = commit_refresh(&database_url, wrong_user).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, user_family, &losing, 1, true, false).await;
+    assert_rotation_conflict_facts(
+        &mut connection,
+        tenant_id,
+        user_family,
+        &losing,
+        1,
+        true,
+        false,
+    )
+    .await;
 
     // Parent belongs to a different tenant: the update misses and the
     // tenant-scoped compromise cannot touch the foreign row.
@@ -2513,8 +2540,16 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     cross_tenant.subject = fixture.client_public_id.clone();
     let (result, losing) = commit_refresh(&database_url, cross_tenant).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, foreign_family, &losing, 0, false, false)
-        .await;
+    assert_rotation_conflict_facts(
+        &mut connection,
+        tenant_id,
+        foreign_family,
+        &losing,
+        0,
+        false,
+        false,
+    )
+    .await;
     let foreign_state = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
          WHERE current_member_id = $1 AND revoked_at IS NULL AND reuse_detected_at IS NULL",
@@ -2565,7 +2600,16 @@ async fn ordinary_rotation_context_mismatch_commits_compromise_and_reuse_audit()
     // fails; the compromise facts commit instead of propagating an error.
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
-    assert_rotation_conflict_facts(&mut connection, tenant_id, family_id, &losing, 1, true, false).await;
+    assert_rotation_conflict_facts(
+        &mut connection,
+        tenant_id,
+        family_id,
+        &losing,
+        1,
+        true,
+        false,
+    )
+    .await;
     let persisted_context = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts AS c \
          JOIN oauth_refresh_families AS f \
@@ -2705,15 +2749,25 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
         format!("serde-shape-child-{}", Uuid::now_v7()),
         Some(shape_parent),
     );
-    shape_child.authentication_context.userinfo_claim_requests = vec![nazo_auth::OidcClaimRequest {
-        name: "claim".to_owned(),
-        essential: false,
-        value: None,
-        values: vec![json!(1)],
-    }];
+    shape_child.authentication_context.userinfo_claim_requests =
+        vec![nazo_auth::OidcClaimRequest {
+            name: "claim".to_owned(),
+            essential: false,
+            value: None,
+            values: vec![json!(1)],
+        }];
     let (result, losing) = commit_refresh(&database_url, shape_child).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, shape_family, &losing, 1, true, false).await;
+    assert_rotation_conflict_facts(
+        &mut connection,
+        tenant_id,
+        shape_family,
+        &losing,
+        1,
+        true,
+        false,
+    )
+    .await;
 
     // The identical semantic context re-serialized stays equal and rotates.
     let equal_family = Uuid::now_v7();
@@ -2841,7 +2895,16 @@ async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compr
     // The winner's insert commits, then the loser's compromise revokes every
     // family row — including the just-committed successor — and its reuse
     // audit is persisted rather than rolled back.
-    assert_rotation_conflict_facts(&mut coordinator, tenant_id, family_id, &losing, 2, true, false).await;
+    assert_rotation_conflict_facts(
+        &mut coordinator,
+        tenant_id,
+        family_id,
+        &losing,
+        2,
+        true,
+        false,
+    )
+    .await;
     let winner_issuance = if losing.issuance_id == left_input.issuance_id {
         right_input.issuance_id
     } else {
@@ -3412,8 +3475,7 @@ async fn family_active_exists_semantics_cover_cardinality_and_predicates() {
     )
     .await;
     let successor_raw = format!("exists-many-child-{}", Uuid::now_v7());
-    let mut successor =
-        raw_refresh_row(&fixture, tenant_id, many_family, &successor_raw, &context);
+    let mut successor = raw_refresh_row(&fixture, tenant_id, many_family, &successor_raw, &context);
     successor.rotated_from_id = Some(root_id);
     insert_refresh_row(&mut connection, &successor).await;
     assert!(

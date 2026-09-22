@@ -241,12 +241,16 @@ async fn cap_grows_to_ten_then_retires_the_deterministic_oldest() {
 
     let mut created = Vec::new();
     for ordinal in 0..CAP {
-        let (family_id, _) =
-            issue_family(&database_url, &fixture, tenant_id, ordinal).await;
+        let (family_id, _) = issue_family(&database_url, &fixture, tenant_id, ordinal).await;
         created.push(family_id);
         assert_eq!(
-            live_family_count(&mut connection, tenant_id, fixture.user_id, fixture.client_id)
-                .await,
+            live_family_count(
+                &mut connection,
+                tenant_id,
+                fixture.user_id,
+                fixture.client_id
+            )
+            .await,
             ordinal + 1,
             "issuance {ordinal} should grow the scope to {} families",
             ordinal + 1
@@ -255,7 +259,13 @@ async fn cap_grows_to_ten_then_retires_the_deterministic_oldest() {
 
     // The eleventh authorization retires exactly the oldest family.
     let (eleventh, _) = issue_family(&database_url, &fixture, tenant_id, CAP).await;
-    let live = live_family_ids(&mut connection, tenant_id, fixture.user_id, fixture.client_id).await;
+    let live = live_family_ids(
+        &mut connection,
+        tenant_id,
+        fixture.user_id,
+        fixture.client_id,
+    )
+    .await;
     assert_eq!(live.len() as i64, CAP, "the cap must hold after eviction");
     assert!(
         !live.contains(&created[0]),
@@ -271,7 +281,13 @@ async fn cap_grows_to_ten_then_retires_the_deterministic_oldest() {
         issue_family(&database_url, &fixture, tenant_id, ordinal).await;
     }
     assert_eq!(
-        live_family_count(&mut connection, tenant_id, fixture.user_id, fixture.client_id).await,
+        live_family_count(
+            &mut connection,
+            tenant_id,
+            fixture.user_id,
+            fixture.client_id
+        )
+        .await,
         CAP,
         "sustained authorization churn must stay bounded"
     );
@@ -307,8 +323,13 @@ async fn cap_is_per_tenant_user_client_scope() {
         issue_family(&database_url, &fixture_a, tenant_id, ordinal).await;
     }
     assert_eq!(
-        live_family_count(&mut connection, tenant_id, fixture_b.user_id, fixture_b.client_id)
-            .await,
+        live_family_count(
+            &mut connection,
+            tenant_id,
+            fixture_b.user_id,
+            fixture_b.client_id
+        )
+        .await,
         0,
         "a different user/client scope is untouched by the first scope's cap"
     );
@@ -316,18 +337,33 @@ async fn cap_is_per_tenant_user_client_scope() {
     // A second scope under the same tenant still receives its own full budget.
     let (other, _) = issue_family(&database_url, &fixture_b, tenant_id, 0).await;
     assert_eq!(
-        live_family_count(&mut connection, tenant_id, fixture_b.user_id, fixture_b.client_id)
-            .await,
+        live_family_count(
+            &mut connection,
+            tenant_id,
+            fixture_b.user_id,
+            fixture_b.client_id
+        )
+        .await,
         1
     );
     assert_eq!(
-        live_family_count(&mut connection, tenant_id, fixture_a.user_id, fixture_a.client_id)
-            .await,
+        live_family_count(
+            &mut connection,
+            tenant_id,
+            fixture_a.user_id,
+            fixture_a.client_id
+        )
+        .await,
         CAP,
         "scope A remains at its cap"
     );
-    let live_b =
-        live_family_ids(&mut connection, tenant_id, fixture_b.user_id, fixture_b.client_id).await;
+    let live_b = live_family_ids(
+        &mut connection,
+        tenant_id,
+        fixture_b.user_id,
+        fixture_b.client_id,
+    )
+    .await;
     assert_eq!(live_b, vec![other]);
 }
 
@@ -346,7 +382,13 @@ async fn rotation_never_consumes_a_family_slot() {
 
     // Rotate the oldest live family twice; rotation is generation churn inside
     // one slot, not a new authorization decision.
-    let live = live_family_ids(&mut connection, tenant_id, fixture.user_id, fixture.client_id).await;
+    let live = live_family_ids(
+        &mut connection,
+        tenant_id,
+        fixture.user_id,
+        fixture.client_id,
+    )
+    .await;
     let family = live[0];
     let mut member = {
         let rows = sql_query(
@@ -377,8 +419,13 @@ async fn rotation_never_consumes_a_family_slot() {
             .expect("rotation should commit");
         assert_eq!(result, CommitTokenIssuanceResult::Committed);
         assert_eq!(
-            live_family_count(&mut connection, tenant_id, fixture.user_id, fixture.client_id)
-                .await,
+            live_family_count(
+                &mut connection,
+                tenant_id,
+                fixture.user_id,
+                fixture.client_id
+            )
+            .await,
             CAP,
             "rotation must not trigger capacity eviction"
         );
@@ -443,7 +490,13 @@ async fn retired_family_tokens_resolve_as_unknown_grant() {
     // The next authorization retires the oldest family outright.
     issue_family(&database_url, &fixture, tenant_id, CAP).await;
     assert_eq!(
-        live_family_count(&mut connection, tenant_id, fixture.user_id, fixture.client_id).await,
+        live_family_count(
+            &mut connection,
+            tenant_id,
+            fixture.user_id,
+            fixture.client_id
+        )
+        .await,
         CAP
     );
 
@@ -516,7 +569,13 @@ async fn concurrent_authorizations_never_exceed_the_cap() {
 
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     assert_eq!(
-        live_family_count(&mut connection, tenant_id, fixture.user_id, fixture.client_id).await,
+        live_family_count(
+            &mut connection,
+            tenant_id,
+            fixture.user_id,
+            fixture.client_id
+        )
+        .await,
         CAP,
         "concurrent authorizations must converge on the cap, not past it"
     );
@@ -552,7 +611,13 @@ async fn machine_issuance_without_user_skips_the_cap() {
         .expect("machine issuance should commit");
     assert_eq!(result, CommitTokenIssuanceResult::Committed);
     assert_eq!(
-        live_family_count(&mut connection, tenant_id, fixture.user_id, fixture.client_id).await,
+        live_family_count(
+            &mut connection,
+            tenant_id,
+            fixture.user_id,
+            fixture.client_id
+        )
+        .await,
         CAP,
         "machine issuance must not evict user-bound families"
     );
@@ -632,7 +697,13 @@ async fn spent_proofs_stay_bounded_under_sustained_rotation() {
         "the current generation still resolves"
     );
     assert_eq!(
-        live_family_count(&mut connection, tenant_id, fixture.user_id, fixture.client_id).await,
+        live_family_count(
+            &mut connection,
+            tenant_id,
+            fixture.user_id,
+            fixture.client_id
+        )
+        .await,
         1,
         "rotation never multiplies the family row"
     );

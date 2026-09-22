@@ -2020,7 +2020,10 @@ async fn refresh_state_minimal_migration_converges_family_cap_and_contracts() {
     .get_result::<CountRow>(&mut connection)
     .await
     .expect("live family count should read");
-    assert_eq!(live.count, 10, "migration must converge the scope to the cap");
+    assert_eq!(
+        live.count, 10,
+        "migration must converge the scope to the cap"
+    );
 
     // The two oldest families (k=0, k=1) are the deterministic victims.
     let victims_gone = sql_query(
@@ -2071,7 +2074,10 @@ async fn refresh_state_minimal_migration_converges_family_cap_and_contracts() {
     .get_result::<CountRow>(&mut connection)
     .await
     .expect("spent count should read");
-    assert_eq!(spent.count, 1, "the surviving family's predecessor keeps a proof");
+    assert_eq!(
+        spent.count, 1,
+        "the surviving family's predecessor keeps a proof"
+    );
     let stray_spent = sql_query(
         "SELECT count(*) AS count FROM oauth_refresh_spent_tokens s \
          WHERE NOT EXISTS (SELECT 1 FROM oauth_refresh_families f \
@@ -2110,12 +2116,10 @@ async fn refresh_state_minimal_migration_converges_family_cap_and_contracts() {
     .expect("orphan contract count should read");
     assert_eq!(orphans.count, 0, "no unreferenced contract survives");
 
-    let dropped = sql_query(
-        "SELECT to_regclass('public.oauth_tokens') IS NULL AS value",
-    )
-    .get_result::<BooleanRow>(&mut connection)
-    .await
-    .expect("legacy table lookup should read");
+    let dropped = sql_query("SELECT to_regclass('public.oauth_tokens') IS NULL AS value")
+        .get_result::<BooleanRow>(&mut connection)
+        .await
+        .expect("legacy table lookup should read");
     assert!(dropped.value, "legacy oauth_tokens must be dropped");
 
     connection

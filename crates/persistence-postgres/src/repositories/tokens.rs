@@ -4,8 +4,8 @@ use diesel::{
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
-    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, MAX_SPENT_PROOFS_PER_REFRESH_FAMILY,
-    NewRefreshToken, RefreshContract, RefreshToken, RefreshTokenPersistResult,
+    MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE, MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, NewRefreshToken,
+    RefreshContract, RefreshToken, RefreshTokenPersistResult,
 };
 use nazo_identity::ports::RepositoryError;
 use nazo_persistence::SecurityAuditEvent;
@@ -377,18 +377,14 @@ fn validate_new_refresh_token(token: &NewRefreshToken) -> Result<(), RepositoryE
 fn persisted_contract(contract: &RefreshContract) -> Result<(Vec<u8>, Value), RepositoryError> {
     let persisted = contract.persisted();
     let value = serde_json::to_value(&persisted).map_err(|error| {
-        RepositoryError::Consistency(format!(
-            "refresh contract could not be serialized: {error}"
-        ))
+        RepositoryError::Consistency(format!("refresh contract could not be serialized: {error}"))
     })?;
     Ok((persisted.blake3_digest().to_vec(), value))
 }
 
 fn parse_contract(row: &RefreshContractRow) -> Result<PersistedRefreshContract, RepositoryError> {
     serde_json::from_value::<PersistedRefreshContract>(row.contract.clone()).map_err(|error| {
-        RepositoryError::Unexpected(format!(
-            "invalid persisted refresh contract: {error}"
-        ))
+        RepositoryError::Unexpected(format!("invalid persisted refresh contract: {error}"))
     })
 }
 
@@ -496,11 +492,14 @@ async fn lookup_refresh_token(
                 "refresh family references a missing contract".into(),
             ));
         };
-        let contract = parse_contract(&contract_row)
-            .map_err(|error| diesel::result::Error::DeserializationError(error.to_string().into()))?;
+        let contract = parse_contract(&contract_row).map_err(|error| {
+            diesel::result::Error::DeserializationError(error.to_string().into())
+        })?;
         return token_from_current(family, &contract)
             .map(Some)
-            .map_err(|error| diesel::result::Error::DeserializationError(error.to_string().into()));
+            .map_err(|error| {
+                diesel::result::Error::DeserializationError(error.to_string().into())
+            });
     }
     if let Some(spent) = oauth_refresh_spent_tokens::table
         .filter(oauth_refresh_spent_tokens::tenant_id.eq(tenant_id))
@@ -527,11 +526,14 @@ async fn lookup_refresh_token(
                 "refresh family references a missing contract".into(),
             ));
         };
-        let contract = parse_contract(&contract_row)
-            .map_err(|error| diesel::result::Error::DeserializationError(error.to_string().into()))?;
+        let contract = parse_contract(&contract_row).map_err(|error| {
+            diesel::result::Error::DeserializationError(error.to_string().into())
+        })?;
         return token_from_spent(spent, family, &contract)
             .map(Some)
-            .map_err(|error| diesel::result::Error::DeserializationError(error.to_string().into()));
+            .map_err(|error| {
+                diesel::result::Error::DeserializationError(error.to_string().into())
+            });
     }
     Ok(None)
 }
@@ -604,9 +606,8 @@ async fn persist_refresh_token_inner(
                 .first::<(Uuid, DateTime<Utc>)>(connection)
                 .await
                 .optional()?;
-            let elapsed = edge.map(|(_, spent_at)| {
-                retry.retry_started_at.signed_duration_since(spent_at)
-            });
+            let elapsed =
+                edge.map(|(_, spent_at)| retry.retry_started_at.signed_duration_since(spent_at));
             let edge_valid = matches!(
                 edge,
                 Some((successor_member_id, _))
@@ -664,8 +665,7 @@ async fn persist_refresh_token_inner(
         .set((
             oauth_refresh_families::current_member_id.eq(token.member_id),
             oauth_refresh_families::current_token_blake3.eq(token_blake3.as_bytes().to_vec()),
-            oauth_refresh_families::current_audience
-                .eq(serde_json::json!(token.audiences)),
+            oauth_refresh_families::current_audience.eq(serde_json::json!(token.audiences)),
             oauth_refresh_families::current_issued_at.eq(token.issued_at),
             oauth_refresh_families::current_expires_at.eq(token.expires_at),
             oauth_refresh_families::current_id_token_sid
@@ -721,8 +721,7 @@ async fn persist_refresh_token_inner(
                 .eq(token.authentication_context.id_token_sid.clone()),
             oauth_refresh_families::dpop_jkt.eq(token.dpop_jkt.clone()),
             oauth_refresh_families::mtls_x5t_s256.eq(token.mtls_x5t_s256.clone()),
-            oauth_refresh_families::client_attestation_jkt
-                .eq(token.client_attestation_jkt.clone()),
+            oauth_refresh_families::client_attestation_jkt.eq(token.client_attestation_jkt.clone()),
             oauth_refresh_families::created_at.eq(token.issued_at),
         ))
         .execute(connection)
@@ -778,9 +777,7 @@ async fn retire_families_over_cap(
                 .filter(oauth_refresh_families::token_family_id.eq(victim.token_family_id))
                 .filter(oauth_refresh_families::revoked_at.is_null())
                 .filter(oauth_refresh_families::reuse_detected_at.is_null())
-                .filter(
-                    oauth_refresh_families::current_expires_at.gt(diesel::dsl::now),
-                ),
+                .filter(oauth_refresh_families::current_expires_at.gt(diesel::dsl::now)),
         )
         .execute(connection)
         .await?;
@@ -796,8 +793,7 @@ async fn retire_families_over_cap(
                     oauth_refresh_families::table
                         .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
                         .filter(
-                            oauth_refresh_families::contract_blake3
-                                .eq(&victim.contract_blake3),
+                            oauth_refresh_families::contract_blake3.eq(&victim.contract_blake3),
                         ),
                 ))),
         )
