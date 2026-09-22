@@ -12,6 +12,7 @@ the current release or an unmeasured deployment.
 
 | Document | Role |
 | --- | --- |
+| [performance-benchmarks.md](performance-benchmarks.md) | Canonical current baseline: refresh-storage steady state, WAL, audit, stability (Sept 2026 redesign era). |
 | [performance-capacity-curve.md](performance-capacity-curve.md) | Unified capacity benchmark overview across the main and extended matrices. |
 | [summaries/performance-capacity-main-summary.md](summaries/performance-capacity-main-summary.md) | Main capacity matrix summary. |
 | [summaries/performance-capacity-extended-summary.md](summaries/performance-capacity-extended-summary.md) | Extended capacity matrix summary. |
