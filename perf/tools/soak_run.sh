@@ -38,6 +38,51 @@ MANIFEST=$OUT/manifest.txt
   echo "--- container-side digests ---"
   echo "sampler $(docker exec nazoauth-perf-perf-1 sha256sum /perf/tools/soak_sampler.py 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
 } | tee "$MANIFEST" >>"$LOG"
+
+# ---------------- provenance (git -> image -> binary -> schema) ---------
+# BENCHMARK_PROVENANCE gate: a formal run is only admissible when the
+# source commit, the image built from it, the running binary hash and the
+# applied schema are all captured here. No secrets are recorded.
+{
+  echo "--- source ---"
+  echo "TEST_SOURCE_SHA=$(git -C /workspace rev-parse HEAD 2>/dev/null || echo unknown)"
+  echo "git_status_clean=$([ -z "$(git -C /workspace status --porcelain 2>/dev/null)" ] && echo yes || echo no)"
+  echo "--- image ---"
+  APP_IMAGE=$(docker inspect nazoauth-perf-nazoauth-1 --format '{{.Image}}' 2>/dev/null || echo unknown)
+  echo "app_image_id=$APP_IMAGE"
+  docker image inspect "$APP_IMAGE" --format 'repo_digest={{json .RepoDigests}}' 2>/dev/null || true
+  docker inspect nazoauth-perf-nazoauth-1 --format 'base_image={{.Config.Image}}' 2>/dev/null || true
+  echo "--- running binary ---"
+  BIN=$(docker exec nazoauth-perf-nazoauth-1 sh -c 'readlink /proc/1/exe' 2>/dev/null || echo unknown)
+  echo "binary_path=$BIN"
+  echo "RUNNING_BINARY_SHA256=$(docker exec nazoauth-perf-nazoauth-1 sha256sum "$BIN" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
+  echo "--- postgres ---"
+  docker exec nazoauth-perf-postgres-1 psql -X -A -t -U postgres -d oauth -c "SELECT version()" 2>/dev/null | head -1 | sed 's/^/pg_version=/'
+  for s in max_wal_size checkpoint_timeout checkpoint_completion_target fsync synchronous_commit full_page_writes shared_buffers max_connections; do
+    v=$(docker exec nazoauth-perf-postgres-1 psql -X -A -t -U postgres -d oauth -c "SHOW $s" 2>/dev/null)
+    echo "pg_$s=$v"
+  done
+  echo "--- migrations ---"
+  echo "MIGRATION_SET_SHA256=$(find /workspace/migrations -type f -name '*.sql' | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)"
+  docker exec -i nazoauth-perf-postgres-1 psql -X -A -t -U postgres -d oauth -c "SELECT version FROM __diesel_schema_migrations ORDER BY version" 2>/dev/null > "$OUT/applied-migrations.txt" || true
+  echo "applied_migrations=$(wc -l < "$OUT/applied-migrations.txt" 2>/dev/null || echo 0)"
+  echo "PG_SCHEMA_SHA256=$(docker exec nazoauth-perf-postgres-1 sh -c 'pg_dump -U postgres -d oauth -s --no-owner --no-privileges 2>/dev/null | grep -v "^--" | grep -v "^$" | sha256sum | cut -d" " -f1' || echo unavailable)"
+  echo "--- valkey ---"
+  docker exec nazoauth-perf-valkey-1 sh -c 'valkey-cli INFO server 2>/dev/null | grep -E "redis_version|valkey_version" | head -1' 2>/dev/null | tr -d '\r' | sed 's/^/valkey_/'
+  docker exec nazoauth-perf-valkey-1 sh -c 'valkey-cli CONFIG GET maxmemory 2>/dev/null | tail -1' 2>/dev/null | tr -d '\r' | sed 's/^/valkey_maxmemory=/'
+  docker exec nazoauth-perf-valkey-1 sh -c 'valkey-cli CONFIG GET maxmemory-policy 2>/dev/null | tail -1' 2>/dev/null | tr -d '\r' | sed 's/^/valkey_maxmemory_policy=/'
+  echo "--- harness ---"
+  echo "k6=$(docker exec nazoauth-perf-perf-1 k6 version 2>/dev/null | head -1 || echo unavailable)"
+  echo "python=$(python3 --version 2>&1)"
+  echo "docker=$(docker --version 2>/dev/null)"
+  echo "compose=$(docker compose version --short 2>/dev/null)"
+  echo "--- host ---"
+  echo "cpu_model=$(grep -m1 'model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs)"
+  echo "logical_cpus=$(nproc)"
+  echo "mem_kb=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}')"
+  echo "kernel=$(uname -r)"
+  echo "rootfs=$(df -T /workspace 2>/dev/null | tail -1 | awk '{print $2" "$1}')"
+} | tee -a "$MANIFEST" >>"$LOG" 2>/dev/null || echo "WARN: provenance capture partial" >>"$LOG"
 echo "soak start $(date -u +%FT%TZ) RUN_ID=$RUN_ID RATE=$RATE" >>"$LOG"
 
 # ---------------- pre-window ledgers (validated before load starts) ----
@@ -70,7 +115,7 @@ echo "sampler started $(date -u +%H:%M:%S)" >>"$LOG"
 (
   while :; do
     ts=$(date -u +%s)
-    for c in $(docker ps --format '{{.Names}}' | grep -E 'perf-run-|soak-'); do
+    for c in $(docker ps --format '{{.Names}}' | grep -E 'perf-run-|soak-|nazoauth-perf-nazoauth'); do
       read rss utime <<<"$(docker exec "$c" sh -c 'r=0;u=0;for f in /proc/[0-9]*/stat; do set -- $(cat $f 2>/dev/null); [ -n "$3" ] && { u=$((u+${14}+${15})); }; done; for f in /proc/[0-9]*/status; do v=$(grep VmRSS $f 2>/dev/null | awk "{print \$2}"); r=$((r+v)); done; echo "$r $u"' 2>/dev/null)"
       [ -n "${rss:-}" ] && echo "{\"ts\":$ts,\"container\":\"$c\",\"rss_kb\":$rss,\"utime\":$utime}" >> "$OUT/runner-rss.jsonl"
     done
@@ -172,7 +217,7 @@ docker compose -f docker-compose.perf.yml run --rm --no-deps \
   -e PERF_TENANT_HOST=127.0.0.1:8000 -e PERF_DEPLOYMENT_ID="$DEPID" \
   -e PERF_PROFILE=capacity -e PERF_SCENARIO=cap_mixed \
   -e PERF_EXECUTOR=constant-arrival-rate -e PERF_RATE="$RATE" \
-  -e PERF_PRE_ALLOCATED_VUS=96 -e PERF_MAX_VUS=256 \
+  -e PERF_PRE_ALLOCATED_VUS=${SOAK_MAIN_PRE_VUS:-256} -e PERF_MAX_VUS=${SOAK_MAIN_MAX_VUS:-1024} \
   -e PERF_DURATION="$DUR_MAIN" -e CAP_WARMUP_MS=15000 \
   -e PERF_USER_COUNT=256 \
   perf > "$OUT/main/run.log" 2>&1 &

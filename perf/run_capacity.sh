@@ -12,7 +12,7 @@ REPORT_SUFFIX="${CAPACITY_REPORT_SUFFIX:-full}"
 DURATION="${CAPACITY_DURATION:-30m}"
 INSTANCES="${CAPACITY_INSTANCES:-1,2,4}"
 RATES="${CAPACITY_RATES:-}"
-MAX_VUS="${CAPACITY_MAX_VUS:-512}"
+MAX_VUS="${CAPACITY_MAX_VUS:-1024}"
 case "${REPORT_SUFFIX}" in
   dev-*) REPORT="docs/performance/archive/dev/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;
   extended-*) REPORT="docs/performance/reports/extended/performance-capacity-curve-${REPORT_SUFFIX}.md" ;;

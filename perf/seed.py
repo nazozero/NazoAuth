@@ -313,6 +313,18 @@ def upsert_client(
     )
 
 
+def refresh_contract_digest(contract: dict[str, Any]) -> bytes:
+    """BLAKE3 over the exact serde_json canonical bytes the runtime writes.
+
+    `RefreshContract::canonical_bytes` serializes struct fields in declaration
+    order with serde_json's compact encoding; rotation recomputes this digest
+    and rejects a family whose stored digest differs, so a seeded family is
+    only rotatable when this byte-for-byte matches the Rust encoding.
+    """
+    canonical = json.dumps(contract, separators=(",", ":"), ensure_ascii=False)
+    return blake3(canonical.encode("utf-8")).digest()
+
+
 def seed_oidc_refresh_tokens(
     conn: psycopg.Connection[Any],
     users: list[dict[str, str]],
@@ -330,13 +342,28 @@ def seed_oidc_refresh_tokens(
     if client_row is None:
         raise RuntimeError("perf OIDC client was not seeded")
     client_db_id = client_row[0]
+    # Refresh authority lives in three tables now: the immutable contract
+    # (content-addressed), one narrow family row per grant, and compact spent
+    # proofs. Reseeding deletes family rows; spent proofs cascade.
     conn.execute(
         """
-        DELETE FROM oauth_tokens
+        DELETE FROM oauth_refresh_families
         WHERE tenant_id = %s::uuid
           AND client_id = %s
         """,
         (TENANT_ID, client_db_id),
+    )
+    conn.execute(
+        """
+        DELETE FROM oauth_refresh_contracts AS c
+        WHERE c.tenant_id = %s::uuid
+          AND NOT EXISTS (
+              SELECT 1 FROM oauth_refresh_families AS f
+              WHERE f.tenant_id = c.tenant_id
+                AND f.contract_blake3 = c.contract_blake3
+          )
+        """,
+        (TENANT_ID,),
     )
     now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=REFRESH_TOKEN_TTL_SECONDS)
@@ -355,49 +382,64 @@ def seed_oidc_refresh_tokens(
             raise RuntimeError(f"perf user was not seeded: {user['email']}")
         user_db_id = user_row[0]
         raw_refresh_token = random_token(48)
+        # Field order matters: this dict must serialize byte-identically to
+        # the Rust RefreshContract (struct order) + RefreshTokenAuthenticationContext.
+        contract = {
+            "subject": str(user_db_id),
+            "scopes": ["openid", "profile", "offline_access"],
+            "audiences": ["resource://default"],
+            "authorization_details": [],
+            "authentication_context": {
+                "version": 1,
+                "issuer": issuer,
+                "audience": "perf-oidc-client",
+                "auth_time": int(now.timestamp()),
+                "amr": ["pwd"],
+                "oidc_sid": None,
+                "id_token_sid": None,
+                "acr": None,
+                "nonce": None,
+                "userinfo_claims": [],
+                "userinfo_claim_requests": [],
+                "id_token_claims": [],
+                "id_token_claim_requests": [],
+            },
+        }
+        contract_digest = refresh_contract_digest(contract)
         conn.execute(
             """
-            INSERT INTO oauth_tokens (
-                tenant_id, refresh_token_blake3, token_family_id, rotated_from_id,
-                client_id, user_id, scopes, audience, authorization_details,
-                issued_at, expires_at, subject, dpop_jkt, mtls_x5t_s256,
-                oidc_auth_context
+            INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)
+            VALUES (%s::uuid, %s, %s)
+            ON CONFLICT (tenant_id, contract_blake3) DO NOTHING
+            """,
+            (TENANT_ID, contract_digest, Jsonb(contract)),
+        )
+        conn.execute(
+            """
+            INSERT INTO oauth_refresh_families (
+                tenant_id, token_family_id, client_id, user_id, contract_blake3,
+                current_member_id, current_token_blake3, current_audience,
+                current_issued_at, current_expires_at, current_id_token_sid,
+                dpop_jkt, mtls_x5t_s256, client_attestation_jkt, created_at
             )
             VALUES (
-                %s::uuid, %s, %s, NULL,
-                %s, %s, %s, %s, %s,
-                %s, %s, %s, NULL, NULL, %s
+                %s::uuid, %s, %s, %s, %s,
+                %s, %s, %s::jsonb,
+                %s, %s, NULL, NULL, NULL, NULL, %s
             )
             """,
             (
                 TENANT_ID,
-                blake3_hex(raw_refresh_token),
                 uuid.uuid4(),
                 client_db_id,
                 user_db_id,
-                Jsonb(["openid", "profile", "offline_access"]),
-                Jsonb(["resource://default"]),
-                Jsonb([]),
+                contract_digest,
+                uuid.uuid4(),
+                blake3(raw_refresh_token.encode("utf-8")).digest(),
+                json.dumps(["resource://default"]),
                 now,
                 expires_at,
-                str(user_db_id),
-                Jsonb(
-                    {
-                        "version": 1,
-                        "issuer": issuer,
-                        "audience": "perf-oidc-client",
-                        "auth_time": int(now.timestamp()),
-                        "amr": ["pwd"],
-                        "oidc_sid": None,
-                        "id_token_sid": None,
-                        "acr": None,
-                        "nonce": None,
-                        "userinfo_claims": [],
-                        "userinfo_claim_requests": [],
-                        "id_token_claims": [],
-                        "id_token_claim_requests": [],
-                    }
-                ),
+                now,
             ),
         )
         refresh_tokens.append(raw_refresh_token)
@@ -512,20 +554,28 @@ def seed() -> None:
 
     with psycopg.connect(database_url) as conn:
         conn.execute("CREATE EXTENSION IF NOT EXISTS pg_stat_statements")
-        # Seeded refresh tokens reference user rows; clear them before the
-        # delete+insert user upsert so re-seeding stays idempotent.
-        # Refresh-token rotation chains self-reference via rotated_from_id;
-        # detach the links before the delete so reseeding stays idempotent.
-        # A concurrent soak keeps minting rotated tokens, so lock the table
-        # to make the detach+delete atomic against live writers.
+        # Seeded refresh families reference user rows; clear them before the
+        # delete+insert user upsert so re-seeding stays idempotent. Spent
+        # proofs cascade with their family; orphan contracts are reclaimed by
+        # the same unreferenced-delete the runtime uses.
         with conn.transaction():
-            conn.execute("LOCK TABLE oauth_tokens IN ACCESS EXCLUSIVE MODE")
             conn.execute(
-                "UPDATE oauth_tokens SET rotated_from_id = NULL WHERE tenant_id = %s::uuid",
+                "LOCK TABLE oauth_refresh_families IN ACCESS EXCLUSIVE MODE"
+            )
+            conn.execute(
+                "DELETE FROM oauth_refresh_families WHERE tenant_id = %s::uuid",
                 (TENANT_ID,),
             )
             conn.execute(
-                "DELETE FROM oauth_tokens WHERE tenant_id = %s::uuid",
+                """
+                DELETE FROM oauth_refresh_contracts AS c
+                WHERE c.tenant_id = %s::uuid
+                  AND NOT EXISTS (
+                      SELECT 1 FROM oauth_refresh_families AS f
+                      WHERE f.tenant_id = c.tenant_id
+                        AND f.contract_blake3 = c.contract_blake3
+                  )
+                """,
                 (TENANT_ID,),
             )
         upsert_users(conn, users)

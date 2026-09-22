@@ -15,7 +15,7 @@ for c in "$@"; do
     -e PERF_PROFILE=capacity -e PERF_SCENARIO=oidc_cold_login_refresh \
     -e PERF_EXECUTOR=constant-vus -e PERF_VUS="$c" -e PERF_FLOW_VUS="$c" \
     -e PERF_PRE_ALLOCATED_VUS="$c" -e PERF_MAX_VUS="$c" \
-    -e PERF_DURATION=60s -e PERF_USER_COUNT="$users" \
+    -e PERF_DURATION="${ARGON2_DURATION:-60s}" -e PERF_USER_COUNT="$users" \
     perf > "$d/run.log" 2>&1
   python3 - "$d/capacity-oidc-cold-login-refresh.summary.json" <<PY
 import json,sys

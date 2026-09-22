@@ -11,6 +11,23 @@ services:
       - pg_stat_statements.track=all
       - -c
       - track_io_timing=on
+      # Benchmark WAL envelope: 8GB accommodates the sustained write rate of
+      # the high-load capacity topology between timed checkpoints. Durability
+      # stays on; this is a capacity setting for this benchmark topology, not
+      # a universal production requirement. Production sizing remains
+      # max_wal_size >= peak WAL rate x desired checkpoint interval x safety.
+      - -c
+      - max_wal_size=8GB
+      - -c
+      - checkpoint_timeout=5min
+      - -c
+      - checkpoint_completion_target=0.9
+      - -c
+      - fsync=on
+      - -c
+      - synchronous_commit=on
+      - -c
+      - full_page_writes=on
     environment:
       POSTGRES_DB: oauth
       POSTGRES_USER: postgres
