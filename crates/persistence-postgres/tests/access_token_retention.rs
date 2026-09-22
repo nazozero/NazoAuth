@@ -259,7 +259,7 @@ async fn insert_vci_grant(
     .expect("vci grant fixture should insert");
 }
 
-/// One active refresh-token row for the owner; used to prove transaction
+/// One active refresh family for the owner; used to prove transaction
 /// boundaries in the owner-revocation tests.
 async fn insert_refresh(
     connection: &mut AsyncPgConnection,
@@ -268,8 +268,12 @@ async fn insert_refresh(
     user_id: Uuid,
     family_id: Uuid,
 ) {
-    let authentication_context =
-        serde_json::to_value(nazo_auth::RefreshTokenAuthenticationContext {
+    let contract = nazo_auth::RefreshContract {
+        subject: user_id.to_string(),
+        scopes: vec!["openid".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        authorization_details: serde_json::json!([]),
+        authentication_context: nazo_auth::RefreshTokenAuthenticationContext {
             version: nazo_auth::RefreshTokenAuthenticationContext::CURRENT_VERSION,
             issuer: "https://issuer.example".to_owned(),
             audience: "retention-client".to_owned(),
@@ -283,27 +287,38 @@ async fn insert_refresh(
             userinfo_claim_requests: Vec::new(),
             id_token_claims: Vec::new(),
             id_token_claim_requests: Vec::new(),
-        })
-        .expect("refresh auth context should serialize");
+        },
+    };
+    let persisted = contract.persisted();
+    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let contract_json = serde_json::to_value(&persisted).expect("contract should serialize");
+    let member_id = Uuid::now_v7();
     sql_query(
-        "INSERT INTO oauth_tokens (\
-             id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id, \
-             client_id, user_id, scopes, audience, authorization_details, \
-             issued_at, expires_at, subject, oidc_auth_context) \
-         VALUES ($1, $2, $3, $4, NULL, $5, $6, \
-             '[\"openid\"]'::jsonb, '[\"resource://default\"]'::jsonb, '[]'::jsonb, \
-             $7, $8, $9, $10::jsonb)",
+        "WITH c AS (\
+             INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract) \
+             VALUES ($2, $3, $4::jsonb) \
+             ON CONFLICT (tenant_id, contract_blake3) DO NOTHING \
+         ) \
+         INSERT INTO oauth_refresh_families (\
+             tenant_id, token_family_id, contract_blake3, client_id, user_id, \
+             current_member_id, current_token_blake3, current_audience, \
+             current_issued_at, current_expires_at) \
+         VALUES ($2, $5, $3, $6, $7, $1, $8, '[\"resource://default\"]'::jsonb, $9, $10)",
     )
-    .bind::<SqlUuid, _>(Uuid::now_v7())
+    .bind::<SqlUuid, _>(member_id)
     .bind::<SqlUuid, _>(tenant_id)
-    .bind::<Text, _>(Uuid::now_v7().simple().to_string().repeat(2))
+    .bind::<diesel::sql_types::Binary, _>(&contract_blake3)
+    .bind::<diesel::sql_types::Jsonb, _>(&contract_json)
     .bind::<SqlUuid, _>(family_id)
     .bind::<SqlUuid, _>(client_id)
     .bind::<SqlUuid, _>(user_id)
+    .bind::<diesel::sql_types::Binary, _>(
+        blake3::hash(Uuid::now_v7().simple().to_string().as_bytes())
+            .as_bytes()
+            .to_vec(),
+    )
     .bind::<Timestamptz, _>(Utc::now())
     .bind::<Timestamptz, _>(Utc::now() + Duration::hours(1))
-    .bind::<Text, _>(user_id.to_string())
-    .bind::<diesel::sql_types::Jsonb, _>(authentication_context)
     .execute(connection)
     .await
     .expect("refresh fixture should insert");
@@ -502,7 +517,7 @@ async fn replay_compensation_writes_padded_deadline_and_missing_expiry_skips_the
             .expect("revocation lookup should succeed")
     );
     let unrevoked = sql_query(
-        "SELECT count(*)::bigint AS count FROM oauth_tokens \
+        "SELECT count(*)::bigint AS count FROM oauth_refresh_families \
          WHERE tenant_id = $1 AND token_family_id = $2 AND revoked_at IS NULL",
     )
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
@@ -1004,7 +1019,7 @@ async fn conflicting_owner_revocation_rolls_back_and_other_tenants_are_unaffecte
         "the rolled-back batch must not leave a partial revocation fact"
     );
     let unrevoked = sql_query(
-        "SELECT count(*)::bigint AS count FROM oauth_tokens \
+        "SELECT count(*)::bigint AS count FROM oauth_refresh_families \
          WHERE tenant_id = $1 AND token_family_id = $2 AND revoked_at IS NULL",
     )
     .bind::<SqlUuid, _>(SYSTEM_TENANT)

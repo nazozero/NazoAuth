@@ -13,7 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     DbPool, get_conn,
-    schema::{oauth_clients, oauth_tokens, user_client_grants, users},
+    schema::{oauth_clients, oauth_refresh_families, user_client_grants, users},
 };
 
 use super::tokens::{lock_refresh_family, lock_refresh_grant_scope};
@@ -289,13 +289,12 @@ impl GrantRepository {
                     lock_refresh_grant_scope(connection, tenant_id, Some(user_id), client_pk)
                         .await
                         .map_err(GrantRevokeTransactionError::Revoke)?;
-                    let family_ids = oauth_tokens::table
-                        .filter(oauth_tokens::tenant_id.eq(tenant_id))
-                        .filter(oauth_tokens::user_id.eq(user_id))
-                        .filter(oauth_tokens::client_id.eq(client_pk))
-                        .select(oauth_tokens::token_family_id)
-                        .distinct()
-                        .order(oauth_tokens::token_family_id.asc())
+                    let family_ids = oauth_refresh_families::table
+                        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
+                        .filter(oauth_refresh_families::user_id.eq(user_id))
+                        .filter(oauth_refresh_families::client_id.eq(client_pk))
+                        .select(oauth_refresh_families::token_family_id)
+                        .order(oauth_refresh_families::token_family_id.asc())
                         .load::<Uuid>(connection)
                         .await
                         .map_err(GrantRevokeTransactionError::Revoke)?;
@@ -305,13 +304,13 @@ impl GrantRepository {
                             .map_err(GrantRevokeTransactionError::Revoke)?;
                     }
                     let revoked_refresh_tokens = diesel::update(
-                        oauth_tokens::table
-                            .filter(oauth_tokens::tenant_id.eq(tenant_id))
-                            .filter(oauth_tokens::user_id.eq(user_id))
-                            .filter(oauth_tokens::client_id.eq(client_pk))
-                            .filter(oauth_tokens::revoked_at.is_null()),
+                        oauth_refresh_families::table
+                            .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
+                            .filter(oauth_refresh_families::user_id.eq(user_id))
+                            .filter(oauth_refresh_families::client_id.eq(client_pk))
+                            .filter(oauth_refresh_families::revoked_at.is_null()),
                     )
-                    .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
+                    .set(oauth_refresh_families::revoked_at.eq(diesel::dsl::now))
                     .execute(connection)
                     .await
                     .map_err(GrantRevokeTransactionError::Revoke)?;

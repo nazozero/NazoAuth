@@ -169,6 +169,7 @@ fn valid_commit_input(mode: TokenIssuanceMode) -> CommitTokenIssuance {
 fn refresh_token_for(input: &CommitTokenIssuance) -> NewRefreshToken {
     NewRefreshToken {
         raw_token: "refresh".to_owned(),
+        member_id: Uuid::now_v7(),
         tenant_id: input.tenant_id,
         family_id: Uuid::now_v7(),
         rotated_from_id: None,
@@ -302,6 +303,7 @@ fn audit_events_cover_issuance_rotation_and_reuse_shapes() {
     refresh.rotated_from_id = Some(Uuid::now_v7());
     refresh.lost_response_retry = Some(nazo_auth::LostResponseRetry {
         original_id: Uuid::now_v7(),
+        original_blake3: [7u8; 32],
         retry_started_at: Utc::now(),
     });
     // A rotation is the same logical issuance: the rotated_from_id fact rides

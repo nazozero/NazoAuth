@@ -16,15 +16,17 @@ pub type SecurityStateMaintenanceFuture<'a, T> =
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct CleanupBatchResult {
     pub issuances: u64,
+    /// Refresh families deleted because their current generation expired.
     pub refresh_tokens: u64,
+    /// Compact spent/replay proofs deleted at their own expiry.
+    pub spent_refresh_proofs: u64,
+    /// Refresh contracts deleted once no family referenced them.
+    pub refresh_contracts: u64,
     pub revocations: u64,
     pub scim_audit_events: u64,
     pub logout_deliveries: u64,
     pub scim_security_events: u64,
     pub presentations: u64,
-    /// Expired, long-revoked refresh members rewritten to their terminal stub
-    /// (payload tombstoned, chain edge unlinked) inside still-live families.
-    pub sparsified_refresh_members: u64,
     /// `true` when a category or candidate scan hit its per-batch budget, so
     /// another batch probably has deletable work. Callers use it to keep
     /// draining backlog instead of waiting a full interval.

@@ -404,9 +404,9 @@ async fn insert_token_client(
     .expect("test access token revocation cleanup should succeed");
     sql_query(
         r#"
-        DELETE FROM oauth_tokens
+        DELETE FROM oauth_refresh_families
         USING oauth_clients
-        WHERE oauth_tokens.client_id = oauth_clients.id
+        WHERE oauth_refresh_families.client_id = oauth_clients.id
           AND oauth_clients.tenant_id = $1
           AND oauth_clients.client_id = $2
         "#,

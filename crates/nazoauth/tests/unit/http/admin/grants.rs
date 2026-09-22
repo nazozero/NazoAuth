@@ -236,7 +236,9 @@ impl LiveAdminGrantFixture {
                 "users",
                 "oauth_clients",
                 "user_client_grants",
-                "oauth_tokens",
+                "oauth_refresh_contracts",
+                "oauth_refresh_families",
+                "oauth_refresh_spent_tokens",
             ])
             .await;
         Some(fixture)
@@ -444,38 +446,58 @@ impl LiveAdminGrantFixture {
         let mut conn = get_conn(&self.state.diesel_db)
             .await
             .expect("database connection");
+        let contract = serde_json::json!({
+            "subject": user.id.to_string(),
+            "scopes": ["openid", "offline_access"],
+            "audiences": ["resource://default"],
+            "authorization_details": [],
+            "authentication_context": {
+                "version": 1,
+                "issuer": "https://issuer.example.test",
+                "audience": client.client_id,
+                "auth_time": Utc::now().timestamp() - 1,
+                "amr": ["pwd"],
+                "userinfo_claims": [],
+                "userinfo_claim_requests": [],
+                "id_token_claims": [],
+                "id_token_claim_requests": []
+            }
+        });
         sql_query(
             r#"
-            INSERT INTO oauth_tokens (
-                id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id,
-                client_id, user_id, scopes, audience, oidc_auth_context,
-                authorization_details, issued_at, expires_at,
-                revoked_at, reuse_detected_at, subject, dpop_jkt, mtls_x5t_s256
+            WITH c AS (
+                INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)
+                VALUES ($2, $8, $7::jsonb)
+                ON CONFLICT (tenant_id, contract_blake3) DO NOTHING
+            )
+            INSERT INTO oauth_refresh_families (
+                tenant_id, token_family_id, contract_blake3, client_id, user_id,
+                current_member_id, current_token_blake3, current_audience,
+                current_issued_at, current_expires_at, created_at
             )
             VALUES (
-                $1, $2, $3, $4, NULL,
-                $5, $6, '["openid","offline_access"]'::jsonb,
-                '["resource://default"]'::jsonb,
-                jsonb_build_object(
-                    'version', 1, 'issuer', 'https://issuer.example.test',
-                    'audience', $7, 'auth_time', floor(extract(epoch from now()))::bigint,
-                    'amr', '["pwd"]'::jsonb, 'oidc_sid', NULL, 'id_token_sid', NULL,
-                    'acr', NULL, 'nonce', NULL, 'userinfo_claims', '[]'::jsonb,
-                    'userinfo_claim_requests', '[]'::jsonb, 'id_token_claims', '[]'::jsonb,
-                    'id_token_claim_requests', '[]'::jsonb
-                ),
-                '[]'::jsonb, now(),
-                now() + interval '1 day', NULL, NULL, 'subject-1', NULL, NULL
+                $2, $4, $8, $5, $6,
+                $1, $3, '["resource://default"]'::jsonb,
+                now(), now() + interval '1 day', now()
             )
             "#,
         )
         .bind::<SqlUuid, _>(Uuid::now_v7())
         .bind::<SqlUuid, _>(client.tenant_id)
-        .bind::<Text, _>(format!("refresh-{}", Uuid::now_v7()))
+        .bind::<diesel::sql_types::Binary, _>(
+            blake3::hash(format!("refresh-{}", Uuid::now_v7()).as_bytes())
+                .as_bytes()
+                .to_vec(),
+        )
         .bind::<SqlUuid, _>(family_id)
         .bind::<SqlUuid, _>(client.id)
         .bind::<Nullable<SqlUuid>, _>(Some(user.id))
-        .bind::<Text, _>(client.client_id.as_str())
+        .bind::<diesel::sql_types::Jsonb, _>(contract.clone())
+        .bind::<diesel::sql_types::Binary, _>(
+            blake3::hash(serde_json::to_vec(&contract).unwrap().as_slice())
+                .as_bytes()
+                .to_vec(),
+        )
         .execute(&mut conn)
         .await
         .expect("refresh token row should insert");
@@ -505,7 +527,7 @@ impl LiveAdminGrantFixture {
             .await
             .expect("database connection");
         sql_query(
-            "SELECT COUNT(*) AS count FROM oauth_tokens WHERE user_id = $1 AND client_id = $2 AND revoked_at IS NOT NULL",
+            "SELECT COUNT(*) AS count FROM oauth_refresh_families WHERE user_id = $1 AND client_id = $2 AND revoked_at IS NOT NULL",
         )
         .bind::<SqlUuid, _>(user.id)
         .bind::<SqlUuid, _>(client.id)
@@ -880,7 +902,11 @@ async fn admin_revoke_grant_surfaces_transaction_failure_without_partial_revocat
     fixture.insert_grant(&end_user, &client).await;
     fixture.insert_refresh_token(&end_user, &client).await;
     fixture
-        .rename_column("oauth_tokens", "revoked_at", "revoked_at_unavailable")
+        .rename_column(
+            "oauth_refresh_families",
+            "revoked_at",
+            "revoked_at_unavailable",
+        )
         .await;
 
     let response = invoke_admin_revoke_grant(
@@ -893,7 +919,11 @@ async fn admin_revoke_grant_surfaces_transaction_failure_without_partial_revocat
     )
     .await;
     fixture
-        .rename_column("oauth_tokens", "revoked_at_unavailable", "revoked_at")
+        .rename_column(
+            "oauth_refresh_families",
+            "revoked_at_unavailable",
+            "revoked_at",
+        )
         .await;
     let grant_count = fixture.grant_count(&end_user, &client).await;
     let token_count = fixture

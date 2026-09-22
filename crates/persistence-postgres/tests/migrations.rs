@@ -1844,3 +1844,282 @@ async fn empty_schema_migration_run_leaves_revocation_retention_applied_and_writ
         .await
         .expect("runtime-role fixtures should clean up");
 }
+
+/// Upgrade convergence for `20260926000100_refresh_state_minimal`: a legacy
+/// `oauth_tokens` deployment with more than ten live families per
+/// (tenant, user, client) scope must converge to the cap inside the
+/// migration, retire the deterministically oldest, keep compact spent proofs
+/// only for surviving families, deduplicate contracts, and drop the legacy
+/// table. The fixture runs inside one transaction on the real public schema
+/// (the DO block hard-references `public.oauth_tokens`) and rolls back, so
+/// no migrated state persists.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn refresh_state_minimal_migration_converges_family_cap_and_contracts() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    nazo_postgres::run_pending_migrations(&database_url)
+        .await
+        .expect("pending migrations should apply");
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("test database should connect");
+
+    let user_a = Uuid::now_v7();
+    let user_b = Uuid::now_v7();
+    let client_a = Uuid::now_v7();
+    let client_public = format!("mig-cap-{}", Uuid::now_v7().simple());
+    let context = "{\"version\":1,\"issuer\":\"https://issuer.example\",\"audience\":\"client-a\",\"auth_time\":1577836800,\"amr\":[\"pwd\"],\"oidc_sid\":null,\"id_token_sid\":null,\"acr\":null,\"nonce\":null,\"userinfo_claims\":[],\"userinfo_claim_requests\":[],\"id_token_claims\":[],\"id_token_claim_requests\":[]}";
+
+    connection
+        .batch_execute("BEGIN")
+        .await
+        .expect("fixture transaction should open");
+    let fixture_result = connection
+        .batch_execute(&format!(
+            r#"
+            INSERT INTO users (id, tenant_id, username, email, password_hash)
+            VALUES ('{user_a}', '00000000-0000-0000-0000-000000000001',
+                    '{client_public}-a', '{client_public}-a@example.test', 'x'),
+                   ('{user_b}', '00000000-0000-0000-0000-000000000001',
+                    '{client_public}-b', '{client_public}-b@example.test', 'x');
+            INSERT INTO oauth_clients (id, tenant_id, client_id, client_name,
+                client_type, redirect_uris, scopes, grant_types,
+                token_endpoint_auth_method, security_policy)
+            VALUES ('{client_a}', '00000000-0000-0000-0000-000000000001',
+                    '{client_public}', 'Migration Cap', 'confidential',
+                    '["https://client.example/callback"]'::jsonb,
+                    '["openid","offline_access"]'::jsonb,
+                    '["authorization_code","refresh_token"]'::jsonb,
+                    'client_secret_basic',
+                    '{{"version":1,"assurance":"baseline","require_signed_authorization_request":false,"require_signed_authorization_response":false,"require_signed_introspection_response":false,"session_management":false,"allow_cross_device_flows":false,"allow_confidential_oidc_without_pkce":false}}'::jsonb);
+
+            CREATE TABLE public.oauth_tokens (
+                id UUID PRIMARY KEY,
+                tenant_id UUID NOT NULL,
+                refresh_token_blake3 VARCHAR(64) NOT NULL,
+                token_family_id UUID,
+                rotated_from_id UUID,
+                client_id UUID NOT NULL,
+                user_id UUID,
+                scopes JSONB NOT NULL,
+                audience JSONB NOT NULL,
+                authorization_details JSONB NOT NULL,
+                issued_at TIMESTAMPTZ NOT NULL,
+                expires_at TIMESTAMPTZ NOT NULL,
+                revoked_at TIMESTAMPTZ,
+                reuse_detected_at TIMESTAMPTZ,
+                subject VARCHAR(128) NOT NULL,
+                dpop_jkt VARCHAR(128),
+                mtls_x5t_s256 VARCHAR(128),
+                client_attestation_jkt VARCHAR(128),
+                oidc_auth_context JSONB
+            );
+
+            -- 12 live families for scope (tenant,userA,clientA), issued at
+            -- one-minute offsets so the two oldest are deterministic victims.
+            -- Family k=5 additionally carries one rotated predecessor member
+            -- which must become a spent proof.
+            INSERT INTO public.oauth_tokens (
+                id, tenant_id, refresh_token_blake3, token_family_id,
+                rotated_from_id, client_id, user_id, scopes, audience,
+                authorization_details, issued_at, expires_at, subject,
+                oidc_auth_context)
+            SELECT
+                gen_random_uuid(), '00000000-0000-0000-0000-000000000001',
+                md5('cap-head-' || k::text || '{user_a}') || md5('{user_a}' || k::text),
+                ('00000000-0000-4000-8000-' || lpad((k + 1)::text, 12, '0'))::uuid,
+                NULL, '{client_a}', '{user_a}',
+                '["openid","offline_access"]'::jsonb,
+                '["resource://default"]'::jsonb, '[]'::jsonb,
+                now() + (k || ' minutes')::interval,
+                now() + interval '30 days', '{user_a}', '{context}'::jsonb
+            FROM generate_series(0, 11) AS k;
+
+            -- Rotated predecessor inside surviving family k=5.
+            INSERT INTO public.oauth_tokens (
+                id, tenant_id, refresh_token_blake3, token_family_id,
+                rotated_from_id, client_id, user_id, scopes, audience,
+                authorization_details, issued_at, expires_at, subject,
+                oidc_auth_context)
+            VALUES (
+                '00000000-0000-5000-8000-00000000a005',
+                '00000000-0000-0000-0000-000000000001',
+                md5('cap-pred-{user_a}') || md5('cap-pred2-{user_a}'),
+                '00000000-0000-4000-8000-000000000006',
+                NULL, '{client_a}', '{user_a}',
+                '["openid","offline_access"]'::jsonb,
+                '["resource://default"]'::jsonb, '[]'::jsonb,
+                now() + interval '4 minutes',
+                now() + interval '30 days', '{user_a}', '{context}'::jsonb);
+            UPDATE public.oauth_tokens
+            SET rotated_from_id = '00000000-0000-5000-8000-00000000a005'
+            WHERE token_family_id = '00000000-0000-4000-8000-000000000006'
+              AND rotated_from_id IS NULL;
+
+            -- An already-expired family carries no authority and must not
+            -- migrate at all.
+            INSERT INTO public.oauth_tokens (
+                id, tenant_id, refresh_token_blake3, token_family_id,
+                rotated_from_id, client_id, user_id, scopes, audience,
+                authorization_details, issued_at, expires_at, subject,
+                oidc_auth_context)
+            VALUES (
+                gen_random_uuid(), '00000000-0000-0000-0000-000000000001',
+                md5('cap-expired-{user_a}') || md5('cap-expired2-{user_a}'),
+                '00000000-0000-4000-8000-0000000000e1',
+                NULL, '{client_a}', '{user_a}',
+                '["openid","offline_access"]'::jsonb,
+                '["resource://default"]'::jsonb, '[]'::jsonb,
+                now() - interval '2 days', now() - interval '1 day',
+                '{user_a}', '{context}'::jsonb);
+
+            -- A different user's scope is independent of the cap victims.
+            INSERT INTO public.oauth_tokens (
+                id, tenant_id, refresh_token_blake3, token_family_id,
+                rotated_from_id, client_id, user_id, scopes, audience,
+                authorization_details, issued_at, expires_at, subject,
+                oidc_auth_context)
+            SELECT
+                gen_random_uuid(), '00000000-0000-0000-0000-000000000001',
+                md5('cap-b-' || k::text || '{user_b}') || md5('{user_b}' || k::text),
+                ('00000000-0000-4000-8000-' || lpad((k + 100)::text, 12, '0'))::uuid,
+                NULL, '{client_a}', '{user_b}',
+                '["openid","offline_access"]'::jsonb,
+                '["resource://default"]'::jsonb, '[]'::jsonb,
+                now() - (k || ' minutes')::interval,
+                now() + interval '30 days', '{user_b}', '{context}'::jsonb
+            FROM generate_series(0, 2) AS k;
+            "#
+        ))
+        .await;
+    if let Err(error) = fixture_result {
+        let _ = connection.batch_execute("ROLLBACK").await;
+        panic!("migration fixture should initialize: {error}");
+    }
+
+    let up_sql = include_str!("../../../migrations/20260926000100_refresh_state_minimal/up.sql");
+    let do_block = up_sql
+        .split_once("DO $$")
+        .map(|(_, tail)| format!("DO $${tail}"))
+        .expect("migration must contain the upgrade DO block");
+    if let Err(error) = connection.batch_execute(&do_block).await {
+        let _ = connection.batch_execute("ROLLBACK").await;
+        panic!("refresh-state-minimal migration should execute: {error}");
+    }
+
+    let live = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_families \
+         WHERE tenant_id = '00000000-0000-0000-0000-000000000001' \
+           AND user_id = $1 AND client_id = $2 \
+           AND revoked_at IS NULL AND reuse_detected_at IS NULL \
+           AND current_expires_at > CURRENT_TIMESTAMP",
+    )
+    .bind::<diesel::sql_types::Uuid, _>(user_a)
+    .bind::<diesel::sql_types::Uuid, _>(client_a)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("live family count should read");
+    assert_eq!(live.count, 10, "migration must converge the scope to the cap");
+
+    // The two oldest families (k=0, k=1) are the deterministic victims.
+    let victims_gone = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_families \
+         WHERE token_family_id IN \
+         ('00000000-0000-4000-8000-000000000001', '00000000-0000-4000-8000-000000000002')",
+    )
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("victim lookup should read");
+    assert_eq!(victims_gone.count, 0, "oldest families must be retired");
+    let newest_kept = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_families \
+         WHERE token_family_id IN \
+         ('00000000-0000-4000-8000-000000000011', '00000000-0000-4000-8000-000000000012')",
+    )
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("newest lookup should read");
+    assert_eq!(newest_kept.count, 2, "newest families must survive");
+
+    // The expired legacy family migrates nothing.
+    let expired = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_families \
+         WHERE token_family_id = '00000000-0000-4000-8000-0000000000e1'",
+    )
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("expired lookup should read");
+    assert_eq!(expired.count, 0, "expired family carries no authority");
+
+    // Scope isolation: the second user's three families all survive.
+    let scope_b = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_families \
+         WHERE user_id = $1",
+    )
+    .bind::<diesel::sql_types::Uuid, _>(user_b)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("scope-b count should read");
+    assert_eq!(scope_b.count, 3, "a different scope is untouched");
+
+    // Spent proofs exist only for non-head members of surviving families.
+    let spent = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_spent_tokens \
+         WHERE token_family_id = '00000000-0000-4000-8000-000000000006'",
+    )
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("spent count should read");
+    assert_eq!(spent.count, 1, "the surviving family's predecessor keeps a proof");
+    let stray_spent = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_spent_tokens s \
+         WHERE NOT EXISTS (SELECT 1 FROM oauth_refresh_families f \
+             WHERE f.tenant_id = s.tenant_id \
+               AND f.token_family_id = s.token_family_id)",
+    )
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("stray spent count should read");
+    assert_eq!(stray_spent.count, 0, "no spent proof outlives its family");
+
+    // Identical authorization contracts deduplicate; nothing unreferenced
+    // remains after retirement.
+    let contracts = sql_query(
+        "SELECT count(DISTINCT c.contract_blake3) AS count \
+         FROM oauth_refresh_families f \
+         JOIN oauth_refresh_contracts c \
+           ON c.tenant_id = f.tenant_id AND c.contract_blake3 = f.contract_blake3 \
+         WHERE f.tenant_id = '00000000-0000-0000-0000-000000000001' \
+           AND f.user_id = $1 AND f.client_id = $2",
+    )
+    .bind::<diesel::sql_types::Uuid, _>(user_a)
+    .bind::<diesel::sql_types::Uuid, _>(client_a)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("contract count should read");
+    assert_eq!(contracts.count, 1, "identical contracts deduplicate");
+    let orphans = sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_contracts c \
+         WHERE NOT EXISTS (SELECT 1 FROM oauth_refresh_families f \
+             WHERE f.tenant_id = c.tenant_id \
+               AND f.contract_blake3 = c.contract_blake3)",
+    )
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("orphan contract count should read");
+    assert_eq!(orphans.count, 0, "no unreferenced contract survives");
+
+    let dropped = sql_query(
+        "SELECT to_regclass('public.oauth_tokens') IS NULL AS value",
+    )
+    .get_result::<BooleanRow>(&mut connection)
+    .await
+    .expect("legacy table lookup should read");
+    assert!(dropped.value, "legacy oauth_tokens must be dropped");
+
+    connection
+        .batch_execute("ROLLBACK")
+        .await
+        .expect("migration fixture should roll back");
+}

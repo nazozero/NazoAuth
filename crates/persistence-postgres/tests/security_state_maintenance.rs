@@ -2,12 +2,13 @@
 //!
 //! One `cleanup_batch` performs at most 256 row modifications per category.
 //! Refresh reclaim works on `(tenant_id, token_family_id)` authorities under
-//! the shared family advisory key: each batch deletes a bounded
-//! descendant-first slice and unlinks at most as many inbound references as
-//! the budget allows, so a fully expired family drains across batches without
-//! ever touching a family that still has an unexpired member — or a
-//! same-named family in another tenant. OpenID4VP reads are pure selects; the
-//! global presentation sweep belongs exclusively to this worker.
+//! the shared family advisory key: expired spent proofs delete on their own
+//! `expires_at`, a fully expired family row deletes under a try-lock (a writer
+//! holding the lock skips it for the batch), and orphan contracts leave after
+//! a grace period once the last family reference is gone — never touching a
+//! family that still has an unexpired current member or a same-named family
+//! in another tenant. OpenID4VP reads are pure selects; the global
+//! presentation sweep belongs exclusively to this worker.
 
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
@@ -148,6 +149,10 @@ async fn insert_refresh_leaf(
     .await
 }
 
+/// Inserts one refresh generation in the minimal three-table model. A
+/// `rotated_from_id` successor first moves the family's current member into a
+/// spent proof (carrying that member's own `expires_at`), then the new member
+/// becomes the family's current state.
 #[allow(clippy::too_many_arguments)]
 async fn insert_refresh_leaf_in_tenant(
     connection: &mut AsyncPgConnection,
@@ -160,75 +165,133 @@ async fn insert_refresh_leaf_in_tenant(
     expires_at: DateTime<Utc>,
 ) -> Uuid {
     let id = Uuid::now_v7();
-    let token_hash = Uuid::now_v7().simple().to_string().repeat(2);
+    let issued_at = (expires_at - Duration::hours(1)).min(Utc::now());
+    let context = RefreshTokenAuthenticationContext {
+        version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
+        issuer: "https://issuer.example".to_owned(),
+        audience: fixture.client_public_id.clone(),
+        auth_time: issued_at.timestamp() - 1,
+        amr: vec!["pwd".to_owned()],
+        oidc_sid: None,
+        id_token_sid: None,
+        acr: None,
+        nonce: None,
+        userinfo_claims: Vec::new(),
+        userinfo_claim_requests: Vec::new(),
+        id_token_claims: Vec::new(),
+        id_token_claim_requests: Vec::new(),
+    };
+    let contract = nazo_auth::RefreshContract {
+        subject: fixture.user_id.to_string(),
+        scopes: vec!["openid".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        authorization_details: serde_json::json!([]),
+        authentication_context: context,
+    };
+    let persisted = contract.persisted();
+    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let contract_json = serde_json::to_value(&persisted).expect("contract serializes");
     sql_query(
-        "INSERT INTO oauth_tokens (\
-             id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id, \
-             client_id, user_id, scopes, audience, authorization_details, \
-             issued_at, expires_at, subject, oidc_auth_context) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, \
-             '[\"openid\"]'::jsonb, '[\"resource://default\"]'::jsonb, '[]'::jsonb, \
-             $8, $9, $10, $11::jsonb)",
+        r#"
+        WITH contract AS (
+            INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)
+            VALUES ($2, $3, $4)
+            ON CONFLICT (tenant_id, contract_blake3) DO NOTHING
+            RETURNING contract_blake3
+        ), resolved AS (
+            SELECT contract_blake3 FROM contract
+            UNION ALL
+            SELECT contract_blake3 FROM oauth_refresh_contracts
+            WHERE tenant_id = $2 AND contract_blake3 = $3
+            LIMIT 1
+        ), spent AS (
+            INSERT INTO oauth_refresh_spent_tokens (
+                tenant_id, refresh_token_blake3, token_family_id, member_id,
+                successor_member_id, spent_at, expires_at
+            )
+            SELECT f.tenant_id, f.current_token_blake3, f.token_family_id,
+                   f.current_member_id, $1,
+                   LEAST(CURRENT_TIMESTAMP,
+                         f.current_expires_at - INTERVAL '1 microsecond'),
+                   f.current_expires_at
+            FROM oauth_refresh_families AS f
+            WHERE $6 IS NOT NULL
+              AND f.tenant_id = $2 AND f.token_family_id = $5
+              AND f.current_member_id = $6
+        )
+        INSERT INTO oauth_refresh_families (
+            tenant_id, token_family_id, client_id, user_id, contract_blake3,
+            current_member_id, current_token_blake3, current_audience,
+            current_issued_at, current_expires_at, created_at
+        )
+        SELECT
+            $2, $5, $7, $8, r.contract_blake3,
+            $1, $9, '["resource://default"]'::jsonb, $10, $11, $10
+        FROM resolved AS r
+        ON CONFLICT (tenant_id, token_family_id) DO UPDATE SET
+            current_member_id = EXCLUDED.current_member_id,
+            current_token_blake3 = EXCLUDED.current_token_blake3,
+            current_audience = EXCLUDED.current_audience,
+            current_issued_at = EXCLUDED.current_issued_at,
+            current_expires_at = EXCLUDED.current_expires_at
+        "#,
     )
     .bind::<SqlUuid, _>(id)
     .bind::<SqlUuid, _>(tenant_id)
-    .bind::<Text, _>(token_hash)
+    .bind::<sql_types::Binary, _>(contract_blake3)
+    .bind::<sql_types::Jsonb, _>(contract_json)
     .bind::<SqlUuid, _>(family_id)
     .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(rotated_from_id)
     .bind::<SqlUuid, _>(client_id)
     .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(user_id))
-    .bind::<Timestamptz, _>(expires_at - Duration::hours(1))
-    .bind::<Timestamptz, _>(expires_at)
-    .bind::<Text, _>(fixture.user_id.to_string())
-    .bind::<sql_types::Jsonb, _>(
-        serde_json::to_value(RefreshTokenAuthenticationContext {
-            version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
-            issuer: "https://issuer.example".to_owned(),
-            audience: fixture.client_public_id.clone(),
-            auth_time: (expires_at - Duration::hours(1)).timestamp() - 1,
-            amr: vec!["pwd".to_owned()],
-            oidc_sid: None,
-            id_token_sid: None,
-            acr: None,
-            nonce: None,
-            userinfo_claims: Vec::new(),
-            userinfo_claim_requests: Vec::new(),
-            id_token_claims: Vec::new(),
-            id_token_claim_requests: Vec::new(),
-        })
-        .expect("refresh auth context should serialize"),
+    .bind::<sql_types::Binary, _>(
+        blake3::hash(Uuid::now_v7().as_bytes()).as_bytes().to_vec(),
     )
+    .bind::<Timestamptz, _>(issued_at)
+    .bind::<Timestamptz, _>(expires_at)
     .execute(connection)
     .await
     .expect("refresh leaf fixture should insert");
     id
 }
 
-/// Expired `oauth_tokens` rows cannot be deleted while any `rotated_from_id`
-/// still references them; the helper unlinks inbound references first, the
-/// same ordering the production reclaim uses inside the family lock.
+/// Clears expired refresh state the same way the production sweeps do: spent
+/// proofs at their own expiry, expired families (proofs cascade), then orphan
+/// contracts.
 async fn clear_expired_tokens(connection: &mut AsyncPgConnection) {
+    sql_query("DELETE FROM oauth_refresh_spent_tokens WHERE expires_at <= CURRENT_TIMESTAMP")
+        .execute(connection)
+        .await
+        .expect("expired spent proofs should clear");
     sql_query(
-        "UPDATE oauth_tokens SET rotated_from_id = NULL \
-         WHERE rotated_from_id IN ( \
-             SELECT id FROM oauth_tokens WHERE expires_at <= CURRENT_TIMESTAMP)",
+        "DELETE FROM oauth_refresh_families WHERE current_expires_at <= CURRENT_TIMESTAMP",
     )
     .execute(connection)
     .await
-    .expect("expired token unlink should succeed");
-    sql_query("DELETE FROM oauth_tokens WHERE expires_at <= CURRENT_TIMESTAMP")
-        .execute(connection)
-        .await
-        .expect("expired token clear should succeed");
+    .expect("expired families should clear");
+    sql_query(
+        "DELETE FROM oauth_refresh_contracts AS c WHERE NOT EXISTS (\
+             SELECT 1 FROM oauth_refresh_families AS f \
+             WHERE f.tenant_id = c.tenant_id AND f.contract_blake3 = c.contract_blake3)",
+    )
+    .execute(connection)
+    .await
+    .expect("orphan contracts should clear");
 }
 
+/// Family extent = its family row plus surviving spent proofs.
 async fn family_row_count(connection: &mut AsyncPgConnection, family_id: Uuid) -> i64 {
-    sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_tokens WHERE token_family_id = $1")
-        .bind::<SqlUuid, _>(family_id)
-        .get_result::<CountRow>(connection)
-        .await
-        .expect("family row count should query")
-        .count
+    sql_query(
+        "SELECT \
+             (SELECT COUNT(*) FROM oauth_refresh_families WHERE token_family_id = $1) \
+             + (SELECT COUNT(*) FROM oauth_refresh_spent_tokens WHERE token_family_id = $1) \
+             AS count",
+    )
+    .bind::<SqlUuid, _>(family_id)
+    .get_result::<CountRow>(connection)
+    .await
+    .expect("family row count should query")
+    .count
 }
 
 async fn tagged_issuance_count(connection: &mut AsyncPgConnection, tag: &str) -> i64 {
@@ -386,7 +449,8 @@ async fn active_successor_blocks_ancestor_reclaim() {
         Utc::now() - Duration::hours(2),
     )
     .await;
-    // The successor is still valid, so the family is not fully expired.
+    // The successor is still valid, so the family is not fully expired; the
+    // predecessor's already-expired spent proof is reclaimed independently.
     insert_refresh_leaf(
         &mut connection,
         &fixture,
@@ -403,8 +467,8 @@ async fn active_successor_blocks_ancestor_reclaim() {
         .expect("cleanup batch should succeed");
     assert_eq!(
         family_row_count(&mut connection, family_id).await,
-        2,
-        "an unexpired successor must keep the whole family, ancestry included"
+        1,
+        "the live family row survives; the expired spent proof is deleted"
     );
 }
 
@@ -442,15 +506,15 @@ async fn three_generation_family_reclaims_whole_chain_in_one_batch() {
         .await
         .expect("cleanup batch should succeed");
     assert!(
-        result.refresh_tokens >= 3,
-        "a fully expired family must release every member in one batch, got {}",
+        result.refresh_tokens >= 1,
+        "the expired family row must be reclaimed in one batch, got {}",
         result.refresh_tokens
     );
     assert_eq!(
         family_row_count(&mut connection, family_id).await,
         0,
-        "the unlink step must let the whole chain leave in one batch; the \
-         self-FK can no longer force one leaf per cycle"
+        "deleting the family cascades its spent proofs — the whole chain \
+         leaves in one batch"
     );
 }
 
@@ -467,14 +531,22 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
     clear_expired_tokens(&mut connection).await;
     let family_id = Uuid::now_v7();
     let expired = Utc::now() - Duration::hours(2);
-    // 300 expired members exceed the 256-row batch budget, so the family must
-    // drain over two batches and the first must report saturation.
+    // 300 expired generations under a still-live head: the spent sweep must
+    // drain the proofs across bounded batches while the family row stays.
     let mut previous = None;
     for _ in 0..300 {
         previous = Some(
             insert_refresh_leaf(&mut connection, &fixture, family_id, previous, expired).await,
         );
     }
+    insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        family_id,
+        previous,
+        Utc::now() + Duration::hours(1),
+    )
+    .await;
 
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
@@ -486,10 +558,15 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
         first.saturated,
         "hitting the 256-row budget must mark the batch saturated"
     );
+    assert!(
+        first.spent_refresh_proofs <= 256,
+        "one batch may delete at most 256 spent proofs"
+    );
+    let remaining = family_row_count(&mut connection, family_id).await;
     assert_eq!(
-        family_row_count(&mut connection, family_id).await,
-        300 - 256,
-        "one batch may delete at most 256 refresh rows"
+        remaining,
+        300 - first.spent_refresh_proofs as i64 + 1,
+        "the live family row plus the undrained spent proofs remain"
     );
     let second = maintenance
         .cleanup_batch()
@@ -497,10 +574,10 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
         .expect("second cleanup batch should succeed");
     assert_eq!(
         family_row_count(&mut connection, family_id).await,
-        0,
-        "the follow-up batch must finish the partially reclaimed family"
+        1,
+        "the follow-up batch finishes the proofs; the live family stays"
     );
-    assert!(second.refresh_tokens >= 44);
+    assert_eq!(second.spent_refresh_proofs, 300 - first.spent_refresh_proofs);
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -552,8 +629,9 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
     );
 
     // The writer commits a fresh successor before releasing the key. The
-    // maintenance recheck after lock acquisition must see the family is no
-    // longer fully expired even though the earlier scan listed it.
+    // maintenance recheck under the acquired advisory lock must see the
+    // family is no longer expired even though the earlier scan listed it;
+    // the predecessor's expired spent proof is reclaimed on its own.
     insert_refresh_leaf(
         &mut writer,
         &fixture,
@@ -572,9 +650,9 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
         .expect("cleanup batch should succeed");
     assert_eq!(
         family_row_count(&mut connection, locked_family).await,
-        2,
-        "a family that gained an unexpired member after the candidate scan \
-         must survive the post-lock recheck"
+        1,
+        "a family that gained an unexpired generation after the candidate \
+         scan must survive the post-lock recheck; only the spent proof goes"
     );
 }
 
@@ -642,7 +720,7 @@ async fn cancelled_batch_leaves_no_open_transaction_on_pooled_connection() {
     .await
     .expect("gate function should install");
     sql_query(format!(
-        "CREATE TRIGGER {trigger} BEFORE DELETE ON oauth_tokens \
+        "CREATE TRIGGER {trigger} BEFORE DELETE ON oauth_refresh_families \
          FOR EACH ROW EXECUTE FUNCTION {function}()"
     ))
     .execute(&mut connection)
@@ -694,7 +772,7 @@ async fn cancelled_batch_leaves_no_open_transaction_on_pooled_connection() {
         .await
         .expect("session gate lock should release");
     assert!(unlocked.flag, "the gate advisory lock must still be held");
-    sql_query(format!("DROP TRIGGER {trigger} ON oauth_tokens"))
+    sql_query(format!("DROP TRIGGER {trigger} ON oauth_refresh_families"))
         .execute(&mut connection)
         .await
         .expect("gate trigger should drop");
@@ -1233,8 +1311,8 @@ async fn reclaim_scopes_family_authority_to_tenant() {
     let past = Utc::now() - Duration::hours(1);
     let future = Utc::now() + Duration::hours(1);
 
-    // Tenant B gets a real tenant/user/client triple: tenant_id on
-    // oauth_tokens is a hard foreign key, not a label.
+    // Tenant B gets a real tenant/user/client triple: tenant_id on the
+    // refresh tables is a hard foreign key, not a label.
     let suffix = Uuid::now_v7().simple().to_string();
     let tenant_b = sql_query(format!(
         "WITH t AS ( \
@@ -1324,7 +1402,7 @@ async fn reclaim_scopes_family_authority_to_tenant() {
         .expect("cleanup batch should succeed");
 
     let a_left = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
          WHERE tenant_id = $1 AND token_family_id = $2",
     )
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
@@ -1335,8 +1413,10 @@ async fn reclaim_scopes_family_authority_to_tenant() {
     .count;
     assert_eq!(a_left, 0, "tenant-A expired family must be reclaimed");
 
+    // Tenant B's live family row survives; its already-expired spent proof is
+    // reclaimed on its own schedule, not by the family sweep.
     let b_rows = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
          WHERE tenant_id = $1 AND token_family_id = $2",
     )
     .bind::<SqlUuid, _>(tenant_b.tenant_id)
@@ -1345,22 +1425,29 @@ async fn reclaim_scopes_family_authority_to_tenant() {
     .await
     .expect("tenant-B count should query")
     .count;
-    assert_eq!(b_rows, 2, "tenant-B family must be untouched");
+    assert_eq!(b_rows, 1, "tenant-B family must be untouched");
 
-    // Tenant B's parent link must survive — the unlink is tenant-scoped.
-    let b_link = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
-         WHERE id = $1 AND rotated_from_id = $2",
+    let b_current = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2 AND current_member_id = $3 \
+           AND revoked_at IS NULL",
     )
+    .bind::<SqlUuid, _>(tenant_b.tenant_id)
+    .bind::<SqlUuid, _>(family_id)
     .bind::<SqlUuid, _>(b_active)
-    .bind::<SqlUuid, _>(b_parent)
     .get_result::<CountRow>(&mut connection)
     .await
-    .expect("tenant-B link should query")
+    .expect("tenant-B current member should query")
     .count;
-    assert_eq!(b_link, 1, "tenant-B rotated_from_id must not be cleared");
+    assert_eq!(
+        b_current, 1,
+        "tenant-B's live current member must not be displaced"
+    );
 }
 
+/// The spent-proof sweep is bounded at 256 rows per batch; an expired family
+/// takes its remaining proofs down by cascade in the same batch. Both sweeps
+/// must converge without stalling.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn large_family_reclaim_stays_bounded_per_batch() {
     let Some(database_url) = database_url() else {
@@ -1372,161 +1459,118 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
         .expect("cleanup-batch test gate should remain open");
     let (fixture, mut connection) = fixture(&database_url).await;
     clear_expired_tokens(&mut connection).await;
-    let chain_family = Uuid::now_v7();
-    let star_family = Uuid::now_v7();
+    let live_family = Uuid::now_v7();
+    let dead_family = Uuid::now_v7();
     let past = Utc::now() - Duration::hours(2);
-    let ctx = serde_json::to_value(RefreshTokenAuthenticationContext {
-        version: RefreshTokenAuthenticationContext::CURRENT_VERSION,
-        issuer: "https://issuer.example".to_owned(),
-        audience: fixture.client_public_id.clone(),
-        auth_time: (past - Duration::hours(1)).timestamp() - 1,
-        amr: vec!["pwd".to_owned()],
-        oidc_sid: None,
-        id_token_sid: None,
-        acr: None,
-        nonce: None,
-        userinfo_claims: Vec::new(),
-        userinfo_claim_requests: Vec::new(),
-        id_token_claims: Vec::new(),
-        id_token_claim_requests: Vec::new(),
-    })
-    .expect("refresh auth context should serialize");
 
-    // A 10,000-member expired chain: each row's rotated_from_id is the
-    // previous row's id. issued_at increases along the chain so the bounded
-    // descendant-first delete peels 256 members per batch without unlinks.
-    sql_query(
-        "WITH RECURSIVE chain AS ( \
-             SELECT 1 AS depth, gen_random_uuid() AS id, NULL::uuid AS parent \
-             UNION ALL \
-             SELECT depth + 1, gen_random_uuid(), id FROM chain WHERE depth < 10000 \
-         ) \
-         INSERT INTO oauth_tokens (\
-             id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id, \
-             client_id, user_id, scopes, audience, authorization_details, \
-             issued_at, expires_at, subject, oidc_auth_context) \
-         SELECT id, $1, md5(id::text) || md5(id::text), $2, parent, $3, $4, \
-             '[\"openid\"]'::jsonb, '[\"resource://default\"]'::jsonb, '[]'::jsonb, \
-             $5 + (depth * INTERVAL '1 millisecond'), $6, $7, $8::jsonb \
-         FROM chain",
-    )
-    .bind::<SqlUuid, _>(SYSTEM_TENANT)
-    .bind::<SqlUuid, _>(chain_family)
-    .bind::<SqlUuid, _>(fixture.client_id)
-    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(fixture.user_id))
-    .bind::<Timestamptz, _>(past)
-    .bind::<Timestamptz, _>(past + Duration::hours(1))
-    .bind::<Text, _>(fixture.user_id.to_string())
-    .bind::<sql_types::Jsonb, _>(ctx.clone())
-    .execute(&mut connection)
-    .await
-    .expect("large chain fixture should insert");
-
-    // Anomaly star: a parent whose issued_at is newer than all 1,000 expired
-    // children. The bounded unlink can only detach `remaining` children per
-    // batch, so the parent waits for a later batch instead of forcing one
-    // giant UPDATE.
-    let star_parent = insert_refresh_leaf_in_tenant(
+    // A live family with 10,000 expired spent proofs: the sweep must peel 256
+    // per batch while the family row stays.
+    let live_head = insert_refresh_leaf_in_tenant(
         &mut connection,
         &fixture,
         SYSTEM_TENANT,
         fixture.client_id,
         fixture.user_id,
-        star_family,
+        live_family,
+        None,
+        Utc::now() + Duration::hours(1),
+    )
+    .await;
+    sql_query(
+        "INSERT INTO oauth_refresh_spent_tokens (\
+             tenant_id, refresh_token_blake3, token_family_id, member_id, \
+             successor_member_id, spent_at, expires_at) \
+         SELECT $1, decode(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text), 'hex'), \
+                $2, gen_random_uuid(), $3, $4, $5 \
+         FROM generate_series(1, 10000)",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(live_family)
+    .bind::<SqlUuid, _>(live_head)
+    .bind::<Timestamptz, _>(past)
+    .bind::<Timestamptz, _>(past + Duration::hours(1))
+    .execute(&mut connection)
+    .await
+    .expect("large spent fixture should insert");
+
+    // An expired family with 1,000 expired spent proofs: the family delete
+    // cascades them in one batch.
+    let dead_head = insert_refresh_leaf_in_tenant(
+        &mut connection,
+        &fixture,
+        SYSTEM_TENANT,
+        fixture.client_id,
+        fixture.user_id,
+        dead_family,
         None,
         past,
     )
     .await;
     sql_query(
-        "WITH kids AS ( \
-             SELECT generate_series(1, 1000) AS seq, gen_random_uuid() AS id \
-         ) \
-         INSERT INTO oauth_tokens (\
-             id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id, \
-             client_id, user_id, scopes, audience, authorization_details, \
-             issued_at, expires_at, subject, oidc_auth_context) \
-         SELECT id, $1, md5(id::text) || md5(id::text), $2, $3, $4, $5, \
-             '[\"openid\"]'::jsonb, '[\"resource://default\"]'::jsonb, '[]'::jsonb, \
-             $6 - (seq * INTERVAL '1 millisecond'), $7, $8, $9::jsonb \
-         FROM kids",
+        "INSERT INTO oauth_refresh_spent_tokens (\
+             tenant_id, refresh_token_blake3, token_family_id, member_id, \
+             successor_member_id, spent_at, expires_at) \
+         SELECT $1, decode(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text), 'hex'), \
+                $2, gen_random_uuid(), $3, $4, $5 \
+         FROM generate_series(1, 1000)",
     )
     .bind::<SqlUuid, _>(SYSTEM_TENANT)
-    .bind::<SqlUuid, _>(star_family)
-    .bind::<SqlUuid, _>(star_parent)
-    .bind::<SqlUuid, _>(fixture.client_id)
-    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(fixture.user_id))
+    .bind::<SqlUuid, _>(dead_family)
+    .bind::<SqlUuid, _>(dead_head)
     .bind::<Timestamptz, _>(past)
-    .bind::<Timestamptz, _>(past + Duration::minutes(30))
-    .bind::<Text, _>(fixture.user_id.to_string())
-    .bind::<sql_types::Jsonb, _>(ctx)
+    .bind::<Timestamptz, _>(past + Duration::hours(1))
     .execute(&mut connection)
     .await
-    .expect("star fixture should insert");
-    // The star parent sorts youngest by issued_at so it lands inside the
-    // first doomed slice while most of its children stay outside.
-    sql_query("UPDATE oauth_tokens SET issued_at = $1 WHERE id = $2")
-        .bind::<Timestamptz, _>(past + Duration::hours(2))
-        .bind::<SqlUuid, _>(star_parent)
-        .execute(&mut connection)
-        .await
-        .expect("star parent issued_at should update");
+    .expect("dead-family spent fixture should insert");
 
     let maintenance =
         SecurityStateMaintenanceRepository::new(create_pool(&database_url, 4).unwrap());
-    // `refresh_tokens` is a per-batch total across every scanned family, so
-    // boundedness is asserted per batch while per-family correctness is
-    // checked on the residual row counts afterwards.
-    let mut total = 0_u64;
-    for round in 0..512_u32 {
+    let mut spent_total = 0_u64;
+    for round in 0..64_u32 {
         let result = maintenance
             .cleanup_batch()
             .await
             .expect("cleanup batch should succeed");
         assert!(
-            result.refresh_tokens <= 256,
+            result.spent_refresh_proofs <= 256,
             "one batch must never exceed the 256-row budget"
         );
-        total += result.refresh_tokens;
-        if !result.saturated && result.refresh_tokens == 0 {
+        assert!(
+            result.refresh_tokens <= 256,
+            "the family sweep is bounded per batch too"
+        );
+        spent_total += result.spent_refresh_proofs;
+        if !result.saturated
+            && result.spent_refresh_proofs == 0
+            && result.refresh_tokens == 0
+        {
             break;
         }
-        assert!(round < 511, "family reclaim must converge, not stall");
+        assert!(round < 63, "refresh-state reclaim must converge, not stall");
     }
-    let residual = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
-         WHERE tenant_id = $1 AND token_family_id = ANY($2)",
-    )
-    .bind::<SqlUuid, _>(SYSTEM_TENANT)
-    .bind::<sql_types::Array<SqlUuid>, _>(vec![chain_family, star_family])
-    .get_result::<CountRow>(&mut connection)
-    .await
-    .expect("residual count should query")
-    .count;
-    assert!(
-        total >= 11_001,
-        "the whole expired state must drain across bounded batches (residual={residual})"
+    assert_eq!(
+        spent_total, 10_000,
+        "the dead family's proofs left by cascade are not double-counted; \
+         only the live family's sweep drains through the bounded cursor"
     );
-    for family in [chain_family, star_family] {
-        let left = sql_query(
-            "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
-             WHERE tenant_id = $1 AND token_family_id = $2",
-        )
-        .bind::<SqlUuid, _>(SYSTEM_TENANT)
-        .bind::<SqlUuid, _>(family)
-        .get_result::<CountRow>(&mut connection)
-        .await
-        .expect("family count should query")
-        .count;
-        assert_eq!(left, 0);
-    }
+    assert_eq!(
+        family_row_count(&mut connection, dead_family).await,
+        0,
+        "the expired family and its proofs must be gone"
+    );
+    assert_eq!(
+        family_row_count(&mut connection, live_family).await,
+        1,
+        "the live family keeps its row; all expired proofs are swept"
+    );
 }
 
-/// A member becomes a terminal stub only once it is expired AND past the
-/// lost-response window; live family members and recently revoked members
-/// keep their full payload, and the stub still resolves through the token
-/// repository for reuse detection.
+/// A spent proof expires on its own `expires_at` — the sweep deletes expired
+/// proofs while the family's live current member and still-valid proofs are
+/// untouched, and a retained proof keeps resolving through the token
+/// repository for replay detection.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn terminal_members_sparsify_without_touching_live_or_recently_revoked_members() {
+async fn expired_spent_proofs_reclaim_while_valid_proofs_and_live_family_survive() {
     let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
     let Some(database_url) = database_url() else {
         return;
@@ -1536,56 +1580,39 @@ async fn terminal_members_sparsify_without_touching_live_or_recently_revoked_mem
 
     let family_id = Uuid::now_v7();
     let now = Utc::now();
-    let long_revoked = now - Duration::seconds(120);
-    let within_window = now - Duration::seconds(30);
-
-    let dead_parent = insert_refresh_leaf(
-        &mut connection,
-        &fixture,
-        family_id,
-        None,
-        now - Duration::minutes(10),
-    )
-    .await;
-    let dead_child = insert_refresh_leaf(
-        &mut connection,
-        &fixture,
-        family_id,
-        Some(dead_parent),
-        now - Duration::minutes(5),
-    )
-    .await;
-    // Recently revoked member: expired but still inside the lost-response
-    // window — the stub projection must not touch it yet.
-    let recent = insert_refresh_leaf(
-        &mut connection,
-        &fixture,
-        family_id,
-        Some(dead_child),
-        now - Duration::minutes(1),
-    )
-    .await;
-    // Live tip keeps the family active.
     let live = insert_refresh_leaf(
         &mut connection,
         &fixture,
         family_id,
-        Some(recent),
+        None,
         now + Duration::hours(1),
     )
     .await;
-    sql_query("UPDATE oauth_tokens SET revoked_at = $1 WHERE id = ANY($2)")
-        .bind::<Timestamptz, _>(long_revoked)
-        .bind::<sql_types::Array<SqlUuid>, _>(vec![dead_parent, dead_child])
+
+    // Two proofs already past their own expiry; one still inside it.
+    let raw_alive = format!("spent-alive-{}", Uuid::now_v7());
+    for (seed, expires_at) in [
+        ("dead-a", now - Duration::minutes(5)),
+        ("dead-b", now - Duration::minutes(1)),
+        (&*raw_alive, now + Duration::hours(1)),
+    ] {
+        sql_query(
+            "INSERT INTO oauth_refresh_spent_tokens (\
+                 tenant_id, refresh_token_blake3, token_family_id, member_id, \
+                 successor_member_id, spent_at, expires_at) \
+             VALUES ($1, $2, $3, $4, $5, $6, $7)",
+        )
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<sql_types::Binary, _>(blake3::hash(seed.as_bytes()).as_bytes().to_vec())
+        .bind::<SqlUuid, _>(family_id)
+        .bind::<SqlUuid, _>(Uuid::now_v7())
+        .bind::<SqlUuid, _>(live)
+        .bind::<Timestamptz, _>(now - Duration::minutes(30))
+        .bind::<Timestamptz, _>(expires_at)
         .execute(&mut connection)
         .await
-        .expect("backdated revocation should apply");
-    sql_query("UPDATE oauth_tokens SET revoked_at = $1 WHERE id = $2")
-        .bind::<Timestamptz, _>(within_window)
-        .bind::<SqlUuid, _>(recent)
-        .execute(&mut connection)
-        .await
-        .expect("recent revocation should apply");
+        .expect("spent proof fixture should insert");
+    }
 
     let repository = SecurityStateMaintenanceRepository::new(
         create_pool(&database_url, 2).expect("pool should build"),
@@ -1594,47 +1621,53 @@ async fn terminal_members_sparsify_without_touching_live_or_recently_revoked_mem
         .cleanup_batch()
         .await
         .expect("cleanup batch should succeed");
-    assert_eq!(batch.sparsified_refresh_members, 2);
+    assert_eq!(
+        batch.spent_refresh_proofs, 2,
+        "only the proofs past their own expiry may be reclaimed"
+    );
 
     #[derive(QueryableByName)]
-    struct SparseRow {
-        #[diesel(sql_type = SqlUuid)]
-        id: Uuid,
-        #[diesel(sql_type = diesel::sql_types::Nullable<Timestamptz>)]
-        sparsified_at: Option<DateTime<Utc>>,
-        #[diesel(sql_type = diesel::sql_types::Nullable<SqlUuid>)]
-        rotated_from_id: Option<Uuid>,
-        #[diesel(sql_type = sql_types::Jsonb)]
-        oidc_auth_context: serde_json::Value,
+    struct ProofRow {
+        #[diesel(sql_type = sql_types::Binary)]
+        refresh_token_blake3: Vec<u8>,
     }
-    let rows = sql_query(
-        "SELECT id, sparsified_at, rotated_from_id, oidc_auth_context          FROM oauth_tokens WHERE token_family_id = $1 ORDER BY issued_at",
+    let proofs = sql_query(
+        "SELECT refresh_token_blake3 FROM oauth_refresh_spent_tokens \
+         WHERE tenant_id = $1 AND token_family_id = $2",
     )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
     .bind::<SqlUuid, _>(family_id)
-    .load::<SparseRow>(&mut connection)
+    .load::<ProofRow>(&mut connection)
     .await
-    .expect("family rows should load");
-    assert_eq!(rows.len(), 4, "sparsify must never delete members");
-
-    let by_id = |id: Uuid| rows.iter().find(|row| row.id == id).unwrap();
-    for dead in [dead_parent, dead_child] {
-        let row = by_id(dead);
-        assert!(row.sparsified_at.is_some(), "dead member should be sparse");
-        assert_eq!(row.rotated_from_id, None, "stub chain edge must unlink");
-        assert_eq!(row.oidc_auth_context, serde_json::Value::Null);
-    }
-    let recent_row = by_id(recent);
-    assert!(
-        recent_row.sparsified_at.is_none(),
-        "a revocation inside the lost-response window must stay complete"
+    .expect("proof rows should load");
+    assert_eq!(
+        proofs
+            .iter()
+            .map(|row| row.refresh_token_blake3.clone())
+            .collect::<Vec<_>>(),
+        vec![blake3::hash(raw_alive.as_bytes()).as_bytes().to_vec()],
+        "the still-valid proof must be the only survivor"
     );
-    assert_eq!(recent_row.rotated_from_id, Some(dead_child));
-    let live_row = by_id(live);
-    assert!(live_row.sparsified_at.is_none());
-    assert_eq!(live_row.rotated_from_id, Some(recent));
 
-    // The family is still live, so no member may be reclaimed.
-    assert_eq!(family_row_count(&mut connection, family_id).await, 4);
+    let tokens = nazo_postgres::TokenRepository::new(
+        create_pool(&database_url, 2).expect("pool should build"),
+    );
+    let spent = tokens
+        .by_raw_refresh_token(SYSTEM_TENANT, &raw_alive)
+        .await
+        .expect("lookup should succeed")
+        .expect("a valid spent proof must still resolve for replay detection");
+    assert_eq!(spent.token_family_id, family_id);
+    assert!(
+        spent.revoked_at.is_some(),
+        "a spent presentation resolves revoked so the grant can classify it"
+    );
+
+    assert_eq!(
+        family_row_count(&mut connection, family_id).await,
+        2,
+        "one live family row plus the one still-valid spent proof must survive"
+    );
 }
 
 async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64, i64) {

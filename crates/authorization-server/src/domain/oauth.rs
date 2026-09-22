@@ -20,6 +20,9 @@ pub enum RefreshTokenPolicy {
     RotateLostResponse {
         family_id: Uuid,
         original_id: Uuid,
+        /// BLAKE3 digest of the originally presented (spent) token; the
+        /// retry proves the direct-predecessor edge against the spent proof.
+        original_blake3: [u8; 32],
         successor_id: Uuid,
         retry_started_at: DateTime<Utc>,
     },

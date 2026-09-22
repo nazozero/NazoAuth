@@ -96,6 +96,7 @@ fn refresh_token_fixture(
         .expect("fixed authentication time should be valid");
     NewRefreshToken {
         raw_token,
+        member_id: Uuid::now_v7(),
         tenant_id,
         family_id,
         rotated_from_id,
@@ -283,7 +284,7 @@ async fn expired_single_use_grant_rolls_back_everything() {
         assert_eq!(count.count, 0, "{table} must roll back");
     }
     let tokens = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens WHERE token_family_id IS NOT NULL AND client_id = $1",
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE client_id = $1",
     )
     .bind::<sql_types::Uuid, _>(fixture.client_id)
     .get_result::<CountRow>(&mut connection)

@@ -4,7 +4,7 @@ use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
-use crate::{DbPool, get_conn, schema::oauth_tokens};
+use crate::{DbPool, get_conn, schema::oauth_refresh_families};
 
 use super::{
     access_token_revocation::{
@@ -72,13 +72,13 @@ impl AuthorizationRepository {
                     upsert_access_token_revocations(connection, &[new_revocation]).await?;
                 }
                 diesel::update(
-                    oauth_tokens::table
-                        .filter(oauth_tokens::tenant_id.eq(tenant_id))
-                        .filter(oauth_tokens::client_id.eq(client_id))
-                        .filter(oauth_tokens::token_family_id.eq(family_id))
-                        .filter(oauth_tokens::revoked_at.is_null()),
+                    oauth_refresh_families::table
+                        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
+                        .filter(oauth_refresh_families::client_id.eq(client_id))
+                        .filter(oauth_refresh_families::token_family_id.eq(family_id))
+                        .filter(oauth_refresh_families::revoked_at.is_null()),
                 )
-                .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
+                .set(oauth_refresh_families::revoked_at.eq(diesel::dsl::now))
                 .execute(connection)
                 .await?;
                 Ok(())

@@ -199,8 +199,9 @@ pub use session_management::{
 };
 pub use signing::{SignError, SignRequest, Signature, Signer, SigningPurpose};
 pub use token::{
-    BackchannelLogoutDelivery, LostResponseRetry, NewRefreshToken,
-    PendingBackchannelLogoutDelivery, RefreshToken, RefreshTokenAuthenticationContext,
+    BackchannelLogoutDelivery, LostResponseRetry, MAX_ACTIVE_REFRESH_FAMILIES_PER_SCOPE,
+    MAX_SPENT_PROOFS_PER_REFRESH_FAMILY, NewRefreshToken, PendingBackchannelLogoutDelivery,
+    RefreshContract, RefreshToken, RefreshTokenAuthenticationContext,
     RefreshTokenPersistResult,
 };
 pub use token_endpoint::{
