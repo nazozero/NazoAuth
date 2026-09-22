@@ -63,31 +63,31 @@ def deployment_id() -> str:
 
 def run_isolated(scenario: str, rate: int, out_dir: Path, duration: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
-    env = os.environ.copy()
-    env.update(
-        {
-            "PERF_RESULTS_DIR": "/out",
-            "PERF_REPORT_PATH": "/out/report.md",
-            "PERF_TENANT_HOST": "127.0.0.1:8000",
-            "PERF_DEPLOYMENT_ID": deployment_id(),
-            "PERF_PROFILE": "capacity",
-            "PERF_SCENARIO": scenario,
-            "PERF_EXECUTOR": "constant-arrival-rate",
-            "PERF_RATE": str(rate),
-            "PERF_PRE_ALLOCATED_VUS": os.environ.get("CAP_PRE_VUS", "256"),
-            "PERF_MAX_VUS": os.environ.get("CAP_MAX_VUS", "1024"),
-            "PERF_DURATION": duration,
-            "CAP_WARMUP_MS": "15000",
-            "PERF_USER_COUNT": str(max(256, min(rate, 4096))),
-            "PERF_VECTOR_COUNT": os.environ.get("PERF_VECTOR_COUNT", "2000"),
-        }
-    )
+    # `compose run` only forwards variables declared in the service's
+    # environment: block or passed via -e; process env alone is NOT enough.
+    overrides = {
+        "PERF_RESULTS_DIR": "/out",
+        "PERF_REPORT_PATH": "/out/report.md",
+        "PERF_TENANT_HOST": "127.0.0.1:8000",
+        "PERF_DEPLOYMENT_ID": deployment_id(),
+        "PERF_PROFILE": "capacity",
+        "PERF_SCENARIO": scenario,
+        "PERF_EXECUTOR": "constant-arrival-rate",
+        "PERF_RATE": str(rate),
+        "PERF_PRE_ALLOCATED_VUS": os.environ.get("CAP_PRE_VUS", "256"),
+        "PERF_MAX_VUS": os.environ.get("CAP_MAX_VUS", "1024"),
+        "PERF_DURATION": duration,
+        "CAP_WARMUP_MS": "15000",
+        "PERF_USER_COUNT": str(max(256, min(rate, 4096))),
+        "PERF_VECTOR_COUNT": os.environ.get("PERF_VECTOR_COUNT", "2000"),
+    }
+    cmd = COMPOSE + ["run", "--rm", "--no-deps"]
+    for key, value in overrides.items():
+        cmd += ["-e", f"{key}={value}"]
+    cmd += ["-v", f"{out_dir}:/out", "perf"]
     log = out_dir / "run.log"
     with log.open("w") as handle:
-        subprocess.run(
-            COMPOSE + ["run", "--rm", "--no-deps", "-v", f"{out_dir}:/out", "perf"],
-            cwd=ROOT, env=env, stdout=handle, stderr=subprocess.STDOUT, check=False,
-        )
+        subprocess.run(cmd, cwd=ROOT, stdout=handle, stderr=subprocess.STDOUT, check=False)
     return out_dir / "latest.json"
 
 
