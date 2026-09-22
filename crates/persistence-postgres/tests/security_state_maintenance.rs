@@ -244,9 +244,7 @@ async fn insert_refresh_leaf_in_tenant(
     .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(rotated_from_id)
     .bind::<SqlUuid, _>(client_id)
     .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(user_id))
-    .bind::<sql_types::Binary, _>(
-        blake3::hash(Uuid::now_v7().as_bytes()).as_bytes().to_vec(),
-    )
+    .bind::<sql_types::Binary, _>(blake3::hash(Uuid::now_v7().as_bytes()).as_bytes().to_vec())
     .bind::<Timestamptz, _>(issued_at)
     .bind::<Timestamptz, _>(expires_at)
     .execute(connection)
@@ -263,12 +261,10 @@ async fn clear_expired_tokens(connection: &mut AsyncPgConnection) {
         .execute(connection)
         .await
         .expect("expired spent proofs should clear");
-    sql_query(
-        "DELETE FROM oauth_refresh_families WHERE current_expires_at <= CURRENT_TIMESTAMP",
-    )
-    .execute(connection)
-    .await
-    .expect("expired families should clear");
+    sql_query("DELETE FROM oauth_refresh_families WHERE current_expires_at <= CURRENT_TIMESTAMP")
+        .execute(connection)
+        .await
+        .expect("expired families should clear");
     sql_query(
         "DELETE FROM oauth_refresh_contracts AS c WHERE NOT EXISTS (\
              SELECT 1 FROM oauth_refresh_families AS f \
@@ -577,7 +573,10 @@ async fn oversized_family_drains_across_bounded_batches_and_reports_saturation()
         1,
         "the follow-up batch finishes the proofs; the live family stays"
     );
-    assert_eq!(second.spent_refresh_proofs, 300 - first.spent_refresh_proofs);
+    assert_eq!(
+        second.spent_refresh_proofs,
+        300 - first.spent_refresh_proofs
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -1540,10 +1539,7 @@ async fn large_family_reclaim_stays_bounded_per_batch() {
             "the family sweep is bounded per batch too"
         );
         spent_total += result.spent_refresh_proofs;
-        if !result.saturated
-            && result.spent_refresh_proofs == 0
-            && result.refresh_tokens == 0
-        {
+        if !result.saturated && result.spent_refresh_proofs == 0 && result.refresh_tokens == 0 {
             break;
         }
         assert!(round < 63, "refresh-state reclaim must converge, not stall");

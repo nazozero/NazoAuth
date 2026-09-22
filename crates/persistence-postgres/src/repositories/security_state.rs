@@ -156,15 +156,13 @@ impl SecurityStateMaintenanceRepository {
                 let saturated = due.len() as i64 >= CLEANUP_BATCH_LIMIT;
                 let mut deleted = 0_u64;
                 for family in due {
-                    let acquired = sql_query(
-                        "SELECT pg_try_advisory_xact_lock($1) AS acquired",
-                    )
-                    .bind::<sql_types::BigInt, _>(super::tokens::refresh_family_lock_key(
-                        family.token_family_id,
-                    ))
-                    .get_result::<LockRow>(connection)
-                    .await?
-                    .acquired;
+                    let acquired = sql_query("SELECT pg_try_advisory_xact_lock($1) AS acquired")
+                        .bind::<sql_types::BigInt, _>(super::tokens::refresh_family_lock_key(
+                            family.token_family_id,
+                        ))
+                        .get_result::<LockRow>(connection)
+                        .await?
+                        .acquired;
                     if !acquired {
                         continue;
                     }
