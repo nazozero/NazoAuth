@@ -219,27 +219,45 @@ diesel::table! {
 }
 
 diesel::table! {
-    oauth_tokens (id) {
-        id -> Uuid,
+    oauth_refresh_contracts (tenant_id, contract_blake3) {
         tenant_id -> Uuid,
-        refresh_token_blake3 -> Varchar,
+        contract_blake3 -> Binary,
+        contract -> Jsonb,
+        created_at -> Timestamptz,
+    }
+}
+
+diesel::table! {
+    oauth_refresh_families (tenant_id, token_family_id) {
+        tenant_id -> Uuid,
         token_family_id -> Uuid,
-        rotated_from_id -> Nullable<Uuid>,
         client_id -> Uuid,
         user_id -> Nullable<Uuid>,
-        scopes -> Jsonb,
-        audience -> Jsonb,
-        authorization_details -> Jsonb,
-        issued_at -> Timestamptz,
-        expires_at -> Timestamptz,
-        revoked_at -> Nullable<Timestamptz>,
-        reuse_detected_at -> Nullable<Timestamptz>,
-        subject -> Varchar,
+        contract_blake3 -> Binary,
+        current_member_id -> Uuid,
+        current_token_blake3 -> Binary,
+        current_audience -> Jsonb,
+        current_issued_at -> Timestamptz,
+        current_expires_at -> Timestamptz,
+        current_id_token_sid -> Nullable<Varchar>,
         dpop_jkt -> Nullable<Varchar>,
         mtls_x5t_s256 -> Nullable<Varchar>,
         client_attestation_jkt -> Nullable<Varchar>,
-        oidc_auth_context -> Jsonb,
-        sparsified_at -> Nullable<Timestamptz>,
+        created_at -> Timestamptz,
+        revoked_at -> Nullable<Timestamptz>,
+        reuse_detected_at -> Nullable<Timestamptz>,
+    }
+}
+
+diesel::table! {
+    oauth_refresh_spent_tokens (tenant_id, refresh_token_blake3) {
+        tenant_id -> Uuid,
+        refresh_token_blake3 -> Binary,
+        token_family_id -> Uuid,
+        member_id -> Uuid,
+        successor_member_id -> Uuid,
+        spent_at -> Timestamptz,
+        expires_at -> Timestamptz,
     }
 }
 
@@ -543,7 +561,9 @@ diesel::allow_tables_to_appear_in_same_query!(
     identity_security_events,
     user_passkey_credentials,
     external_identity_links,
-    oauth_tokens,
+    oauth_refresh_contracts,
+    oauth_refresh_families,
+    oauth_refresh_spent_tokens,
     oauth_token_issuances,
     recovery_invalidations,
     user_client_grants,

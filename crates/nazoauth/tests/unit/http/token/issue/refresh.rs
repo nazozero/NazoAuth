@@ -387,7 +387,11 @@ async fn refresh_issue_new_persistence_failure_uses_non_rotation_error_mapping()
     let grant_key = format!("refresh-persist-error-{}", Uuid::now_v7());
     let mut issue = token_issue_without_openid();
     issue.user_id = None;
-    issue.subject = "s".repeat(129);
+    issue.subject = "subject-persist-error".to_owned();
+    // The family row's `dpop_jkt VARCHAR(128)` bound makes this sender
+    // constraint fail the refresh-family INSERT, exercising the
+    // non-rotation error mapping on the fresh-issuance path.
+    issue.refresh_token_dpop_jkt = Some("d".repeat(129));
     issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
     issue.include_refresh = true;
 

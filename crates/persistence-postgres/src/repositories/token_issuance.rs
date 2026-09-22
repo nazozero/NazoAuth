@@ -472,6 +472,7 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                             match TokenRepository::persist_refresh_token_on_connection(
                                 connection,
                                 refresh.clone(),
+                                input.issuance_id,
                             )
                             .await
                             .map_err(CommitTransactionError::Repository)?

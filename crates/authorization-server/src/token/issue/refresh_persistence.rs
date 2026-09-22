@@ -5,9 +5,14 @@ use uuid::Uuid;
 use crate::domain::client_policy::client_supports_grant;
 pub(super) struct PendingRefreshToken {
     pub(super) raw: String,
+    /// Identity of this generation; the parent's spent proof names it as the
+    /// direct successor.
+    pub(super) member_id: Uuid,
     pub(super) family: Uuid,
     pub(super) rotated_from: Option<Uuid>,
-    pub(super) lost_response_retry: Option<(Uuid, DateTime<Utc>)>,
+    /// `(original member id, original token digest, retry start)` — the digest
+    /// is what a persisted retry must prove against the spent-proof edge.
+    pub(super) lost_response_retry: Option<(Uuid, [u8; 32], DateTime<Utc>)>,
     pub(super) issued_at: DateTime<Utc>,
     pub(super) expires_at: DateTime<Utc>,
 }
@@ -65,17 +70,17 @@ pub(super) fn prepare_refresh_token(
 ) -> nazo_auth::NewRefreshToken {
     nazo_auth::NewRefreshToken {
         raw_token: refresh.raw.clone(),
+        member_id: refresh.member_id,
         tenant_id: client.tenant_id,
         family_id: refresh.family,
         rotated_from_id: refresh.rotated_from,
-        lost_response_retry: refresh
-            .lost_response_retry
-            .map(
-                |(original_id, retry_started_at)| nazo_auth::LostResponseRetry {
-                    original_id,
-                    retry_started_at,
-                },
-            ),
+        lost_response_retry: refresh.lost_response_retry.map(
+            |(original_id, original_blake3, retry_started_at)| nazo_auth::LostResponseRetry {
+                original_id,
+                original_blake3,
+                retry_started_at,
+            },
+        ),
         client_id: client.id,
         user_id: issue.user_id,
         scopes: refresh_token_persistence_scopes(

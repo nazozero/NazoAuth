@@ -4,7 +4,7 @@ use crate::{
     get_conn,
     repositories::audit::insert_identity_security_event,
     rows::identity::{AuthenticationIdentityRow, PrincipalRow, PublicAccountRow, SubjectClaimsRow},
-    schema::{oauth_tokens, user_client_grants, users},
+    schema::{oauth_refresh_families, user_client_grants, users},
 };
 use diesel::{
     ExpressionMethods, OptionalExtension, PgExpressionMethods, QueryDsl, SelectableHelper,
@@ -725,12 +725,12 @@ pub async fn disable_user_on_connection(
     )
     .await?;
     diesel::update(
-        oauth_tokens::table
-            .filter(oauth_tokens::tenant_id.eq(tenant_id.as_uuid()))
-            .filter(oauth_tokens::user_id.eq(user_id.as_uuid()))
-            .filter(oauth_tokens::revoked_at.is_null()),
+        oauth_refresh_families::table
+            .filter(oauth_refresh_families::tenant_id.eq(tenant_id.as_uuid()))
+            .filter(oauth_refresh_families::user_id.eq(user_id.as_uuid()))
+            .filter(oauth_refresh_families::revoked_at.is_null()),
     )
-    .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
+    .set(oauth_refresh_families::revoked_at.eq(diesel::dsl::now))
     .execute(connection)
     .await?;
     diesel::delete(

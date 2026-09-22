@@ -136,8 +136,7 @@ async fn install_rotation_insert_gate(
         r#"
         CREATE FUNCTION {function}() RETURNS trigger LANGUAGE plpgsql AS $$
         BEGIN
-            IF NEW.token_family_id = '{family_id}'::uuid
-               AND NEW.rotated_from_id IS NOT NULL THEN
+            IF NEW.token_family_id = '{family_id}'::uuid THEN
                 PERFORM pg_advisory_xact_lock({gate_key});
             END IF;
             RETURN NEW;
@@ -151,7 +150,7 @@ async fn install_rotation_insert_gate(
     sql_query(format!(
         r#"
         CREATE TRIGGER {trigger}
-        BEFORE INSERT ON oauth_tokens
+        BEFORE INSERT ON oauth_refresh_spent_tokens
         FOR EACH ROW EXECUTE FUNCTION {function}()
         "#
     ))
@@ -166,7 +165,7 @@ async fn remove_rotation_insert_gate(
     trigger: &str,
     function: &str,
 ) {
-    sql_query(format!("DROP TRIGGER {trigger} ON oauth_tokens"))
+    sql_query(format!("DROP TRIGGER {trigger} ON oauth_refresh_spent_tokens"))
         .execute(&mut *connection)
         .await
         .expect("rotation insert gate trigger should be removed");
@@ -239,6 +238,7 @@ fn refresh_token_fixture(
         .expect("fixed authentication time should be valid");
     NewRefreshToken {
         raw_token,
+        member_id: Uuid::now_v7(),
         tenant_id,
         family_id,
         rotated_from_id,
@@ -364,7 +364,7 @@ async fn deactivation_state(
         'issuances', (SELECT count(*) FROM oauth_token_issuances WHERE client_id = $1), \
         'revocations', (SELECT count(*) FROM access_token_revocations WHERE client_id = $1), \
         'active_vci', (SELECT count(*) FROM openid4vci_access_grants WHERE client_id = $2 AND revoked_at IS NULL), \
-        'active_refresh', (SELECT count(*) FROM oauth_tokens WHERE client_id = $1 AND revoked_at IS NULL), \
+        'active_refresh', (SELECT count(*) FROM oauth_refresh_families WHERE client_id = $1 AND revoked_at IS NULL), \
         'grants', (SELECT count(*) FROM user_client_grants WHERE client_id = $1)) AS value")
         .bind::<SqlUuid, _>(fixture.client_id).bind::<Text, _>(&fixture.client_public_id)
         .get_result::<State>(connection).await.unwrap().value
@@ -527,7 +527,7 @@ async fn single_use_grant_retry_is_rejected_without_reissuing_or_duplicating_aud
     .await
     .unwrap();
     assert_eq!(rows.count, 1);
-    let family = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_tokens WHERE token_family_id = $1 AND revoked_at IS NULL")
+    let family = sql_query("SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families WHERE token_family_id = $1 AND revoked_at IS NULL")
         .bind::<SqlUuid, _>(family_id).get_result::<CountRow>(&mut connection).await.unwrap();
     assert_eq!(
         family.count, 1,
@@ -751,42 +751,58 @@ async fn refresh_token_authentication_context_round_trips_and_rejects_invalid_va
     let mut connection = AsyncPgConnection::establish(&database_url)
         .await
         .expect("test database should connect");
-    let invalid_values = [
-        json!("not-an-authentication-context"),
+    let invalid_contracts = [
+        json!("not-a-refresh-contract"),
         json!({
-            "version": 2,
-            "issuer": "https://issuer.example",
-            "audience": fixture.client_public_id,
-            "auth_time": 1_700_000_000_i64,
-            "amr": ["pwd"],
-            "oidc_sid": null,
-            "id_token_sid": null,
-            "acr": null,
-            "nonce": null,
-            "userinfo_claims": [],
-            "userinfo_claim_requests": [],
-            "id_token_claims": [],
-            "id_token_claim_requests": []
+            "subject": loaded.subject,
+            "scopes": loaded.scopes,
+            "audiences": loaded.audience,
+            "authorization_details": [],
+            "authentication_context": {
+                "version": 2,
+                "issuer": "https://issuer.example",
+                "audience": fixture.client_public_id,
+                "auth_time": 1_700_000_000_i64,
+                "amr": ["pwd"],
+                "oidc_sid": null,
+                "id_token_sid": null,
+                "acr": null,
+                "nonce": null,
+                "userinfo_claims": [],
+                "userinfo_claim_requests": [],
+                "id_token_claims": [],
+                "id_token_claim_requests": []
+            }
         }),
     ];
-    for invalid_value in invalid_values {
-        let result = sql_query("UPDATE oauth_tokens SET oidc_auth_context = $2 WHERE id = $1")
-            .bind::<SqlUuid, _>(loaded.id)
-            .bind::<diesel::sql_types::Jsonb, _>(invalid_value)
-            .execute(&mut connection)
-            .await;
-        assert!(
-            result.is_err(),
-            "the database must reject an invalid refresh authentication context"
-        );
-    }
-    let null_result = sql_query("UPDATE oauth_tokens SET oidc_auth_context = NULL WHERE id = $1")
+    for invalid_contract in invalid_contracts {
+        let result = sql_query(
+            "UPDATE oauth_refresh_contracts c SET contract = $2 \
+             FROM oauth_refresh_families f \
+             WHERE f.tenant_id = c.tenant_id AND f.contract_blake3 = c.contract_blake3 \
+               AND f.current_member_id = $1",
+        )
         .bind::<SqlUuid, _>(loaded.id)
+        .bind::<diesel::sql_types::Jsonb, _>(invalid_contract)
         .execute(&mut connection)
         .await;
+        assert!(
+            result.is_err(),
+            "the database must reject an invalid refresh contract"
+        );
+    }
+    let null_result = sql_query(
+        "UPDATE oauth_refresh_contracts c SET contract = NULL \
+         FROM oauth_refresh_families f \
+         WHERE f.tenant_id = c.tenant_id AND f.contract_blake3 = c.contract_blake3 \
+           AND f.current_member_id = $1",
+    )
+    .bind::<SqlUuid, _>(loaded.id)
+    .execute(&mut connection)
+    .await;
     assert!(
         null_result.is_err(),
-        "the database must reject a missing refresh authentication context"
+        "the database must reject a missing refresh contract"
     );
 }
 
@@ -912,7 +928,10 @@ async fn refresh_family_requires_one_root_and_matching_direct_parent_context() {
         format!("context-parent-child-{}", Uuid::now_v7()),
         Some(context_root_id),
     );
-    mismatched_context.authentication_context.nonce = Some("different-authentication".to_owned());
+    // The persisted contract strips `nonce` (no refresh-time reader), so a
+    // diverging nonce no longer distinguishes contracts; mutate a persisted
+    // authentication-context fact instead.
+    mismatched_context.authentication_context.amr = vec!["mfa".to_owned()];
     assert_eq!(
         issuance
             .commit_token_issuance(refresh_issuance(mismatched_context))
@@ -1206,29 +1225,18 @@ async fn grants_upsert_cover_and_revoke_tokens_atomically() {
     let mut connection = AsyncPgConnection::establish(&database_url)
         .await
         .expect("test database should connect");
-    let token_hash = Uuid::now_v7().simple().to_string().repeat(2);
     let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
-    sql_query(format!(
-        r#"
-        INSERT INTO oauth_tokens (
-            refresh_token_blake3, token_family_id, client_id, user_id, scopes,
-            audience, authorization_details, issued_at, expires_at, subject,
-            oidc_auth_context
-        ) VALUES (
-            '{token_hash}', '{}', '{}', '{}', '["openid", "offline_access"]'::jsonb,
-            '["resource://default"]'::jsonb, '[]'::jsonb,
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour', '{}',
-            '{context}'::jsonb
-        )
-        "#,
-        Uuid::now_v7(),
-        fixture.client_id,
-        fixture.user_id,
-        fixture.user_id
-    ))
-    .execute(&mut connection)
-    .await
-    .expect("active refresh token fixture should insert");
+    insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            Uuid::now_v7(),
+            &format!("grant-revoke-refresh-{}", Uuid::now_v7()),
+            &context,
+        ),
+    )
+    .await;
     let revoked = repository
         .revoke_by_client_id(tenant_id, fixture.user_id, &fixture.client_public_id)
         .await
@@ -1416,28 +1424,20 @@ async fn authorization_code_replay_compensation_revokes_both_token_kinds() {
     let fixture = fixture(&database_url).await;
     let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
     let family_id = Uuid::now_v7();
-    let token_hash = Uuid::now_v7().simple().to_string().repeat(2);
     let access_jti = format!("authorization-replay-{}", Uuid::now_v7());
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     let context = refresh_context_json(&fixture.client_public_id, chrono::Utc::now());
-    sql_query(format!(
-        r#"
-        INSERT INTO oauth_tokens (
-            refresh_token_blake3, token_family_id, client_id, user_id, scopes,
-            audience, authorization_details, issued_at, expires_at, subject,
-            oidc_auth_context
-        ) VALUES (
-            '{token_hash}', '{family_id}', '{}', '{}', '["openid"]'::jsonb,
-            '["resource://default"]'::jsonb, '[]'::jsonb,
-            CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour', '{}',
-            '{context}'::jsonb
-        )
-        "#,
-        fixture.client_id, fixture.user_id, fixture.user_id
-    ))
-    .execute(&mut connection)
-    .await
-    .expect("authorization replay refresh fixture should insert");
+    insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            family_id,
+            &format!("authorization-replay-refresh-{}", Uuid::now_v7()),
+            &context,
+        ),
+    )
+    .await;
 
     AuthorizationRepository::new(create_pool(&database_url, 4).unwrap())
         .revoke_issued_tokens(
@@ -1475,36 +1475,16 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     let family_id = Uuid::now_v7();
     let first = format!("revocation-first-{}", Uuid::now_v7());
     let second = format!("revocation-second-{}", Uuid::now_v7());
-    let first_hash = blake3::hash(first.as_bytes()).to_hex().to_string();
-    let second_hash = blake3::hash(second.as_bytes()).to_hex().to_string();
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
     let context = refresh_context_json(&owner.client_public_id, chrono::Utc::now());
-    sql_query(format!(
-        r#"
-        INSERT INTO oauth_tokens (
-            refresh_token_blake3, token_family_id, client_id, user_id, scopes,
-            audience, authorization_details, issued_at, expires_at, subject,
-            oidc_auth_context
-        ) VALUES
-            ('{first_hash}', '{family_id}', '{}', '{}', '["openid"]'::jsonb,
-             '["resource://default"]'::jsonb, '[]'::jsonb,
-             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour', '{}',
-             '{context}'::jsonb),
-            ('{second_hash}', '{family_id}', '{}', '{}', '["openid"]'::jsonb,
-             '["resource://default"]'::jsonb, '[]'::jsonb,
-             CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '1 hour', '{}',
-             '{context}'::jsonb)
-        "#,
-        owner.client_id,
-        owner.user_id,
-        owner.user_id,
-        owner.client_id,
-        owner.user_id,
-        owner.user_id,
-    ))
-    .execute(&mut connection)
-    .await
-    .expect("refresh family fixture should insert");
+    let first_id = insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(&owner, tenant_id, family_id, &first, &context),
+    )
+    .await;
+    let mut second_row = raw_refresh_row(&owner, tenant_id, family_id, &second, &context);
+    second_row.rotated_from_id = Some(first_id);
+    insert_refresh_row(&mut connection, &second_row).await;
 
     let foreign_repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     let foreign_result = foreign_repository
@@ -1536,8 +1516,8 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     );
     assert_eq!(
         first_result.unwrap() + second_result.unwrap(),
-        2,
-        "one serialized revocation must revoke the complete active family"
+        1,
+        "revoking either member of a family revokes the family once"
     );
 
     let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
@@ -1571,7 +1551,7 @@ async fn token_management_revocation_is_client_scoped_idempotent_and_serializes_
     }
 
     let active_family = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
          WHERE token_family_id = $1 AND revoked_at IS NULL",
     )
     .bind::<SqlUuid, _>(family_id)
@@ -1848,6 +1828,9 @@ fn server_auth_callers_do_not_query_diesel_or_auth_tables() {
             "diesel::",
             "diesel_async",
             "oauth_tokens::",
+            "oauth_refresh_families::",
+            "oauth_refresh_contracts::",
+            "oauth_refresh_spent_tokens::",
             "user_client_grants::",
             "access_token_revocations::",
             "scim_tokens::",
@@ -1970,19 +1953,22 @@ async fn stale_logout_worker_cannot_complete_or_fail_a_reclaimed_delivery() {
 // ---------------------------------------------------------------------------
 static ROTATION_MATRIX_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 
-/// Field-level description of one directly inserted `oauth_tokens` row.
+/// Field-level description of one directly inserted refresh generation. A row
+/// without `rotated_from_id` stages a family head; a row with it stages the
+/// next generation: the current member becomes a spent proof and the new
+/// member becomes current, mirroring the runtime rotation layout.
 struct RawRefreshRow<'a> {
     tenant_id: Uuid,
     family_id: Uuid,
     rotated_from_id: Option<Uuid>,
     client_id: Uuid,
     user_id: Option<Uuid>,
-    subject: &'a str,
+    subject: String,
     raw_token: &'a str,
     dpop_jkt: Option<&'a str>,
-    /// Offset from now in seconds; `None` leaves the row unrevoked.
+    /// Offset from now in seconds; `None` leaves the family unrevoked.
     revoked_offset_seconds: Option<i32>,
-    /// Offset from now in seconds for `expires_at`.
+    /// Offset from now in seconds for the member/family `expires_at`.
     expires_offset_seconds: i32,
     reuse_detected: bool,
     context_json: &'a str,
@@ -1994,36 +1980,97 @@ async fn insert_refresh_row(connection: &mut AsyncPgConnection, row: &RawRefresh
         #[diesel(sql_type = SqlUuid)]
         id: Uuid,
     }
+    let context: nazo_auth::RefreshTokenAuthenticationContext =
+        serde_json::from_str(row.context_json).expect("fixture context must parse");
+    let contract = nazo_auth::RefreshContract {
+        subject: row.subject.to_owned(),
+        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        authorization_details: json!([]),
+        authentication_context: context.clone(),
+    };
+    let persisted = contract.persisted();
+    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let contract_json = serde_json::to_value(&persisted).expect("contract serializes");
+    let member_id = Uuid::now_v7();
+    let token_blake3 = blake3::hash(row.raw_token.as_bytes()).as_bytes().to_vec();
     sql_query(
         r#"
-        INSERT INTO oauth_tokens (
-            refresh_token_blake3, tenant_id, token_family_id, rotated_from_id,
-            client_id, user_id, scopes, audience, authorization_details,
-            issued_at, expires_at, revoked_at, reuse_detected_at, subject,
-            dpop_jkt, oidc_auth_context
-        ) VALUES (
-            $1, $2, $3, $4, $5, $6, '["openid", "offline_access"]'::jsonb,
-            '["resource://default"]'::jsonb, '[]'::jsonb,
-            CURRENT_TIMESTAMP,
-            CURRENT_TIMESTAMP + ($7 * INTERVAL '1 second'),
-            CURRENT_TIMESTAMP + ($8 * INTERVAL '1 second'),
-            CASE WHEN $9 THEN CURRENT_TIMESTAMP ELSE NULL END,
-            $10, $11, $12::jsonb
-        ) RETURNING id
+        WITH contract AS (
+            INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)
+            VALUES ($2, $4, $5::jsonb)
+            ON CONFLICT (tenant_id, contract_blake3) DO NOTHING
+            RETURNING contract_blake3
+        ), resolved_contract AS (
+            SELECT contract_blake3 FROM contract
+            UNION ALL
+            SELECT contract_blake3 FROM oauth_refresh_contracts
+            WHERE tenant_id = $2 AND contract_blake3 = $4
+            LIMIT 1
+        ), spent AS (
+            -- The predecessor's revoked offset was staged onto the family row
+            -- by its own insert; carry it into the spent proof's spent_at.
+            INSERT INTO oauth_refresh_spent_tokens (
+                tenant_id, refresh_token_blake3, token_family_id, member_id,
+                successor_member_id, spent_at, expires_at
+            )
+            SELECT f.tenant_id, f.current_token_blake3, f.token_family_id,
+                   f.current_member_id, $9,
+                   LEAST(COALESCE(f.revoked_at, CURRENT_TIMESTAMP),
+                         f.current_expires_at - INTERVAL '1 microsecond'),
+                   f.current_expires_at
+            FROM oauth_refresh_families AS f
+            WHERE $10 IS NOT NULL
+              AND f.tenant_id = $2
+              AND f.token_family_id = $3
+              AND f.current_member_id = $10
+        ), upsert AS (
+            -- Terminal flags describe the CURRENT member: a staged successor
+            -- replaces them (the predecessor's state moved into its proof).
+            INSERT INTO oauth_refresh_families (
+                tenant_id, token_family_id, client_id, user_id, contract_blake3,
+                current_member_id, current_token_blake3, current_audience,
+                current_issued_at, current_expires_at, current_id_token_sid,
+                dpop_jkt, created_at, revoked_at, reuse_detected_at
+            )
+            SELECT
+                $2, $3, $6, $7, rc.contract_blake3,
+                $9, $1, '["resource://default"]'::jsonb,
+                LEAST(CURRENT_TIMESTAMP,
+                      CURRENT_TIMESTAMP + (($8 - 1) * INTERVAL '1 second')),
+                CURRENT_TIMESTAMP + ($8 * INTERVAL '1 second'),
+                $5::jsonb -> 'authentication_context' ->> 'id_token_sid',
+                $11, CURRENT_TIMESTAMP,
+                CURRENT_TIMESTAMP + ($12 * INTERVAL '1 second'),
+                CASE WHEN $13 THEN CURRENT_TIMESTAMP ELSE NULL END
+            FROM resolved_contract AS rc
+            ON CONFLICT (tenant_id, token_family_id) DO UPDATE SET
+                current_member_id = EXCLUDED.current_member_id,
+                current_token_blake3 = EXCLUDED.current_token_blake3,
+                current_audience = EXCLUDED.current_audience,
+                current_issued_at = EXCLUDED.current_issued_at,
+                current_expires_at = EXCLUDED.current_expires_at,
+                current_id_token_sid = EXCLUDED.current_id_token_sid,
+                revoked_at = EXCLUDED.revoked_at,
+                reuse_detected_at = EXCLUDED.reuse_detected_at
+            RETURNING current_member_id
+        )
+        SELECT current_member_id AS id FROM upsert
         "#,
     )
-    .bind::<Text, _>(blake3::hash(row.raw_token.as_bytes()).to_hex().to_string())
+    .bind::<diesel::sql_types::Bytea, _>(token_blake3)
     .bind::<SqlUuid, _>(row.tenant_id)
     .bind::<SqlUuid, _>(row.family_id)
-    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(row.rotated_from_id)
+    .bind::<diesel::sql_types::Bytea, _>(contract_blake3)
+    .bind::<diesel::sql_types::Jsonb, _>(contract_json)
     .bind::<SqlUuid, _>(row.client_id)
     .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(row.user_id)
     .bind::<diesel::sql_types::Integer, _>(row.expires_offset_seconds)
+    .bind::<SqlUuid, _>(member_id)
+    .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(row.rotated_from_id)
+    .bind::<diesel::sql_types::Nullable<Text>, _>(row.dpop_jkt)
     .bind::<diesel::sql_types::Nullable<diesel::sql_types::Integer>, _>(row.revoked_offset_seconds)
     .bind::<diesel::sql_types::Bool, _>(row.reuse_detected)
-    .bind::<Text, _>(row.subject)
-    .bind::<diesel::sql_types::Nullable<Text>, _>(row.dpop_jkt)
-    .bind::<Text, _>(row.context_json)
     .get_result::<IdRow>(connection)
     .await
     .expect("raw refresh token row should insert")
@@ -2044,7 +2091,7 @@ fn raw_refresh_row<'a>(
         rotated_from_id: None,
         client_id: fixture.client_id,
         user_id: Some(fixture.user_id),
-        subject: "raw-refresh-subject",
+        subject: fixture.user_id.to_string(),
         raw_token,
         dpop_jkt: None,
         revoked_offset_seconds: None,
@@ -2056,8 +2103,8 @@ fn raw_refresh_row<'a>(
 
 /// Bounded retry for token-repository calls that may abort on transient
 /// lock-queue timeouts.  The shared test database serializes the gated
-/// concurrency tests' `CREATE`/`DROP TRIGGER` DDL on `oauth_tokens` and
-/// `oauth_token_issuances` behind parked rotation transactions, so an
+/// concurrency tests' `CREATE`/`DROP TRIGGER` DDL on `oauth_refresh_spent_tokens`
+/// and `oauth_token_issuances` behind parked rotation transactions, so an
 /// unrelated commit can hit its 2s `lock_timeout` through no fault of the
 /// path under test.  An `Err` always means the transaction rolled back, so
 /// retrying is safe; business verdicts return immediately and deterministic
@@ -2102,24 +2149,34 @@ async fn commit_refresh_labeled(
 }
 
 /// Durable facts that every ordinary-rotation business conflict must leave
-/// behind: no extra family rows, the losing issuance row deleted, exactly one
-/// `refresh_reuse_detected` audit (pending in the outbox) and no `token_issued`
-/// audit for the losing issuance.
+/// behind: the family carries exactly its current member plus the spent proofs
+/// of rotated generations, the losing issuance row is deleted, exactly one
+/// `refresh_reuse_detected` audit (pending in the outbox) is appended, and no
+/// `token_issued` audit exists for the losing issuance. `compromised` and
+/// `active` are family-level facts in the minimal model.
 async fn assert_rotation_conflict_facts(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     family_id: Uuid,
     losing: &CommitTokenIssuance,
-    expected_family_rows: i64,
-    expected_compromised_rows: i64,
-    expected_active_rows: i64,
+    expected_member_rows: i64,
+    expected_compromised: bool,
+    expected_active: bool,
 ) {
     let totals = sql_query(
         "SELECT \
             COUNT(*)::bigint AS count, \
-            COUNT(*) FILTER (WHERE reuse_detected_at IS NOT NULL)::bigint AS compromised, \
-            COUNT(*) FILTER (WHERE revoked_at IS NULL)::bigint AS active \
-         FROM oauth_tokens WHERE tenant_id = $1 AND token_family_id = $2",
+            COUNT(*) FILTER (WHERE kind = 'family' AND reuse_detected_at IS NOT NULL)::bigint AS compromised, \
+            COUNT(*) FILTER (WHERE kind = 'family' AND revoked_at IS NULL AND reuse_detected_at IS NULL)::bigint AS active \
+         FROM ( \
+             SELECT 'family' AS kind, f.revoked_at, f.reuse_detected_at \
+             FROM oauth_refresh_families AS f \
+             WHERE f.tenant_id = $1 AND f.token_family_id = $2 \
+             UNION ALL \
+             SELECT 'spent', NULL, NULL \
+             FROM oauth_refresh_spent_tokens AS s \
+             WHERE s.tenant_id = $1 AND s.token_family_id = $2 \
+         ) AS members",
     );
     #[derive(QueryableByName)]
     struct FamilyCounts {
@@ -2136,12 +2193,20 @@ async fn assert_rotation_conflict_facts(
         .get_result::<FamilyCounts>(connection)
         .await
         .expect("family counts should load");
-    assert_eq!(counts.count, expected_family_rows, "family row total");
     assert_eq!(
-        counts.compromised, expected_compromised_rows,
-        "compromise marks reuse_detected_at on every tenant-scoped family row"
+        counts.count, expected_member_rows,
+        "family + spent member rows"
     );
-    assert_eq!(counts.active, expected_active_rows, "active family rows");
+    assert_eq!(
+        counts.compromised,
+        i64::from(expected_compromised),
+        "compromise is one family-level fact"
+    );
+    assert_eq!(
+        counts.active,
+        i64::from(expected_active),
+        "the family's current member is the only active state"
+    );
     let issuance = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
     )
@@ -2260,7 +2325,7 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     )
     .await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, missing_family, &losing, 1, 1, 0)
+    assert_rotation_conflict_facts(&mut connection, tenant_id, missing_family, &losing, 1, true, false)
         .await;
 
     // Parent already consumed by an earlier rotation: a revoked root plus
@@ -2304,8 +2369,8 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
         consumed_family,
         &losing,
         2,
-        2,
-        0,
+        true,
+        false,
     )
     .await;
 
@@ -2343,12 +2408,12 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
         requested_family,
         &losing,
         0,
-        0,
-        0,
+        false,
+        false,
     )
     .await;
     let untouched = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
          WHERE tenant_id = $1 AND token_family_id = $2 \
            AND revoked_at IS NULL AND reuse_detected_at IS NULL",
     )
@@ -2385,7 +2450,7 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     wrong_client.client_id = foreign.client_id;
     let (result, losing) = commit_refresh(&database_url, wrong_client).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, client_family, &losing, 1, 1, 0)
+    assert_rotation_conflict_facts(&mut connection, tenant_id, client_family, &losing, 1, true, false)
         .await;
 
     // Parent is owned by a different user.
@@ -2412,7 +2477,7 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     wrong_user.subject = foreign.user_id.to_string();
     let (result, losing) = commit_refresh(&database_url, wrong_user).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, user_family, &losing, 1, 1, 0).await;
+    assert_rotation_conflict_facts(&mut connection, tenant_id, user_family, &losing, 1, true, false).await;
 
     // Parent belongs to a different tenant: the update misses and the
     // tenant-scoped compromise cannot touch the foreign row.
@@ -2426,7 +2491,7 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
         &RawRefreshRow {
             client_id: foreign_client,
             user_id: None,
-            subject: &foreign_public_id,
+            subject: foreign_public_id.clone(),
             ..raw_refresh_row(
                 &fixture,
                 foreign_tenant,
@@ -2448,11 +2513,11 @@ async fn ordinary_rotation_parent_misses_compromise_family_and_commit_reuse_audi
     cross_tenant.subject = fixture.client_public_id.clone();
     let (result, losing) = commit_refresh(&database_url, cross_tenant).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, foreign_family, &losing, 0, 0, 0)
+    assert_rotation_conflict_facts(&mut connection, tenant_id, foreign_family, &losing, 0, false, false)
         .await;
     let foreign_state = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
-         WHERE id = $1 AND revoked_at IS NULL AND reuse_detected_at IS NULL",
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
+         WHERE current_member_id = $1 AND revoked_at IS NULL AND reuse_detected_at IS NULL",
     )
     .bind::<SqlUuid, _>(foreign_parent_id)
     .get_result::<CountRow>(&mut connection)
@@ -2500,10 +2565,13 @@ async fn ordinary_rotation_context_mismatch_commits_compromise_and_reuse_audit()
     // fails; the compromise facts commit instead of propagating an error.
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
     let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
-    assert_rotation_conflict_facts(&mut connection, tenant_id, family_id, &losing, 1, 1, 0).await;
+    assert_rotation_conflict_facts(&mut connection, tenant_id, family_id, &losing, 1, true, false).await;
     let persisted_context = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
-         WHERE id = $1 AND oidc_auth_context ->> 'acr' IS NULL",
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts AS c \
+         JOIN oauth_refresh_families AS f \
+           ON f.tenant_id = c.tenant_id AND f.contract_blake3 = c.contract_blake3 \
+         WHERE f.current_member_id = $1 \
+           AND c.contract #>> '{authentication_context,acr}' IS NULL",
     )
     .bind::<SqlUuid, _>(root_id)
     .get_result::<CountRow>(&mut connection)
@@ -2567,11 +2635,13 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
     );
     float_child.authentication_context.userinfo_claim_requests = vec![claim_for(json!(1))];
     let float_input = refresh_issuance(float_child);
-    let incoming_json = serde_json::to_value(
-        &float_input
+    let incoming_context = serde_json::to_value(
+        float_input
             .refresh_token
             .as_ref()
             .unwrap()
+            .contract()
+            .persisted()
             .authentication_context,
     )
     .unwrap();
@@ -2581,10 +2651,14 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
         value: bool,
     }
     let pg_equal = sql_query(
-        "SELECT (oidc_auth_context = $2::jsonb) AS value FROM oauth_tokens WHERE id = $1",
+        "SELECT (c.contract -> 'authentication_context' = $2::jsonb) AS value \
+         FROM oauth_refresh_contracts AS c \
+         JOIN oauth_refresh_families AS f \
+           ON f.tenant_id = c.tenant_id AND f.contract_blake3 = c.contract_blake3 \
+         WHERE f.current_member_id = $1",
     )
     .bind::<SqlUuid, _>(float_parent)
-    .bind::<Text, _>(serde_json::to_string(&incoming_json).unwrap())
+    .bind::<Text, _>(serde_json::to_string(&incoming_context).unwrap())
     .get_result::<BoolRow>(&mut connection)
     .await
     .unwrap();
@@ -2603,41 +2677,43 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
         float_family,
         &float_input,
         1,
-        1,
-        0,
+        true,
+        false,
     )
     .await;
 
-    // `null` versus a missing member is likewise serde-visible.
-    let null_family = Uuid::now_v7();
-    let stored_null = context_with_claim(serde_json::Value::Null);
-    let null_parent = insert_refresh_row(
+    // A structural difference the typed contract still preserves: a claim
+    // request with an explicit value versus one with no constraint at all
+    // (`values` non-empty vs empty) must not be silently equalized.
+    let shape_family = Uuid::now_v7();
+    let stored_shape = context_with_claim(json!(1));
+    let shape_parent = insert_refresh_row(
         &mut connection,
         &raw_refresh_row(
             &fixture,
             tenant_id,
-            null_family,
-            &format!("serde-null-parent-{}", Uuid::now_v7()),
-            &stored_null,
+            shape_family,
+            &format!("serde-shape-parent-{}", Uuid::now_v7()),
+            &stored_shape,
         ),
     )
     .await;
-    let mut null_child = refresh_token_fixture(
+    let mut shape_child = refresh_token_fixture(
         &fixture,
         tenant_id,
-        null_family,
-        format!("serde-null-child-{}", Uuid::now_v7()),
-        Some(null_parent),
+        shape_family,
+        format!("serde-shape-child-{}", Uuid::now_v7()),
+        Some(shape_parent),
     );
-    null_child.authentication_context.userinfo_claim_requests = vec![nazo_auth::OidcClaimRequest {
+    shape_child.authentication_context.userinfo_claim_requests = vec![nazo_auth::OidcClaimRequest {
         name: "claim".to_owned(),
         essential: false,
         value: None,
-        values: Vec::new(),
+        values: vec![json!(1)],
     }];
-    let (result, losing) = commit_refresh(&database_url, null_child).await;
+    let (result, losing) = commit_refresh(&database_url, shape_child).await;
     assert_eq!(result, CommitTokenIssuanceResult::RotationConflict);
-    assert_rotation_conflict_facts(&mut connection, tenant_id, null_family, &losing, 1, 1, 0).await;
+    assert_rotation_conflict_facts(&mut connection, tenant_id, shape_family, &losing, 1, true, false).await;
 
     // The identical semantic context re-serialized stays equal and rotates.
     let equal_family = Uuid::now_v7();
@@ -2664,7 +2740,7 @@ async fn ordinary_rotation_context_compare_uses_serde_value_semantics() {
     let (result, _) = commit_refresh(&database_url, equal_child).await;
     assert_eq!(result, CommitTokenIssuanceResult::Committed);
     let state = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
          WHERE token_family_id = $1 AND revoked_at IS NULL AND reuse_detected_at IS NULL",
     )
     .bind::<SqlUuid, _>(equal_family)
@@ -2765,7 +2841,7 @@ async fn concurrent_ordinary_rotations_commit_one_winner_and_one_committed_compr
     // The winner's insert commits, then the loser's compromise revokes every
     // family row — including the just-committed successor — and its reuse
     // audit is persisted rather than rolled back.
-    assert_rotation_conflict_facts(&mut coordinator, tenant_id, family_id, &losing, 2, 2, 0).await;
+    assert_rotation_conflict_facts(&mut coordinator, tenant_id, family_id, &losing, 2, true, false).await;
     let winner_issuance = if losing.issuance_id == left_input.issuance_id {
         right_input.issuance_id
     } else {
@@ -2878,6 +2954,7 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
     retry_token.dpop_jkt = Some(dpop_jkt.clone());
     retry_token.lost_response_retry = Some(nazo_auth::LostResponseRetry {
         original_id: original.id,
+        original_blake3: original.token_blake3,
         retry_started_at,
     });
     let retry_input = refresh_issuance(retry_token);
@@ -2890,7 +2967,7 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
     // A concurrent reuse verdict commits while the retry waits for the lock.
     let mut compromiser = AsyncPgConnection::establish(&database_url).await.unwrap();
     let marked = sql_query(
-        "UPDATE oauth_tokens SET reuse_detected_at = CURRENT_TIMESTAMP \
+        "UPDATE oauth_refresh_families SET reuse_detected_at = CURRENT_TIMESTAMP \
          WHERE tenant_id = $1 AND token_family_id = $2 AND reuse_detected_at IS NULL",
     )
     .bind::<SqlUuid, _>(tenant_id)
@@ -2917,8 +2994,8 @@ async fn lost_response_retry_rechecks_family_compromise_under_the_family_lock() 
         family_id,
         &retry_input,
         2,
-        2,
-        0,
+        true,
+        false,
     )
     .await;
 }
@@ -3095,28 +3172,51 @@ async fn lost_response_successor_requires_exactly_one_bound_unexpired_successor(
         "an unbound original has no recoverable successor"
     );
 
-    // A successor bound to a different key is not this retry's successor.
-    let (original, _) = stage_lost_response(
-        &database_url,
+    // Sender binding is family authority: a rotation that drifts the binding
+    // is itself a compromise, so a successor "bound to another key" can never
+    // be committed inside a live family.
+    let binding_family = Uuid::now_v7();
+    let binding_root_raw = format!("binding-drift-root-{}", Uuid::now_v7());
+    let mut binding_root = refresh_token_fixture(
         &fixture,
         tenant_id,
-        "mismatch",
-        0,
-        Some(jkt),
-        Some("a-different-jkt"),
-        3600,
-        false,
+        binding_family,
+        binding_root_raw.clone(),
+        None,
+    );
+    binding_root.dpop_jkt = Some(jkt.to_owned());
+    let (result, _) = commit_refresh(&database_url, binding_root).await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let binding_root_id = TokenRepository::new(create_pool(&database_url, 1).unwrap())
+        .by_raw_refresh_token(tenant_id, &binding_root_raw)
+        .await
+        .unwrap()
+        .unwrap()
+        .id;
+    let mut drifting = refresh_token_fixture(
+        &fixture,
+        tenant_id,
+        binding_family,
+        format!("binding-drift-child-{}", Uuid::now_v7()),
+        Some(binding_root_id),
+    );
+    drifting.dpop_jkt = Some("a-different-jkt".to_owned());
+    let (result, losing) = commit_refresh(&database_url, drifting).await;
+    assert_eq!(
+        result,
+        CommitTokenIssuanceResult::RotationConflict,
+        "a successor bound to another key must compromise the family"
+    );
+    assert_rotation_conflict_facts(
+        &mut AsyncPgConnection::establish(&database_url).await.unwrap(),
+        tenant_id,
+        binding_family,
+        &losing,
         1,
+        true,
+        false,
     )
     .await;
-    assert!(
-        tokens
-            .inspect_lost_response_successor(&original, fixture.client_id, now())
-            .await
-            .expect("successor lookup should load")
-            .is_none(),
-        "a successor bound to another key must not be recovered"
-    );
 
     // A client different from the original's owner sees nothing.
     let (original, _) = stage_lost_response(
@@ -3211,17 +3311,24 @@ async fn rotation_sql_failure_propagates_error_and_rolls_back_instead_of_conflic
         .unwrap()
         .id;
 
-    // Reusing the parent's raw refresh token makes the successor INSERT hit
-    // ux_oauth_tokens_tenant_refresh_token_blake3 — a real constraint
-    // violation after the conditional parent UPDATE has already run.  The
+    // Reusing another family's live raw refresh token makes the current-member
+    // UPDATE hit ux_oauth_refresh_families_current_digest — a real constraint
+    // violation after the spent-proof INSERT has already run.  The
     // transaction must abort and roll back instead of degrading into a
     // business conflict.
+    let other_raw = format!("sql-failure-other-{}", Uuid::now_v7());
+    let (result, _) = commit_refresh(
+        &database_url,
+        refresh_token_fixture(&fixture, tenant_id, Uuid::now_v7(), other_raw.clone(), None),
+    )
+    .await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
     let repository = TokenIssuanceRepository::new(create_pool(&database_url, 2).unwrap());
     let failing = refresh_issuance(refresh_token_fixture(
         &fixture,
         tenant_id,
         family_id,
-        root_raw.clone(),
+        other_raw.clone(),
         Some(root_id),
     ));
     let failing_issuance_id = failing.issuance_id;
@@ -3236,8 +3343,8 @@ async fn rotation_sql_failure_propagates_error_and_rolls_back_instead_of_conflic
     );
     let mut coordinator = AsyncPgConnection::establish(&database_url).await.unwrap();
     let intact = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM oauth_tokens \
-         WHERE id = $1 AND revoked_at IS NULL AND reuse_detected_at IS NULL",
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families \
+         WHERE current_member_id = $1 AND revoked_at IS NULL AND reuse_detected_at IS NULL",
     )
     .bind::<SqlUuid, _>(root_id)
     .get_result::<CountRow>(&mut coordinator)
@@ -3256,7 +3363,10 @@ async fn rotation_sql_failure_propagates_error_and_rolls_back_instead_of_conflic
             "security_audit_events",
             format!("payload->>'issuance_id' = '{failing_issuance_id}'"),
         ),
-        ("oauth_tokens", format!("rotated_from_id = '{root_id}'")),
+        (
+            "oauth_refresh_spent_tokens",
+            format!("member_id = '{root_id}'"),
+        ),
     ] {
         let count = sql_query(format!(
             "SELECT COUNT(*)::bigint AS count FROM {table} WHERE {clause}"
@@ -3288,25 +3398,30 @@ async fn family_active_exists_semantics_cover_cardinality_and_predicates() {
             .expect("empty family state should load")
     );
 
-    // Many rows with at least one active → true.
+    // A family with spent history whose current member is live → true.
     let many_family = Uuid::now_v7();
-    for (label, revoked, expires) in [
-        ("active", None, 3600),
-        ("revoked", Some(0), 3600),
-        ("expired", None, -60),
-    ] {
-        let raw = format!("exists-many-{label}-{}", Uuid::now_v7());
-        let mut row = raw_refresh_row(&fixture, tenant_id, many_family, &raw, &context);
-        row.revoked_offset_seconds = revoked;
-        row.expires_offset_seconds = expires;
-        insert_refresh_row(&mut connection, &row).await;
-    }
+    let root_id = insert_refresh_row(
+        &mut connection,
+        &raw_refresh_row(
+            &fixture,
+            tenant_id,
+            many_family,
+            &format!("exists-many-root-{}", Uuid::now_v7()),
+            &context,
+        ),
+    )
+    .await;
+    let successor_raw = format!("exists-many-child-{}", Uuid::now_v7());
+    let mut successor =
+        raw_refresh_row(&fixture, tenant_id, many_family, &successor_raw, &context);
+    successor.rotated_from_id = Some(root_id);
+    insert_refresh_row(&mut connection, &successor).await;
     assert!(
         tokens
             .family_active(tenant_id, many_family, fixture.user_id)
             .await
             .expect("multi-row family state should load"),
-        "one unrevoked unexpired row is enough"
+        "an unrevoked unexpired current member with spent history is enough"
     );
     // Single active row family.
     let single_family = Uuid::now_v7();
@@ -3343,7 +3458,7 @@ async fn family_active_exists_semantics_cover_cardinality_and_predicates() {
         "a different user must not see the family active"
     );
     // Revoke the single row → false; a family of only expired rows → false.
-    sql_query("UPDATE oauth_tokens SET revoked_at = CURRENT_TIMESTAMP WHERE token_family_id = $1")
+    sql_query("UPDATE oauth_refresh_families SET revoked_at = CURRENT_TIMESTAMP WHERE token_family_id = $1")
         .bind::<SqlUuid, _>(single_family)
         .execute(&mut connection)
         .await

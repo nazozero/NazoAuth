@@ -261,9 +261,10 @@ fn refresh_context(client_public_id: &str) -> RefreshTokenAuthenticationContext 
     }
 }
 
-/// Raw insert of a refresh-token row satisfying every current constraint
-/// (non-empty string audience array, valid current auth context, timeline
-/// checks, sender-constraint columns).
+/// Raw insert of one refresh generation in the minimal three-table model: the
+/// deduplicated contract row, then the family current member (a
+/// `rotated_from_id` successor first moves the existing current member into
+/// its spent proof). `revoked_at` stages the member's terminal timestamp.
 #[allow(clippy::too_many_arguments)]
 async fn seed_refresh_token_row(
     connection: &mut AsyncPgConnection,
@@ -277,33 +278,75 @@ async fn seed_refresh_token_row(
     dpop_jkt: Option<&str>,
 ) {
     let issued_at = Utc::now();
-    let context =
-        serde_json::to_value(refresh_context(&seed.client.client_id)).expect("context serializes");
+    let contract = nazo_auth::RefreshContract {
+        subject: seed.user_id.to_string(),
+        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        authorization_details: json!([]),
+        authentication_context: refresh_context(&seed.client.client_id),
+    };
+    let persisted = contract.persisted();
+    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let contract_json = serde_json::to_value(&persisted).expect("contract serializes");
     sql_query(
-        "INSERT INTO oauth_tokens (\
-            id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id, client_id,\
-            user_id, scopes, audience, authorization_details, issued_at, expires_at, revoked_at,\
-            subject, dpop_jkt, oidc_auth_context\
-         ) VALUES (\
-            $1, $2, $3, $4, $5, $6, $7,\
-            '[\"openid\",\"offline_access\"]'::jsonb, $8, '[]'::jsonb,\
-            $9, $10, $11, $12, $13, $14\
-         )",
+        r#"
+        WITH contract AS (
+            INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)
+            VALUES ($2, $3, $4)
+            ON CONFLICT (tenant_id, contract_blake3) DO NOTHING
+            RETURNING contract_blake3
+        ), resolved AS (
+            SELECT contract_blake3 FROM contract
+            UNION ALL
+            SELECT contract_blake3 FROM oauth_refresh_contracts
+            WHERE tenant_id = $2 AND contract_blake3 = $3
+            LIMIT 1
+        ), spent AS (
+            INSERT INTO oauth_refresh_spent_tokens (
+                tenant_id, refresh_token_blake3, token_family_id, member_id,
+                successor_member_id, spent_at, expires_at
+            )
+            SELECT f.tenant_id, f.current_token_blake3, f.token_family_id,
+                   f.current_member_id, $1,
+                   COALESCE(f.revoked_at, CURRENT_TIMESTAMP), f.current_expires_at
+            FROM oauth_refresh_families AS f
+            WHERE $6 IS NOT NULL
+              AND f.tenant_id = $2 AND f.token_family_id = $5
+              AND f.current_member_id = $6
+        )
+        INSERT INTO oauth_refresh_families (
+            tenant_id, token_family_id, client_id, user_id, contract_blake3,
+            current_member_id, current_token_blake3, current_audience,
+            current_issued_at, current_expires_at, dpop_jkt, created_at,
+            revoked_at
+        )
+        SELECT
+            $2, $5, $7, $8, r.contract_blake3,
+            $1, $9, '["resource://default"]'::jsonb,
+            $10, $11, $13, $10, $12
+        FROM resolved AS r
+        ON CONFLICT (tenant_id, token_family_id) DO UPDATE SET
+            current_member_id = EXCLUDED.current_member_id,
+            current_token_blake3 = EXCLUDED.current_token_blake3,
+            current_audience = EXCLUDED.current_audience,
+            current_issued_at = EXCLUDED.current_issued_at,
+            current_expires_at = EXCLUDED.current_expires_at,
+            revoked_at = EXCLUDED.revoked_at
+        "#,
     )
     .bind::<sql_types::Uuid, _>(token_id)
     .bind::<sql_types::Uuid, _>(tenant.tenant_id.as_uuid())
-    .bind::<sql_types::Text, _>(blake3_hex(raw_token))
+    .bind::<sql_types::Binary, _>(contract_blake3)
+    .bind::<sql_types::Jsonb, _>(contract_json)
     .bind::<sql_types::Uuid, _>(family_id)
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(rotated_from_id)
     .bind::<sql_types::Uuid, _>(seed.client.id)
     .bind::<sql_types::Nullable<sql_types::Uuid>, _>(Some(seed.user_id))
-    .bind::<sql_types::Jsonb, _>(json!(["resource://default"]))
+    .bind::<sql_types::Binary, _>(blake3::hash(raw_token.as_bytes()).as_bytes().to_vec())
     .bind::<sql_types::Timestamptz, _>(issued_at)
     .bind::<sql_types::Timestamptz, _>(issued_at + Duration::hours(1))
     .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(revoked_at)
-    .bind::<sql_types::Text, _>(seed.user_id.to_string())
     .bind::<sql_types::Nullable<sql_types::Text>, _>(dpop_jkt.map(str::to_owned))
-    .bind::<sql_types::Jsonb, _>(context)
     .execute(connection)
     .await
     .expect("the refresh-token fixture should insert");
@@ -320,6 +363,7 @@ fn new_refresh_token(
     let issued_at = Utc::now();
     NewRefreshToken {
         raw_token,
+        member_id: Uuid::now_v7(),
         tenant_id,
         family_id,
         rotated_from_id,
@@ -448,7 +492,12 @@ async fn cleanup_seed(database_url: &str, tenant: TenantContext, seed: &Seed) {
         "DELETE FROM client_access_requests WHERE tenant_id = $1 AND user_id = $2",
         "DELETE FROM oauth_token_issuances WHERE tenant_id = $1 AND (user_id = $2 OR client_id = $3)",
         "DELETE FROM access_token_revocations WHERE tenant_id = $1 AND client_id = $3",
-        "DELETE FROM oauth_tokens WHERE tenant_id = $1 AND client_id = $3",
+        "DELETE FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND token_family_id IN (\
+            SELECT token_family_id FROM oauth_refresh_families WHERE tenant_id = $1 AND client_id = $3)",
+        "DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND client_id = $3",
+        "DELETE FROM oauth_refresh_contracts WHERE tenant_id = $1 AND NOT EXISTS (\
+            SELECT 1 FROM oauth_refresh_families f WHERE f.tenant_id = $1 \
+            AND f.contract_blake3 = oauth_refresh_contracts.contract_blake3)",
         "DELETE FROM oauth_clients WHERE tenant_id = $1 AND id = $3",
         "DELETE FROM users WHERE tenant_id = $1 AND id = $2",
     ];
@@ -496,11 +545,12 @@ async fn rv09_revoke_access_token_jti_is_lookup_plus_single_upsert() {
     let (result, delta, acquires) = measure(&counter, repository.revoke_token(input)).await;
 
     assert_eq!(result.expect("revocation succeeds"), 0);
-    // 2 data statements: SELECT token_family_id lookup (misses — the raw token
-    // is not a stored refresh token), then the single
+    // 3 data statements: the digest probe on oauth_refresh_families misses,
+    // the spent-proof probe on oauth_refresh_spent_tokens also misses (a spent
+    // token still names its family for revocation), then the single
     // INSERT .. ON CONFLICT DO UPDATE upsert into access_token_revocations.
     // The JTI write is one statement, not an insert-then-select pair.
-    assert_eq!(delta.data_queries, 2);
+    assert_eq!(delta.data_queries, 3);
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1, "one pooled checkout for the whole revocation");
@@ -560,7 +610,7 @@ async fn rv09_revoke_refresh_family_is_lookup_lock_and_single_update() {
         "one family member was marked revoked"
     );
     // 3 data statements: SELECT token_family_id, SELECT pg_advisory_xact_lock,
-    // UPDATE oauth_tokens SET revoked_at. The access-token upsert never runs
+    // UPDATE oauth_refresh_families SET revoked_at. The access-token upsert never runs
     // because the raw token resolved to a refresh family first.
     assert_eq!(delta.data_queries, 3);
     assert_eq!(delta.begins, 1);
@@ -733,7 +783,9 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         family_id,
         format!("qc-child-{}", Uuid::now_v7()),
         Some(parent.id),
-        Some("qc-child-dpop".to_owned()),
+        // Sender binding is family authority: the successor carries the same
+        // DPoP binding as the parent it replaces.
+        Some("qc-parent-dpop".to_owned()),
     ));
     let (result, delta, acquires) =
         measure(&counter, repository.commit_token_issuance(child)).await;
@@ -742,20 +794,21 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
         result.expect("rotation should commit"),
         CommitTokenIssuanceResult::Committed
     );
-    // 9 data statements inside the single commit transaction:
+    // 11 data statements inside the single commit transaction:
     //   SET LOCAL lock_timeout
     //   SELECT is_active FROM oauth_clients .. FOR SHARE
     //   SELECT is_active FROM users .. FOR SHARE          (user_id is Some)
     //   INSERT INTO oauth_token_issuances                  (issuance fence)
     //   SELECT pg_advisory_xact_lock(grant scope)
     //   SELECT pg_advisory_xact_lock(family)
-    //   UPDATE oauth_tokens SET revoked_at .. RETURNING oidc_auth_context
-    //   INSERT INTO oauth_tokens                           (successor)
+    //   SELECT oauth_refresh_families                      (current member check)
+    //   INSERT INTO oauth_refresh_spent_tokens             (predecessor proof)
+    //   DELETE FROM oauth_refresh_spent_tokens .. LIMIT    (generation bound)
+    //   UPDATE oauth_refresh_families SET current_*        (in-place rotation)
     //   SELECT nazo_persist_security_audit_event(..)       (token_issued)
-    // The parent row is revoked with RETURNING oidc_auth_context instead of a
-    // separate SELECT — that removed read is the RF-01 remediation. A rotation
-    // emits one audit event: rotated_from_id rides on token_issued.
-    assert_eq!(delta.data_queries, 9);
+    // Rotation writes one narrow family UPDATE plus one compact spent proof —
+    // the immutable contract is never rewritten.
+    assert_eq!(delta.data_queries, 11);
     assert_eq!(delta.begins, 1);
     assert_eq!(delta.commits, 1);
     assert_eq!(acquires, 1, "the whole saga runs on one pooled checkout");
@@ -787,6 +840,8 @@ async fn rf06_lost_response_successor_is_single_read() {
     let child_id = Uuid::now_v7();
     let dpop_jkt = "qc-dpop-jkt".to_owned();
     let revoked_at = Utc::now() - Duration::seconds(2);
+    let parent_raw = format!("qc-parent-{}", Uuid::now_v7());
+    let child_raw = format!("qc-child-{}", Uuid::now_v7());
 
     {
         let mut connection = connect(&database_url).await;
@@ -796,7 +851,7 @@ async fn rf06_lost_response_successor_is_single_read() {
             &seed,
             parent_id,
             family_id,
-            &format!("qc-parent-{}", Uuid::now_v7()),
+            &parent_raw,
             None,
             Some(revoked_at),
             Some(&dpop_jkt),
@@ -808,7 +863,7 @@ async fn rf06_lost_response_successor_is_single_read() {
             &seed,
             child_id,
             family_id,
-            &format!("qc-child-{}", Uuid::now_v7()),
+            &child_raw,
             Some(parent_id),
             None,
             Some(&dpop_jkt),
@@ -820,6 +875,7 @@ async fn rf06_lost_response_successor_is_single_read() {
     let repository = TokenRepository::new(pool);
     let parent = RefreshToken {
         id: parent_id,
+        token_blake3: *blake3::hash(parent_raw.as_bytes()).as_bytes(),
         tenant_id,
         token_family_id: family_id,
         client_id: seed.client.id,
@@ -1099,7 +1155,7 @@ async fn exs04_existence_checks_are_single_statements() {
     let tokens = TokenRepository::new(pool.clone());
     let requests = AccessRequestRepository::new(pool);
 
-    // family_active — SELECT EXISTS over oauth_tokens.
+    // family_active — SELECT EXISTS over oauth_refresh_families.
     let (result, delta, acquires) = measure(
         &counter,
         tokens.family_active(tenant_id, family_id, seed.user_id),

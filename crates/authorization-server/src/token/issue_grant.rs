@@ -444,18 +444,20 @@ pub async fn issue_token_response(
             RefreshTokenPolicy::RotateLostResponse {
                 family_id,
                 original_id,
+                original_blake3,
                 successor_id,
                 retry_started_at,
             } => Some((
                 family_id,
                 Some(successor_id),
-                Some((original_id, retry_started_at)),
+                Some((original_id, original_blake3, retry_started_at)),
             )),
             RefreshTokenPolicy::PreserveExisting => None,
         };
         if let Some((family, rotated_from, lost_response_retry)) = refresh_family {
             let refresh = PendingRefreshToken {
                 raw: format!("{}.{}", random_urlsafe_token(), random_urlsafe_token()),
+                member_id: Uuid::now_v7(),
                 family,
                 rotated_from,
                 lost_response_retry,

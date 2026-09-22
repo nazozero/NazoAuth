@@ -169,7 +169,7 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
-    let mut lost_response_original_id = None;
+    let mut lost_response_original: Option<(uuid::Uuid, [u8; 32])> = None;
     // Keep the original token's authentication context independent from the
     // optional lost-response successor replacement below.  Borrowing the
     // context through `token` would prevent assigning the successor in place.
@@ -249,6 +249,7 @@ pub async fn token_refresh_with_service(
     }
     if token.revoked_at.is_some() {
         let original_id = token.id;
+        let original_blake3 = token.token_blake3;
         match token_service
             .inspect_lost_refresh_successor(&token, client.id, request_started_at)
             .await
@@ -269,7 +270,7 @@ pub async fn token_refresh_with_service(
         // authenticated reuse.  In the latter case it atomically compromises
         // the family and appends the rejection audit before returning
         // RotationConflict.
-        lost_response_original_id = Some(original_id);
+        lost_response_original = Some((original_id, original_blake3));
     }
     let openid4vci_credential_authorization = issuance
         .config
@@ -325,10 +326,11 @@ pub async fn token_refresh_with_service(
             false,
         ));
     }
-    let refresh_token_policy = match lost_response_original_id {
-        Some(original_id) => RefreshTokenPolicy::RotateLostResponse {
+    let refresh_token_policy = match lost_response_original {
+        Some((original_id, original_blake3)) => RefreshTokenPolicy::RotateLostResponse {
             family_id: token.token_family_id,
             original_id,
+            original_blake3,
             successor_id: token.id,
             retry_started_at: request_started_at,
         },

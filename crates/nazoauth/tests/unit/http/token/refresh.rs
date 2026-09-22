@@ -220,11 +220,35 @@ fn live_trusted_proxy_refresh_state(
     Some(state)
 }
 
+/// The direct predecessor a family row rotated away from. In the durable
+/// model the predecessor is not a member row — it survives only as a compact
+/// spent proof carrying the digest, member identity and the named successor.
+struct SpentEdge {
+    member_id: Uuid,
+    raw_token: String,
+    spent_at: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+}
+
+/// Build the spent-proof edge a successor leaves behind: the predecessor's
+/// rotation time is the proof's `spent_at`, and the proof lives until the
+/// predecessor's own expiry.
+fn spent_edge(predecessor: &TokenRow, raw_token: &str) -> SpentEdge {
+    SpentEdge {
+        member_id: predecessor.id,
+        raw_token: raw_token.to_owned(),
+        spent_at: predecessor
+            .revoked_at
+            .expect("predecessor fixture must carry its rotation time as revoked_at"),
+        expires_at: predecessor.expires_at,
+    }
+}
+
 async fn insert_refresh_token_row(
     state: &TestInfrastructure,
     raw_refresh_token: &str,
     token: &TokenRow,
-    rotated_from_id: Option<Uuid>,
+    predecessor: Option<SpentEdge>,
     reuse_detected_at: Option<DateTime<Utc>>,
 ) {
     let authentication_context = &token.authentication_context;
@@ -236,51 +260,110 @@ async fn insert_refresh_token_row(
         !json_array_to_strings(&token.audience).is_empty(),
         "refresh fixture must carry an explicit non-empty audience"
     );
+    let persisted = nazo_auth::RefreshContract {
+        subject: token.subject.clone(),
+        scopes: json_array_to_strings(&token.scopes),
+        audiences: json_array_to_strings(&token.audience),
+        authorization_details: token.authorization_details.clone(),
+        authentication_context: authentication_context.clone(),
+    }
+    .persisted();
+    let contract_blake3 = persisted.blake3_digest().to_vec();
+    let contract_json = serde_json::to_value(&persisted).expect("contract should serialize");
+    let token_blake3 = blake3::hash(raw_refresh_token.as_bytes())
+        .as_bytes()
+        .to_vec();
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
-    sql_query("DELETE FROM oauth_tokens WHERE tenant_id = $1 AND refresh_token_blake3 = $2")
-        .bind::<SqlUuid, _>(token.tenant_id)
-        .bind::<Text, _>(blake3_hex(raw_refresh_token))
-        .execute(&mut conn)
-        .await
-        .expect("refresh token cleanup should succeed");
+    // Idempotent fixture setup: drop a same-named family (cascading its spent
+    // proofs), any same-digest spent proof, and this contract digest only when
+    // it is already orphaned.
+    sql_query(
+        "DELETE FROM oauth_refresh_families \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(token.tenant_id)
+    .bind::<SqlUuid, _>(token.token_family_id)
+    .execute(&mut conn)
+    .await
+    .expect("refresh family cleanup should succeed");
+    sql_query(
+        "DELETE FROM oauth_refresh_contracts AS c \
+         WHERE c.tenant_id = $1 AND c.contract_blake3 = $2 AND NOT EXISTS (\
+             SELECT 1 FROM oauth_refresh_families AS f \
+             WHERE f.tenant_id = c.tenant_id AND f.contract_blake3 = c.contract_blake3)",
+    )
+    .bind::<SqlUuid, _>(token.tenant_id)
+    .bind::<diesel::sql_types::Binary, _>(&contract_blake3)
+    .execute(&mut conn)
+    .await
+    .expect("orphan contract cleanup should succeed");
     sql_query(
         r#"
-        INSERT INTO oauth_tokens (
-            id, tenant_id, refresh_token_blake3, token_family_id, rotated_from_id,
-            client_id, user_id, scopes, audience, oidc_auth_context, authorization_details,
-            issued_at, expires_at,
-            revoked_at, reuse_detected_at, subject, dpop_jkt, mtls_x5t_s256
+        WITH c AS (
+            INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)
+            VALUES ($2, $3, $4::jsonb)
+            ON CONFLICT (tenant_id, contract_blake3) DO NOTHING
+        )
+        INSERT INTO oauth_refresh_families (
+            tenant_id, token_family_id, contract_blake3, client_id, user_id,
+            current_member_id, current_token_blake3, current_audience,
+            current_issued_at, current_expires_at, current_id_token_sid,
+            dpop_jkt, mtls_x5t_s256, client_attestation_jkt,
+            created_at, revoked_at, reuse_detected_at
         )
         VALUES (
-            $1, $2, $3, $4, $5,
-            $6, $7, $8, $9, $10, $11, $12,
-            $13, $14, $15, $16, $17, $18
+            $2, $5, $3, $6, $7,
+            $1, $8, $9::jsonb, $10, $11, $12,
+            $13, $14, $15,
+            $10, $16, $17
         )
         "#,
     )
     .bind::<SqlUuid, _>(token.id)
     .bind::<SqlUuid, _>(token.tenant_id)
-    .bind::<Text, _>(blake3_hex(raw_refresh_token))
+    .bind::<diesel::sql_types::Binary, _>(&contract_blake3)
+    .bind::<Jsonb, _>(&contract_json)
     .bind::<SqlUuid, _>(token.token_family_id)
-    .bind::<Nullable<SqlUuid>, _>(rotated_from_id)
     .bind::<SqlUuid, _>(token.client_id)
     .bind::<Nullable<SqlUuid>, _>(token.user_id)
-    .bind::<Jsonb, _>(token.scopes.clone())
+    .bind::<diesel::sql_types::Binary, _>(&token_blake3)
     .bind::<Jsonb, _>(token.audience.clone())
-    .bind::<Jsonb, _>(json!(authentication_context))
-    .bind::<Jsonb, _>(token.authorization_details.clone())
     .bind::<Timestamptz, _>(token.issued_at)
     .bind::<Timestamptz, _>(token.expires_at)
-    .bind::<Nullable<Timestamptz>, _>(token.revoked_at)
-    .bind::<Nullable<Timestamptz>, _>(reuse_detected_at)
-    .bind::<Text, _>(token.subject.as_str())
+    .bind::<Nullable<Text>, _>(token.authentication_context.id_token_sid.as_deref())
     .bind::<Nullable<Text>, _>(token.dpop_jkt.as_deref())
     .bind::<Nullable<Text>, _>(token.mtls_x5t_s256.as_deref())
+    .bind::<Nullable<Text>, _>(token.client_attestation_jkt.as_deref())
+    .bind::<Nullable<Timestamptz>, _>(token.revoked_at)
+    .bind::<Nullable<Timestamptz>, _>(reuse_detected_at)
     .execute(&mut conn)
     .await
-    .expect("refresh token insert should succeed");
+    .expect("refresh family insert should succeed");
+    if let Some(edge) = predecessor {
+        sql_query(
+            r#"
+            INSERT INTO oauth_refresh_spent_tokens (
+                tenant_id, refresh_token_blake3, token_family_id, member_id,
+                successor_member_id, spent_at, expires_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
+            "#,
+        )
+        .bind::<SqlUuid, _>(token.tenant_id)
+        .bind::<diesel::sql_types::Binary, _>(
+            blake3::hash(edge.raw_token.as_bytes()).as_bytes().to_vec(),
+        )
+        .bind::<SqlUuid, _>(token.token_family_id)
+        .bind::<SqlUuid, _>(edge.member_id)
+        .bind::<SqlUuid, _>(token.id)
+        .bind::<Timestamptz, _>(edge.spent_at)
+        .bind::<Timestamptz, _>(edge.expires_at)
+        .execute(&mut conn)
+        .await
+        .expect("spent proof insert should succeed");
+    }
 }
 
 async fn insert_refresh_client(state: &TestInfrastructure, client: &ClientRow) {
@@ -289,9 +372,9 @@ async fn insert_refresh_client(state: &TestInfrastructure, client: &ClientRow) {
         .expect("database connection should be available");
     sql_query(
         r#"
-        DELETE FROM oauth_tokens
+        DELETE FROM oauth_refresh_families
         USING oauth_clients
-        WHERE oauth_tokens.client_id = oauth_clients.id
+        WHERE oauth_refresh_families.client_id = oauth_clients.id
           AND oauth_clients.tenant_id = $1
           AND oauth_clients.client_id = $2
         "#,
@@ -395,6 +478,10 @@ async fn insert_refresh_user(state: &TestInfrastructure, user_id: Uuid, active: 
     .expect("refresh test user should insert");
 }
 
+/// Project the family's durable rows back into member-shaped facts: the
+/// family row reports its current member, each spent proof reports the member
+/// it retired. `rotated_from_id` on the family row resolves to the spent
+/// proof whose named successor is the current member — the predecessor edge.
 async fn load_family_rows(
     state: &TestInfrastructure,
     family_id: Uuid,
@@ -404,9 +491,28 @@ async fn load_family_rows(
         .expect("database connection should be available");
     sql_query(
         r#"
-        SELECT id, refresh_token_blake3, rotated_from_id, revoked_at, reuse_detected_at
-        FROM oauth_tokens
-        WHERE tenant_id = $1 AND token_family_id = $2
+        SELECT f.current_member_id AS id,
+               encode(f.current_token_blake3, 'hex') AS refresh_token_blake3,
+               p.member_id AS rotated_from_id,
+               f.revoked_at,
+               f.reuse_detected_at
+        FROM oauth_refresh_families AS f
+        LEFT JOIN oauth_refresh_spent_tokens AS p
+          ON p.tenant_id = f.tenant_id
+         AND p.token_family_id = f.token_family_id
+         AND p.successor_member_id = f.current_member_id
+        WHERE f.tenant_id = $1 AND f.token_family_id = $2
+        UNION ALL
+        SELECT s.member_id,
+               encode(s.refresh_token_blake3, 'hex'),
+               NULL::uuid,
+               s.spent_at,
+               f.reuse_detected_at
+        FROM oauth_refresh_spent_tokens AS s
+        JOIN oauth_refresh_families AS f
+          ON f.tenant_id = s.tenant_id
+         AND f.token_family_id = s.token_family_id
+        WHERE f.tenant_id = $1 AND f.token_family_id = $2
         "#,
     )
     .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
@@ -557,6 +663,10 @@ fn token_row_with_refresh_context(
     let issued_at = Utc::now();
     TokenRow {
         id: Uuid::now_v7(),
+        // The fixture does not know the raw token; the insert helper derives
+        // the stored digest from `raw_refresh_token`, and tests that pass the
+        // row to repository calls set the matching digest explicitly.
+        token_blake3: [0; 32],
         tenant_id: DEFAULT_TENANT_ID,
         token_family_id: Uuid::now_v7(),
         client_id,
@@ -865,13 +975,22 @@ async fn refresh_grant_reports_lookup_query_failure_without_issuing_tokens() {
     ) else {
         return;
     };
-    create_isolated_schema(&state, &schema, &["oauth_tokens"]).await;
+    create_isolated_schema(
+        &state,
+        &schema,
+        &[
+            "oauth_refresh_contracts",
+            "oauth_refresh_families",
+            "oauth_refresh_spent_tokens",
+        ],
+    )
+    .await;
     rename_column(
         &state,
         &schema,
-        "oauth_tokens",
-        "refresh_token_blake3",
-        "refresh_token_blake3_broken",
+        "oauth_refresh_families",
+        "current_token_blake3",
+        "current_token_blake3_broken",
     )
     .await;
     let req = actix_web::test::TestRequest::post()
@@ -936,6 +1055,7 @@ async fn refresh_grant_rejects_unknown_expired_and_wrong_client_tokens() {
     expired.scopes = json!(["accounts", "offline_access"]);
     expired.subject = client.client_id.clone();
     expired.user_id = None;
+    expired.issued_at = Utc::now() - Duration::minutes(5);
     expired.expires_at = Utc::now() - Duration::seconds(5);
     expired.dpop_jkt = None;
     let expired_raw = "refresh-token-expired";
@@ -972,7 +1092,6 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     reused.dpop_jkt = None;
     reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
     let reused_raw = format!("refresh-token-reused-{suffix}");
-    insert_refresh_token_row(&state, &reused_raw, &reused, None, None).await;
 
     let mut active_sibling = token_row_for_client(&state, &client);
     active_sibling.client_id = client.id;
@@ -982,7 +1101,14 @@ async fn refresh_grant_marks_family_reuse_and_revokes_active_family_tokens() {
     active_sibling.user_id = None;
     active_sibling.dpop_jkt = None;
     let active_raw = format!("refresh-token-active-sibling-{suffix}");
-    insert_refresh_token_row(&state, &active_raw, &active_sibling, Some(reused.id), None).await;
+    insert_refresh_token_row(
+        &state,
+        &active_raw,
+        &active_sibling,
+        Some(spent_edge(&reused, &reused_raw)),
+        None,
+    )
+    .await;
 
     let mut form = refresh_form_without_token();
     form.refresh_token = Some(reused_raw);
@@ -1019,7 +1145,16 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     ) else {
         return;
     };
-    create_isolated_schema(&state, &schema, &["oauth_tokens"]).await;
+    create_isolated_schema(
+        &state,
+        &schema,
+        &[
+            "oauth_refresh_contracts",
+            "oauth_refresh_families",
+            "oauth_refresh_spent_tokens",
+        ],
+    )
+    .await;
 
     let req = actix_web::test::TestRequest::post()
         .uri("/oauth/token")
@@ -1038,7 +1173,6 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
     reused.dpop_jkt = None;
     reused.revoked_at = Some(Utc::now() - Duration::seconds(65));
     let reused_raw = "refresh-token-reuse-marker-failure";
-    insert_refresh_token_row(&state, reused_raw, &reused, None, None).await;
     let mut active_sibling = token_row_for_client(&state, &client);
     active_sibling.client_id = client.id;
     active_sibling.token_family_id = family_id;
@@ -1050,7 +1184,7 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
         &state,
         "refresh-token-active-marker-failure-sibling",
         &active_sibling,
-        Some(reused.id),
+        Some(spent_edge(&reused, reused_raw)),
         None,
     )
     .await;
@@ -1077,7 +1211,7 @@ async fn refresh_grant_rolls_back_reuse_marker_when_family_revoke_fails() {
         &format!(
             r#"
             CREATE TRIGGER reject_refresh_family_revoke
-            BEFORE UPDATE OF revoked_at ON "{}".oauth_tokens
+            BEFORE UPDATE OF revoked_at ON "{}".oauth_refresh_families
             FOR EACH ROW
             WHEN (OLD.revoked_at IS NULL AND NEW.revoked_at IS NOT NULL)
             EXECUTE FUNCTION "{}".reject_refresh_family_revoke();
@@ -1128,7 +1262,7 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     revoked.dpop_jkt = None;
     revoked.revoked_at = Some(Utc::now() - Duration::seconds(35));
     let revoked_raw = format!("refresh-token-retry-original-{suffix}");
-    insert_refresh_token_row(&state, &revoked_raw, &revoked, None, None).await;
+    revoked.token_blake3 = *blake3::hash(revoked_raw.as_bytes()).as_bytes();
 
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
@@ -1139,7 +1273,14 @@ async fn refresh_grant_rejects_unbound_active_successor_inside_lost_response_win
     successor.dpop_jkt = None;
     successor.authentication_context = revoked.authentication_context.clone();
     let successor_raw = format!("refresh-token-retry-successor-{suffix}");
-    insert_refresh_token_row(&state, &successor_raw, &successor, Some(revoked.id), None).await;
+    insert_refresh_token_row(
+        &state,
+        &successor_raw,
+        &successor,
+        Some(spent_edge(&revoked, &revoked_raw)),
+        None,
+    )
+    .await;
     assert!(
         nazo_postgres::TokenRepository::new(state.diesel_db.clone())
             .inspect_lost_response_successor(&revoked, client.id, Utc::now())
@@ -1195,7 +1336,6 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
     revoked.revoked_at = Some(Utc::now() - Duration::seconds(35));
     let revoked_raw = format!("refresh-token-mtls-retry-original-{suffix}");
-    insert_refresh_token_row(&state, &revoked_raw, &revoked, None, None).await;
 
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
@@ -1207,7 +1347,14 @@ async fn refresh_grant_rotates_from_mtls_bound_successor_inside_lost_response_wi
     successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
     successor.authentication_context = revoked.authentication_context.clone();
     let successor_raw = format!("refresh-token-mtls-retry-successor-{suffix}");
-    insert_refresh_token_row(&state, &successor_raw, &successor, Some(revoked.id), None).await;
+    insert_refresh_token_row(
+        &state,
+        &successor_raw,
+        &successor,
+        Some(spent_edge(&revoked, &revoked_raw)),
+        None,
+    )
+    .await;
 
     let mut form = refresh_form_without_token();
     form.refresh_token = Some(revoked_raw.clone());
@@ -1294,7 +1441,16 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
     ) else {
         return;
     };
-    create_isolated_schema(&state, &schema, &["oauth_tokens"]).await;
+    create_isolated_schema(
+        &state,
+        &schema,
+        &[
+            "oauth_refresh_contracts",
+            "oauth_refresh_families",
+            "oauth_refresh_spent_tokens",
+        ],
+    )
+    .await;
 
     let now = DateTime::parse_from_rfc3339("2026-07-13T12:00:00Z")
         .expect("fixed test timestamp should parse")
@@ -1308,20 +1464,15 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
     revoked.dpop_jkt = Some("fixed-window-dpop-jkt".to_owned());
     revoked.issued_at = now - Duration::hours(1);
     revoked.expires_at = now + Duration::hours(1);
+    // The member rotated out at `now`, which is the spent proof's spent_at.
     revoked.revoked_at = Some(now);
     revoked.authentication_context = refresh_authentication_context(
         state.settings.endpoint.issuer.as_str(),
         "refresh-fixed-window-client",
         revoked.issued_at,
     );
-    insert_refresh_token_row(
-        &state,
-        &format!("refresh-lost-window-original-{}", Uuid::now_v7()),
-        &revoked,
-        None,
-        None,
-    )
-    .await;
+    let revoked_raw = format!("refresh-lost-window-original-{}", Uuid::now_v7());
+    revoked.token_blake3 = *blake3::hash(revoked_raw.as_bytes()).as_bytes();
 
     let mut successor = token_row_for_client_id(&state, client_id, "refresh-fixed-window-client");
     successor.client_id = client_id;
@@ -1335,35 +1486,37 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
         &state,
         &format!("refresh-lost-window-successor-{}", Uuid::now_v7()),
         &successor,
-        Some(revoked.id),
+        Some(spent_edge(&revoked, &revoked_raw)),
         None,
     )
     .await;
 
+    // The window is measured from the persisted spent_at (`now`), so the
+    // boundary moves with the `now` argument, not with the stored row.
     let repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());
-    revoked.revoked_at = Some(now);
     let at_zero = repository
         .inspect_lost_response_successor(&revoked, client_id, now)
         .await;
-    revoked.revoked_at = Some(now - Duration::seconds(60));
     let at_sixty_seconds = repository
-        .inspect_lost_response_successor(&revoked, client_id, now)
+        .inspect_lost_response_successor(&revoked, client_id, now + Duration::seconds(60))
         .await;
-    revoked.revoked_at = Some(now - Duration::seconds(60) - Duration::milliseconds(1));
     let after_sixty_seconds = repository
-        .inspect_lost_response_successor(&revoked, client_id, now)
+        .inspect_lost_response_successor(
+            &revoked,
+            client_id,
+            now + Duration::seconds(60) + Duration::milliseconds(1),
+        )
         .await;
-    revoked.revoked_at = Some(now + Duration::milliseconds(1));
-    let future = repository
-        .inspect_lost_response_successor(&revoked, client_id, now)
+    let before_spent = repository
+        .inspect_lost_response_successor(&revoked, client_id, now - Duration::milliseconds(1))
         .await;
     drop_schema(&state, &schema).await;
 
-    let (at_zero, at_sixty_seconds, after_sixty_seconds, future) = (
+    let (at_zero, at_sixty_seconds, after_sixty_seconds, before_spent) = (
         at_zero.expect("zero boundary should load"),
         at_sixty_seconds.expect("sixty-second boundary should load"),
         after_sixty_seconds.expect("after-window lookup should load"),
-        future.expect("future lookup should load"),
+        before_spent.expect("pre-spent lookup should load"),
     );
     assert_eq!(at_zero.map(|row| row.id), Some(successor.id));
     assert_eq!(
@@ -1376,8 +1529,8 @@ async fn lost_response_successor_enforces_fixed_window_boundaries_in_real_postgr
         "60 seconds plus 1 millisecond must be outside the retry window"
     );
     assert!(
-        future.is_none(),
-        "a future revocation must not become retryable"
+        before_spent.is_none(),
+        "a retry before the recorded spent instant must not be eligible"
     );
 }
 
@@ -1394,8 +1547,7 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
     client.require_dpop_bound_tokens = false;
     insert_refresh_client(&state, &client).await;
 
-    for shape in ["none", "multiple", "expired", "revoked"] {
-        let successor_count = usize::from(shape != "none") + usize::from(shape == "multiple");
+    for shape in ["none", "stale-successor", "expired", "revoked"] {
         let family_id = Uuid::now_v7();
         let mut revoked = token_row_for_client(&state, &client);
         revoked.client_id = client.id;
@@ -1406,9 +1558,12 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
         revoked.dpop_jkt = Some(format!("lost-shape-{shape}-dpop-jkt"));
         revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
         let revoked_raw = format!("refresh-lost-shape-{shape}-{}", Uuid::now_v7());
-        insert_refresh_token_row(&state, &revoked_raw, &revoked, None, None).await;
 
-        for _ in 0..successor_count {
+        if shape == "none" {
+            // The member was revoked without a rotation: it stays the family's
+            // current member and no spent proof exists to recover through.
+            insert_refresh_token_row(&state, &revoked_raw, &revoked, None, None).await;
+        } else {
             let mut successor = token_row_for_client(&state, &client);
             successor.client_id = client.id;
             successor.token_family_id = family_id;
@@ -1418,6 +1573,7 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
             successor.dpop_jkt = revoked.dpop_jkt.clone();
             successor.authentication_context = revoked.authentication_context.clone();
             if shape == "expired" {
+                successor.issued_at = Utc::now() - Duration::seconds(30);
                 successor.expires_at = Utc::now() - Duration::seconds(1);
             }
             if shape == "revoked" {
@@ -1427,10 +1583,34 @@ async fn refresh_grant_rejects_lost_response_retry_without_exactly_one_active_su
                 &state,
                 &format!("refresh-lost-shape-successor-{}", Uuid::now_v7()),
                 &successor,
-                Some(revoked.id),
+                Some(spent_edge(&revoked, &revoked_raw)),
                 None,
             )
             .await;
+            if shape == "stale-successor" {
+                // The family rotated past the member the spent proof names —
+                // the direct-successor edge no longer resolves. In the old
+                // model this was the "two successors claim one predecessor"
+                // fork; the durable model makes the fork structurally
+                // impossible, so the equivalent failure is a stale edge.
+                let mut conn = get_conn(&state.diesel_db)
+                    .await
+                    .expect("database connection should be available");
+                sql_query(
+                    "UPDATE oauth_refresh_families \
+                     SET current_member_id = $1, current_token_blake3 = $2 \
+                     WHERE tenant_id = $3 AND token_family_id = $4",
+                )
+                .bind::<SqlUuid, _>(Uuid::now_v7())
+                .bind::<diesel::sql_types::Binary, _>(
+                    blake3::hash(Uuid::now_v7().as_bytes()).as_bytes().to_vec(),
+                )
+                .bind::<SqlUuid, _>(DEFAULT_TENANT_ID)
+                .bind::<SqlUuid, _>(family_id)
+                .execute(&mut conn)
+                .await
+                .expect("stale-successor projection should apply");
+            }
         }
 
         let mut form = refresh_form_without_token();
@@ -1479,21 +1659,26 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
     revoked.mtls_x5t_s256 = Some("expected-x5t".to_owned());
     revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
     let revoked_raw = format!("refresh-lost-wrong-constraints-{}", Uuid::now_v7());
-    insert_refresh_token_row(&state, &revoked_raw, &revoked, None, None).await;
 
-    let mut wrong_client = token_row_for_client(&state, &other_client);
-    wrong_client.client_id = other_client.id;
-    wrong_client.token_family_id = family_id;
-    wrong_client.user_id = None;
-    wrong_client.subject = revoked.subject.clone();
-    wrong_client.scopes = revoked.scopes.clone();
-    wrong_client.dpop_jkt = revoked.dpop_jkt.clone();
-    wrong_client.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
+    // Sender constraints and client ownership are family-level authority in
+    // the durable model — a "successor" carrying a different client or sender
+    // binding cannot exist as a sibling row. The one structural variant left
+    // is a spent proof under a different family that happens to name the same
+    // member id; it must not satisfy this family's recovery.
+    let mut successor = token_row_for_client(&state, &client);
+    successor.client_id = client.id;
+    successor.token_family_id = family_id;
+    successor.user_id = None;
+    successor.subject = revoked.subject.clone();
+    successor.scopes = revoked.scopes.clone();
+    successor.dpop_jkt = revoked.dpop_jkt.clone();
+    successor.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
+    successor.authentication_context = revoked.authentication_context.clone();
     insert_refresh_token_row(
         &state,
-        &format!("refresh-lost-wrong-client-{}", Uuid::now_v7()),
-        &wrong_client,
-        Some(revoked.id),
+        &format!("refresh-lost-successor-{}", Uuid::now_v7()),
+        &successor,
+        Some(spent_edge(&revoked, &revoked_raw)),
         None,
     )
     .await;
@@ -1510,24 +1695,12 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
         &state,
         &format!("refresh-lost-wrong-family-{}", Uuid::now_v7()),
         &wrong_family,
-        Some(revoked.id),
-        None,
-    )
-    .await;
-
-    let mut wrong_sender = token_row_for_client(&state, &client);
-    wrong_sender.client_id = client.id;
-    wrong_sender.token_family_id = family_id;
-    wrong_sender.user_id = None;
-    wrong_sender.subject = revoked.subject.clone();
-    wrong_sender.scopes = revoked.scopes.clone();
-    wrong_sender.dpop_jkt = Some("wrong-jkt".to_owned());
-    wrong_sender.mtls_x5t_s256 = revoked.mtls_x5t_s256.clone();
-    insert_refresh_token_row(
-        &state,
-        &format!("refresh-lost-wrong-sender-{}", Uuid::now_v7()),
-        &wrong_sender,
-        Some(revoked.id),
+        Some(SpentEdge {
+            member_id: revoked.id,
+            raw_token: format!("refresh-lost-foreign-proof-{}", Uuid::now_v7()),
+            spent_at: Utc::now() - Duration::seconds(10),
+            expires_at: revoked.expires_at,
+        }),
         None,
     )
     .await;
@@ -1569,7 +1742,16 @@ async fn lost_response_successor_requires_same_tenant_in_real_postgres() {
     ) else {
         return;
     };
-    create_isolated_schema(&state, &schema, &["oauth_tokens"]).await;
+    create_isolated_schema(
+        &state,
+        &schema,
+        &[
+            "oauth_refresh_contracts",
+            "oauth_refresh_families",
+            "oauth_refresh_spent_tokens",
+        ],
+    )
+    .await;
 
     let client_id = Uuid::now_v7();
     let family_id = Uuid::now_v7();
@@ -1579,30 +1761,44 @@ async fn lost_response_successor_requires_same_tenant_in_real_postgres() {
     revoked.user_id = None;
     revoked.dpop_jkt = Some("same-tenant-dpop-jkt".to_owned());
     revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
-    insert_refresh_token_row(&state, "refresh-lost-tenant-original", &revoked, None, None).await;
+    let revoked_raw = "refresh-lost-tenant-original";
+    revoked.token_blake3 = *blake3::hash(revoked_raw.as_bytes()).as_bytes();
 
-    let mut wrong_tenant = token_row_for_client_id(&state, client_id, "refresh-tenant-client");
-    wrong_tenant.tenant_id = Uuid::now_v7();
-    wrong_tenant.client_id = client_id;
-    wrong_tenant.token_family_id = family_id;
-    wrong_tenant.user_id = None;
-    wrong_tenant.dpop_jkt = revoked.dpop_jkt.clone();
+    let mut successor = token_row_for_client_id(&state, client_id, "refresh-tenant-client");
+    successor.client_id = client_id;
+    successor.token_family_id = family_id;
+    successor.user_id = None;
+    successor.dpop_jkt = revoked.dpop_jkt.clone();
     insert_refresh_token_row(
         &state,
-        "refresh-lost-wrong-tenant-successor",
-        &wrong_tenant,
-        Some(revoked.id),
+        "refresh-lost-tenant-successor",
+        &successor,
+        Some(spent_edge(&revoked, revoked_raw)),
         None,
     )
     .await;
 
+    // Tenant isolation: replaying the same digest under a foreign tenant must
+    // not resolve the spent proof or the family's current member.
+    let mut foreign = revoked.clone();
+    foreign.tenant_id = Uuid::now_v7();
+    let repository = nazo_postgres::TokenRepository::new(state.diesel_db.clone());
     assert!(
-        nazo_postgres::TokenRepository::new(state.diesel_db.clone())
-            .inspect_lost_response_successor(&revoked, client_id, Utc::now())
+        repository
+            .inspect_lost_response_successor(&foreign, client_id, Utc::now())
             .await
             .expect("successor lookup should succeed")
             .is_none(),
-        "a cross-tenant child must not satisfy lost-response recovery"
+        "a cross-tenant lookup must not satisfy lost-response recovery"
+    );
+    assert_eq!(
+        repository
+            .inspect_lost_response_successor(&revoked, client_id, Utc::now())
+            .await
+            .expect("same-tenant lookup should succeed")
+            .map(|row| row.id),
+        Some(successor.id),
+        "the same-tenant direct successor still resolves"
     );
     drop_schema(&state, &schema).await;
 }
@@ -1624,7 +1820,16 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
         nazo_http_actix::IpCidr::parse("127.0.0.1/32").expect("trusted proxy CIDR should parse"),
     ];
     state.settings = Arc::new(settings);
-    create_isolated_schema(&state, &schema, &["oauth_tokens"]).await;
+    create_isolated_schema(
+        &state,
+        &schema,
+        &[
+            "oauth_refresh_contracts",
+            "oauth_refresh_families",
+            "oauth_refresh_spent_tokens",
+        ],
+    )
+    .await;
 
     let certificate = crate::test_support::rfc9440_certificate_fixture("refresh-revoked");
     let thumbprint = certificate.thumbprint.as_str();
@@ -1642,14 +1847,7 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
     revoked.dpop_jkt = None;
     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
     revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
-    insert_refresh_token_row(
-        &state,
-        "refresh-lost-insert-failure-original",
-        &revoked,
-        None,
-        None,
-    )
-    .await;
+    let revoked_raw = "refresh-lost-insert-failure-original";
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
     successor.token_family_id = family_id;
@@ -1663,7 +1861,7 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
         &state,
         "refresh-lost-insert-failure-successor",
         &successor,
-        Some(revoked.id),
+        Some(spent_edge(&revoked, revoked_raw)),
         None,
     )
     .await;
@@ -1690,7 +1888,7 @@ async fn lost_response_rotation_rolls_back_successor_revoke_when_insert_fails() 
         &format!(
             r#"
             CREATE TRIGGER reject_lost_response_insert
-            BEFORE INSERT ON "{}".oauth_tokens
+            BEFORE INSERT ON "{}".oauth_refresh_spent_tokens
             FOR EACH ROW
             EXECUTE FUNCTION "{}".reject_lost_response_insert();
             "#,
@@ -1748,8 +1946,9 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
         revoked.dpop_jkt = Some(format!("lost-{label}-dpop-jkt"));
         revoked.revoked_at = Some(revoked_at);
         let revoked_raw = format!("refresh-lost-{label}-{}", Uuid::now_v7());
-        insert_refresh_token_row(&state, &revoked_raw, &revoked, None, reuse_detected_at).await;
 
+        // `reuse_detected_at` is a family-level fact: it lives on the family
+        // row (the successor's insert), not on the spent proof.
         let mut successor = token_row_for_client(&state, &client);
         successor.client_id = client.id;
         successor.token_family_id = family_id;
@@ -1762,8 +1961,8 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
             &state,
             &format!("refresh-lost-{label}-successor-{}", Uuid::now_v7()),
             &successor,
-            Some(revoked.id),
-            None,
+            Some(spent_edge(&revoked, &revoked_raw)),
+            reuse_detected_at,
         )
         .await;
 
@@ -1777,7 +1976,7 @@ async fn refresh_grant_rejects_future_revocation_or_reuse_marked_lost_response_f
         assert_eq!(
             family
                 .iter()
-                .filter(|row| row.reuse_detected_at.is_some())
+                .filter(|row| row.id == successor.id && row.reuse_detected_at.is_some())
                 .count(),
             usize::from(reuse_detected_at.is_some()),
             "sender validation failure must not add a reuse marker"
@@ -1809,7 +2008,6 @@ async fn concurrent_mtls_bound_lost_response_retries_yield_one_success_then_comp
     revoked.mtls_x5t_s256 = Some(thumbprint.to_owned());
     revoked.revoked_at = Some(Utc::now() - Duration::seconds(10));
     let revoked_raw = format!("refresh-concurrent-lost-original-{}", Uuid::now_v7());
-    insert_refresh_token_row(&state, &revoked_raw, &revoked, None, None).await;
 
     let mut successor = token_row_for_client(&state, &client);
     successor.client_id = client.id;
@@ -1824,7 +2022,7 @@ async fn concurrent_mtls_bound_lost_response_retries_yield_one_success_then_comp
         &state,
         &format!("refresh-concurrent-lost-successor-{}", Uuid::now_v7()),
         &successor,
-        Some(revoked.id),
+        Some(spent_edge(&revoked, &revoked_raw)),
         None,
     )
     .await;

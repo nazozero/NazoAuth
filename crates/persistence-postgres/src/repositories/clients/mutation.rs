@@ -4,7 +4,7 @@ use nazo_auth::OAuthClient;
 use nazo_identity::ports::RepositoryError;
 use uuid::Uuid;
 
-use crate::schema::{oauth_clients, oauth_tokens, user_client_grants};
+use crate::schema::{oauth_clients, oauth_refresh_families, user_client_grants};
 
 use super::base::OAuthClientRepository;
 use super::{OAuthClientRecord, map_error};
@@ -630,12 +630,12 @@ async fn revoke_client_dependents_on_connection(
     )
     .await?;
     diesel::update(
-        oauth_tokens::table
-            .filter(oauth_tokens::tenant_id.eq(tenant_id))
-            .filter(oauth_tokens::client_id.eq(id))
-            .filter(oauth_tokens::revoked_at.is_null()),
+        oauth_refresh_families::table
+            .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
+            .filter(oauth_refresh_families::client_id.eq(id))
+            .filter(oauth_refresh_families::revoked_at.is_null()),
     )
-    .set(oauth_tokens::revoked_at.eq(diesel::dsl::now))
+    .set(oauth_refresh_families::revoked_at.eq(diesel::dsl::now))
     .execute(connection)
     .await?;
     diesel::delete(

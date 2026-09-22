@@ -3,7 +3,7 @@ use crate::{
     convert::identity,
     get_conn,
     rows::identity::PublicAccountRow,
-    schema::{oauth_tokens, scim_security_events, user_client_grants, users},
+    schema::{oauth_refresh_families, scim_security_events, user_client_grants, users},
 };
 use chrono::Utc;
 use diesel::{
@@ -464,12 +464,12 @@ async fn revoke(
     user_id: uuid::Uuid,
 ) -> Result<(), Error> {
     diesel::update(
-        oauth_tokens::table
-            .filter(oauth_tokens::tenant_id.eq(tenant_id))
-            .filter(oauth_tokens::user_id.eq(user_id))
-            .filter(oauth_tokens::revoked_at.is_null()),
+        oauth_refresh_families::table
+            .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
+            .filter(oauth_refresh_families::user_id.eq(user_id))
+            .filter(oauth_refresh_families::revoked_at.is_null()),
     )
-    .set(oauth_tokens::revoked_at.eq(now))
+    .set(oauth_refresh_families::revoked_at.eq(now))
     .execute(connection)
     .await?;
     diesel::delete(

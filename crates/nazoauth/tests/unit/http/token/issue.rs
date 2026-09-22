@@ -225,7 +225,7 @@ async fn refresh_token_row_count(state: &TestInfrastructure, client: &ClientRow)
         .await
         .expect("issue test database connection should be available");
     sql_query(
-        "SELECT COUNT(*)::BIGINT AS count FROM oauth_tokens WHERE tenant_id = $1 AND client_id = $2",
+        "SELECT COUNT(*)::BIGINT AS count FROM oauth_refresh_families WHERE tenant_id = $1 AND client_id = $2",
     )
     .bind::<SqlUuid, _>(client.tenant_id)
     .bind::<SqlUuid, _>(client.id)

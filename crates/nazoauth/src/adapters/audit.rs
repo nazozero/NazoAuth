@@ -369,6 +369,13 @@ const AUDIT_EVENT_DEFINITIONS: &[(&str, &str, AuditEventClass)] = &[
         AuditEventClass::Telemetry,
     ),
     ("token_issued", "token_lifecycle", AuditEventClass::Required),
+    // Deliberate server-side retirement of a refresh family when the
+    // (tenant, user, client) active-family cap evicts the oldest live family.
+    (
+        "refresh_family_capacity_retired",
+        "token_lifecycle",
+        AuditEventClass::Required,
+    ),
     // Retired intent marker: issuance commits the token row and `token_issued`
     // in one transaction, so no producer emits this.  It stays defined as
     // Required so any future accidental emission fails closed instead of

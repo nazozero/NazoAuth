@@ -22,6 +22,7 @@ fn valid_refresh_token() -> NewRefreshToken {
     let issued_at = Utc::now();
     NewRefreshToken {
         raw_token: "refresh".to_owned(),
+        member_id: Uuid::now_v7(),
         tenant_id: Uuid::now_v7(),
         family_id: Uuid::now_v7(),
         rotated_from_id: None,
@@ -44,9 +45,7 @@ fn valid_refresh_token() -> NewRefreshToken {
 #[test]
 fn refresh_token_validation_accepts_complete_current_context() {
     let token = valid_refresh_token();
-    let value = validate_new_refresh_token(&token).expect("complete refresh token is valid");
-    assert_eq!(value["version"], 1);
-    assert_eq!(value["audience"], "resource");
+    validate_new_refresh_token(&token).expect("complete refresh token is valid");
 }
 
 #[test]
