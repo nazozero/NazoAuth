@@ -205,13 +205,16 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
     # full measured rate; for every other scenario an op failure is real and
     # the gate uses the successful-only rate.
     rate_for_gate = measured_ops_s if label == "cap_mixed" else successful_ops_s
+    # Runner's `target_miss` status fires on ANY drop or <99% http rps, which
+    # is stricter than the formal gate (drops<=0.1%, ops>=99.5%). Gate on the
+    # measured metrics directly; only a k6 threshold breach is an auto-FAIL.
     ok = (
-        drop_fraction <= 0.001
+        status != "threshold_failed"
+        and drop_fraction <= 0.001
         and rate_for_gate >= target * 0.995
         and unexpected == 0
         and p95 <= 100
         and p99 <= 250
-        and status == "passed"
     )
     metrics["rate_for_gate"] = round(rate_for_gate, 3)
     return ("PASS" if ok else "FAIL"), metrics
