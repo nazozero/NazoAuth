@@ -1,0 +1,28 @@
+{
+  "scenario": "cap_mixed",
+  "mapped_scenario": "cap_mixed",
+  "duration_s": 600,
+  "points": 2,
+  "max_10m_pass": 2000,
+  "max_10m_pass_metrics": {
+    "rps": 2862.072,
+    "p50": 3.944,
+    "p95": 10.344,
+    "p99": 16.198,
+    "dropped": 127,
+    "drop_fraction": 0.00010583324513896238,
+    "error_rate": 0.000116,
+    "status": "target_miss",
+    "measured_ops_s": 1998.285,
+    "successful_ops_s": 1954.154,
+    "classified_errors": 200,
+    "expected_invalid_grant": 200,
+    "unexpected_errors": 0,
+    "rate_for_gate": 1998.285,
+    "target": 2000,
+    "verdict": "PASS",
+    "summary": "/workspace/perf-results/capsearch-mixed-2000rps-1790120745/main/latest.json"
+  },
+  "first_fail_above": 2500,
+  "ledger": "/workspace/perf-results/capacity-search/cap_mixed/search-ledger.jsonl"
+}

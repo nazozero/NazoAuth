@@ -1,0 +1,28 @@
+{
+  "scenario": "cap_refresh_token",
+  "mapped_scenario": "cap_refresh_token",
+  "duration_s": 600,
+  "points": 3,
+  "max_10m_pass": 1440,
+  "max_10m_pass_metrics": {
+    "rps": 1441.687,
+    "p50": 6.154,
+    "p95": 9.66,
+    "p99": 13.992,
+    "dropped": 0,
+    "drop_fraction": 0.0,
+    "error_rate": 0.0,
+    "status": "passed",
+    "measured_ops_s": 1440.183,
+    "successful_ops_s": 1440.183,
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "rate_for_gate": 1440.183,
+    "target": 1440,
+    "verdict": "PASS",
+    "summary": "/workspace/perf-results/capacity-search/cap_refresh_token/r1440/latest.json"
+  },
+  "first_fail_above": 1600,
+  "ledger": "/workspace/perf-results/capacity-search/cap_refresh_token/search-ledger.jsonl"
+}

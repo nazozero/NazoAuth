@@ -1,0 +1,162 @@
+[
+  {
+    "profile": "capacity",
+    "scenario": "fapi2_logged_in_high_security",
+    "elapsed_seconds": 602.014,
+    "status": "passed",
+    "k6_exit_code": 0,
+    "k6": {
+      "http_reqs": 1125005,
+      "rps": 1874.934,
+      "error_rate": 0.0,
+      "iterations_completed": 225001,
+      "dropped_iterations": 0,
+      "dropped_per_s": 0.0,
+      "drop_fraction": 0.0,
+      "scheduled_estimate": 225001,
+      "latency_ms": {
+        "p50": 4.226,
+        "p95": 8.195,
+        "p99": 11.354
+      }
+    },
+    "steps": [
+      {
+        "step": "authorize",
+        "http_reqs": 225001,
+        "rps": 374.987,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 0.539,
+          "p95": 0.972,
+          "p99": 1.696
+        }
+      },
+      {
+        "step": "authorize_decision",
+        "http_reqs": 225001,
+        "rps": 374.987,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 4.659,
+          "p95": 8.754,
+          "p99": 13.466
+        }
+      },
+      {
+        "step": "fapi_token_authorization_code",
+        "http_reqs": 225001,
+        "rps": 374.987,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 6.96,
+          "p95": 9.733,
+          "p99": 13.555
+        }
+      },
+      {
+        "step": "fapi_token_refresh",
+        "http_reqs": 225001,
+        "rps": 374.987,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 4.848,
+          "p95": 7.32,
+          "p99": 10.764
+        }
+      },
+      {
+        "step": "par_fapi",
+        "http_reqs": 225001,
+        "rps": 374.987,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 1.099,
+          "p95": 1.663,
+          "p99": 2.397
+        }
+      }
+    ],
+    "error_breakdown": [],
+    "postgres": {
+      "statement_calls": 15769735,
+      "total_statement_ms": 652505.434,
+      "mean_statement_ms": 0.041,
+      "rows": 13894007,
+      "database_bytes": 21775947455,
+      "statements_per_http_request": 14.017
+    },
+    "db_pool": {
+      "counter_reset": false,
+      "acquire_count": 4077753,
+      "wait_ms_total": 4651.69,
+      "wait_ms_avg": 0.001,
+      "wait_ms_max_observed_process_lifetime": 312.244
+    },
+    "valkey": {
+      "keyspace_hits": 3600835,
+      "keyspace_misses": 1222,
+      "commands_processed": 9228920,
+      "expired_keys": 1726672,
+      "db0_keys": 298357
+    },
+    "containers": {
+      "by_container": {
+        "nazoauth-perf-nazoauth-1": {
+          "service": "nazoauth",
+          "samples": 193,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth-perf-postgres-1": {
+          "service": "postgres",
+          "samples": 193,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth-perf-valkey-1": {
+          "service": "valkey",
+          "samples": 193,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      },
+      "by_service": {
+        "postgres": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "valkey": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      }
+    },
+    "load_model": {
+      "executor": "constant-arrival-rate",
+      "target_rate": 375,
+      "duration": "600s",
+      "app_replicas": 1,
+      "observed_app_instances": 1
+    }
+  }
+]

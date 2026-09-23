@@ -1,0 +1,162 @@
+[
+  {
+    "profile": "capacity",
+    "scenario": "fapi2_logged_in_high_security",
+    "elapsed_seconds": 603.751,
+    "status": "passed",
+    "k6_exit_code": 0,
+    "k6": {
+      "http_reqs": 900005,
+      "rps": 1499.958,
+      "error_rate": 0.0,
+      "iterations_completed": 180001,
+      "dropped_iterations": 0,
+      "dropped_per_s": 0.0,
+      "drop_fraction": 0.0,
+      "scheduled_estimate": 180001,
+      "latency_ms": {
+        "p50": 4.064,
+        "p95": 8.261,
+        "p99": 12.224
+      }
+    },
+    "steps": [
+      {
+        "step": "authorize",
+        "http_reqs": 180001,
+        "rps": 299.992,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 0.506,
+          "p95": 0.854,
+          "p99": 1.544
+        }
+      },
+      {
+        "step": "authorize_decision",
+        "http_reqs": 180001,
+        "rps": 299.992,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 4.44,
+          "p95": 9.698,
+          "p99": 14.882
+        }
+      },
+      {
+        "step": "fapi_token_authorization_code",
+        "http_reqs": 180001,
+        "rps": 299.992,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 6.756,
+          "p95": 9.947,
+          "p99": 14.076
+        }
+      },
+      {
+        "step": "fapi_token_refresh",
+        "http_reqs": 180001,
+        "rps": 299.992,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 4.75,
+          "p95": 7.692,
+          "p99": 11.439
+        }
+      },
+      {
+        "step": "par_fapi",
+        "http_reqs": 180001,
+        "rps": 299.992,
+        "error_rate": 0.0,
+        "latency_ms": {
+          "p50": 1.103,
+          "p95": 1.548,
+          "p99": 2.181
+        }
+      }
+    ],
+    "error_breakdown": [],
+    "postgres": {
+      "statement_calls": 12650858,
+      "total_statement_ms": 505584.064,
+      "mean_statement_ms": 0.04,
+      "rows": 11787290,
+      "database_bytes": 20858926783,
+      "statements_per_http_request": 14.056
+    },
+    "db_pool": {
+      "counter_reset": false,
+      "acquire_count": 3279219,
+      "wait_ms_total": 3370.56,
+      "wait_ms_avg": 0.001,
+      "wait_ms_max_observed_process_lifetime": 312.244
+    },
+    "valkey": {
+      "keyspace_hits": 2880836,
+      "keyspace_misses": 1225,
+      "commands_processed": 7383927,
+      "expired_keys": 743522,
+      "db0_keys": 876507
+    },
+    "containers": {
+      "by_container": {
+        "nazoauth-perf-nazoauth-1": {
+          "service": "nazoauth",
+          "samples": 194,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth-perf-postgres-1": {
+          "service": "postgres",
+          "samples": 194,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth-perf-valkey-1": {
+          "service": "valkey",
+          "samples": 194,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      },
+      "by_service": {
+        "valkey": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "nazoauth": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        },
+        "postgres": {
+          "containers": 1,
+          "cpu_percent_avg": 0.0,
+          "cpu_percent_max": 0.0,
+          "memory_bytes_avg": 0,
+          "memory_bytes_max": 0
+        }
+      }
+    },
+    "load_model": {
+      "executor": "constant-arrival-rate",
+      "target_rate": 300,
+      "duration": "600s",
+      "app_replicas": 1,
+      "observed_app_instances": 1
+    }
+  }
+]

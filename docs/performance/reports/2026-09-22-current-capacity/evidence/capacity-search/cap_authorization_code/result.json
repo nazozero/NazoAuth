@@ -1,0 +1,28 @@
+{
+  "scenario": "cap_authorization_code",
+  "mapped_scenario": "cap_authorization_code",
+  "duration_s": 600,
+  "points": 4,
+  "max_10m_pass": 1125,
+  "max_10m_pass_metrics": {
+    "rps": 4499.331,
+    "p50": 4.479,
+    "p95": 12.204,
+    "p99": 17.374,
+    "dropped": 82,
+    "drop_fraction": 0.00012148130150918295,
+    "error_rate": 0.0,
+    "status": "target_miss",
+    "measured_ops_s": 1123.735,
+    "successful_ops_s": 1123.735,
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "rate_for_gate": 1123.735,
+    "target": 1125,
+    "verdict": "PASS",
+    "summary": "/workspace/perf-results/capacity-search/cap_authorization_code/r1125/latest.json"
+  },
+  "first_fail_above": 1250,
+  "ledger": "/workspace/perf-results/capacity-search/cap_authorization_code/search-ledger.jsonl"
+}

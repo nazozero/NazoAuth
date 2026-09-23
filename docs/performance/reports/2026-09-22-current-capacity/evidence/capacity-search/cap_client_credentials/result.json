@@ -1,0 +1,28 @@
+{
+  "scenario": "cap_client_credentials",
+  "mapped_scenario": "cap_client_credentials",
+  "duration_s": 600,
+  "points": 6,
+  "max_10m_pass": 3200,
+  "max_10m_pass_metrics": {
+    "rps": 3198.389,
+    "p50": 3.726,
+    "p95": 7.329,
+    "p99": 15.199,
+    "dropped": 957,
+    "drop_fraction": 0.0004984369807948117,
+    "error_rate": 0.0,
+    "status": "target_miss",
+    "measured_ops_s": 3194.644,
+    "successful_ops_s": 3194.644,
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "rate_for_gate": 3194.644,
+    "target": 3200,
+    "verdict": "PASS",
+    "summary": "/workspace/perf-results/capacity-search/cap_client_credentials/r3200/latest.json"
+  },
+  "first_fail_above": 3400,
+  "ledger": "/workspace/perf-results/capacity-search/cap_client_credentials/search-ledger.jsonl"
+}

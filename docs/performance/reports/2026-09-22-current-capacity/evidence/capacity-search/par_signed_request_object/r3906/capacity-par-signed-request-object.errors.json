@@ -1,0 +1,10 @@
+{
+ "err_classified{step:par_oidc}": {
+  "rate": 0,
+  "count": 0
+ },
+ "err_classified": {
+  "count": 0,
+  "rate": 0
+ }
+}

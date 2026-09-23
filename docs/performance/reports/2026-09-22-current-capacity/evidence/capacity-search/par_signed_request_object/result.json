@@ -1,0 +1,28 @@
+{
+  "scenario": "par_signed_request_object",
+  "mapped_scenario": "par_signed_request_object",
+  "duration_s": 600,
+  "points": 6,
+  "max_10m_pass": 6102,
+  "max_10m_pass_metrics": {
+    "rps": 6101.979,
+    "p50": 0.911,
+    "p95": 1.413,
+    "p99": 14.127,
+    "dropped": 12,
+    "drop_fraction": 3.277599573475042e-06,
+    "error_rate": 0.0,
+    "status": "target_miss",
+    "measured_ops_s": 6258.468,
+    "successful_ops_s": 6258.468,
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "rate_for_gate": 6258.468,
+    "target": 6102,
+    "verdict": "PASS",
+    "summary": "/workspace/perf-results/capacity-search/par_signed_request_object/r6102/latest.json"
+  },
+  "first_fail_above": null,
+  "ledger": "/workspace/perf-results/capacity-search/par_signed_request_object/search-ledger.jsonl"
+}

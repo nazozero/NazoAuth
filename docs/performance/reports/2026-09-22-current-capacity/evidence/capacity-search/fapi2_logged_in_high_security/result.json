@@ -1,0 +1,28 @@
+{
+  "scenario": "fapi2_logged_in_high_security",
+  "mapped_scenario": "fapi2_logged_in_high_security",
+  "duration_s": 600,
+  "points": 6,
+  "max_10m_pass": 731,
+  "max_10m_pass_metrics": {
+    "rps": 3654.536,
+    "p50": 5.241,
+    "p95": 10.993,
+    "p99": 17.25,
+    "dropped": 31,
+    "drop_fraction": 7.067911227034988e-05,
+    "error_rate": 0.0,
+    "status": "target_miss",
+    "measured_ops_s": 749.694,
+    "successful_ops_s": 749.694,
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "rate_for_gate": 749.694,
+    "target": 731,
+    "verdict": "PASS",
+    "summary": "/workspace/perf-results/capacity-search/fapi2_logged_in_high_security/r731/latest.json"
+  },
+  "first_fail_above": 913,
+  "ledger": "/workspace/perf-results/capacity-search/fapi2_logged_in_high_security/search-ledger.jsonl"
+}

@@ -1,0 +1,93 @@
+RUN_ID=current-capacity-final-30m-fresh
+DEPID=01a0ca09-3769-7372-8e81-f0299519626a RATE=2000 DUR_MAIN=1800s DUR_SIDE=1800s
+start_utc=2026-09-23T01:07:04Z
+--- tool digests (repo copy) ---
+sha256 ledger.sql 24b9cb3fe8c249b9e65dacceb0e8e8b1da8ff29512c3e795e7bcea43f1ddabf2
+sha256 soak_sampler.py b377f7b4aa16bee1e35e8b93af5989607ac1e127c28b50159e0f555c80cbf221
+sha256 vkledger.py 9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b
+sha256 ledger_check.py aacf367b5458c42d83c8c17c187895f53aca54113b7dad5e69c2b7722c64fcd8
+sha256 soak_run.sh a4db2bf7daaa62d4364ca30dab53228238a8779ad564c07bcfb7440922c8dea7
+--- container-side digests ---
+sampler unavailable
+--- source ---
+TEST_SOURCE_SHA=fd52b556370fa8d72ecfef35947bae8241e722e6
+git_status_clean=no
+--- image ---
+app_image_id=sha256:2bfa9c824d29e91fdd4649b496957ba19b675854913eee327c3ba7bdd080b708
+repo_digest=["nazoauth-perf-nazoauth@sha256:2bfa9c824d29e91fdd4649b496957ba19b675854913eee327c3ba7bdd080b708"]
+base_image=nazoauth-perf-nazoauth
+--- running binary ---
+binary_path=/usr/local/bin/nazoauth
+RUNNING_BINARY_SHA256=24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae
+--- postgres ---
+pg_version=PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit
+pg_max_wal_size=8GB
+pg_checkpoint_timeout=5min
+pg_checkpoint_completion_target=0.9
+pg_fsync=on
+pg_synchronous_commit=on
+pg_full_page_writes=on
+pg_shared_buffers=128MB
+pg_max_connections=100
+--- migrations ---
+MIGRATION_SET_SHA256=4b25e9660a74b4f62385336be5921e3636bc5c01ca3ca82ee1b8fead19f9d240
+applied_migrations=84
+PG_SCHEMA_SHA256=974a25582d0c46c1c8f6241e5e1c696b58fa605d3d56e5ce0a1c3712ff68a81a
+--- valkey ---
+valkey_redis_version:7.2.4
+valkey_maxmemory=0
+valkey_maxmemory_policy=noeviction
+--- harness ---
+k6=unavailable
+python=Python 3.11.2
+docker=Docker version 29.6.2, build dfc4efb
+compose=5.3.1
+--- host ---
+cpu_model=AMD EPYC 9K65 192-Core Processor
+logical_cpus=64
+mem_kb=134217728
+kernel=5.4.241-1-tlinux4-0025.10
+rootfs=overlay git-clone-yyds
+soak start 2026-09-23T01:07:05Z RUN_ID=current-capacity-final-30m-fresh RATE=2000
+ledger pre 01:07:05
+check /workspace/perf-results/current-capacity-final-30m-fresh/ledger-pre.txt: PASS
+vkledger pre: keys=1 dbsize=1
+ Container soak-sampler-current-capacity-final-30m-fresh Creating 
+ Container soak-sampler-current-capacity-final-30m-fresh Created 
+e188b2561cb3ecaafde6eb1051d94716424b3ec21ae0991cc9d53a21b3f99026
+sampler started 01:07:06
+runner rss sampler pid=61636 01:07:06
+ Container soak-anchor-rcv-current-capacity-final-30m-fresh Creating 
+ Container soak-anchor-rcv-current-capacity-final-30m-fresh Created 
+9afea8df3f9703c56eb218b6732c08efaf7f59eb29f7f61f082610a5b8e95d36
+ Container soak-anchor-worker-current-capacity-final-30m-fresh Creating 
+ Container soak-anchor-worker-current-capacity-final-30m-fresh Created 
+635cbf342f5cd20dc40ce49377245438a098efbf427515ab3318ff21b1e25608
+audit anchor worker+receiver started depid=01a0ca09-3769-7372-8e81-f0299519626a 01:07:10
+audit health sampler pid=61923 01:07:10
+main cap_mixed arrival=2000ops/s pid=61927 01:07:10
+ Container soak-argon2-current-capacity-final-30m-fresh Creating 
+ Container soak-argon2-current-capacity-final-30m-fresh Created 
+5a2938672e56a93e2e791445b027a93224617ec1ae3c0bee108a186de9d79f6a
+argon2 sidecar arrival=8/s started 01:09:11
+ Container soak-meta-current-capacity-final-30m-fresh Creating 
+ Container soak-meta-current-capacity-final-30m-fresh Created 
+99850a88a3a9687bf53f5051b79ab7678d55c3f9d47552977e03f79a4f7b1685
+meta sidecar arrival=200/s started 01:09:11
+ Container soak-fapi-current-capacity-final-30m-fresh Creating 
+ Container soak-fapi-current-capacity-final-30m-fresh Created 
+358cf590947b23893ab3685e80f56a636a3727f1badb465cc52749f03f168bff
+fapi sidecar arrival=30/s started 01:09:12
+ Container soak-refresh-current-capacity-final-30m-fresh Creating 
+ Container soak-refresh-current-capacity-final-30m-fresh Created 
+7fc2cf6a4bd3f39e479b67e9254624c6ada4d069698eb30bdade17679568de57
+refresh sidecar arrival=600/s started 01:09:12
+main finished 01:37:27
+time="2026-09-23T09:38:08+08:00" level=warning msg="Found orphan containers (soak-refresh-current-capacity-final-30m-fresh, soak-fapi-current-capacity-final-30m-fresh, soak-meta-current-capacity-final-30m-fresh, soak-argon2-current-capacity-final-30m-fresh, soak-sampler-current-capacity-final-30m-fresh) for this project. If you removed or renamed this service in your compose file, you can run this command with the --remove-orphans flag to clean it up."
+ Container nazoauth-perf-perf-run-26b91ac0059b Creating 
+ Container nazoauth-perf-perf-run-26b91ac0059b Created 
+sampler /workspace/perf-results/current-capacity-final-30m-fresh/soak-metrics.jsonl: PASS (182 rows)
+ledger post 01:38:19
+check /workspace/perf-results/current-capacity-final-30m-fresh/ledger-post.txt: PASS
+end_utc=2026-09-23T01:38:21Z
+SOAK_DONE RUN_ID=current-capacity-final-30m-fresh 2026-09-23T01:38:21Z

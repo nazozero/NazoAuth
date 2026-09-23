@@ -1,0 +1,28 @@
+{
+  "scenario": "mtls_client_credentials",
+  "mapped_scenario": "mtls_client_credentials",
+  "duration_s": 600,
+  "points": 5,
+  "max_10m_pass": 3515,
+  "max_10m_pass_metrics": {
+    "rps": 3514.971,
+    "p50": 4.237,
+    "p95": 7.447,
+    "p99": 14.362,
+    "dropped": 0,
+    "drop_fraction": 0.0,
+    "error_rate": 0.0,
+    "status": "passed",
+    "measured_ops_s": 3605.13,
+    "successful_ops_s": 3605.13,
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "rate_for_gate": 3605.13,
+    "target": 3515,
+    "verdict": "PASS",
+    "summary": "/workspace/perf-results/capacity-search/mtls_client_credentials/r3515/latest.json"
+  },
+  "first_fail_above": 3906,
+  "ledger": "/workspace/perf-results/capacity-search/mtls_client_credentials/search-ledger.jsonl"
+}

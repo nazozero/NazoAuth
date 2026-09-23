@@ -1,0 +1,28 @@
+{
+  "scenario": "cap_revoke",
+  "mapped_scenario": "cap_revoke",
+  "duration_s": 600,
+  "points": 3,
+  "max_10m_pass": 787,
+  "max_10m_pass_metrics": {
+    "rps": 3934.891,
+    "p50": 4.038,
+    "p95": 8.469,
+    "p99": 12.405,
+    "dropped": 0,
+    "drop_fraction": 0.0,
+    "error_rate": 0.0,
+    "status": "passed",
+    "measured_ops_s": 787.053,
+    "successful_ops_s": 787.053,
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "rate_for_gate": 787.053,
+    "target": 787,
+    "verdict": "PASS",
+    "summary": "/workspace/perf-results/capacity-search/cap_revoke/r787/latest.json"
+  },
+  "first_fail_above": 875,
+  "ledger": "/workspace/perf-results/capacity-search/cap_revoke/search-ledger.jsonl"
+}

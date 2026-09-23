@@ -1,0 +1,178 @@
+{
+  "profile": "capacity",
+  "scenario": "oidc_cold_login_refresh",
+  "elapsed_seconds": 605.746,
+  "status": "threshold_failed",
+  "k6_exit_code": 99,
+  "k6": {
+    "http_reqs": 247684,
+    "rps": 412.708,
+    "error_rate": 0.088887,
+    "iterations_completed": 55958,
+    "dropped_iterations": 0,
+    "dropped_per_s": 0.0,
+    "drop_fraction": 0.0,
+    "scheduled_estimate": 55958,
+    "latency_ms": {
+      "p50": 5.586,
+      "p95": 199.314,
+      "p99": 257.228
+    }
+  },
+  "steps": [
+    {
+      "step": "authorize",
+      "http_reqs": 33942,
+      "rps": 56.556,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 0.683,
+        "p95": 0.984,
+        "p99": 1.361
+      }
+    },
+    {
+      "step": "authorize_decision",
+      "http_reqs": 33942,
+      "rps": 56.556,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 4.938,
+        "p95": 10.108,
+        "p99": 15.281
+      }
+    },
+    {
+      "step": "login",
+      "http_reqs": 55958,
+      "rps": 93.241,
+      "error_rate": 0.393438,
+      "latency_ms": {
+        "p50": 156.087,
+        "p95": 255.792,
+        "p99": 269.843
+      }
+    },
+    {
+      "step": "par_oidc",
+      "http_reqs": 55958,
+      "rps": 93.241,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 1.141,
+        "p95": 1.759,
+        "p99": 2.129
+      }
+    },
+    {
+      "step": "token_authorization_code",
+      "http_reqs": 33942,
+      "rps": 56.556,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 7.229,
+        "p95": 10.378,
+        "p99": 13.656
+      }
+    },
+    {
+      "step": "token_refresh",
+      "http_reqs": 33942,
+      "rps": 56.556,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 5.895,
+        "p95": 8.915,
+        "p99": 12.408
+      }
+    }
+  ],
+  "error_breakdown": [
+    {
+      "step": "login",
+      "status": "?",
+      "err": "?",
+      "count": 22016
+    }
+  ],
+  "postgres": {
+    "statement_calls": 3109095,
+    "total_statement_ms": 141099.093,
+    "mean_statement_ms": 0.045,
+    "rows": 2832330,
+    "database_bytes": 40357508799,
+    "statements_per_http_request": 12.553
+  },
+  "db_pool": {
+    "counter_reset": false,
+    "acquire_count": 902207,
+    "wait_ms_total": 1152.364,
+    "wait_ms_avg": 0.001,
+    "wait_ms_max_observed_process_lifetime": 496.778
+  },
+  "valkey": {
+    "keyspace_hits": 733508,
+    "keyspace_misses": 91139,
+    "commands_processed": 1772685,
+    "expired_keys": 60123,
+    "db0_keys": 51823
+  },
+  "containers": {
+    "by_container": {
+      "nazoauth-perf-nazoauth-1": {
+        "service": "nazoauth",
+        "samples": 194,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "nazoauth-perf-postgres-1": {
+        "service": "postgres",
+        "samples": 194,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "nazoauth-perf-valkey-1": {
+        "service": "valkey",
+        "samples": 194,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    },
+    "by_service": {
+      "postgres": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "valkey": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "nazoauth": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    }
+  },
+  "load_model": {
+    "executor": "constant-vus",
+    "target_rate": 0,
+    "duration": "600s",
+    "app_replicas": 1,
+    "observed_app_instances": 1
+  }
+}

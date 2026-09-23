@@ -1,0 +1,28 @@
+{
+  "scenario": "cap_introspect",
+  "mapped_scenario": "cap_introspect",
+  "duration_s": 600,
+  "points": 6,
+  "max_10m_pass": 7812,
+  "max_10m_pass_metrics": {
+    "rps": 7815.052,
+    "p50": 0.832,
+    "p95": 1.029,
+    "p99": 1.319,
+    "dropped": 1321,
+    "drop_fraction": 0.00028183094964655926,
+    "error_rate": 0.0,
+    "status": "target_miss",
+    "measured_ops_s": 7812.503,
+    "successful_ops_s": 7812.503,
+    "classified_errors": 0,
+    "expected_invalid_grant": 0,
+    "unexpected_errors": 0,
+    "rate_for_gate": 7812.503,
+    "target": 7812,
+    "verdict": "PASS",
+    "summary": "/workspace/perf-results/capacity-search/cap_introspect/r7812/latest.json"
+  },
+  "first_fail_above": 8788,
+  "ledger": "/workspace/perf-results/capacity-search/cap_introspect/search-ledger.jsonl"
+}
