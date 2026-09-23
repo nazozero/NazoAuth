@@ -55,8 +55,54 @@ steps clean. Reported as measured — protection semantics unchanged.
 
 ## Headline
 
-`current-capacity-final-30m-fresh` — fresh `oauth` database, all sidecars,
-audit exporter + receiver, `cap_mixed` at the matrix's 10-minute pass rate:
+### `current-capacity-final-1900-30m` — fresh `oauth` database, all sidecars, `cap_mixed` @1900 it/s
+
+```
+TARGET=1900 ops/s   MEASURED_OPS_S=1889.129 (cap_measure_ops 3,372,095 / 1785s)
+ATTAINMENT=99.43%   HTTP_RPS=2718.0
+P50=4.2ms  P95=11.2ms  P99=19.2ms
+DROPS=3,119  DROP_RATE=0.091%   UNEXPECTED_ERRORS=0
+WAL=+17.58 GB / 3.42M ops ≈ 5.1 KB/op   DB_FINAL=490 MB (ledger-post)
+APP_RSS=91→218 MB (flat ~201 MB plateau t+5–25 min)   restarts=0
+AUDIT=receiver 5,218,207 events / 85,890 batches; dup=0; reject=0;
+      anchor 5,218,207 == DB anchor 5,218,207; pending=0 after drain;
+      queue_full shed=0; dropped_required=0
+REFRESH=families 5,894 live / 24.9 MB; spent 41,824 / 25.3 MB;
+      contracts 1,160 / 1.17 MB; max 10 families/scope; max 64 spent/family;
+      expired spent backlog=0 on every sample
+```
+
+**Verdict: FAIL** — measured 1889.129 ops/s < 1890.5 required (99.5% ×
+1900), a miss of 0.07%. Every other gate passed (drops 0.091% ≤0.1%, zero
+unexpected errors, latencies far inside bounds, audit fully reconciled).
+
+Mechanism: the same timed-checkpoint arrival dips as the 2000 run — the
+worst window t≈1640–1695 s briefly fell to ~840 it/s for ~2 s with VU
+scaling to 500 (MAX_VUS 1024, never hit); steady-state between dips is the
+full 1900 it/s. Runner averaged 1.7 CPU cores and peaked 4.0 GB RSS on a
+64C/128G host — not load-generator-bound. Latency, pool wait, and backend
+counts stayed healthy throughout: the strict gate measures
+arrival-schedule fidelity under periodic checkpoint flush, not a server
+saturation ceiling.
+
+Provenance note: this run's checkout was `822c44c8` (this report commit —
+docs-only delta over `fd52b556`; `git diff fd52b556..822c44c8 -- crates/
+migrations/ Cargo.toml Cargo.lock` is empty) and the running binary is
+byte-identical (`RUNNING_BINARY_SHA256=24d8067d…`, image `2bfa9c824d29`).
+
+Consequence: `STRICT_30M_CAPACITY_NOT_ESTABLISHED`. Validated sustained
+statement is therefore: **10-minute mixed target 2000 ops/s; 30-minute
+observed delivery 1967.4 ops/s @2000 target and 1889.1 ops/s @1900
+target** — the 1900–2000 boundary was not searched and no exact maximum is
+claimed. Sidecar terminal metrics were not persisted for this run (sidecar
+stdout is lost on container removal — a harness gap already present in the
+2000 run); app logs show zero `queue_full`/`dropped_required` over the run
+window.
+
+### `current-capacity-final-30m-fresh` — @2000 it/s
+
+Fresh `oauth` database, all sidecars, audit exporter + receiver,
+`cap_mixed` at the matrix's 10-minute pass rate:
 
 ```
 MAX_SUSTAINED_MIXED_30M=2000 (target)
@@ -102,8 +148,13 @@ app RSS 166→310 MB peak, end 197 MB
   writer; request VUs spiked 13→951 (max 1024) for ~30 s.
 - The in-memory audit queue (capacity 4096, single draining worker)
   overflowed for ~9 min: **16,806 events were rejected `queue_full` and
-  never reached the durable sink**. Requests were unaffected — shedding
-  is by design, and this run measured its cost.
+  never reached the durable sink**. Taxonomy per the run log: all 16,806
+  were Telemetry-class (`persistence_status="not_queued"` —
+  `authorization_approved` 16,474, `login_success` 332); zero
+  `dropped_required` — Required-class events persist via the fail-closed
+  transactional path and were not lost. Requests were unaffected; the run
+  measured the shedding cost of a pathological inherited backlog and is
+  not a capacity result.
 - Even so the system delivered 1950 ops/s sustained *and* net-drained
   the 43 M outbox backlog (~965/s) — recovery behavior is real, bounded
   only by export throughput.

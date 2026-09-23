@@ -424,6 +424,7 @@ docker compose -f docker-compose.perf.yml run --rm --no-deps \
 # 5. aggregate: perf/tools/aggregate_points.py
 ```
 
-*Historical note*: earlier reports under `reports/main|extended|special`
-describe July/September 2026 pre-release measurements and are not a
-statement about this `main` revision.
+*Historical note*: the July 2026 pre-release capacity matrix
+(`reports/main|extended`, since removed as superseded) is not a statement
+about this `main` revision; the current matrix lives in
+`../../performance-capacity-curve.md`.

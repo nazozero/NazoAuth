@@ -1,0 +1,174 @@
+{
+ "test_source_sha": "fd52b556370fa8d72ecfef35947bae8241e722e6",
+ "generated_from": "docs/performance/reports/2026-09-22-current-capacity",
+ "host": "AMD EPYC 9K65 64C/128G container host, kernel 5.4.241",
+ "topology": "1x nazoauth + postgres:18-alpine (max_wal_size=8GB, fsync on) + valkey:8-alpine",
+ "point_duration_s": 600,
+ "gate": "drops<=0.1%, measured_ops>=99.5% target, 0 unexpected errors, p95<=100ms, p99<=250ms",
+ "scenarios": [
+  {
+   "scenario": "cap_mixed",
+   "highest_10m_pass": 2000,
+   "first_fail_above": 2500,
+   "measured_ops_s": 1998.285,
+   "http_rps": 2862.1,
+   "p50_ms": 3.944,
+   "p95_ms": 10.344,
+   "p99_ms": 16.198,
+   "drop_fraction": 0.000106,
+   "unexpected_errors": 0
+  },
+  {
+   "scenario": "cap_client_credentials",
+   "highest_10m_pass": 3200,
+   "first_fail_above": 3400,
+   "measured_ops_s": 3194.644,
+   "http_rps": 3198.4,
+   "p50_ms": 3.726,
+   "p95_ms": 7.329,
+   "p99_ms": 15.199,
+   "drop_fraction": 0.000498,
+   "unexpected_errors": 0
+  },
+  {
+   "scenario": "cap_authorization_code",
+   "highest_10m_pass": 1125,
+   "first_fail_above": 1250,
+   "measured_ops_s": 1123.735,
+   "http_rps": 4499.3,
+   "p50_ms": 4.479,
+   "p95_ms": 12.204,
+   "p99_ms": 17.374,
+   "drop_fraction": 0.000121,
+   "unexpected_errors": 0
+  },
+  {
+   "scenario": "cap_refresh_token",
+   "highest_10m_pass": 1440,
+   "first_fail_above": 1600,
+   "measured_ops_s": 1440.183,
+   "http_rps": 1441.7,
+   "p50_ms": 6.154,
+   "p95_ms": 9.66,
+   "p99_ms": 13.992,
+   "drop_fraction": 0.0,
+   "unexpected_errors": 0
+  },
+  {
+   "scenario": "fapi2_logged_in_high_security",
+   "highest_10m_pass": 731,
+   "first_fail_above": 913,
+   "measured_ops_s": 749.694,
+   "http_rps": 3654.5,
+   "p50_ms": 5.241,
+   "p95_ms": 10.993,
+   "p99_ms": 17.25,
+   "drop_fraction": 7.1e-05,
+   "unexpected_errors": 0
+  },
+  {
+   "scenario": "cap_introspect",
+   "highest_10m_pass": 7812,
+   "first_fail_above": 8788,
+   "measured_ops_s": 7812.503,
+   "http_rps": 7815.1,
+   "p50_ms": 0.832,
+   "p95_ms": 1.029,
+   "p99_ms": 1.319,
+   "drop_fraction": 0.000282,
+   "unexpected_errors": 0
+  },
+  {
+   "scenario": "cap_revoke",
+   "highest_10m_pass": 787,
+   "first_fail_above": 875,
+   "measured_ops_s": 787.053,
+   "http_rps": 3934.9,
+   "p50_ms": 4.038,
+   "p95_ms": 8.469,
+   "p99_ms": 12.405,
+   "drop_fraction": 0.0,
+   "unexpected_errors": 0
+  },
+  {
+   "scenario": "mtls_client_credentials",
+   "highest_10m_pass": 3515,
+   "first_fail_above": 3906,
+   "measured_ops_s": 3605.13,
+   "http_rps": 3515.0,
+   "p50_ms": 4.237,
+   "p95_ms": 7.447,
+   "p99_ms": 14.362,
+   "drop_fraction": 0.0,
+   "unexpected_errors": 0
+  },
+  {
+   "scenario": "par_signed_request_object",
+   "highest_10m_pass": 6102,
+   "first_fail_above": null,
+   "measured_ops_s": 6258.468,
+   "http_rps": 6102.0,
+   "p50_ms": 0.911,
+   "p95_ms": 1.413,
+   "p99_ms": 14.127,
+   "drop_fraction": 3e-06,
+   "unexpected_errors": 0
+  }
+ ],
+ "argon2_oidc_cold_login_refresh": {
+  "vu8": {
+   "flows_per_s": 55.1,
+   "rejected_frac": 0.0,
+   "login_503": 0,
+   "login_p50_ms": 121.0,
+   "login_p95_ms": 127.6,
+   "login_p99_ms": 138.0,
+   "http_rps": 330.5
+  },
+  "vu16": {
+   "flows_per_s": 93.3,
+   "successful_login_per_s": 56.6,
+   "rejected_frac": 0.3934,
+   "login_503": 22016,
+   "login_p50_ms": 156.1,
+   "login_p95_ms": 255.8,
+   "login_p99_ms": 269.8,
+   "http_rps": 412.7
+  }
+ },
+ "sustained_30m": {
+  "target_2000_fresh_db": {
+   "measured_ops_s": 1967.39,
+   "attainment": 0.9837,
+   "http_rps": 2858.3,
+   "p50_ms": 4.2,
+   "p95_ms": 11.9,
+   "p99_ms": 37.9,
+   "drop_fraction": 0.00158,
+   "unexpected_errors": 0,
+   "queue_full_shed": 0,
+   "verdict": "FAIL_RATE_GATE"
+  },
+  "target_1900_fresh_db": {
+   "run_id": "current-capacity-final-1900-30m",
+   "measured_ops_s": 1889.129,
+   "attainment": 0.9943,
+   "http_rps": 2718.0,
+   "p50_ms": 4.2,
+   "p95_ms": 11.2,
+   "p99_ms": 19.2,
+   "dropped_iterations": 3119,
+   "drop_fraction": 0.000912,
+   "unexpected_errors": 0,
+   "queue_full_shed": 0,
+   "audit_receiver_events": 5218207,
+   "audit_duplicates": 0,
+   "audit_rejects": 0,
+   "audit_pending_final": 0,
+   "wal_per_op_kb": 5.1,
+   "db_final_mb": 490,
+   "verdict": "FAIL_RATE_GATE"
+  },
+  "verdict": "STRICT_30M_CAPACITY_NOT_ESTABLISHED"
+ }
+}

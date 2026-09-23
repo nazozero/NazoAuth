@@ -13,17 +13,18 @@ the current release or an unmeasured deployment.
 | Document | Role |
 | --- | --- |
 | [performance-benchmarks.md](performance-benchmarks.md) | Canonical current baseline: refresh-storage steady state, WAL, audit, stability (Sept 2026 redesign era). |
-| [performance-capacity-curve.md](performance-capacity-curve.md) | Unified capacity benchmark overview across the main and extended matrices. |
-| [summaries/performance-capacity-main-summary.md](summaries/performance-capacity-main-summary.md) | Main capacity matrix summary. |
-| [summaries/performance-capacity-extended-summary.md](summaries/performance-capacity-extended-summary.md) | Extended capacity matrix summary. |
+| [performance-capacity-curve.md](performance-capacity-curve.md) | **Current release capacity matrix** — the only current capacity table; machine-readable form at `perf/results/data/capacity/current-capacity.json`. |
+| [reports/2026-09-22-current-capacity](reports/2026-09-22-current-capacity/report.md) | Current capacity evidence report (matrix points, 30m sustained runs, refresh bounds, audit reconciliation). |
+
+Historical capacity reports under `reports/` retain their generation date
+and are regression/root-cause evidence only — none describes the current
+release unless it is linked from the entry points above.
 
 ## Report Groups
 
 | Group | Directory | Contents |
 | --- | --- | --- |
-| Main matrix | [reports/main](reports/main) | Token-only, OIDC, refresh-only, and FAPI2 logged-in capacity reports. |
-| Extended matrix | [reports/extended](reports/extended) | mTLS, PAR/JAR, introspection, revocation, discovery/JWKS, and same-user contention reports. |
-| Special runs | [reports/special](reports/special) | App CPU experiments and PG wait-event diagnostics with retained structured evidence. |
+| Special runs | [reports/special](reports/special) | Retained root-cause diagnostics (PG wait events, pool recycling A/B). |
 
 ## Evidence Model
 
@@ -57,8 +58,10 @@ the current release or an unmeasured deployment.
 ## Maintenance Rules
 
 - Keep stable reader entry points in this directory root.
-- Put new main matrix scenario reports under `reports/main/`.
-- Put new extended matrix scenario reports under `reports/extended/`.
+- The current capacity matrix lives only in
+  [performance-capacity-curve.md](performance-capacity-curve.md) +
+  `perf/results/data/capacity/current-capacity.json`; do not add parallel
+  matrices that could be mistaken for the current baseline.
 - Put one-off CPU, single-instance, or experiment reports under
   `reports/special/`.
 - Keep only compact structured results and environment captures required to
@@ -67,4 +70,4 @@ the current release or an unmeasured deployment.
 - Temporary paths in old environment captures describe that run, not a current
   deployment recipe; use `perf/README.md` for current runner commands.
 - Update [performance-capacity-curve.md](performance-capacity-curve.md) and
-  the relevant summary file when adding a durable scenario report.
+  `current-capacity.json` when adding a durable scenario report.

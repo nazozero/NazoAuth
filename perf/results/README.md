@@ -6,8 +6,9 @@ results do not live here.
 
 ## Layout
 
-- `data/capacity/` — retained main-matrix capacity results (`<scenario>.json`).
-- `data/extended/` — retained extended-scenario results.
+- `data/capacity/` — the current capacity baseline
+  (`current-capacity.json`, the machine-readable form of
+  `docs/performance/performance-capacity-curve.md`).
 - `data/comparisons/` — retained external-implementation comparisons (only if a
   report consumes them).
 - `environments/` — per-run environment/topology captures (`<run-suffix>.md`).
