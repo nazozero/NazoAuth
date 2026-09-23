@@ -1,0 +1,39 @@
+{
+ "census_exact": {
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 1,
+  "evicted_keys": 0,
+  "expired_keys": 51863503,
+  "keyspace_hits": 253077560,
+  "keyspace_misses": 291215,
+  "mem_fragmentation_ratio": 28.96,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 1456272,
+  "used_memory_rss": 42164224
+ },
+ "keys_seen": 1,
+ "mem_bytes_sampled": {
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "current-capacity-final-1900-30m",
+  "sample_per_cat": 400,
+  "sampled_at": 1790129891,
+  "scan_ms": 2,
+  "script_sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b"
+ },
+ "sampled_per_cat": {
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 1,
+ "ttl_buckets_sampled": {
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

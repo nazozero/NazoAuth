@@ -66,7 +66,14 @@ MANIFEST=$OUT/manifest.txt
   echo "MIGRATION_SET_SHA256=$(find /workspace/migrations -type f -name '*.sql' | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1)"
   docker exec -i nazoauth-perf-postgres-1 psql -X -A -t -U postgres -d oauth -c "SELECT version FROM __diesel_schema_migrations ORDER BY version" 2>/dev/null > "$OUT/applied-migrations.txt" || true
   echo "applied_migrations=$(wc -l < "$OUT/applied-migrations.txt" 2>/dev/null || echo 0)"
-  echo "PG_SCHEMA_SHA256=$(docker exec nazoauth-perf-postgres-1 sh -c 'pg_dump -U postgres -d oauth -s --no-owner --no-privileges 2>/dev/null | grep -v "^--" | grep -v "^$" | sha256sum | cut -d" " -f1' || echo unavailable)"
+  echo "APPLIED_MIGRATIONS_SHA256=$(sha256sum "$OUT/applied-migrations.txt" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
+  # Canonical schema identity: deterministic catalog dump (sorted logical
+  # schema, no OIDs/owners/ACLs). Raw pg_dump -s remains diagnostic only.
+  docker exec -i nazoauth-perf-postgres-1 psql -X -v ON_ERROR_STOP=1 \
+    -U postgres -d oauth -f - < "$TOOLS/canonical_schema.sql" \
+    > "$OUT/canonical-schema.txt" 2>/dev/null || true
+  echo "CANONICAL_PG_SCHEMA_SHA256=$(sha256sum "$OUT/canonical-schema.txt" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
+  echo "PG_DUMP_SCHEMA_SHA256_DIAG=$(docker exec nazoauth-perf-postgres-1 sh -c 'pg_dump -U postgres -d oauth -s --no-owner --no-privileges 2>/dev/null | grep -v "^--" | grep -v "^$" | sha256sum | cut -d" " -f1' || echo unavailable)"
   echo "--- valkey ---"
   docker exec nazoauth-perf-valkey-1 sh -c 'valkey-cli INFO server 2>/dev/null | grep -E "redis_version|valkey_version" | head -1' 2>/dev/null | tr -d '\r' | sed 's/^/valkey_/'
   docker exec nazoauth-perf-valkey-1 sh -c 'valkey-cli CONFIG GET maxmemory 2>/dev/null | tail -1' 2>/dev/null | tr -d '\r' | sed 's/^/valkey_maxmemory=/'
@@ -302,5 +309,13 @@ RUN_ID=$RUN_ID docker run --rm --network nazoauth-perf_perf_net \
   nazoauth-perf-perf python3 /tmp/vkledger.py \
   > "$OUT/vkledger-post.json"
 
-echo "end_utc=$(date -u +%FT%TZ)" | tee -a "$MANIFEST" >>"$LOG"
+# Post-run canonical schema re-capture: must equal the pre-run fingerprint
+# (schema is fixed at migration/startup; a drift here invalidates identity).
+docker exec -i nazoauth-perf-postgres-1 psql -X -v ON_ERROR_STOP=1 \
+  -U postgres -d oauth -f - < "$TOOLS/canonical_schema.sql" \
+  > "$OUT/canonical-schema-post.txt" 2>/dev/null || true
+{
+  echo "CANONICAL_PG_SCHEMA_SHA256_POST=$(sha256sum "$OUT/canonical-schema-post.txt" 2>/dev/null | cut -d' ' -f1 || echo unavailable)"
+  echo "end_utc=$(date -u +%FT%TZ)"
+} | tee -a "$MANIFEST" >>"$LOG"
 echo "SOAK_DONE RUN_ID=$RUN_ID $(date -u +%FT%TZ)" >>"$LOG"
