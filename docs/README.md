@@ -143,9 +143,8 @@ set can be scanned from one place.
 | --- | --- |
 | [../perf/README.md](../perf/README.md) | Benchmark runner usage, load model, profiles, and metrics. |
 | [performance/README.md](performance/README.md) | Local performance documentation index, report groups, common semantics, and maintenance rules. |
-| [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) | Dated capacity baseline with its recorded source and environment. |
-| [performance/summaries](performance/summaries) | Main and extended capacity matrix summaries. |
-| [performance/reports](performance/reports) | Scenario-level capacity reports grouped by main, extended, and special runs. |
+| [performance/performance-capacity-curve.md](performance/performance-capacity-curve.md) | Current release capacity baseline with its recorded source and environment. |
+| [performance/reports](performance/reports) | Dated evidence reports: current-capacity set, redesign, and historical root-cause records. |
 
 ### Project
 
