@@ -119,14 +119,36 @@ GUC set (`fsync=on`, `synchronous_commit=on`, `full_page_writes=on`,
 
 ## Validation
 
-- `cargo fmt --check`: PASS on all integration files; `mfa_profile.rs:457`
-  is a pre-existing violation on `bb5f42c6` (untouched).
+- Baseline: `origin/main` re-fetched at final validation; still
+  `bb5f42c6` — integration base remains current (`0 5` left-right count).
+- `cargo fmt --check`: PASS on every file added or modified by this
+  branch; `mfa_profile.rs:457` is a pre-existing violation on `bb5f42c6`
+  itself (verified in a clean main worktree; untouched here).
+- Targeted crates: `nazo-crypto`, `nazo-key-management`, `nazo-oauth-server`,
+  `nazo-persistence` — all `test result: ok`, 0 failures.
 - Real PostgreSQL: `audit_ledger` 9/9, `token_issuance_fresh` 12/12.
 - Focused `nazoauth` unit tests (audit + token issue paths): 79/79.
-- `nazoauth` lib suite vs baseline `bb5f42c6`: identical failure surface —
-  the same two environment-sensitive tests
-  (`authorization_code_marker_failure_revokes…`, `refresh_grant_rejects_
-  wrong_client_family…`) fail on unmodified main under this environment;
-  zero new failures introduced.
+- `cargo test --workspace` (131 test binaries): the only failing binary is
+  `nazoauth` lib. Its failure set on this branch equals the failure set of
+  unmodified `bb5f42c6` run in the same environment: two
+  environment-sensitive tests
+  (`authorization_code_marker_failure_revokes_the_issued_access_token`,
+  `refresh_grant_rejects_wrong_client_family_or_sender_constrained_
+  successors_without_compromising_family`) plus contention flakes that
+  pass under `--test-threads=1`. `WORKSPACE_TESTS = BASELINE_EQUIVALENT`,
+  `WORKSPACE_REGRESSION = NO`.
 - Perf Python suite: 276 pass / 0 fail / 1 skip.
-- No performance workload executed.
+- JS harness (k6 2.2.0 pinned container): `subject_state_test` 10/10,
+  `checkpoint_clock_test` `pass:true` (begin/end reconciled, late-VU
+  coverage). Zero SUT traffic.
+- One-shot driver runtime dependencies: 0 — only docstring provenance
+  mentions remain in `point_runner.py`.
+- Formal path fail-closed: `pool_size_ab` invokes
+  `evaluate(..., require_stream=True)`; missing stream evidence →
+  `INVALID: stream_evidence_missing`.
+- Secret scan of the full `origin/main...HEAD` diff plus decompressed
+  evidence archives: no private keys, tokens, cookies, or credentials —
+  only fixed perf fixtures and parameterized query text.
+- Evidence added: ~19.8 MB (largest single artifact 2.8 MB tarball);
+  minimum-sufficient set per keep/drop matrix below.
+- No performance workload executed: `NEW_REAL_LOAD_TIME = 0s`.
