@@ -469,7 +469,7 @@ mod queue_persistence {
 
     // The queue counters are process-global atomics, so tests that assert on
     // their deltas must not overlap.
-    static COUNTER_TEST_LOCK: Mutex<()> = Mutex::new(());
+    static COUNTER_TEST_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     fn telemetry_event() -> QueuedAuditEvent {
         prepare_event("login_success", serde_json::Map::new()).unwrap()
@@ -488,7 +488,7 @@ mod queue_persistence {
 
     #[tokio::test]
     async fn worker_persists_a_single_event_immediately_without_batching() {
-        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
         let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
@@ -521,7 +521,7 @@ mod queue_persistence {
 
     #[tokio::test]
     async fn worker_retries_failed_append_then_preserves_order() {
-        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(8);
         let ledger = Arc::new(FakeLedger::new());
         ledger.fail_next.store(1, AtomicOrdering::Relaxed);
@@ -546,7 +546,7 @@ mod queue_persistence {
 
     #[tokio::test]
     async fn queue_counters_reconcile_enqueue_persist_drop_and_pending() {
-        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(4);
         let ledger = Arc::new(FakeLedger::new());
         let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
@@ -571,7 +571,7 @@ mod queue_persistence {
 
     #[tokio::test]
     async fn required_append_uses_the_direct_ledger_path_not_the_queue() {
-        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        let _guard = COUNTER_TEST_LOCK.lock().await;
         let fake = Arc::new(FakeLedger::new());
         let ledger: Arc<dyn SecurityAuditLedger> = fake.clone();
         let (e0, _, d0, _, _, _) = counters();
@@ -590,7 +590,7 @@ mod queue_persistence {
 
     #[tokio::test]
     async fn burst_events_persist_in_bounded_batches() {
-        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(256);
         let ledger = Arc::new(FakeLedger::new());
         let worker = tokio::spawn(run_audit_persist_worker(receiver, ledger.clone()));
@@ -637,7 +637,7 @@ mod queue_persistence {
 
     #[tokio::test]
     async fn failed_batch_is_retried_whole_and_blocks_later_batches() {
-        let _guard = COUNTER_TEST_LOCK.lock().unwrap();
+        let _guard = COUNTER_TEST_LOCK.lock().await;
         let (sender, receiver) = mpsc::channel(16);
         let ledger = Arc::new(FakeLedger::new());
         // Fail the first two batch attempts: the first batch must be retried
