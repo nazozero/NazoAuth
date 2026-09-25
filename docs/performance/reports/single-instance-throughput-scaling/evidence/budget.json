@@ -1,0 +1,33 @@
+{
+  "load_seconds_used": 895.8,
+  "points": [
+    {
+      "load_seconds": 127.9,
+      "name": "X4"
+    },
+    {
+      "load_seconds": 127.9,
+      "name": "X8"
+    },
+    {
+      "load_seconds": 127.9,
+      "name": "X16"
+    },
+    {
+      "load_seconds": 128.0,
+      "name": "A1"
+    },
+    {
+      "load_seconds": 128.0,
+      "name": "B1"
+    },
+    {
+      "load_seconds": 128.1,
+      "name": "B2"
+    },
+    {
+      "load_seconds": 128.0,
+      "name": "A2"
+    }
+  ]
+}

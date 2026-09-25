@@ -1,0 +1,13 @@
+{
+  "baseline_app_sha": "bec5ff72dc17ae4f077fa492018435828e35bbc1",
+  "baseline_binary_sha256": "a49d39bd54e355932f067e9a990a01d5b671e006ca6773c9f26ae8209c67e489",
+  "baseline_image": "abp-a:bec5ff72",
+  "batch_sha": "d4f5c73478c9479b7565ce806ad562b8301f5167",
+  "candidate_app_sha": "d4f5c73478c9479b7565ce806ad562b8301f5167",
+  "candidate_binary_sha256": "00237080631e0b16ad35782151b65fe61f0bb895715c3963992d8255ce427ae2",
+  "candidate_image": "abp-b:d4f5c734",
+  "common_sha": "bec5ff72dc17ae4f077fa492018435828e35bbc1",
+  "harness_sha": "30c7f55643eb19dd21300c34fb3e69df158d0e89",
+  "protocol": "mixed A1->B1->B2->A2 4x120s cap_mixed 3000/s",
+  "task": "audit-batch-persistence"
+}

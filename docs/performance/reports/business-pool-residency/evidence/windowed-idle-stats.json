@@ -1,0 +1,98 @@
+{
+ "cc": {
+  "pool_wait_ms_per_acq": 1.99,
+  "acq_delta": 827227,
+  "pg_idle_age_ms": {
+   "n": 1048,
+   "p50": -1.254,
+   "p90": -0.835,
+   "p99": 0.071,
+   "max": 2.62,
+   "ge1ms": 0.0057,
+   "ge20ms": 0.0
+  },
+  "itx_age_ms": {
+   "n": 850,
+   "p50": -1.319,
+   "p90": -0.949,
+   "p99": -0.311,
+   "max": 2.45,
+   "ge1ms": 0.0024,
+   "ge20ms": 0.0
+  },
+  "idle_episode_len_s": {
+   "n_episodes": 1048,
+   "def": "same pid AND same state_change => truly queryless idle run",
+   "p50": 0.0,
+   "p90": 0.0,
+   "p99": 0.0,
+   "max": 0.0,
+   "ge250ms": 0,
+   "ge500ms": 0
+  }
+ },
+ "m1": {
+  "pool_wait_ms_per_acq": 64.46,
+  "acq_delta": 1870758,
+  "pg_idle_age_ms": {
+   "n": 3052,
+   "p50": -1.294,
+   "p90": -0.59,
+   "p99": 4.26,
+   "max": 20.92,
+   "ge1ms": 0.0236,
+   "ge20ms": 0.0003
+  },
+  "itx_age_ms": {
+   "n": 2171,
+   "p50": -1.354,
+   "p90": -0.803,
+   "p99": 2.814,
+   "max": 38.84,
+   "ge1ms": 0.0134,
+   "ge20ms": 0.0005
+  },
+  "idle_episode_len_s": {
+   "n_episodes": 3052,
+   "def": "same pid AND same state_change => truly queryless idle run",
+   "p50": 0.0,
+   "p90": 0.0,
+   "p99": 0.0,
+   "max": 0.0,
+   "ge250ms": 0,
+   "ge500ms": 0
+  }
+ },
+ "m2": {
+  "pool_wait_ms_per_acq": 70.62,
+  "acq_delta": 1839910,
+  "pg_idle_age_ms": {
+   "n": 2920,
+   "p50": -1.266,
+   "p90": -0.619,
+   "p99": 2.309,
+   "max": 11.08,
+   "ge1ms": 0.0185,
+   "ge20ms": 0.0
+  },
+  "itx_age_ms": {
+   "n": 2201,
+   "p50": -1.326,
+   "p90": -0.73,
+   "p99": 1.648,
+   "max": 11.29,
+   "ge1ms": 0.015,
+   "ge20ms": 0.0
+  },
+  "idle_episode_len_s": {
+   "n_episodes": 2920,
+   "def": "same pid AND same state_change => truly queryless idle run",
+   "p50": 0.0,
+   "p90": 0.0,
+   "p99": 0.0,
+   "max": 0.0,
+   "ge250ms": 0,
+   "ge500ms": 0
+  }
+ }
+}

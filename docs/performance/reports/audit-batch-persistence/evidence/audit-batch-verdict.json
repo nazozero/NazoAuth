@@ -1,0 +1,177 @@
+{
+  "a_health_failures": [],
+  "b_health_failures": [],
+  "points": {
+    "A1": {
+      "audit_queue": {
+        "dropped": 42435,
+        "enqueued": 6797,
+        "pending_in_process": 0,
+        "persist_batch_events": 6797,
+        "persist_batches": 6797,
+        "persist_max_batch": 1,
+        "persisted": 6797
+      },
+      "checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "batch_events_eq_persisted": true,
+        "batching_observed": false,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "journal_contiguous": true,
+        "max_batch_le_64": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "queue_dropped_zero": false,
+        "queue_full_reproduced": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "drop_fraction": 0.210599,
+      "failed": [],
+      "op_p99_ms": 1375.0,
+      "point": "A1",
+      "queue_full": 42435,
+      "successful_ops_per_s": 2351.4,
+      "verdict": "PASS"
+    },
+    "A2": {
+      "audit_queue": {
+        "dropped": 44906,
+        "enqueued": 7309,
+        "pending_in_process": 0,
+        "persist_batch_events": 7309,
+        "persist_batches": 7309,
+        "persist_max_batch": 1,
+        "persisted": 7309
+      },
+      "checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "batch_events_eq_persisted": true,
+        "batching_observed": false,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "journal_contiguous": true,
+        "max_batch_le_64": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "queue_dropped_zero": false,
+        "queue_full_reproduced": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "drop_fraction": 0.158398,
+      "failed": [],
+      "op_p99_ms": 1240.0,
+      "point": "A2",
+      "queue_full": 44906,
+      "successful_ops_per_s": 2480.571,
+      "verdict": "PASS"
+    },
+    "B1": {
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 50764,
+        "pending_in_process": 0,
+        "persist_batch_events": 50764,
+        "persist_batches": 2227,
+        "persist_max_batch": 64,
+        "persisted": 50764
+      },
+      "checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "batch_events_eq_persisted": true,
+        "batching_observed": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "journal_contiguous": true,
+        "max_batch_le_64": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "drop_fraction": 0.18023,
+      "failed": [],
+      "op_p99_ms": 1206.0,
+      "point": "B1",
+      "queue_full": 0,
+      "successful_ops_per_s": 2474.933,
+      "verdict": "PASS"
+    },
+    "B2": {
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 52381,
+        "pending_in_process": 0,
+        "persist_batch_events": 52381,
+        "persist_batches": 2207,
+        "persist_max_batch": 62,
+        "persisted": 52381
+      },
+      "checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "batch_events_eq_persisted": true,
+        "batching_observed": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "journal_contiguous": true,
+        "max_batch_le_64": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "drop_fraction": 0.159957,
+      "failed": [],
+      "op_p99_ms": 1212.0,
+      "point": "B2",
+      "queue_full": 0,
+      "successful_ops_per_s": 2497.419,
+      "verdict": "PASS"
+    }
+  },
+  "throughput": {
+    "a_max": 2480.571,
+    "a_values": [
+      2351.4,
+      2480.571
+    ],
+    "b_min": 2474.933,
+    "b_values": [
+      2474.933,
+      2497.419
+    ],
+    "floor_97pct": 2406.1538699999996,
+    "non_regression": true
+  },
+  "verdict": "PASS"
+}

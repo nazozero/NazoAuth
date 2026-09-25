@@ -1,0 +1,854 @@
+{
+  "generated_by": "offline-review/reanalyze.py",
+  "raw_root": "/workspace/.sis-worktree/perf-results/sis",
+  "raw_modified": false,
+  "points": [
+    {
+      "point": "X4",
+      "phase": "phase1",
+      "inputs": {
+        "point.json": {
+          "sha256": "85e7cadebb9a5ebffcc63ac97ce6efb1556ea026b2b6911d57059717b801cdb5"
+        },
+        "soak-metrics.jsonl": {
+          "sha256": "625e82c0afe0154f555c9aa49b0388a1777d7ae7b21de5d0ccabd406b3c56ce8"
+        },
+        "proc-detail.jsonl": {
+          "sha256": "c8bdcd0bcb20e908527d49a9e6297d413bccafd273e6fbf36f84fff4c36e87ee"
+        },
+        "pgss-pre.json": {
+          "sha256": "f92f7cdbc043f17cb73fe5a7df39037a7ff6601feba6e129eb32bcc3e54931d5"
+        },
+        "pgss-post.json": {
+          "sha256": "88b91354a2a7f2b2cb86394584ad6f0b8efda7a0048422d008e9f169614a2c8c"
+        },
+        "load/sis-cap-client-credentials.summary.json": {
+          "sha256": "4467843c23e66fa9e99356da768e45bc80e51a382949cf9ed98bae50503bacf4"
+        }
+      },
+      "window": {
+        "start_ms": 1790179250745,
+        "end_ms": 1790179355745,
+        "seconds": 105
+      },
+      "denominators": {
+        "measure_cohort_success": 313797,
+        "full_run_http_reqs": 358696,
+        "iterations_completed": 358696
+      },
+      "wal": {
+        "original_wal_per_success_bytes": 3051.43,
+        "original_numerator": "pg_stat_wal delta over seed+load+drain",
+        "original_denominator": "measure-cohort success",
+        "original_verdict": "NOT_COMPARABLE \u2014 mixed window/population",
+        "windowed_delta_bytes": 831244873.6256542,
+        "windowed_per_success_bytes": 2649.0,
+        "window_error": null
+      },
+      "acquire": {
+        "lifetime_acquire_count": 1438901,
+        "full_run_per_http": 4.0115,
+        "full_run_note": "app-lifetime counter / full-run HTTP; background-inclusive",
+        "windowed_delta": 1245587.0053720474,
+        "windowed_per_success": 3.9694,
+        "windowed_note": "same-window ratio still includes background acquisitions; they cannot be separated out",
+        "window_error": null,
+        "rejected_mixed_ratio": 4.5855
+      },
+      "pgss": {
+        "pre_stats_reset": "1790179214.693863",
+        "post_stats_reset": "1790179234.787798",
+        "delta_valid": false,
+        "identity_fields_present": false,
+        "since_reset_calls_observed": 6970065,
+        "verdict": "since-reset observation only \u2014 no pre/post subtraction (reset epoch changed or identity fields absent)"
+      },
+      "statements_per_req_observed": 19.431,
+      "statements_per_req_semantics": "sum of pg_stat_statements calls since scenario reset over all roles/levels divided by full-run HTTP; it is NOT a count of serial network round trips per business op",
+      "cpu": {
+        "window_s": 95.7,
+        "n_samples": 18,
+        "coverage": "good",
+        "app": {
+          "cores": 3.4,
+          "pid1_thread_count": 130,
+          "thread_roles": "unknown \u2014 tid names were not captured; cannot split tokio workers vs blocking threads vs tasks",
+          "top_threads_jif": [
+            {
+              "tid": 181,
+              "jif_delta": 635
+            },
+            {
+              "tid": 148,
+              "jif_delta": 633
+            },
+            {
+              "tid": 182,
+              "jif_delta": 632
+            },
+            {
+              "tid": 183,
+              "jif_delta": 632
+            },
+            {
+              "tid": 143,
+              "jif_delta": 631
+            },
+            {
+              "tid": 132,
+              "jif_delta": 630
+            },
+            {
+              "tid": 139,
+              "jif_delta": 630
+            },
+            {
+              "tid": 165,
+              "jif_delta": 630
+            }
+          ]
+        },
+        "postgres": {
+          "cores": 3.714
+        },
+        "valkey": {
+          "cores": 0.067
+        },
+        "reproducible": true
+      },
+      "audit_evidence": {
+        "db_pending": 0,
+        "db_last_sequence": 358696,
+        "db_anchor_sequence": 358696,
+        "db_drained": true,
+        "receiver_reconciliation": "missing \u2014 receiver container logs were not preserved; no end-to-end required-delivery claim is made"
+      }
+    },
+    {
+      "point": "X8",
+      "phase": "phase1",
+      "inputs": {
+        "point.json": {
+          "sha256": "1e61d0678734b4929d336d96d6189fbb477714f1673c58472db3ce4e49d7422d"
+        },
+        "soak-metrics.jsonl": {
+          "sha256": "972c2b4a9fac2a122e629eeb31c36eba5de7df676336666dfe30d48c0ec95a96"
+        },
+        "proc-detail.jsonl": {
+          "sha256": "2090460b861a3dbe277b61e1178d944471b5ce8e16c776b6153a0f46a36f34b7"
+        },
+        "pgss-pre.json": {
+          "sha256": "b6ecd1ceb742954b136b57b3a53f12f91243371770a2dc23bbf37bfa83c4176f"
+        },
+        "pgss-post.json": {
+          "sha256": "c88d34c30c1b1b35da968e4fbaf4dbfa1d4578fb18b8b1c8bd941e16a2f37a9a"
+        },
+        "load/sis-cap-client-credentials.summary.json": {
+          "sha256": "414fed1807789897e0bcdc56de7fefc324c9f2cf2263195ebe8e04b939cd61a1"
+        }
+      },
+      "window": {
+        "start_ms": 1790179460888,
+        "end_ms": 1790179565888,
+        "seconds": 105
+      },
+      "denominators": {
+        "measure_cohort_success": 475667,
+        "full_run_http_reqs": 542120,
+        "iterations_completed": 542120
+      },
+      "wal": {
+        "original_wal_per_success_bytes": 3054.491,
+        "original_numerator": "pg_stat_wal delta over seed+load+drain",
+        "original_denominator": "measure-cohort success",
+        "original_verdict": "NOT_COMPARABLE \u2014 mixed window/population",
+        "windowed_delta_bytes": 1270549675.6641557,
+        "windowed_per_success_bytes": 2671.1,
+        "window_error": null
+      },
+      "acquire": {
+        "lifetime_acquire_count": 2172564,
+        "full_run_per_http": 4.0075,
+        "full_run_note": "app-lifetime counter / full-run HTTP; background-inclusive",
+        "windowed_delta": 1901751.383913517,
+        "windowed_per_success": 3.9981,
+        "windowed_note": "same-window ratio still includes background acquisitions; they cannot be separated out",
+        "window_error": null,
+        "rejected_mixed_ratio": 4.5674
+      },
+      "pgss": {
+        "pre_stats_reset": "1790179424.148907",
+        "post_stats_reset": "1790179444.940054",
+        "delta_valid": false,
+        "identity_fields_present": false,
+        "since_reset_calls_observed": 10445874,
+        "verdict": "since-reset observation only \u2014 no pre/post subtraction (reset epoch changed or identity fields absent)"
+      },
+      "statements_per_req_observed": 19.268,
+      "statements_per_req_semantics": "sum of pg_stat_statements calls since scenario reset over all roles/levels divided by full-run HTTP; it is NOT a count of serial network round trips per business op",
+      "cpu": {
+        "window_s": 95.6,
+        "n_samples": 18,
+        "coverage": "good",
+        "app": {
+          "cores": 5.789,
+          "pid1_thread_count": 130,
+          "thread_roles": "unknown \u2014 tid names were not captured; cannot split tokio workers vs blocking threads vs tasks",
+          "top_threads_jif": [
+            {
+              "tid": 112,
+              "jif_delta": 1101
+            },
+            {
+              "tid": 123,
+              "jif_delta": 1100
+            },
+            {
+              "tid": 116,
+              "jif_delta": 1099
+            },
+            {
+              "tid": 155,
+              "jif_delta": 1099
+            },
+            {
+              "tid": 139,
+              "jif_delta": 1098
+            },
+            {
+              "tid": 136,
+              "jif_delta": 1097
+            },
+            {
+              "tid": 164,
+              "jif_delta": 1097
+            },
+            {
+              "tid": 114,
+              "jif_delta": 1096
+            }
+          ]
+        },
+        "postgres": {
+          "cores": 5.194
+        },
+        "valkey": {
+          "cores": 0.088
+        },
+        "reproducible": true
+      },
+      "audit_evidence": {
+        "db_pending": 0,
+        "db_last_sequence": 542120,
+        "db_anchor_sequence": 542120,
+        "db_drained": true,
+        "receiver_reconciliation": "missing \u2014 receiver container logs were not preserved; no end-to-end required-delivery claim is made"
+      }
+    },
+    {
+      "point": "X16",
+      "phase": "phase1",
+      "inputs": {
+        "point.json": {
+          "sha256": "d77967efcc7384f4fe91e95c695b23a6d79b500b507a17b76bf0c62bd523dd77"
+        },
+        "soak-metrics.jsonl": {
+          "sha256": "ef9e28435da965db2f332083a2b0fb7f46972cb116d065249a975e934fec62c5"
+        },
+        "proc-detail.jsonl": {
+          "sha256": "6968bfee81b0d391e6b3dc1367a038f0155d3764bd1af8cf4f3f2c14d0c379bc"
+        },
+        "pgss-pre.json": {
+          "sha256": "bdbb02153bafe148df41dd8d6e9c0ad9cc7a9b65101df314878c7e5ab04ff982"
+        },
+        "pgss-post.json": {
+          "sha256": "438fe4505758f68b08c919b6692d2227ab0ae736e0f2c0c8859b3cc8e8ba7d42"
+        },
+        "load/sis-cap-client-credentials.summary.json": {
+          "sha256": "ff895576861105ce4679c9671ef28c8c97787003728324419323be7809a0a8b6"
+        }
+      },
+      "window": {
+        "start_ms": 1790179651880,
+        "end_ms": 1790179756880,
+        "seconds": 105
+      },
+      "denominators": {
+        "measure_cohort_success": 573571,
+        "full_run_http_reqs": 658277,
+        "iterations_completed": 658277
+      },
+      "wal": {
+        "original_wal_per_success_bytes": 3097.446,
+        "original_numerator": "pg_stat_wal delta over seed+load+drain",
+        "original_denominator": "measure-cohort success",
+        "original_verdict": "NOT_COMPARABLE \u2014 mixed window/population",
+        "windowed_delta_bytes": 1549420288.5258622,
+        "windowed_per_success_bytes": 2701.4,
+        "window_error": null
+      },
+      "acquire": {
+        "lifetime_acquire_count": 2637258,
+        "full_run_per_http": 4.0063,
+        "full_run_note": "app-lifetime counter / full-run HTTP; background-inclusive",
+        "windowed_delta": 2291530.078648567,
+        "windowed_per_success": 3.9952,
+        "windowed_note": "same-window ratio still includes background acquisitions; they cannot be separated out",
+        "window_error": null,
+        "rejected_mixed_ratio": 4.598
+      },
+      "pgss": {
+        "pre_stats_reset": "1790179615.994427",
+        "post_stats_reset": "1790179635.897733",
+        "delta_valid": false,
+        "identity_fields_present": false,
+        "since_reset_calls_observed": 12609687,
+        "verdict": "since-reset observation only \u2014 no pre/post subtraction (reset epoch changed or identity fields absent)"
+      },
+      "statements_per_req_observed": 19.155,
+      "statements_per_req_semantics": "sum of pg_stat_statements calls since scenario reset over all roles/levels divided by full-run HTTP; it is NOT a count of serial network round trips per business op",
+      "cpu": {
+        "window_s": 96.0,
+        "n_samples": 18,
+        "coverage": "good",
+        "app": {
+          "cores": 8.838,
+          "pid1_thread_count": 130,
+          "thread_roles": "unknown \u2014 tid names were not captured; cannot split tokio workers vs blocking threads vs tasks",
+          "top_threads_jif": [
+            {
+              "tid": 162,
+              "jif_delta": 1708
+            },
+            {
+              "tid": 166,
+              "jif_delta": 1708
+            },
+            {
+              "tid": 134,
+              "jif_delta": 1707
+            },
+            {
+              "tid": 152,
+              "jif_delta": 1706
+            },
+            {
+              "tid": 159,
+              "jif_delta": 1706
+            },
+            {
+              "tid": 129,
+              "jif_delta": 1705
+            },
+            {
+              "tid": 135,
+              "jif_delta": 1704
+            },
+            {
+              "tid": 121,
+              "jif_delta": 1703
+            }
+          ]
+        },
+        "postgres": {
+          "cores": 6.373
+        },
+        "valkey": {
+          "cores": 0.104
+        },
+        "reproducible": true
+      },
+      "audit_evidence": {
+        "db_pending": 0,
+        "db_last_sequence": 658277,
+        "db_anchor_sequence": 658277,
+        "db_drained": true,
+        "receiver_reconciliation": "missing \u2014 receiver container logs were not preserved; no end-to-end required-delivery claim is made"
+      }
+    },
+    {
+      "point": "A1",
+      "phase": "phase2",
+      "inputs": {
+        "point.json": {
+          "sha256": "40c1246824f35f6d9326877244c5547359375afae824c3f2266b2b35342b90cf"
+        },
+        "soak-metrics.jsonl": {
+          "sha256": "e87fd1006a51156b9c53acc21586780c14504036e45ae22878e1d9c79ec6d9cf"
+        },
+        "proc-detail.jsonl": {
+          "sha256": "47d847ebfac21fb98da4ea0fd4738180ec540bd9d5932657a911dd279ad2c7d9"
+        },
+        "pgss-pre.json": {
+          "sha256": "119f28563afa67ef27fa561db86e9d2ba7d9cef63ad81b11fd0153da4c8af1ac"
+        },
+        "pgss-post.json": {
+          "sha256": "77cdd097016a670eb7ac821d04b52cf94c028a106db5e0771a5700f527026952"
+        },
+        "load/sis-cap-client-credentials.summary.json": {
+          "sha256": "3ca6a6d3aa70c627e7d91f9321df194636f616245045d858a684bde581ba41e8"
+        }
+      },
+      "window": {
+        "start_ms": 1790180385684,
+        "end_ms": 1790180490684,
+        "seconds": 105
+      },
+      "denominators": {
+        "measure_cohort_success": 448011,
+        "full_run_http_reqs": 512556,
+        "iterations_completed": 512556
+      },
+      "wal": {
+        "original_wal_per_success_bytes": 3069.048,
+        "original_numerator": "pg_stat_wal delta over seed+load+drain",
+        "original_denominator": "measure-cohort success",
+        "original_verdict": "NOT_COMPARABLE \u2014 mixed window/population",
+        "windowed_delta_bytes": 1199969960.36339,
+        "windowed_per_success_bytes": 2678.4,
+        "window_error": null
+      },
+      "acquire": {
+        "lifetime_acquire_count": 2054308,
+        "full_run_per_http": 4.008,
+        "full_run_note": "app-lifetime counter / full-run HTTP; background-inclusive",
+        "windowed_delta": 1791992.4337530136,
+        "windowed_per_success": 3.9999,
+        "windowed_note": "same-window ratio still includes background acquisitions; they cannot be separated out",
+        "window_error": null,
+        "rejected_mixed_ratio": 4.5854
+      },
+      "pgss": {
+        "pre_stats_reset": "1790180347.988551",
+        "post_stats_reset": "1790180369.652601",
+        "delta_valid": false,
+        "identity_fields_present": false,
+        "since_reset_calls_observed": 9865269,
+        "verdict": "since-reset observation only \u2014 no pre/post subtraction (reset epoch changed or identity fields absent)"
+      },
+      "statements_per_req_observed": 19.247,
+      "statements_per_req_semantics": "sum of pg_stat_statements calls since scenario reset over all roles/levels divided by full-run HTTP; it is NOT a count of serial network round trips per business op",
+      "cpu": {
+        "window_s": 96.5,
+        "n_samples": 18,
+        "coverage": "good",
+        "app": {
+          "cores": 5.335,
+          "pid1_thread_count": 130,
+          "thread_roles": "unknown \u2014 tid names were not captured; cannot split tokio workers vs blocking threads vs tasks",
+          "top_threads_jif": [
+            {
+              "tid": 124,
+              "jif_delta": 1023
+            },
+            {
+              "tid": 142,
+              "jif_delta": 1023
+            },
+            {
+              "tid": 156,
+              "jif_delta": 1023
+            },
+            {
+              "tid": 136,
+              "jif_delta": 1022
+            },
+            {
+              "tid": 139,
+              "jif_delta": 1022
+            },
+            {
+              "tid": 147,
+              "jif_delta": 1022
+            },
+            {
+              "tid": 161,
+              "jif_delta": 1022
+            },
+            {
+              "tid": 127,
+              "jif_delta": 1021
+            }
+          ]
+        },
+        "postgres": {
+          "cores": 5.069
+        },
+        "valkey": {
+          "cores": 0.085
+        },
+        "reproducible": true
+      },
+      "audit_evidence": {
+        "db_pending": 0,
+        "db_last_sequence": 512556,
+        "db_anchor_sequence": 512556,
+        "db_drained": true,
+        "receiver_reconciliation": "missing \u2014 receiver container logs were not preserved; no end-to-end required-delivery claim is made"
+      }
+    },
+    {
+      "point": "A2",
+      "phase": "phase2",
+      "inputs": {
+        "point.json": {
+          "sha256": "7b5e048e05cbfad1a07bde4d7cfe711b5240a4ec09c8b0fec12924388cbc55ba"
+        },
+        "soak-metrics.jsonl": {
+          "sha256": "4602e09b40ca3283de9dac7e5adb13ef4243dd46a0aa976a3b9f6b9b8aff2567"
+        },
+        "proc-detail.jsonl": {
+          "sha256": "55993222fd68ce8680a53000e24cddafe499dfe31092e2a42a19aaf892c6a980"
+        },
+        "pgss-pre.json": {
+          "sha256": "95747a75b3f69067506bce0401c879c1cf7164f5e906616ba85a3579d57edc24"
+        },
+        "pgss-post.json": {
+          "sha256": "af3867d9f979da2a0b6591eca6fae03cbe57090c6dffda12a8ebb1b88b110a9c"
+        },
+        "load/sis-cap-client-credentials.summary.json": {
+          "sha256": "cc7d4bd344a6f9dd5cda1752335df9dd410f8b0d918f709774a9ae3b13ccf976"
+        }
+      },
+      "window": {
+        "start_ms": 1790180966180,
+        "end_ms": 1790181071180,
+        "seconds": 105
+      },
+      "denominators": {
+        "measure_cohort_success": 475474,
+        "full_run_http_reqs": 544492,
+        "iterations_completed": 544492
+      },
+      "wal": {
+        "original_wal_per_success_bytes": 3068.316,
+        "original_numerator": "pg_stat_wal delta over seed+load+drain",
+        "original_denominator": "measure-cohort success",
+        "original_verdict": "NOT_COMPARABLE \u2014 mixed window/population",
+        "windowed_delta_bytes": 1274375292.395346,
+        "windowed_per_success_bytes": 2680.2,
+        "window_error": null
+      },
+      "acquire": {
+        "lifetime_acquire_count": 2182052,
+        "full_run_per_http": 4.0075,
+        "full_run_note": "app-lifetime counter / full-run HTTP; background-inclusive",
+        "windowed_delta": 1902424.628748536,
+        "windowed_per_success": 4.0011,
+        "windowed_note": "same-window ratio still includes background acquisitions; they cannot be separated out",
+        "window_error": null,
+        "rejected_mixed_ratio": 4.5892
+      },
+      "pgss": {
+        "pre_stats_reset": "1790180928.360645",
+        "post_stats_reset": "1790180950.168051",
+        "delta_valid": false,
+        "identity_fields_present": false,
+        "since_reset_calls_observed": 10484669,
+        "verdict": "since-reset observation only \u2014 no pre/post subtraction (reset epoch changed or identity fields absent)"
+      },
+      "statements_per_req_observed": 19.255,
+      "statements_per_req_semantics": "sum of pg_stat_statements calls since scenario reset over all roles/levels divided by full-run HTTP; it is NOT a count of serial network round trips per business op",
+      "cpu": {
+        "window_s": 97.4,
+        "n_samples": 18,
+        "coverage": "good",
+        "app": {
+          "cores": 5.707,
+          "pid1_thread_count": 130,
+          "thread_roles": "unknown \u2014 tid names were not captured; cannot split tokio workers vs blocking threads vs tasks",
+          "top_threads_jif": [
+            {
+              "tid": 127,
+              "jif_delta": 1103
+            },
+            {
+              "tid": 116,
+              "jif_delta": 1102
+            },
+            {
+              "tid": 124,
+              "jif_delta": 1102
+            },
+            {
+              "tid": 147,
+              "jif_delta": 1102
+            },
+            {
+              "tid": 110,
+              "jif_delta": 1101
+            },
+            {
+              "tid": 153,
+              "jif_delta": 1101
+            },
+            {
+              "tid": 114,
+              "jif_delta": 1100
+            },
+            {
+              "tid": 135,
+              "jif_delta": 1100
+            }
+          ]
+        },
+        "postgres": {
+          "cores": 5.292
+        },
+        "valkey": {
+          "cores": 0.09
+        },
+        "reproducible": true
+      },
+      "audit_evidence": {
+        "db_pending": 0,
+        "db_last_sequence": 544492,
+        "db_anchor_sequence": 544492,
+        "db_drained": true,
+        "receiver_reconciliation": "missing \u2014 receiver container logs were not preserved; no end-to-end required-delivery claim is made"
+      }
+    },
+    {
+      "point": "B1",
+      "phase": "phase2",
+      "inputs": {
+        "point.json": {
+          "sha256": "d714e1e6bd19c15f6a7b9a7f7d81a93edb6e707275642600b6360f5953b29d60"
+        },
+        "soak-metrics.jsonl": {
+          "sha256": "26640d843f1845fe2c5a2849619174481e53fb653b436a43c48ddd63156ebb4d"
+        },
+        "proc-detail.jsonl": {
+          "sha256": "b323a4a48e2f035744b3c04edc75fcbb3474675f8d1b70946145c7863a9ced26"
+        },
+        "pgss-pre.json": {
+          "sha256": "61b43e0c16ee527d4ade8f3a862737567042107af91f7ae7988ab1ef967c7714"
+        },
+        "pgss-post.json": {
+          "sha256": "fdd2d783e793c9ba53bf445a1d0002edf0928a3c601dedc1919c4d981e8ad531"
+        },
+        "load/sis-cap-client-credentials.summary.json": {
+          "sha256": "b7acd01fdd9800106d6c7e24289bbf6b49405f1e9ae469949c4d3efdde3282ad"
+        }
+      },
+      "window": {
+        "start_ms": 1790180577715,
+        "end_ms": 1790180682715,
+        "seconds": 105
+      },
+      "denominators": {
+        "measure_cohort_success": 435890,
+        "full_run_http_reqs": 495412,
+        "iterations_completed": 495412
+      },
+      "wal": {
+        "original_wal_per_success_bytes": 3026.772,
+        "original_numerator": "pg_stat_wal delta over seed+load+drain",
+        "original_denominator": "measure-cohort success",
+        "original_verdict": "NOT_COMPARABLE \u2014 mixed window/population",
+        "windowed_delta_bytes": 1148601826.6029696,
+        "windowed_per_success_bytes": 2635.1,
+        "window_error": null
+      },
+      "acquire": {
+        "lifetime_acquire_count": 1985799,
+        "full_run_per_http": 4.0084,
+        "full_run_note": "app-lifetime counter / full-run HTTP; background-inclusive",
+        "windowed_delta": 1728612.2081102133,
+        "windowed_per_success": 3.9657,
+        "windowed_note": "same-window ratio still includes background acquisitions; they cannot be separated out",
+        "window_error": null,
+        "rejected_mixed_ratio": 4.5557
+      },
+      "pgss": {
+        "pre_stats_reset": "1790180540.751386",
+        "post_stats_reset": "1790180561.744249",
+        "delta_valid": false,
+        "identity_fields_present": false,
+        "since_reset_calls_observed": 8529849,
+        "verdict": "since-reset observation only \u2014 no pre/post subtraction (reset epoch changed or identity fields absent)"
+      },
+      "statements_per_req_observed": 17.217,
+      "statements_per_req_semantics": "sum of pg_stat_statements calls since scenario reset over all roles/levels divided by full-run HTTP; it is NOT a count of serial network round trips per business op",
+      "cpu": {
+        "window_s": 103.7,
+        "n_samples": 19,
+        "coverage": "good",
+        "app": {
+          "cores": 5.058,
+          "pid1_thread_count": 130,
+          "thread_roles": "unknown \u2014 tid names were not captured; cannot split tokio workers vs blocking threads vs tasks",
+          "top_threads_jif": [
+            {
+              "tid": 122,
+              "jif_delta": 1025
+            },
+            {
+              "tid": 110,
+              "jif_delta": 1024
+            },
+            {
+              "tid": 114,
+              "jif_delta": 1023
+            },
+            {
+              "tid": 125,
+              "jif_delta": 1023
+            },
+            {
+              "tid": 112,
+              "jif_delta": 1022
+            },
+            {
+              "tid": 103,
+              "jif_delta": 1021
+            },
+            {
+              "tid": 113,
+              "jif_delta": 1020
+            },
+            {
+              "tid": 120,
+              "jif_delta": 1020
+            }
+          ]
+        },
+        "postgres": {
+          "cores": 6.462
+        },
+        "valkey": {
+          "cores": 0.097
+        },
+        "reproducible": true
+      },
+      "audit_evidence": {
+        "db_pending": 0,
+        "db_last_sequence": 495412,
+        "db_anchor_sequence": 495412,
+        "db_drained": true,
+        "receiver_reconciliation": "missing \u2014 receiver container logs were not preserved; no end-to-end required-delivery claim is made"
+      }
+    },
+    {
+      "point": "B2",
+      "phase": "phase2",
+      "inputs": {
+        "point.json": {
+          "sha256": "09f1379ca8e51f1896800c0e7f0b8c7bd0e79d524aa517db063f0decb544f90f"
+        },
+        "soak-metrics.jsonl": {
+          "sha256": "7991d2e3ddce6db8233b9e73190e98b25767f51e9316fbf2408116562a544ef9"
+        },
+        "proc-detail.jsonl": {
+          "sha256": "33b911af5131987f692e3abbbd8931117ac8f426e3258576d4bd56f5367ed96d"
+        },
+        "pgss-pre.json": {
+          "sha256": "267b093c723f34bb0d0f1a39fffa3e394f08682ea59926463f3273838b2f03aa"
+        },
+        "pgss-post.json": {
+          "sha256": "7aa9def738d3a5776067c4883327555d80b973421051c1b8a9d48a51d270968d"
+        },
+        "load/sis-cap-client-credentials.summary.json": {
+          "sha256": "ab646d307cdc6f5eb27d30b938e7c565bd060a5d11d62ce5a0c21cf7cf7fd3a7"
+        }
+      },
+      "window": {
+        "start_ms": 1790180772672,
+        "end_ms": 1790180877672,
+        "seconds": 105
+      },
+      "denominators": {
+        "measure_cohort_success": 466446,
+        "full_run_http_reqs": 506428,
+        "iterations_completed": 506428
+      },
+      "wal": {
+        "original_wal_per_success_bytes": 2883.592,
+        "original_numerator": "pg_stat_wal delta over seed+load+drain",
+        "original_denominator": "measure-cohort success",
+        "original_verdict": "NOT_COMPARABLE \u2014 mixed window/population",
+        "windowed_delta_bytes": 1222830622.018001,
+        "windowed_per_success_bytes": 2621.6,
+        "window_error": null
+      },
+      "acquire": {
+        "lifetime_acquire_count": 2029930,
+        "full_run_per_http": 4.0083,
+        "full_run_note": "app-lifetime counter / full-run HTTP; background-inclusive",
+        "windowed_delta": 1849293.5885095596,
+        "windowed_per_success": 3.9646,
+        "windowed_note": "same-window ratio still includes background acquisitions; they cannot be separated out",
+        "window_error": null,
+        "rejected_mixed_ratio": 4.3519
+      },
+      "pgss": {
+        "pre_stats_reset": "1790180733.796906",
+        "post_stats_reset": "1790180756.652439",
+        "delta_valid": false,
+        "identity_fields_present": false,
+        "since_reset_calls_observed": 8733946,
+        "verdict": "since-reset observation only \u2014 no pre/post subtraction (reset epoch changed or identity fields absent)"
+      },
+      "statements_per_req_observed": 17.246,
+      "statements_per_req_semantics": "sum of pg_stat_statements calls since scenario reset over all roles/levels divided by full-run HTTP; it is NOT a count of serial network round trips per business op",
+      "cpu": {
+        "window_s": 98.2,
+        "n_samples": 18,
+        "coverage": "good",
+        "app": {
+          "cores": 5.417,
+          "pid1_thread_count": 130,
+          "thread_roles": "unknown \u2014 tid names were not captured; cannot split tokio workers vs blocking threads vs tasks",
+          "top_threads_jif": [
+            {
+              "tid": 129,
+              "jif_delta": 1041
+            },
+            {
+              "tid": 127,
+              "jif_delta": 1039
+            },
+            {
+              "tid": 133,
+              "jif_delta": 1039
+            },
+            {
+              "tid": 137,
+              "jif_delta": 1037
+            },
+            {
+              "tid": 149,
+              "jif_delta": 1037
+            },
+            {
+              "tid": 157,
+              "jif_delta": 1037
+            },
+            {
+              "tid": 167,
+              "jif_delta": 1037
+            },
+            {
+              "tid": 121,
+              "jif_delta": 1036
+            }
+          ]
+        },
+        "postgres": {
+          "cores": 6.312
+        },
+        "valkey": {
+          "cores": 0.095
+        },
+        "reproducible": true
+      },
+      "audit_evidence": {
+        "db_pending": 0,
+        "db_last_sequence": 506428,
+        "db_anchor_sequence": 506428,
+        "db_drained": true,
+        "receiver_reconciliation": "missing \u2014 receiver container logs were not preserved; no end-to-end required-delivery claim is made"
+      }
+    }
+  ]
+}

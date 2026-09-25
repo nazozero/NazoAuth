@@ -1,0 +1,11 @@
+PERF_VECTOR_COUNT=2000 is below the replay-safe minimum; using 15208 flow vectors
+Traceback (most recent call last):
+  File "/perf/runner.py", line 1145, in <module>
+    main()
+    ~~~~^^
+  File "/perf/runner.py", line 1139, in main
+    results.append(run_scenario(profile, scenario))
+                   ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "/perf/runner.py", line 778, in run_scenario
+    raise RuntimeError(f"k6 scenario failed before writing summary: {profile}/{scenario}")
+RuntimeError: k6 scenario failed before writing summary: cap/oidc_cold_login_refresh

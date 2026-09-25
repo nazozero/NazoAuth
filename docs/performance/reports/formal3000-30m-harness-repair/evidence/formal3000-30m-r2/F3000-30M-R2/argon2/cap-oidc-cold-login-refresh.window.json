@@ -1,0 +1,37 @@
+{
+  "contract": "cap-scenario-window-v1",
+  "valid": false,
+  "consistent": true,
+  "problems": [
+    "missing:scenario_start_ms",
+    "missing:measure_start_ms",
+    "missing:measure_end_ms",
+    "missing:duration_ms",
+    "scenario_clock_ok!=1"
+  ],
+  "fields": {},
+  "vus_seen": 0,
+  "points": 996929,
+  "parse_errors": 0,
+  "reader_error": null,
+  "measurement_cohort": {
+    "window_start_s": null,
+    "window_end_s": null,
+    "measure_started_exact": 0,
+    "measure_completed_exact": 0,
+    "measure_dropped_exact": 0,
+    "measure_scheduled_observed": 0,
+    "measure_drop_fraction": null,
+    "measure_outcomes": {},
+    "measure_outcome_sum": 0,
+    "drops_pre_window": 0,
+    "drops_post_window": 0,
+    "drops_pending_unclassified": 5,
+    "pending_drops_overflow": false,
+    "valid": false,
+    "problems": [
+      "window_bounds_unresolved",
+      "unclassified_drops:5"
+    ]
+  }
+}

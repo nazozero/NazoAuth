@@ -1,0 +1,45 @@
+{
+  "gates": {
+    "drop_fraction": {
+      "a": 0.395878,
+      "b": 0.136815,
+      "pass": true
+    },
+    "expected_rejection_fraction": {
+      "a": 0.000231,
+      "b": 0.00019,
+      "pass": true
+    },
+    "no_request_fraction": {
+      "a": 0.006799,
+      "b": 0.007946,
+      "pass": true
+    },
+    "p99_regression": {
+      "a": 1596.0,
+      "b": 1117.0,
+      "pass": true
+    },
+    "queue_full_zero": {
+      "a": 51838,
+      "b": 71242,
+      "pass": false
+    },
+    "refresh_invariants": {
+      "pass": true
+    },
+    "runtime_health": {
+      "pass": true
+    },
+    "throughput_nonregression": {
+      "a": 1797.697,
+      "b": 2557.776,
+      "pass": true
+    },
+    "unexpected_zero": {
+      "pass": true
+    }
+  },
+  "retain": false,
+  "verdict": "FAIL"
+}

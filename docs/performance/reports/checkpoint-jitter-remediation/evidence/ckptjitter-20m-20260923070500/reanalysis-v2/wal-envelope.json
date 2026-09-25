@@ -1,0 +1,399 @@
+{
+  "basis": "pg_stat_wal counter deltas (publication counters, not physical I/O timings)",
+  "interval": [
+    1790147407.733,
+    1790148592.733
+  ],
+  "interval_utc": [
+    "2026-09-23T07:10:07.733000+00:00",
+    "2026-09-23T07:29:52.733000+00:00"
+  ],
+  "deltas": 1185,
+  "segment_breaks": 0,
+  "covered_seconds": 1185.0,
+  "wal_bytes": 11743146658,
+  "wal_records": 110611394,
+  "wal_fpi": 142301,
+  "wal_write_ms": null,
+  "wal_sync_ms": null,
+  "mean_Bps": 9909828.4,
+  "peak_rate_1s_Bps": 113476420.0,
+  "volume_peak_10s_B": 202148178.0,
+  "volume_peak_60s_B": 750708268.0,
+  "volume_peak_300s_B": 3226805372.0,
+  "volume_peak_600s_B": 6340742929.0,
+  "resolution_note": "midpoint-clipped ~1s deltas; boundary deltas count fully \u2014 resolution +/-1s per boundary",
+  "wal_per_op": {
+    "bytes_per_op": 4962.8,
+    "KiB_per_op": 4.846,
+    "numerator": "pg_stat_wal.wal_bytes deltas, midpoint-clipped to the measurement window",
+    "denominator": "measure-cohort iteration begins inside the same window (all sidecars' own WAL is included in the numerator; denominator is main-scenario ops only)",
+    "ops_in_window": 2366235,
+    "window_seconds": 1185.0
+  },
+  "io": {
+    "deltas": 93615,
+    "segment_breaks": 0,
+    "by_backend": {
+      "autovacuum launcher": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 1185
+      },
+      "autovacuum worker": {
+        "write_bytes": 1899208704,
+        "fsyncs": 138.0,
+        "fsync_ms": 181.67400000000004,
+        "writes": 230687,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 2370
+      },
+      "background worker": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4740
+      },
+      "background writer": {
+        "write_bytes": 1943011328,
+        "fsyncs": 0,
+        "fsync_ms": 0.0,
+        "writes": 237184,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 0
+      },
+      "checkpointer": {
+        "write_bytes": 91947008,
+        "fsyncs": 705,
+        "fsync_ms": 374.212,
+        "writes": 11209,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 0
+      },
+      "client backend": {
+        "write_bytes": 31755378688,
+        "fsyncs": 1441064.0,
+        "fsync_ms": 1067659.8820000002,
+        "writes": 1616651,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4740
+      },
+      "io worker": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4740
+      },
+      "slotsync worker": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4740
+      },
+      "standalone backend": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 3555
+      },
+      "startup": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 3555
+      },
+      "walreceiver": {
+        "write_bytes": 0,
+        "fsyncs": 0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "wal"
+        ],
+        "null_field_deltas": 0
+      },
+      "walsender": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4740
+      },
+      "walsummarizer": {
+        "write_bytes": 0,
+        "fsyncs": 0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "wal"
+        ],
+        "null_field_deltas": 0
+      },
+      "walwriter": {
+        "write_bytes": 3448832,
+        "fsyncs": 300,
+        "fsync_ms": 162.16500000000002,
+        "writes": 301,
+        "objects": [
+          "wal"
+        ],
+        "null_field_deltas": 0
+      }
+    },
+    "by_object": {
+      "relation": {
+        "write_bytes": 5344346112,
+        "fsyncs": 695.0,
+        "fsync_ms": 366.598
+      },
+      "temp relation": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0
+      },
+      "wal": {
+        "write_bytes": 30348648448,
+        "fsyncs": 1441512,
+        "fsync_ms": 1068011.3350000004
+      }
+    },
+    "note": "fsync_time is cumulative milliseconds spent in fsync across all backends \u2014 a wait-time total, not a CPU or device measure"
+  },
+  "disk": {
+    "md0": {
+      "deltas": 1185,
+      "write_Bps_mean": 68618617.6,
+      "write_Bps_peak": 3562315776.0,
+      "write_await_ms_peak": 0.0,
+      "avg_queue_peak": 0.0,
+      "util_peak": 0.0
+    },
+    "vdb": {
+      "deltas": 1185,
+      "write_Bps_mean": 2708868.0,
+      "write_Bps_peak": 121077760.0,
+      "write_await_ms_peak": 38.550898203592816,
+      "avg_queue_peak": 15.488,
+      "util_peak": 0.649
+    },
+    "vdc": {
+      "deltas": 1185,
+      "write_Bps_mean": 2709011.9,
+      "write_Bps_peak": 120217600.0,
+      "write_await_ms_peak": 45.87341772151899,
+      "avg_queue_peak": 12.684,
+      "util_peak": 0.637
+    },
+    "vdd": {
+      "deltas": 1185,
+      "write_Bps_mean": 2649543.8,
+      "write_Bps_peak": 119181312.0,
+      "write_await_ms_peak": 48.49411764705882,
+      "avg_queue_peak": 11.604,
+      "util_peak": 0.66
+    },
+    "vde": {
+      "deltas": 1185,
+      "write_Bps_mean": 2741541.8,
+      "write_Bps_peak": 119930880.0,
+      "write_await_ms_peak": 49.875,
+      "avg_queue_peak": 10.172,
+      "util_peak": 0.684
+    },
+    "vdf": {
+      "deltas": 1185,
+      "write_Bps_mean": 2815736.9,
+      "write_Bps_peak": 119390208.0,
+      "write_await_ms_peak": 50.164556962025316,
+      "avg_queue_peak": 10.215,
+      "util_peak": 0.699
+    },
+    "vdg": {
+      "deltas": 1185,
+      "write_Bps_mean": 2748047.0,
+      "write_Bps_peak": 119930880.0,
+      "write_await_ms_peak": 51.375,
+      "avg_queue_peak": 10.787,
+      "util_peak": 0.689
+    },
+    "vdh": {
+      "deltas": 1185,
+      "write_Bps_mean": 3002501.1,
+      "write_Bps_peak": 121499648.0,
+      "write_await_ms_peak": 49.24691358024691,
+      "avg_queue_peak": 9.838,
+      "util_peak": 0.773
+    },
+    "vdi": {
+      "deltas": 1185,
+      "write_Bps_mean": 3031892.5,
+      "write_Bps_peak": 121032704.0,
+      "write_await_ms_peak": 44.57333333333333,
+      "avg_queue_peak": 10.121,
+      "util_peak": 0.795
+    },
+    "vdj": {
+      "deltas": 1185,
+      "write_Bps_mean": 3262466.2,
+      "write_Bps_peak": 120590336.0,
+      "write_await_ms_peak": 29.05298013245033,
+      "avg_queue_peak": 11.11,
+      "util_peak": 0.715
+    },
+    "vdk": {
+      "deltas": 1185,
+      "write_Bps_mean": 3011730.5,
+      "write_Bps_peak": 121397248.0,
+      "write_await_ms_peak": 30.044303797468356,
+      "avg_queue_peak": 12.776,
+      "util_peak": 0.71
+    },
+    "vdl": {
+      "deltas": 1185,
+      "write_Bps_mean": 2754283.0,
+      "write_Bps_peak": 123011072.0,
+      "write_await_ms_peak": 47.83098591549296,
+      "avg_queue_peak": 14.953,
+      "util_peak": 0.661
+    },
+    "vdm": {
+      "deltas": 1185,
+      "write_Bps_mean": 2758104.2,
+      "write_Bps_peak": 124039168.0,
+      "write_await_ms_peak": 46.88135593220339,
+      "avg_queue_peak": 15.811,
+      "util_peak": 0.693
+    },
+    "vdn": {
+      "deltas": 1185,
+      "write_Bps_mean": 2654821.1,
+      "write_Bps_peak": 121212928.0,
+      "write_await_ms_peak": 50.888888888888886,
+      "avg_queue_peak": 13.246,
+      "util_peak": 0.599
+    },
+    "vdo": {
+      "deltas": 1185,
+      "write_Bps_mean": 3175385.5,
+      "write_Bps_peak": 120885248.0,
+      "write_await_ms_peak": 41.5,
+      "avg_queue_peak": 10.979,
+      "util_peak": 0.699
+    },
+    "vdp": {
+      "deltas": 1185,
+      "write_Bps_mean": 2715628.6,
+      "write_Bps_peak": 119365632.0,
+      "write_await_ms_peak": 45.6875,
+      "avg_queue_peak": 12.093,
+      "util_peak": 0.634
+    },
+    "vdq": {
+      "deltas": 1185,
+      "write_Bps_mean": 3127284.3,
+      "write_Bps_peak": 119779328.0,
+      "write_await_ms_peak": 41.42138364779874,
+      "avg_queue_peak": 9.839,
+      "util_peak": 0.695
+    },
+    "vdr": {
+      "deltas": 1185,
+      "write_Bps_mean": 2979696.6,
+      "write_Bps_peak": 119648256.0,
+      "write_await_ms_peak": 40.32934131736527,
+      "avg_queue_peak": 8.689,
+      "util_peak": 0.689
+    },
+    "vds": {
+      "deltas": 1185,
+      "write_Bps_mean": 2650443.0,
+      "write_Bps_peak": 118816768.0,
+      "write_await_ms_peak": 44.05555555555556,
+      "avg_queue_peak": 10.666,
+      "util_peak": 0.662
+    },
+    "vdt": {
+      "deltas": 1185,
+      "write_Bps_mean": 3065902.7,
+      "write_Bps_peak": 120045568.0,
+      "write_await_ms_peak": 40.69590643274854,
+      "avg_queue_peak": 10.604,
+      "util_peak": 0.713
+    },
+    "vdu": {
+      "deltas": 1185,
+      "write_Bps_mean": 2768003.3,
+      "write_Bps_peak": 120459264.0,
+      "write_await_ms_peak": 40.19767441860465,
+      "avg_queue_peak": 12.419,
+      "util_peak": 0.712
+    }
+  },
+  "cpu": {
+    "deltas": 1185,
+    "segment_breaks": 0,
+    "iowait_pct_mean": 0.0,
+    "iowait_pct_peak": 0.0,
+    "steal_pct_peak": 0.0
+  },
+  "pool": {
+    "deltas": 1185,
+    "segment_breaks": 0,
+    "wait_ms_per_s_peak": 227085.028,
+    "wait_ms_per_s_mean": 5105.735,
+    "acquires": 17540282,
+    "note": "wait_nanos_total is cumulative pool wait; per-second figures are deltas, never the lifetime max gauge"
+  }
+}

@@ -1,0 +1,105 @@
+#0 building with "default" instance using docker driver
+
+#1 [internal] load build definition from Containerfile
+#1 transferring dockerfile: 2.49kB done
+#1 DONE 0.0s
+
+#2 resolve image config for docker-image://docker.io/docker/dockerfile:1.7
+#2 DONE 0.2s
+
+#3 docker-image://docker.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e
+#3 resolve docker.io/docker/dockerfile:1.7@sha256:a57df69d0ea827fb7266491f2813635de6f17269be881f696fbfdf2d83dda33e 0.0s done
+#3 CACHED
+
+#4 [internal] load metadata for docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+#4 ...
+
+#5 [internal] load metadata for docker.io/library/rust:1.98.0-slim@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
+#5 DONE 0.2s
+
+#4 [internal] load metadata for docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+#4 DONE 0.2s
+
+#6 [internal] load .dockerignore
+#6 transferring context: 590B done
+#6 DONE 0.0s
+
+#7 [runtime-base 1/3] FROM docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
+#7 resolve docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 0.0s done
+#7 DONE 0.0s
+
+#8 [internal] load build context
+#8 transferring context: 11.47MB 0.1s done
+#8 DONE 0.1s
+
+#9 [build-base 1/6] FROM docker.io/library/rust:1.98.0-slim@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27
+#9 resolve docker.io/library/rust:1.98.0-slim@sha256:17d1ba895198f9934c6314ec5346a0d5115372f3243390c3d731e242f35c2f27 0.0s done
+#9 DONE 0.0s
+
+#10 [build-base 2/6] WORKDIR /app
+#10 CACHED
+
+#11 [build-base 3/6] RUN mkdir -p /usr/local/cargo     && printf '[registries.crates-io]\nprotocol = "sparse"\n' > /usr/local/cargo/config.toml     && apt-get update     && apt-get install -y --no-install-recommends ca-certificates git make perl     && rm -rf /var/lib/apt/lists/*
+#11 CACHED
+
+#12 [build-base 4/6] COPY Cargo.toml Cargo.lock rust-toolchain.toml .env.yaml.example ./
+#12 CACHED
+
+#13 [build-base 5/6] COPY crates ./crates
+#13 DONE 0.1s
+
+#14 [build-base 6/6] COPY migrations ./migrations
+#14 DONE 0.1s
+
+#15 [product-builder 1/1] RUN --mount=type=cache,id=nazoauth-cargo-registry,target=/usr/local/cargo/registry,sharing=locked     --mount=type=cache,id=nazoauth-cargo-git,target=/usr/local/cargo/git,sharing=locked     --mount=type=cache,id=nazoauth-target,target=/app/target,sharing=locked     cargo build --release --locked       --package nazoauth --bin nazoauth     && install -Dm755 target/release/nazoauth /out/nazoauth
+#15 0.902    Compiling nazo-runtime-modules v0.2.16 (/app/crates/runtime-capabilities)
+#15 0.906    Compiling nazo-scim-events v0.2.16 (/app/crates/scim-events)
+#15 0.912    Compiling nazo-crypto v0.2.16 (/app/crates/crypto)
+#15 1.252    Compiling nazo-identity v0.2.16 (/app/crates/identity)
+#15 1.252    Compiling nazo-digital-credentials v0.2.16 (/app/crates/digital-credentials)
+#15 1.252    Compiling nazo-operator-protocol v0.2.16 (/app/crates/operator-protocol)
+#15 1.252    Compiling nazo-resource-server v0.2.16 (/app/crates/resource-server)
+#15 1.252    Compiling nazo-http-signatures v0.2.16 (/app/crates/http-signatures)
+#15 1.735    Compiling nazo-openid4vci v0.2.16 (/app/crates/openid4vci)
+#15 2.041    Compiling nazo-openid4vp v0.2.16 (/app/crates/openid4vp)
+#15 2.424    Compiling nazo-openid4vc-http-actix v0.2.16 (/app/crates/openid4vc-http-actix)
+#15 2.825    Compiling nazo-auth v0.2.16 (/app/crates/authorization-server-core)
+#15 2.825    Compiling nazo-oauth-server-object-store v0.2.16 (/app/crates/authorization-server-object-store)
+#15 5.457    Compiling nazo-persistence v0.2.16 (/app/crates/persistence)
+#15 5.457    Compiling nazo-key-management v0.2.16 (/app/crates/key-management)
+#15 5.458    Compiling nazo-valkey v0.2.16 (/app/crates/state-store-valkey)
+#15 6.327    Compiling nazo-oauth-server v0.2.16 (/app/crates/authorization-server)
+#15 6.327    Compiling nazo-postgres v0.2.16 (/app/crates/persistence-postgres)
+#15 10.67    Compiling nazo-oauth-server-valkey v0.2.16 (/app/crates/authorization-server-valkey)
+#15 10.67    Compiling nazo-http-actix v0.2.16 (/app/crates/http-actix)
+#15 29.04    Compiling nazo-oauth-server-postgres v0.2.16 (/app/crates/authorization-server-postgres)
+#15 29.14    Compiling nazoauth v0.2.16 (/app/crates/nazoauth)
+#15 142.8     Finished `release` profile [optimized] target(s) in 2m 22s
+#15 DONE 142.9s
+
+#16 [runtime-base 2/3] RUN apt-get update     && apt-get install -y --no-install-recommends         ca-certificates         gzip=1.13-1+deb13u1         libpcre2-8-0=10.46-1~deb13u2         libsqlite3-0=3.46.1-7+deb13u2         perl-base=5.40.1-6+deb13u1     && groupadd --gid 10001 nazoauth     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent --shell /usr/sbin/nologin nazoauth     && rm -rf /var/lib/apt/lists/*
+#16 CACHED
+
+#17 [runtime-base 3/3] WORKDIR /app
+#17 CACHED
+
+#18 [runtime 1/1] COPY --from=product-builder /out/nazoauth /usr/local/bin/nazoauth
+#18 DONE 0.0s
+
+#19 [development-runtime 1/1] COPY --from=product-builder /app/.env.yaml.example /app/.env.yaml
+#19 DONE 0.0s
+
+#20 [perf-runtime 1/1] COPY perf/env.yaml /app/.env.yaml
+#20 DONE 0.0s
+
+#21 exporting to image
+#21 exporting layers
+#21 exporting layers 1.2s done
+#21 exporting manifest sha256:235f1e0ae3d1808bab2d14a0b879b1692246faffc027ca6cf0e1e06e987d39fa 0.0s done
+#21 exporting config sha256:5053f9b8bf5b87ad3e040cc0211e34b5601ae8654be8571aafd3e2ccd740f1bc 0.0s done
+#21 exporting attestation manifest sha256:e5ca9a0bf878aba478c4ae231e9d77628fa4f224a4d809a8cbeb92f78b30f6a2 0.0s done
+#21 exporting manifest list sha256:6ac3eaa20368f97b0ef06dac57794f90ecb6b92d6319180b5b2efe6c761edafe 0.0s done
+#21 naming to docker.io/library/sis-app:B done
+#21 unpacking to docker.io/library/sis-app:B
+#21 unpacking to docker.io/library/sis-app:B 0.2s done
+#21 DONE 1.4s

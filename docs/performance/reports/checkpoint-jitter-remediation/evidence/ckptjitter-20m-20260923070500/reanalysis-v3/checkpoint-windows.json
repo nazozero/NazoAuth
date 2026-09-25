@@ -1,0 +1,1473 @@
+{
+  "basis": "each checkpoint has TWO local windows: start_local = start + [-30s,+90s] and complete_local = complete + [-30s,+90s], clipped to the all-load common window; local_union = start \u222a complete only \u2014 the middle write phase is NOT checkpoint-local; union_bins dedupes overlaps for steady-state exclusion",
+  "common_window": {
+    "recoverable": true,
+    "basis": "conservative_bounds",
+    "exact": false,
+    "start": 1790147538.0,
+    "end": 1790148588.0,
+    "seconds": 1050.0,
+    "start_utc": "2026-09-23T07:12:18+00:00",
+    "end_utc": "2026-09-23T07:29:48+00:00",
+    "loads": [
+      {
+        "name": "main",
+        "kind": "contract",
+        "exact": true,
+        "start": 1790147407.733,
+        "end": 1790148592.733,
+        "source": "cap_window_measure_* metrics"
+      },
+      {
+        "name": "argon2",
+        "kind": "bounded",
+        "exact": false,
+        "start": null,
+        "end": null,
+        "measure_start_lb": 1790147523.0,
+        "measure_start_ub": 1790147538.0,
+        "measure_end_lb": 1790148588.0,
+        "measure_end_ub": 1790148603.0,
+        "container_started_ts": 1790147508,
+        "container_ended_ts": 1790148603,
+        "source": "container lifecycle bounds (provenance only)"
+      },
+      {
+        "name": "meta",
+        "kind": "bounded",
+        "exact": false,
+        "start": null,
+        "end": null,
+        "measure_start_lb": 1790147524.0,
+        "measure_start_ub": 1790147538.0,
+        "measure_end_lb": 1790148589.0,
+        "measure_end_ub": 1790148603.0,
+        "container_started_ts": 1790147509,
+        "container_ended_ts": 1790148603,
+        "source": "container lifecycle bounds (provenance only)"
+      },
+      {
+        "name": "fapi",
+        "kind": "bounded",
+        "exact": false,
+        "start": null,
+        "end": null,
+        "measure_start_lb": 1790147524.0,
+        "measure_start_ub": 1790147538.0,
+        "measure_end_lb": 1790148589.0,
+        "measure_end_ub": 1790148603.0,
+        "container_started_ts": 1790147509,
+        "container_ended_ts": 1790148603,
+        "source": "container lifecycle bounds (provenance only)"
+      },
+      {
+        "name": "refresh",
+        "kind": "contract",
+        "exact": true,
+        "start": 1790147527.388,
+        "end": 1790148592.388,
+        "source": "cap_window_measure_* metrics"
+      }
+    ]
+  },
+  "measurement_window": {
+    "requested": [
+      1790147407.733,
+      1790148592.733
+    ],
+    "effective": [
+      1790147408,
+      1790148592
+    ],
+    "effective_seconds": 1184,
+    "missing_bins": []
+  },
+  "checkpoints": [
+    {
+      "id": "ckpt-1",
+      "reason": "time",
+      "kind": "complete_pair",
+      "start_s": 1790147634.850962,
+      "complete_s": 1790147904.553621,
+      "start_utc": "2026-09-23T07:13:54.850962+00:00",
+      "complete_utc": "2026-09-23T07:18:24.553621+00:00",
+      "write_s": 269.222,
+      "sync_s": 0.293,
+      "total_s": 269.703,
+      "distance_kb": 1899116,
+      "estimate_kb": 1899116,
+      "buffers": 2433,
+      "sync_files": 788,
+      "missing_boundary": null,
+      "ambiguous": false,
+      "clip_basis": "all-load common window (conservative_bounds)",
+      "start_window": {
+        "requested_interval": [
+          1790147604.850962,
+          1790147724.850962
+        ],
+        "effective_interval": [
+          1790147605,
+          1790147724
+        ],
+        "effective_seconds": 119,
+        "covered_bins": 119,
+        "missing_bins": [],
+        "expected_ops": 238000.0,
+        "completed": 238008,
+        "success": 234431,
+        "expected_rejection": 47,
+        "local_no_request": 3530,
+        "unexpected": 0,
+        "begins": 238000,
+        "drops": 0,
+        "min_completed_s": 1946,
+        "episodes": [
+          {
+            "episode_start_s": 1790147633,
+            "episode_end_s": 1790147635,
+            "duration_s": 2,
+            "min_completed_s": 1967,
+            "min_at_s": [
+              1790147634
+            ],
+            "hole_area_ops": 62.0,
+            "recovered": true,
+            "recovery_s": 7,
+            "recovery_run_start_s": 1790147635
+          },
+          {
+            "episode_start_s": 1790147642,
+            "episode_end_s": 1790147643,
+            "duration_s": 1,
+            "min_completed_s": 1946,
+            "min_at_s": [
+              1790147642
+            ],
+            "hole_area_ops": 54.0,
+            "recovered": true,
+            "recovery_s": 10,
+            "recovery_run_start_s": 1790147647
+          },
+          {
+            "episode_start_s": 1790147646,
+            "episode_end_s": 1790147647,
+            "duration_s": 1,
+            "min_completed_s": 1967,
+            "min_at_s": [
+              1790147646
+            ],
+            "hole_area_ops": 33.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147647
+          },
+          {
+            "episode_start_s": 1790147675,
+            "episode_end_s": 1790147676,
+            "duration_s": 1,
+            "min_completed_s": 1976,
+            "min_at_s": [
+              1790147675
+            ],
+            "hole_area_ops": 24.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147676
+          },
+          {
+            "episode_start_s": 1790147692,
+            "episode_end_s": 1790147693,
+            "duration_s": 1,
+            "min_completed_s": 1973,
+            "min_at_s": [
+              1790147692
+            ],
+            "hole_area_ops": 27.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147693
+          },
+          {
+            "episode_start_s": 1790147712,
+            "episode_end_s": 1790147713,
+            "duration_s": 1,
+            "min_completed_s": 1955,
+            "min_at_s": [
+              1790147712
+            ],
+            "hole_area_ops": 45.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147713
+          }
+        ],
+        "hole_area_ops": 495.0,
+        "selected_bins": 119,
+        "truncated_start": false,
+        "truncated_end": false
+      },
+      "complete_window": {
+        "requested_interval": [
+          1790147874.553621,
+          1790147994.553621
+        ],
+        "effective_interval": [
+          1790147875,
+          1790147994
+        ],
+        "effective_seconds": 119,
+        "covered_bins": 119,
+        "missing_bins": [],
+        "expected_ops": 238000.0,
+        "completed": 237995,
+        "success": 235584,
+        "expected_rejection": 46,
+        "local_no_request": 2365,
+        "unexpected": 0,
+        "begins": 238000,
+        "drops": 0,
+        "min_completed_s": 1963,
+        "episodes": [
+          {
+            "episode_start_s": 1790147884,
+            "episode_end_s": 1790147885,
+            "duration_s": 1,
+            "min_completed_s": 1965,
+            "min_at_s": [
+              1790147884
+            ],
+            "hole_area_ops": 35.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147885
+          },
+          {
+            "episode_start_s": 1790147908,
+            "episode_end_s": 1790147909,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790147908
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147909
+          },
+          {
+            "episode_start_s": 1790147940,
+            "episode_end_s": 1790147941,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790147940
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147941
+          },
+          {
+            "episode_start_s": 1790147961,
+            "episode_end_s": 1790147962,
+            "duration_s": 1,
+            "min_completed_s": 1979,
+            "min_at_s": [
+              1790147961
+            ],
+            "hole_area_ops": 21.0,
+            "recovered": true,
+            "recovery_s": 9,
+            "recovery_run_start_s": 1790147965
+          },
+          {
+            "episode_start_s": 1790147964,
+            "episode_end_s": 1790147965,
+            "duration_s": 1,
+            "min_completed_s": 1963,
+            "min_at_s": [
+              1790147964
+            ],
+            "hole_area_ops": 37.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147965
+          },
+          {
+            "episode_start_s": 1790147988,
+            "episode_end_s": 1790147989,
+            "duration_s": 1,
+            "min_completed_s": 1976,
+            "min_at_s": [
+              1790147988
+            ],
+            "hole_area_ops": 24.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147989
+          }
+        ],
+        "hole_area_ops": 432.0,
+        "selected_bins": 119,
+        "truncated_start": false,
+        "truncated_end": false
+      },
+      "local_union": {
+        "requested_interval": [
+          1790147604.850962,
+          1790147994.553621
+        ],
+        "effective_interval": [
+          1790147605,
+          1790147994
+        ],
+        "effective_seconds": 238,
+        "covered_bins": 238,
+        "missing_bins": [],
+        "expected_ops": 476000.0,
+        "completed": 476003,
+        "success": 470015,
+        "expected_rejection": 93,
+        "local_no_request": 5895,
+        "unexpected": 0,
+        "begins": 476000,
+        "drops": 0,
+        "min_completed_s": 1946,
+        "episodes": [
+          {
+            "episode_start_s": 1790147633,
+            "episode_end_s": 1790147635,
+            "duration_s": 2,
+            "min_completed_s": 1967,
+            "min_at_s": [
+              1790147634
+            ],
+            "hole_area_ops": 62.0,
+            "recovered": true,
+            "recovery_s": 7,
+            "recovery_run_start_s": 1790147635
+          },
+          {
+            "episode_start_s": 1790147642,
+            "episode_end_s": 1790147643,
+            "duration_s": 1,
+            "min_completed_s": 1946,
+            "min_at_s": [
+              1790147642
+            ],
+            "hole_area_ops": 54.0,
+            "recovered": true,
+            "recovery_s": 10,
+            "recovery_run_start_s": 1790147647
+          },
+          {
+            "episode_start_s": 1790147646,
+            "episode_end_s": 1790147647,
+            "duration_s": 1,
+            "min_completed_s": 1967,
+            "min_at_s": [
+              1790147646
+            ],
+            "hole_area_ops": 33.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147647
+          },
+          {
+            "episode_start_s": 1790147675,
+            "episode_end_s": 1790147676,
+            "duration_s": 1,
+            "min_completed_s": 1976,
+            "min_at_s": [
+              1790147675
+            ],
+            "hole_area_ops": 24.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147676
+          },
+          {
+            "episode_start_s": 1790147692,
+            "episode_end_s": 1790147693,
+            "duration_s": 1,
+            "min_completed_s": 1973,
+            "min_at_s": [
+              1790147692
+            ],
+            "hole_area_ops": 27.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147693
+          },
+          {
+            "episode_start_s": 1790147712,
+            "episode_end_s": 1790147713,
+            "duration_s": 1,
+            "min_completed_s": 1955,
+            "min_at_s": [
+              1790147712
+            ],
+            "hole_area_ops": 45.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147713
+          },
+          {
+            "episode_start_s": 1790147884,
+            "episode_end_s": 1790147885,
+            "duration_s": 1,
+            "min_completed_s": 1965,
+            "min_at_s": [
+              1790147884
+            ],
+            "hole_area_ops": 35.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147885
+          },
+          {
+            "episode_start_s": 1790147908,
+            "episode_end_s": 1790147909,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790147908
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147909
+          },
+          {
+            "episode_start_s": 1790147940,
+            "episode_end_s": 1790147941,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790147940
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147941
+          },
+          {
+            "episode_start_s": 1790147961,
+            "episode_end_s": 1790147962,
+            "duration_s": 1,
+            "min_completed_s": 1979,
+            "min_at_s": [
+              1790147961
+            ],
+            "hole_area_ops": 21.0,
+            "recovered": true,
+            "recovery_s": 9,
+            "recovery_run_start_s": 1790147965
+          },
+          {
+            "episode_start_s": 1790147964,
+            "episode_end_s": 1790147965,
+            "duration_s": 1,
+            "min_completed_s": 1963,
+            "min_at_s": [
+              1790147964
+            ],
+            "hole_area_ops": 37.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147965
+          },
+          {
+            "episode_start_s": 1790147988,
+            "episode_end_s": 1790147989,
+            "duration_s": 1,
+            "min_completed_s": 1976,
+            "min_at_s": [
+              1790147988
+            ],
+            "hole_area_ops": 24.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147989
+          }
+        ],
+        "hole_area_ops": 927.0,
+        "selected_bins": 238,
+        "truncated_start": false,
+        "truncated_end": false
+      },
+      "truncated": false,
+      "evidence_sufficient": true,
+      "terminal_drain_artifact": false
+    },
+    {
+      "id": "ckpt-2",
+      "reason": "time",
+      "kind": "complete_pair",
+      "start_s": 1790147934.58317,
+      "complete_s": 1790148204.455858,
+      "start_utc": "2026-09-23T07:18:54.583170+00:00",
+      "complete_utc": "2026-09-23T07:23:24.455858+00:00",
+      "write_s": 269.425,
+      "sync_s": 0.18,
+      "total_s": 269.873,
+      "distance_kb": 2928923,
+      "estimate_kb": 2928923,
+      "buffers": 2292,
+      "sync_files": 264,
+      "missing_boundary": null,
+      "ambiguous": false,
+      "clip_basis": "all-load common window (conservative_bounds)",
+      "start_window": {
+        "requested_interval": [
+          1790147904.58317,
+          1790148024.58317
+        ],
+        "effective_interval": [
+          1790147905,
+          1790148024
+        ],
+        "effective_seconds": 119,
+        "covered_bins": 119,
+        "missing_bins": [],
+        "expected_ops": 238000.0,
+        "completed": 238001,
+        "success": 234714,
+        "expected_rejection": 43,
+        "local_no_request": 3244,
+        "unexpected": 0,
+        "begins": 238000,
+        "drops": 0,
+        "min_completed_s": 1963,
+        "episodes": [
+          {
+            "episode_start_s": 1790147908,
+            "episode_end_s": 1790147909,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790147908
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147909
+          },
+          {
+            "episode_start_s": 1790147940,
+            "episode_end_s": 1790147941,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790147940
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147941
+          },
+          {
+            "episode_start_s": 1790147961,
+            "episode_end_s": 1790147962,
+            "duration_s": 1,
+            "min_completed_s": 1979,
+            "min_at_s": [
+              1790147961
+            ],
+            "hole_area_ops": 21.0,
+            "recovered": true,
+            "recovery_s": 9,
+            "recovery_run_start_s": 1790147965
+          },
+          {
+            "episode_start_s": 1790147964,
+            "episode_end_s": 1790147965,
+            "duration_s": 1,
+            "min_completed_s": 1963,
+            "min_at_s": [
+              1790147964
+            ],
+            "hole_area_ops": 37.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147965
+          },
+          {
+            "episode_start_s": 1790147988,
+            "episode_end_s": 1790147989,
+            "duration_s": 1,
+            "min_completed_s": 1976,
+            "min_at_s": [
+              1790147988
+            ],
+            "hole_area_ops": 24.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147989
+          },
+          {
+            "episode_start_s": 1790147999,
+            "episode_end_s": 1790148000,
+            "duration_s": 1,
+            "min_completed_s": 1975,
+            "min_at_s": [
+              1790147999
+            ],
+            "hole_area_ops": 25.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148000
+          },
+          {
+            "episode_start_s": 1790148017,
+            "episode_end_s": 1790148018,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790148017
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148018
+          }
+        ],
+        "hole_area_ops": 417.0,
+        "selected_bins": 119,
+        "truncated_start": false,
+        "truncated_end": false
+      },
+      "complete_window": {
+        "requested_interval": [
+          1790148174.455858,
+          1790148294.455858
+        ],
+        "effective_interval": [
+          1790148175,
+          1790148294
+        ],
+        "effective_seconds": 119,
+        "covered_bins": 119,
+        "missing_bins": [],
+        "expected_ops": 238000.0,
+        "completed": 238013,
+        "success": 233088,
+        "expected_rejection": 49,
+        "local_no_request": 4876,
+        "unexpected": 0,
+        "begins": 238000,
+        "drops": 0,
+        "min_completed_s": 1741,
+        "episodes": [
+          {
+            "episode_start_s": 1790148180,
+            "episode_end_s": 1790148181,
+            "duration_s": 1,
+            "min_completed_s": 1969,
+            "min_at_s": [
+              1790148180
+            ],
+            "hole_area_ops": 31.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148181
+          },
+          {
+            "episode_start_s": 1790148200,
+            "episode_end_s": 1790148201,
+            "duration_s": 1,
+            "min_completed_s": 1979,
+            "min_at_s": [
+              1790148200
+            ],
+            "hole_area_ops": 21.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148201
+          },
+          {
+            "episode_start_s": 1790148244,
+            "episode_end_s": 1790148245,
+            "duration_s": 1,
+            "min_completed_s": 1949,
+            "min_at_s": [
+              1790148244
+            ],
+            "hole_area_ops": 51.0,
+            "recovered": true,
+            "recovery_s": 11,
+            "recovery_run_start_s": 1790148250
+          },
+          {
+            "episode_start_s": 1790148249,
+            "episode_end_s": 1790148250,
+            "duration_s": 1,
+            "min_completed_s": 1931,
+            "min_at_s": [
+              1790148249
+            ],
+            "hole_area_ops": 69.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148250
+          },
+          {
+            "episode_start_s": 1790148259,
+            "episode_end_s": 1790148260,
+            "duration_s": 1,
+            "min_completed_s": 1815,
+            "min_at_s": [
+              1790148259
+            ],
+            "hole_area_ops": 185.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148260
+          },
+          {
+            "episode_start_s": 1790148270,
+            "episode_end_s": 1790148271,
+            "duration_s": 1,
+            "min_completed_s": 1741,
+            "min_at_s": [
+              1790148270
+            ],
+            "hole_area_ops": 259.0,
+            "recovered": true,
+            "recovery_s": 10,
+            "recovery_run_start_s": 1790148275
+          },
+          {
+            "episode_start_s": 1790148274,
+            "episode_end_s": 1790148275,
+            "duration_s": 1,
+            "min_completed_s": 1977,
+            "min_at_s": [
+              1790148274
+            ],
+            "hole_area_ops": 23.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148275
+          }
+        ],
+        "hole_area_ops": 965.0,
+        "selected_bins": 119,
+        "truncated_start": false,
+        "truncated_end": false
+      },
+      "local_union": {
+        "requested_interval": [
+          1790147904.58317,
+          1790148294.455858
+        ],
+        "effective_interval": [
+          1790147905,
+          1790148294
+        ],
+        "effective_seconds": 238,
+        "covered_bins": 238,
+        "missing_bins": [],
+        "expected_ops": 476000.0,
+        "completed": 476014,
+        "success": 467802,
+        "expected_rejection": 92,
+        "local_no_request": 8120,
+        "unexpected": 0,
+        "begins": 476000,
+        "drops": 0,
+        "min_completed_s": 1741,
+        "episodes": [
+          {
+            "episode_start_s": 1790147908,
+            "episode_end_s": 1790147909,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790147908
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147909
+          },
+          {
+            "episode_start_s": 1790147940,
+            "episode_end_s": 1790147941,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790147940
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147941
+          },
+          {
+            "episode_start_s": 1790147961,
+            "episode_end_s": 1790147962,
+            "duration_s": 1,
+            "min_completed_s": 1979,
+            "min_at_s": [
+              1790147961
+            ],
+            "hole_area_ops": 21.0,
+            "recovered": true,
+            "recovery_s": 9,
+            "recovery_run_start_s": 1790147965
+          },
+          {
+            "episode_start_s": 1790147964,
+            "episode_end_s": 1790147965,
+            "duration_s": 1,
+            "min_completed_s": 1963,
+            "min_at_s": [
+              1790147964
+            ],
+            "hole_area_ops": 37.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147965
+          },
+          {
+            "episode_start_s": 1790147988,
+            "episode_end_s": 1790147989,
+            "duration_s": 1,
+            "min_completed_s": 1976,
+            "min_at_s": [
+              1790147988
+            ],
+            "hole_area_ops": 24.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790147989
+          },
+          {
+            "episode_start_s": 1790147999,
+            "episode_end_s": 1790148000,
+            "duration_s": 1,
+            "min_completed_s": 1975,
+            "min_at_s": [
+              1790147999
+            ],
+            "hole_area_ops": 25.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148000
+          },
+          {
+            "episode_start_s": 1790148017,
+            "episode_end_s": 1790148018,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790148017
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148018
+          },
+          {
+            "episode_start_s": 1790148180,
+            "episode_end_s": 1790148181,
+            "duration_s": 1,
+            "min_completed_s": 1969,
+            "min_at_s": [
+              1790148180
+            ],
+            "hole_area_ops": 31.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148181
+          },
+          {
+            "episode_start_s": 1790148200,
+            "episode_end_s": 1790148201,
+            "duration_s": 1,
+            "min_completed_s": 1979,
+            "min_at_s": [
+              1790148200
+            ],
+            "hole_area_ops": 21.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148201
+          },
+          {
+            "episode_start_s": 1790148244,
+            "episode_end_s": 1790148245,
+            "duration_s": 1,
+            "min_completed_s": 1949,
+            "min_at_s": [
+              1790148244
+            ],
+            "hole_area_ops": 51.0,
+            "recovered": true,
+            "recovery_s": 11,
+            "recovery_run_start_s": 1790148250
+          },
+          {
+            "episode_start_s": 1790148249,
+            "episode_end_s": 1790148250,
+            "duration_s": 1,
+            "min_completed_s": 1931,
+            "min_at_s": [
+              1790148249
+            ],
+            "hole_area_ops": 69.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148250
+          },
+          {
+            "episode_start_s": 1790148259,
+            "episode_end_s": 1790148260,
+            "duration_s": 1,
+            "min_completed_s": 1815,
+            "min_at_s": [
+              1790148259
+            ],
+            "hole_area_ops": 185.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148260
+          },
+          {
+            "episode_start_s": 1790148270,
+            "episode_end_s": 1790148271,
+            "duration_s": 1,
+            "min_completed_s": 1741,
+            "min_at_s": [
+              1790148270
+            ],
+            "hole_area_ops": 259.0,
+            "recovered": true,
+            "recovery_s": 10,
+            "recovery_run_start_s": 1790148275
+          },
+          {
+            "episode_start_s": 1790148274,
+            "episode_end_s": 1790148275,
+            "duration_s": 1,
+            "min_completed_s": 1977,
+            "min_at_s": [
+              1790148274
+            ],
+            "hole_area_ops": 23.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148275
+          }
+        ],
+        "hole_area_ops": 1382.0,
+        "selected_bins": 238,
+        "truncated_start": false,
+        "truncated_end": false
+      },
+      "truncated": false,
+      "evidence_sufficient": true,
+      "terminal_drain_artifact": false
+    },
+    {
+      "id": "ckpt-3",
+      "reason": "time",
+      "kind": "complete_pair",
+      "start_s": 1790148234.168248,
+      "complete_s": 1790148504.394089,
+      "start_utc": "2026-09-23T07:23:54.168248+00:00",
+      "complete_utc": "2026-09-23T07:28:24.394089+00:00",
+      "write_s": 269.844,
+      "sync_s": 0.174,
+      "total_s": 270.226,
+      "distance_kb": 3123487,
+      "estimate_kb": 3123487,
+      "buffers": 6135,
+      "sync_files": 271,
+      "missing_boundary": null,
+      "ambiguous": false,
+      "clip_basis": "all-load common window (conservative_bounds)",
+      "start_window": {
+        "requested_interval": [
+          1790148204.168248,
+          1790148324.168248
+        ],
+        "effective_interval": [
+          1790148205,
+          1790148324
+        ],
+        "effective_seconds": 119,
+        "covered_bins": 119,
+        "missing_bins": [],
+        "expected_ops": 238000.0,
+        "completed": 238016,
+        "success": 232017,
+        "expected_rejection": 46,
+        "local_no_request": 5953,
+        "unexpected": 0,
+        "begins": 238000,
+        "drops": 0,
+        "min_completed_s": 1741,
+        "episodes": [
+          {
+            "episode_start_s": 1790148244,
+            "episode_end_s": 1790148245,
+            "duration_s": 1,
+            "min_completed_s": 1949,
+            "min_at_s": [
+              1790148244
+            ],
+            "hole_area_ops": 51.0,
+            "recovered": true,
+            "recovery_s": 11,
+            "recovery_run_start_s": 1790148250
+          },
+          {
+            "episode_start_s": 1790148249,
+            "episode_end_s": 1790148250,
+            "duration_s": 1,
+            "min_completed_s": 1931,
+            "min_at_s": [
+              1790148249
+            ],
+            "hole_area_ops": 69.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148250
+          },
+          {
+            "episode_start_s": 1790148259,
+            "episode_end_s": 1790148260,
+            "duration_s": 1,
+            "min_completed_s": 1815,
+            "min_at_s": [
+              1790148259
+            ],
+            "hole_area_ops": 185.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148260
+          },
+          {
+            "episode_start_s": 1790148270,
+            "episode_end_s": 1790148271,
+            "duration_s": 1,
+            "min_completed_s": 1741,
+            "min_at_s": [
+              1790148270
+            ],
+            "hole_area_ops": 259.0,
+            "recovered": true,
+            "recovery_s": 10,
+            "recovery_run_start_s": 1790148275
+          },
+          {
+            "episode_start_s": 1790148274,
+            "episode_end_s": 1790148275,
+            "duration_s": 1,
+            "min_completed_s": 1977,
+            "min_at_s": [
+              1790148274
+            ],
+            "hole_area_ops": 23.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148275
+          }
+        ],
+        "hole_area_ops": 866.0,
+        "selected_bins": 119,
+        "truncated_start": false,
+        "truncated_end": false
+      },
+      "complete_window": {
+        "requested_interval": [
+          1790148474.394089,
+          1790148588.0
+        ],
+        "effective_interval": [
+          1790148475,
+          1790148588
+        ],
+        "effective_seconds": 113,
+        "covered_bins": 113,
+        "missing_bins": [],
+        "expected_ops": 226000.0,
+        "completed": 226004,
+        "success": 220316,
+        "expected_rejection": 37,
+        "local_no_request": 5651,
+        "unexpected": 0,
+        "begins": 226000,
+        "drops": 0,
+        "min_completed_s": 1851,
+        "episodes": [
+          {
+            "episode_start_s": 1790148477,
+            "episode_end_s": 1790148478,
+            "duration_s": 1,
+            "min_completed_s": 1923,
+            "min_at_s": [
+              1790148477
+            ],
+            "hole_area_ops": 77.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148478
+          },
+          {
+            "episode_start_s": 1790148489,
+            "episode_end_s": 1790148490,
+            "duration_s": 1,
+            "min_completed_s": 1851,
+            "min_at_s": [
+              1790148489
+            ],
+            "hole_area_ops": 149.0,
+            "recovered": true,
+            "recovery_s": 10,
+            "recovery_run_start_s": 1790148494
+          },
+          {
+            "episode_start_s": 1790148493,
+            "episode_end_s": 1790148494,
+            "duration_s": 1,
+            "min_completed_s": 1979,
+            "min_at_s": [
+              1790148493
+            ],
+            "hole_area_ops": 21.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148494
+          },
+          {
+            "episode_start_s": 1790148552,
+            "episode_end_s": 1790148553,
+            "duration_s": 1,
+            "min_completed_s": 1960,
+            "min_at_s": [
+              1790148552
+            ],
+            "hole_area_ops": 40.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148553
+          },
+          {
+            "episode_start_s": 1790148565,
+            "episode_end_s": 1790148566,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790148565
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148566
+          }
+        ],
+        "hole_area_ops": 567.0,
+        "selected_bins": 113,
+        "truncated_start": false,
+        "truncated_end": true
+      },
+      "local_union": {
+        "requested_interval": [
+          1790148204.168248,
+          1790148588.0
+        ],
+        "effective_interval": [
+          1790148205,
+          1790148588
+        ],
+        "effective_seconds": 232,
+        "covered_bins": 232,
+        "missing_bins": [],
+        "expected_ops": 464000.0,
+        "completed": 464020,
+        "success": 452333,
+        "expected_rejection": 83,
+        "local_no_request": 11604,
+        "unexpected": 0,
+        "begins": 464000,
+        "drops": 0,
+        "min_completed_s": 1741,
+        "episodes": [
+          {
+            "episode_start_s": 1790148244,
+            "episode_end_s": 1790148245,
+            "duration_s": 1,
+            "min_completed_s": 1949,
+            "min_at_s": [
+              1790148244
+            ],
+            "hole_area_ops": 51.0,
+            "recovered": true,
+            "recovery_s": 11,
+            "recovery_run_start_s": 1790148250
+          },
+          {
+            "episode_start_s": 1790148249,
+            "episode_end_s": 1790148250,
+            "duration_s": 1,
+            "min_completed_s": 1931,
+            "min_at_s": [
+              1790148249
+            ],
+            "hole_area_ops": 69.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148250
+          },
+          {
+            "episode_start_s": 1790148259,
+            "episode_end_s": 1790148260,
+            "duration_s": 1,
+            "min_completed_s": 1815,
+            "min_at_s": [
+              1790148259
+            ],
+            "hole_area_ops": 185.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148260
+          },
+          {
+            "episode_start_s": 1790148270,
+            "episode_end_s": 1790148271,
+            "duration_s": 1,
+            "min_completed_s": 1741,
+            "min_at_s": [
+              1790148270
+            ],
+            "hole_area_ops": 259.0,
+            "recovered": true,
+            "recovery_s": 10,
+            "recovery_run_start_s": 1790148275
+          },
+          {
+            "episode_start_s": 1790148274,
+            "episode_end_s": 1790148275,
+            "duration_s": 1,
+            "min_completed_s": 1977,
+            "min_at_s": [
+              1790148274
+            ],
+            "hole_area_ops": 23.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148275
+          },
+          {
+            "episode_start_s": 1790148477,
+            "episode_end_s": 1790148478,
+            "duration_s": 1,
+            "min_completed_s": 1923,
+            "min_at_s": [
+              1790148477
+            ],
+            "hole_area_ops": 77.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148478
+          },
+          {
+            "episode_start_s": 1790148489,
+            "episode_end_s": 1790148490,
+            "duration_s": 1,
+            "min_completed_s": 1851,
+            "min_at_s": [
+              1790148489
+            ],
+            "hole_area_ops": 149.0,
+            "recovered": true,
+            "recovery_s": 10,
+            "recovery_run_start_s": 1790148494
+          },
+          {
+            "episode_start_s": 1790148493,
+            "episode_end_s": 1790148494,
+            "duration_s": 1,
+            "min_completed_s": 1979,
+            "min_at_s": [
+              1790148493
+            ],
+            "hole_area_ops": 21.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148494
+          },
+          {
+            "episode_start_s": 1790148552,
+            "episode_end_s": 1790148553,
+            "duration_s": 1,
+            "min_completed_s": 1960,
+            "min_at_s": [
+              1790148552
+            ],
+            "hole_area_ops": 40.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148553
+          },
+          {
+            "episode_start_s": 1790148565,
+            "episode_end_s": 1790148566,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790148565
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148566
+          }
+        ],
+        "hole_area_ops": 1433.0,
+        "selected_bins": 232,
+        "truncated_start": false,
+        "truncated_end": false
+      },
+      "truncated": true,
+      "evidence_sufficient": true,
+      "terminal_drain_artifact": false
+    },
+    {
+      "id": "ckpt-4",
+      "reason": "time",
+      "kind": "start",
+      "start_s": 1790148534.056805,
+      "complete_s": null,
+      "start_utc": "2026-09-23T07:28:54.056805+00:00",
+      "complete_utc": null,
+      "write_s": null,
+      "sync_s": null,
+      "total_s": null,
+      "distance_kb": null,
+      "estimate_kb": null,
+      "buffers": null,
+      "sync_files": null,
+      "missing_boundary": "checkpoint_complete",
+      "ambiguous": false,
+      "clip_basis": "all-load common window (conservative_bounds)",
+      "start_window": {
+        "requested_interval": [
+          1790148504.056805,
+          1790148588.0
+        ],
+        "effective_interval": [
+          1790148505,
+          1790148588
+        ],
+        "effective_seconds": 83,
+        "covered_bins": 83,
+        "missing_bins": [],
+        "expected_ops": 166000.0,
+        "completed": 166000,
+        "success": 161482,
+        "expected_rejection": 27,
+        "local_no_request": 4491,
+        "unexpected": 0,
+        "begins": 166000,
+        "drops": 0,
+        "min_completed_s": 1960,
+        "episodes": [
+          {
+            "episode_start_s": 1790148552,
+            "episode_end_s": 1790148553,
+            "duration_s": 1,
+            "min_completed_s": 1960,
+            "min_at_s": [
+              1790148552
+            ],
+            "hole_area_ops": 40.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148553
+          },
+          {
+            "episode_start_s": 1790148565,
+            "episode_end_s": 1790148566,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790148565
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148566
+          }
+        ],
+        "hole_area_ops": 263.0,
+        "selected_bins": 83,
+        "truncated_start": false,
+        "truncated_end": true
+      },
+      "complete_window": null,
+      "local_union": {
+        "requested_interval": [
+          1790148504.056805,
+          1790148588.0
+        ],
+        "effective_interval": [
+          1790148505,
+          1790148588
+        ],
+        "effective_seconds": 83,
+        "covered_bins": 83,
+        "missing_bins": [],
+        "expected_ops": 166000.0,
+        "completed": 166000,
+        "success": 161482,
+        "expected_rejection": 27,
+        "local_no_request": 4491,
+        "unexpected": 0,
+        "begins": 166000,
+        "drops": 0,
+        "min_completed_s": 1960,
+        "episodes": [
+          {
+            "episode_start_s": 1790148552,
+            "episode_end_s": 1790148553,
+            "duration_s": 1,
+            "min_completed_s": 1960,
+            "min_at_s": [
+              1790148552
+            ],
+            "hole_area_ops": 40.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148553
+          },
+          {
+            "episode_start_s": 1790148565,
+            "episode_end_s": 1790148566,
+            "duration_s": 1,
+            "min_completed_s": 1978,
+            "min_at_s": [
+              1790148565
+            ],
+            "hole_area_ops": 22.0,
+            "recovered": true,
+            "recovery_s": 6,
+            "recovery_run_start_s": 1790148566
+          }
+        ],
+        "hole_area_ops": 263.0,
+        "selected_bins": 83,
+        "truncated_start": false,
+        "truncated_end": false
+      },
+      "truncated": true,
+      "evidence_sufficient": false,
+      "terminal_drain_artifact": true,
+      "note": "no checkpoint complete record \u2014 a trailing truncated local window contains the end-of-run drain, not a throughput trough"
+    }
+  ]
+}

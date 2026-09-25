@@ -1,0 +1,54 @@
+{
+  "task": "business-pool-24-vs-32",
+  "base_sha": "23c98ff394b038b3f7e230c0a2f3b4422c230605",
+  "branch": "perf/business-pool-24-vs-32-23c98ff3",
+  "harness_sha": "7b27933b",
+  "app_image": "tap-b:86b2df16",
+  "app_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+  "runtime_role": "nazoauth_perf_runtime",
+  "runtime_role_source": "DATABASE_URL: postgresql://nazoauth_perf_runtime:***@postgres:5432/oauth",
+  "variable": "DATABASE_MAX_CONNECTIONS via container env override (env > file > generated)",
+  "protocol": "mixed-only A1->B1->B2->A2, cap_mixed constant-arrival 3000/s, 120s + 15s warmup, pre256/max1024, sidecars refresh=600 argon2=8 meta=200 fapi=30",
+  "load_seconds_used": 521.8,
+  "load_budget_s": 600,
+  "results_dir": "/workspace/perf-results/p24v32",
+  "project": "sis32",
+  "postgres": {
+    "version": "18.6",
+    "max_connections": 100,
+    "gucs_confirmed": {
+      "commit_delay": "0",
+      "commit_siblings": "5",
+      "track_wal_io_timing": "off",
+      "fsync": "on",
+      "synchronous_commit": "on",
+      "full_page_writes": "on",
+      "wal_sync_method": "fdatasync",
+      "max_wal_size": "8GB",
+      "checkpoint_timeout": "5min",
+      "checkpoint_completion_target": "0.9",
+      "shared_buffers": "128MB"
+    }
+  },
+  "points": {
+    "A1": {"pool": 24, "ops_per_s": 2613.333, "attempted_ops_per_s": 2628.695, "p99_ms": 1256, "drop": 0.1209, "runtime_backends_max": 24},
+    "B1": {"pool": 32, "ops_per_s": 2952.876, "attempted_ops_per_s": 2995.905, "p99_ms": 144, "drop": 0.0031, "runtime_backends_max": 32},
+    "B2": {"pool": 32, "ops_per_s": 2953.99, "attempted_ops_per_s": 2999.286, "p99_ms": 101, "drop": 0.0020, "runtime_backends_max": 32},
+    "A2": {"pool": 24, "ops_per_s": 2744.333, "attempted_ops_per_s": 2753.762, "p99_ms": 1148, "drop": 0.0783, "runtime_backends_max": 24}
+  },
+  "verdict": {
+    "pool_24_baseline_stable": "YES",
+    "pool_32": "PASS",
+    "mixed_throughput_change": 0.1025,
+    "pool_wait_change": "waiting -97.6%, wait_per_acq -98.1%",
+    "strict_3000_gate": "INVALID_MIXED_WINDOW_ACCOUNTING (superseded)",
+    "corrected_short_3000_gate": {"B1": "FAIL", "B2": "PASS"},
+    "benchmark_pool_aligned_to_default": "YES",
+    "group_commit_candidate": "FAIL",
+    "commit_delay": 0,
+    "durability_changed": "NO",
+    "production_code_changed": "NO",
+    "strict_30m_capacity": "NOT_TESTED"
+  },
+  "evidence": "evidence/evidence.tar.gz"
+}

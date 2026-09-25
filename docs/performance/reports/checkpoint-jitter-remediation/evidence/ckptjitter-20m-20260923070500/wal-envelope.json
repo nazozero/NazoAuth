@@ -1,0 +1,12 @@
+{
+  "samples": 1220,
+  "resets_or_missing": 1,
+  "mean_Bps": 9740344.4,
+  "peak_1s_Bps": 113476420.0,
+  "peak_10s_avg_Bps": 20214817.8,
+  "peak_60s_avg_Bps": 12412678.6,
+  "rolling_300s_bytes": 3225562838.0,
+  "rolling_600s_bytes": 6340698450.0,
+  "fpi_upper_bound_note": "wal_fpi * 8192 is an uncompressed-image upper bound, not actual FPI WAL bytes",
+  "stats_reset_seen": 0
+}

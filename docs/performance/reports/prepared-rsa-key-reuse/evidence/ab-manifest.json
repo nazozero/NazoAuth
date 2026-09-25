@@ -1,0 +1,8 @@
+{
+  "baseline_app_sha": "b8e1aead20d4f875f64e55eb4bb3fb71d758cfd7",
+  "baseline_image": "prsa-base:b8e1aead",
+  "candidate_app_sha": "47f431785dba9b2d510a01e262ef6c4ff44577b9",
+  "candidate_image": "prsa-cand:47f43178",
+  "harness_sha": "47f431785dba9b2d510a01e262ef6c4ff44577b9",
+  "task": "prepared-rsa-key-reuse"
+}

@@ -1,0 +1,18 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.19s
+     Running tests/token_issuance_fresh.rs (target/debug/deps/token_issuance_fresh-8a3f25f331376334)
+
+running 11 tests
+test fresh_issuance_commits_ownership_audit_and_outbox ... ok
+test fresh_issuance_audit_function_failure_rolls_back_ownership ... ok
+test client_deactivation_waits_for_fresh_issuance_commit ... ok
+test fresh_issuance_abort_during_lock_wait_discards_connection ... ok
+test fresh_issuance_id_conflict_stays_an_error ... ok
+test fresh_issuance_never_crosses_tenant_boundary ... ok
+test fresh_issuance_rejects_missing_or_inactive_client ... ok
+test fresh_issuance_rejects_oversized_audit_payload ... ok
+test fresh_issuance_runs_under_the_restricted_runtime_role ... ok
+test fresh_issuance_waits_for_client_deactivation_and_rechecks ... ok
+test fresh_issuance_lock_timeout_discards_connection_cleanly ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 5.29s
+

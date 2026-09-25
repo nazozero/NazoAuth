@@ -1,0 +1,18 @@
+{
+  "valid": true,
+  "problems": [],
+  "contract_defects": [
+    "missing:cap_window_measure_offset_ms"
+  ],
+  "checkpoint_evidence_gaps": [],
+  "stream_stats": {
+    "parse_errors": 0,
+    "reader_error": null,
+    "events": null
+  },
+  "window_json": {
+    "valid": true,
+    "problems": null,
+    "reader_error": null
+  }
+}

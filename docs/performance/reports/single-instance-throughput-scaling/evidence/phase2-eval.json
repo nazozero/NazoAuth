@@ -1,0 +1,76 @@
+{
+  "verdict": "INCONCLUSIVE",
+  "retain": false,
+  "gates": {
+    "window_validity": {
+      "pass": true,
+      "invalid_points": []
+    },
+    "a_stability": {
+      "pass": false,
+      "spread": 0.0578,
+      "a1": 4266.771,
+      "a2": 4528.324
+    },
+    "b_gain": {
+      "pass": false,
+      "rows": [
+        {
+          "point": "B1",
+          "gain": -0.0833,
+          "pass": false
+        },
+        {
+          "point": "B2",
+          "gain": -0.019,
+          "pass": false
+        }
+      ]
+    },
+    "p99_regression": {
+      "pass": true,
+      "rows": [
+        {
+          "point": "B1",
+          "a_p99": 43.0,
+          "b_p99": 38.0,
+          "rel": -0.1163,
+          "abs_ms": -5.0,
+          "violation": false
+        },
+        {
+          "point": "B2",
+          "a_p99": 43.0,
+          "b_p99": 35.0,
+          "rel": -0.186,
+          "abs_ms": -8.0,
+          "violation": false
+        }
+      ]
+    },
+    "clean_outcomes": {
+      "pass": true
+    },
+    "wal_per_success": {
+      "pass": true,
+      "rows": [
+        {
+          "point": "B1",
+          "wal_per_success": 3026.772,
+          "pass": true
+        },
+        {
+          "point": "B2",
+          "wal_per_success": 2883.592,
+          "pass": true
+        }
+      ]
+    },
+    "runtime_health": {
+      "pass": true
+    },
+    "audit_reconciliation": {
+      "pass": true
+    }
+  }
+}

@@ -1,0 +1,209 @@
+{
+  "health_failed": [],
+  "phase": "cc",
+  "points": {
+    "A1": {
+      "checks": {
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "expected_rejection_zero": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "point_completed": true,
+        "queue_full_zero": true,
+        "unexpected_zero": true
+      },
+      "evidence": {
+        "acquire_per_op_windowed": 3.9682,
+        "acquire_windowed": {
+          "delta": 1599724.3799690008,
+          "field": "pool.acq",
+          "sample_span": [
+            1790244129,
+            1790244245
+          ],
+          "window_s": 75.0
+        },
+        "anchor_health_calls": 0,
+        "drop_fraction": 0.0,
+        "op_p99_ms": 33.0,
+        "outcome_success": 403140,
+        "pool_acquire_count": 1947355,
+        "pool_wait_ms_avg": 1.714,
+        "pool_wait_ms_total": 3337498.063,
+        "successful_ops_per_s": 5375.2,
+        "writer_preflight_calls": 486053,
+        "writer_preflight_per_success": 1.2057
+      },
+      "failed": [],
+      "point": "A1",
+      "verdict": "PASS"
+    },
+    "A2": {
+      "checks": {
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "expected_rejection_zero": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "point_completed": true,
+        "queue_full_zero": true,
+        "unexpected_zero": true
+      },
+      "evidence": {
+        "acquire_per_op_windowed": 3.9768,
+        "acquire_windowed": {
+          "delta": 1629270.1130869389,
+          "field": "pool.acq",
+          "sample_span": [
+            1790244633,
+            1790244746
+          ],
+          "window_s": 75.0
+        },
+        "anchor_health_calls": 0,
+        "drop_fraction": 0.0,
+        "op_p99_ms": 33.0,
+        "outcome_success": 409690,
+        "pool_acquire_count": 1982053,
+        "pool_wait_ms_avg": 1.689,
+        "pool_wait_ms_total": 3348200.269,
+        "successful_ops_per_s": 5462.533,
+        "writer_preflight_calls": 494727,
+        "writer_preflight_per_success": 1.2076
+      },
+      "failed": [],
+      "point": "A2",
+      "verdict": "PASS"
+    },
+    "B1": {
+      "checks": {
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "expected_rejection_zero": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "point_completed": true,
+        "queue_full_zero": true,
+        "unexpected_zero": true
+      },
+      "evidence": {
+        "acquire_per_op_windowed": 2.9717,
+        "acquire_windowed": {
+          "delta": 1307599.3589458466,
+          "field": "pool.acq",
+          "sample_span": [
+            1790244299,
+            1790244411
+          ],
+          "window_s": 75.0
+        },
+        "anchor_health_calls": 0,
+        "drop_fraction": 0.0,
+        "op_p99_ms": 31.0,
+        "outcome_success": 440012,
+        "pool_acquire_count": 1580692,
+        "pool_wait_ms_avg": 2.088,
+        "pool_wait_ms_total": 3300995.759,
+        "successful_ops_per_s": 5866.827,
+        "writer_preflight_calls": 0,
+        "writer_preflight_per_success": 0.0
+      },
+      "failed": [],
+      "point": "B1",
+      "verdict": "PASS"
+    },
+    "B2": {
+      "checks": {
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "expected_rejection_zero": true,
+        "journal_contiguous": true,
+        "local_no_request_zero": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "point_completed": true,
+        "queue_full_zero": true,
+        "unexpected_zero": true
+      },
+      "evidence": {
+        "acquire_per_op_windowed": 2.9828,
+        "acquire_windowed": {
+          "delta": 1341902.052332878,
+          "field": "pool.acq",
+          "sample_span": [
+            1790244466,
+            1790244577
+          ],
+          "window_s": 75.0
+        },
+        "anchor_health_calls": 0,
+        "drop_fraction": 0.0,
+        "op_p99_ms": 31.0,
+        "outcome_success": 449885,
+        "pool_acquire_count": 1623214,
+        "pool_wait_ms_avg": 2.034,
+        "pool_wait_ms_total": 3300844.296,
+        "successful_ops_per_s": 5998.467,
+        "writer_preflight_calls": 0,
+        "writer_preflight_per_success": 0.0
+      },
+      "failed": [],
+      "point": "B2",
+      "verdict": "PASS"
+    }
+  },
+  "structural": {
+    "a_preflight_per_success": {
+      "pass": true,
+      "tolerance": [
+        0.8,
+        1.5
+      ],
+      "values": [
+        1.2057,
+        1.2076
+      ]
+    },
+    "acquire_reduction_ge_0_9": {
+      "a_mean_acquire_per_op": 3.9725,
+      "b_acquire_per_op": [
+        2.9717,
+        2.9828
+      ],
+      "min_required": 0.9,
+      "pass": true,
+      "reductions": [
+        1.0008,
+        0.9897
+      ]
+    },
+    "b_preflight_zero": {
+      "pass": true,
+      "values": [
+        0,
+        0
+      ]
+    },
+    "throughput_non_regression_3pct": {
+      "a_max": 5462.533,
+      "b_values": [
+        5866.827,
+        5998.467
+      ],
+      "floor_97pct": 5298.65701,
+      "pass": true
+    }
+  },
+  "verdict": "PASS"
+}

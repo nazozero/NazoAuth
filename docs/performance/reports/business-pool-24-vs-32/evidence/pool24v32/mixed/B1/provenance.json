@@ -1,0 +1,19 @@
+{
+  "app_image_id": "sha256:0e818be74d312c9596f0530c9171225957def699df9a359d7bbe77f22ec14d0d",
+  "app_image_ref": "tap-b:86b2df16",
+  "applied_migrations_sha256": "0b4cb38907d4d10b6115319dc8ce8b76e0937f9d5ee1dd45e88b3cd01a4edc90",
+  "binary_path": "/usr/local/bin/nazoauth",
+  "binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+  "pg_checkpoint_completion_target": "0.9",
+  "pg_checkpoint_timeout": "5min",
+  "pg_fsync": "on",
+  "pg_full_page_writes": "on",
+  "pg_max_connections": "100",
+  "pg_max_wal_size": "8GB",
+  "pg_shared_buffers": "128MB",
+  "pg_synchronous_commit": "on",
+  "pg_track_io_timing": "on",
+  "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+  "point": "B1",
+  "source_sha": "unknown"
+}

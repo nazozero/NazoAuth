@@ -1,0 +1,41 @@
+   Compiling nazo-postgres v0.2.16 (/src/crates/persistence-postgres)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.55s
+     Running tests/audit_ledger.rs (target/debug/deps/audit_ledger-f4b29cb8baf5bcd7)
+
+running 8 tests
+test audit_ledger_migration_is_append_only_and_has_durable_outbox ... ok
+test audit_claim_is_bounded_without_planner_statistics ... FAILED
+test audit_ledger_append_is_chained_and_outboxed ... FAILED
+test audit_ledger_rejects_invalid_events_and_enforces_batch_fencing ... FAILED
+test bounded_claim_migration_materializes_identities_before_joining ... ok
+test shared_anchor_migration_persists_checkpoint_without_a_local_file ... ok
+test delivery_scoped_retention_migration_reclaims_at_ack_and_drops_archive ... ok
+test batch_delivery_migration_fences_one_batch_and_retires_per_event_state ... ok
+
+failures:
+
+---- audit_claim_is_bounded_without_planner_statistics stdout ----
+
+thread 'audit_claim_is_bounded_without_planner_statistics' (277) panicked at crates/persistence-postgres/tests/audit_ledger.rs:155:9:
+CI audit ledger tests require an isolated NAZO_AUDIT_TEST_DATABASE_URL
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- audit_ledger_append_is_chained_and_outboxed stdout ----
+
+thread 'audit_ledger_append_is_chained_and_outboxed' (278) panicked at crates/persistence-postgres/tests/audit_ledger.rs:155:9:
+CI audit ledger tests require an isolated NAZO_AUDIT_TEST_DATABASE_URL
+
+---- audit_ledger_rejects_invalid_events_and_enforces_batch_fencing stdout ----
+
+thread 'audit_ledger_rejects_invalid_events_and_enforces_batch_fencing' (280) panicked at crates/persistence-postgres/tests/audit_ledger.rs:155:9:
+CI audit ledger tests require an isolated NAZO_AUDIT_TEST_DATABASE_URL
+
+
+failures:
+    audit_claim_is_bounded_without_planner_statistics
+    audit_ledger_append_is_chained_and_outboxed
+    audit_ledger_rejects_invalid_events_and_enforces_batch_fencing
+
+test result: FAILED. 5 passed; 3 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: test failed, to rerun pass `-p nazo-postgres --test audit_ledger`

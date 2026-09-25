@@ -1,0 +1,1 @@
+time="2026-09-25T02:36:29Z" level=error msg="GoError: stat /perf-state/vectors.json: no such file or directory\n\tat go.k6.io/k6/v2/internal/js.(*Bundle).setInitGlobals.func3 (native)\n\tat file:///perf/k6/oauth.js:18:70(5)\n\tat file:///perf/k6/oauth.js:18:17(310)\n" hint="script exception" source=stacktrace

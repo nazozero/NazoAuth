@@ -1,0 +1,17 @@
+services:
+  keyset:
+    volumes:
+      - sisprsa-confirm-keys:/var/lib/nazo_oauth
+  migrate:
+    volumes:
+      - sisprsa-confirm-keys:/var/lib/nazo_oauth
+  nazoauth:
+    entrypoint: ["/pinbin/pinset", "64,66,68,70,72,74,76,78"]
+    environment:
+      DATABASE_MAX_CONNECTIONS: "32"
+    volumes:
+      - sisprsa-confirm-keys:/var/lib/nazo_oauth
+      - /workspace/.lmr/perf-results/sis/bin:/pinbin:ro
+volumes:
+  sisprsa-confirm-keys:
+    external: true

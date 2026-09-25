@@ -1,0 +1,116 @@
+{
+  "common_window": {
+    "label": "common-window",
+    "start": 1790147510,
+    "end": 1790148592.733,
+    "start_utc": "2026-09-23T07:11:50+00:00",
+    "end_utc": "2026-09-23T07:29:52.733000+00:00",
+    "seconds": 1082.7,
+    "expected_iterations": 2165466.0,
+    "hole_area_ops": 6140.0,
+    "min_completed_per_s": 1712,
+    "recovery_s_from_trough": 1,
+    "in_flight_start": 40,
+    "in_flight_end": 0,
+    "expected_bins": 1082,
+    "present_bins": 1083,
+    "begins_pair": {
+      "measure|1": 2163983,
+      "measure|0": 1483
+    },
+    "ends": {
+      "measure|0|success": 1485,
+      "measure|1|success": 2123210,
+      "measure|1|local_no_request": 40435,
+      "measure|1|expected_rejection": 363
+    },
+    "measure_begins": 2165466,
+    "measure_ends": 2165493,
+    "measure_completions": 2165493,
+    "iterations_completed": 2165493,
+    "dropped_iterations": 0,
+    "successful_measure_ops": 2124695,
+    "http_requests": 3106420,
+    "vus_peak": 154,
+    "vus_max_peak": 361,
+    "cap_measure_ms": {
+      "n": 2165493,
+      "avg": 9.316,
+      "max": 437,
+      "p50": 6.528,
+      "p95": 42.159,
+      "p99": 70.277
+    },
+    "cap_iter_ms": {
+      "n": 2165493,
+      "avg": 9.335,
+      "max": 437,
+      "p50": 6.552,
+      "p95": 42.18,
+      "p99": 70.313
+    },
+    "http_req_duration": {
+      "n": 3106420,
+      "avg": 6.096,
+      "max": 217.86028,
+      "p50": 4.493,
+      "p95": 18.748,
+      "p99": 44.459
+    }
+  },
+  "intervals": [
+    {
+      "start": 1790147510,
+      "end": 1790147604.85,
+      "start_utc": "2026-09-23T07:11:50+00:00",
+      "end_utc": "2026-09-23T07:13:24.850000+00:00"
+    },
+    {
+      "start": 1790147724.85,
+      "end": 1790147874.553,
+      "start_utc": "2026-09-23T07:15:24.850000+00:00",
+      "end_utc": "2026-09-23T07:17:54.553000+00:00"
+    },
+    {
+      "start": 1790148024.583,
+      "end": 1790148174.455,
+      "start_utc": "2026-09-23T07:20:24.583000+00:00",
+      "end_utc": "2026-09-23T07:22:54.455000+00:00"
+    },
+    {
+      "start": 1790148324.168,
+      "end": 1790148474.393,
+      "start_utc": "2026-09-23T07:25:24.168000+00:00",
+      "end_utc": "2026-09-23T07:27:54.393000+00:00"
+    }
+  ],
+  "seconds": 544,
+  "completed_measure_ops": 1088002,
+  "dropped_iterations": 0,
+  "throughput_ops_per_s": 2000.004,
+  "cap_measure_ms": {
+    "n": 1088002,
+    "avg": 9.959,
+    "max": 337,
+    "p50": 6.783,
+    "p95": 43.449,
+    "p99": 78.804
+  },
+  "cap_iter_ms": {
+    "n": 1088002,
+    "avg": 9.979,
+    "max": 337,
+    "p50": 6.805,
+    "p95": 43.466,
+    "p99": 78.828
+  },
+  "http_req_duration": {
+    "n": 1562587,
+    "avg": 6.528,
+    "max": 213.067993,
+    "p50": 4.787,
+    "p95": 19.579,
+    "p99": 46.142
+  },
+  "note": "may still contain smooth checkpoint write phases; not checkpoint-free"
+}

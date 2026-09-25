@@ -1,0 +1,12 @@
+{
+  "gates": {
+    "a_stability": {
+      "a1": 3191.143,
+      "a2": 3630.848,
+      "pass": false,
+      "spread": 0.1211
+    }
+  },
+  "retain": false,
+  "verdict": "INCONCLUSIVE"
+}

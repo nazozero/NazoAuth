@@ -1,0 +1,33 @@
+{
+  "checkpointer": "{\"num_timed\":0,\"num_requested\":1,\"num_done\":0,\"restartpoints_timed\":0,\"restartpoints_req\":0,\"restartpoints_done\":0,\"write_time\":16,\"sync_time\":8,\"buffers_written\":943,\"slru_written\":3,\"stats_reset\":\"2026-09-25T02:35:59.945279+00:00\"}",
+  "statements": [
+    {
+      "calls": 1,
+      "datname": "oauth",
+      "dbid": "16384",
+      "q": "SELECT extract($1 from stats_reset) FROM pg_stat_statements_info",
+      "queryid": -7079431614217517475,
+      "rolname": "postgres",
+      "rows": 1,
+      "toplevel": true,
+      "total_exec_time": 0.048628000000000005,
+      "userid": "10"
+    },
+    {
+      "calls": 1,
+      "datname": "oauth",
+      "dbid": "16384",
+      "q": "SELECT pg_stat_statements_reset()::text",
+      "queryid": 8508371163884219219,
+      "rolname": "postgres",
+      "rows": 1,
+      "toplevel": true,
+      "total_exec_time": 0.32432300000000003,
+      "userid": "10"
+    }
+  ],
+  "stats_reset": "1790303780.305653",
+  "tag": "pre",
+  "ts": 1790303780.308227,
+  "wal": "16984329"
+}

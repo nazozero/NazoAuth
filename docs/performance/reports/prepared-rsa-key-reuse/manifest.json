@@ -1,0 +1,38 @@
+{
+  "task": "prepared-rsa-key-reuse",
+  "date": "2026-09-24",
+  "host": "cnb-r49-1k38f54tm-001 (authorized remote benchmark host)",
+  "identity": {
+    "base_sha": "b8e1aead20d4f875f64e55eb4bb3fb71d758cfd7",
+    "harness_sha": "47f431785dba9b2d510a01e262ef6c4ff44577b9",
+    "baseline_app_sha": "b8e1aead20d4f875f64e55eb4bb3fb71d758cfd7",
+    "candidate_app_sha": "47f431785dba9b2d510a01e262ef6c4ff44577b9",
+    "baseline_binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+    "candidate_binary_sha256": "4896749e163efce6dfedcc6bdec9f6ddf8ea84265798dd430632d251a7e9e966",
+    "jsonwebtoken": "11.0.0",
+    "aws_lc_rs": "1.18.1"
+  },
+  "evidence": {
+    "microbench": "evidence/microbench.jsonl",
+    "points": ["evidence/A1.point.json", "evidence/B1.point.json",
+               "evidence/B2.point.json", "evidence/A2.point.json"],
+    "phase1_gates": "evidence/phase1-gates.json",
+    "ab_manifest": "evidence/ab-manifest.json"
+  },
+  "verdicts": {
+    "RSA_PARSE_REUSE": "implemented-and-reverted",
+    "RS256_SIGN_COST_CHANGE": "-60.4% ns/sign (microbench)",
+    "PS256_SIGN_COST_CHANGE": "-59.6% ns/sign (microbench)",
+    "END_TO_END_THROUGHPUT_CHANGE": "INCONCLUSIVE (baseline spread 12.1%)",
+    "APP_CPU_PER_SUCCESS_CHANGE": "NOT_ESTABLISHED",
+    "AUDIT_STATE_CHECK": "PASS x4",
+    "CANDIDATE_RETAINED": "NO",
+    "SYSTEM_CAPACITY_GAIN": "NOT_ESTABLISHED",
+    "EFFICIENCY_GAIN": "NOT_ESTABLISHED",
+    "PRIMARY_SCALING_BOTTLENECK": "UNRESOLVED",
+    "DURABILITY_CHANGED": "NO",
+    "DB_POOL_CHANGED": "NO",
+    "STRICT_30M_CAPACITY": "NOT_TESTED",
+    "NEW_REAL_LOAD_TIME_S": 796
+  }
+}

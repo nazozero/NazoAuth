@@ -1,0 +1,107 @@
+{
+  "report": "formal3000-30m-stability",
+  "status": "INVALID",
+  "fail_class": "LOAD_MODEL_INVALID",
+  "generated_at": "2026-10-24T03:52:00Z",
+  "base_sha": "c8b977085861f4587b69e05322422d8a32f8b5c2",
+  "final_sha": "1a8357e826ef9df20fd92ca449e951b7bb83f1c7",
+  "reviewed_head": "c8b977085861f4587b69e05322422d8a32f8b5c2",
+  "app_image_ref": "sisr2-nazoauth:latest",
+  "app_image_id": "sha256:2d767212839854ec65780794328c5ce59cc35bd2ec4a65f5d405a9e98c58dcae",
+  "image_binary_sha": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+  "database_max_connections": "32",
+  "durability_changed": false,
+  "production_code_changed": false,
+  "changed_paths": [
+    "perf/k6/oauth.js",
+    "perf/tools/capacity_search.py",
+    "perf/tools/measure_schedule.py",
+    "perf/tools/pool_size_ab.py",
+    "perf/tools/runner.py",
+    "perf/tools/stability_analyze.py",
+    "perf/tests/test_measure_schedule.py",
+    "perf/tests/test_pool_size_ab.py",
+    "perf/tests/test_stability_analyze.py",
+    "docs/performance/reports/formal3000-load-model-repair/report.md",
+    "docs/performance/reports/formal3000-30m-stability"
+  ],
+  "points": [
+    {
+      "name": "F3000-30M",
+      "scenario": "cap_mixed",
+      "duration_s": 1800,
+      "measure_offset_ms": 15000,
+      "bucket_ms": 60000,
+      "bucket_count": 31,
+      "status": "target_miss",
+      "load_seconds": 1820.6,
+      "k6_exit_code": 0,
+      "main_oom_killed": false,
+      "restart_count": 0,
+      "measurement": {
+        "scheduled": 5355000,
+        "started": 5355005,
+        "completed": 5355005,
+        "schedule_delta": 5,
+        "boundary_overshoot": 5,
+        "drop_lower_bound": 0,
+        "drop_upper_bound": 5,
+        "drop_fraction_upper": 1e-06,
+        "cohort_valid": false,
+        "invalid_reason": "scheduled_less_than_started:5>3",
+        "ops_per_s": 3000.003,
+        "p50_ms": 5.0,
+        "p95_ms": 25.0,
+        "p99_ms": 43.0,
+        "outcome_unexpected": 0,
+        "late_vu_fraction": 0.0
+      },
+      "generator": {
+        "main_exit_code": 0,
+        "active_vu": {
+          "mean": 24.3,
+          "p95": 40.0,
+          "max": 306,
+          "first300s_max": 2044
+        },
+        "rss_cpu": "NOT_MEASURED",
+        "host_mem_available": "NOT_MEASURED"
+      },
+      "subject": {
+        "initial_mint": 2048,
+        "refresh_update": 772902,
+        "expired_reauth": 733,
+        "reauth_peak_per_min": 39
+      },
+      "stability": {
+        "sustained_cliff": false,
+        "anomaly_buckets": [],
+        "buckets_over_p95_100_or_p99_250": [],
+        "checkpoint_events": 6,
+        "checkpoint_window_anomalies": 0
+      },
+      "health": {
+        "audit_reconciled": true,
+        "journal_contiguous": true,
+        "db_outbox_drained": true,
+        "anchor_sequence": 7518429,
+        "refresh_invariants": {
+          "max_active_per_scope": 10,
+          "spent_max_per_family": 64,
+          "spent_expired_backlog": 0
+        },
+        "sidecars_complete": false,
+        "audit_queue_observable": false,
+        "residency_observable": false
+      }
+    }
+  ],
+  "invalidity_reasons": [
+    "measurement cohort schedule_delta +5 exceeds registered boundary allowance +3",
+    "SIS_WORKSPACE unset: samplers mounted from stale /workspace checkout (proc-detail/residency absent; audit_queue unobservable)",
+    "argon2 sidecar startup raced vectors.json bootstrap (exit 1 before load)"
+  ],
+  "evidence_dir": "evidence",
+  "notes": "No SUT capacity cliff observed in any of 30 minute buckets; INVALID is load-model/harness provenance, not a production health finding. Production invariants unchanged.",
+  "superseded_for_formal_certification_by": "F3000-30M-R2 (docs/performance/reports/formal3000-30m-harness-repair) \u2014 original verdict INVALID preserved unchanged"
+}
