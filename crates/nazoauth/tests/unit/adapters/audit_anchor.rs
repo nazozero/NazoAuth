@@ -13,7 +13,8 @@ use super::{
     },
 };
 use chrono::{Duration as ChronoDuration, Utc};
-use ed25519_dalek::{Signer as _, SigningKey, VerifyingKey};
+use ed25519_dalek::{Signer as _, SigningKey};
+use nazo_crypto::ed25519::VerifyingKey;
 use nazo_identity::ports::{RepositoryError, RepositoryFuture};
 use nazo_persistence::{
     SecurityAuditAnchorHealth, SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim,
@@ -31,7 +32,7 @@ fn test_signing_key() -> SigningKey {
 }
 
 fn test_verify_key() -> VerifyingKey {
-    test_signing_key().verifying_key()
+    VerifyingKey::from_bytes(&test_signing_key().verifying_key().to_bytes()).unwrap()
 }
 
 fn valid_worker_config(endpoint: Url) -> AuditAnchorWorkerConfig {

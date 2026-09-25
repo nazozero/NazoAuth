@@ -1,7 +1,7 @@
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use chrono::{DateTime, Utc};
-use ed25519_dalek::{Signature, VerifyingKey};
 use hmac::{Hmac, KeyInit, Mac};
+use nazo_crypto::ed25519::VerifyingKey;
 use nazo_persistence::SecurityAuditBatch;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
@@ -237,10 +237,11 @@ pub(super) fn verify_receipt(
     if receipt.schema_version != RECEIPT_SCHEMA_VERSION {
         return Err(ReceiptError::SchemaMismatch);
     }
-    let signature_bytes = URL_SAFE_NO_PAD
+    let signature: [u8; 64] = URL_SAFE_NO_PAD
         .decode(receipt.signature.as_bytes())
+        .map_err(|_| ReceiptError::Malformed)?
+        .try_into()
         .map_err(|_| ReceiptError::Malformed)?;
-    let signature = Signature::from_slice(&signature_bytes).map_err(|_| ReceiptError::Malformed)?;
     let signing_body = receipt_signing_body(&receipt).map_err(|_| ReceiptError::Malformed)?;
     verify_key
         .verify_strict(&signing_body, &signature)
