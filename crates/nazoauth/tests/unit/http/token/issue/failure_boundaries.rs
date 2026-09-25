@@ -263,7 +263,7 @@ async fn id_token_encryption_failure_does_not_issue_an_unencrypted_token() {
 }
 
 #[actix_web::test]
-async fn authorization_code_marker_failure_revokes_the_issued_access_token() {
+async fn missing_authorization_code_state_does_not_revoke_committed_access_token() {
     let Some(state) = issue_state_with_live_database() else {
         return;
     };
@@ -282,8 +282,9 @@ async fn authorization_code_marker_failure_revokes_the_issued_access_token() {
     issue.include_refresh = false;
     issue.authorization_code_hash = Some(format!("missing-code-{}", Uuid::now_v7()));
 
-    // The finalize path requires the SingleUse grant key that a real
-    // authorization-code redemption carries.
+    // The lower-level issuance path receives an already-validated redemption.
+    // After the durable commit, code-state deletion is cleanup; a missing
+    // entry must not invalidate or revoke the committed access token.
     let response = issue_token_response_with_grant_for_test(
         &state,
         &client,
@@ -292,16 +293,16 @@ async fn authorization_code_marker_failure_revokes_the_issued_access_token() {
     )
     .await;
 
-    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    assert_eq!(response.status(), StatusCode::OK);
     let value: Value = serde_json::from_slice(&response_body(response).await)
-        .expect("OAuth error body should be JSON");
-    assert_eq!(
-        value
-            .get("error")
-            .and_then(serde_json::Value::as_str)
-            .expect("OAuth JSON should contain an error code"),
-        "server_error"
+        .expect("token response body should be JSON");
+    assert!(
+        value.get("access_token").and_then(Value::as_str).is_some(),
+        "successful committed issuance should return its access token"
     );
-    assert_eq!(value["error"], "server_error");
-    assert!(value.get("access_token").is_none());
+    assert_eq!(
+        token_issuance_row_count(&state, &client).await,
+        1,
+        "the database issuance row is authoritative after the commit"
+    );
 }

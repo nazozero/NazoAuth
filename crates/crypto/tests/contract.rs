@@ -280,6 +280,207 @@ mod jose {
         ));
     }
 
+    /// RS256 (PKCS#1 v1.5) is deterministic: the prepared path must emit
+    /// byte-identical signatures to the previous per-sign provider path.
+    #[test]
+    fn rs256_prepared_signatures_are_byte_identical_to_provider() {
+        let private_der = signature::generate_private_key(Algorithm::RS256).unwrap();
+        let key = signature::PreparedSigningKey::new(Algorithm::RS256, &private_der).unwrap();
+        let message = b"eyJhbGciOlJTMjU2.test-claims";
+
+        for _ in 0..4 {
+            let prepared = key.sign(message).unwrap();
+            let native = jsonwebtoken::crypto::sign(
+                message,
+                &native_encoding_key(Algorithm::RS256, &private_der),
+                Algorithm::RS256,
+            )
+            .unwrap();
+            let native_raw = URL_SAFE_NO_PAD.decode(native).unwrap();
+            assert_eq!(prepared, native_raw);
+        }
+    }
+
+    /// PS256 (PSS) is randomized: signatures must verify, have modulus
+    /// length, and differ across repeats while staying self-consistent.
+    #[test]
+    fn ps256_prepared_signatures_verify_and_randomize() {
+        let private_der = signature::generate_private_key(Algorithm::PS256).unwrap();
+        let key = signature::PreparedSigningKey::new(Algorithm::PS256, &private_der).unwrap();
+        let decoding = native_decoding_key(Algorithm::PS256, &private_der);
+        let message = b"eyJhbGciOlBTMjU2.test-claims";
+
+        let first = key.sign(message).unwrap();
+        assert_eq!(first.len(), 256, "RSA-2048 signature is modulus-sized");
+        let mut distinct = vec![first];
+        for _ in 0..4 {
+            let raw = key.sign(message).unwrap();
+            assert_eq!(raw.len(), 256);
+            assert!(matches!(
+                jsonwebtoken::crypto::verify(
+                    &URL_SAFE_NO_PAD.encode(&raw),
+                    message,
+                    &decoding,
+                    Algorithm::PS256,
+                ),
+                Ok(true)
+            ));
+            distinct.push(raw);
+        }
+        assert!(
+            distinct.windows(2).all(|w| w[0] != w[1]),
+            "PSS must keep producing randomized signatures"
+        );
+    }
+
+    /// A signature made under one RSA padding policy must not satisfy the
+    /// other algorithm's verifier.
+    #[test]
+    fn rsa_signatures_do_not_cross_accept_between_rs256_and_ps256() {
+        let private_der = signature::generate_private_key(Algorithm::RS256).unwrap();
+        let rs_key = signature::PreparedSigningKey::new(Algorithm::RS256, &private_der).unwrap();
+        let ps_key = signature::PreparedSigningKey::new(Algorithm::PS256, &private_der).unwrap();
+        let rs_decoding = native_decoding_key(Algorithm::RS256, &private_der);
+        let ps_decoding = native_decoding_key(Algorithm::PS256, &private_der);
+        let message = b"eyJhbGci.cross-check";
+
+        let rs_raw = rs_key.sign(message).unwrap();
+        let ps_raw = ps_key.sign(message).unwrap();
+        assert!(!matches!(
+            jsonwebtoken::crypto::verify(
+                &URL_SAFE_NO_PAD.encode(&rs_raw),
+                message,
+                &rs_decoding,
+                Algorithm::PS256,
+            ),
+            Ok(true)
+        ));
+        assert!(!matches!(
+            jsonwebtoken::crypto::verify(
+                &URL_SAFE_NO_PAD.encode(&ps_raw),
+                message,
+                &ps_decoding,
+                Algorithm::RS256,
+            ),
+            Ok(true)
+        ));
+    }
+
+    /// Malformed RSA DER must fail at construction: the retained native key
+    /// pair is parsed once in `new`, so an invalid generation can never be
+    /// published and can never produce a signature.
+    #[test]
+    fn rsa_prepared_key_rejects_invalid_der_at_construction() {
+        let private_der = signature::generate_private_key(Algorithm::RS256).unwrap();
+        let truncated = &private_der[..private_der.len() / 2];
+        let ed25519_der = signature::generate_private_key(Algorithm::EdDSA).unwrap();
+
+        for (algorithm, bad) in [
+            (Algorithm::RS256, &[][..]),
+            (Algorithm::PS256, &[][..]),
+            (Algorithm::RS256, &[0x30u8, 0x03][..]),
+            (Algorithm::PS256, truncated),
+            (Algorithm::RS256, &ed25519_der[..]),
+        ] {
+            assert!(
+                matches!(
+                    signature::PreparedSigningKey::new(algorithm, bad),
+                    Err(CryptoError::InvalidKey)
+                ),
+                "{algorithm:?} must reject malformed DER at construction"
+            );
+        }
+    }
+
+    /// Structural check: the RSA request-time path must not re-enter DER
+    /// parsing or the provider signer factory. Interop and concurrency
+    /// coverage above is the real proof; this guards the hot path shape.
+    #[test]
+    fn rsa_sign_path_does_not_reparse_der() {
+        const SOURCE: &str = include_str!("../src/signature.rs");
+        let rsa_arm = SOURCE
+            .split("PreparedKey::Rsa(pair) =>")
+            .nth(1)
+            .expect("RSA sign arm exists")
+            .split("PreparedKey::Provider")
+            .next()
+            .expect("RSA arm precedes provider arm");
+        for forbidden in ["from_der", "from_pkcs8", "signer_factory", "try_sign"] {
+            assert!(
+                !rsa_arm.contains(forbidden),
+                "RSA sign arm must not contain {forbidden}"
+            );
+        }
+    }
+
+    /// The prepared key is shared by every signing handle of a generation;
+    /// it must be `Send + Sync` and support concurrent signing.
+    #[test]
+    fn prepared_rsa_key_signs_concurrently_across_eight_threads() {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<signature::PreparedSigningKey>();
+
+        for algorithm in [Algorithm::RS256, Algorithm::PS256] {
+            let private_der = signature::generate_private_key(algorithm).unwrap();
+            let decoding = native_decoding_key(algorithm, &private_der);
+            let key = std::sync::Arc::new(
+                signature::PreparedSigningKey::new(algorithm, &private_der).unwrap(),
+            );
+
+            let results: Vec<Vec<Vec<u8>>> = std::thread::scope(|scope| {
+                let handles: Vec<_> = (0..8)
+                    .map(|thread| {
+                        let key = std::sync::Arc::clone(&key);
+                        scope.spawn(move || {
+                            (0..8)
+                                .map(|i| {
+                                    key.sign(format!("thread-{thread}-message-{i}").as_bytes())
+                                        .unwrap()
+                                })
+                                .collect::<Vec<_>>()
+                        })
+                    })
+                    .collect();
+                handles.into_iter().map(|h| h.join().unwrap()).collect()
+            });
+
+            for (thread, signatures) in results.iter().enumerate() {
+                for (i, raw) in signatures.iter().enumerate() {
+                    let message = format!("thread-{thread}-message-{i}");
+                    assert!(
+                        matches!(
+                            jsonwebtoken::crypto::verify(
+                                &URL_SAFE_NO_PAD.encode(raw),
+                                message.as_bytes(),
+                                &decoding,
+                                algorithm,
+                            ),
+                            Ok(true)
+                        ),
+                        "signature from shared prepared key must verify"
+                    );
+                }
+            }
+        }
+    }
+
+    /// `Debug`, error values, and test output must not expose private key
+    /// material.
+    #[test]
+    fn prepared_key_debug_does_not_leak_private_material() {
+        let private_der = signature::generate_private_key(Algorithm::RS256).unwrap();
+        let key = signature::PreparedSigningKey::new(Algorithm::RS256, &private_der).unwrap();
+        let rendered = format!("{key:?}");
+        let der_b64 = URL_SAFE_NO_PAD.encode(&private_der);
+        assert!(rendered.contains("redacted") || rendered.len() < 128);
+        assert!(!rendered.contains(&der_b64));
+        assert!(!rendered.contains("PRIVATE KEY"));
+        for byte_window in private_der.chunks(32) {
+            let hexed: String = byte_window.iter().map(|b| format!("{b:02x}")).collect();
+            assert!(!rendered.contains(&hexed));
+        }
+    }
+
     #[derive(Deserialize)]
     #[allow(dead_code)]
     struct TestClaims {

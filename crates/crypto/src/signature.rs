@@ -10,26 +10,46 @@ use crate::jwt::{Algorithm, VerificationKey};
 
 /// Local signing material prepared once per key generation.
 ///
-/// The retained `EncodingKey` is `Send + Sync`; the provider's raw signer is
-/// not — the `Box<dyn JwtSigner>` is created inside the synchronous `sign`
-/// call and dropped before it returns, so it never crosses an `await` and is
-/// never shared or cached.
+/// RSA algorithms retain the provider's parsed `RsaKeyPair`: DER parsing and
+/// private-key validation happen once at construction, so the request-time
+/// `sign` path never re-parses the key. Other algorithms keep the byte
+/// `EncodingKey` — their provider signer is created inside the synchronous
+/// `sign` call and dropped before it returns, so it never crosses an `await`
+/// and is never shared or cached.
 pub struct PreparedSigningKey {
     algorithm: Algorithm,
-    key: jsonwebtoken::EncodingKey,
+    key: PreparedKey,
+}
+
+enum PreparedKey {
+    /// Parsed native RSA key pair shared immutably across all signatures of
+    /// this generation. `aws_lc_rs::rsa::KeyPair` is `Send + Sync` upstream.
+    Rsa(aws_lc_rs::rsa::KeyPair),
+    /// Byte-wrapping key for algorithms still on the provider path.
+    Provider(jsonwebtoken::EncodingKey),
 }
 
 impl PreparedSigningKey {
     /// Prepares signing material from the existing private-key DER bytes.
     ///
-    /// Construction asks the provider factory for a signer once to prove this
-    /// material can produce one; the proof signer stays local and is discarded
-    /// immediately. This is stronger than the `EncodingKey::from_*_der` byte
-    /// wrapping, which alone does not validate the key.
+    /// For RS256/PS256 this performs the real parse once: invalid DER fails
+    /// here with `InvalidKey`, so an unusable generation cannot be published.
+    /// Other algorithms keep the provider factory probe, which validates that
+    /// this material can produce a signer before it is retained.
     pub fn new(algorithm: Algorithm, private_der: &[u8]) -> crate::Result<Self> {
-        let key = encoding_key(algorithm, private_der)?;
-        (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.signer_factory)(&algorithm, &key)
-            .map_err(|_| CryptoError::InvalidKey)?;
+        let key = match algorithm {
+            Algorithm::RS256 | Algorithm::PS256 => PreparedKey::Rsa(
+                aws_lc_rs::rsa::KeyPair::from_der(private_der)
+                    .map_err(|_| CryptoError::InvalidKey)?,
+            ),
+            Algorithm::EdDSA | Algorithm::ES256 => {
+                let key = encoding_key(algorithm, private_der)?;
+                (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.signer_factory)(&algorithm, &key)
+                    .map_err(|_| CryptoError::InvalidKey)?;
+                PreparedKey::Provider(key)
+            }
+            _ => return Err(CryptoError::UnsupportedAlgorithm),
+        };
         Ok(Self { algorithm, key })
     }
 
@@ -38,14 +58,34 @@ impl PreparedSigningKey {
     /// Callers that assemble a JWT apply Base64url once at the final assembly
     /// point; raw-signature consumers keep the `Vec<u8>`.
     pub fn sign(&self, message: &[u8]) -> crate::Result<Vec<u8>> {
-        let signer = (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.signer_factory)(
-            &self.algorithm,
-            &self.key,
-        )
-        .map_err(|_| CryptoError::InvalidKey)?;
-        signer
-            .try_sign(message)
-            .map_err(|_| CryptoError::OperationFailed)
+        match &self.key {
+            PreparedKey::Rsa(pair) => {
+                let padding: &'static dyn aws_lc_rs::signature::RsaEncoding = match self.algorithm {
+                    Algorithm::RS256 => &aws_lc_rs::signature::RSA_PKCS1_SHA256,
+                    Algorithm::PS256 => &aws_lc_rs::signature::RSA_PSS_SHA256,
+                    _ => unreachable!("RSA key is only stored for RSA algorithms"),
+                };
+                let mut signature = vec![0; pair.public_modulus_len()];
+                pair.sign(
+                    padding,
+                    &aws_lc_rs::rand::SystemRandom::new(),
+                    message,
+                    &mut signature,
+                )
+                .map_err(|_| CryptoError::OperationFailed)?;
+                Ok(signature)
+            }
+            PreparedKey::Provider(key) => {
+                let signer = (jsonwebtoken::crypto::aws_lc::DEFAULT_PROVIDER.signer_factory)(
+                    &self.algorithm,
+                    key,
+                )
+                .map_err(|_| CryptoError::InvalidKey)?;
+                signer
+                    .try_sign(message)
+                    .map_err(|_| CryptoError::OperationFailed)
+            }
+        }
     }
 }
 

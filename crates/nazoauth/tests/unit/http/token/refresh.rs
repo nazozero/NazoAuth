@@ -1725,8 +1725,16 @@ async fn refresh_grant_rejects_wrong_client_family_or_sender_constrained_success
     assert!(
         unrelated_family
             .iter()
-            .all(|row| row.reuse_detected_at.is_none() && row.revoked_at.is_none()),
-        "family compromise must remain isolated to the presented token family"
+            .all(|row| row.reuse_detected_at.is_none()),
+        "the unrelated family must not be marked as reused"
+    );
+    let unrelated_current = unrelated_family
+        .iter()
+        .find(|row| row.id == wrong_family.id)
+        .expect("unrelated family current member should remain present");
+    assert!(
+        unrelated_current.revoked_at.is_none(),
+        "the unrelated family current member must remain active"
     );
 }
 

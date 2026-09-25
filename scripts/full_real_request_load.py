@@ -199,28 +199,12 @@ def cleanup_load_fixture() -> None:
             user_ids = [row[0] for row in cur.fetchall()]
 
             if client_ids:
-                # Break self-referential refresh-token links before deleting the
-                # fixture's token rows in one statement.
-                cur.execute(
-                    """
-                    UPDATE oauth_tokens
-                    SET rotated_from_id = NULL
-                    WHERE rotated_from_id IN (
-                        SELECT id FROM oauth_tokens WHERE client_id = ANY(%s)
-                    )
-                    """,
-                    (client_ids,),
-                )
                 cur.execute(
                     "DELETE FROM access_token_revocations WHERE client_id = ANY(%s)",
                     (client_ids,),
                 )
                 cur.execute(
                     "DELETE FROM oauth_token_issuances WHERE client_id = ANY(%s)",
-                    (client_ids,),
-                )
-                cur.execute(
-                    "DELETE FROM oauth_tokens WHERE client_id = ANY(%s)",
                     (client_ids,),
                 )
                 cur.execute(
@@ -257,20 +241,6 @@ def cleanup_load_fixture() -> None:
                 )
 
             if user_ids:
-                cur.execute(
-                    """
-                    UPDATE oauth_tokens
-                    SET rotated_from_id = NULL
-                    WHERE rotated_from_id IN (
-                        SELECT id FROM oauth_tokens WHERE user_id = ANY(%s)
-                    )
-                    """,
-                    (user_ids,),
-                )
-                cur.execute(
-                    "DELETE FROM oauth_tokens WHERE user_id = ANY(%s)",
-                    (user_ids,),
-                )
                 cur.execute(
                     "DELETE FROM user_client_grants WHERE user_id = ANY(%s)",
                     (user_ids,),

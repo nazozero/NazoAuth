@@ -457,11 +457,8 @@ impl MfaProfileOperations for ServerMfaProfileOperations {
                 tracing::warn!(?error, "failed to disable MFA");
                 MfaProfileError::new(MfaProfileErrorKind::DisableFailed)
             })?;
-            self.record_required(
-                "mfa_disabled",
-                self.mfa_fields(&account, &command.context),
-            )
-            .await?;
+            self.record_required("mfa_disabled", self.mfa_fields(&account, &command.context))
+                .await?;
             tracing::info!(user_id = %account.id(), "MFA disabled");
             Ok(true)
         })

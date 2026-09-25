@@ -100,8 +100,9 @@ impl LifecycleHealth {
 /// entry of one generation.
 ///
 /// The DER remains because `database_local_private_key_pem` (mdoc export) is a
-/// real consumer; the prepared key serves every request-time signing path so
-/// `EncodingKey` is never rebuilt from DER per request.
+/// real consumer; the prepared key serves every request-time signing path and
+/// for RSA algorithms now holds the parsed provider key pair, so the private
+/// key is never re-parsed from DER per request.
 pub(crate) struct LocalSigningMaterial {
     pub(crate) private_pkcs8_der: Vec<u8>,
     pub(crate) prepared: nazo_crypto::signature::PreparedSigningKey,

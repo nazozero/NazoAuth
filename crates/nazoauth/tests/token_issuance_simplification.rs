@@ -572,8 +572,8 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
     )
     .await;
 
-    // The issuance table contract is exactly the simplified eight columns —
-    // no response envelope, digest, or saga columns survive.
+    // The issuance fact stays narrow: eight core columns plus the nullable
+    // family reference required to revoke an authorization-code replay.
     assert_eq!(
         issuance_column_names(&mut connection).await,
         vec![
@@ -585,8 +585,9 @@ async fn repeated_idempotency_key_issues_fresh_tokens_through_the_real_dispatche
             "access_token_jti",
             "access_token_expires_at",
             "retain_until",
+            "refresh_token_family_id",
         ],
-        "oauth_token_issuances must carry only the simplified columns"
+        "oauth_token_issuances must carry only the simplified facts and replay family reference"
     );
 
     // TOK-01/TOK-11: the same inbound Idempotency-Key on two requests yields

@@ -138,6 +138,14 @@ impl nazo_persistence::SecurityAuditLedger for AuditLedgerRepository {
     {
         Box::pin(async move { AuditLedgerRepository::append(self, event).await })
     }
+
+    fn append_batch<'a>(
+        &'a self,
+        events: &'a [nazo_persistence::SecurityAuditEvent],
+    ) -> futures_util::future::BoxFuture<'a, Result<(), nazo_identity::ports::RepositoryError>>
+    {
+        Box::pin(async move { AuditLedgerRepository::append_batch(self, events).await })
+    }
 }
 
 impl nazo_persistence::SecurityAuditExporter for AuditLedgerRepository {

@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use anyhow::bail;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use ed25519_dalek::VerifyingKey;
+use nazo_crypto::ed25519::VerifyingKey;
 use url::Url;
 
 use crate::config::ConfigSource;
