@@ -4,6 +4,14 @@ import exec from 'k6/execution';
 import { SharedArray } from 'k6/data';
 import { Trend, Counter } from 'k6/metrics';
 import encoding from 'k6/encoding';
+import {
+  bucketCount, bucketIndexAt, capIterMs, contractFromMetrics,
+  createMeasurementClock, parseDurationMs, COHORT_MEASURE,
+} from './measurement_clock.js';
+import {
+  SUBJECT_KINDS, adoptSubjectAccessToken, classifyMint,
+  subjectCounters,
+} from './subject_state.js';
 
 const BASE_URL = (__ENV.BASE_URL || 'http://nazoauth:8000').replace(/\/$/, '');
 const secrets = JSON.parse(open('/perf-state/secrets.json'));
@@ -1235,14 +1243,30 @@ export default function () {
 
 // --- capacity/stress scenarios (perf/capacity-stress-20260915) ---
 
-// Warmup/measure split: only ops executed after CAP_WARMUP_MS are recorded into
-// cap_measure_* metrics, so bootstrap/login and ramp noise stay out of percentiles.
+// Warmup/measure split: ops whose iteration entered the scenario-level
+// measurement window are recorded into cap_measure_* metrics, so
+// bootstrap/login and ramp noise stay out of percentiles.
 const CAP_WARMUP_MS = Number(__ENV.CAP_WARMUP_MS || '15000');
 // Optional hard-isolated measurement window for diagnostics: warmup ends at
 // CAP_WARMUP_MS, VUs idle through the gap, measurement starts at
 // CAP_MEASURE_START_MS. 0 disables the gap (legacy two-phase mode).
 const CAP_MEASURE_START_MS = Number(__ENV.CAP_MEASURE_START_MS || '0');
+// The measurement window opens MEASURE_OFFSET_MS after the scenario starts:
+// warmup for standard runs, CAP_MEASURE_START_MS when a gap is configured.
+const MEASURE_OFFSET_MS = CAP_MEASURE_START_MS > 0 ? CAP_MEASURE_START_MS : CAP_WARMUP_MS;
+const CAP_DURATION_MS = parseDurationMs(duration);
+const capClock = createMeasurementClock({
+  durationMs: CAP_DURATION_MS,
+  measureOffsetMs: MEASURE_OFFSET_MS,
+  bucketMs: Number(__ENV.CAP_BUCKET_MS || '60000'),
+  vuInitMs: testStartedAtMs,
+});
 
+// Workload lifecycle phase — deliberately on the VU-local init clock.
+// capRefreshOp consults it to decide whether a missing token may be re-minted
+// (warmup) or must surface as a local no-request failure (measure), and the
+// optional gap phase idles VUs. Measurement membership is NOT decided here;
+// it is the scenario-clock cohort computed in capRun.
 function capPhase() {
   const t = Date.now() - testStartedAtMs;
   if (CAP_MEASURE_START_MS <= 0) {
@@ -1260,62 +1284,124 @@ const capLatency = new Trend('cap_measure_ms', true);
 const capOps = new Counter('cap_measure_ops');
 const capErrs = new Counter('cap_measure_errors');
 // Per-minute measure buckets (cap_m1_*, cap_m2_*, ...) let steady-state and
-// recovery runs report drift without per-request logs.
-const CAP_BUCKETS = 24;
+// recovery runs report drift without per-request logs. The bucket count is
+// derived from the configured duration on the scenario clock; the last bucket
+// is an explicit overflow slot for post-window completions.
 const CAP_BUCKET_MS = Number(__ENV.CAP_BUCKET_MS || '60000');
+const CAP_BUCKETS = bucketCount(CAP_DURATION_MS, MEASURE_OFFSET_MS, CAP_BUCKET_MS);
 const capBucketLatency = [];
 const capBucketOps = [];
 const capBucketErrs = [];
+// Entry-bucketed begins let the report compute per-minute drops
+// (scheduled_i - begin_i); subject lifecycle counters expose the
+// 240s re-bootstrap herd and whether refresh responses carry the
+// fixture forward.
+const capBucketBegins = [];
+const capBucketSubject = {};
+for (const kind of SUBJECT_KINDS) {
+  capBucketSubject[kind] = [];
+}
 for (let i = 0; i < CAP_BUCKETS; i += 1) {
   capBucketLatency.push(new Trend(`cap_m${i + 1}_ms`, true));
   capBucketOps.push(new Counter(`cap_m${i + 1}_ops`));
   capBucketErrs.push(new Counter(`cap_m${i + 1}_errors`));
+  capBucketBegins.push(new Counter(`cap_m${i + 1}_iter_begin`));
+  for (const kind of SUBJECT_KINDS) {
+    capBucketSubject[kind].push(
+      new Counter(`cap_m${i + 1}_subject_${kind}`));
+  }
 }
-function capBucketIndex() {
-  const elapsed = Date.now() - testStartedAtMs - CAP_WARMUP_MS;
-  const idx = Math.floor(elapsed / CAP_BUCKET_MS);
-  return idx < 0 ? 0 : Math.min(idx, CAP_BUCKETS - 1);
+
+// Subject lifecycle event: global counter always; the 60s measurement
+// bucket only when the event lands inside [measure_start, measure_end).
+// Warmup bootstraps land in bucket -1 and stay out of the per-minute
+// evidence by design.
+function capSubjectEvent(kind) {
+  subjectCounters[kind].add(1);
+  const idx = bucketIndexAt(
+    Date.now(), capClock.window().startMs, CAP_BUCKET_MS, CAP_BUCKETS);
+  if (idx >= 0) {
+    capBucketSubject[kind][idx].add(1);
+  }
 }
 
 function capWarmedUp() {
   return Date.now() - testStartedAtMs >= CAP_WARMUP_MS;
 }
 
+// Ops return true/false, or a { capOutcome } object for classified exits:
+// local_no_request (no HTTP request was ever sent), expected_rejection
+// (protocol-correct rejection such as bounded-family invalid_grant).
+function capOutcomeOf(result, threw) {
+  if (threw) {
+    return 'unexpected';
+  }
+  if (result && typeof result === 'object' && result.capOutcome) {
+    return result.capOutcome;
+  }
+  return result ? 'success' : 'unexpected';
+}
+
 async function capRun(prepare, op) {
+  const entryMs = Date.now();
+  // Workload lifecycle phase on the VU-local clock — unchanged semantics:
+  // gap idles, warmup executes unmeasured, measure executes measured.
   const phase = capPhase();
+  const lw = phase === 'measure';
+  // Measurement cohort on the scenario clock: identical origin for every VU,
+  // so VUs spawned mid-run join the same [start, end) window immediately.
+  const cohort = capClock.begin(entryMs, lw);
+  if (cohort === COHORT_MEASURE) {
+    const bidx = bucketIndexAt(
+      entryMs, capClock.window().startMs, CAP_BUCKET_MS, CAP_BUCKETS);
+    if (bidx >= 0) {
+      capBucketBegins[bidx].add(1);
+    }
+  }
   if (phase === 'gap') {
     sleep(0.2);
+    capClock.end(cohort, lw, 'gap_idle');
     return;
   }
-  const measuring = phase === 'measure';
+  const measuring = cohort === COHORT_MEASURE;
   try {
     await prepare();
   } catch (e) {
+    capClock.end(cohort, lw, 'prepare_failed');
     if (measuring) {
       capOps.add(1);
       capErrs.add(1);
     }
     return;
   }
+  const t0 = Date.now();
+  let result;
+  let threw = false;
+  try {
+    result = await op();
+  } catch (e) {
+    threw = true;
+  }
+  const endMs = Date.now();
+  const outcome = capOutcomeOf(result, threw);
+  capClock.end(cohort, lw, outcome);
   if (!measuring) {
-    try {
-      await op();
-    } catch (e) {}
     return;
   }
-  const t0 = Date.now();
-  let ok = false;
-  try {
-    ok = await op();
-  } catch (e) {}
-  const idx = capBucketIndex();
-  capLatency.add(Date.now() - t0);
+  const opMs = endMs - t0;
+  capIterMs.add(endMs - entryMs);
+  capLatency.add(opMs);
   capOps.add(1);
-  capBucketLatency[idx].add(Date.now() - t0);
-  capBucketOps[idx].add(1);
-  if (!ok) {
+  const idx = bucketIndexAt(endMs, capClock.window().startMs, CAP_BUCKET_MS, CAP_BUCKETS);
+  if (idx >= 0) {
+    capBucketLatency[idx].add(opMs);
+    capBucketOps[idx].add(1);
+    if (outcome !== 'success') {
+      capBucketErrs[idx].add(1);
+    }
+  }
+  if (outcome !== 'success') {
     capErrs.add(1);
-    capBucketErrs[idx].add(1);
   }
 }
 
@@ -1330,9 +1416,10 @@ function capVector() {
 const CAP_SUBJECT_AT_MAX_AGE_MS = 240000;
 
 async function capMintSubjectTokens(withSso, force = false) {
+  const mintKind = classifyMint(
+    __VU_STATE, Date.now(), CAP_SUBJECT_AT_MAX_AGE_MS);
   if (!force
-      && __VU_STATE.subjectAt
-      && Date.now() - (__VU_STATE.subjectAtMintedAt || 0) < CAP_SUBJECT_AT_MAX_AGE_MS
+      && mintKind === 'fresh'
       && (!withSso || __VU_STATE.ssoDeviceSecret)) {
     return;
   }
@@ -1357,6 +1444,8 @@ async function capMintSubjectTokens(withSso, force = false) {
   const tokens = tokenAuthorizationCode(v, code);
   __VU_STATE.subjectAt = tokens.access_token;
   __VU_STATE.subjectAtMintedAt = Date.now();
+  capSubjectEvent(
+    mintKind === 'initial_mint' ? 'initial_mint' : 'expired_reauth');
   if (tokens.refresh_token) {
     __VU_STATE.refreshToken = tokens.refresh_token;
   }
@@ -1419,9 +1508,10 @@ async function capRefreshOp() {
   if (!__VU_STATE.refreshToken) {
     if (capPhase() === 'measure') {
       // Measurement must only rotate: re-minting would mix bootstrap SQL into
-      // the measured statement window. A missing family mid-measure is an
-      // error op.
-      return false;
+      // the measured statement window. A missing family mid-measure is a
+      // local no-request failure — no HTTP request is sent, so it must never
+      // be read as a successful or HTTP-rejected operation.
+      return { capOutcome: 'local_no_request' };
     }
     // A dead/rotated family must not be replayed; mint a fresh one through the
     // real authorization-code flow instead of reusing the seeded token.
@@ -1445,7 +1535,17 @@ async function capRefreshOp() {
   } else {
     __VU_STATE.refreshToken = null;
   }
-  return ok;
+  if (response.status === 200 && adoptSubjectAccessToken(
+      __VU_STATE, response.json('access_token'), Date.now())) {
+    capSubjectEvent('refresh_update');
+  }
+  if (ok) {
+    return true;
+  }
+  return {
+    capOutcome: classifyError(response) === 'oauth_invalid_grant'
+      ? 'expected_rejection' : 'unexpected',
+  };
 }
 
 function capTokenExchangeOp() {
@@ -1934,6 +2034,16 @@ export async function cap_public_reads() {
 export function handleSummary(data) {
   const outputs = {};
   const summaryPath = __ENV.PERF_SUMMARY_EXPORT;
+  // Attach the measurement contract only when this scenario really ran the
+  // cap-window protocol (cap_window_measure_start_ms gauge emitted). A
+  // non-capRun scenario must not carry a contract shell whose bounds are
+  // all null — evaluators take a present-but-empty contract as real.
+  if ((data.metrics || {}).cap_window_measure_start_ms) {
+    data.measurement_contract = contractFromMetrics(data.metrics, {
+      warmupMs: CAP_WARMUP_MS,
+      measureStartMs: CAP_MEASURE_START_MS,
+    });
+  }
   if (summaryPath) {
     outputs[summaryPath] = JSON.stringify(data);
   }

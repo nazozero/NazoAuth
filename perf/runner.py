@@ -6,6 +6,7 @@ import os
 import re
 import statistics
 import subprocess
+import sys
 import threading
 import time
 from datetime import UTC, datetime
@@ -16,7 +17,17 @@ from urllib.request import Request, urlopen
 import psycopg
 import redis
 
+from tools.measure_schedule import (
+    cohort_accounting, parse_time_unit_ms)
+from tools.perf_state_ready import (
+    clear_ready, wait_ready, write_ready)
+
 from seed import seed
+
+# Validated perf-state marker for this container (seed publisher or
+# sidecar consumer); stamped into k6-started.json so the harness can
+# prove the runner gated on prepared state before load.
+STATE_READY: dict | None = None
 
 
 BASE_URL = os.environ.get("BASE_URL", "http://nazoauth:8000").rstrip("/")
@@ -387,6 +398,37 @@ def k6_protocol_failed(summary: dict[str, Any]) -> bool:
     return k6_error_rate(summary) >= 0.01 or k6_check_rate(summary) < 0.99
 
 
+CONTRACT_REQUIRED_FIELDS = (
+    "window_start_ms", "window_end_ms", "scenario_start_ms", "duration_ms",
+)
+
+
+def contract_problems(contract: dict[str, Any] | None) -> list[str]:
+    """Strict validity for the emitted cap-scenario-window-v1 contract.
+
+    Invalid when any required bound field is missing, the clock flag is
+    not exactly 1, VUs disagree, or the window is empty. A missing
+    contract is invalid — callers must never fall back to Counter.rate or
+    a recomputed denominator."""
+    if not contract:
+        return ["missing_contract"]
+    problems = []
+    for f in CONTRACT_REQUIRED_FIELDS:
+        if contract.get(f) is None:
+            problems.append(f"missing:{f}")
+    if contract.get("scenario_clock_ok") != 1:
+        problems.append("scenario_clock_ok!=1")
+    if contract.get("divergent_vus"):
+        problems.append("divergent_vus")
+    ws = contract.get("window_start_ms")
+    we = contract.get("window_end_ms")
+    if ws is not None and we is not None and ws >= we:
+        problems.append("window_start>=window_end")
+    if contract.get("contract") != "cap-scenario-window-v1":
+        problems.append("unknown_contract")
+    return problems
+
+
 def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
     metrics = summary.get("metrics", {})
     duration_metric = metrics.get("http_req_duration", {})
@@ -405,24 +447,41 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
     # scheduled ≈ started + dropped; completed iterations are `iterations`.
     started_count = int(iters.get("count", 0))
     scheduled_count = started_count + dropped_count
+    full_run_drop = (round(dropped_count / scheduled_count, 6)
+                     if scheduled_count else 0.0)
     brief = {
         "http_reqs": int(reqs.get("count", 0)),
         "rps": round(float(reqs.get("rate", 0)), 3),
         "error_rate": round(k6_error_rate(summary), 6),
+        # Whole-run population (DEPRECATED for capRun capacity gates —
+        # use the measurement cohort under "measure"; these fields cover
+        # warmup + measure + drain and are diagnostics only).
         "iterations_completed": started_count,
         "dropped_iterations": dropped_count,
         "dropped_per_s": round(float(dropped.get("rate", 0)), 3),
-        "drop_fraction": round(dropped_count / scheduled_count, 6)
-        if scheduled_count else 0.0,
+        "drop_fraction": full_run_drop,
         "scheduled_estimate": scheduled_count,
         "latency_ms": {
             "p50": round(float(duration.get("med", 0)), 3),
             "p95": round(float(duration.get("p(95)", 0)), 3),
             "p99": round(float(duration.get("p(99)", 0)), 3),
         },
+        # Explicit full-run alias block: same numbers, unambiguous names.
+        "full_run": {
+            "iterations_completed": started_count,
+            "dropped_iterations": dropped_count,
+            "drop_fraction": full_run_drop,
+            "http_latency_ms": {
+                "p50": round(float(duration.get("med", 0)), 3),
+                "p95": round(float(duration.get("p(95)", 0)), 3),
+                "p99": round(float(duration.get("p(99)", 0)), 3),
+            },
+        },
     }
     # Warmup/measure split: cap_* scenarios record post-warmup ops into
     # cap_measure_* so measured windows exclude bootstrap and ramp traffic.
+    # The denominator is the explicit scenario-window contract emitted by the
+    # script — never Counter.rate and never a different evaluator's window.
     measure_metric = metrics.get("cap_measure_ms", {})
     if measure_metric:
         measure = measure_metric.get("values", measure_metric)
@@ -430,28 +489,117 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
         errs_metric = metrics.get("cap_measure_errors", {})
         ops = ops_metric.get("values", ops_metric)
         errs = errs_metric.get("values", errs_metric)
+        iter_ms = metric_values(summary, "cap_iter_ms")
+        contract = summary.get("measurement_contract") or {}
+        problems = contract_problems(contract)
+        window_s = (contract.get("window_seconds") if not problems else None)
+        ops_count = int(ops.get("count", 0))
+        # Outcome classification + legacy reconstruction via named counters
+        # (k6 summaries fold tag submetrics into the parent; the JSON stream
+        # carries the full cohort|lw|outcome matrix for diagnostics).
+        def cnt(name: str) -> int:
+            return int(metric_values(summary, name).get("count", 0))
+        outcomes = {
+            name: cnt(f"cap_measure_{name}")
+            for name in ("success", "expected_rejection", "local_no_request",
+                         "unexpected", "prepare_failed")
+        }
+        legacy_ops = cnt("cap_iter_begin_lw1")
+        late_vu = cnt("cap_iter_begin_late_vu")
+        # Measurement-cohort accounting: the only population the formal
+        # capacity gate may read. scheduled/started/completed/dropped all
+        # describe entries into [window_start, window_end) — whole-run
+        # numbers stay under the deprecated top-level fields above.
+        acct = cohort_accounting(
+            metrics, contract,
+            os.environ.get("PERF_RATE", "0"),
+            parse_time_unit_ms(os.environ.get("PERF_TIME_UNIT", "1s")))
         brief["measure"] = {
-            "ops": int(ops.get("count", 0)),
-            "ops_per_s": round(float(ops.get("rate", 0)), 3),
+            "ops": ops_count,
+            "ops_per_s": round(ops_count / window_s, 3) if window_s else None,
+            "ops_per_s_basis": (
+                "scenario_window" if window_s
+                else "invalid_contract:" + ";".join(problems)),
+            "successful_ops_per_s": (
+                round(outcomes["success"] / window_s, 3)
+                if window_s else None),
             "errors": int(errs.get("count", 0)),
+            "outcomes": outcomes,
+            "iterations": {
+                "measure_begins": cnt("cap_iter_begin_measure"),
+                "legacy_rule_begins": legacy_ops,
+                "late_vu_measured_only": late_vu,
+                "late_vu_fraction": (
+                    round(late_vu / acct["started"], 6)
+                    if acct["started"] else None),
+                "begins_total": cnt("cap_iter_begin"),
+                "ends_total": cnt("cap_iter_end"),
+            },
+            # Subject-token lifecycle (cap-scenario-window-v1 runs): how
+            # subjectAt was (re)established — first mint, refresh-driven
+            # adoption of the returned access_token, or full auth-code
+            # re-bootstrap. A 240s reauth herd shows up here directly.
+            "subject_lifecycle": {
+                "initial_mint": cnt("cap_subject_initial_mint"),
+                "refresh_update": cnt("cap_subject_refresh_update"),
+                "expired_reauth": cnt("cap_subject_expired_reauth"),
+            },
+            "legacy_rule_ops": legacy_ops,
+            # cohort accounting (authoritative for capRun gates)
+            "scheduled": acct["scheduled"],
+            "started": acct["started"],
+            "completed": acct["completed"],
+            "unfinished": acct["unfinished"],
+            "dropped": acct["dropped"],
+            "drop_fraction": acct["drop_fraction"],
+            "schedule_delta": acct["schedule_delta"],
+            "drop_lower_bound": acct["drop_lower_bound"],
+            "drop_upper_bound": acct["drop_upper_bound"],
+            "drop_fraction_upper": acct["drop_fraction_upper"],
+            "boundary_overshoot": acct["boundary_overshoot"],
+            "pre_measure_drops_estimate":
+                acct["pre_measure_drops_estimate"],
+            "cohort_problems": acct["problems"],
+            "cohort_valid": acct["valid"],
             "latency_ms": {
                 "p50": round(float(measure.get("med", 0)), 3),
                 "p95": round(float(measure.get("p(95)", 0)), 3),
                 "p99": round(float(measure.get("p(99)", 0)), 3),
             },
+            "iteration_ms": {
+                "p50": round(float(iter_ms.get("med", 0)), 3),
+                "p95": round(float(iter_ms.get("p(95)", 0)), 3),
+                "p99": round(float(iter_ms.get("p(99)", 0)), 3),
+            },
+            "measurement_contract": contract,
+            "contract_problems": problems,
+            "window_valid": not problems,
         }
         # Per-minute buckets for steady-state drift and recovery evidence.
+        # Bucket count comes from the emitted contract, not a fixed constant.
+        bucket_total = int(contract.get("bucket_count") or 0)
         buckets = []
-        for i in range(1, 25):
+        for i in range(1, max(bucket_total, 24) + 1):
             lat = metrics.get(f"cap_m{i}_ms", {}).get("values", {})
             cnt = metrics.get(f"cap_m{i}_ops", {}).get("values", {})
             err = metrics.get(f"cap_m{i}_errors", {}).get("values", {})
-            if not cnt.get("count"):
+            beg = metrics.get(
+                f"cap_m{i}_iter_begin", {}).get("values", {})
+            subj = {
+                k: int((metrics.get(f"cap_m{i}_subject_{k}", {})
+                        .get("values", {})).get("count", 0) or 0)
+                for k in ("initial_mint", "refresh_update",
+                          "expired_reauth")
+            }
+            if not cnt.get("count") and not beg.get("count"):
                 continue
             buckets.append({
                 "bucket": i,
+                "overflow": bool(bucket_total and i == bucket_total),
+                "iter_begin": int(beg.get("count", 0) or 0),
                 "ops": int(cnt.get("count", 0)),
                 "errors": int(err.get("count", 0)),
+                "subject": subj,
                 "latency_ms": {
                     "p50": round(float(lat.get("med", 0)), 3),
                     "p95": round(float(lat.get("p(95)", 0)), 3),
@@ -568,7 +716,11 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     k6_summary_path = RESULTS_DIR / f"{safe_name}.k6.json"
     err_detail_path = RESULTS_DIR / f"{safe_name}.errors.json"
     combined_path = RESULTS_DIR / f"{safe_name}.summary.json"
-    reset_pg_stats()
+    # Sidecar runners sharing a seeded stack must not reset the shared
+    # pg_stat_statements mid-window; the flag is explicit so a standalone
+    # non-seeding runner can still reset.
+    if os.environ.get("PERF_SKIP_PG_STATS_RESET") != "1":
+        reset_pg_stats()
     valkey_before = valkey_stats()
     app_before = get_app_metrics()
     env = os.environ.copy()
@@ -576,6 +728,27 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
     env["PERF_SCENARIO"] = scenario
     env["PERF_SUMMARY_EXPORT"] = str(k6_summary_path)
     env["PERF_ERR_DETAIL"] = str(err_detail_path)
+    stream_fifo = None
+    stream_proc = None
+    if os.environ.get("PERF_CHECKPOINT_EVIDENCE") == "1":
+        # Diagnostic stream: k6 writes JSON points into a FIFO drained by
+        # checkpoint_analyze.py, which keeps bounded per-second aggregates and
+        # a filtered compressed sample — raw request detail never lands on
+        # disk. Evidence-only flag; measurement semantics are unchanged.
+        stream_fifo = RESULTS_DIR / f"{safe_name}.k6points.fifo"
+        os.mkfifo(stream_fifo)
+        analyzer = Path(__file__).resolve().parent / "tools" / "checkpoint_analyze.py"
+        # The child opens the FIFO for reading itself: a blocking open() here
+        # would deadlock the runner (no writer until k6 starts).
+        stream_proc = subprocess.Popen(
+            ["sh", "-c",
+             f'exec "{sys.executable}" "{analyzer}" stream'
+             f' --diag-out "{RESULTS_DIR / (safe_name + ".diag.jsonl.gz")}"'
+             f' --series-out "{RESULTS_DIR / (safe_name + ".series.json")}"'
+             f' --window-out "{RESULTS_DIR / (safe_name + ".window.json")}"'
+             f' --stats-out "{RESULTS_DIR / (safe_name + ".analyzer-stats.json")}"'
+             f' < "{stream_fifo}"'],
+            stderr=subprocess.DEVNULL)
     command = [
         "k6",
         "run",
@@ -584,17 +757,68 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
             if os.environ.get("PERF_EXECUTOR") == "constant-arrival-rate"
             else []
         ),
+        *(["--out", f"json={stream_fifo}"] if stream_fifo else []),
         "--summary-export",
         str(k6_summary_path),
         "/perf/k6/oauth.js",
     ]
+    # k6-start provenance: the harness checks every sidecar entered the
+    # scenario before measurement_start-5s, and that the perf-state ready
+    # marker was validated first — timestamps from this file, not guesses.
+    (RESULTS_DIR / "k6-started.json").write_text(json.dumps({
+        "ts": time.time(), "scenario": scenario, "profile": profile,
+        "run_id": os.environ.get("PERF_STATE_RUN_ID", ""),
+        "state_ready_ts": (STATE_READY or {}).get("validated_at"),
+        "state_ready_run_id": (STATE_READY or {}).get(
+            "marker", {}).get("run_id"),
+    }, indent=2))
     started = time.perf_counter()
-    with StatsSampler() as sampler:
-        completed = subprocess.run(command, env=env, text=True)
+    try:
+        with StatsSampler() as sampler:
+            completed = subprocess.run(command, env=env, text=True)
+    finally:
+        if stream_proc is not None:
+            # k6 closing the FIFO gives the analyzer EOF; bound the wait so a
+            # wedged reader can never hang the run.
+            try:
+                stream_proc.wait(timeout=60)
+            except subprocess.TimeoutExpired:
+                stream_proc.terminate()
+                try:
+                    stream_proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    stream_proc.kill()
+            if stream_fifo.exists():
+                stream_fifo.unlink()
     elapsed = time.perf_counter() - started
     if not k6_summary_path.exists():
         raise RuntimeError(f"k6 scenario failed before writing summary: {profile}/{scenario}")
     k6_summary = json.loads(k6_summary_path.read_text(encoding="utf-8"))
+    # Analyzer-side evidence validity: parse errors, reader errors or a
+    # divergent/missing window contract invalidate the measurement even
+    # when k6 itself exited 0. Never let an unreadable stream look clean.
+    measurement_evidence = None
+    if stream_proc is not None:
+        window_path = RESULTS_DIR / f"{safe_name}.window.json"
+        stats_path = RESULTS_DIR / f"{safe_name}.analyzer-stats.json"
+        win = {}
+        stats = {}
+        try:
+            win = json.loads(window_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            win = {"valid": False, "reader_error": str(e)}
+        try:
+            stats = json.loads(stats_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as e:
+            stats = {"reader_error": str(e)}
+        measurement_evidence = {
+            "window_valid": bool(win.get("valid")),
+            "window_problems": win.get("problems"),
+            "parse_errors": stats.get("parse_errors"),
+            "reader_error": stats.get("reader_error"),
+            "lag_over_5s": stats.get("lag_over_5s"),
+            "diag_overflow": stats.get("diag_overflow"),
+        }
     app_after = get_app_metrics()
     pg = pg_stats()
     valkey = delta(valkey_stats(), valkey_before)
@@ -623,6 +847,14 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         status = "threshold_failed"
     elif target_miss:
         status = "target_miss"
+    # Stream-analyzer evidence propagates into measurement validity: a
+    # clean k6 exit code or silent stderr never masks a broken window.
+    if measurement_evidence is not None:
+        if "measure" in k6 and not measurement_evidence["window_valid"]:
+            k6["measure"]["window_valid"] = False
+            k6["measure"]["contract_problems"] = (
+                k6["measure"].get("contract_problems") or []) + [
+                "stream_window_invalid"]
     combined = {
         "profile": profile,
         "scenario": scenario,
@@ -630,6 +862,7 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         "status": status,
         "k6_exit_code": completed.returncode,
         "k6": k6,
+        "measurement_evidence": measurement_evidence,
         "steps": k6_step_brief(k6_summary),
         "error_breakdown": k6_error_breakdown(k6_summary)
         or error_breakdown_from_file(err_detail_path),
@@ -649,6 +882,7 @@ def run_scenario(profile: str, scenario: str) -> dict[str, Any]:
         "load_model": {
             "executor": os.environ.get("PERF_EXECUTOR", "") or "default",
             "target_rate": target_rate,
+            "time_unit": os.environ.get("PERF_TIME_UNIT", "1s"),
             "duration": os.environ.get("PERF_DURATION", "20s"),
             "app_replicas": int(os.environ.get("PERF_APP_REPLICAS", str(app_after.get("instances", 1))) or 1),
             "observed_app_instances": app_after.get("instances", 1),
@@ -910,12 +1144,39 @@ def ensure_user_capacity() -> None:
 
 
 def main() -> None:
+    global STATE_READY
     RESULTS_DIR.mkdir(parents=True, exist_ok=True)
     wait_for_service()
     ensure_vector_capacity()
     ensure_user_capacity()
+    state_dir = Path(os.environ.get("PERF_STATE_DIR", "/perf-state"))
+    run_id = os.environ.get("PERF_STATE_RUN_ID", "")
     if os.environ.get("PERF_SKIP_SEED") != "1":
+        # Seeding runner: clear any stale marker, seed, then publish a
+        # fresh hash-carrying marker so siblings gate on prepared state.
+        clear_ready(state_dir)
         seed()
+        marker = write_ready(state_dir, run_id or "standalone")
+        STATE_READY = {"marker": marker,
+                       "validated_at": round(time.time(), 3)}
+        if os.environ.get("PERF_SEED_ONLY") == "1":
+            (RESULTS_DIR / "latest.json").write_text(json.dumps(
+                [{"seed_only": True, "ready": marker}], indent=2),
+                encoding="utf-8")
+            return
+    else:
+        # Sidecar: block on the published marker + verified content
+        # hashes — k6 must never start against absent or partial state.
+        marker = wait_ready(
+            state_dir, run_id,
+            float(os.environ.get("PERF_STATE_WAIT_S", "60")))
+        STATE_READY = {"marker": marker,
+                       "validated_at": marker.get("validated_at")}
+        if os.environ.get("PERF_PREFLIGHT_ONLY") == "1":
+            (RESULTS_DIR / "latest.json").write_text(json.dumps(
+                [{"preflight_only": True, "ready": marker}], indent=2),
+                encoding="utf-8")
+            return
     results = []
     for profile, scenarios in selected_profiles().items():
         for scenario in scenarios:
