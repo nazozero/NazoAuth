@@ -135,7 +135,7 @@ jobs:
             --env MINIO_ROOT_USER="$NAZO_TEST_S3_ACCESS_KEY" \
             --env MINIO_ROOT_PASSWORD="$NAZO_TEST_S3_SECRET_KEY" \
             docker.io/bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c \
-            server /data
+            server /bitnami/minio/data
           ready=false
           for attempt in $(seq 1 30); do
             if curl --fail --silent "$NAZO_TEST_S3_ENDPOINT/minio/health/live"; then
