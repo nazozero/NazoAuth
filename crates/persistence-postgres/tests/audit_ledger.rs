@@ -545,6 +545,152 @@ async fn audit_ledger_rejects_invalid_events_and_enforces_batch_fencing() {
         .expect("exporter preflight should accept the isolated test database");
 }
 
+#[tokio::test]
+async fn audit_ledger_append_batch_commits_atomically() {
+    let _claim_guard = AUDIT_LEDGER_CLAIM_TEST_LOCK.lock().await;
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    run_pending_migrations(&database_url)
+        .await
+        .expect("audit ledger migration should apply");
+    let pool = create_pool(database_url.clone(), 4).expect("audit pool should create");
+    let repository = AuditLedgerRepository::new(pool);
+    drain_outbox(&repository).await;
+
+    // Empty batches are a no-op without a checkout.
+    repository
+        .append_batch(&[])
+        .await
+        .expect("an empty batch should succeed");
+
+    // A single event keeps the established single-append semantics, including
+    // the same idempotent replay result.
+    let single = SecurityAuditEvent {
+        event_id: Uuid::now_v7(),
+        event_type: "token_issued".to_owned(),
+        event_category: "token_lifecycle".to_owned(),
+        payload: json!({"subject_hash": "single"}),
+        occurred_at: Utc::now(),
+    };
+    repository
+        .append_batch(std::slice::from_ref(&single))
+        .await
+        .expect("a single-event batch should persist");
+    repository
+        .append_batch(std::slice::from_ref(&single))
+        .await
+        .expect("a repeated identical single-event batch should be idempotent");
+
+    let mut batch: Vec<SecurityAuditEvent> = (0..64)
+        .map(|index| SecurityAuditEvent {
+            event_id: Uuid::now_v7(),
+            event_type: "token_issued".to_owned(),
+            event_category: "token_lifecycle".to_owned(),
+            payload: json!({"subject_hash": format!("batch-{index}")}),
+            occurred_at: Utc::now(),
+        })
+        .collect();
+    repository
+        .append_batch(&batch)
+        .await
+        .expect("a 64-event batch should persist in one transaction");
+    // Repeating the identical batch is idempotent: no duplicate events or
+    // outbox entries appear.
+    repository
+        .append_batch(&batch)
+        .await
+        .expect("a repeated identical batch should be idempotent");
+
+    #[derive(QueryableByName)]
+    struct IdCount {
+        #[diesel(sql_type = diesel::sql_types::BigInt)]
+        value: i64,
+    }
+    let batch_ids: Vec<Uuid> = batch.iter().map(|event| event.event_id).collect();
+    let mut connection = AsyncPgConnection::establish(&database_url)
+        .await
+        .expect("audit test database should connect");
+    for table in ["security_audit_events", "security_audit_event_outbox"] {
+        let count = sql_query(format!(
+            "SELECT count(*) AS value FROM public.{table} WHERE event_id = ANY($1)"
+        ))
+        .bind::<diesel::sql_types::Array<SqlUuid>, _>(&batch_ids)
+        .get_result::<IdCount>(&mut connection)
+        .await
+        .expect("batch row count should be readable");
+        assert_eq!(
+            count.value, 64,
+            "{table} must hold each batch event exactly once"
+        );
+    }
+
+    // A payload collision part-way through the batch must roll the whole
+    // transaction back: none of the preceding events may survive.
+    let collided_id = batch[10].event_id;
+    let mut failing: Vec<SecurityAuditEvent> = (0..8)
+        .map(|index| SecurityAuditEvent {
+            event_id: Uuid::now_v7(),
+            event_type: "token_issued".to_owned(),
+            event_category: "token_lifecycle".to_owned(),
+            payload: json!({"subject_hash": format!("failing-{index}")}),
+            occurred_at: Utc::now(),
+        })
+        .collect();
+    failing.push(SecurityAuditEvent {
+        event_id: collided_id,
+        event_type: "token_issued".to_owned(),
+        event_category: "token_lifecycle".to_owned(),
+        payload: json!({"subject_hash": "different-payload"}),
+        occurred_at: Utc::now(),
+    });
+    let failing_ids: Vec<Uuid> = failing.iter().take(8).map(|event| event.event_id).collect();
+    assert!(
+        repository.append_batch(&failing).await.is_err(),
+        "a batch colliding with an existing event must fail"
+    );
+    let count = sql_query(
+        "SELECT count(*) AS value FROM public.security_audit_events WHERE event_id = ANY($1)",
+    )
+    .bind::<diesel::sql_types::Array<SqlUuid>, _>(&failing_ids)
+    .get_result::<IdCount>(&mut connection)
+    .await
+    .expect("rolled-back row count should be readable");
+    assert_eq!(
+        count.value, 0,
+        "a failed batch must not leave any of its events behind"
+    );
+
+    // Validation is not loosened inside a batch: an invalid payload rejects
+    // the whole batch.
+    let mut invalid = batch.pop().expect("the batch still has events");
+    invalid.payload = json!("not-an-object");
+    assert!(matches!(
+        repository.append_batch(&[invalid]).await,
+        Err(RepositoryError::Unexpected(_))
+    ));
+
+    // Batched rows still flow through the exporter claim/ack path unchanged.
+    let claimed = match repository
+        .claim_batch("test-deployment", 256, 1024 * 1024, 60)
+        .await
+        .expect("batched audit events should be claimable")
+    {
+        SecurityAuditBatchClaim::Claimed(batch) => batch,
+        other => panic!("expected a claimed batch, got {other:?}"),
+    };
+    assert!(
+        batch_ids
+            .iter()
+            .all(|id| claimed.deliveries.iter().any(|d| d.event_id == *id)),
+        "every batched event must reach the exporter outbox"
+    );
+    repository
+        .ack_batch(batch_ack(&claimed))
+        .await
+        .expect("the batched events should acknowledge normally");
+}
+
 const BOUNDED_CLAIM_UP: &str =
     include_str!("../../../migrations/20260925000100_audit_claim_bounded_scan/up.sql");
 const BOUNDED_CLAIM_DOWN: &str =

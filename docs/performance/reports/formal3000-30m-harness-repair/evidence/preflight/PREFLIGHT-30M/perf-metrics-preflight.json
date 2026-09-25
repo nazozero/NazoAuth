@@ -1,0 +1,29 @@
+{
+  "check": {
+    "app_container": "hr2p-nazoauth-1",
+    "has_audit_queue": true,
+    "has_db_pool": true,
+    "http_ok": true,
+    "ok": true,
+    "via": "container-netns 127.0.0.1:8000"
+  },
+  "response": {
+    "audit_queue": {
+      "dropped": 0,
+      "enqueued": 0,
+      "pending_in_process": 0,
+      "persist_batch_events": 0,
+      "persist_batches": 0,
+      "persist_max_batch": 0,
+      "persisted": 0
+    },
+    "db_pool": {
+      "acquire_count": 292,
+      "connections": 3,
+      "idle_connections": 3,
+      "wait_nanos_max": 64367250,
+      "wait_nanos_total": 84223485,
+      "waiting_acquisitions": 0
+    }
+  }
+}

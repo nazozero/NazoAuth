@@ -1,0 +1,1 @@
+INVALID: sidecars died at init - /perf-state volume missing from docker run (fixed in 7b340f31); main 20min valid

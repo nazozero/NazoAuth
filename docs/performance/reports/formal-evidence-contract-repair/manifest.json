@@ -1,0 +1,121 @@
+{
+  "report": "formal-evidence-contract-repair",
+  "status": "PASS",
+  "generated_at": "2026-09-25T06:00:13Z",
+  "base_sha": "52fb25b32abdeff0e460a5400643a4de684288e3",
+  "harness_fix_sha": "378b8200",
+  "harness_test_sha": "efc2cb13",
+  "report_source_sha": "c39e35dfbfc68cebaab62d61b88bf75d665555f9",
+  "integration_base": "bb5f42c60d24c18bf71d279ad50aee4935f0cca0",
+  "source_branch": "perf/formal3000-30m-harness-repair-1e758edc",
+  "source_final_branch": "perf/formal-evidence-contract-52fb25b3",
+  "new_real_load_time_s": 0,
+  "production_code_changed": false,
+  "durability_changed": false,
+  "pg_params_changed": false,
+  "pool_changed": false,
+  "load_model_changed": false,
+  "thresholds_changed": false,
+  "evidence_contract": "REPAIRED",
+  "evidence_tiers": {
+    "authoritative": [
+      "window.json",
+      "series.json",
+      "k6 summary",
+      "analyzer-stats.json"
+    ],
+    "system_health": [
+      "residency.jsonl",
+      "soak-metrics.jsonl",
+      "proc-detail.jsonl",
+      "audit db/receiver evidence",
+      "sidecar summaries",
+      "runtime provenance"
+    ],
+    "forensic_optional": [
+      "diag.jsonl.gz"
+    ]
+  },
+  "forensic_diag_status": "TRUNCATED",
+  "diag_overflow_affects_formal_accounting": false,
+  "lag_classification": "EVIDENCE_PIPELINE_INVALID (fifo writer can block on lagging consumer; implemented for real, was dead counter)",
+  "authoritative_stream": "COMPLETE",
+  "original_f3000_30m_r2_verdict": {
+    "verdict": "INVALID",
+    "reason": "stream_evidence_invalid: diag_overflow",
+    "contract": "old evidence contract (forensic artifact completeness gated formal validity)",
+    "report": "docs/performance/reports/formal3000-30m-harness-repair"
+  },
+  "corrected_f3000_30m_r2_verdict": {
+    "verdict": "PASS",
+    "fail_class": null,
+    "basis": "same execution, same raw evidence, offline re-evaluation under repaired contract; zero additional load",
+    "method": "pool_size_ab.py --reeval over extracted f3000-30m-r2-evidence.tar.gz; identical _post_run_verdict code path as live runner; recorded old verdict not an input",
+    "evidence": "evidence/F3000-30M-R2.reeval-verdict.json"
+  },
+  "measurement": {
+    "measure_started_exact": 5355005,
+    "measure_completed_exact": 5355005,
+    "measure_dropped_exact": 0,
+    "measure_rate": 3000.003,
+    "p95_ms": 41.0,
+    "p99_ms": 135.0,
+    "unexpected": 0,
+    "sustained_cliff": false,
+    "audit": {
+      "enqueued": 895378,
+      "persisted": 895378,
+      "dropped": 0,
+      "journal_contiguous": true,
+      "receiver_reconciled": true
+    },
+    "sidecars": "4/4 ready+timed+exit 0",
+    "provenance": "PASS"
+  },
+  "acceptance_conditions": {
+    "A_overflow_invariance_proven": true,
+    "B_stability_diag_independent": true,
+    "C_formal_numeric_gates_pass": true,
+    "D_system_health_gates_pass": true,
+    "E_integrity_gates_complete": true,
+    "F_only_gap_is_forensic_truncation": true
+  },
+  "formal": {
+    "FORMAL_10M_3000_CAPACITY": "PASS",
+    "FORMAL_30M_3000_STABILITY": "PASS",
+    "READY_FOR_MERGE": "YES",
+    "PRIMARY_LIMIT": "NONE",
+    "NEXT_PRODUCTION_CANDIDATE": "NONE"
+  },
+  "invariants": {
+    "POOL_32": "PASS",
+    "DATABASE_MAX_CONNECTIONS": "32",
+    "RSA_REUSE_STATUS": "CONFIRMED_AND_PRESENT",
+    "AUDIT_BATCH_STATUS": "PASS_AND_PRESENT",
+    "TOKEN_AUDIT_PREFLIGHT_STATUS": "PASS_AND_PRESENT",
+    "GROUP_COMMIT_CANDIDATE": "FAIL",
+    "COMMIT_DELAY": "0",
+    "WAL_SYNC_METHOD_CANDIDATE": "NOT_TESTED"
+  },
+  "tests": {
+    "total": 366,
+    "failures": 0,
+    "skipped": 1
+  },
+  "supersession": {
+    "marked_on": "docs/performance/reports/formal3000-30m-harness-repair",
+    "field": "SUPERSEDED_EVIDENCE_CONTRACT_BY",
+    "original_verdict_preserved": true,
+    "f3000_30m_oldest": "verdict INVALID preserved; certification chain now resolves through corrected F3000-30M-R2"
+  },
+  "changed_paths": [
+    "perf/tools/checkpoint_analyze.py",
+    "perf/tools/capacity_search.py",
+    "perf/tools/pool_size_ab.py",
+    "perf/tests/test_evidence_contract.py",
+    "perf/tests/test_checkpoint_measurement.py",
+    "docs/performance/reports/formal-evidence-contract-repair",
+    "docs/performance/reports/formal3000-30m-harness-repair"
+  ],
+  "notes": "No run of any kind was executed. FORENSIC_DIAG_STATUS=TRUNCATED remains a permanent caveat on this execution; it records missing per-point forensic detail in the tail of the window, not missing formal evidence. READY_FOR_MERGE does not itself merge anything."
+}

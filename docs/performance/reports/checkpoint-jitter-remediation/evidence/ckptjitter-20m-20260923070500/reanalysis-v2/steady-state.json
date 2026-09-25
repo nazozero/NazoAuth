@@ -1,0 +1,109 @@
+{
+  "basis": "measurement_bins_minus_checkpoint_windows",
+  "seconds": 197,
+  "excluded_checkpoint_bins": 987,
+  "missing_bins": [],
+  "throughput_ops_per_s": 1990.98,
+  "successful_ops_per_s": 1966.858,
+  "unexpected": 0,
+  "drops": 1765,
+  "op_latency_ms": {
+    "n": 392223,
+    "min": null,
+    "max": 989,
+    "mean": 10.679,
+    "p50": {
+      "interval_ms": [
+        2,
+        5
+      ],
+      "estimate_ms": 3.5,
+      "estimate": true,
+      "bucket": 3
+    },
+    "p95": {
+      "interval_ms": [
+        10,
+        20
+      ],
+      "estimate_ms": 15.0,
+      "estimate": true,
+      "bucket": 5
+    },
+    "p99": {
+      "interval_ms": [
+        20,
+        50
+      ],
+      "estimate_ms": 35.0,
+      "estimate": true,
+      "bucket": 6
+    }
+  },
+  "iter_latency_ms": {
+    "n": 392223,
+    "min": null,
+    "max": 990,
+    "mean": 10.698,
+    "p50": {
+      "interval_ms": [
+        2,
+        5
+      ],
+      "estimate_ms": 3.5,
+      "estimate": true,
+      "bucket": 3
+    },
+    "p95": {
+      "interval_ms": [
+        10,
+        20
+      ],
+      "estimate_ms": 15.0,
+      "estimate": true,
+      "bucket": 5
+    },
+    "p99": {
+      "interval_ms": [
+        20,
+        50
+      ],
+      "estimate_ms": 35.0,
+      "estimate": true,
+      "bucket": 6
+    }
+  },
+  "http_latency_ms": {
+    "n": 563889,
+    "min": null,
+    "max": 504.182454,
+    "mean": 7.032,
+    "p50": {
+      "interval_ms": [
+        1,
+        2
+      ],
+      "estimate_ms": 1.5,
+      "estimate": true,
+      "bucket": 2
+    },
+    "p95": {
+      "interval_ms": [
+        5,
+        10
+      ],
+      "estimate_ms": 7.5,
+      "estimate": true,
+      "bucket": 4
+    },
+    "p99": {
+      "interval_ms": [
+        20,
+        50
+      ],
+      "estimate_ms": 35.0,
+      "estimate": true,
+      "bucket": 6
+    }
+  }
+}

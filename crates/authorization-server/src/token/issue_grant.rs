@@ -218,7 +218,23 @@ pub async fn issue_token_response(
         None
     };
     let issuance_id = Uuid::now_v7();
-    if let Err(error) = context.security_audit.ensure_storage().await {
+    // Commit-owned issuance: when the final commit transaction carries both
+    // the durable token fact and the required `token_issued` append, the
+    // commit itself is the fail-closed writer check, so the per-request
+    // static capability probe is redundant. Any path with a preceding
+    // durable side effect (refresh rotation bookkeeping is commit-owned but
+    // kept conservative here, authorization-code consumption, Native SSO
+    // device-secret persistence) keeps the full storage preflight.
+    let commit_owned = matches!(mode, TokenIssuanceMode::Fresh)
+        && !will_issue_refresh
+        && issue.authorization_code_hash.is_none()
+        && issue.native_sso.is_none();
+    let audit_ready = if commit_owned {
+        context.security_audit.ensure_transactional_ready().await
+    } else {
+        context.security_audit.ensure_storage().await
+    };
+    if let Err(error) = audit_ready {
         tracing::error!(%error, "token issuance audit preflight failed");
         return Err(OAuthEndpointError::token(
             StatusCode::SERVICE_UNAVAILABLE,

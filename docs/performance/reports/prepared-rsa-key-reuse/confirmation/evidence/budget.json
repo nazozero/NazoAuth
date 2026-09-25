@@ -1,0 +1,55 @@
+{
+  "load_seconds_used": 1168.0,
+  "points": [
+    {
+      "load_seconds": 98.4,
+      "name": "A3",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 97.9,
+      "name": "A3",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 97.9,
+      "name": "A3",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 98.5,
+      "name": "B3",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 98.0,
+      "name": "B4",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 98.1,
+      "name": "A4",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 98.0,
+      "name": "A5",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 98.2,
+      "name": "B5",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 191.5,
+      "name": "MIXEDA",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 191.5,
+      "name": "MIXEDB",
+      "status": "completed"
+    }
+  ]
+}

@@ -1,0 +1,493 @@
+{
+  "measurement_notes": {
+    "superseded_by": "offline-review/corrected-metrics.json",
+    "wal_per_success_bytes": "mixed window (seed+load+drain delta / measure cohort) — NOT_COMPARABLE; use offline-review same-window values",
+    "pool_acquire_count": "app-lifetime counter; divide only by full-run http_reqs, never by the post-warmup cohort",
+    "pg_statements_per_req": "since-reset SUM(calls) all roles/levels / full-run HTTP — not serial network RTTs",
+    "audit_log_scan": "stdout-only scan; corrected harness merges stderr and records collection status"
+  },
+  "budget": {
+    "load_seconds_used": 895.8,
+    "points": [
+      {
+        "load_seconds": 127.9,
+        "name": "X4"
+      },
+      {
+        "load_seconds": 127.9,
+        "name": "X8"
+      },
+      {
+        "load_seconds": 127.9,
+        "name": "X16"
+      },
+      {
+        "load_seconds": 128.0,
+        "name": "A1"
+      },
+      {
+        "load_seconds": 128.0,
+        "name": "B1"
+      },
+      {
+        "load_seconds": 128.1,
+        "name": "B2"
+      },
+      {
+        "load_seconds": 128.0,
+        "name": "A2"
+      }
+    ]
+  },
+  "generated_ts": 1790181200.3857207,
+  "points": {
+    "A1": {
+      "app_cpus": 8,
+      "image": "sis-app:A",
+      "load_seconds": 128.0,
+      "metrics": {
+        "audit_drained": true,
+        "audit_log_scan": {
+          "dropped_required": 0,
+          "lines": 0,
+          "persistence_error": 0,
+          "queue_full": 0
+        },
+        "contract_problems": [],
+        "drop_fraction": 0.0,
+        "dropped_iterations": 0,
+        "http_reqs": 512556,
+        "http_rps": 4270.899,
+        "iterations_completed": 512556,
+        "k6_exit_code": 0,
+        "measure_errors": 0,
+        "measure_ops": 448011,
+        "oom_killed": false,
+        "op_p50_ms": 13.0,
+        "op_p95_ms": 22.0,
+        "op_p99_ms": 43.0,
+        "ops_per_s": 4266.771,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_success": 448011,
+        "outcome_unexpected": 0,
+        "pg_statements_per_req": 19.247,
+        "pool_acquire_count": 2054308,
+        "pool_wait_ms_avg": 2.089,
+        "pool_wait_ms_total": 4290463.072,
+        "refresh_invariants": {
+          "max_active_per_scope": 1,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "restart_count": 0,
+        "sidecar_terminal_complete": true,
+        "status": "passed",
+        "successful_ops_per_s": 4266.771,
+        "wal_delta_bytes": 1374967106.0,
+        "wal_per_success_bytes": 3069.048,
+        "window_seconds": 105,
+        "window_valid": true
+      },
+      "ok": true,
+      "pgss_path_classes": {
+        "audit_append": 512556,
+        "client_lock": 512556,
+        "combined": 0,
+        "issuance_insert": 512556
+      },
+      "phase": "phase2",
+      "pin_verified": true,
+      "provenance": {
+        "app_image_id": "sha256:2c1710ba13587a3c29ea0296a9b920991a91a00a46907ed90012c2c23381762f",
+        "binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+        "source_sha": "unknown"
+      }
+    },
+    "A2": {
+      "app_cpus": 8,
+      "image": "sis-app:A",
+      "load_seconds": 128.0,
+      "metrics": {
+        "audit_drained": true,
+        "audit_log_scan": {
+          "dropped_required": 0,
+          "lines": 0,
+          "persistence_error": 0,
+          "queue_full": 0
+        },
+        "contract_problems": [],
+        "drop_fraction": 0.0,
+        "dropped_iterations": 0,
+        "http_reqs": 544492,
+        "http_rps": 4536.99,
+        "iterations_completed": 544492,
+        "k6_exit_code": 0,
+        "measure_errors": 0,
+        "measure_ops": 475474,
+        "oom_killed": false,
+        "op_p50_ms": 13.0,
+        "op_p95_ms": 19.0,
+        "op_p99_ms": 31.0,
+        "ops_per_s": 4528.324,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_success": 475474,
+        "outcome_unexpected": 0,
+        "pg_statements_per_req": 19.255,
+        "pool_acquire_count": 2182052,
+        "pool_wait_ms_avg": 1.951,
+        "pool_wait_ms_total": 4258104.602,
+        "refresh_invariants": {
+          "max_active_per_scope": 1,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "restart_count": 0,
+        "sidecar_terminal_complete": true,
+        "status": "passed",
+        "successful_ops_per_s": 4528.324,
+        "wal_delta_bytes": 1458904657.0,
+        "wal_per_success_bytes": 3068.316,
+        "window_seconds": 105,
+        "window_valid": true
+      },
+      "ok": true,
+      "pgss_path_classes": {
+        "audit_append": 544492,
+        "client_lock": 544492,
+        "combined": 0,
+        "issuance_insert": 544492
+      },
+      "phase": "phase2",
+      "pin_verified": true,
+      "provenance": {
+        "app_image_id": "sha256:2c1710ba13587a3c29ea0296a9b920991a91a00a46907ed90012c2c23381762f",
+        "binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+        "source_sha": "unknown"
+      }
+    },
+    "B1": {
+      "app_cpus": 8,
+      "image": "sis-app:B",
+      "load_seconds": 128.0,
+      "metrics": {
+        "audit_drained": true,
+        "audit_log_scan": {
+          "dropped_required": 0,
+          "lines": 0,
+          "persistence_error": 0,
+          "queue_full": 0
+        },
+        "contract_problems": [],
+        "drop_fraction": 0.0,
+        "dropped_iterations": 0,
+        "http_reqs": 495412,
+        "http_rps": 4127.986,
+        "iterations_completed": 495412,
+        "k6_exit_code": 0,
+        "measure_errors": 0,
+        "measure_ops": 435890,
+        "oom_killed": false,
+        "op_p50_ms": 14.0,
+        "op_p95_ms": 25.0,
+        "op_p99_ms": 38.0,
+        "ops_per_s": 4151.333,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_success": 435890,
+        "outcome_unexpected": 0,
+        "pg_statements_per_req": 17.217,
+        "pool_acquire_count": 1985799,
+        "pool_wait_ms_avg": 2.137,
+        "pool_wait_ms_total": 4244596.347,
+        "refresh_invariants": {
+          "max_active_per_scope": 1,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "restart_count": 0,
+        "sidecar_terminal_complete": true,
+        "status": "passed",
+        "successful_ops_per_s": 4151.333,
+        "wal_delta_bytes": 1319339691.0,
+        "wal_per_success_bytes": 3026.772,
+        "window_seconds": 105,
+        "window_valid": true
+      },
+      "ok": true,
+      "pgss_path_classes": {
+        "audit_append": 0,
+        "client_lock": 495412,
+        "combined": 495412,
+        "issuance_insert": 0
+      },
+      "phase": "phase2",
+      "pin_verified": true,
+      "provenance": {
+        "app_image_id": "sha256:6ac3eaa20368f97b0ef06dac57794f90ecb6b92d6319180b5b2efe6c761edafe",
+        "binary_sha256": "6b0d63ffd2b01b1f10fe5a2e9b0d94fb792d76958e80a9aa3fdea631e402c246",
+        "source_sha": "unknown"
+      }
+    },
+    "B2": {
+      "app_cpus": 8,
+      "image": "sis-app:B",
+      "load_seconds": 128.1,
+      "metrics": {
+        "audit_drained": true,
+        "audit_log_scan": {
+          "dropped_required": 0,
+          "lines": 0,
+          "persistence_error": 0,
+          "queue_full": 0
+        },
+        "contract_problems": [],
+        "drop_fraction": 0.0,
+        "dropped_iterations": 0,
+        "http_reqs": 506428,
+        "http_rps": 4219.856,
+        "iterations_completed": 506428,
+        "k6_exit_code": 0,
+        "measure_errors": 0,
+        "measure_ops": 466446,
+        "oom_killed": false,
+        "op_p50_ms": 13.0,
+        "op_p95_ms": 20.0,
+        "op_p99_ms": 35.0,
+        "ops_per_s": 4442.343,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_success": 466446,
+        "outcome_unexpected": 0,
+        "pg_statements_per_req": 17.246,
+        "pool_acquire_count": 2029930,
+        "pool_wait_ms_avg": 2.104,
+        "pool_wait_ms_total": 4270217.26,
+        "refresh_invariants": {
+          "max_active_per_scope": 1,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "restart_count": 0,
+        "sidecar_terminal_complete": true,
+        "status": "passed",
+        "successful_ops_per_s": 4442.343,
+        "wal_delta_bytes": 1345040136.0,
+        "wal_per_success_bytes": 2883.592,
+        "window_seconds": 105,
+        "window_valid": true
+      },
+      "ok": true,
+      "pgss_path_classes": {
+        "audit_append": 0,
+        "client_lock": 506428,
+        "combined": 506428,
+        "issuance_insert": 0
+      },
+      "phase": "phase2",
+      "pin_verified": true,
+      "provenance": {
+        "app_image_id": "sha256:6ac3eaa20368f97b0ef06dac57794f90ecb6b92d6319180b5b2efe6c761edafe",
+        "binary_sha256": "6b0d63ffd2b01b1f10fe5a2e9b0d94fb792d76958e80a9aa3fdea631e402c246",
+        "source_sha": "unknown"
+      }
+    },
+    "X16": {
+      "app_cpus": 16,
+      "image": "sis-app:A",
+      "load_seconds": 127.9,
+      "metrics": {
+        "audit_drained": true,
+        "audit_log_scan": {
+          "dropped_required": 0,
+          "lines": 0,
+          "persistence_error": 0,
+          "queue_full": 0
+        },
+        "contract_problems": [],
+        "drop_fraction": 0.0,
+        "dropped_iterations": 0,
+        "http_reqs": 658277,
+        "http_rps": 5484.843,
+        "iterations_completed": 658277,
+        "k6_exit_code": 0,
+        "measure_errors": 0,
+        "measure_ops": 573571,
+        "oom_killed": false,
+        "op_p50_ms": 11.0,
+        "op_p95_ms": 17.0,
+        "op_p99_ms": 30.0,
+        "ops_per_s": 5462.581,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_success": 573571,
+        "outcome_unexpected": 0,
+        "pg_statements_per_req": 19.155,
+        "pool_acquire_count": 2637258,
+        "pool_wait_ms_avg": 1.511,
+        "pool_wait_ms_total": 3985493.829,
+        "refresh_invariants": {
+          "max_active_per_scope": 1,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "restart_count": 0,
+        "sidecar_terminal_complete": true,
+        "status": "passed",
+        "successful_ops_per_s": 5462.581,
+        "wal_delta_bytes": 1776604921.0,
+        "wal_per_success_bytes": 3097.446,
+        "window_seconds": 105,
+        "window_valid": true
+      },
+      "ok": true,
+      "pgss_path_classes": {
+        "audit_append": 658277,
+        "client_lock": 658277,
+        "combined": 0,
+        "issuance_insert": 658277
+      },
+      "phase": "phase1",
+      "pin_verified": true,
+      "provenance": {
+        "app_image_id": "sha256:2c1710ba13587a3c29ea0296a9b920991a91a00a46907ed90012c2c23381762f",
+        "binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+        "source_sha": "unknown"
+      }
+    },
+    "X4": {
+      "app_cpus": 4,
+      "image": "sis-app:A",
+      "load_seconds": 127.9,
+      "metrics": {
+        "audit_drained": true,
+        "audit_log_scan": {
+          "dropped_required": 0,
+          "lines": 0,
+          "persistence_error": 0,
+          "queue_full": 0
+        },
+        "contract_problems": [],
+        "drop_fraction": 0.0,
+        "dropped_iterations": 0,
+        "http_reqs": 358696,
+        "http_rps": 2988.82,
+        "iterations_completed": 358696,
+        "k6_exit_code": 0,
+        "measure_errors": 0,
+        "measure_ops": 313797,
+        "oom_killed": false,
+        "op_p50_ms": 20.0,
+        "op_p95_ms": 30.0,
+        "op_p99_ms": 43.0,
+        "ops_per_s": 2988.543,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_success": 313797,
+        "outcome_unexpected": 0,
+        "pg_statements_per_req": 19.431,
+        "pool_acquire_count": 1438901,
+        "pool_wait_ms_avg": 3.089,
+        "pool_wait_ms_total": 4444992.299,
+        "refresh_invariants": {
+          "max_active_per_scope": 1,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "restart_count": 0,
+        "sidecar_terminal_complete": true,
+        "status": "passed",
+        "successful_ops_per_s": 2988.543,
+        "wal_delta_bytes": 957529563.0,
+        "wal_per_success_bytes": 3051.43,
+        "window_seconds": 105,
+        "window_valid": true
+      },
+      "ok": true,
+      "pgss_path_classes": {
+        "audit_append": 358696,
+        "client_lock": 358696,
+        "combined": 0,
+        "issuance_insert": 358696
+      },
+      "phase": "phase1",
+      "pin_verified": true,
+      "provenance": {
+        "app_image_id": "sha256:2c1710ba13587a3c29ea0296a9b920991a91a00a46907ed90012c2c23381762f",
+        "binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+        "source_sha": "unknown"
+      }
+    },
+    "X8": {
+      "app_cpus": 8,
+      "image": "sis-app:A",
+      "load_seconds": 127.9,
+      "metrics": {
+        "audit_drained": true,
+        "audit_log_scan": {
+          "dropped_required": 0,
+          "lines": 0,
+          "persistence_error": 0,
+          "queue_full": 0
+        },
+        "contract_problems": [],
+        "drop_fraction": 0.0,
+        "dropped_iterations": 0,
+        "http_reqs": 542120,
+        "http_rps": 4517.284,
+        "iterations_completed": 542120,
+        "k6_exit_code": 0,
+        "measure_errors": 0,
+        "measure_ops": 475667,
+        "oom_killed": false,
+        "op_p50_ms": 13.0,
+        "op_p95_ms": 19.0,
+        "op_p99_ms": 31.0,
+        "ops_per_s": 4530.162,
+        "outcome_expected_rejection": 0,
+        "outcome_local_no_request": 0,
+        "outcome_prepare_failed": 0,
+        "outcome_success": 475667,
+        "outcome_unexpected": 0,
+        "pg_statements_per_req": 19.268,
+        "pool_acquire_count": 2172564,
+        "pool_wait_ms_avg": 1.963,
+        "pool_wait_ms_total": 4263992.986,
+        "refresh_invariants": {
+          "max_active_per_scope": 1,
+          "spent_expired_backlog": 0,
+          "spent_max_per_family": 0
+        },
+        "restart_count": 0,
+        "sidecar_terminal_complete": true,
+        "status": "passed",
+        "successful_ops_per_s": 4530.162,
+        "wal_delta_bytes": 1452920646.0,
+        "wal_per_success_bytes": 3054.491,
+        "window_seconds": 105,
+        "window_valid": true
+      },
+      "ok": true,
+      "pgss_path_classes": {
+        "audit_append": 542120,
+        "client_lock": 542120,
+        "combined": 0,
+        "issuance_insert": 542120
+      },
+      "phase": "phase1",
+      "pin_verified": true,
+      "provenance": {
+        "app_image_id": "sha256:2c1710ba13587a3c29ea0296a9b920991a91a00a46907ed90012c2c23381762f",
+        "binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+        "source_sha": "unknown"
+      }
+    }
+  }
+}

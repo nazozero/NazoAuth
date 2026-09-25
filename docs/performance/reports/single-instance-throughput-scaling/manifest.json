@@ -1,0 +1,63 @@
+{
+  "report": "single-instance-throughput-scaling",
+  "date": "2026-09-24",
+  "host": "cnb-9dp-1k378qhr6-001.55f8011d-064d-445f-b886-d85aac9ad1c5-3q9@cnb.space",
+  "remote_worktree": "/workspace/.sis-worktree",
+  "review": {
+    "date": "2026-09-24",
+    "host": "cnb-r49-1k38f54tm-001.d6cf1b91-88dc-4f37-bb40-f72780a0abe4-7gj@cnb.space",
+    "scope": "harness cleanup ownership, measurement identity/reset, window consistency, fail-closed gates, report attribution",
+    "new_real_load_time_s": 0,
+    "reviewed_head": "bcdc4768422e3d57f1c8bbad65fcff44e0c85789"
+  },
+  "identity": {
+    "base_sha": "c6df5b4fd13e399e181854f86b8b4d3c5eabc520",
+    "reviewed_main_sha": "bb5f42c60d24c18bf71d279ad50aee4935f0cca0",
+    "baseline_app_sha": "7332cb6f1b3dc68b424105bdb39f0687e4400ec2",
+    "candidate_app_sha": "66839aa32fc461b6a6cc396265aadb40f6008bf7",
+    "final_code_sha": "4875c7b889e2b84f88253f2dae697bfd99007f4d",
+    "baseline_binary_sha256_prefix": "24d8067d395c624c",
+    "candidate_binary_sha256_prefix": "6b0d63ffd2b01b1f",
+    "applied_migrations_sha256_prefix": "0b4cb38907d4d10b"
+  },
+  "verdict": {
+    "phase2": "INCONCLUSIVE",
+    "retain": false,
+    "candidate_reverted": true,
+    "phase3": "NOT_RUN",
+    "candidate_retained": "NO",
+    "measured_gain": "NOT_ESTABLISHED",
+    "primary_scaling_bottleneck": "UNRESOLVED",
+    "production_changes": "NONE"
+  },
+  "files": {
+    "report": "report.md",
+    "audit_findings": "audit-findings.md",
+    "scaling_points": "scaling-points.json",
+    "evidence": "evidence/",
+    "offline_review": "offline-review/"
+  },
+  "evidence_layout": {
+    "env-check.json": "host cpusets/cgroup/images",
+    "budget.json": "load wall-clock ledger (895.8s of 1800s cap)",
+    "phase2-eval.json": "formal retention gate output",
+    "points/": "point definitions actually executed",
+    "phase1/{X4,X8,X16}/": "baseline scaling points",
+    "phase2/{A1,B1,B2,A2}/": "controlled A/B points",
+    "correctness/": "remote test logs incl. revert-fresh2.log",
+    "build/": "image build logs",
+    "offline-review/": "corrected derived metrics (windowed WAL/success, acquire/op, recomputed CPU), reanalyze.py, compressed sampler streams; inputs identified by sha256"
+  },
+  "corrected_metrics": {
+    "wal_per_success_bytes": "was seed+load+drain delta / 105s cohort (mixed window) -> same-window sampler interpolation / cohort success (2620-2701 B)",
+    "acquire_per_op": "was lifetime counter / post-warmup cohort (4.567 on X8, retracted) -> full-run 4.007-4.012 and same-window 3.96-4.00, both background-inclusive",
+    "pgss_deltas": "old snapshots lack dbid/userid/toplevel; A1 crossed stats_reset -> since-reset observations only",
+    "statements_per_req": "19.25->17.22 is a statement-count ratio over all roles/levels, not serial network RTTs",
+    "cpu": "recomputed from proc-detail jiffies inside the k6 window; thread roles unknown (tid names not captured)"
+  },
+  "unrecoverable": [
+    "receiver-side audit reconciliation logs (sis-rcv-* not preserved)",
+    "pg wait-event evidence (never instrumented)",
+    "precise per-request top-level statement totals from old snapshots"
+  ]
+}

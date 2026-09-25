@@ -1,0 +1,46 @@
+{
+  "main": {
+    "container": "main",
+    "started_ts": 1790147387,
+    "ended_ts": 1790148603,
+    "exit_code": "0"
+  },
+  "sidecars": [
+    {
+      "name": "argon2",
+      "container": "soak-argon2-ckptjitter-20m-20260923070500",
+      "started_ts": 1790147508,
+      "ended_ts": 1790148603,
+      "exit_code": "0",
+      "interrupted": false,
+      "terminal_summary": true
+    },
+    {
+      "name": "meta",
+      "container": "soak-meta-ckptjitter-20m-20260923070500",
+      "started_ts": 1790147509,
+      "ended_ts": 1790148603,
+      "exit_code": "0",
+      "interrupted": false,
+      "terminal_summary": true
+    },
+    {
+      "name": "fapi",
+      "container": "soak-fapi-ckptjitter-20m-20260923070500",
+      "started_ts": 1790147509,
+      "ended_ts": 1790148603,
+      "exit_code": "0",
+      "interrupted": false,
+      "terminal_summary": true
+    },
+    {
+      "name": "refresh",
+      "container": "soak-refresh-ckptjitter-20m-20260923070500",
+      "started_ts": 1790147510,
+      "ended_ts": 1790148603,
+      "exit_code": "0",
+      "interrupted": false,
+      "terminal_summary": true
+    }
+  ]
+}

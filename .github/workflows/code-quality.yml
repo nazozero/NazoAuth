@@ -51,7 +51,7 @@ jobs:
   rust-quality:
     name: Rust quality gate
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     services:
       postgres:
         image: docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2
@@ -134,8 +134,8 @@ jobs:
           docker run --detach --name avatar-store --publish 127.0.0.1:9000:9000 \
             --env MINIO_ROOT_USER="$NAZO_TEST_S3_ACCESS_KEY" \
             --env MINIO_ROOT_PASSWORD="$NAZO_TEST_S3_SECRET_KEY" \
-            quay.io/minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e \
-            server /data
+            docker.io/bitnamilegacy/minio@sha256:451fe6858cb770cc9d0e77ba811ce287420f781c7c1b806a386f6896471a349c \
+            server /bitnami/minio/data
           ready=false
           for attempt in $(seq 1 30); do
             if curl --fail --silent "$NAZO_TEST_S3_ENDPOINT/minio/health/live"; then

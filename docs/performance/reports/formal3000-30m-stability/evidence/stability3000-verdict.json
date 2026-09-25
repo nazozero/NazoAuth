@@ -1,0 +1,806 @@
+{
+  "audit_queue": {
+    "collected": false,
+    "error": "no audit_queue samples"
+  },
+  "capacity_gate": {
+    "metrics": {
+      "cohort_problems": [
+        "scheduled_less_than_started:5>3"
+      ],
+      "completed": 5355005,
+      "drop_fraction": 0.0,
+      "dropped": 0,
+      "measured_ops_s": 3000.003,
+      "measurement_contract": "cap-scenario-window-v1",
+      "rate_basis": "scenario_window",
+      "reason": "measurement_cohort_invalid",
+      "scheduled": 5355000,
+      "started": 5355005,
+      "status": "target_miss",
+      "unfinished": 0,
+      "window_seconds": 1785.0
+    },
+    "status": "INVALID"
+  },
+  "checks": {
+    "active_per_scope_le_10": true,
+    "audit_reconciled": true,
+    "capacity_gate_pass": false,
+    "db_outbox_drained": true,
+    "dropped_required_zero": true,
+    "enqueued_eq_persisted": false,
+    "expired_backlog_zero": true,
+    "journal_contiguous": true,
+    "no_restarts": true,
+    "oom_none": true,
+    "pending_zero_post_drain": false,
+    "point_completed": true,
+    "pool_size_observed": false,
+    "queue_dropped_zero": false,
+    "queue_full_zero": true,
+    "runtime_backends_match": false,
+    "sidecars_complete": false,
+    "spent_per_family_le_64": true,
+    "unexpected_zero": true
+  },
+  "evidence": {
+    "acquire_per_op": 6.4525,
+    "app_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+    "attainment": 1.0,
+    "attempted_ops_per_s": 3000.003,
+    "backend_state_means": {},
+    "checked_out_max": null,
+    "checked_out_mean": null,
+    "cohort_valid": false,
+    "commits_delta": 5111924,
+    "commits_per_fsync": 2.7472,
+    "configured_pool": "32",
+    "cpu_cores": {},
+    "drop_fraction": 9e-06,
+    "full_run_drop_fraction": 9e-06,
+    "iter_p95_ms": 25.0,
+    "iter_p99_ms": 43.0,
+    "measure_completed": 5355005,
+    "measure_drop_fraction": 0.0,
+    "measure_dropped": 0,
+    "measure_scheduled": 5355000,
+    "measure_started": 5355005,
+    "ops_per_s": 2979.094,
+    "outcome_success": 5317683,
+    "outcome_unexpected": 0,
+    "p50_ms": 5.0,
+    "p95_ms": 25.0,
+    "p99_ms": 43.0,
+    "pool_size_observed": null,
+    "runtime_backends_max": null,
+    "strict_3000_gate": {
+      "attempted_ops_per_s": 3000.003,
+      "measure_completed": 5355005,
+      "measure_drop_fraction": 0.0,
+      "measure_drop_fraction_upper": 1e-06,
+      "measure_scheduled": 5355000,
+      "measure_started": 5355005,
+      "pass": false,
+      "population": "measurement_cohort",
+      "target": 3000.0
+    },
+    "wait_per_acq_ms": 0.196,
+    "waiting_max": null,
+    "waiting_mean": null,
+    "wal_bytes_per_s": 13710540.1,
+    "wal_fsyncs_delta": 1860763,
+    "wal_fsyncs_per_s": null,
+    "wal_wait": {
+      "active_samples": 0,
+      "wal_wait_samples": 0,
+      "wal_wait_share": null,
+      "window_samples": 0
+    },
+    "wal_writes_per_s": null
+  },
+  "fail_class": "LOAD_MODEL_INVALID",
+  "failed": [
+    "sidecars_complete",
+    "queue_dropped_zero",
+    "pending_zero_post_drain",
+    "enqueued_eq_persisted",
+    "pool_size_observed",
+    "runtime_backends_match",
+    "capacity_gate_pass"
+  ],
+  "generator": {
+    "injector_vu_cap_reached": null,
+    "main_exit_code": "0",
+    "main_oom_killed": false,
+    "max_vus": 2048,
+    "pre_allocated_vus": 2048
+  },
+  "generator_preflight": {
+    "captured": true,
+    "container_mem": {
+      "s30-keyset-1": "0B / 0B",
+      "s30-migrate-1": "0B / 0B",
+      "s30-nazoauth-1": "0B / 0B",
+      "s30-postgres-1": "0B / 0B",
+      "s30-valkey-1": "0B / 0B",
+      "sis-rcv-F3000-30M": "0B / 0B",
+      "sis-sampler-F3000-30M": "0B / 0B",
+      "sis-worker-F3000-30M": "0B / 0B"
+    },
+    "mem_available_gib": 127.86,
+    "mem_available_kb": 134068604,
+    "mem_free_kb": 132114444,
+    "mem_total_kb": 134217728
+  },
+  "stability": {
+    "active_vu": {
+      "first300s_max": 2044,
+      "max": 306,
+      "mean": 24.3,
+      "p95": 40.0,
+      "samples": 1785
+    },
+    "anomaly_buckets": [],
+    "buckets": [
+      {
+        "began": 180000,
+        "bucket": 1,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 118,
+        "ops": 179981,
+        "ops_per_s": 2999.7,
+        "p50": 5.0,
+        "p95": 32.0,
+        "p99": 55.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 0,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 26705
+      },
+      {
+        "began": 180000,
+        "bucket": 2,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 458,
+        "ops": 180004,
+        "ops_per_s": 3000.1,
+        "p50": 5.0,
+        "p95": 25.0,
+        "p99": 47.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 0,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 26438
+      },
+      {
+        "began": 180000,
+        "bucket": 3,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1008,
+        "ops": 179996,
+        "ops_per_s": 2999.9,
+        "p50": 5.0,
+        "p95": 24.0,
+        "p99": 43.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 0,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25836
+      },
+      {
+        "began": 180001,
+        "bucket": 4,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1413,
+        "ops": 180006,
+        "ops_per_s": 3000.1,
+        "p50": 5.0,
+        "p95": 27.0,
+        "p99": 66.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 8,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25937
+      },
+      {
+        "began": 180000,
+        "bucket": 5,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1433,
+        "ops": 179994,
+        "ops_per_s": 2999.9,
+        "p50": 5.0,
+        "p95": 26.0,
+        "p99": 47.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 24,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25514
+      },
+      {
+        "began": 179999,
+        "bucket": 6,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1365,
+        "ops": 180005,
+        "ops_per_s": 3000.1,
+        "p50": 5.0,
+        "p95": 24.0,
+        "p99": 45.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 36,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25746
+      },
+      {
+        "began": 180001,
+        "bucket": 7,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1159,
+        "ops": 179946,
+        "ops_per_s": 2999.1,
+        "p50": 5.0,
+        "p95": 24.0,
+        "p99": 41.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 37,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 26054
+      },
+      {
+        "began": 180000,
+        "bucket": 8,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1129,
+        "ops": 180042,
+        "ops_per_s": 3000.7,
+        "p50": 5.0,
+        "p95": 25.0,
+        "p99": 49.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 16,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25785
+      },
+      {
+        "began": 180000,
+        "bucket": 9,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1241,
+        "ops": 180008,
+        "ops_per_s": 3000.1,
+        "p50": 4.0,
+        "p95": 24.0,
+        "p99": 43.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 31,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25905
+      },
+      {
+        "began": 180001,
+        "bucket": 10,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1223,
+        "ops": 180006,
+        "ops_per_s": 3000.1,
+        "p50": 5.0,
+        "p95": 24.0,
+        "p99": 38.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 18,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25876
+      },
+      {
+        "began": 180000,
+        "bucket": 11,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1441,
+        "ops": 180001,
+        "ops_per_s": 3000.0,
+        "p50": 5.0,
+        "p95": 24.0,
+        "p99": 39.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 25,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25292
+      },
+      {
+        "began": 179999,
+        "bucket": 12,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1502,
+        "ops": 179998,
+        "ops_per_s": 3000.0,
+        "p50": 4.0,
+        "p95": 23.0,
+        "p99": 32.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 31,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25845
+      },
+      {
+        "began": 180001,
+        "bucket": 13,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1530,
+        "ops": 179998,
+        "ops_per_s": 3000.0,
+        "p50": 4.0,
+        "p95": 24.0,
+        "p99": 38.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 26,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25287
+      },
+      {
+        "began": 180000,
+        "bucket": 14,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1513,
+        "ops": 179991,
+        "ops_per_s": 2999.8,
+        "p50": 5.0,
+        "p95": 25.0,
+        "p99": 48.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 34,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25546
+      },
+      {
+        "began": 180001,
+        "bucket": 15,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1424,
+        "ops": 180005,
+        "ops_per_s": 3000.1,
+        "p50": 4.0,
+        "p95": 24.0,
+        "p99": 38.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 36,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25616
+      },
+      {
+        "began": 180000,
+        "bucket": 16,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1372,
+        "ops": 179993,
+        "ops_per_s": 2999.9,
+        "p50": 4.0,
+        "p95": 23.0,
+        "p99": 37.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 27,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25681
+      },
+      {
+        "began": 180000,
+        "bucket": 17,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1429,
+        "ops": 180008,
+        "ops_per_s": 3000.1,
+        "p50": 4.0,
+        "p95": 23.0,
+        "p99": 34.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 27,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25681
+      },
+      {
+        "began": 180000,
+        "bucket": 18,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1356,
+        "ops": 180001,
+        "ops_per_s": 3000.0,
+        "p50": 4.0,
+        "p95": 23.0,
+        "p99": 32.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 29,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25693
+      },
+      {
+        "began": 180000,
+        "bucket": 19,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1284,
+        "ops": 179998,
+        "ops_per_s": 3000.0,
+        "p50": 4.0,
+        "p95": 23.0,
+        "p99": 34.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 30,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25730
+      },
+      {
+        "began": 180000,
+        "bucket": 20,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1279,
+        "ops": 179993,
+        "ops_per_s": 2999.9,
+        "p50": 5.0,
+        "p95": 24.0,
+        "p99": 38.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 26,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25823
+      },
+      {
+        "began": 180000,
+        "bucket": 21,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1210,
+        "ops": 180009,
+        "ops_per_s": 3000.2,
+        "p50": 4.0,
+        "p95": 24.0,
+        "p99": 37.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 29,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25897
+      },
+      {
+        "began": 180000,
+        "bucket": 22,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1172,
+        "ops": 180001,
+        "ops_per_s": 3000.0,
+        "p50": 5.0,
+        "p95": 26.0,
+        "p99": 43.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 24,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25696
+      },
+      {
+        "began": 180001,
+        "bucket": 23,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1200,
+        "ops": 179998,
+        "ops_per_s": 3000.0,
+        "p50": 5.0,
+        "p95": 27.0,
+        "p99": 50.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 30,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25487
+      },
+      {
+        "began": 179999,
+        "bucket": 24,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1313,
+        "ops": 180006,
+        "ops_per_s": 3000.1,
+        "p50": 5.0,
+        "p95": 25.0,
+        "p99": 39.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 19,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25453
+      },
+      {
+        "began": 180000,
+        "bucket": 25,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1579,
+        "ops": 179996,
+        "ops_per_s": 2999.9,
+        "p50": 5.0,
+        "p95": 25.0,
+        "p99": 40.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 25,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25339
+      },
+      {
+        "began": 180002,
+        "bucket": 26,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1531,
+        "ops": 179986,
+        "ops_per_s": 2999.8,
+        "p50": 5.0,
+        "p95": 29.0,
+        "p99": 91.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 25,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25688
+      },
+      {
+        "began": 180000,
+        "bucket": 27,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1446,
+        "ops": 180014,
+        "ops_per_s": 3000.2,
+        "p50": 5.0,
+        "p95": 25.0,
+        "p99": 40.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 34,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25785
+      },
+      {
+        "began": 180000,
+        "bucket": 28,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1229,
+        "ops": 179999,
+        "ops_per_s": 3000.0,
+        "p50": 5.0,
+        "p95": 24.0,
+        "p99": 34.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 39,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25815
+      },
+      {
+        "began": 180000,
+        "bucket": 29,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1170,
+        "ops": 179995,
+        "ops_per_s": 2999.9,
+        "p50": 5.0,
+        "p95": 25.0,
+        "p99": 38.0,
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 29,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25636
+      },
+      {
+        "began": 135000,
+        "bucket": 30,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 795,
+        "ops": 135027,
+        "ops_per_s": 3000.6,
+        "p50": 5.0,
+        "p95": 25.0,
+        "p99": 37.0,
+        "scheduled": 135000,
+        "span_s": 45.0,
+        "subject_expired_reauth": 18,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 19334
+      }
+    ],
+    "checkpoint_events": [
+      {
+        "incomplete": true,
+        "kind": "timed",
+        "start_observed_ts": 1790304061,
+        "start_ts": 1790304059
+      }
+    ],
+    "generator": {
+      "cpu_cores_avg": null,
+      "cpu_cores_max": null,
+      "rss_gib_avg": null,
+      "rss_gib_max": null
+    },
+    "host_mem_available_gib_min": null,
+    "reauth_herd": {
+      "herd": false,
+      "max_per_minute": 39
+    },
+    "sustained_cliff": {
+      "sustained_cliff": false,
+      "triggers": []
+    }
+  },
+  "subject_lifecycle": {
+    "measure_expired_reauth": 733,
+    "reauth_fraction_of_started": null
+  },
+  "verdict": "INVALID"
+}

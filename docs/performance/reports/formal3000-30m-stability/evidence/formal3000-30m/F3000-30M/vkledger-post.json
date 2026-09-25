@@ -1,0 +1,70 @@
+{
+ "census_exact": {
+  "oauth:client_assertion": 17537,
+  "oauth:dpop": 41032,
+  "oauth:jar": 94846,
+  "oauth:session": 2049,
+  "tenant-directory:snapshot": 1
+ },
+ "done": true,
+ "info": {
+  "aof_enabled": 0,
+  "dbsize": 155463,
+  "evicted_keys": 0,
+  "expired_keys": 1146878,
+  "keyspace_hits": 20290581,
+  "keyspace_misses": 3877,
+  "mem_fragmentation_ratio": 1.64,
+  "rdb_bgsave_in_progress": 0,
+  "used_memory": 55098744,
+  "used_memory_rss": 90447872
+ },
+ "keys_seen": 155465,
+ "mem_bytes_sampled": {
+  "oauth:client_assertion": 127360,
+  "oauth:dpop": 118144,
+  "oauth:jar": 128000,
+  "oauth:session": 179456,
+  "tenant-directory:snapshot": 544
+ },
+ "mem_sample_n": {
+  "oauth:client_assertion": 398,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "meta": {
+  "run_id": "F3000-30M",
+  "sample_per_cat": 400,
+  "sampled_at": 1790305637,
+  "scan_ms": 443,
+  "script_sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b"
+ },
+ "sampled_per_cat": {
+  "oauth:client_assertion": 400,
+  "oauth:dpop": 400,
+  "oauth:jar": 400,
+  "oauth:session": 400,
+  "tenant-directory:snapshot": 1
+ },
+ "total_keys": 155465,
+ "ttl_buckets_sampled": {
+  "oauth:client_assertion|0m+": 118,
+  "oauth:client_assertion|1m+": 137,
+  "oauth:client_assertion|2m+": 116,
+  "oauth:client_assertion|3m+": 27,
+  "oauth:client_assertion|gone": 2,
+  "oauth:dpop|0m+": 74,
+  "oauth:dpop|1m+": 100,
+  "oauth:dpop|2m+": 85,
+  "oauth:dpop|3m+": 82,
+  "oauth:dpop|4m+": 59,
+  "oauth:jar|0m+": 127,
+  "oauth:jar|1m+": 119,
+  "oauth:jar|2m+": 115,
+  "oauth:jar|3m+": 39,
+  "oauth:session|449m+": 400,
+  "tenant-directory:snapshot|no_ttl": 1
+ }
+}

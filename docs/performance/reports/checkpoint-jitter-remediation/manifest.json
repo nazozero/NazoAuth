@@ -1,0 +1,213 @@
+{
+  "run_id": "ckptjitter-20m-20260923070500",
+  "date_utc": "2026-09-23",
+  "kind": "bounded 20-minute checkpoint diagnostic + measurement-window validation",
+  "identity": {
+    "base_sha": "bb5f42c60d24c18bf71d279ad50aee4935f0cca0",
+    "implementation_sha": "ed67b8d37e2e456c334d0b17d601d468e835e32f",
+    "test_source_sha": "f842280c3d5935ca04c889b1db89f54b02e135a1",
+    "deployment_id": "01a0cd18-b561-7580-8cc6-a80b1829d6eb",
+    "app_image": "nazoauth-perf-nazoauth@sha256:4d32274115a499614f7001ddb38f6ae5eeaa5b5be4066ce05d935981612a7bfc",
+    "running_binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+    "postgres_image": "docker.io/library/postgres:18-alpine@sha256:d3e1620b530c944afa6e887d22eb899824da68e19c52024bf98f5220c88a65b2",
+    "postgres_version": "PostgreSQL 18.6",
+    "valkey_image": "docker.io/valkey/valkey:8-alpine@sha256:e0eb7c480958d32bdc4357a74bdd70653ae15f2f9b4c93c4a5a9fad1dc471c84",
+    "migration_set_sha256": "4b25e9660a74b4f62385336be5921e3636bc5c01ca3ca82ee1b8fead19f9d240",
+    "applied_migrations_sha256": "84dbbfd1a001d7a3a90b995531fd44a7fd1cb39ffb6468af8bcf25314d667df9",
+    "canonical_pg_schema_sha256": "c0e96dbad212dd0b132934bf15a86c6841f122a97c7cdbdc5b2fc4d4b90a0f87",
+    "harness_file_sha256": {
+      "perf/tools/soak_run.sh": "4e236b3f65b82ea873e0b4b6c102a150770e34a65aa0af977b9ff8dcaad67dfe",
+      "perf/runner.py": "6707e01e444bac0e950566c9880747d2cd25bf0209fcfb36555d5a501bcaeb3c",
+      "perf/tools/checkpoint_observer.py": "55109458e66bb28b1e3d6be2467628032b17d1ebf5517ad3d587227b7756431f",
+      "perf/tools/checkpoint_analyze.py_at_run": "6422b6b405f3324cef7770094c42bb212cb4809b772deb955d43a61733def9e6",
+      "perf/k6/oauth.js": "0c8624cdf336af4fd0124aa200079ae3ee4701e5cb09bacd8a1a930beb12fa53",
+      "perf/k6/measurement_clock.js": "e9ee930982e7a1db6cec16f0ccb7fd4d32c7fcf772d0c59dbe36529f5cc2351a"
+    },
+    "host": "AMD EPYC 9K65 / 64 logical CPUs / 128 GiB / kernel 5.4.241-1-tlinux4 / PGDATA on /dev/md0 (19-disk RAID0, XFS)"
+  },
+  "workload": {
+    "main": {
+      "scenario": "cap_mixed",
+      "executor": "constant-arrival-rate",
+      "rate_per_s": 2000,
+      "duration_s": 1200,
+      "warmup_ms": 15000,
+      "pre_vus": 256,
+      "max_vus": 1024
+    },
+    "sidecars_delay_s": 120,
+    "sidecars": {
+      "refresh": 600,
+      "argon2": 8,
+      "meta": 200,
+      "fapi": 30
+    },
+    "audit": "exporter + durable receiver enabled",
+    "diagnostics": {
+      "track_wal_io_timing": "on->restored off",
+      "log_checkpoints": "on (pre-existing)",
+      "track_io_timing": "on (unchanged)"
+    },
+    "postgres_perf_params_changed": "NONE",
+    "durability_changes": "NONE",
+    "workload_behaviour_changes": "NONE (fapi sidecar now executes real requests because the shared vector pool covers its offset; iteration mix/rates unchanged)"
+  },
+  "measurement_contract": {
+    "name": "cap-scenario-window-v1",
+    "window_utc": [
+      "2026-09-23T07:10:07.733Z",
+      "2026-09-23T07:29:52.733Z"
+    ],
+    "window_seconds": 1185,
+    "common_window_utc": [
+      "2026-09-23T07:12:18Z",
+      "2026-09-23T07:29:48Z"
+    ],
+    "common_window_basis": "conservative_bounds (argon2/meta/fapi emit no cap_window_* metrics; exact only for main\u2229refresh: [2026-09-23T07:12:07.388Z, 2026-09-23T07:29:52.388Z])",
+    "scenario_clock_ok": true,
+    "divergent_vus": false
+  },
+  "headline_results": {
+    "unified_measure_ops": 2368236,
+    "unified_measure_attempts_per_s": 1998.511,
+    "measure_cohort_success_per_s": 1962.78,
+    "legacy_rule_ops_same_stream": 2360048,
+    "legacy_ops_per_s": 1991.602,
+    "dropped_iterations": 1921,
+    "drop_fraction": 0.0008,
+    "unexpected_errors": 0,
+    "op_latency_ms_interval": {
+      "p50": "[5,10)",
+      "p95": "[20,50)",
+      "p99": "[50,100)",
+      "note": "containing-bucket intervals under artifact-declared stream-v1 schema (v < bound); not exact quantiles"
+    },
+    "http_latency_ms": {
+      "p50": 4.614,
+      "p95": 16.845,
+      "p99": 38.887
+    },
+    "cap_mixed_gate_unified_basis": "PASS (this bounded window; not a 30m certification)"
+  },
+  "checkpoints": {
+    "timed_complete_in_window": 3,
+    "write_phase_s_each": [
+      269.222,
+      269.425,
+      269.844
+    ],
+    "sync_phase_s_each": [
+      0.293,
+      0.18,
+      0.174
+    ],
+    "local_window_semantics": "start_local = start+[-30s,+90s]; complete_local = complete+[-30s,+90s]; clipped to all-load common window; local_union excludes the middle write phase",
+    "hole_area_ops_per_checkpoint_local_union": [
+      927,
+      1382,
+      1433
+    ],
+    "episodes_per_checkpoint_local_union": [
+      12,
+      14,
+      10
+    ],
+    "recovery": "per-episode, all recovered",
+    "note": "ckpt-4 is a terminal drain artifact (start only, evidence_sufficient=false); ckpt-3 complete_local truncated at common-window end"
+  },
+  "wal_envelope": {
+    "mean_Bps": 9909828.4,
+    "peak_rate_1s_Bps": 113476420.0,
+    "volume_peak_10s_B": 202148178.0,
+    "volume_peak_60s_B": 750708268.0,
+    "volume_peak_300s_B": 3226805372.0,
+    "volume_peak_600s_B": 6340742929.0,
+    "wal_write_ms": null,
+    "wal_sync_ms": null,
+    "note": "counter publication deltas clipped to the measurement window; rolling values are time windows, not sample counts; wal_write_time/wal_sync_time are absent from PG18 pg_stat_wal -> null, not zero"
+  },
+  "wal_per_op": {
+    "value_bytes": 4960.0,
+    "value_kib": 4.844,
+    "effective_interval_utc": [
+      "2026-09-23T07:10:08Z",
+      "2026-09-23T07:29:52Z"
+    ],
+    "numerator": "pg_stat_wal.wal_bytes deltas midpoint-clipped to the effective interval (11.74 GB / 1184 s)",
+    "denominator": "measure-cohort begins on the same effective interval (2366235)",
+    "comparable_to_historical_3_62KB": false
+  },
+  "safety": {
+    "audit_events_accepted": 3580431,
+    "audit_duplicates": 0,
+    "audit_rejected": 0,
+    "audit_pending_end": 0,
+    "refresh_families_live": 4593,
+    "refresh_max_active_per_scope": 10,
+    "refresh_spent_max_per_family": 64,
+    "refresh_expired_backlog": 0,
+    "wal_bytes_per_op": 4960.0,
+    "app_rss_kb_end": 141884,
+    "restarts": 0,
+    "oom": false,
+    "sidecar_terminal_summaries": "all present (argon2/meta/fapi/refresh exit=0)"
+  },
+  "verdict": {
+    "core_clock_accounting": "REPAIRED",
+    "evaluator_validity": "REPAIRED",
+    "checkpoint_analysis_validity": "REPAIRED",
+    "historical_comparability": "PRESERVED",
+    "checkpoint_runtime_cause": "UNRESOLVED (commit-path WAL fsync + pool wait correlate with dips; no causal proof)",
+    "runtime_remediation": "NOT_PERFORMED",
+    "strict_30m_capacity": "NOT_RETESTED"
+  },
+  "reanalysis_v2": {
+    "analyzer_source_sha": "72e4b9b82d3af3cb1a08c723dcbc3eed7527e9b7",
+    "revision": 2,
+    "new_workload_time_s": 0,
+    "output_dir": "evidence/ckptjitter-20m-20260923070500/reanalysis-v2/",
+    "provenance": "evidence/ckptjitter-20m-20260923070500/reanalysis-v2/REANALYSIS.json",
+    "unrecoverable": [
+      "argon2/meta/fapi exact measurement bounds (no cap_window_* metrics emitted)",
+      "sub-second event placement within 1 s bins",
+      "exact op-latency quantiles (bucketed histograms only)",
+      "pg_stat_wal.wal_write_time/wal_sync_time (null in capture)",
+      "main contract measure_offset_ms (naming defect in run source)"
+    ],
+    "superseded_by": "reanalysis-v3"
+  },
+  "failed_runs_preserved_remote": [
+    "ckptjitter-20m-20260923055713 (perf image predated import sys fix; runner NameError pre-load)",
+    "ckptjitter-20m-20260923061800 (missing /perf-state mount; sidecars dead at init; main valid standalone)"
+  ],
+  "remote_artifacts": {
+    "root": "/workspace/perf-results/ckptjitter-20m-20260923070500/",
+    "diag_stream": "main/capacity-cap-mixed.diag.jsonl.gz sha256=d99d38339ccf09b26a39da4bbcd88cfee5c1535dcf4f1156d95ee3c80db84e2b (310 MB, retained remote)"
+  },
+  "steady_state_v3": {
+    "basis": "common_window_minus_checkpoint_local_windows",
+    "common_seconds": 1050,
+    "steady_seconds": 520,
+    "excluded_checkpoint_local_bins": 530,
+    "throughput_ops_per_s": 1999.983,
+    "successful_ops_per_s": 1961.331,
+    "drops": 0,
+    "unexpected": 0,
+    "dips_in_steady": 42
+  },
+  "reanalysis_v3": {
+    "analyzer_source_sha": "030df6d5b3634352f4a03e8ddfb166edd1eab0a7",
+    "revision": 3,
+    "new_workload_time_s": 0,
+    "output_dir": "evidence/ckptjitter-20m-20260923070500/reanalysis-v3/",
+    "provenance": "evidence/ckptjitter-20m-20260923070500/reanalysis-v3/REANALYSIS.json",
+    "authoritative": true,
+    "unrecoverable": [
+      "argon2/meta/fapi exact measurement bounds (no cap_window_* metrics emitted)",
+      "sub-second event placement within 1 s bins",
+      "exact op-latency quantiles (bucketed histograms only)",
+      "pg_stat_wal.wal_write_time/wal_sync_time (null in capture)",
+      "main contract measure_offset_ms (naming defect in run source)"
+    ]
+  }
+}

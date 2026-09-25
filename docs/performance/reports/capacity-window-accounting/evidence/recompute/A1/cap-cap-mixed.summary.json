@@ -1,0 +1,254 @@
+{
+  "profile": "cap",
+  "scenario": "cap_mixed",
+  "elapsed_seconds": 125.762,
+  "status": "target_miss",
+  "k6_exit_code": 0,
+  "k6": {
+    "http_reqs": 460825,
+    "rps": 3822.235,
+    "error_rate": 0.000148,
+    "iterations_completed": 316467,
+    "dropped_iterations": 43534,
+    "dropped_per_s": 361.085,
+    "drop_fraction": 0.120927,
+    "scheduled_estimate": 360001,
+    "latency_ms": {
+      "p50": 205.31,
+      "p95": 460.302,
+      "p99": 529.887
+    },
+    "measure": {
+      "ops": 276013,
+      "ops_per_s": 2628.695,
+      "ops_per_s_basis": "scenario_window",
+      "successful_ops_per_s": 2613.333,
+      "errors": 1613,
+      "outcomes": {
+        "success": 274400,
+        "expected_rejection": 66,
+        "local_no_request": 1547,
+        "unexpected": 0,
+        "prepare_failed": 0
+      },
+      "iterations": {
+        "measure_begins": 276013,
+        "legacy_rule_begins": 250816,
+        "late_vu_measured_only": 25316,
+        "begins_total": 316467,
+        "ends_total": 316467
+      },
+      "legacy_rule_ops": 250816,
+      "latency_ms": {
+        "p50": 248.0,
+        "p95": 1129.0,
+        "p99": 1256.0
+      },
+      "iteration_ms": {
+        "p50": 248.0,
+        "p95": 1129.0,
+        "p99": 1256.0
+      },
+      "measurement_contract": {
+        "scenario_clock_ok": 1,
+        "divergent_vus": false,
+        "scenario_start_ms": 1790261642420,
+        "window_end_ms": 1790261762420,
+        "window_seconds": 105,
+        "duration_ms": 120000,
+        "measure_offset_ms": 15000,
+        "cap_measure_start_ms": 0,
+        "bucket_ms": 60000,
+        "bucket_count": 3,
+        "contract": "cap-scenario-window-v1",
+        "window_start_ms": 1790261657420,
+        "warmup_ms": 15000
+      },
+      "contract_problems": [],
+      "window_valid": true
+    }
+  },
+  "measurement_evidence": null,
+  "steps": [
+    {
+      "step": "authorize",
+      "http_reqs": 48292,
+      "rps": 400.55,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 145.459,
+        "p95": 185.052,
+        "p99": 216.693
+      }
+    },
+    {
+      "step": "authorize_decision",
+      "http_reqs": 48292,
+      "rps": 400.55,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 371.331,
+        "p95": 453.296,
+        "p99": 501.226
+      }
+    },
+    {
+      "step": "cap_bootstrap",
+      "http_reqs": 1029,
+      "rps": 8.535,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 78.104,
+        "p95": 155.165,
+        "p99": 167.418
+      }
+    },
+    {
+      "step": "par_oidc",
+      "http_reqs": 47263,
+      "rps": 392.015,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 147.054,
+        "p95": 186.17,
+        "p99": 220.62
+      }
+    },
+    {
+      "step": "token_authorization_code",
+      "http_reqs": 48292,
+      "rps": 400.55,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 375.302,
+        "p95": 464.725,
+        "p99": 508.639
+      }
+    },
+    {
+      "step": "token_client_credentials",
+      "http_reqs": 79296,
+      "rps": 657.707,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 222.713,
+        "p95": 274.829,
+        "p99": 311.064
+      }
+    },
+    {
+      "step": "token_exchange",
+      "http_reqs": 47483,
+      "rps": 393.84,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 296.731,
+        "p95": 362.146,
+        "p99": 405.517
+      }
+    },
+    {
+      "step": "token_refresh",
+      "http_reqs": 46186,
+      "rps": 383.082,
+      "error_rate": 0.001472,
+      "latency_ms": {
+        "p50": 446.345,
+        "p95": 541.901,
+        "p99": 597.315
+      }
+    },
+    {
+      "step": "userinfo",
+      "http_reqs": 94692,
+      "rps": 785.407,
+      "error_rate": 0.0,
+      "latency_ms": {
+        "p50": 145.575,
+        "p95": 184.857,
+        "p99": 217.869
+      }
+    }
+  ],
+  "error_breakdown": [],
+  "postgres": {
+    "statement_calls": 9784640,
+    "total_statement_ms": 673772.526,
+    "mean_statement_ms": 0.069,
+    "rows": 10377591,
+    "database_bytes": 359225023,
+    "statements_per_http_request": 21.233
+  },
+  "db_pool": {
+    "counter_reset": false,
+    "acquire_count": 2050726,
+    "wait_ms_total": 140420729.909,
+    "wait_ms_avg": 68.474,
+    "wait_ms_max_observed_process_lifetime": 214.581
+  },
+  "valkey": {
+    "keyspace_hits": 1232200,
+    "keyspace_misses": 2144,
+    "commands_processed": 2553518,
+    "expired_keys": 11,
+    "db0_keys": 82622
+  },
+  "containers": {
+    "by_container": {
+      "sis32-nazoauth-1": {
+        "service": "nazoauth",
+        "samples": 42,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "sis32-postgres-1": {
+        "service": "postgres",
+        "samples": 42,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "sis32-valkey-1": {
+        "service": "valkey",
+        "samples": 42,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    },
+    "by_service": {
+      "nazoauth": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "valkey": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      },
+      "postgres": {
+        "containers": 1,
+        "cpu_percent_avg": 0.0,
+        "cpu_percent_max": 0.0,
+        "memory_bytes_avg": 0,
+        "memory_bytes_max": 0
+      }
+    }
+  },
+  "load_model": {
+    "executor": "constant-arrival-rate",
+    "target_rate": 3000,
+    "duration": "120s",
+    "app_replicas": 1,
+    "observed_app_instances": 1
+  }
+}

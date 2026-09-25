@@ -1,0 +1,15 @@
+{
+  "points": 165104262,
+  "parse_errors": 0,
+  "reader_error": null,
+  "bins": 1805,
+  "first_ts": 1790312080.958617,
+  "last_ts": 1790313884.183429,
+  "first_utc": "2026-09-25T04:54:40.958617+00:00",
+  "last_utc": "2026-09-25T05:24:44.183429+00:00",
+  "vus_seen": 0,
+  "lag_max_s": 0.0,
+  "lag_over_5s": 0,
+  "diag_budget_exceeded": 8587268,
+  "diag_overflow": true
+}

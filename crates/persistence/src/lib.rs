@@ -52,6 +52,16 @@ pub trait SecurityAuditLedger: Send + Sync {
     fn anchor_health(&self) -> BoxFuture<'_, Result<SecurityAuditAnchorHealth, RepositoryError>>;
 
     fn append(&self, event: SecurityAuditEvent) -> BoxFuture<'_, Result<(), RepositoryError>>;
+
+    /// Persist an already-validated event slice as one durable unit. The
+    /// batch either commits in full or fails in full; adapters must not
+    /// reorder, split, or partially apply it. Used by the best-effort audit
+    /// queue worker to amortize checkout/commit cost under backlog; the
+    /// required-evidence path keeps using `append`.
+    fn append_batch<'a>(
+        &'a self,
+        events: &'a [SecurityAuditEvent],
+    ) -> BoxFuture<'a, Result<(), RepositoryError>>;
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

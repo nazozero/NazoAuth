@@ -1,0 +1,243 @@
+{
+  "report": "formal3000-30m-harness-repair",
+  "status": "INVALID",
+  "fail_class": "LOAD_MODEL_INVALID",
+  "generated_at": "2026-09-25T14:46:38Z",
+  "base_sha": "1e758edcc9faa8ea07085d1fce11b82eef3bb891",
+  "harness_sha": "ebbfa79727063d69895125f0d7c9e1e150da8cf8",
+  "final_sha": "ebbfa79727063d69895125f0d7c9e1e150da8cf8",
+  "reviewed_head": "ebbfa79727063d69895125f0d7c9e1e150da8cf8",
+  "source_branch": "perf/formal3000-30m-stability-c8b97708",
+  "workspace_realpath": "/workspace/.hr2",
+  "remote_host": "jgw_bot1 (cnb dev env cnb-n1n-1k3b2cveg)",
+  "app_image_ref": "hr2-app:a2dd5f13",
+  "app_image_id": "sha256:7a8a436bbe05d7aa866291aed71d2cfbff63aff50d377ac0fbd6e6d4086b7490",
+  "image_binary_sha": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+  "running_pid1_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+  "expected_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+  "compose_sha256": "a95fdab1c1d5e24e71b72b203ee6dc6a32879ef1b350afec38402ec8b8932c1c",
+  "perf_metrics_schema": {
+    "db_pool": true,
+    "audit_queue": true,
+    "status": "PASS"
+  },
+  "preload_preflight": "PASS",
+  "database_max_connections": "32",
+  "commit_delay": "0",
+  "wal_sync_method": "fdatasync",
+  "durability_changed": false,
+  "production_code_changed": false,
+  "changed_paths": [
+    "perf/runner.py",
+    "perf/tools/capacity_search.py",
+    "perf/tools/checkpoint_analyze.py",
+    "perf/tools/measure_schedule.py",
+    "perf/tools/pool_size_ab.py",
+    "perf/tools/prepared_rsa_ab.py",
+    "perf/tools/proc_detail_sampler.py",
+    "perf/tools/single_instance_scaling.py",
+    "perf/tools/perf_state_ready.py",
+    "perf/tests/test_stream_cohort.py",
+    "docs/performance/reports/formal3000-30m-harness-repair",
+    "docs/performance/reports/formal3000-30m-stability"
+  ],
+  "timestamps": {
+    "remote_host_time_start": 1790312034.3202083,
+    "run_start_epoch": 1790312075.008104,
+    "run_end_epoch": 1790313896.1489937,
+    "remote_host_time_end": 1790313996.3489459,
+    "report_generated_at": 1790313998.743805,
+    "report_time_ok": true
+  },
+  "points": [
+    {
+      "name": "F3000-30M-R2",
+      "scenario": "cap_mixed",
+      "duration_s": 1800,
+      "warmup_s": 15,
+      "measurement_window_s": 1785,
+      "target_ops_per_s": 3000,
+      "pre_allocated_vus": 2048,
+      "max_vus": 2048,
+      "pool_size": 32,
+      "status": "INVALID",
+      "fail_class": "LOAD_MODEL_INVALID",
+      "failed_gates": [
+        "capacity_gate_pass"
+      ],
+      "invalid_reason": "stream_evidence_invalid: diag_overflow",
+      "formal_real_load_time_s": 1800.29,
+      "k6_exit_code": 0,
+      "main_oom_killed": false,
+      "measurement": {
+        "measure_scheduled": 5355000,
+        "measure_started_exact": 5355005,
+        "measure_completed_exact": 5355005,
+        "measure_dropped_exact": 0,
+        "measure_scheduled_observed": 5355005,
+        "measure_drop_fraction": 0.0,
+        "measure_rate": 3000.003,
+        "observed_schedule_rate": 3000.003,
+        "rational_planned_arrivals": 5355000,
+        "schedule_delta_vs_rational": 5,
+        "schedule_delta_vs_k6_scheduled_metric": 1,
+        "outcome_sum": 5355005,
+        "outcome_success": 5314987,
+        "outcome_unexpected": 0,
+        "cap_iter_ms": {
+          "p50": 6.0,
+          "p95": 41.0,
+          "p99": 135.0
+        },
+        "cap_op_ms": {
+          "p95": 41.0,
+          "p99": 134.0
+        },
+        "late_vu_fraction": 0.0,
+        "cohort_valid": true,
+        "window_valid": true
+      },
+      "stream_analyzer": {
+        "points": 165104262,
+        "parse_errors": 0,
+        "reader_error": null,
+        "lag_over_5s": 0,
+        "diag_overflow": true,
+        "diag_budget_exceeded": 8587268,
+        "max_diag_bytes": 512000000
+      },
+      "whole_run_diagnostics": {
+        "dropped_iterations": 477,
+        "drop_fraction": 8.8e-05,
+        "note": "all drops pre-window warmup; diagnostic only, non-gating"
+      },
+      "generator": {
+        "main_exit_code": 0,
+        "main_oom_killed": false,
+        "active_vu": {
+          "mean": 39.8,
+          "p95": 120.0,
+          "max": 778,
+          "first300s_max": 2033
+        },
+        "cpu_cores_avg": 4.6,
+        "cpu_cores_max": 11.82,
+        "rss_gib_avg": 19.65,
+        "rss_gib_max": 20.63,
+        "host_mem_available_gib_min": 102.49
+      },
+      "app_runtime": {
+        "rss_mib_avg": 223,
+        "rss_mib_max": 232,
+        "cpu_cores_avg": 5.04,
+        "postgres_rss_mib_avg": 5687,
+        "postgres_cpu_cores_avg": 8.34
+      },
+      "sidecars": {
+        "argon2": {
+          "ready": true,
+          "exit": 0,
+          "terminal_summary": true,
+          "http_reqs": 86376
+        },
+        "fapi": {
+          "ready": true,
+          "exit": 0,
+          "terminal_summary": true,
+          "http_reqs": 269950
+        },
+        "meta": {
+          "ready": true,
+          "exit": 0,
+          "terminal_summary": true,
+          "http_reqs": 720002
+        },
+        "refresh": {
+          "ready": true,
+          "exit": 0,
+          "terminal_summary": true,
+          "http_reqs": 1079307
+        },
+        "all_started_before_measurement_minus_5s": true
+      },
+      "audit_queue": {
+        "enqueued": 895378,
+        "persisted": 895378,
+        "dropped": 0,
+        "dropped_required": 0,
+        "pending_in_process": 0,
+        "queue_full": 0,
+        "persist_batches": 524439,
+        "persist_max_batch": 64,
+        "receiver_reconciled": true,
+        "journal_gap": 0,
+        "journal_dup": 0
+      },
+      "subject_lifecycle": {
+        "initial_mint": 2048,
+        "refresh_update": 770142,
+        "measure_expired_reauth": 766,
+        "reauth_herd": false
+      },
+      "checkpoints": {
+        "timed_initiated": 6,
+        "timed_completed_in_window": 5,
+        "requested": 0,
+        "write_time_ms_delta": 1347621.0,
+        "sync_time_ms_delta": 1618.0,
+        "buffers_written_delta": 31016,
+        "checkpoint_correlated_cliff": false
+      },
+      "stability": {
+        "sustained_cliff": false,
+        "anomaly_buckets": [
+          {
+            "bucket": 1,
+            "p95_ms": 270.0,
+            "p99_ms": 707.0,
+            "waiting_mean": 192.1,
+            "in_checkpoint_write_window": false,
+            "note": "isolated first-minute transient; sustained-cliff rule (>=4/5 consecutive) not met"
+          }
+        ],
+        "buckets_within_gate": "29/30"
+      },
+      "pool": {
+        "configured": 32,
+        "checked_out_mean": 24.52,
+        "checked_out_max": 32,
+        "waiting_mean_per_tick": 20.8,
+        "waiting_max_burst": 1009,
+        "acquire_per_op": 6.4986,
+        "wait_per_acq_ms": 1.047
+      },
+      "wal": {
+        "wal_writes_per_s": 1008.8,
+        "wal_fsyncs_per_s": 1006.3,
+        "wal_per_success_bytes": 4675.791,
+        "commits_per_fsync": 2.8368,
+        "pg_statements_per_req": 21.013
+      }
+    }
+  ],
+  "invalidity_reasons": [
+    "stream_evidence_invalid: diag_overflow \u2014 k6 point-stream diagnostic artifact exceeded MAX_DIAG_BYTES=512MiB; 8,587,268 points rejected at write time; per registered contract diag_overflow=false is required evidence for formal/stability runs"
+  ],
+  "non_invalidity_notes": [
+    "measurement cohort complete and internally consistent: started==completed==5,355,005, window drops=0, outcome_sum matches",
+    "all other registered gates passed (provenance, timing, schema, samplers, sidecars, audit, refresh, stability, generator)",
+    "healthy SUT metrics are diagnostic context only; they do not certify FORMAL_30M_3000_STABILITY",
+    "schedule_delta_vs_rational=+5 is executor diagnostic per new contract and did not gate"
+  ],
+  "unique_point_consumed": true,
+  "rerun_permitted": false,
+  "evidence_dir": "evidence",
+  "evidence_archive": {
+    "remote": "jgw_bot1:/workspace/.hr2/f3000-30m-r2-evidence.tar.gz (~65.5 MB, full streams incl. truncated diag)",
+    "local_untracked": "runtime/perf-evidence/f3000-30m-r2-evidence.tar.gz",
+    "committed": "curated files <2MiB under evidence/ (78 files, ~5.6 MB)"
+  },
+  "supersedes_for_certification": "formal3000-30m-stability/F3000-30M (remains INVALID; historical verdict preserved)",
+  "notes": "INVALID is a harness evidence-artifact budget defect (MAX_DIAG_BYTES undersized for 3000 ops/s x 30 min), not a SUT capacity finding. FORMAL_10M_3000_CAPACITY=PASS (prior F3000R2) unchanged. READY_FOR_MERGE=NO. No second formal point executed per unique-point protocol. Production code unchanged.",
+  "superseded_evidence_contract_by": "formal-evidence-contract-repair \u2014 original verdict INVALID preserved; corrected verdict under repaired contract: PASS (same evidence, zero additional load)"
+}

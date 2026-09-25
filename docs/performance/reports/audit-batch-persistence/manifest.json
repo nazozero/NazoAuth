@@ -1,0 +1,36 @@
+{
+  "experiment": "audit-batch-persistence",
+  "branch": "perf/audit-batch-persistence-69c79378",
+  "date": "2026-09-24",
+  "shas": {
+    "base_sha": "69c793783b261c9c783b3336909517fc915d3d3c",
+    "rsa_base_sha": "69c793783b261c9c783b3336909517fc915d3d3c",
+    "common_sha": "bec5ff72dc17ae4f077fa492018435828e35bbc1",
+    "batch_sha": "d4f5c73478c9479b7565ce806ad562b8301f5167",
+    "harness_sha": "30c7f55643eb19dd21300c34fb3e69df158d0e89"
+  },
+  "images": {
+    "a": {"tag": "abp-a:bec5ff72", "binary_sha256": "a49d39bd54e355932f067e9a990a01d5b671e006ca6773c9f26ae8209c67e489"},
+    "b": {"tag": "abp-b:d4f5c734", "binary_sha256": "00237080631e0b16ad35782151b65fe61f0bb895715c3963992d8255ce427ae2"}
+  },
+  "protocol": {
+    "points": ["A1", "B1", "B2", "A2"],
+    "workload": "cap_mixed 3000/s, 120s, warmup 15s, pre256/max1024",
+    "sidecars": "refresh 600/s, argon2 8/s, metadata 200/s, fapi 30/s",
+    "load_budget_s": 720,
+    "load_seconds": 518.87,
+    "postgres": "18.6",
+    "app_cpus": "24,26,132,134,136,138,140,142"
+  },
+  "verdict": "PASS",
+  "tests": {
+    "nazoauth_queue_persistence": "6/6",
+    "nazo_postgres_audit_ledger_real_pg18": "9/9",
+    "audit_batch_ab_driver": "12/12"
+  },
+  "evidence": {
+    "verdict": "evidence/audit-batch-verdict.json",
+    "remote_manifest": "evidence/audit-batch-manifest.json",
+    "budget": "evidence/budget.json"
+  }
+}

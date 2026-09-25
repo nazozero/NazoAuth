@@ -1,0 +1,25 @@
+{
+  "load_seconds_used": 518.9,
+  "points": [
+    {
+      "load_seconds": 131.0,
+      "name": "A1",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 126.4,
+      "name": "B1",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 130.6,
+      "name": "B2",
+      "status": "completed"
+    },
+    {
+      "load_seconds": 130.9,
+      "name": "A2",
+      "status": "completed"
+    }
+  ]
+}

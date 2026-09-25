@@ -1,0 +1,855 @@
+{
+  "basis": "pg_stat_wal counter deltas (publication counters, not physical I/O timings)",
+  "interval": [
+    1790147408,
+    1790148592
+  ],
+  "interval_utc": [
+    "2026-09-23T07:10:08+00:00",
+    "2026-09-23T07:29:52+00:00"
+  ],
+  "interval_basis": "measurement window effective full-second bins (same interval as the ops denominator)",
+  "deltas": 1184,
+  "segment_breaks": 0,
+  "covered_seconds": 1184.0,
+  "wal_bytes": 11736631641,
+  "wal_records": 110545754,
+  "wal_fpi": 142301,
+  "wal_write_ms": null,
+  "wal_sync_ms": null,
+  "mean_Bps": 9912695.6,
+  "peak_rate_1s_Bps": 113476420.0,
+  "volume_peak_10s_B": 202148178.0,
+  "volume_peak_60s_B": 750708268.0,
+  "volume_peak_300s_B": 3226805372.0,
+  "volume_peak_600s_B": 6340742929.0,
+  "resolution_note": "midpoint-clipped ~1s deltas; boundary deltas count fully \u2014 resolution +/-1s per boundary",
+  "wal_per_op": {
+    "bytes_per_op": 4960.0,
+    "KiB_per_op": 4.844,
+    "effective_interval": [
+      1790147408,
+      1790148592
+    ],
+    "numerator": "pg_stat_wal.wal_bytes deltas midpoint-clipped to effective_interval [2026-09-23T07:10:08+00:00, 2026-09-23T07:29:52+00:00) \u2014 the same interval as the denominator",
+    "denominator": "measure-cohort iteration begins on the full-second bins of the same effective_interval (all sidecars' own WAL is included in the numerator; denominator is main-scenario ops only \u2014 not a pure per-op WAL cost)",
+    "ops_in_window": 2366235,
+    "window_seconds": 1184,
+    "wal_covered_seconds": 1184.0,
+    "resolution_caveat": "observer deltas are midpoint-clipped ~1s samples; boundary deltas count fully \u2014 +/-1s per boundary"
+  },
+  "io": {
+    "deltas": 93536,
+    "segment_breaks": 0,
+    "by_backend": {
+      "autovacuum launcher": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 1184
+      },
+      "autovacuum worker": {
+        "write_bytes": 1899208704,
+        "fsyncs": 138.0,
+        "fsync_ms": 181.67400000000004,
+        "writes": 230687,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 2368
+      },
+      "background worker": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4736
+      },
+      "background writer": {
+        "write_bytes": 1943011328,
+        "fsyncs": 0,
+        "fsync_ms": 0.0,
+        "writes": 237184,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 0
+      },
+      "checkpointer": {
+        "write_bytes": 91947008,
+        "fsyncs": 705,
+        "fsync_ms": 374.212,
+        "writes": 11209,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 0
+      },
+      "client backend": {
+        "write_bytes": 31723520000,
+        "fsyncs": 1440038.0,
+        "fsync_ms": 1066757.0130000003,
+        "writes": 1615624,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4736
+      },
+      "io worker": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4736
+      },
+      "slotsync worker": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4736
+      },
+      "standalone backend": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 3552
+      },
+      "startup": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "wal"
+        ],
+        "null_field_deltas": 3552
+      },
+      "walreceiver": {
+        "write_bytes": 0,
+        "fsyncs": 0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "wal"
+        ],
+        "null_field_deltas": 0
+      },
+      "walsender": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "relation",
+          "temp relation",
+          "wal"
+        ],
+        "null_field_deltas": 4736
+      },
+      "walsummarizer": {
+        "write_bytes": 0,
+        "fsyncs": 0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "objects": [
+          "wal"
+        ],
+        "null_field_deltas": 0
+      },
+      "walwriter": {
+        "write_bytes": 3448832,
+        "fsyncs": 300,
+        "fsync_ms": 162.16500000000002,
+        "writes": 301,
+        "objects": [
+          "wal"
+        ],
+        "null_field_deltas": 0
+      }
+    },
+    "by_object": {
+      "relation": {
+        "write_bytes": 5344346112,
+        "fsyncs": 695.0,
+        "fsync_ms": 366.598
+      },
+      "temp relation": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0
+      },
+      "wal": {
+        "write_bytes": 30316789760,
+        "fsyncs": 1440486,
+        "fsync_ms": 1067108.4660000005
+      }
+    },
+    "by_dimension": {
+      "autovacuum launcher|relation|bulkread": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "autovacuum worker|relation|bulkread": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "autovacuum worker|relation|normal": {
+        "write_bytes": 3547136,
+        "fsyncs": 0,
+        "fsync_ms": 0.0,
+        "writes": 433,
+        "null_field_deltas": 0
+      },
+      "autovacuum worker|relation|vacuum": {
+        "write_bytes": 1885085696,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 230113,
+        "null_field_deltas": 1184
+      },
+      "autovacuum worker|wal|normal": {
+        "write_bytes": 10575872,
+        "fsyncs": 138,
+        "fsync_ms": 181.67400000000004,
+        "writes": 141,
+        "null_field_deltas": 0
+      },
+      "background worker|relation|bulkread": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "background worker|relation|bulkwrite": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "background worker|relation|vacuum": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "background worker|temp relation|normal": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "background writer|relation|normal": {
+        "write_bytes": 1943011328,
+        "fsyncs": 0,
+        "fsync_ms": 0.0,
+        "writes": 237184,
+        "null_field_deltas": 0
+      },
+      "checkpointer|relation|normal": {
+        "write_bytes": 91742208,
+        "fsyncs": 695,
+        "fsync_ms": 366.598,
+        "writes": 11199,
+        "null_field_deltas": 0
+      },
+      "checkpointer|wal|normal": {
+        "write_bytes": 204800,
+        "fsyncs": 10,
+        "fsync_ms": 7.614,
+        "writes": 10,
+        "null_field_deltas": 0
+      },
+      "client backend|relation|bulkread": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "client backend|relation|bulkwrite": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "client backend|relation|normal": {
+        "write_bytes": 1420959744,
+        "fsyncs": 0,
+        "fsync_ms": 0.0,
+        "writes": 173457,
+        "null_field_deltas": 0
+      },
+      "client backend|relation|vacuum": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "client backend|temp relation|normal": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "client backend|wal|init": {
+        "write_bytes": 6610223104,
+        "fsyncs": 394,
+        "fsync_ms": 7126.139999999999,
+        "writes": 394,
+        "null_field_deltas": 0
+      },
+      "client backend|wal|normal": {
+        "write_bytes": 23692337152,
+        "fsyncs": 1439644,
+        "fsync_ms": 1059630.8730000001,
+        "writes": 1441773,
+        "null_field_deltas": 0
+      },
+      "io worker|relation|bulkread": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "io worker|relation|bulkwrite": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "io worker|relation|vacuum": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "io worker|temp relation|normal": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "slotsync worker|relation|bulkread": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "slotsync worker|relation|bulkwrite": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "slotsync worker|relation|vacuum": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "slotsync worker|temp relation|normal": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "standalone backend|relation|bulkread": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "standalone backend|relation|bulkwrite": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "standalone backend|relation|vacuum": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "startup|relation|bulkread": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "startup|relation|bulkwrite": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "startup|relation|vacuum": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "walsender|relation|bulkread": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "walsender|relation|bulkwrite": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "walsender|relation|vacuum": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "walsender|temp relation|normal": {
+        "write_bytes": 0,
+        "fsyncs": 0.0,
+        "fsync_ms": 0.0,
+        "writes": 0,
+        "null_field_deltas": 1184
+      },
+      "walwriter|wal|normal": {
+        "write_bytes": 3448832,
+        "fsyncs": 300,
+        "fsync_ms": 162.16500000000002,
+        "writes": 301,
+        "null_field_deltas": 0
+      }
+    },
+    "dimension_key": "backend_type|object|context",
+    "client_backend_wal_fsync_ms_per_s_at_dips": {
+      "2026-09-23T07:10:32.483000+00:00": 799.3,
+      "2026-09-23T07:10:48.483000+00:00": 797.5,
+      "2026-09-23T07:10:49.483000+00:00": 867.0,
+      "2026-09-23T07:11:02.483000+00:00": 905.4,
+      "2026-09-23T07:11:04.483000+00:00": 920.3,
+      "2026-09-23T07:11:20.483000+00:00": 865.3,
+      "2026-09-23T07:11:21.483000+00:00": 891.6,
+      "2026-09-23T07:11:28.483000+00:00": 834.8,
+      "2026-09-23T07:11:35.483000+00:00": 806.2,
+      "2026-09-23T07:11:36.483000+00:00": 907.5,
+      "2026-09-23T07:11:42.483000+00:00": 850.3,
+      "2026-09-23T07:11:48.483000+00:00": 781.3,
+      "2026-09-23T07:11:53.483000+00:00": 893.7,
+      "2026-09-23T07:11:55.483000+00:00": 916.7,
+      "2026-09-23T07:11:59.483000+00:00": 916.3,
+      "2026-09-23T07:12:15.483000+00:00": 886.2,
+      "2026-09-23T07:12:23.483000+00:00": 890.3,
+      "2026-09-23T07:13:12.483000+00:00": 892.8,
+      "2026-09-23T07:13:53.483000+00:00": 853.3,
+      "2026-09-23T07:13:54.483000+00:00": 878.6,
+      "2026-09-23T07:14:02.483000+00:00": 890.2,
+      "2026-09-23T07:14:06.483000+00:00": 903.3,
+      "2026-09-23T07:14:35.483000+00:00": 892.9,
+      "2026-09-23T07:14:52.483000+00:00": 925.9,
+      "2026-09-23T07:15:12.483000+00:00": 857.5,
+      "2026-09-23T07:15:45.483000+00:00": 888.7,
+      "2026-09-23T07:16:23.483000+00:00": 892.2,
+      "2026-09-23T07:16:32.483000+00:00": 882.3,
+      "2026-09-23T07:16:41.483000+00:00": 891.4,
+      "2026-09-23T07:16:49.483000+00:00": 894.6,
+      "2026-09-23T07:16:50.483000+00:00": 930.0,
+      "2026-09-23T07:16:57.483000+00:00": 885.1,
+      "2026-09-23T07:17:05.483000+00:00": 905.6,
+      "2026-09-23T07:17:23.483000+00:00": 928.6,
+      "2026-09-23T07:17:44.483000+00:00": 859.2,
+      "2026-09-23T07:18:04.483000+00:00": 896.4,
+      "2026-09-23T07:18:28.483000+00:00": 900.5,
+      "2026-09-23T07:19:00.483000+00:00": 944.2,
+      "2026-09-23T07:19:21.483000+00:00": 913.4,
+      "2026-09-23T07:19:24.483000+00:00": 948.8,
+      "2026-09-23T07:19:48.483000+00:00": 947.7,
+      "2026-09-23T07:19:59.483000+00:00": 892.6,
+      "2026-09-23T07:20:17.483000+00:00": 932.3,
+      "2026-09-23T07:20:52.483000+00:00": 901.8,
+      "2026-09-23T07:21:23.483000+00:00": 902.9,
+      "2026-09-23T07:21:25.483000+00:00": 928.2,
+      "2026-09-23T07:21:28.483000+00:00": 909.0,
+      "2026-09-23T07:21:54.483000+00:00": 909.6,
+      "2026-09-23T07:21:59.483000+00:00": 923.4,
+      "2026-09-23T07:22:26.483000+00:00": 937.3,
+      "2026-09-23T07:22:31.483000+00:00": 954.6,
+      "2026-09-23T07:23:00.483000+00:00": 910.4,
+      "2026-09-23T07:23:20.483000+00:00": 886.2,
+      "2026-09-23T07:24:04.483000+00:00": 915.2,
+      "2026-09-23T07:24:09.483000+00:00": 899.6,
+      "2026-09-23T07:24:19.483000+00:00": 929.0,
+      "2026-09-23T07:24:30.483000+00:00": 903.3,
+      "2026-09-23T07:24:34.483000+00:00": 940.5,
+      "2026-09-23T07:25:26.483000+00:00": 922.0,
+      "2026-09-23T07:25:39.483000+00:00": 899.9,
+      "2026-09-23T07:25:43.483000+00:00": 873.6,
+      "2026-09-23T07:25:54.483000+00:00": 902.3,
+      "2026-09-23T07:26:00.483000+00:00": 898.0,
+      "2026-09-23T07:26:06.483000+00:00": 945.1,
+      "2026-09-23T07:26:08.483000+00:00": 884.5,
+      "2026-09-23T07:26:09.483000+00:00": 943.1,
+      "2026-09-23T07:26:11.484000+00:00": 975.8,
+      "2026-09-23T07:26:20.483000+00:00": 704.4,
+      "2026-09-23T07:26:24.483000+00:00": 906.7,
+      "2026-09-23T07:26:26.483000+00:00": 871.4,
+      "2026-09-23T07:26:41.483000+00:00": 902.4,
+      "2026-09-23T07:26:47.483000+00:00": 944.0,
+      "2026-09-23T07:26:50.483000+00:00": 913.6,
+      "2026-09-23T07:27:03.483000+00:00": 948.8,
+      "2026-09-23T07:27:12.483000+00:00": 866.4,
+      "2026-09-23T07:27:17.483000+00:00": 889.3,
+      "2026-09-23T07:27:20.483000+00:00": 962.8,
+      "2026-09-23T07:27:29.483000+00:00": 902.2,
+      "2026-09-23T07:27:34.483000+00:00": 916.0,
+      "2026-09-23T07:27:40.483000+00:00": 903.9,
+      "2026-09-23T07:27:57.483000+00:00": 874.8,
+      "2026-09-23T07:28:09.483000+00:00": 913.4,
+      "2026-09-23T07:28:13.483000+00:00": 839.9,
+      "2026-09-23T07:29:12.483000+00:00": 940.3,
+      "2026-09-23T07:29:25.483000+00:00": 918.9
+    },
+    "note": "fsync_time is cumulative milliseconds spent in fsync across all backends \u2014 a wait-time total, not a CPU or device measure"
+  },
+  "disk": {
+    "md0": {
+      "deltas": 1184,
+      "write_Bps_mean": 68634875.7,
+      "write_Bps_peak": 3562315776.0,
+      "write_await_ms_peak": 0.0,
+      "avg_queue_peak": 0.0,
+      "util_peak": 0.0
+    },
+    "vdb": {
+      "deltas": 1184,
+      "write_Bps_mean": 2710228.8,
+      "write_Bps_peak": 121077760.0,
+      "write_await_ms_peak": 38.550898203592816,
+      "avg_queue_peak": 15.488,
+      "util_peak": 0.649
+    },
+    "vdc": {
+      "deltas": 1184,
+      "write_Bps_mean": 2710289.7,
+      "write_Bps_peak": 120217600.0,
+      "write_await_ms_peak": 45.87341772151899,
+      "avg_queue_peak": 12.684,
+      "util_peak": 0.637
+    },
+    "vdd": {
+      "deltas": 1184,
+      "write_Bps_mean": 2649747.5,
+      "write_Bps_peak": 119181312.0,
+      "write_await_ms_peak": 48.49411764705882,
+      "avg_queue_peak": 11.604,
+      "util_peak": 0.66
+    },
+    "vde": {
+      "deltas": 1184,
+      "write_Bps_mean": 2741709.0,
+      "write_Bps_peak": 119930880.0,
+      "write_await_ms_peak": 49.875,
+      "avg_queue_peak": 10.172,
+      "util_peak": 0.684
+    },
+    "vdf": {
+      "deltas": 1184,
+      "write_Bps_mean": 2815423.6,
+      "write_Bps_peak": 119390208.0,
+      "write_await_ms_peak": 50.164556962025316,
+      "avg_queue_peak": 10.215,
+      "util_peak": 0.699
+    },
+    "vdg": {
+      "deltas": 1184,
+      "write_Bps_mean": 2747790.7,
+      "write_Bps_peak": 119930880.0,
+      "write_await_ms_peak": 51.375,
+      "avg_queue_peak": 10.787,
+      "util_peak": 0.689
+    },
+    "vdh": {
+      "deltas": 1184,
+      "write_Bps_mean": 3001861.2,
+      "write_Bps_peak": 121499648.0,
+      "write_await_ms_peak": 49.24691358024691,
+      "avg_queue_peak": 9.838,
+      "util_peak": 0.773
+    },
+    "vdi": {
+      "deltas": 1184,
+      "write_Bps_mean": 3031727.1,
+      "write_Bps_peak": 121032704.0,
+      "write_await_ms_peak": 44.57333333333333,
+      "avg_queue_peak": 10.121,
+      "util_peak": 0.795
+    },
+    "vdj": {
+      "deltas": 1184,
+      "write_Bps_mean": 3261544.2,
+      "write_Bps_peak": 120590336.0,
+      "write_await_ms_peak": 29.05298013245033,
+      "avg_queue_peak": 11.11,
+      "util_peak": 0.715
+    },
+    "vdk": {
+      "deltas": 1184,
+      "write_Bps_mean": 3010749.0,
+      "write_Bps_peak": 121397248.0,
+      "write_await_ms_peak": 30.044303797468356,
+      "avg_queue_peak": 12.776,
+      "util_peak": 0.71
+    },
+    "vdl": {
+      "deltas": 1184,
+      "write_Bps_mean": 2754755.0,
+      "write_Bps_peak": 123011072.0,
+      "write_await_ms_peak": 47.83098591549296,
+      "avg_queue_peak": 14.953,
+      "util_peak": 0.661
+    },
+    "vdm": {
+      "deltas": 1184,
+      "write_Bps_mean": 2758558.7,
+      "write_Bps_peak": 124039168.0,
+      "write_await_ms_peak": 46.88135593220339,
+      "avg_queue_peak": 15.811,
+      "util_peak": 0.693
+    },
+    "vdn": {
+      "deltas": 1184,
+      "write_Bps_mean": 2655804.1,
+      "write_Bps_peak": 121212928.0,
+      "write_await_ms_peak": 50.888888888888886,
+      "avg_queue_peak": 13.246,
+      "util_peak": 0.599
+    },
+    "vdo": {
+      "deltas": 1184,
+      "write_Bps_mean": 3177181.8,
+      "write_Bps_peak": 120885248.0,
+      "write_await_ms_peak": 41.5,
+      "avg_queue_peak": 10.979,
+      "util_peak": 0.699
+    },
+    "vdp": {
+      "deltas": 1184,
+      "write_Bps_mean": 2717479.4,
+      "write_Bps_peak": 119365632.0,
+      "write_await_ms_peak": 45.6875,
+      "avg_queue_peak": 12.093,
+      "util_peak": 0.634
+    },
+    "vdq": {
+      "deltas": 1184,
+      "write_Bps_mean": 3129396.3,
+      "write_Bps_peak": 119779328.0,
+      "write_await_ms_peak": 41.42138364779874,
+      "avg_queue_peak": 9.839,
+      "util_peak": 0.695
+    },
+    "vdr": {
+      "deltas": 1184,
+      "write_Bps_mean": 2981327.6,
+      "write_Bps_peak": 119648256.0,
+      "write_await_ms_peak": 40.32934131736527,
+      "avg_queue_peak": 8.689,
+      "util_peak": 0.689
+    },
+    "vds": {
+      "deltas": 1184,
+      "write_Bps_mean": 2651778.6,
+      "write_Bps_peak": 118816768.0,
+      "write_await_ms_peak": 44.05555555555556,
+      "avg_queue_peak": 10.666,
+      "util_peak": 0.662
+    },
+    "vdt": {
+      "deltas": 1184,
+      "write_Bps_mean": 3067599.6,
+      "write_Bps_peak": 120045568.0,
+      "write_await_ms_peak": 40.69590643274854,
+      "avg_queue_peak": 10.604,
+      "util_peak": 0.713
+    },
+    "vdu": {
+      "deltas": 1184,
+      "write_Bps_mean": 2769455.6,
+      "write_Bps_peak": 120459264.0,
+      "write_await_ms_peak": 40.19767441860465,
+      "avg_queue_peak": 12.419,
+      "util_peak": 0.712
+    }
+  },
+  "cpu": {
+    "deltas": 1184,
+    "segment_breaks": 0,
+    "iowait_pct_mean": 0.0,
+    "iowait_pct_peak": 0.0,
+    "steal_pct_peak": 0.0
+  },
+  "pool": {
+    "deltas": 1184,
+    "segment_breaks": 0,
+    "wait_ms_per_s_peak": 227085.028,
+    "wait_ms_per_s_mean": 5109.527,
+    "wait_ms_per_s_median": 1582.134,
+    "wait_ms_per_s_p95": 16660.357,
+    "wait_ms_per_s_at_dip_bins": {
+      "2026-09-23T07:10:32.483000+00:00": 68.7,
+      "2026-09-23T07:10:48.483000+00:00": 17.5,
+      "2026-09-23T07:10:49.483000+00:00": 158478.7,
+      "2026-09-23T07:11:02.483000+00:00": 2595.0,
+      "2026-09-23T07:11:04.483000+00:00": 18.4,
+      "2026-09-23T07:11:20.483000+00:00": 22.1,
+      "2026-09-23T07:11:21.483000+00:00": 107648.0,
+      "2026-09-23T07:11:28.483000+00:00": 109.2,
+      "2026-09-23T07:11:35.483000+00:00": 17.5,
+      "2026-09-23T07:11:36.483000+00:00": 42.4,
+      "2026-09-23T07:11:42.483000+00:00": 989.2,
+      "2026-09-23T07:11:48.483000+00:00": 39659.0,
+      "2026-09-23T07:11:53.483000+00:00": 3973.6,
+      "2026-09-23T07:11:55.483000+00:00": 62.8,
+      "2026-09-23T07:11:59.483000+00:00": 9840.9,
+      "2026-09-23T07:12:15.483000+00:00": 1267.2,
+      "2026-09-23T07:12:23.483000+00:00": 371.4,
+      "2026-09-23T07:13:12.483000+00:00": 286.1,
+      "2026-09-23T07:13:53.483000+00:00": 24636.3,
+      "2026-09-23T07:13:54.483000+00:00": 15872.8,
+      "2026-09-23T07:14:02.483000+00:00": 2042.8,
+      "2026-09-23T07:14:06.483000+00:00": 1372.1,
+      "2026-09-23T07:14:35.483000+00:00": 2074.1,
+      "2026-09-23T07:14:52.483000+00:00": 1108.2,
+      "2026-09-23T07:15:12.483000+00:00": 1432.9,
+      "2026-09-23T07:15:45.483000+00:00": 566.7,
+      "2026-09-23T07:16:23.483000+00:00": 164.2,
+      "2026-09-23T07:16:32.483000+00:00": 114.3,
+      "2026-09-23T07:16:41.483000+00:00": 647.8,
+      "2026-09-23T07:16:49.483000+00:00": 5981.0,
+      "2026-09-23T07:16:50.483000+00:00": 69083.9,
+      "2026-09-23T07:16:57.483000+00:00": 4957.6,
+      "2026-09-23T07:17:05.483000+00:00": 15531.0,
+      "2026-09-23T07:17:23.483000+00:00": 3105.3,
+      "2026-09-23T07:17:44.483000+00:00": 437.4,
+      "2026-09-23T07:18:04.483000+00:00": 4046.1,
+      "2026-09-23T07:18:28.483000+00:00": 153.8,
+      "2026-09-23T07:19:00.483000+00:00": 2770.1,
+      "2026-09-23T07:19:21.483000+00:00": 539.1,
+      "2026-09-23T07:19:24.483000+00:00": 59.0,
+      "2026-09-23T07:19:48.483000+00:00": 876.7,
+      "2026-09-23T07:19:59.483000+00:00": 8897.5,
+      "2026-09-23T07:20:17.483000+00:00": 1449.7,
+      "2026-09-23T07:20:52.483000+00:00": 91.2,
+      "2026-09-23T07:21:23.483000+00:00": 1481.5,
+      "2026-09-23T07:21:25.483000+00:00": 1937.9,
+      "2026-09-23T07:21:28.483000+00:00": 2297.4,
+      "2026-09-23T07:21:54.483000+00:00": 4425.6,
+      "2026-09-23T07:21:59.483000+00:00": 1947.8,
+      "2026-09-23T07:22:26.483000+00:00": 18136.1,
+      "2026-09-23T07:22:31.483000+00:00": 2527.8,
+      "2026-09-23T07:23:00.483000+00:00": 1636.1,
+      "2026-09-23T07:23:20.483000+00:00": 1471.7,
+      "2026-09-23T07:24:04.483000+00:00": 4592.4,
+      "2026-09-23T07:24:09.483000+00:00": 477.3,
+      "2026-09-23T07:24:19.483000+00:00": 25841.4,
+      "2026-09-23T07:24:30.483000+00:00": 15083.0,
+      "2026-09-23T07:24:34.483000+00:00": 1027.5,
+      "2026-09-23T07:25:26.483000+00:00": 1798.0,
+      "2026-09-23T07:25:39.483000+00:00": 6892.5,
+      "2026-09-23T07:25:43.483000+00:00": 11468.7,
+      "2026-09-23T07:25:54.483000+00:00": 37582.8,
+      "2026-09-23T07:26:00.483000+00:00": 3609.3,
+      "2026-09-23T07:26:06.483000+00:00": 19242.4,
+      "2026-09-23T07:26:08.483000+00:00": 13549.4,
+      "2026-09-23T07:26:09.483000+00:00": 19686.2,
+      "2026-09-23T07:26:11.484000+00:00": 4829.7,
+      "2026-09-23T07:26:20.483000+00:00": 1566.0,
+      "2026-09-23T07:26:24.483000+00:00": 1674.3,
+      "2026-09-23T07:26:26.483000+00:00": 409.8,
+      "2026-09-23T07:26:41.483000+00:00": 3199.5,
+      "2026-09-23T07:26:47.483000+00:00": 4479.4,
+      "2026-09-23T07:26:50.483000+00:00": 5769.2,
+      "2026-09-23T07:27:03.483000+00:00": 2993.4,
+      "2026-09-23T07:27:12.483000+00:00": 10552.4,
+      "2026-09-23T07:27:17.483000+00:00": 3320.2,
+      "2026-09-23T07:27:20.483000+00:00": 11968.0,
+      "2026-09-23T07:27:29.483000+00:00": 2892.5,
+      "2026-09-23T07:27:34.483000+00:00": 9185.7,
+      "2026-09-23T07:27:40.483000+00:00": 7722.4,
+      "2026-09-23T07:27:57.483000+00:00": 505.0,
+      "2026-09-23T07:28:09.483000+00:00": 4335.4,
+      "2026-09-23T07:28:13.483000+00:00": 485.3,
+      "2026-09-23T07:29:12.483000+00:00": 3124.7,
+      "2026-09-23T07:29:25.483000+00:00": 5660.2
+    },
+    "wait_ms_per_s_dip_range": [
+      17.5,
+      158478.7
+    ],
+    "acquires": 17529433,
+    "note": "wait_nanos_total is cumulative pool wait; per-second figures are deltas, never the lifetime max gauge"
+  }
+}

@@ -1,0 +1,147 @@
+{
+  "gates": {
+    "acquire_reduction_ge_5pct": {
+      "a_acquire_per_op": 6.8746,
+      "b_acquire_per_op": 6.4311,
+      "min_required_pct": 5.0,
+      "pass": true,
+      "reduction_pct": 6.451
+    },
+    "b_preflight_reduced": {
+      "a_calls": 492734,
+      "a_per_success": 1.2255,
+      "b_calls": 351967,
+      "b_per_success": 0.7576,
+      "pass": true
+    },
+    "drop_fraction_worsening_le_0_1pp": {
+      "a": 0.17457,
+      "b": 0.053539,
+      "pass": true
+    },
+    "p99_bounded": {
+      "a": 1444.0,
+      "b": 1081.0,
+      "pass": true
+    },
+    "throughput_non_regression_3pct": {
+      "a": 2436.709,
+      "b": 2815.752,
+      "change_pct": 15.556,
+      "pass": true
+    }
+  },
+  "health_failed": [],
+  "phase": "mixed",
+  "points": {
+    "A": {
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 75477,
+        "pending_in_process": 0,
+        "persist_batch_events": 75477,
+        "persist_batches": 3189,
+        "persist_max_batch": 64,
+        "persisted": 75477
+      },
+      "checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "journal_contiguous": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "evidence": {
+        "acquire_per_op_windowed": 6.8746,
+        "acquire_windowed": {
+          "delta": 2763974.4687747955,
+          "field": "pool.acq",
+          "sample_span": [
+            1790244804,
+            1790245012
+          ],
+          "window_s": 165.0
+        },
+        "anchor_health_calls": 0,
+        "drop_fraction": 0.17457,
+        "op_p99_ms": 1444.0,
+        "outcome_success": 402057,
+        "pool_acquire_count": 3073478,
+        "pool_wait_ms_avg": 70.243,
+        "pool_wait_ms_total": 215890978.475,
+        "successful_ops_per_s": 2436.709,
+        "writer_preflight_calls": 492734,
+        "writer_preflight_per_success": 1.2255
+      },
+      "failed": [],
+      "point": "A",
+      "verdict": "PASS"
+    },
+    "B": {
+      "audit_queue": {
+        "dropped": 0,
+        "enqueued": 85808,
+        "pending_in_process": 0,
+        "persist_batch_events": 85808,
+        "persist_batches": 3523,
+        "persist_max_batch": 64,
+        "persisted": 85808
+      },
+      "checks": {
+        "active_per_scope_le_10": true,
+        "audit_reconciled": true,
+        "db_outbox_drained": true,
+        "dropped_required_zero": true,
+        "enqueued_eq_persisted": true,
+        "expired_backlog_zero": true,
+        "journal_contiguous": true,
+        "no_restarts": true,
+        "oom_none": true,
+        "pending_zero_post_drain": true,
+        "point_completed": true,
+        "queue_dropped_zero": true,
+        "queue_full_zero": true,
+        "sidecars_complete": true,
+        "spent_per_family_le_64": true,
+        "unexpected_zero": true
+      },
+      "evidence": {
+        "acquire_per_op_windowed": 6.4311,
+        "acquire_windowed": {
+          "delta": 2987864.3359565735,
+          "field": "pool.acq",
+          "sample_span": [
+            1790245069,
+            1790245278
+          ],
+          "window_s": 165.0
+        },
+        "anchor_health_calls": 0,
+        "drop_fraction": 0.053539,
+        "op_p99_ms": 1081.0,
+        "outcome_success": 464599,
+        "pool_acquire_count": 3270454,
+        "pool_wait_ms_avg": 61.743,
+        "pool_wait_ms_total": 201927074.985,
+        "successful_ops_per_s": 2815.752,
+        "writer_preflight_calls": 351967,
+        "writer_preflight_per_success": 0.7576
+      },
+      "failed": [],
+      "point": "B",
+      "verdict": "PASS"
+    }
+  },
+  "verdict": "PASS"
+}

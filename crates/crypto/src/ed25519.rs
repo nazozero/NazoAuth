@@ -71,4 +71,12 @@ impl VerifyingKey {
             .verify(message, &signature)
             .map_err(|_| CryptoError::InvalidSignature)
     }
+
+    pub fn verify_strict(&self, message: &[u8], signature: &[u8]) -> crate::Result<()> {
+        let signature = ed25519_dalek::Signature::from_slice(signature)
+            .map_err(|_| CryptoError::InvalidSignature)?;
+        self.inner
+            .verify_strict(message, &signature)
+            .map_err(|_| CryptoError::InvalidSignature)
+    }
 }

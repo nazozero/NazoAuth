@@ -1,0 +1,51 @@
+{
+  "task": "capacity-window-accounting-repair",
+  "base_sha": "c983b1ec98bfbc50b9ddf4fb7a216704b95495e0",
+  "branch": "perf/capacity-window-accounting-c983b1ec",
+  "harness_sha": "7809bc84a296398d9f9bb5950352c1c02beaac22",
+  "production_code_changed": false,
+  "offline_reanalysis_load_time_s": 0,
+  "formal_real_load_time_s": 612.6,
+  "formal_load_budget_s": 660,
+  "accounting_fix": {
+    "authoritative_population": "measurement cohort: iteration entry in [measure_start, measure_end) per cap-scenario-window-v1",
+    "scheduled": "exact rational count of arrivals in window (period=time_unit/rate, half-open)",
+    "started": "cap_iter_begin_measure",
+    "completed": "sum(cap_measure_{success,expected_rejection,local_no_request,unexpected,prepare_failed})",
+    "consistency": ["outcomes_sum==cap_measure_ops", "scheduled>=started", "started==completed else INVALID"],
+    "gate": "capRun: measure_drop<=0.001, cap_measure_unexpected==0, cap_iter_ms p95<=100 p99<=250, rate>=99.5% target; threshold_failed demoted to diagnostic; generator evidence checked on any measure_drop>0.001"
+  },
+  "corrected_offline": {
+    "A1": {"scheduled": 315000, "started": 276013, "dropped": 38987, "drop_fraction": 0.123768, "verdict": "FAIL"},
+    "B1": {"scheduled": 315000, "started": 314570, "dropped": 430, "drop_fraction": 0.001365, "verdict": "FAIL"},
+    "B2": {"scheduled": 315000, "started": 314925, "dropped": 75, "drop_fraction": 0.000238, "verdict": "PASS"},
+    "A2": {"scheduled": 315000, "started": 289145, "dropped": 25855, "drop_fraction": 0.082079, "verdict": "FAIL"}
+  },
+  "formal3000": {
+    "point": "F3000", "pool": 32, "scenario_wall_s": 612.6,
+    "measurement_window_s": 585.0,
+    "scheduled": 1755000, "started": 1184955, "completed": 1184955,
+    "dropped": 570045, "drop_fraction": 0.324812,
+    "measured_ops_s": 2025.564,
+    "iter_p99_ms": 2025.0, "iter_p50_ms": 321.0, "iter_p95_ms": 1712.0,
+    "unexpected": 0, "audit_reconciled": true,
+    "generator_evidence": ["vus_max 1024 >= configured CAP_MAX_VUS 1024"],
+    "verdict": "LOAD_GENERATOR_INVALID",
+    "wal_wait_share": 0.4718, "commits_per_fsync": 1.6918,
+    "waiting_mean": 1283.9, "checked_out_mean": 32.0
+  },
+  "verdicts": {
+    "pool_32": "PASS",
+    "old_strict_3000_verdict": "INVALID_MIXED_WINDOW_ACCOUNTING",
+    "corrected_short_3000_gate_b1": "FAIL",
+    "corrected_short_3000_gate_b2": "PASS",
+    "formal_10m_3000_capacity": "NOT_ESTABLISHED (LOAD_GENERATOR_INVALID)",
+    "postgres_memory_metric": "NOT_MEASURED",
+    "summed_rss_physical_interpretation": "RETRACTED",
+    "wal_sync_method_candidate": "NOT_TESTED",
+    "commit_delay": 0,
+    "durability_changed": "NO"
+  },
+  "tests": {"total": 267, "failed": 0, "skipped": 1},
+  "evidence": ["evidence/recompute/", "evidence/formal3000.tar.gz", "evidence/formal3000/"]
+}

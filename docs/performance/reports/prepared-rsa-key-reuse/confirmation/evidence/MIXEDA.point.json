@@ -1,0 +1,1341 @@
+{
+  "app_log_scan": {
+    "collected": true,
+    "dropped_required": 0,
+    "lines": 51839,
+    "persistence_error": 0,
+    "queue_full": 51838,
+    "rc": 0,
+    "since_ts": 1790229234.6376674
+  },
+  "audit": {
+    "deployment": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+    "receiver": "sis-rcv-MIXEDA",
+    "worker": "sis-worker-MIXEDA"
+  },
+  "audit_drain": {
+    "anchor_sequence": 422476,
+    "drained": true,
+    "last_sequence": 422476,
+    "pending": 0
+  },
+  "audit_state_check": {
+    "accepted_events_delta": 422476,
+    "checks": {
+      "accepted_events_delta_eq": true,
+      "checkpoint_advanced": true,
+      "collected": true,
+      "db_head_eq_anchor_hash": true,
+      "db_head_eq_anchor_seq": true,
+      "deployment_match": true,
+      "fault_none": true,
+      "journal_clean": true,
+      "journal_collected": true,
+      "journal_range_eq_delta": true,
+      "pending_zero": true,
+      "rcv_hash_eq_anchor": true,
+      "rcv_seq_eq_anchor": true
+    },
+    "delta_events": 422476,
+    "expected_issuances": null,
+    "journal": {
+      "batches": 11440,
+      "by_event_type": {
+        "authorization_approved": 5898,
+        "authorization_decision_intent": 56697,
+        "login_success": 104,
+        "refresh_family_capacity_retired": 46861,
+        "refresh_reuse_detected": 1,
+        "token_issued": 312915
+      },
+      "collected": true,
+      "duplicate_sequences": 0,
+      "events_in_range": 422476,
+      "expected_in_range": 422476,
+      "foreign_deployment_batches": 0,
+      "journal_bytes": 387220349,
+      "journal_sha256": "93636550812e6a648e22b6f2fedbddcd9d8471257bcadb53116c671bbd0ea9c4",
+      "malformed_lines": 0,
+      "range_contiguous": true,
+      "remote_path": "sis-rcv-MIXEDA:/data/journal.jsonl",
+      "sequence_gaps": 0,
+      "token_issued_in_range": 312915
+    },
+    "point": "MIXEDA",
+    "token_issued_delta": 312915,
+    "token_issued_scope": "reported_only_no_clean_denominator",
+    "verdict": "PASS"
+  },
+  "audit_state_post": {
+    "db": {
+      "anchor_deployment_id": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+      "anchor_hash": "888cdc822e458316210f3e5075286877fb2dcfeaab7c92fbd7062e1929214de2",
+      "anchor_sequence": 422476,
+      "collected": true,
+      "last_hash": "888cdc822e458316210f3e5075286877fb2dcfeaab7c92fbd7062e1929214de2",
+      "last_sequence": 422476,
+      "pending": 0
+    },
+    "deployment_id": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+    "receiver_checkpoint": {
+      "accepted_batches": 11440,
+      "accepted_events": 422476,
+      "batch_digest": "O-SRgxFpSZVVvJ-0MO-6GYP3KNYV2_KOpemuPCDCe5I",
+      "checkpoint_kind": "batch",
+      "collected": true,
+      "deployment_id": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+      "last_hash": "iIzcgi5FgxYhDz5QdShod_stz-qrfJL71wYuGSkhTeI",
+      "last_sequence": 422476,
+      "updated_at": "2026-09-24T05:57:06.022683130Z"
+    },
+    "receiver_state": {
+      "accepted": 11441,
+      "checkpoint": {
+        "accepted_batches": 11440,
+        "accepted_events": 422476,
+        "batch_digest": "O-SRgxFpSZVVvJ-0MO-6GYP3KNYV2_KOpemuPCDCe5I",
+        "checkpoint_kind": "batch",
+        "deployment_id": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+        "last_hash": "iIzcgi5FgxYhDz5QdShod_stz-qrfJL71wYuGSkhTeI",
+        "last_sequence": 422476,
+        "updated_at": "2026-09-24T05:57:06.022683130Z"
+      },
+      "collected": true,
+      "duplicates": 0,
+      "fault": "none",
+      "rejected": 0,
+      "requests": 11444
+    }
+  },
+  "audit_state_pre": {
+    "db": {
+      "anchor_deployment_id": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+      "anchor_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "anchor_sequence": 0,
+      "collected": true,
+      "last_hash": "0000000000000000000000000000000000000000000000000000000000000000",
+      "last_sequence": 0,
+      "pending": 0
+    },
+    "receiver_checkpoint": {
+      "accepted_batches": 0,
+      "accepted_events": 0,
+      "batch_digest": "1huEI0BQFkyUABntsDE7_bghZYI8O28bTdRAzGUxO9o",
+      "checkpoint_kind": "genesis",
+      "collected": true,
+      "deployment_id": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+      "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "last_sequence": 0,
+      "updated_at": "2026-09-24T05:53:49.696242560Z"
+    },
+    "receiver_state": {
+      "accepted": 1,
+      "checkpoint": {
+        "accepted_batches": 0,
+        "accepted_events": 0,
+        "batch_digest": "1huEI0BQFkyUABntsDE7_bghZYI8O28bTdRAzGUxO9o",
+        "checkpoint_kind": "genesis",
+        "deployment_id": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+        "last_hash": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        "last_sequence": 0,
+        "updated_at": "2026-09-24T05:53:49.696242560Z"
+      },
+      "collected": true,
+      "duplicates": 0,
+      "fault": "none",
+      "rejected": 0,
+      "requests": 2
+    }
+  },
+  "container_health": {
+    "sisprsa-nazoauth-1": {
+      "oom_killed": false,
+      "restart_count": 0,
+      "status": "running"
+    },
+    "sisprsa-postgres-1": {
+      "oom_killed": false,
+      "restart_count": 0,
+      "status": "running"
+    },
+    "sisprsa-valkey-1": {
+      "oom_killed": false,
+      "restart_count": 0,
+      "status": "running"
+    }
+  },
+  "elapsed_s": 244.4,
+  "journal_stats": {
+    "batches": 11440,
+    "by_event_type": {
+      "authorization_approved": 5898,
+      "authorization_decision_intent": 56697,
+      "login_success": 104,
+      "refresh_family_capacity_retired": 46861,
+      "refresh_reuse_detected": 1,
+      "token_issued": 312915
+    },
+    "collected": true,
+    "deployment": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+    "duplicate_sequences": 0,
+    "events_in_range": 422476,
+    "expected_in_range": 422476,
+    "foreign_deployment_batches": 0,
+    "journal_bytes": 387220349,
+    "journal_sha256": "93636550812e6a648e22b6f2fedbddcd9d8471257bcadb53116c671bbd0ea9c4",
+    "malformed_lines": 0,
+    "per_second_counts": {
+      "1790229238": 290,
+      "1790229239": 2658,
+      "1790229240": 2336,
+      "1790229241": 2584,
+      "1790229242": 2663,
+      "1790229243": 2405,
+      "1790229244": 2357,
+      "1790229245": 2529,
+      "1790229246": 2357,
+      "1790229247": 2429,
+      "1790229248": 2418,
+      "1790229249": 2310,
+      "1790229250": 2058,
+      "1790229251": 2190,
+      "1790229252": 2120,
+      "1790229253": 2190,
+      "1790229254": 2177,
+      "1790229255": 1939,
+      "1790229256": 2134,
+      "1790229257": 2209,
+      "1790229258": 2164,
+      "1790229259": 2221,
+      "1790229260": 2149,
+      "1790229261": 2251,
+      "1790229262": 2134,
+      "1790229263": 2160,
+      "1790229264": 2219,
+      "1790229265": 2289,
+      "1790229266": 2220,
+      "1790229267": 2022,
+      "1790229268": 2141,
+      "1790229269": 2053,
+      "1790229270": 2094,
+      "1790229271": 2164,
+      "1790229272": 2203,
+      "1790229273": 2135,
+      "1790229274": 2234,
+      "1790229275": 2125,
+      "1790229276": 2196,
+      "1790229277": 2177,
+      "1790229278": 2153,
+      "1790229279": 2205,
+      "1790229280": 2335,
+      "1790229281": 2260,
+      "1790229282": 2320,
+      "1790229283": 2283,
+      "1790229284": 2177,
+      "1790229285": 2123,
+      "1790229286": 2123,
+      "1790229287": 2393,
+      "1790229288": 2137,
+      "1790229289": 2245,
+      "1790229290": 2277,
+      "1790229291": 2224,
+      "1790229292": 2095,
+      "1790229293": 2138,
+      "1790229294": 2254,
+      "1790229295": 2294,
+      "1790229296": 2350,
+      "1790229297": 2427,
+      "1790229298": 2259,
+      "1790229299": 2214,
+      "1790229300": 2228,
+      "1790229301": 2399,
+      "1790229302": 2349,
+      "1790229303": 2547,
+      "1790229304": 2231,
+      "1790229305": 2453,
+      "1790229306": 2210,
+      "1790229307": 2367,
+      "1790229308": 2482,
+      "1790229309": 2387,
+      "1790229310": 2489,
+      "1790229311": 2430,
+      "1790229312": 2281,
+      "1790229313": 2310,
+      "1790229314": 2442,
+      "1790229315": 2344,
+      "1790229316": 2376,
+      "1790229317": 2088,
+      "1790229318": 2420,
+      "1790229319": 2059,
+      "1790229320": 2364,
+      "1790229321": 2381,
+      "1790229322": 2263,
+      "1790229323": 2408,
+      "1790229324": 2266,
+      "1790229325": 2263,
+      "1790229326": 2476,
+      "1790229327": 2331,
+      "1790229328": 2426,
+      "1790229329": 2381,
+      "1790229330": 2278,
+      "1790229331": 2243,
+      "1790229332": 2273,
+      "1790229333": 2494,
+      "1790229334": 2432,
+      "1790229335": 2358,
+      "1790229336": 2394,
+      "1790229337": 2411,
+      "1790229338": 2595,
+      "1790229339": 2520,
+      "1790229340": 2317,
+      "1790229341": 2533,
+      "1790229342": 2119,
+      "1790229343": 2423,
+      "1790229344": 2408,
+      "1790229345": 2402,
+      "1790229346": 2362,
+      "1790229347": 2419,
+      "1790229348": 2190,
+      "1790229349": 2259,
+      "1790229350": 2305,
+      "1790229351": 2540,
+      "1790229352": 2474,
+      "1790229353": 2392,
+      "1790229354": 2374,
+      "1790229355": 2266,
+      "1790229356": 2371,
+      "1790229357": 2478,
+      "1790229358": 2452,
+      "1790229359": 2370,
+      "1790229360": 2320,
+      "1790229361": 2297,
+      "1790229362": 2440,
+      "1790229363": 2412,
+      "1790229364": 2452,
+      "1790229365": 2397,
+      "1790229366": 2373,
+      "1790229367": 2377,
+      "1790229368": 2427,
+      "1790229369": 2461,
+      "1790229370": 2442,
+      "1790229371": 2280,
+      "1790229372": 2438,
+      "1790229373": 2496,
+      "1790229374": 2376,
+      "1790229375": 2468,
+      "1790229376": 2466,
+      "1790229377": 2417,
+      "1790229378": 2260,
+      "1790229379": 2393,
+      "1790229380": 2380,
+      "1790229381": 2419,
+      "1790229382": 2453,
+      "1790229383": 2380,
+      "1790229384": 2481,
+      "1790229385": 2466,
+      "1790229386": 2405,
+      "1790229387": 2318,
+      "1790229388": 2085,
+      "1790229389": 2155,
+      "1790229390": 2366,
+      "1790229391": 2278,
+      "1790229392": 2205,
+      "1790229393": 2349,
+      "1790229394": 2178,
+      "1790229395": 2331,
+      "1790229396": 2371,
+      "1790229397": 2492,
+      "1790229398": 2436,
+      "1790229399": 2397,
+      "1790229400": 2325,
+      "1790229401": 2358,
+      "1790229402": 2393,
+      "1790229403": 2414,
+      "1790229404": 2483,
+      "1790229405": 2517,
+      "1790229406": 2501,
+      "1790229407": 2287,
+      "1790229408": 2356,
+      "1790229409": 2461,
+      "1790229410": 2422,
+      "1790229411": 2469,
+      "1790229412": 2332,
+      "1790229413": 2413,
+      "1790229414": 2371,
+      "1790229415": 2204,
+      "1790229416": 2249,
+      "1790229417": 2202,
+      "1790229418": 2385,
+      "1790229419": 2274,
+      "1790229420": 754,
+      "1790229421": 476
+    },
+    "range": [
+      0,
+      422476
+    ],
+    "range_contiguous": true,
+    "remote_path": "sis-rcv-MIXEDA:/data/journal.jsonl",
+    "sequence_gaps": 0,
+    "token_issued_in_range": 312915
+  },
+  "load": {
+    "ended_ts": 1790229426.1191711,
+    "load_seconds": 191.5,
+    "load_status": "completed",
+    "main_container": "sis-load-MIXEDA",
+    "main_exit_code": "0",
+    "sidecars": [
+      {
+        "container": "sis-side-argon2-MIXEDA",
+        "exit_code": "0",
+        "interrupted": false,
+        "name": "argon2",
+        "terminal_summary": true,
+        "started_ts": 1790229237.8884912
+      },
+      {
+        "container": "sis-side-meta-MIXEDA",
+        "exit_code": "0",
+        "interrupted": false,
+        "name": "meta",
+        "terminal_summary": true,
+        "started_ts": 1790229238.6173882
+      },
+      {
+        "container": "sis-side-fapi-MIXEDA",
+        "exit_code": "0",
+        "interrupted": false,
+        "name": "fapi",
+        "terminal_summary": true,
+        "started_ts": 1790229239.4407113
+      },
+      {
+        "container": "sis-side-refresh-MIXEDA",
+        "exit_code": "0",
+        "interrupted": false,
+        "name": "refresh",
+        "terminal_summary": true,
+        "started_ts": 1790229240.248723
+      }
+    ],
+    "started_ts": 1790229234.6376674
+  },
+  "metrics": {
+    "acquire_per_op_windowed": 7.0622,
+    "acquire_windowed": {
+      "delta": 2094781.9950489998,
+      "field": "pool.acq",
+      "sample_span": [
+        1790229232,
+        1790229440
+      ],
+      "window_s": 165.0
+    },
+    "audit_db_drained": true,
+    "audit_log_scan": {
+      "collected": true,
+      "dropped_required": 0,
+      "lines": 51839,
+      "persistence_error": 0,
+      "queue_full": 51838,
+      "rc": 0,
+      "since_ts": 1790229234.6376674
+    },
+    "common_window_s": {
+      "seconds": 162.0,
+      "method": "mixed_contract_and_container_bounds",
+      "start_ms": 1790229256773,
+      "end_ms": 1790229418803
+    },
+    "contract_problems": [],
+    "cpu_per_success_ms": {
+      "cpu_ms": null,
+      "cpu_per_success_ms": null,
+      "estimate": null,
+      "reason": "non-CC scenario: audit events are not a 1:1 completion counter",
+      "status": "UNAVAILABLE",
+      "success_in_interval": null
+    },
+    "drop_fraction": 0.395878,
+    "dropped_iterations": 213774,
+    "http_reqs": 475000,
+    "http_rps": 2626.237,
+    "iterations_completed": 326226,
+    "k6_exit_code": 0,
+    "measure_errors": 2100,
+    "measure_ops": 298720,
+    "oom_killed": false,
+    "op_p50_ms": 444.0,
+    "op_p95_ms": 1516.0,
+    "op_p99_ms": 1596.0,
+    "ops_per_s": 1810.424,
+    "outcome_expected_rejection": 69,
+    "outcome_local_no_request": 2031,
+    "outcome_prepare_failed": 0,
+    "outcome_success": 296620,
+    "outcome_unexpected": 0,
+    "pg_statements_per_req": 21.947,
+    "pool_acquire_count": 2307498,
+    "pool_wait_ms_avg": 100.712,
+    "pool_wait_ms_total": 232392735.638,
+    "refresh_invariants": {
+      "max_active_per_scope": 10,
+      "spent_expired_backlog": 0,
+      "spent_max_per_family": 64
+    },
+    "restart_count": 0,
+    "sidecar_evidence": {
+      "argon2": {
+        "exit_code": "0",
+        "interrupted": false,
+        "terminal_summary": true,
+        "http_reqs": 6858,
+        "window_start_ms": null,
+        "window_end_ms": null,
+        "started_ts": 1790229237.8884912
+      },
+      "meta": {
+        "exit_code": "0",
+        "interrupted": false,
+        "terminal_summary": true,
+        "http_reqs": 72000,
+        "window_start_ms": null,
+        "window_end_ms": null,
+        "started_ts": 1790229238.6173882
+      },
+      "fapi": {
+        "exit_code": "0",
+        "interrupted": false,
+        "terminal_summary": true,
+        "http_reqs": 26855,
+        "window_start_ms": null,
+        "window_end_ms": null,
+        "started_ts": 1790229239.4407113
+      },
+      "refresh": {
+        "exit_code": "0",
+        "interrupted": false,
+        "terminal_summary": true,
+        "http_reqs": 73347,
+        "window_start_ms": 1790229256773,
+        "window_end_ms": 1790229421773,
+        "started_ts": 1790229240.248723
+      }
+    },
+    "sidecar_terminal_complete": true,
+    "status": "target_miss",
+    "successful_ops_per_s": 1797.697,
+    "wal_per_success_bytes": 4162.132,
+    "wal_windowed": {
+      "delta": 1234571511.646471,
+      "field": "wal_bytes",
+      "sample_span": [
+        1790229232,
+        1790229440
+      ],
+      "window_s": 165.0
+    },
+    "window_end_ms": 1790229418803,
+    "window_seconds": 165,
+    "window_start_ms": 1790229253803,
+    "window_valid": true
+  },
+  "ok": true,
+  "pgss_delta": {
+    "calls_per_http_request": 21.984,
+    "path_classes": {
+      "audit_append": 422476,
+      "client_lock": 312916,
+      "combined": 0,
+      "exporter": 103002,
+      "issuance_insert": 312916,
+      "nested": 4851798,
+      "observer_other": 7289,
+      "runtime_toplevel": 5480329
+    },
+    "statements": [
+      {
+        "calls_delta": 1225195,
+        "q": "SELECT $2 FROM ONLY \"public\".\"tenants\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x",
+        "queryid": 3175560230803026983,
+        "rolname": "postgres",
+        "rows_delta": 1225195,
+        "toplevel": false,
+        "total_exec_ms_delta": 10060.167
+      },
+      {
+        "calls_delta": 844952,
+        "q": "SELECT $2 FROM ONLY \"public\".\"security_audit_event_outbox\" x WHERE $1 OPERATOR(pg_catalog.=) \"event_id\" FOR KEY SHARE OF x",
+        "queryid": 668357838032508247,
+        "rolname": "postgres",
+        "rows_delta": 0,
+        "toplevel": false,
+        "total_exec_ms_delta": 2588.76
+      },
+      {
+        "calls_delta": 422476,
+        "q": "INSERT INTO public.security_audit_chain_entries (event_id, sequence, previous_hash, event_hash)\n        VALUES (v_entry.event_id, v_sequence, v_hash, v_entry.ev",
+        "queryid": -2565421133935146987,
+        "rolname": "postgres",
+        "rows_delta": 422476,
+        "toplevel": false,
+        "total_exec_ms_delta": 9996.07
+      },
+      {
+        "calls_delta": 422476,
+        "q": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+        "queryid": 7937354421020446243,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 422476,
+        "toplevel": true,
+        "total_exec_ms_delta": 59614.642
+      },
+      {
+        "calls_delta": 422476,
+        "q": "INSERT INTO public.security_audit_event_outbox (event_id, occurred_at)\n    VALUES (p_event_id, p_occurred_at)",
+        "queryid": -8141536737647953945,
+        "rolname": "postgres",
+        "rows_delta": 422476,
+        "toplevel": false,
+        "total_exec_ms_delta": 16083.003
+      },
+      {
+        "calls_delta": 422476,
+        "q": "INSERT INTO public.security_audit_events (event_id, event_type, event_category, payload, occurred_at)\n    VALUES (p_event_id, p_event_type, p_event_category, p_",
+        "queryid": -7247551828350762117,
+        "rolname": "postgres",
+        "rows_delta": 422476,
+        "toplevel": false,
+        "total_exec_ms_delta": 23548.374
+      },
+      {
+        "calls_delta": 400795,
+        "q": "SELECT pg_advisory_xact_lock($1)",
+        "queryid": 275221827254537758,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 400795,
+        "toplevel": true,
+        "total_exec_ms_delta": 2970.339
+      },
+      {
+        "calls_delta": 371724,
+        "q": "SELECT $3 FROM ONLY \"public\".\"oauth_clients\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 AND \"tenant_id\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+        "queryid": 8290667273201477087,
+        "rolname": "postgres",
+        "rows_delta": 371724,
+        "toplevel": false,
+        "total_exec_ms_delta": 2932.576
+      },
+      {
+        "calls_delta": 369683,
+        "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "queryid": 4375303120003040442,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 369683,
+        "toplevel": true,
+        "total_exec_ms_delta": 11720.65
+      },
+      {
+        "calls_delta": 369613,
+        "q": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+        "queryid": -6838157736527928436,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 369613,
+        "toplevel": true,
+        "total_exec_ms_delta": 36885.918
+      },
+      {
+        "calls_delta": 369613,
+        "q": "SELECT (NOT COALESCE($1, $2) OR has_function_privilege(session_user,\n        $3::REGPROCEDURE, $4))\n    AND (NOT COALESCE($5, $6) OR (\n        has_function_priv",
+        "queryid": -2246674608066554652,
+        "rolname": "postgres",
+        "rows_delta": 369613,
+        "toplevel": false,
+        "total_exec_ms_delta": 13849.519
+      },
+      {
+        "calls_delta": 353570,
+        "q": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_",
+        "queryid": -859282481384524542,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 353570,
+        "toplevel": true,
+        "total_exec_ms_delta": 3899.066
+      },
+      {
+        "calls_delta": 312919,
+        "q": "COMMIT",
+        "queryid": 6097083398544187049,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 142.417
+      },
+      {
+        "calls_delta": 312919,
+        "q": "BEGIN",
+        "queryid": 4854991825702068830,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 124.471
+      },
+      {
+        "calls_delta": 312916,
+        "q": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE",
+        "queryid": 327112332356189388,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 312916,
+        "toplevel": true,
+        "total_exec_ms_delta": 6942.573
+      },
+      {
+        "calls_delta": 312916,
+        "q": "SET LOCAL lock_timeout = $1",
+        "queryid": -1708461756726018533,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 1146.057
+      },
+      {
+        "calls_delta": 290056,
+        "q": "SELECT $3 FROM ONLY \"public\".\"users\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 AND \"tenant_id\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+        "queryid": 1978390624132223685,
+        "rolname": "postgres",
+        "rows_delta": 290056,
+        "toplevel": false,
+        "total_exec_ms_delta": 4454.674
+      },
+      {
+        "calls_delta": 256219,
+        "q": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\", \"refresh",
+        "queryid": -2887139335912015367,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 256219,
+        "toplevel": true,
+        "total_exec_ms_delta": 28162.614
+      },
+      {
+        "calls_delta": 231247,
+        "q": "SELECT \"users\".\"is_active\" FROM \"users\" WHERE ((\"users\".\"tenant_id\" = $1) AND (\"users\".\"id\" = $2)) LIMIT $3 FOR SHARE",
+        "queryid": 1097838245962260042,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 231247,
+        "toplevel": true,
+        "total_exec_ms_delta": 4745.864
+      },
+      {
+        "calls_delta": 182338,
+        "q": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda",
+        "queryid": -8152297345095296909,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 182338,
+        "toplevel": true,
+        "total_exec_ms_delta": 4713.459
+      },
+      {
+        "calls_delta": 176967,
+        "q": "SELECT \"oauth_refresh_families\".\"tenant_id\", \"oauth_refresh_families\".\"token_family_id\", \"oauth_refresh_families\".\"client_id\", \"oauth_refresh_families\".\"user_id",
+        "queryid": 3059364362978693673,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 120269,
+        "toplevel": true,
+        "total_exec_ms_delta": 3140.651
+      },
+      {
+        "calls_delta": 146749,
+        "q": "SELECT EXISTS (SELECT \"access_token_revocations\".\"id\", \"access_token_revocations\".\"access_token_jti_blake3\", \"access_token_revocations\".\"client_id\", \"access_tok",
+        "queryid": -4985401138811537698,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 146749,
+        "toplevel": true,
+        "total_exec_ms_delta": 1466.74
+      },
+      {
+        "calls_delta": 125711,
+        "q": "SELECT \"oauth_refresh_families\".\"tenant_id\", \"oauth_refresh_families\".\"token_family_id\", \"oauth_refresh_families\".\"client_id\", \"oauth_refresh_families\".\"user_id",
+        "queryid": -2877339505154587149,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 125641,
+        "toplevel": true,
+        "total_exec_ms_delta": 2562.053
+      },
+      {
+        "calls_delta": 125641,
+        "q": "SELECT \"oauth_refresh_contracts\".\"contract\" FROM \"oauth_refresh_contracts\" WHERE ((\"oauth_refresh_contracts\".\"tenant_id\" = $1) AND (\"oauth_refresh_contracts\".\"c",
+        "queryid": 2229661839462797247,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 125641,
+        "toplevel": true,
+        "total_exec_ms_delta": 1924.955
+      },
+      {
+        "calls_delta": 122331,
+        "q": "SELECT $3 FROM ONLY \"public\".\"realms\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 AND \"tenant_id\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+        "queryid": -3027920698235884960,
+        "rolname": "postgres",
+        "rows_delta": 122331,
+        "toplevel": false,
+        "total_exec_ms_delta": 1090.146
+      },
+      {
+        "calls_delta": 120269,
+        "q": "DELETE FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND token_family_id = $2 AND member_id NOT IN ( SELECT member_id FROM oauth_refresh_spent_tokens WHE",
+        "queryid": -5288884251522700385,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 55979,
+        "toplevel": true,
+        "total_exec_ms_delta": 15404.782
+      },
+      {
+        "calls_delta": 120269,
+        "q": "INSERT INTO \"oauth_refresh_spent_tokens\" (\"tenant_id\", \"refresh_token_blake3\", \"token_family_id\", \"member_id\", \"successor_member_id\", \"spent_at\", \"expires_at\") ",
+        "queryid": -11707619807080382,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 120269,
+        "toplevel": true,
+        "total_exec_ms_delta": 7795.9
+      },
+      {
+        "calls_delta": 120269,
+        "q": "UPDATE \"oauth_refresh_families\" SET \"current_member_id\" = $1, \"current_token_blake3\" = $2, \"current_audience\" = $3, \"current_issued_at\" = $4, \"current_expires_a",
+        "queryid": -4627606135148110578,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 120269,
+        "toplevel": true,
+        "total_exec_ms_delta": 10788.903
+      },
+      {
+        "calls_delta": 114537,
+        "q": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_",
+        "queryid": -1127769266060406036,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 114537,
+        "toplevel": true,
+        "total_exec_ms_delta": 3440.785
+      },
+      {
+        "calls_delta": 113394,
+        "q": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_cli",
+        "queryid": 4914488998956313696,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 113394,
+        "toplevel": true,
+        "total_exec_ms_delta": 4035.884
+      },
+      {
+        "calls_delta": 97840,
+        "q": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"upda",
+        "queryid": -5182508414320503099,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 97840,
+        "toplevel": true,
+        "total_exec_ms_delta": 6984.985
+      },
+      {
+        "calls_delta": 59803,
+        "q": "SELECT $3 FROM ONLY \"public\".\"oauth_refresh_contracts\" x WHERE \"tenant_id\" OPERATOR(pg_catalog.=) $1 AND \"contract_blake3\" OPERATOR(pg_catalog.=) $2 FOR KEY SHA",
+        "queryid": 7069696701630184062,
+        "rolname": "postgres",
+        "rows_delta": 57721,
+        "toplevel": false,
+        "total_exec_ms_delta": 687.988
+      },
+      {
+        "calls_delta": 56697,
+        "q": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, r",
+        "queryid": 7076455219069621783,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 56697,
+        "toplevel": true,
+        "total_exec_ms_delta": 8633.152
+      },
+      {
+        "calls_delta": 56697,
+        "q": "INSERT INTO \"user_client_grants\" (\"tenant_id\", \"user_id\", \"client_id\", \"first_authorized_at\", \"last_authorized_at\", \"last_scopes\", \"last_resource_indicators\", \"",
+        "queryid": -3849542434411556545,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 56697,
+        "toplevel": true,
+        "total_exec_ms_delta": 6803.687
+      },
+      {
+        "calls_delta": 56697,
+        "q": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"c",
+        "queryid": -4859543494755560605,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 56697,
+        "toplevel": true,
+        "total_exec_ms_delta": 9122.25
+      },
+      {
+        "calls_delta": 56697,
+        "q": "INSERT INTO \"oauth_refresh_contracts\" (\"tenant_id\", \"contract_blake3\", \"contract\") VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+        "queryid": -8310862026670360255,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 2229,
+        "toplevel": true,
+        "total_exec_ms_delta": 16056.908
+      },
+      {
+        "calls_delta": 56697,
+        "q": "WITH ranked AS ( SELECT token_family_id, contract_blake3, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, count(*) OVER () AS to",
+        "queryid": 822029240019536883,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 46861,
+        "toplevel": true,
+        "total_exec_ms_delta": 20238.027
+      },
+      {
+        "calls_delta": 46861,
+        "q": "DELETE FROM ONLY \"public\".\"oauth_refresh_spent_tokens\" WHERE $1 OPERATOR(pg_catalog.=) \"tenant_id\" AND $2 OPERATOR(pg_catalog.=) \"token_family_id\"",
+        "queryid": 3453106762841261166,
+        "rolname": "postgres",
+        "rows_delta": 2619,
+        "toplevel": false,
+        "total_exec_ms_delta": 423.431
+      },
+      {
+        "calls_delta": 46861,
+        "q": "DELETE FROM \"oauth_refresh_contracts\" WHERE (((\"oauth_refresh_contracts\".\"tenant_id\" = $1) AND (\"oauth_refresh_contracts\".\"contract_blake3\" = $2)) AND  NOT (EXI",
+        "queryid": 7644058008137761304,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 2082,
+        "toplevel": true,
+        "total_exec_ms_delta": 24626.256
+      },
+      {
+        "calls_delta": 46861,
+        "q": "DELETE FROM \"oauth_refresh_families\" WHERE (((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"token_family_id\" = $2)) AND (\"oauth_re",
+        "queryid": 8718669233736325932,
+        "rolname": "nazoauth_perf_runtime",
+        "rows_delta": 46861,
+        "toplevel": true,
+        "total_exec_ms_delta": 22733.119
+      },
+      {
+        "calls_delta": 22880,
+        "q": "SELECT set_config($1, $2, $3)",
+        "queryid": 791674583167769820,
+        "rolname": "postgres",
+        "rows_delta": 22880,
+        "toplevel": false,
+        "total_exec_ms_delta": 56.574
+      },
+      {
+        "calls_delta": 11447,
+        "q": "UPDATE public.security_audit_chain_state\n    SET anchor_deployment_id = COALESCE(anchor_deployment_id, p_deployment_id),\n        anchor_observed_at = CURRENT_TI",
+        "queryid": 7824955434935616261,
+        "rolname": "postgres",
+        "rows_delta": 0,
+        "toplevel": false,
+        "total_exec_ms_delta": 95.164
+      },
+      {
+        "calls_delta": 11447,
+        "q": "WITH pending AS MATERIALIZED (\n        SELECT outbox.event_id, outbox.occurred_at\n        FROM public.security_audit_event_outbox AS outbox\n        ORDER BY out",
+        "queryid": -3108691796264403323,
+        "rolname": "postgres",
+        "rows_delta": 422476,
+        "toplevel": false,
+        "total_exec_ms_delta": 2536.874
+      },
+      {
+        "calls_delta": 11447,
+        "q": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM public.security_audit_chain_entries AS chain\n        ORDER BY chain.sequence DESC LIMIT 1\n  ",
+        "queryid": -6343702909504785895,
+        "rolname": "postgres",
+        "rows_delta": 11447,
+        "toplevel": false,
+        "total_exec_ms_delta": 5742.477
+      },
+      {
+        "calls_delta": 11447,
+        "q": "SELECT state.last_sequence, state.last_hash,\n           state.anchor_sequence, state.anchor_hash, state.anchor_deployment_id::TEXT,\n           state.batch_first",
+        "queryid": -7190079489427888143,
+        "rolname": "postgres",
+        "rows_delta": 11447,
+        "toplevel": false,
+        "total_exec_ms_delta": 137.407
+      },
+      {
+        "calls_delta": 11447,
+        "q": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($",
+        "queryid": -9087905150910015971,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 422476,
+        "toplevel": true,
+        "total_exec_ms_delta": 8194.285
+      },
+      {
+        "calls_delta": 11447,
+        "q": "SELECT last_sequence, last_hash, anchor_sequence, batch_first_sequence, batch_last_sequence, batch_event_count, batch_digest, batch_attempts, batch_available_at",
+        "queryid": 6577223710300968884,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 11447,
+        "toplevel": true,
+        "total_exec_ms_delta": 426.359
+      },
+      {
+        "calls_delta": 11447,
+        "q": "COMMIT",
+        "queryid": 6097083398544187049,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 5.419
+      },
+      {
+        "calls_delta": 11447,
+        "q": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+        "queryid": -793151951593613389,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 11447,
+        "toplevel": true,
+        "total_exec_ms_delta": 572.578
+      },
+      {
+        "calls_delta": 11447,
+        "q": "BEGIN",
+        "queryid": 4854991825702068830,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 0,
+        "toplevel": true,
+        "total_exec_ms_delta": 5.184
+      },
+      {
+        "calls_delta": 11447,
+        "q": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_seque",
+        "queryid": -6627084719960489992,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 11447,
+        "toplevel": true,
+        "total_exec_ms_delta": 7115.336
+      },
+      {
+        "calls_delta": 11447,
+        "q": "WITH chained AS MATERIALIZED (\n        SELECT chain.event_id, chain.sequence, chain.previous_hash, chain.event_hash\n        FROM public.security_audit_chain_ent",
+        "queryid": 2415075331727316930,
+        "rolname": "postgres",
+        "rows_delta": 0,
+        "toplevel": false,
+        "total_exec_ms_delta": 85.119
+      },
+      {
+        "calls_delta": 11447,
+        "q": "EXISTS (\n        SELECT $2 FROM public.security_audit_chain_state AS state\n        WHERE state.singleton AND state.anchor_deployment_id = p_deployment_id\n    )",
+        "queryid": -4850833075568047896,
+        "rolname": "postgres",
+        "rows_delta": 11447,
+        "toplevel": false,
+        "total_exec_ms_delta": 42.43
+      },
+      {
+        "calls_delta": 11447,
+        "q": "SELECT COALESCE(\n        (SELECT state.anchor_sequence FROM public.security_audit_chain_state AS state\n         WHERE state.singleton), 0)",
+        "queryid": 427714051535286495,
+        "rolname": "postgres",
+        "rows_delta": 11447,
+        "toplevel": false,
+        "total_exec_ms_delta": 135.285
+      },
+      {
+        "calls_delta": 11440,
+        "q": "SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)",
+        "queryid": -6871906609541267958,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 11440,
+        "toplevel": true,
+        "total_exec_ms_delta": 13024.916
+      },
+      {
+        "calls_delta": 11440,
+        "q": "v_members <> p_event_count OR NOT EXISTS (\n        SELECT $11 FROM public.security_audit_chain_entries AS chain\n        WHERE chain.sequence = p_last_sequence A",
+        "queryid": 6628736147247293519,
+        "rolname": "postgres",
+        "rows_delta": 11440,
+        "toplevel": false,
+        "total_exec_ms_delta": 82.546
+      },
+      {
+        "calls_delta": 11440,
+        "q": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+        "queryid": 7702997900265701813,
+        "rolname": "nazoauth_perf_exporter",
+        "rows_delta": 11440,
+        "toplevel": true,
+        "total_exec_ms_delta": 15457.659
+      },
+      {
+        "calls_delta": 11440,
+        "q": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])                           FROM public.security_audit_chain_entries AS chain\n    JOIN public.se",
+        "queryid": -4729170833889453614,
+        "rolname": "postgres",
+        "rows_delta": 11440,
+        "toplevel": false,
+        "total_exec_ms_delta": 1099.455
+      },
+      {
+        "calls_delta": 11440,
+        "q": "DELETE FROM public.security_audit_event_outbox AS outbox\n    WHERE outbox.event_id = ANY(v_ids)",
+        "queryid": 5352525615642087706,
+        "rolname": "postgres",
+        "rows_delta": 422476,
+        "toplevel": false,
+        "total_exec_ms_delta": 613.216
+      },
+      {
+        "calls_delta": 11440,
+        "q": "SELECT * FROM unnest(p_event_ids, p_event_hashes) AS item(event_id, event_hash)",
+        "queryid": 6898365521273534339,
+        "rolname": "postgres",
+        "rows_delta": 422476,
+        "toplevel": false,
+        "total_exec_ms_delta": 157.334
+      }
+    ],
+    "total_calls_delta": 10442418,
+    "valid": true
+  },
+  "pgss_reset": "2026-09-24 05:53:51.188878+00",
+  "point": {
+    "app_cpus": [
+      24,
+      26,
+      132,
+      134,
+      136,
+      138,
+      140,
+      142
+    ],
+    "deployment_id": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+    "duration": "180s",
+    "executor": "constant-arrival-rate",
+    "image": "prsa-base:b8e1aead",
+    "infra_cpus": [
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150,
+      151,
+      152,
+      153,
+      154,
+      155,
+      156,
+      157,
+      158,
+      159,
+      160,
+      161,
+      162,
+      163,
+      164,
+      165,
+      166,
+      167,
+      168,
+      169,
+      170,
+      171,
+      172,
+      173,
+      174,
+      175,
+      176,
+      177,
+      178,
+      179,
+      180,
+      181,
+      182,
+      183,
+      184,
+      185,
+      186,
+      187,
+      188,
+      189,
+      190,
+      191
+    ],
+    "max_vus": 1024,
+    "name": "MIXEDA",
+    "phase": "mixed",
+    "pre_vus": 256,
+    "profile": "cap",
+    "rate": 3000,
+    "scenario": "cap_mixed",
+    "sidecar_delay_s": 0,
+    "sidecars": [
+      {
+        "container": "sis-side-argon2-MIXEDA",
+        "duration": "180s",
+        "max_vus": 16,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 8,
+        "scenario": "oidc_cold_login_refresh",
+        "started_ts": 1790229237.8884912,
+        "user_count": 64
+      },
+      {
+        "container": "sis-side-meta-MIXEDA",
+        "duration": "180s",
+        "max_vus": 32,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 200,
+        "scenario": "metadata_jwks",
+        "started_ts": 1790229238.6173882,
+        "user_count": 64
+      },
+      {
+        "container": "sis-side-fapi-MIXEDA",
+        "duration": "180s",
+        "max_vus": 64,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 30,
+        "scenario": "fapi2_logged_in_high_security",
+        "started_ts": 1790229239.4407113,
+        "user_count": 128
+      },
+      {
+        "container": "sis-side-refresh-MIXEDA",
+        "duration": "180s",
+        "max_vus": 256,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 600,
+        "scenario": "cap_refresh_token",
+        "started_ts": 1790229240.248723,
+        "user_count": 256
+      }
+    ],
+    "user_count": 256,
+    "vector_count": 48000,
+    "warmup_ms": 15000
+  },
+  "provenance": {
+    "app_image_id": "sha256:135c88d74cac595649ec17a620d3f8f578045e3c15ee6c1755ed52a7ab1665be",
+    "app_image_ref": "prsa-base:b8e1aead",
+    "applied_migrations_sha256": "0b4cb38907d4d10b6115319dc8ce8b76e0937f9d5ee1dd45e88b3cd01a4edc90",
+    "binary_path": "/usr/local/bin/nazoauth",
+    "binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+    "pg_checkpoint_completion_target": "0.9",
+    "pg_checkpoint_timeout": "5min",
+    "pg_fsync": "on",
+    "pg_full_page_writes": "on",
+    "pg_max_connections": "100",
+    "pg_max_wal_size": "8GB",
+    "pg_shared_buffers": "128MB",
+    "pg_synchronous_commit": "on",
+    "pg_track_io_timing": "on",
+    "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+    "point": "MIXEDA",
+    "source_sha": "unknown"
+  },
+  "run_id": "MIXEDA",
+  "samplers": {
+    "proc_detail": "sis-proc-MIXEDA",
+    "sampler": "sis-sampler-MIXEDA"
+  },
+  "stack": {
+    "app_binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+    "deployment_id": "01a0d1d9-8441-7d42-a866-a6447ba724d2",
+    "healthy": {
+      "keyset": true,
+      "migrate": true,
+      "nazoauth": true,
+      "postgres": true,
+      "valkey": true
+    },
+    "image": "prsa-base:b8e1aead",
+    "keyset": {
+      "collected": true,
+      "files": {
+        "/var/lib/nazo_oauth/keys/keyset.json": "8d094a91db1920841e96a2b9ea72b1b972c86ff105516111543c573b5da46343",
+        "/var/lib/nazo_oauth/keys/ps256-runtime-787ac0713f714ed699f991b1c26fe21a.pem": "bf1190f88e60871152e10db7833035df406d811eef914c294db2b9614ec3dba7",
+        "/var/lib/nazo_oauth/keys/request-object-encryption.pem": "19f9830bfe951e0f269e8bde1012bf6e1b43c863504164fe927d97a31709b160",
+        "/var/lib/nazo_oauth/keys/rs256-runtime-df6c4ce7a7224ecfb45772c5da2cc94e.pem": "a76182603112451d36c5b3caaaec3808a8c3271be9bb8974559d849f6d5cc41b"
+      },
+      "key_dir_volume": "/home/rootless/.local/share/docker/volumes/sisprsa-confirm-keys/_data"
+    },
+    "pin": {
+      "app": {
+        "container": "sisprsa-nazoauth-1",
+        "pid1_allowed": "Cpus_allowed_list:\t24,26,132,134,136,138,140,142",
+        "pin_output": "pinned_tasks=20 failed_procs=0",
+        "pin_rc": 0,
+        "proc_masks": [
+          "/proc/1 nazoauth 24,26,132,134,136,138,140,142",
+          "/proc/64 sh 24-27,132-191"
+        ],
+        "requested": "24,26,132,134,136,138,140,142",
+        "uid": "10001"
+      },
+      "app_cpus": "24,26,132,134,136,138,140,142",
+      "app_exec_mode": "pinset-exec",
+      "app_verified": true,
+      "keyset": {
+        "container": "sisprsa-keyset-1",
+        "pid1_allowed": "Cpus_allowed_list:\t144-191",
+        "pin_output": "pinned_tasks=2 failed_procs=0",
+        "pin_rc": 0,
+        "proc_masks": [
+          "/proc/1 tail 144-191",
+          "/proc/84 sh 24-27,132-191"
+        ],
+        "requested": "144-191",
+        "uid": "0"
+      },
+      "pg_verified": true,
+      "postgres": {
+        "container": "sisprsa-postgres-1",
+        "pid1_allowed": "Cpus_allowed_list:\t144-191",
+        "pin_output": "pinned_tasks=13 failed_procs=0",
+        "pin_rc": 0,
+        "proc_masks": [
+          "/proc/1 postgres 144-191",
+          "/proc/127 sh 24-27,132-191",
+          "/proc/64 postgres 144-191",
+          "/proc/65 postgres 144-191",
+          "/proc/66 postgres 144-191",
+          "/proc/67 postgres 144-191",
+          "/proc/68 postgres 144-191",
+          "/proc/70 postgres 144-191",
+          "/proc/71 postgres 144-191",
+          "/proc/72 postgres 144-191",
+          "/proc/92 postgres 144-191",
+          "/proc/93 postgres 144-191",
+          "/proc/94 postgres 144-191"
+        ],
+        "requested": "144-191",
+        "uid": "70"
+      },
+      "valkey": {
+        "container": "sisprsa-valkey-1",
+        "pid1_allowed": "Cpus_allowed_list:\t144-191",
+        "pin_output": "pinned_tasks=6 failed_procs=0",
+        "pin_rc": 0,
+        "proc_masks": [
+          "/proc/1 valkey-server 144-191",
+          "/proc/57 sh 24-27,132-191"
+        ],
+        "requested": "144-191",
+        "uid": "999"
+      }
+    },
+    "point": "MIXEDA"
+  },
+  "summary_files": [
+    "cap-cap-mixed.summary.json"
+  ]
+}

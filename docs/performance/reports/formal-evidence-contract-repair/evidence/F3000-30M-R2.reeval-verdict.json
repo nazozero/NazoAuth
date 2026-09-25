@@ -1,0 +1,1416 @@
+{
+  "audit_queue": {
+    "collected": true,
+    "dropped": 0,
+    "enqueued": 895378,
+    "pending_in_process": 0,
+    "persist_batch_events": 895378,
+    "persist_batches": 524439,
+    "persist_max_batch": 64,
+    "persisted": 895378
+  },
+  "capacity_gate": {
+    "metrics": {
+      "classified_errors": 886,
+      "drop_fraction": 8.833323518529424e-05,
+      "dropped": 477,
+      "error_rate": 0.000114,
+      "expected_invalid_grant": 886,
+      "forensic_diag": {
+        "budget_exceeded_points": 8587268,
+        "file": "runtime\\reeval\\formal3000-30m-r2\\F3000-30M-R2\\load\\cap-cap-mixed.diag.jsonl.gz",
+        "logical_bytes_cap": null,
+        "overflow_dropped_points": null,
+        "status": "TRUNCATED",
+        "truncated": true
+      },
+      "gate_p95": 41.0,
+      "gate_p99": 135.0,
+      "gate_population": "measurement_cohort",
+      "injector_vu_cap_reached": true,
+      "measure": {
+        "cohort_source": "k6_stream_exact",
+        "drops_pending_unclassified": 0,
+        "drops_post_window": 0,
+        "drops_pre_window": 477,
+        "late_vu_fraction": 0.0,
+        "measure_completed_exact": 5355005,
+        "measure_drop_fraction": 0.0,
+        "measure_dropped_exact": 0,
+        "measure_outcome_sum": 5355005,
+        "measure_outcomes": {
+          "expected_rejection": 885,
+          "local_no_request": 39133,
+          "success": 5314987
+        },
+        "measure_scheduled_observed": 5355005,
+        "measure_started_exact": 5355005,
+        "observed_schedule_rate": 3000.003,
+        "pending_drops_overflow": false,
+        "problems": [],
+        "rational_planned_arrivals": 5355000,
+        "schedule_delta_vs_rational": 5,
+        "valid": true,
+        "window_end_s": 1790313884.163,
+        "window_start_s": 1790312099.163
+      },
+      "measured_ops_s": 3000.003,
+      "measurement_contract": "cap-scenario-window-v1",
+      "p50": 5.139,
+      "p95": 28.427,
+      "p99": 100.698,
+      "rate_basis": "scenario_window_stream",
+      "rate_for_gate": 3000.003,
+      "rps": 4333.493,
+      "status": "target_miss",
+      "subject_lifecycle": {
+        "expired_reauth": 766,
+        "initial_mint": 2048,
+        "refresh_update": 770142
+      },
+      "successful_ops_s": 2977.584,
+      "threshold_status_diagnostic": "target_miss",
+      "unexpected_errors": 0,
+      "window_seconds": 1785.0
+    },
+    "status": "PASS"
+  },
+  "checks": {
+    "active_per_scope_le_10": true,
+    "audit_reconciled": true,
+    "capacity_gate_pass": true,
+    "db_outbox_drained": true,
+    "dropped_required_zero": true,
+    "enqueued_eq_persisted": true,
+    "expired_backlog_zero": true,
+    "journal_contiguous": true,
+    "no_restarts": true,
+    "oom_none": true,
+    "pending_zero_post_drain": true,
+    "point_completed": true,
+    "pool_size_observed": true,
+    "queue_dropped_zero": true,
+    "queue_full_zero": true,
+    "runtime_backends_match": true,
+    "sidecars_complete": true,
+    "spent_per_family_le_64": true,
+    "unexpected_zero": true
+  },
+  "evidence": {
+    "acquire_per_op": 6.4986,
+    "app_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+    "attainment": 1.0,
+    "attempted_ops_per_s": 3000.003,
+    "backend_state_means": {
+      "active": 14.01,
+      "idle": 13.08,
+      "idle in transaction": 4.91
+    },
+    "checked_out_max": 32,
+    "checked_out_mean": 24.52,
+    "cohort_valid": false,
+    "commits_delta": 5153179,
+    "commits_per_fsync": 2.8368,
+    "configured_pool": "32",
+    "cpu_cores": {
+      "app": 5.04,
+      "postgres": 8.34
+    },
+    "drop_fraction": 8.8e-05,
+    "full_run_drop_fraction": 8.8e-05,
+    "iter_p95_ms": 41.0,
+    "iter_p99_ms": 135.0,
+    "measure_completed": 5355005,
+    "measure_drop_fraction": 0.0,
+    "measure_dropped": 0,
+    "measure_scheduled": 5355000,
+    "measure_started": 5355005,
+    "ops_per_s": 2977.584,
+    "outcome_success": 5314987,
+    "outcome_unexpected": 0,
+    "p50_ms": 6.0,
+    "p95_ms": 41.0,
+    "p99_ms": 134.0,
+    "pool_size_observed": 32,
+    "runtime_backends_max": 32,
+    "strict_3000_gate": {
+      "attempted_ops_per_s": 3000.003,
+      "measure_completed": 5355005,
+      "measure_drop_fraction": 0.0,
+      "measure_drop_fraction_upper": 1e-06,
+      "measure_scheduled": 5355000,
+      "measure_started": 5355005,
+      "pass": false,
+      "population": "measurement_cohort",
+      "target": 3000.0
+    },
+    "wait_per_acq_ms": 1.047,
+    "waiting_max": 1009,
+    "waiting_mean": 20.2,
+    "wal_bytes_per_s": 13922560.2,
+    "wal_fsyncs_delta": 1816565,
+    "wal_fsyncs_per_s": 1006.3,
+    "wal_wait": {
+      "active_samples": 99997,
+      "wal_wait_samples": 54645,
+      "wal_wait_share": 0.5465,
+      "window_samples": 7136
+    },
+    "wal_writes_per_s": 1008.8
+  },
+  "failed": [],
+  "forensic_diag": {
+    "budget_exceeded_points": 8587268,
+    "file": "runtime\\reeval\\formal3000-30m-r2\\F3000-30M-R2\\load\\cap-cap-mixed.diag.jsonl.gz",
+    "logical_bytes_cap": null,
+    "overflow_dropped_points": null,
+    "status": "TRUNCATED",
+    "truncated": true
+  },
+  "generator": {
+    "injector_vu_cap_reached": true,
+    "main_exit_code": "0",
+    "main_oom_killed": false,
+    "max_vus": 2048,
+    "pre_allocated_vus": 2048
+  },
+  "generator_preflight": {
+    "captured": true,
+    "container_mem": {
+      "hr2-keyset-1": "0B / 0B",
+      "hr2-migrate-1": "0B / 0B",
+      "hr2-nazoauth-1": "0B / 0B",
+      "hr2-postgres-1": "0B / 0B",
+      "hr2-valkey-1": "0B / 0B",
+      "sis-proc-F3000-30M-R2": "0B / 0B",
+      "sis-rcv-F3000-30M-R2": "0B / 0B",
+      "sis-residency-F3000-30M-R2": "0B / 0B",
+      "sis-sampler-F3000-30M-R2": "0B / 0B",
+      "sis-worker-F3000-30M-R2": "0B / 0B"
+    },
+    "mem_available_gib": 127.9,
+    "mem_available_kb": 134115144,
+    "mem_free_kb": 133198620,
+    "mem_total_kb": 134217728
+  },
+  "provenance": {
+    "binary": {
+      "container_id": "93d1b588b10aaa87902ab95e656bd46fac581450808c776d5b99a5e4f15df8cc",
+      "expected_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+      "host_pid": 802689,
+      "image_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+      "image_id": "sha256:7a8a436bbe05d7aa866291aed71d2cfbff63aff50d377ac0fbd6e6d4086b7490",
+      "ok": true,
+      "pid1_eq_expected": true,
+      "pid1_eq_image": true,
+      "running_pid1_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a"
+    },
+    "expected_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+    "perf_schema": {
+      "app_container": "hr2-nazoauth-1",
+      "has_audit_queue": true,
+      "has_db_pool": true,
+      "http_ok": true,
+      "ok": true,
+      "via": "container-netns 127.0.0.1:8000"
+    },
+    "runner": {
+      "app_image_id": "sha256:7a8a436bbe05d7aa866291aed71d2cfbff63aff50d377ac0fbd6e6d4086b7490",
+      "app_image_ref": "hr2-app:a2dd5f13",
+      "applied_migrations_sha256": "0b4cb38907d4d10b6115319dc8ce8b76e0937f9d5ee1dd45e88b3cd01a4edc90",
+      "binary_path": "/usr/local/bin/nazoauth",
+      "binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+      "pg_checkpoint_completion_target": "0.9",
+      "pg_checkpoint_timeout": "5min",
+      "pg_fsync": "on",
+      "pg_full_page_writes": "on",
+      "pg_max_connections": "100",
+      "pg_max_wal_size": "8GB",
+      "pg_shared_buffers": "128MB",
+      "pg_synchronous_commit": "on",
+      "pg_track_io_timing": "on",
+      "pg_version": "PostgreSQL 18.6 on x86_64-pc-linux-musl, compiled by gcc (Alpine 15.2.0) 15.2.0, 64-bit",
+      "point": "F3000-30M-R2",
+      "source_sha": "unknown"
+    },
+    "sampler_health": {
+      "checks": {
+        "proc": {
+          "container": "sis-proc-F3000-30M-R2",
+          "detail": "ok",
+          "meta_ok": true,
+          "running": true
+        },
+        "residency": {
+          "container": "sis-residency-F3000-30M-R2",
+          "detail": "ok",
+          "meta_ok": true,
+          "running": true
+        },
+        "soak": {
+          "container": "sis-sampler-F3000-30M-R2",
+          "detail": "ok",
+          "meta_ok": true,
+          "running": true
+        }
+      },
+      "ok": true
+    },
+    "workspace": {
+      "file_sha256": {
+        "docker-compose.perf.yml": {
+          "sha256": "da2f371f10adc3b36a0e8786ccd274cc8f8ed2bf8238dd5855c2566bbce0b1c5",
+          "size": 6646
+        },
+        "perf/runner.py": {
+          "sha256": "1aba3c373e304b8f7a8c090e095750d8385d0104d9b9001f520850b3ecb04ed8",
+          "size": 49233
+        },
+        "perf/seed.py": {
+          "sha256": "d3ad49edfa39021504e492bf73bb08055df109ed1787ce56f3c108eec8525c61",
+          "size": 29330
+        },
+        "perf/tools/checkpoint_analyze.py": {
+          "sha256": "12a03c04bf3fe31443bd2b1f990b8f54e26f710ddbbad237622767639d10f2b5",
+          "size": 86689
+        },
+        "perf/tools/ledger.sql": {
+          "sha256": "24b9cb3fe8c249b9e65dacceb0e8e8b1da8ff29512c3e795e7bcea43f1ddabf2",
+          "size": 24251
+        },
+        "perf/tools/pool_size_ab.py": {
+          "sha256": "02432cafdf933277788d5dc556a9762c7e5d7733cdd8d08d85de7c92e250656e",
+          "size": 51120
+        },
+        "perf/tools/proc_detail_sampler.py": {
+          "sha256": "e7c9cb739e845e72753c4cc4bf5377907968fd0ee69880e7c2d1142e369d2cec",
+          "size": 5860
+        },
+        "perf/tools/residency_observer.py": {
+          "sha256": "9e2c6f456ea78ba9802063f86cdf42c2827a913eec8283148b205bdc466ee9f8",
+          "size": 9196
+        },
+        "perf/tools/single_instance_scaling.py": {
+          "sha256": "0ab816d769024e59217fa097b55d5c559e1e5d50353e4b7bd8c4186b9360a660",
+          "size": 95859
+        },
+        "perf/tools/soak_sampler.py": {
+          "sha256": "fb1e0b5ab592b346d966aaebbe093a06cb154a01afbb5562006ba6e49941c3f0",
+          "size": 13047
+        },
+        "perf/tools/stability_analyze.py": {
+          "sha256": "f9bdcea435944b10977b2fdc27d5fdbdf316e15312ff5dc47f5dd4a78f6cb826",
+          "size": 16693
+        },
+        "perf/tools/vkledger.py": {
+          "sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b",
+          "size": 4459
+        }
+      },
+      "git_head": "ebbfa79727063d69895125f0d7c9e1e150da8cf8",
+      "missing": [],
+      "ok": true,
+      "workspace_realpath": "/workspace/.hr2"
+    }
+  },
+  "reeval": {
+    "evidence_dir": "runtime\\reeval\\formal3000-30m-r2\\F3000-30M-R2",
+    "mode": "offline_same_evidence",
+    "new_real_load_time_s": 0
+  },
+  "sidecar_timing": {
+    "detail": {
+      "argon2": {
+        "deadline_s": 1790312094.163,
+        "k6_started_ts": 1790312079.0955472,
+        "ok": true,
+        "state_ready_run_id": "F3000-30M-R2",
+        "state_ready_ts": 1790312078.936
+      },
+      "fapi": {
+        "deadline_s": 1790312094.163,
+        "k6_started_ts": 1790312079.7650845,
+        "ok": true,
+        "state_ready_run_id": "F3000-30M-R2",
+        "state_ready_ts": 1790312079.57
+      },
+      "meta": {
+        "deadline_s": 1790312094.163,
+        "k6_started_ts": 1790312079.5683477,
+        "ok": true,
+        "state_ready_run_id": "F3000-30M-R2",
+        "state_ready_ts": 1790312079.43
+      },
+      "refresh": {
+        "deadline_s": 1790312094.163,
+        "k6_started_ts": 1790312080.642537,
+        "ok": true,
+        "state_ready_run_id": "F3000-30M-R2",
+        "state_ready_ts": 1790312080.437
+      }
+    },
+    "ok": true
+  },
+  "stability": {
+    "active_vu": {
+      "first300s_max": 2033,
+      "max": 778,
+      "mean": 39.8,
+      "p95": 120.0,
+      "samples": 1785
+    },
+    "anomaly_buckets": [
+      {
+        "began": 180000,
+        "bucket": 1,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 339,
+        "in_checkpoint_write_window": false,
+        "ops": 179981,
+        "ops_per_s": 2999.7,
+        "p50": 12.0,
+        "p95": 270.0,
+        "p99": 707.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 27.9,
+          "waiting_max": 1009.0,
+          "waiting_mean": 192.1
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 0,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 26656,
+        "wal": {
+          "active_mean": 16.4,
+          "wal_share": 0.475
+        }
+      }
+    ],
+    "buckets": [
+      {
+        "began": 180000,
+        "bucket": 1,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 339,
+        "ops": 179981,
+        "ops_per_s": 2999.7,
+        "p50": 12.0,
+        "p95": 270.0,
+        "p99": 707.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 27.9,
+          "waiting_max": 1009.0,
+          "waiting_mean": 192.1
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 0,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 26656,
+        "wal": {
+          "active_mean": 16.4,
+          "wal_share": 0.475
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 2,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 714,
+        "ops": 180006,
+        "ops_per_s": 3000.1,
+        "p50": 6.0,
+        "p95": 41.0,
+        "p99": 110.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 23.5,
+          "waiting_max": 417.0,
+          "waiting_mean": 16.4
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 0,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 26440,
+        "wal": {
+          "active_mean": 12.91,
+          "wal_share": 0.545
+        }
+      },
+      {
+        "began": 180001,
+        "bucket": 3,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1077,
+        "ops": 179988,
+        "ops_per_s": 2999.8,
+        "p50": 5.0,
+        "p95": 35.0,
+        "p99": 90.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 22.9,
+          "waiting_max": 424.0,
+          "waiting_mean": 13.6
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 0,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 26370,
+        "wal": {
+          "active_mean": 13.22,
+          "wal_share": 0.534
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 4,
+        "checkpoint": {
+          "buffers_written": 0,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1277,
+        "ops": 180009,
+        "ops_per_s": 3000.2,
+        "p50": 5.0,
+        "p95": 33.0,
+        "p99": 75.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 24.4,
+          "waiting_max": 257.0,
+          "waiting_mean": 11.0
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 18,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25833,
+        "wal": {
+          "active_mean": 14.07,
+          "wal_share": 0.597
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 5,
+        "checkpoint": {
+          "buffers_written": 1284,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1260,
+        "ops": 180001,
+        "ops_per_s": 3000.0,
+        "p50": 6.0,
+        "p95": 35.0,
+        "p99": 79.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 23.2,
+          "waiting_max": 375.0,
+          "waiting_mean": 13.4
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 30,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25837,
+        "wal": {
+          "active_mean": 13.59,
+          "wal_share": 0.579
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 6,
+        "checkpoint": {
+          "buffers_written": 46,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1256,
+        "ops": 179972,
+        "ops_per_s": 2999.5,
+        "p50": 6.0,
+        "p95": 43.0,
+        "p99": 104.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 24.3,
+          "waiting_max": 377.0,
+          "waiting_mean": 18.5
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 28,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 26068,
+        "wal": {
+          "active_mean": 14.53,
+          "wal_share": 0.574
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 7,
+        "checkpoint": {
+          "buffers_written": 630,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1294,
+        "ops": 180022,
+        "ops_per_s": 3000.4,
+        "p50": 6.0,
+        "p95": 36.0,
+        "p99": 86.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 23.5,
+          "waiting_max": 339.0,
+          "waiting_mean": 13.9
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 21,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25672,
+        "wal": {
+          "active_mean": 14.16,
+          "wal_share": 0.578
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 8,
+        "checkpoint": {
+          "buffers_written": 1746,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1377,
+        "ops": 180005,
+        "ops_per_s": 3000.1,
+        "p50": 6.0,
+        "p95": 35.0,
+        "p99": 70.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 24.4,
+          "waiting_max": 253.0,
+          "waiting_mean": 11.1
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 26,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25441,
+        "wal": {
+          "active_mean": 12.85,
+          "wal_share": 0.534
+        }
+      },
+      {
+        "began": 180001,
+        "bucket": 9,
+        "checkpoint": {
+          "buffers_written": 20,
+          "num_done": 1,
+          "sync_time_ms": 345.0,
+          "write_time_ms": 269260.0
+        },
+        "errors": 1534,
+        "ops": 180002,
+        "ops_per_s": 3000.0,
+        "p50": 6.0,
+        "p95": 42.0,
+        "p99": 95.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 26.0,
+          "waiting_max": 266.0,
+          "waiting_mean": 17.6
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 27,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25233,
+        "wal": {
+          "active_mean": 15.08,
+          "wal_share": 0.563
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 10,
+        "checkpoint": {
+          "buffers_written": 1215,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1548,
+        "ops": 179998,
+        "ops_per_s": 3000.0,
+        "p50": 6.0,
+        "p95": 34.0,
+        "p99": 81.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 24.5,
+          "waiting_max": 254.0,
+          "waiting_mean": 11.2
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 33,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25318,
+        "wal": {
+          "active_mean": 13.82,
+          "wal_share": 0.568
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 11,
+        "checkpoint": {
+          "buffers_written": 793,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1593,
+        "ops": 179996,
+        "ops_per_s": 2999.9,
+        "p50": 5.0,
+        "p95": 33.0,
+        "p99": 95.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 22.6,
+          "waiting_max": 389.0,
+          "waiting_mean": 12.9
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 29,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25370,
+        "wal": {
+          "active_mean": 13.29,
+          "wal_share": 0.545
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 12,
+        "checkpoint": {
+          "buffers_written": 996,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1573,
+        "ops": 180005,
+        "ops_per_s": 3000.1,
+        "p50": 5.0,
+        "p95": 28.0,
+        "p99": 51.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 22.6,
+          "waiting_max": 192.0,
+          "waiting_mean": 5.0
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 29,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25364,
+        "wal": {
+          "active_mean": 13.12,
+          "wal_share": 0.527
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 13,
+        "checkpoint": {
+          "buffers_written": 3193,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1525,
+        "ops": 179993,
+        "ops_per_s": 2999.9,
+        "p50": 5.0,
+        "p95": 29.0,
+        "p99": 62.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 23.6,
+          "waiting_max": 204.0,
+          "waiting_mean": 7.3
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 38,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25382,
+        "wal": {
+          "active_mean": 13.36,
+          "wal_share": 0.548
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 14,
+        "checkpoint": {
+          "buffers_written": 301,
+          "num_done": 1,
+          "sync_time_ms": 265.0,
+          "write_time_ms": 269416.0
+        },
+        "errors": 1515,
+        "ops": 180001,
+        "ops_per_s": 3000.0,
+        "p50": 5.0,
+        "p95": 36.0,
+        "p99": 101.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 23.1,
+          "waiting_max": 473.0,
+          "waiting_mean": 15.4
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 33,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25167,
+        "wal": {
+          "active_mean": 13.32,
+          "wal_share": 0.535
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 15,
+        "checkpoint": {
+          "buffers_written": 1410,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1477,
+        "ops": 180004,
+        "ops_per_s": 3000.1,
+        "p50": 5.0,
+        "p95": 29.0,
+        "p99": 61.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 23.2,
+          "waiting_max": 325.0,
+          "waiting_mean": 7.1
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 30,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25483,
+        "wal": {
+          "active_mean": 13.62,
+          "wal_share": 0.593
+        }
+      },
+      {
+        "began": 180001,
+        "bucket": 16,
+        "checkpoint": {
+          "buffers_written": 692,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1471,
+        "ops": 180002,
+        "ops_per_s": 3000.0,
+        "p50": 5.0,
+        "p95": 29.0,
+        "p99": 56.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 22.6,
+          "waiting_max": 215.0,
+          "waiting_mean": 6.0
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 33,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25630,
+        "wal": {
+          "active_mean": 12.95,
+          "wal_share": 0.526
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 17,
+        "checkpoint": {
+          "buffers_written": 1008,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1416,
+        "ops": 179998,
+        "ops_per_s": 3000.0,
+        "p50": 5.0,
+        "p95": 30.0,
+        "p99": 60.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 23.2,
+          "waiting_max": 280.0,
+          "waiting_mean": 6.9
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 34,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25369,
+        "wal": {
+          "active_mean": 13.57,
+          "wal_share": 0.528
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 18,
+        "checkpoint": {
+          "buffers_written": 3311,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1426,
+        "ops": 179986,
+        "ops_per_s": 2999.8,
+        "p50": 5.0,
+        "p95": 30.0,
+        "p99": 58.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 24.7,
+          "waiting_max": 291.0,
+          "waiting_mean": 8.0
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 29,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25622,
+        "wal": {
+          "active_mean": 14.47,
+          "wal_share": 0.544
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 19,
+        "checkpoint": {
+          "buffers_written": 455,
+          "num_done": 1,
+          "sync_time_ms": 378.0,
+          "write_time_ms": 269599.0
+        },
+        "errors": 1393,
+        "ops": 180014,
+        "ops_per_s": 3000.2,
+        "p50": 6.0,
+        "p95": 58.0,
+        "p99": 210.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 26.2,
+          "waiting_max": 798.0,
+          "waiting_mean": 34.4
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 25,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25694,
+        "wal": {
+          "active_mean": 15.3,
+          "wal_share": 0.566
+        }
+      },
+      {
+        "began": 180001,
+        "bucket": 20,
+        "checkpoint": {
+          "buffers_written": 1213,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1317,
+        "ops": 179997,
+        "ops_per_s": 2999.9,
+        "p50": 6.0,
+        "p95": 35.0,
+        "p99": 95.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 24.0,
+          "waiting_max": 259.0,
+          "waiting_mean": 12.9
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 29,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25886,
+        "wal": {
+          "active_mean": 14.04,
+          "wal_share": 0.537
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 21,
+        "checkpoint": {
+          "buffers_written": 823,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1288,
+        "ops": 179994,
+        "ops_per_s": 2999.9,
+        "p50": 5.0,
+        "p95": 32.0,
+        "p99": 76.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 23.7,
+          "waiting_max": 380.0,
+          "waiting_mean": 10.7
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 30,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25604,
+        "wal": {
+          "active_mean": 13.72,
+          "wal_share": 0.536
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 22,
+        "checkpoint": {
+          "buffers_written": 932,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1268,
+        "ops": 180014,
+        "ops_per_s": 3000.2,
+        "p50": 6.0,
+        "p95": 44.0,
+        "p99": 114.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 25.8,
+          "waiting_max": 323.0,
+          "waiting_mean": 18.7
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 32,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25741,
+        "wal": {
+          "active_mean": 14.65,
+          "wal_share": 0.546
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 23,
+        "checkpoint": {
+          "buffers_written": 3291,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1299,
+        "ops": 179987,
+        "ops_per_s": 2999.8,
+        "p50": 7.0,
+        "p95": 46.0,
+        "p99": 115.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 26.7,
+          "waiting_max": 399.0,
+          "waiting_mean": 19.6
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 22,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25767,
+        "wal": {
+          "active_mean": 14.86,
+          "wal_share": 0.53
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 24,
+        "checkpoint": {
+          "buffers_written": 478,
+          "num_done": 1,
+          "sync_time_ms": 316.0,
+          "write_time_ms": 269995.0
+        },
+        "errors": 1341,
+        "ops": 180014,
+        "ops_per_s": 3000.2,
+        "p50": 6.0,
+        "p95": 37.0,
+        "p99": 84.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 25.1,
+          "waiting_max": 315.0,
+          "waiting_mean": 13.1
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 26,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25594,
+        "wal": {
+          "active_mean": 13.63,
+          "wal_share": 0.56
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 25,
+        "checkpoint": {
+          "buffers_written": 1475,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1321,
+        "ops": 179999,
+        "ops_per_s": 3000.0,
+        "p50": 6.0,
+        "p95": 42.0,
+        "p99": 105.01999999998952,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 26.1,
+          "waiting_max": 306.0,
+          "waiting_mean": 17.3
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 30,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25903,
+        "wal": {
+          "active_mean": 14.21,
+          "wal_share": 0.572
+        }
+      },
+      {
+        "began": 180001,
+        "bucket": 26,
+        "checkpoint": {
+          "buffers_written": 776,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1359,
+        "ops": 180003,
+        "ops_per_s": 3000.1,
+        "p50": 6.0,
+        "p95": 36.0,
+        "p99": 85.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 25.6,
+          "waiting_max": 257.0,
+          "waiting_mean": 12.6
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 25,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25795,
+        "wal": {
+          "active_mean": 14.59,
+          "wal_share": 0.54
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 27,
+        "checkpoint": {
+          "buffers_written": 941,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1408,
+        "ops": 179708,
+        "ops_per_s": 2995.1,
+        "p50": 6.0,
+        "p95": 35.0,
+        "p99": 68.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 25.8,
+          "waiting_max": 355.0,
+          "waiting_mean": 10.1
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 29,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25543,
+        "wal": {
+          "active_mean": 14.08,
+          "wal_share": 0.511
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 28,
+        "checkpoint": {
+          "buffers_written": 2922,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1531,
+        "ops": 180284,
+        "ops_per_s": 3004.7,
+        "p50": 8.0,
+        "p95": 86.0,
+        "p99": 219.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 26.9,
+          "waiting_max": 684.0,
+          "waiting_mean": 52.3
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 22,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25555,
+        "wal": {
+          "active_mean": 14.2,
+          "wal_share": 0.548
+        }
+      },
+      {
+        "began": 180000,
+        "bucket": 29,
+        "checkpoint": {
+          "buffers_written": 366,
+          "num_done": 1,
+          "sync_time_ms": 314.0,
+          "write_time_ms": 269351.0
+        },
+        "errors": 1681,
+        "ops": 179997,
+        "ops_per_s": 2999.9,
+        "p50": 6.0,
+        "p95": 34.0,
+        "p99": 67.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 25.2,
+          "waiting_max": 205.0,
+          "waiting_mean": 7.5
+        },
+        "scheduled": 180000,
+        "span_s": 60.0,
+        "subject_expired_reauth": 30,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 25123,
+        "wal": {
+          "active_mean": 14.43,
+          "wal_share": 0.531
+        }
+      },
+      {
+        "began": 135000,
+        "bucket": 30,
+        "checkpoint": {
+          "buffers_written": 688,
+          "num_done": 0,
+          "sync_time_ms": 0.0,
+          "write_time_ms": 0.0
+        },
+        "errors": 1140,
+        "ops": 135025,
+        "ops_per_s": 3000.6,
+        "p50": 5.0,
+        "p95": 31.0,
+        "p99": 66.0,
+        "pool": {
+          "checked_out_max": 32.0,
+          "checked_out_mean": 18.1,
+          "waiting_max": 202.0,
+          "waiting_mean": 5.5
+        },
+        "scheduled": 135000,
+        "span_s": 45.0,
+        "subject_expired_reauth": 28,
+        "subject_initial_mint": 0,
+        "subject_refresh_update": 18970,
+        "wal": {
+          "active_mean": 10.85,
+          "wal_share": 0.57
+        }
+      }
+    ],
+    "checkpoint_events": [
+      {
+        "buffers_written_delta": 0,
+        "done_delta": 1,
+        "end_ts": 1790312615,
+        "kind": "timed",
+        "start_observed_ts": 1790312345,
+        "start_ts": 1790312343,
+        "sync_time_ms_delta": 345.0,
+        "write_time_ms_delta": 269260.0
+      },
+      {
+        "buffers_written_delta": 1,
+        "done_delta": 1,
+        "end_ts": 1790312915,
+        "kind": "timed",
+        "start_observed_ts": 1790312645,
+        "start_ts": 1790312643,
+        "sync_time_ms_delta": 265.0,
+        "write_time_ms_delta": 269416.0
+      },
+      {
+        "buffers_written_delta": 2,
+        "done_delta": 1,
+        "end_ts": 1790313216,
+        "kind": "timed",
+        "start_observed_ts": 1790312945,
+        "start_ts": 1790312943,
+        "sync_time_ms_delta": 378.0,
+        "write_time_ms_delta": 269599.0
+      },
+      {
+        "buffers_written_delta": 4,
+        "done_delta": 1,
+        "end_ts": 1790313516,
+        "kind": "timed",
+        "start_observed_ts": 1790313246,
+        "start_ts": 1790313244,
+        "sync_time_ms_delta": 316.0,
+        "write_time_ms_delta": 269995.0
+      },
+      {
+        "buffers_written_delta": 1,
+        "done_delta": 1,
+        "end_ts": 1790313818,
+        "kind": "timed",
+        "start_observed_ts": 1790313546,
+        "start_ts": 1790313544,
+        "sync_time_ms_delta": 314.0,
+        "write_time_ms_delta": 269351.0
+      },
+      {
+        "incomplete": true,
+        "kind": "timed",
+        "start_observed_ts": 1790313848,
+        "start_ts": 1790313846
+      }
+    ],
+    "generator": {
+      "cpu_cores_avg": 4.6,
+      "cpu_cores_max": 11.82,
+      "rss_gib_avg": 19.65,
+      "rss_gib_max": 20.63
+    },
+    "host_mem_available_gib_min": 102.49,
+    "reauth_herd": {
+      "herd": false,
+      "max_per_minute": 38
+    },
+    "sustained_cliff": {
+      "sustained_cliff": false,
+      "triggers": []
+    }
+  },
+  "subject_lifecycle": {
+    "measure_expired_reauth": 766,
+    "reauth_fraction_of_started": null
+  },
+  "timestamps": {
+    "offline_reeval": true,
+    "remote_host_time_end": 1790313896.1489937,
+    "remote_host_time_start": 1790312075.008104,
+    "report_generated_at": 1790315837.1637917,
+    "report_time_ok": "skipped_offline_reeval",
+    "run_end_epoch": 1790313896.1489937,
+    "run_start_epoch": 1790312075.008104
+  },
+  "verdict": "PASS"
+}

@@ -1,0 +1,53 @@
+{
+  "task": "business-pool-residency-attribution",
+  "mode": "diagnosis-only",
+  "base_sha": "f093a25606f71e840a85ec8ce610501c5f879cdc",
+  "branch": "perf/business-pool-residency-f093a256",
+  "binary": {
+    "image": "tap-b:86b2df16",
+    "sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+    "equivalence": "git diff 86b2df16..f093a256 over crates/**/src and migrations/** is empty; the image is the reviewed head's production semantics"
+  },
+  "observer": {
+    "file": "perf/tools/residency_observer.py",
+    "sha256": "9e2c6f456ea78ba9802063f86cdf42c2827a913eec8283148b205bdc466ee9f8",
+    "interval_s": 0.25,
+    "effective_rate_hz": 3.99,
+    "connection": "independent postgres admin session; never the business pool",
+    "scope": "datname=oauth AND usename=runtime role AND backend_type=client backend"
+  },
+  "runtime_role": {
+    "value": "nazoauth_perf_runtime",
+    "source": "DATABASE_URL inside the tested image's /app/.env.yaml"
+  },
+  "identity_validation": {
+    "runtime_backends_in_window": 24,
+    "pool_connections": 24,
+    "other_roles": {"nazoauth_perf_exporter": 1, "postgres": 1},
+    "valid_sample_ratio": {"cc": 1.0, "m1": 1.0, "m2": 1.0}
+  },
+  "load": {
+    "real_load_seconds": 300,
+    "budget_cap_seconds": 420,
+    "failed_attempts": 0,
+    "points": {
+      "cc": {"scenario": "cap_client_credentials", "executor": "constant-vus", "vus": 64, "duration_s": 60, "ops_per_s": 6150.6, "p99_ms": 29.0, "wait_per_acq_ms": 1.99},
+      "m1": {"scenario": "cap_mixed", "rate": 3000, "duration_s": 120, "ops_per_s": 2769.514, "p99_ms": 1092.0, "wait_per_acq_ms": 64.46},
+      "m2": {"scenario": "cap_mixed", "rate": 3000, "duration_s": 120, "ops_per_s": 2717.886, "p99_ms": 1177.0, "wait_per_acq_ms": 70.62}
+    }
+  },
+  "verdict": {
+    "previous_connection_hold_claim": "NOT_ESTABLISHED",
+    "primary_scaling_limit": "POSTGRES_EXECUTION_WAIT",
+    "next_production_candidate": "merge the client_credentials path's three sequential checkouts (snapshot -> digest EXISTS -> commit txn) into one borrowed session; in-PG digest boundary preserved",
+    "db_pool_changed": false,
+    "production_changes": "NONE"
+  },
+  "tests": {"residency_analyze_unittests": "7/7 pass", "py_compile": "pass"},
+  "evidence_files": [
+    "evidence/agg-cc.json", "evidence/agg-m1.json", "evidence/agg-m2.json",
+    "evidence/windowed-idle-stats.json", "evidence/query-id-map.json",
+    "evidence/residency-cc.jsonl.gz", "evidence/residency-m1.jsonl.gz",
+    "evidence/residency-m2.jsonl.gz"
+  ]
+}

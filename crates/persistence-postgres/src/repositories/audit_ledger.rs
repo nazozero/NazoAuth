@@ -158,6 +158,36 @@ impl AuditLedgerRepository {
             .map_err(map_error)
     }
 
+    /// Persist a queued batch in one checkout and one transaction. Each event
+    /// still goes through `nazo_persist_security_audit_event`, so idempotent
+    /// replay semantics are unchanged; any failure rolls the whole batch back.
+    /// An indeterminate transaction outcome discards the physical connection
+    /// instead of returning it to the pool.
+    pub async fn append_batch(&self, events: &[SecurityAuditEvent]) -> Result<(), RepositoryError> {
+        match events.len() {
+            0 => return Ok(()),
+            // Keep the established single-event path: one checkout, one
+            // autocommit, no extra transaction framing.
+            1 => return self.append(events[0].clone()).await,
+            _ => {}
+        }
+        let mut guard = DiscardOnDrop(Some(self.connection().await?));
+        let result = guard
+            .connection()
+            .transaction::<_, diesel::result::Error, _>(async |connection| {
+                for event in events {
+                    append_on_connection(connection, event).await?;
+                }
+                Ok(())
+            })
+            .await
+            .map_err(map_error);
+        if result.is_ok() {
+            guard.return_to_pool();
+        }
+        result
+    }
+
     /// Claim the single in-flight batch inside one exporter transaction. The
     /// chain control row stays locked only for the database work: candidate
     /// selection, chain assignment, lease commit. HTTPS always happens after

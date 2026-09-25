@@ -111,6 +111,38 @@ committed implementation, so it remains the long-window plateau evidence:
   anchor == DB anchor, duplicates=0, rejected=0, pending=0.
 - App RSS ~107→205MB plateau, uncorrelated with DB/WAL growth; no OOM/restart.
 
+### 2d. Measurement contract (cap_* scenarios, `cap-scenario-window-v1`)
+
+From the checkpoint-jitter-remediation change onward, all `cap_*` scenarios
+measure on one scenario-wide window instead of per-VU clocks:
+
+- Time origin: `exec.scenario.startTime` — identical for every VU, including
+  VUs spawned mid-run by `constant-arrival-rate`. The VU-local init clock is
+  retained only for workload lifecycle (warmup/gap phasing, refresh
+  re-minting gating); it never decides measurement membership.
+- Window: half-open `[scenario_start + measure_offset, scenario_start +
+  duration)`. `measure_offset` is `CAP_WARMUP_MS` (default 15000) for
+  standard runs, `CAP_MEASURE_START_MS` when a diagnostic gap is configured.
+- Cohort membership is decided by iteration **entry** time. An iteration that
+  enters inside the window and completes during `gracefulStop` keeps its
+  cohort; completions are also recorded per-second by real completion time.
+- Denominator: `cap_measure_ops / window_seconds`, where `window_seconds` is
+  the emitted contract — never `Counter.rate` (total-elapsed) and never an
+  evaluator's own `duration - warmup` recomputation. A `cap_*` summary
+  without a consistent `measurement_contract` is INVALID.
+- Outcome classes per measured iteration: `success`,
+  `expected_rejection` (protocol-correct rejections, e.g. bounded-family
+  `invalid_grant`), `local_no_request` (no HTTP request sent, e.g. missing
+  refresh token mid-measure), `unexpected`, `prepare_failed`. Attempts are
+  never relabeled as successes.
+- Reconciliation: every iteration emits `cap_iter_begin{cohort,lw}` /
+  `cap_iter_end{cohort,lw,outcome}`; `lw=1` marks what the legacy VU-local
+  rule would have counted, so one execution stream reconstructs both the
+  legacy and the unified accounting.
+- Minute buckets (`cap_mN_*`) are derived from the configured duration on
+  the scenario clock with an explicit overflow bucket; late minutes are
+  never folded into a fixed-size last bucket.
+
 ## 3. Current storage steady state
 
 Canonical 30 min fresh-DB run (`current-capacity-final-30m-fresh` sampler):
@@ -283,3 +315,88 @@ Capacity baselines:
 - [2026-09-19 state lifecycle](reports/2026-09-19-state-lifecycle/report.md)
   and [state minimization](reports/2026-09-19-state-minimization/report.md) —
   remediation rounds superseded by the redesign above, retained as fix lineage
+
+## 11. Errata — 2026-09-23 measurement-window review
+
+Audit of the 2026-09-22 current-capacity headlines found measurement
+defects (historical numbers retained as recorded; this erratum does not
+re-run or re-judge them):
+
+- The two headline ops/s values used **different denominators**: the 2000
+  figure (`1967.4`) is `cap_measure_ops` Counter.rate over the full
+  elapsed 1800 s; the 1900 figure (`1889.1`) is count over the 1785 s
+  evaluator window. They are not directly comparable.
+- The measured cohort was keyed to **per-VU init time**, so late-created
+  VUs were under-counted; a single scenario-wide measurement window did
+  not exist. In the follow-up 20-minute diagnostic the same execution
+  stream reconstructs 8,358 iterations the legacy rule missed.
+- The 2000 run also failed the **0.1% drop gate** (0.158%), not only the
+  99.5% rate gate.
+- The "checkpoint-flush dips" attribution was **not phase-proven**; the
+  write/sync/WAL/host/generator split was unmeasured.
+- Sidecar terminal summaries were lost by container teardown in several
+  historical runs (e.g. empty fapi k6logs), which hid a latent
+  vector-pool defect that left the fapi sidecar issuing zero requests.
+
+Follow-up evidence and the unified measurement contract
+(`cap-scenario-window-v1`):
+[checkpoint-jitter-remediation](reports/checkpoint-jitter-remediation/report.md).
+Measurement remediation is complete; checkpoint runtime remediation was
+not performed and remains unestablished.
+
+### 2026-09-23 errata, revision 2 — analyzer/evaluator defects
+
+Offline re-analysis of the same run
+(`reanalysis-v2/`, zero new workload) found and corrected further
+toolchain defects:
+
+- The first report's "common window" (`07:11:50` start) used sidecar
+  **container** timestamps, not scenario measurement bounds. The exact
+  contract-covered pair is main∩refresh `[07:12:07.388, 07:29:52.388]`;
+  the all-load common window is only recoverable as conservative bounds
+  `[07:12:18, 07:29:48]` (1050 s) — argon2/meta/fapi emit no contract
+  metrics.
+- Checkpoint windows are now per-checkpoint (`ckpt-1..4`) rather than
+  merged unions; the terminal drain artifact (1,482/s bin) is excluded
+  from trough figures.
+- The "≈900–950 fsync ms/s ≈ one CPU core" correlation is corrected:
+  per-`(backend_type,object,context)` deltas show it is **client-backend
+  WAL commit fsync** cumulative wait — and it is a *constant* ~900 ms/s
+  baseline across the whole window (median 902 ms/s), not a dip-specific
+  spike. Checkpointer fsync totals only 374 ms; the dip discriminator is
+  the app pool-wait spike (up to ~26 s/s vs ~1.5 s/s median), not fsync.
+- WAL/op on the stated basis is **4.846 KiB/op** (window WAL delta ÷
+  measure-cohort begins); the earlier "≈3.58 KB/op comparable to 3.62"
+  claim is withdrawn — the historical basis is not recoverable.
+- Op-latency p95/p99 are bucketed intervals, not exact values;
+  `1998.511/s` is measured *attempts* (whole-window success rate is
+  1,962.780/s — neither is an error or a capacity ceiling).
+- This run is **not** a controlled measurement-only A/B against
+  historical runs (fapi's vector-pool fix changed its actual workload);
+  "the long throughput hole did not reappear" is an observation, not a
+  fix confirmation. Checkpoint runtime cause remains **UNRESOLVED**.
+
+### 2026-09-23 errata, revision 3 — window/schema semantics
+
+A final offline pass (`reanalysis-v3/`, zero new workload; v1 and v2 are
+superseded derived analyses — the raw run is unchanged) corrected:
+
+- Checkpoint-local evidence is two disjoint windows per checkpoint —
+  `start + [-30 s, +90 s]` and `complete + [-30 s, +90 s]`, clipped to the
+  all-load common window. The v2 single `start−30 → complete+90` span had
+  swallowed the ~270 s middle write phase; middle-phase dips (e.g.
+  1,712/s @07:21:28, 1,810/s @07:26:06) now stay visible inside steady
+  state instead of being auto-excluded.
+- Steady state is common-window bins minus the checkpoint local union:
+  520 s, 1,999.98 completed/s, 1,961.33 successful/s, 0 drops — the
+  v2 basis had leaked the pre-common VU-ramp drops.
+- Histogram quantiles follow the artifact's declared stream-v1 schema
+  (`v < bound`, `[lo,hi)`): steady op p50 [5,10) / p95 [20,50) /
+  p99 [50,100) ms. Unknown schemas yield unavailable quantiles, never
+  guesses.
+- WAL/op numerator and denominator share one effective interval
+  `[07:10:08, 07:29:52)`: 4,960.0 B/op = 4.844 KiB/op.
+- The capacity evaluator no longer treats an all-null
+  `measurement_contract` shell as capRun identity (a real non-capRun FAPI
+  summary had been misclassified INVALID); stream evidence errors gate to
+  INVALID.

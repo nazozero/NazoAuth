@@ -32,6 +32,14 @@ class FullRealRequestLoadPolicyTests(unittest.TestCase):
         self.assertIn('"admin_load_e2e_{LOAD_RUN_ID}"', source)
         self.assertIn('"Load Test Client {LOAD_RUN_ID}"', source)
 
+    def test_cleanup_fixture_drops_stale_oauth_tokens_references(self) -> None:
+        source = SCRIPT.read_text(encoding="utf-8")
+        start = source.index("def cleanup_load_fixture")
+        body = source[start:]
+        # `oauth_tokens` was dropped by the refresh-state-minimal migration;
+        # cleanup must not reference the removed table.
+        self.assertNotIn("oauth_tokens", body)
+
 
 if __name__ == "__main__":
     unittest.main()

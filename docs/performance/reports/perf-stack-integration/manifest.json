@@ -1,0 +1,53 @@
+{
+  "report": "perf-stack-integration",
+  "kind": "integration",
+  "integration_base": "bb5f42c60d24c18bf71d279ad50aee4935f0cca0",
+  "source_branch": "perf/formal-evidence-contract-52fb25b3",
+  "source_final_sha": "c39e35dfbfc68cebaab62d61b88bf75d665555f9",
+  "main_diverged": false,
+  "new_real_load_time_s": 0,
+  "production_candidates": {
+    "RSA_REUSE": "PRESENT",
+    "AUDIT_BATCH": "PRESENT",
+    "TOKEN_AUDIT_PREFLIGHT": "PRESENT"
+  },
+  "unexpected_production_diff": false,
+  "production_tree_equivalence": "PASS",
+  "main_new_changes_preserved": "N/A (no overlapping main changes)",
+  "rejected_candidates_not_ported": {
+    "GROUP_COMMIT_CANDIDATE": "FAIL",
+    "COMMIT_DELAY": "0",
+    "WAL_SYNC_METHOD_CANDIDATE": "NOT_TESTED"
+  },
+  "durability_changed": false,
+  "validation": {
+    "fmt": "PASS (integration files); mfa_profile.rs:457 pre-existing on main",
+    "targeted_tests": "PASS (crypto/key-management/authorization-server/persistence)",
+    "real_pg_tests": "PASS 21/21 (audit_ledger 9, token_issuance_fresh 12)",
+    "nazoauth_focused": "PASS 79/79",
+    "workspace_tests": "BASELINE_EQUIVALENT (only nazoauth lib fails, identical set on unmodified main in same environment)",
+    "workspace_regression": false,
+    "perf_python_tests": "276 passed / 0 failed / 1 skipped",
+    "js_harness_tests": "PASS (subject_state 10/10, checkpoint_clock pass:true)",
+    "one_shot_runtime_dependencies": 0,
+    "formal_stream_fail_closed": true,
+    "secret_scan": "PASS",
+    "docs_evidence_total_size_mb": 19.8
+  },
+  "formal": {
+    "FORMAL_10M_3000_CAPACITY": "PASS",
+    "FORMAL_30M_3000_STABILITY": "PASS",
+    "POOL_32": "PASS",
+    "DATABASE_MAX_CONNECTIONS": "32",
+    "source": "docs/performance/reports/formal-evidence-contract-repair"
+  },
+  "dropped_one_shot_drivers": [
+    "perf/tools/prepared_rsa_ab.py",
+    "perf/tools/audit_batch_ab.py",
+    "perf/tools/token_audit_preflight_ab.py",
+    "perf/tools/group_commit_ab.py",
+    "perf/tools/residency_run.py",
+    "crates/crypto/examples/prepared_rsa_probe.rs"
+  ],
+  "notes": "Integration commit SHAs are not self-referenced here; the git history carries them. No merge/rebase/cherry-pick of the experimental chain was performed."
+}

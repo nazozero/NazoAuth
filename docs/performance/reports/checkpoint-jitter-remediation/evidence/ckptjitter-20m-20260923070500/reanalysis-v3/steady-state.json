@@ -1,0 +1,396 @@
+{
+  "basis": "common_window_minus_checkpoint_local_windows",
+  "semantics": "excludes only checkpoint start/complete local windows; a checkpoint's middle write phase remains inside steady state",
+  "seconds": 520,
+  "common_seconds": 1050,
+  "excluded_checkpoint_local_bins": 530,
+  "missing_bins": [],
+  "histogram_schema": {
+    "version": "stream-v1",
+    "bounds": [
+      1.0,
+      2.0,
+      5.0,
+      10.0,
+      20.0,
+      50.0,
+      100.0,
+      200.0,
+      500.0,
+      1000.0,
+      2000.0,
+      5000.0,
+      10000.0
+    ],
+    "upper_inclusive": false
+  },
+  "throughput_ops_per_s": 1999.983,
+  "successful_ops_per_s": 1961.331,
+  "unexpected": 0,
+  "drops": 0,
+  "dips_in_steady": [
+    {
+      "s": 1790147543,
+      "ts_utc": "2026-09-23T07:12:23+00:00",
+      "completed": 1971,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147592,
+      "ts_utc": "2026-09-23T07:13:12+00:00",
+      "completed": 1970,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147745,
+      "ts_utc": "2026-09-23T07:15:45+00:00",
+      "completed": 1957,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147783,
+      "ts_utc": "2026-09-23T07:16:23+00:00",
+      "completed": 1932,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147792,
+      "ts_utc": "2026-09-23T07:16:32+00:00",
+      "completed": 1956,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147801,
+      "ts_utc": "2026-09-23T07:16:41+00:00",
+      "completed": 1914,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147809,
+      "ts_utc": "2026-09-23T07:16:49+00:00",
+      "completed": 1975,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147810,
+      "ts_utc": "2026-09-23T07:16:50+00:00",
+      "completed": 1972,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147817,
+      "ts_utc": "2026-09-23T07:16:57+00:00",
+      "completed": 1975,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147825,
+      "ts_utc": "2026-09-23T07:17:05+00:00",
+      "completed": 1966,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147843,
+      "ts_utc": "2026-09-23T07:17:23+00:00",
+      "completed": 1939,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790147864,
+      "ts_utc": "2026-09-23T07:17:44+00:00",
+      "completed": 1966,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148052,
+      "ts_utc": "2026-09-23T07:20:52+00:00",
+      "completed": 1941,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148083,
+      "ts_utc": "2026-09-23T07:21:23+00:00",
+      "completed": 1951,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148085,
+      "ts_utc": "2026-09-23T07:21:25+00:00",
+      "completed": 1966,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148088,
+      "ts_utc": "2026-09-23T07:21:28+00:00",
+      "completed": 1712,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148114,
+      "ts_utc": "2026-09-23T07:21:54+00:00",
+      "completed": 1971,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148119,
+      "ts_utc": "2026-09-23T07:21:59+00:00",
+      "completed": 1954,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148146,
+      "ts_utc": "2026-09-23T07:22:26+00:00",
+      "completed": 1964,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148151,
+      "ts_utc": "2026-09-23T07:22:31+00:00",
+      "completed": 1892,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148326,
+      "ts_utc": "2026-09-23T07:25:26+00:00",
+      "completed": 1974,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148339,
+      "ts_utc": "2026-09-23T07:25:39+00:00",
+      "completed": 1938,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148343,
+      "ts_utc": "2026-09-23T07:25:43+00:00",
+      "completed": 1972,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148354,
+      "ts_utc": "2026-09-23T07:25:54+00:00",
+      "completed": 1906,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148360,
+      "ts_utc": "2026-09-23T07:26:00+00:00",
+      "completed": 1967,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148366,
+      "ts_utc": "2026-09-23T07:26:06+00:00",
+      "completed": 1810,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148368,
+      "ts_utc": "2026-09-23T07:26:08+00:00",
+      "completed": 1972,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148369,
+      "ts_utc": "2026-09-23T07:26:09+00:00",
+      "completed": 1962,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148371,
+      "ts_utc": "2026-09-23T07:26:11+00:00",
+      "completed": 1967,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148380,
+      "ts_utc": "2026-09-23T07:26:20+00:00",
+      "completed": 1966,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148384,
+      "ts_utc": "2026-09-23T07:26:24+00:00",
+      "completed": 1968,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148386,
+      "ts_utc": "2026-09-23T07:26:26+00:00",
+      "completed": 1975,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148401,
+      "ts_utc": "2026-09-23T07:26:41+00:00",
+      "completed": 1962,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148407,
+      "ts_utc": "2026-09-23T07:26:47+00:00",
+      "completed": 1955,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148410,
+      "ts_utc": "2026-09-23T07:26:50+00:00",
+      "completed": 1976,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148423,
+      "ts_utc": "2026-09-23T07:27:03+00:00",
+      "completed": 1968,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148432,
+      "ts_utc": "2026-09-23T07:27:12+00:00",
+      "completed": 1976,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148437,
+      "ts_utc": "2026-09-23T07:27:17+00:00",
+      "completed": 1960,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148440,
+      "ts_utc": "2026-09-23T07:27:20+00:00",
+      "completed": 1927,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148449,
+      "ts_utc": "2026-09-23T07:27:29+00:00",
+      "completed": 1974,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148454,
+      "ts_utc": "2026-09-23T07:27:34+00:00",
+      "completed": 1958,
+      "in_checkpoint_local": false
+    },
+    {
+      "s": 1790148460,
+      "ts_utc": "2026-09-23T07:27:40+00:00",
+      "completed": 1979,
+      "in_checkpoint_local": false
+    }
+  ],
+  "op_latency_ms": {
+    "n": 1039991,
+    "min": null,
+    "max": 337,
+    "mean": 9.891,
+    "histogram_schema": "stream-v1",
+    "p50": {
+      "interval_ms": [
+        5.0,
+        10.0
+      ],
+      "interval_semantics": "[lo,hi)",
+      "estimate_ms": 7.5,
+      "estimate": true,
+      "bucket": 3
+    },
+    "p95": {
+      "interval_ms": [
+        20.0,
+        50.0
+      ],
+      "interval_semantics": "[lo,hi)",
+      "estimate_ms": 35.0,
+      "estimate": true,
+      "bucket": 5
+    },
+    "p99": {
+      "interval_ms": [
+        50.0,
+        100.0
+      ],
+      "interval_semantics": "[lo,hi)",
+      "estimate_ms": 75.0,
+      "estimate": true,
+      "bucket": 6
+    }
+  },
+  "iter_latency_ms": {
+    "n": 1039991,
+    "min": null,
+    "max": 337,
+    "mean": 9.911,
+    "histogram_schema": "stream-v1",
+    "p50": {
+      "interval_ms": [
+        5.0,
+        10.0
+      ],
+      "interval_semantics": "[lo,hi)",
+      "estimate_ms": 7.5,
+      "estimate": true,
+      "bucket": 3
+    },
+    "p95": {
+      "interval_ms": [
+        20.0,
+        50.0
+      ],
+      "interval_semantics": "[lo,hi)",
+      "estimate_ms": 35.0,
+      "estimate": true,
+      "bucket": 5
+    },
+    "p99": {
+      "interval_ms": [
+        50.0,
+        100.0
+      ],
+      "interval_semantics": "[lo,hi)",
+      "estimate_ms": 75.0,
+      "estimate": true,
+      "bucket": 6
+    }
+  },
+  "http_latency_ms": {
+    "n": 1493586,
+    "min": null,
+    "max": 213.067993,
+    "mean": 6.481,
+    "histogram_schema": "stream-v1",
+    "p50": {
+      "interval_ms": [
+        2.0,
+        5.0
+      ],
+      "interval_semantics": "[lo,hi)",
+      "estimate_ms": 3.5,
+      "estimate": true,
+      "bucket": 2
+    },
+    "p95": {
+      "interval_ms": [
+        10.0,
+        20.0
+      ],
+      "interval_semantics": "[lo,hi)",
+      "estimate_ms": 15.0,
+      "estimate": true,
+      "bucket": 4
+    },
+    "p99": {
+      "interval_ms": [
+        20.0,
+        50.0
+      ],
+      "interval_semantics": "[lo,hi)",
+      "estimate_ms": 35.0,
+      "estimate": true,
+      "bucket": 5
+    }
+  }
+}

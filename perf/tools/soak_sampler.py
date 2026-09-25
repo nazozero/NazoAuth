@@ -130,18 +130,46 @@ def main():
                     "SELECT pg_database_size(current_database())").fetchone()[0]
                 row["wal_bytes"] = c.execute(
                     "SELECT wal_bytes::bigint FROM pg_stat_wal").fetchone()[0]
+                # PG18 WAL flush accounting lives in pg_stat_io (the old
+                # pg_stat_wal.wal_sync time fields are gone). Summed across
+                # backend_type/context for the same-window delta series;
+                # full dimensions stay in the wal_snapshot evidence.
+                row["wal_io"] = dict(zip(
+                    ["writes", "write_bytes", "write_time_ms", "fsyncs",
+                     "fsync_time_ms"],
+                    c.execute(
+                        "SELECT COALESCE(sum(writes),0)::bigint,"
+                        " COALESCE(sum(write_bytes),0)::bigint,"
+                        " COALESCE(sum(write_time),0)::float8,"
+                        " COALESCE(sum(fsyncs),0)::bigint,"
+                        " COALESCE(sum(fsync_time),0)::float8"
+                        " FROM pg_stat_io WHERE object='wal'").fetchone()))
                 try:
+                    # PG18: cumulative checkpointer counters — per-60s
+                    # deltas of write/sync time and buffers_written
+                    # correlate load cliffs with checkpoint activity
+                    # without resetting any stats.
                     row["checkpoints"] = dict(zip(
-                        ["timed", "requested"],
+                        ["timed", "requested", "done",
+                         "write_time_ms", "sync_time_ms",
+                         "buffers_written"],
                         c.execute(
-                            "SELECT num_timed, num_requested "
+                            "SELECT num_timed, num_requested, num_done,"
+                            " write_time, sync_time, buffers_written "
                             "FROM pg_stat_checkpointer").fetchone()))
                 except Exception:
-                    row["checkpoints"] = dict(zip(
-                        ["timed", "requested"],
-                        c.execute(
-                            "SELECT checkpoints_timed, checkpoints_req "
-                            "FROM pg_stat_bgwriter").fetchone()))
+                    try:
+                        row["checkpoints"] = dict(zip(
+                            ["timed", "requested"],
+                            c.execute(
+                                "SELECT num_timed, num_requested "
+                                "FROM pg_stat_checkpointer").fetchone()))
+                    except Exception:
+                        row["checkpoints"] = dict(zip(
+                            ["timed", "requested"],
+                            c.execute(
+                                "SELECT checkpoints_timed, checkpoints_req"
+                                " FROM pg_stat_bgwriter").fetchone()))
                 row["rel_bytes"] = {
                     r[0]: {"total": r[1], "heap": r[2], "idx": r[3],
                            "toast": r[4], "ins": r[5], "upd": r[6],
@@ -172,6 +200,14 @@ def main():
                         " security_audit_event_outbox),"
                         " last_sequence, anchor_sequence "
                         "FROM security_audit_chain_state").fetchone()))
+                # PG wait-event distribution by type: distinguishes
+                # connection-hold vs in-server wait when pool wait is high.
+                row["pg_waits"] = {
+                    r[0]: r[1] for r in c.execute(
+                        "SELECT wait_event_type, count(*) "
+                        "FROM pg_stat_activity "
+                        "WHERE wait_event IS NOT NULL "
+                        "GROUP BY wait_event_type").fetchall()}
         except Exception as e:
             row["pg_err"] = str(e)[:120]
         try:
@@ -201,7 +237,12 @@ def main():
                 "acq": p["acquire_count"],
                 "wait_ns": p["wait_nanos_total"],
                 "wait_max_ns": p["wait_nanos_max"],
+                "waiting": p.get("waiting_acquisitions"),
+                "size": p.get("connections"),
+                "idle": p.get("idle_connections"),
             }
+            if "audit_queue" in pm:
+                row["audit_queue"] = pm["audit_queue"]
         except Exception as e:
             row["app_err"] = str(e)[:120]
         out.write(json.dumps(row) + "\n")

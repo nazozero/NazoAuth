@@ -54,6 +54,8 @@ use nazo_auth::{
 
 const LIVE_VALKEY_TIMEOUT: StdDuration = StdDuration::from_secs(5);
 
+#[path = "issue/audit_readiness.rs"]
+mod audit_readiness;
 #[path = "issue/failure_boundaries.rs"]
 mod failure_boundaries;
 #[path = "issue/refresh.rs"]

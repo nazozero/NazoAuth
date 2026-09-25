@@ -1,0 +1,146 @@
+{
+  "app_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+  "app_image": "hr2-app:a2dd5f13",
+  "app_sha": "ebbfa79727063d69895125f0d7c9e1e150da8cf8",
+  "load_model": {
+    "generator_mem_min_gib": 14,
+    "max_vus": 2048,
+    "pre_allocated_vus": 2048,
+    "subject_token": "refresh-adopts-access_token"
+  },
+  "postgres_diag": {
+    "baseline_mismatches": {},
+    "gucs": {
+      "checkpoint_completion_target": "0.9",
+      "checkpoint_timeout": "5min",
+      "commit_delay": "0",
+      "commit_siblings": "5",
+      "fsync": "on",
+      "full_page_writes": "on",
+      "max_connections": "100",
+      "max_wal_size": "8GB",
+      "server_version": "18.6",
+      "shared_buffers": "128MB",
+      "synchronous_commit": "on",
+      "track_wal_io_timing": "off",
+      "wal_sync_method": "fdatasync"
+    },
+    "headroom_ok": true,
+    "max_connections": 100,
+    "ok": true,
+    "version_ok": true
+  },
+  "remote_host_time_start": 1790312034.3202083,
+  "runtime_role": "nazoauth_perf_runtime",
+  "runtime_role_source": "DATABASE_URL: \"postgresql://nazoauth_perf_runtime:runtime@postgres:5432/oauth\"",
+  "scenario": {
+    "duration_s": 1800,
+    "measurement_window_s": 1785,
+    "mix": {
+      "authorization_code": 15,
+      "client_credentials": 25,
+      "refresh": 15,
+      "token_exchange": 15,
+      "userinfo": 30
+    },
+    "name": "cap_mixed",
+    "rate": 3000,
+    "sidecar_duration_s": 1800,
+    "sidecars": [
+      {
+        "duration": "120s",
+        "max_vus": 16,
+        "name": "argon2",
+        "pre_vus": 8,
+        "rate": 8,
+        "scenario": "oidc_cold_login_refresh",
+        "user_count": 64
+      },
+      {
+        "duration": "120s",
+        "max_vus": 32,
+        "name": "meta",
+        "pre_vus": 16,
+        "rate": 200,
+        "scenario": "metadata_jwks",
+        "user_count": 64
+      },
+      {
+        "duration": "120s",
+        "max_vus": 64,
+        "name": "fapi",
+        "pre_vus": 32,
+        "rate": 30,
+        "scenario": "fapi2_logged_in_high_security",
+        "user_count": 128
+      },
+      {
+        "duration": "120s",
+        "max_vus": 256,
+        "name": "refresh",
+        "pre_vus": 64,
+        "rate": 600,
+        "scenario": "cap_refresh_token",
+        "user_count": 256
+      }
+    ],
+    "warmup_ms": 15000
+  },
+  "task": "formal3000-30m-harness-repair",
+  "workspace_provenance": {
+    "file_sha256": {
+      "docker-compose.perf.yml": {
+        "sha256": "da2f371f10adc3b36a0e8786ccd274cc8f8ed2bf8238dd5855c2566bbce0b1c5",
+        "size": 6646
+      },
+      "perf/runner.py": {
+        "sha256": "1aba3c373e304b8f7a8c090e095750d8385d0104d9b9001f520850b3ecb04ed8",
+        "size": 49233
+      },
+      "perf/seed.py": {
+        "sha256": "d3ad49edfa39021504e492bf73bb08055df109ed1787ce56f3c108eec8525c61",
+        "size": 29330
+      },
+      "perf/tools/checkpoint_analyze.py": {
+        "sha256": "12a03c04bf3fe31443bd2b1f990b8f54e26f710ddbbad237622767639d10f2b5",
+        "size": 86689
+      },
+      "perf/tools/ledger.sql": {
+        "sha256": "24b9cb3fe8c249b9e65dacceb0e8e8b1da8ff29512c3e795e7bcea43f1ddabf2",
+        "size": 24251
+      },
+      "perf/tools/pool_size_ab.py": {
+        "sha256": "02432cafdf933277788d5dc556a9762c7e5d7733cdd8d08d85de7c92e250656e",
+        "size": 51120
+      },
+      "perf/tools/proc_detail_sampler.py": {
+        "sha256": "e7c9cb739e845e72753c4cc4bf5377907968fd0ee69880e7c2d1142e369d2cec",
+        "size": 5860
+      },
+      "perf/tools/residency_observer.py": {
+        "sha256": "9e2c6f456ea78ba9802063f86cdf42c2827a913eec8283148b205bdc466ee9f8",
+        "size": 9196
+      },
+      "perf/tools/single_instance_scaling.py": {
+        "sha256": "0ab816d769024e59217fa097b55d5c559e1e5d50353e4b7bd8c4186b9360a660",
+        "size": 95859
+      },
+      "perf/tools/soak_sampler.py": {
+        "sha256": "fb1e0b5ab592b346d966aaebbe093a06cb154a01afbb5562006ba6e49941c3f0",
+        "size": 13047
+      },
+      "perf/tools/stability_analyze.py": {
+        "sha256": "f9bdcea435944b10977b2fdc27d5fdbdf316e15312ff5dc47f5dd4a78f6cb826",
+        "size": 16693
+      },
+      "perf/tools/vkledger.py": {
+        "sha256": "9367851303b227157c004a7ad4251c9f05388c46d12e0f95116a1fbad913f82b",
+        "size": 4459
+      }
+    },
+    "git_head": "ebbfa79727063d69895125f0d7c9e1e150da8cf8",
+    "missing": [],
+    "ok": true,
+    "workspace_realpath": "/workspace/.hr2"
+  }
+}

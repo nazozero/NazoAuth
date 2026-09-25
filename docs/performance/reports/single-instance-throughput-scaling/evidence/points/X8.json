@@ -1,0 +1,4 @@
+{"name":"X8","phase":"phase1","image":"sis-app:A",
+ "app_cpus":[88,90,92,94,96,98,100,102],"infra_cpus":[87,104,105,106,107,108,109,110,111,112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,144,145,146,147,148,149,150],
+ "profile":"sis","scenario":"cap_client_credentials","executor":"constant-vus",
+ "vus":64,"duration":"120s","warmup_ms":15000,"user_count":64,"vector_count":48000,"grace_s":300}

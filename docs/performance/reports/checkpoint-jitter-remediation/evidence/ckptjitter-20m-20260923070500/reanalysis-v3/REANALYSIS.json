@@ -1,0 +1,42 @@
+{
+  "revision": "reanalysis-v3",
+  "run_id": "ckptjitter-20m-20260923070500",
+  "original_test_source_sha": "f842280c3d5935ca04c889b1db89f54b02e135a1",
+  "analyzer_source_sha": "030df6d5b3634352f4a03e8ddfb166edd1eab0a7",
+  "analyzer": "perf/tools/checkpoint_analyze.py @030df6d5",
+  "generated_by": "offline re-run of checkpoint_analyze.py report mode on the original evidence files; no new workload executed (NEW_REAL_LOAD_TIME=0s)",
+  "inputs_sha256": {
+    "main/capacity-cap-mixed.series.json": "e4b54abbf18a0e59aa24d72c2df5866fa8f716b70baa068e888d9048de63b8f0",
+    "main/capacity-cap-mixed.k6.json": "7720391f47f44b2ea4bad1a26435880756c7e71ce39b75ac8ae35b235177fe5d",
+    "main/capacity-cap-mixed.window.json": "ced622fd06072b8ba1d21b6eb56094e42a5e6dc64d35ee00a4b6602e79ad9a98",
+    "main/capacity-cap-mixed.analyzer-stats.json": "50e9cbe3275162c5af14e360e8823f5522ae3293d44b9d0f0dd1df0ea71a5910",
+    "ckpt-observer.jsonl.gz": "4018b2a27abed991b4b2b5b6da0527eb322b1bfe4bf46d87fcf6076347e87dd8",
+    "pg-checkpoints.log": "e0b28bcc4dd9a19268aed3ba98248521fea59deb7c1adac0e833c3b295919bd3",
+    "analyze-config-v2.json": "b3de5416858bae875a9a79aa88de47eda24f81ad82e659b37098e9014b6d3f55",
+    "sidecar-status.json": "c93e836e68a91af46f008e6b256ea664dbbae12c60f7a2af10c8775dbe240922"
+  },
+  "lineage": {
+    "raw_run": "unchanged \u2014 the preserved capture of ckptjitter-20m-20260923070500",
+    "revision1": "superseded derived analysis (continuous windows, container-time basis)",
+    "reanalysis-v2": "superseded derived analysis (single-span checkpoint windows, measurement-window steady state, internal bucket schema applied to foreign histograms)",
+    "reanalysis-v3": "current authoritative offline derivation"
+  },
+  "corrections_vs_v2": [
+    "checkpoint windows are two disjoint locals \u2014 start+[-30s,+90s] and complete+[-30s,+90s] clipped to the all-load common window; the middle write phase is no longer swallowed into checkpoint-local evidence (v2 used one continuous start-30..complete+90 span of ~389s)",
+    "steady state = common-window bins minus checkpoint local union (v2 used main measurement bins minus the continuous window, which leaked pre-common VU-ramp drops and removed the entire write phase from view)",
+    "histogram quantiles read the artifact's declared stream-v1 schema (bounds [1,2,5,...,10000], `v < bound` -> [lo,hi) intervals); v2 applied the analyzer's internal bucket list and `<=` semantics, producing wrong containing intervals",
+    "wal_per_op numerator and denominator now share one effective interval (the measurement window's full-second bins); v2 mixed midpoint-clipped and bin-effective extents while labeling them one window",
+    "min_at_s reports epoch seconds (v2 emitted array indices)",
+    "missing observer rows count as delta-stream breaks (v2 cleared prev before testing it, so breaks were never counted)",
+    "sidecar contract windows require scenario_clock_ok==1 and non-inverted bounds to count as exact",
+    "pg_stat_io keeps by_dimension (backend|object|context); pool wait exposes median/p95/dip-bin series; checkpoint evidence gaps feed final validity",
+    "capacity evaluator: capRun identity derives from real cap_* markers only \u2014 a measurement_contract shell with all-null bounds no longer classifies a non-capRun summary as capRun; stream measurement_evidence errors are INVALID"
+  ],
+  "unrecoverable": [
+    "exact scenario measurement bounds of argon2/meta/fapi sidecars (non-capRun scenarios emit no cap_window_* contract metrics); bounded by container lifecycle only",
+    "sub-second placement of events inside a 1s bin",
+    "exact p95/p99 op latency \u2014 only bucketed histograms were persisted",
+    "pg_stat_wal.wal_write_time/wal_sync_time - columns absent in PG18, never captured",
+    "cap_window_measure_offset_ms in the saved main contract - emitted under the old cap_window_offset_ms name; value 15000 is recoverable by inspection but the analysis deliberately does not consume the legacy name (no alias layer)"
+  ]
+}

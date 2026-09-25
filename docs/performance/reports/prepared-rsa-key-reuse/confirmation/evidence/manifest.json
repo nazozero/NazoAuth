@@ -1,0 +1,11 @@
+{
+  "baseline_app_sha": "b8e1aead20d4f875f64e55eb4bb3fb71d758cfd7",
+  "baseline_binary_sha256": "24d8067d395c624c7677e3d8c45d8e18c8be04182177bcb4d32ede17389fa0ae",
+  "baseline_image": "prsa-base:b8e1aead",
+  "candidate_app_sha": "86c5907ab01873d596a55a84344d4c9a4b8f34bf",
+  "candidate_binary_sha256": "4896749e163efce6dfedcc6bdec9f6ddf8ea84265798dd430632d251a7e9e966",
+  "candidate_image": "prsa-cand:47f43178",
+  "harness_sha": "86c5907ab01873d596a55a84344d4c9a4b8f34bf",
+  "protocol": "paired-3x-90s-cc + conditional mixed 2x180s",
+  "task": "prepared-rsa-key-reuse-confirmation"
+}

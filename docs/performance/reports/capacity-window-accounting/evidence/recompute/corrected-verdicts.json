@@ -1,0 +1,122 @@
+{
+ "A1": {
+  "verdict": "FAIL",
+  "measure": {
+   "scheduled": 315000,
+   "started": 276013,
+   "completed": 276013,
+   "unfinished": 0,
+   "dropped": 38987,
+   "drop_fraction": 0.123768,
+   "pre_measure_drops_estimate": 4546,
+   "iter_latency_ms": {
+    "p50": 248.0,
+    "p95": 1129.0,
+    "p99": 1256.0
+   },
+   "outcomes": {
+    "success": 274400,
+    "expected_rejection": 66,
+    "local_no_request": 1547,
+    "unexpected": 0,
+    "prepare_failed": 0
+   }
+  },
+  "rate_for_gate": 2628.695,
+  "gate_p95": 1129.0,
+  "gate_p99": 1256.0,
+  "unexpected": 0,
+  "full_run_drop": 0.12092744186821704,
+  "gen_evidence": "absent"
+ },
+ "B1": {
+  "verdict": "FAIL",
+  "measure": {
+   "scheduled": 315000,
+   "started": 314570,
+   "completed": 314570,
+   "unfinished": 0,
+   "dropped": 430,
+   "drop_fraction": 0.001365,
+   "pre_measure_drops_estimate": 690,
+   "iter_latency_ms": {
+    "p50": 7.0,
+    "p95": 57.0,
+    "p99": 144.0
+   },
+   "outcomes": {
+    "success": 310052,
+    "expected_rejection": 54,
+    "local_no_request": 4464,
+    "unexpected": 0,
+    "prepare_failed": 0
+   }
+  },
+  "rate_for_gate": 2995.905,
+  "gate_p95": 57.0,
+  "gate_p99": 144.0,
+  "unexpected": 0,
+  "full_run_drop": 0.003113880239221558,
+  "gen_evidence": "absent"
+ },
+ "B2": {
+  "verdict": "PASS",
+  "measure": {
+   "scheduled": 315000,
+   "started": 314925,
+   "completed": 314925,
+   "unfinished": 0,
+   "dropped": 75,
+   "drop_fraction": 0.000238,
+   "pre_measure_drops_estimate": 638,
+   "iter_latency_ms": {
+    "p50": 6.0,
+    "p95": 46.0,
+    "p99": 101.0
+   },
+   "outcomes": {
+    "success": 310169,
+    "expected_rejection": 48,
+    "local_no_request": 4708,
+    "unexpected": 0,
+    "prepare_failed": 0
+   }
+  },
+  "rate_for_gate": 2999.286,
+  "gate_p95": 46.0,
+  "gate_p99": 101.0,
+  "unexpected": 0,
+  "full_run_drop": 0.0019833278240893775,
+  "gen_evidence": null
+ },
+ "A2": {
+  "verdict": "FAIL",
+  "measure": {
+   "scheduled": 315000,
+   "started": 289145,
+   "completed": 289145,
+   "unfinished": 0,
+   "dropped": 25855,
+   "drop_fraction": 0.082079,
+   "pre_measure_drops_estimate": 2336,
+   "iter_latency_ms": {
+    "p50": 225.0,
+    "p95": 1036.0,
+    "p99": 1148.0
+   },
+   "outcomes": {
+    "success": 288155,
+    "expected_rejection": 45,
+    "local_no_request": 945,
+    "unexpected": 0,
+    "prepare_failed": 0
+   }
+  },
+  "rate_for_gate": 2753.762,
+  "gate_p95": 1036.0,
+  "gate_p99": 1148.0,
+  "unexpected": 0,
+  "full_run_drop": 0.07831089358085117,
+  "gen_evidence": "absent"
+ }
+}

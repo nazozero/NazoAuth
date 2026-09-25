@@ -1,0 +1,191 @@
+{
+ "audit_queue": {
+  "collected": true,
+  "dropped": 0,
+  "enqueued": 300298,
+  "pending_in_process": 0,
+  "persist_batch_events": 300298,
+  "persist_batches": 181652,
+  "persist_max_batch": 64,
+  "persisted": 300298
+ },
+ "capacity_gate": {
+  "metrics": {
+   "classified_errors": 300,
+   "drop_fraction": 0.0005355549604944883,
+   "dropped": 964,
+   "error_rate": 0.000115,
+   "expected_invalid_grant": 300,
+   "gate_p95": 34.0,
+   "gate_p99": 93.0,
+   "gate_population": "measurement_cohort",
+   "injector_vu_cap_reached": true,
+   "measure": {
+    "boundary_overshoot": 1,
+    "completed": 1755001,
+    "drop_fraction": -1e-06,
+    "drop_fraction_worst": 1e-06,
+    "dropped": -1,
+    "iter_latency_ms": {
+     "p50": 5.0,
+     "p95": 34.0,
+     "p99": 93.0
+    },
+    "late_vu_fraction": 0.0,
+    "outcomes": {
+     "expected_rejection": 298,
+     "local_no_request": 10996,
+     "prepare_failed": 0,
+     "success": 1743707,
+     "unexpected": 0
+    },
+    "pre_measure_drops_estimate": 963,
+    "scheduled": 1755000,
+    "started": 1755001,
+    "unfinished": 0
+   },
+   "measured_ops_s": 3000.002,
+   "measurement_contract": "cap-scenario-window-v1",
+   "p50": 4.721,
+   "p95": 25.124,
+   "p99": 155.209,
+   "rate_basis": "scenario_window",
+   "rate_for_gate": 3000.002,
+   "rps": 4346.172,
+   "status": "target_miss",
+   "subject_lifecycle": {
+    "expired_reauth": 183,
+    "initial_mint": 2048,
+    "refresh_update": 258453
+   },
+   "successful_ops_s": 2980.696,
+   "threshold_status_diagnostic": "target_miss",
+   "unexpected_errors": 0,
+   "window_seconds": 585.0
+  },
+  "status": "PASS"
+ },
+ "checks": {
+  "active_per_scope_le_10": true,
+  "audit_reconciled": true,
+  "capacity_gate_pass": true,
+  "db_outbox_drained": true,
+  "dropped_required_zero": true,
+  "enqueued_eq_persisted": true,
+  "expired_backlog_zero": true,
+  "journal_contiguous": true,
+  "no_restarts": true,
+  "oom_none": true,
+  "pending_zero_post_drain": true,
+  "point_completed": true,
+  "pool_size_observed": true,
+  "queue_dropped_zero": true,
+  "queue_full_zero": true,
+  "runtime_backends_match": true,
+  "sidecars_complete": true,
+  "spent_per_family_le_64": true,
+  "unexpected_zero": true
+ },
+ "evidence": {
+  "acquire_per_op": 6.4974,
+  "app_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+  "attainment": 1.0,
+  "attempted_ops_per_s": 3000.002,
+  "backend_state_means": {
+   "active": 13.86,
+   "idle": 13.73,
+   "idle in transaction": 4.41
+  },
+  "checked_out_max": 32,
+  "checked_out_mean": 23.38,
+  "cohort_valid": false,
+  "commits_delta": 1717222,
+  "commits_per_fsync": 2.8102,
+  "configured_pool": "32",
+  "cpu_cores": {
+   "app": 4.94,
+   "postgres": 7.82
+  },
+  "drop_fraction": 0.000536,
+  "full_run_drop_fraction": 0.000536,
+  "iter_p95_ms": 34.0,
+  "iter_p99_ms": 93.0,
+  "measure_completed": 1755001,
+  "measure_drop_fraction": -1e-06,
+  "measure_dropped": -1,
+  "measure_scheduled": 1755000,
+  "measure_started": 1755001,
+  "ops_per_s": 2980.696,
+  "outcome_success": 1743707,
+  "outcome_unexpected": 0,
+  "p50_ms": 5.0,
+  "p95_ms": 34.0,
+  "p99_ms": 93.0,
+  "pool_size_observed": 32,
+  "runtime_backends_max": 32,
+  "strict_3000_gate": {
+   "attempted_ops_per_s": 3000.002,
+   "measure_completed": 1755001,
+   "measure_drop_fraction": -1e-06,
+   "measure_scheduled": 1755000,
+   "measure_started": 1755001,
+   "pass": false,
+   "population": "measurement_cohort",
+   "target": 3000.0
+  },
+  "wait_per_acq_ms": 0.778,
+  "waiting_max": 1374,
+  "waiting_mean": 14.8,
+  "wal_bytes_per_s": 13497519.3,
+  "wal_fsyncs_delta": 611074,
+  "wal_fsyncs_per_s": 1017.9,
+  "wal_wait": {
+   "active_samples": 32419,
+   "wal_wait_samples": 18323,
+   "wal_wait_share": 0.5652,
+   "window_samples": 2339
+  },
+  "wal_writes_per_s": 1020.4
+ },
+ "failed": [],
+ "generator": {
+  "injector_vu_cap_reached": true,
+  "main_exit_code": "0",
+  "main_oom_killed": false,
+  "max_vus": 2048,
+  "pre_allocated_vus": 2048
+ },
+ "generator_preflight": {
+  "captured": true,
+  "container_mem": {
+   "sis-proc-F3000R2": "0B / 0B",
+   "sis-rcv-F3000R2": "0B / 0B",
+   "sis-residency-F3000R2": "0B / 0B",
+   "sis-sampler-F3000R2": "0B / 0B",
+   "sis-worker-F3000R2": "0B / 0B",
+   "sisr2-keyset-1": "0B / 0B",
+   "sisr2-migrate-1": "0B / 0B",
+   "sisr2-nazoauth-1": "0B / 0B",
+   "sisr2-postgres-1": "0B / 0B",
+   "sisr2-valkey-1": "0B / 0B"
+  },
+  "mem_available_gib": 127.87,
+  "mem_available_kb": 134079816,
+  "mem_free_kb": 132289976,
+  "mem_total_kb": 134217728
+ },
+ "reevaluation": {
+  "harness_sha": "1fa3e9020715f23e72f3effaae4cb2793b2612ba",
+  "original_verdict": "INVALID",
+  "original_verdict_file": "formal3000r2/F3000R2/formal3000-verdict-precontract-fix.json",
+  "reason": "cohort boundary-overshoot contract fix (1fa3e902): k6 ticker may land <=1ms of arrivals inside a window edge; observed +1/1,755,000. Same evidence, no reload."
+ },
+ "subject_lifecycle": {
+  "expired_reauth": 183,
+  "initial_mint": 2048,
+  "measure_expired_reauth": 183,
+  "reauth_fraction_of_started": 0.000104,
+  "refresh_update": 258453
+ },
+ "verdict": "PASS"
+}

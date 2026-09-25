@@ -1,0 +1,57 @@
+{
+  "task": "token-audit-preflight-elision",
+  "branch": "perf/token-audit-preflight-elision-de603c8f",
+  "date": "2026-09-24",
+  "shas": {
+    "base_sha": "de603c8f6d5d613c6d533cc84990c504505a2bde",
+    "rsa_sha": "86c5907a (confirmed native RSA key-pair reuse, present on both sides)",
+    "audit_batch_sha": "de603c8f6d5d613c6d533cc84990c504505a2bde (confirmed batching tip)",
+    "common_sha": "53e05ebe02156e491f65de45388d2cdac7536f22",
+    "candidate_sha": "86b2df169e05a65e0c482e1d6653a848c6aa83a8",
+    "test_fix_sha": "608b549289dc28410ff3abab3382530cb104b4bb",
+    "harness_sha": "perf/tools/token_audit_preflight_ab.py @ report commit (evaluator corrected to the pre-registered spec before mixed verdict)"
+  },
+  "binaries": {
+    "a_image": "tap-a:53e05ebe",
+    "a_binary_sha256": "4ada844be97e3e408cc7357a2bdbb20e19f721edc794a3e0b02f61d7ff0a1223",
+    "b_image": "tap-b:86b2df16",
+    "b_binary_sha256": "046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a",
+    "binary_check": "distinct sha256, verified in-container per point; both built with full --no-cache so the shared BuildKit target cache could not stale-hit"
+  },
+  "environment": {
+    "postgres": "18-alpine (pinned digest)",
+    "app_cpus": "same 8 physical cores via pinset-exec (before Tokio/Actix threads)",
+    "database_max_connections": 24,
+    "audit_queue_capacity": 4096,
+    "audit_workers": 1,
+    "audit_anchor_mode_app": "disabled (compose default)",
+    "audit_anchor_mode_sidecar_worker": "optional",
+    "keyset_volume": "sisprsa-confirm-keys (external, identical key material on all six points)"
+  },
+  "protocol": {
+    "cc": "cap_client_credentials constant-vus=64, 90s + 15s warmup; order A1 B1 B2 A2",
+    "mixed": "cap_mixed constant-arrival-rate 3000/s, 180s + 15s warmup, pre256/max1024; sidecars refresh=600/s argon2=8/s metadata=200/s fapi=30/s",
+    "load_budget_s": 900,
+    "load_seconds_actual": 769.7
+  },
+  "verdicts": {
+    "cc": "PASS",
+    "mixed": "PASS",
+    "token_audit_preflight_status": "PASS",
+    "ready_for_merge": "YES",
+    "strict_3000_gate": "FAIL",
+    "strict_30m_capacity": "NOT_TESTED",
+    "db_pool_changed": "NO",
+    "durability_changed": "NO",
+    "audit_semantics_changed": "NO",
+    "rsa_reuse_status": "CONFIRMED_AND_PRESENT",
+    "audit_batch_status": "PASS_AND_PRESENT"
+  },
+  "evidence": {
+    "run_manifest": "evidence/run-manifest.json",
+    "cc_verdict": "evidence/cc-verdict.json",
+    "mixed_verdict": "evidence/mixed-verdict.json",
+    "budget": "evidence/budget.json",
+    "point_records": "remote workspace /workspace/.tap-b/perf-results/sis/tokenauditpreflight/{cc,mixed}/<point>/point.json (CNB workspace cnb-r49-1k38f54tm; ephemeral)"
+  }
+}

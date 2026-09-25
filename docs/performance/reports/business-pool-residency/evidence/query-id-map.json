@@ -1,0 +1,1094 @@
+{
+ "-1118924422343236163": {
+  "calls": 1,
+  "query": "CREATE EXTENSION IF NOT EXISTS pg_stat_statements",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.051188
+ },
+ "-1127769266060406036": {
+  "calls": 4856,
+  "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"mfa_enabled\", \"users\".\"created_at\", \"users\".",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 141.09169700000007
+ },
+ "-11707619807080382": {
+  "calls": 2873,
+  "query": "INSERT INTO \"oauth_refresh_spent_tokens\" (\"tenant_id\", \"refresh_token_blake3\", \"token_family_id\", \"member_id\", \"successor_member_id\", \"spent_at\", \"expires_at\") VALUES ($1, $2, $3, $4, $5, $6, $7)",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 188.3588859999999
+ },
+ "-1231275493859611259": {
+  "calls": 1,
+  "query": "DELETE FROM oauth_client_mtls_trust_anchor_requests WHERE tenant_id = $1::uuid",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.003929
+ },
+ "-1250702971719156001": {
+  "calls": 1,
+  "query": "WITH expired AS (\n        SELECT id\n        FROM openid4vp_transactions\n        WHERE expires_at <= CURRENT_TIMESTAMP\n        ORDER BY expires_at, id\n        LIMIT $1\n        FOR UPDATE SKIP LOCKED\n  ",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": false,
+  "total_exec_time": 0.003809
+ },
+ "-1708461756726018533": {
+  "calls": 36915,
+  "query": "SET LOCAL lock_timeout = $1",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 100.33764700000057
+ },
+ "-1719180567995714108": {
+  "calls": 21,
+  "query": "SET TIME ZONE 'UTC'",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.198355
+ },
+ "-189834805381950481": {
+  "calls": 1,
+  "query": "SELECT $1,$2,$3, pg_database_size(current_database())::text\nUNION ALL SELECT $4,$5,$6, temp_bytes::text FROM pg_stat_database WHERE datname=current_database()\nUNION ALL SELECT $7,$8,$9, temp_files::te",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.815003
+ },
+ "-2002876113919984656": {
+  "calls": 214,
+  "query": "SELECT public.nazo_open_security_audit_batch($1, $2, $3, $4, $5) AS generation",
+  "rolname": "nazoauth_perf_exporter",
+  "toplevel": true,
+  "total_exec_time": 24.355366000000007
+ },
+ "-2011583352629354549": {
+  "calls": 213,
+  "query": "SELECT state.anchor_sequence                   FROM public.security_audit_chain_state AS state\n    WHERE state.singleton AND state.batch_last_sequence IS NOT NULL\n      AND (state.anchor_deployment_id",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 6.670430000000005
+ },
+ "-2016376713443688297": {
+  "calls": 1,
+  "query": "SELECT $1,$2, (now() AT TIME ZONE $3)::text",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.00421
+ },
+ "-2182206566908618211": {
+  "calls": 1,
+  "query": "INSERT INTO user_client_grants\n                (tenant_id, user_id, client_id, first_authorized_at,\n                 last_authorized_at, last_scopes)\n            SELECT u.tenant_id, u.id, c.id, now(),",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 3.423711
+ },
+ "-2246674608066554652": {
+  "calls": 7721,
+  "query": "SELECT (NOT COALESCE($1, $2) OR has_function_privilege(session_user,\n        $3::REGPROCEDURE, $4))\n    AND (NOT COALESCE($5, $6) OR (\n        has_function_privilege(session_user, $7::REGPROCEDURE, $8",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 300.8204670000002
+ },
+ "-2282213859625286044": {
+  "calls": 1,
+  "query": "SELECT $1, $2, count(*)::text,\n       COALESCE(min(current_expires_at AT TIME ZONE $3)::text,$4)\nFROM oauth_refresh_families WHERE current_expires_at <= now()\nUNION ALL SELECT $5,$6,count(*)::text,\n  ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.111078
+ },
+ "-2374618570616957587": {
+  "calls": 214,
+  "query": "v_sequence IS DISTINCT FROM p_previous_sequence OR v_hash IS DISTINCT FROM p_previous_hash\n       OR (v_sequence = $9 AND v_hash <> decode(repeat($10, $11), $12))\n       OR (v_sequence > $13 AND v_seq",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 0.16985700000000006
+ },
+ "-2436087183235826827": {
+  "calls": 64,
+  "query": "INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract)\n            VALUES ($1::uuid, $2, $3)\n            ON CONFLICT (tenant_id, contract_blake3) DO NOTHING",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 10.046533999999996
+ },
+ "-2473026879760628390": {
+  "calls": 1,
+  "query": "SELECT usename, count(*) FROM pg_stat_activity\nWHERE datname = $1 AND backend_type = $2\nGROUP BY usename ORDER BY 2 DESC",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.12609700000000001
+ },
+ "-2565421133935146987": {
+  "calls": 36861,
+  "query": "INSERT INTO public.security_audit_chain_entries (event_id, sequence, previous_hash, event_hash)\n        VALUES (v_entry.event_id, v_sequence, v_hash, v_entry.event_hash)",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 786.0547880000124
+ },
+ "-2767749378158235868": {
+  "calls": 1,
+  "query": "SELECT $1, $2, $3,\n       (SELECT count(*)::text FROM security_audit_event_outbox)\nUNION ALL SELECT $4,$5,$6,\n       (SELECT COALESCE(batch_event_count,$7)::text FROM security_audit_chain_state)\nUNION",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.030728000000000002
+ },
+ "-2785641046450464105": {
+  "calls": 5,
+  "query": "SELECT \"oauth_refresh_spent_tokens\".\"refresh_token_blake3\", \"oauth_refresh_spent_tokens\".\"token_family_id\", \"oauth_refresh_spent_tokens\".\"member_id\", \"oauth_refresh_spent_tokens\".\"spent_at\", \"oauth_re",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.060628
+ },
+ "-2877339505154587149": {
+  "calls": 2970,
+  "query": "SELECT \"oauth_refresh_families\".\"tenant_id\", \"oauth_refresh_families\".\"token_family_id\", \"oauth_refresh_families\".\"client_id\", \"oauth_refresh_families\".\"user_id\", \"oauth_refresh_families\".\"contract_bl",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 53.42811199999997
+ },
+ "-2887139335912015367": {
+  "calls": 36911,
+  "query": "INSERT INTO \"oauth_token_issuances\" (\"issuance_id\", \"tenant_id\", \"client_id\", \"user_id\", \"access_token_jti\", \"access_token_expires_at\", \"retain_until\", \"refresh_token_family_id\") VALUES ($1, $2, $3, $",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 2620.721656999993
+ },
+ "-2964386963526952398": {
+  "calls": 1,
+  "query": "SELECT $1, $2, $3,\n       COALESCE(max(extract($4 FROM now() - xact_start))::bigint::text, $5)\nFROM pg_stat_activity\nWHERE xact_start IS NOT NULL AND pid <> pg_backend_pid()\nUNION ALL\nSELECT $6, $7, $",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.576758
+ },
+ "-3027920698235884960": {
+  "calls": 142,
+  "query": "SELECT $3 FROM ONLY \"public\".\"realms\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 AND \"tenant_id\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 0.16833199999999993
+ },
+ "-3108691796264403323": {
+  "calls": 217,
+  "query": "WITH pending AS MATERIALIZED (\n        SELECT outbox.event_id, outbox.occurred_at\n        FROM public.security_audit_event_outbox AS outbox\n        ORDER BY outbox.occurred_at, outbox.event_id\n       ",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 147.53962900000005
+ },
+ "-3327562769489100694": {
+  "calls": 214,
+  "query": "SELECT state.last_sequence, state.last_hash, state.anchor_sequence\n                                                   FROM public.security_audit_chain_state AS state WHERE state.singleton FOR UPDATE",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 2.0686569999999995
+ },
+ "-3462245435103740339": {
+  "calls": 1,
+  "query": "WITH due AS (\n        SELECT id FROM backchannel_logout_deliveries\n        WHERE expires_at <= clock_timestamp()\n        ORDER BY expires_at, id\n        LIMIT $1 FOR UPDATE SKIP LOCKED\n    )\n    DELET",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": false,
+  "total_exec_time": 0.0067610000000000005
+ },
+ "-354564363792443243": {
+  "calls": 64,
+  "query": "DELETE FROM users\n            WHERE tenant_id <> $1::uuid\n              AND lower(email) = $2",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.2894320000000001
+ },
+ "-3688696628780506391": {
+  "calls": 1,
+  "query": "SELECT $1",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.006888999999999999
+ },
+ "-3825744519171043240": {
+  "calls": 1,
+  "query": "WITH due AS (\n        SELECT id FROM scim_security_events\n        WHERE expires_at <= clock_timestamp()\n        ORDER BY expires_at, id\n        LIMIT $1 FOR UPDATE SKIP LOCKED\n    )\n    DELETE FROM sc",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": false,
+  "total_exec_time": 0.0027300000000000002
+ },
+ "-3849542434411556545": {
+  "calls": 2390,
+  "query": "INSERT INTO \"user_client_grants\" (\"tenant_id\", \"user_id\", \"client_id\", \"first_authorized_at\", \"last_authorized_at\", \"last_scopes\", \"last_resource_indicators\", \"last_authorization_details\", \"authorizat",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 289.9309639999998
+ },
+ "-3898660763507826447": {
+  "calls": 6,
+  "query": "SELECT wait_event_type, count(*) FROM pg_stat_activity WHERE wait_event IS NOT NULL GROUP BY wait_event_type",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.44954800000000006
+ },
+ "-3982802711012393414": {
+  "calls": 1,
+  "query": "WITH rels AS (\n  SELECT c.oid, n.nspname, c.relname, pg_partition_root(c.oid) AS root_oid\n  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace\n  WHERE n.nspname = $1 AND c.relkind = $2\n)\nSE",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.45772100000000004
+ },
+ "-408914604291366251": {
+  "calls": 6,
+  "query": "SELECT xact_commit,xact_rollback,blks_read,blks_hit,tup_returned,tup_inserted,tup_updated,tup_deleted,deadlocks,temp_bytes FROM pg_stat_database WHERE datname=$1",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.115986
+ },
+ "-4246617108923476194": {
+  "calls": 1,
+  "query": "WITH due AS ( SELECT tenant_id, refresh_token_blake3 FROM oauth_refresh_spent_tokens WHERE expires_at <= CURRENT_TIMESTAMP ORDER BY expires_at, refresh_token_blake3 LIMIT $1 FOR UPDATE SKIP LOCKED ) D",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.003940000000000001
+ },
+ "-4543671969365093206": {
+  "calls": 1,
+  "query": "SELECT $1,$2,$3, archived_count::text FROM pg_stat_archiver\nUNION ALL SELECT $4,$5,$6, failed_count::text FROM pg_stat_archiver\nUNION ALL SELECT $7,$8,$9, COALESCE(last_archived_wal,$10) FROM pg_stat_",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.015139
+ },
+ "-4627606135148110578": {
+  "calls": 2872,
+  "query": "UPDATE \"oauth_refresh_families\" SET \"current_member_id\" = $1, \"current_token_blake3\" = $2, \"current_audience\" = $3, \"current_issued_at\" = $4, \"current_expires_at\" = $5, \"current_id_token_sid\" = $6 WHE",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 247.968728
+ },
+ "-4729170833889453614": {
+  "calls": 213,
+  "query": "SELECT COUNT(*), COALESCE(array_agg(chain.event_id), $10::UUID[])                           FROM public.security_audit_chain_entries AS chain\n    JOIN public.security_audit_event_outbox AS outbox ON o",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 55.258770999999975
+ },
+ "-4834924897643323743": {
+  "calls": 1,
+  "query": "SELECT $1, queryid::text, $2, calls::text FROM (\n  SELECT * FROM pg_stat_statements ORDER BY total_exec_time DESC LIMIT $3) s\nUNION ALL SELECT $4, queryid::text, $5, rows::text FROM (\n  SELECT * FROM ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 2.014469
+ },
+ "-4838682823314902447": {
+  "calls": 1,
+  "query": "RELEASE $1",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.00134
+ },
+ "-4850833075568047896": {
+  "calls": 217,
+  "query": "EXISTS (\n        SELECT $2 FROM public.security_audit_chain_state AS state\n        WHERE state.singleton AND state.anchor_deployment_id = p_deployment_id\n    )",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 1.2885640000000005
+ },
+ "-4859543494755560605": {
+  "calls": 2360,
+  "query": "INSERT INTO \"oauth_refresh_families\" (\"tenant_id\", \"token_family_id\", \"client_id\", \"user_id\", \"contract_blake3\", \"current_member_id\", \"current_token_blake3\", \"current_audience\", \"current_issued_at\", \"",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 396.7688980000006
+ },
+ "-4904717326721440124": {
+  "calls": 1,
+  "query": "SELECT COALESCE(json_agg(t),$1) FROM (SELECT s.dbid, d.datname, s.userid, r.rolname, s.toplevel, s.queryid, s.calls, s.total_exec_time, s.rows, left(s.query,$2) AS q FROM pg_stat_statements s JOIN pg_",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.133877
+ },
+ "-4985401138811537698": {
+  "calls": 5599,
+  "query": "SELECT EXISTS (SELECT \"access_token_revocations\".\"id\", \"access_token_revocations\".\"access_token_jti_blake3\", \"access_token_revocations\".\"client_id\", \"access_token_revocations\".\"tenant_id\", \"access_tok",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 53.02347100000009
+ },
+ "-5075627566397697970": {
+  "calls": 1,
+  "query": "WITH due AS (\n        SELECT issuance_id FROM oauth_token_issuances\n        WHERE retain_until <= clock_timestamp()\n        ORDER BY retain_until, issuance_id\n        LIMIT $1 FOR UPDATE SKIP LOCKED\n ",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": false,
+  "total_exec_time": 128.87927399999998
+ },
+ "-5136870562211518345": {
+  "calls": 1,
+  "query": "DELETE FROM oauth_refresh_families\n        WHERE tenant_id = $1::uuid\n          AND client_id = $2",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.01399
+ },
+ "-5182508414320503099": {
+  "calls": 3744,
+  "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"updated_at\", \"users\".\"email_verified\", \"user",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 256.229777
+ },
+ "-5288884251522700385": {
+  "calls": 2873,
+  "query": "DELETE FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND token_family_id = $2 AND member_id NOT IN ( SELECT member_id FROM oauth_refresh_spent_tokens WHERE tenant_id = $1 AND token_family_id = ",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 105.6518650000001
+ },
+ "-5580234532319639601": {
+  "calls": 213,
+  "query": "SELECT event.occurred_at                        FROM public.security_audit_chain_entries AS chain\n    JOIN public.security_audit_events AS event ON event.event_id = chain.event_id\n    WHERE chain.sequ",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 2.3623130000000008
+ },
+ "-5706127392633137785": {
+  "calls": 214,
+  "query": "UPDATE public.security_audit_chain_state SET last_sequence = v_sequence, last_hash = v_hash\n    WHERE singleton",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 13.249634000000004
+ },
+ "-6027925679874878835": {
+  "calls": 1,
+  "query": "INSERT INTO users (\n                tenant_id, realm_id, organization_id, username, email, password_hash,\n                is_active, email_verified, display_name, role, admin_level\n            )\n     ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.095038
+ },
+ "-6120425301985475742": {
+  "calls": 6,
+  "query": "SELECT jsonb_typeof($1) = $2\n       AND $3 ?& ARRAY[$4 /*, ... */]\n       AND $5 - ARRAY[$6 /*, ... */] = $7::jsonb\n       AND jsonb_typeof($8 -> $9) = $10\n       AND $11 ->> $12 = $13\n       AND json",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 0.01351
+ },
+ "-6343702909504785895": {
+  "calls": 217,
+  "query": "WITH head AS (\n        SELECT chain.sequence, chain.event_hash FROM public.security_audit_chain_entries AS chain\n        ORDER BY chain.sequence DESC LIMIT 1\n    ), backlog AS (\n        SELECT EXISTS ",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 128.43370000000002
+ },
+ "-6359776199588324831": {
+  "calls": 1,
+  "query": "WITH due AS (\n        SELECT id FROM scim_audit_events\n        WHERE created_at < clock_timestamp() - INTERVAL $1\n        ORDER BY created_at, id\n        LIMIT $2 FOR UPDATE SKIP LOCKED\n    )\n    DELE",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": false,
+  "total_exec_time": 0.00286
+ },
+ "-6407518857252508909": {
+  "calls": 213,
+  "query": "DELETE FROM public.security_audit_events AS event\n    WHERE event.event_id = ANY(v_ids)",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 684.3469070000002
+ },
+ "-6421484356574917337": {
+  "calls": 2,
+  "query": "UPDATE backchannel_logout_deliveries\n            SET attempts = attempts + $3, locked_at = CURRENT_TIMESTAMP,\n                updated_at = CURRENT_TIMESTAMP\n            WHERE id IN (\n                S",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.02005
+ },
+ "-6520716032698243160": {
+  "calls": 1,
+  "query": "SELECT $1, $2, $3,\n       count(*)::text FROM oauth_refresh_families\nUNION ALL SELECT $4,$5,$6,\n       count(*)::text FROM oauth_refresh_families\n       WHERE revoked_at IS NULL AND reuse_detected_at ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.394002
+ },
+ "-6570954527227515144": {
+  "calls": 86,
+  "query": "SELECT $3 FROM ONLY \"public\".\"oauth_refresh_families\" x WHERE $1 OPERATOR(pg_catalog.=) \"tenant_id\" AND $2 OPERATOR(pg_catalog.=) \"contract_blake3\" FOR KEY SHARE OF x",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 27.641095999999987
+ },
+ "-6627084719960489992": {
+  "calls": 217,
+  "query": "SELECT last_sequence AS head_sequence, last_hash AS head_hash, pending_exists, pending_estimate, pending_orphan_exists, oldest_pending_occurred_at, anchor_sequence AS last_exported_sequence, anchor_ha",
+  "rolname": "nazoauth_perf_exporter",
+  "toplevel": true,
+  "total_exec_time": 155.32417099999992
+ },
+ "-6838157736527928436": {
+  "calls": 7721,
+  "query": "SELECT policy_satisfied FROM public.nazo_security_audit_shared_privilege_preflight($1, $2, $3)",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 864.1673439999961
+ },
+ "-6871906609541267958": {
+  "calls": 214,
+  "query": "SELECT public.nazo_append_security_audit_chain($1, $2, $3, $4)",
+  "rolname": "nazoauth_perf_exporter",
+  "toplevel": true,
+  "total_exec_time": 931.332827
+ },
+ "-7000512521530996070": {
+  "calls": 213,
+  "query": "DELETE FROM public.security_audit_chain_entries AS chain\n    WHERE chain.sequence > COALESCE(v_anchor, $10) AND chain.sequence <= p_last_sequence",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 66.77514000000001
+ },
+ "-7079431614217517475": {
+  "calls": 1,
+  "query": "SELECT extract($1 from stats_reset) FROM pg_stat_statements_info",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.050557
+ },
+ "-7190079489427888143": {
+  "calls": 217,
+  "query": "SELECT state.last_sequence, state.last_hash,\n           state.anchor_sequence, state.anchor_hash, state.anchor_deployment_id::TEXT,\n           state.batch_first_sequence, state.batch_last_sequence, st",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 3.1993040000000006
+ },
+ "-7247551828350762117": {
+  "calls": 36910,
+  "query": "INSERT INTO public.security_audit_events (event_id, event_type, event_category, payload, occurred_at)\n    VALUES (p_event_id, p_event_type, p_event_category, p_payload, p_occurred_at)\n    ON CONFLICT ",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 1666.018009
+ },
+ "-7247730294085342360": {
+  "calls": 1,
+  "query": "INSERT INTO scim_tokens (tenant_id, token_hash, label, scopes)\n            VALUES ($1::uuid, $2, $3,\n                    $4::jsonb)\n            ON CONFLICT (token_hash) DO NOTHING",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.225505
+ },
+ "-7276809251837087901": {
+  "calls": 1,
+  "query": "SELECT row_to_json(pg_stat_checkpointer) FROM pg_stat_checkpointer",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.047899000000000004
+ },
+ "-7513416259045771382": {
+  "calls": 1,
+  "query": "SELECT $1,$2,$3, pg_current_wal_lsn()::text\nUNION ALL SELECT $4,$5,$6, (now() AT TIME ZONE $7)::text",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.00581
+ },
+ "-7602699173612363938": {
+  "calls": 130,
+  "query": "SELECT id FROM users\n            WHERE tenant_id = $1::uuid AND lower(email) = $2",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.518661
+ },
+ "-7724678440847265048": {
+  "calls": 213,
+  "query": "UPDATE public.security_audit_chain_state AS state\n    SET anchor_deployment_id = p_deployment_id,\n        anchor_sequence = p_last_sequence,\n        anchor_hash = p_last_hash,\n        anchor_occurred_",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 15.317457999999997
+ },
+ "-7893390483728133924": {
+  "calls": 1,
+  "query": "SELECT * FROM nazo_oauth_cleanup_expired_security_state()",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 132.706037
+ },
+ "-793151951593613389": {
+  "calls": 217,
+  "query": "SELECT public.nazo_observe_security_audit_anchor($1) AS changed",
+  "rolname": "nazoauth_perf_exporter",
+  "toplevel": true,
+  "total_exec_time": 14.967569000000003
+ },
+ "-7954105295148306054": {
+  "calls": 6,
+  "query": "SELECT num_timed, num_requested FROM pg_stat_checkpointer",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.01226
+ },
+ "-8141536737647953945": {
+  "calls": 36910,
+  "query": "INSERT INTO public.security_audit_event_outbox (event_id, occurred_at)\n    VALUES (p_event_id, p_occurred_at)",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 1022.1459849999948
+ },
+ "-8152297345095296909": {
+  "calls": 5335,
+  "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"is_active\", \"users\".\"updated_at\", \"users\".\"email_verified\", \"user",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 146.99161399999988
+ },
+ "-8186815385500962442": {
+  "calls": 64,
+  "query": "INSERT INTO users (\n                tenant_id, realm_id, organization_id, username, email, password_hash,\n                is_active, email_verified, display_name, role, admin_level\n            )\n     ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 4.909349999999998
+ },
+ "-8310862026670360255": {
+  "calls": 2360,
+  "query": "INSERT INTO \"oauth_refresh_contracts\" (\"tenant_id\", \"contract_blake3\", \"contract\") VALUES ($1, $2, $3) ON CONFLICT DO NOTHING",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 684.4430620000005
+ },
+ "-8509193350030884028": {
+  "calls": 1,
+  "query": "SELECT $1, backend_type, $2, reads::text FROM pg_stat_io\nUNION ALL SELECT $3, backend_type, $4, read_time::text FROM pg_stat_io\nUNION ALL SELECT $5, backend_type, $6, writes::text FROM pg_stat_io\nUNIO",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.795934
+ },
+ "-859282481384524542": {
+  "calls": 36927,
+  "query": "SELECT EXISTS (SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_clients\".\"client_name\", \"oau",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 323.58997899999844
+ },
+ "-8768392626722937958": {
+  "calls": 7,
+  "query": "SELECT wal_bytes::bigint FROM pg_stat_wal",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.108675
+ },
+ "-8781049189478755468": {
+  "calls": 1,
+  "query": "SELECT pg_blocking_pids($1) AS blockers",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.0133
+ },
+ "-8824788839042052302": {
+  "calls": 1,
+  "query": "WITH rels AS (\n  SELECT c.oid, n.nspname, c.relname, c.reltoastrelid\n  FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace\n  WHERE n.nspname = $1 AND c.relkind = $2\n), sized AS (\n  SELECT r.",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 12.451338
+ },
+ "-9056692400419241984": {
+  "calls": 6,
+  "query": "SELECT c.relname, pg_total_relation_size(c.oid), pg_relation_size(c.oid,$1), pg_indexes_size(c.oid), CASE WHEN c.reltoastrelid<>$2 THEN   pg_total_relation_size(c.reltoastrelid) ELSE $3 END, COALESCE(",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 10.535297
+ },
+ "-9087905150910015971": {
+  "calls": 217,
+  "query": "SELECT event_id, sequence, event_type, event_category, payload_canonical, occurred_at, previous_hash, event_hash FROM public.nazo_claim_security_audit_pending($1)",
+  "rolname": "nazoauth_perf_exporter",
+  "toplevel": true,
+  "total_exec_time": 233.15197300000003
+ },
+ "1097838245962260042": {
+  "calls": 7139,
+  "query": "SELECT \"users\".\"is_active\" FROM \"users\" WHERE ((\"users\".\"tenant_id\" = $1) AND (\"users\".\"id\" = $2)) LIMIT $3 FOR SHARE",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 152.09803399999913
+ },
+ "1756439507586887578": {
+  "calls": 1,
+  "query": "SELECT pid, query_id, state, wait_event_type, wait_event\nFROM pg_stat_activity WHERE pid = ANY($1)",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.130377
+ },
+ "1819405781816738824": {
+  "calls": 40,
+  "query": "SELECT pid, application_name, client_addr::text, state,\n       wait_event_type, wait_event, query_id,\n       extract($2 from xact_start)::float8,\n       extract($3 from query_start)::float8,\n       ex",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 9.725317
+ },
+ "1873939674175753493": {
+  "calls": 1,
+  "query": "SELECT $1,$2,$3, num_done::text FROM pg_stat_checkpointer\nUNION ALL SELECT $4,$5,$6, slru_written::text FROM pg_stat_checkpointer",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.00195
+ },
+ "1978390624132223685": {
+  "calls": 130,
+  "query": "SELECT $3 FROM ONLY \"public\".\"users\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 AND \"tenant_id\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 0.42430599999999996
+ },
+ "2050635526893134130": {
+  "calls": 1,
+  "query": "SELECT $1,$2,$3, count(*)::text FROM pg_ls_waldir()\nUNION ALL SELECT $4,$5,$6, COALESCE(sum(size),$7)::text FROM pg_ls_waldir()\nUNION ALL SELECT $8,$9,$10,\n       COALESCE(max(modification AT TIME ZON",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.20632499999999998
+ },
+ "2229661839462797247": {
+  "calls": 2970,
+  "query": "SELECT \"oauth_refresh_contracts\".\"contract\" FROM \"oauth_refresh_contracts\" WHERE ((\"oauth_refresh_contracts\".\"tenant_id\" = $1) AND (\"oauth_refresh_contracts\".\"contract_blake3\" = $2)) LIMIT $3",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 43.86294199999998
+ },
+ "2238229892042255616": {
+  "calls": 1,
+  "query": "LOCK TABLE oauth_refresh_families IN ACCESS EXCLUSIVE MODE",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.121597
+ },
+ "2415075331727316930": {
+  "calls": 217,
+  "query": "WITH chained AS MATERIALIZED (\n        SELECT chain.event_id, chain.sequence, chain.previous_hash, chain.event_hash\n        FROM public.security_audit_chain_entries AS chain\n        WHERE chain.sequen",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 1.7388979999999992
+ },
+ "2529200348057660570": {
+  "calls": 1,
+  "query": "WITH due AS ( SELECT c.tenant_id, c.contract_blake3 FROM oauth_refresh_contracts AS c WHERE c.created_at < CURRENT_TIMESTAMP - make_interval(secs => $2) AND NOT EXISTS ( SELECT $3 FROM oauth_refresh_f",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.20326599999999997
+ },
+ "275221827254537758": {
+  "calls": 10648,
+  "query": "SELECT pg_advisory_xact_lock($1)",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 97.6795629999998
+ },
+ "2939817420941947816": {
+  "calls": 6,
+  "query": "INSERT INTO oauth_clients (\n            tenant_id, realm_id, organization_id, client_id, client_name, client_type,\n            client_secret_hash, redirect_uris, post_logout_redirect_uris,\n           ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 2.504411
+ },
+ "2986872045897350522": {
+  "calls": 6,
+  "query": "SELECT (SELECT count(*) FROM oauth_refresh_families),(SELECT count(*) FROM oauth_refresh_families WHERE  revoked_at IS NULL AND reuse_detected_at IS NULL AND current_expires_at > now()),(SELECT count(",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 2.7452959999999997
+ },
+ "3045061800950875676": {
+  "calls": 6,
+  "query": "SELECT pg_database_size(current_database())",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 4.344752
+ },
+ "3059364362978693673": {
+  "calls": 5234,
+  "query": "SELECT \"oauth_refresh_families\".\"tenant_id\", \"oauth_refresh_families\".\"token_family_id\", \"oauth_refresh_families\".\"client_id\", \"oauth_refresh_families\".\"user_id\", \"oauth_refresh_families\".\"contract_bl",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 247.17535699999934
+ },
+ "3160644019050396638": {
+  "calls": 1,
+  "query": "SELECT s.dbid, r.rolname, s.toplevel, s.queryid, s.calls,\n       s.total_exec_time, left(s.query, $1)\nFROM pg_stat_statements s\nJOIN pg_roles r ON r.oid = s.userid\nJOIN pg_database d ON d.oid = s.dbid",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.592248
+ },
+ "3175560230803026983": {
+  "calls": 111217,
+  "query": "SELECT $2 FROM ONLY \"public\".\"tenants\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 FOR KEY SHARE OF x",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 747.2061659999897
+ },
+ "327112332356189388": {
+  "calls": 36912,
+  "query": "SELECT \"oauth_clients\".\"is_active\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"id\" = $2)) LIMIT $3 FOR SHARE",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 726.8439699999994
+ },
+ "327599666449656670": {
+  "calls": 192,
+  "query": "SELECT \"runtime_module_instance_states\".\"tenant_id\", \"runtime_module_instance_states\".\"instance_id\", \"runtime_module_instance_states\".\"module_id\", \"runtime_module_instance_states\".\"actual_state\", \"run",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 2.5028720000000018
+ },
+ "3453106762841261166": {
+  "calls": 180,
+  "query": "DELETE FROM ONLY \"public\".\"oauth_refresh_spent_tokens\" WHERE $1 OPERATOR(pg_catalog.=) \"tenant_id\" AND $2 OPERATOR(pg_catalog.=) \"token_family_id\"",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 1.6306410000000005
+ },
+ "3725282846181257213": {
+  "calls": 1,
+  "query": "SELECT $1, $2, $3\nUNION ALL SELECT $4, $5, $6\nUNION ALL SELECT $7, $8, (now() AT TIME ZONE $9)::text\nUNION ALL SELECT $10, $11, current_setting($12)\nUNION ALL SELECT $13, $14, version()\nUNION ALL SELE",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.07818800000000001
+ },
+ "3826996350823470353": {
+  "calls": 1,
+  "query": "SELECT $1, $2, count(*)::text FROM oauth_refresh_families\nUNION ALL SELECT $3,$4,count(*)::text FROM oauth_refresh_spent_tokens\nUNION ALL SELECT $5,$6,count(*)::text FROM oauth_refresh_contracts\nUNION",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 9.39805
+ },
+ "3867181147013517150": {
+  "calls": 204,
+  "query": "SELECT \"runtime_module_desired_states\".\"tenant_id\", \"runtime_module_desired_states\".\"module_id\", \"runtime_module_desired_states\".\"desired_mode\", \"runtime_module_desired_states\".\"revision\", \"runtime_mo",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 1.6826710000000002
+ },
+ "3991033256990947462": {
+  "calls": 1,
+  "query": "SELECT $1,$2,$3, count(*)::text FROM pg_replication_slots\nUNION ALL SELECT $4,$5,$6,\n       COALESCE(sum(COALESCE(safe_wal_size,$7)),$8)::text FROM pg_replication_slots\nUNION ALL SELECT $9,$10,$11,\n  ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.01491
+ },
+ "4120263271607053284": {
+  "calls": 1,
+  "query": "SELECT nazo_openid4vp_cleanup_expired_transactions() AS deleted_transactions",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 2.0878680000000003
+ },
+ "427714051535286495": {
+  "calls": 217,
+  "query": "SELECT COALESCE(\n        (SELECT state.anchor_sequence FROM public.security_audit_chain_state AS state\n         WHERE state.singleton), 0)",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 1.908136
+ },
+ "4359259187362990377": {
+  "calls": 21,
+  "query": "SET CLIENT_ENCODING TO $1",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.025051999999999998
+ },
+ "4375303120003040442": {
+  "calls": 36946,
+  "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_clients\".\"client_name\", \"oauth_clients\".\"cl",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 945.8974089999952
+ },
+ "4500955875985355274": {
+  "calls": 2,
+  "query": "SELECT revision\n             FROM tenant_runtime_directory_state\n             WHERE singleton",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.046888
+ },
+ "4604502914195879536": {
+  "calls": 1,
+  "query": "SELECT pid, query_id, state, wait_event_type, wait_event\nFROM pg_stat_activity WHERE pid = ANY($1)",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.142197
+ },
+ "460789033816743987": {
+  "calls": 1,
+  "query": "SELECT tenant_id, token_family_id FROM oauth_refresh_families WHERE current_expires_at <= CURRENT_TIMESTAMP ORDER BY current_expires_at, token_family_id LIMIT $1",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.130816
+ },
+ "4679783087244294872": {
+  "calls": 1,
+  "query": "SELECT\n                COALESCE(SUM(calls), $1)::bigint AS calls,\n                COALESCE(SUM(total_plan_time + total_exec_time), $2)::double precision AS total_ms,\n                COALESCE(SUM(rows)",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.5068600000000001
+ },
+ "4853810572633038225": {
+  "calls": 64,
+  "query": "INSERT INTO oauth_refresh_families (\n                tenant_id, token_family_id, client_id, user_id, contract_blake3,\n                current_member_id, current_token_blake3, current_audience,\n       ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 3.8764199999999995
+ },
+ "4854991825702068830": {
+  "calls": 36915,
+  "query": "BEGIN",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 11.367561999999925
+ },
+ "4914488998956313696": {
+  "calls": 4813,
+  "query": "SELECT \"oauth_clients\".\"id\", \"oauth_clients\".\"tenant_id\", \"oauth_clients\".\"realm_id\", \"oauth_clients\".\"organization_id\", \"oauth_clients\".\"client_id\", \"oauth_clients\".\"client_name\", \"oauth_clients\".\"cl",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 166.9322140000003
+ },
+ "4942631075669320498": {
+  "calls": 1,
+  "query": "SELECT (SELECT count(*) FROM security_audit_event_outbox), last_sequence, encode(last_hash,$1), anchor_deployment_id, anchor_sequence, encode(anchor_hash,$2) FROM security_audit_chain_state",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.02386
+ },
+ "5352525615642087706": {
+  "calls": 213,
+  "query": "DELETE FROM public.security_audit_event_outbox AS outbox\n    WHERE outbox.event_id = ANY(v_ids)",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 21.709225999999997
+ },
+ "5385006169646940034": {
+  "calls": 1,
+  "query": "SELECT $1,$2,$3, buffers_clean::text FROM pg_stat_bgwriter\nUNION ALL SELECT $4,$5,$6, maxwritten_clean::text FROM pg_stat_bgwriter\nUNION ALL SELECT $7,$8,$9, buffers_alloc::text FROM pg_stat_bgwriter\n",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.005710000000000001
+ },
+ "5787111146665920708": {
+  "calls": 214,
+  "query": "UPDATE public.security_audit_chain_state AS state\n    SET batch_first_sequence = p_first_sequence,\n        batch_last_sequence = p_last_sequence,\n        batch_event_count = p_event_count,\n        bat",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 14.636867000000011
+ },
+ "5873899589405855992": {
+  "calls": 6,
+  "query": "SELECT count(*),count(*) FILTER(WHERE state=$1),count(*) FILTER(WHERE state=$2) FROM pg_stat_activity",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.773706
+ },
+ "6097083398544187049": {
+  "calls": 36910,
+  "query": "COMMIT",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 14.009131999999944
+ },
+ "6214362769626118818": {
+  "calls": 1,
+  "query": "SELECT $1,$2,$3, count(*)::text FROM pg_stat_activity WHERE datname=current_database()\nUNION ALL SELECT $4,$5,$6, count(*) FILTER (WHERE state=$7)::text FROM pg_stat_activity WHERE datname=current_dat",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.373343
+ },
+ "6376800314651963318": {
+  "calls": 1,
+  "query": "INSERT INTO oauth_client_mtls_trust_anchor_requests\n                (tenant_id, user_id, client_id, certificate_pem,\n                 certificate_sha256, subject_dn, not_before, not_after,\n           ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.725456
+ },
+ "6577223710300968884": {
+  "calls": 217,
+  "query": "SELECT last_sequence, last_hash, anchor_sequence, batch_first_sequence, batch_last_sequence, batch_event_count, batch_digest, batch_attempts, batch_available_at, batch_locked_until, batch_blocked_reas",
+  "rolname": "nazoauth_perf_exporter",
+  "toplevel": true,
+  "total_exec_time": 9.963415999999992
+ },
+ "6628736147247293519": {
+  "calls": 213,
+  "query": "v_members <> p_event_count OR NOT EXISTS (\n        SELECT $11 FROM public.security_audit_chain_entries AS chain\n        WHERE chain.sequence = p_last_sequence AND chain.event_hash = p_last_hash\n    )",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 2.273421999999999
+ },
+ "6671669872956015439": {
+  "calls": 1,
+  "query": "SELECT $1, $2, $3, wal_records::text FROM pg_stat_wal\nUNION ALL SELECT $4,$5,$6, wal_fpi::text FROM pg_stat_wal\nUNION ALL SELECT $7,$8,$9, wal_bytes::text FROM pg_stat_wal\nUNION ALL SELECT $10,$11,$12",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.022498999999999998
+ },
+ "668357838032508247": {
+  "calls": 73456,
+  "query": "SELECT $2 FROM ONLY \"public\".\"security_audit_event_outbox\" x WHERE $1 OPERATOR(pg_catalog.=) \"event_id\" FOR KEY SHARE OF x",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 249.82709000001162
+ },
+ "6697580890275869146": {
+  "calls": 2,
+  "query": "DELETE FROM oauth_refresh_contracts AS c\n                WHERE c.tenant_id = $1::uuid\n                  AND NOT EXISTS (\n                      SELECT $2 FROM oauth_refresh_families AS f\n              ",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.009659999999999998
+ },
+ "6742457020769894887": {
+  "calls": 1,
+  "query": "SAVEPOINT $1",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.00082
+ },
+ "6898365521273534339": {
+  "calls": 214,
+  "query": "SELECT * FROM unnest(p_event_ids, p_event_hashes) AS item(event_id, event_hash)",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 9.669185000000006
+ },
+ "6902822692892831148": {
+  "calls": 30,
+  "query": "SELECT \"users\".\"id\", \"users\".\"tenant_id\", \"users\".\"realm_id\", \"users\".\"organization_id\", \"users\".\"username\", \"users\".\"email\", \"users\".\"password_hash\", \"users\".\"is_active\", \"users\".\"mfa_enabled\", \"user",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 0.4361439999999999
+ },
+ "6932645679671952768": {
+  "calls": 6,
+  "query": "SELECT (SELECT count(*) FROM  security_audit_event_outbox), last_sequence, anchor_sequence FROM security_audit_chain_state",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.9550209999999999
+ },
+ "7019628274609906428": {
+  "calls": 1,
+  "query": "SELECT $1, i.oid::text, tn.nspname || $2 || t.relname,\n       i.relname, pg_relation_size(i.oid)::text,\n       COALESCE(s.idx_scan,$3)::text,\n       regexp_replace(pg_get_indexdef(x.indexrelid), $4, $",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 7.8444329999999995
+ },
+ "7069696701630184062": {
+  "calls": 64,
+  "query": "SELECT $3 FROM ONLY \"public\".\"oauth_refresh_contracts\" x WHERE \"tenant_id\" OPERATOR(pg_catalog.=) $1 AND \"contract_blake3\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 0.33379499999999995
+ },
+ "7076455219069621783": {
+  "calls": 2362,
+  "query": "INSERT INTO oauth_token_issuances (issuance_id, tenant_id, client_id, user_id, single_use_key_blake3, access_token_jti, access_token_expires_at, retain_until, refresh_token_family_id) VALUES ($1, $2, ",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 365.7340260000002
+ },
+ "7606304980424591422": {
+  "calls": 6,
+  "query": "SELECT COALESCE(max(extract($1 FROM now()-xact_start))::bigint,$2),COALESCE(max(age(backend_xmin)),$3),count(*) FILTER(WHERE xact_start<now()-interval $4),count(*) FILTER(WHERE xact_start<now()-interv",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.431293
+ },
+ "7644058008137761304": {
+  "calls": 180,
+  "query": "DELETE FROM \"oauth_refresh_contracts\" WHERE (((\"oauth_refresh_contracts\".\"tenant_id\" = $1) AND (\"oauth_refresh_contracts\".\"contract_blake3\" = $2)) AND  NOT (EXISTS (SELECT \"oauth_refresh_families\".\"te",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 96.58966799999999
+ },
+ "7702997900265701813": {
+  "calls": 213,
+  "query": "SELECT public.nazo_ack_security_audit_batch($1, $2, $3, $4, $5, $6, $7) AS changed",
+  "rolname": "nazoauth_perf_exporter",
+  "toplevel": true,
+  "total_exec_time": 908.313914
+ },
+ "7824955434935616261": {
+  "calls": 217,
+  "query": "UPDATE public.security_audit_chain_state\n    SET anchor_deployment_id = COALESCE(anchor_deployment_id, p_deployment_id),\n        anchor_observed_at = CURRENT_TIMESTAMP\n    WHERE singleton IS TRUE\n    ",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 2.8119629999999987
+ },
+ "791674583167769820": {
+  "calls": 426,
+  "query": "SELECT set_config($1, $2, $3)",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 1.2395149999999997
+ },
+ "7937354421020446243": {
+  "calls": 36910,
+  "query": "SELECT public.nazo_persist_security_audit_event($1, $2, $3, $4, $5) AS changed",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 3929.2134949999922
+ },
+ "8181603185188344353": {
+  "calls": 3,
+  "query": "SELECT current_setting($1)::int >= $2 AS pg17",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.017959999999999997
+ },
+ "822029240019536883": {
+  "calls": 2360,
+  "query": "WITH ranked AS ( SELECT token_family_id, contract_blake3, row_number() OVER ( ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, count(*) OVER () AS total FROM oauth_refresh_families WHERE te",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 112.83333300000004
+ },
+ "8290667273201477087": {
+  "calls": 37040,
+  "query": "SELECT $3 FROM ONLY \"public\".\"oauth_clients\" x WHERE \"id\" OPERATOR(pg_catalog.=) $1 AND \"tenant_id\" OPERATOR(pg_catalog.=) $2 FOR KEY SHARE OF x",
+  "rolname": "postgres",
+  "toplevel": false,
+  "total_exec_time": 277.1747390000018
+ },
+ "8322215266413004277": {
+  "calls": 1,
+  "query": "WITH due AS (\n        SELECT tenant_id, access_token_jti_blake3 FROM access_token_revocations\n        WHERE expires_at <= clock_timestamp()\n        ORDER BY expires_at, tenant_id, access_token_jti_bla",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": false,
+  "total_exec_time": 0.00437
+ },
+ "8425379238971144491": {
+  "calls": 1,
+  "query": "DELETE FROM oauth_refresh_families WHERE tenant_id = $1::uuid",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.01076
+ },
+ "8508371163884219219": {
+  "calls": 1,
+  "query": "SELECT pg_stat_statements_reset()::text",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.280604
+ },
+ "857956296734379746": {
+  "calls": 1,
+  "query": "SELECT id\n        FROM oauth_clients\n        WHERE tenant_id = $1::uuid\n          AND client_id = $2",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.009300000000000001
+ },
+ "8718669233736325932": {
+  "calls": 180,
+  "query": "DELETE FROM \"oauth_refresh_families\" WHERE (((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"token_family_id\" = $2)) AND (\"oauth_refresh_families\".\"revoked_at\" IS NULL)) A",
+  "rolname": "nazoauth_perf_runtime",
+  "toplevel": true,
+  "total_exec_time": 111.45618899999992
+ },
+ "8917778133643515513": {
+  "calls": 1,
+  "query": "SELECT current_setting($1)::int < $2 AS pg_lt18",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.00416
+ },
+ "897841448272039065": {
+  "calls": 1,
+  "query": "SELECT EXISTS(SELECT $1 FROM pg_extension WHERE extname=$2) AS has_pss",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.062287999999999996
+ },
+ "961053972281843779": {
+  "calls": 1,
+  "query": "SELECT $1,$2,$3, num_timed::text FROM pg_stat_checkpointer\nUNION ALL SELECT $4,$5,$6, num_requested::text FROM pg_stat_checkpointer\nUNION ALL SELECT $7,$8,$9, restartpoints_timed::text FROM pg_stat_ch",
+  "rolname": "postgres",
+  "toplevel": true,
+  "total_exec_time": 0.012317999999999999
+ }
+}

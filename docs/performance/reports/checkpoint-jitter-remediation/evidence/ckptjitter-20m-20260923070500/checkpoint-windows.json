@@ -1,0 +1,352 @@
+{
+  "target_rate": 2000.0,
+  "common_window_ok": true,
+  "timed_checkpoints_total": 3,
+  "timed_checkpoints_fully_in_common_window": 3,
+  "evidence_sufficient": true,
+  "windows": [
+    {
+      "label": "ckpt-0",
+      "start": 1790147604.85,
+      "end": 1790147724.85,
+      "start_utc": "2026-09-23T07:13:24.850000+00:00",
+      "end_utc": "2026-09-23T07:15:24.850000+00:00",
+      "seconds": 120.0,
+      "expected_iterations": 240000.0,
+      "hole_area_ops": 501.0,
+      "min_completed_per_s": 1946,
+      "recovery_s_from_trough": 5,
+      "in_flight_start": 19,
+      "in_flight_end": 12,
+      "expected_bins": 120,
+      "present_bins": 120,
+      "begins_pair": {
+        "measure|1": 240000
+      },
+      "ends": {
+        "measure|1|success": 236394,
+        "measure|1|local_no_request": 3566,
+        "measure|1|expected_rejection": 47
+      },
+      "measure_begins": 240000,
+      "measure_ends": 240007,
+      "measure_completions": 240007,
+      "iterations_completed": 240007,
+      "dropped_iterations": 0,
+      "successful_measure_ops": 236394,
+      "http_requests": 345773,
+      "vus_peak": 117,
+      "vus_max_peak": 361,
+      "cap_measure_ms": {
+        "n": 240007,
+        "avg": 8.346,
+        "max": 231,
+        "p50": 6.081,
+        "p95": 39.948,
+        "p99": 51.963
+      },
+      "cap_iter_ms": {
+        "n": 240007,
+        "avg": 8.364,
+        "max": 231,
+        "p50": 6.109,
+        "p95": 39.981,
+        "p99": 52.031
+      },
+      "http_req_duration": {
+        "n": 345773,
+        "avg": 5.417,
+        "max": 153.462016,
+        "p50": 4.003,
+        "p95": 17.421,
+        "p99": 40.654
+      },
+      "checkpoints": [
+        {
+          "reason": "time",
+          "start_ts": 1790147634.85,
+          "complete_ts": 1790147904.553,
+          "write_s": 269.222,
+          "sync_s": 0.293,
+          "total_s": 269.703,
+          "distance_kb": 1899116,
+          "buffers_written": 2433
+        }
+      ],
+      "scope": "common"
+    },
+    {
+      "label": "ckpt-1",
+      "start": 1790147874.553,
+      "end": 1790148024.583,
+      "start_utc": "2026-09-23T07:17:54.553000+00:00",
+      "end_utc": "2026-09-23T07:20:24.583000+00:00",
+      "seconds": 150.0,
+      "expected_iterations": 300060.0,
+      "hole_area_ops": 540.0,
+      "min_completed_per_s": 1963,
+      "recovery_s_from_trough": 1,
+      "in_flight_start": 12,
+      "in_flight_end": 23,
+      "expected_bins": 150,
+      "present_bins": 150,
+      "begins_pair": {
+        "measure|1": 300000
+      },
+      "ends": {
+        "measure|1|success": 296400,
+        "measure|1|local_no_request": 3537,
+        "measure|1|expected_rejection": 52
+      },
+      "measure_begins": 300000,
+      "measure_ends": 299989,
+      "measure_completions": 299989,
+      "iterations_completed": 299989,
+      "dropped_iterations": 0,
+      "successful_measure_ops": 296400,
+      "http_requests": 431342,
+      "vus_peak": 69,
+      "vus_max_peak": 361,
+      "cap_measure_ms": {
+        "n": 299989,
+        "avg": 8.152,
+        "max": 174,
+        "p50": 6.241,
+        "p95": 39.693,
+        "p99": 49.37
+      },
+      "cap_iter_ms": {
+        "n": 299989,
+        "avg": 8.171,
+        "max": 174,
+        "p50": 6.266,
+        "p95": 39.721,
+        "p99": 49.373
+      },
+      "http_req_duration": {
+        "n": 431342,
+        "avg": 5.285,
+        "max": 109.818338,
+        "p50": 4.095,
+        "p95": 16.871,
+        "p99": 35.797
+      },
+      "checkpoints": [
+        {
+          "reason": "time",
+          "start_ts": 1790147934.583,
+          "complete_ts": 1790148204.455,
+          "write_s": 269.425,
+          "sync_s": 0.18,
+          "total_s": 269.873,
+          "distance_kb": 2928923,
+          "buffers_written": 2292
+        }
+      ],
+      "scope": "common"
+    },
+    {
+      "label": "ckpt-2",
+      "start": 1790148174.455,
+      "end": 1790148324.168,
+      "start_utc": "2026-09-23T07:22:54.455000+00:00",
+      "end_utc": "2026-09-23T07:25:24.168000+00:00",
+      "seconds": 149.7,
+      "expected_iterations": 299426.0,
+      "hole_area_ops": 1023.0,
+      "min_completed_per_s": 1741,
+      "recovery_s_from_trough": 5,
+      "in_flight_start": 20,
+      "in_flight_end": 12,
+      "expected_bins": 150,
+      "present_bins": 150,
+      "begins_pair": {
+        "measure|1": 300000
+      },
+      "ends": {
+        "measure|1|success": 293090,
+        "measure|1|local_no_request": 6860,
+        "measure|1|expected_rejection": 58
+      },
+      "measure_begins": 300000,
+      "measure_ends": 300008,
+      "measure_completions": 300008,
+      "iterations_completed": 300008,
+      "dropped_iterations": 0,
+      "successful_measure_ops": 293090,
+      "http_requests": 427917,
+      "vus_peak": 144,
+      "vus_max_peak": 361,
+      "cap_measure_ms": {
+        "n": 300008,
+        "avg": 9.263,
+        "max": 437,
+        "p50": 6.235,
+        "p95": 41.843,
+        "p99": 77.431
+      },
+      "cap_iter_ms": {
+        "n": 300008,
+        "avg": 9.282,
+        "max": 437,
+        "p50": 6.261,
+        "p95": 41.867,
+        "p99": 77.461
+      },
+      "http_req_duration": {
+        "n": 427917,
+        "avg": 6.105,
+        "max": 217.86028,
+        "p50": 4.176,
+        "p95": 18.229,
+        "p99": 48.496
+      },
+      "checkpoints": [
+        {
+          "reason": "time",
+          "start_ts": 1790148234.168,
+          "complete_ts": 1790148504.393,
+          "write_s": 269.844,
+          "sync_s": 0.174,
+          "total_s": 270.226,
+          "distance_kb": 3123487,
+          "buffers_written": 6135
+        }
+      ],
+      "scope": "common"
+    },
+    {
+      "label": "ckpt-3",
+      "start": 1790148474.393,
+      "end": 1790148624.056,
+      "start_utc": "2026-09-23T07:27:54.393000+00:00",
+      "end_utc": "2026-09-23T07:30:24.056000+00:00",
+      "seconds": 149.7,
+      "expected_iterations": 299326.0,
+      "hole_area_ops": 1106.0,
+      "min_completed_per_s": 1482,
+      "recovery_s_from_trough": null,
+      "in_flight_start": 14,
+      "in_flight_end": null,
+      "expected_bins": 150,
+      "present_bins": 118,
+      "begins_pair": {
+        "measure|1": 235466
+      },
+      "ends": {
+        "measure|1|success": 229457,
+        "measure|1|local_no_request": 5983,
+        "measure|1|expected_rejection": 40
+      },
+      "measure_begins": 235466,
+      "measure_ends": 235480,
+      "measure_completions": 235480,
+      "iterations_completed": 235480,
+      "dropped_iterations": 0,
+      "successful_measure_ops": 229457,
+      "http_requests": 335567,
+      "vus_peak": 69,
+      "vus_max_peak": 361,
+      "cap_measure_ms": {
+        "n": 235480,
+        "avg": 8.868,
+        "max": 246,
+        "p50": 6.569,
+        "p95": 41.091,
+        "p99": 49.846
+      },
+      "cap_iter_ms": {
+        "n": 235480,
+        "avg": 8.888,
+        "max": 246,
+        "p50": 6.591,
+        "p95": 41.109,
+        "p99": 49.851
+      },
+      "http_req_duration": {
+        "n": 335567,
+        "avg": 5.809,
+        "max": 177.360452,
+        "p50": 4.632,
+        "p95": 18.044,
+        "p99": 38.293
+      },
+      "checkpoints": [
+        {
+          "reason": "time",
+          "start_ts": 1790148534.056,
+          "complete_ts": null,
+          "write_s": null,
+          "sync_s": null,
+          "total_s": null,
+          "distance_kb": null,
+          "buffers_written": null
+        }
+      ],
+      "scope": "common"
+    }
+  ],
+  "checkpoint_events": [
+    {
+      "start_ts": 1790147634.85,
+      "reason": "time",
+      "complete_ts": 1790147904.553,
+      "buffers_written": 2433,
+      "buffers_pct": 14.8,
+      "slru_written": 101,
+      "wal_added": 0,
+      "wal_removed": 35,
+      "wal_recycled": 81,
+      "write_s": 269.222,
+      "sync_s": 0.293,
+      "total_s": 269.703,
+      "sync_files": 788,
+      "longest_sync_s": 0.039,
+      "avg_sync_s": 0.001,
+      "distance_kb": 1899116,
+      "estimate_kb": 1899116
+    },
+    {
+      "start_ts": 1790147934.583,
+      "reason": "time",
+      "complete_ts": 1790148204.455,
+      "buffers_written": 2292,
+      "buffers_pct": 14.0,
+      "slru_written": 109,
+      "wal_added": 0,
+      "wal_removed": 0,
+      "wal_recycled": 179,
+      "write_s": 269.425,
+      "sync_s": 0.18,
+      "total_s": 269.873,
+      "sync_files": 264,
+      "longest_sync_s": 0.021,
+      "avg_sync_s": 0.001,
+      "distance_kb": 2928923,
+      "estimate_kb": 2928923
+    },
+    {
+      "start_ts": 1790148234.168,
+      "reason": "time",
+      "complete_ts": 1790148504.393,
+      "buffers_written": 6135,
+      "buffers_pct": 37.4,
+      "slru_written": 110,
+      "wal_added": 0,
+      "wal_removed": 0,
+      "wal_recycled": 191,
+      "write_s": 269.844,
+      "sync_s": 0.174,
+      "total_s": 270.226,
+      "sync_files": 271,
+      "longest_sync_s": 0.032,
+      "avg_sync_s": 0.001,
+      "distance_kb": 3123487,
+      "estimate_kb": 3123487
+    },
+    {
+      "start_ts": 1790148534.056,
+      "reason": "time"
+    }
+  ]
+}

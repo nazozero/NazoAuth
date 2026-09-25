@@ -1,0 +1,13 @@
+[
+  {
+    "preflight_only": true,
+    "ready": {
+      "run_id": "PREFLIGHT-30M",
+      "vectors_sha256": "4c1df4caeeb35ad0963d333e17560233458657e034d2e3f4c88d613e6285bd83",
+      "secrets_sha256": "c24e1841c416ddaeebf29fdc7ed31b1098bb05abf25246c4ed06d55531fcde1a",
+      "vector_count": 48000,
+      "created_at": 1790311936.185,
+      "validated_at": 1790311942.499
+    }
+  }
+]
