@@ -128,10 +128,10 @@ def _wire_hash_bytes(value) -> bytes | None:
 
 
 def db_chain_state() -> dict:
-    """security_audit_chain_state facts + outbox depth."""
+    """security_audit_chain_state facts + pending depth."""
     try:
         row = sis.psql(
-            "SELECT (SELECT count(*) FROM security_audit_event_outbox),"
+            "SELECT (SELECT count(*) FROM security_audit_events),"
             " last_sequence, encode(last_hash,'hex'),"
             " anchor_deployment_id, anchor_sequence,"
             " encode(anchor_hash,'hex')"

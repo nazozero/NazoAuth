@@ -722,17 +722,34 @@ def stop_samplers(run_id: str) -> None:
 
 WORKSPACE_FILES = (
     "docker-compose.perf.yml",
+    "Containerfile",
+    "perf/env.yaml",
+    "perf/runner.py",
+    "perf/seed.py",
+    "perf/k6/oauth.js",
+    "perf/k6/measurement_clock.js",
+    "perf/k6/subject_state.js",
+    "perf/runner/Containerfile",
+    "perf/keyset/Containerfile",
+    "perf/audit-anchor-receiver/Containerfile",
+    "perf/audit-anchor-receiver/Cargo.toml",
+    "perf/audit-anchor-receiver/src/main.rs",
+    "perf/audit-anchor-receiver/src/store.rs",
+    "perf/audit-anchor-receiver/src/wire.rs",
+    "scripts/ensure_runtime_keyset.py",
     "perf/tools/single_instance_scaling.py",
+    "perf/tools/point_runner.py",
+    "perf/tools/pool_size_ab.py",
+    "perf/tools/capacity_search.py",
     "perf/tools/soak_sampler.py",
     "perf/tools/proc_detail_sampler.py",
     "perf/tools/residency_observer.py",
     "perf/tools/checkpoint_analyze.py",
-    "perf/tools/pool_size_ab.py",
     "perf/tools/stability_analyze.py",
     "perf/tools/vkledger.py",
     "perf/tools/ledger.sql",
-    "perf/runner.py",
-    "perf/seed.py",
+    "perf/tools/ledger_check.py",
+    "perf/tools/audit_anchor_fault_regression.sh",
 )
 
 
@@ -762,8 +779,21 @@ def workspace_provenance() -> dict:
     head = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
         capture_output=True, text=True, check=False).stdout.strip()
+    # Whole-tree harness hash: the runner image bakes all of perf/ via
+    # `COPY perf /perf`, so provenance binds the tree, not only the files
+    # this driver happens to mount today.
+    import hashlib
+    tree = hashlib.sha256()
+    perf_root = root / "perf"
+    if perf_root.is_dir():
+        for f in sorted(perf_root.rglob("*")):
+            if f.is_file():
+                tree.update(str(f.relative_to(perf_root)).encode())
+                tree.update(hashlib.sha256(f.read_bytes()).digest())
+    tree_sha = tree.hexdigest()
     return {"workspace_realpath": str(root), "git_head": head or None,
             "file_sha256": files, "missing": missing,
+            "perf_tree_sha256": tree_sha,
             "ok": not missing}
 
 
@@ -1626,7 +1656,7 @@ def audit_drain(timeout_s: int = 120) -> dict:
     while time.time() < deadline:
         try:
             row = psql(
-                "SELECT (SELECT count(*) FROM security_audit_event_outbox),"
+                "SELECT (SELECT count(*) FROM security_audit_events),"
                 " last_sequence, anchor_sequence"
                 " FROM security_audit_chain_state")
             pending, last_seq, anchor = row.split("|")
@@ -1774,6 +1804,50 @@ def provenance(point: dict, out_dir: Path) -> dict:
         import hashlib
         prov["applied_migrations_sha256"] = hashlib.sha256(
             applied.encode()).hexdigest()
+
+    # Image <-> source bindings. The app image carries
+    # org.opencontainers.image.revision and /etc/nazoauth-source-sha; the
+    # runner image bakes the harness (COPY perf /perf) so the in-image k6
+    # script hash must equal this checkout's file hash — otherwise the run
+    # would measure a stale harness.
+    prov["app_image_revision"] = dc(
+        "image", "inspect", point["image"], "--format",
+        '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+        check=False).stdout.strip() or None
+    srcfile = dcx(APP, ["cat", "/etc/nazoauth-source-sha"], check=False)
+    prov["app_source_sha_file"] = (
+        srcfile.stdout.strip() or None if srcfile.returncode == 0 else None)
+    declared = prov.get("source_sha")
+    prov["source_sha_registered"] = (
+        declared is not None and declared != "unknown")
+    prov["source_sha_eq_image_revision"] = (
+        prov["source_sha_registered"]
+        and prov["app_image_revision"] == declared)
+    prov["source_sha_eq_file"] = (
+        prov["source_sha_registered"]
+        and prov["app_source_sha_file"] == declared)
+
+    runner = PERF_IMAGE
+    prov["runner_image_ref"] = runner
+    prov["runner_image_id"] = dc(
+        "image", "inspect", runner, "--format", "{{.Id}}",
+        check=False).stdout.strip() or None
+    prov["runner_image_revision"] = dc(
+        "image", "inspect", runner, "--format",
+        '{{index .Config.Labels "org.opencontainers.image.revision"}}',
+        check=False).stdout.strip() or None
+    k6_in_image = dc("run", "--rm", "--entrypoint", "sha256sum", runner,
+                     "/perf/k6/oauth.js", check=False)
+    prov["runner_k6_oauth_sha256"] = (
+        k6_in_image.stdout.split()[0]
+        if k6_in_image.returncode == 0 and k6_in_image.stdout.strip()
+        else None)
+    prov["workspace_k6_oauth_sha256"] = file_sha256(
+        Path(WORKSPACE) / "perf/k6/oauth.js")
+    prov["k6_oauth_eq_workspace"] = (
+        prov["runner_k6_oauth_sha256"] is not None
+        and prov["runner_k6_oauth_sha256"]
+        == prov["workspace_k6_oauth_sha256"])
     jdump(out_dir / "provenance.json", prov)
     return prov
 
@@ -2031,7 +2105,7 @@ def evaluate_phase2_gates(records: dict) -> dict:
     gates["runtime_health"] = {
         "pass": all(r["pass"] for r in health_rows), "rows": health_rows}
     # DB drain and end-to-end delivery are separate gates — an empty
-    # outbox alone is not reconciliation.
+    # pending set alone is not reconciliation.
     gates["audit_db_drained"] = {"pass": all(
         r["audit_db_drained"] is True for r in records.values())}
     gates["audit_delivery_reconciled"] = {"pass": all(

@@ -108,7 +108,6 @@ UNION ALL SELECT 'ROW_COUNTS','oauth_refresh_spent_tokens',count(*)::text FROM o
 UNION ALL SELECT 'ROW_COUNTS','oauth_refresh_contracts',count(*)::text FROM oauth_refresh_contracts
 UNION ALL SELECT 'ROW_COUNTS','oauth_token_issuances',count(*)::text FROM oauth_token_issuances
 UNION ALL SELECT 'ROW_COUNTS','security_audit_events',count(*)::text FROM security_audit_events
-UNION ALL SELECT 'ROW_COUNTS','security_audit_event_outbox',count(*)::text FROM security_audit_event_outbox
 UNION ALL SELECT 'ROW_COUNTS','security_audit_chain_entries',count(*)::text FROM security_audit_chain_entries
 UNION ALL SELECT 'ROW_COUNTS','access_token_revocations',count(*)::text FROM access_token_revocations;
 
@@ -183,9 +182,9 @@ WHERE NOT EXISTS (SELECT 1 FROM oauth_refresh_families f
 UNION ALL SELECT 'EXPIRED_BACKLOG','issuances_due',count(*)::text,
        COALESCE(min(retain_until AT TIME ZONE 'utc')::text,'-')
 FROM oauth_token_issuances WHERE retain_until <= now()
-UNION ALL SELECT 'EXPIRED_BACKLOG','outbox_pending',count(*)::text,
+UNION ALL SELECT 'EXPIRED_BACKLOG','pending_events',count(*)::text,
        COALESCE(min(occurred_at AT TIME ZONE 'utc')::text,'-')
-FROM security_audit_event_outbox
+FROM security_audit_events
 UNION ALL SELECT 'EXPIRED_BACKLOG','audit_batch_in_flight',(batch_first_sequence IS NOT NULL)::text,
        COALESCE((batch_locked_until AT TIME ZONE 'utc')::text,'-')
 FROM security_audit_chain_state
@@ -198,7 +197,7 @@ FROM access_token_revocations WHERE expires_at <= now();
 
 -- ============================ AUDIT (KV) ===============================
 SELECT 'AUDIT', 'ledger', 'pending_export',
-       (SELECT count(*)::text FROM security_audit_event_outbox)
+       (SELECT count(*)::text FROM security_audit_events)
 UNION ALL SELECT 'AUDIT','ledger','in_flight_batch_events',
        (SELECT COALESCE(batch_event_count,0)::text FROM security_audit_chain_state)
 UNION ALL SELECT 'AUDIT','ledger','batch_generation',
@@ -215,12 +214,12 @@ UNION ALL SELECT 'AUDIT','ledger','chain_head',
        (SELECT last_sequence::text FROM security_audit_chain_state)
 UNION ALL SELECT 'AUDIT','ledger','oldest_pending_age_s',
        (SELECT COALESCE(extract(epoch FROM now()-min(occurred_at))::bigint::text,'-')
-        FROM security_audit_event_outbox);
+        FROM security_audit_events);
 
 -- ============================ XACT_HORIZON ============================
 -- MVCC horizon diagnostics: a long transaction pins backend_xmin and makes
 -- vacuum unable to reclaim queue-head deletes, which is how dead index
--- prefixes accumulate under the audit outbox order index. Boundary snapshot.
+-- prefixes accumulate under the audit pending-order index. Boundary snapshot.
 SELECT 'XACT_HORIZON', 'activity', 'oldest_xact_age_s',
        COALESCE(max(extract(epoch FROM now() - xact_start))::bigint::text, '-')
 FROM pg_stat_activity

@@ -1420,6 +1420,7 @@ async function capMintSubjectTokens(withSso, force = false) {
     __VU_STATE, Date.now(), CAP_SUBJECT_AT_MAX_AGE_MS);
   if (!force
       && mintKind === 'fresh'
+      && __VU_STATE.refreshToken
       && (!withSso || __VU_STATE.ssoDeviceSecret)) {
     return;
   }
@@ -1442,13 +1443,15 @@ async function capMintSubjectTokens(withSso, force = false) {
   }
   const code = approveAuthorization(requestId, v.oidc_state);
   const tokens = tokenAuthorizationCode(v, code);
-  __VU_STATE.subjectAt = tokens.access_token;
-  __VU_STATE.subjectAtMintedAt = Date.now();
+  if (!adoptSubjectAccessToken(__VU_STATE, tokens.access_token, Date.now())) {
+    fail('cap bootstrap did not return access_token');
+  }
   capSubjectEvent(
     mintKind === 'initial_mint' ? 'initial_mint' : 'expired_reauth');
-  if (tokens.refresh_token) {
-    __VU_STATE.refreshToken = tokens.refresh_token;
+  if (!tokens.refresh_token) {
+    fail('cap bootstrap did not return refresh_token');
   }
+  __VU_STATE.refreshToken = tokens.refresh_token;
   if (withSso) {
     __VU_STATE.ssoIdToken = tokens.id_token;
     __VU_STATE.ssoDeviceSecret = tokens.device_secret;
@@ -1500,21 +1503,26 @@ function capAuthorizationCodeOp() {
     }
     const code = approveAuthorization(requestId, v.oidc_state);
     const tokens = tokenAuthorizationCode(v, code);
-    return Boolean(tokens && tokens.access_token);
+    if (!tokens.access_token || !tokens.refresh_token) {
+      fail('cap authorization_code response is missing issued tokens');
+    }
+    // A successful issuance is this VU's newest rotatable family; adopting
+    // it keeps later refresh rolls on the chain this op just advanced
+    // instead of an older family the per-scope cap may have retired.
+    __VU_STATE.refreshToken = tokens.refresh_token;
+    adoptSubjectAccessToken(__VU_STATE, tokens.access_token, Date.now());
+    return true;
   })();
 }
 
 async function capRefreshOp() {
   if (!__VU_STATE.refreshToken) {
-    if (capPhase() === 'measure') {
-      // Measurement must only rotate: re-minting would mix bootstrap SQL into
-      // the measured statement window. A missing family mid-measure is a
-      // local no-request failure — no HTTP request is sent, so it must never
-      // be read as a successful or HTTP-rejected operation.
-      return { capOutcome: 'local_no_request' };
-    }
-    // A dead/rotated family must not be replayed; mint a fresh one through the
-    // real authorization-code flow instead of reusing the seeded token.
+    // A missing/dead family is replenished through the real authorization
+    // flow even inside the measurement window: the bootstrap HTTP requests,
+    // their SQL work, and their latency all stay inside this iteration's
+    // measured cost, and only a successful refresh below counts as a
+    // logical success. capIntrospectOp/capRevokeOp already behave this way.
+    // A dead/rotated family must never be replayed.
     await capMintSubjectTokens(false, true);
   }
   const response = http.post(

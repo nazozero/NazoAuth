@@ -48,7 +48,6 @@ QUERY_CLASSES = [
     ("oauth_refresh_families", "refresh_family"),
     ("oauth_refresh_spent_tokens", "refresh_spent"),
     ("oauth_refresh_contracts", "refresh_contract"),
-    ("security_audit_event_outbox", "audit_outbox"),
     ("security_audit_chain", "audit_chain"),
     ("security_audit_events", "audit_events"),
     ("access_token_revocations", "access_revocation"),
