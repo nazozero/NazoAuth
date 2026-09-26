@@ -98,10 +98,15 @@ pub trait ServerPersistenceProvider: Send + Sync {
         &self,
         data_key: [u8; 32],
     ) -> Arc<dyn nazo_persistence::Openid4vcTrustPolicyStore>;
-    fn openid4vci_store(&self, data_key: [u8; 32]) -> Arc<dyn nazo_persistence::Openid4vciStore>;
+    fn openid4vci_store(
+        &self,
+        data_key: [u8; 32],
+        secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
+    ) -> Arc<dyn nazo_persistence::Openid4vciStore>;
     fn openid4vci_authorization_offers(
         &self,
         data_key: [u8; 32],
+        secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
     ) -> Arc<dyn nazo_openid4vci::AuthorizationOfferPort>;
     fn openid4vci_datasets(
         &self,
