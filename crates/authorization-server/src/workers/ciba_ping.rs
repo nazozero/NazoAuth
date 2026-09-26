@@ -19,8 +19,9 @@ pub trait CibaPingSender: Send + Sync {
     >;
 }
 const DELIVERY_CONCURRENCY: usize = 8;
-// One concurrency wave keeps the whole batch within the existing claim lease.
-const DELIVERY_BATCH_SIZE: usize = DELIVERY_CONCURRENCY;
+/// Claim limit, also used by hosts to detect a potentially non-empty backlog.
+// Keep the batch to one concurrency wave within the existing claim lease.
+pub const DELIVERY_BATCH_SIZE: usize = DELIVERY_CONCURRENCY;
 const DELIVERY_LOCK_SECONDS: i64 = 15;
 
 pub struct CibaPingDeliveryWorker {
