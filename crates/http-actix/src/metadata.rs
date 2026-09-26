@@ -79,7 +79,7 @@ pub async fn oauth_protected_resource_metadata(handles: Data<MetadataHandles>) -
 
 /// Public JSON Web Key Set derived from the current key snapshot.
 pub async fn jwks(handles: Data<MetadataHandles>) -> Json<Value> {
-    Json(handles.snapshots.snapshot().jwks)
+    Json(handles.snapshots.jwks())
 }
 
 #[cfg(test)]

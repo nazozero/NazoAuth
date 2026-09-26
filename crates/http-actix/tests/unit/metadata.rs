@@ -17,6 +17,7 @@ use super::*;
 
 struct TestSnapshots {
     calls: AtomicUsize,
+    jwks_calls: AtomicUsize,
 }
 
 impl MetadataSnapshotSource for TestSnapshots {
@@ -31,8 +32,12 @@ impl MetadataSnapshotSource for TestSnapshots {
             active_signing_algorithms: vec!["RS256"],
             id_token_signing_algorithms: vec!["RS256", "PS256"],
             response_signing_algorithms: vec!["PS256"],
-            jwks: json!({"keys": [{"kid": "current", "alg": "PS256"}]}),
         }
+    }
+
+    fn jwks(&self) -> Value {
+        self.jwks_calls.fetch_add(1, Ordering::Relaxed);
+        json!({"keys": [{"kid": "current", "alg": "PS256"}]})
     }
 }
 
@@ -57,6 +62,7 @@ fn handles(source: Arc<TestSnapshots>) -> MetadataHandles {
 async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
     let source = Arc::new(TestSnapshots {
         calls: AtomicUsize::new(0),
+        jwks_calls: AtomicUsize::new(0),
     });
     let app = test::init_service(
         App::new()
@@ -135,6 +141,8 @@ async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
         );
     }
 
+    assert_eq!(source.calls.load(Ordering::Relaxed), 4);
+    assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 0);
     let response = test::call_service(
         &app,
         test::TestRequest::get().uri("/jwks.json").to_request(),
@@ -150,7 +158,8 @@ async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
     );
     let body: Value = test::read_body_json(response).await;
     assert_eq!(body["keys"][0]["kid"], "current");
-    assert_eq!(source.calls.load(Ordering::Relaxed), 5);
+    assert_eq!(source.calls.load(Ordering::Relaxed), 4);
+    assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 1);
 
     for (path, expected_status) in [
         ("/.well-known/openid-configuration", StatusCode::NOT_FOUND),
@@ -180,5 +189,6 @@ async fn focused_metadata_routes_preserve_transport_and_snapshot_contracts() {
             assert_eq!(response.status(), expected_status, "{method} {path}");
         }
     }
-    assert_eq!(source.calls.load(Ordering::Relaxed), 5);
+    assert_eq!(source.calls.load(Ordering::Relaxed), 4);
+    assert_eq!(source.jwks_calls.load(Ordering::Relaxed), 1);
 }

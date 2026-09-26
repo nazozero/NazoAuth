@@ -18,17 +18,17 @@ pub struct MetadataEndpointConfig {
     pub require_pushed_authorization_requests: bool,
 }
 
-/// One request's immutable view of module admission and public signing data.
+/// One request's immutable view of module admission and signing algorithms.
 #[derive(Clone, Debug)]
 pub struct MetadataSnapshot {
     pub active_modules: Arc<ActiveModuleSnapshot>,
     pub active_signing_algorithms: Vec<&'static str>,
     pub id_token_signing_algorithms: Vec<&'static str>,
     pub response_signing_algorithms: Vec<&'static str>,
-    pub jwks: Value,
 }
 
 /// Supplies public, request-facing snapshots without exposing key lifecycle or storage details.
 pub trait MetadataSnapshotSource: Send + Sync {
     fn snapshot(&self) -> MetadataSnapshot;
+    fn jwks(&self) -> Value;
 }
