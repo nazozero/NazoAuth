@@ -154,8 +154,6 @@ impl SecurityStateMaintenanceRepository {
     /// round) and expiry is rechecked under the lock, so a family whose writer
     /// just committed a new generation is never reclaimed mid-commit.
     async fn delete_expired_refresh_families(&self) -> Result<(u64, bool), RepositoryError> {
-        use diesel::{ExpressionMethods, QueryDsl};
-
         #[derive(QueryableByName)]
         struct ExpiredFamily {
             #[diesel(sql_type = sql_types::Uuid)]
@@ -163,12 +161,6 @@ impl SecurityStateMaintenanceRepository {
             #[diesel(sql_type = sql_types::Uuid)]
             token_family_id: uuid::Uuid,
         }
-        #[derive(QueryableByName)]
-        struct LockRow {
-            #[diesel(sql_type = sql_types::Bool)]
-            acquired: bool,
-        }
-
         let mut connection = self.connection().await?;
         connection
             .build_transaction()
@@ -185,36 +177,54 @@ impl SecurityStateMaintenanceRepository {
                 .load::<ExpiredFamily>(connection)
                 .await?;
                 let saturated = due.len() as i64 >= CLEANUP_BATCH_LIMIT;
-                let mut deleted = 0_u64;
-                for family in due {
-                    let acquired = sql_query("SELECT pg_try_advisory_xact_lock($1) AS acquired")
-                        .bind::<sql_types::BigInt, _>(super::tokens::refresh_family_lock_key(
-                            family.token_family_id,
-                        ))
-                        .get_result::<LockRow>(connection)
-                        .await?
-                        .acquired;
-                    if !acquired {
-                        continue;
-                    }
-                    deleted += diesel::delete(
-                        crate::schema::oauth_refresh_families::table
-                            .filter(
-                                crate::schema::oauth_refresh_families::tenant_id
-                                    .eq(family.tenant_id),
-                            )
-                            .filter(
-                                crate::schema::oauth_refresh_families::token_family_id
-                                    .eq(family.token_family_id),
-                            )
-                            .filter(
-                                crate::schema::oauth_refresh_families::current_expires_at
-                                    .le(diesel::dsl::now),
-                            ),
-                    )
-                    .execute(connection)
-                    .await? as u64;
+                if due.is_empty() {
+                    return Ok((0, false));
                 }
+                let tenant_ids = due.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
+                let family_ids = due
+                    .iter()
+                    .map(|row| row.token_family_id)
+                    .collect::<Vec<_>>();
+                let lock_keys = family_ids
+                    .iter()
+                    .map(|id| super::tokens::refresh_family_lock_key(*id))
+                    .collect::<Vec<_>>();
+                // Candidates are already bounded before this volatile function
+                // runs. Keep exactly the writer's lock key; try-lock failures
+                // skip that family without holding up unrelated candidates.
+                let locked = sql_query(
+                    "SELECT tenant_id, token_family_id \
+                     FROM UNNEST($1::uuid[], $2::uuid[], $3::bigint[]) \
+                          AS due(tenant_id, token_family_id, lock_key) \
+                     WHERE pg_try_advisory_xact_lock(lock_key)",
+                )
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&tenant_ids)
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&family_ids)
+                .bind::<sql_types::Array<sql_types::BigInt>, _>(&lock_keys)
+                .load::<ExpiredFamily>(connection)
+                .await?;
+                if locked.is_empty() {
+                    return Ok((0, saturated));
+                }
+                let tenant_ids = locked.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
+                let family_ids = locked
+                    .iter()
+                    .map(|row| row.token_family_id)
+                    .collect::<Vec<_>>();
+                // This must remain a separate READ COMMITTED statement. A
+                // rotation can commit between the candidate snapshot and lock
+                // acquisition; only a new snapshot sees its extended expiry.
+                let deleted = sql_query(
+                    "DELETE FROM oauth_refresh_families AS target \
+                     USING UNNEST($1::uuid[], $2::uuid[]) AS due(tenant_id, token_family_id) \
+                     WHERE target.tenant_id = due.tenant_id \
+                       AND target.token_family_id = due.token_family_id \
+                       AND target.current_expires_at <= CURRENT_TIMESTAMP",
+                )
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&tenant_ids)
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&family_ids)
+                .execute(connection)
+                .await? as u64;
                 Ok((deleted, saturated))
             })
             .await
