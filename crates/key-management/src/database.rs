@@ -899,6 +899,8 @@ fn validate_external_registration(registration: &ExternalKeyRegistration) -> any
         .ok_or_else(|| anyhow!("unsupported signing alg"))?;
     let entry = json!({"kid":registration.kid,"alg":algorithm,"backend":"external-command","key_ref":registration.key_ref,"public_jwk":registration.public_jwk,"created_at":timestamp(Utc::now()),"retire_at":null});
     external_public_jwk(&entry).context("external key public JWK is invalid")?;
+    crate::model::prepared_verification(&registration.public_jwk, registration.algorithm)
+        .ok_or_else(|| anyhow!("external key public JWK cannot produce verification material"))?;
     Ok(())
 }
 
