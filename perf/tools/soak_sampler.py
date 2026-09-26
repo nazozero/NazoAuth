@@ -190,14 +190,13 @@ def main():
                         "   'oauth_refresh_families','oauth_refresh_spent_tokens',"
                         "   'oauth_refresh_contracts','oauth_token_issuances',"
                         "   'access_token_revocations','security_audit_events',"
-                        "   'security_audit_event_outbox',"
                         "   'security_audit_chain_entries')"
                     ).fetchall()}
                 row["audit"] = dict(zip(
                     ["pending", "chain_head", "anchor"],
                     c.execute(
                         "SELECT (SELECT count(*) FROM "
-                        " security_audit_event_outbox),"
+                        " security_audit_events),"
                         " last_sequence, anchor_sequence "
                         "FROM security_audit_chain_state").fetchone()))
                 # PG wait-event distribution by type: distinguishes

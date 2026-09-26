@@ -69,7 +69,6 @@ reset_ledger() {
   # the superuser so the regression can start from an empty ledger.
   psql <<'SQL' >/dev/null
 SET session_replication_role = replica;
-DELETE FROM public.security_audit_event_outbox;
 DELETE FROM public.security_audit_chain_entries;
 DELETE FROM public.security_audit_events;
 DELETE FROM public.security_audit_chain_state;
@@ -89,7 +88,7 @@ emit_events() { # emit_events <count> <action-prefix>
   done
 }
 
-outbox_depth() { psql -c "SELECT count(*) FROM public.security_audit_event_outbox"; }
+pending_depth() { psql -c "SELECT count(*) FROM public.security_audit_events"; }
 anchor_seq()  { psql -c "SELECT coalesce(max(anchor_sequence),0) FROM public.security_audit_chain_state"; }
 head_seq()    { psql -c "SELECT coalesce(max(last_sequence),0) FROM public.security_audit_chain_state"; }
 
@@ -184,7 +183,7 @@ say "S1 genesis + steady-state export"
 emit_events 5 s1
 start_worker s1
 wait_for "genesis + first batch acknowledged" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 40
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
 check "anchor advanced to 5 events" "$(anchor_seq)" "5"
 check "receiver last_sequence = 5" "$(ckpt_field last_sequence)" "5"
 check "chain entries = events" \
@@ -197,10 +196,10 @@ emit_events 4 s2
 stop_receiver
 start_worker s2
 sleep 6  # worker retries against a dead endpoint
-check "no acknowledgement while receiver down" "$(outbox_depth)" "4"
+check "no acknowledgement while receiver down" "$(pending_depth)" "4"
 start_receiver
-wait_for "outbox drains after receiver restart" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 40
+wait_for "pending set drains after receiver restart" \
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
 check "anchor covers all events" "$(anchor_seq)" "9"
 check "receiver checkpoint resumes from persisted state" "$(ckpt_field last_sequence)" "9"
 stop_workers
@@ -211,10 +210,10 @@ emit_events 3 s3
 set_fault http_500
 start_worker s3
 sleep 5
-check "no ack while receiver 5xx" "$(psql -c 'SELECT count(*) > 0 FROM public.security_audit_event_outbox')" "t"
+check "no ack while receiver 5xx" "$(psql -c 'SELECT count(*) > 0 FROM public.security_audit_events')" "t"
 set_fault none
 wait_for "batch recovers after transient 5xx" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 40
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
 check "receiver last_sequence = 12" "$(ckpt_field last_sequence)" "12"
 stop_workers
 
@@ -227,7 +226,7 @@ start_worker s4
 sleep 6
 set_fault none
 wait_for "duplicate-receipt path acks the batch" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 40
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
 check "receiver observed duplicate redelivery" \
   "$(psql -c "SELECT true")" "t"   # placeholder replaced below
 DUP_AFTER="$(state_field duplicates)"
@@ -241,10 +240,10 @@ emit_events 3 s5
 set_fault bad_signature
 start_worker s5
 sleep 5
-check "no ack under invalid signatures" "$(outbox_depth)" "3"
+check "no ack under invalid signatures" "$(pending_depth)" "3"
 set_fault none
 wait_for "batch acked once receipts are valid" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 40
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
 stop_workers
 
 # --- S6: permanent reject -> blocked -> operator unblock ------------------
@@ -254,13 +253,13 @@ set_fault reject_permanent
 start_worker s6
 wait_for "batch marked blocked" \
   "SELECT batch_blocked_reason IS NOT NULL FROM public.nazo_security_audit_shared_anchor_health()" 30
-check "outbox retained under block" "$(psql -c 'SELECT count(*) >= 3 FROM public.security_audit_event_outbox')" "t"
+check "pending set retained under block" "$(psql -c 'SELECT count(*) >= 3 FROM public.security_audit_events')" "t"
 stop_workers
 set_fault none
 psql -c "SELECT public.nazo_unblock_security_audit_batch()" >/dev/null
 start_worker s6b
 wait_for "unblocked batch completes" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 40
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
 check "anchor covers all events" "$(anchor_seq)" "21"
 stop_workers
 
@@ -268,8 +267,8 @@ stop_workers
 say "S7 two workers: single in-flight batch, stale generation fenced"
 emit_events 20 s7
 start_worker w1; start_worker w2
-wait_for "outbox drains under concurrent workers" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 90
+wait_for "pending set drains under concurrent workers" \
+  "SELECT count(*) = 0 FROM public.security_audit_events" 90
 check "at most one in-flight batch at any time" \
   "$(psql -c 'SELECT count(*) <= 1 FROM public.security_audit_chain_state WHERE batch_last_sequence IS NOT NULL AND batch_blocked_reason IS NULL')" "t"
 check "anchor complete" "$(anchor_seq)" "41"
@@ -282,7 +281,7 @@ GEN_BEFORE="$(psql -c 'SELECT coalesce(max(batch_generation),0) FROM public.secu
 start_worker stale; sleep 3; kill -STOP "${WORKER_PIDS[0]}" 2>/dev/null || true
 start_worker reclaim
 wait_for "reclaim after lock expiry bumps generation" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 40
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
 GEN_AFTER="$(psql -c 'SELECT coalesce(max(batch_generation),0) FROM public.security_audit_chain_state')"
 kill -CONT "${WORKER_PIDS[0]}" 2>/dev/null || true
 if [ "${GEN_AFTER:-0}" -gt "${GEN_BEFORE:-0}" ]; then ok "generation advanced on reclaim ($GEN_BEFORE -> $GEN_AFTER)"; else bad "generation did not advance"; fi
@@ -304,7 +303,7 @@ SET session_replication_role = DEFAULT;
 SQL
 start_receiver                # healthy receiver: only the digest check protects
 sleep 8
-check "digest mismatch prevents ack" "$(outbox_depth)" "2"
+check "digest mismatch prevents ack" "$(pending_depth)" "2"
 # The tampered head row makes chain_valid false, so the health projection
 # yields no row and the worker fails closed before any further claim/ack.
 CLAIM_FAILURES="$(grep -cE 'health query failed|batch claim failed' "$WORK_DIR/worker-s8.log" || true)"
@@ -321,7 +320,7 @@ SET session_replication_role = DEFAULT;
 SQL
 start_worker s8b
 wait_for "restored batch drains after hash restore" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 40
+  "SELECT count(*) = 0 FROM public.security_audit_events" 40
 stop_workers
 
 # --- S9: drain after stop-load ---------------------------------------------
@@ -329,7 +328,7 @@ say "S9 stop load, exporter drains to zero"
 emit_events 6 s9
 start_worker s9
 wait_for "ledger drains to zero pending" \
-  "SELECT count(*) = 0 FROM public.security_audit_event_outbox" 60
+  "SELECT count(*) = 0 FROM public.security_audit_events" 60
 check "health reports no pending" \
   "$(psql -c 'SELECT NOT pending_exists FROM public.nazo_security_audit_shared_anchor_health()')" "t"
 check "receiver accepted_events = total events" \

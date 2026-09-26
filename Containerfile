@@ -18,12 +18,19 @@ COPY migrations ./migrations
 
 FROM build-base AS product-builder
 
+# The cargo target cache mount is keyed by source identity: --no-cache does
+# not clear BuildKit cache mounts, and a shared id lets cargo ship a binary
+# fingerprinted from a previously built tree. Registry/git mounts stay
+# shared — they are already content-addressed downloads.
+ARG SOURCE_SHA=unknown
+
 RUN --mount=type=cache,id=nazoauth-cargo-registry,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=nazoauth-cargo-git,target=/usr/local/cargo/git,sharing=locked \
-    --mount=type=cache,id=nazoauth-target,target=/app/target,sharing=locked \
+    --mount=type=cache,id=nazoauth-target-${SOURCE_SHA},target=/app/target,sharing=locked \
     cargo build --release --locked \
       --package nazoauth --bin nazoauth \
-    && install -Dm755 target/release/nazoauth /out/nazoauth
+    && install -Dm755 target/release/nazoauth /out/nazoauth \
+    && printf "%s" "${SOURCE_SHA}" > /out/source-sha
 
 FROM docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS runtime-base
 
@@ -44,7 +51,11 @@ WORKDIR /app
 
 FROM runtime-base AS runtime
 
+ARG SOURCE_SHA=unknown
+LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
+
 COPY --from=product-builder /out/nazoauth /usr/local/bin/nazoauth
+COPY --from=product-builder /out/source-sha /etc/nazoauth-source-sha
 
 USER 10001:10001
 

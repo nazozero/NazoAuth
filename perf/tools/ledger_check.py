@@ -33,7 +33,6 @@ BASE_RELATIONS = [
     "public.oauth_refresh_contracts",
     "public.oauth_token_issuances",
     "public.security_audit_events",
-    "public.security_audit_event_outbox",
     "public.security_audit_chain_entries",
 ]
 REL_COLS = ["relid", "relation", "heap_main", "heap_aux", "user_indexes_total",
@@ -322,7 +321,7 @@ def selftest():
         " RELATION_BYTES | 7 | public.oauth_refresh_contracts | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
         " RELATION_BYTES | 2 | public.oauth_token_issuances | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
         " RELATION_BYTES | 3 | public.security_audit_events | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
-        " RELATION_BYTES | 4 | public.security_audit_event_outbox | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
+        " RELATION_BYTES | 4 | public.security_audit_chain_entries | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
         " RELATION_BYTES | 5 | public.security_audit_chain_entries | 10 | 1 | 2 | 3 | 16 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 16",
         " INDEX_DETAIL | 9 | public.x | x_idx | 8 | 0 | CREATE INDEX",
         " ROW_COUNTS | x | 1",
