@@ -8,6 +8,7 @@ struct Store {
     release: Semaphore,
     claimed: Semaphore,
     batch_size: AtomicUsize,
+    stale_entries: AtomicUsize,
     claim_fails: AtomicBool,
     finish_fails: AtomicBool,
     finished: AtomicUsize,
@@ -20,6 +21,7 @@ impl Store {
             release: Semaphore::new(0),
             claimed: Semaphore::new(0),
             batch_size: AtomicUsize::new(0),
+            stale_entries: AtomicUsize::new(0),
             claim_fails: AtomicBool::new(false),
             finish_fails: AtomicBool::new(false),
             finished: AtomicUsize::new(0),
@@ -66,6 +68,41 @@ async fn full_batch_continues_immediately_then_empty_or_partial_batch_waits() {
         tokio::time::advance(Duration::from_millis(1)).await;
         store.claimed.acquire().await.unwrap().forget();
         assert_eq!(store.claims.load(Ordering::SeqCst), 3);
+        assert_eq!(tokio::time::Instant::now(), started + INTERVAL);
+        handle.abort();
+        assert!(handle.await.unwrap_err().is_cancelled());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn full_scan_with_missing_entries_continues_without_an_idle_delay() {
+    for delivery_count in [0, 1] {
+        let store = Store::new();
+        store.batch_size.store(delivery_count, Ordering::SeqCst);
+        store
+            .stale_entries
+            .store(DELIVERY_BATCH_SIZE - delivery_count, Ordering::SeqCst);
+        let started = tokio::time::Instant::now();
+        let handle = spawn_worker(store.clone());
+        store.claimed.acquire().await.unwrap().forget();
+        store.release.add_permits(1);
+        store.claimed.acquire().await.unwrap().forget();
+        assert_eq!(tokio::time::Instant::now(), started);
+        assert_eq!(store.finished.load(Ordering::SeqCst), delivery_count);
+
+        // A partial scan of stale entries is idle even though its delivery
+        // count is indistinguishable from the preceding full stale page.
+        store.batch_size.store(0, Ordering::SeqCst);
+        store
+            .stale_entries
+            .store(DELIVERY_BATCH_SIZE - 1, Ordering::SeqCst);
+        store.release.add_permits(1);
+        tokio::task::yield_now().await;
+        tokio::time::advance(INTERVAL - Duration::from_millis(1)).await;
+        tokio::task::yield_now().await;
+        assert_eq!(store.claims.load(Ordering::SeqCst), 2);
+        tokio::time::advance(Duration::from_millis(1)).await;
+        store.claimed.acquire().await.unwrap().forget();
         assert_eq!(tokio::time::Instant::now(), started + INTERVAL);
         handle.abort();
         assert!(handle.await.unwrap_err().is_cancelled());
@@ -141,8 +178,8 @@ async fn abort_cancels_inflight_batch_and_await_finishes() {
 }
 
 use nazo_oauth_server::ports::transient_state::{
-    CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome, CibaPingFinishResult,
-    TransientStateError, TransientStateFuture,
+    CibaPingClaimBatch, CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome,
+    CibaPingFinishResult, TransientStateError, TransientStateFuture,
 };
 use nazo_oauth_server::workers::ciba_ping::CibaPingSender;
 const INTERVAL: std::time::Duration = std::time::Duration::from_millis(500);
@@ -152,24 +189,28 @@ impl CibaPingDeliveryPort for Store {
         _: i64,
         _: i64,
         limit: usize,
-    ) -> TransientStateFuture<'_, Vec<CibaPingDelivery>> {
+    ) -> TransientStateFuture<'_, CibaPingClaimBatch> {
         Box::pin(async move {
             self.claim().await;
             if self.claim_fails.load(Ordering::SeqCst) {
                 return Err(TransientStateError::Unavailable);
             }
             let size = self.batch_size.load(Ordering::SeqCst);
-            assert!(size <= limit);
-            Ok((0..size)
-                .map(|id| CibaPingDelivery {
-                    auth_req_id_hash: id.to_string(),
-                    auth_req_id: format!("request-{id}"),
-                    endpoint: "https://client.example/ping".to_owned(),
-                    client_notification_token: "test-notification-token".to_owned(),
-                    attempts: 1,
-                    expires_at: chrono::Utc::now().timestamp() + 60,
-                })
-                .collect())
+            let stale = self.stale_entries.load(Ordering::SeqCst);
+            assert!(size + stale <= limit);
+            Ok(CibaPingClaimBatch {
+                scanned: size + stale,
+                deliveries: (0..size)
+                    .map(|id| CibaPingDelivery {
+                        auth_req_id_hash: id.to_string(),
+                        auth_req_id: format!("request-{id}"),
+                        endpoint: "https://client.example/ping".to_owned(),
+                        client_notification_token: "test-notification-token".to_owned(),
+                        attempts: 1,
+                        expires_at: chrono::Utc::now().timestamp() + 60,
+                    })
+                    .collect(),
+            })
         })
     }
     fn finish<'a>(
