@@ -444,7 +444,7 @@ impl HttpSigningLease {
             .ok_or_else(|| {
                 anyhow::anyhow!("HTTP signing lease no longer matches its generation")
             })?;
-        sign_selected(&selected, signing_input)
+        sign_selected(&selected, &self.generation.snapshot, signing_input)
             .await
             .map_err(anyhow::Error::from)
     }
@@ -519,7 +519,7 @@ impl Signer for Openid4vcSigningLease {
             .selected_key(request.purpose, algorithm)
             .filter(|selected| selected.kid == self.kid)
             .ok_or(SignError::KeyUnavailable)?;
-        sign_selected(&selected, request.signing_input).await
+        sign_selected(&selected, &self.generation.snapshot, request.signing_input).await
     }
 }
 
@@ -1158,7 +1158,7 @@ pub(crate) async fn encode_jwt_for_generation<T: Serialize>(
     URL_SAFE_NO_PAD.encode_string(&claims_json, &mut signing_input);
     drop(header_json);
     drop(claims_json);
-    let signature = sign_selected(&selected, signing_input.as_bytes())
+    let signature = sign_selected(&selected, &generation.snapshot, signing_input.as_bytes())
         .await
         .map_err(|_| nazo_crypto::CryptoError::OperationFailed)?;
     signing_input.reserve(
@@ -1183,11 +1183,15 @@ impl Signer for KeyManager {
             .loaded
             .selected_key(request.purpose, algorithm)
             .ok_or(SignError::KeyUnavailable)?;
-        sign_selected(&selected, request.signing_input).await
+        sign_selected(&selected, &generation.snapshot, request.signing_input).await
     }
 }
 
-async fn sign_selected(selected: &SelectedKey<'_>, input: &[u8]) -> Result<Signature, SignError> {
+async fn sign_selected(
+    selected: &SelectedKey<'_>,
+    snapshot: &KeySnapshot,
+    input: &[u8],
+) -> Result<Signature, SignError> {
     let local_sign = |material: &LocalSigningMaterial| {
         material
             .prepared
@@ -1200,11 +1204,18 @@ async fn sign_selected(selected: &SelectedKey<'_>, input: &[u8]) -> Result<Signa
         #[cfg(any(test, feature = "test-support"))]
         SelectedHandle::Active(ActiveSigningKey::FailingForTest) => Err(SignError::SigningFailed),
         SelectedHandle::Active(ActiveSigningKey::External(external)) => {
+            // Every caller supplies the snapshot pinned with the selected key;
+            // rotation during the external call cannot change the verification key.
+            let verification = snapshot
+                .verification_keys
+                .iter()
+                .find(|key| key.kid == selected.kid && key.prepared.algorithm == selected.algorithm)
+                .ok_or(SignError::KeyUnavailable)?;
             crate::external::sign_external(
                 external,
                 selected.kid,
                 selected.algorithm,
-                selected.public_jwk,
+                &verification.prepared.key,
                 input,
             )
             .await
@@ -1266,60 +1277,10 @@ fn prepared_verification(
     public_jwk: &Value,
     algorithm: nazo_crypto::jwt::Algorithm,
 ) -> Option<PreparedVerification> {
-    use nazo_crypto::jwt::VerificationKey as JwtVerificationKey;
-    let algorithm_name = crate::serialization::signing_algorithm_name(algorithm)?;
-    if public_jwk.get("d").is_some()
-        || public_jwk
-            .get("alg")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value != algorithm_name)
-        || public_jwk
-            .get("use")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value != "sig")
-        || !key_ops_allow_verification(public_jwk.get("key_ops"))
-    {
+    if !key_ops_allow_verification(public_jwk.get("key_ops")) {
         return None;
     }
-    let key = match algorithm {
-        nazo_crypto::jwt::Algorithm::EdDSA
-            if public_jwk.get("kty").and_then(Value::as_str) == Some("OKP")
-                && public_jwk.get("crv").and_then(Value::as_str) == Some("Ed25519") =>
-        {
-            let x = public_jwk.get("x")?.as_str()?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ed_components(x).ok()?
-        }
-        nazo_crypto::jwt::Algorithm::RS256 | nazo_crypto::jwt::Algorithm::PS256
-            if public_jwk.get("kty").and_then(Value::as_str) == Some("RSA") =>
-        {
-            let modulus = public_jwk.get("n")?.as_str()?;
-            let exponent = public_jwk.get("e")?.as_str()?;
-            if !nazo_auth::rsa_public_key_components_are_safe(
-                &URL_SAFE_NO_PAD.decode(modulus).ok()?,
-                &URL_SAFE_NO_PAD.decode(exponent).ok()?,
-            ) {
-                return None;
-            }
-            JwtVerificationKey::from_rsa_components(modulus, exponent).ok()?
-        }
-        nazo_crypto::jwt::Algorithm::ES256
-            if public_jwk.get("kty").and_then(Value::as_str) == Some("EC")
-                && public_jwk.get("crv").and_then(Value::as_str) == Some("P-256") =>
-        {
-            let x = public_jwk.get("x")?.as_str()?;
-            let y = public_jwk.get("y")?.as_str()?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32
-                || URL_SAFE_NO_PAD.decode(y).ok()?.len() != 32
-            {
-                return None;
-            }
-            JwtVerificationKey::from_ec_components(x, y).ok()?
-        }
-        _ => return None,
-    };
+    let key = crate::external::decoding_key_from_public_jwk(public_jwk, algorithm)?;
     Some(PreparedVerification { algorithm, key })
 }
 
