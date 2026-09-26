@@ -127,7 +127,7 @@ pub trait ServerTransientStateProvider: Send + Sync {
 /// This port is used only by the runtime refresher. Request handlers resolve a
 /// tenant from the process-local snapshot and never call this cache.
 pub trait TenantDirectoryCachePort: Send + Sync {
-    fn load(&self) -> TransientStateFuture<'_, Option<TenantDirectorySnapshot>>;
+    fn load(&self) -> TransientStateFuture<'_, Option<Arc<TenantDirectorySnapshot>>>;
 
     /// Publishes a snapshot loaded from the authoritative database.
     ///
