@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use base64::{
     Engine as _,
     engine::general_purpose::{STANDARD, URL_SAFE_NO_PAD},
@@ -137,11 +139,14 @@ pub(super) fn verify(
     let expected_digests = credential
         .get("_sd")
         .and_then(Value::as_array)
-        .ok_or(CredentialTrustError::InvalidEncoding)?;
+        .ok_or(CredentialTrustError::InvalidEncoding)?
+        .iter()
+        .filter_map(Value::as_str)
+        .collect::<HashSet<_>>();
     let mut disclosed = Map::new();
     for disclosure in disclosures {
-        let digest = Value::String(URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes())));
-        if !expected_digests.contains(&digest) {
+        let digest = URL_SAFE_NO_PAD.encode(Sha256::digest(disclosure.as_bytes()));
+        if !expected_digests.contains(digest.as_str()) {
             return Err(CredentialTrustError::InvalidSignature);
         }
         let decoded: Value = serde_json::from_slice(

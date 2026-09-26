@@ -183,6 +183,7 @@ impl PresentationStorePort for Openid4vpRepository {
             let row = load_presentation(&mut connection, self.tenant_id, transaction_id, now)
                 .await
                 .map_err(|_| PresentationStoreError::Unavailable)?;
+            drop(connection);
             row.map(|value| value.transaction_with_key(&self.data_key, self.tenant_id))
                 .transpose()
         })
@@ -241,9 +242,6 @@ impl PresentationStorePort for Openid4vpRepository {
         now: DateTime<Utc>,
     ) -> PresentationStoreFuture<'a, Result<bool, PresentationStoreError>> {
         Box::pin(async move {
-            let mut connection = get_conn(&self.pool)
-                .await
-                .map_err(|_| PresentationStoreError::Unavailable)?;
             let encoded = serde_json::to_vec(result)
                 .map_err(|_| PresentationStoreError::InvalidTransition)?;
             let encoded = protect_payload(
@@ -253,6 +251,9 @@ impl PresentationStorePort for Openid4vpRepository {
                 transaction_id,
                 &encoded,
             )?;
+            let mut connection = get_conn(&self.pool)
+                .await
+                .map_err(|_| PresentationStoreError::Unavailable)?;
             let changed = sql_query(
                 "UPDATE openid4vp_transactions SET result_ciphertext = $5, completed_at = $4, \
                      ephemeral_private_key_ciphertext = NULL \
