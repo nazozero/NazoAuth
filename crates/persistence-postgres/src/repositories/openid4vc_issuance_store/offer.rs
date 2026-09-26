@@ -34,6 +34,7 @@ impl Openid4vciRepository {
             .await
             .optional()
             .map_err(|_| CredentialStoreError::Unavailable)?;
+            drop(connection);
             row.map(|row| row.into_domain(&self.data_key)).transpose()
         })
     }

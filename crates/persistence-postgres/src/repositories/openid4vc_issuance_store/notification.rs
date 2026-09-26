@@ -42,6 +42,7 @@ impl Openid4vciRepository {
             .await
             .optional()
             .map_err(|_| CredentialStoreError::Unavailable)?;
+            drop(connection);
             row.map(|row| {
                 let encoding = match row.encoding.as_str() {
                     "json" => CredentialResponseEncoding::Json,
