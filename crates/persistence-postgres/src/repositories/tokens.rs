@@ -160,8 +160,20 @@ impl TokenRepository {
     ) -> Result<Option<RefreshToken>, RepositoryError> {
         let digest = blake3::hash(raw_token.as_bytes());
         let mut connection = self.connection().await?;
-        lookup_refresh_token(&mut connection, tenant_id, digest.as_bytes())
+        let presentation = lookup_refresh_token(&mut connection, tenant_id, digest.as_bytes())
             .await
+            .map_err(map_error)?;
+        drop(connection);
+        presentation
+            .map(|(spent, family, contract)| {
+                let contract = require_contract(contract)?;
+                match spent {
+                    Some(spent) => token_from_spent(spent, family, contract),
+                    None => token_from_current(family, contract),
+                }
+                .map_err(deserialization_error)
+            })
+            .transpose()
             .map_err(map_error)
     }
 
@@ -189,10 +201,18 @@ impl TokenRepository {
         client_id: Uuid,
         now: DateTime<Utc>,
     ) -> Result<Option<RefreshToken>, RepositoryError> {
+        if token.dpop_jkt.is_none() && token.mtls_x5t_s256.is_none() {
+            return Ok(None);
+        }
         let mut connection = self.connection().await?;
-        lost_response_successor(&mut connection, token, client_id, now)
+        let row = load_lost_response_successor(&mut connection, token, client_id, now)
             .await
-            .map_err(map_error)
+            .map_err(map_error)?;
+        drop(connection);
+        let Some(row) = row else {
+            return Ok(None);
+        };
+        token_from_lost_response_successor(row, token, now).map_err(map_error)
     }
 
     pub async fn family_active(
@@ -410,8 +430,8 @@ pub(crate) fn prepare_refresh_contract(
     })
 }
 
-fn parse_contract(row: &RefreshContractRow) -> Result<PersistedRefreshContract, RepositoryError> {
-    serde_json::from_value::<PersistedRefreshContract>(row.contract.clone()).map_err(|error| {
+fn parse_contract(value: Value) -> Result<PersistedRefreshContract, RepositoryError> {
+    serde_json::from_value::<PersistedRefreshContract>(value).map_err(|error| {
         RepositoryError::Unexpected(format!("invalid persisted refresh contract: {error}"))
     })
 }
@@ -424,10 +444,10 @@ fn digest32(bytes: &[u8]) -> Result<[u8; 32], RepositoryError> {
 
 fn token_from_current(
     family: RefreshFamilyRow,
-    contract: &PersistedRefreshContract,
+    contract: PersistedRefreshContract,
 ) -> Result<RefreshToken, RepositoryError> {
-    let mut context = contract.authentication_context.clone();
-    context.id_token_sid = family.current_id_token_sid.clone();
+    let mut context = contract.authentication_context;
+    context.id_token_sid = family.current_id_token_sid;
     Ok(RefreshToken {
         id: family.current_member_id,
         token_blake3: digest32(&family.current_token_blake3)?,
@@ -435,16 +455,16 @@ fn token_from_current(
         token_family_id: family.token_family_id,
         client_id: family.client_id,
         user_id: family.user_id,
-        scopes: serde_json::json!(contract.scopes),
-        audience: family.current_audience.clone(),
-        authorization_details: contract.authorization_details.clone(),
+        scopes: Value::Array(contract.scopes.into_iter().map(Value::String).collect()),
+        audience: family.current_audience,
+        authorization_details: contract.authorization_details,
         issued_at: family.current_issued_at,
         expires_at: family.current_expires_at,
         revoked_at: family.revoked_at,
-        subject: contract.subject.clone(),
-        dpop_jkt: family.dpop_jkt.clone(),
-        mtls_x5t_s256: family.mtls_x5t_s256.clone(),
-        client_attestation_jkt: family.client_attestation_jkt.clone(),
+        subject: contract.subject,
+        dpop_jkt: family.dpop_jkt,
+        mtls_x5t_s256: family.mtls_x5t_s256,
+        client_attestation_jkt: family.client_attestation_jkt,
         authentication_context: context,
     })
 }
@@ -456,10 +476,10 @@ fn token_from_current(
 fn token_from_spent(
     spent: SpentRefreshTokenRow,
     family: RefreshFamilyRow,
-    contract: &PersistedRefreshContract,
+    contract: PersistedRefreshContract,
 ) -> Result<RefreshToken, RepositoryError> {
-    let mut context = contract.authentication_context.clone();
-    context.id_token_sid = family.current_id_token_sid.clone();
+    let mut context = contract.authentication_context;
+    context.id_token_sid = family.current_id_token_sid;
     Ok(RefreshToken {
         id: spent.member_id,
         token_blake3: digest32(&spent.refresh_token_blake3)?,
@@ -467,20 +487,35 @@ fn token_from_spent(
         token_family_id: family.token_family_id,
         client_id: family.client_id,
         user_id: family.user_id,
-        scopes: serde_json::json!(contract.scopes),
-        audience: serde_json::json!(contract.audiences),
-        authorization_details: contract.authorization_details.clone(),
+        scopes: Value::Array(contract.scopes.into_iter().map(Value::String).collect()),
+        audience: Value::Array(contract.audiences.into_iter().map(Value::String).collect()),
+        authorization_details: contract.authorization_details,
         // The member's own issuance time is not retained; `spent_at` is the
         // last instant the member was the family's current token.
         issued_at: spent.spent_at,
         expires_at: spent.expires_at,
         revoked_at: Some(spent.spent_at),
-        subject: contract.subject.clone(),
-        dpop_jkt: family.dpop_jkt.clone(),
-        mtls_x5t_s256: family.mtls_x5t_s256.clone(),
-        client_attestation_jkt: family.client_attestation_jkt.clone(),
+        subject: contract.subject,
+        dpop_jkt: family.dpop_jkt,
+        mtls_x5t_s256: family.mtls_x5t_s256,
+        client_attestation_jkt: family.client_attestation_jkt,
         authentication_context: context,
     })
+}
+
+fn deserialization_error(error: RepositoryError) -> diesel::result::Error {
+    diesel::result::Error::DeserializationError(error.to_string().into())
+}
+
+fn require_contract(
+    row: Option<RefreshContractRow>,
+) -> diesel::QueryResult<PersistedRefreshContract> {
+    let row = row.ok_or_else(|| {
+        diesel::result::Error::DeserializationError(
+            "refresh family references a missing contract".into(),
+        )
+    })?;
+    parse_contract(row.contract).map_err(deserialization_error)
 }
 
 /// Presentation lookup: the current member by digest, else a spent proof.
@@ -494,7 +529,13 @@ async fn lookup_refresh_token(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     digest: &[u8],
-) -> Result<Option<RefreshToken>, diesel::result::Error> {
+) -> diesel::QueryResult<
+    Option<(
+        Option<SpentRefreshTokenRow>,
+        RefreshFamilyRow,
+        Option<RefreshContractRow>,
+    )>,
+> {
     if let Some((family, contract_row)) = oauth_refresh_families::table
         .left_join(
             oauth_refresh_contracts::table.on(oauth_refresh_contracts::tenant_id
@@ -514,19 +555,7 @@ async fn lookup_refresh_token(
         .await
         .optional()?
     {
-        let Some(contract_row) = contract_row else {
-            return Err(diesel::result::Error::DeserializationError(
-                "refresh family references a missing contract".into(),
-            ));
-        };
-        let contract = parse_contract(&contract_row).map_err(|error| {
-            diesel::result::Error::DeserializationError(error.to_string().into())
-        })?;
-        return token_from_current(family, &contract)
-            .map(Some)
-            .map_err(|error| {
-                diesel::result::Error::DeserializationError(error.to_string().into())
-            });
+        return Ok(Some((None, family, contract_row)));
     }
     if let Some((spent, family, contract_row)) = oauth_refresh_spent_tokens::table
         .inner_join(
@@ -560,19 +589,7 @@ async fn lookup_refresh_token(
         .await
         .optional()?
     {
-        let Some(contract_row) = contract_row else {
-            return Err(diesel::result::Error::DeserializationError(
-                "refresh family references a missing contract".into(),
-            ));
-        };
-        let contract = parse_contract(&contract_row).map_err(|error| {
-            diesel::result::Error::DeserializationError(error.to_string().into())
-        })?;
-        return token_from_spent(spent, family, &contract)
-            .map(Some)
-            .map_err(|error| {
-                diesel::result::Error::DeserializationError(error.to_string().into())
-            });
+        return Ok(Some((Some(spent), family, contract_row)));
     }
     Ok(None)
 }
@@ -988,16 +1005,13 @@ async fn compromise_family(
 /// that still names it as the direct predecessor (`current_member_id =
 /// successor_member_id`), then to its contract. A revoked, compromised,
 /// re-rotated, or expired family simply yields no row.
-async fn lost_response_successor(
+async fn load_lost_response_successor(
     connection: &mut AsyncPgConnection,
     token: &RefreshToken,
     client_id: Uuid,
     now: DateTime<Utc>,
-) -> Result<Option<RefreshToken>, diesel::result::Error> {
-    if token.dpop_jkt.is_none() && token.mtls_x5t_s256.is_none() {
-        return Ok(None);
-    }
-    let Some(row) = sql_query(
+) -> diesel::QueryResult<Option<LostResponseJoinRow>> {
+    sql_query(
         "SELECT \
              f.tenant_id, f.token_family_id, f.client_id, f.user_id, \
              f.contract_blake3, f.current_member_id, f.current_token_blake3, \
@@ -1022,10 +1036,14 @@ async fn lost_response_successor(
     .bind::<sql_types::Timestamptz, _>(now)
     .get_result::<LostResponseJoinRow>(connection)
     .await
-    .optional()?
-    else {
-        return Ok(None);
-    };
+    .optional()
+}
+
+fn token_from_lost_response_successor(
+    row: LostResponseJoinRow,
+    token: &RefreshToken,
+    now: DateTime<Utc>,
+) -> diesel::QueryResult<Option<RefreshToken>> {
     if row.token_family_id != token.token_family_id {
         return Ok(None);
     }
@@ -1038,10 +1056,7 @@ async fn lost_response_successor(
             "refresh family references a missing contract".into(),
         ));
     };
-    let contract = parse_contract(&RefreshContractRow {
-        contract: contract_json,
-    })
-    .map_err(|error| diesel::result::Error::DeserializationError(error.to_string().into()))?;
+    let contract = parse_contract(contract_json).map_err(deserialization_error)?;
     token_from_current(
         RefreshFamilyRow {
             tenant_id: row.tenant_id,
@@ -1061,10 +1076,10 @@ async fn lost_response_successor(
             revoked_at: row.revoked_at,
             reuse_detected_at: row.reuse_detected_at,
         },
-        &contract,
+        contract,
     )
     .map(Some)
-    .map_err(|error| diesel::result::Error::DeserializationError(error.to_string().into()))
+    .map_err(deserialization_error)
 }
 
 #[derive(diesel::QueryableByName)]
