@@ -273,6 +273,7 @@ async fn operations_with_overrides(
         Arc::new(nazo_postgres::Openid4vciRepository::new(
             pool.clone(),
             [0x51; 32],
+            Arc::new(crate::bootstrap::LoginPasswordVerifier),
         ))
     });
     let users: Arc<dyn nazo_persistence::Openid4vcSubjectStore> =

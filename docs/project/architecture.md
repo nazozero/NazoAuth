@@ -180,6 +180,13 @@ Valkey JTI-to-subject projection, keeping the durable store the single source
 of truth. OpenID4VC preauthorized issuance keeps its own storage and is not
 mixed into the generic issuance fence.
 
+OpenID4VC preauthorized transaction-code verification uses the host's shared,
+bounded password verifier. The repository releases its read connection before
+waiting for Argon2, then conditionally consumes the unchanged offer in one
+statement. That write rechecks the database clock, tenant, code, verifier and
+authorization snapshot; concurrent requests still have exactly one winner.
+Verifier saturation returns storage unavailable rather than an invalid code.
+
 Expired security state is reclaimed by a bounded host-owned worker: each
 server process runs one maintenance worker, each batch is capped per
 category, and refresh-token families are processed under the same advisory

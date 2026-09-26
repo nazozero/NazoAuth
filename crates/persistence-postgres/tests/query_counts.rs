@@ -17,6 +17,9 @@
 #[allow(dead_code)]
 mod support;
 
+#[path = "support/password.rs"]
+mod password;
+
 use chrono::{DateTime, Duration, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
@@ -1053,7 +1056,11 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let issuer = Openid4vciRepository::new(pool, [0x51_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool,
+        [0x51_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     // Fixture rows go through the production upsert/store on the instrumented
     // pool; the measurement baseline is taken after they complete.
@@ -1219,7 +1226,11 @@ async fn up06_upsert_access_is_one_statement_and_idempotent() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let issuer = Openid4vciRepository::new(pool, [0x52_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool,
+        [0x52_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     let token_hash = format!("qc-access-hash-{}", Uuid::now_v7());
     let access = CredentialAccess {
@@ -1273,7 +1284,11 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let issuer = Openid4vciRepository::new(pool, [0x53_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool,
+        [0x53_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     let access = CredentialAccess {
         token_id: Uuid::now_v7(),

@@ -170,13 +170,3 @@ struct AuthorizationOfferRow {
     #[diesel(sql_type = sql_types::Timestamptz)]
     expires_at: DateTime<Utc>,
 }
-
-pub(super) fn tx_code_matches(expected: Option<&str>, presented: Option<&str>) -> bool {
-    match (expected, presented) {
-        (None, None) => true,
-        (Some(expected), Some(presented)) => {
-            nazo_crypto::password::verify_argon2_phc(expected, presented.as_bytes())
-        }
-        _ => false,
-    }
-}

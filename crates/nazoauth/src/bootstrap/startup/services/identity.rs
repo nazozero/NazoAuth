@@ -114,6 +114,7 @@ pub(super) async fn build(
                             .openid4vc
                             .data_encryption_key
                             .expect("enabled OpenID4VCI requires a data encryption key"),
+                        Arc::new(LoginPasswordVerifier),
                     ),
                 )
             } else {
