@@ -322,7 +322,7 @@ pub(super) fn decode_and_verify_dpop_proof(
     if parts.next().is_some() {
         return Err(DpopProofVerifierError::MalformedProof);
     }
-    let signing_input = format!("{header}.{payload}");
+    let signing_input = &proof_jwt[..header.len() + 1 + payload.len()];
     let raw_signature = URL_SAFE_NO_PAD
         .decode(signature)
         .map_err(|_| DpopProofVerifierError::InvalidSignature)?;
@@ -346,7 +346,6 @@ pub(super) fn dpop_jwk_decoding_key(key: &Value, alg: Algorithm) -> Option<JwtVe
     {
         return None;
     }
-    let key = Value::Object(key.clone());
     let (expected_alg, supported_alg) = supported_dpop_algorithm(alg)?;
     if let Some(key_alg) = key.get("alg").and_then(Value::as_str)
         && key_alg != expected_alg
