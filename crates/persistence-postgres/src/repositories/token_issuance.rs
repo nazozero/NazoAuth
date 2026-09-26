@@ -25,6 +25,7 @@ use super::{
     access_token_revocation::{NewAccessTokenRevocation, upsert_access_token_revocations},
     audit_ledger::append_fresh_security_audit_on_connection,
     clients::OAuthClientRecord,
+    tokens::prepare_refresh_contract,
 };
 use crate::{convert::identity, rows::identity::SubjectClaimsRow};
 
@@ -386,6 +387,16 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                     std::cmp::max(ownership_horizon, *grant_expires_at),
                 ),
             };
+            // Pure preparation before the connection checkout: contract
+            // serialization and its digest carry no database state, so they
+            // must not occupy pool occupancy time. Authoritative state
+            // validation stays inside the transaction unchanged.
+            let prepared_contract = input
+                .refresh_token
+                .as_ref()
+                .map(prepare_refresh_contract)
+                .transpose()
+                .map_err(map_repository_error)?;
             let mut guard =
                 DiscardOnDrop(Some(self.connection().await.map_err(map_repository_error)?));
             let transaction = guard
@@ -469,10 +480,16 @@ impl TokenRepositoryPort for TokenIssuanceRepository {
                             }
                         }
                         if let Some(refresh) = input.refresh_token.as_ref() {
+                            let prepared = prepared_contract.as_ref().ok_or_else(|| {
+                                CommitTransactionError::Repository(RepositoryError::Consistency(
+                                    "refresh token is missing its prepared contract".to_owned(),
+                                ))
+                            })?;
                             match TokenRepository::persist_refresh_token_on_connection(
                                 connection,
                                 refresh.clone(),
                                 input.issuance_id,
+                                prepared,
                             )
                             .await
                             .map_err(CommitTransactionError::Repository)?

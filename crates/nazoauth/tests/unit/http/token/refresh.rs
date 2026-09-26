@@ -276,15 +276,17 @@ async fn insert_refresh_token_row(
     let mut conn = get_conn(&state.diesel_db)
         .await
         .expect("database connection should be available");
-    // Idempotent fixture setup: drop a same-named family (cascading its spent
-    // proofs), any same-digest spent proof, and this contract digest only when
-    // it is already orphaned.
+    // Idempotent fixture setup: drop a same-named or same-digest family
+    // (cascading its spent proofs), any same-digest spent proof, and this
+    // contract digest only when it is already orphaned.
     sql_query(
         "DELETE FROM oauth_refresh_families \
-         WHERE tenant_id = $1 AND token_family_id = $2",
+         WHERE tenant_id = $1 \
+           AND (token_family_id = $2 OR current_token_blake3 = $3)",
     )
     .bind::<SqlUuid, _>(token.tenant_id)
     .bind::<SqlUuid, _>(token.token_family_id)
+    .bind::<diesel::sql_types::Binary, _>(&token_blake3)
     .execute(&mut conn)
     .await
     .expect("refresh family cleanup should succeed");

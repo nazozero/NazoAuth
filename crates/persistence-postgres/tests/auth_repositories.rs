@@ -549,7 +549,7 @@ struct IssuanceAuditRow {
     #[diesel(sql_type = diesel::sql_types::Jsonb)]
     payload: serde_json::Value,
     #[diesel(sql_type = diesel::sql_types::Bool)]
-    pending_outbox: bool,
+    pending_delivery: bool,
 }
 
 async fn assert_issuance_audit(
@@ -557,13 +557,13 @@ async fn assert_issuance_audit(
     input: &CommitTokenIssuance,
     expected: &[(&str, &str, serde_json::Value)],
 ) {
-    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, true AS pending_outbox FROM security_audit_events e JOIN security_audit_event_outbox o USING(event_id) WHERE e.payload->>'issuance_id' = $1 ORDER BY e.occurred_at, e.event_id")
+    let rows = sql_query("SELECT e.event_type::text AS event_type, e.event_category::text AS event_category, e.payload, NOT EXISTS (SELECT 1 FROM security_audit_chain_entries c WHERE c.event_id = e.event_id) AS pending_delivery FROM security_audit_events e WHERE e.payload->>'issuance_id' = $1 ORDER BY e.occurred_at, e.event_id")
         .bind::<Text, _>(input.issuance_id.to_string()).load::<IssuanceAuditRow>(connection).await.unwrap();
     assert_eq!(rows.len(), expected.len());
     for (row, (event_type, category, fields)) in rows.iter().zip(expected) {
         assert_eq!(row.event_type, *event_type);
         assert_eq!(row.event_category, *category);
-        assert!(row.pending_outbox);
+        assert!(row.pending_delivery);
         let mut payload = json!({
             "schema_version": nazo_persistence::SECURITY_AUDIT_SCHEMA_VERSION,
             "event_category": category,
@@ -592,7 +592,8 @@ fn issued_audit_fields(input: &CommitTokenIssuance) -> serde_json::Value {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn issuance_commits_complete_audit_payloads_and_outbox_for_users_rotation_and_reuse() {
+async fn issuance_commits_complete_audit_payloads_and_pending_events_for_users_rotation_and_reuse()
+{
     let database_url =
         database_url().expect("audit regression requires a live PostgreSQL database");
     let fixture = fixture(&database_url).await;
@@ -2153,7 +2154,7 @@ async fn commit_refresh_labeled(
 /// Durable facts that every ordinary-rotation business conflict must leave
 /// behind: the family carries exactly its current member plus the spent proofs
 /// of rotated generations, the losing issuance row is deleted, exactly one
-/// `refresh_reuse_detected` audit (pending in the outbox) is appended, and no
+/// `refresh_reuse_detected` audit (pending delivery) is appended, and no
 /// `token_issued` audit exists for the losing issuance. `compromised` and
 /// `active` are family-level facts in the minimal model.
 async fn assert_rotation_conflict_facts(
@@ -3689,5 +3690,488 @@ async fn single_use_redemption_reads_back_committed_replay_evidence() {
             .unwrap()
             .is_none(),
         "another tenant must not resolve the redemption"
+    );
+}
+// ---------------------------------------------------------------------------
+// Refresh-contract ensure races: same-key concurrent creation, shared
+// references across families, and last-reference reclaim racing a new
+// reference. All use the real schema rows; interleavings are made
+// deterministic by holding transactions open across a lock-wait observation.
+// ---------------------------------------------------------------------------
+
+/// The contract identity a `refresh_token_fixture` token persists for this
+/// subject: the same serialized body and BLAKE3 digest the runtime path
+/// computes inside `persist_refresh_token`.
+fn contract_parts(fixture: &FixtureIds) -> (Vec<u8>, serde_json::Value) {
+    let authentication_time = chrono::DateTime::from_timestamp(1_700_000_000, 0)
+        .expect("fixed authentication time should be valid");
+    let contract = nazo_auth::RefreshContract {
+        subject: fixture.user_id.to_string(),
+        scopes: vec!["openid".to_owned(), "offline_access".to_owned()],
+        audiences: vec!["resource://default".to_owned()],
+        authorization_details: json!([]),
+        authentication_context: refresh_authentication_context(
+            &fixture.client_public_id,
+            authentication_time,
+        ),
+    };
+    let persisted = contract.persisted();
+    (
+        persisted.blake3_digest().to_vec(),
+        serde_json::to_value(&persisted).expect("contract serializes"),
+    )
+}
+
+async fn contract_count(
+    connection: &mut AsyncPgConnection,
+    tenant_id: Uuid,
+    contract_blake3: &[u8],
+) -> i64 {
+    sql_query(
+        "SELECT count(*) AS count FROM oauth_refresh_contracts \
+         WHERE tenant_id = $1 AND contract_blake3 = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(contract_blake3.to_vec())
+    .get_result::<CountRow>(connection)
+    .await
+    .expect("contract count should read")
+    .count
+}
+
+/// The same orphan-reclaim statement the janitor runs
+/// (`delete_orphan_refresh_contracts`), pinned to the test key so the race is
+/// exercised without sweeping unrelated rows.
+const RECLAIM_SQL: &str = r#"
+    WITH due AS (
+        SELECT c.tenant_id, c.contract_blake3
+        FROM oauth_refresh_contracts AS c
+        WHERE c.tenant_id = $1
+          AND c.contract_blake3 = $2
+          AND c.created_at < CURRENT_TIMESTAMP - make_interval(secs => 3600)
+          AND NOT EXISTS (
+              SELECT 1 FROM oauth_refresh_families AS f
+              WHERE f.tenant_id = c.tenant_id
+                AND f.contract_blake3 = c.contract_blake3)
+        ORDER BY c.created_at, c.contract_blake3
+        LIMIT 256 FOR UPDATE SKIP LOCKED
+    )
+    DELETE FROM oauth_refresh_contracts AS target
+    USING due
+    WHERE target.tenant_id = due.tenant_id
+      AND target.contract_blake3 = due.contract_blake3
+"#;
+
+/// `INSERT` for a refresh family bound to an already-ensured contract — the
+/// same statement shape the runtime persist path issues after `ensure`.
+const FAMILY_INSERT_SQL: &str = r#"
+    INSERT INTO oauth_refresh_families (
+        tenant_id, token_family_id, client_id, user_id, contract_blake3,
+        current_member_id, current_token_blake3, current_audience,
+        current_issued_at, current_expires_at, current_id_token_sid, created_at
+    ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, '["resource://default"]'::jsonb,
+        CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + interval '1 hour',
+        NULL, CURRENT_TIMESTAMP
+    )
+"#;
+
+#[tokio::test]
+async fn refresh_contract_ensure_serializes_same_key_create_race() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let (contract_blake3, contract_json) = contract_parts(&fixture);
+    let mut observer = AsyncPgConnection::establish(&database_url).await.unwrap();
+
+    // The loser's speculative INSERT blocks on the winner's in-flight key,
+    // then falls back to the FOR KEY SHARE reference when the winner commits.
+    let mut winner = AsyncPgConnection::establish(&database_url).await.unwrap();
+    winner.batch_execute("BEGIN").await.unwrap();
+    sql_query(
+        "INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract) \
+         VALUES ($1, $2, $3)",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+    .bind::<diesel::sql_types::Jsonb, _>(contract_json.clone())
+    .execute(&mut winner)
+    .await
+    .expect("winner contract insert should apply");
+
+    let loser_app = format!("contract-loser-{}", Uuid::now_v7().simple());
+    let loser_url = tagged_database_url(&database_url, &loser_app);
+    let (loser_tenant, loser_digest, loser_json) =
+        (tenant_id, contract_blake3.clone(), contract_json.clone());
+    let mut loser = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&loser_url).await.unwrap();
+        connection.batch_execute("BEGIN").await.unwrap();
+        let result = sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+            .bind::<SqlUuid, _>(loser_tenant)
+            .bind::<diesel::sql_types::Bytea, _>(loser_digest)
+            .bind::<diesel::sql_types::Jsonb, _>(loser_json)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string());
+        if result.is_ok() {
+            connection.batch_execute("COMMIT").await.unwrap();
+        }
+        result
+    });
+    wait_for_lock_wait_or_task(&mut observer, &loser_app, &mut loser).await;
+    winner.batch_execute("COMMIT").await.unwrap();
+    loser
+        .await
+        .expect("loser task should join")
+        .expect("loser ensure should resolve after the winner commits");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "a same-key create race must converge on one contract row"
+    );
+
+    // Winner rolls back: the loser's own INSERT wins on a different key.
+    let mut retry_digest = contract_blake3.clone();
+    retry_digest[1] ^= 0xff;
+    let mut winner = AsyncPgConnection::establish(&database_url).await.unwrap();
+    winner.batch_execute("BEGIN").await.unwrap();
+    sql_query(
+        "INSERT INTO oauth_refresh_contracts (tenant_id, contract_blake3, contract) \
+         VALUES ($1, $2, $3)",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(retry_digest.clone())
+    .bind::<diesel::sql_types::Jsonb, _>(contract_json.clone())
+    .execute(&mut winner)
+    .await
+    .expect("winner contract insert should apply");
+    let loser_app = format!("contract-retry-{}", Uuid::now_v7().simple());
+    let loser_url = tagged_database_url(&database_url, &loser_app);
+    let (loser_tenant, loser_digest, loser_json) =
+        (tenant_id, retry_digest.clone(), contract_json.clone());
+    let mut loser = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&loser_url).await.unwrap();
+        connection.batch_execute("BEGIN").await.unwrap();
+        let result = sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+            .bind::<SqlUuid, _>(loser_tenant)
+            .bind::<diesel::sql_types::Bytea, _>(loser_digest)
+            .bind::<diesel::sql_types::Jsonb, _>(loser_json)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string());
+        if result.is_ok() {
+            connection.batch_execute("COMMIT").await.unwrap();
+        }
+        result
+    });
+    wait_for_lock_wait_or_task(&mut observer, &loser_app, &mut loser).await;
+    winner.batch_execute("ROLLBACK").await.unwrap();
+    loser
+        .await
+        .expect("loser task should join")
+        .expect("loser ensure must win the insert after the winner aborts");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &retry_digest).await,
+        1,
+        "exactly one contract row may remain after the retry path"
+    );
+}
+
+#[tokio::test]
+async fn refresh_contract_reference_survives_last_reference_reclaim_race() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let (contract_blake3, contract_json) = contract_parts(&fixture);
+
+    // Stage family_a holding the sole reference, then remove the family so
+    // the aged contract is genuinely reclaimable.
+    let family_a = Uuid::now_v7();
+    let raw_a = format!("race-reclaim-a-{}", Uuid::now_v7());
+    let (result, _) = commit_refresh(
+        &database_url,
+        refresh_token_fixture(&fixture, tenant_id, family_a, raw_a.clone(), None),
+    )
+    .await;
+    assert_eq!(result, CommitTokenIssuanceResult::Committed);
+    let mut observer = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query(
+        "UPDATE oauth_refresh_contracts \
+         SET created_at = CURRENT_TIMESTAMP - interval '2 hours' \
+         WHERE tenant_id = $1 AND contract_blake3 = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+    .execute(&mut observer)
+    .await
+    .expect("contract aging should apply");
+    sql_query("DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND token_family_id = $2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(family_a)
+        .execute(&mut observer)
+        .await
+        .expect("the last family reference should delete");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "the orphaned contract still exists before the race"
+    );
+
+    // Interleave A: the janitor holds the delete in flight while a new
+    // reference blocks on FOR KEY SHARE; the reclaim commits first and the
+    // ensure call re-creates the row inside its bounded attempt loop.
+    let mut janitor = AsyncPgConnection::establish(&database_url).await.unwrap();
+    janitor.batch_execute("BEGIN").await.unwrap();
+    sql_query(RECLAIM_SQL)
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+        .execute(&mut janitor)
+        .await
+        .expect("the janitor should delete the orphaned contract");
+
+    let new_app = format!("contract-newref-{}", Uuid::now_v7().simple());
+    let new_url = tagged_database_url(&database_url, &new_app);
+    let family_b = Uuid::now_v7();
+    let raw_b = format!("race-reclaim-b-{}", Uuid::now_v7());
+    let (new_tenant, new_digest, new_json) =
+        (tenant_id, contract_blake3.clone(), contract_json.clone());
+    let (new_client, new_user) = (fixture.client_id, fixture.user_id);
+    let new_token_hash = blake3::hash(raw_b.as_bytes()).as_bytes().to_vec();
+    let mut new_reference = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&new_url).await.unwrap();
+        connection.batch_execute("BEGIN").await.unwrap();
+        sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+            .bind::<SqlUuid, _>(new_tenant)
+            .bind::<diesel::sql_types::Bytea, _>(new_digest.clone())
+            .bind::<diesel::sql_types::Jsonb, _>(new_json)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        sql_query(FAMILY_INSERT_SQL)
+            .bind::<SqlUuid, _>(new_tenant)
+            .bind::<SqlUuid, _>(family_b)
+            .bind::<SqlUuid, _>(new_client)
+            .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(new_user))
+            .bind::<diesel::sql_types::Bytea, _>(new_digest)
+            .bind::<SqlUuid, _>(Uuid::now_v7())
+            .bind::<diesel::sql_types::Bytea, _>(new_token_hash)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        connection
+            .batch_execute("COMMIT")
+            .await
+            .map_err(|error| error.to_string())
+    });
+    wait_for_lock_wait_or_task(&mut observer, &new_app, &mut new_reference).await;
+    janitor.batch_execute("COMMIT").await.unwrap();
+    new_reference
+        .await
+        .expect("new-reference task should join")
+        .expect("ensure must re-create the contract after the reclaim commits");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "the re-created contract must exist for the committed family"
+    );
+    let resolved = TokenRepository::new(create_pool(&database_url, 1).unwrap())
+        .by_raw_refresh_token(tenant_id, &raw_b)
+        .await
+        .expect("lookup should execute");
+    assert!(
+        resolved.is_some(),
+        "the raced family must resolve its token"
+    );
+
+    // Interleave B: the same key becomes orphaned again, a new reference
+    // holds FOR KEY SHARE while parked, and the janitor's SKIP LOCKED
+    // selection must bypass the locked row instead of deleting it.
+    sql_query("DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND token_family_id = $2")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<SqlUuid, _>(family_b)
+        .execute(&mut observer)
+        .await
+        .expect("the second last-reference delete should apply");
+    sql_query(
+        "UPDATE oauth_refresh_contracts \
+         SET created_at = CURRENT_TIMESTAMP - interval '2 hours' \
+         WHERE tenant_id = $1 AND contract_blake3 = $2",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+    .execute(&mut observer)
+    .await
+    .expect("contract re-aging should apply");
+
+    let gate_key = family_lock_key(Uuid::now_v7());
+    let mut gatekeeper = AsyncPgConnection::establish(&database_url).await.unwrap();
+    sql_query("SELECT pg_advisory_lock($1)")
+        .bind::<BigInt, _>(gate_key)
+        .execute(&mut gatekeeper)
+        .await
+        .expect("gatekeeper should hold the gate lock");
+
+    let holder_app = format!("contract-holder-{}", Uuid::now_v7().simple());
+    let holder_url = tagged_database_url(&database_url, &holder_app);
+    let family_c = Uuid::now_v7();
+    let raw_c = format!("race-reclaim-c-{}", Uuid::now_v7());
+    let (holder_tenant, holder_digest, holder_json) =
+        (tenant_id, contract_blake3.clone(), contract_json.clone());
+    let (holder_client, holder_user) = (fixture.client_id, fixture.user_id);
+    let holder_token_hash = blake3::hash(raw_c.as_bytes()).as_bytes().to_vec();
+    let mut holder = tokio::spawn(async move {
+        let mut connection = AsyncPgConnection::establish(&holder_url).await.unwrap();
+        connection.batch_execute("BEGIN").await.unwrap();
+        sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+            .bind::<SqlUuid, _>(holder_tenant)
+            .bind::<diesel::sql_types::Bytea, _>(holder_digest.clone())
+            .bind::<diesel::sql_types::Jsonb, _>(holder_json)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        // Park with the FOR KEY SHARE still held: the reference is locked
+        // but the family insert has not run yet — the exact window the
+        // reclaim race must survive.
+        sql_query("SELECT pg_advisory_xact_lock($1)")
+            .bind::<BigInt, _>(gate_key)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        sql_query(FAMILY_INSERT_SQL)
+            .bind::<SqlUuid, _>(holder_tenant)
+            .bind::<SqlUuid, _>(family_c)
+            .bind::<SqlUuid, _>(holder_client)
+            .bind::<diesel::sql_types::Nullable<SqlUuid>, _>(Some(holder_user))
+            .bind::<diesel::sql_types::Bytea, _>(holder_digest)
+            .bind::<SqlUuid, _>(Uuid::now_v7())
+            .bind::<diesel::sql_types::Bytea, _>(holder_token_hash)
+            .execute(&mut connection)
+            .await
+            .map_err(|error| error.to_string())?;
+        connection
+            .batch_execute("COMMIT")
+            .await
+            .map_err(|error| error.to_string())
+    });
+    wait_for_lock_wait_or_task(&mut observer, &holder_app, &mut holder).await;
+    let janitor_deleted = sql_query(RECLAIM_SQL)
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<diesel::sql_types::Bytea, _>(contract_blake3.clone())
+        .execute(&mut observer)
+        .await
+        .expect("the janitor statement should run against the locked row");
+    assert_eq!(
+        janitor_deleted, 0,
+        "SKIP LOCKED must bypass the FOR KEY SHARE referenced contract"
+    );
+    sql_query("SELECT pg_advisory_unlock($1)")
+        .bind::<BigInt, _>(gate_key)
+        .execute(&mut gatekeeper)
+        .await
+        .expect("gatekeeper should release the gate lock");
+    holder
+        .await
+        .expect("holder task should join")
+        .expect("the holding transaction must commit");
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "the referenced contract must survive the reclaim pass"
+    );
+    let resolved = TokenRepository::new(create_pool(&database_url, 1).unwrap())
+        .by_raw_refresh_token(tenant_id, &raw_c)
+        .await
+        .expect("lookup should execute");
+    assert!(
+        resolved.is_some(),
+        "the shared contract family must resolve"
+    );
+
+    // Two concurrent real-path issuances on the same contract key both
+    // commit; the contract row stays singular (shared reference).
+    let family_d = Uuid::now_v7();
+    let family_e = Uuid::now_v7();
+    let ((result_d, _), (result_e, _)) = tokio::join!(
+        commit_refresh(
+            &database_url,
+            refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                family_d,
+                format!("race-shared-d-{}", Uuid::now_v7()),
+                None,
+            ),
+        ),
+        commit_refresh(
+            &database_url,
+            refresh_token_fixture(
+                &fixture,
+                tenant_id,
+                family_e,
+                format!("race-shared-e-{}", Uuid::now_v7()),
+                None,
+            ),
+        )
+    );
+    assert_eq!(result_d, CommitTokenIssuanceResult::Committed);
+    assert_eq!(result_e, CommitTokenIssuanceResult::Committed);
+    assert_eq!(
+        contract_count(&mut observer, tenant_id, &contract_blake3).await,
+        1,
+        "concurrent same-contract issuances must share one contract row"
+    );
+}
+
+#[tokio::test]
+async fn refresh_contract_ensure_rolls_back_with_caller_and_validates_args() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _serial = ROTATION_MATRIX_TEST_LOCK.lock().await;
+    let fixture = fixture(&database_url).await;
+    let tenant_id = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
+    let (contract_blake3, contract_json) = contract_parts(&fixture);
+
+    // The ensure INSERT participates in the caller's transaction: a later
+    // failure must roll it back atomically and leave no unreferenced row.
+    let mut fresh_digest = contract_blake3.clone();
+    fresh_digest[0] ^= 0xff;
+    let mut connection = AsyncPgConnection::establish(&database_url).await.unwrap();
+    connection.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+        .bind::<SqlUuid, _>(tenant_id)
+        .bind::<diesel::sql_types::Bytea, _>(fresh_digest.clone())
+        .bind::<diesel::sql_types::Jsonb, _>(contract_json.clone())
+        .execute(&mut connection)
+        .await
+        .expect("the in-transaction ensure should apply");
+    sql_query("SELECT 1 / 0")
+        .execute(&mut connection)
+        .await
+        .expect_err("the forced failure must abort the transaction");
+    connection.batch_execute("ROLLBACK").await.unwrap();
+    assert_eq!(
+        contract_count(&mut connection, tenant_id, &fresh_digest).await,
+        0,
+        "a rolled-back ensure must not leave an orphan contract row"
+    );
+
+    // Invalid arguments raise instead of silently referencing nothing.
+    let invalid = sql_query(
+        "SELECT public.nazo_oauth_refresh_contract_ensure($1, '\\x01'::bytea, '{}'::jsonb)",
+    )
+    .bind::<SqlUuid, _>(tenant_id)
+    .execute(&mut connection)
+    .await;
+    let error = invalid.expect_err("a short digest must be rejected");
+    assert!(
+        error.to_string().contains("arguments are invalid"),
+        "unexpected ensure error classification: {error}"
     );
 }
