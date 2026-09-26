@@ -2172,3 +2172,272 @@ async fn concurrent_credential_sweepers_skip_an_uncommitted_child_parent() {
         .await
         .unwrap();
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn contract_scan_advances_past_referenced_pages_and_revisits_after_wrap() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    let mut families = Vec::new();
+    // Distinct persisted auth_time values give these live families distinct
+    // contracts. Every referenced contract sorts before the orphan below.
+    let future = Utc::now() + Duration::minutes(20);
+    for offset in 0..300 {
+        let family = Uuid::now_v7();
+        insert_refresh_leaf(
+            &mut connection,
+            &fixture,
+            family,
+            None,
+            future + Duration::seconds(offset),
+        )
+        .await;
+        families.push(family);
+    }
+    sql_query(
+        "UPDATE oauth_refresh_contracts AS contract SET created_at = TIMESTAMPTZ '1000-01-01 UTC' \
+         FROM oauth_refresh_families AS family \
+         WHERE family.tenant_id = contract.tenant_id AND family.contract_blake3 = contract.contract_blake3 \
+           AND family.token_family_id = ANY($1)",
+    )
+    .bind::<sql_types::Array<SqlUuid>, _>(&families)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let orphan = Uuid::now_v7();
+    insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        orphan,
+        None,
+        Utc::now() + Duration::minutes(30),
+    )
+    .await;
+    #[derive(QueryableByName)]
+    struct ContractRow {
+        #[diesel(sql_type = sql_types::Binary)]
+        contract_blake3: Vec<u8>,
+    }
+    let orphan_digest = sql_query(
+        "UPDATE oauth_refresh_contracts AS contract SET created_at = TIMESTAMPTZ '1001-01-01 UTC' \
+         FROM oauth_refresh_families AS family \
+         WHERE family.tenant_id = contract.tenant_id AND family.contract_blake3 = contract.contract_blake3 \
+           AND family.tenant_id = $1 AND family.token_family_id = $2 \
+         RETURNING contract.contract_blake3",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(orphan)
+    .get_result::<ContractRow>(&mut connection)
+    .await
+    .unwrap()
+    .contract_blake3;
+    sql_query("DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND token_family_id = $2")
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(orphan)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let first = maintenance.cleanup_batch().await.unwrap();
+    assert_eq!(first.refresh_contracts, 0);
+    assert!(
+        first.saturated,
+        "a referenced full page still advances the scan"
+    );
+    // A clone must continue the same scan, not restart at its referenced head.
+    maintenance.clone().cleanup_batch().await.unwrap();
+    let orphan_count = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract_blake3 = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<sql_types::Binary, _>(&orphan_digest)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        orphan_count.count, 0,
+        "referenced parents must not starve a later orphan"
+    );
+
+    // Remove a reference that this pass has already visited. A completed
+    // pass must wrap and discover it without restarting the repository.
+    let released = sql_query(
+        "DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND token_family_id = $2 RETURNING contract_blake3",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(families[0])
+    .get_result::<ContractRow>(&mut connection)
+    .await
+    .unwrap()
+    .contract_blake3;
+    for round in 0..8 {
+        maintenance.cleanup_batch().await.unwrap();
+        let count = sql_query(
+            "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract_blake3 = $2",
+        )
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<sql_types::Binary, _>(&released)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+        if count.count == 0 {
+            break;
+        }
+        assert_ne!(
+            round, 7,
+            "completed scans must revisit newly unreferenced contracts"
+        );
+    }
+    let live = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM oauth_refresh_families AS family \
+         JOIN oauth_refresh_contracts AS contract USING (tenant_id, contract_blake3) \
+         WHERE family.tenant_id = $1 AND family.token_family_id = ANY($2)",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<sql_types::Array<SqlUuid>, _>(&families)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        live.count, 299,
+        "all still-referenced contracts must remain"
+    );
+    sql_query("DELETE FROM oauth_refresh_families WHERE tenant_id = $1 AND user_id = $2")
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    // Do not leave the centuries-old fixture at the head of sibling scans.
+    sql_query(
+        "DELETE FROM oauth_refresh_contracts WHERE tenant_id = $1 AND contract->>'subject' = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<Text, _>(fixture.user_id.to_string())
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn grant_scan_advances_past_referenced_pages_and_revisits_after_wrap() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    let tag = Uuid::now_v7().simple().to_string();
+    sql_query(
+        "WITH parents AS ( \
+             INSERT INTO openid4vci_access_grants \
+             (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+             SELECT gen_random_uuid(),$4 || '-' || g,$1,$2,$3,'[\"pid\"]','[]',TIMESTAMPTZ '0999-01-01 UTC',TIMESTAMPTZ '1000-01-01 UTC' \
+             FROM generate_series(1,300) AS g RETURNING token_id \
+         ) INSERT INTO openid4vci_notifications (notification_id,token_id,expires_at) \
+         SELECT token_id::text,token_id,CURRENT_TIMESTAMP + interval '1 hour' FROM parents",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .bind::<Text, _>(&fixture.client_public_id)
+    .bind::<Text, _>(&tag)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let orphan = Uuid::now_v7();
+    sql_query(
+        "INSERT INTO openid4vci_access_grants \
+         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+         VALUES ($1,$1::text,$2,$3,$4,'[\"pid\"]','[]',TIMESTAMPTZ '0999-01-01 UTC',TIMESTAMPTZ '1001-01-01 UTC')",
+    )
+    .bind::<SqlUuid, _>(orphan)
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .bind::<Text, _>(&fixture.client_public_id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let first = maintenance.cleanup_batch().await.unwrap();
+    assert_eq!(first.credential_access_grants, 0);
+    assert!(first.saturated);
+    maintenance.clone().cleanup_batch().await.unwrap();
+    let count = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+    )
+    .bind::<SqlUuid, _>(orphan)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        count.count, 0,
+        "a later childless grant must not starve behind a full referenced page"
+    );
+    #[derive(QueryableByName)]
+    struct GrantRow {
+        #[diesel(sql_type = SqlUuid)]
+        token_id: Uuid,
+    }
+    let released = sql_query(
+        "DELETE FROM openid4vci_notifications WHERE token_id = ( \
+             SELECT token_id FROM openid4vci_access_grants WHERE subject_id = $1 ORDER BY expires_at,token_id LIMIT 1 \
+         ) RETURNING token_id",
+    )
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .get_result::<GrantRow>(&mut connection)
+    .await
+    .unwrap()
+    .token_id;
+    for round in 0..8 {
+        maintenance.cleanup_batch().await.unwrap();
+        let count = sql_query(
+            "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+        )
+        .bind::<SqlUuid, _>(released)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+        if count.count == 0 {
+            break;
+        }
+        assert_ne!(
+            round, 7,
+            "a completed pass must revisit a parent whose child is later removed"
+        );
+    }
+    let retained = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants AS parent \
+         JOIN openid4vci_notifications AS child USING (token_id) WHERE parent.subject_id = $1",
+    )
+    .bind::<SqlUuid, _>(fixture.user_id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        retained.count, 299,
+        "unexpired children and their parents must survive every pass"
+    );
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}

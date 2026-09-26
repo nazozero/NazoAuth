@@ -35,8 +35,9 @@ pub struct CleanupBatchResult {
     pub credential_notifications: u64,
     pub credential_responses: u64,
     /// `true` when a category or candidate scan hit its per-batch budget, so
-    /// another batch probably has deletable work. Callers use it to keep
-    /// draining backlog instead of waiting a full interval.
+    /// another batch may have more candidates to inspect, including parents
+    /// beyond a full page of referenced rows. Callers keep advancing bounded
+    /// scans instead of waiting a full interval after every page.
     pub saturated: bool,
 }
 
