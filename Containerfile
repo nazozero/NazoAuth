@@ -25,7 +25,7 @@ RUN --mount=type=cache,id=nazoauth-cargo-registry,target=/usr/local/cargo/regist
       --package nazoauth --bin nazoauth \
     && install -Dm755 target/release/nazoauth /out/nazoauth
 
-FROM docker.io/library/debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132 AS runtime-base
+FROM docker.io/library/debian:trixie-slim@sha256:a99cfc517144bc59b1978475ec53b46ecabec7e43635402ee5b77cc54cd1b20a AS runtime-base
 
 # Security fixes not yet in the pinned base digest are installed at exact
 # versions (Renovate-managed); never blanket-upgrade the runtime image.
