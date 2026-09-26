@@ -7,7 +7,7 @@ mod reauth;
 mod response;
 use super::{
     AuthorizationOutcome, AuthorizationRequestContext, apply_request_object_with_context,
-    is_pushed_authorization_request_uri, unverified_request_object_client_id,
+    is_pushed_authorization_request_uri,
 };
 pub(super) use parameters::authorization_duplicate_parameters;
 use parameters::{

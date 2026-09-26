@@ -1,6 +1,7 @@
 //! Pushed authorization request orchestration.
 use super::{
-    AuthorizationApplication, AuthorizationRequestContext, jar::apply_request_object_with_context,
+    AuthorizationApplication, AuthorizationRequestContext,
+    jar::{DecryptedRequestObject, apply_request_object_with_context},
 };
 use crate::{
     contracts::{
@@ -38,11 +39,13 @@ pub struct PreparedParParameters<'a> {
     context: AuthorizationRequestContext<'a>,
     params: HashMap<String, String>,
     client_id: String,
+    decrypted_request_object: Option<DecryptedRequestObject>,
 }
 pub struct PreparedParClient<'a> {
     context: AuthorizationRequestContext<'a>,
     params: HashMap<String, String>,
     client_id: String,
+    decrypted_request_object: Option<DecryptedRequestObject>,
     client: ClientRow,
     secret_salt: Option<String>,
     credentials: PresentedClientCredentials,
@@ -129,15 +132,13 @@ impl<'a> ParPreparation<'a> {
             ));
         }
 
-        if !params.contains_key("client_id")
-            && let Some(request_object) = params.get("request")
-            && let Some(client_id) = super::jar::unverified_request_object_client_id(
-                context.request_object_keys,
-                request_object,
-            )
-        {
-            params.insert("client_id".to_owned(), client_id);
-        }
+        // RFC 9126 section 3 permits authorization parameters inside the JAR.
+        // Preserve its plaintext only within this preparation; params.request
+        // is unchanged until apply_request_object_with_context verifies it.
+        let decrypted_request_object = super::jar::prepare_par_request_object_client_id(
+            context.request_object_keys,
+            &mut params,
+        );
         if !params.contains_key("client_id")
         && let Some((attestation, _)) = attestation_headers
         && let Some(client_id) =
@@ -165,6 +166,7 @@ impl<'a> ParPreparation<'a> {
             context: self.context,
             params,
             client_id,
+            decrypted_request_object,
         })
     }
 }
@@ -185,6 +187,7 @@ impl<'a> PreparedParParameters<'a> {
             context,
             params,
             client_id,
+            decrypted_request_object,
         } = self;
         let has_basic = transport.basic_challenge();
         let assertion_client_id = transport
@@ -243,6 +246,7 @@ impl<'a> PreparedParParameters<'a> {
             context,
             params,
             client_id,
+            decrypted_request_object,
             client,
             secret_salt,
             credentials,
@@ -259,6 +263,7 @@ impl PreparedParClient<'_> {
             context,
             mut params,
             client_id,
+            decrypted_request_object,
             mut client,
             secret_salt,
             credentials,
@@ -372,7 +377,13 @@ impl PreparedParClient<'_> {
         ) {
             return Err(par_admission_error(error));
         }
-        apply_request_object_with_context(context, &mut params, &mut client).await?;
+        apply_request_object_with_context(
+            context,
+            &mut params,
+            &mut client,
+            decrypted_request_object,
+        )
+        .await?;
         if !super::accepts_module(
             context,
             nazo_runtime_modules::ModuleId::AuthorizationDetails,
