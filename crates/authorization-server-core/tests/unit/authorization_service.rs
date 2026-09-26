@@ -16,8 +16,9 @@ use super::{
     AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
     AuthorizationDecisionAdmissionError, AuthorizationFuture, AuthorizationPortError,
     AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
-    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort, GrantWrite,
-    StoredAuthorizationGrant, stored_grant_covers_requested_authorization,
+    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateSnapshot,
+    AuthorizationStateStorePort, GrantWrite, StoredAuthorizationGrant,
+    stored_grant_covers_requested_authorization,
 };
 
 #[derive(Default)]
@@ -95,12 +96,18 @@ impl AuthorizationStateStorePort for FakeStore {
     fn load_par<'a>(
         &'a self,
         _request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         let pushed = self.0.pushed.lock().unwrap().clone();
         if let Some(replacement) = self.0.replace_pushed_after_load.lock().unwrap().take() {
             *self.0.pushed.lock().unwrap() = Some(replacement);
         }
-        Box::pin(async move { Ok(pushed) })
+        Box::pin(async move {
+            Ok(pushed.map(|payload| AuthorizationStateSnapshot {
+                version: format!("revision:{}", serde_json::to_value(&payload).unwrap()),
+                payload,
+            }))
+        })
     }
 
     fn take_par<'a>(
@@ -115,12 +122,12 @@ impl AuthorizationStateStorePort for FakeStore {
     fn compare_and_delete_par<'a>(
         &'a self,
         _request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.0.pushed_takes.fetch_add(1, Ordering::Relaxed);
         let mut current = self.0.pushed.lock().unwrap();
         let matches = current.as_ref().is_some_and(|current| {
-            serde_json::to_vec(current).unwrap() == serde_json::to_vec(expected).unwrap()
+            format!("revision:{}", serde_json::to_value(current).unwrap()) == expected
         });
         if matches {
             current.take();
@@ -140,12 +147,17 @@ impl AuthorizationStateStorePort for FakeStore {
     fn load_consent<'a>(
         &'a self,
         _request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         let consent = self.0.consent.lock().unwrap().clone();
         if let Some(replacement) = self.0.replace_consent_after_load.lock().unwrap().take() {
             *self.0.consent.lock().unwrap() = Some(replacement);
         }
-        Box::pin(async move { Ok(consent) })
+        Box::pin(async move {
+            Ok(consent.map(|payload| AuthorizationStateSnapshot {
+                version: format!("revision:{}", serde_json::to_value(&payload).unwrap()),
+                payload,
+            }))
+        })
     }
 
     fn take_consent<'a>(
@@ -160,12 +172,12 @@ impl AuthorizationStateStorePort for FakeStore {
     fn compare_and_delete_consent<'a>(
         &'a self,
         _request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.0.consent_takes.fetch_add(1, Ordering::Relaxed);
         let mut current = self.0.consent.lock().unwrap();
         let matches = current.as_ref().is_some_and(|current| {
-            serde_json::to_vec(current).unwrap() == serde_json::to_vec(expected).unwrap()
+            format!("revision:{}", serde_json::to_value(current).unwrap()) == expected
         });
         if matches {
             current.take();

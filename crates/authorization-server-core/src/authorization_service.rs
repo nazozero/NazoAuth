@@ -54,13 +54,32 @@ pub struct GrantWrite<'a> {
     pub authorization_details: &'a Value,
 }
 
+/// A parsed authorization state and the opaque storage version read with it.
+/// The adapter must compare this version without reserializing the payload.
+#[derive(Clone, Debug)]
+pub struct AuthorizationStateSnapshot<T> {
+    pub payload: T,
+    pub version: String,
+}
+
 /// The exact consent/pushed-request state a decision preview observed. The
 /// durable decision-intent record describes this snapshot, and
 /// `consume_user_decision` only consumes it if it is still stored unchanged.
 #[derive(Clone, Debug)]
 pub struct ConsentAdmissionPreview {
-    pub consent: ConsentPayload,
-    pub pushed_request: Option<PushedAuthorizationRequest>,
+    consent: ConsentPayload,
+    consent_version: String,
+    pushed_request_version: Option<String>,
+}
+
+impl ConsentAdmissionPreview {
+    pub fn consent(&self) -> &ConsentPayload {
+        &self.consent
+    }
+
+    pub fn into_consent(self) -> ConsentPayload {
+        self.consent
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -240,15 +259,16 @@ pub trait AuthorizationStateStorePort: Send + Sync {
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>>;
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>;
     fn take_par<'a>(
         &'a self,
         request_uri: &'a str,
     ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>>;
+    /// Consume only the exact storage version returned by `load_par`.
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool>;
     fn store_par<'a>(
         &'a self,
@@ -259,15 +279,16 @@ pub trait AuthorizationStateStorePort: Send + Sync {
     fn load_consent<'a>(
         &'a self,
         request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>>;
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>>;
     fn take_consent<'a>(
         &'a self,
         request_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<ConsentPayload>>;
+    /// Consume only the exact storage version returned by `load_consent`.
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool>;
     fn store_consent<'a>(
         &'a self,
@@ -340,7 +361,8 @@ where
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         self.as_ref().load_par(request_uri)
     }
 
@@ -354,7 +376,7 @@ where
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.as_ref().compare_and_delete_par(request_uri, expected)
     }
@@ -371,7 +393,7 @@ where
     fn load_consent<'a>(
         &'a self,
         request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         self.as_ref().load_consent(request_id)
     }
 
@@ -385,7 +407,7 @@ where
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.as_ref()
             .compare_and_delete_consent(request_id, expected)
@@ -625,7 +647,10 @@ where
         request_id: &str,
         user_id: Uuid,
     ) -> Result<ConsentAdmissionPreview, AuthorizationDecisionAdmissionError> {
-        let consent = match self.state.load_consent(request_id).await {
+        let AuthorizationStateSnapshot {
+            payload: consent,
+            version: consent_version,
+        } = match self.state.load_consent(request_id).await {
             Ok(Some(consent)) => consent,
             Ok(None) => return Err(AuthorizationDecisionAdmissionError::ConsentMissing),
             Err(AuthorizationPortError::CorruptData) => {
@@ -641,9 +666,12 @@ where
             return Err(AuthorizationDecisionAdmissionError::UserMismatch);
         }
 
-        let mut pushed_request = None;
+        let mut pushed_request_version = None;
         if let Some(request_uri) = consent.pushed_request_uri.as_deref() {
-            let pushed = match self.state.load_par(request_uri).await {
+            let AuthorizationStateSnapshot {
+                payload: pushed,
+                version,
+            } = match self.state.load_par(request_uri).await {
                 Ok(Some(pushed)) => pushed,
                 Ok(None) => {
                     return Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(
@@ -678,11 +706,12 @@ where
                     ));
                 }
             }
-            pushed_request = Some(pushed);
+            pushed_request_version = Some(version);
         }
         Ok(ConsentAdmissionPreview {
             consent,
-            pushed_request,
+            consent_version,
+            pushed_request_version,
         })
     }
 
@@ -695,10 +724,10 @@ where
         request_id: &str,
         preview: &ConsentAdmissionPreview,
     ) -> Result<(), AuthorizationDecisionAdmissionError> {
-        let consent = preview.consent.clone();
+        let consent = &preview.consent;
         match self
             .state
-            .compare_and_delete_consent(request_id, &consent)
+            .compare_and_delete_consent(request_id, &preview.consent_version)
             .await
         {
             Ok(true) => {}
@@ -710,22 +739,26 @@ where
             }
         }
 
-        if let Some(pushed) = preview.pushed_request.as_ref() {
+        if let Some(version) = preview.pushed_request_version.as_deref() {
             let request_uri = consent
                 .pushed_request_uri
                 .as_deref()
                 .expect("a previewed pushed request implies its consent uri");
-            match self.state.compare_and_delete_par(request_uri, pushed).await {
+            match self
+                .state
+                .compare_and_delete_par(request_uri, version)
+                .await
+            {
                 Ok(true) => {}
                 Ok(false) => {
                     return Err(AuthorizationDecisionAdmissionError::PushedRequestMissing(
-                        Box::new(consent),
+                        Box::new(consent.clone()),
                     ));
                 }
                 Err(source) => {
                     return Err(
                         AuthorizationDecisionAdmissionError::PushedRequestReadFailed {
-                            consent: Box::new(consent),
+                            consent: Box::new(consent.clone()),
                             source,
                         },
                     );
@@ -812,7 +845,11 @@ where
         &self,
         uri: &str,
     ) -> Result<Option<PushedAuthorizationRequest>, AuthorizationPortError> {
-        self.state.load_par(uri).await
+        Ok(self
+            .state
+            .load_par(uri)
+            .await?
+            .map(|snapshot| snapshot.payload))
     }
     pub async fn take_par(
         &self,
@@ -832,7 +869,11 @@ where
         &self,
         id: &str,
     ) -> Result<Option<ConsentPayload>, AuthorizationPortError> {
-        self.state.load_consent(id).await
+        Ok(self
+            .state
+            .load_consent(id)
+            .await?
+            .map(|snapshot| snapshot.payload))
     }
     pub async fn take_consent(
         &self,

@@ -80,9 +80,10 @@ pub use authorization_service::{
     AuthorizationApprovalCommitError, AuthorizationApprovalError, AuthorizationApprovalInput,
     AuthorizationDecisionAdmissionError, AuthorizationFuture, AuthorizationPortError,
     AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationResponseSignInput,
-    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateStorePort,
-    ClientAuthenticationSnapshot, GrantWrite, StoredAuthorizationGrant,
-    pushed_authorization_request_digest, stored_grant_covers_requested_authorization,
+    AuthorizationResponseSignerPort, AuthorizationService, AuthorizationStateSnapshot,
+    AuthorizationStateStorePort, ClientAuthenticationSnapshot, GrantWrite,
+    StoredAuthorizationGrant, pushed_authorization_request_digest,
+    stored_grant_covers_requested_authorization,
 };
 pub use ciba::{
     CibaAtomicResult, CibaAuthenticationContext, CibaCommittedDecision, CibaCreateFailure,

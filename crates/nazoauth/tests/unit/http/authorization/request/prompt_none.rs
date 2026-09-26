@@ -6,7 +6,8 @@ use diesel::sql_query;
 use diesel_async::RunQueryDsl;
 use nazo_auth::{
     AuthorizationFuture, AuthorizationRateDimension, AuthorizationRepositoryPort,
-    AuthorizationStateStorePort, ConsentPayload, GrantWrite, OAuthClient, StoredAuthorizationGrant,
+    AuthorizationStateSnapshot, AuthorizationStateStorePort, ConsentPayload, GrantWrite,
+    OAuthClient, StoredAuthorizationGrant,
 };
 use nazo_oauth_server::{
     authorization::{AuthorizationOutcome, AuthorizationRequestFacts},
@@ -80,7 +81,8 @@ impl AuthorizationStateStorePort for PromptNoneStore {
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         self.live.load_par(request_uri)
     }
     fn take_par<'a>(
@@ -114,7 +116,7 @@ impl AuthorizationStateStorePort for PromptNoneStore {
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.live.compare_and_delete_par(request_uri, expected)
     }
@@ -129,7 +131,7 @@ impl AuthorizationStateStorePort for PromptNoneStore {
     fn load_consent<'a>(
         &'a self,
         request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         self.live.load_consent(request_id)
     }
     fn take_consent<'a>(
@@ -141,7 +143,7 @@ impl AuthorizationStateStorePort for PromptNoneStore {
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.live.compare_and_delete_consent(request_id, expected)
     }

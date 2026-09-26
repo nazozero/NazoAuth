@@ -16,9 +16,9 @@ use super::app::{
 use chrono::Utc;
 use nazo_auth::{
     AuthorizationCodeState, AuthorizationFuture, AuthorizationPortError,
-    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationStateStorePort,
-    ConsentPayload, DpopNoncePolicy, GrantWrite, OAuthClient, PushedAuthorizationRequest,
-    StoredAuthorizationGrant, ValidatedClientRegistration,
+    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationStateSnapshot,
+    AuthorizationStateStorePort, ConsentPayload, DpopNoncePolicy, GrantWrite, OAuthClient,
+    PushedAuthorizationRequest, StoredAuthorizationGrant, ValidatedClientRegistration,
 };
 use nazo_identity::{
     AccountIdentity, Principal, PublicAccount, SessionId, TenantContext, TenantId, UserId,
@@ -133,14 +133,25 @@ impl AuthorizationStateStorePort for Ports {
     fn load_consent<'a>(
         &'a self,
         _request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         self.record("consent");
-        Box::pin(async { Ok(self.consent.lock().unwrap().clone()) })
+        Box::pin(async {
+            Ok(self
+                .consent
+                .lock()
+                .unwrap()
+                .clone()
+                .map(|payload| AuthorizationStateSnapshot {
+                    version: serde_json::to_value(&payload).unwrap().to_string(),
+                    payload,
+                }))
+        })
     }
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         self.record("load_par");
         Box::pin(async move {
             Ok(self
@@ -149,7 +160,10 @@ impl AuthorizationStateStorePort for Ports {
                 .unwrap()
                 .iter()
                 .find(|(uri, _, _)| uri == request_uri)
-                .map(|(_, request, _)| request.clone()))
+                .map(|(_, request, _)| AuthorizationStateSnapshot {
+                    version: serde_json::to_value(request).unwrap().to_string(),
+                    payload: request.clone(),
+                }))
         })
     }
     fn take_par<'a>(
@@ -161,7 +175,7 @@ impl AuthorizationStateStorePort for Ports {
     fn compare_and_delete_par<'a>(
         &'a self,
         _request_uri: &'a str,
-        _expected: &'a PushedAuthorizationRequest,
+        _expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::compare_and_delete_par call")
     }
@@ -194,14 +208,16 @@ impl AuthorizationStateStorePort for Ports {
     fn compare_and_delete_consent<'a>(
         &'a self,
         _request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         self.record("consume_consent");
         Box::pin(async move {
             let mut consent = self.consent.lock().unwrap();
             assert_eq!(
-                serde_json::to_value(consent.as_ref()).unwrap(),
-                serde_json::to_value(Some(expected)).unwrap(),
+                serde_json::to_value(consent.as_ref().unwrap())
+                    .unwrap()
+                    .to_string(),
+                expected,
             );
             Ok(consent.take().is_some())
         })

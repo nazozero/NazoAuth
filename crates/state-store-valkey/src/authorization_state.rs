@@ -1,7 +1,7 @@
 use nazo_auth::{
     AuthorizationCodeState, AuthorizationFuture, AuthorizationPortError,
-    AuthorizationRateDimension, AuthorizationStateStorePort, ConsentPayload,
-    PushedAuthorizationRequest,
+    AuthorizationRateDimension, AuthorizationStateSnapshot, AuthorizationStateStorePort,
+    ConsentPayload, PushedAuthorizationRequest,
 };
 
 use crate::{
@@ -33,10 +33,11 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         Box::pin(async move {
             self.authorization
-                .load_par(request_uri)
+                .load_par_snapshot(request_uri)
                 .await
                 .map_err(map_error)
         })
@@ -57,7 +58,7 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         Box::pin(async move {
             self.authorization
@@ -84,10 +85,10 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
     fn load_consent<'a>(
         &'a self,
         request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         Box::pin(async move {
             self.authorization
-                .load_consent(request_id)
+                .load_consent_snapshot(request_id)
                 .await
                 .map_err(map_error)
         })
@@ -108,7 +109,7 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         Box::pin(async move {
             self.authorization
