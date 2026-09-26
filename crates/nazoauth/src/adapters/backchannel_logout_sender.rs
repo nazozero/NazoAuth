@@ -7,6 +7,8 @@ use nazo_oauth_server::workers::backchannel_logout::{
 };
 use std::{collections::HashSet, net::SocketAddr, time::Duration as StdDuration};
 
+const DELIVERY_TIMEOUT: StdDuration = StdDuration::from_secs(3);
+
 pub(crate) struct NativeBackchannelLogoutSender {
     private_network_origins: HashSet<String>,
 }
@@ -24,11 +26,20 @@ impl BackchannelLogoutSender for NativeBackchannelLogoutSender {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = anyhow::Result<http::StatusCode>> + Send + 'a>,
     > {
-        Box::pin(post_logout_token(
-            &self.private_network_origins,
-            &delivery.logout_uri,
-            &delivery.logout_token,
-        ))
+        Box::pin(async move {
+            // Include our explicit DNS lookup in the delivery deadline, not
+            // only the HTTP request constructed after it.
+            tokio::time::timeout(
+                DELIVERY_TIMEOUT,
+                post_logout_token(
+                    &self.private_network_origins,
+                    &delivery.logout_uri,
+                    &delivery.logout_token,
+                ),
+            )
+            .await
+            .context("back-channel logout delivery timed out")?
+        })
     }
 }
 fn parse_private_network_origins(values: &[String]) -> anyhow::Result<HashSet<String>> {
@@ -72,8 +83,8 @@ async fn post_logout_token(
     }
     let http = reqwest::Client::builder()
         .no_proxy()
-        .connect_timeout(StdDuration::from_secs(3))
-        .timeout(StdDuration::from_secs(3))
+        .connect_timeout(DELIVERY_TIMEOUT)
+        .timeout(DELIVERY_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none())
         .resolve_to_addrs(host, &addresses)
         .build()
