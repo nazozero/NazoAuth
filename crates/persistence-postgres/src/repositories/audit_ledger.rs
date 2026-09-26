@@ -159,11 +159,13 @@ impl AuditLedgerRepository {
             .map_err(map_error)
     }
 
-    /// Persist a queued batch in one checkout and one transaction. Each event
-    /// still goes through `nazo_persist_security_audit_event`, so idempotent
-    /// replay semantics are unchanged; any failure rolls the whole batch back.
-    /// An indeterminate transaction outcome discards the physical connection
-    /// instead of returning it to the pool.
+    /// Persist a queued batch in one checkout and one transaction. Events
+    /// beyond the first are written by a single set-based statement that
+    /// calls `nazo_persist_security_audit_event` once per row inside the same
+    /// statement, so per-event idempotent replay semantics are unchanged and
+    /// any failure rolls the whole batch back. An indeterminate transaction
+    /// outcome discards the physical connection instead of returning it to
+    /// the pool.
     pub async fn append_batch(&self, events: &[SecurityAuditEvent]) -> Result<(), RepositoryError> {
         match events.len() {
             0 => return Ok(()),
@@ -172,13 +174,41 @@ impl AuditLedgerRepository {
             1 => return self.append(events[0].clone()).await,
             _ => {}
         }
+        // Same validation order and error classification as the single-event
+        // path: every event is checked before the batch statement runs.
+        for event in events {
+            validate_event_for_transaction(event).map_err(map_error)?;
+        }
+        let event_ids: Vec<Uuid> = events.iter().map(|event| event.event_id).collect();
+        let event_types: Vec<&str> = events
+            .iter()
+            .map(|event| event.event_type.as_str())
+            .collect();
+        let event_categories: Vec<&str> = events
+            .iter()
+            .map(|event| event.event_category.as_str())
+            .collect();
+        let payloads: Vec<&serde_json::Value> = events.iter().map(|event| &event.payload).collect();
+        let occurred_ats: Vec<DateTime<Utc>> =
+            events.iter().map(|event| event.occurred_at).collect();
         let mut guard = DiscardOnDrop(Some(self.connection().await?));
         let result = guard
             .connection()
             .transaction::<_, diesel::result::Error, _>(async |connection| {
-                for event in events {
-                    append_on_connection(connection, event).await?;
-                }
+                sql_query(
+                    "SELECT public.nazo_persist_security_audit_event(\
+                            item.event_id, item.event_type, item.event_category, \
+                            item.payload, item.occurred_at) AS changed \
+                     FROM unnest($1, $2, $3, $4, $5) AS \
+                            item(event_id, event_type, event_category, payload, occurred_at)",
+                )
+                .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(event_ids)
+                .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(event_types)
+                .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(event_categories)
+                .bind::<diesel::sql_types::Array<diesel::sql_types::Jsonb>, _>(payloads)
+                .bind::<diesel::sql_types::Array<diesel::sql_types::Timestamptz>, _>(occurred_ats)
+                .load::<AuditMutationRow>(connection)
+                .await?;
                 Ok(())
             })
             .await
