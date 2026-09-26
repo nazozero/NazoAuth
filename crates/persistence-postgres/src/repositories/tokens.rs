@@ -174,9 +174,10 @@ impl TokenRepository {
         connection: &mut AsyncPgConnection,
         token: NewRefreshToken,
         issuance_id: Uuid,
+        prepared_contract: &PreparedRefreshContract,
     ) -> Result<RefreshTokenPersistResult, RepositoryError> {
         validate_new_refresh_token(&token)?;
-        persist_refresh_token_inner(connection, &token, issuance_id)
+        persist_refresh_token_inner(connection, &token, issuance_id, prepared_contract)
             .await
             .map_err(map_error)
     }
@@ -382,6 +383,32 @@ fn persisted_contract(contract: &RefreshContract) -> Result<(Vec<u8>, Value), Re
     Ok((persisted.blake3_digest().to_vec(), value))
 }
 
+/// Connection-free refresh-contract preparation: the persisted JSON shape
+/// and its BLAKE3 digest are pure functions of the token, so callers compute
+/// them before borrowing a connection. Everything that depends on database
+/// state still runs inside the caller's transaction unchanged.
+#[derive(Debug)]
+pub(crate) struct PreparedRefreshContract {
+    contract_blake3: Vec<u8>,
+    contract_value: Value,
+}
+
+pub(crate) fn prepare_refresh_contract(
+    token: &NewRefreshToken,
+) -> Result<PreparedRefreshContract, RepositoryError> {
+    let (contract_blake3, contract_value) =
+        persisted_contract(&token.contract()).map_err(|error| {
+            // Preserve the pre-hoist classification: a prepare failure used to
+            // surface as a diesel deserialization error inside the persist
+            // transaction, which callers mapped to RepositoryError::Unexpected.
+            RepositoryError::Unexpected(error.to_string())
+        })?;
+    Ok(PreparedRefreshContract {
+        contract_blake3,
+        contract_value,
+    })
+}
+
 fn parse_contract(row: &RefreshContractRow) -> Result<PersistedRefreshContract, RepositoryError> {
     serde_json::from_value::<PersistedRefreshContract>(row.contract.clone()).map_err(|error| {
         RepositoryError::Unexpected(format!("invalid persisted refresh contract: {error}"))
@@ -556,13 +583,16 @@ async fn persist_refresh_token_inner(
     connection: &mut AsyncPgConnection,
     token: &NewRefreshToken,
     issuance_id: Uuid,
+    prepared_contract: &PreparedRefreshContract,
 ) -> diesel::QueryResult<RefreshTokenPersistResult> {
+    // Contract serialization and digest were computed before this
+    // connection was borrowed (see prepare_refresh_contract); only the
+    // token hash and authoritative in-transaction state work remain here.
+    let contract_blake3 = &prepared_contract.contract_blake3;
+    let contract_value = &prepared_contract.contract_value;
+    let token_blake3 = blake3::hash(token.raw_token.as_bytes());
     lock_refresh_grant_scope(connection, token.tenant_id, token.user_id, token.client_id).await?;
     lock_refresh_family(connection, token.family_id).await?;
-    let contract = token.contract();
-    let (contract_blake3, contract_value) = persisted_contract(&contract)
-        .map_err(|error| diesel::result::Error::DeserializationError(error.to_string().into()))?;
-    let token_blake3 = blake3::hash(token.raw_token.as_bytes());
 
     if let Some(rotated_from_id) = token.rotated_from_id {
         // Rotation: the family row must name the presented member as its
@@ -578,7 +608,7 @@ async fn persist_refresh_token_inner(
                     && family.user_id == token.user_id
                     && family.revoked_at.is_none()
                     && family.reuse_detected_at.is_none()
-                    && family.contract_blake3 == contract_blake3
+                    && family.contract_blake3 == *contract_blake3
                     && family.dpop_jkt == token.dpop_jkt
                     && family.mtls_x5t_s256 == token.mtls_x5t_s256
                     && family.client_attestation_jkt == token.client_attestation_jkt =>
@@ -696,13 +726,14 @@ async fn persist_refresh_token_inner(
         )
         .await?;
     }
-    diesel::insert_into(oauth_refresh_contracts::table)
-        .values((
-            oauth_refresh_contracts::tenant_id.eq(token.tenant_id),
-            oauth_refresh_contracts::contract_blake3.eq(contract_blake3.clone()),
-            oauth_refresh_contracts::contract.eq(contract_value),
-        ))
-        .on_conflict_do_nothing()
+    // One narrow call references the contract: an existing key is locked
+    // FOR KEY SHARE inside this transaction (the family foreign key can
+    // never dangle against a concurrent reclaim); a missing key takes the
+    // validated INSERT and a genuine create/reclaim race retries locally.
+    sql_query("SELECT public.nazo_oauth_refresh_contract_ensure($1, $2, $3)")
+        .bind::<sql_types::Uuid, _>(token.tenant_id)
+        .bind::<sql_types::Binary, _>(contract_blake3)
+        .bind::<sql_types::Jsonb, _>(contract_value)
         .execute(connection)
         .await?;
     diesel::insert_into(oauth_refresh_families::table)
@@ -711,7 +742,7 @@ async fn persist_refresh_token_inner(
             oauth_refresh_families::token_family_id.eq(token.family_id),
             oauth_refresh_families::client_id.eq(token.client_id),
             oauth_refresh_families::user_id.eq(token.user_id),
-            oauth_refresh_families::contract_blake3.eq(contract_blake3),
+            oauth_refresh_families::contract_blake3.eq(contract_blake3.clone()),
             oauth_refresh_families::current_member_id.eq(token.member_id),
             oauth_refresh_families::current_token_blake3.eq(token_blake3.as_bytes().to_vec()),
             oauth_refresh_families::current_audience.eq(serde_json::json!(token.audiences)),

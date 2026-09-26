@@ -1240,6 +1240,10 @@ const PENDING_SET_UP: &str =
     include_str!("../../../migrations/20260927000100_audit_pending_event_set/up.sql");
 const PENDING_SET_DOWN: &str =
     include_str!("../../../migrations/20260927000100_audit_pending_event_set/down.sql");
+const CONTRACT_ENSURE_UP: &str =
+    include_str!("../../../migrations/20260927000200_refresh_contract_ensure/up.sql");
+const CONTRACT_ENSURE_DOWN: &str =
+    include_str!("../../../migrations/20260927000200_refresh_contract_ensure/down.sql");
 
 #[test]
 fn pending_event_set_migration_moves_pending_identity_to_events() {
@@ -1277,6 +1281,21 @@ fn pending_event_set_migration_moves_pending_identity_to_events() {
     }
 }
 
+#[test]
+fn refresh_contract_ensure_migration_provides_single_call_reference() {
+    for required in [
+        "CREATE FUNCTION public.nazo_oauth_refresh_contract_ensure",
+        "FOR KEY SHARE",
+        "ON CONFLICT (tenant_id, contract_blake3) DO NOTHING",
+        "FOR attempt IN 1..3",
+        "SET search_path = pg_catalog, pg_temp",
+    ] {
+        assert!(CONTRACT_ENSURE_UP.contains(required), "missing {required}");
+    }
+    assert!(
+        CONTRACT_ENSURE_DOWN.contains("DROP FUNCTION public.nazo_oauth_refresh_contract_ensure")
+    );
+}
 
 /// The cutover guard must refuse a divergent pending state and leave the
 /// pre-cutover shape untouched; a consistent mirror passes. Both runs happen
