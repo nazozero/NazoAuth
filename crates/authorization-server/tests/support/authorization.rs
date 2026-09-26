@@ -175,7 +175,8 @@ impl AuthorizationStateStorePort for Ports {
         Box::pin(async move {
             let mut stored = self.stored_par.lock().unwrap();
             let Some(index) = stored.iter().position(|(uri, request, _)| {
-                uri == request_uri && serde_json::to_value(request).unwrap().to_string() == expected
+                let version = serde_json::to_value(request).unwrap().to_string();
+                uri == request_uri && version.as_str() == expected
             }) else {
                 return Ok(false);
             };

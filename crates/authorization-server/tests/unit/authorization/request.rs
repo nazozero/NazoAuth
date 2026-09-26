@@ -872,7 +872,7 @@ fn authorize_requires_outer_client_id_before_jar_or_par_lookup() {
             ),
         ] {
             let mut parameters = query(&[(parameter, value)]);
-            let error = application
+            let result = application
                 .authorize(
                     &AuthorizationRequestFacts {
                         source_ip: "192.0.2.1",
@@ -881,9 +881,11 @@ fn authorize_requires_outer_client_id_before_jar_or_par_lookup() {
                     },
                     &mut parameters,
                 )
-                .await
-                .err()
-                .expect("missing outer client_id must fail");
+                .await;
+            let error = match result {
+                Err(error) => error,
+                Ok(_) => panic!("missing outer client_id must fail"),
+            };
             let OAuthEndpointError::Json(fields) = error else {
                 panic!("JSON error expected");
             };
