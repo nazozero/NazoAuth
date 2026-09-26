@@ -270,6 +270,29 @@ fn dummy_password_hash_is_valid_and_never_matches_the_probe_password() {
 }
 
 #[tokio::test]
+async fn bootstrap_password_providers_reuse_the_prepared_unknown_secret_hash() {
+    use nazo_identity::ports::FederationPasswordHasherPort;
+    use nazo_oauth_server::contracts::scim::ScimBootstrapPasswordProvider;
+
+    let prepared = dummy_password_hash().expect("startup hash must initialize");
+    let scim = super::ServerScimBootstrapPasswordProvider
+        .password_hash()
+        .await
+        .unwrap()
+        .into_persistence_value();
+    let federation = crate::bootstrap::FederationBootstrapPasswordHasher
+        .hash_bootstrap_secret()
+        .await
+        .unwrap()
+        .into_persistence_value();
+    assert_eq!(scim, prepared);
+    assert_eq!(federation, prepared);
+    let hash = nazo_identity::PasswordHash::new(prepared).expect("valid Argon2 password hash");
+    assert!(!hash.verify_password("password"));
+    assert!(!hash.verify_password(""));
+}
+
+#[tokio::test]
 async fn mfa_secret_hasher_preserves_candidate_order_and_rejects_wrong_secret() {
     use nazo_identity::ports::MfaSecretHashPort;
     let hasher = super::ServerMfaSecretHasher;

@@ -2,10 +2,8 @@ use nazo_oauth_server::ports::audit::{SecurityAudit, audit_fields};
 use serde_json::json;
 use std::sync::Arc;
 
-use crate::adapters::security::PasswordHashingError;
-use crate::adapters::security::hash_password_blocking_limited;
+use crate::adapters::security::dummy_password_hash;
 use nazo_oauth_server::crypto::blake3_hex;
-use nazo_oauth_server::crypto::random_urlsafe_token;
 
 #[derive(Clone, Copy)]
 pub(crate) struct FederationBootstrapPasswordHasher;
@@ -15,18 +13,11 @@ impl nazo_identity::ports::FederationPasswordHasherPort for FederationBootstrapP
         &self,
     ) -> nazo_identity::ports::RepositoryFuture<'_, nazo_identity::ports::PasswordHashInput> {
         Box::pin(async move {
-            let hash = hash_password_blocking_limited(random_urlsafe_token())
-                .await
-                .map_err(|error| match error {
-                    PasswordHashingError::Saturated | PasswordHashingError::WorkerFailed => {
-                        nazo_identity::ports::RepositoryError::Unavailable
-                    }
-                    PasswordHashingError::HashFailed => {
-                        nazo_identity::ports::RepositoryError::Unexpected(
-                            "Argon2 password hashing failed".to_owned(),
-                        )
-                    }
-                })?;
+            let hash = dummy_password_hash().map_err(|_| {
+                nazo_identity::ports::RepositoryError::Unexpected(
+                    "Argon2 password hashing failed".to_owned(),
+                )
+            })?;
             nazo_identity::ports::PasswordHashInput::new(hash).map_err(|error| {
                 nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
             })
