@@ -1,5 +1,8 @@
+use std::collections::BTreeMap;
+
 use crate::{
-    ModuleId, ModuleLifecycle, ModuleState, ModuleStateRepository, ReconcileOutcome, RegistryError,
+    ModuleId, ModuleLifecycle, ModuleReconcileState, ModuleState, ModuleStateRepository,
+    ReconcileOutcome, RegistryError,
 };
 
 use super::RuntimeModuleRegistry;
@@ -9,6 +12,76 @@ where
     R: ModuleStateRepository,
     L: ModuleLifecycle,
 {
+    /// Poll durable state once for this instance. The snapshot only eliminates
+    /// settled work; every transition still reads and fences its current state.
+    pub async fn reconcile_all(
+        &self,
+    ) -> Result<
+        Vec<(ModuleId, Result<ReconcileOutcome, RegistryError<R::Error>>)>,
+        RegistryError<R::Error>,
+    > {
+        let states = self
+            .repository
+            .read_reconcile_state(&self.instance_id)
+            .await
+            .map_err(RegistryError::Repository)?
+            .into_iter()
+            .map(|state| (state.desired.module_id, state))
+            .collect::<BTreeMap<_, _>>();
+        let mut outcomes = Vec::with_capacity(ModuleId::ALL.len());
+        for module_id in ModuleId::ALL {
+            let outcome = if self.is_settled(module_id, &states) {
+                Ok(ReconcileOutcome::NoChange)
+            } else {
+                self.reconcile_once(module_id).await
+            };
+            outcomes.push((module_id, outcome));
+        }
+        Ok(outcomes)
+    }
+
+    fn is_settled(
+        &self,
+        module_id: ModuleId,
+        states: &BTreeMap<ModuleId, ModuleReconcileState>,
+    ) -> bool {
+        let Some(state) = states.get(&module_id) else {
+            return false;
+        };
+        let enabled = state.desired.mode.is_enabled();
+        if !state.instance.as_ref().is_some_and(|instance| {
+            instance.applied_revision == Some(state.desired.revision)
+                && ((enabled && instance.state == ModuleState::Enabled)
+                    || (!enabled && instance.state == ModuleState::Disabled))
+        }) {
+            return false;
+        }
+        // Re-read the in-process admission snapshot after any earlier transition
+        // in this pass. Desired mode alone never proves dependency readiness.
+        let snapshot = self.snapshot();
+        if enabled {
+            self.catalog.spec(module_id).is_some_and(|spec| {
+                spec.dependencies.iter().all(|dependency| {
+                    states
+                        .get(dependency)
+                        .is_some_and(|state| state.desired.mode.is_enabled())
+                        && snapshot.admits(*dependency)
+                })
+            })
+        } else {
+            self.catalog
+                .specs()
+                .values()
+                .filter(|candidate| candidate.dependencies.contains(&module_id))
+                .all(|dependent| {
+                    states
+                        .get(&dependent.id)
+                        .is_some_and(|state| !state.desired.mode.is_enabled())
+                        && !snapshot.admits(dependent.id)
+                })
+        }
+    }
+
     pub async fn reconcile_once(
         &self,
         module_id: ModuleId,

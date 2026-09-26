@@ -7,8 +7,8 @@ mod transaction;
 use nazo_identity::ports::RepositoryError;
 use nazo_runtime_modules::{
     CasOutcome, DesiredRevisionGuard, DesiredStateChange, DesiredStateRecord,
-    InstanceStateMutation, InstanceStateRecord, ModuleEventPage, ModuleId, ModuleRevision,
-    ModuleStateRepository,
+    InstanceStateMutation, InstanceStateRecord, ModuleEventPage, ModuleId, ModuleReconcileState,
+    ModuleRevision, ModuleStateRepository,
 };
 
 use crate::{DbPool, get_conn};
@@ -68,6 +68,13 @@ impl ModuleStateRepository for RuntimeModuleRepository {
 
     async fn read_all_desired(&self) -> Result<Vec<DesiredStateRecord>, Self::Error> {
         desired::read_all_desired(self).await
+    }
+
+    async fn read_reconcile_state(
+        &self,
+        instance_id: &str,
+    ) -> Result<Vec<ModuleReconcileState>, Self::Error> {
+        desired::read_reconcile_state(self, instance_id).await
     }
 
     async fn compare_and_set_desired(
@@ -134,6 +141,14 @@ impl nazo_persistence::RuntimeModuleStore for RuntimeModuleRepository {
         &self,
     ) -> futures_util::future::BoxFuture<'_, Result<Vec<DesiredStateRecord>, RepositoryError>> {
         Box::pin(async move { desired::read_all_desired(self).await })
+    }
+
+    fn read_reconcile_state<'a>(
+        &'a self,
+        instance_id: &'a str,
+    ) -> futures_util::future::BoxFuture<'a, Result<Vec<ModuleReconcileState>, RepositoryError>>
+    {
+        Box::pin(async move { desired::read_reconcile_state(self, instance_id).await })
     }
 
     fn compare_and_set_desired(

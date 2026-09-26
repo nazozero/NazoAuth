@@ -150,6 +150,8 @@ struct TestRepository {
     single_instance_reads: AtomicUsize,
     bulk_desired_reads: AtomicUsize,
     bulk_instance_reads: AtomicUsize,
+    reconcile_reads: AtomicUsize,
+    desired_after_reconcile_read: Mutex<Option<DesiredStateRecord>>,
     cas_pause: Mutex<Option<CasPause>>,
     read_pauses: Mutex<Vec<ReadPause>>,
     desired_transaction: Mutex<()>,
@@ -195,6 +197,41 @@ impl ModuleStateRepository for TestRepository {
             return Err(TestError::Unavailable);
         }
         Ok(self.state.lock().unwrap().desired.clone())
+    }
+
+    async fn read_reconcile_state(
+        &self,
+        instance_id: &str,
+    ) -> Result<Vec<crate::ModuleReconcileState>, Self::Error> {
+        self.reconcile_reads.fetch_add(1, Ordering::Relaxed);
+        if self.fail_bulk_desired.load(Ordering::Relaxed) {
+            return Err(TestError::Unavailable);
+        }
+        let mut state = self.state.lock().unwrap();
+        let snapshot = state
+            .desired
+            .iter()
+            .map(|desired| crate::ModuleReconcileState {
+                desired: desired.clone(),
+                instance: state
+                    .instances
+                    .iter()
+                    .find(|instance| {
+                        instance.instance_id == instance_id
+                            && instance.module_id == desired.module_id
+                    })
+                    .cloned(),
+            })
+            .collect();
+        if let Some(next) = self.desired_after_reconcile_read.lock().unwrap().take() {
+            let current = state
+                .desired
+                .iter_mut()
+                .find(|record| record.module_id == next.module_id)
+                .unwrap();
+            *current = next;
+        }
+        Ok(snapshot)
     }
 
     async fn compare_and_set_desired(
@@ -445,6 +482,158 @@ fn registry_with_lifecycle<L: ModuleLifecycle>(
             draining: BTreeSet::new(),
         },
     )
+}
+
+fn settled_repository() -> Arc<TestRepository> {
+    let repository = Arc::new(TestRepository::default());
+    let mut state = repository.state.lock().unwrap();
+    for module_id in ModuleId::ALL {
+        let mut desired = desired(1, DesiredMode::Enabled);
+        desired.module_id = module_id;
+        state.desired.push(desired);
+        let mut instance = instance();
+        instance.module_id = module_id;
+        instance.state = ModuleState::Enabled;
+        instance.transition_revision = ModuleRevision::new(1);
+        instance.applied_revision = Some(ModuleRevision::new(1));
+        instance.drain_deadline = None;
+        state.instances.push(instance);
+    }
+    drop(state);
+    repository
+}
+
+#[test]
+fn reconcile_all_polls_one_snapshot_and_observes_the_next_admin_revision() {
+    let repository = settled_repository();
+    let registry = registry(
+        repository.clone(),
+        fixed_catalog()
+            .with_dependencies(ModuleId::Ciba, [ModuleId::RequestObjects])
+            .unwrap(),
+        ModuleId::ALL.into_iter().collect(),
+    );
+    let outcomes = block_on(registry.reconcile_all()).unwrap();
+    assert_eq!(outcomes.len(), ModuleId::ALL.len());
+    assert!(
+        outcomes
+            .iter()
+            .all(|(_, outcome)| matches!(outcome, Ok(ReconcileOutcome::NoChange)))
+    );
+    assert_eq!(repository.reconcile_reads.load(Ordering::Relaxed), 1);
+    assert_eq!(repository.single_desired_reads.load(Ordering::Relaxed), 0);
+    assert_eq!(repository.single_instance_reads.load(Ordering::Relaxed), 0);
+    assert_eq!(repository.bulk_desired_reads.load(Ordering::Relaxed), 0);
+    assert_eq!(repository.bulk_instance_reads.load(Ordering::Relaxed), 0);
+
+    *repository
+        .state
+        .lock()
+        .unwrap()
+        .desired
+        .iter_mut()
+        .find(|record| record.module_id == ModuleId::Ciba)
+        .unwrap() = desired(2, DesiredMode::Disabled);
+    let outcomes = block_on(registry.reconcile_all()).unwrap();
+    assert!(matches!(
+        outcomes
+            .iter()
+            .find(|(module, _)| *module == ModuleId::Ciba)
+            .unwrap()
+            .1,
+        Ok(ReconcileOutcome::Disabled)
+    ));
+    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+    assert_eq!(repository.reconcile_reads.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn reconcile_all_does_not_skip_dependency_loss_or_active_dependents() {
+    let repository = settled_repository();
+    {
+        let mut state = repository.state.lock().unwrap();
+        let dependency = state
+            .desired
+            .iter_mut()
+            .find(|record| record.module_id == ModuleId::RequestObjects)
+            .unwrap();
+        dependency.mode = DesiredMode::Disabled;
+        let dependency = state
+            .instances
+            .iter_mut()
+            .find(|record| record.module_id == ModuleId::RequestObjects)
+            .unwrap();
+        dependency.state = ModuleState::Disabled;
+    }
+    let registry = registry(
+        repository,
+        fixed_catalog()
+            .with_dependencies(ModuleId::Ciba, [ModuleId::RequestObjects])
+            .unwrap(),
+        ModuleId::ALL
+            .into_iter()
+            .filter(|module| *module != ModuleId::RequestObjects)
+            .collect(),
+    );
+    let outcomes = block_on(registry.reconcile_all()).unwrap();
+    assert!(matches!(
+        outcomes
+            .iter()
+            .find(|(module, _)| *module == ModuleId::Ciba)
+            .unwrap()
+            .1,
+        Ok(ReconcileOutcome::Failed)
+    ));
+    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+    assert!(matches!(
+        outcomes
+            .iter()
+            .find(|(module, _)| *module == ModuleId::RequestObjects)
+            .unwrap()
+            .1,
+        Err(RegistryError::ActiveDependent {
+            module_id: ModuleId::RequestObjects,
+            dependent: ModuleId::Ciba
+        })
+    ));
+}
+
+#[test]
+fn reconcile_all_reloads_pending_state_before_a_transition() {
+    let repository = settled_repository();
+    repository
+        .state
+        .lock()
+        .unwrap()
+        .instances
+        .retain(|record| record.module_id != ModuleId::Ciba);
+    *repository.desired_after_reconcile_read.lock().unwrap() =
+        Some(desired(2, DesiredMode::Disabled));
+    let registry = registry(repository, fixed_catalog(), BTreeSet::new());
+    let outcomes = block_on(registry.reconcile_all()).unwrap();
+    assert!(matches!(
+        outcomes
+            .iter()
+            .find(|(module, _)| *module == ModuleId::Ciba)
+            .unwrap()
+            .1,
+        Ok(ReconcileOutcome::Disabled)
+    ));
+    assert!(!registry.snapshot().admits(ModuleId::Ciba));
+}
+
+#[test]
+fn reconcile_all_does_not_transition_after_a_snapshot_read_failure() {
+    let repository = settled_repository();
+    repository.fail_bulk_desired.store(true, Ordering::Relaxed);
+    let registry = registry(repository.clone(), fixed_catalog(), BTreeSet::new());
+    assert!(matches!(
+        block_on(registry.reconcile_all()),
+        Err(RegistryError::Repository(TestError::Unavailable))
+    ));
+    assert!(registry.snapshot().accepting.is_empty());
+    assert_eq!(repository.single_desired_reads.load(Ordering::Relaxed), 0);
+    assert_eq!(repository.single_instance_reads.load(Ordering::Relaxed), 0);
 }
 
 #[test]
