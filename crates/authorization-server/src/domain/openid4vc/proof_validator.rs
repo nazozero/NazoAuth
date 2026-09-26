@@ -105,10 +105,7 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                         .ok_or(ProofError::InvalidKeyAttestation)?;
                     for key in keys {
                         validated.push(ValidatedProof {
-                            proof_type: "attestation".to_owned(),
                             holder_binding: json!({"jwk": key}),
-                            nonce: expected_nonce.to_owned(),
-                            key_attestation: Some(claims.clone()),
                         });
                     }
                 }
@@ -179,10 +176,7 @@ impl ProofValidatorPort for Openid4vcProofValidator {
                     }
                 }
                 validated.push(ValidatedProof {
-                    proof_type: "jwt".to_owned(),
                     holder_binding: json!({"jwk": jwk}),
-                    nonce: expected_nonce.to_owned(),
-                    key_attestation,
                 });
             }
             Ok(validated)

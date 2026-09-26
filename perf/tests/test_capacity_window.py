@@ -445,7 +445,7 @@ class GateTest(unittest.TestCase):
         self.assertEqual(met["measure"]["dropped"], 430)
         self.assertAlmostEqual(met["measure"]["drop_fraction"],
                                430 / 315000, places=6)
-        # B2: 75 drops -> PASS
+        # B2: drops pass, but successes are below the successful-ops-v1 gate.
         m2 = _k6_metrics(314925, 314925,
                          {"success": 310400, "expected_rejection": 60,
                           "local_no_request": 4465, "unexpected": 0,
@@ -455,8 +455,9 @@ class GateTest(unittest.TestCase):
                          dropped_whole=714)
         s2 = _summary(dropped_whole=714, iters=359287)
         v2, met2 = self._eval(s2, m2)
-        self.assertEqual(v2, "PASS", met2)
+        self.assertEqual(v2, "FAIL", met2)
         self.assertEqual(met2["measure"]["dropped"], 75)
+        self.assertLess(met2["rate_for_gate"], 2985)
 
 
 class SubjectLifecycleWiringTest(unittest.TestCase):

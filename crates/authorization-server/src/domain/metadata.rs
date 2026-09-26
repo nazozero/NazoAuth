@@ -58,7 +58,10 @@ impl MetadataSnapshotSource for ApplicationMetadataSnapshotSource {
                 .collect(),
             id_token_signing_algorithms: keys.id_token_signing_alg_values_supported(),
             response_signing_algorithms: keys.response_signing_alg_values_supported(),
-            jwks: keys.jwks(),
         }
+    }
+
+    fn jwks(&self) -> serde_json::Value {
+        self.keyset.snapshot().jwks()
     }
 }

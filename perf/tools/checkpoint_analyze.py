@@ -59,7 +59,8 @@ from datetime import datetime, timezone
 # ----------------------------- tuning constants ----------------------------
 OUT_NAME = "capacity-cap-mixed"
 OUTCOME_KEYS = ("success", "expected_rejection", "local_no_request",
-                "unexpected_error")
+                "unexpected", "prepare_failed", "prepare_local_failed",
+                "prepare_sut_failed")
 # Three evidence tiers (kept explicit — see report and tests):
 #   A. AUTHORITATIVE  — series.json / window.json / k6 summary: every
 #      counted formal fact (begins/ends/drops/outcomes/latency aggregates
@@ -720,7 +721,13 @@ def bin_record(b: dict | None) -> dict | None:
         "local_no_request": sum(v for k, v in ends.items()
                                 if k.endswith("|local_no_request")),
         "unexpected": sum(v for k, v in ends.items()
-                          if k.endswith("|unexpected_error")),
+                          if k.endswith("|unexpected")),
+        "prepare_failed": sum(v for k, v in ends.items()
+                              if k.endswith("|prepare_failed")),
+        "prepare_local_failed": sum(v for k, v in ends.items()
+                                    if k.endswith("|prepare_local_failed")),
+        "prepare_sut_failed": sum(v for k, v in ends.items()
+                                  if k.endswith("|prepare_sut_failed")),
         "drops": b.get("dropped", 0),
         "iterations": b.get("iterations", 0),
         "http_reqs": b.get("http_reqs", 0),

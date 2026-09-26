@@ -192,6 +192,37 @@ fn captured_snapshot_stops_exposing_a_key_after_its_retirement_deadline() {
     );
 }
 
+#[test]
+fn captured_jwks_uses_the_same_retirement_boundary_as_its_cache_deadline() {
+    let deadline = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+    let snapshot = super::KeySnapshot {
+        active_kid: "active".to_owned(),
+        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        verification_keys: vec![super::VerificationKey {
+            kid: "retiring".to_owned(),
+            public_jwk: serde_json::json!({"kid":"retiring","alg":"EdDSA"}),
+            prepared: prepared_test_verification(),
+            signing_purposes: BTreeSet::new(),
+            retire_at: Some(deadline),
+        }],
+        id_token_signing_algorithms: Vec::new(),
+        response_signing_algorithms: Vec::new(),
+        request_object_encryption_jwk: serde_json::Value::Null,
+    };
+    let before = deadline - chrono::Duration::nanoseconds(1);
+    assert_eq!(
+        snapshot.next_verification_retirement(before),
+        Some(deadline)
+    );
+    assert_eq!(snapshot.jwks_at(before)["keys"][0]["kid"], "retiring");
+    for now in [deadline, deadline + chrono::Duration::seconds(1)] {
+        assert_eq!(snapshot.next_verification_retirement(now), None);
+        assert_eq!(snapshot.jwks_at(now)["keys"], serde_json::json!([null]));
+    }
+    // The same captured generation regains the original projection on rollback.
+    assert_eq!(snapshot.jwks_at(before)["keys"][0]["kid"], "retiring");
+}
+
 #[tokio::test]
 async fn http_signing_lease_keeps_label_and_key_on_one_generation_during_rotation() {
     let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
@@ -600,6 +631,77 @@ fn snapshot_publication_rejects_a_managed_key_whose_jwk_cannot_verify() {
     assert!(KeyGeneration::database(loaded).is_err());
 }
 
+#[tokio::test]
+async fn external_signatures_use_the_selected_generation_prepared_public_key() {
+    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+    let mut loaded = manager.inner.generation.load().loaded.clone();
+    let super::ActiveSigningKey::Local(material) = &loaded.active_signing_key else {
+        panic!("fixture must have local signing material");
+    };
+    let signature = material.prepared.sign(b"expected").unwrap();
+    loaded.active_signing_key = super::ActiveSigningKey::External(super::ExternalSigningKey {
+        key_ref: "kms://test/key".to_owned(),
+        signer: Arc::new(crate::test_support::FixedExternalKeySigner(signature)),
+    });
+    manager
+        .inner
+        .generation
+        .store(Arc::new(KeyGeneration::database(loaded.clone()).unwrap()));
+    assert!(
+        manager
+            .sign(SignRequest {
+                purpose: SigningPurpose::IdToken,
+                algorithm: "EdDSA",
+                signing_input: b"expected",
+            })
+            .await
+            .is_ok()
+    );
+    assert_eq!(
+        manager
+            .sign(SignRequest {
+                purpose: SigningPurpose::IdToken,
+                algorithm: "EdDSA",
+                signing_input: b"tampered",
+            })
+            .await,
+        Err(nazo_auth::SignError::SigningFailed)
+    );
+
+    let replacement = nazo_crypto::signature::generate_private_key(loaded.active_alg).unwrap();
+    loaded.verification_keys[0].public_jwk = crate::serialization::public_jwk_from_private_der(
+        &loaded.active_kid,
+        loaded.active_alg,
+        &replacement,
+    )
+    .unwrap();
+    manager
+        .inner
+        .generation
+        .store(Arc::new(KeyGeneration::database(loaded).unwrap()));
+    assert_eq!(
+        manager
+            .sign(SignRequest {
+                purpose: SigningPurpose::IdToken,
+                algorithm: "EdDSA",
+                signing_input: b"expected",
+            })
+            .await,
+        Err(nazo_auth::SignError::SigningFailed),
+        "an old external signature must not be accepted by a replacement generation"
+    );
+}
+
+#[test]
+fn prepared_verification_rejects_invalid_p256_public_points() {
+    let jwk = serde_json::json!({
+        "kty": "EC", "crv": "P-256", "alg": "ES256", "use": "sig",
+        "x": URL_SAFE_NO_PAD.encode([0_u8; 32]),
+        "y": URL_SAFE_NO_PAD.encode([0_u8; 32])
+    });
+    assert!(super::prepared_verification(&jwk, nazo_crypto::jwt::Algorithm::ES256).is_none());
+}
+
 #[test]
 fn prepared_verification_accepts_only_absent_or_verify_only_key_ops() {
     let algorithm = nazo_crypto::jwt::Algorithm::EdDSA;
@@ -620,4 +722,45 @@ fn prepared_verification_accepts_only_absent_or_verify_only_key_ops() {
         jwk["key_ops"] = key_ops;
         assert!(super::prepared_verification(&jwk, algorithm).is_none());
     }
+}
+
+#[test]
+fn openid4vc_public_projection_and_revocation_index_are_shared_per_generation() {
+    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::ES256);
+    let kid = manager.snapshot().active_kid.clone();
+    let mut material = public_openid4vc_material(kid);
+    let now = chrono::Utc::now();
+    material.revocation_snapshot = Some(nazo_digital_credentials::CertificateRevocationSnapshot {
+        version: nazo_digital_credentials::CertificateRevocationSnapshot::VERSION,
+        this_update: now - chrono::Duration::minutes(1),
+        next_update: now + chrono::Duration::minutes(1),
+        entries: Vec::new(),
+    });
+    manager.set_openid4vc_material_for_test(material.clone());
+    let first = manager.openid4vc_public_material().unwrap();
+    let first_revocation = manager.openid4vc_revocation_snapshot().unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        &first,
+        &manager.openid4vc_public_material().unwrap()
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        &first_revocation,
+        &manager.openid4vc_revocation_snapshot().unwrap()
+    ));
+    material.revocation_snapshot.as_mut().unwrap().next_update += chrono::Duration::minutes(1);
+    manager.set_openid4vc_material_for_test(material);
+    let second = manager.openid4vc_public_material().unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&first, &second));
+    assert!(!std::sync::Arc::ptr_eq(
+        &first_revocation,
+        &manager.openid4vc_revocation_snapshot().unwrap()
+    ));
+    assert_eq!(
+        first.revocation_snapshot.as_ref().unwrap().next_update,
+        now + chrono::Duration::minutes(1)
+    );
+    assert_eq!(
+        second.revocation_snapshot.as_ref().unwrap().next_update,
+        now + chrono::Duration::minutes(2)
+    );
 }

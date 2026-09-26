@@ -17,6 +17,9 @@
 #[allow(dead_code)]
 mod support;
 
+#[path = "support/password.rs"]
+mod password;
+
 use chrono::{DateTime, Duration, Utc};
 use diesel::{sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
@@ -515,11 +518,11 @@ async fn cleanup_seed(database_url: &str, tenant: TenantContext, seed: &Seed) {
 // RV-09: token revocation
 // ---------------------------------------------------------------------------
 
-/// RV-09 (access-token path): revoking one access-token JTI is a family lookup
-/// plus a single `INSERT .. ON CONFLICT` upsert — 2 data statements inside one
-/// transaction on one pooled connection.
+/// The mixed repository API preserves raw refresh priority even when the
+/// caller supplies an access-token JTI. Verified access-only requests use
+/// `revoke_issued_tokens` instead (covered below).
 #[tokio::test]
-async fn rv09_revoke_access_token_jti_is_lookup_plus_single_upsert() {
+async fn rv09_mixed_revocation_retains_refresh_probes_before_jti_upsert() {
     let _serial = SERIAL.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -820,9 +823,8 @@ async fn rf01_ordinary_rotation_commit_has_exact_statement_count() {
 // RF-06: lost-response successor lookup
 // ---------------------------------------------------------------------------
 
-/// RF-06: `inspect_lost_response_successor` locates the non-compromised
-/// successor in one SELECT — the `NOT EXISTS` compromise guard is a subquery
-/// inside that same statement.
+/// RF-06: the spent edge, active direct-successor family and contract are read
+/// in one joined statement. Without sender binding recovery needs no checkout.
 #[tokio::test]
 async fn rf06_lost_response_successor_is_single_read() {
     let _serial = SERIAL.lock().await;
@@ -905,13 +907,32 @@ async fn rf06_lost_response_successor_is_single_read() {
         Some(child_id),
         "the seeded non-compromised child must be found"
     );
-    // 1 data statement: SELECT .. WHERE rotated_from_id = parent AND
-    // NOT EXISTS (compromised family member) — the compromise check lives in
-    // the same SQL statement as the successor predicates.
+    // One joined statement keeps the spent edge, current family and immutable
+    // contract in one snapshot, including the compromise and expiry predicates.
     assert_eq!(delta.data_queries, 1);
     assert_no_transaction(delta);
     assert_eq!(acquires, 1);
     assert_clean(delta);
+    let mut unbound_parent = parent;
+    unbound_parent.dpop_jkt = None;
+    let (result, delta, acquires) = measure(
+        &counter,
+        repository.inspect_lost_response_successor(&unbound_parent, seed.client.id, Utc::now()),
+    )
+    .await;
+    assert!(
+        result
+            .expect("unbound presentations cannot recover successors")
+            .is_none()
+    );
+    assert_eq!(delta.data_queries, 0);
+    assert_no_transaction(delta);
+    assert_eq!(
+        acquires, 0,
+        "sender-binding rejection precedes pool acquisition"
+    );
+    assert_clean(delta);
+
     cleanup_seed(&database_url, tenant, &seed).await;
 }
 
@@ -1053,7 +1074,11 @@ async fn df01_deferred_claim_ready_is_single_update_returning() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let issuer = Openid4vciRepository::new(pool, [0x51_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool,
+        [0x51_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     // Fixture rows go through the production upsert/store on the instrumented
     // pool; the measurement baseline is taken after they complete.
@@ -1219,7 +1244,11 @@ async fn up06_upsert_access_is_one_statement_and_idempotent() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let issuer = Openid4vciRepository::new(pool, [0x52_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool,
+        [0x52_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     let token_hash = format!("qc-access-hash-{}", Uuid::now_v7());
     let access = CredentialAccess {
@@ -1273,7 +1302,11 @@ async fn vf01_pre_authorized_access_is_one_statement_per_path() {
     let tenant = TenantContext::default_system();
     let seed = seed_principal(&database_url, tenant).await;
     let (pool, counter) = instrumented_pool(&database_url).await;
-    let issuer = Openid4vciRepository::new(pool, [0x53_u8; 32]);
+    let issuer = Openid4vciRepository::new(
+        pool,
+        [0x53_u8; 32],
+        std::sync::Arc::new(password::BlockingSecretVerifier),
+    );
 
     let access = CredentialAccess {
         token_id: Uuid::now_v7(),

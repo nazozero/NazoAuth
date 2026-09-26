@@ -103,11 +103,13 @@ python scripts/check_persistence_dependency_graph.py
 cargo fmt --check
 cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings
 cargo test --locked -p nazo-postgres --test migrations pending_migrations_create_all_runtime_module_state_tables
-cargo test --workspace --all-features --locked
+cargo test --workspace --all-features --locked --no-fail-fast
 ```
 
 The migration test prepares the isolated schema before the full suite, as in
-CI. For a focused change, run the owning package/test target first; broaden
+CI. The full suite collects failures across test targets in one run; any failed
+target still fails the gate. For a focused change, run the owning package/test
+target first; broaden
 validation when the change crosses boundaries or leaves an unresolved risk.
 Documentation-only changes need source/example/reference checks, not a Rust
 build. A passed unit suite does not replace required HTTP, migration, recovery,

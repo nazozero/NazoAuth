@@ -128,10 +128,10 @@ def _wire_hash_bytes(value) -> bytes | None:
 
 
 def db_chain_state() -> dict:
-    """security_audit_chain_state facts + outbox depth."""
+    """security_audit_chain_state facts + pending depth."""
     try:
         row = sis.psql(
-            "SELECT (SELECT count(*) FROM security_audit_event_outbox),"
+            "SELECT (SELECT count(*) FROM security_audit_events),"
             " last_sequence, encode(last_hash,'hex'),"
             " anchor_deployment_id, anchor_sequence,"
             " encode(anchor_hash,'hex')"
@@ -809,6 +809,8 @@ def run_ab_point(point: dict) -> dict:
             and m.get("outcome_local_no_request") == 0
             and m.get("outcome_expected_rejection") == 0
             and m.get("outcome_prepare_failed") in (0, None)
+            and m.get("outcome_prepare_local_failed") in (0, None)
+            and m.get("outcome_prepare_sut_failed") in (0, None)
             and rec["load"].get("load_status") == "completed")
         expected = m.get("iterations_completed") if clean_run else None
         rec["audit_state_check"] = reconcile_audit_state(
@@ -1122,6 +1124,9 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
     checks = {
         "point_completed": rec.get("ok") is True,
         "unexpected_zero": m.get("outcome_unexpected") == 0,
+        "preparation_valid": (m.get("outcome_prepare_failed", 0) == 0
+                              and m.get("outcome_prepare_local_failed", 0) == 0),
+        "prepare_sut_zero": m.get("outcome_prepare_sut_failed", 0) == 0,
         "oom_none": m.get("oom_killed") is False,
         "no_restarts": m.get("restart_count") == 0,
         "queue_full_zero": scan.get("queue_full") == 0,
@@ -1138,7 +1143,7 @@ def _health_checks(rec: dict, mixed: bool) -> dict:
         # issuance, so both classes must stay at zero. cap_mixed counts
         # protocol-correct bounded-family invalid_grant rejections and
         # dead-family local no-request exits by design, so the mixed gate
-        # only requires unexpected == 0.
+        # allows these outcomes diagnostically; neither is a success.
         checks["local_no_request_zero"] = (
             m.get("outcome_local_no_request") == 0)
         checks["expected_rejection_zero"] = (

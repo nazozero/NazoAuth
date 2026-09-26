@@ -6,12 +6,12 @@ pub type AuditFuture<'a> =
 pub trait SecurityAudit: Send + Sync {
     fn ensure_storage(&self) -> AuditFuture<'_>;
 
-    /// Readiness for a state change whose required audit record commits in
-    /// the same transaction as the mutation itself. The commit is then the
-    /// fail-closed writer check, so an implementation may elide the static
-    /// capability probe; dynamic freshness gates still apply. Defaults to
-    /// `ensure_storage` so existing adapters keep the stricter behavior
-    /// until they opt in.
+    /// Readiness when the required audit record commits before any business
+    /// mutation, or in the same transaction as the mutation. That required
+    /// append is the fail-closed writer check, so an implementation may elide
+    /// the static capability probe; dynamic freshness gates still apply.
+    /// Defaults to `ensure_storage` so existing adapters keep the stricter
+    /// behavior until they opt in.
     fn ensure_transactional_ready(&self) -> AuditFuture<'_> {
         self.ensure_storage()
     }

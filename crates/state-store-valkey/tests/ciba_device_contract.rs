@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use chrono::{TimeZone, Utc};
 use fred::interfaces::{ClientLike, KeysInterface};
-use fred::prelude::{Builder, Config};
+use fred::prelude::{Builder, Config, Expiration};
 use nazo_auth::{
     CibaAuthenticationContext, CibaDecision, CibaPingNotification, CibaPingNotificationStatus,
     CibaPollCommit, CibaRequestState, CibaService, CibaStatus, DeviceAuthorizationApproval,
@@ -73,7 +73,7 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
         audiences: vec!["resource".to_owned()],
         acr: None,
         authentication_context: None,
-        binding_message: None,
+        binding_message: Some("确认 \"device\"\nrequest".to_owned()),
         issued_at: now,
         status: CibaStatus::Pending,
         interval_seconds: 5,
@@ -82,6 +82,7 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
         last_poll_at: None,
         ping_notification: None,
     };
+    assert!(store.load(&auth_req_id).await.unwrap().is_none());
     assert_eq!(
         store.create(&auth_req_id, &state).await.unwrap(),
         AtomicResult::Applied
@@ -90,7 +91,17 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
         inspector.expire_time::<i64, _>(&key).await.unwrap(),
         state.retention_expires_at
     );
+    let raw = serde_json::to_string_pretty(&state).unwrap();
+    inspector
+        .set::<(), _, _>(&key, &raw, Some(Expiration::KEEPTTL), None, false)
+        .await
+        .unwrap();
     let stored = store.load(&auth_req_id).await.unwrap().unwrap();
+    assert_eq!(stored.version().comparison_token(), raw);
+    assert_eq!(
+        stored.version().retention_expires_at(),
+        state.retention_expires_at
+    );
     assert_eq!(stored.state(), &state);
     state.last_poll_at = Some(now + 1);
     let mut other = state.clone();
@@ -106,6 +117,21 @@ async fn ciba_cas_preserves_exact_key_payload_deadline_and_single_winner() {
             .count(),
         1
     );
+    assert!(inspector.persist::<bool, _>(&key).await.unwrap());
+    assert_eq!(
+        store.load(&auth_req_id).await.unwrap_err().kind(),
+        nazo_valkey::ErrorKind::Protocol
+    );
+    inspector
+        .set::<(), _, _>(&key, "not-json", Some(Expiration::EX(60)), None, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        store.load(&auth_req_id).await.unwrap_err().kind(),
+        nazo_valkey::ErrorKind::Protocol
+    );
+    inspector.del::<i64, _>(&key).await.unwrap();
+    assert!(store.load(&auth_req_id).await.unwrap().is_none());
 }
 
 #[tokio::test]
@@ -264,7 +290,9 @@ async fn ciba_decision_atomically_schedules_and_terminally_acks_ping_delivery() 
         .await
         .unwrap();
 
-    let deliveries = store.claim_due_ping(now, now + 15, 10).await.unwrap();
+    let batch = store.claim_due_ping(now, now + 15, 10).await.unwrap();
+    assert_eq!(batch.scanned, 1);
+    let deliveries = batch.deliveries;
     assert_eq!(deliveries.len(), 1);
     assert_eq!(deliveries[0].auth_req_id, auth_req_id);
     assert_eq!(deliveries[0].attempts, 1);
@@ -285,8 +313,103 @@ async fn ciba_decision_atomically_schedules_and_terminally_acks_ping_delivery() 
             .claim_due_ping(now + 30, now + 45, 10)
             .await
             .unwrap()
+            .deliveries
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn ciba_ping_claim_reports_full_stale_and_mixed_scans_before_live_tail() {
+    let Some((_, inspector)) = setup().await else {
+        return;
+    };
+    let now = server_time(&inspector).await;
+    for stale_count in [8, 7] {
+        let epoch = uuid::Uuid::now_v7();
+        let tenant = nazo_identity::TenantId::new(uuid::Uuid::now_v7()).unwrap();
+        let connection = ValkeyConnection::from_existing_client(
+            inspector.clone(),
+            "ciba-stale-scan",
+            epoch,
+            tenant,
+        )
+        .unwrap();
+        let store = CibaStore::new(&connection);
+        for id in 0..9 {
+            let auth_req_id = format!("scan-{id}");
+            let state = CibaRequestState {
+                client_id: "ping-client".to_owned(),
+                user_id: uuid::Uuid::from_u128(7),
+                scopes: vec!["openid".to_owned()],
+                audiences: vec!["resource".to_owned()],
+                acr: None,
+                authentication_context: None,
+                binding_message: None,
+                issued_at: now,
+                status: CibaStatus::Pending,
+                interval_seconds: 5,
+                expires_at: now + 60,
+                retention_expires_at: now + 180,
+                last_poll_at: None,
+                ping_notification: Some(CibaPingNotification {
+                    auth_req_id: None,
+                    endpoint: "https://client.example/ciba-notification".to_owned(),
+                    client_notification_token: Some("notification-token-0123456789".to_owned()),
+                    status: CibaPingNotificationStatus::AwaitingDecision,
+                    attempts: 0,
+                    next_attempt_at: None,
+                }),
+            };
+            assert_eq!(
+                store.create(&auth_req_id, &state).await.unwrap(),
+                AtomicResult::Applied
+            );
+            CibaService::new(store.clone())
+                .decide(
+                    &auth_req_id,
+                    CibaDecision::Approve(ciba_approval_context(now)),
+                    Some(state.user_id),
+                    || now + i64::from(id == 8),
+                )
+                .await
+                .unwrap();
+            if id < stale_count {
+                // Simulate state TTL expiry while its ZSET member remains.
+                let key = nazo_valkey::test_support::storage_key(
+                    "ciba-stale-scan",
+                    epoch,
+                    tenant,
+                    format!(
+                        "oauth:ciba:{}",
+                        blake3::hash(auth_req_id.as_bytes()).to_hex()
+                    ),
+                )
+                .unwrap();
+                assert_eq!(inspector.del::<i64, _>(key).await.unwrap(), 1);
+            }
+        }
+
+        let first = store.claim_due_ping(now + 1, now + 16, 8).await.unwrap();
+        assert_eq!(first.scanned, 8);
+        assert_eq!(first.deliveries.len(), 8 - stale_count);
+        let tail = store.claim_due_ping(now + 1, now + 16, 8).await.unwrap();
+        assert_eq!(tail.scanned, 1);
+        assert_eq!(tail.deliveries.len(), 1);
+        assert_eq!(tail.deliveries[0].auth_req_id, "scan-8");
+        assert_eq!(tail.deliveries[0].attempts, 1);
+        for delivery in first.deliveries.iter().chain(&tail.deliveries) {
+            assert_eq!(
+                store
+                    .finish_ping(delivery, CibaPingFinishOutcome::Delivered)
+                    .await
+                    .unwrap(),
+                CibaPingFinishResult::Applied
+            );
+        }
+        let empty = store.claim_due_ping(now + 1, now + 16, 8).await.unwrap();
+        assert_eq!(empty.scanned, 0);
+        assert!(empty.deliveries.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -341,6 +464,7 @@ async fn expired_ciba_ping_is_failed_without_exposing_its_notification_token() {
             .claim_due_ping(now + 2, now + 17, 10)
             .await
             .unwrap()
+            .deliveries
             .is_empty(),
         "an expired authorization request must never trigger outbound notification"
     );
@@ -365,6 +489,84 @@ fn pending_device(now: chrono::DateTime<Utc>) -> DeviceAuthorizationState {
         last_poll_at: None,
         slow_down_count: 0,
     }
+}
+
+#[tokio::test]
+async fn device_snapshot_preserves_raw_cas_value_and_rejects_missing_expiry_or_corruption() {
+    use nazo_auth::{DeviceAtomicResult, DeviceStateStorePort};
+    let Some((connection, inspector)) = setup().await else {
+        return;
+    };
+    let store = DeviceStore::new(&connection);
+    let device_code = format!("snapshot-{}", uuid::Uuid::now_v7());
+    let key = nazo_valkey::test_support::state_storage_key(format!(
+        "oauth:device:code:{}",
+        blake3::hash(device_code.as_bytes()).to_hex()
+    ));
+    assert!(
+        store
+            .load_by_device_code(&device_code)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    let state = pending_device(Utc::now());
+    let raw = serde_json::to_string_pretty(&state).unwrap();
+    inspector
+        .set::<(), _, _>(&key, &raw, Some(Expiration::PX(60_000)), None, false)
+        .await
+        .unwrap();
+    let deadline = inspector.pexpire_time::<i64, _>(&key).await.unwrap();
+    let stored = DeviceStateStorePort::load_by_device_code(&store, &device_code)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(stored.state(), &state);
+    assert_eq!(stored.version().comparison_token(), raw);
+    assert_eq!(
+        DeviceStateStorePort::replace_by_device_code(
+            &store,
+            &device_code,
+            stored.version(),
+            &state
+        )
+        .await
+        .unwrap(),
+        DeviceAtomicResult::Applied
+    );
+    assert_eq!(
+        inspector.pexpire_time::<i64, _>(&key).await.unwrap(),
+        deadline
+    );
+    assert!(inspector.persist::<bool, _>(&key).await.unwrap());
+    assert_eq!(
+        store
+            .load_by_device_code(&device_code)
+            .await
+            .unwrap_err()
+            .kind(),
+        nazo_valkey::ErrorKind::Protocol
+    );
+    inspector
+        .set::<(), _, _>(&key, "not-json", Some(Expiration::EX(60)), None, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .load_by_device_code(&device_code)
+            .await
+            .unwrap_err()
+            .kind(),
+        nazo_valkey::ErrorKind::Protocol
+    );
+    inspector.del::<i64, _>(&key).await.unwrap();
+    assert!(
+        store
+            .load_by_device_code(&device_code)
+            .await
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]

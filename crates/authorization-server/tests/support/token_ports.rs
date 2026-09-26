@@ -189,19 +189,14 @@ impl AuthorizationStateStorePort for HolderFixture {
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         panic!("unexpected AuthorizationStateStorePort::load_par call")
-    }
-    fn take_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        panic!("unexpected AuthorizationStateStorePort::take_par call")
     }
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,
-        expected: &'a PushedAuthorizationRequest,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::compare_and_delete_par call")
     }
@@ -216,7 +211,7 @@ impl AuthorizationStateStorePort for HolderFixture {
     fn load_consent<'a>(
         &'a self,
         request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         panic!("unexpected AuthorizationStateStorePort::load_consent call")
     }
     fn take_consent<'a>(
@@ -228,7 +223,7 @@ impl AuthorizationStateStorePort for HolderFixture {
     fn compare_and_delete_consent<'a>(
         &'a self,
         request_id: &'a str,
-        expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
         panic!("unexpected AuthorizationStateStorePort::compare_and_delete_consent call")
     }

@@ -112,7 +112,11 @@ Each `ModuleId` declares:
 An administrator PATCH changes only desired state and returns `202 Accepted`.
 The UI must show the request as pending until actual state and revision confirm
 completion. Desired state is durable; actual state is reconciled by each
-server instance.
+server instance. Each one-second reconciliation pass reads the tenant's desired
+state and this instance's actual state in one PostgreSQL snapshot. The snapshot
+only skips already-settled modules whose dependency and admission checks still
+hold; modules requiring action retain fresh reads and the revision-fenced state
+machine. No durable snapshot is cached between passes.
 
 Every asynchronous transition carries the desired-state revision. The worker
 revalidates that revision before publishing an active snapshot, before
@@ -179,6 +183,13 @@ flows resolve the issuing user through `oauth_token_issuances` rather than a
 Valkey JTI-to-subject projection, keeping the durable store the single source
 of truth. OpenID4VC preauthorized issuance keeps its own storage and is not
 mixed into the generic issuance fence.
+
+OpenID4VC preauthorized transaction-code verification uses the host's shared,
+bounded password verifier. The repository releases its read connection before
+waiting for Argon2, then conditionally consumes the unchanged offer in one
+statement. That write rechecks the database clock, tenant, code, verifier and
+authorization snapshot; concurrent requests still have exactly one winner.
+Verifier saturation returns storage unavailable rather than an invalid code.
 
 Expired security state is reclaimed by a bounded host-owned worker: each
 server process runs one maintenance worker, each batch is capped per

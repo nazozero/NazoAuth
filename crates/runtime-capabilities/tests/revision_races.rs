@@ -125,6 +125,28 @@ impl ModuleStateRepository for Repository {
             .collect())
     }
 
+    async fn read_reconcile_state(
+        &self,
+        instance_id: &str,
+    ) -> Result<Vec<nazo_runtime_modules::ModuleReconcileState>, Self::Error> {
+        let state = self.state.lock().unwrap();
+        Ok(state
+            .desired
+            .iter()
+            .map(|desired| nazo_runtime_modules::ModuleReconcileState {
+                desired: desired.clone(),
+                instance: state
+                    .instance
+                    .as_ref()
+                    .filter(|instance| {
+                        instance.instance_id == instance_id
+                            && instance.module_id == desired.module_id
+                    })
+                    .cloned(),
+            })
+            .collect())
+    }
+
     async fn compare_and_set_desired(
         &self,
         change: DesiredStateChange,

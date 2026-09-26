@@ -16,9 +16,9 @@ use super::app::{
 use chrono::Utc;
 use nazo_auth::{
     AuthorizationCodeState, AuthorizationFuture, AuthorizationPortError,
-    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationStateStorePort,
-    ConsentPayload, DpopNoncePolicy, GrantWrite, OAuthClient, PushedAuthorizationRequest,
-    StoredAuthorizationGrant, ValidatedClientRegistration,
+    AuthorizationRateDimension, AuthorizationRepositoryPort, AuthorizationStateSnapshot,
+    AuthorizationStateStorePort, ConsentPayload, DpopNoncePolicy, GrantWrite, OAuthClient,
+    PushedAuthorizationRequest, StoredAuthorizationGrant, ValidatedClientRegistration,
 };
 use nazo_identity::{
     AccountIdentity, Principal, PublicAccount, SessionId, TenantContext, TenantId, UserId,
@@ -52,6 +52,7 @@ pub struct Ports {
     pub stored_par: Mutex<Vec<(String, PushedAuthorizationRequest, u64)>>,
     pub record_code_writes: AtomicBool,
     pub stored_codes: Mutex<Vec<RecordedAuthorizationCode>>,
+    pub consent: Mutex<Option<ConsentPayload>>,
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
     session: Result<Option<SessionSnapshot>, RepositoryError>,
     calls: Mutex<Vec<&'static str>>,
@@ -132,14 +133,25 @@ impl AuthorizationStateStorePort for Ports {
     fn load_consent<'a>(
         &'a self,
         _request_id: &'a str,
-    ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<ConsentPayload>>> {
         self.record("consent");
-        Box::pin(async { Ok(None) })
+        Box::pin(async {
+            Ok(self
+                .consent
+                .lock()
+                .unwrap()
+                .clone()
+                .map(|payload| AuthorizationStateSnapshot {
+                    version: serde_json::to_value(&payload).unwrap().to_string(),
+                    payload,
+                }))
+        })
     }
     fn load_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+    ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
+    {
         self.record("load_par");
         Box::pin(async move {
             Ok(self
@@ -148,21 +160,29 @@ impl AuthorizationStateStorePort for Ports {
                 .unwrap()
                 .iter()
                 .find(|(uri, _, _)| uri == request_uri)
-                .map(|(_, request, _)| request.clone()))
+                .map(|(_, request, _)| AuthorizationStateSnapshot {
+                    version: serde_json::to_value(request).unwrap().to_string(),
+                    payload: request.clone(),
+                }))
         })
-    }
-    fn take_par<'a>(
-        &'a self,
-        _request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        panic!("unexpected AuthorizationStateStorePort::take_par call")
     }
     fn compare_and_delete_par<'a>(
         &'a self,
-        _request_uri: &'a str,
-        _expected: &'a PushedAuthorizationRequest,
+        request_uri: &'a str,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::compare_and_delete_par call")
+        self.record("consume_par");
+        Box::pin(async move {
+            let mut stored = self.stored_par.lock().unwrap();
+            let Some(index) = stored.iter().position(|(uri, request, _)| {
+                let version = serde_json::to_value(request).unwrap().to_string();
+                uri == request_uri && version.as_str() == expected
+            }) else {
+                return Ok(false);
+            };
+            stored.remove(index);
+            Ok(true)
+        })
     }
     fn store_par<'a>(
         &'a self,
@@ -193,9 +213,19 @@ impl AuthorizationStateStorePort for Ports {
     fn compare_and_delete_consent<'a>(
         &'a self,
         _request_id: &'a str,
-        _expected: &'a ConsentPayload,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::compare_and_delete_consent call")
+        self.record("consume_consent");
+        Box::pin(async move {
+            let mut consent = self.consent.lock().unwrap();
+            assert_eq!(
+                serde_json::to_value(consent.as_ref().unwrap())
+                    .unwrap()
+                    .to_string(),
+                expected,
+            );
+            Ok(consent.take().is_some())
+        })
     }
     fn store_consent<'a>(
         &'a self,
@@ -526,6 +556,7 @@ impl Fixture {
             stored_par: Mutex::new(Vec::new()),
             record_code_writes: AtomicBool::new(false),
             stored_codes: Mutex::new(Vec::new()),
+            consent: Mutex::new(None),
             client,
             session,
             calls: Mutex::new(Vec::new()),

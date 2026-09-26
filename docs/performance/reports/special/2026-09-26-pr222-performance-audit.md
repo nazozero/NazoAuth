@@ -1,0 +1,364 @@
+# PR #222 性能证据与最短请求链路审查
+
+后续基于 `8140acc` 的扩大范围只读审查，见 [新增问题、最短修法与规范边界](2026-09-26-pr222-static-followup.md)；其中新增问题尚未实施，不包含在下述第二阶段已修复清单内。
+
+审查日期：2026-09-26。目标为 [PR #222](https://github.com/nazozero/NazoAuth/pull/222) 的 `perf/db-hotpath-minimal-0c70d746` 分支；接手基线为 `da2899161a1e4a9989a3641cd0d1f94ebb59f68f`。第一阶段生产修改至 `2af5e69ae1106bfc2f15b3c52eaa8e0381d0e961`，测试修正与完整 CI 验证提交为 `3444de03a5b823d7e1530a7772bed285b626db96`，对应第 8、9 节。第二阶段按用户要求采用深度静态审查、原则性修复与最小测试，逐项 checkpoint 和验证边界见第 10 节；旧 CI 结果不代表这些后续修改通过完整集成。本报告复核历史原始数据、测量脚本和源码，不是当前候选的新压测报告，不追溯修改历史 PASS / FAIL / INVALID。未合并、未部署。
+
+**主要结论：优先处理数据库请求链路中的重复写入与无效回收，以及后台回收能力不足；同时修正验收口径，否则会把完成迭代当成成功吞吐，把短时容量当成长时稳定性。** 最强证据是历史 formal 运行的百万级过期 issuance 积压、refresh contract 删除 98.10% 无效，以及受控 pool 24/32 实验中的排队变化。SCIM 共享鉴权写入有源码机制与扩容失效现象支持，但没有足够的锁采样把全部损失定量归因于某一行锁。累计 SQL 时间不能换算为端到端延迟损失，更不能据此宣布当前代码已提升某个百分比。
+
+## 1. 证据范围与可信边界
+
+| 证据 | 原始来源 | 能证明什么 | 不能证明什么 |
+| --- | --- | --- | --- |
+| Formal 3000、30 分钟 R2 | [window](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/load/cap-cap-mixed.window.json)、[PGSS pre](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/pgss-pre.json)、[PGSS post](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/pgss-post.json)、[ledger post](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/ledger-post.txt) | 指定历史运行的成功数、数据库工作量与结束时积压 | 当前分支性能、整个项目所有协议流的稳态容量 |
+| Pool 24/32 A/B | [完整归档](../business-pool-24-vs-32/evidence/evidence.tar.gz)、[manifest](../business-pool-24-vs-32/manifest.json) | 同一历史二进制、指定 mixed 负载下，24 个连接构成额外排队限制 | 任意部署都应使用 32；当前候选严格 3000/s 稳态通过 |
+| SCIM / Device / CIBA 梯度 | [原始 ladder 目录](../2026-09-18-capacity-endurance/evidence/ladder/)、[来源说明](../2026-09-18-capacity-endurance/report.md) | 特定历史版本、共享主机上的并发扩展形态 | 当前代码绝对容量、特定 SQL 锁占全部损失的比例 |
+| Audit batching A/B | [verdict](../audit-batch-persistence/evidence/audit-batch-verdict.json)、[二进制 manifest](../audit-batch-persistence/evidence/audit-batch-manifest.json) | 已保留汇总中的队列丢弃消失、实际批处理与吞吐非退化 | 从仓库独立重建全部原始四点时序；普遍吞吐提升幅度 |
+| 当前修改 | Git 提交及本报告第 8、10 节所列源码 | 冗余链路已在代码中移除，测量契约已修改 | 未在相同数据库环境重新运行前的实际收益 |
+
+Formal 的 [manifest](../formal3000-30m-harness-repair/manifest.json) 记录 `base_sha=1e758edcc9faa8ea07085d1fce11b82eef3bb891`、`harness_sha=ebbfa79727063d69895125f0d7c9e1e150da8cf8`，应用镜像 `hr2-app:a2dd5f13`，镜像/运行进程/预期 binary SHA256 均为 `046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a`。但 [provenance.json](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/provenance.json) 的 `source_sha` 为 `unknown`。二进制三方一致不等于证明该二进制来自当前源码。应保留这个可追溯性限制。
+
+仓库保留了 formal 主负载的 window、summary、k6 summary、错误和日志，但未保留可在本地完整重放全部主负载分析的 series / residency / soak 原始时序。因此本报告可以重算保留字段、校验 PGSS 差分、核对结束 ledger；不能补造逐分钟清理年龄曲线。SCIM 等 2026-09-18 结果来自 `3ff5030e038ca5de16226c74f8e5759d4ec2cd1b`，当时应用未绑核、最多可见 64 个 CPU，与当前候选不能混为一组 A/B。
+
+## 2. P1：旧后台回收存在结构性供需缺口
+
+### 2.1 最直接的证据是已过期的存量与年龄
+
+Formal R2 的 [ledger-pre.txt](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/ledger-pre.txt) 中 issuance 行数、过期行数均为 0；[ledger-post.txt](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/ledger-post.txt) 的关键记录为：
+
+| 位置 | 字段 | 值 |
+| --- | --- | --- |
+| 第 3 行 | `META sampled_at` | `2026-09-25 05:25:40.136724` |
+| 第 252 行 | `ROW_COUNTS oauth_token_issuances`，精确行数 | 1,961,417 |
+| 第 276 行 | `EXPIRED_BACKLOG issuances_due` | 1,128,769 |
+| 第 276 行 | 最早 `retain_until` | `2026-09-25 05:18:51` |
+| 第 10 行 | relation 累计插入 / 删除 | 4,957,370 / 2,995,953 |
+
+计算：
+
+```text
+过期存量占比 = 1,128,769 / 1,961,417 = 57.5486%
+ledger 开始时间 - 最早 retain_until = 409.136724 秒
+```
+
+`META sampled_at` 早于后续 backlog SQL，409.137 秒是该次采集下的诊断年龄下界，不是同语句时钟计算的精确即时年龄。即便如此，最旧过期行已等待超过 6 个正常 60 秒周期，不能用“周期清理自然会暂时有 due 行”解释为充分稳定。第 10 行的 `n_live_tup=1,964,715` 是估计量，不能替代第 252 行的精确行数。
+
+### 2.2 源码给出可证明的旧吞吐上限
+
+在 `da28991:crates/nazoauth/src/jobs/security_state.rs` 第 14–21、50–67 行，旧 worker 每轮最多 512 批，批内回收 issuance 最多 256 行，随后固定休眠 60 秒；还受 30 秒连续工作预算限制。因此，在单 worker 下，即使忽略所有执行时间：
+
+```text
+旧 issuance 回收长期上限 ≤ 512 × 256 / 60 = 2,184.533 行/秒
+```
+
+这只是乐观上界，实际批次耗时、其他类别维护和预算到期只会降低吞吐。该上界不是 HTTP 容量：一次请求可能不产生 issuance，也可能负载旁路产生额外 issuance。源码链路见 [worker](../../../../crates/nazoauth/src/jobs/security_state.rs)、[维护仓储](../../../../crates/persistence-postgres/src/repositories/security_state.rs) 与 [初始 bounded cleanup 定义](../../../../migrations/20260805000500_token_issuance_saga/up.sql)。历史实现一直保留到本轮 worker 修改前；这是持久机制证据，不冒充当前 HEAD 的实测。
+
+同一 formal 的 PGSS 可以提供同窗工作量交叉检查：
+
+```text
+pre.ts  = 1790312068.525355
+post.ts = 1790313942.1984613
+span    = 1,873.673106 秒
+Fresh INSERT rows + SingleUse INSERT rows
+        = 4,076,388 + 880,982 = 4,957,370
+整个 PGSS 区间平均插入率 = 4,957,370 / 1,873.673106 = 2,645.803 行/秒
+```
+
+该分母来自实际 PGSS pre/post，不使用 `point.load` 的约 1,821.1 秒，也不使用主负载的 1,785 秒测量窗。它包含预热、旁路和收尾，是全区间平均值，不能冒充成熟稳态的逐秒到期率。对于保持相同生产率、保留期有限且最终均到期的长期运行，旧回收上限低于生产率；结束时百万过期行是已经发生的实证。
+
+[perf/env.yaml](../../../../perf/env.yaml) 第 28 行的 access-token TTL 为 300 秒，但 [token_issuance.rs](../../../../crates/persistence-postgres/src/repositories/token_issuance.rs) 第 366–387 行把 `retain_until` 设为 access-token 有效期加 clock skew，并在 SingleUse 时取与 grant deadline 的较大值。因此不能仅凭 TTL=300 声称所有 issuance 都在 300 秒或固定 360 秒成熟。应按实际场景最大保留期声明成熟观察窗。
+
+### 2.3 当前代码与剩余风险
+
+当前 worker 已移除 512 批总数上限；饱和运行达到 30 秒调度预算后，按该轮实际工作时间休息；排空或失败时休息 60 秒。仍保留每类别、每批次行数限制、批间 yield 与错误后的正常等待。其意义是消除固定行数/60 秒造成的结构性天花板，同时避免无限连续抢占。等长休息只约束单个 worker 饱和周期的工作/休息比例，不承诺数据库 CPU 或连接资源的占比，也不限制多副本聚合维护负载。**这不证明数据库实际清理能力已经超过生产率。** 在途批次允许完成，30 秒是批次调度预算，不是单条 SQL 的硬超时。
+
+验收已扩展为 [issuance-maintenance-evidence.md](../../issuance-maintenance-evidence.md)：运行前声明实际最大 retention 和最大过期年龄目标；从 `measurement_start + retention` 开始至少观察 180 秒，使用同语句数据库时间采样最旧 due 行，并验证覆盖、时钟和计数器 reset。非零或短暂上升的 due 数自然可能来自清理锯齿，不能只看一个终点；另一方面，旧 refresh-family / spent-proof invariant 通过不能证明 issuance 清理通过。新 PASS 只证明该运行成熟窗口内的采样年龄目标，不是无限稳态证明。
+
+## 3. P1：同步数据库工作放大了关键请求链路
+
+### 3.1 PGSS 差分的正确归因范围
+
+[pgss-pre.json](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/pgss-pre.json) 与 [pgss-post.json](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/pgss-post.json) 的 `stats_reset` 都是 `1790312068.521715`。pre 仅有两条 postgres observer/reset 语句。按 `(dbid, userid, toplevel, queryid)` 对齐，并核对 reset 相等后，下表 runtime 顶层查询的 post 值可作为该区间增量。
+
+| `pgss-post.json` 位置 / queryid | 顶层 runtime 查询 | calls | rows | 累计 `total_exec_time` ms |
+| --- | --- | ---: | ---: | ---: |
+| 第 41–50 行；`7937354421020446243` | 持久化 required security audit | 7,595,860 | 7,595,860 | 1,228,831.750 |
+| 第 185–194 行；`-2887139335912015367` | Fresh issuance INSERT | 4,076,388 | 4,076,388 | 498,049.505 |
+| 第 197–206 行；`-6838157736527928436` | shared privilege preflight | 3,678,979 | 3,678,979 | 438,253.786 |
+| 第 317–326 行；`-5288884251522700385` | 每次 refresh 的 spent-proof prune | 1,863,025 | 1,670,307 | 363,765.115 |
+| 第 473–482 行；`7644058008137761304` | 按 contract 主键尝试删除 orphan | 862,130 | 16,361 | 540,028.255 |
+
+最后一项按唯一主键一次最多删除一行，所以可精确推导：
+
+```text
+无删除调用比例 = (862,130 - 16,361) / 862,130 = 98.1023%
+```
+
+这不是“删了一些行所以大部分有用”，而是绝大多数同步尝试没有回收任何对象。安全决策需要即时退休 refresh family、维护 replay/ownership 证据并原子记录 required audit；对无引用、过了保护期的 contract 做物理回收，不需要每次发 token 都尝试。`abf9449` 已把这部分回收交给维护任务并补充引用索引，属于减少请求必经链路的直接修复。
+
+shared privilege preflight 也有数百万调用。`05f0deb` 让最终 Required append 在适用路径负责静态 writer 权限检查，避免在同一必定追加路径提前重复查询。不能由此删除动态 readiness、撤销/租户隔离检查、审计持久化或事务原子性；append 是安全决策的最终拥有者，失败必须使业务提交失败。Device / CIBA 等具体分支应以源码路径和故障测试确认，不能把某一 mixed 结果推广到全部协议。
+
+### 3.2 不应使用的推导
+
+累计 SQL 执行时间包含并发会话的工作时间，不是 wall-clock，也不等同 CPU 时间。表中 540,028 ms 不能直接除以整段运行时长后称为“端到端性能损失”，也不能承诺移除后提升相应百分比。必要的安全持久化本身耗时高，不意味着可删除。
+
+本次 PGSS 全部 calls 为 164,372,310，其中 nested 为 77,978,705，runtime 顶层为 85,868,387。主负载 HTTP 数为 7,800,382，而包含旁路负载的总 HTTP 数为 9,956,017。把全角色、含 nested 的 SQL 除以主负载 HTTP 得到约 21 次“SQL/request”，混合了执行层级和工作负载；它不是一次请求经过 21 次串行网络 RTT 的证明。连接池 acquire 还可能包含后台任务，除以主负载成功数也不能得出单个业务的准确 checkout 数。最短链路应通过具体成功/失败分支源码顺序确认，再用同窗计数交叉验证。
+
+## 4. P1：formal 3000 的历史 PASS 不等于成功吞吐达到目标
+
+[window.json](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/load/cap-cap-mixed.window.json) 第 61–78 行 `measurement_cohort`：
+
+| 项目 | 数值 |
+| --- | ---: |
+| window start / end | 1790312099.163 / 1790313884.163 |
+| 精确窗口长度 | 1,785 秒 |
+| started / completed | 5,355,005 / 5,355,005 |
+| success | 5,314,987 |
+| expected_rejection | 885 |
+| local_no_request | 39,133 |
+| 测量窗 dropped | 0 |
+
+```text
+完成迭代率 = 5,355,005 / 1,785 = 3,000.003 /秒
+成功操作率 = 5,314,987 / 1,785 = 2,977.584 /秒
+成功 / completed = 99.2527%
+当前 successful-ops-v1 的 3000/s × 99.5% 下限 = 2,985 /秒
+```
+
+按当前成功吞吐契约，这组历史计数未达到 2,985/s 下限。`local_no_request` 没有实际完成目标服务工作；协议正确拒绝也不能混入成功 numerator。完整迭代 P95/P99 为 41/135 ms、操作 P99 为 134 ms，这些低延迟与上述吞吐不足及回收积压可以同时存在，不能相互代替。
+
+原始 [manifest](../formal3000-30m-harness-repair/manifest.json) 因 `diag_overflow` 标记 INVALID，后续 [reeval-verdict](../formal-evidence-contract-repair/evidence/F3000-30M-R2.reeval-verdict.json) 在区分 forensic 诊断溢出与容量核心证据后有原契约判定。这里保留其历史语义，并明确新旧 numerator 差异，不把事后重算包装成新运行，也不为了让旧 PASS 保留而调整新门槛。
+
+该 formal 的主 mixed 配方是 userinfo 30%、client credentials 25%、authorization code 15%、refresh 15%、token exchange 15%，另有 refresh 600/s、Argon2 登录 8/s、metadata 200/s、FAPI 30/s 旁路。它不是 SCIM、Device、CIBA、所有 Fresh / single-use / mTLS 分支的全覆盖。
+
+### 4.1 PR #222 的后续进度是另一组证据
+
+[PR #222 进度评论](https://github.com/nazozero/NazoAuth/pull/222#issuecomment-5844672554) 发布于 `2026-09-26T08:39:32Z`，报告针对 `da289916` 候选的 600 秒容量结果：baseline 2400/s PASS、P99 53 ms；head 3200/s PASS、P99 239 ms，即报告容量增加约 33%。评论还报告 1800/s、pre/max VU 均 2048、120 秒 warmup + 120 秒 measurement 的 ABBA pair A 全部 PASS；其中一个 B 的 P99 136 ms 对比 A 最小值 96 ms 被标记，WAL 约 4956 → 4494 B/op。pairs B–E、故障点及 3 × 1800 秒 steady 后续验证尚未形成可在本轮复核的完整归档。
+
+这些是前任运行者提供的进度，而非本次独立复验结果；base/head 的完整来源、实际 outcome/window、所有 A/B 点及故障/长期结果应在恢复连接后以原始 manifest 核对。它们与 2026-09-25 的旧 formal3000 不是同一个运行，**不能用旧 formal 的成功吞吐重算直接否定前任 3200/s 结果**，也不能把前任结果推广到后来新增修复后的 `2af5e69`。600 秒容量点不能独立证明长期稳定；3200/s 的 P99 239 ms 距 250 ms 门仅 11 ms，需按运行前既定 gate 检验其复现性，不能事后放宽门槛消除真实退化。本报告对这组进度保留“已报告、待独立核验”的状态。
+
+## 5. Pool 24/32：受控实验比“WAL 占比高所以不能加连接”的猜测更有力
+
+原始 [evidence.tar.gz](../business-pool-24-vs-32/evidence/evidence.tar.gz) 的成员为：
+
+```text
+pool24v32/mixed/{A1,A2,B1,B2}/point.json
+pool24v32/mixed/{A1,A2,B1,B2}/residency.jsonl
+```
+
+下表直接取各 `point.json.metrics` 的 `successful_ops_per_s`、`op_p99_ms`、`wait_per_acq_ms`；队列均值来自各 residency 的测量窗样本（每点 420 个）。
+
+| 点 | pool | 成功操作/s | 操作 P99 ms | wait/acquire ms | checked-out 均值 | waiting 均值 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A1 | 24 | 2613.333 | 1256 | 75.325 | 24.000 | 1267.974 |
+| A2 | 24 | 2744.333 | 1148 | 68.002 | 24.000 | 1195.195 |
+| B1 | 32 | 2952.876 | 144 | 1.590 | 25.895 | 29.833 |
+| B2 | 32 | 2953.990 | 101 | 1.039 | 25.033 | 18.848 |
+
+A 均值 2678.833/s，B 均值 2953.433/s，历史实验提高约 10.25%。24 时连接借满、千级队列；32 时平均借出约 25–26 个、队列显著缩小。这支持“24 的限制额外阻塞了该负载”，而非单凭 PG WAL wait share 推断增大 pool 必然更差。
+
+该实验的 WAL active-sample share A1/A2 为 41.1%/45.5%，B1/B2 为 49.9%/45.4%。吞吐改善与 WAL 活跃样本占比提高并不矛盾；share 是采样构成，不是某个请求的等待预算。`commit_delay=0`，durability 没有降低；此前 group-commit 候选失败不能通过换个口径宣布成功。PG 进程 RSS 相加包含共享页重复计算，不能作为物理内存增量。
+
+[manifest](../business-pool-24-vs-32/manifest.json) 记录同一应用 binary `046c7d40...`、唯一变量为 pool env override；当时生产默认已是 32，实验是把基准配置对齐，而非新的生产默认优化。四点只有短窗，且 B1/B2 的真实成功吞吐都低于当前 2985/s 下限，所以历史 pool32 PASS 应理解为该实验的选择结论，不能替代当前成功吞吐契约下的 strict 3000 / 30m 通过。
+
+## 6. SCIM、Device、CIBA：辨别流程单位与扩容形态
+
+### 6.1 SCIM：并发增加没有增加吞吐，共用鉴权路径是优先排查对象
+
+原始文件分别为 [c4](../2026-09-18-capacity-endurance/evidence/ladder/cap_scim_reads-c4/capacity-cap-scim-reads.k6.json)、[c8](../2026-09-18-capacity-endurance/evidence/ladder/cap_scim_reads-c8/capacity-cap-scim-reads.k6.json)、[c16](../2026-09-18-capacity-endurance/evidence/ladder/cap_scim_reads-c16/capacity-cap-scim-reads.k6.json)。读取 `metrics.iterations` / `http_reqs` / `http_req_duration` / `cap_measure_ops`：
+
+| 并发 | 全运行 HTTP=迭代/s | 全运行 HTTP P99 ms | cap_measure_ops count | k6 原始 cap_measure_ops rate |
+| --- | ---: | ---: | ---: | ---: |
+| 4 | 505.158 | 22.172 | 16,725 | 371.587 |
+| 8 | 521.340 | 78.330 | 17,447 | 387.567 |
+| 16 | 504.913 | 185.008 | 16,751 | 371.968 |
+
+各点 pool wait 约 0.002 ms。全运行吞吐约 505–521/s 不再上升，P99 由 22 ms 增至 185 ms，证明该历史 SCIM workload 的扩容失效不是明显的 pool checkout 等待。旧鉴权每次请求对同一 credential 写 last-used，并开专用事务/持久化专用使用证据；即使业务读取 schema、metadata，也经过该公共写路径。这是符合现象的序列化机制。
+
+`f2c3b67` 已移除冗余 credential-use 写路径，保留有效 credential 查询、scope、租户、expiry/revocation 检查、统一审计及必要 deny audit。仍需用同 credential 与多 credential 对照，查看行锁与事务耗时，证明实际收益；历史没有 SCIM 锁采样，不能宣布全部平台瓶颈都是这一行 UPDATE。
+
+特别注意：历史标题中的 371–388 “ops/s”来自 post-warmup `cap_measure_ops.count` 除以约 45 秒的全运行时长。该 numerator/window 不一致，不能当作精确稳态容量。原始文件缺少可恢复精确测量 cohort 的对应时序，本报告保留原值及定义，不猜一个“修正后容量”。全运行 HTTP rate 使用同窗 count/rate，可以说明相对扩容形态，但也不是成功稳态验收值。
+
+### 6.2 Device / CIBA：一次业务包含多次 HTTP
+
+Device 原始 [c4](../2026-09-18-capacity-endurance/evidence/ladder/cap_device_flow-c4/capacity-cap-device-flow.k6.json)、[c8](../2026-09-18-capacity-endurance/evidence/ladder/cap_device_flow-c8/capacity-cap-device-flow.k6.json)：全运行分别约 298.207、472.932 flow/s，对应 1192.827、1891.727 HTTP/s，HTTP 约为逻辑流程的 4 倍。c8 的 23 个 `cap_measure_errors` 除以同口径 14,786 `cap_measure_ops` 为 0.15555%；若错误地除以全运行 85,152 HTTP，则只得到 0.02701%，掩盖流程错误比例。该数据不足以将错误唯一归因于某个 rate limiter。
+
+CIBA 原始 [ladder](../2026-09-18-capacity-endurance/evidence/ladder/) 中 `cap_ciba_flow-c{4,8,16,32,64}/capacity-cap-ciba-flow.k6.json` 的全运行 flow/s 依次为 187.833、389.522、692.041、1221.494、1454.269；c64 为 5817.076 HTTP/s。历史 1063.723 “ops/s”是 47,896 post-warmup count 的全时长 rate，同样有分母问题。c32/c64 pool wait 约 0.028/0.642 ms，不能据此证明 DPoP 是唯一瓶颈；需要把签名/校验、数据库和轮询语义区分。历史 private-key poll r60/r120 因轮询语义不正确而被排除，不可回收为有效容量证据。
+
+当前 static writer preflight 合并覆盖部分 Device / CIBA 路径，但本轮没有对应的新数据库性能数据。应先验证协议、安全失败与事务语义，然后做代表性的短链路对照，不从 mixed 一项直接推断这些 flow 已提速。
+
+## 7. Audit batching：已证明的是避免丢弃与非退化
+
+[audit-batch-verdict.json](../audit-batch-persistence/evidence/audit-batch-verdict.json) 的 `points.*.audit_queue`、`successful_ops_per_s`、`op_p99_ms`：
+
+| 点 | dropped | persisted events | persist batches | max batch | 成功操作/s | P99 ms |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| A1 | 42,435 | 6,797 | 6,797 | 1 | 2351.400 | 1375 |
+| A2 | 44,906 | 7,309 | 7,309 | 1 | 2480.571 | 1240 |
+| B1 | 0 | 50,764 | 2,227 | 64 | 2474.933 | 1206 |
+| B2 | 0 | 52,381 | 2,207 | 62 | 2497.419 | 1212 |
+
+该实验使用 common 应用 `bec5ff72` 与 batch 应用 `d4f5c734`，harness `30c7f556`，二进制不同且来源保留在 [manifest](../audit-batch-persistence/manifest.json)。B 实际持久化更多事件，队列丢弃归零，批量落库确实发生；`B_min/A_max - 1 = -0.227%`，满足当时 97% 非退化下限。不能称为显著吞吐提升，也不能因为 B 完成了更多原来被丢弃的审计而把 WAL/op 上升直接视为劣化。
+
+仓库仅保留这组 verdict、manifest、budget 等汇总证据，缺少四个完整 point 的原始时序，独立重算能力弱于 pool 归档。该问题属于此前已测的审计队列修复，不应在 PR #222 里重复计为新的收益。
+
+## 8. 第一阶段实现与当时的待验项
+
+下表区分已经实现的源码变更与仍待完成的验收；审查期间的工作区修改已在交付前提交，不把“代码已经修改”写成“性能已经改善”。
+
+| 状态 | 变更 | 最短链路与安全边界 | 待验证 |
+| --- | --- | --- | --- |
+| 已提交 `da28991` | refresh rotation 使用 commit-owned writer gate | 必要审计与状态写入由最终提交路径负责 | 同环境 A/B；Required append 故障语义 |
+| 已提交 `abf9449` | retired refresh contract 转入维护回收，补引用索引 | family cap / replay / required retirement audit 保持即时；物理 orphan 删除离开签发路径 | contract 创建后一小时且无引用时的回收与扫描成本；正确性集成已通过 |
+| 已提交 `f2c3b67` | 移除 SCIM 冗余 credential-use 事务与写入 | 保留真实鉴权、撤销检查、统一审计和 deny audit | 同 credential 扩容/锁等待对照 |
+| 已提交 `05f0deb` | 适用路径取消重复静态 writer preflight | 最终 Required append 继续负责必要检查；动态 readiness 不得省略 | Device/CIBA 等各分支安全失败与查询数 |
+| 已提交 `1861749` | signing header 与签名绑定同一 key generation | 防止轮换时 header/signature 不一致 | 这是正确性修复，没有单独的性能提升证据 |
+| 已提交 `0af1aaf` | 修正 SCIM 测试 executor | 修复测试编译依赖 | CI 状态见下节 |
+| 已提交 `6da30a2` | successful-ops、producer/outcome、PG 时钟、成熟清理证据 | 消除错误成功统计和采样年龄伪精度 | 与真实 k6/PG 数据对接及新 A/B |
+| 已提交 `ba25019` | SCIM poll receipts 批处理并避免空事务 | 相同结果的持久化批次合并；保留确认语义 | 同环境查询数与尾延迟；真实 PG receipt 集成已通过 |
+| 已提交 `3c962fa` | OID4VCI transaction-code 校验移出数据库连接占用 | 高成本校验不占用 lease；提交阶段仍需权威状态校验 | 高并发与无效码负载下的实际成本；单赢家、快照与过载集成已通过 |
+| 已提交 `3c1043a` | OID4VC request trust policy 使用单次快照 | 合并请求内重复获取，保留信任与授权边界 | 同环境 query-count / latency；相关数据库集成已通过 |
+| 已提交 `2af5e69` | GC 自适应休息、移除 512 批上限、周期摘要日志 | 保留每类别每批行数限制、错误退避、批间 yield | 成熟窗口年龄、请求尾延迟、实际清理率 |
+| 已提交 `2af5e69` | OpenID4VCI 过期清理转维护、索引与引用保护 | 前台只保留当前对象的必要校验；子对象独立到期，grant 保留到 expiry + 60 秒且无子项，不提前级联删除 | 真实数据规模下的查询计划与部署窗口；迁移、并发、保留期集成已通过 |
+| 已提交 `5958075` | 审查报告 checkpoint | 固定历史数值、代码证据与待验边界 | 最终 CI 证据在本报告更新 |
+| 已提交 `a23552b` | 修正 contract 回收测试数据 | 用持久化保留的 auth_time 区分孤儿与活跃 contract；保留所有断言 | 修复后真实数据库回归已通过 |
+| 已提交 `3444de0` | CI 收集所有 workspace 测试目标的失败 | `--no-fail-fast` 让后续目标仍执行，任意失败仍阻断通过 | 完整 CI 六个工作流通过，见第 9 节 |
+
+实现入口：[worker](../../../../crates/nazoauth/src/jobs/security_state.rs)、[maintenance port](../../../../crates/persistence/src/maintenance.rs)、[PG maintenance](../../../../crates/persistence-postgres/src/repositories/security_state.rs)、[OID4VC offer store](../../../../crates/persistence-postgres/src/repositories/openid4vc_issuance_store/offer.rs)、[tenant resources](../../../../crates/persistence-postgres/src/repositories/tenant_resources.rs)、[新增保留期索引](../../../../migrations/20260927000400_openid4vci_retention_indexes/up.sql)。
+
+`3c962fa` 的关键并非简单把 transaction-code Argon 校验放到异步函数：旧路径在 `SELECT ... FOR UPDATE` 的事务与连接占用期间做昂贵校验；新路径先读取快照、归还连接，再通过注入的共享有界 `SecretVerifyPort` / `LoginPasswordVerifier` 校验，避免为每个请求新增无界密码计算任务。只有校验成功才重新借连接，以一条条件 UPDATE 消费。条件比较 tenant/id、未消费状态、pre-authorized code hash、transaction-code hash、subject、credential configurations 和原 expiry 等授权字段；快照改变或竞争者先消费则不返回授权。校验排队期间可能过期，因此消费时重新使用数据库 `clock_timestamp()` 与调用方 `now` 的较大值检查 expiry，返回的授权期限也受 offer expiry 限制。这样减少昂贵计算时的连接/行锁占用，同时保留单赢家与不消费失效快照的语义。pool-release、锁、快照变化与过载测试已在 `2af5e69` 的真实 PostgreSQL CI 中执行通过，具体记录见第 9 节。
+
+`3c1043a` 将公共 OID4VC trust-policy 读取从三次查询（其中 active-policy 查询带行锁）改为单次已提交快照查询；`Unbound`、`BoundInactive`、`Active` 与不一致状态的错误语义保留，管理写事务的锁保留。它缩短读取往返，不意味着可以缓存跨请求的旧信任状态。`ba25019` 则合并 SCIM poll receipt 写入并跳过没有 receipt 的空事务，避免在没有写入工作时仍占连接执行事务。这三项当前都是源码链路改善，尚无新的同环境收益数字。
+
+### 8.1 测量修复的意义与保留限制
+
+本轮曾用现有 fixture/实际 JS producer 做最小复现，属于逻辑回归而非压测：旧消费者查找 `unexpected_error`，实际 producer 发送 `unexpected`，导致 SUT 非预期失败被判成 `outcome_counter_mismatch` / INVALID；另一个 9,990 success + 10 未分类 prepare_failed 的 10,000 次样本仍可能通过 99.5% 吞吐 gate。0.1% 准备失败不能因为落在吞吐容差内而自动获准。
+
+准备阶段包含本地 fixture/signing，也可能包含真实登录、PAR、授权与 token HTTP 调用。当前 [measurement-accounting.md](../../measurement-accounting.md) 及代码将明确 SUT HTTP 失败/缺 token 归为 `prepare_sut_failed` → FAIL；请求前本地准备失败为 `prepare_local_failed` → INVALID；未知或历史 `prepare_failed` → INVALID，不强行给 SUT 或注入器定责。成功和失败准备都进入完整 `cap_iter_ms`，stream outcome 与 named counter 必须逐项一致。不能用只有操作阶段的低延迟掩盖准备耗时。
+
+旧 observer 在 HTTP 请求前取得主机 `ts`，随后查询 PG 状态，可能出现 `state_change` 晚于 `ts`，负值再被 clamp 为 0。历史 [windowed-idle-stats.json](../business-pool-residency/evidence/windowed-idle-stats.json) 第 39–49 行保留过负的 idle age（如 idle p50 -1.294 ms、idle-in-transaction p50 -1.354 ms）。因此旧“98.7% 小于 1 ms”等微秒级解释不可靠。当前改用同查询数据库 `pg_ts - state_change`，负值/缺字段视为无效。修复后 pool 与 PG 仍是非原子采样；250 ms observer 也不是每次请求的精确 trace，`time_weighted_share` 只是按所见 age 加权，不是累计连接驻留。
+
+### 8.2 第一阶段发现：限制删除行数不等于限制扫描量
+
+本节描述 `2af5e69` 的实现；父对象分页和 family 批量处理已在第二阶段完成代码修复，见第 10 节。以下历史证据及实际执行计划的待验边界仍保留。
+
+[PG maintenance](../../../../crates/persistence-postgres/src/repositories/security_state.rs) 的 orphan contract 与 OID4VC grant 候选查询，`NOT EXISTS` 在 `LIMIT` 之前。若有大量已到期、但仍被有效 child 引用的父对象，数据库可能每个 catch-up batch 都检查大量不合格父行，最后只返回少量或零个候选。新增 FK/reference 索引缩短每次 inner probe，却不保证 outer scan 有界。
+
+因此“每类候选或直接删除具有 256 行预算”（refresh family 删除仍可级联最多 64 个 spent proofs/family）和“一个父对象带 300 个 child 的 fixture 不发生级联删除”只分别证明输出/删除量与安全语义，不证明每批扫描耗时。还需要在真实 PG 上以这类分布查看执行计划、实际扫描行数、buffer 与每批耗时，并观察批次长期占用连接时的请求 P99。30 秒调度预算不会中断已经执行的 SQL。此项暂列待验风险，不能在没有计划证据时宣布已经发生新的性能回归，也不能因有 LIMIT 就宣称成本受控。
+
+另一个需要区分场景的维护成本是 refresh family 到期清理：当时每个候选先尝试获取与 writer 相同的 advisory lock，成功后再 DELETE；256 个候选全部可锁时，循环最多执行 512 条串行 SQL，另加候选查询和事务控制。各维护类别串行执行，因此大量 family 同时到期时，可能延长下一批 issuance 回收的间隔。但它**不能解释本次历史 formal 的百万 issuance 积压**：[PGSS post](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/pgss-post.json) 中候选 SELECT（queryid `460789033816743987`）共 11,709 次、返回 0 行、累计仅 153.995 ms；[ledger post](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/ledger-post.txt) 的 `refresh_families_expired=0`。第二阶段在保留相同 advisory key 与取锁后 expiry 复核的前提下合并 SQL；实际收益仍需到期 family 密集场景验证，不能按 512 次推算历史损失。
+
+### 8.3 真实迁移与并发结果，以及部署边界
+
+[270003 引用索引](../../../../migrations/20260927000300_refresh_contract_reference_index/up.sql) 为 refresh family 新增 `(tenant_id, contract_blake3)` 索引；[270004](../../../../migrations/20260927000400_openid4vci_retention_indexes/up.sql) 新增 notification expiry、deferred token、notification token 三个 expiry/reference 索引。它们使用普通 `CREATE INDEX`，并非并发建索引。真实库迁移前应按现有表大小与写入负载评估锁等待、构建耗时及部署窗口；本轮尚未部署。
+
+新增迁移已经在 PostgreSQL 18 CI 中实际执行通过。并发 child INSERT 与两个 sweeper 跳过已锁对象的测试，以及每类回收上限、子对象引用和时钟偏差保护测试，也已在 `3444de0` 的真实数据库中执行通过，详见第 9 节。这些结果证明所覆盖 fixture 的正确性；不替代生产规模索引构建成本、执行计划或清理吞吐验证。
+
+### 8.4 第一阶段场景候选，以及应保留的链路
+
+下表保留按 `2af5e69` 核对的候选机制，不描述最新实现。前四项已在第二阶段处理，默认日志已完成保留判断，见第 10 节。它们缺少在目标部署中的成本占比，不能与上述百万积压实证同级，也不能全部归因到普通 token 请求。
+
+| 场景 | 当前机制 | 下一条必要证据与安全边界 |
+| --- | --- | --- |
+| 多 tenant / replica 的 runtime reconciliation | 每个已启动 tenant runtime 各起 reconciler；目标一秒周期遍历 16 个 module，正常齐备时至少逐个读取 desired 与 instance，各自 checkout；依赖检查可能继续查询。见 [tenant runtime](../../../../crates/nazoauth/src/bootstrap/startup/tenant_runtime.rs)、[reconcile](../../../../crates/runtime-capabilities/src/registry/reconcile.rs)。 | 先测活跃 tenant × replica、相关 PGSS 与 pool wait。若确有成本，可评估一次批量 snapshot 与 revision 判断；必须保留依赖和并发 revision 校验。这不是每个 HTTP 请求扫描全部 tenant。 |
+| 大 PAR / consent 内容的原子消费 | [Valkey authorization](../../../../crates/state-store-valkey/src/authorization.rs) 发送完整 expected JSON；[Lua command](../../../../crates/state-store-valkey/src/command.rs) 解析 stored/expected 后递归比较并排序对象 keys。 | 需要 payload 分布、Lua CPU / slowlog。可评估原始 wire/version 比较，不能用无条件 GETDEL 代替 CAS。解析发生在一次 Lua 调用内，不能计为多次网络往返。 |
+| 外层无 `client_id` 的 encrypted JAR | [authorize flow](../../../../crates/authorization-server/src/authorization/request/flow.rs) / [PAR](../../../../crates/authorization-server/src/authorization/par.rs) 先解密探测 client，再经 [JAR](../../../../crates/authorization-server/src/authorization/jar.rs) 正式校验时再次解密。 | 先测该分支占比与解密 profile。可考虑请求内携带“已解密、尚未信任”对象，但 client 的 alg/enc、签名、claims 和 replay 检查仍全部需要。外层已有 client_id 时不属于此问题。 |
+| CIBA ping / logout 积压排空 | [ping 调度](../../../../crates/nazoauth/src/jobs/ciba_ping.rs) 和 [logout 调度](../../../../crates/nazoauth/src/jobs/backchannel_logout.rs) 不利用处理条数，满批后仍分别 sleep 500 ms / 5 s；当前批量为 8 / 20。 | 需要 backlog、到达率、远端耗时和 delivery P95。若满批持续饱和，可评估连续处理与空批退避，但须保留 claim lease、失败重试和远端保护，不能据此声称普通 token 吞吐受限。 |
+| 默认生产日志 | [observability](../../../../crates/nazoauth/src/bootstrap/observability.rs) 默认 info；[HTTP factory](../../../../crates/nazoauth/src/bootstrap/startup/services/factory.rs) 为请求创建 span / 完成 event。性能 [env](../../../../perf/env.yaml) 实际为 warn。 | 需在真实输出端做 info/warn 对照，测格式化 CPU、字节率、背压及 OTEL 队列。当前 bench 没有证明默认日志无成本，也不能用默认 info 解释该 warn bench 的瓶颈；Required audit 是独立安全事实，不随诊断日志删减。 |
+
+复核后不把 Device/CIBA 一概写成“重复预读”：当前 CIBA 已将 `initial` 传给 poll，正常路径不再预读，CAS conflict 才重取；Device 正常 poll 读取一次，冲突才重试，Approved 结果仍由最终 issuance fence 防重。JARM 确有 client 重读，但两次之间已提交业务状态，需先定义 client 停用或策略变更应在哪个时点生效，不能直接复用旧 snapshot。refresh 的 scope/family 锁和必要 client/user 共享锁也不能仅因耗时就删除；它们维护并发授权与撤销语义。
+
+## 9. 第一阶段验收证据（截至 `3444de0`）
+
+最短路径是先闭合已知证据缺口，再验证直接移除的链路，不重新铺开所有历史容量矩阵：
+
+1. **固定来源与规则。** 在运行前冻结 baseline/candidate source、镜像与 runtime binary SHA、migration head、硬件/绑核、pool、数据规模、旁路、VU 供应与时长；双方使用同一修正后的 harness。保持 durability。预先声明成功吞吐、完整迭代 P95/P99、错误、审计和成熟清理门槛，任何 offline re-evaluation 都另列版本与原因，不能看到结果后换 gate 掩盖退化。
+2. **先完成真实数据库正确性验证。** 重点是 required audit 失败回滚、refresh replay/ownership、contract 引用保护、SCIM 撤销与审计、OID4VC child retention/并发以及新索引迁移。纯逻辑测试与 DB test 编译都不能替代真实 PG 执行。
+3. **一次受控 A/B 检验短链路。** 本轮增量先比较接手基线 `da289916` 与新候选；若另测 `0c70d746` 到最终候选的整个 PR 收益，单独报告，避免重复计算前任已实施优化。用相同负载做交错 A/B；PGSS reset identity 与 pre/post span 必须匹配，分别报告 runtime 顶层、nested、background。预期证据是同步 orphan DELETE 和重复 preflight/SCIM UPDATE 消失，以及同成功吞吐下 SQL/WAL/CPU/尾延迟的变化；不能只挑吞吐最好的一点。
+4. **专门覆盖成熟回收。** 同一 soak 用预声明最大 retention 后至少三个正常周期的完整年龄采样、due 数和同窗 insert/delete 支持稳定性判断。单个终点与 600 秒容量点不足；fresh 30 分钟也没有跨过 refresh contract 1 小时 grace，需已有成熟对象或对应跨度，不能把 issuance 验收当成全部类别回收验收。
+5. **只为剩余归因补最小场景。** SCIM 做共享/分散 credential 对照；Device/CIBA 以 flow 成功为单位核验代表性路径；grant/contract 做大量受引用父对象分布的真实执行计划。若结果已满足已声明门槛且无剩余具体风险，不再追加无目的压测。
+
+| 验证项目 | 截至本报告状态 |
+| --- | --- |
+| 历史 window、PGSS、ledger、pool archive 重算 | 已完成只读审查；本报告列出数值、字段与边界 |
+| `cargo clippy --workspace --all-targets --all-features --locked --keep-going -- -D warnings` | PASS，包含数据库测试编译；追加并发 GC 测试另以 `cargo clippy --locked -p nazo-postgres --test security_state_maintenance -- -D warnings` 通过 |
+| `cargo test --locked -p nazo-key-management --lib` | 72 PASS，含跨算法轮换期间 access/ID/introspection 签名一致性 |
+| `python -m unittest discover -s perf/tests` | 299 项：298 PASS、1 SKIP（缺少真实 k6）；包含 Node 执行真实 JS producer 的跨语言回归，不是压测 |
+| `cargo test --locked -p nazo-oauth-server --lib --test authorization_application --test cross_device_application -- --test-threads=1` | 299 + 11 + 11 = 321 PASS，含 SCIM、授权、Device/CIBA 和 Required 审计失败路径 |
+| `cargo test --locked -p nazoauth --lib jobs::security_state -- --test-threads=1` | 6 PASS，含超过 512 批排空、预算耗尽休息、错误退避和关闭取消 |
+| `cargo test --locked -p nazo-identity --test scim_service` / `cargo test --locked -p nazo-http-actix --test scim_transport` | 3 + 5 = 8 PASS，覆盖服务边界与 HTTP 契约 |
+| 格式与静态契约 | `cargo fmt --check`、`git diff --check`、`verify_static_contracts.py --check`、`check_persistence_dependency_graph.py`、`check_crypto_boundary.py`、`check_perf_results_layout.py` 均通过；Python 脚本位于 `scripts/` |
+| [完整 CI 验证提交 `3444de0`](https://github.com/nazozero/NazoAuth/actions/runs/36244492514) | PASS；code-quality、conformance-security、CodeQL、dependency-review、specification-freshness、performance-images 六个工作流全部通过。生产源码与迁移等同 `2af5e69`，后续只修测试数据、CI 收集方式及报告 |
+| PostgreSQL 18 schema / migration | CI 已通过，包含新索引迁移；本地没有可用数据库环境 |
+| [OID4VC PostgreSQL 集成](https://github.com/nazozero/NazoAuth/actions/runs/36244492514/job/108411024674) | `3444de0` 的 `openid4vc.rs` 23/23 PASS，含新增 pool-release / single-consumer 与 snapshot / expiry / busy 回归 |
+| [真实 HTTP 安全矩阵](https://github.com/nazozero/NazoAuth/actions/runs/36244492527) | `3444de0` PASS；含 11 项 SCIM SET black-box、四组 load/race 的 errors=0、Valkey outage 的 health/token 503 fail-closed；不是容量 A/B |
+| [CodeQL](https://github.com/nazozero/NazoAuth/actions/runs/36244492449) | `3444de0` PASS |
+| PostgreSQL / Valkey 全工作区集成 | PASS；`cargo test --workspace --all-features --locked --no-fail-fast` 在 PostgreSQL 18、Valkey 8、隔离审计库和对象存储 fixture 下执行：3,124 PASS、0 FAIL、3 ignored。单独的 schema materialization 测试另 1 PASS，不重复计入 workspace 数量 |
+| 远程同环境 A/B / 成熟 soak | PENDING；已知 SSH 主机名仍 DNS 解析失败，尚未恢复可执行环境 |
+| 当前候选性能收益 | 未验证，不宣称已提升 |
+
+CI 已发现并修复两项测试问题：`0af1aaf` 将未声明的 Tokio 测试宏换成该 crate 既有 executor；`a23552b` 修复 contract 回收 fixture。后者在 [旧 `6da30a2` 运行](https://github.com/nazozero/NazoAuth/actions/runs/36242973823) 的 distinct-contract 断言失败，因为 `RefreshContract::persisted()` 会清除 nonce，改变 nonce 不能生成不同持久化 contract。现在改用保留的 auth_time 区分，未删除或放松 grace、回收及活跃引用断言；修复后的真实 PostgreSQL CI 已确认该用例通过。
+
+### 9.1 关键数据库测试的实际执行证据
+
+以下均来自 `3444de0` 的 [Rust quality job 日志](https://github.com/nazozero/NazoAuth/actions/runs/36244492514/job/108411024674)，时间为 2026-09-26 UTC。该步骤配置了真实 PostgreSQL / Valkey 地址，不是本地缺少数据库时的 early-return 结果。
+
+| 测试 | 日志中的 `ok` 时间 | 所属测试目标结果 |
+| --- | --- | --- |
+| `audit_repository_reads_active_scim_credentials_and_drives_logout_outbox` | 13:34:00 | auth_repositories 31/31 PASS |
+| `pre_authorized_verification_rechecks_snapshot_expiry_and_busy_result` | 13:35:16 | openid4vc 23/23 PASS |
+| `pre_authorized_verification_releases_the_pool_and_has_one_consumer` | 13:35:16 | 同上，不重复计数 |
+| `retired_contract_is_reclaimed_after_grace_without_touching_live_references` | 13:35:34 | refresh_family_capacity 8/8 PASS |
+| `batched_receipts_preserve_visibility_terminal_outcomes_and_receiver_isolation` | 13:35:47 | scim_security_events 2/2 PASS |
+| `concurrent_credential_sweepers_skip_an_uncommitted_child_parent` | 13:35:50 | security_state_maintenance 17/17 PASS |
+| `credential_state_cleanup_is_bounded_and_preserves_live_ownership` | 13:35:51 | 同上，不重复计数 |
+| `openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional` | 13:36:10 | tenant_resources 3/3 PASS |
+
+全工作区仍有仓库既有的 3 项 ignored：下载当前官方 UI 的集成、需要控制器提供 wire fixture 的契约，以及标记为必须显式 `--ignored` 执行的 FAPI2 PAR 用例。本轮未执行这三项，不将其计为通过；也没有通过新增 ignore 或弱化断言来取得绿色 CI。本地 407 项 Rust 回归是 CI 覆盖的子集，不与上述 3,124 相加成独立测试数。
+
+第一阶段把性能问题收敛到可检验的工作：必要安全写入保留在提交边界，重复鉴权写入和高度无效的同步物理回收离开请求链路；后台容量必须覆盖成熟到期负载；验收只统计成功业务且覆盖真实保留期。上述本地及真实服务 CI 证据仅归属所列提交，不能从旧报告推算后续候选的收益。
+
+## 10. 第二阶段：静态审查、原则性修复与最小验证
+
+本阶段从 `98e8943` 接续，生产修改至 `d16b71fa1e43e8a89748fdd689cc6710ef73959f`。按用户最新要求，先完成五类已发现问题的深度静态审查和代码修复，再做相关小范围测试；不重新搭建远程运行环境、不等待全量 CI、不追加容量矩阵。每项修复均已独立提交并更新同一个 PR。判断原则是减少重复读取、解析、解密、网络往返和有积压时的无效等待，同时保留协议校验、安全审计和并发状态的最终裁决者。
+
+### 10.1 已完成的 checkpoint
+
+| 提交 | 原有成本及场景 | 修复后的路径与边界 |
+| --- | --- | --- |
+| `1bd4deb` | 大量 refresh family 同时到期时，256 个候选最多产生 513 条业务 SQL，另有事务控制 | 候选读取、批量 try-lock、批量 DELETE，最多 3 条业务 SQL。使用与 writer 相同的 advisory key；跳过锁冲突，删除使用取锁后的独立 READ COMMITTED 快照并重查 expiry。没有去掉锁，也不将这一场景解释成历史 issuance 积压的原因。 |
+| `7fafa2a` | tenant × replica × module 的一秒 reconciliation 中，稳定 module 仍逐项借连接读 desired / instance | 每轮一个 tenant + instance 的 LEFT JOIN 快照，只跳过已稳定且依赖和 admission 条件成立的 module。周期仍为一秒，不跨轮缓存授权状态；实际迁移继续走原有新鲜读取、revision CAS、审计和 drain。没有引入额外通知系统。 |
+| `16d3223` | 大 PAR / consent 原子消费时，在 Valkey Lua 内重复解析两份 JSON、递归比较和排序 | 初读同时返回解析对象与原始 wire version，CAS 直接比较原值；删除 Lua JSON 解析器及深比较。wire 格式、TTL 和租户 key 不变；旧 JSON 的字段顺序不影响初读，读取后的任何值变化都拒绝且不删除替换值。这减少服务器端工作，不减少原有一次 CAS 往返，也不消除 payload 传输成本。 |
+| `a2c402e` | 外层无 client_id 的 encrypted JAR 分支曾先解密识别 client，再正式解密 | `/authorize` 按 RFC 9101 §5、RFC 9126 §4 要求先检查原始外层 client_id，删除不符合规范的探测分支。PAR 按 RFC 9126 §3 保留合法外层省略场景；解密结果仅在同一请求内以私有类型传递，正式校验复用一次解密。注册 alg/enc、签名、claims、client 绑定和 replay 校验全部保留。 |
+| `d105f44` | orphan contract / grant 的 NOT EXISTS 位于 LIMIT 之前，大量引用父对象可能被每批重复检查 | 复合索引 keyset 先选最多 256 个父键，再检查引用及 SKIP LOCKED；按末个扫描键推进，包含被引用/锁定对象。每轮固定截止时间，末页回绕，事务成功后更新进程内游标，clone 共享进度。持有父锁后的第二条 READ COMMITTED DELETE 再查 expiry 和引用。重启只重扫，不改变数据权限。 |
+| `e807539` | CIBA ping / logout 满批后仍固定等待 500 ms / 5 s，分别为 8 / 20 条一批 | 满批完成后 yield 并继续领取；空批、部分批和存储错误仍按原间隔等待。保持并发度 8、claim lease、attempt fencing、过期、终态和已持久化重试时间。继续处理下一批不等于提前重试刚失败的同一通知。 |
+| `305d9d5` | 通知发送的显式 DNS 查询发生在原 HTTP timeout 之前，可长期占用发送任务 | 将完整发送过程纳入原有 5 秒 / 3 秒截止时间，超时沿用既有失败重试。保留全地址 SSRF 检查、固定解析地址、TLS 校验、禁止代理及重定向。该截止时间约束应用等待，不承诺强制取消操作系统中的 DNS 工作，也不包含存储 finish 阶段。 |
+| `d16b71f` | 同链路审查发现 prompt=none 初读 PAR 后仍用无条件 GETDEL，可能消费后来替换的值 | 原始 version 只沿当前请求内部传递；Required audit 成功后 CAS，成功才写 code。替换/过期/其他消费者先消费均拒绝；删除 take_par 和重复应用转发层，不把 version 加入 ConsentPayload、协议或日志。初读坏 JSON 仍为 server_error，初读后值改变为 invalid_request_uri。 |
+
+JAR 规范来源：[RFC 9101 §5–6](https://www.rfc-editor.org/rfc/rfc9101.html#section-5)、[RFC 9126 §3–4](https://www.rfc-editor.org/rfc/rfc9126.html#section-3)；实现约束已同步到 [规范矩阵](../../../protocol/rfc-compliance-matrix.md)。修复不能为了省解密或读取而信任未验证声明，也不能把 required audit、一次性消费或撤销条件移出正确的提交边界。
+
+父对象扫描使用显式事务与新鲜删除快照，不能宣称空负载下每条链路的往返都减少；新增成本用于保持取锁与引用复核的正确顺序。256 限制的是可见父候选及引用检查数，不是索引页、MVCC 死元组访问或级联子行数的物理上限。新增 [270005 迁移](../../../../migrations/20260927000500_maintenance_parent_scan_indexes/up.sql) 使用普通 CREATE INDEX，实际部署仍需安排相应锁等待和建索引窗口；本阶段没有部署迁移。
+
+### 10.2 已完成判断、保留不变的链路
+
+默认 HTTP info 事件不仅是诊断文本，还承载请求计数和延迟直方图；全局过滤器同时影响相关观测层。直接降到 debug 或删除事件会改变监控契约，且历史基准使用 warn，不能据此归因该基准的损失。本阶段保留日志和观测行为；需要比较真实输出端成本时再做单变量测量，不增加异步日志框架或缓存来处理未经测量的问题。
+
+Device / CIBA 正常轮询已复用初读状态，CAS 冲突后的重读有并发意义；JARM 跨业务提交后的 client 重读，以及 refresh 的 scope/family、client/user 必要锁继续保留。当前五类候选已完成实现判断，不再标为“已发现、尚未决定如何处理”；未完成的是实际数据库执行和性能收益的验证。
+
+### 10.3 本阶段实际验证结果
+
+| 范围 | 执行及结果 | 证明范围 |
+| --- | --- | --- |
+| Runtime modules | `cargo test --locked -p nazo-runtime-modules`：58 PASS | 稳定态跳过、依赖/admission、迁移状态机与 revision 竞争 |
+| Core authorization | `cargo test --locked -p nazo-auth --lib authorization_service`：15 PASS | preview/CAS、替换拒绝及已有授权不变量；prompt=none 接口修改后已重跑 |
+| Authorization application | `cargo test --locked -p nazo-oauth-server --test authorization_application`：11 PASS | PAR、client 校验与 Required audit 顺序；最终接口修改后已重跑 |
+| JAR / authorization 单元 | `cargo test --locked -p nazo-oauth-server --lib authorization::`：57 PASS | 实际 RSA-OAEP/A256GCM + EdDSA fixture 的成功、注册算法不匹配、签名/claims/client/replay 拒绝路径 |
+| Prompt=none 单元 | `cargo test --locked -p nazo-oauth-server --lib authorization::request::prompt_none`：9 PASS | 含新增替换后不发 code、两个竞争请求只能写一个 code；其中 7 项与上一行重叠，不重复累计 |
+| Host 定向测试 | `cargo test --locked -p nazoauth --lib -- jobs::ciba_ping::tests jobs::backchannel_logout::tests adapters::ciba_ping_sender::tests adapters::backchannel_logout_sender::tests authorization_request_reports_request_uri_storage_failure_without_redirect authorization_get_requires_client_id_before_database_lookup`：24 PASS | 8 项调度、14 项本地发送策略、2 项无外部服务授权入口；实际执行 0.33 秒，不含编译时间 |
+| PostgreSQL 测试构建 | `cargo test --locked -p nazo-postgres --test security_state_maintenance --test runtime_modules --no-run`：PASS | 新 SQL 调用、绑定类型及测试源码可编译；没有执行 SQL 或数据库锁竞争 |
+| Valkey 契约测试构建 | `cargo test --locked -p nazo-valkey --test authorization_contract --no-run`：PASS | 原值 CAS、替换/损坏值和存储 API 契约测试可编译；没有实际执行 Lua |
+| 静态门禁 | `cargo fmt --check`、`git diff --check`、`verify_static_contracts.py --check`、`check_persistence_dependency_graph.py`、`check_crypto_boundary.py`：PASS | 格式、迁移校验和、分层依赖及密码学边界 |
+
+本地验证曾遇到两个依赖包的旧 rlib / 新 metadata 不一致；只清理这两个包后恢复编译。新测试的规范化参数断言和 Atomic load 方法歧义也已修正，未放松协议拒绝、单次消费或保留期断言。没有通过跳过失败断言或把缺服务测试的 early-return 当作成功来得出上述结果。
+
+真实 PostgreSQL / Valkey 执行、270005 迁移运行、父扫描 EXPLAIN、远程 A/B 和成熟 soak 均未在本阶段完成。已有数据库回归涵盖分页越过引用父对象、clone 进度、回绕重访、锁冲突及 FK 并发；恢复可用服务后可只执行这些相关目标。按用户要求，本次不等待这些服务，不发起全量运行；代码层面的五类处理与最小可执行验证已完成，不宣称新的吞吐提升百分比或全项目性能验收通过。

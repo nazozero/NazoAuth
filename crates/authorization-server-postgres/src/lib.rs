@@ -210,7 +210,7 @@ impl ServerPersistenceProvider for PostgresProvider {
         ))
     }
 
-    fn scim_credential_audit(&self) -> Arc<dyn nazo_identity::ports::ScimCredentialAuditPort> {
+    fn scim_credentials(&self) -> Arc<dyn nazo_identity::ports::ScimCredentialPort> {
         Arc::new(AuditRepository::new(self.pool.clone()))
     }
 
@@ -245,15 +245,28 @@ impl ServerPersistenceProvider for PostgresProvider {
         Arc::new(TenantResourceRepository::new(self.pool.clone()))
     }
 
-    fn openid4vci_store(&self, data_key: [u8; 32]) -> Arc<dyn nazo_persistence::Openid4vciStore> {
-        Arc::new(Openid4vciRepository::new(self.pool.clone(), data_key))
+    fn openid4vci_store(
+        &self,
+        data_key: [u8; 32],
+        secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
+    ) -> Arc<dyn nazo_persistence::Openid4vciStore> {
+        Arc::new(Openid4vciRepository::new(
+            self.pool.clone(),
+            data_key,
+            secret_verifier,
+        ))
     }
 
     fn openid4vci_authorization_offers(
         &self,
         data_key: [u8; 32],
+        secret_verifier: Arc<dyn nazo_identity::ports::SecretVerifyPort>,
     ) -> Arc<dyn nazo_openid4vci::AuthorizationOfferPort> {
-        Arc::new(Openid4vciRepository::new(self.pool.clone(), data_key))
+        Arc::new(Openid4vciRepository::new(
+            self.pool.clone(),
+            data_key,
+            secret_verifier,
+        ))
     }
 
     fn openid4vci_datasets(

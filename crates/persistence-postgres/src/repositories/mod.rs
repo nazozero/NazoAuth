@@ -32,7 +32,7 @@ pub use admin_provision::{
 pub use audit::AuditRepository;
 pub use audit_ledger::{
     AuditLedgerRepository, MAX_SECURITY_AUDIT_PAYLOAD_BYTES, SecurityAuditAnchorHealth,
-    SecurityAuditEvent, SecurityAuditOutboxDelivery, append_fresh_security_audit_on_connection,
+    SecurityAuditEvent, SecurityAuditPendingDelivery, append_fresh_security_audit_on_connection,
 };
 pub use authorization::AuthorizationRepository;
 pub use authorization_flow::AuthorizationFlowRepository;

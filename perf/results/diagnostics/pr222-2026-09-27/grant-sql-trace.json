@@ -1,0 +1,133 @@
+{
+  "method": "PostgreSQL log_statement=all, log_parameter_max_length=0; retain only complete grant-revocation transactions. Logging settings restored.",
+  "cases": [
+    {
+      "label": "one-family",
+      "source_sha": "ece640dd058a802b663ea223441a603cec39c437",
+      "scope_lock_statements": 1,
+      "family_lock_statements": 1,
+      "statements": [
+        {
+          "timestamp_utc": "2026-09-26 17:13:32.889",
+          "sql": "BEGIN"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:32.890",
+          "sql": "SELECT \"oauth_clients\".\"id\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"client_id\" = $2)) LIMIT $3"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:32.890",
+          "sql": "SELECT pg_advisory_xact_lock($1)"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:32.891",
+          "sql": "SELECT \"oauth_refresh_families\".\"token_family_id\" FROM \"oauth_refresh_families\" WHERE (((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"user_id\" = $2)) AND (\"oauth_refresh_families\".\"client_id\" = $3)) ORDER BY \"oauth_refresh_families\".\"token_family_id\" ASC"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:32.891",
+          "sql": "SELECT pg_advisory_xact_lock($1)"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:32.891",
+          "sql": "UPDATE \"oauth_refresh_families\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE ((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"user_id\" = $2)) AND (\"oauth_refresh_families\".\"client_id\" = $3)) AND (\"oauth_refresh_families\".\"revoked_at\" IS NULL))"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:32.892",
+          "sql": "DELETE FROM \"user_client_grants\" WHERE (((\"user_client_grants\".\"tenant_id\" = $1) AND (\"user_client_grants\".\"user_id\" = $2)) AND (\"user_client_grants\".\"client_id\" = $3))"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:32.892",
+          "sql": "COMMIT"
+        }
+      ]
+    },
+    {
+      "label": "concurrent-rotation",
+      "source_sha": "ece640dd058a802b663ea223441a603cec39c437",
+      "scope_lock_statements": 1,
+      "family_lock_statements": 1,
+      "statements": [
+        {
+          "timestamp_utc": "2026-09-26 17:13:33.878",
+          "sql": "BEGIN"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:33.880",
+          "sql": "SELECT \"oauth_clients\".\"id\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"client_id\" = $2)) LIMIT $3"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:33.880",
+          "sql": "SELECT pg_advisory_xact_lock($1)"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:33.887",
+          "sql": "SELECT \"oauth_refresh_families\".\"token_family_id\" FROM \"oauth_refresh_families\" WHERE (((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"user_id\" = $2)) AND (\"oauth_refresh_families\".\"client_id\" = $3)) ORDER BY \"oauth_refresh_families\".\"token_family_id\" ASC"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:33.887",
+          "sql": "SELECT pg_advisory_xact_lock($1)"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:33.887",
+          "sql": "UPDATE \"oauth_refresh_families\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE ((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"user_id\" = $2)) AND (\"oauth_refresh_families\".\"client_id\" = $3)) AND (\"oauth_refresh_families\".\"revoked_at\" IS NULL))"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:33.888",
+          "sql": "DELETE FROM \"user_client_grants\" WHERE (((\"user_client_grants\".\"tenant_id\" = $1) AND (\"user_client_grants\".\"user_id\" = $2)) AND (\"user_client_grants\".\"client_id\" = $3))"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:13:33.888",
+          "sql": "COMMIT"
+        }
+      ]
+    },
+    {
+      "label": "three-families",
+      "source_sha": "ece640dd058a802b663ea223441a603cec39c437",
+      "scope_lock_statements": 1,
+      "family_lock_statements": 3,
+      "statements": [
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.290",
+          "sql": "BEGIN"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.291",
+          "sql": "SELECT \"oauth_clients\".\"id\" FROM \"oauth_clients\" WHERE ((\"oauth_clients\".\"tenant_id\" = $1) AND (\"oauth_clients\".\"client_id\" = $2)) LIMIT $3"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.291",
+          "sql": "SELECT pg_advisory_xact_lock($1)"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.292",
+          "sql": "SELECT \"oauth_refresh_families\".\"token_family_id\" FROM \"oauth_refresh_families\" WHERE (((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"user_id\" = $2)) AND (\"oauth_refresh_families\".\"client_id\" = $3)) ORDER BY \"oauth_refresh_families\".\"token_family_id\" ASC"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.293",
+          "sql": "SELECT pg_advisory_xact_lock($1)"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.293",
+          "sql": "SELECT pg_advisory_xact_lock($1)"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.293",
+          "sql": "SELECT pg_advisory_xact_lock($1)"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.293",
+          "sql": "UPDATE \"oauth_refresh_families\" SET \"revoked_at\" = CURRENT_TIMESTAMP WHERE ((((\"oauth_refresh_families\".\"tenant_id\" = $1) AND (\"oauth_refresh_families\".\"user_id\" = $2)) AND (\"oauth_refresh_families\".\"client_id\" = $3)) AND (\"oauth_refresh_families\".\"revoked_at\" IS NULL))"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.294",
+          "sql": "DELETE FROM \"user_client_grants\" WHERE (((\"user_client_grants\".\"tenant_id\" = $1) AND (\"user_client_grants\".\"user_id\" = $2)) AND (\"user_client_grants\".\"client_id\" = $3))"
+        },
+        {
+          "timestamp_utc": "2026-09-26 17:15:57.294",
+          "sql": "COMMIT"
+        }
+      ]
+    }
+  ]
+}

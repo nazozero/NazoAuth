@@ -7,7 +7,6 @@ use crate::contracts::scim::{
 use hmac::{Hmac, KeyInit, Mac};
 use nazo_identity::{
     TenantContext, TenantId,
-    ports::ScimCredentialUse,
     scim::{
         SCIM_CURSOR_AAD, SCIM_CURSOR_KEY_LABEL, SCIM_CURSOR_NONCE_LEN, SCIM_CURSOR_TAG_LEN,
         ScimCursorSubject, ScimRequiredScope, ScimService, scim_credential_allows,
@@ -85,27 +84,13 @@ impl ServerScimRequestAuthorizer {
         }
     }
 
-    async fn record_use(
+    fn record_use(
         &self,
         ip_hash: String,
         user_agent_hash: Option<String>,
         required_scope: ScimRequiredScope,
         credential: &AuthorizedCredential,
     ) {
-        if let Some(token_id) = credential.token_id
-            && let Err(error) = self
-                .service
-                .record_credential_use(ScimCredentialUse {
-                    token_id,
-                    tenant_id: credential.tenant.tenant_id.as_uuid(),
-                    scopes: vec![required_scope.as_str().to_owned()],
-                    ip_hash: Some(ip_hash.clone()),
-                    user_agent_hash,
-                })
-                .await
-        {
-            tracing::warn!(%error, %token_id, "failed to insert SCIM token audit event");
-        }
         self.audit.record(
             "scim_token_used",
             audit_fields(&[
@@ -117,6 +102,7 @@ impl ServerScimRequestAuthorizer {
                 ("scope", serde_json::json!(required_scope.as_str())),
                 ("source", serde_json::json!(credential.source)),
                 ("ip_hash", serde_json::json!(ip_hash)),
+                ("user_agent_hash", serde_json::json!(user_agent_hash)),
             ]),
         );
     }
@@ -201,8 +187,7 @@ impl ScimRequestAuthorizer for ServerScimRequestAuthorizer {
                 .await?;
                 return Err(ScimAuthorizationError::TenantMismatch);
             }
-            self.record_use(ip_hash, user_agent_hash, required_scope, &credential)
-                .await;
+            self.record_use(ip_hash, user_agent_hash, required_scope, &credential);
             Ok(ScimAuthorizedRequest {
                 tenant: credential.tenant,
                 cursor_subject: ScimCursorSubject {

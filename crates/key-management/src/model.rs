@@ -159,7 +159,7 @@ pub(crate) struct LoadedKeyset {
     pub(crate) active_alg: nazo_crypto::jwt::Algorithm,
     pub(crate) active_signing_key: ActiveSigningKey,
     pub(crate) verification_keys: Vec<StoredVerificationKey>,
-    pub(crate) request_object_decryption_key: Vec<u8>,
+    pub(crate) request_object_decryption_key: Arc<nazo_crypto::key_wrap::RsaOaep256PrivateKey>,
     pub(crate) request_object_encryption_jwk: Value,
     pub(crate) openid4vc_material: Option<Openid4vcMaterial>,
 }
@@ -193,8 +193,11 @@ impl VerificationKey {
 
     #[must_use]
     pub fn can_verify(&self) -> bool {
-        self.retire_at
-            .is_none_or(|retire_at| retire_at > Utc::now())
+        self.can_verify_at(Utc::now())
+    }
+
+    pub(crate) fn can_verify_at(&self, now: chrono::DateTime<Utc>) -> bool {
+        self.retire_at.is_none_or(|retire_at| retire_at > now)
     }
 }
 
@@ -252,7 +255,30 @@ impl KeySnapshot {
 
     #[must_use]
     pub fn jwks(&self) -> Value {
-        crate::jwks::public_jwks(&self.verification_keys, &self.request_object_encryption_jwk)
+        self.jwks_at(Utc::now())
+    }
+
+    /// Builds the public projection and its cache deadline from one captured time.
+    #[must_use]
+    pub fn jwks_at(&self, now: chrono::DateTime<Utc>) -> Value {
+        crate::jwks::public_jwks(
+            &self.verification_keys,
+            &self.request_object_encryption_jwk,
+            now,
+        )
+    }
+
+    /// Earliest future change to verification eligibility in this generation.
+    #[must_use]
+    pub fn next_verification_retirement(
+        &self,
+        now: chrono::DateTime<Utc>,
+    ) -> Option<chrono::DateTime<Utc>> {
+        self.verification_keys
+            .iter()
+            .filter_map(|key| key.retire_at)
+            .filter(|retire_at| *retire_at > now)
+            .min()
     }
 }
 
@@ -369,6 +395,9 @@ pub struct Openid4vcState {
 pub(crate) struct KeyGeneration {
     pub(crate) loaded: LoadedKeyset,
     pub(crate) snapshot: Arc<KeySnapshot>,
+    openid4vc_public: Option<Arc<Openid4vcPublicMaterial>>,
+    openid4vc_revocation:
+        Option<Arc<nazo_digital_credentials::PreparedCertificateRevocationSnapshot>>,
     expires_at: Option<Instant>,
 }
 
@@ -415,7 +444,7 @@ impl HttpSigningLease {
             .ok_or_else(|| {
                 anyhow::anyhow!("HTTP signing lease no longer matches its generation")
             })?;
-        sign_selected(&selected, signing_input)
+        sign_selected(&selected, &self.generation.snapshot, signing_input)
             .await
             .map_err(anyhow::Error::from)
     }
@@ -490,7 +519,7 @@ impl Signer for Openid4vcSigningLease {
             .selected_key(request.purpose, algorithm)
             .filter(|selected| selected.kid == self.kid)
             .ok_or(SignError::KeyUnavailable)?;
-        sign_selected(&selected, request.signing_input).await
+        sign_selected(&selected, &self.generation.snapshot, request.signing_input).await
     }
 }
 
@@ -745,13 +774,16 @@ impl KeyManager {
     /// a subsequent refresh or rotation.
     #[must_use]
     pub fn openid4vc_public_material(&self) -> Option<Arc<Openid4vcPublicMaterial>> {
-        self.inner
-            .generation
-            .load()
-            .loaded
-            .openid4vc_material
-            .as_ref()
-            .map(|material| Arc::new(material.public.clone()))
+        self.inner.generation.load().openid4vc_public.clone()
+    }
+
+    /// Share the generation's structurally validated, indexed revocation view.
+    /// Its freshness is checked by the request's revocation policy.
+    #[must_use]
+    pub fn openid4vc_revocation_snapshot(
+        &self,
+    ) -> Option<Arc<nazo_digital_credentials::PreparedCertificateRevocationSnapshot>> {
+        self.inner.generation.load().openid4vc_revocation.clone()
     }
 
     /// Install managed material on an in-memory fixture without involving a
@@ -857,6 +889,10 @@ impl KeyManager {
                 })
             }
         };
+        let request_object_der = crate::serialization::rsa_pkcs8_from_pem(
+            &test_request_object_decryption_key().expect("test request object decryption key"),
+        )
+        .expect("test request object PKCS8");
         let loaded = LoadedKeyset {
             active_kid: kid.clone(),
             active_alg: algorithm,
@@ -874,17 +910,15 @@ impl KeyManager {
                     handle: KeyHandle::Local(local_material),
                 },
             }],
-            request_object_decryption_key: test_request_object_decryption_key()
-                .expect("test request object decryption key"),
-            request_object_encryption_jwk: Value::Null,
+            request_object_decryption_key: Arc::new(
+                nazo_crypto::key_wrap::RsaOaep256PrivateKey::from_pkcs8(&request_object_der)
+                    .expect("test request object decryption key"),
+            ),
+            request_object_encryption_jwk:
+                crate::request_object_encryption::request_object_encryption_jwk(&request_object_der)
+                    .expect("test request object encryption JWK"),
             openid4vc_material: None,
         };
-        let mut loaded = loaded;
-        loaded.request_object_encryption_jwk =
-            crate::request_object_encryption::request_object_encryption_jwk(
-                &loaded.request_object_decryption_key,
-            )
-            .expect("test request object encryption JWK");
         let generation = KeyGeneration::database(loaded)
             .expect("test keyset must contain valid signing and verification material");
         Self {
@@ -1074,7 +1108,7 @@ impl KeyManager {
     }
 }
 
-async fn encode_jwt_for_generation<T: Serialize>(
+pub(crate) async fn encode_jwt_for_generation<T: Serialize>(
     generation: &Arc<KeyGeneration>,
     health: &LifecycleHealth,
     expected_kid: Option<&str>,
@@ -1124,7 +1158,7 @@ async fn encode_jwt_for_generation<T: Serialize>(
     URL_SAFE_NO_PAD.encode_string(&claims_json, &mut signing_input);
     drop(header_json);
     drop(claims_json);
-    let signature = sign_selected(&selected, signing_input.as_bytes())
+    let signature = sign_selected(&selected, &generation.snapshot, signing_input.as_bytes())
         .await
         .map_err(|_| nazo_crypto::CryptoError::OperationFailed)?;
     signing_input.reserve(
@@ -1149,11 +1183,15 @@ impl Signer for KeyManager {
             .loaded
             .selected_key(request.purpose, algorithm)
             .ok_or(SignError::KeyUnavailable)?;
-        sign_selected(&selected, request.signing_input).await
+        sign_selected(&selected, &generation.snapshot, request.signing_input).await
     }
 }
 
-async fn sign_selected(selected: &SelectedKey<'_>, input: &[u8]) -> Result<Signature, SignError> {
+async fn sign_selected(
+    selected: &SelectedKey<'_>,
+    snapshot: &KeySnapshot,
+    input: &[u8],
+) -> Result<Signature, SignError> {
     let local_sign = |material: &LocalSigningMaterial| {
         material
             .prepared
@@ -1166,11 +1204,18 @@ async fn sign_selected(selected: &SelectedKey<'_>, input: &[u8]) -> Result<Signa
         #[cfg(any(test, feature = "test-support"))]
         SelectedHandle::Active(ActiveSigningKey::FailingForTest) => Err(SignError::SigningFailed),
         SelectedHandle::Active(ActiveSigningKey::External(external)) => {
+            // Every caller supplies the snapshot pinned with the selected key;
+            // rotation during the external call cannot change the verification key.
+            let verification = snapshot
+                .verification_keys
+                .iter()
+                .find(|key| key.kid == selected.kid && key.prepared.algorithm == selected.algorithm)
+                .ok_or(SignError::KeyUnavailable)?;
             crate::external::sign_external(
                 external,
                 selected.kid,
                 selected.algorithm,
-                selected.public_jwk,
+                &verification.prepared.key,
                 input,
             )
             .await
@@ -1185,9 +1230,25 @@ impl KeyGeneration {
     /// handed to `ArcSwap`.
     fn database(loaded: LoadedKeyset) -> anyhow::Result<Self> {
         let snapshot = Arc::new(snapshot_from_loaded(&loaded)?);
+        let openid4vc_public = loaded
+            .openid4vc_material
+            .as_ref()
+            .map(|material| Arc::new(material.public.clone()));
+        let openid4vc_revocation = openid4vc_public
+            .as_ref()
+            .and_then(|material| material.revocation_snapshot.as_ref())
+            .map(|snapshot| {
+                Arc::new(
+                    nazo_digital_credentials::PreparedCertificateRevocationSnapshot::new(Arc::new(
+                        snapshot.clone(),
+                    )),
+                )
+            });
         Ok(Self {
             loaded,
             snapshot,
+            openid4vc_public,
+            openid4vc_revocation,
             expires_at: Some(Instant::now() + DATABASE_MAX_STALE),
         })
     }
@@ -1212,64 +1273,14 @@ fn key_ops_allow_verification(key_ops: Option<&Value>) -> bool {
     }
 }
 
-fn prepared_verification(
+pub(crate) fn prepared_verification(
     public_jwk: &Value,
     algorithm: nazo_crypto::jwt::Algorithm,
 ) -> Option<PreparedVerification> {
-    use nazo_crypto::jwt::VerificationKey as JwtVerificationKey;
-    let algorithm_name = crate::serialization::signing_algorithm_name(algorithm)?;
-    if public_jwk.get("d").is_some()
-        || public_jwk
-            .get("alg")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value != algorithm_name)
-        || public_jwk
-            .get("use")
-            .and_then(Value::as_str)
-            .is_some_and(|value| value != "sig")
-        || !key_ops_allow_verification(public_jwk.get("key_ops"))
-    {
+    if !key_ops_allow_verification(public_jwk.get("key_ops")) {
         return None;
     }
-    let key = match algorithm {
-        nazo_crypto::jwt::Algorithm::EdDSA
-            if public_jwk.get("kty").and_then(Value::as_str) == Some("OKP")
-                && public_jwk.get("crv").and_then(Value::as_str) == Some("Ed25519") =>
-        {
-            let x = public_jwk.get("x")?.as_str()?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32 {
-                return None;
-            }
-            JwtVerificationKey::from_ed_components(x).ok()?
-        }
-        nazo_crypto::jwt::Algorithm::RS256 | nazo_crypto::jwt::Algorithm::PS256
-            if public_jwk.get("kty").and_then(Value::as_str) == Some("RSA") =>
-        {
-            let modulus = public_jwk.get("n")?.as_str()?;
-            let exponent = public_jwk.get("e")?.as_str()?;
-            if !nazo_auth::rsa_public_key_components_are_safe(
-                &URL_SAFE_NO_PAD.decode(modulus).ok()?,
-                &URL_SAFE_NO_PAD.decode(exponent).ok()?,
-            ) {
-                return None;
-            }
-            JwtVerificationKey::from_rsa_components(modulus, exponent).ok()?
-        }
-        nazo_crypto::jwt::Algorithm::ES256
-            if public_jwk.get("kty").and_then(Value::as_str) == Some("EC")
-                && public_jwk.get("crv").and_then(Value::as_str) == Some("P-256") =>
-        {
-            let x = public_jwk.get("x")?.as_str()?;
-            let y = public_jwk.get("y")?.as_str()?;
-            if URL_SAFE_NO_PAD.decode(x).ok()?.len() != 32
-                || URL_SAFE_NO_PAD.decode(y).ok()?.len() != 32
-            {
-                return None;
-            }
-            JwtVerificationKey::from_ec_components(x, y).ok()?
-        }
-        _ => return None,
-    };
+    let key = crate::external::decoding_key_from_public_jwk(public_jwk, algorithm)?;
     Some(PreparedVerification { algorithm, key })
 }
 

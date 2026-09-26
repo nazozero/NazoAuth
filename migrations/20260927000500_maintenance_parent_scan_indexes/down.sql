@@ -1,0 +1,3 @@
+CREATE INDEX ix_openid4vci_access_expiry ON openid4vci_access_grants (expires_at);
+DROP INDEX ix_openid4vci_access_expiry_scan;
+DROP INDEX ix_oauth_refresh_contract_scan;

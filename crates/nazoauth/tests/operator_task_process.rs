@@ -47,7 +47,7 @@ struct ExistsRow {
 async fn isolated_registry(
     case: &str,
 ) -> Option<(String, nazo_postgres::ControllerRegistryRepository)> {
-    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 7] = [
+    const PUBLIC_SECURITY_AUDIT_MIGRATION_VERSIONS: [&str; 11] = [
         "20260805000100",
         "20260905000100",
         "20260909000100",
@@ -55,6 +55,10 @@ async fn isolated_registry(
         "20260919000200",
         "20260920000100",
         "20260923000100",
+        "20260924000100",
+        "20260925000100",
+        "20260927000100",
+        "20260927000200",
     ];
 
     let base = std::env::var("NAZO_TEST_DATABASE_URL")

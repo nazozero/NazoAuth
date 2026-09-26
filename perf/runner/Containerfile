@@ -8,6 +8,10 @@ RUN apk add --no-cache ca-certificates docker-cli \
 COPY --from=k6 /usr/bin/k6 /usr/bin/k6
 COPY perf /perf
 
+ARG SOURCE_SHA=unknown
+LABEL org.opencontainers.image.revision="${SOURCE_SHA}"
+RUN printf "%s" "${SOURCE_SHA}" > /perf/.source-sha
+
 WORKDIR /perf
 
 CMD ["python", "/perf/runner.py"]

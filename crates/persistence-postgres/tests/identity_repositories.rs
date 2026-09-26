@@ -56,6 +56,12 @@ fn repositories_accept_validated_tenant_and_user_ids() {
 }
 
 async fn database_fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
+    database_fixture_with_pool_size(8).await
+}
+
+async fn database_fixture_with_pool_size(
+    max_size: usize,
+) -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
     let database_url =
         match std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL")) {
             Ok(database_url) => database_url,
@@ -64,7 +70,7 @@ async fn database_fixture() -> Option<(nazo_postgres::DbPool, TenantContext, Use
             }
             Err(_) => return None,
         };
-    let pool = create_pool(database_url, 8).expect("test pool can be built");
+    let pool = create_pool(database_url, max_size).expect("test pool can be built");
     let tenant = TenantContext::default_system();
     let user_id = UserId::new(Uuid::now_v7()).expect("generated ID is non-nil");
     let token = Uuid::now_v7().simple().to_string();
@@ -846,6 +852,68 @@ async fn backup_code_is_consumed_once_atomically() {
 }
 
 #[tokio::test]
+async fn backup_code_batch_replacement_clears_empty_and_rolls_back_invalid_batches() {
+    let Some((pool, tenant, user_id)) = database_fixture().await else {
+        return;
+    };
+    let repository = mfa_repository(pool.clone());
+    repository
+        .replace_backup_code_hashes(
+            tenant.tenant_id,
+            user_id,
+            vec!["first-hash".into(), "second-hash".into()],
+        )
+        .await
+        .unwrap();
+    let snapshot = |codes: Vec<nazo_identity::ports::BackupCodeCandidate>| {
+        codes
+            .into_iter()
+            .map(|code| (code.id, code.hash.as_str().to_owned()))
+            .collect::<std::collections::BTreeMap<_, _>>()
+    };
+    let before = snapshot(
+        repository
+            .backup_code_candidates(tenant.tenant_id, user_id)
+            .await
+            .unwrap(),
+    );
+    assert_eq!(before.len(), 2);
+    assert!(
+        repository
+            .replace_backup_code_hashes(
+                tenant.tenant_id,
+                user_id,
+                vec!["valid-hash".into(), "x".repeat(256)],
+            )
+            .await
+            .is_err(),
+        "one invalid hash must reject the whole replacement"
+    );
+    assert_eq!(
+        snapshot(
+            repository
+                .backup_code_candidates(tenant.tenant_id, user_id)
+                .await
+                .unwrap()
+        ),
+        before,
+        "failed batch must roll back deletion of the previous codes"
+    );
+    repository
+        .replace_backup_code_hashes(tenant.tenant_id, user_id, Vec::new())
+        .await
+        .unwrap();
+    assert!(
+        repository
+            .backup_code_candidates(tenant.tenant_id, user_id)
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    cleanup(&pool, user_id).await;
+}
+
+#[tokio::test]
 async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     let Some((pool, tenant, user_id)) = database_fixture().await else {
         return;
@@ -1060,6 +1128,42 @@ async fn mfa_encrypted_lifecycle_and_trait_boundary_are_tenant_safe() {
     );
     assert!(
         !repository
+            .remembered_device_valid(tenant.tenant_id, user_id, &token_hash, None, now)
+            .await
+            .unwrap()
+    );
+    let unbound_token_hash = "d".repeat(64);
+    trait_repository
+        .remember_device(
+            tenant.tenant_id,
+            user_id,
+            unbound_token_hash.clone(),
+            None,
+            now + chrono::Duration::minutes(10),
+        )
+        .await
+        .unwrap();
+    assert!(
+        repository
+            .remembered_device_valid(tenant.tenant_id, user_id, &unbound_token_hash, None, now)
+            .await
+            .unwrap(),
+        "a stored NULL user-agent only matches an absent user-agent"
+    );
+    assert!(
+        !repository
+            .remembered_device_valid(
+                tenant.tenant_id,
+                user_id,
+                &unbound_token_hash,
+                Some(&user_agent_hash),
+                now,
+            )
+            .await
+            .unwrap()
+    );
+    assert!(
+        !repository
             .remembered_device_valid(
                 other_tenant,
                 user_id,
@@ -1256,8 +1360,8 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
 }
 
 #[tokio::test]
-async fn concurrent_federated_create_is_idempotent_and_tenant_scoped() {
-    let Some((pool, tenant, fixture_user_id)) = database_fixture().await else {
+async fn concurrent_federated_create_is_idempotent_with_one_connection_and_tenant_scoped() {
+    let Some((pool, tenant, fixture_user_id)) = database_fixture_with_pool_size(1).await else {
         return;
     };
     let repository = FederationRepository::new(pool.clone());
@@ -1278,13 +1382,28 @@ async fn concurrent_federated_create_is_idempotent_and_tenant_scoped() {
             .unwrap(),
     };
 
-    let (left, right) = tokio::join!(
-        repository.create_federated(new_identity.clone()),
-        repository.create_federated(new_identity)
-    );
+    let (left, right) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::join!(
+            repository.create_federated(new_identity.clone()),
+            repository.create_federated(new_identity.clone())
+        )
+    })
+    .await
+    .expect("unique-conflict recovery must release the only connection before borrowing again");
     let left = left.unwrap();
     let right = right.unwrap();
     assert_eq!(left.user_id(), right.user_id());
+
+    let mut conflicting_identity = new_identity;
+    conflicting_identity.login.subject = format!("unlinked-{suffix}");
+    let conflict = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        repository.create_federated(conflicting_identity),
+    )
+    .await
+    .expect("an unlinked email conflict must also release its connection")
+    .unwrap_err();
+    assert!(matches!(conflict, RepositoryError::Conflict));
 
     let other_tenant = TenantContext {
         tenant_id: TenantId::new(Uuid::now_v7()).unwrap(),

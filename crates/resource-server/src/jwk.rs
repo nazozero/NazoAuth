@@ -2,6 +2,26 @@ use base64::{Engine, engine::general_purpose::URL_SAFE_NO_PAD};
 use nazo_crypto::jwt::{Algorithm, VerificationKey as JwtVerificationKey};
 use serde_json::Value;
 
+#[derive(Clone, Debug)]
+pub(super) struct PreparedVerificationKey {
+    pub(super) algorithm: Algorithm,
+    pub(super) key: JwtVerificationKey,
+}
+
+pub(super) fn prepare_verification_key(key: &Value) -> Option<PreparedVerificationKey> {
+    let algorithm = match key.get("alg").and_then(Value::as_str)? {
+        "EdDSA" => Algorithm::EdDSA,
+        "RS256" => Algorithm::RS256,
+        "ES256" => Algorithm::ES256,
+        "PS256" => Algorithm::PS256,
+        _ => return None,
+    };
+    Some(PreparedVerificationKey {
+        algorithm,
+        key: decoding_key(key, algorithm)?,
+    })
+}
+
 enum SupportedJwkAlgorithm {
     EdDsa,
     Rsa,

@@ -66,6 +66,7 @@ struct RecordingCache {
     replies: Mutex<VecDeque<CacheReply>>,
     loads: AtomicUsize,
     stores: Mutex<Vec<TenantDirectorySnapshot>>,
+    store_error: Mutex<Option<TransientStateError>>,
 }
 
 impl RecordingCache {
@@ -74,6 +75,7 @@ impl RecordingCache {
             replies: Mutex::new(replies.into_iter().collect()),
             loads: AtomicUsize::new(0),
             stores: Mutex::new(Vec::new()),
+            store_error: Mutex::new(None),
         }
     }
 
@@ -87,7 +89,7 @@ impl RecordingCache {
 }
 
 impl TenantDirectoryCachePort for RecordingCache {
-    fn load(&self) -> TransientStateFuture<'_, Option<TenantDirectorySnapshot>> {
+    fn load(&self) -> TransientStateFuture<'_, Option<Arc<TenantDirectorySnapshot>>> {
         self.loads.fetch_add(1, Ordering::SeqCst);
         let reply = self
             .replies
@@ -97,7 +99,7 @@ impl TenantDirectoryCachePort for RecordingCache {
             .unwrap_or(CacheReply::Miss);
         Box::pin(async move {
             match reply {
-                CacheReply::Snapshot(snapshot) => Ok(Some(snapshot)),
+                CacheReply::Snapshot(snapshot) => Ok(Some(Arc::new(snapshot))),
                 CacheReply::Miss => Ok(None),
                 CacheReply::Error(error) => Err(error),
             }
@@ -112,7 +114,8 @@ impl TenantDirectoryCachePort for RecordingCache {
             .lock()
             .expect("cache stores lock")
             .push(snapshot.clone());
-        Box::pin(async { Ok(true) })
+        let error = *self.store_error.lock().expect("cache store error lock");
+        Box::pin(async move { error.map_or(Ok(true), Err) })
     }
 }
 
@@ -623,7 +626,7 @@ async fn invalid_cache_snapshot_repairs_from_database_and_quarantines_revision()
             .refresh_cache_once()
             .await
             .expect("invalid cache snapshot falls back to database"),
-        TenantDirectoryRefreshOutcome::Applied { revision: 1 }
+        TenantDirectoryRefreshOutcome::Unchanged
     );
     assert_eq!(fixture.registry.revision(), 1);
     assert_eq!(
@@ -636,7 +639,7 @@ async fn invalid_cache_snapshot_repairs_from_database_and_quarantines_revision()
     );
     assert_eq!(fixture.cache.stored().last(), Some(&authoritative));
     assert_eq!(fixture.directory.revision_read_count(), 1);
-    assert_eq!(fixture.directory.snapshot_read_count(), 1);
+    assert_eq!(fixture.directory.snapshot_read_count(), 0);
     let builds_after_repair = fixture.builder.build_count();
 
     assert_eq!(
@@ -651,7 +654,7 @@ async fn invalid_cache_snapshot_repairs_from_database_and_quarantines_revision()
     assert_eq!(fixture.builder.build_count(), builds_after_repair);
     assert_eq!(fixture.cache.load_count(), 2);
     assert_eq!(fixture.directory.revision_read_count(), 1);
-    assert_eq!(fixture.directory.snapshot_read_count(), 1);
+    assert_eq!(fixture.directory.snapshot_read_count(), 0);
 }
 
 #[tokio::test]
@@ -925,4 +928,151 @@ async fn tenant_shutdown_owns_and_stops_every_background_worker() {
     assert!(lifecycle.runtime_module_reconciler.is_none());
     assert!(lifecycle.key_lifecycle.is_none());
     assert!(lifecycle.ciba_ping_worker.is_none());
+}
+
+#[tokio::test]
+async fn repeated_cache_failure_repairs_confirmed_snapshot_without_full_database_reads() {
+    let authoritative = snapshot(
+        1,
+        vec![binding(1, "tenant-a.example", "https://tenant-a.example")],
+    );
+    let fixture = Fixture::new(
+        authoritative.clone(),
+        [
+            CacheReply::Miss,
+            CacheReply::Error(TransientStateError::CorruptData),
+            CacheReply::Error(TransientStateError::Unavailable),
+        ],
+        1,
+        [],
+    )
+    .await;
+    *fixture.cache.store_error.lock().unwrap() = Some(TransientStateError::Unavailable);
+    for _ in 0..3 {
+        assert_eq!(
+            fixture.refresher.refresh_cache_once().await.unwrap(),
+            TenantDirectoryRefreshOutcome::Unchanged
+        );
+    }
+    assert_eq!(fixture.directory.revision_read_count(), 3);
+    assert_eq!(fixture.directory.snapshot_read_count(), 0);
+    assert_eq!(fixture.builder.build_count(), 1);
+    assert_eq!(fixture.cache.stored(), vec![authoritative; 3]);
+}
+
+#[tokio::test]
+async fn cache_failure_does_not_republish_unconfirmed_cache_payload() {
+    let authoritative = snapshot(
+        2,
+        vec![binding(
+            1,
+            "tenant-a.example",
+            "https://tenant-a.example/authoritative",
+        )],
+    );
+    let fixture = Fixture::new(
+        snapshot(
+            1,
+            vec![binding(1, "tenant-a.example", "https://tenant-a.example")],
+        ),
+        [
+            CacheReply::Snapshot(snapshot(
+                2,
+                vec![binding(
+                    1,
+                    "tenant-a.example",
+                    "https://tenant-a.example/cache",
+                )],
+            )),
+            CacheReply::Miss,
+        ],
+        2,
+        [authoritative.clone()],
+    )
+    .await;
+    fixture.refresher.refresh_cache_once().await.unwrap();
+    fixture.refresher.refresh_cache_once().await.unwrap();
+    assert_eq!(fixture.directory.snapshot_read_count(), 1);
+    assert_eq!(fixture.cache.stored(), vec![authoritative.clone()]);
+    assert_eq!(
+        fixture
+            .registry
+            .resolve("tenant-a.example")
+            .unwrap()
+            .binding,
+        authoritative.tenants[0]
+    );
+}
+
+#[tokio::test]
+async fn publication_stops_only_displaced_lifecycles() {
+    let first = binding(1, "tenant-a.example", "https://tenant-a.example");
+    let second = binding(2, "tenant-b.example", "https://tenant-b.example");
+    let third = binding(3, "tenant-c.example", "https://tenant-c.example");
+    let fixture = Fixture::new(
+        snapshot(1, vec![first.clone(), second.clone(), third]),
+        [],
+        1,
+        [],
+    )
+    .await;
+    let previous = fixture.registry.load();
+    for runtime in previous.by_host.values() {
+        runtime.lifecycle.lock().unwrap().runtime_module_reconciler =
+            Some(tokio::spawn(std::future::pending()));
+    }
+    let retained = fixture.registry.resolve("tenant-a.example").unwrap();
+    let replaced = fixture.registry.resolve("tenant-b.example").unwrap();
+    let removed = fixture.registry.resolve("tenant-c.example").unwrap();
+    let mut changed_second = second;
+    changed_second.runtime_revision = 2;
+    fixture
+        .refresher
+        .apply_snapshot(
+            &snapshot(2, vec![first, changed_second]),
+            SnapshotSource::Database,
+        )
+        .await
+        .unwrap();
+    assert!(
+        retained
+            .lifecycle
+            .lock()
+            .unwrap()
+            .runtime_module_reconciler
+            .is_some()
+    );
+    assert!(
+        replaced
+            .lifecycle
+            .lock()
+            .unwrap()
+            .runtime_module_reconciler
+            .is_some()
+    );
+    assert!(
+        removed
+            .lifecycle
+            .lock()
+            .unwrap()
+            .runtime_module_reconciler
+            .is_none()
+    );
+    fixture.refresher.shutdown().await;
+    assert!(
+        retained
+            .lifecycle
+            .lock()
+            .unwrap()
+            .runtime_module_reconciler
+            .is_none()
+    );
+    assert!(
+        replaced
+            .lifecycle
+            .lock()
+            .unwrap()
+            .runtime_module_reconciler
+            .is_none()
+    );
 }

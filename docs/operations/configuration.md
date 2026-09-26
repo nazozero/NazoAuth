@@ -445,6 +445,11 @@ token owned by the resource in the same transaction.
 `EMAIL_SMTP_TLS` accepts only `starttls`, `implicit`, or `none`. The `none`
 mode is rejected unless the issuer is loopback HTTP and no SMTP credentials
 are configured; production deployments must use encrypted mail submission.
+The SMTP transport is prepared during service startup and reused for verification
+emails; invalid TLS setup fails startup. Each email still opens its own connection
+with the configured TLS mode, authentication, and 30-second transport timeout.
+Delivery errors still fail the request and follow the existing verification-code
+cleanup path.
 `EMAIL_CODE_DEV_RESPONSE_ENABLED=true` is accepted only by a debug build with
 a loopback HTTP issuer, so a deployable server cannot return verification
 codes in API responses.

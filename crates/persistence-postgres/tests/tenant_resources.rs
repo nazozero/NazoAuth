@@ -821,6 +821,68 @@ async fn openid4vc_trust_policy_is_tenant_scoped_digest_fenced_and_transactional
         .await
         .expect("trust policy transaction should commit");
 
+    let reader = TenantResourceRepository::new(pool.clone());
+    assert_eq!(
+        reader
+            .openid4vc_trust_policy_for_client(tenant_id, &public_client_id)
+            .await
+            .unwrap(),
+        Openid4vcTrustPolicyForClient::BoundInactive,
+        "reapplying a policy must not reactivate the old client binding",
+    );
+    assert_eq!(
+        reader
+            .openid4vc_trust_policy_for_client(other_tenant_id, &public_client_id)
+            .await
+            .unwrap(),
+        Openid4vcTrustPolicyForClient::Unbound,
+    );
+    TenantResourceRepository::bind_openid4vc_trust_policy_client_on_connection(
+        &mut connection,
+        tenant_id,
+        "wallet-trust",
+        &first_digest,
+        oauth_client_id,
+    )
+    .await
+    .unwrap();
+    connection
+        .transaction::<(), TestTransactionError, _>(async |connection| {
+            // Management keeps its policy/binding locks throughout this transaction.
+            TenantResourceRepository::openid4vc_trust_policy_for_client_on_connection(
+                connection,
+                tenant_id,
+                &public_client_id,
+            )
+            .await?;
+            let resolved = tokio::time::timeout(
+                std::time::Duration::from_secs(2),
+                reader.openid4vc_trust_policy_for_client(tenant_id, &public_client_id),
+            )
+            .await
+            .expect("request-time trust reads must not wait on management row locks")?;
+            assert!(
+                matches!(resolved, Openid4vcTrustPolicyForClient::Active(ref policy)
+            if policy.resource_digest == first_digest)
+            );
+            Ok(())
+        })
+        .await
+        .unwrap();
+    sql_query("UPDATE oauth_clients SET is_active = FALSE WHERE id = $1")
+        .bind::<sql_types::Uuid, _>(oauth_client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    assert_eq!(
+        reader
+            .openid4vc_trust_policy_for_client(tenant_id, &public_client_id)
+            .await
+            .unwrap(),
+        Openid4vcTrustPolicyForClient::BoundInactive,
+        "inactive clients must not resolve an otherwise active bound policy",
+    );
+
     let rolled_back = connection
         .transaction::<(), TestTransactionError, _>(async |connection| {
             TenantResourceRepository::apply_openid4vc_trust_policy_on_connection(

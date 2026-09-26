@@ -27,9 +27,17 @@ pub struct CleanupBatchResult {
     pub logout_deliveries: u64,
     pub scim_security_events: u64,
     pub presentations: u64,
+    pub credential_offers: u64,
+    pub credential_nonces: u64,
+    /// Access-grant ownership retained through the maximum verifier clock skew.
+    pub credential_access_grants: u64,
+    pub deferred_credentials: u64,
+    pub credential_notifications: u64,
+    pub credential_responses: u64,
     /// `true` when a category or candidate scan hit its per-batch budget, so
-    /// another batch probably has deletable work. Callers use it to keep
-    /// draining backlog instead of waiting a full interval.
+    /// another batch may have more candidates to inspect, including parents
+    /// beyond a full page of referenced rows. Callers keep advancing bounded
+    /// scans instead of waiting a full interval after every page.
     pub saturated: bool,
 }
 

@@ -7,31 +7,6 @@ use super::{
     authorization_response_redirect_with_context,
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum PushedAuthorizationRequestConsumeError {
-    Missing,
-    ReadFailed,
-    Malformed,
-}
-
-pub(crate) async fn consume_pushed_authorization_request_with_context(
-    context: &AuthorizationRequestContext<'_>,
-    request_uri: &str,
-) -> Result<(), PushedAuthorizationRequestConsumeError> {
-    match context.service.take_par(request_uri).await {
-        Ok(Some(_)) => Ok(()),
-        Ok(None) => Err(PushedAuthorizationRequestConsumeError::Missing),
-        Err(nazo_auth::AuthorizationPortError::CorruptData) => {
-            tracing::warn!("PAR payload is malformed");
-            Err(PushedAuthorizationRequestConsumeError::Malformed)
-        }
-        Err(error) => {
-            tracing::warn!(%error, "failed to consume PAR request_uri");
-            Err(PushedAuthorizationRequestConsumeError::ReadFailed)
-        }
-    }
-}
-
 pub(crate) async fn authorization_oauth_error_redirect(
     context: &AuthorizationRequestContext<'_>,
     redirect_uri: &str,

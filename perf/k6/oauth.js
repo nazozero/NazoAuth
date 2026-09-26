@@ -778,7 +778,7 @@ async function fapiPar(v) {
   return response.json('request_uri');
 }
 
-function authorizePar(clientId, requestUri, user, cacheSession = false) {
+function authorizePar(clientId, requestUri, user, cacheSession = false, onFailure = fail) {
   if (!ensureUserSession(user, cacheSession)) {
     return '';
   }
@@ -797,12 +797,12 @@ function authorizePar(clientId, requestUri, user, cacheSession = false) {
   });
   const requestId = queryParamFromLocation(locationHeader(response), 'request_id');
   if ((response.status !== 302 && response.status !== 303) || !requestId) {
-    fail(`authorize failed: ${response.status} ${locationHeader(response)} ${response.body}`);
+    onFailure(`authorize failed: ${response.status} ${locationHeader(response)} ${response.body}`);
   }
   return requestId;
 }
 
-function approveAuthorization(requestId, expectedState) {
+function approveAuthorization(requestId, expectedState, onFailure = fail) {
   const response = http.post(
     `${BASE_URL}/authorize/decision`,
     form({
@@ -820,12 +820,12 @@ function approveAuthorization(requestId, expectedState) {
     'authorization state roundtrips': () => location.includes(`state=${encodeURIComponent(expectedState)}`),
   });
   if (response.status !== 302 && response.status !== 303) {
-    fail(`authorization decision failed: ${response.status} ${response.body}`);
+    onFailure(`authorization decision failed: ${response.status} ${response.body}`);
   }
   return queryParamFromLocation(location, 'code');
 }
 
-function tokenAuthorizationCode(v, code) {
+function tokenAuthorizationCode(v, code, onFailure = fail) {
   const response = http.post(
     `${BASE_URL}/token`,
     form({
@@ -847,7 +847,7 @@ function tokenAuthorizationCode(v, code) {
     'authorization_code refresh token returned': (r) => Boolean(r.json('refresh_token')),
   });
   if (response.status !== 200) {
-    fail(`authorization_code token failed: ${response.status} ${response.body}`);
+    onFailure(`authorization_code token failed: ${response.status} ${response.body}`);
   }
   return response.json();
 }
@@ -1333,13 +1333,23 @@ function capWarmedUp() {
 // local_no_request (no HTTP request was ever sent), expected_rejection
 // (protocol-correct rejection such as bounded-family invalid_grant).
 function capOutcomeOf(result, threw) {
-  if (threw) {
-    return 'unexpected';
-  }
   if (result && typeof result === 'object' && result.capOutcome) {
     return result.capOutcome;
   }
+  if (threw) {
+    return 'unexpected';
+  }
   return result ? 'success' : 'unexpected';
+}
+
+function capPreparationFailure(outcome, cause) {
+  const error = new Error(String(cause));
+  error.capOutcome = outcome;
+  throw error;
+}
+
+function capSutPreparationFailure(cause) {
+  capPreparationFailure('prepare_sut_failed', cause);
 }
 
 async function capRun(prepare, op) {
@@ -1367,8 +1377,9 @@ async function capRun(prepare, op) {
   try {
     await prepare();
   } catch (e) {
-    capClock.end(cohort, lw, 'prepare_failed');
+    capClock.end(cohort, lw, e && e.capOutcome ? e.capOutcome : 'prepare_failed');
     if (measuring) {
+      capIterMs.add(Date.now() - entryMs);
       capOps.add(1);
       capErrs.add(1);
     }
@@ -1380,6 +1391,7 @@ async function capRun(prepare, op) {
   try {
     result = await op();
   } catch (e) {
+    result = e;
     threw = true;
   }
   const endMs = Date.now();
@@ -1420,41 +1432,59 @@ async function capMintSubjectTokens(withSso, force = false) {
     __VU_STATE, Date.now(), CAP_SUBJECT_AT_MAX_AGE_MS);
   if (!force
       && mintKind === 'fresh'
+      && __VU_STATE.refreshToken
       && (!withSso || __VU_STATE.ssoDeviceSecret)) {
     return;
   }
-  const user = selectedUser(false);
-  const v = capVector();
-  const request = await requestObject(
-    secrets.clients.oidc, v.oidc_state, v.oidc_nonce, v.oidc_code_challenge, null,
-    withSso ? 'openid profile offline_access device_sso' : null);
-  const parResponse = http.post(
-    `${BASE_URL}/par`,
-    form({ client_id: secrets.clients.oidc, client_secret: secrets.client_secret, request }),
-    formHeaders({}, requestTags('cap_bootstrap', { endpoint: '/par' })),
-  );
-  if (parResponse.status !== 201) {
-    fail(`cap bootstrap PAR failed: ${parResponse.status} ${parResponse.body}`);
+  let user, v, request;
+  try {
+    user = selectedUser(false);
+    v = capVector();
+    request = await requestObject(
+      secrets.clients.oidc, v.oidc_state, v.oidc_nonce, v.oidc_code_challenge, null,
+      withSso ? 'openid profile offline_access device_sso' : null);
+  } catch (e) {
+    capPreparationFailure('prepare_local_failed', e);
   }
-  const requestId = authorizePar(secrets.clients.oidc, parResponse.json('request_uri'), user, true);
-  if (!requestId) {
-    fail('cap bootstrap authorize failed');
-  }
-  const code = approveAuthorization(requestId, v.oidc_state);
-  const tokens = tokenAuthorizationCode(v, code);
-  __VU_STATE.subjectAt = tokens.access_token;
-  __VU_STATE.subjectAtMintedAt = Date.now();
-  capSubjectEvent(
-    mintKind === 'initial_mint' ? 'initial_mint' : 'expired_reauth');
-  if (tokens.refresh_token) {
-    __VU_STATE.refreshToken = tokens.refresh_token;
-  }
-  if (withSso) {
-    __VU_STATE.ssoIdToken = tokens.id_token;
-    __VU_STATE.ssoDeviceSecret = tokens.device_secret;
-    if (!__VU_STATE.ssoIdToken || !__VU_STATE.ssoDeviceSecret) {
-      fail('cap bootstrap did not return id_token/device_secret');
+  try {
+    const parResponse = http.post(
+      `${BASE_URL}/par`,
+      form({ client_id: secrets.clients.oidc, client_secret: secrets.client_secret, request }),
+      formHeaders({}, requestTags('cap_bootstrap', { endpoint: '/par' })),
+    );
+    if (parResponse.status !== 201) {
+      capSutPreparationFailure(`cap bootstrap PAR failed: ${parResponse.status} ${parResponse.body}`);
     }
+    const requestId = authorizePar(secrets.clients.oidc, parResponse.json('request_uri'), user, true,
+      capSutPreparationFailure);
+    if (!requestId) {
+      capSutPreparationFailure('cap bootstrap authorize failed');
+    }
+    const code = approveAuthorization(requestId, v.oidc_state, capSutPreparationFailure);
+    const tokens = tokenAuthorizationCode(v, code, capSutPreparationFailure);
+    if (!adoptSubjectAccessToken(__VU_STATE, tokens.access_token, Date.now())) {
+      capSutPreparationFailure('cap bootstrap did not return access_token');
+    }
+    capSubjectEvent(
+      mintKind === 'initial_mint' ? 'initial_mint' : 'expired_reauth');
+    if (!tokens.refresh_token) {
+      capSutPreparationFailure('cap bootstrap did not return refresh_token');
+    }
+    __VU_STATE.refreshToken = tokens.refresh_token;
+    if (withSso) {
+      __VU_STATE.ssoIdToken = tokens.id_token;
+      __VU_STATE.ssoDeviceSecret = tokens.device_secret;
+      if (!__VU_STATE.ssoIdToken || !__VU_STATE.ssoDeviceSecret) {
+        capSutPreparationFailure('cap bootstrap did not return id_token/device_secret');
+      }
+    }
+  } catch (e) {
+    if (e && e.capOutcome) {
+      throw e;
+    }
+    // A thrown JS/transport/parser exception without an explicit failed SUT
+    // response is unclassified evidence, never an invented capacity failure.
+    capPreparationFailure('prepare_failed', e);
   }
 }
 
@@ -1500,21 +1530,26 @@ function capAuthorizationCodeOp() {
     }
     const code = approveAuthorization(requestId, v.oidc_state);
     const tokens = tokenAuthorizationCode(v, code);
-    return Boolean(tokens && tokens.access_token);
+    if (!tokens.access_token || !tokens.refresh_token) {
+      fail('cap authorization_code response is missing issued tokens');
+    }
+    // A successful issuance is this VU's newest rotatable family; adopting
+    // it keeps later refresh rolls on the chain this op just advanced
+    // instead of an older family the per-scope cap may have retired.
+    __VU_STATE.refreshToken = tokens.refresh_token;
+    adoptSubjectAccessToken(__VU_STATE, tokens.access_token, Date.now());
+    return true;
   })();
 }
 
 async function capRefreshOp() {
   if (!__VU_STATE.refreshToken) {
-    if (capPhase() === 'measure') {
-      // Measurement must only rotate: re-minting would mix bootstrap SQL into
-      // the measured statement window. A missing family mid-measure is a
-      // local no-request failure — no HTTP request is sent, so it must never
-      // be read as a successful or HTTP-rejected operation.
-      return { capOutcome: 'local_no_request' };
-    }
-    // A dead/rotated family must not be replayed; mint a fresh one through the
-    // real authorization-code flow instead of reusing the seeded token.
+    // A missing/dead family is replenished through the real authorization
+    // flow even inside the measurement window: the bootstrap HTTP requests,
+    // their SQL work, and their latency all stay inside this iteration's
+    // measured cost, and only a successful refresh below counts as a
+    // logical success. capIntrospectOp/capRevokeOp already behave this way.
+    // A dead/rotated family must never be replayed.
     await capMintSubjectTokens(false, true);
   }
   const response = http.post(

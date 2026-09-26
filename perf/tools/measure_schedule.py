@@ -106,7 +106,8 @@ def _trend(metrics: dict, name: str) -> dict:
 
 
 OUTCOME_NAMES = ("success", "expected_rejection", "local_no_request",
-                 "unexpected", "prepare_failed")
+                 "unexpected", "prepare_failed", "prepare_local_failed",
+                 "prepare_sut_failed")
 
 # DEPRECATED / NON-GATING (harness-repair): legacy counter-path
 # accounting only. Real runs showed the executor's observed schedule

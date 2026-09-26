@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicU64, Ordering as AtomicOrdering};
 struct CountingSecurityAudit {
     storage_calls: AtomicU64,
     transactional_calls: AtomicU64,
+    reject_transactional: bool,
 }
 
 impl CountingSecurityAudit {
@@ -33,6 +34,9 @@ impl SecurityAudit for CountingSecurityAudit {
         Box::pin(async move {
             self.transactional_calls
                 .fetch_add(1, AtomicOrdering::SeqCst);
+            if self.reject_transactional {
+                anyhow::bail!("dynamic audit anchor is unavailable");
+            }
             Ok(())
         })
     }
@@ -162,6 +166,131 @@ async fn refresh_issuance_keeps_the_full_storage_preflight() {
         audit.counts(),
         (1, 0),
         "refresh issuance must keep ensure_storage"
+    );
+}
+
+/// Preserving a refresh token does not persist any state before the final
+/// issuance commit, including when the request is eligible for refresh.
+#[actix_web::test]
+async fn preserve_existing_refresh_uses_transactional_readiness() {
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
+    let mut client = client_with_grants(&["client_credentials", "refresh_token"]);
+    client.client_id = format!("audit-ready-preserve-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+    issue.include_refresh = true;
+    issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
+    let audit = CountingSecurityAudit::default();
+
+    let response = issue_counted_fresh(&state, &client, issue, &audit).await;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+    assert!(body.get("access_token").is_some());
+    assert!(body.get("refresh_token").is_none());
+    assert_eq!(audit.counts(), (0, 1));
+    assert_eq!(token_issuance_row_count(&state, &client).await, 1);
+}
+
+#[actix_web::test]
+async fn preserve_existing_refresh_fails_before_commit_when_dynamic_audit_gate_rejects() {
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
+    let mut client = client_with_grants(&["client_credentials", "refresh_token"]);
+    client.client_id = format!("audit-ready-preserve-denied-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+    issue.include_refresh = true;
+    issue.refresh_token_policy = RefreshTokenPolicy::PreserveExisting;
+    let audit = CountingSecurityAudit {
+        reject_transactional: true,
+        ..Default::default()
+    };
+
+    let response = issue_counted_fresh(&state, &client, issue, &audit).await;
+
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let body: Value = serde_json::from_slice(&response_body(response).await).unwrap();
+    assert!(body.get("access_token").is_none());
+    assert_eq!(audit.counts(), (0, 1));
+    assert_eq!(token_issuance_row_count(&state, &client).await, 0);
+}
+
+/// Normal refresh rotation is commit-owned Fresh issuance: the family lock,
+/// spent-proof bookkeeping, and `token_issued` event all live in the final
+/// commit transaction, so the static per-request probe is elided. The
+/// fixture has no real family row, so the commit rejects the rotation after
+/// the gate — the gate choice is what this test measures.
+#[actix_web::test]
+async fn refresh_rotation_uses_transactional_readiness() {
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
+    let mut client = client_with_grants(&["authorization_code", "refresh_token"]);
+    client.client_id = format!("audit-ready-rotate-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+    issue.include_refresh = true;
+    issue.refresh_token_policy = RefreshTokenPolicy::Rotate {
+        family_id: Uuid::now_v7(),
+        rotated_from_id: Uuid::now_v7(),
+    };
+    let audit = CountingSecurityAudit::default();
+
+    let response = issue_counted_fresh(&state, &client, issue, &audit).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        audit.counts(),
+        (0, 1),
+        "normal refresh rotation must take the transactional gate"
+    );
+}
+
+/// Lost-response rotation recovery is deliberately kept conservative: the
+/// commit still proves its direct-predecessor edge transactionally, but the
+/// path keeps the full storage preflight.
+#[actix_web::test]
+async fn lost_response_rotation_keeps_the_full_storage_preflight() {
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
+    let mut client = client_with_grants(&["authorization_code", "refresh_token"]);
+    client.client_id = format!("audit-ready-lost-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+    issue.include_refresh = true;
+    issue.refresh_token_policy = RefreshTokenPolicy::RotateLostResponse {
+        family_id: Uuid::now_v7(),
+        original_id: Uuid::now_v7(),
+        original_blake3: [0xAB; 32],
+        successor_id: Uuid::now_v7(),
+        retry_started_at: Utc::now(),
+    };
+    let audit = CountingSecurityAudit::default();
+
+    let response = issue_counted_fresh(&state, &client, issue, &audit).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        audit.counts(),
+        (1, 0),
+        "lost-response rotation must keep ensure_storage"
     );
 }
 

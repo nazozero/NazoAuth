@@ -135,7 +135,7 @@ async fn prepare_ciba_decision_intent(
         }
         Err(response) => return Err(response),
     };
-    if let Err(error) = security_audit.ensure_storage().await {
+    if let Err(error) = security_audit.ensure_transactional_ready().await {
         tracing::error!(%error, "CIBA decision audit preflight failed");
         return Err(OAuthEndpointError::authorization(
             StatusCode::SERVICE_UNAVAILABLE,
