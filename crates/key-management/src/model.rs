@@ -193,8 +193,11 @@ impl VerificationKey {
 
     #[must_use]
     pub fn can_verify(&self) -> bool {
-        self.retire_at
-            .is_none_or(|retire_at| retire_at > Utc::now())
+        self.can_verify_at(Utc::now())
+    }
+
+    pub(crate) fn can_verify_at(&self, now: chrono::DateTime<Utc>) -> bool {
+        self.retire_at.is_none_or(|retire_at| retire_at > now)
     }
 }
 
@@ -252,7 +255,30 @@ impl KeySnapshot {
 
     #[must_use]
     pub fn jwks(&self) -> Value {
-        crate::jwks::public_jwks(&self.verification_keys, &self.request_object_encryption_jwk)
+        self.jwks_at(Utc::now())
+    }
+
+    /// Builds the public projection and its cache deadline from one captured time.
+    #[must_use]
+    pub fn jwks_at(&self, now: chrono::DateTime<Utc>) -> Value {
+        crate::jwks::public_jwks(
+            &self.verification_keys,
+            &self.request_object_encryption_jwk,
+            now,
+        )
+    }
+
+    /// Earliest future change to verification eligibility in this generation.
+    #[must_use]
+    pub fn next_verification_retirement(
+        &self,
+        now: chrono::DateTime<Utc>,
+    ) -> Option<chrono::DateTime<Utc>> {
+        self.verification_keys
+            .iter()
+            .filter_map(|key| key.retire_at)
+            .filter(|retire_at| *retire_at > now)
+            .min()
     }
 }
 
