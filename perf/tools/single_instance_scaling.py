@@ -26,12 +26,14 @@ tracked in budget.json and capped (failed attempts count against it).
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import shlex
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 # ---------------------------------------------------------------------
@@ -708,7 +710,7 @@ def start_samplers(run_id: str, out_host: str, tick: int = 2) -> dict:
     infra = format_cpu_list(CURRENT_POINT["infra_cpus"])
     pin_container(sampler, infra)
     pin_container(detail, infra)
-    return {"sampler": sampler, "proc_detail": detail}
+    return {"sampler": sampler, "proc_detail": detail, "interval_s": tick}
 
 
 def stop_samplers(run_id: str) -> None:
@@ -1552,6 +1554,8 @@ def extract_point_metrics(combined: dict) -> dict:
         "outcome_local_no_request": outcomes.get("local_no_request"),
         "outcome_unexpected": outcomes.get("unexpected"),
         "outcome_prepare_failed": outcomes.get("prepare_failed"),
+        "outcome_prepare_local_failed": outcomes.get("prepare_local_failed"),
+        "outcome_prepare_sut_failed": outcomes.get("prepare_sut_failed"),
         "subject_lifecycle": m.get("subject_lifecycle"),
         "late_vu_fraction": (m.get("iterations") or {})
                             .get("late_vu_fraction"),
@@ -1691,6 +1695,150 @@ def refresh_invariants(ledger_path: Path) -> dict:
             out["spent_expired_backlog"] = int(f[2])
     return out
 
+
+def issuance_ledger(ledger_path: Path) -> dict:
+    """Whole-ledger diagnostics; its clock precedes the later backlog query."""
+    out = {"rows": None, "due_count": None, "sampled_at_s": None,
+           "oldest_due_at_s": None, "oldest_expired_age_s": None}
+    if not ledger_path.exists():
+        return out
+    for line in ledger_path.read_text(errors="replace").splitlines():
+        f = line.split("|")
+        if f[:2] == ["META", "sampled_at"] and len(f) >= 3:
+            out["sampled_at_s"] = datetime.fromisoformat(f[2]).replace(
+                tzinfo=timezone.utc).timestamp()
+        elif f[:2] == ["ROW_COUNTS", "oauth_token_issuances"] and len(f) >= 3:
+            out["rows"] = int(f[2])
+        elif f[:2] == ["EXPIRED_BACKLOG", "issuances_due"] and len(f) >= 4:
+            out["due_count"] = int(f[2])
+            if f[3] != "-":
+                out["oldest_due_at_s"] = datetime.fromisoformat(f[3]).replace(
+                    tzinfo=timezone.utc).timestamp()
+    sampled, oldest = out["sampled_at_s"], out["oldest_due_at_s"]
+    if out["due_count"] == 0:
+        out["oldest_expired_age_s"] = 0.0
+    elif sampled is not None and oldest is not None and sampled >= oldest:
+        out["oldest_expired_age_s"] = sampled - oldest
+    out["clock_scope"] = "ledger-start clock; diagnostic lower bound, not a gate"
+    return out
+
+
+def issuance_maintenance_evidence(
+        sample_path: Path, window_start_ms: float | None,
+        window_end_ms: float | None, point: dict,
+        sampler_interval_s: float = 2) -> dict:
+    """Age SLO over >=3 normal maintenance intervals after retention matures.
+
+    The test point must declare the actual maximum retention horizon and its
+    expiry-age SLO before load. Counts/slopes are diagnostics, not zero-backlog
+    requirements: normal periodic reclamation has a sawtooth queue.
+    """
+    retention = point.get("issuance_retention_seconds")
+    max_age = point.get("issuance_max_expired_age_seconds")
+    out = {"status": "INVALID", "pass": False,
+           "retention_seconds": retention, "max_expired_age_seconds": max_age,
+           "minimum_mature_observation_seconds": 180,
+           "max_sample_gap_seconds": 2 * sampler_interval_s}
+
+    def number(value):
+        return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                and math.isfinite(value))
+
+    if not all(number(v) and v > 0 for v in
+               (retention, max_age, sampler_interval_s)):
+        return {**out, "reason": "missing_or_invalid_declared_retention_or_age_slo"}
+    if not all(number(v) for v in (window_start_ms, window_end_ms)):
+        return {**out, "reason": "missing_measurement_window"}
+    start, end = window_start_ms / 1000, window_end_ms / 1000
+    mature_start = start + retention
+    out["mature_window_s"] = [mature_start, end]
+    if end - mature_start < 180:
+        return {**out, "reason": "insufficient_mature_observation"}
+    if not sample_path.exists():
+        return {**out, "reason": "missing_sampler"}
+    ages, counts, counters, problems = [], [], [], []
+    gap_limit = out["max_sample_gap_seconds"]
+    for line in sample_path.read_text(errors="replace").splitlines():
+        try:
+            row = json.loads(line)
+        except (ValueError, TypeError):
+            problems.append("malformed_sampler_row")
+            continue
+        if not isinstance(row, dict):
+            problems.append("malformed_sampler_row")
+            continue
+        if row.get("kind") == "meta":
+            continue
+        host_ts = row.get("ts")
+        if not number(host_ts) or not (mature_start - gap_limit <= host_ts <= end):
+            continue
+        sample = row.get("issuance_maintenance") or {}
+        ts, due_at = sample.get("sampled_at_s"), sample.get("oldest_due_at_s")
+        if (not number(ts) or abs(ts - host_ts) > gap_limit
+                or "oldest_due_at_s" not in sample
+                or (due_at is not None and (not number(due_at) or due_at > ts))
+                or row.get("pg_err")):
+            problems.append("missing_or_invalid_database_clock_or_oldest_due")
+            continue
+        if not (mature_start <= ts <= end):
+            continue
+        if ages and ts <= ages[-1][0]:
+            problems.append("non_increasing_database_clock")
+            continue
+        ages.append((ts, ts - due_at if due_at is not None else 0.0))
+        count, count_ts = sample.get("due_count"), sample.get("due_count_sampled_at_s")
+        if count is not None:
+            if (not number(count) or count < 0 or not number(count_ts)
+                    or abs(count_ts - ts) > gap_limit):
+                problems.append("invalid_due_count")
+            elif mature_start <= count_ts <= end:
+                counts.append((count_ts, count))
+        stat = (row.get("rel_bytes") or {}).get("oauth_token_issuances") or {}
+        if all(number(stat.get(k)) for k in ("ins", "del")):
+            counters.append((ts, stat["ins"], stat["del"]))
+    out["samples"] = len(ages)
+    out["problems"] = sorted(set(problems))
+    if not ages:
+        return {**out, "reason": "missing_mature_samples"}
+    gaps = [b[0] - a[0] for a, b in zip(ages, ages[1:])]
+    out["observed_max_sample_gap_seconds"] = max(gaps, default=0)
+    out["observed_sample_span_s"] = [ages[0][0], ages[-1][0]]
+    if (problems or ages[0][0] > mature_start + gap_limit
+            or ages[-1][0] < end - gap_limit
+            or any(gap > gap_limit for gap in gaps)):
+        return {**out, "reason": "invalid_clock_or_incomplete_mature_coverage"}
+
+    def trend(series):
+        if len(series) < 2:
+            return {"samples": len(series), "slope_per_s": None}
+        origin = series[0][0]
+        xs, ys = zip(*[(ts - origin, val) for ts, val in series])
+        mx, my = sum(xs) / len(xs), sum(ys) / len(ys)
+        xx = sum((x - mx) ** 2 for x in xs)
+        return {"samples": len(series), "first": series[0][1],
+                "last": series[-1][1], "min": min(ys), "max": max(ys),
+                "slope_per_s": (sum((x - mx) * (y - my)
+                                    for x, y in zip(xs, ys)) / xx if xx else None)}
+
+    out["oldest_expired_age"] = trend(ages)
+    out["due_count"] = trend(counts)
+    out["counter_window"] = None
+    if len(counters) >= 2:
+        first, last = counters[0], counters[-1]
+        if any(b[i] < a[i] for a, b in zip(counters, counters[1:]) for i in (1, 2)):
+            return {**out, "reason": "issuance_stat_counter_reset"}
+        span = last[0] - first[0]
+        out["counter_window"] = {
+            "start_s": first[0], "end_s": last[0],
+            "inserted": last[1] - first[1], "deleted": last[2] - first[2],
+            "inserted_per_s": (last[1] - first[1]) / span,
+            "deleted_per_s": (last[2] - first[2]) / span,
+        }
+    passed = all(age <= max_age for _, age in ages)
+    return {**out, "status": "PASS" if passed else "FAIL", "pass": passed,
+            "reason": "sampled_expiry_age_within_declared_slo" if passed
+            else "sampled_expiry_age_exceeded_declared_slo",
+            "scope": "sampled issuance maintenance SLO; not all-state or indefinite steady state"}
 
 def receiver_log_scan(run_id: str) -> dict:
     """Receiver-side audit evidence for this run, scoped to what the log
@@ -1970,6 +2118,14 @@ def run_point(point: dict) -> dict:
             audit_delivery_reconciled_of(rec["audit_drain"], rcv))
         rec["metrics"]["refresh_invariants"] = refresh_invariants(
             out_dir / "ledger-post.txt")
+        rec["metrics"]["issuance_ledger"] = {
+            phase: issuance_ledger(out_dir / f"ledger-{phase}.txt")
+            for phase in ("pre", "post")}
+        rec["metrics"]["issuance_maintenance"] = issuance_maintenance_evidence(
+            out_dir / "soak-metrics.jsonl",
+            rec["metrics"].get("window_start_ms"),
+            rec["metrics"].get("window_end_ms"), point,
+            rec["samplers"]["interval_s"])
         if rec["load"].get("sidecars") is not None:
             rec["metrics"]["sidecar_terminal_complete"] = all(
                 s["terminal_summary"] and not s["interrupted"]
@@ -1992,6 +2148,8 @@ def run_point(point: dict) -> dict:
 PHASE2_REQUIRED = (
     "window_valid", "successful_ops_per_s", "op_p99_ms",
     "outcome_unexpected", "outcome_local_no_request",
+    "outcome_prepare_failed", "outcome_prepare_local_failed",
+    "outcome_prepare_sut_failed",
     "oom_killed", "restart_count", "wal_per_success_bytes",
     "audit_log_scan", "audit_db_drained", "audit_delivery_reconciled")
 
@@ -2012,6 +2170,16 @@ def _missing_required(records: dict, points: tuple, fields: tuple) -> list:
     return missing
 
 
+def _preparation_gate(records: dict) -> dict:
+    rows = [{"point": name,
+             "unknown": rec["outcome_prepare_failed"],
+             "local": rec["outcome_prepare_local_failed"],
+             "sut": rec["outcome_prepare_sut_failed"]}
+            for name, rec in records.items()]
+    return {"pass": all(r["unknown"] == r["local"] == r["sut"] == 0 for r in rows),
+            "invalid_points": [r["point"] for r in rows if r["unknown"] or r["local"]],
+            "rows": rows}
+
 def evaluate_phase2_gates(records: dict) -> dict:
     gates: dict = {}
 
@@ -2030,6 +2198,9 @@ def evaluate_phase2_gates(records: dict) -> dict:
     invalid = [n for n, r in records.items()
                if r["window_valid"] is not True]
     gates["window_validity"] = {"pass": not invalid, "invalid_points": invalid}
+    preparation = _preparation_gate(records)
+    gates["preparation"] = preparation
+    invalid += preparation["invalid_points"]
 
     a_vals = [a1["successful_ops_per_s"], a2["successful_ops_per_s"]]
     amax, amin = max(a_vals), min(a_vals)
@@ -2123,12 +2294,13 @@ def evaluate_phase2_gates(records: dict) -> dict:
 
 PHASE3_REQUIRED_A = (
     "successful_ops_per_s", "drop_fraction", "op_p99_ms",
-    "outcome_expected_rejection", "audit_db_drained",
+    "outcome_expected_rejection", "outcome_prepare_failed",
+    "outcome_prepare_local_failed", "outcome_prepare_sut_failed", "audit_db_drained",
     "audit_delivery_reconciled")
 PHASE3_REQUIRED_B = PHASE3_REQUIRED_A + (
     "window_valid", "outcome_unexpected", "outcome_local_no_request",
     "oom_killed", "restart_count", "audit_log_scan",
-    "refresh_invariants", "sidecar_terminal_complete")
+    "refresh_invariants", "issuance_maintenance", "sidecar_terminal_complete")
 
 
 def evaluate_phase3_gates(a: dict | None, b: dict | None) -> dict:
@@ -2149,6 +2321,15 @@ def evaluate_phase3_gates(a: dict | None, b: dict | None) -> dict:
     if missing:
         return {"verdict": "INVALID", "retain": False, "gates": gates}
 
+    preparation = _preparation_gate({"A": a, "B": b})
+    gates["preparation"] = preparation
+    issuance = b["issuance_maintenance"]
+    gates["issuance_maintenance"] = {
+        "pass": issuance.get("status") == "PASS" and issuance.get("pass") is True,
+        "evidence": issuance}
+    invalid = (bool(preparation["invalid_points"])
+               or issuance.get("status") not in ("PASS", "FAIL")
+               or b["window_valid"] is not True)
     a_thr, b_thr = a["successful_ops_per_s"], b["successful_ops_per_s"]
     gates["throughput"] = {
         "pass": bool(a_thr and b_thr and b_thr >= a_thr * 0.98),
@@ -2189,8 +2370,9 @@ def evaluate_phase3_gates(a: dict | None, b: dict | None) -> dict:
         "pass": a.get("sidecar_terminal_complete") is not False
         and b.get("sidecar_terminal_complete") is True}
     all_pass = all(g["pass"] for g in gates.values())
-    return {"verdict": "PASS" if all_pass else "FAIL",
-            "retain": all_pass, "gates": gates}
+    verdict = "INVALID" if invalid else "PASS" if all_pass else "FAIL"
+    return {"verdict": verdict,
+            "retain": verdict == "PASS", "gates": gates}
 
 
 # ---------------------------------------------------------------------

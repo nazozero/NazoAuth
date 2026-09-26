@@ -42,6 +42,7 @@ def main():
         "db": DB.split("@")[-1], "app_metrics": APP,
         "started_at": int(time.time()),
     }) + "\n")
+    next_issuance_count = 0.0
     while True:
         row = {"ts": int(time.time())}
         try:
@@ -125,6 +126,32 @@ def main():
                         "  FROM oauth_refresh_spent_tokens"
                         "  GROUP BY tenant_id,token_family_id) s)"
                     ).fetchone()))
+                # Indexed oldest-due probe on every tick. Exact backlog counts
+                # are deliberately sparse: counting a large backlog on every
+                # metrics tick would add the work this probe is diagnosing.
+                row["issuance_maintenance"] = dict(zip(
+                    ["sampled_at_s", "oldest_due_at_s"],
+                    c.execute(
+                        "SELECT extract(epoch FROM statement_timestamp())::float8,"
+                        " (SELECT extract(epoch FROM retain_until)::float8"
+                        "  FROM oauth_token_issuances"
+                        "  WHERE retain_until <= statement_timestamp()"
+                        "  ORDER BY retain_until LIMIT 1)"
+                    ).fetchone()))
+                if time.monotonic() >= next_issuance_count:
+                    count_started = time.monotonic()
+                    sampled_at, due = c.execute(
+                        "SELECT extract(epoch FROM statement_timestamp())::float8,"
+                        " count(*) FROM oauth_token_issuances"
+                        " WHERE retain_until <= statement_timestamp()"
+                    ).fetchone()
+                    row["issuance_maintenance"].update({
+                        "due_count": due,
+                        "due_count_sampled_at_s": sampled_at,
+                        "due_count_query_ms": round(
+                            (time.monotonic() - count_started) * 1000, 3),
+                    })
+                    next_issuance_count = time.monotonic() + 60
                 # ---- storage: db total + per-relation bytes ----------------
                 row["db_bytes"] = c.execute(
                     "SELECT pg_database_size(current_database())").fetchone()[0]

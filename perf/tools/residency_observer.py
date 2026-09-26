@@ -49,7 +49,8 @@ SELECT pid, application_name, client_addr::text, state,
        extract(epoch from query_start)::float8,
        extract(epoch from state_change)::float8,
        extract(epoch from backend_start)::float8,
-       backend_xid::text, age(backend_xmin)
+       backend_xid::text, age(backend_xmin),
+       extract(epoch from clock_timestamp())::float8
 FROM pg_stat_activity
 WHERE datname = 'oauth' AND usename = %s AND backend_type = 'client backend'
 ORDER BY pid
@@ -177,6 +178,7 @@ def main() -> int:
                         "state": r[3], "wet": r[4], "we": r[5],
                         "qid": r[6], "xs": r[7], "qs": r[8], "sc": r[9],
                         "bs": r[10], "xid": r[11], "xmin_age": r[12],
+                        "pg_ts": r[13],
                     })
                 row["backends"] = backends
                 # Minimal blocking probe only for Lock-waiting backends.

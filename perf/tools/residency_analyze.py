@@ -11,8 +11,8 @@ task requires:
   * checked_out = connections - idle_connections, runtime-role state
     split (active / idle-in-transaction / pg-idle-estimate), each with
     mean/median/p95/max and share of valid samples;
-  * idle-in-transaction residency: per-backend idle_age = ts -
-    state_change, fixed buckets, time-weighted share, top query_ids
+  * idle-in-transaction residency: per-backend idle_age = pg_ts -
+    state_change, fixed buckets, sampled-age-weighted share, top query_ids
     mapped through the same-window pg_stat_statements identity map;
   * active-backend wait distribution by (wait_event_type, wait_event)
     and by query class;
@@ -25,6 +25,7 @@ Usage: residency_analyze.py <residency.jsonl> <point.json> [--json]
 from __future__ import annotations
 
 import json
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -176,6 +177,24 @@ def analyze_point(residency_path: Path, point_path: Path) -> dict:
         if pg_idle_est < 0:
             invalid.append("negative_idle_estimate")
             continue
+        idle_ages = []
+        age_problem = None
+        for b in backends:
+            if b.get("state") != "idle in transaction":
+                continue
+            pg_ts, state_change = b.get("pg_ts"), b.get("sc")
+            if not (isinstance(pg_ts, (int, float))
+                    and isinstance(state_change, (int, float))):
+                age_problem = "missing_pg_idle_age_clock"
+                break
+            age = (pg_ts - state_change) * 1000.0
+            if not math.isfinite(age) or age < 0:
+                age_problem = "invalid_pg_idle_age"
+                break
+            idle_ages.append((age, b.get("qid")))
+        if age_problem:
+            invalid.append(age_problem)
+            continue
         valid.append(s)
         checked_out_l.append(checked_out)
         active_l.append(states["active"])
@@ -186,11 +205,9 @@ def analyze_point(residency_path: Path, point_path: Path) -> dict:
         waiting_l.append(waiting)
         con_l.append(con)
         ts = s["ts"]
+        itx_rows.extend(idle_ages)
         for b in backends:
-            if b.get("state") == "idle in transaction" and b.get("sc"):
-                itx_rows.append((max(0.0, (ts - b["sc"]) * 1000.0),
-                                 b.get("qid")))
-            elif b.get("state") == "active":
+            if b.get("state") == "active":
                 wet = b.get("wet") or "no_wait"
                 we = b.get("we") or "-"
                 active_wait[(wet, we)] = active_wait.get((wet, we), 0) + 1
@@ -338,6 +355,8 @@ def analyze_point(residency_path: Path, point_path: Path) -> dict:
                           ("checked_out_pg_idle", pgidle_l))}
             if valid and statistics.fmean(checked_out_l) > 0 else None),
         "idle_in_tx": {
+            "age_clock": "postgres_clock_timestamp",
+            "weighting": "sampled_idle_age_not_cumulative_residence",
             "samples": len(itx_rows),
             "histogram_count": itx_hist,
             "time_weighted_share": {k: round(v / total_itx_time, 4)

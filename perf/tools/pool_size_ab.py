@@ -85,7 +85,7 @@ SIDECARS_120 = [
      "user_count": 256},
 ]
 
-# Formal strict-3000 gate (capacity_search.evaluate): measured rate
+# Formal strict-3000 gate (capacity_search.evaluate): successful rate
 # >=99.5% of target, drop<=0.1%, unexpected==0, p95<=100ms, p99<=250ms.
 STRICT_TARGET = 3000.0
 
@@ -231,8 +231,9 @@ def point_evidence(rec: dict) -> dict:
         "backend_state_means": pool["state_means"],
         "ops_per_s": ops,
         "attempted_ops_per_s": attempted,
-        "attainment": (round(attempted / STRICT_TARGET, 4)
-                       if isinstance(attempted, (int, float)) else None),
+        "attainment": (round(ops / STRICT_TARGET, 4)
+                       if isinstance(ops, (int, float)) else None),
+        "capacity_gate_contract": "successful-ops-v1",
         "p50_ms": m.get("op_p50_ms"), "p95_ms": m.get("op_p95_ms"),
         "p99_ms": m.get("op_p99_ms"),
         "iter_p95_ms": m.get("iter_p95_ms"),
@@ -267,7 +268,7 @@ def point_evidence(rec: dict) -> dict:
 
 def _strict_gate(m: dict, attempted) -> dict:
     """Formal strict gate for cap_mixed, measurement cohort only:
-    measured ops >=99.5% of target, MEASURE drops<=0.1%, measure
+    successful ops >=99.5% of target, MEASURE drops<=0.1%, measure
     unexpected==0, cap_iter_ms p95<=100ms p99<=250ms. Whole-run
     drop_fraction / http_req_duration are a different population and
     are never gate inputs."""
@@ -275,17 +276,23 @@ def _strict_gate(m: dict, attempted) -> dict:
     # Gate on the provable upper bound: a boundary overshoot of `o`
     # observed starts can mask up to `o` real drops.
     mdrop_upper = m.get("measure_drop_fraction_upper", mdrop)
+    successful = m.get("successful_ops_per_s")
     ok = (m.get("cohort_valid") is True
-          and isinstance(attempted, (int, float))
-          and attempted >= STRICT_TARGET * 0.995
+          and isinstance(successful, (int, float))
+          and successful >= STRICT_TARGET * 0.995
           and isinstance(mdrop_upper, (int, float))
           and mdrop_upper <= 0.001
           and m.get("outcome_unexpected") == 0
+          and m.get("outcome_prepare_failed", 0) == 0
+          and m.get("outcome_prepare_local_failed", 0) == 0
+          and m.get("outcome_prepare_sut_failed", 0) == 0
           and isinstance(m.get("iter_p95_ms"), (int, float))
           and m["iter_p95_ms"] <= 100
           and isinstance(m.get("iter_p99_ms"), (int, float))
           and m["iter_p99_ms"] <= 250)
     return {"pass": bool(ok), "attempted_ops_per_s": attempted,
+            "successful_ops_per_s": successful,
+            "capacity_gate_contract": "successful-ops-v1",
             "target": STRICT_TARGET,
             "measure_drop_fraction": mdrop,
             "measure_drop_fraction_upper": mdrop_upper,
@@ -368,11 +375,14 @@ def evaluate(records: dict) -> dict:
                             .get(k) for k in (
                                 "enqueued", "persisted", "dropped",
                                 "pending_in_process")},
-            "verdict": "PASS" if not failed else "FAIL"}
+            "verdict": ("INVALID" if checks["preparation_valid"] is not True
+                        else "PASS" if not failed else "FAIL")}
     health_failed = [n for n in order
                      if result["points"][n]["verdict"] != "PASS"]
     if health_failed:
-        result["verdict"] = "FAIL"
+        result["verdict"] = (
+            "INVALID" if any(result["points"][n]["verdict"] == "INVALID"
+                             for n in health_failed) else "FAIL")
         result["reason"] = f"health/identity gates failed on " \
                            f"{health_failed}"
         return result

@@ -22,7 +22,7 @@ def _sample(ts, con=24, idle=2, waiting=0, acq=1000, backends=()):
             "span_ms": 10.0,
             "pool": {"con": con, "idle": idle, "waiting": waiting,
                      "acq": acq, "wait_ns": 0, "wait_max_ns": 0},
-            "backends": list(backends),
+            "backends": [dict(b, pg_ts=b.get("pg_ts", ts)) for b in backends],
             "self": {"utime_s": 0.1, "stime_s": 0.05}}
 
 
@@ -170,6 +170,27 @@ class ResidencyAnalyzeTest(unittest.TestCase):
         self.assertEqual(out["validity"]["valid"], 0)
         self.assertEqual(
             out["validity"]["invalid_reasons"]["negative_idle_estimate"], 1)
+
+    def test_idle_age_uses_postgres_clock_and_rejects_invalid_evidence(self):
+        for pg_ts, sc, reason in ((100.25, 100.20, None),
+                                 (None, 100.20, "missing_pg_idle_age_clock"),
+                                 (100.25, None, "missing_pg_idle_age_clock"),
+                                 (100.25, 100.30, "invalid_pg_idle_age"),
+                                 (float("nan"), 100.2, "invalid_pg_idle_age")):
+            with self.subTest(pg_ts=pg_ts, sc=sc), tempfile.TemporaryDirectory() as td:
+                tmp = Path(td)
+                b = dict(_backend(1, "idle in transaction", sc=sc), pg_ts=pg_ts)
+                # Host timestamp precedes state_change: using host clock would
+                # manufacture a zero age rather than the actual 50ms age.
+                res = _write(tmp, "r.jsonl", [_sample(100.0, backends=[b])])
+                point = _write(tmp, "p.json", {"metrics": {}})
+                out = ra.analyze_point(res, point)
+                if reason:
+                    self.assertEqual(out["validity"]["valid"], 0)
+                    self.assertEqual(out["validity"]["invalid_reasons"][reason], 1)
+                else:
+                    self.assertEqual(out["validity"]["valid"], 1)
+                    self.assertEqual(out["idle_in_tx"]["histogram_count"]["20-100ms"], 1)
 
 
 if __name__ == "__main__":
