@@ -17,7 +17,7 @@ Ladder rule (fixed, no fine-grained search):
 
 PASS gate (non-argon2):
   dropped_iterations <= 0.1% of the arrival cohort
-  measured rps >= 99.5% of target
+  successful logical ops/s >= 99.5% of target
   unexpected/business/security error_rate == 0
   p95 <= 100ms, p99 <= 250ms
 A point is LOAD_GENERATOR_INVALID when k6 itself saturated (the SUT is not
@@ -34,7 +34,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from measure_schedule import (  # noqa: E402
-    _trend, cohort_accounting, parse_time_unit_ms,
+    OUTCOME_NAMES, _trend, cohort_accounting, parse_time_unit_ms,
     scheduled_arrivals_in_window)
 
 ROOT = Path("/workspace")
@@ -498,16 +498,21 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
                     "status": status}
             # Named outcome counters and the stream's cohort|lw|outcome
             # tags describe the same events — they must agree exactly.
-            gate_unexpected = int(
-                stream_outcomes.get("unexpected_error", 0))
-            named_unexp = int(
-                _count(metrics_raw, "cap_measure_unexpected"))
-            if gate_unexpected != named_unexp:
-                return "INVALID", {
-                    "reason": "outcome_counter_mismatch",
-                    "stream_unexpected": gate_unexpected,
-                    "counter_unexpected": named_unexp,
-                    "status": status}
+            if set(stream_outcomes) - set(OUTCOME_NAMES):
+                return "INVALID", {"reason": "unknown_outcome",
+                                   "outcomes": stream_outcomes,
+                                   "status": status}
+            for outcome in OUTCOME_NAMES:
+                stream_count = int(stream_outcomes.get(outcome, 0))
+                named_count = int(_count(
+                    metrics_raw, f"cap_measure_{outcome}"))
+                if stream_count != named_count:
+                    return "INVALID", {
+                        "reason": "outcome_counter_mismatch",
+                        "outcome": outcome, "stream_count": stream_count,
+                        "counter_count": named_count, "status": status}
+            gate_outcomes = stream_outcomes
+            gate_unexpected = int(stream_outcomes.get("unexpected", 0))
             gate_lat = _trend(metrics_raw, "cap_iter_ms")
             gate_p95 = gate_lat["p95"]
             gate_p99 = gate_lat["p99"]
@@ -555,6 +560,7 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
                 return "INVALID", m_out
             measure_drop_fraction = acct["drop_fraction_upper"]
             gate_unexpected = acct["unexpected"]
+            gate_outcomes = acct["outcomes"]
             gate_lat = acct["iter_latency_ms"]
             gate_p95 = gate_lat["p95"]
             gate_p99 = gate_lat["p99"]
@@ -605,6 +611,8 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
         "classified_errors": int(classified),
         "expected_invalid_grant": int(expected_invalid_grant),
         "unexpected_errors": int(unexpected),
+        "capacity_gate_contract": ("successful-ops-v1" if is_caprun
+                                   else "legacy-full-scenario"),
     }
     if is_caprun and scohort is not None:
         metrics["measure"] = dict(scohort)
@@ -640,6 +648,14 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
     # itself: drops at the cap can equally mean the SUT slowed and held
     # VUs longer. Recorded whenever the numbers exist.
     if is_caprun:
+        metrics["prepare_failures"] = {
+            outcome: int(gate_outcomes.get(outcome, 0))
+            for outcome in ("prepare_failed", "prepare_local_failed",
+                            "prepare_sut_failed")}
+        if (metrics["prepare_failures"]["prepare_failed"]
+                or metrics["prepare_failures"]["prepare_local_failed"]):
+            metrics["reason"] = "preparation_evidence_invalid"
+            return "INVALID", metrics
         ivc = injector_vu_cap_reached(metrics_raw)
         if ivc is not None:
             metrics["injector_vu_cap_reached"] = ivc
@@ -654,20 +670,16 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
     # LOAD_GENERATOR_RESOURCE_INVALID — drops never attribute themselves.
     gate_drop = (measure_drop_fraction if is_caprun
                  else drop_fraction)
-    if gate_drop is not None and gate_drop > 0.001 and unexpected == 0:
+    if (gate_drop is not None and gate_drop > 0.001 and unexpected == 0
+            and (not is_caprun or not gate_outcomes.get("prepare_sut_failed"))):
         ev = generator_resource_evidence(
             summary_path, metrics_raw, generator_facts)
         metrics["load_generator_evidence"] = ev or "absent"
         if ev:
             return "LOAD_GENERATOR_RESOURCE_INVALID", metrics
-    # cap_mixed deliberately exercises the bounded-family cap: an evicted
-    # refresh token answers invalid_grant, which is the *correct* response.
-    # Its cascade (a VU whose token was evicted fails fast) counts in
-    # cap_measure_errors without any HTTP error. For cap_mixed the capacity
-    # question is "did the SUT keep pace with arrivals", so the gate uses the
-    # full measured rate; for every other scenario an op failure is real and
-    # the gate uses the successful-only rate.
-    rate_for_gate = measured_ops_s if label == "cap_mixed" else successful_ops_s
+    # Correct rejections and local no-request exits are useful diagnostics,
+    # but neither delivers a successful logical operation, including mixed.
+    rate_for_gate = successful_ops_s
     # For capRun the gate reads the measurement cohort only. k6 thresholds
     # (http_req_duration p99<5s, checks>0.99, http_req_failed<1%) are
     # whole-run health guardrails kept as diagnostics: a warmup-only breach
@@ -682,6 +694,7 @@ def evaluate(summary: dict | None, summary_path: Path, target: int,
             and rate_for_gate is not None
             and rate_for_gate >= target * 0.995
             and unexpected == 0
+            and gate_outcomes.get("prepare_sut_failed", 0) == 0
             and gate_p95 <= 100
             and gate_p99 <= 250
         )

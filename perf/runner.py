@@ -18,7 +18,7 @@ import psycopg
 import redis
 
 from tools.measure_schedule import (
-    cohort_accounting, parse_time_unit_ms)
+    OUTCOME_NAMES, cohort_accounting, parse_time_unit_ms)
 from tools.perf_state_ready import (
     clear_ready, wait_ready, write_ready)
 
@@ -483,7 +483,7 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
     # The denominator is the explicit scenario-window contract emitted by the
     # script — never Counter.rate and never a different evaluator's window.
     measure_metric = metrics.get("cap_measure_ms", {})
-    if measure_metric:
+    if measure_metric or "cap_measure_ops" in metrics:
         measure = measure_metric.get("values", measure_metric)
         ops_metric = metrics.get("cap_measure_ops", {})
         errs_metric = metrics.get("cap_measure_errors", {})
@@ -501,8 +501,7 @@ def k6_brief(summary: dict[str, Any]) -> dict[str, Any]:
             return int(metric_values(summary, name).get("count", 0))
         outcomes = {
             name: cnt(f"cap_measure_{name}")
-            for name in ("success", "expected_rejection", "local_no_request",
-                         "unexpected", "prepare_failed")
+            for name in OUTCOME_NAMES
         }
         legacy_ops = cnt("cap_iter_begin_lw1")
         late_vu = cnt("cap_iter_begin_late_vu")

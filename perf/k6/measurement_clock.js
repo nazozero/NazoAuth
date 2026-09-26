@@ -18,7 +18,8 @@
 //   cap_iter_ms                         Trend, entry->end incl. prepare
 //                                       (measure cohort only)
 //   cap_measure_{success,expected_rejection,local_no_request,unexpected,
-//                prepare_failed}        named outcome counters, measure cohort
+//                prepare_failed,prepare_local_failed,prepare_sut_failed}
+//                                       named outcome counters, measure cohort
 //   cap_window_*                        Gauges emitted once per VU carrying
 //                                       the window contract (plain names —
 //                                       k6 summaries fold tag submetrics):
@@ -32,7 +33,7 @@
 //         clock) would have counted this iteration — lets one execution
 //         stream reconstruct both accountings.
 // outcome: success | expected_rejection | local_no_request | unexpected |
-//          prepare_failed | gap_idle
+//          prepare_failed | prepare_local_failed | prepare_sut_failed | gap_idle
 import exec from 'k6/execution';
 import { Counter, Gauge, Trend } from 'k6/metrics';
 
@@ -52,6 +53,8 @@ export const capOutcomeCounters = {
   local_no_request: new Counter('cap_measure_local_no_request'),
   unexpected: new Counter('cap_measure_unexpected'),
   prepare_failed: new Counter('cap_measure_prepare_failed'),
+  prepare_local_failed: new Counter('cap_measure_prepare_local_failed'),
+  prepare_sut_failed: new Counter('cap_measure_prepare_sut_failed'),
 };
 const windowGauges = {
   scenario_start_ms: new Gauge('cap_window_scenario_start_ms'),
