@@ -655,6 +655,66 @@ async fn writer_family_lock_skips_locked_family_and_recheck_blocks_late_successo
     );
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn family_reclaim_batches_locks_without_waiting_or_exceeding_the_candidate_budget() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    clear_expired_tokens(&mut connection).await;
+    let locked_family = Uuid::now_v7();
+    insert_refresh_leaf(
+        &mut connection,
+        &fixture,
+        locked_family,
+        None,
+        Utc::now() - Duration::days(730),
+    )
+    .await;
+    // Put the held key first in a 300-family backlog. The candidate budget
+    // counts attempted families, including the one whose try-lock fails.
+    sql_query(
+        "INSERT INTO oauth_refresh_families \
+         (tenant_id,token_family_id,client_id,user_id,contract_blake3, \
+          current_member_id,current_token_blake3,current_audience, \
+          current_issued_at,current_expires_at,created_at) \
+         SELECT tenant_id,gen_random_uuid(),client_id,user_id,contract_blake3, \
+                gen_random_uuid(),decode(md5(gen_random_uuid()::text) || md5(gen_random_uuid()::text),'hex'),current_audience, \
+                current_issued_at,current_expires_at + interval '1 second',created_at \
+         FROM oauth_refresh_families CROSS JOIN generate_series(1,299) \
+         WHERE tenant_id = $1 AND token_family_id = $2",
+    )
+    .bind::<SqlUuid, _>(SYSTEM_TENANT)
+    .bind::<SqlUuid, _>(locked_family)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    connection.batch_execute("BEGIN").await.unwrap();
+    sql_query("SELECT pg_advisory_xact_lock($1)")
+        .bind::<BigInt, _>(family_lock_key(locked_family))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    let (first, second) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        let first = maintenance.cleanup_batch().await.unwrap();
+        let second = maintenance.cleanup_batch().await.unwrap();
+        (first, second)
+    })
+    .await
+    .expect("a held family advisory key must not stall either batch");
+    assert_eq!(first.refresh_tokens, 255);
+    assert!(first.saturated);
+    assert_eq!(second.refresh_tokens, 44);
+    assert_eq!(family_row_count(&mut connection, locked_family).await, 1);
+    connection.batch_execute("COMMIT").await.unwrap();
+    let final_batch = maintenance.cleanup_batch().await.unwrap();
+    assert_eq!(final_batch.refresh_tokens, 1);
+    assert_eq!(family_row_count(&mut connection, locked_family).await, 0);
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn concurrent_batches_do_not_deadlock_or_double_count() {
     let Some(database_url) = database_url() else {

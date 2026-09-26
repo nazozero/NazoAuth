@@ -113,8 +113,10 @@ instances from double-processing the same rows.
 - Refresh-token leaf reclaim takes the same family advisory lock used by
   refresh-token writers (`pg_try_advisory_xact_lock`). A family whose lock is
   held by an active writer is skipped for that pass, and lock-free rows are
-  rechecked inside the reclaim transaction. Families with an active successor
-  are never reclaimed.
+  rechecked inside the reclaim transaction. A batch uses one candidate read,
+  one bounded advisory-lock query and one bulk delete. The delete is a separate
+  READ COMMITTED statement so it sees a rotation committed before lock acquisition.
+  Families with an active successor are never reclaimed.
 - Expired spent proofs are removed at their own expiry. Rotation also limits
   proofs to 64 per family; family deletion cascades any remaining proofs.
   The current family row remains authoritative until its current token expires.
