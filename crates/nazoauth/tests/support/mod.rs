@@ -354,14 +354,17 @@ pub(crate) fn federation_http_config(
 ) -> actix_web::web::Data<crate::http::auth::federation::FederationHttpConfig> {
     let session = &state.settings.session;
     let federation = &state.settings.identity.federation;
-    actix_web::web::Data::new(crate::http::auth::federation::FederationHttpConfig::new(
-        federation.providers.clone(),
-        federation.saml_gateway.clone(),
-        session.session_cookie_name.as_str(),
-        session.csrf_cookie_name.as_str(),
-        session.session_ttl_seconds,
-        session.cookie_secure,
-    ))
+    actix_web::web::Data::new(
+        crate::http::auth::federation::FederationHttpConfig::new(
+            federation.providers.clone(),
+            federation.saml_gateway.clone(),
+            session.session_cookie_name.as_str(),
+            session.csrf_cookie_name.as_str(),
+            session.session_ttl_seconds,
+            session.cookie_secure,
+        )
+        .expect("federation HTTP configuration"),
+    )
 }
 
 pub(crate) fn auth_request_limiter(
