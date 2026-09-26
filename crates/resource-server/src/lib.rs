@@ -9,7 +9,7 @@ use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use chrono::Utc;
 use nazo_crypto::jwt::{Algorithm, Validation};
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 mod dpop;
 mod jwk;
@@ -41,6 +41,7 @@ const DEFAULT_DPOP_MAX_AGE_SECONDS: i64 = 300;
 #[derive(Clone, Debug)]
 pub struct ResourceServerVerifier {
     config: ResourceServerVerifierConfig,
+    verification_keys: HashMap<String, Option<jwk::PreparedVerificationKey>>,
 }
 
 #[derive(Clone, Debug)]
@@ -168,18 +169,24 @@ impl ResourceServerVerifier {
         let Some(keys) = config.jwks.get("keys").and_then(Value::as_array) else {
             return Err(ResourceServerVerifierError::MissingJwks);
         };
-        let mut key_ids = HashSet::with_capacity(keys.len());
+        let mut verification_keys = HashMap::with_capacity(keys.len());
         for key in keys {
             if let Some(kid) = key.get("kid") {
                 let Some(kid) = kid.as_str() else {
                     return Err(ResourceServerVerifierError::InvalidKey);
                 };
-                if kid.trim().is_empty() || !key_ids.insert(kid) {
+                if kid.trim().is_empty() || verification_keys.contains_key(kid) {
                     return Err(ResourceServerVerifierError::DuplicateKeyId);
                 }
+                // Invalid, unrelated keys do not invalidate the whole JWKS.
+                // Retain their IDs so selecting one still reports InvalidKey.
+                verification_keys.insert(kid.to_owned(), jwk::prepare_verification_key(key));
             }
         }
-        Ok(Self { config })
+        Ok(Self {
+            config,
+            verification_keys,
+        })
     }
 
     pub fn verify(&self, token: &str) -> Result<VerifiedAccessToken, ResourceServerVerifierError> {
@@ -204,17 +211,18 @@ impl ResourceServerVerifier {
             .as_deref()
             .ok_or(ResourceServerVerifierError::MissingKeyId)?;
         let key = self
-            .jwk_for_kid(kid)
-            .ok_or(ResourceServerVerifierError::UnknownKeyId)?;
-        let decoding_key =
-            jwk::decoding_key(key, header.alg).ok_or(ResourceServerVerifierError::InvalidKey)?;
+            .verification_keys
+            .get(kid)
+            .ok_or(ResourceServerVerifierError::UnknownKeyId)?
+            .as_ref()
+            .filter(|key| key.algorithm == header.alg)
+            .ok_or(ResourceServerVerifierError::InvalidKey)?;
         let mut validation = Validation::new(header.alg);
         validation.validate_aud = false;
         validation.validate_exp = false;
         validation.validate_nbf = false;
-        let decoded =
-            nazo_crypto::jwt::decode::<AccessTokenClaims>(token, &decoding_key, &validation)
-                .map_err(|_| ResourceServerVerifierError::InvalidToken)?;
+        let decoded = nazo_crypto::jwt::decode::<AccessTokenClaims>(token, &key.key, &validation)
+            .map_err(|_| ResourceServerVerifierError::InvalidToken)?;
         self.validate_claims(decoded.claims, now)
     }
 
@@ -264,15 +272,6 @@ impl ResourceServerVerifier {
             cnf: claims.cnf,
             authorization_details: claims.authorization_details,
         })
-    }
-
-    fn jwk_for_kid(&self, kid: &str) -> Option<&Value> {
-        self.config
-            .jwks
-            .get("keys")?
-            .as_array()?
-            .iter()
-            .find(|key| key.get("kid").and_then(Value::as_str) == Some(kid))
     }
 }
 
