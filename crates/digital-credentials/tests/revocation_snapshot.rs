@@ -363,3 +363,48 @@ fn global_certificate_status_requires_consistent_entries() {
         Err(CredentialTrustError::RevocationStatusUnknown)
     );
 }
+
+#[test]
+fn prepared_snapshot_preserves_freshness_boundaries_and_clock_rollback() {
+    let certificate = certificate_der();
+    let snapshot = Arc::new(snapshot(&certificate, CertificateRevocationStatus::Good));
+    let start = snapshot.this_update;
+    let deadline = snapshot.next_update;
+    let prepared = Arc::new(
+        nazo_digital_credentials::PreparedCertificateRevocationSnapshot::new(snapshot.clone()),
+    );
+    let policy = CertificateRevocationPolicy::required_prepared(prepared);
+    assert!(Arc::ptr_eq(
+        &snapshot,
+        &policy.snapshot().expect("shared raw snapshot")
+    ));
+    for now in [start, deadline - Duration::nanoseconds(1), start] {
+        policy
+            .check_chain(Some(ISSUER), std::slice::from_ref(&certificate), now)
+            .expect("fresh snapshot");
+    }
+    for now in [deadline, start - Duration::nanoseconds(1)] {
+        assert_eq!(
+            policy.check_chain(Some(ISSUER), std::slice::from_ref(&certificate), now),
+            Err(CredentialTrustError::RevocationSnapshotStale)
+        );
+    }
+}
+
+#[test]
+fn prepared_snapshot_rejects_invalid_public_input() {
+    let certificate = certificate_der();
+    let mut invalid = snapshot(&certificate, CertificateRevocationStatus::Good);
+    invalid.entries.push(invalid.entries[0].clone());
+    let prepared = Arc::new(
+        nazo_digital_credentials::PreparedCertificateRevocationSnapshot::new(Arc::new(invalid)),
+    );
+    assert_eq!(
+        CertificateRevocationPolicy::optional_prepared(prepared).check_chain(
+            Some(ISSUER),
+            &[certificate],
+            Utc::now()
+        ),
+        Err(CredentialTrustError::RevocationSnapshotUnavailable)
+    );
+}

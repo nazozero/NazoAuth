@@ -395,6 +395,9 @@ pub struct Openid4vcState {
 pub(crate) struct KeyGeneration {
     pub(crate) loaded: LoadedKeyset,
     pub(crate) snapshot: Arc<KeySnapshot>,
+    openid4vc_public: Option<Arc<Openid4vcPublicMaterial>>,
+    openid4vc_revocation:
+        Option<Arc<nazo_digital_credentials::PreparedCertificateRevocationSnapshot>>,
     expires_at: Option<Instant>,
 }
 
@@ -771,13 +774,16 @@ impl KeyManager {
     /// a subsequent refresh or rotation.
     #[must_use]
     pub fn openid4vc_public_material(&self) -> Option<Arc<Openid4vcPublicMaterial>> {
-        self.inner
-            .generation
-            .load()
-            .loaded
-            .openid4vc_material
-            .as_ref()
-            .map(|material| Arc::new(material.public.clone()))
+        self.inner.generation.load().openid4vc_public.clone()
+    }
+
+    /// Share the generation's structurally validated, indexed revocation view.
+    /// Its freshness is checked by the request's revocation policy.
+    #[must_use]
+    pub fn openid4vc_revocation_snapshot(
+        &self,
+    ) -> Option<Arc<nazo_digital_credentials::PreparedCertificateRevocationSnapshot>> {
+        self.inner.generation.load().openid4vc_revocation.clone()
     }
 
     /// Install managed material on an in-memory fixture without involving a
@@ -1213,9 +1219,25 @@ impl KeyGeneration {
     /// handed to `ArcSwap`.
     fn database(loaded: LoadedKeyset) -> anyhow::Result<Self> {
         let snapshot = Arc::new(snapshot_from_loaded(&loaded)?);
+        let openid4vc_public = loaded
+            .openid4vc_material
+            .as_ref()
+            .map(|material| Arc::new(material.public.clone()));
+        let openid4vc_revocation = openid4vc_public
+            .as_ref()
+            .and_then(|material| material.revocation_snapshot.as_ref())
+            .map(|snapshot| {
+                Arc::new(
+                    nazo_digital_credentials::PreparedCertificateRevocationSnapshot::new(Arc::new(
+                        snapshot.clone(),
+                    )),
+                )
+            });
         Ok(Self {
             loaded,
             snapshot,
+            openid4vc_public,
+            openid4vc_revocation,
             expires_at: Some(Instant::now() + DATABASE_MAX_STALE),
         })
     }
