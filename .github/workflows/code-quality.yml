@@ -183,7 +183,7 @@ jobs:
           pending_migrations_create_all_runtime_module_state_tables
 
       - name: Test workspace with PostgreSQL and Valkey
-        run: cargo test --workspace --all-features --locked
+        run: cargo test --workspace --all-features --locked --no-fail-fast
 
   python-quality:
     name: Python script syntax gate
