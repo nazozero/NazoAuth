@@ -32,13 +32,14 @@ pub(crate) fn email_delivery_configured(settings: &Settings) -> bool {
 }
 
 async fn send_verification_email_with_ttl(
-    smtp: &SmtpEmailSettings,
+    from: &Mailbox,
+    transport: &AsyncSmtpTransport<Tokio1Executor>,
     recipient: Mailbox,
     code: &str,
     code_ttl_seconds: u64,
 ) -> anyhow::Result<()> {
     let message = Message::builder()
-        .from(smtp.from.clone())
+        .from(from.clone())
         .to(recipient)
         .subject("Nazo OAuth 注册验证码")
         .singlepart(html_part(
@@ -46,7 +47,7 @@ async fn send_verification_email_with_ttl(
         ))
         .context("failed to build verification email")?;
 
-    build_smtp_transport(smtp)?
+    transport
         .send(message)
         .await
         .context("failed to send verification email")?;
@@ -55,17 +56,17 @@ async fn send_verification_email_with_ttl(
 
 #[derive(Clone)]
 pub(crate) struct SmtpVerificationEmailDelivery {
-    smtp: Option<SmtpEmailSettings>,
+    smtp: Option<(Mailbox, AsyncSmtpTransport<Tokio1Executor>)>,
 }
 
 impl SmtpVerificationEmailDelivery {
-    pub(crate) fn from_delivery(delivery: &EmailDelivery) -> Self {
-        Self {
+    pub(crate) fn from_delivery(delivery: &EmailDelivery) -> anyhow::Result<Self> {
+        Ok(Self {
             smtp: match delivery {
                 EmailDelivery::Disabled => None,
-                EmailDelivery::Smtp(smtp) => Some(smtp.clone()),
+                EmailDelivery::Smtp(smtp) => Some((smtp.from.clone(), build_smtp_transport(smtp)?)),
             },
-        }
+        })
     }
 }
 
@@ -77,7 +78,7 @@ impl nazo_identity::ports::VerificationEmailDeliveryPort for SmtpVerificationEma
         code_ttl_seconds: u64,
     ) -> nazo_identity::ports::RepositoryFuture<'a, ()> {
         Box::pin(async move {
-            let smtp = self.smtp.as_ref().ok_or_else(|| {
+            let (from, transport) = self.smtp.as_ref().ok_or_else(|| {
                 nazo_identity::ports::RepositoryError::Unexpected(
                     "email delivery is disabled".to_owned(),
                 )
@@ -86,7 +87,8 @@ impl nazo_identity::ports::VerificationEmailDeliveryPort for SmtpVerificationEma
                 nazo_identity::ports::RepositoryError::Unexpected(error.to_string())
             })?;
             send_verification_email_with_ttl(
-                smtp,
+                from,
+                transport,
                 Mailbox::new(None, address),
                 code,
                 code_ttl_seconds,
