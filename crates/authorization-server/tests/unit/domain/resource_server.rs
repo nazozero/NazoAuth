@@ -28,7 +28,11 @@ fn verifier_cache_expires_at_retirement_even_without_a_new_generation() {
         Some(deadline),
         deadline - chrono::Duration::nanoseconds(1),
     ));
-    assert!(!within_verification_cache_window(captured, Some(deadline), deadline));
+    assert!(!within_verification_cache_window(
+        captured,
+        Some(deadline),
+        deadline
+    ));
     assert!(!within_verification_cache_window(
         captured,
         Some(deadline),
@@ -41,7 +45,13 @@ fn verifier_cache_rebuilds_after_clock_rollback_with_or_without_a_future_retirem
     let captured = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
     let rolled_back = captured - chrono::Duration::nanoseconds(1);
     for deadline in [None, Some(captured + chrono::Duration::seconds(60))] {
-        assert!(!within_verification_cache_window(captured, deadline, rolled_back));
-        assert!(within_verification_cache_window(captured, deadline, captured));
+        assert!(!within_verification_cache_window(
+            captured,
+            deadline,
+            rolled_back
+        ));
+        assert!(within_verification_cache_window(
+            captured, deadline, captured
+        ));
     }
 }

@@ -5,9 +5,11 @@ use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 
+type AccessRevocationCall = (Uuid, Uuid, String, Option<DateTime<Utc>>, Option<Uuid>);
+
 #[derive(Default)]
 struct Calls {
-    access: Vec<(Uuid, Uuid, String, Option<DateTime<Utc>>, Option<Uuid>)>,
+    access: Vec<AccessRevocationCall>,
     mixed: usize,
     revocation_reads: usize,
 }
