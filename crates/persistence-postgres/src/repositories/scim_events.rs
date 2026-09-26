@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, RunQueryDsl};
 use nazo_scim_events::{
-    EventFuture, EventPage, EventReceiver, EventStoreError, EventStorePort, SetError, StoredEvent,
+    EventFuture, EventPage, EventReceiver, EventStoreError, EventStorePort, StoredEvent,
     ValidatedPollRequest,
 };
 use uuid::Uuid;
@@ -22,32 +22,47 @@ impl ScimEventRepository {
         Self { pool }
     }
 
-    async fn apply_disposition(
+    async fn apply_dispositions(
         connection: &mut diesel_async::AsyncPgConnection,
         receiver: &EventReceiver,
-        event_id: Uuid,
-        disposition: &str,
-        error: Option<&SetError>,
+        request: &ValidatedPollRequest,
     ) -> Result<(), diesel::result::Error> {
-        let (error_code, error_description) = error
-            .map(|error| (Some(error.err.as_str()), Some(error.description.as_str())))
-            .unwrap_or((None, None));
+        let count = request.ack.len() + request.set_errors.len();
+        let mut event_ids = Vec::with_capacity(count);
+        let mut dispositions = Vec::with_capacity(count);
+        let mut error_codes = Vec::with_capacity(count);
+        let mut error_descriptions = Vec::with_capacity(count);
+        for event_id in &request.ack {
+            event_ids.push(*event_id);
+            dispositions.push("acknowledged");
+            error_codes.push(None);
+            error_descriptions.push(None);
+        }
+        for (event_id, error) in &request.set_errors {
+            event_ids.push(*event_id);
+            dispositions.push("error");
+            error_codes.push(Some(error.err.as_str()));
+            error_descriptions.push(Some(error.description.as_str()));
+        }
         sql_query(
             "INSERT INTO scim_security_event_receipts \
              (event_id, scim_token_id, disposition, error_code, error_description, updated_at) \
-             SELECT event.id, token.id, $3, $4, $5, CURRENT_TIMESTAMP \
-             FROM scim_security_events event \
-             JOIN scim_tokens token ON token.id = $2 AND token.tenant_id = event.tenant_id \
-             WHERE event.id = $1 AND event.tenant_id = $6 \
+             SELECT event.id, token.id, item.disposition, item.error_code, \
+                    item.error_description, CURRENT_TIMESTAMP \
+             FROM unnest($1::uuid[], $2::text[], $3::text[], $4::text[]) \
+               AS item(event_id, disposition, error_code, error_description) \
+             JOIN scim_security_events event ON event.id = item.event_id \
+             JOIN scim_tokens token ON token.id = $5 AND token.tenant_id = event.tenant_id \
+             WHERE event.tenant_id = $6 \
                AND event.occurred_at >= token.created_at \
                AND event.expires_at > CURRENT_TIMESTAMP \
              ON CONFLICT (event_id, scim_token_id) DO NOTHING",
         )
-        .bind::<sql_types::Uuid, _>(event_id)
+        .bind::<sql_types::Array<sql_types::Uuid>, _>(event_ids)
+        .bind::<sql_types::Array<sql_types::Text>, _>(dispositions)
+        .bind::<sql_types::Array<sql_types::Nullable<sql_types::Text>>, _>(error_codes)
+        .bind::<sql_types::Array<sql_types::Nullable<sql_types::Text>>, _>(error_descriptions)
         .bind::<sql_types::Uuid, _>(receiver.token_id)
-        .bind::<sql_types::Text, _>(disposition)
-        .bind::<sql_types::Nullable<sql_types::Text>, _>(error_code)
-        .bind::<sql_types::Nullable<sql_types::Text>, _>(error_description)
         .bind::<sql_types::Uuid, _>(receiver.tenant_id)
         .execute(connection)
         .await?;
@@ -102,28 +117,14 @@ impl EventStorePort for ScimEventRepository {
             let mut connection = get_conn(&self.pool)
                 .await
                 .map_err(|_| EventStoreError::Unavailable)?;
+            if request.ack.is_empty() && request.set_errors.is_empty() {
+                return Self::page(&mut connection, receiver, request.max_events)
+                    .await
+                    .map_err(|_| EventStoreError::Unavailable);
+            }
             connection
                 .transaction::<EventPage, diesel::result::Error, _>(async move |connection| {
-                    for event_id in &request.ack {
-                        Self::apply_disposition(
-                            connection,
-                            receiver,
-                            *event_id,
-                            "acknowledged",
-                            None,
-                        )
-                        .await?;
-                    }
-                    for (event_id, error) in &request.set_errors {
-                        Self::apply_disposition(
-                            connection,
-                            receiver,
-                            *event_id,
-                            "error",
-                            Some(error),
-                        )
-                        .await?;
-                    }
+                    Self::apply_dispositions(connection, receiver, request).await?;
                     Self::page(connection, receiver, request.max_events).await
                 })
                 .await
