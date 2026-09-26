@@ -4,16 +4,13 @@ use nazo_auth::{
     CibaStateStorePort, CibaStateVersion, CibaStoredRequest,
 };
 use serde::Deserialize;
-use serde_json::Value;
 
 use crate::{Error, ValkeyConnection, command, keys};
 
 const SNAPSHOT_SCRIPT: &str = r#"
 local value = redis.call('GET', KEYS[1])
-if not value then
-  return cjson.encode({found = false})
-end
-return cjson.encode({found = true, value = value, expire_at = redis.call('EXPIRETIME', KEYS[1])})
+if not value then return false end
+return {value, redis.call('EXPIRETIME', KEYS[1])}
 "#;
 const SET_NX_DEADLINE_SCRIPT: &str = r#"
 local authorization_deadline = tonumber(ARGV[3]) or 0
@@ -239,26 +236,19 @@ impl CibaStore {
         &self,
         auth_req_id: &str,
     ) -> Result<Option<CibaStoredRequest<CibaStateVersion>>, Error> {
-        let reply = command::eval_string(
-            &self.connection,
-            SNAPSHOT_SCRIPT,
-            vec![keys::ciba(auth_req_id)],
-            vec![],
-        )
-        .await?;
-        let snapshot: Value = serde_json::from_str(&reply).map_err(serialization_error)?;
-        if snapshot.get("found").and_then(Value::as_bool) != Some(true) {
+        let snapshot: Option<(String, i64)> = self
+            .connection
+            .client
+            .eval(
+                SNAPSHOT_SCRIPT,
+                self.connection.state_keys(vec![keys::ciba(auth_req_id)]),
+                Vec::<String>::new(),
+            )
+            .await
+            .map_err(Error::from_fred)?;
+        let Some((raw, deadline)) = snapshot else {
             return Ok(None);
-        }
-        let raw = snapshot
-            .get("value")
-            .and_then(Value::as_str)
-            .ok_or_else(|| Error::protocol("missing CIBA snapshot value"))?
-            .to_owned();
-        let deadline = snapshot
-            .get("expire_at")
-            .and_then(Value::as_i64)
-            .ok_or_else(|| Error::protocol("missing CIBA snapshot deadline"))?;
+        };
         let value: CibaRequestState = serde_json::from_str(&raw).map_err(serialization_error)?;
         if value.retention_expires_at != deadline {
             return Err(Error::protocol(
