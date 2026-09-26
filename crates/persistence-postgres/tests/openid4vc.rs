@@ -1639,7 +1639,7 @@ async fn issuance_store_covers_atomic_recovery_and_terminal_error_boundaries() {
 
     let issuer = Openid4vciRepository::new(
         pool.clone(),
-        [0x48_u8; 32],
+        rand::random::<[u8; 32]>(),
         std::sync::Arc::new(password::BlockingSecretVerifier),
     );
     let now = Utc::now();
@@ -4522,7 +4522,8 @@ async fn paused_pre_authorized_offer(
         resume: tokio::sync::Semaphore::new(0),
         result,
     });
-    let repository = Openid4vciRepository::new(pool.clone(), [0x71; 32], verifier.clone());
+    let repository =
+        Openid4vciRepository::new(pool.clone(), rand::random::<[u8; 32]>(), verifier.clone());
     let code = format!("paused-offer-{}", Uuid::now_v7());
     let code_hash = blake3::hash(code.as_bytes()).to_hex().to_string();
     let offer = StoredCredentialOffer {
