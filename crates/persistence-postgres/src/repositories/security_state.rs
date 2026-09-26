@@ -21,7 +21,7 @@
 //! candidate to be skipped this round, and expiry is rechecked under the lock
 //! so a just-rotated family is never reclaimed mid-commit. Audit-ledger rows
 //! are not a maintenance category: the
-//! exporter's ACK removes the delivered event, chain-entry and outbox rows in
+//! exporter's ACK removes the delivered event and chain-entry rows in
 //! the same transaction that advances the durable anchor checkpoint, so
 //! nothing accumulates for a sweeper to reclaim and no local archive copy
 //! exists — the receiver is the sole authoritative audit history.

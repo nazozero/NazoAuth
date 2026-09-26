@@ -42,7 +42,7 @@ pub use repositories::{
     RECOVERY_CHALLENGE_TTL_SECONDS, RecoveredSlotCommit, RecoveryInvalidation, RecoveryRootError,
     RecoveryRootRepository, RecoveryRootSummary, RecoveryRotationError, RecoverySubmission,
     RotateControllerKey, RuntimeModuleEventPage, RuntimeModuleRepository, ScimEventRepository,
-    ScimRepository, SecurityAuditAnchorHealth, SecurityAuditEvent, SecurityAuditOutboxDelivery,
+    ScimRepository, SecurityAuditAnchorHealth, SecurityAuditEvent, SecurityAuditPendingDelivery,
     SecurityStateMaintenanceRepository, SigningKeysetRepository, StoredControllerSlot,
     StoredOpenid4vcTrustPolicy, StoredRecoveryRoot, TenantBoundaryDefinition,
     TenantDirectoryControlRepository, TenantDirectoryRepository, TenantProvisioningRequest,

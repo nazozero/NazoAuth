@@ -520,18 +520,6 @@ diesel::table! {
     }
 }
 
-diesel::table! {
-    security_audit_event_outbox (event_id) {
-        event_id -> Uuid,
-        attempts -> Int4,
-        available_at -> Timestamptz,
-        locked_at -> Nullable<Timestamptz>,
-        last_error -> Nullable<Text>,
-        created_at -> Timestamptz,
-        updated_at -> Timestamptz,
-    }
-}
-
 diesel::joinable!(realms -> tenants (tenant_id));
 diesel::joinable!(organizations -> tenants (tenant_id));
 diesel::joinable!(client_access_requests -> users (user_id));
@@ -580,6 +568,5 @@ diesel::allow_tables_to_appear_in_same_query!(
     runtime_module_state_events,
     security_audit_chain_state,
     security_audit_chain_entries,
-    security_audit_events,
-    security_audit_event_outbox
+    security_audit_events
 );

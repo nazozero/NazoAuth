@@ -1,8 +1,8 @@
 //! Contract coverage for the Fresh issuance commit path with no user and no
-//! refresh token: one ownership row, one `token_issued` audit event and one
-//! outbox entry commit atomically, and every rejection leaves no partial
-//! writes. These tests exercise the public repository contract; they must
-//! pass identically on the serial and the combined-statement implementation.
+//! refresh token: one ownership row and one `token_issued` audit event
+//! commit atomically, and every rejection leaves no partial writes. These
+//! tests exercise the public repository contract; they must pass identically
+//! on the serial and the combined-statement implementation.
 
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl, SimpleAsyncConnection};
@@ -172,7 +172,7 @@ async fn wait_for_lock_wait_or_task<T: std::fmt::Debug>(
     }
 }
 
-async fn write_counts(connection: &mut AsyncPgConnection, issuance_id: Uuid) -> (i64, i64, i64) {
+async fn write_counts(connection: &mut AsyncPgConnection, issuance_id: Uuid) -> (i64, i64) {
     let issuances = sql_query(
         "SELECT COUNT(*)::bigint AS count FROM oauth_token_issuances WHERE issuance_id = $1",
     )
@@ -189,17 +189,7 @@ async fn write_counts(connection: &mut AsyncPgConnection, issuance_id: Uuid) -> 
     .await
     .expect("audit count should load")
     .count;
-    let outbox = sql_query(
-        "SELECT COUNT(*)::bigint AS count FROM security_audit_event_outbox AS o \
-         WHERE EXISTS (SELECT 1 FROM security_audit_events AS e WHERE e.event_id = o.event_id \
-                       AND e.payload->>'issuance_id' = $1)",
-    )
-    .bind::<sql_types::Text, _>(issuance_id.to_string())
-    .get_result::<CountRow>(connection)
-    .await
-    .expect("outbox count should load")
-    .count;
-    (issuances, audits, outbox)
+    (issuances, audits)
 }
 
 async fn assert_no_writes(database_url: &str, issuance_id: Uuid) {
@@ -208,13 +198,13 @@ async fn assert_no_writes(database_url: &str, issuance_id: Uuid) {
         .expect("verification connection should connect");
     assert_eq!(
         write_counts(&mut connection, issuance_id).await,
-        (0, 0, 0),
-        "a rejected issuance must leave no ownership, audit, or outbox row"
+        (0, 0),
+        "a rejected issuance must leave no ownership or audit row"
     );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn fresh_issuance_commits_ownership_audit_and_outbox() {
+async fn fresh_issuance_commits_ownership_and_audit() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -234,8 +224,8 @@ async fn fresh_issuance_commits_ownership_audit_and_outbox() {
         .expect("verification connection should connect");
     assert_eq!(
         write_counts(&mut connection, input.issuance_id).await,
-        (1, 1, 1),
-        "a committed fresh issuance owns one row, one audit event, one outbox entry"
+        (1, 1),
+        "a committed fresh issuance owns one row and one audit event"
     );
     let row = sql_query(
         "SELECT user_id, refresh_token_family_id, access_token_expires_at, retain_until \
@@ -353,7 +343,7 @@ async fn fresh_issuance_id_conflict_stays_an_error() {
         .expect("verification connection should connect");
     assert_eq!(
         write_counts(&mut connection, input.issuance_id).await,
-        (1, 1, 1),
+        (1, 1),
         "the conflicting retry must not append a second audit or ownership row"
     );
 }
@@ -716,7 +706,7 @@ async fn fresh_issuance_runs_under_the_restricted_runtime_role() {
         .expect("verification connection should connect");
     assert_eq!(
         write_counts(&mut connection, input.issuance_id).await,
-        (1, 1, 1),
+        (1, 1),
         "the restricted role writes audit through the function boundary only"
     );
     // The role holds granted privileges (database CONNECT plus the
@@ -739,8 +729,8 @@ async fn fresh_issuance_runs_under_the_restricted_runtime_role() {
 /// Mid-run privilege revocation must fail the commit, not just the next
 /// preflight: with EXECUTE on `nazo_persist_security_audit_event` revoked
 /// after a healthy start, the same transaction that writes the ownership
-/// row must roll back in full — no issuance row, no audit event, no outbox
-/// entry — and the pool must not retain an open transaction.
+/// row must roll back in full — no issuance row, no audit event — and the
+/// pool must not retain an open transaction.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn revoked_audit_append_execute_fails_the_fresh_commit() {
     let Some(database_url) = database_url() else {
@@ -841,7 +831,7 @@ async fn revoked_audit_append_execute_fails_the_fresh_commit() {
         .expect("verification connection should connect");
     assert_eq!(
         write_counts(&mut connection, recovered.issuance_id).await,
-        (1, 1, 1)
+        (1, 1)
     );
 
     drop(pool);

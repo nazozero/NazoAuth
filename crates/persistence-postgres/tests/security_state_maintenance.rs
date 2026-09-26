@@ -1138,18 +1138,6 @@ async fn insert_audit_event(connection: &mut AsyncPgConnection, event_id: Uuid) 
     .expect("audit event fixture should insert");
 }
 
-async fn outbox_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64 {
-    sql_query(
-        "SELECT COUNT(*)::bigint AS count \
-         FROM security_audit_event_outbox WHERE event_id = $1",
-    )
-    .bind::<SqlUuid, _>(event_id)
-    .get_result::<CountRow>(connection)
-    .await
-    .expect("outbox count should query")
-    .count
-}
-
 /// Acknowledge the whole committed batch through the real exporter path.
 async fn ack_batch(
     repository: &nazo_postgres::AuditLedgerRepository,
@@ -1171,7 +1159,7 @@ async fn ack_batch(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
+async fn audit_ack_deletes_delivery_rows_atomically() {
     let Some(database_url) = database_url() else {
         return;
     };
@@ -1219,7 +1207,7 @@ async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
     let second = Uuid::now_v7();
     for event_id in [first, second] {
         insert_audit_event(&mut connection, event_id).await;
-        assert_eq!(outbox_count(&mut connection, event_id).await, 1);
+        assert_eq!(event_row_count(&mut connection, event_id).await, 1);
     }
 
     let batch = match repository
@@ -1244,21 +1232,21 @@ async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
         ack_batch(&repository, &batch, batch.generation + 1, &deployment_id).await,
         Err(nazo_identity::ports::RepositoryError::Consistency(_))
     ));
-    assert_eq!(outbox_count(&mut connection, first).await, 1);
-    assert_eq!(outbox_count(&mut connection, second).await, 1);
+    assert_eq!(event_row_count(&mut connection, first).await, 1);
+    assert_eq!(event_row_count(&mut connection, second).await, 1);
 
     // The live generation ack deletes every member row and advances the
     // anchor in the same transaction.
     ack_batch(&repository, &batch, batch.generation, &deployment_id)
         .await
         .expect("the committed batch should acknowledge");
-    assert_eq!(outbox_count(&mut connection, first).await, 0);
-    assert_eq!(outbox_count(&mut connection, second).await, 0);
+    assert_eq!(event_row_count(&mut connection, first).await, 0);
+    assert_eq!(event_row_count(&mut connection, second).await, 0);
     assert!(matches!(
         repository
             .claim_batch(&deployment_id, 256, 1024 * 1024, 60)
             .await
-            .expect("an empty outbox should report Empty"),
+            .expect("an empty pending set should report Empty"),
         nazo_persistence::SecurityAuditBatchClaim::Empty
     ));
     // Repeating the settled acknowledgement is a stale claim, not a duplicate.
@@ -1268,8 +1256,8 @@ async fn audit_outbox_ack_deletes_delivery_rows_atomically() {
     ));
 
     // The acknowledgement already reclaimed every delivered copy: the
-    // receiver is the durable audit store, so the OLTP event, chain-entry
-    // and outbox rows for this batch are gone.
+    // receiver is the durable audit store, so the OLTP event and chain-entry
+    // rows for this batch are gone.
     for event_id in [first, second] {
         let row = sql_query(
             "SELECT COUNT(*)::bigint AS count \
@@ -1666,7 +1654,7 @@ async fn expired_spent_proofs_reclaim_while_valid_proofs_and_live_family_survive
     );
 }
 
-async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64, i64) {
+async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64) {
     let events = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_events")
         .get_result::<CountRow>(connection)
         .await
@@ -1677,12 +1665,7 @@ async fn audit_counts(connection: &mut AsyncPgConnection) -> (i64, i64, i64) {
         .await
         .expect("chain count should query")
         .count;
-    let outbox = sql_query("SELECT COUNT(*)::bigint AS count FROM security_audit_event_outbox")
-        .get_result::<CountRow>(connection)
-        .await
-        .expect("outbox count should query")
-        .count;
-    (events, chain, outbox)
+    (events, chain)
 }
 
 async fn event_row_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> i64 {
@@ -1710,9 +1693,9 @@ async fn chain_row_count(connection: &mut AsyncPgConnection, event_id: Uuid) -> 
 }
 
 /// Acknowledgement is the only retention boundary: it reclaims the delivered
-/// event, chain-entry and outbox rows in the same transaction that advances
-/// the anchor, an unacknowledged event keeps all three rows, and the
-/// append-only guard still rejects deletes without the reclaim permit.
+/// event and chain-entry rows in the same transaction that advances the
+/// anchor, an unacknowledged event keeps both rows, and the append-only
+/// guard still rejects deletes without the reclaim permit.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
     let Some(database_url) = database_url() else {
@@ -1757,7 +1740,7 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         }
     }
 
-    // Two events claimed and acknowledged: all three delivery copies leave in
+    // Two events claimed and acknowledged: both delivery copies leave in
     // the ack transaction, and the anchor lands on the batch tail.
     let acked_ids: Vec<Uuid> = (0..2).map(|_| Uuid::now_v7()).collect();
     for event_id in &acked_ids {
@@ -1771,11 +1754,11 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         nazo_persistence::SecurityAuditBatchClaim::Claimed(batch) => batch,
         other => panic!("expected a claimed batch, got {other:?}"),
     };
-    let (events_before, chain_before, outbox_before) = audit_counts(&mut connection).await;
+    let (events_before, chain_before) = audit_counts(&mut connection).await;
     ack_batch(&repository, &batch, batch.generation, &deployment_id)
         .await
         .expect("the batch should acknowledge");
-    let (events_after, chain_after, outbox_after) = audit_counts(&mut connection).await;
+    let (events_after, chain_after) = audit_counts(&mut connection).await;
     assert_eq!(
         events_before - events_after,
         2,
@@ -1786,15 +1769,9 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         2,
         "acked chain entries leave security_audit_chain_entries"
     );
-    assert_eq!(
-        outbox_before - outbox_after,
-        2,
-        "acked outbox rows leave security_audit_event_outbox"
-    );
     for event_id in &acked_ids {
         assert_eq!(event_row_count(&mut connection, *event_id).await, 0);
         assert_eq!(chain_row_count(&mut connection, *event_id).await, 0);
-        assert_eq!(outbox_count(&mut connection, *event_id).await, 0);
     }
 
     // A fully delivered chain is still a valid chain: head reads through
@@ -1807,8 +1784,8 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
     assert_eq!(health.last_exported_sequence, Some(health.head_sequence));
     assert!(!health.pending_orphan_exists);
 
-    // One event claimed (chain entry exists) but never acknowledged keeps all
-    // three rows until its batch is delivered.
+    // One event claimed (chain entry exists) but never acknowledged keeps
+    // both rows until its batch is delivered.
     let unacked = Uuid::now_v7();
     insert_audit_event(&mut connection, unacked).await;
     let pending_batch = match repository
@@ -1825,7 +1802,6 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         .expect("batch should return to pending");
     assert_eq!(event_row_count(&mut connection, unacked).await, 1);
     assert_eq!(chain_row_count(&mut connection, unacked).await, 1);
-    assert_eq!(outbox_count(&mut connection, unacked).await, 1);
 
     // The append-only guard still rejects direct deletes — both with no
     // permit and under the retired archive permit name.

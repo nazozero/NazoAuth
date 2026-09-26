@@ -11,13 +11,13 @@ use nazo_persistence::audit_chain::{security_audit_batch_digest, security_audit_
 /// The maximum JSON payload accepted by the durable audit ledger.
 ///
 /// Audit events deliberately contain identifiers and hashes, not bearer
-/// credentials. A bounded payload keeps the in-process queue and the database
-/// outbox from becoming an unbounded memory/storage sink when a caller makes a
-/// programming mistake.
+/// credentials. A bounded payload keeps the in-process queue and the pending
+/// event set from becoming an unbounded memory/storage sink when a caller
+/// makes a programming mistake.
 pub use nazo_persistence::{
     MAX_SECURITY_AUDIT_PAYLOAD_BYTES, SecurityAuditAnchorHealth, SecurityAuditBatch,
     SecurityAuditBatchAck, SecurityAuditBatchClaim, SecurityAuditBatchLease, SecurityAuditEvent,
-    SecurityAuditOutboxDelivery,
+    SecurityAuditPendingDelivery,
 };
 
 /// Headroom below the configured envelope bound so framing fields and the
@@ -130,7 +130,7 @@ impl AuditLedgerRepository {
             .get_result::<AuditMutationRow>(&mut connection)
             .await
             .map_err(map_error)?;
-        require_current_outbox_claim(result.changed)
+        require_current_audit_mutation(result.changed)
     }
 
     pub async fn record_genesis(
@@ -146,10 +146,11 @@ impl AuditLedgerRepository {
                 .get_result::<AuditMutationRow>(&mut connection)
                 .await
                 .map_err(map_error)?;
-        require_current_outbox_claim(result.changed)
+        require_current_audit_mutation(result.changed)
     }
 
-    /// Persist an event and its outbox entry atomically, without acquiring the chain head.
+    /// Persist an event atomically; the row is the pending delivery identity
+    /// until the acknowledgement deletes it. The chain head is not touched.
     pub async fn append(&self, event: SecurityAuditEvent) -> Result<(), RepositoryError> {
         let mut connection = self.connection().await?;
         append_on_connection(&mut connection, &event)
@@ -264,7 +265,7 @@ impl AuditLedgerRepository {
         .get_result::<AuditMutationRow>(&mut connection)
         .await
         .map_err(map_error)?;
-        require_current_outbox_claim(result.changed)
+        require_current_audit_mutation(result.changed)
     }
 
     /// Release the lease after a failed send/ack so the identical range is
@@ -388,7 +389,7 @@ async fn claim_inflight(
             .try_into()
             .map_err(|_| invariant_error("security audit chain hash has an invalid length"))?;
         event_hashes.push(hash);
-        deliveries.push(SecurityAuditOutboxDelivery {
+        deliveries.push(SecurityAuditPendingDelivery {
             event_id: row.event_id,
             sequence: row
                 .sequence
@@ -511,7 +512,7 @@ async fn claim_fresh(
                 _ => return Err(invariant_error("security audit chain entry is incomplete")),
             };
         used_bytes += cost;
-        deliveries.push(SecurityAuditOutboxDelivery {
+        deliveries.push(SecurityAuditPendingDelivery {
             event_id: row.event_id,
             sequence,
             event_type: row.event_type,
@@ -774,12 +775,12 @@ fn invariant_error(message: &'static str) -> diesel::result::Error {
     )))
 }
 
-fn require_current_outbox_claim(changed: bool) -> Result<(), RepositoryError> {
+fn require_current_audit_mutation(changed: bool) -> Result<(), RepositoryError> {
     if changed {
         Ok(())
     } else {
         Err(RepositoryError::Consistency(
-            "security audit outbox claim is stale or already terminal".to_owned(),
+            "security audit mutation is stale or already terminal".to_owned(),
         ))
     }
 }
