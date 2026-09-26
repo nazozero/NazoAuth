@@ -112,7 +112,11 @@ Each `ModuleId` declares:
 An administrator PATCH changes only desired state and returns `202 Accepted`.
 The UI must show the request as pending until actual state and revision confirm
 completion. Desired state is durable; actual state is reconciled by each
-server instance.
+server instance. Each one-second reconciliation pass reads the tenant's desired
+state and this instance's actual state in one PostgreSQL snapshot. The snapshot
+only skips already-settled modules whose dependency and admission checks still
+hold; modules requiring action retain fresh reads and the revision-fenced state
+machine. No durable snapshot is cached between passes.
 
 Every asynchronous transition carries the desired-state revision. The worker
 revalidates that revision before publishing an active snapshot, before

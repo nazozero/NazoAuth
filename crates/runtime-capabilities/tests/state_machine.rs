@@ -336,6 +336,24 @@ impl ModuleStateRepository for InMemoryRepository {
             .collect())
     }
 
+    async fn read_reconcile_state(
+        &self,
+        instance_id: &str,
+    ) -> Result<Vec<nazo_runtime_modules::ModuleReconcileState>, Self::Error> {
+        let state = self.state.lock().expect("state lock poisoned");
+        Ok(state
+            .desired
+            .values()
+            .map(|desired| nazo_runtime_modules::ModuleReconcileState {
+                desired: desired.clone(),
+                instance: state
+                    .instances
+                    .get(&(instance_id.to_owned(), desired.module_id))
+                    .cloned(),
+            })
+            .collect())
+    }
+
     async fn compare_and_set_desired(
         &self,
         change: DesiredStateChange,

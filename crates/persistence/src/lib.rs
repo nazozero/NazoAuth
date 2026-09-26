@@ -277,6 +277,12 @@ pub trait RuntimeModuleStore: Send + Sync {
         &self,
     ) -> BoxFuture<'_, Result<Vec<nazo_runtime_modules::DesiredStateRecord>, RepositoryError>>;
 
+    /// A tenant-scoped snapshot joining desired state with the named instance.
+    fn read_reconcile_state<'a>(
+        &'a self,
+        instance_id: &'a str,
+    ) -> BoxFuture<'a, Result<Vec<nazo_runtime_modules::ModuleReconcileState>, RepositoryError>>;
+
     fn compare_and_set_desired(
         &self,
         change: nazo_runtime_modules::DesiredStateChange,
