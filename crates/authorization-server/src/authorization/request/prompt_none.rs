@@ -1,8 +1,7 @@
 use crate::authorization::AuthorizationRequestContext;
 use crate::authorization::request::{
     AuthorizationResponseClientPolicy, AuthorizationResponseRedirect,
-    PushedAuthorizationRequestConsumeError, authorization_response_redirect_with_context,
-    consume_pushed_authorization_request_with_context,
+    authorization_response_redirect_with_context,
 };
 use crate::authorization::{AuthorizationOutcome, AuthorizationRequestFacts};
 use crate::contracts::oauth_error::OAuthEndpointError;
@@ -12,6 +11,7 @@ use crate::domain::oauth::{AuthorizationCodeState, CodePayload, ConsentPayload};
 use crate::ports::audit::audit_fields;
 use chrono::{Duration, Utc};
 use http::StatusCode;
+use nazo_auth::PushedAuthorizationRequestConsumeError;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
@@ -50,6 +50,7 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
     context: &AuthorizationRequestContext<'_>,
     facts: &AuthorizationRequestFacts<'_>,
     payload: ConsentPayload,
+    pushed_request_version: Option<&str>,
 ) -> Result<AuthorizationOutcome, OAuthEndpointError> {
     let (Some(signed_response_required), Some(session_management_allowed), Some(ttl_seconds)) = (
         payload.signed_authorization_response_required,
@@ -111,7 +112,18 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
             )
         })?;
     if let Some(request_uri) = payload.pushed_request_uri.as_deref() {
-        match consume_pushed_authorization_request_with_context(context, request_uri).await {
+        let Some(version) = pushed_request_version else {
+            return Err(OAuthEndpointError::json(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "server_error",
+                "授权请求状态不可用.",
+            ));
+        };
+        match context
+            .service
+            .consume_pushed_authorization_request(request_uri, version)
+            .await
+        {
             Ok(()) => {}
             Err(PushedAuthorizationRequestConsumeError::Missing) => {
                 return authorization_response_redirect_with_context(
@@ -129,8 +141,8 @@ pub(super) async fn issue_authorization_code_without_interaction_with_context(
                 )
                 .await;
             }
-            Err(PushedAuthorizationRequestConsumeError::ReadFailed)
-            | Err(PushedAuthorizationRequestConsumeError::Malformed) => {
+            Err(PushedAuthorizationRequestConsumeError::Dependency(error)) => {
+                tracing::warn!(%error, "failed to consume PAR request_uri");
                 return authorization_response_redirect_with_context(
                     context,
                     AuthorizationResponseRedirect {

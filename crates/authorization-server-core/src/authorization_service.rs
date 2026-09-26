@@ -260,10 +260,6 @@ pub trait AuthorizationStateStorePort: Send + Sync {
         &'a self,
         request_uri: &'a str,
     ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>;
-    fn take_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>>;
     /// Consume only the exact storage version returned by `load_par`.
     fn compare_and_delete_par<'a>(
         &'a self,
@@ -364,13 +360,6 @@ where
     ) -> AuthorizationFuture<'a, Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>>
     {
         self.as_ref().load_par(request_uri)
-    }
-
-    fn take_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        self.as_ref().take_par(request_uri)
     }
 
     fn compare_and_delete_par<'a>(
@@ -844,18 +833,11 @@ where
     pub async fn load_par(
         &self,
         uri: &str,
-    ) -> Result<Option<PushedAuthorizationRequest>, AuthorizationPortError> {
-        Ok(self
-            .state
-            .load_par(uri)
-            .await?
-            .map(|snapshot| snapshot.payload))
-    }
-    pub async fn take_par(
-        &self,
-        uri: &str,
-    ) -> Result<Option<PushedAuthorizationRequest>, AuthorizationPortError> {
-        self.state.take_par(uri).await
+    ) -> Result<
+        Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>,
+        AuthorizationPortError,
+    > {
+        self.state.load_par(uri).await
     }
     pub async fn store_par(
         &self,
@@ -944,18 +926,19 @@ where
         Ok(apply_request_object_plan(outer, plan))
     }
 
-    /// Atomically consumes a PAR transaction and preserves malformed-state and
-    /// dependency-failure categories for the transport presenter.
+    /// Claims only the PAR version used to validate this authorization request.
     pub async fn consume_pushed_authorization_request(
         &self,
         request_uri: &str,
-    ) -> Result<PushedAuthorizationRequest, PushedAuthorizationRequestConsumeError> {
-        match self.state.take_par(request_uri).await {
-            Ok(Some(request)) => Ok(request),
-            Ok(None) => Err(PushedAuthorizationRequestConsumeError::Missing),
-            Err(AuthorizationPortError::CorruptData) => {
-                Err(PushedAuthorizationRequestConsumeError::Malformed)
-            }
+        expected_version: &str,
+    ) -> Result<(), PushedAuthorizationRequestConsumeError> {
+        match self
+            .state
+            .compare_and_delete_par(request_uri, expected_version)
+            .await
+        {
+            Ok(true) => Ok(()),
+            Ok(false) => Err(PushedAuthorizationRequestConsumeError::Missing),
             Err(error) => Err(PushedAuthorizationRequestConsumeError::Dependency(error)),
         }
     }

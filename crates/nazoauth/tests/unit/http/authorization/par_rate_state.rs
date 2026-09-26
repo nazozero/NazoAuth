@@ -9,13 +9,6 @@ impl AuthorizationStateStorePort for AllowParRateState {
         self.0.as_ref().load_par(request_uri)
     }
 
-    fn take_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        self.0.as_ref().take_par(request_uri)
-    }
-
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,

@@ -20,10 +20,7 @@ use prompt_none::{
     issue_authorization_code_without_interaction_with_context,
     user_grant_covers_requested_scopes_with_context,
 };
-use pushed::{
-    PushedAuthorizationRequestConsumeError, authorization_oauth_error_redirect,
-    consume_pushed_authorization_request_with_context,
-};
+use pushed::authorization_oauth_error_redirect;
 use reauth::{authorization_login_url_with_context, consume_reauth_nonce_with_context};
 use response::{
     AuthorizationResponseClientPolicy, AuthorizationResponseRedirect,

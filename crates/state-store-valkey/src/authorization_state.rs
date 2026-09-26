@@ -37,19 +37,7 @@ impl AuthorizationStateStorePort for AuthorizationStateAdapter {
     {
         Box::pin(async move {
             self.authorization
-                .load_par_snapshot(request_uri)
-                .await
-                .map_err(map_error)
-        })
-    }
-
-    fn take_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        Box::pin(async move {
-            self.authorization
-                .take_par(request_uri)
+                .load_par(request_uri)
                 .await
                 .map_err(map_error)
         })

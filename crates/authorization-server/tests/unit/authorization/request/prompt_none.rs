@@ -212,6 +212,7 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
             &application.context(),
             &facts,
             payload.clone(),
+            None,
         ))
         .expect("the normalized private payload issues a code");
     let AuthorizationOutcome::Redirect { location } = result else {
@@ -243,4 +244,141 @@ fn prompt_none_preserves_original_private_payload_claims_when_storing_code() {
     assert_eq!(stored.userinfo_claims, payload.userinfo_claims);
     assert_eq!((stored.expires_at - stored.issued_at).num_seconds(), 60);
     assert_eq!(fixture.ports.calls(), ["store_authorization_code"]);
+}
+
+fn pushed_prompt_none_fixture() -> (
+    crate::test_support::authorization::Fixture,
+    ConsentPayload,
+    String,
+) {
+    let fixture = crate::test_support::authorization::Fixture::new(
+        Err(nazo_auth::AuthorizationPortError::Unavailable),
+        Ok(None),
+    );
+    fixture
+        .ports
+        .record_code_writes
+        .store(true, std::sync::atomic::Ordering::SeqCst);
+    let mut payload = prompt_none_payload();
+    let uri = format!("urn:ietf:params:oauth:request_uri:{}", Uuid::now_v7());
+    let pushed = nazo_auth::PushedAuthorizationRequest {
+        client_id: payload.client_id.clone(),
+        params: std::collections::HashMap::from([("state".into(), "original-state".into())]),
+        dpop_jkt: None,
+        mtls_x5t_s256: None,
+        issued_at: payload.issued_at,
+        expires_at: payload.expires_at,
+    };
+    payload.pushed_request_uri = Some(uri.clone());
+    payload.pushed_request_digest =
+        Some(nazo_auth::pushed_authorization_request_digest(&pushed).unwrap());
+    fixture
+        .ports
+        .stored_par
+        .lock()
+        .unwrap()
+        .push((uri.clone(), pushed, 60));
+    let version = futures_executor::block_on(fixture.service.load_par(&uri))
+        .unwrap()
+        .unwrap()
+        .version;
+    (fixture, payload, version)
+}
+
+#[test]
+fn prompt_none_keeps_replacement_par_and_never_writes_a_code() {
+    let (fixture, payload, version) = pushed_prompt_none_fixture();
+    fixture.ports.stored_par.lock().unwrap()[0]
+        .1
+        .params
+        .insert("state".into(), "replacement-state".into());
+    let application = fixture.make_application();
+    let facts = crate::authorization::AuthorizationRequestFacts {
+        source_ip: "192.0.2.10",
+        session_id: None,
+        user_agent: None,
+    };
+    let outcome = futures_executor::block_on(
+        super::issue_authorization_code_without_interaction_with_context(
+            &application.context(),
+            &facts,
+            payload,
+            Some(&version),
+        ),
+    )
+    .unwrap();
+    let crate::authorization::AuthorizationOutcome::Redirect { location } = outcome else {
+        panic!("query response must redirect")
+    };
+    let location = url::Url::parse(&location).unwrap();
+    let query: std::collections::HashMap<_, _> = location.query_pairs().into_owned().collect();
+    assert_eq!(
+        query.get("error").map(String::as_str),
+        Some("invalid_request_uri")
+    );
+    assert!(!query.contains_key("code"));
+    assert!(fixture.ports.stored_codes.lock().unwrap().is_empty());
+    assert_eq!(
+        fixture.ports.stored_par.lock().unwrap()[0].1.params["state"],
+        "replacement-state"
+    );
+}
+
+#[test]
+fn competing_prompt_none_requests_with_one_par_snapshot_write_one_code() {
+    let (fixture, payload, version) = pushed_prompt_none_fixture();
+    let application = fixture.make_application();
+    let context = application.context();
+    let facts = crate::authorization::AuthorizationRequestFacts {
+        source_ip: "192.0.2.10",
+        session_id: None,
+        user_agent: None,
+    };
+    let (first, second) = futures_executor::block_on(async {
+        futures_util::join!(
+            super::issue_authorization_code_without_interaction_with_context(
+                &context,
+                &facts,
+                payload.clone(),
+                Some(&version)
+            ),
+            super::issue_authorization_code_without_interaction_with_context(
+                &context,
+                &facts,
+                payload.clone(),
+                Some(&version)
+            ),
+        )
+    });
+    let queries = [first, second]
+        .into_iter()
+        .map(|outcome| {
+            let crate::authorization::AuthorizationOutcome::Redirect { location } =
+                outcome.unwrap()
+            else {
+                panic!("query response must redirect")
+            };
+            url::Url::parse(&location)
+                .unwrap()
+                .query_pairs()
+                .into_owned()
+                .collect::<std::collections::HashMap<_, _>>()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        queries
+            .iter()
+            .filter(|query| query.contains_key("code"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        queries
+            .iter()
+            .filter(|query| query.get("error").map(String::as_str) == Some("invalid_request_uri"))
+            .count(),
+        1
+    );
+    assert_eq!(fixture.ports.stored_codes.lock().unwrap().len(), 1);
+    assert!(fixture.ports.stored_par.lock().unwrap().is_empty());
 }
