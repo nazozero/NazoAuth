@@ -37,6 +37,7 @@ const MAX_FEDERATION_PROVIDER_RESPONSE_BYTES: usize = 1024 * 1024;
 #[derive(Clone)]
 pub(crate) struct FederationHttpConfig {
     providers: FederationProviderRegistry,
+    client: reqwest::Client,
     saml_gateway: Option<SamlGatewaySettings>,
     session_cookie_name: String,
     csrf_cookie_name: String,
@@ -52,15 +53,16 @@ impl FederationHttpConfig {
         csrf_cookie_name: impl Into<String>,
         session_ttl_seconds: u64,
         cookie_secure: bool,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        Ok(Self {
             providers,
+            client: federation_http_client()?,
             saml_gateway,
             session_cookie_name: session_cookie_name.into(),
             csrf_cookie_name: csrf_cookie_name.into(),
             session_ttl_seconds,
             cookie_secure,
-        }
+        })
     }
 }
 
@@ -235,7 +237,14 @@ async fn oidc_callback_after_rate_limit_for_provider(
         Ok(stored) => stored,
         Err(error) => return federation_state_error(error),
     };
-    let token = match exchange_oidc_code(&provider, &input.code, &stored.pkce_verifier).await {
+    let token = match exchange_oidc_code(
+        &config.client,
+        &provider,
+        &input.code,
+        &stored.pkce_verifier,
+    )
+    .await
+    {
         Ok(token) => token,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC token exchange failed");
@@ -246,7 +255,7 @@ async fn oidc_callback_after_rate_limit_for_provider(
             );
         }
     };
-    let jwks = match fetch_oidc_jwks(&provider).await {
+    let jwks = match fetch_oidc_jwks(&config.client, &provider).await {
         Ok(jwks) => jwks,
         Err(error) => {
             tracing::warn!(%error, provider_id = %provider.provider_id, "OIDC JWKS fetch failed");
@@ -334,22 +343,28 @@ async fn social_callback_after_rate_limit(
         Ok(stored) => stored,
         Err(error) => return federation_state_error(error),
     };
-    let identity =
-        match resolve_social_identity(&provider, &input.code, &stored.pkce_verifier).await {
-            Ok(identity) => identity,
-            Err(error) => {
-                tracing::warn!(
-                    %provider_id,
-                    upstream_http_error = error.is::<reqwest::Error>(),
-                    "OAuth2 social federation failed"
-                );
-                return oauth_error(
-                    StatusCode::UNAUTHORIZED,
-                    "access_denied",
-                    "social federation failed.",
-                );
-            }
-        };
+    let identity = match resolve_social_identity(
+        &config.client,
+        &provider,
+        &input.code,
+        &stored.pkce_verifier,
+    )
+    .await
+    {
+        Ok(identity) => identity,
+        Err(error) => {
+            tracing::warn!(
+                %provider_id,
+                upstream_http_error = error.is::<reqwest::Error>(),
+                "OAuth2 social federation failed"
+            );
+            return oauth_error(
+                StatusCode::UNAUTHORIZED,
+                "access_denied",
+                "social federation failed.",
+            );
+        }
+    };
     let existing_only = identity.email.is_none();
     complete_federation(
         service.get_ref(),

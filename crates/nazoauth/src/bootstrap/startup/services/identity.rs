@@ -442,7 +442,7 @@ pub(super) async fn build(
         session.csrf_cookie_name.as_str(),
         session.session_ttl_seconds,
         session.cookie_secure,
-    ));
+    )?);
 
     Ok(IdentityServices {
         profile_logout_endpoint,
