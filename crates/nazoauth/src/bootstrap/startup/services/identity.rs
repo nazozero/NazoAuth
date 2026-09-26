@@ -295,7 +295,7 @@ pub(super) async fn build(
         core.security_audit.clone(),
     ));
     let email_delivery =
-        SmtpVerificationEmailDelivery::from_delivery(&identity_settings.email.delivery);
+        SmtpVerificationEmailDelivery::from_delivery(&identity_settings.email.delivery)?;
     let registration = LocalRegistrationService::from_port(
         persistence.registration_accounts(),
         transient_state.email_verification(),

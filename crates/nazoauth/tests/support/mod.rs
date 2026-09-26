@@ -281,7 +281,8 @@ pub(crate) fn registration_service(
         std::sync::Arc::new(
             crate::adapters::email::SmtpVerificationEmailDelivery::from_delivery(
                 &identity.email.delivery,
-            ),
+            )
+            .expect("valid test SMTP configuration"),
         ),
         state.settings.tenant.context,
         nazo_identity::RegistrationServiceConfig {
