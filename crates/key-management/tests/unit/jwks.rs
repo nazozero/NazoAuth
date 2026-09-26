@@ -30,6 +30,7 @@ fn jwks_never_publishes_private_members() {
             "kty": "RSA", "use": "enc", "alg": "RSA-OAEP-256",
             "kid": "request-object", "n": "public", "e": "AQAB"
         }),
+        chrono::Utc::now(),
     );
     assert!(jwks["keys"][0].get("d").is_none());
     assert_eq!(jwks["keys"][1]["use"], "enc");

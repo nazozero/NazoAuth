@@ -44,6 +44,8 @@ mod production {
 
     struct CachedResourceAuthorizationService {
         keys: Arc<KeySnapshot>,
+        captured_at: chrono::DateTime<chrono::Utc>,
+        valid_until: Option<chrono::DateTime<chrono::Utc>>,
         service: Arc<ServerResourceAuthorizationService>,
     }
 
@@ -54,6 +56,16 @@ mod production {
         // The cache entry strongly owns `cached`, so its allocation cannot be
         // freed or have its address reused while this comparison executes.
         Arc::ptr_eq(cached, current)
+    }
+
+    pub(super) fn within_verification_cache_window(
+        captured_at: chrono::DateTime<chrono::Utc>,
+        valid_until: Option<chrono::DateTime<chrono::Utc>>,
+        now: chrono::DateTime<chrono::Utc>,
+    ) -> bool {
+        // A rollback can make an already retired key eligible again. Rebuild
+        // rather than retaining a projection made on the other side of it.
+        now >= captured_at && valid_until.is_none_or(|deadline| now < deadline)
     }
 
     #[derive(Clone)]
@@ -92,8 +104,10 @@ mod production {
                     ),
                 )
             })?;
+            let now = chrono::Utc::now();
             if let Some(cached) = cache.as_ref()
                 && same_key_generation(&cached.keys, &keys)
+                && within_verification_cache_window(cached.captured_at, cached.valid_until, now)
             {
                 return Ok(cached.service.clone());
             }
@@ -103,7 +117,7 @@ mod production {
                     self.config.default_audience.clone(),
                     self.config.protected_resource_identifier.clone(),
                 ],
-                jwks: keys.jwks(),
+                jwks: keys.jwks_at(now),
                 required_scopes: Vec::new(),
                 confirmation: ConfirmationPolicy::Optional,
                 allowed_algs: vec![
@@ -137,6 +151,8 @@ mod production {
                 }),
             );
             *cache = Some(CachedResourceAuthorizationService {
+                captured_at: now,
+                valid_until: keys.next_verification_retirement(now),
                 keys,
                 service: service.clone(),
             });

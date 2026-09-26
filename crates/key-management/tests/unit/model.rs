@@ -192,6 +192,34 @@ fn captured_snapshot_stops_exposing_a_key_after_its_retirement_deadline() {
     );
 }
 
+#[test]
+fn captured_jwks_uses_the_same_retirement_boundary_as_its_cache_deadline() {
+    let deadline = chrono::DateTime::from_timestamp(1_700_000_000, 0).unwrap();
+    let snapshot = super::KeySnapshot {
+        active_kid: "active".to_owned(),
+        active_alg: jsonwebtoken::Algorithm::EdDSA,
+        verification_keys: vec![super::VerificationKey {
+            kid: "retiring".to_owned(),
+            public_jwk: serde_json::json!({"kid":"retiring","alg":"EdDSA"}),
+            prepared: prepared_test_verification(),
+            signing_purposes: BTreeSet::new(),
+            retire_at: Some(deadline),
+        }],
+        id_token_signing_algorithms: Vec::new(),
+        response_signing_algorithms: Vec::new(),
+        request_object_encryption_jwk: serde_json::Value::Null,
+    };
+    let before = deadline - chrono::Duration::nanoseconds(1);
+    assert_eq!(snapshot.next_verification_retirement(before), Some(deadline));
+    assert_eq!(snapshot.jwks_at(before)["keys"][0]["kid"], "retiring");
+    for now in [deadline, deadline + chrono::Duration::seconds(1)] {
+        assert_eq!(snapshot.next_verification_retirement(now), None);
+        assert_eq!(snapshot.jwks_at(now)["keys"], serde_json::json!([null]));
+    }
+    // The same captured generation regains the original projection on rollback.
+    assert_eq!(snapshot.jwks_at(before)["keys"][0]["kid"], "retiring");
+}
+
 #[tokio::test]
 async fn http_signing_lease_keeps_label_and_key_on_one_generation_during_rotation() {
     let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
