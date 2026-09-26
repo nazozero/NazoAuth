@@ -1,6 +1,7 @@
 use chrono::{DateTime, Duration, Utc};
 use diesel::{
-    ExpressionMethods, OptionalExtension, QueryDsl, SelectableHelper, sql_query, sql_types,
+    BoolExpressionMethods, ExpressionMethods, JoinOnDsl, OptionalExtension, QueryDsl,
+    SelectableHelper, sql_query, sql_types,
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
@@ -482,39 +483,38 @@ fn token_from_spent(
     })
 }
 
-async fn load_contract(
-    connection: &mut AsyncPgConnection,
-    tenant_id: Uuid,
-    contract_blake3: &[u8],
-) -> diesel::QueryResult<Option<RefreshContractRow>> {
-    oauth_refresh_contracts::table
-        .filter(oauth_refresh_contracts::tenant_id.eq(tenant_id))
-        .filter(oauth_refresh_contracts::contract_blake3.eq(contract_blake3))
-        .select(RefreshContractRow::as_select())
-        .first::<RefreshContractRow>(connection)
-        .await
-        .optional()
-}
-
 /// Presentation lookup: the current member by digest, else a spent proof.
-/// A spent proof without a live family row is unreachable (the foreign key
-/// cascades), so a missing family means the proof row is gone as well.
+/// Each branch reads its family and contract in one statement; the contract
+/// join is a LEFT JOIN so a missing referenced contract still surfaces as a
+/// consistency error instead of silently turning the presentation into
+/// "token not found". A spent proof without a live family row is unreachable
+/// (the foreign key cascades), so a missing family means the proof row is
+/// gone as well.
 async fn lookup_refresh_token(
     connection: &mut AsyncPgConnection,
     tenant_id: Uuid,
     digest: &[u8],
 ) -> Result<Option<RefreshToken>, diesel::result::Error> {
-    if let Some(family) = oauth_refresh_families::table
+    if let Some((family, contract_row)) = oauth_refresh_families::table
+        .left_join(
+            oauth_refresh_contracts::table.on(oauth_refresh_contracts::tenant_id
+                .eq(oauth_refresh_families::tenant_id)
+                .and(
+                    oauth_refresh_contracts::contract_blake3
+                        .eq(oauth_refresh_families::contract_blake3),
+                )),
+        )
         .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
         .filter(oauth_refresh_families::current_token_blake3.eq(digest))
-        .select(RefreshFamilyRow::as_select())
-        .first::<RefreshFamilyRow>(connection)
+        .select((
+            RefreshFamilyRow::as_select(),
+            Option::<RefreshContractRow>::as_select(),
+        ))
+        .first::<(RefreshFamilyRow, Option<RefreshContractRow>)>(connection)
         .await
         .optional()?
     {
-        let Some(contract_row) =
-            load_contract(connection, tenant_id, &family.contract_blake3).await?
-        else {
+        let Some(contract_row) = contract_row else {
             return Err(diesel::result::Error::DeserializationError(
                 "refresh family references a missing contract".into(),
             ));
@@ -528,27 +528,39 @@ async fn lookup_refresh_token(
                 diesel::result::Error::DeserializationError(error.to_string().into())
             });
     }
-    if let Some(spent) = oauth_refresh_spent_tokens::table
+    if let Some((spent, family, contract_row)) = oauth_refresh_spent_tokens::table
+        .inner_join(
+            oauth_refresh_families::table.on(oauth_refresh_families::tenant_id
+                .eq(oauth_refresh_spent_tokens::tenant_id)
+                .and(
+                    oauth_refresh_families::token_family_id
+                        .eq(oauth_refresh_spent_tokens::token_family_id),
+                )),
+        )
+        .left_join(
+            oauth_refresh_contracts::table.on(oauth_refresh_contracts::tenant_id
+                .eq(oauth_refresh_families::tenant_id)
+                .and(
+                    oauth_refresh_contracts::contract_blake3
+                        .eq(oauth_refresh_families::contract_blake3),
+                )),
+        )
         .filter(oauth_refresh_spent_tokens::tenant_id.eq(tenant_id))
         .filter(oauth_refresh_spent_tokens::refresh_token_blake3.eq(digest))
-        .select(SpentRefreshTokenRow::as_select())
-        .first::<SpentRefreshTokenRow>(connection)
+        .select((
+            SpentRefreshTokenRow::as_select(),
+            RefreshFamilyRow::as_select(),
+            Option::<RefreshContractRow>::as_select(),
+        ))
+        .first::<(
+            SpentRefreshTokenRow,
+            RefreshFamilyRow,
+            Option<RefreshContractRow>,
+        )>(connection)
         .await
         .optional()?
     {
-        let Some(family) = oauth_refresh_families::table
-            .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
-            .filter(oauth_refresh_families::token_family_id.eq(spent.token_family_id))
-            .select(RefreshFamilyRow::as_select())
-            .first::<RefreshFamilyRow>(connection)
-            .await
-            .optional()?
-        else {
-            return Ok(None);
-        };
-        let Some(contract_row) =
-            load_contract(connection, tenant_id, &family.contract_blake3).await?
-        else {
+        let Some(contract_row) = contract_row else {
             return Err(diesel::result::Error::DeserializationError(
                 "refresh family references a missing contract".into(),
             ));
