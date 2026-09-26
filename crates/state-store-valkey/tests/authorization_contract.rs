@@ -354,12 +354,13 @@ async fn consent_snapshot_accepts_old_wire_but_rejects_rewritten_or_changed_stat
     let mut observed = consent_payload(&request_id, uuid::Uuid::from_u128(1));
     observed.authorization_details = json!([{
         "type": "payment_initiation",
-        "actions": {"alpha": 1, "beta": 2}
+        "actions": ["transfer"],
+        "instructedAmount": {"amount": "123.50", "currency": "EUR"}
     }]);
     let canonical = serde_json::to_string(&observed).unwrap();
     let reordered = canonical.replace(
-        r#""actions":{"alpha":1,"beta":2}"#,
-        r#""actions":{"beta":2,"alpha":1}"#,
+        r#""instructedAmount":{"amount":"123.50","currency":"EUR"}"#,
+        r#""instructedAmount":{"currency":"EUR","amount":"123.50"}"#,
     );
     assert_ne!(canonical, reordered);
     inspector
