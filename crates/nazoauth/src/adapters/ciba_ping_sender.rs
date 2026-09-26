@@ -8,6 +8,8 @@ use reqwest::header;
 use serde_json::json;
 use std::{collections::HashSet, net::SocketAddr, time::Duration};
 
+const DELIVERY_TIMEOUT: Duration = Duration::from_secs(5);
+
 pub(crate) struct CibaPingHttpSender {
     private_network_origins: HashSet<String>,
 }
@@ -76,7 +78,7 @@ fn apply_ciba_ping_client_policy(
 ) -> anyhow::Result<reqwest::ClientBuilder> {
     Ok(apply_ciba_ping_tls_policy(builder.no_proxy())?
         .connect_timeout(Duration::from_secs(3))
-        .timeout(Duration::from_secs(5))
+        .timeout(DELIVERY_TIMEOUT)
         .redirect(reqwest::redirect::Policy::none()))
 }
 
@@ -91,7 +93,13 @@ impl CibaPingSender for CibaPingHttpSender {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = anyhow::Result<http::StatusCode>> + Send + 'a>,
     > {
-        Box::pin(self.post(delivery))
+        Box::pin(async move {
+            // The HTTP client's timeout starts after our explicit DNS lookup.
+            // Bound both phases so slow DNS cannot occupy the claim indefinitely.
+            tokio::time::timeout(DELIVERY_TIMEOUT, self.post(delivery))
+                .await
+                .context("CIBA ping delivery timed out")?
+        })
     }
 }
 #[cfg(test)]
