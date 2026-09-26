@@ -52,6 +52,7 @@ pub struct Ports {
     pub stored_par: Mutex<Vec<(String, PushedAuthorizationRequest, u64)>>,
     pub record_code_writes: AtomicBool,
     pub stored_codes: Mutex<Vec<RecordedAuthorizationCode>>,
+    pub consent: Mutex<Option<ConsentPayload>>,
     client: Result<Option<OAuthClient>, AuthorizationPortError>,
     session: Result<Option<SessionSnapshot>, RepositoryError>,
     calls: Mutex<Vec<&'static str>>,
@@ -134,7 +135,7 @@ impl AuthorizationStateStorePort for Ports {
         _request_id: &'a str,
     ) -> AuthorizationFuture<'a, Option<ConsentPayload>> {
         self.record("consent");
-        Box::pin(async { Ok(None) })
+        Box::pin(async { Ok(self.consent.lock().unwrap().clone()) })
     }
     fn load_par<'a>(
         &'a self,
@@ -193,9 +194,17 @@ impl AuthorizationStateStorePort for Ports {
     fn compare_and_delete_consent<'a>(
         &'a self,
         _request_id: &'a str,
-        _expected: &'a ConsentPayload,
+        expected: &'a ConsentPayload,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::compare_and_delete_consent call")
+        self.record("consume_consent");
+        Box::pin(async move {
+            let mut consent = self.consent.lock().unwrap();
+            assert_eq!(
+                serde_json::to_value(consent.as_ref()).unwrap(),
+                serde_json::to_value(Some(expected)).unwrap(),
+            );
+            Ok(consent.take().is_some())
+        })
     }
     fn store_consent<'a>(
         &'a self,
@@ -526,6 +535,7 @@ impl Fixture {
             stored_par: Mutex::new(Vec::new()),
             record_code_writes: AtomicBool::new(false),
             stored_codes: Mutex::new(Vec::new()),
+            consent: Mutex::new(None),
             client,
             session,
             calls: Mutex::new(Vec::new()),

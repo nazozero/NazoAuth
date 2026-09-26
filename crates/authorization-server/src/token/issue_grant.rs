@@ -221,9 +221,10 @@ pub async fn issue_token_response(
     // Commit-owned issuance: when the final commit transaction carries both
     // the durable token fact and the required `token_issued` append, the
     // commit itself is the fail-closed writer check, so the per-request
-    // static capability probe is redundant. Normal refresh rotation joins
-    // the no-refresh shape: the family lock, spent-proof bookkeeping and
-    // issuance row are all owned by that same commit transaction. Any path
+    // static capability probe is redundant. Normal refresh rotation and
+    // preserving an existing refresh token join the no-refresh shape: any
+    // family lock, spent-proof bookkeeping and issuance row are owned by
+    // that same commit transaction. Any path
     // with a preceding durable side effect (authorization-code consumption,
     // Native SSO device-secret persistence) keeps the full storage
     // preflight, and `RotateLostResponse` stays on it as well — the retry
@@ -235,7 +236,7 @@ pub async fn issue_token_response(
         && (!will_issue_refresh
             || matches!(
                 issue.refresh_token_policy,
-                RefreshTokenPolicy::Rotate { .. }
+                RefreshTokenPolicy::PreserveExisting | RefreshTokenPolicy::Rotate { .. }
             ));
     let audit_ready = if commit_owned {
         context.security_audit.ensure_transactional_ready().await

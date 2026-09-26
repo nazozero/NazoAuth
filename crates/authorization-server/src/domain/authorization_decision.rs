@@ -82,7 +82,7 @@ impl ServerAuthorizationDecisionOperations {
         };
 
         self.security_audit
-            .ensure_storage()
+            .ensure_transactional_ready()
             .await
             .map_err(|error| {
                 tracing::error!(%error, "authorization decision audit preflight failed");

@@ -273,7 +273,7 @@ impl DeviceDecisionHandles {
                 ));
             }
         };
-        if let Err(error) = self.audit.ensure_storage().await {
+        if let Err(error) = self.audit.ensure_transactional_ready().await {
             tracing::error!(%error, "device decision audit preflight failed");
             return Err(OAuthEndpointError::json(
                 StatusCode::SERVICE_UNAVAILABLE,

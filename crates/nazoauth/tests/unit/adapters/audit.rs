@@ -286,13 +286,17 @@ fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
     // a state change without pretending to be a protocol E2E test.
     let authorization =
         include_str!("../../../../authorization-server/src/domain/authorization_decision.rs");
-    assert_source_order(authorization, ".ensure_storage()", "preview_user_decision(");
+    assert_source_order(
+        authorization,
+        ".ensure_transactional_ready()",
+        "preview_user_decision(",
+    );
     assert_source_order(authorization, "preview_user_decision(", "record_required(");
     assert_source_order(authorization, "record_required(", "consume_user_decision(");
     assert!(authorization.contains("AuthorizationDecisionError::AuditUnavailable"));
 
     let device = include_str!("../../../../authorization-server/src/token/device.rs");
-    assert_source_order(device, ".ensure_storage()", "record_required(");
+    assert_source_order(device, ".ensure_transactional_ready()", "record_required(");
     assert_source_order(device, "record_required(", "let result = match decision {");
     assert!(device.contains("设备授权审计无法持久化."));
 
@@ -302,7 +306,11 @@ fn high_impact_state_changes_are_guarded_by_required_audit_intent() {
         "async fn prepare_ciba_decision_intent(",
         "async fn set_ciba_request_decision(",
     );
-    assert_source_order(ciba_intent, ".ensure_storage()", ".record_required(");
+    assert_source_order(
+        ciba_intent,
+        ".ensure_transactional_ready()",
+        ".record_required(",
+    );
     let ciba_browser = source_body(
         ciba,
         "pub async fn decide(",
