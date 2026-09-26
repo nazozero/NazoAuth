@@ -737,11 +737,14 @@ where
             {
                 return Ok(TokenInspection::Inactive);
             }
-            let revoked = self
+            if claims.exp <= now.timestamp() {
+                return Ok(TokenInspection::Inactive);
+            }
+            if self
                 .repository
                 .access_token_revoked(resource_server.tenant_id, &claims.jti)
-                .await?;
-            if revoked || claims.exp <= now.timestamp() {
+                .await?
+            {
                 return Ok(TokenInspection::Inactive);
             }
             let token_type = access_token_type(&claims);
@@ -792,19 +795,36 @@ where
             .signer
             .decode_access_token(issuer, raw_token)
             .await?
-            .filter(|claims| claims.client_id == client.client_id)
+            .filter(|claims| {
+                claims.client_id == client.client_id
+                    && claims.tenant_id.parse::<Uuid>().ok() == Some(client.tenant_id)
+            })
             .and_then(|claims| {
                 Some(AccessTokenRevocation {
                     jti: claims.jti,
                     expires_at: DateTime::<Utc>::from_timestamp(claims.exp, 0)?,
                 })
             });
+        if let Some(access_token) = access_token {
+            self.repository
+                .revoke_issued_tokens(
+                    client.tenant_id,
+                    client.id,
+                    &access_token.jti,
+                    Some(access_token.expires_at),
+                    None,
+                )
+                .await?;
+            // The audit count records revoked refresh-family members. An
+            // access-only revocation has always reported zero updated members.
+            return Ok(0);
+        }
         self.repository
             .revoke_token(TokenRevocation {
                 tenant_id: client.tenant_id,
                 client_id: client.id,
                 raw_token,
-                access_token,
+                access_token: None,
             })
             .await
     }
