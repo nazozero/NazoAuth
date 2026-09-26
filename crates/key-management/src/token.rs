@@ -14,6 +14,12 @@ impl TokenSignerPort for KeyManager {
         &'a self,
         input: AccessTokenSignInput<'a>,
     ) -> TokenFuture<'a, IssuedAccessToken> {
+        // Pin the header and signing key to one generation. Rotation may publish
+        // another generation before this future is polled or while it signs.
+        let generation = self.inner.generation.load_full();
+        let mut header = nazo_crypto::jwt::Header::new(generation.snapshot.active_alg);
+        header.typ = Some("at+jwt".to_owned());
+        header.kid = Some(generation.snapshot.active_kid.clone());
         Box::pin(async move {
             let now = Utc::now().timestamp();
             let jti = Uuid::now_v7().to_string();
@@ -39,14 +45,16 @@ impl TokenSignerPort for KeyManager {
                 now,
                 &jti,
             );
-            let keyset = self.snapshot();
-            let mut header = nazo_crypto::jwt::Header::new(keyset.active_alg);
-            header.typ = Some("at+jwt".to_owned());
-            header.kid = Some(keyset.active_kid.clone());
-            let token = self
-                .encode_jwt(SigningPurpose::AccessToken, &header, &claims)
-                .await
-                .map_err(|_| TokenPortError::Unavailable)?;
+            let token = crate::model::encode_jwt_for_generation(
+                &generation,
+                &self.inner.health,
+                None,
+                SigningPurpose::AccessToken,
+                &header,
+                &claims,
+            )
+            .await
+            .map_err(|_| TokenPortError::Unavailable)?;
             Ok(IssuedAccessToken {
                 token,
                 jti,
@@ -56,6 +64,7 @@ impl TokenSignerPort for KeyManager {
     }
 
     fn sign_id_token<'a>(&'a self, input: IdTokenSignInput<'a>) -> TokenFuture<'a, String> {
+        let generation = self.inner.generation.load_full();
         Box::pin(async move {
             let claims = id_token_claims(
                 input.issuer,
@@ -76,13 +85,20 @@ impl TokenSignerPort for KeyManager {
                 Some(name) => {
                     signing_algorithm_from_name(name).ok_or(TokenPortError::Unexpected)?
                 }
-                None => self.snapshot().active_alg,
+                None => generation.snapshot.active_alg,
             };
             let mut header = nazo_crypto::jwt::Header::new(algorithm);
             header.typ = Some("JWT".to_owned());
-            self.encode_jwt(SigningPurpose::IdToken, &header, &Value::Object(claims))
-                .await
-                .map_err(|_| TokenPortError::Unavailable)
+            crate::model::encode_jwt_for_generation(
+                &generation,
+                &self.inner.health,
+                None,
+                SigningPurpose::IdToken,
+                &header,
+                &Value::Object(claims),
+            )
+            .await
+            .map_err(|_| TokenPortError::Unavailable)
         })
     }
 
@@ -159,13 +175,13 @@ impl TokenSignerPort for KeyManager {
         &'a self,
         input: IntrospectionSignInput<'a>,
     ) -> TokenFuture<'a, String> {
+        let generation = self.inner.generation.load_full();
         Box::pin(async move {
-            let snapshot = self.snapshot();
             let algorithm = match input.signing_algorithm {
                 Some(name) => {
                     signing_algorithm_from_name(name).ok_or(TokenPortError::Unexpected)?
                 }
-                None => snapshot.active_alg,
+                None => generation.snapshot.active_alg,
             };
             let mut header = nazo_crypto::jwt::Header::new(algorithm);
             header.typ = Some("token-introspection+jwt".to_owned());
@@ -175,9 +191,16 @@ impl TokenSignerPort for KeyManager {
                 "iat": Utc::now().timestamp(),
                 "token_introspection": input.body,
             });
-            self.encode_jwt(SigningPurpose::Introspection, &header, &claims)
-                .await
-                .map_err(|_| TokenPortError::Unavailable)
+            crate::model::encode_jwt_for_generation(
+                &generation,
+                &self.inner.health,
+                None,
+                SigningPurpose::Introspection,
+                &header,
+                &claims,
+            )
+            .await
+            .map_err(|_| TokenPortError::Unavailable)
         })
     }
 }

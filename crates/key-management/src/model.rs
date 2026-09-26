@@ -1074,7 +1074,7 @@ impl KeyManager {
     }
 }
 
-async fn encode_jwt_for_generation<T: Serialize>(
+pub(crate) async fn encode_jwt_for_generation<T: Serialize>(
     generation: &Arc<KeyGeneration>,
     health: &LifecycleHealth,
     expected_kid: Option<&str>,
