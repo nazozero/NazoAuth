@@ -1273,7 +1273,7 @@ fn key_ops_allow_verification(key_ops: Option<&Value>) -> bool {
     }
 }
 
-fn prepared_verification(
+pub(crate) fn prepared_verification(
     public_jwk: &Value,
     algorithm: nazo_crypto::jwt::Algorithm,
 ) -> Option<PreparedVerification> {

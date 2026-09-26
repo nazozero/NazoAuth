@@ -47,6 +47,55 @@ async fn database_fixture() -> (
     (manager, repository, tenant_id, wrapping_keys)
 }
 
+#[tokio::test]
+async fn external_registration_rejects_unusable_verification_material_without_persisting() {
+    let (manager, repository, tenant_id, wrapping_keys) = database_fixture().await;
+    let before = repository.snapshot().unwrap();
+    let generation = manager.snapshot();
+    let material =
+        crate::serialization::generate_key_material(nazo_crypto::jwt::Algorithm::ES256).unwrap();
+    let mut wrong_usage = crate::serialization::public_jwk_from_private_der(
+        "invalid-external",
+        nazo_crypto::jwt::Algorithm::ES256,
+        &material.private_pkcs8_der,
+    )
+    .unwrap();
+    wrong_usage["key_ops"] = json!(["sign"]);
+
+    for public_jwk in [
+        json!({
+            "kty": "EC", "crv": "P-256", "alg": "ES256", "use": "sig",
+            "kid": "invalid-external",
+            "x": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+            "y": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"
+        }),
+        wrong_usage,
+    ] {
+        assert!(
+            manager
+                .database_register_external(crate::ExternalKeyRegistration {
+                    kid: "invalid-external".to_owned(),
+                    algorithm: nazo_crypto::jwt::Algorithm::ES256,
+                    key_ref: "kms://unit/invalid-external".to_owned(),
+                    public_jwk,
+                })
+                .await
+                .is_err()
+        );
+        let after = repository.snapshot().unwrap();
+        assert_eq!(after.revision, before.revision);
+        assert_eq!(after.public_metadata, before.public_metadata);
+        assert_eq!(
+            after.encrypted_private_material,
+            before.encrypted_private_material
+        );
+        assert!(Arc::ptr_eq(&manager.snapshot(), &generation));
+    }
+    KeyManager::load_or_create_database(settings(), None, tenant_id, repository, wrapping_keys)
+        .await
+        .expect("rejected external material must leave the persisted generation restartable");
+}
+
 struct Openid4vcFixture {
     material: Openid4vcMaterial,
     private_key_pem: String,
