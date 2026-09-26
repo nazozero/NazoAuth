@@ -6,7 +6,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, HashMap},
+    collections::{BTreeMap, HashSet},
     sync::{Arc, Mutex},
 };
 
@@ -19,7 +19,13 @@ const MAX_DPOP_JTI_BYTES: usize = 128;
 pub struct DpopProofVerifier {
     config: DpopProofVerifierConfig,
     max_replay_cache_entries: usize,
-    replay_cache: Arc<Mutex<HashMap<String, i64>>>,
+    replay_cache: Arc<Mutex<DpopReplayCache>>,
+}
+
+#[derive(Debug, Default)]
+struct DpopReplayCache {
+    keys: HashSet<Arc<str>>,
+    expirations: BTreeMap<i64, Vec<Arc<str>>>,
 }
 
 #[derive(Clone, Debug)]
@@ -87,7 +93,7 @@ impl DpopProofVerifier {
         Self {
             config,
             max_replay_cache_entries: max_replay_cache_entries.max(1),
-            replay_cache: Arc::new(Mutex::new(HashMap::new())),
+            replay_cache: Arc::new(Mutex::new(DpopReplayCache::default())),
         }
     }
 
@@ -110,7 +116,7 @@ impl DpopProofVerifier {
             .dpop_jkt
             .as_deref()
             .ok_or(DpopProofVerifierError::InvalidPublicJwk)?;
-        self.check_replay(jkt, &verification.jti)?;
+        self.check_replay(jkt, &verification.jti, Utc::now().timestamp())?;
         Ok(verification.proof)
     }
 
@@ -210,26 +216,43 @@ impl DpopProofVerifier {
         Ok(())
     }
 
-    fn check_replay(&self, jkt: &str, jti: &str) -> Result<(), DpopProofVerifierError> {
-        let now = Utc::now().timestamp();
+    fn check_replay(&self, jkt: &str, jti: &str, now: i64) -> Result<(), DpopProofVerifierError> {
         let ttl = self
             .config
             .max_age_seconds
             .max(1)
             .saturating_add(self.config.clock_skew_seconds.max(0));
+        let replay_key = format!("{jkt}:{jti}");
         let mut cache = self
             .replay_cache
             .lock()
             .map_err(|_| DpopProofVerifierError::ReplayStoreUnavailable)?;
-        cache.retain(|_, expires_at| *expires_at > now);
-        let replay_key = format!("{jkt}:{jti}");
-        if cache.contains_key(&replay_key) {
+        // Absolute expiry ordering also handles insertions after a clock rollback.
+        // Every key belongs to exactly one bucket; no unexpired key is evicted.
+        while cache
+            .expirations
+            .first_key_value()
+            .is_some_and(|(expires_at, _)| *expires_at <= now)
+        {
+            if let Some((_, keys)) = cache.expirations.pop_first() {
+                for key in keys {
+                    cache.keys.remove(&key);
+                }
+            }
+        }
+        if cache.keys.contains(replay_key.as_str()) {
             return Err(DpopProofVerifierError::ReplayDetected);
         }
-        if cache.len() >= self.max_replay_cache_entries {
+        if cache.keys.len() >= self.max_replay_cache_entries {
             return Err(DpopProofVerifierError::ReplayCacheFull);
         }
-        cache.insert(replay_key, now.saturating_add(ttl));
+        let replay_key: Arc<str> = replay_key.into();
+        cache.keys.insert(Arc::clone(&replay_key));
+        cache
+            .expirations
+            .entry(now.saturating_add(ttl))
+            .or_default()
+            .push(replay_key);
         Ok(())
     }
 }
