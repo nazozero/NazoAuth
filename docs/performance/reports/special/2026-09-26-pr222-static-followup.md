@@ -1,6 +1,8 @@
 # PR #222 后续静态性能审查
 
-源码基准：`8140acc077e3cc58dabc66507b1f26fdc24b358f`。审查开始时已核对远端 [PR #222](https://github.com/nazozero/NazoAuth/pull/222) 仍为 open，分支为 `perf/db-hotpath-minimal-0c70d746`，本地与远端一致。本轮按“继续静态审查、确认更多问题”的要求执行，只提交审查结果，不修改生产代码、不运行测试、压测或环境安装。上一轮已完成项和历史性能证据见 [前一份报告](2026-09-26-pr222-performance-audit.md)。
+原始静态审查基准：`8140acc077e3cc58dabc66507b1f26fdc24b358f`；审查报告 checkpoint：`1615707`。审查开始时已核对远端 [PR #222](https://github.com/nazozero/NazoAuth/pull/222) 仍为 open，分支为 `perf/db-hotpath-minimal-0c70d746`，本地与远端一致。首次审查按“继续静态审查、确认更多问题”的要求执行，只提交调查结果，没有修改生产代码或运行测试。上一轮已完成项和历史性能证据见 [前一份报告](2026-09-26-pr222-performance-audit.md)。
+
+**后续修复状态：**用户随后授权实施、反复复核和最小测试。本文件第一至四节保留原始发现及当时的判断，不代表当前代码仍有全部问题；第五节记录修复及保留项，第六节区分已经执行的定向测试、仅编译的存储测试与未完成的验证。F01–F06、F08–F14、F16–F17 已实施，F07 仅处理分页查询与索引；F15、F18 尚未实施。没有新增压测、吞吐或尾延迟收益结论。
 
 ## 结论与证据边界
 
@@ -124,4 +126,60 @@
 
 后续每项仍独立 checkpoint。验证优先用小池冲突、注入时间、暂停时钟、端口调用计数和现有协议负向案例；涉及真实SQL/Lua的项目只执行相应数据库/Valkey目标，服务不可用时明确记为未执行。只有选择率/计划不确定的 F07/F15 等需要窄数据分布的 EXPLAIN，不先重开全量容量或长时soak。
 
-**本轮状态：静态审查完成，新增问题尚未实施修复；没有新的运行测试或性能收益结论。**
+**原始审查结束时的状态（`1615707`）：静态审查完成，新增问题尚未实施修复；当时没有新的运行测试或性能收益结论。**
+
+## 五、后续实施与复核
+
+以下“已实施”指代码修改已完成；协议正确性、真实存储行为、CI 和性能实测仍分别按证据判断。修复沿用现有端口与资源生命周期，没有以去锁、降低密码强度、跳过审计或扩大缓存信任代替性能优化。每个已推送的新 checkpoint 均在 PR 中回复修改内容及验证边界。
+
+| 项目 | 实施状态与改动 | 保留的不变量及证据边界 |
+| --- | --- | --- |
+| F01 | 已实施：事务返回后释放 Federation 连接，再进入唯一冲突恢复（`71f165b`）。 | 唯一约束、既有 link 恢复和 Conflict 分类不变；小池回归目标编译通过，真实 PG 未执行。 |
+| F02 | 已实施：SCIM/Federation 无密码建户复用启动期准备的随机不可知口令 hash（`96f84ad`）。 | 不产生已知默认密码，不降低真实口令或 MFA 备用码 Argon2 参数；provider 定向测试通过。 |
+| F03 | 已实施：FAPI 验证器缓存同时受 generation、构建时间和下一退休点约束；JWKS 使用同一时刻（`70b7c4b`）。 | 同一快照到期失效、刷新失败期间失效、时钟回拨和新 generation 均复核；5 个密钥/应用定向测试通过。 |
+| F04 | 已实施：一次有界 Lua 返回扫描量和 deliveries，调度按扫描是否饱和继续（`b64168d`）。 | 保留 lease、attempt fencing、并发上限及错误退避；应用/宿主定向测试通过，真实 Valkey 脚本回归仅编译。 |
+| F05 | 已实施：相同原始 wire 值复用已校验目录；缓存修复复用已由数据库 revision 确认的权威 snapshot（`e0d7283`）。 | 每次仍读 Valkey，未减少全量传输；不将未确认缓存内容当成权威目录重新发布。损坏、超前、数据库变化与缓存持续故障测试覆盖。 |
+| F06 | 已实施：发布时一次构造保留 lifecycle 指针集合，删除旧 runtime 对新目录的嵌套扫描（`e0d7283`）。 | 保留不变、替换、移除及共享 lifecycle 的停启行为；与 F05 的 18 个宿主定向测试一起验证。 |
+| F07 | **部分实施**：游标谓词改为 `(created_at,id)` tuple range；迁移 `20260927000600` 新增 `(tenant_id,created_at,id)` 索引（`4d35f77`）。 | 保留精确 `totalResults`、独立 tenant 索引及原有 count=0 只查总数的契约。重复全量 COUNT 成本仍在；未做真实数据 EXPLAIN，不能宣称查询计划或净写入收益已验证。普通 CREATE INDEX 的迁移会占用建索引窗口，尚未执行或部署。 |
+| F08 | 已实施：generation 共享公共材料与预构建撤销索引，删除逐凭证深拷贝/结构重校验（`63298ff`）。 | 公开损坏输入仍 fail closed；freshness 逐次检查，issuer 冲突、unknown/revoked、失败替换及旧 generation 均保留。17 个撤销快照、2 个 generation 测试通过，并经独立交叉复核。 |
+| F09 | 已实施：只返回被消费的 holder binding，移除每个 holder 的整份 attestation claims 拷贝（`0eed70b`）。 | 完整签名、nonce、时间和 holder 绑定仍在 validator 校验；单 attestation 展开 11 个 key 的回归通过，没有错误套用 proofs 数组 batch_size。 |
+| F10 | 已实施：logout 按 tenant 批量查 client，复用 hint；outbox 单次批量 INSERT，冲突保留首份 JWT（`5d8ddff`）。 | 每 RP 独立签名、当前 active 状态、pairwise、Required audit 和全批原子性保留；9 个应用退出测试通过，PG 原子性/租户回归仅编译。 |
+| F11 | 已实施：已经验签且确认归属的 access token 走现有 access-only 撤销 upsert（`718d042`）。 | 混合底层接口的 raw refresh 优先级不变；保留 expiry/skew 与审计语义。4 个 token-management 测试通过，SQL 次数回归仅编译。 |
+| F12 | 已实施：generation 加载时准备 RSA-OAEP 私钥，解密复用准备材料（`8ba0d31`）。 | kid 与私钥固定在同一 generation；alg/enc/cty、CEK 长度、AAD、tag 和轮换边界不变，不缓存明文。4 个 JAR 测试及 OAEP 互操作目标通过，并经独立复核。 |
+| F13 | 已实施：immutable verifier 构造时准备公钥（`47c9e85`），沿 F03 的有效期边界复用。 | 无关坏 key 不使整份 JWKS 拒绝；重复 kid、unknown kid、命中坏 key 与算法错误分类保留。40 个 verifier 过滤目标测试通过。 |
+| F14 | 已实施：remembered MFA 单次查询验证 tenant/user/token/expiry/UA，删除无人读取的 last_used_at 写入（`c476e0e`）。 | NULL UA 相等语义保留；没有删除 Passkey 的计数器 CAS 或 last-used 更新。PG 目标仅编译。 |
+| F15 | **未实施**：owner 撤销索引候选保留待真实执行计划确认。 | 目标 owner 选择率、其他 owner 数据量及签发写放大尚无证据；不静态堆叠宽索引，不异步撤销，不移除 principal 锁。 |
+| F16 | 已实施：metadata snapshot 不再构建未消费的 JWKS，仅真正的 `/jwks` 消费者读取（`a2bb664`）。 | 当前算法/模块与 JWKS 退休资格保留；HTTP metadata 定向测试通过。 |
+| F17 | 已实施：现有 Federation 配置生命周期持有并复用 HTTP client（`a72f982`）。 | 保留 no_proxy、禁止 redirect、超时及响应体限制；12 个 Federation 定向测试通过。未缓存上游 JWKS，未改变 provider 私网政策；真实网络连接复用收益未测。 |
+| F18 | **未实施**：复核后保留现有 nonce binding 读取。 | 原第二次读取承担最新状态及损坏 JSON 在写入前失败的语义。直接 UPDATE RETURNING 不能保留此边界；包事务回滚又增加往返。现有端口没有 observed revision，新增跨层 CAS 契约超出这次减少一条 SQL 的窄改动。 |
+
+较小候选的处理状态：
+
+| 状态 | 范围与边界 |
+| --- | --- |
+| 已实施 | MFA 备用码 batch INSERT，保留空列表清空与原事务；SCIM PUT 在事件关闭时跳过仅为事件读取的旧值，PATCH/DELETE 所需读取保留。 |
+| 已实施 | Refresh owned row 转换前归还连接；无 sender binding 的 lost-response 路径在借池前返回；仍有效 token 内省继续查撤销，已业务过期 token 先返回 Inactive。最后一项明确保留 fail-closed，但 expired token 与存储故障并存时不再返回存储错误。 |
+| 已实施 | 授权服务器 DPoP 复用已解码签名与原 compact signing-input 切片；不删验签、时间或 replay 检查。 |
+| 已实施 | VC dataset/VP request 解密前归还连接；VP complete 加密后借连接；SD-JWT 一次构造摘要集合，保留非法或重复 disclosure/claim 拒绝。 |
+| 已实施 | CIBA/Device 的 JSON 包裹 raw JSON 改原子 RESP tuple（`4bedcf8`）；保持 raw CAS 字节、missing/无 TTL/损坏拒绝以及秒/毫秒绝对过期语义，目标仅编译。 |
+| 未实施 | mTLS anchor verifier、external signer 回验公钥及同一 VC signing lease 的重复证书准备。材料生命周期、信任/有效期逐次检查与缓存失效边界需要分别确认，不能合并成“验证结果可缓存”。 |
+| 未实施 | SMTP transport/连接池复用；当前依赖未启用 pool，仅移动构造并不证明 SMTP 连接复用。独立 resource-server 本地 replay 全表扫描也未改；NazoAuth 主服务使用外部 replay store，不能将此成本归因主服务基准。 |
+
+## 六、最小验证、CI 与剩余边界
+
+本阶段只做静态推演、交叉复核和下列定向验证，没有重新安装数据库、开展长时 soak 或重跑全量容量矩阵。测试计数只用于描述执行范围，不能折算成性能提升，也不与历史 CI 测试数混用。
+
+| 验证范围 | 已取得的证据 |
+| --- | --- |
+| 密钥/FAPI | F03 密钥快照 2、应用缓存 3；F13 verifier 过滤目标 40；F12 JAR 4、OAEP 互操作 1 通过。 |
+| VC | 撤销快照 17、generation 公共材料 2、OID4VC 应用过滤目标 69、OID4VCI service contract 8 通过；覆盖 malformed/stale/unknown/revoked、holder 与 disclosure 负向案例。 |
+| 调度/目录/宿主 | CIBA delivery/host replacement 6+3、宿主调度 5；目录 cache 解码 3、宿主目录 18；未知密码 provider 1；Federation 12；HTTP metadata 1 通过。 |
+| 授权/退出 | logout service 9、token management 4、core DPoP 24 通过。 |
+| PostgreSQL | `auth_repositories`、`identity_repositories`、`oidc_logout`、`openid4vc`、`query_counts`、`scim_pagination` 已 `--no-run` 编译通过；新增 logout 客户端边界断言后也重新编译了该目标。没有可用的真实 PG 服务，本地没有执行 SQL/锁/回滚/索引计划断言。 |
+| Valkey | `ciba_device_contract`、`tenant_directory_cache_contract`、`tenant_namespace_contract` 已 `--no-run` 编译通过。真实 Lua、lease/TTL 和目录缓存集成断言尚未本地执行。 |
+| 静态质量 | `80d78cc` 的受影响 11 个包通过 all-targets/all-features Clippy `-D warnings`；格式、静态兼容/迁移契约、持久层依赖隔离、crypto boundary、perf results layout 检查通过。没有添加 lint 豁免。 |
+| 原始 CI Failed | 已定位两处授权回归测试中的 strict Clippy 错误，并以 `ebdf632` 修复；相应本地 Clippy 检查完成。此事实不等于后续全部提交的远端 CI 已通过。 |
+
+复核还修正了两处新增测试质量问题（`80d78cc`）：格式与 type-complexity；原测试断言不变。查询该提交的远端工作流时，7 个均仍为 queued，不能声明远端 CI 全绿。后续文档提交将再次触发工作流，PR 评论记录每次 checkpoint 的实际验证范围。F07 的精确总数成本、F15 的计划选择、F18 的安全更新契约，以及上表尚未实施的小项仍有明确边界。**当前结论是已完成多项原则性修复并取得有限定向验证，不是所有候选均已关闭，也不是已经测得项目整体性能收益。**
+
+构建过程中一次因可重建缓存耗尽磁盘而失败；按包清理 Cargo 缓存后重跑有效目标通过。一次未启用 jose feature 的过滤命令运行了 0 项，随后以正确 feature 执行 OAEP 互操作 1 项通过，0 项未计作验证。上述环境/命令修正没有改变生产安全语义。
