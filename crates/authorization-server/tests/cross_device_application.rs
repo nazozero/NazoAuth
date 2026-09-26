@@ -101,7 +101,10 @@ impl CibaStateStorePort for Ports {
 }
 impl SecurityAudit for Ports {
     fn ensure_storage(&self) -> AuditFuture<'_> {
-        self.record_call("audit_preflight");
+        panic!("required intent owns the writer check; the static probe must be skipped")
+    }
+    fn ensure_transactional_ready(&self) -> AuditFuture<'_> {
+        self.record_call("audit_dynamic_readiness");
         Box::pin(async {
             if matches!(self.failure, AuditFailure::Preflight) {
                 anyhow::bail!("audit storage unavailable");
@@ -364,7 +367,7 @@ fn ciba_decision_persists_audit_intent_before_state_transition_and_result_audit(
             ports.calls(),
             [
                 "load",
-                "audit_preflight",
+                "audit_dynamic_readiness",
                 "audit_intent",
                 "load",
                 "decide",
@@ -398,9 +401,9 @@ fn ciba_decision_audit_failure_never_mutates_request_state() {
             assert_eq!(fields(&error).error, "server_error");
             assert_eq!(ports.state.lock().unwrap().status, CibaStatus::Pending);
             let expected = if matches!(failure, AuditFailure::Preflight) {
-                vec!["load", "audit_preflight"]
+                vec!["load", "audit_dynamic_readiness"]
             } else {
-                vec!["load", "audit_preflight", "audit_intent"]
+                vec!["load", "audit_dynamic_readiness", "audit_intent"]
             };
             assert_eq!(ports.calls(), expected);
         }
@@ -420,7 +423,7 @@ fn ciba_decision_binds_expected_user_to_current_session() {
         assert_eq!(ports.state.lock().unwrap().status, CibaStatus::Pending);
         assert_eq!(
             ports.calls(),
-            ["load", "audit_preflight", "audit_intent", "load"]
+            ["load", "audit_dynamic_readiness", "audit_intent", "load"]
         );
         assert_eq!(
             ports.intents.lock().unwrap()[0]["expected_user_id"],

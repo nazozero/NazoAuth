@@ -179,7 +179,10 @@ impl RequestRateLimitPort for Ports {
 }
 impl SecurityAudit for Ports {
     fn ensure_storage(&self) -> AuditFuture<'_> {
-        self.record("audit_preflight");
+        panic!("required intent owns the writer check; the static probe must be skipped")
+    }
+    fn ensure_transactional_ready(&self) -> AuditFuture<'_> {
+        self.record("audit_dynamic_readiness");
         Box::pin(async {
             if self.fail(Failure::AuditPreflight) {
                 anyhow::bail!("audit unavailable");

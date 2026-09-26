@@ -15,10 +15,19 @@ implements their storage. A structured log line alone is not a durable receipt.
 | External anchor worker | Exports only committed ledger events through the durable outbox. Receiver acceptance, retry ordering, freshness, and remaining trust limits are specified in [audit anchoring](audit-anchor.md). |
 
 `ensure_audit_storage` checks writer availability and required privileges before
-high-impact work. Required anchor mode also checks exporter health. Where the
-mutation and ledger do not share a transaction, the caller records a required
-`*_intent` before changing state and emits an outcome afterward. An intent
-proves admission to an attempt; it does not prove the mutation committed.
+high-impact work. Required anchor mode also checks exporter health. A path whose
+required append commits before the business mutation, or in the same transaction,
+may use `ensure_transactional_ready`: it retains the dynamic exporter-health gate
+and lets the append itself check writer capability. Authorization decisions,
+Device decisions, and CIBA creation/decisions use this path; a readiness or
+required-intent append failure prevents the business mutation. Fresh token
+issuance without earlier authorization-code consumption or Native SSO persistence
+also uses it for no-refresh, normal rotation, and `PreserveExisting` policies.
+Other issuance shapes retain the full storage preflight.
+
+Where the mutation and ledger do not share a transaction, the caller records a
+required `*_intent` before changing state and emits an outcome afterward. An
+intent proves admission to an attempt; it does not prove the mutation committed.
 
 ## Structured HTTP/application events
 
