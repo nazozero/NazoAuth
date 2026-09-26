@@ -29,6 +29,9 @@
 //! nothing accumulates for a sweeper to reclaim and no local archive copy
 //! exists — the receiver is the sole authoritative audit history.
 
+use std::sync::Arc;
+
+use chrono::{DateTime, Utc};
 use diesel::{QueryableByName, sql_query, sql_types};
 use diesel_async::RunQueryDsl;
 use nazo_identity::ports::RepositoryError;
@@ -47,6 +50,51 @@ const ORPHAN_CONTRACT_GRACE_SECONDS: i64 = 3600;
 #[derive(Clone)]
 pub struct SecurityStateMaintenanceRepository {
     pool: DbPool,
+    contract_cursor: Arc<tokio::sync::Mutex<Option<ContractSweepCursor>>>,
+    grant_cursor: Arc<tokio::sync::Mutex<Option<GrantSweepCursor>>>,
+}
+
+// Cursors only schedule a bounded pass; PostgreSQL remains the authority for
+// expiry and references. Clones share progress, and restart simply rescans.
+#[derive(Clone)]
+struct ContractSweepCursor {
+    cutoff: DateTime<Utc>,
+    created_at: DateTime<Utc>,
+    tenant_id: uuid::Uuid,
+    contract_blake3: Vec<u8>,
+}
+
+#[derive(QueryableByName)]
+struct ContractSweepRow {
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    cutoff: DateTime<Utc>,
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    created_at: DateTime<Utc>,
+    #[diesel(sql_type = sql_types::Uuid)]
+    tenant_id: uuid::Uuid,
+    #[diesel(sql_type = sql_types::Binary)]
+    contract_blake3: Vec<u8>,
+    #[diesel(sql_type = sql_types::Bool)]
+    locked: bool,
+}
+
+#[derive(Clone)]
+struct GrantSweepCursor {
+    cutoff: DateTime<Utc>,
+    expires_at: DateTime<Utc>,
+    token_id: uuid::Uuid,
+}
+
+#[derive(QueryableByName)]
+struct GrantSweepRow {
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    cutoff: DateTime<Utc>,
+    #[diesel(sql_type = sql_types::Timestamptz)]
+    expires_at: DateTime<Utc>,
+    #[diesel(sql_type = sql_types::Uuid)]
+    token_id: uuid::Uuid,
+    #[diesel(sql_type = sql_types::Bool)]
+    locked: bool,
 }
 
 #[derive(QueryableByName)]
@@ -99,7 +147,11 @@ struct CredentialCleanupCounts {
 impl SecurityStateMaintenanceRepository {
     #[must_use]
     pub fn new(pool: DbPool) -> Self {
-        Self { pool }
+        Self {
+            pool,
+            contract_cursor: Arc::new(tokio::sync::Mutex::new(None)),
+            grant_cursor: Arc::new(tokio::sync::Mutex::new(None)),
+        }
     }
 
     async fn generic_cleanup(&self) -> Result<GenericCleanupCounts, RepositoryError> {
@@ -236,33 +288,96 @@ impl SecurityStateMaintenanceRepository {
     /// transaction, so a committed-but-unreferenced contract is either a
     /// rolled-back remnant or a retired family's residue — both collectible.
     async fn delete_orphan_refresh_contracts(&self) -> Result<(u64, bool), RepositoryError> {
+        // Wait for the process-local cursor before acquiring a pool lease.
+        let mut cursor = self.contract_cursor.lock().await;
+        let after = cursor.clone();
         let mut connection = self.connection().await?;
-        let deleted = sql_query(
-            "WITH due AS ( \
-                 SELECT c.tenant_id, c.contract_blake3 \
-                 FROM oauth_refresh_contracts AS c \
-                 WHERE c.created_at < CURRENT_TIMESTAMP - make_interval(secs => $2) \
-                   AND NOT EXISTS ( \
-                       SELECT 1 FROM oauth_refresh_families AS f \
-                       WHERE f.tenant_id = c.tenant_id \
-                         AND f.contract_blake3 = c.contract_blake3) \
-                 ORDER BY c.created_at, c.contract_blake3 \
-                 LIMIT $1 FOR UPDATE SKIP LOCKED \
-             ) \
-             DELETE FROM oauth_refresh_contracts AS target \
-             USING due \
-             WHERE target.tenant_id = due.tenant_id \
-               AND target.contract_blake3 = due.contract_blake3",
-        )
-        .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
-        .bind::<sql_types::Double, _>(ORPHAN_CONTRACT_GRACE_SECONDS as f64)
-        .execute(&mut connection)
-        .await
-        .map_err(map_error)?;
-        Ok((deleted as u64, deleted as i64 >= CLEANUP_BATCH_LIMIT))
+        let (deleted, saturated, next) = connection
+            .build_transaction()
+            .read_committed()
+            .run::<_, diesel::result::Error, _>(async |connection| {
+                let page = sql_query(
+                    "WITH scan AS MATERIALIZED ( \
+                         SELECT tenant_id, contract_blake3, created_at, \
+                                COALESCE($3, CURRENT_TIMESTAMP - make_interval(secs => $2)) AS cutoff \
+                         FROM oauth_refresh_contracts \
+                         WHERE created_at < COALESCE($3, CURRENT_TIMESTAMP - make_interval(secs => $2)) \
+                           AND (created_at, tenant_id, contract_blake3) > \
+                               (COALESCE($4, '-infinity'::timestamptz), $5, $6) \
+                         ORDER BY created_at, tenant_id, contract_blake3 LIMIT $1 \
+                     ) \
+                     SELECT scan.*, COALESCE(held.locked, FALSE) AS locked FROM scan \
+                     LEFT JOIN LATERAL ( \
+                         SELECT TRUE AS locked FROM oauth_refresh_contracts AS target \
+                         WHERE target.tenant_id = scan.tenant_id \
+                           AND target.contract_blake3 = scan.contract_blake3 \
+                           AND NOT EXISTS (SELECT 1 FROM oauth_refresh_families AS family \
+                                           WHERE family.tenant_id = target.tenant_id \
+                                             AND family.contract_blake3 = target.contract_blake3) \
+                         FOR UPDATE OF target SKIP LOCKED \
+                     ) AS held ON TRUE \
+                     ORDER BY scan.created_at, scan.tenant_id, scan.contract_blake3",
+                )
+                .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
+                .bind::<sql_types::Double, _>(ORPHAN_CONTRACT_GRACE_SECONDS as f64)
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.as_ref().map(|row| row.cutoff))
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.as_ref().map(|row| row.created_at))
+                .bind::<sql_types::Uuid, _>(after.as_ref().map_or(uuid::Uuid::nil(), |row| row.tenant_id))
+                .bind::<sql_types::Binary, _>(after.as_ref().map_or(&[][..], |row| row.contract_blake3.as_slice()))
+                .load::<ContractSweepRow>(connection)
+                .await?;
+                let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;
+                // Advance past referenced and locked parents too. A fixed
+                // cutoff closes this pass even as new contracts mature; a
+                // short final page resets it so skipped parents are revisited.
+                let next = if saturated {
+                    page.last().map(|row| ContractSweepCursor {
+                        cutoff: row.cutoff,
+                        created_at: row.created_at,
+                        tenant_id: row.tenant_id,
+                        contract_blake3: row.contract_blake3.clone(),
+                    })
+                } else {
+                    None
+                };
+                let locked = page.into_iter().filter(|row| row.locked).collect::<Vec<_>>();
+                if locked.is_empty() {
+                    return Ok((0, saturated, next));
+                }
+                let tenant_ids = locked.iter().map(|row| row.tenant_id).collect::<Vec<_>>();
+                let digests = locked.iter().map(|row| row.contract_blake3.clone()).collect::<Vec<_>>();
+                // The held UPDATE locks conflict with both the writer's
+                // contract-ensure KEY SHARE and family FK checks. This fresh
+                // READ COMMITTED snapshot also sees references that committed
+                // while the first statement was acquiring those locks.
+                let deleted = sql_query(
+                    "DELETE FROM oauth_refresh_contracts AS target \
+                     USING UNNEST($1::uuid[], $2::bytea[]) AS due(tenant_id, contract_blake3) \
+                     WHERE target.tenant_id = due.tenant_id \
+                       AND target.contract_blake3 = due.contract_blake3 \
+                       AND target.created_at < CURRENT_TIMESTAMP - make_interval(secs => $3) \
+                       AND NOT EXISTS (SELECT 1 FROM oauth_refresh_families AS family \
+                                       WHERE family.tenant_id = target.tenant_id \
+                                         AND family.contract_blake3 = target.contract_blake3)",
+                )
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&tenant_ids)
+                .bind::<sql_types::Array<sql_types::Binary>, _>(&digests)
+                .bind::<sql_types::Double, _>(ORPHAN_CONTRACT_GRACE_SECONDS as f64)
+                .execute(connection)
+                .await?;
+                Ok((deleted as u64, saturated, next))
+            })
+            .await
+            .map_err(map_error)?;
+        // Failure or cancellation cannot advance progress past rolled-back
+        // work. Losing this in-memory cursor only repeats a safe scan.
+        *cursor = next;
+        Ok((deleted, saturated))
     }
 
     async fn credential_cleanup(&self) -> Result<CredentialCleanupCounts, RepositoryError> {
+        let mut cursor = self.grant_cursor.lock().await;
+        let after = cursor.clone();
         let mut connection = self.connection().await?;
         // One statement handles the independent expiry categories. This also
         // avoids five empty round trips on deployments that have never enabled
@@ -331,33 +446,52 @@ impl SecurityStateMaintenanceRepository {
         .into_iter()
         .any(|count| count >= CLEANUP_BATCH_LIMIT as u64);
         if !expired.grants_due {
+            *cursor = None;
             return Ok(counts);
         }
-        #[derive(QueryableByName)]
-        struct GrantId {
-            #[diesel(sql_type = sql_types::Uuid)]
-            token_id: uuid::Uuid,
-        }
-        let (grants, saturated) = connection
+        let (grants, saturated, next) = connection
             .build_transaction()
             .read_committed()
-            .run::<(u64, bool), diesel::result::Error, _>(async |connection| {
-                let candidates = sql_query(
-                    "SELECT grant_row.token_id FROM openid4vci_access_grants AS grant_row \
-                     WHERE grant_row.expires_at <= CURRENT_TIMESTAMP - make_interval(secs => $2) \
-                       AND NOT EXISTS (SELECT 1 FROM openid4vci_deferred_transactions AS child WHERE child.token_id = grant_row.token_id) \
-                       AND NOT EXISTS (SELECT 1 FROM openid4vci_notifications AS child WHERE child.token_id = grant_row.token_id) \
-                       AND NOT EXISTS (SELECT 1 FROM openid4vci_issuance_responses AS child WHERE child.token_id = grant_row.token_id) \
-                     ORDER BY grant_row.expires_at, grant_row.token_id \
-                     LIMIT $1 FOR UPDATE OF grant_row SKIP LOCKED",
+            .run::<_, diesel::result::Error, _>(async |connection| {
+                let page = sql_query(
+                    "WITH scan AS MATERIALIZED ( \
+                         SELECT token_id, expires_at, \
+                                COALESCE($3, CURRENT_TIMESTAMP - make_interval(secs => $2)) AS cutoff \
+                         FROM openid4vci_access_grants \
+                         WHERE expires_at <= COALESCE($3, CURRENT_TIMESTAMP - make_interval(secs => $2)) \
+                           AND (expires_at, token_id) > (COALESCE($4, '-infinity'::timestamptz), $5) \
+                         ORDER BY expires_at, token_id LIMIT $1 \
+                     ) \
+                     SELECT scan.*, COALESCE(held.locked, FALSE) AS locked FROM scan \
+                     LEFT JOIN LATERAL ( \
+                         SELECT TRUE AS locked FROM openid4vci_access_grants AS target \
+                         WHERE target.token_id = scan.token_id \
+                           AND NOT EXISTS (SELECT 1 FROM openid4vci_deferred_transactions AS child WHERE child.token_id = target.token_id) \
+                           AND NOT EXISTS (SELECT 1 FROM openid4vci_notifications AS child WHERE child.token_id = target.token_id) \
+                           AND NOT EXISTS (SELECT 1 FROM openid4vci_issuance_responses AS child WHERE child.token_id = target.token_id) \
+                         FOR UPDATE OF target SKIP LOCKED \
+                     ) AS held ON TRUE \
+                     ORDER BY scan.expires_at, scan.token_id",
                 )
                 .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
                 .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
-                .load::<GrantId>(connection)
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.as_ref().map(|row| row.cutoff))
+                .bind::<sql_types::Nullable<sql_types::Timestamptz>, _>(after.as_ref().map(|row| row.expires_at))
+                .bind::<sql_types::Uuid, _>(after.as_ref().map_or(uuid::Uuid::nil(), |row| row.token_id))
+                .load::<GrantSweepRow>(connection)
                 .await?;
-                let saturated = candidates.len() as i64 >= CLEANUP_BATCH_LIMIT;
-                if candidates.is_empty() { return Ok((0, false)); }
-                let ids = candidates.into_iter().map(|row| row.token_id).collect::<Vec<_>>();
+                let saturated = page.len() as i64 >= CLEANUP_BATCH_LIMIT;
+                let next = if saturated {
+                    page.last().map(|row| GrantSweepCursor {
+                        cutoff: row.cutoff,
+                        expires_at: row.expires_at,
+                        token_id: row.token_id,
+                    })
+                } else {
+                    None
+                };
+                let ids = page.into_iter().filter(|row| row.locked).map(|row| row.token_id).collect::<Vec<_>>();
+                if ids.is_empty() { return Ok((0, saturated, next)); }
                 // FK inserts take KEY SHARE on the parent, so the held UPDATE
                 // locks exclude new children. This separate READ COMMITTED
                 // statement sees any child committed while candidates were
@@ -374,10 +508,11 @@ impl SecurityStateMaintenanceRepository {
                 .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
                 .execute(connection)
                 .await?;
-                Ok((deleted as u64, saturated))
+                Ok((deleted as u64, saturated, next))
             })
             .await
             .map_err(map_error)?;
+        *cursor = next;
         counts.grants = grants;
         counts.saturated |= saturated;
         Ok(counts)

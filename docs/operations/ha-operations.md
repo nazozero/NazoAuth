@@ -105,11 +105,18 @@ instances from double-processing the same rows.
   rows, elapsed time and the next delay; individual batch logs are debug-only.
 - Each batch is bounded: at most 256 expired-state candidates per category and
   256 refresh-token families per pass. Backlog drains across successive
-  batches, not in one unbounded transaction. These bounds limit selected and
-  deleted rows, not all rows scanned: orphan-contract and credential-grant
-  anti-joins can inspect many referenced parents before finding eligible rows.
-  Validate their query plans and batch duration against the deployed data
-  distribution; the scheduling budget cannot interrupt an in-flight query.
+  batches, not in one unbounded transaction. Orphan contracts and credential
+  grants scan at most 256 age-eligible parent keys before checking references
+  and taking `FOR UPDATE SKIP LOCKED`; a separate READ COMMITTED delete rechecks
+  references while those parent locks are held. Composite age/key indexes
+  support forward progress without scanning live grants or sorting an entire
+  expiry bucket. Process-local cursors advance past referenced and locked keys,
+  keep a fixed cutoff for each pass, and wrap after its final page. Clones share
+  progress; restart only repeats a scan. Cursor updates follow successful commit.
+  Saturation includes a full scan page even when it deleted nothing, so later
+  orphans cannot be starved by referenced parents at the head. These bounds do
+  not bound physical I/O from dead tuples or replace normal PostgreSQL vacuum;
+  the scheduling budget cannot interrupt an in-flight query.
 - Refresh-token leaf reclaim takes the same family advisory lock used by
   refresh-token writers (`pg_try_advisory_xact_lock`). A family whose lock is
   held by an active writer is skipped for that pass, and lock-free rows are
