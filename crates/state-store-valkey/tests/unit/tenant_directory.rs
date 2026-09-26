@@ -44,3 +44,31 @@ fn decoder_rejects_unknown_fields_and_noncanonical_revision() {
         crate::ErrorKind::CorruptData
     );
 }
+
+#[test]
+fn equal_wire_reuses_validated_snapshot_but_changed_wire_is_revalidated() {
+    let encoded = encode_snapshot(&snapshot(7)).unwrap();
+    let mut validated = None;
+    let first = decode_cached_snapshot(encoded.clone(), &mut validated).unwrap();
+    let second = decode_cached_snapshot(encoded.clone(), &mut validated).unwrap();
+    assert!(Arc::ptr_eq(&first, &second));
+
+    let invalid = encoded.replace("https://tenant.example.com", "not-an-issuer");
+    assert_eq!(
+        decode_cached_snapshot(invalid, &mut validated)
+            .unwrap_err()
+            .kind(),
+        crate::ErrorKind::CorruptData
+    );
+    let unchanged = decode_cached_snapshot(encoded, &mut validated).unwrap();
+    assert!(Arc::ptr_eq(&first, &unchanged));
+
+    let replacement = TenantDirectorySnapshot {
+        revision: 7,
+        tenants: vec![],
+    };
+    let replaced =
+        decode_cached_snapshot(encode_snapshot(&replacement).unwrap(), &mut validated).unwrap();
+    assert_eq!(*replaced, replacement);
+    assert!(!Arc::ptr_eq(&first, &replaced));
+}

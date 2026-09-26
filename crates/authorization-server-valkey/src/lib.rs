@@ -176,7 +176,9 @@ struct ValkeyTenantDirectoryCache {
 }
 
 impl TenantDirectoryCachePort for ValkeyTenantDirectoryCache {
-    fn load(&self) -> TransientStateFuture<'_, Option<nazo_identity::TenantDirectorySnapshot>> {
+    fn load(
+        &self,
+    ) -> TransientStateFuture<'_, Option<Arc<nazo_identity::TenantDirectorySnapshot>>> {
         Box::pin(async move { self.cache.load().await.map_err(map_transient_state_error) })
     }
 
