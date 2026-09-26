@@ -737,9 +737,10 @@ async fn retired_contract_is_reclaimed_after_grace_without_touching_live_referen
         None,
         chrono::Utc::now() - chrono::Duration::minutes(10),
     );
-    // Only the oldest family owns this immutable contract; the other ten
-    // families share a different one, exercising both orphan and live cases.
-    token.authentication_context.nonce = Some("retired-contract".to_owned());
+    // Give the oldest family an earlier authentication time, which is part
+    // of the persisted contract. Nonce/id_token_sid are cleared by persisted()
+    // and therefore cannot distinguish the orphan from the ten live families.
+    token.authentication_context.auth_time -= 60;
     assert_eq!(
         issuance_repository
             .commit_token_issuance(issuance(token))
