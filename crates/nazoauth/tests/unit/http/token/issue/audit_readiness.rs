@@ -165,6 +165,75 @@ async fn refresh_issuance_keeps_the_full_storage_preflight() {
     );
 }
 
+/// Normal refresh rotation is commit-owned Fresh issuance: the family lock,
+/// spent-proof bookkeeping, and `token_issued` event all live in the final
+/// commit transaction, so the static per-request probe is elided. The
+/// fixture has no real family row, so the commit rejects the rotation after
+/// the gate — the gate choice is what this test measures.
+#[actix_web::test]
+async fn refresh_rotation_uses_transactional_readiness() {
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
+    let mut client = client_with_grants(&["authorization_code", "refresh_token"]);
+    client.client_id = format!("audit-ready-rotate-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+    issue.include_refresh = true;
+    issue.refresh_token_policy = RefreshTokenPolicy::Rotate {
+        family_id: Uuid::now_v7(),
+        rotated_from_id: Uuid::now_v7(),
+    };
+    let audit = CountingSecurityAudit::default();
+
+    let response = issue_counted_fresh(&state, &client, issue, &audit).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        audit.counts(),
+        (0, 1),
+        "normal refresh rotation must take the transactional gate"
+    );
+}
+
+/// Lost-response rotation recovery is deliberately kept conservative: the
+/// commit still proves its direct-predecessor edge transactionally, but the
+/// path keeps the full storage preflight.
+#[actix_web::test]
+async fn lost_response_rotation_keeps_the_full_storage_preflight() {
+    let Some(state) = issue_state_with_live_database() else {
+        return;
+    };
+    let mut client = client_with_grants(&["authorization_code", "refresh_token"]);
+    client.client_id = format!("audit-ready-lost-{}", Uuid::now_v7());
+    insert_issue_client(&state, &client).await;
+    let mut issue = token_issue_without_openid();
+    issue.user_id = None;
+    issue.subject = client.client_id.clone();
+    issue.scopes = vec!["accounts".to_owned(), "offline_access".to_owned()];
+    issue.include_refresh = true;
+    issue.refresh_token_policy = RefreshTokenPolicy::RotateLostResponse {
+        family_id: Uuid::now_v7(),
+        original_id: Uuid::now_v7(),
+        original_blake3: [0xAB; 32],
+        successor_id: Uuid::now_v7(),
+        retry_started_at: Utc::now(),
+    };
+    let audit = CountingSecurityAudit::default();
+
+    let response = issue_counted_fresh(&state, &client, issue, &audit).await;
+
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(
+        audit.counts(),
+        (1, 0),
+        "lost-response rotation must keep ensure_storage"
+    );
+}
+
 /// Authorization-code (single-use) redemption consumes grant state and is
 /// not commit-owned Fresh issuance.
 #[actix_web::test]
