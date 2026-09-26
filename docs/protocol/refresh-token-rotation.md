@@ -40,6 +40,20 @@ the RFC 7638 thumbprint of the Client Instance public key in the attestation
 the binding is retained by every rotated successor and by lost-response
 recovery.
 
+## Family Capacity and Contract Reclamation
+
+Fresh user-bound authorizations retain at most ten active refresh families per
+`(tenant_id, user_id, client_id)`. The issuing transaction retires the oldest
+family, cascades its spent proofs and records the Required retirement audit.
+Rotation does not consume another family slot.
+
+Contract payloads are immutable and may be shared by surviving families.
+Capacity retirement leaves their reclamation to the maintenance worker:
+a contract is removed only when no family references it and its creation is
+at least one hour old. The `(tenant_id, contract_blake3)` family index supports
+that reference check. Removing an expired contract remains coordinated with
+the existing contract ensure/retry and foreign-key protection.
+
 ## Tests
 
 Unit coverage:

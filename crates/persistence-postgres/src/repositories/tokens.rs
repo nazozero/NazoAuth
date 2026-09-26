@@ -788,15 +788,13 @@ async fn retire_families_over_cap(
     struct LiveFamilyId {
         #[diesel(sql_type = sql_types::Uuid)]
         token_family_id: Uuid,
-        #[diesel(sql_type = sql_types::Binary)]
-        contract_blake3: Vec<u8>,
     }
     // Keep the nine newest live families so the pending insert lands at the
     // cap; everything older is retired. Ordered access makes the set
     // deterministic under identical timestamps.
     let victims = sql_query(
         "WITH ranked AS ( \
-             SELECT token_family_id, contract_blake3, \
+             SELECT token_family_id, \
                     row_number() OVER ( \
                         ORDER BY current_issued_at ASC, token_family_id ASC) AS rn, \
                     count(*) OVER () AS total \
@@ -804,7 +802,7 @@ async fn retire_families_over_cap(
              WHERE tenant_id = $1 AND user_id = $2 AND client_id = $3 \
                AND revoked_at IS NULL AND reuse_detected_at IS NULL \
                AND current_expires_at > CURRENT_TIMESTAMP \
-         ) SELECT token_family_id, contract_blake3 FROM ranked WHERE rn <= total - $4",
+         ) SELECT token_family_id FROM ranked WHERE rn <= total - $4",
     )
     .bind::<sql_types::Uuid, _>(tenant_id)
     .bind::<sql_types::Uuid, _>(user_id)
@@ -827,21 +825,7 @@ async fn retire_families_over_cap(
         if removed == 0 {
             continue;
         }
-        // Drop the contract when no surviving family references it.
-        diesel::delete(
-            oauth_refresh_contracts::table
-                .filter(oauth_refresh_contracts::tenant_id.eq(tenant_id))
-                .filter(oauth_refresh_contracts::contract_blake3.eq(&victim.contract_blake3))
-                .filter(diesel::dsl::not(diesel::dsl::exists(
-                    oauth_refresh_families::table
-                        .filter(oauth_refresh_families::tenant_id.eq(tenant_id))
-                        .filter(
-                            oauth_refresh_families::contract_blake3.eq(&victim.contract_blake3),
-                        ),
-                ))),
-        )
-        .execute(connection)
-        .await?;
+        // Unreferenced contracts are reclaimed by maintenance after its grace.
         append_fresh_security_audit_on_connection(
             connection,
             &SecurityAuditEvent {
