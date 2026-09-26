@@ -18,6 +18,7 @@ the current release or an unmeasured deployment.
 | [measurement-accounting.md](measurement-accounting.md) | Successful-operation accounting, prepare-failure classification and observer clock validity. |
 | [issuance-maintenance-evidence.md](issuance-maintenance-evidence.md) | Required mature-window expiry-age evidence for single-instance phase-3 acceptance. |
 | [PR #222 performance audit](reports/special/2026-09-26-pr222-performance-audit.md) | Source-linked bottleneck review, implementation checkpoints and validation limits; not a new capacity baseline. |
+| [PR #222 targeted validation](reports/special/2026-09-27-pr222-validation.md) | CNB regression fixes, real PostgreSQL/Valkey checks and narrow query/lock diagnostics; not a capacity acceptance. |
 
 Historical capacity reports under `reports/` retain their generation date
 and are regression/root-cause evidence only — none describes the current
