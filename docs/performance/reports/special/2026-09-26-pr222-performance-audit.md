@@ -1,6 +1,6 @@
 # PR #222 性能证据与最短请求链路审查
 
-审查日期：2026-09-26。目标为 [PR #222](https://github.com/nazozero/NazoAuth/pull/222) 的 `perf/db-hotpath-minimal-0c70d746` 分支；接手基线为 `da2899161a1e4a9989a3641cd0d1f94ebb59f68f`，本轮生产代码修改逐项提交至 `2af5e69ae1106bfc2f15b3c52eaa8e0381d0e961`，测试修正与完整 CI 验证提交为 `3444de03a5b823d7e1530a7772bed285b626db96`。历史证据按原 source/binary 归属，验证状态见第 9 节。本报告复核仓库保存的历史原始数据、测量脚本和源码，不是当前候选版本的新压测报告，不追溯修改历史报告的 PASS / FAIL / INVALID。未合并、未部署。
+审查日期：2026-09-26。目标为 [PR #222](https://github.com/nazozero/NazoAuth/pull/222) 的 `perf/db-hotpath-minimal-0c70d746` 分支；接手基线为 `da2899161a1e4a9989a3641cd0d1f94ebb59f68f`。第一阶段生产修改至 `2af5e69ae1106bfc2f15b3c52eaa8e0381d0e961`，测试修正与完整 CI 验证提交为 `3444de03a5b823d7e1530a7772bed285b626db96`，对应第 8、9 节。第二阶段按用户要求采用深度静态审查、原则性修复与最小测试，逐项 checkpoint 和验证边界见第 10 节；旧 CI 结果不代表这些后续修改通过完整集成。本报告复核历史原始数据、测量脚本和源码，不是当前候选的新压测报告，不追溯修改历史 PASS / FAIL / INVALID。未合并、未部署。
 
 **主要结论：优先处理数据库请求链路中的重复写入与无效回收，以及后台回收能力不足；同时修正验收口径，否则会把完成迭代当成成功吞吐，把短时容量当成长时稳定性。** 最强证据是历史 formal 运行的百万级过期 issuance 积压、refresh contract 删除 98.10% 无效，以及受控 pool 24/32 实验中的排队变化。SCIM 共享鉴权写入有源码机制与扩容失效现象支持，但没有足够的锁采样把全部损失定量归因于某一行锁。累计 SQL 时间不能换算为端到端延迟损失，更不能据此宣布当前代码已提升某个百分比。
 
@@ -12,7 +12,7 @@
 | Pool 24/32 A/B | [完整归档](../business-pool-24-vs-32/evidence/evidence.tar.gz)、[manifest](../business-pool-24-vs-32/manifest.json) | 同一历史二进制、指定 mixed 负载下，24 个连接构成额外排队限制 | 任意部署都应使用 32；当前候选严格 3000/s 稳态通过 |
 | SCIM / Device / CIBA 梯度 | [原始 ladder 目录](../2026-09-18-capacity-endurance/evidence/ladder/)、[来源说明](../2026-09-18-capacity-endurance/report.md) | 特定历史版本、共享主机上的并发扩展形态 | 当前代码绝对容量、特定 SQL 锁占全部损失的比例 |
 | Audit batching A/B | [verdict](../audit-batch-persistence/evidence/audit-batch-verdict.json)、[二进制 manifest](../audit-batch-persistence/evidence/audit-batch-manifest.json) | 已保留汇总中的队列丢弃消失、实际批处理与吞吐非退化 | 从仓库独立重建全部原始四点时序；普遍吞吐提升幅度 |
-| 当前修改 | Git 提交及本报告第 8 节所列源码 | 冗余链路已在代码中移除，测量契约已修改 | 未在相同数据库环境重新运行前的实际收益 |
+| 当前修改 | Git 提交及本报告第 8、10 节所列源码 | 冗余链路已在代码中移除，测量契约已修改 | 未在相同数据库环境重新运行前的实际收益 |
 
 Formal 的 [manifest](../formal3000-30m-harness-repair/manifest.json) 记录 `base_sha=1e758edcc9faa8ea07085d1fce11b82eef3bb891`、`harness_sha=ebbfa79727063d69895125f0d7c9e1e150da8cf8`，应用镜像 `hr2-app:a2dd5f13`，镜像/运行进程/预期 binary SHA256 均为 `046c7d40861b63bdb8b75303d36b3b89d7ad0ad1cd50d86d7cec253020bba60a`。但 [provenance.json](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/provenance.json) 的 `source_sha` 为 `unknown`。二进制三方一致不等于证明该二进制来自当前源码。应保留这个可追溯性限制。
 
@@ -200,7 +200,7 @@ CIBA 原始 [ladder](../2026-09-18-capacity-endurance/evidence/ladder/) 中 `cap
 
 仓库仅保留这组 verdict、manifest、budget 等汇总证据，缺少四个完整 point 的原始时序，独立重算能力弱于 pool 归档。该问题属于此前已测的审计队列修复，不应在 PR #222 里重复计为新的收益。
 
-## 8. 本轮已实现内容与未完成验收
+## 8. 第一阶段实现与当时的待验项
 
 下表区分已经实现的源码变更与仍待完成的验收；审查期间的工作区修改已在交付前提交，不把“代码已经修改”写成“性能已经改善”。
 
@@ -236,13 +236,15 @@ CIBA 原始 [ladder](../2026-09-18-capacity-endurance/evidence/ladder/) 中 `cap
 
 旧 observer 在 HTTP 请求前取得主机 `ts`，随后查询 PG 状态，可能出现 `state_change` 晚于 `ts`，负值再被 clamp 为 0。历史 [windowed-idle-stats.json](../business-pool-residency/evidence/windowed-idle-stats.json) 第 39–49 行保留过负的 idle age（如 idle p50 -1.294 ms、idle-in-transaction p50 -1.354 ms）。因此旧“98.7% 小于 1 ms”等微秒级解释不可靠。当前改用同查询数据库 `pg_ts - state_change`，负值/缺字段视为无效。修复后 pool 与 PG 仍是非原子采样；250 ms observer 也不是每次请求的精确 trace，`time_weighted_share` 只是按所见 age 加权，不是累计连接驻留。
 
-### 8.2 P2 待验风险：限制删除行数不等于限制扫描量
+### 8.2 第一阶段发现：限制删除行数不等于限制扫描量
+
+本节描述 `2af5e69` 的实现；父对象分页和 family 批量处理已在第二阶段完成代码修复，见第 10 节。以下历史证据及实际执行计划的待验边界仍保留。
 
 [PG maintenance](../../../../crates/persistence-postgres/src/repositories/security_state.rs) 的 orphan contract 与 OID4VC grant 候选查询，`NOT EXISTS` 在 `LIMIT` 之前。若有大量已到期、但仍被有效 child 引用的父对象，数据库可能每个 catch-up batch 都检查大量不合格父行，最后只返回少量或零个候选。新增 FK/reference 索引缩短每次 inner probe，却不保证 outer scan 有界。
 
 因此“每类候选或直接删除具有 256 行预算”（refresh family 删除仍可级联最多 64 个 spent proofs/family）和“一个父对象带 300 个 child 的 fixture 不发生级联删除”只分别证明输出/删除量与安全语义，不证明每批扫描耗时。还需要在真实 PG 上以这类分布查看执行计划、实际扫描行数、buffer 与每批耗时，并观察批次长期占用连接时的请求 P99。30 秒调度预算不会中断已经执行的 SQL。此项暂列待验风险，不能在没有计划证据时宣布已经发生新的性能回归，也不能因有 LIMIT 就宣称成本受控。
 
-另一个需要区分场景的维护成本是 refresh family 到期清理：每个候选先尝试获取与 writer 相同的 advisory lock，成功后再 DELETE；256 个候选全部可锁时，循环最多执行 512 条串行 SQL，另加候选查询和事务控制。各维护类别串行执行，因此大量 family 同时到期时，可能延长下一批 issuance 回收的间隔。但它**不能解释本次历史 formal 的百万 issuance 积压**：[PGSS post](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/pgss-post.json) 中候选 SELECT（queryid `460789033816743987`）共 11,709 次、返回 0 行、累计仅 153.995 ms；[ledger post](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/ledger-post.txt) 的 `refresh_families_expired=0`。本轮保留该锁与锁下 expiry 复核；只有在到期 family 密集场景测出每批耗时及 issuance 年龄影响后，才评估安全的批量锁/删除方式，不能直接去锁或按 512 次推算当前损失。
+另一个需要区分场景的维护成本是 refresh family 到期清理：当时每个候选先尝试获取与 writer 相同的 advisory lock，成功后再 DELETE；256 个候选全部可锁时，循环最多执行 512 条串行 SQL，另加候选查询和事务控制。各维护类别串行执行，因此大量 family 同时到期时，可能延长下一批 issuance 回收的间隔。但它**不能解释本次历史 formal 的百万 issuance 积压**：[PGSS post](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/pgss-post.json) 中候选 SELECT（queryid `460789033816743987`）共 11,709 次、返回 0 行、累计仅 153.995 ms；[ledger post](../formal3000-30m-harness-repair/evidence/formal3000-30m-r2/F3000-30M-R2/ledger-post.txt) 的 `refresh_families_expired=0`。第二阶段在保留相同 advisory key 与取锁后 expiry 复核的前提下合并 SQL；实际收益仍需到期 family 密集场景验证，不能按 512 次推算历史损失。
 
 ### 8.3 真实迁移与并发结果，以及部署边界
 
@@ -250,9 +252,9 @@ CIBA 原始 [ladder](../2026-09-18-capacity-endurance/evidence/ladder/) 中 `cap
 
 新增迁移已经在 PostgreSQL 18 CI 中实际执行通过。并发 child INSERT 与两个 sweeper 跳过已锁对象的测试，以及每类回收上限、子对象引用和时钟偏差保护测试，也已在 `3444de0` 的真实数据库中执行通过，详见第 9 节。这些结果证明所覆盖 fixture 的正确性；不替代生产规模索引构建成本、执行计划或清理吞吐验证。
 
-### 8.4 尚未测量的场景候选，以及应保留的链路
+### 8.4 第一阶段场景候选，以及应保留的链路
 
-下列内容按 `2af5e69` 源码核对，尚未实施。它们有额外工作机制，但缺少在目标部署中的成本占比，不能与上述百万积压等实证同级，也不能全部归因到普通 token 请求。
+下表保留按 `2af5e69` 核对的候选机制，不描述最新实现。前四项已在第二阶段处理，默认日志已完成保留判断，见第 10 节。它们缺少在目标部署中的成本占比，不能与上述百万积压实证同级，也不能全部归因到普通 token 请求。
 
 | 场景 | 当前机制 | 下一条必要证据与安全边界 |
 | --- | --- | --- |
@@ -264,7 +266,7 @@ CIBA 原始 [ladder](../2026-09-18-capacity-endurance/evidence/ladder/) 中 `cap
 
 复核后不把 Device/CIBA 一概写成“重复预读”：当前 CIBA 已将 `initial` 传给 poll，正常路径不再预读，CAS conflict 才重取；Device 正常 poll 读取一次，冲突才重试，Approved 结果仍由最终 issuance fence 防重。JARM 确有 client 重读，但两次之间已提交业务状态，需先定义 client 停用或策略变更应在哪个时点生效，不能直接复用旧 snapshot。refresh 的 scope/family 锁和必要 client/user 共享锁也不能仅因耗时就删除；它们维护并发授权与撤销语义。
 
-## 9. 最短验收路径与当前验证状态
+## 9. 第一阶段验收证据（截至 `3444de0`）
 
 最短路径是先闭合已知证据缺口，再验证直接移除的链路，不重新铺开所有历史容量矩阵：
 
@@ -312,4 +314,49 @@ CI 已发现并修复两项测试问题：`0af1aaf` 将未声明的 Tokio 测试
 
 全工作区仍有仓库既有的 3 项 ignored：下载当前官方 UI 的集成、需要控制器提供 wire fixture 的契约，以及标记为必须显式 `--ignored` 执行的 FAPI2 PAR 用例。本轮未执行这三项，不将其计为通过；也没有通过新增 ignore 或弱化断言来取得绿色 CI。本地 407 项 Rust 回归是 CI 覆盖的子集，不与上述 3,124 相加成独立测试数。
 
-本轮已经把性能问题从泛泛的“WAL 慢、连接少、SQL 多”收敛到可检验的工作：必要安全写入保留在提交边界，重复鉴权写入和高度无效的同步物理回收离开请求链路；后台容量必须覆盖成熟到期负载；验收只统计成功业务且覆盖真实保留期。代码与测量修复已完成本地及真实服务 CI 验证，后续需要恢复 CNB 同环境 A/B、成熟回收和执行计划证据，不能从旧报告推算当前收益。
+第一阶段把性能问题收敛到可检验的工作：必要安全写入保留在提交边界，重复鉴权写入和高度无效的同步物理回收离开请求链路；后台容量必须覆盖成熟到期负载；验收只统计成功业务且覆盖真实保留期。上述本地及真实服务 CI 证据仅归属所列提交，不能从旧报告推算后续候选的收益。
+
+## 10. 第二阶段：静态审查、原则性修复与最小验证
+
+本阶段从 `98e8943` 接续，生产修改至 `d16b71fa1e43e8a89748fdd689cc6710ef73959f`。按用户最新要求，先完成五类已发现问题的深度静态审查和代码修复，再做相关小范围测试；不重新搭建远程运行环境、不等待全量 CI、不追加容量矩阵。每项修复均已独立提交并更新同一个 PR。判断原则是减少重复读取、解析、解密、网络往返和有积压时的无效等待，同时保留协议校验、安全审计和并发状态的最终裁决者。
+
+### 10.1 已完成的 checkpoint
+
+| 提交 | 原有成本及场景 | 修复后的路径与边界 |
+| --- | --- | --- |
+| `1bd4deb` | 大量 refresh family 同时到期时，256 个候选最多产生 513 条业务 SQL，另有事务控制 | 候选读取、批量 try-lock、批量 DELETE，最多 3 条业务 SQL。使用与 writer 相同的 advisory key；跳过锁冲突，删除使用取锁后的独立 READ COMMITTED 快照并重查 expiry。没有去掉锁，也不将这一场景解释成历史 issuance 积压的原因。 |
+| `7fafa2a` | tenant × replica × module 的一秒 reconciliation 中，稳定 module 仍逐项借连接读 desired / instance | 每轮一个 tenant + instance 的 LEFT JOIN 快照，只跳过已稳定且依赖和 admission 条件成立的 module。周期仍为一秒，不跨轮缓存授权状态；实际迁移继续走原有新鲜读取、revision CAS、审计和 drain。没有引入额外通知系统。 |
+| `16d3223` | 大 PAR / consent 原子消费时，在 Valkey Lua 内重复解析两份 JSON、递归比较和排序 | 初读同时返回解析对象与原始 wire version，CAS 直接比较原值；删除 Lua JSON 解析器及深比较。wire 格式、TTL 和租户 key 不变；旧 JSON 的字段顺序不影响初读，读取后的任何值变化都拒绝且不删除替换值。这减少服务器端工作，不减少原有一次 CAS 往返，也不消除 payload 传输成本。 |
+| `a2c402e` | 外层无 client_id 的 encrypted JAR 分支曾先解密识别 client，再正式解密 | `/authorize` 按 RFC 9101 §5、RFC 9126 §4 要求先检查原始外层 client_id，删除不符合规范的探测分支。PAR 按 RFC 9126 §3 保留合法外层省略场景；解密结果仅在同一请求内以私有类型传递，正式校验复用一次解密。注册 alg/enc、签名、claims、client 绑定和 replay 校验全部保留。 |
+| `d105f44` | orphan contract / grant 的 NOT EXISTS 位于 LIMIT 之前，大量引用父对象可能被每批重复检查 | 复合索引 keyset 先选最多 256 个父键，再检查引用及 SKIP LOCKED；按末个扫描键推进，包含被引用/锁定对象。每轮固定截止时间，末页回绕，事务成功后更新进程内游标，clone 共享进度。持有父锁后的第二条 READ COMMITTED DELETE 再查 expiry 和引用。重启只重扫，不改变数据权限。 |
+| `e807539` | CIBA ping / logout 满批后仍固定等待 500 ms / 5 s，分别为 8 / 20 条一批 | 满批完成后 yield 并继续领取；空批、部分批和存储错误仍按原间隔等待。保持并发度 8、claim lease、attempt fencing、过期、终态和已持久化重试时间。继续处理下一批不等于提前重试刚失败的同一通知。 |
+| `305d9d5` | 通知发送的显式 DNS 查询发生在原 HTTP timeout 之前，可长期占用发送任务 | 将完整发送过程纳入原有 5 秒 / 3 秒截止时间，超时沿用既有失败重试。保留全地址 SSRF 检查、固定解析地址、TLS 校验、禁止代理及重定向。该截止时间约束应用等待，不承诺强制取消操作系统中的 DNS 工作，也不包含存储 finish 阶段。 |
+| `d16b71f` | 同链路审查发现 prompt=none 初读 PAR 后仍用无条件 GETDEL，可能消费后来替换的值 | 原始 version 只沿当前请求内部传递；Required audit 成功后 CAS，成功才写 code。替换/过期/其他消费者先消费均拒绝；删除 take_par 和重复应用转发层，不把 version 加入 ConsentPayload、协议或日志。初读坏 JSON 仍为 server_error，初读后值改变为 invalid_request_uri。 |
+
+JAR 规范来源：[RFC 9101 §5–6](https://www.rfc-editor.org/rfc/rfc9101.html#section-5)、[RFC 9126 §3–4](https://www.rfc-editor.org/rfc/rfc9126.html#section-3)；实现约束已同步到 [规范矩阵](../../../protocol/rfc-compliance-matrix.md)。修复不能为了省解密或读取而信任未验证声明，也不能把 required audit、一次性消费或撤销条件移出正确的提交边界。
+
+父对象扫描使用显式事务与新鲜删除快照，不能宣称空负载下每条链路的往返都减少；新增成本用于保持取锁与引用复核的正确顺序。256 限制的是可见父候选及引用检查数，不是索引页、MVCC 死元组访问或级联子行数的物理上限。新增 [270005 迁移](../../../../migrations/20260927000500_maintenance_parent_scan_indexes/up.sql) 使用普通 CREATE INDEX，实际部署仍需安排相应锁等待和建索引窗口；本阶段没有部署迁移。
+
+### 10.2 已完成判断、保留不变的链路
+
+默认 HTTP info 事件不仅是诊断文本，还承载请求计数和延迟直方图；全局过滤器同时影响相关观测层。直接降到 debug 或删除事件会改变监控契约，且历史基准使用 warn，不能据此归因该基准的损失。本阶段保留日志和观测行为；需要比较真实输出端成本时再做单变量测量，不增加异步日志框架或缓存来处理未经测量的问题。
+
+Device / CIBA 正常轮询已复用初读状态，CAS 冲突后的重读有并发意义；JARM 跨业务提交后的 client 重读，以及 refresh 的 scope/family、client/user 必要锁继续保留。当前五类候选已完成实现判断，不再标为“已发现、尚未决定如何处理”；未完成的是实际数据库执行和性能收益的验证。
+
+### 10.3 本阶段实际验证结果
+
+| 范围 | 执行及结果 | 证明范围 |
+| --- | --- | --- |
+| Runtime modules | `cargo test --locked -p nazo-runtime-modules`：58 PASS | 稳定态跳过、依赖/admission、迁移状态机与 revision 竞争 |
+| Core authorization | `cargo test --locked -p nazo-auth --lib authorization_service`：15 PASS | preview/CAS、替换拒绝及已有授权不变量；prompt=none 接口修改后已重跑 |
+| Authorization application | `cargo test --locked -p nazo-oauth-server --test authorization_application`：11 PASS | PAR、client 校验与 Required audit 顺序；最终接口修改后已重跑 |
+| JAR / authorization 单元 | `cargo test --locked -p nazo-oauth-server --lib authorization::`：57 PASS | 实际 RSA-OAEP/A256GCM + EdDSA fixture 的成功、注册算法不匹配、签名/claims/client/replay 拒绝路径 |
+| Prompt=none 单元 | `cargo test --locked -p nazo-oauth-server --lib authorization::request::prompt_none`：9 PASS | 含新增替换后不发 code、两个竞争请求只能写一个 code；其中 7 项与上一行重叠，不重复累计 |
+| Host 定向测试 | `cargo test --locked -p nazoauth --lib -- jobs::ciba_ping::tests jobs::backchannel_logout::tests adapters::ciba_ping_sender::tests adapters::backchannel_logout_sender::tests authorization_request_reports_request_uri_storage_failure_without_redirect authorization_get_requires_client_id_before_database_lookup`：24 PASS | 8 项调度、14 项本地发送策略、2 项无外部服务授权入口；实际执行 0.33 秒，不含编译时间 |
+| PostgreSQL 测试构建 | `cargo test --locked -p nazo-postgres --test security_state_maintenance --test runtime_modules --no-run`：PASS | 新 SQL 调用、绑定类型及测试源码可编译；没有执行 SQL 或数据库锁竞争 |
+| Valkey 契约测试构建 | `cargo test --locked -p nazo-valkey --test authorization_contract --no-run`：PASS | 原值 CAS、替换/损坏值和存储 API 契约测试可编译；没有实际执行 Lua |
+| 静态门禁 | `cargo fmt --check`、`git diff --check`、`verify_static_contracts.py --check`、`check_persistence_dependency_graph.py`、`check_crypto_boundary.py`：PASS | 格式、迁移校验和、分层依赖及密码学边界 |
+
+本地验证曾遇到两个依赖包的旧 rlib / 新 metadata 不一致；只清理这两个包后恢复编译。新测试的规范化参数断言和 Atomic load 方法歧义也已修正，未放松协议拒绝、单次消费或保留期断言。没有通过跳过失败断言或把缺服务测试的 early-return 当作成功来得出上述结果。
+
+真实 PostgreSQL / Valkey 执行、270005 迁移运行、父扫描 EXPLAIN、远程 A/B 和成熟 soak 均未在本阶段完成。已有数据库回归涵盖分页越过引用父对象、clone 进度、回绕重访、锁冲突及 FK 并发；恢复可用服务后可只执行这些相关目标。按用户要求，本次不等待这些服务，不发起全量运行；代码层面的五类处理与最小可执行验证已完成，不宣称新的吞吐提升百分比或全项目性能验收通过。
