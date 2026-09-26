@@ -1,0 +1,1 @@
+DROP INDEX ix_users_tenant_created_at_id;
