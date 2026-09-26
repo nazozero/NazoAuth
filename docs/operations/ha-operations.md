@@ -95,22 +95,39 @@ the host. There is no leader election: each instance runs its own worker, and
 per-family advisory locks plus `FOR UPDATE SKIP LOCKED` keep concurrent
 instances from double-processing the same rows.
 
-- The first batch runs immediately at startup; each subsequent batch starts 60
-  seconds after the previous batch completes.
+- The first batch runs immediately at startup. A saturated batch immediately
+  schedules another, yielding between batches, until no category is saturated
+  or the cycle reaches its 30-second scheduling budget. There is no batch-count
+  cap. A drained cycle waits 60 seconds; a budget-limited cycle waits its own
+  elapsed duration before continuing, keeping sustained catch-up at no more
+  than half of wall time. An in-flight bounded batch finishes normally even if
+  it crosses the budget. Cycle logs report stop reason, batches, rows, issuance
+  rows, elapsed time and the next delay; individual batch logs are debug-only.
 - Each batch is bounded: at most 256 expired-state candidates per category and
   256 refresh-token families per pass. Backlog drains across successive
-  batches, not in one unbounded transaction.
+  batches, not in one unbounded transaction. These bounds limit selected and
+  deleted rows, not all rows scanned: orphan-contract and credential-grant
+  anti-joins can inspect many referenced parents before finding eligible rows.
+  Validate their query plans and batch duration against the deployed data
+  distribution; the scheduling budget cannot interrupt an in-flight query.
 - Refresh-token leaf reclaim takes the same family advisory lock used by
   refresh-token writers (`pg_try_advisory_xact_lock`). A family whose lock is
   held by an active writer is skipped for that pass, and lock-free rows are
   rechecked inside the reclaim transaction. Families with an active successor
   are never reclaimed.
-- Inside still-live families, members that are expired and past the
-  lost-response window (60 s after revocation) are rewritten to a terminal
-  stub in bounded batches: payload columns are tombstoned, the chain edge is
-  unlinked, and only the hash-to-family mapping is retained so reuse
-  detection and family compromise keep working until the family itself is
-  reclaimed.
+- Expired spent proofs are removed at their own expiry. Rotation also limits
+  proofs to 64 per family; family deletion cascades any remaining proofs.
+  The current family row remains authoritative until its current token expires.
+- Capacity retirement removes the family and its proofs in the issuance
+  transaction, retaining its Required audit. Orphan contract deletion runs only
+  in maintenance after a one-hour creation grace and an indexed reference check.
+- OpenID4VCI offers, nonces, deferred credentials, notifications and response
+  replays are reclaimed at their own expiry. Credential access grants remain
+  until expiry plus the access-token clock-skew allowance (60 seconds), because
+  they still resolve access-token ownership in that interval. Each child table
+  is reclaimed in its own bounded batch; a grant is deleted only when no child
+  remains, preventing unbounded cascading deletes. Credential authorization
+  datasets and audit history are not expiration-sweep categories.
 - A failed batch logs a warning; the worker waits for the next interval
   instead of retrying in a tight loop. The worker is aborted and awaited
   during shutdown.

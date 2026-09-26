@@ -1821,3 +1821,294 @@ async fn acked_audit_rows_leave_the_ledger_and_unacked_rows_stay() {
         "the retired archive permit must not authorize deletes"
     );
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn credential_state_cleanup_is_bounded_and_preserves_live_ownership() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut connection) = fixture(&database_url).await;
+    let tag = Uuid::now_v7().simple().to_string();
+    let expired_parent = Uuid::now_v7();
+    let skew_parent = Uuid::now_v7();
+    let live_parent = Uuid::now_v7();
+    for (id, age) in [
+        (expired_parent, -172800_i64),
+        (skew_parent, -1),
+        (live_parent, 3600),
+    ] {
+        sql_query(
+            "INSERT INTO openid4vci_access_grants \
+             (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+             VALUES ($1,$1::text,$2,$3,$4,'[\"pid\"]','[]',CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP + make_interval(secs => $5))",
+        )
+        .bind::<SqlUuid, _>(id)
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .bind::<Text, _>(&fixture.client_public_id)
+        .bind::<sql_types::Double, _>(age as f64)
+        .execute(&mut connection).await.unwrap();
+    }
+    // A single expired parent has more than one batch of each child. It must
+    // survive the first round rather than cascading the remaining children.
+    for (table, columns, values) in [
+        (
+            "openid4vci_deferred_transactions",
+            "id,transaction_hash,token_id,credential_configuration_id,credential_format,holder_bindings,payload_ciphertext,ready_at,created_at,expires_at",
+            "gen_random_uuid(),$2 || '-' || g,$1,'pid','dc+sd-jwt','[{}]','ciphertext'::bytea,CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '2 days'",
+        ),
+        (
+            "openid4vci_notifications",
+            "notification_id,token_id,issued_at,expires_at",
+            "$2 || '-' || g,$1,CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '2 days'",
+        ),
+        (
+            "openid4vci_issuance_responses",
+            "issuance_id,token_id,request_digest,body_ciphertext,encoding,status,created_at,expires_at",
+            "gen_random_uuid(),$1,md5($2 || '-' || g) || md5($2 || '-' || g),'ciphertext'::bytea,'json',200,CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '2 days'",
+        ),
+    ] {
+        sql_query(format!(
+            "INSERT INTO {table} ({columns}) SELECT {values} FROM generate_series(1, 300) AS g"
+        ))
+        .bind::<SqlUuid, _>(expired_parent)
+        .bind::<Text, _>(&tag)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    }
+    sql_query(
+        "INSERT INTO openid4vci_offers \
+         (id,tenant_id,subject_id,credential_configuration_ids,grants_ciphertext,created_at,expires_at) \
+         SELECT gen_random_uuid(),$1,$2,'[\"pid\"]','ciphertext'::bytea,CURRENT_TIMESTAMP - interval '3 days', \
+                CASE WHEN g = 301 THEN CURRENT_TIMESTAMP + interval '1 hour' ELSE CURRENT_TIMESTAMP - interval '2 days' END \
+         FROM generate_series(1,301) AS g",
+    ).bind::<SqlUuid, _>(SYSTEM_TENANT).bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection).await.unwrap();
+    sql_query(
+        "INSERT INTO openid4vci_nonces (nonce_hash,created_at,expires_at) \
+         SELECT $1 || '-' || g,CURRENT_TIMESTAMP - interval '3 days', \
+                CASE WHEN g = 301 THEN CURRENT_TIMESTAMP + interval '1 hour' ELSE CURRENT_TIMESTAMP - interval '2 days' END \
+         FROM generate_series(1,301) AS g",
+    ).bind::<Text, _>(&tag).execute(&mut connection).await.unwrap();
+    // The grant category must itself be bounded, independent of its children.
+    sql_query(
+        "INSERT INTO openid4vci_access_grants \
+         (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+         SELECT gen_random_uuid(),$4 || '-' || g,$1,$2,$3,'[\"pid\"]','[]',CURRENT_TIMESTAMP - interval '3 days',CURRENT_TIMESTAMP - interval '2 days' \
+         FROM generate_series(1,300) AS g",
+    ).bind::<SqlUuid, _>(SYSTEM_TENANT).bind::<SqlUuid, _>(fixture.user_id)
+        .bind::<Text, _>(&fixture.client_public_id).bind::<Text, _>(&tag)
+        .execute(&mut connection).await.unwrap();
+
+    let maintenance =
+        SecurityStateMaintenanceRepository::new(create_pool(&database_url, 2).unwrap());
+    for round in 0..8 {
+        let result = maintenance.cleanup_batch().await.unwrap();
+        for count in [
+            result.credential_offers,
+            result.credential_nonces,
+            result.credential_access_grants,
+            result.deferred_credentials,
+            result.credential_notifications,
+            result.credential_responses,
+        ] {
+            assert!(
+                count <= 256,
+                "every credential lifecycle must keep its own batch bound"
+            );
+        }
+        if round == 0 {
+            assert!(result.saturated);
+            let parent = sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1")
+                .bind::<SqlUuid, _>(expired_parent).get_result::<CountRow>(&mut connection).await.unwrap();
+            assert_eq!(
+                parent.count, 1,
+                "an expired parent cannot cascade children beyond their budget"
+            );
+            for table in [
+                "openid4vci_deferred_transactions",
+                "openid4vci_notifications",
+                "openid4vci_issuance_responses",
+            ] {
+                let children = sql_query(format!(
+                    "SELECT COUNT(*)::bigint AS count FROM {table} WHERE token_id = $1"
+                ))
+                .bind::<SqlUuid, _>(expired_parent)
+                .get_result::<CountRow>(&mut connection)
+                .await
+                .unwrap();
+                assert!(
+                    children.count >= 44,
+                    "{table} must retain children beyond the batch limit"
+                );
+            }
+        }
+        let due = sql_query(
+            "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants \
+             WHERE subject_id = $1 AND expires_at < CURRENT_TIMESTAMP - interval '1 day'",
+        )
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .get_result::<CountRow>(&mut connection)
+        .await
+        .unwrap();
+        if due.count == 0 {
+            break;
+        }
+        assert_ne!(
+            round, 7,
+            "the expired parent and independent grants must drain"
+        );
+    }
+    let retained = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = ANY($1)",
+    )
+    .bind::<sql_types::Array<SqlUuid>, _>(vec![skew_parent, live_parent])
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(
+        retained.count, 2,
+        "live and recently expired ownership must survive verifier clock skew"
+    );
+    let offers =
+        sql_query("SELECT COUNT(*)::bigint AS count FROM openid4vci_offers WHERE subject_id = $1")
+            .bind::<SqlUuid, _>(fixture.user_id)
+            .get_result::<CountRow>(&mut connection)
+            .await
+            .unwrap();
+    assert_eq!(offers.count, 1);
+    let nonces = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_nonces WHERE nonce_hash LIKE $1",
+    )
+    .bind::<Text, _>(format!("{tag}-%"))
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(nonces.count, 1);
+    sql_query("DELETE FROM openid4vci_nonces WHERE nonce_hash LIKE $1")
+        .bind::<Text, _>(format!("{tag}-%"))
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut connection)
+        .await
+        .unwrap();
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_credential_sweepers_skip_an_uncommitted_child_parent() {
+    let Some(database_url) = database_url() else {
+        return;
+    };
+    let _permit = CLEANUP_BATCH_GATE.acquire().await.unwrap();
+    let (fixture, mut writer) = fixture(&database_url).await;
+    let parent_id = Uuid::now_v7();
+    let control_id = Uuid::now_v7();
+    let notification_id = Uuid::now_v7().to_string();
+    for id in [parent_id, control_id] {
+        sql_query(
+            "INSERT INTO openid4vci_access_grants \
+             (token_id,token_hash,tenant_id,subject_id,client_id,credential_configuration_ids,credential_identifiers,created_at,expires_at) \
+             VALUES ($1,$1::text,$2,$3,$4,'[\"pid\"]','[]',TIMESTAMPTZ '1899-01-01 UTC',TIMESTAMPTZ '1900-01-01 UTC')",
+        )
+        .bind::<SqlUuid, _>(id)
+        .bind::<SqlUuid, _>(SYSTEM_TENANT)
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .bind::<Text, _>(&fixture.client_public_id)
+        .execute(&mut writer)
+        .await
+        .unwrap();
+    }
+    writer.batch_execute("BEGIN").await.unwrap();
+    sql_query(
+        "INSERT INTO openid4vci_notifications (notification_id,token_id,expires_at) \
+         VALUES ($1,$2,CURRENT_TIMESTAMP + interval '1 hour')",
+    )
+    .bind::<Text, _>(&notification_id)
+    .bind::<SqlUuid, _>(parent_id)
+    .execute(&mut writer)
+    .await
+    .unwrap();
+    // INSERT has completed its immediate FK check and therefore holds KEY
+    // SHARE on the expired parent. The child is still invisible to sweepers.
+    // No timer or task scheduling assumption establishes this interleaving.
+    let pool = create_pool(&database_url, 3).unwrap();
+    let mut observer = get_conn(&pool).await.unwrap();
+    let invisible = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_notifications WHERE notification_id = $1",
+    )
+    .bind::<Text, _>(&notification_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(
+        invisible.count, 0,
+        "the racing child must still be uncommitted"
+    );
+    let first = SecurityStateMaintenanceRepository::new(pool.clone());
+    let second = SecurityStateMaintenanceRepository::new(pool.clone());
+    let (first_result, second_result) =
+        tokio::time::timeout(std::time::Duration::from_secs(5), async {
+            tokio::join!(first.cleanup_batch(), second.cleanup_batch())
+        })
+        .await
+        .expect("both sweepers must skip the FK-locked parent without waiting for its writer");
+    for result in [first_result.unwrap(), second_result.unwrap()] {
+        assert!(result.credential_access_grants <= 256);
+        assert!(result.credential_notifications <= 256);
+    }
+    let retained = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+    )
+    .bind::<SqlUuid, _>(parent_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(retained.count, 1);
+    let reclaimed = sql_query(
+        "SELECT COUNT(*)::bigint AS count FROM openid4vci_access_grants WHERE token_id = $1",
+    )
+    .bind::<SqlUuid, _>(control_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(
+        reclaimed.count, 0,
+        "the unlocked expired control proves reclaim still makes progress"
+    );
+    writer.batch_execute("COMMIT").await.unwrap();
+    first.cleanup_batch().await.unwrap();
+    let retained_child = sql_query(
+        "SELECT COUNT(*)::bigint AS count \
+         FROM openid4vci_notifications AS child \
+         JOIN openid4vci_access_grants AS parent ON parent.token_id = child.token_id \
+         WHERE child.notification_id = $1 AND child.expires_at > CURRENT_TIMESTAMP",
+    )
+    .bind::<Text, _>(&notification_id)
+    .get_result::<CountRow>(&mut observer)
+    .await
+    .unwrap();
+    assert_eq!(
+        retained_child.count, 1,
+        "a committed future child and its parent must not be cascaded away"
+    );
+    sql_query("DELETE FROM users WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.user_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+    sql_query("DELETE FROM oauth_clients WHERE id = $1")
+        .bind::<SqlUuid, _>(fixture.client_id)
+        .execute(&mut observer)
+        .await
+        .unwrap();
+}
