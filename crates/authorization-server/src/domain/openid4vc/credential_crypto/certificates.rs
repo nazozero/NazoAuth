@@ -132,15 +132,13 @@ impl Openid4vcCredentialCrypto {
             }
             mode => self
                 .keyset
-                .openid4vc_public_material()
-                .and_then(|material| material.revocation_snapshot.clone())
-                .map(Arc::new)
+                .openid4vc_revocation_snapshot()
                 .map(|snapshot| match mode {
                     crate::policy::Openid4vcRevocationPolicy::Optional => {
-                        CertificateRevocationPolicy::optional(snapshot)
+                        CertificateRevocationPolicy::optional_prepared(snapshot)
                     }
                     crate::policy::Openid4vcRevocationPolicy::Required => {
-                        CertificateRevocationPolicy::required(snapshot)
+                        CertificateRevocationPolicy::required_prepared(snapshot)
                     }
                     crate::policy::Openid4vcRevocationPolicy::Disabled => unreachable!(),
                 })

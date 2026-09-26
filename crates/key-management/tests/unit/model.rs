@@ -210,7 +210,10 @@ fn captured_jwks_uses_the_same_retirement_boundary_as_its_cache_deadline() {
         request_object_encryption_jwk: serde_json::Value::Null,
     };
     let before = deadline - chrono::Duration::nanoseconds(1);
-    assert_eq!(snapshot.next_verification_retirement(before), Some(deadline));
+    assert_eq!(
+        snapshot.next_verification_retirement(before),
+        Some(deadline)
+    );
     assert_eq!(snapshot.jwks_at(before)["keys"][0]["kid"], "retiring");
     for now in [deadline, deadline + chrono::Duration::seconds(1)] {
         assert_eq!(snapshot.next_verification_retirement(now), None);
@@ -648,4 +651,45 @@ fn prepared_verification_accepts_only_absent_or_verify_only_key_ops() {
         jwk["key_ops"] = key_ops;
         assert!(super::prepared_verification(&jwk, algorithm).is_none());
     }
+}
+
+#[test]
+fn openid4vc_public_projection_and_revocation_index_are_shared_per_generation() {
+    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::ES256);
+    let kid = manager.snapshot().active_kid.clone();
+    let mut material = public_openid4vc_material(kid);
+    let now = chrono::Utc::now();
+    material.revocation_snapshot = Some(nazo_digital_credentials::CertificateRevocationSnapshot {
+        version: nazo_digital_credentials::CertificateRevocationSnapshot::VERSION,
+        this_update: now - chrono::Duration::minutes(1),
+        next_update: now + chrono::Duration::minutes(1),
+        entries: Vec::new(),
+    });
+    manager.set_openid4vc_material_for_test(material.clone());
+    let first = manager.openid4vc_public_material().unwrap();
+    let first_revocation = manager.openid4vc_revocation_snapshot().unwrap();
+    assert!(std::sync::Arc::ptr_eq(
+        &first,
+        &manager.openid4vc_public_material().unwrap()
+    ));
+    assert!(std::sync::Arc::ptr_eq(
+        &first_revocation,
+        &manager.openid4vc_revocation_snapshot().unwrap()
+    ));
+    material.revocation_snapshot.as_mut().unwrap().next_update += chrono::Duration::minutes(1);
+    manager.set_openid4vc_material_for_test(material);
+    let second = manager.openid4vc_public_material().unwrap();
+    assert!(!std::sync::Arc::ptr_eq(&first, &second));
+    assert!(!std::sync::Arc::ptr_eq(
+        &first_revocation,
+        &manager.openid4vc_revocation_snapshot().unwrap()
+    ));
+    assert_eq!(
+        first.revocation_snapshot.as_ref().unwrap().next_update,
+        now + chrono::Duration::minutes(1)
+    );
+    assert_eq!(
+        second.revocation_snapshot.as_ref().unwrap().next_update,
+        now + chrono::Duration::minutes(2)
+    );
 }
