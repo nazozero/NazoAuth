@@ -39,7 +39,7 @@
     "gcc": "12.2.0",
     "gcc_static_link_probe": "PASS"
   },
-  "blocking_reason": "The cgroup mounts expose only the current CNB leaf. The parent cgroup limits required to derive the minimum effective CPU budget and memory availability are not visible or available through a CNB metadata command in the SSH environment. The taskbook requires BLOCKED when required quota evidence is missing.",
+  "blocking_reason": "The cgroup mounts expose only the current CNB leaf. The parent cgroup limits required to derive the minimum effective CPU budget and memory availability are not visible or available through a CNB metadata command in the SSH environment. The host affinity mask also includes CPU IDs 161-191 while the kernel reports only 0-63 online; the actual load-image affinity has not yet been measured. The taskbook requires BLOCKED when required quota evidence is missing.",
   "not_run": [
     "A/B/H image builds",
     "Docker load-image affinity plan",
@@ -57,6 +57,29 @@
     "cnb_static_link_probe": "/tmp/pr222-acceptance-kMhxkB/evidence/static-link-probe.log",
     "cnb_static_link_probe_sha256": "87b8ede575fa3470e7d5a8b06ef8f7d429f166ef607cfe5f4f8003398ec0d90b",
     "retrieval_archive": "D:\\self\\artifacts\\pr222-acceptance-20260927-kmhxkb\\resource-evidence.zip",
-    "retrieval_archive_sha256": "aa34e83640b7f7eb344daaad9d84dd32cf464b2d1b40f9cb1034f137a142bdbf"
+    "retrieval_archive_sha256": "4ddd84a2bacf251ea746e79342f28a25f64a42bf648dd69081afd5924f395d5b",
+    "cnb_config_and_topology": "/tmp/pr222-acceptance-kMhxkB/evidence/cnb-config-and-topology.txt",
+    "cnb_config_and_topology_sha256": "3d547527d7f8ab2576cf80b6361eed7ba54cd73c6c1e89478333c30b407ebcf7"
+  },
+  "cpu_topology": {
+    "model": "AMD EPYC 9K65 192-Core Processor",
+    "system_logical_cpus": 192,
+    "system_physical_cores": 96,
+    "threads_per_core": 2,
+    "online_cpu_list": "0-63",
+    "scheduler_affinity_mask": "24-56,161-191",
+    "scheduler_affinity_mask_count": 64,
+    "online_affinity_list": "24-56",
+    "online_affinity_count": 33,
+    "online_physical_core_groups": 17,
+    "core_groups_with_two_allowed_online_smt_threads": 16,
+    "core_groups_with_one_allowed_online_smt_thread": 1,
+    "docker_load_image_affinity_obtained": false
+  },
+  "cnb_workspace_config": {
+    "runner_cpus": 64,
+    "file": ".cnb.yml",
+    "file_sha256": "c25e926e26930bd7734548d07901bf136fc0a00773333c2a2f2f1e227765177a",
+    "agrees_with_visible_leaf_cpu_quota": true
   }
 }
