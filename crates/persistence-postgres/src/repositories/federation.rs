@@ -177,6 +177,8 @@ impl FederationRepository {
                 Ok(user)
             })
             .await;
+        // Conflict recovery borrows from this pool again after the transaction has ended.
+        drop(connection);
         match result {
             Ok(row) => row
                 .try_into()
