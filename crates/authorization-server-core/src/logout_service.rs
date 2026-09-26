@@ -1,4 +1,9 @@
-use std::{future::Future, pin::Pin, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    future::Future,
+    pin::Pin,
+    sync::Arc,
+};
 
 use chrono::{DateTime, Duration, Utc};
 use uuid::Uuid;
@@ -109,6 +114,12 @@ pub trait LogoutClientRepositoryPort: Send + Sync {
         tenant_id: Uuid,
         client_id: &'a str,
     ) -> LogoutFuture<'a, Option<RegisteredLogoutClient>>;
+
+    fn by_client_ids<'a>(
+        &'a self,
+        tenant_id: Uuid,
+        client_ids: &'a [&'a str],
+    ) -> LogoutFuture<'a, Vec<RegisteredLogoutClient>>;
 }
 
 pub trait BackchannelLogoutOutboxPort: Send + Sync {
@@ -197,7 +208,11 @@ impl LogoutService {
         }
 
         let mut active_clients = self
-            .logged_in_clients(input.tenant_id, input.session.as_ref())
+            .logged_in_clients(
+                input.tenant_id,
+                input.session.as_ref(),
+                hinted_client.as_ref(),
+            )
             .await?;
         let hinted_client_is_bound = hinted_client.as_ref().is_some_and(|client| {
             hint_matches_current_session
@@ -261,26 +276,44 @@ impl LogoutService {
         &self,
         tenant_id: Uuid,
         session: Option<&LogoutSession>,
+        hinted_client: Option<&RegisteredLogoutClient>,
     ) -> Result<Vec<RegisteredLogoutClient>, LogoutServiceError> {
         let Some(session) = session else {
             return Ok(Vec::new());
         };
-        let mut clients = Vec::with_capacity(session.logged_in_client_ids.len());
-        for client_id in &session.logged_in_client_ids {
-            let client = self
-                .clients
-                .by_client_id(tenant_id, client_id)
+        let mut requested = HashSet::with_capacity(session.logged_in_client_ids.len());
+        let client_ids: Vec<_> = session
+            .logged_in_client_ids
+            .iter()
+            .map(String::as_str)
+            .filter(|client_id| hinted_client.is_none_or(|hint| hint.client_id != *client_id))
+            .filter(|client_id| requested.insert(*client_id))
+            .collect();
+        let mut loaded: HashMap<_, _> = if client_ids.is_empty() {
+            HashMap::new()
+        } else {
+            self.clients
+                .by_client_ids(tenant_id, &client_ids)
                 .await
-                .map_err(|_| LogoutServiceError::ClientUnavailable)?;
-            if let Some(client) = client.filter(|client| client.active)
-                && !clients
-                    .iter()
-                    .any(|candidate: &RegisteredLogoutClient| candidate.id == client.id)
-            {
-                clients.push(client);
-            }
+                .map_err(|_| LogoutServiceError::ClientUnavailable)?
+                .into_iter()
+                .filter(|client| client.active)
+                .map(|client| (client.client_id.clone(), client))
+                .collect()
+        };
+        if let Some(client) = hinted_client {
+            loaded.insert(client.client_id.clone(), client.clone());
         }
-        Ok(clients)
+        // Preserve session order and emit each client once even when the
+        // session contains duplicate entries or the repository returns rows
+        // in a different order. The validated hint needs no second lookup.
+        let mut emitted = HashSet::with_capacity(loaded.len());
+        Ok(session
+            .logged_in_client_ids
+            .iter()
+            .filter_map(|client_id| loaded.remove(client_id))
+            .filter(|client| emitted.insert(client.id))
+            .collect())
     }
 
     fn hint_matches_session(

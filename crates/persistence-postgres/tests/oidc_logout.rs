@@ -3,7 +3,7 @@ use diesel::{
     sql_types::{BigInt, Jsonb, Text, Uuid as SqlUuid},
 };
 use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
-use nazo_auth::IdempotentBackchannelLogoutDelivery;
+use nazo_auth::{IdempotentBackchannelLogoutDelivery, LogoutClientRepositoryPort};
 use nazo_postgres::{AuditRepository, OAuthClientRepository, create_pool};
 use uuid::Uuid;
 
@@ -226,6 +226,37 @@ async fn logout_fanout_is_tenant_scoped_idempotent_and_atomic() {
     assert_eq!(clients.len(), 1);
     assert_eq!(clients[0].id, local_client);
 
+    let active_public_id = format!("logout-client-{suffix}-active");
+    let inactive_public_id = format!("logout-client-{suffix}-inactive");
+    let foreign_public_id = format!("logout-client-{suffix}-foreign");
+    let requested = [
+        active_public_id.as_str(),
+        inactive_public_id.as_str(),
+        active_public_id.as_str(),
+        foreign_public_id.as_str(),
+        "missing-client",
+    ];
+    let batch = OAuthClientRepository::new(pool.clone())
+        .by_client_ids(DEFAULT_TENANT_ID, &requested)
+        .await
+        .expect("logout batch lookup should load only requested clients in this tenant");
+    assert_eq!(batch.len(), 2);
+    assert!(
+        batch
+            .iter()
+            .any(|client| client.id == local_client && client.active)
+    );
+    assert!(
+        batch
+            .iter()
+            .any(|client| client.id == inactive_client && !client.active)
+    );
+    assert!(
+        batch
+            .iter()
+            .all(|client| client.tenant_id == DEFAULT_TENANT_ID)
+    );
+
     let outbox = AuditRepository::new(pool);
     let operation_key = format!("logout-operation-{suffix}");
     let delivery = IdempotentBackchannelLogoutDelivery {
@@ -273,6 +304,23 @@ async fn logout_fanout_is_tenant_scoped_idempotent_and_atomic() {
         stored.logout_token, delivery.logout_token,
         "the first durable logout payload must remain authoritative across retries"
     );
+
+    let mut first_in_batch = delivery.clone();
+    first_in_batch.operation_key = format!("logout-duplicate-batch-{suffix}");
+    let mut repeated_in_batch = first_in_batch.clone();
+    repeated_in_batch.logout_token = "later-token-must-not-replace-first".to_owned();
+    outbox
+        .enqueue_idempotent_backchannel_logout_batch(&[first_in_batch.clone(), repeated_in_batch])
+        .await
+        .expect("duplicates within one fan-out remain idempotent");
+    let stored = sql_query(
+        "SELECT logout_token FROM backchannel_logout_deliveries WHERE operation_key = $1",
+    )
+    .bind::<Text, _>(&first_in_batch.operation_key)
+    .get_result::<LogoutTokenRow>(&mut connection)
+    .await
+    .unwrap();
+    assert_eq!(stored.logout_token, first_in_batch.logout_token);
 
     let mut cross_tenant_client = delivery.clone();
     cross_tenant_client.operation_key = format!("logout-cross-tenant-{suffix}");
