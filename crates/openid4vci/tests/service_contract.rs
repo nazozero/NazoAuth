@@ -590,16 +590,10 @@ async fn batch_issuance_consumes_nonce_once_and_binds_each_credential() {
     let signer = RecordingSigner::default();
     let proofs = FixedProofs(vec![
         ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder-1"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         },
         ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder-2"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         },
     ]);
     let service = CredentialIssuerService::new(
@@ -664,10 +658,7 @@ async fn invalid_holder_binding_remains_a_protocol_error_not_a_generic_signing_f
     let service = CredentialIssuerService::new(
         store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kty":"unsupported"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         InvalidHolderBindingSigner,
@@ -981,10 +972,7 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let claim_rejected_service = CredentialIssuerService::new(
         claim_rejected_store,
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1011,10 +999,7 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let dataset_service = CredentialIssuerService::new(
         dataset_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         ErrorDataset(CredentialIssuanceError::DatasetUnavailable),
         RecordingSigner::default(),
@@ -1040,10 +1025,7 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let signer_service = CredentialIssuerService::new(
         signer_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         ErrorSigner(CredentialTrustError::Unavailable),
@@ -1069,10 +1051,7 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let invalid_configuration_service = CredentialIssuerService::new(
         invalid_configuration_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1105,10 +1084,7 @@ async fn proof_dataset_claim_and_signing_failures_are_classified_and_released() 
     let late_service = CredentialIssuerService::new(
         RecordingStore::default(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1143,10 +1119,7 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
     let immediate_service = CredentialIssuerService::new(
         immediate_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1250,10 +1223,7 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
     let deferred_service = CredentialIssuerService::new(
         deferred_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1290,10 +1260,7 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
     let deferred_response_service = CredentialIssuerService::new(
         deferred_response_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce-2".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1391,10 +1358,7 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
     let rollback_service = CredentialIssuerService::new(
         rollback_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1423,10 +1387,7 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
     let failing_commit_service = CredentialIssuerService::new(
         failing_commit_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1490,10 +1451,7 @@ async fn immediate_and_deferred_commit_variants_preserve_identity_and_rollback()
     let deferred_failure_service = CredentialIssuerService::new(
         deferred_failure_store.clone(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "deferred-failure".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),
@@ -1543,10 +1501,7 @@ async fn doctype_is_used_when_vct_is_absent() {
     let service = CredentialIssuerService::new(
         RecordingStore::default(),
         FixedProofs(vec![ValidatedProof {
-            proof_type: "jwt".to_owned(),
             holder_binding: json!({"jwk":{"kid":"holder"}}),
-            nonce: "nonce".to_owned(),
-            key_attestation: None,
         }]),
         Dataset,
         RecordingSigner::default(),

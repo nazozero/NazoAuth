@@ -254,10 +254,42 @@ fn proof_port_accepts_one_attestation_set_and_returns_each_attested_public_key()
             .expect("the attestation proof should validate");
 
         assert_eq!(validated.len(), 2);
-        assert_eq!(validated[0].proof_type, "attestation");
         assert_eq!(validated[0].holder_binding, json!({"jwk": first_key}));
         assert_eq!(validated[1].holder_binding, json!({"jwk": second_key}));
     })
+}
+
+#[test]
+fn one_attestation_can_expand_beyond_the_proof_array_batch_limit() {
+    futures_executor::block_on(async {
+        let keys = (1..=11)
+            .map(|seed| es256_test_key(seed).0)
+            .collect::<Vec<_>>();
+        let now = Utc::now();
+        let (validator, encoded, metadata) = key_attestation_fixture(json!({
+            "iat": now.timestamp(),
+            "nonce": "expected-nonce",
+            "attested_keys": keys,
+        }));
+        let proofs = Proofs(std::collections::BTreeMap::from([(
+            "attestation".to_owned(),
+            vec![Value::String(encoded)],
+        )]));
+        let validated = validator
+            .validate(
+                &proofs,
+                "wallet-client",
+                "https://issuer.example",
+                "expected-nonce",
+                &metadata,
+            )
+            .await
+            .expect("batch_size bounds proof array entries, not attested keys");
+        assert_eq!(validated.len(), keys.len());
+        for (proof, key) in validated.iter().zip(keys) {
+            assert_eq!(proof.holder_binding, json!({"jwk": key}));
+        }
+    });
 }
 
 #[test]
@@ -903,7 +935,7 @@ fn proof_validator_binds_required_key_attestation_to_the_jwt_key() {
             .await
             .expect("matching key attestation");
         assert_eq!(validated.len(), 1);
-        assert!(validated[0].key_attestation.is_some());
+        assert_eq!(validated[0].holder_binding, json!({"jwk": wallet_jwk}));
 
         let (other_jwk, other_key) = es256_test_key(61);
         let mismatched_proof = signed_jwt_proof(
