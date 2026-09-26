@@ -1,1 +1,1 @@
-20260927000200_refresh_contract_ensure
+20260927000300_refresh_contract_reference_index
