@@ -14,6 +14,9 @@
 //!    behind a grace so an in-flight issuance can never lose a contract row
 //!    it just inserted.
 //! 5. `nazo_openid4vp_cleanup_expired_transactions()` — expired presentations.
+//! 6. OpenID4VCI offer, nonce, deferred, notification and response expiry;
+//!    access-grant ownership is retained through verifier clock skew and until
+//!    its children have been reclaimed in their own bounded batches.
 //!
 //! Every category is a bounded batch (≤256 rows) on a single row per
 //! authority; there is no member-history traversal. Family reclaim keeps the
@@ -64,6 +67,33 @@ struct GenericCleanupCounts {
 struct PresentationCleanupCount {
     #[diesel(sql_type = sql_types::Integer)]
     deleted_transactions: i32,
+}
+
+#[derive(QueryableByName)]
+struct CredentialExpiryCounts {
+    #[diesel(sql_type = sql_types::BigInt)]
+    offers: i64,
+    #[diesel(sql_type = sql_types::BigInt)]
+    nonces: i64,
+    #[diesel(sql_type = sql_types::BigInt)]
+    deferred: i64,
+    #[diesel(sql_type = sql_types::BigInt)]
+    notifications: i64,
+    #[diesel(sql_type = sql_types::BigInt)]
+    responses: i64,
+    #[diesel(sql_type = sql_types::Bool)]
+    grants_due: bool,
+}
+
+#[derive(Default)]
+struct CredentialCleanupCounts {
+    offers: u64,
+    nonces: u64,
+    grants: u64,
+    deferred: u64,
+    notifications: u64,
+    responses: u64,
+    saturated: bool,
 }
 
 impl SecurityStateMaintenanceRepository {
@@ -125,7 +155,6 @@ impl SecurityStateMaintenanceRepository {
     /// just committed a new generation is never reclaimed mid-commit.
     async fn delete_expired_refresh_families(&self) -> Result<(u64, bool), RepositoryError> {
         use diesel::{ExpressionMethods, QueryDsl};
-        use diesel_async::AsyncConnection;
 
         #[derive(QueryableByName)]
         struct ExpiredFamily {
@@ -142,7 +171,9 @@ impl SecurityStateMaintenanceRepository {
 
         let mut connection = self.connection().await?;
         connection
-            .transaction::<(u64, bool), diesel::result::Error, _>(async |connection| {
+            .build_transaction()
+            .read_committed()
+            .run::<(u64, bool), diesel::result::Error, _>(async |connection| {
                 let due = sql_query(
                     "SELECT tenant_id, token_family_id \
                      FROM oauth_refresh_families \
@@ -221,6 +252,127 @@ impl SecurityStateMaintenanceRepository {
         Ok((deleted as u64, deleted as i64 >= CLEANUP_BATCH_LIMIT))
     }
 
+    async fn credential_cleanup(&self) -> Result<CredentialCleanupCounts, RepositoryError> {
+        let mut connection = self.connection().await?;
+        // One statement handles the independent expiry categories. This also
+        // avoids five empty round trips on deployments that have never enabled
+        // credential issuance. Grants run afterwards, after child deletions are
+        // committed, and retain ownership through verifier clock skew.
+        let expired = sql_query(
+            "WITH offers_due AS ( \
+                     SELECT id FROM openid4vci_offers WHERE expires_at <= CURRENT_TIMESTAMP \
+                     ORDER BY expires_at, id LIMIT $1 FOR UPDATE SKIP LOCKED \
+                 ), offers_deleted AS ( \
+                     DELETE FROM openid4vci_offers AS target USING offers_due AS due \
+                     WHERE target.id = due.id RETURNING 1 \
+                 ), nonces_due AS ( \
+                     SELECT nonce_hash FROM openid4vci_nonces WHERE expires_at <= CURRENT_TIMESTAMP \
+                     ORDER BY expires_at, nonce_hash LIMIT $1 FOR UPDATE SKIP LOCKED \
+                 ), nonces_deleted AS ( \
+                     DELETE FROM openid4vci_nonces AS target USING nonces_due AS due \
+                     WHERE target.nonce_hash = due.nonce_hash RETURNING 1 \
+                 ), deferred_due AS ( \
+                     SELECT id FROM openid4vci_deferred_transactions WHERE expires_at <= CURRENT_TIMESTAMP \
+                     ORDER BY expires_at, id LIMIT $1 FOR UPDATE SKIP LOCKED \
+                 ), deferred_deleted AS ( \
+                     DELETE FROM openid4vci_deferred_transactions AS target USING deferred_due AS due \
+                     WHERE target.id = due.id RETURNING 1 \
+                 ), notifications_due AS ( \
+                     SELECT notification_id FROM openid4vci_notifications WHERE expires_at <= CURRENT_TIMESTAMP \
+                     ORDER BY expires_at, notification_id LIMIT $1 FOR UPDATE SKIP LOCKED \
+                 ), notifications_deleted AS ( \
+                     DELETE FROM openid4vci_notifications AS target USING notifications_due AS due \
+                     WHERE target.notification_id = due.notification_id RETURNING 1 \
+                 ), responses_due AS ( \
+                     SELECT issuance_id FROM openid4vci_issuance_responses WHERE expires_at <= CURRENT_TIMESTAMP \
+                     ORDER BY expires_at, issuance_id LIMIT $1 FOR UPDATE SKIP LOCKED \
+                 ), responses_deleted AS ( \
+                     DELETE FROM openid4vci_issuance_responses AS target USING responses_due AS due \
+                     WHERE target.issuance_id = due.issuance_id RETURNING 1 \
+                 ) \
+                 SELECT (SELECT COUNT(*) FROM offers_deleted) AS offers, \
+                        (SELECT COUNT(*) FROM nonces_deleted) AS nonces, \
+                        (SELECT COUNT(*) FROM deferred_deleted) AS deferred, \
+                        (SELECT COUNT(*) FROM notifications_deleted) AS notifications, \
+                        (SELECT COUNT(*) FROM responses_deleted) AS responses, \
+                        EXISTS (SELECT 1 FROM openid4vci_access_grants \
+                                WHERE expires_at <= CURRENT_TIMESTAMP - make_interval(secs => $2)) AS grants_due",
+        )
+        .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
+        .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
+        .get_result::<CredentialExpiryCounts>(&mut connection)
+        .await
+        .map_err(map_error)?;
+        let mut counts = CredentialCleanupCounts {
+            offers: expired.offers as u64,
+            nonces: expired.nonces as u64,
+            deferred: expired.deferred as u64,
+            notifications: expired.notifications as u64,
+            responses: expired.responses as u64,
+            ..CredentialCleanupCounts::default()
+        };
+        counts.saturated = [
+            counts.offers,
+            counts.nonces,
+            counts.deferred,
+            counts.notifications,
+            counts.responses,
+        ]
+        .into_iter()
+        .any(|count| count >= CLEANUP_BATCH_LIMIT as u64);
+        if !expired.grants_due {
+            return Ok(counts);
+        }
+        #[derive(QueryableByName)]
+        struct GrantId {
+            #[diesel(sql_type = sql_types::Uuid)]
+            token_id: uuid::Uuid,
+        }
+        let (grants, saturated) = connection
+            .build_transaction()
+            .read_committed()
+            .run::<(u64, bool), diesel::result::Error, _>(async |connection| {
+                let candidates = sql_query(
+                    "SELECT grant_row.token_id FROM openid4vci_access_grants AS grant_row \
+                     WHERE grant_row.expires_at <= CURRENT_TIMESTAMP - make_interval(secs => $2) \
+                       AND NOT EXISTS (SELECT 1 FROM openid4vci_deferred_transactions AS child WHERE child.token_id = grant_row.token_id) \
+                       AND NOT EXISTS (SELECT 1 FROM openid4vci_notifications AS child WHERE child.token_id = grant_row.token_id) \
+                       AND NOT EXISTS (SELECT 1 FROM openid4vci_issuance_responses AS child WHERE child.token_id = grant_row.token_id) \
+                     ORDER BY grant_row.expires_at, grant_row.token_id \
+                     LIMIT $1 FOR UPDATE OF grant_row SKIP LOCKED",
+                )
+                .bind::<sql_types::BigInt, _>(CLEANUP_BATCH_LIMIT)
+                .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
+                .load::<GrantId>(connection)
+                .await?;
+                let saturated = candidates.len() as i64 >= CLEANUP_BATCH_LIMIT;
+                if candidates.is_empty() { return Ok((0, false)); }
+                let ids = candidates.into_iter().map(|row| row.token_id).collect::<Vec<_>>();
+                // FK inserts take KEY SHARE on the parent, so the held UPDATE
+                // locks exclude new children. This separate READ COMMITTED
+                // statement sees any child committed while candidates were
+                // being acquired and leaves that parent for a later batch.
+                let deleted = sql_query(
+                    "DELETE FROM openid4vci_access_grants AS grant_row \
+                     WHERE grant_row.token_id = ANY($1) \
+                       AND grant_row.expires_at <= CURRENT_TIMESTAMP - make_interval(secs => $2) \
+                       AND NOT EXISTS (SELECT 1 FROM openid4vci_deferred_transactions AS child WHERE child.token_id = grant_row.token_id) \
+                       AND NOT EXISTS (SELECT 1 FROM openid4vci_notifications AS child WHERE child.token_id = grant_row.token_id) \
+                       AND NOT EXISTS (SELECT 1 FROM openid4vci_issuance_responses AS child WHERE child.token_id = grant_row.token_id)",
+                )
+                .bind::<sql_types::Array<sql_types::Uuid>, _>(&ids)
+                .bind::<sql_types::Double, _>(nazo_resource_server::MAX_ACCESS_TOKEN_CLOCK_SKEW_SECONDS as f64)
+                .execute(connection)
+                .await?;
+                Ok((deleted as u64, saturated))
+            })
+            .await
+            .map_err(map_error)?;
+        counts.grants = grants;
+        counts.saturated |= saturated;
+        Ok(counts)
+    }
+
     async fn connection(&self) -> Result<DbConnection, RepositoryError> {
         get_conn(&self.pool)
             .await
@@ -239,6 +391,7 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
             let (refresh_contracts, contracts_saturated) =
                 self.delete_orphan_refresh_contracts().await?;
             let presentations = self.presentation_cleanup().await?;
+            let credentials = self.credential_cleanup().await?;
             let saturated = families_saturated
                 || spent_saturated
                 || contracts_saturated
@@ -247,7 +400,8 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                 || i64::from(generic.deleted_scim_audit_events) >= CLEANUP_BATCH_LIMIT
                 || i64::from(generic.deleted_backchannel_logout_deliveries) >= CLEANUP_BATCH_LIMIT
                 || i64::from(generic.deleted_scim_security_events) >= CLEANUP_BATCH_LIMIT
-                || presentations >= CLEANUP_BATCH_LIMIT as u64;
+                || presentations >= CLEANUP_BATCH_LIMIT as u64
+                || credentials.saturated;
             Ok(CleanupBatchResult {
                 issuances: generic.deleted_issuances.max(0) as u64,
                 refresh_tokens,
@@ -258,6 +412,12 @@ impl SecurityStateMaintenancePort for SecurityStateMaintenanceRepository {
                 logout_deliveries: generic.deleted_backchannel_logout_deliveries.max(0) as u64,
                 scim_security_events: generic.deleted_scim_security_events.max(0) as u64,
                 presentations,
+                credential_offers: credentials.offers,
+                credential_nonces: credentials.nonces,
+                credential_access_grants: credentials.grants,
+                deferred_credentials: credentials.deferred,
+                credential_notifications: credentials.notifications,
+                credential_responses: credentials.responses,
                 saturated,
             })
         })

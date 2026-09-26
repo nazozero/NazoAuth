@@ -1,1 +1,1 @@
-20260927000300_refresh_contract_reference_index
+20260927000400_openid4vci_retention_indexes
