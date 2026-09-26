@@ -556,5 +556,41 @@
       "test_seconds": 0.76,
       "raw_log": "/tmp/pr222-validation/registration-before-run.log"
     }
-  ]
+  ],
+  "codeql_fixture_followup": {
+    "tested_patch": "Replace only two flagged OpenID4VC fixture keys with random 32-byte keys",
+    "checkout_head": "866409a3a35161fe7390b9c02fe9f9006c82ea9c",
+    "alerts": [
+      533,
+      534
+    ],
+    "clippy_command": "cargo clippy --locked -p nazo-postgres --test openid4vc -- -D warnings",
+    "targets": [
+      {
+        "ignored": 0,
+        "list_command": "cargo test --locked -p nazo-postgres --test openid4vc issuance_store_covers_atomic_recovery_and_terminal_error_boundaries -- --exact --list",
+        "raw_run_log": "/tmp/pr222-validation/F-codeql-boundary-run.log",
+        "failed": 0,
+        "passed": 1,
+        "run_command": "cargo test --locked -p nazo-postgres --test openid4vc issuance_store_covers_atomic_recovery_and_terminal_error_boundaries -- --exact --nocapture --test-threads=1",
+        "raw_list_log": "/tmp/pr222-validation/F-codeql-boundary-list.log",
+        "test_seconds": 1.29,
+        "listed": 1
+      },
+      {
+        "ignored": 0,
+        "list_command": "cargo test --locked -p nazo-postgres --test openid4vc pre_authorized_verification_ -- --list",
+        "raw_run_log": "/tmp/pr222-validation/codeql-paused-run.log",
+        "failed": 0,
+        "passed": 2,
+        "run_command": "cargo test --locked -p nazo-postgres --test openid4vc pre_authorized_verification_ -- --nocapture --test-threads=1",
+        "raw_list_log": "/tmp/pr222-validation/codeql-paused-list.log",
+        "test_seconds": 0.39,
+        "listed": 2
+      }
+    ],
+    "clippy_log": "/tmp/pr222-validation/codeql-clippy.log",
+    "format_command": "cargo fmt -p nazo-postgres --check",
+    "quality_result": "Format and Clippy passed; Clippy finished in 2m20s"
+  }
 }

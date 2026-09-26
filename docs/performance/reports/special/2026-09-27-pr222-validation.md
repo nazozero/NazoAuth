@@ -2,7 +2,7 @@
 
 本轮接手 [PR #222](https://github.com/nazozero/NazoAuth/pull/222)，所有 Rust 构建、测试和数据库操作均在指定 CNB 容器执行，未创建 worktree、启动全工作区测试、容量矩阵或 soak。GitHub 是代码事实源，CNB 只用于检出和验证。
 
-报告生成时必要定向检查已取得有效证据，两项修复已推送；**最终 HEAD 的 CI 尚待完成**。提交本报告后的实际门禁结果追加到 PR 评论，不通过反复提交报告追逐 CI 状态。本报告是窄验证和诊断记录，不是正式全链路性能验收。
+报告生成时必要定向检查已取得有效证据；之后最终门禁发现两处测试固定密钥告警，本报告随该实际 fixture 修复补充证据。**最终 HEAD 的 CI 尚待完成**。提交本报告后的实际门禁结果追加到 PR 评论，不通过反复提交报告追逐 CI 状态。本报告是窄验证和诊断记录，不是正式全链路性能验收。
 
 ## 代码、环境与 CI 基准
 
@@ -18,7 +18,7 @@
 
 原 `9035aa5` 的两个失败已在此完整日志中消除：consent raw-wire 测试通过，`bootstrap_password_providers_reuse_the_prepared_unknown_secret_hash` 通过。本轮对应 CNB 目标也实际执行通过，未跳过测试或放宽生产解析器。
 
-## 两项必要修复
+## 必要修复
 
 ### 合法的 external key 成功路径 fixture
 
@@ -33,6 +33,12 @@ CNB 修复前先列出 1 项，再实际运行该 exact target，复现相同错
 `ece640dd058a802b663ea223441a603cec39c437` 在现有 `validate_external_registration` 中复用 generation 的 `prepared_verification`，在任何 CAS 前拒绝不可用材料。生产改动只有既有函数的 crate 可见性和一次注册校验调用，没有新增缓存、状态或运行层。
 
 新增回归修复前实际失败（1 项，0.76 秒，Cargo 101）：注册返回 Err，但 repository revision 已改变。修复后覆盖非法 P-256 点和仅允许 sign 的 key_ops；断言 revision、public metadata、加密材料、当前 generation 指针均不变，并证明重启仍能加载。该回归 1 项、database 模块 15 项、external 4 项、model 26 项、宿主 keyctl 4 项通过。包格式、Clippy 和源码测试边界检查通过。没有降低 RSA/EC 强度、跳过验签或缓存最终授权判定。
+
+### CodeQL 测试密钥告警
+
+`866409a3` 的 CodeQL 分析任务成功，但随后独立的安全检查失败，报告 [533](https://github.com/nazozero/NazoAuth/security/code-scanning/533) / [534](https://github.com/nazozero/NazoAuth/security/code-scanning/534) 两条 critical hard-coded cryptographic value。两条均分类为 test，位于 OpenID4VC integration fixture；一条来自修改行上的历史固定密钥，另一条来自本 PR 新增的暂停验密 fixture，不是生产部署密钥泄漏。
+
+仅将这两处固定数组替换为已有 rand 依赖生成的 `[u8; 32]`，不屏蔽扫描规则、不修改生产逻辑。CNB 在 `866409a3` 加该补丁时先列举、再实际运行 atomic recovery boundary 1 项（1.29 秒）和暂停验密 2 项（0.39 秒），均通过；后者保留唯一消费者、连接归还、snapshot/expiry/busy 拒绝语义。`cargo fmt -p nazo-postgres --check` 通过，`cargo clippy --locked -p nazo-postgres --test openid4vc -- -D warnings` 通过（2m20s）。详细命令和日志见 validation.json，最终扫描结果以修复提交的 CI 为准。
 
 ## 定向 Rust 执行证据
 
