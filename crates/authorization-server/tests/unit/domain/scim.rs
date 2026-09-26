@@ -170,90 +170,96 @@ fn facts() -> ScimAuthenticationFacts<'static> {
     }
 }
 
-#[tokio::test]
-async fn successful_authorization_uses_one_live_lookup_and_one_unified_audit_event() {
-    let audit = Arc::new(Audit::default());
-    let (authorizer, credentials) = authorizer(audit.clone());
-    let authorized = authorizer
-        .authorize(facts(), ScimRequiredScope::Read)
-        .await
-        .unwrap();
-    assert_eq!(authorized.tenant, TenantContext::default_system());
-    assert_eq!(credentials.lookups.load(Ordering::Relaxed), 1);
-    let events = audit.events.lock().unwrap();
-    assert_eq!(events.len(), 1);
-    assert_eq!(events[0].0, "scim_token_used");
-    assert_eq!(
-        events[0].1,
-        audit_fields(&[
-            ("token_id", json!(uuid::Uuid::from_u128(11))),
-            ("tenant_id", json!(authorized.tenant.tenant_id.as_uuid())),
-            ("scope", json!("scim:read")),
-            ("source", json!("database")),
-            ("ip_hash", json!(blake3_hex("192.0.2.1"))),
-            ("user_agent_hash", json!(blake3_hex("SCIM test client"))),
-        ])
-    );
-    assert!(audit.required.lock().unwrap().is_empty());
-}
-
-#[tokio::test]
-async fn authorization_preserves_scope_tenant_and_live_credential_denials() {
-    let audit = Arc::new(Audit::default());
-    let (authorizer, credentials) = authorizer(audit.clone());
-    assert_eq!(
-        authorizer
-            .authorize(facts(), ScimRequiredScope::Write)
-            .await
-            .expect_err("read scope must not authorize writes"),
-        ScimAuthorizationError::InsufficientScope
-    );
-    credentials
-        .active
-        .lock()
-        .unwrap()
-        .as_mut()
-        .unwrap()
-        .tenant_id = uuid::Uuid::from_u128(12);
-    assert_eq!(
-        authorizer
+#[test]
+fn successful_authorization_uses_one_live_lookup_and_one_unified_audit_event() {
+    futures_executor::block_on(async {
+        let audit = Arc::new(Audit::default());
+        let (authorizer, credentials) = authorizer(audit.clone());
+        let authorized = authorizer
             .authorize(facts(), ScimRequiredScope::Read)
             .await
-            .expect_err("cross-tenant bearer must fail"),
-        ScimAuthorizationError::TenantMismatch
-    );
-    *credentials.active.lock().unwrap() = None;
-    assert_eq!(
-        authorizer
-            .authorize(facts(), ScimRequiredScope::Read)
-            .await
-            .expect_err("inactive credential must fail"),
-        ScimAuthorizationError::InvalidBearer
-    );
-    let denied = audit.required.lock().unwrap();
-    assert_eq!(denied.len(), 3);
-    assert!(denied.iter().all(|(event, _)| event == "scim_token_denied"));
-    assert_eq!(denied[0].1["reason"], "insufficient_scope");
-    assert_eq!(denied[1].1["reason"], "tenant_mismatch");
-    assert_eq!(denied[2].1["reason"], "invalid_token");
-    assert!(audit.events.lock().unwrap().is_empty());
-    assert_eq!(credentials.lookups.load(Ordering::Relaxed), 3);
-}
-
-#[tokio::test]
-async fn denied_authorization_fails_closed_if_required_audit_is_unavailable() {
-    let audit = Arc::new(Audit {
-        fail_required: true,
-        ..Audit::default()
+            .unwrap();
+        assert_eq!(authorized.tenant, TenantContext::default_system());
+        assert_eq!(credentials.lookups.load(Ordering::Relaxed), 1);
+        let events = audit.events.lock().unwrap();
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].0, "scim_token_used");
+        assert_eq!(
+            events[0].1,
+            audit_fields(&[
+                ("token_id", json!(uuid::Uuid::from_u128(11))),
+                ("tenant_id", json!(authorized.tenant.tenant_id.as_uuid())),
+                ("scope", json!("scim:read")),
+                ("source", json!("database")),
+                ("ip_hash", json!(blake3_hex("192.0.2.1"))),
+                ("user_agent_hash", json!(blake3_hex("SCIM test client"))),
+            ])
+        );
+        assert!(audit.required.lock().unwrap().is_empty());
     });
-    let (authorizer, _) = authorizer(audit.clone());
-    assert_eq!(
-        authorizer
-            .authorize(facts(), ScimRequiredScope::Write)
-            .await
-            .expect_err("audit failure must take precedence over denial"),
-        ScimAuthorizationError::BackendUnavailable
-    );
-    assert_eq!(audit.required.lock().unwrap().len(), 1);
-    assert!(audit.events.lock().unwrap().is_empty());
+}
+
+#[test]
+fn authorization_preserves_scope_tenant_and_live_credential_denials() {
+    futures_executor::block_on(async {
+        let audit = Arc::new(Audit::default());
+        let (authorizer, credentials) = authorizer(audit.clone());
+        assert_eq!(
+            authorizer
+                .authorize(facts(), ScimRequiredScope::Write)
+                .await
+                .expect_err("read scope must not authorize writes"),
+            ScimAuthorizationError::InsufficientScope
+        );
+        credentials
+            .active
+            .lock()
+            .unwrap()
+            .as_mut()
+            .unwrap()
+            .tenant_id = uuid::Uuid::from_u128(12);
+        assert_eq!(
+            authorizer
+                .authorize(facts(), ScimRequiredScope::Read)
+                .await
+                .expect_err("cross-tenant bearer must fail"),
+            ScimAuthorizationError::TenantMismatch
+        );
+        *credentials.active.lock().unwrap() = None;
+        assert_eq!(
+            authorizer
+                .authorize(facts(), ScimRequiredScope::Read)
+                .await
+                .expect_err("inactive credential must fail"),
+            ScimAuthorizationError::InvalidBearer
+        );
+        let denied = audit.required.lock().unwrap();
+        assert_eq!(denied.len(), 3);
+        assert!(denied.iter().all(|(event, _)| event == "scim_token_denied"));
+        assert_eq!(denied[0].1["reason"], "insufficient_scope");
+        assert_eq!(denied[1].1["reason"], "tenant_mismatch");
+        assert_eq!(denied[2].1["reason"], "invalid_token");
+        assert!(audit.events.lock().unwrap().is_empty());
+        assert_eq!(credentials.lookups.load(Ordering::Relaxed), 3);
+    });
+}
+
+#[test]
+fn denied_authorization_fails_closed_if_required_audit_is_unavailable() {
+    futures_executor::block_on(async {
+        let audit = Arc::new(Audit {
+            fail_required: true,
+            ..Audit::default()
+        });
+        let (authorizer, _) = authorizer(audit.clone());
+        assert_eq!(
+            authorizer
+                .authorize(facts(), ScimRequiredScope::Write)
+                .await
+                .expect_err("audit failure must take precedence over denial"),
+            ScimAuthorizationError::BackendUnavailable
+        );
+        assert_eq!(audit.required.lock().unwrap().len(), 1);
+        assert!(audit.events.lock().unwrap().is_empty());
+    });
 }
