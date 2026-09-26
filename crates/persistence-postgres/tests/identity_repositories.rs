@@ -56,6 +56,12 @@ fn repositories_accept_validated_tenant_and_user_ids() {
 }
 
 async fn database_fixture() -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
+    database_fixture_with_pool_size(8).await
+}
+
+async fn database_fixture_with_pool_size(
+    max_size: usize,
+) -> Option<(nazo_postgres::DbPool, TenantContext, UserId)> {
     let database_url =
         match std::env::var("NAZO_TEST_DATABASE_URL").or_else(|_| std::env::var("DATABASE_URL")) {
             Ok(database_url) => database_url,
@@ -64,7 +70,7 @@ async fn database_fixture() -> Option<(nazo_postgres::DbPool, TenantContext, Use
             }
             Err(_) => return None,
         };
-    let pool = create_pool(database_url, 8).expect("test pool can be built");
+    let pool = create_pool(database_url, max_size).expect("test pool can be built");
     let tenant = TenantContext::default_system();
     let user_id = UserId::new(Uuid::now_v7()).expect("generated ID is non-nil");
     let token = Uuid::now_v7().simple().to_string();
@@ -1256,8 +1262,8 @@ async fn passkey_counter_update_is_monotonic_compare_and_set() {
 }
 
 #[tokio::test]
-async fn concurrent_federated_create_is_idempotent_and_tenant_scoped() {
-    let Some((pool, tenant, fixture_user_id)) = database_fixture().await else {
+async fn concurrent_federated_create_is_idempotent_with_one_connection_and_tenant_scoped() {
+    let Some((pool, tenant, fixture_user_id)) = database_fixture_with_pool_size(1).await else {
         return;
     };
     let repository = FederationRepository::new(pool.clone());
@@ -1278,13 +1284,28 @@ async fn concurrent_federated_create_is_idempotent_and_tenant_scoped() {
             .unwrap(),
     };
 
-    let (left, right) = tokio::join!(
-        repository.create_federated(new_identity.clone()),
-        repository.create_federated(new_identity)
-    );
+    let (left, right) = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        tokio::join!(
+            repository.create_federated(new_identity.clone()),
+            repository.create_federated(new_identity.clone())
+        )
+    })
+    .await
+    .expect("unique-conflict recovery must release the only connection before borrowing again");
     let left = left.unwrap();
     let right = right.unwrap();
     assert_eq!(left.user_id(), right.user_id());
+
+    let mut conflicting_identity = new_identity;
+    conflicting_identity.login.subject = format!("unlinked-{suffix}");
+    let conflict = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        repository.create_federated(conflicting_identity),
+    )
+    .await
+    .expect("an unlinked email conflict must also release its connection")
+    .unwrap_err();
+    assert!(matches!(conflict, RepositoryError::Conflict));
 
     let other_tenant = TenantContext {
         tenant_id: TenantId::new(Uuid::now_v7()).unwrap(),
