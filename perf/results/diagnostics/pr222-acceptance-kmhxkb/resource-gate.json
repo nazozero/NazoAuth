@@ -1,0 +1,62 @@
+{
+  "run_id": "kmhxkb",
+  "status": "BLOCKED_RESOURCE_LIMIT_EVIDENCE",
+  "task_started_at_utc": "2026-09-26T21:50:00Z",
+  "resource_sample_at_utc": "2026-09-26T22:02:53Z",
+  "source": {
+    "A": "0c70d7464576138af0b3f8a39530d6615ee7a363",
+    "B": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+    "H": "462626b29be202c04f2e4482ade6ab5f5f6267c5",
+    "taskbook_commit": "346382e4dee4f3009813d603d8b8d589f166fc27",
+    "taskbook_sha256": "7c5bc3c4ea6b509d9d7228f816cd93c092549a046e02f42a5345d697d2cb46e0"
+  },
+  "visible_cgroup_v1": {
+    "affinity_logical_cpus": "24-56,161-191",
+    "affinity_count": 64,
+    "cpu_quota_us": 6400000,
+    "cpu_period_us": 100000,
+    "cpu_quota_cores": 64,
+    "cpu_stat_nr_throttled": 0,
+    "memory_limit_bytes": 137438953472,
+    "memory_usage_bytes": 10525335552,
+    "visible_memory_headroom_bytes": 126913617920,
+    "mem_available_kib": 134055468,
+    "parent_cgroups_visible": false
+  },
+  "docker_engine": {
+    "server_version": "29.6.2-7",
+    "cgroup_version": 1,
+    "cgroup_driver": "none",
+    "reported_ncpu": 64,
+    "reported_mem_total_bytes": 597651193856,
+    "docker_storage_available_df_h": "256G"
+  },
+  "workspace_storage_available_df_h": "496G",
+  "tools": {
+    "python": "3.11.2",
+    "docker_compose": "5.3.1",
+    "k6": "2.1.0",
+    "gcc": "12.2.0",
+    "gcc_static_link_probe": "PASS"
+  },
+  "blocking_reason": "The cgroup mounts expose only the current CNB leaf. The parent cgroup limits required to derive the minimum effective CPU budget and memory availability are not visible or available through a CNB metadata command in the SSH environment. The taskbook requires BLOCKED when required quota evidence is missing.",
+  "not_run": [
+    "A/B/H image builds",
+    "Docker load-image affinity plan",
+    "pilot and resource-profile freeze",
+    "formal ABBA groups",
+    "capacity exploration",
+    "1800-second steady-state points",
+    "audit and refresh acceptance"
+  ],
+  "raw_evidence": {
+    "cnb_resource_log": "/tmp/pr222-acceptance-kMhxkB/evidence/resource-discovery.txt",
+    "cnb_resource_log_sha256": "b6eedffe17776529b74b1ad41cdddec3a9fbe4e4861f5dae46d1e3d033def941",
+    "cnb_prepare_log": "/tmp/pr222-acceptance-kMhxkB/logs/prepare.log",
+    "cnb_prepare_log_sha256": "b079838e4d523800abf3560efb764f2e0fe2897ae0edece662920545fca67de0",
+    "cnb_static_link_probe": "/tmp/pr222-acceptance-kMhxkB/evidence/static-link-probe.log",
+    "cnb_static_link_probe_sha256": "87b8ede575fa3470e7d5a8b06ef8f7d429f166ef607cfe5f4f8003398ec0d90b",
+    "retrieval_archive": "D:\\self\\artifacts\\pr222-acceptance-20260927-kmhxkb\\resource-evidence.zip",
+    "retrieval_archive_sha256": "aa34e83640b7f7eb344daaad9d84dd32cf464b2d1b40f9cb1034f137a142bdbf"
+  }
+}
