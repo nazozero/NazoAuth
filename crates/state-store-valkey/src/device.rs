@@ -1,3 +1,4 @@
+use fred::prelude::LuaInterface;
 use nazo_auth::DeviceAuthorizationState;
 use nazo_auth::{
     DeviceAtomicResult, DeviceCreateResult as AuthDeviceCreateResult, DeviceStatePortError,
@@ -15,8 +16,8 @@ return 'applied'
 "#;
 const SNAPSHOT_DEVICE_SCRIPT: &str = r#"
 local value = redis.call('GET', KEYS[1])
-if not value then return cjson.encode({found = false}) end
-return cjson.encode({found = true, value = value, expire_at = redis.call('PEXPIRETIME', KEYS[1])})
+if not value then return false end
+return {value, redis.call('PEXPIRETIME', KEYS[1])}
 "#;
 const COMPARE_SET_DEVICE_SCRIPT: &str = r#"
 local current = redis.call('GET', KEYS[1])
@@ -140,23 +141,19 @@ impl DeviceStore {
         &self,
         key: String,
     ) -> Result<Option<StoredDeviceAuthorization<DeviceStateVersion>>, Error> {
-        let reply =
-            command::eval_string(&self.connection, SNAPSHOT_DEVICE_SCRIPT, vec![key], vec![])
-                .await?;
-        let snapshot: serde_json::Value = serde_json::from_str(&reply)
-            .map_err(|error| Error::protocol(format!("malformed device snapshot: {error}")))?;
-        if snapshot.get("found").and_then(serde_json::Value::as_bool) != Some(true) {
+        let snapshot: Option<(String, i64)> = self
+            .connection
+            .client
+            .eval(
+                SNAPSHOT_DEVICE_SCRIPT,
+                self.connection.state_keys(vec![key]),
+                Vec::<String>::new(),
+            )
+            .await
+            .map_err(Error::from_fred)?;
+        let Some((raw, deadline)) = snapshot else {
             return Ok(None);
-        }
-        let raw = snapshot
-            .get("value")
-            .and_then(serde_json::Value::as_str)
-            .ok_or_else(|| Error::protocol("missing device snapshot value"))?
-            .to_owned();
-        let deadline = snapshot
-            .get("expire_at")
-            .and_then(serde_json::Value::as_i64)
-            .ok_or_else(|| Error::protocol("missing device snapshot deadline"))?;
+        };
         if deadline == -2 {
             return Ok(None);
         }
