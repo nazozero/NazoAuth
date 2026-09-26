@@ -1,6 +1,6 @@
 use chrono::{DateTime, Utc};
 use diesel::{BoolExpressionMethods, ExpressionMethods, OptionalExtension, QueryDsl};
-use diesel_async::{AsyncConnection, AsyncPgConnection, RunQueryDsl};
+use diesel_async::{AsyncPgConnection, RunQueryDsl};
 use nazo_auth::{
     BackchannelLogoutDelivery, BackchannelLogoutOutboxPort, IdempotentBackchannelLogoutDelivery,
     LogoutDependencyError, LogoutFuture, PendingBackchannelLogoutDelivery,
@@ -22,12 +22,6 @@ use crate::{
         scim_tokens, users,
     },
 };
-
-#[derive(diesel::QueryableByName)]
-struct BackchannelLogoutInsertRow {
-    #[diesel(sql_type = diesel::sql_types::Uuid)]
-    id: Uuid,
-}
 
 #[derive(Clone)]
 pub struct AuditRepository {
@@ -104,34 +98,46 @@ impl AuditRepository {
         if deliveries.is_empty() {
             return Ok(());
         }
+        let tenant_ids: Vec<_> = deliveries.iter().map(|value| value.tenant_id).collect();
+        let client_ids: Vec<_> = deliveries.iter().map(|value| value.client_id).collect();
+        let public_ids: Vec<_> = deliveries
+            .iter()
+            .map(|value| value.client_public_id.as_str())
+            .collect();
+        let logout_uris: Vec<_> = deliveries
+            .iter()
+            .map(|value| value.logout_uri.as_str())
+            .collect();
+        let logout_tokens: Vec<_> = deliveries
+            .iter()
+            .map(|value| value.logout_token.as_str())
+            .collect();
+        let expires_at: Vec<_> = deliveries.iter().map(|value| value.expires_at).collect();
         let mut connection = self.connection().await?;
-        connection
-            .transaction::<(), diesel::result::Error, _>(async |connection| {
-                for delivery in deliveries {
-                    diesel::insert_into(backchannel_logout_deliveries::table)
-                        .values((
-                            backchannel_logout_deliveries::tenant_id.eq(delivery.tenant_id),
-                            backchannel_logout_deliveries::client_id.eq(delivery.client_id),
-                            backchannel_logout_deliveries::client_public_id
-                                .eq(&delivery.client_public_id),
-                            backchannel_logout_deliveries::logout_uri.eq(&delivery.logout_uri),
-                            backchannel_logout_deliveries::logout_token.eq(&delivery.logout_token),
-                            backchannel_logout_deliveries::expires_at.eq(delivery.expires_at),
-                        ))
-                        .execute(connection)
-                        .await?;
-                }
-                Ok(())
-            })
-            .await
-            .map_err(map_error)
+        diesel::sql_query(
+            r#"
+            INSERT INTO backchannel_logout_deliveries (
+                tenant_id, client_id, client_public_id, logout_uri, logout_token, expires_at
+            ) SELECT * FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[],
+                                  $5::text[], $6::timestamptz[])
+            "#,
+        )
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(&tenant_ids)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(&client_ids)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&public_ids)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&logout_uris)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&logout_tokens)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Timestamptz>, _>(&expires_at)
+        .execute(&mut connection)
+        .await
+        .map(|_| ())
+        .map_err(map_error)
     }
 
-    /// Idempotently persists one complete logout fan-out.
+    /// Idempotently persists one complete logout fan-out in one atomic statement.
     ///
-    /// The partial unique index on `(tenant_id, operation_key, client_id)` makes
-    /// retrying after a Valkey session-deletion failure safe without weakening
-    /// the all-or-nothing transaction for newly generated deliveries.
+    /// The partial unique index keeps the first durable JWT authoritative when
+    /// session deletion fails and the orchestration retries with fresh JWTs.
     pub async fn enqueue_idempotent_backchannel_logout_batch(
         &self,
         deliveries: &[IdempotentBackchannelLogoutDelivery],
@@ -139,41 +145,54 @@ impl AuditRepository {
         if deliveries.is_empty() {
             return Ok(());
         }
+        let tenant_ids: Vec<_> = deliveries.iter().map(|value| value.tenant_id).collect();
+        let client_ids: Vec<_> = deliveries.iter().map(|value| value.client_id).collect();
+        let public_ids: Vec<_> = deliveries
+            .iter()
+            .map(|value| value.client_public_id.as_str())
+            .collect();
+        let logout_uris: Vec<_> = deliveries
+            .iter()
+            .map(|value| value.logout_uri.as_str())
+            .collect();
+        let logout_tokens: Vec<_> = deliveries
+            .iter()
+            .map(|value| value.logout_token.as_str())
+            .collect();
+        let operation_keys: Vec<_> = deliveries
+            .iter()
+            .map(|value| value.operation_key.as_str())
+            .collect();
+        let expires_at: Vec<_> = deliveries.iter().map(|value| value.expires_at).collect();
         let mut connection = self.connection().await?;
-        connection
-            .transaction::<(), diesel::result::Error, _>(async |connection| {
-                for delivery in deliveries {
-                    let inserted = diesel::sql_query(
-                        r#"
-                        INSERT INTO backchannel_logout_deliveries (
-                            tenant_id, client_id, client_public_id, logout_uri,
-                            logout_token, operation_key, expires_at
-                        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-                        ON CONFLICT (tenant_id, operation_key, client_id)
-                            WHERE operation_key IS NOT NULL
-                        DO UPDATE SET operation_key = EXCLUDED.operation_key
-                        RETURNING id
-                        "#,
-                    )
-                    .bind::<diesel::sql_types::Uuid, _>(delivery.tenant_id)
-                    .bind::<diesel::sql_types::Uuid, _>(delivery.client_id)
-                    .bind::<diesel::sql_types::Text, _>(&delivery.client_public_id)
-                    .bind::<diesel::sql_types::Text, _>(&delivery.logout_uri)
-                    .bind::<diesel::sql_types::Text, _>(&delivery.logout_token)
-                    .bind::<diesel::sql_types::Text, _>(&delivery.operation_key)
-                    .bind::<diesel::sql_types::Timestamptz, _>(delivery.expires_at)
-                    .get_result::<BackchannelLogoutInsertRow>(connection)
-                    .await?;
-                    // A logout JWT carries a fresh jti on every orchestration
-                    // retry. Keep the first durable delivery authoritative and
-                    // perform only a no-op update so a retry can finish session
-                    // deletion without replacing an already queued payload.
-                    let _ = inserted.id;
-                }
-                Ok(())
-            })
-            .await
-            .map_err(map_error)
+        diesel::sql_query(
+            r#"
+            INSERT INTO backchannel_logout_deliveries (
+                tenant_id, client_id, client_public_id, logout_uri,
+                logout_token, operation_key, expires_at
+            ) SELECT tenant_id, client_id, client_public_id, logout_uri,
+                     logout_token, operation_key, expires_at
+              FROM UNNEST($1::uuid[], $2::uuid[], $3::text[], $4::text[],
+                          $5::text[], $6::text[], $7::timestamptz[])
+                   WITH ORDINALITY AS batch(tenant_id, client_id, client_public_id,
+                       logout_uri, logout_token, operation_key, expires_at, position)
+              ORDER BY position
+            ON CONFLICT (tenant_id, operation_key, client_id)
+                WHERE operation_key IS NOT NULL
+            DO NOTHING
+            "#,
+        )
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(&tenant_ids)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Uuid>, _>(&client_ids)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&public_ids)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&logout_uris)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&logout_tokens)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Text>, _>(&operation_keys)
+        .bind::<diesel::sql_types::Array<diesel::sql_types::Timestamptz>, _>(&expires_at)
+        .execute(&mut connection)
+        .await
+        .map(|_| ())
+        .map_err(map_error)
     }
 
     pub async fn claim_due_backchannel_logout(
