@@ -186,6 +186,11 @@ async fn consent_compare_delete_preserves_a_concurrent_replacement() {
         .store_consent(&request_id, &observed, 30)
         .await
         .unwrap();
+    let snapshot = store
+        .load_consent_snapshot(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
     store
         .store_consent(&request_id, &replacement, 30)
         .await
@@ -193,7 +198,7 @@ async fn consent_compare_delete_preserves_a_concurrent_replacement() {
 
     assert!(
         !store
-            .compare_and_delete_consent(&request_id, &observed)
+            .compare_and_delete_consent(&request_id, &snapshot.version)
             .await
             .unwrap()
     );
@@ -220,9 +225,14 @@ async fn concurrent_consent_compare_delete_has_exactly_one_winner() {
         .await
         .unwrap();
 
+    let snapshot = store
+        .load_consent_snapshot(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
     let (first, second) = tokio::join!(
-        store.compare_and_delete_consent(&request_id, &observed),
-        store.compare_and_delete_consent(&request_id, &observed),
+        store.compare_and_delete_consent(&request_id, &snapshot.version),
+        store.compare_and_delete_consent(&request_id, &snapshot.version),
     );
     assert_eq!(
         [first.unwrap(), second.unwrap()]
@@ -250,6 +260,11 @@ async fn par_compare_delete_preserves_a_concurrent_replacement() {
     let mut replacement = observed.clone();
     replacement.client_id = "client-b".to_owned();
     store.store_par(&request_uri, &observed, 30).await.unwrap();
+    let snapshot = store
+        .load_par_snapshot(&request_uri)
+        .await
+        .unwrap()
+        .unwrap();
     store
         .store_par(&request_uri, &replacement, 30)
         .await
@@ -257,7 +272,7 @@ async fn par_compare_delete_preserves_a_concurrent_replacement() {
 
     assert!(
         !store
-            .compare_and_delete_par(&request_uri, &observed)
+            .compare_and_delete_par(&request_uri, &snapshot.version)
             .await
             .unwrap()
     );
@@ -273,7 +288,7 @@ async fn par_compare_delete_preserves_a_concurrent_replacement() {
 }
 
 #[tokio::test]
-async fn par_compare_delete_accepts_semantically_equal_reordered_multi_parameter_json() {
+async fn par_snapshot_consumes_legacy_wire_with_reordered_multi_parameter_json() {
     let Some((store, inspector)) = setup().await else {
         return;
     };
@@ -305,13 +320,20 @@ async fn par_compare_delete_accepts_semantically_equal_reordered_multi_parameter
         serde_json::to_string(&observed.issued_at).unwrap(),
     );
     inspector
-        .set::<(), _, _>(&key, reordered, None, None, false)
+        .set::<(), _, _>(&key, reordered.clone(), None, None, false)
         .await
         .unwrap();
+    let snapshot = store
+        .load_par_snapshot(&request_uri)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot.version, reordered);
+    assert_eq!(snapshot.payload.params, observed.params);
 
     assert!(
         store
-            .compare_and_delete_par(&request_uri, &observed)
+            .compare_and_delete_par(&request_uri, &snapshot.version)
             .await
             .unwrap()
     );
@@ -319,7 +341,7 @@ async fn par_compare_delete_accepts_semantically_equal_reordered_multi_parameter
 }
 
 #[tokio::test]
-async fn consent_json_compare_is_nested_order_independent_but_preserves_array_object_types() {
+async fn consent_snapshot_accepts_old_wire_but_rejects_rewritten_or_changed_state() {
     let Some((store, inspector)) = setup().await else {
         return;
     };
@@ -337,17 +359,54 @@ async fn consent_json_compare_is_nested_order_independent_but_preserves_array_ob
     );
     assert_ne!(canonical, reordered);
     inspector
-        .set::<(), _, _>(&key, reordered, None, None, false)
+        .set::<(), _, _>(&key, reordered.clone(), None, None, false)
         .await
         .unwrap();
+    let snapshot = store
+        .load_consent_snapshot(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot.version, reordered);
+    assert_eq!(
+        snapshot.payload.authorization_details,
+        observed.authorization_details
+    );
     assert!(
         store
-            .compare_and_delete_consent(&request_id, &observed)
+            .compare_and_delete_consent(&request_id, &snapshot.version)
             .await
             .unwrap()
     );
 
+    inspector
+        .set::<(), _, _>(&key, &reordered, None, None, false)
+        .await
+        .unwrap();
+    let snapshot = store
+        .load_consent_snapshot(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    inspector
+        .set::<(), _, _>(&key, canonical, None, None, false)
+        .await
+        .unwrap();
+    assert!(
+        !store
+            .compare_and_delete_consent(&request_id, &snapshot.version)
+            .await
+            .unwrap()
+    );
+    assert!(inspector.exists::<bool, _>(&key).await.unwrap());
+
     let array = consent_payload(&request_id, uuid::Uuid::from_u128(1));
+    store.store_consent(&request_id, &array, 30).await.unwrap();
+    let snapshot = store
+        .load_consent_snapshot(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
     let object_replacement = serde_json::to_string(&array).unwrap().replace(
         r#""authorization_details":[]"#,
         r#""authorization_details":{}"#,
@@ -358,7 +417,7 @@ async fn consent_json_compare_is_nested_order_independent_but_preserves_array_ob
         .unwrap();
     assert!(
         !store
-            .compare_and_delete_consent(&request_id, &array)
+            .compare_and_delete_consent(&request_id, &snapshot.version)
             .await
             .unwrap()
     );
@@ -366,7 +425,7 @@ async fn consent_json_compare_is_nested_order_independent_but_preserves_array_ob
 }
 
 #[tokio::test]
-async fn malformed_json_compare_delete_fails_closed_without_deleting() {
+async fn malformed_snapshot_and_corrupt_replacement_fail_closed_without_deleting() {
     let Some((store, inspector)) = setup().await else {
         return;
     };
@@ -378,10 +437,28 @@ async fn malformed_json_compare_delete_fails_closed_without_deleting() {
         .await
         .unwrap();
 
-    let error = store
-        .compare_and_delete_consent(&request_id, &expected)
-        .await
-        .unwrap_err();
+    let error = store.load_consent_snapshot(&request_id).await.unwrap_err();
     assert_eq!(error.kind(), nazo_valkey::ErrorKind::CorruptData);
     assert!(inspector.exists::<bool, _>(&key).await.unwrap());
+
+    store
+        .store_consent(&request_id, &expected, 30)
+        .await
+        .unwrap();
+    let snapshot = store
+        .load_consent_snapshot(&request_id)
+        .await
+        .unwrap()
+        .unwrap();
+    inspector
+        .set::<(), _, _>(&key, "{", None, None, false)
+        .await
+        .unwrap();
+    assert!(
+        !store
+            .compare_and_delete_consent(&request_id, &snapshot.version)
+            .await
+            .unwrap()
+    );
+    assert_eq!(inspector.get::<String, _>(&key).await.unwrap(), "{");
 }

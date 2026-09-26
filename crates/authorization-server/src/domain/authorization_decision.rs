@@ -134,8 +134,13 @@ impl ServerAuthorizationDecisionOperations {
             }
         };
 
-        let establishes_oidc_login = preview.consent.scopes.iter().any(|scope| scope == "openid");
-        if establishes_oidc_login && preview.consent.oidc_sid.as_deref() != Some(session.oidc_sid())
+        let establishes_oidc_login = preview
+            .consent()
+            .scopes
+            .iter()
+            .any(|scope| scope == "openid");
+        if establishes_oidc_login
+            && preview.consent().oidc_sid.as_deref() != Some(session.oidc_sid())
         {
             tracing::warn!("authorization consent is not bound to the current OP browser session");
             return Err(AuthorizationDecisionError::ConsentInvalid);
@@ -147,21 +152,21 @@ impl ServerAuthorizationDecisionOperations {
         let mut intent_fields = audit_fields(&[
             ("request_id_hash", json!(blake3_hex(&command.request_id))),
             ("user_id", json!(session.user().id())),
-            ("client_id", json!(preview.consent.client_id.clone())),
+            ("client_id", json!(preview.consent().client_id.clone())),
             ("decision", json!(decision)),
-            ("scope", json!(preview.consent.scopes.join(" "))),
+            ("scope", json!(preview.consent().scopes.join(" "))),
             ("source_ip_hash", json!(blake3_hex(&command.source_ip))),
         ]);
-        if !preview.consent.resource_indicators.is_empty() {
+        if !preview.consent().resource_indicators.is_empty() {
             intent_fields.insert(
                 "resource_digest".to_owned(),
                 json!(blake3_hex(
-                    &preview.consent.resource_indicators.join("\u{1f}")
+                    &preview.consent().resource_indicators.join("\u{1f}")
                 )),
             );
         }
         if preview
-            .consent
+            .consent()
             .authorization_details
             .as_array()
             .is_some_and(|details| !details.is_empty())
@@ -169,11 +174,11 @@ impl ServerAuthorizationDecisionOperations {
             intent_fields.insert(
                 "authorization_details_digest".to_owned(),
                 json!(blake3_hex(
-                    &preview.consent.authorization_details.to_string()
+                    &preview.consent().authorization_details.to_string()
                 )),
             );
         }
-        if let Some(digest) = preview.consent.pushed_request_digest.as_deref() {
+        if let Some(digest) = preview.consent().pushed_request_digest.as_deref() {
             intent_fields.insert("pushed_request_digest".to_owned(), json!(digest));
         }
         self.security_audit
@@ -229,7 +234,7 @@ impl ServerAuthorizationDecisionOperations {
         // The intent above is the sole Required evidence for this decision; the
         // outcome below is Telemetry because consent/PAR state and the audit
         // ledger are separate stores that cannot commit atomically here.
-        let payload = preview.consent;
+        let payload = preview.into_consent();
         if command.decision == UserAuthorizationDecision::Deny {
             record_decision_audit(
                 self.security_audit.as_ref(),
