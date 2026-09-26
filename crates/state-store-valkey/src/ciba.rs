@@ -1,3 +1,4 @@
+use fred::prelude::LuaInterface;
 use nazo_auth::{
     CibaAtomicResult, CibaPingNotificationStatus, CibaRequestState, CibaStatePortError,
     CibaStateStorePort, CibaStateVersion, CibaStoredRequest,
@@ -125,8 +126,8 @@ for _, member in ipairs(members) do
     end
   end
 end
-if #deliveries == 0 then return '[]' end
-return cjson.encode(deliveries)
+if #deliveries == 0 then return {#members, '[]'} end
+return {#members, cjson.encode(deliveries)}
 "#;
 
 const FINISH_PING_SCRIPT: &str = r#"
@@ -179,6 +180,12 @@ pub struct CibaPingDelivery {
     pub client_notification_token: String,
     pub attempts: u32,
     pub expires_at: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CibaPingClaimBatch {
+    pub scanned: usize,
+    pub deliveries: Vec<CibaPingDelivery>,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -346,20 +353,26 @@ impl CibaStore {
         now: i64,
         lock_until: i64,
         limit: usize,
-    ) -> Result<Vec<CibaPingDelivery>, Error> {
-        let raw = command::eval_string(
-            &self.connection,
-            CLAIM_DUE_PING_SCRIPT,
-            vec![keys::ciba_ping_queue()],
-            vec![
-                now.to_string(),
-                lock_until.to_string(),
-                limit.to_string(),
-                format!("{}oauth:ciba:", self.connection.state_prefix()),
-            ],
-        )
-        .await?;
-        serde_json::from_str(&raw).map_err(serialization_error)
+    ) -> Result<CibaPingClaimBatch, Error> {
+        let (scanned, raw): (usize, String) = self
+            .connection
+            .client
+            .eval(
+                CLAIM_DUE_PING_SCRIPT,
+                self.connection.state_keys(vec![keys::ciba_ping_queue()]),
+                vec![
+                    now.to_string(),
+                    lock_until.to_string(),
+                    limit.to_string(),
+                    format!("{}oauth:ciba:", self.connection.state_prefix()),
+                ],
+            )
+            .await
+            .map_err(Error::from_fred)?;
+        Ok(CibaPingClaimBatch {
+            scanned,
+            deliveries: serde_json::from_str(&raw).map_err(serialization_error)?,
+        })
     }
 
     pub async fn finish_ping(

@@ -7,8 +7,8 @@ use app::{
     authorization::AuthorizationRequestFacts,
     contracts::{oauth_error::OAuthEndpointError, request_facts::DpopRequestFacts},
     ports::transient_state::{
-        CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome, CibaPingFinishResult,
-        TransientStateFuture,
+        CibaPingClaimBatch, CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome,
+        CibaPingFinishResult, TransientStateFuture,
     },
     security::dpop::validate_dpop_proof,
     workers::ciba_ping::{CibaPingDeliveryWorker, CibaPingSender},
@@ -152,10 +152,14 @@ impl CibaPingDeliveryPort for DeliveryPorts {
         now: i64,
         lock_until: i64,
         limit: usize,
-    ) -> TransientStateFuture<'_, Vec<CibaPingDelivery>> {
+    ) -> TransientStateFuture<'_, CibaPingClaimBatch> {
         Box::pin(async move {
             self.claims.lock().unwrap().push((now, lock_until, limit));
-            Ok(self.pending.lock().unwrap().take().into_iter().collect())
+            let deliveries: Vec<_> = self.pending.lock().unwrap().take().into_iter().collect();
+            Ok(CibaPingClaimBatch {
+                scanned: deliveries.len(),
+                deliveries,
+            })
         })
     }
     fn finish<'a>(

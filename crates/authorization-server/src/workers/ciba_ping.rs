@@ -32,9 +32,10 @@ impl CibaPingDeliveryWorker {
     pub fn new(store: Arc<dyn CibaPingDeliveryPort>, sender: Arc<dyn CibaPingSender>) -> Self {
         Self { store, sender }
     }
+    /// Returns the number of queue entries scanned, including stale entries.
     pub async fn process_due_batch(&self) -> anyhow::Result<usize> {
         let now = Utc::now().timestamp();
-        let deliveries = self
+        let batch = self
             .store
             .claim_due(
                 now,
@@ -43,8 +44,7 @@ impl CibaPingDeliveryWorker {
             )
             .await
             .context("failed to claim CIBA ping deliveries")?;
-        let count = deliveries.len();
-        let outcomes = stream::iter(deliveries)
+        let outcomes = stream::iter(batch.deliveries)
             .map(|delivery| async move { self.process_delivery(delivery).await })
             .buffer_unordered(DELIVERY_CONCURRENCY)
             .collect::<Vec<_>>()
@@ -52,7 +52,7 @@ impl CibaPingDeliveryWorker {
         if let Some(error) = outcomes.into_iter().find_map(Result::err) {
             return Err(error);
         }
-        Ok(count)
+        Ok(batch.scanned)
     }
 
     async fn process_delivery(&self, delivery: CibaPingDelivery) -> anyhow::Result<()> {

@@ -8,8 +8,9 @@ pub(crate) fn spawn_ciba_ping_delivery_worker(
         loop {
             match worker.process_due_batch().await {
                 Ok(DELIVERY_BATCH_SIZE) => {
-                    // A full claim can leave due work behind. Retry deadlines
-                    // remain in the store; only batch scheduling is immediate.
+                    // A full scan can leave due work behind even if stale
+                    // entries produced no deliveries. Retry deadlines remain
+                    // in the store; only batch scheduling is immediate.
                     tokio::task::yield_now().await;
                     continue;
                 }

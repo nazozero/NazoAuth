@@ -264,7 +264,9 @@ async fn ciba_decision_atomically_schedules_and_terminally_acks_ping_delivery() 
         .await
         .unwrap();
 
-    let deliveries = store.claim_due_ping(now, now + 15, 10).await.unwrap();
+    let batch = store.claim_due_ping(now, now + 15, 10).await.unwrap();
+    assert_eq!(batch.scanned, 1);
+    let deliveries = batch.deliveries;
     assert_eq!(deliveries.len(), 1);
     assert_eq!(deliveries[0].auth_req_id, auth_req_id);
     assert_eq!(deliveries[0].attempts, 1);
@@ -285,8 +287,103 @@ async fn ciba_decision_atomically_schedules_and_terminally_acks_ping_delivery() 
             .claim_due_ping(now + 30, now + 45, 10)
             .await
             .unwrap()
+            .deliveries
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn ciba_ping_claim_reports_full_stale_and_mixed_scans_before_live_tail() {
+    let Some((_, inspector)) = setup().await else {
+        return;
+    };
+    let now = server_time(&inspector).await;
+    for stale_count in [8, 7] {
+        let epoch = uuid::Uuid::now_v7();
+        let tenant = nazo_identity::TenantId::new(uuid::Uuid::now_v7()).unwrap();
+        let connection = ValkeyConnection::from_existing_client(
+            inspector.clone(),
+            "ciba-stale-scan",
+            epoch,
+            tenant,
+        )
+        .unwrap();
+        let store = CibaStore::new(&connection);
+        for id in 0..9 {
+            let auth_req_id = format!("scan-{id}");
+            let state = CibaRequestState {
+                client_id: "ping-client".to_owned(),
+                user_id: uuid::Uuid::from_u128(7),
+                scopes: vec!["openid".to_owned()],
+                audiences: vec!["resource".to_owned()],
+                acr: None,
+                authentication_context: None,
+                binding_message: None,
+                issued_at: now,
+                status: CibaStatus::Pending,
+                interval_seconds: 5,
+                expires_at: now + 60,
+                retention_expires_at: now + 180,
+                last_poll_at: None,
+                ping_notification: Some(CibaPingNotification {
+                    auth_req_id: None,
+                    endpoint: "https://client.example/ciba-notification".to_owned(),
+                    client_notification_token: Some("notification-token-0123456789".to_owned()),
+                    status: CibaPingNotificationStatus::AwaitingDecision,
+                    attempts: 0,
+                    next_attempt_at: None,
+                }),
+            };
+            assert_eq!(
+                store.create(&auth_req_id, &state).await.unwrap(),
+                AtomicResult::Applied
+            );
+            CibaService::new(store.clone())
+                .decide(
+                    &auth_req_id,
+                    CibaDecision::Approve(ciba_approval_context(now)),
+                    Some(state.user_id),
+                    || now + i64::from(id == 8),
+                )
+                .await
+                .unwrap();
+            if id < stale_count {
+                // Simulate state TTL expiry while its ZSET member remains.
+                let key = nazo_valkey::test_support::storage_key(
+                    "ciba-stale-scan",
+                    epoch,
+                    tenant,
+                    format!(
+                        "oauth:ciba:{}",
+                        blake3::hash(auth_req_id.as_bytes()).to_hex()
+                    ),
+                )
+                .unwrap();
+                assert_eq!(inspector.del::<i64, _>(key).await.unwrap(), 1);
+            }
+        }
+
+        let first = store.claim_due_ping(now + 1, now + 16, 8).await.unwrap();
+        assert_eq!(first.scanned, 8);
+        assert_eq!(first.deliveries.len(), 8 - stale_count);
+        let tail = store.claim_due_ping(now + 1, now + 16, 8).await.unwrap();
+        assert_eq!(tail.scanned, 1);
+        assert_eq!(tail.deliveries.len(), 1);
+        assert_eq!(tail.deliveries[0].auth_req_id, "scan-8");
+        assert_eq!(tail.deliveries[0].attempts, 1);
+        for delivery in first.deliveries.iter().chain(&tail.deliveries) {
+            assert_eq!(
+                store
+                    .finish_ping(delivery, CibaPingFinishOutcome::Delivered)
+                    .await
+                    .unwrap(),
+                CibaPingFinishResult::Applied
+            );
+        }
+        let empty = store.claim_due_ping(now + 1, now + 16, 8).await.unwrap();
+        assert_eq!(empty.scanned, 0);
+        assert!(empty.deliveries.is_empty());
+    }
 }
 
 #[tokio::test]
@@ -341,6 +438,7 @@ async fn expired_ciba_ping_is_failed_without_exposing_its_notification_token() {
             .claim_due_ping(now + 2, now + 17, 10)
             .await
             .unwrap()
+            .deliveries
             .is_empty(),
         "an expired authorization request must never trigger outbound notification"
     );

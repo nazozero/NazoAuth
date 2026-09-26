@@ -14,10 +14,10 @@ use nazo_oauth_server::ports::{
         FapiHttpSignatureReplayStoreError,
     },
     transient_state::{
-        CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome, CibaPingFinishResult,
-        ServerStateBackendBindings, ServerTransientStateBindings, ServerTransientStateProvider,
-        TenantDirectoryCachePort, TenantTransientStateFactory, TransientStateError,
-        TransientStateFuture, TransientStateHealthPort,
+        CibaPingClaimBatch, CibaPingDelivery, CibaPingDeliveryPort, CibaPingFinishOutcome,
+        CibaPingFinishResult, ServerStateBackendBindings, ServerTransientStateBindings,
+        ServerTransientStateProvider, TenantDirectoryCachePort, TenantTransientStateFactory,
+        TransientStateError, TransientStateFuture, TransientStateHealthPort,
     },
 };
 
@@ -48,13 +48,15 @@ impl CibaPingDeliveryPort for ValkeyCibaPingDelivery {
         now: i64,
         lock_until: i64,
         limit: usize,
-    ) -> TransientStateFuture<'a, Vec<CibaPingDelivery>> {
+    ) -> TransientStateFuture<'a, CibaPingClaimBatch> {
         Box::pin(async move {
             self.store
                 .claim_due_ping(now, lock_until, limit)
                 .await
-                .map(|deliveries| {
-                    deliveries
+                .map(|batch| CibaPingClaimBatch {
+                    scanned: batch.scanned,
+                    deliveries: batch
+                        .deliveries
                         .into_iter()
                         .map(|delivery| CibaPingDelivery {
                             auth_req_id_hash: delivery.auth_req_id_hash,
@@ -64,7 +66,7 @@ impl CibaPingDeliveryPort for ValkeyCibaPingDelivery {
                             attempts: delivery.attempts,
                             expires_at: delivery.expires_at,
                         })
-                        .collect()
+                        .collect(),
                 })
                 .map_err(map_transient_state_error)
         })
