@@ -10,7 +10,7 @@ pub(crate) async fn sign_external(
     external: &ExternalSigningKey,
     kid: &str,
     algorithm: nazo_crypto::jwt::Algorithm,
-    public_jwk: &Value,
+    decoding_key: &JwtVerificationKey,
     signing_input: &[u8],
 ) -> Result<Signature, SignError> {
     let signature = external
@@ -32,7 +32,7 @@ pub(crate) async fn sign_external(
         algorithm,
         signing_input,
         signature.as_bytes(),
-        public_jwk,
+        decoding_key,
     )
     .map_err(|_| SignError::SigningFailed)?;
     Ok(signature)
@@ -44,11 +44,9 @@ fn verify_external_jwt_signature(
     alg: nazo_crypto::jwt::Algorithm,
     signing_input: &[u8],
     signature: &[u8],
-    public_jwk: &Value,
+    decoding_key: &JwtVerificationKey,
 ) -> nazo_crypto::Result<()> {
-    let decoding_key = decoding_key_from_public_jwk(public_jwk, alg)
-        .ok_or(nazo_crypto::CryptoError::InvalidKey)?;
-    if nazo_crypto::signature::verify(alg, &decoding_key, signing_input, signature).is_err() {
+    if nazo_crypto::signature::verify(alg, decoding_key, signing_input, signature).is_err() {
         tracing::error!(
             kid,
             alg = ?alg,

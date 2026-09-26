@@ -631,6 +631,77 @@ fn snapshot_publication_rejects_a_managed_key_whose_jwk_cannot_verify() {
     assert!(KeyGeneration::database(loaded).is_err());
 }
 
+#[tokio::test]
+async fn external_signatures_use_the_selected_generation_prepared_public_key() {
+    let manager = KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
+    let mut loaded = manager.inner.generation.load().loaded.clone();
+    let super::ActiveSigningKey::Local(material) = &loaded.active_signing_key else {
+        panic!("fixture must have local signing material");
+    };
+    let signature = material.prepared.sign(b"expected").unwrap();
+    loaded.active_signing_key = super::ActiveSigningKey::External(super::ExternalSigningKey {
+        key_ref: "kms://test/key".to_owned(),
+        signer: Arc::new(crate::test_support::FixedExternalKeySigner(signature)),
+    });
+    manager
+        .inner
+        .generation
+        .store(Arc::new(KeyGeneration::database(loaded.clone()).unwrap()));
+    assert!(
+        manager
+            .sign(SignRequest {
+                purpose: SigningPurpose::IdToken,
+                algorithm: "EdDSA",
+                signing_input: b"expected",
+            })
+            .await
+            .is_ok()
+    );
+    assert_eq!(
+        manager
+            .sign(SignRequest {
+                purpose: SigningPurpose::IdToken,
+                algorithm: "EdDSA",
+                signing_input: b"tampered",
+            })
+            .await,
+        Err(nazo_auth::SignError::SigningFailed)
+    );
+
+    let replacement = nazo_crypto::signature::generate_private_key(loaded.active_alg).unwrap();
+    loaded.verification_keys[0].public_jwk = crate::serialization::public_jwk_from_private_der(
+        &loaded.active_kid,
+        loaded.active_alg,
+        &replacement,
+    )
+    .unwrap();
+    manager
+        .inner
+        .generation
+        .store(Arc::new(KeyGeneration::database(loaded).unwrap()));
+    assert_eq!(
+        manager
+            .sign(SignRequest {
+                purpose: SigningPurpose::IdToken,
+                algorithm: "EdDSA",
+                signing_input: b"expected",
+            })
+            .await,
+        Err(nazo_auth::SignError::SigningFailed),
+        "an old external signature must not be accepted by a replacement generation"
+    );
+}
+
+#[test]
+fn prepared_verification_rejects_invalid_p256_public_points() {
+    let jwk = serde_json::json!({
+        "kty": "EC", "crv": "P-256", "alg": "ES256", "use": "sig",
+        "x": URL_SAFE_NO_PAD.encode([0_u8; 32]),
+        "y": URL_SAFE_NO_PAD.encode([0_u8; 32])
+    });
+    assert!(super::prepared_verification(&jwk, nazo_crypto::jwt::Algorithm::ES256).is_none());
+}
+
 #[test]
 fn prepared_verification_accepts_only_absent_or_verify_only_key_ops() {
     let algorithm = nazo_crypto::jwt::Algorithm::EdDSA;
