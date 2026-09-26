@@ -152,7 +152,7 @@ pub async fn issue_token_response(
     // Only OIDC claims construction consumes the subject profile; non-OIDC
     // user access tokens rely on the commit's principal lock recheck.
     let subject_claims_snapshot = if issue_includes_openid && let Some(user_id) = issue.user_id {
-        match issue.prepared_subject.as_ref() {
+        match issue.prepared_subject.take() {
             Some(prepared) => {
                 if prepared.tenant_id != client.tenant_id
                     || prepared.claims.subject.as_uuid() != user_id
@@ -174,13 +174,13 @@ pub async fn issue_token_response(
                         false,
                     ));
                 }
-                Some(prepared.claims.clone())
+                Some(prepared.claims)
             }
             None => match token_service
                 .active_subject_claims(client.tenant_id, user_id)
                 .await
             {
-                Ok(Some(claims)) => Some(claims.clone()),
+                Ok(Some(claims)) => Some(claims),
                 Ok(None) => {
                     mark_failed_authorization_code_if_needed(
                         token_service,
