@@ -17,6 +17,7 @@ the current release or an unmeasured deployment.
 | [reports/2026-09-22-current-capacity](reports/2026-09-22-current-capacity/report.md) | Current capacity evidence report (matrix points, 30m sustained runs, refresh bounds, audit reconciliation). |
 | [measurement-accounting.md](measurement-accounting.md) | Successful-operation accounting, prepare-failure classification and observer clock validity. |
 | [issuance-maintenance-evidence.md](issuance-maintenance-evidence.md) | Required mature-window expiry-age evidence for single-instance phase-3 acceptance. |
+| [PR #222 performance audit](reports/special/2026-09-26-pr222-performance-audit.md) | Source-linked bottleneck review, implementation checkpoints and validation limits; not a new capacity baseline. |
 
 Historical capacity reports under `reports/` retain their generation date
 and are regression/root-cause evidence only — none describes the current
