@@ -824,17 +824,76 @@ fn reauth_nonce_consume_failure_removes_untrusted_nonce() {
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 #[test]
 fn unverified_request_object_routing_extracts_only_parseable_signed_payloads() {
+    use crate::authorization::jar::prepare_par_request_object_client_id;
+
     let keys = nazo_key_management::KeyManager::for_test(jsonwebtoken::Algorithm::EdDSA);
     let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","kid":"routing-only"}"#);
     let payload = URL_SAFE_NO_PAD.encode(json!({"client_id": "routed-client"}).to_string());
     let object = format!("{header}.{payload}.not-a-real-signature");
 
-    assert_eq!(
-        unverified_request_object_client_id(&keys, &object).as_deref(),
-        Some("routed-client")
-    );
-    assert!(unverified_request_object_client_id(&keys, "broken").is_none());
-    assert!(unverified_request_object_client_id(&keys, "a.b.c.d.e").is_none());
+    let mut parameters = query(&[("request", &object)]);
+    assert!(prepare_par_request_object_client_id(&keys, &mut parameters).is_none());
+    assert_eq!(parameters["client_id"], "routed-client");
+    for invalid in ["broken", "a.b.c.d.e"] {
+        let mut parameters = query(&[("request", invalid)]);
+        assert!(prepare_par_request_object_client_id(&keys, &mut parameters).is_none());
+        assert!(!parameters.contains_key("client_id"));
+    }
+}
+
+#[test]
+fn authorize_requires_outer_client_id_before_jar_or_par_lookup() {
+    use crate::authorization::AuthorizationRequestFacts;
+    use nazo_runtime_modules::{ActiveModuleSnapshot, ModuleId, ModuleRevision};
+
+    futures_executor::block_on(async {
+        let fixture = authorization_fixture::Fixture::new(Ok(None), Ok(None));
+        fixture
+            .snapshots
+            .compare_and_publish(
+                ModuleRevision::new(1),
+                ActiveModuleSnapshot {
+                    revision: ModuleRevision::new(2),
+                    accepting: [ModuleId::RequestObjects].into(),
+                    draining: Default::default(),
+                },
+            )
+            .unwrap();
+        let application = fixture.make_application();
+        let header = URL_SAFE_NO_PAD.encode(r#"{"alg":"RS256","kid":"routing-only"}"#);
+        let payload = URL_SAFE_NO_PAD.encode(json!({"client_id": "routed-client"}).to_string());
+        let signed = format!("{header}.{payload}.not-a-real-signature");
+        for (parameter, value) in [
+            ("request", signed.as_str()),
+            ("request", "a.b.c.d.e"),
+            (
+                "request_uri",
+                "urn:ietf:params:oauth:request_uri:stored-par",
+            ),
+        ] {
+            let mut parameters = query(&[(parameter, value)]);
+            let error = application
+                .authorize(
+                    &AuthorizationRequestFacts {
+                        source_ip: "192.0.2.1",
+                        session_id: None,
+                        user_agent: None,
+                    },
+                    &mut parameters,
+                )
+                .await
+                .err()
+                .expect("missing outer client_id must fail");
+            let OAuthEndpointError::Json(fields) = error else {
+                panic!("JSON error expected");
+            };
+            assert_eq!(fields.status, StatusCode::BAD_REQUEST);
+            assert_eq!(fields.error, "invalid_request");
+            assert_eq!(fields.description, "缺少 client_id.");
+            assert!(!parameters.contains_key("client_id"));
+            assert!(fixture.ports.calls().is_empty());
+        }
+    });
 }
 
 #[test]
@@ -852,7 +911,7 @@ fn request_object_jwks_failure_is_server_error_without_using_persisted_fallback(
         client.registration.client_id = "remote-jar-client".into();
         client.registration.jwks_uri = Some("https://localhost:1/jwks".into());
         client.registration.jwks = Some(json!({"keys":[{"kid":"persisted"}]}));
-        let response = apply_request_object_with_context(&context, &mut outer, &mut client)
+        let response = apply_request_object_with_context(&context, &mut outer, &mut client, None)
             .await
             .expect_err("unavailable remote JWK source must reject the request object");
         let OAuthEndpointError::Json(fields) = response else {
