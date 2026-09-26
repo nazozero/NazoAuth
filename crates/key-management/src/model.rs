@@ -159,7 +159,7 @@ pub(crate) struct LoadedKeyset {
     pub(crate) active_alg: nazo_crypto::jwt::Algorithm,
     pub(crate) active_signing_key: ActiveSigningKey,
     pub(crate) verification_keys: Vec<StoredVerificationKey>,
-    pub(crate) request_object_decryption_key: Vec<u8>,
+    pub(crate) request_object_decryption_key: Arc<nazo_crypto::key_wrap::RsaOaep256PrivateKey>,
     pub(crate) request_object_encryption_jwk: Value,
     pub(crate) openid4vc_material: Option<Openid4vcMaterial>,
 }
@@ -883,6 +883,10 @@ impl KeyManager {
                 })
             }
         };
+        let request_object_der = crate::serialization::rsa_pkcs8_from_pem(
+            &test_request_object_decryption_key().expect("test request object decryption key"),
+        )
+        .expect("test request object PKCS8");
         let loaded = LoadedKeyset {
             active_kid: kid.clone(),
             active_alg: algorithm,
@@ -900,17 +904,15 @@ impl KeyManager {
                     handle: KeyHandle::Local(local_material),
                 },
             }],
-            request_object_decryption_key: test_request_object_decryption_key()
-                .expect("test request object decryption key"),
-            request_object_encryption_jwk: Value::Null,
+            request_object_decryption_key: Arc::new(
+                nazo_crypto::key_wrap::RsaOaep256PrivateKey::from_pkcs8(&request_object_der)
+                    .expect("test request object decryption key"),
+            ),
+            request_object_encryption_jwk:
+                crate::request_object_encryption::request_object_encryption_jwk(&request_object_der)
+                    .expect("test request object encryption JWK"),
             openid4vc_material: None,
         };
-        let mut loaded = loaded;
-        loaded.request_object_encryption_jwk =
-            crate::request_object_encryption::request_object_encryption_jwk(
-                &loaded.request_object_decryption_key,
-            )
-            .expect("test request object encryption JWK");
         let generation = KeyGeneration::database(loaded)
             .expect("test keyset must contain valid signing and verification material");
         Self {

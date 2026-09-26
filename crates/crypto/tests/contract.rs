@@ -671,10 +671,6 @@ mod jose {
             key_wrap::generate_rsa_pkcs8_der(1024),
             Err(CryptoError::InvalidInput)
         ));
-        assert!(matches!(
-            key_wrap::validate_rsa_pkcs8(b"not der"),
-            Err(CryptoError::InvalidKey)
-        ));
     }
 
     #[test]
@@ -695,18 +691,19 @@ mod jose {
 
         // Old AWS-LC encrypt -> new decrypt.
         let ciphertext = aws_rsa_oaep256_encrypt(&n, &e, message);
-        let decrypted = key_wrap::rsa_oaep256_decrypt(&private_der, &ciphertext).unwrap();
-        assert_eq!(decrypted, message);
+        let prepared = key_wrap::RsaOaep256PrivateKey::from_pkcs8(&private_der).unwrap();
+        assert_eq!(prepared.decrypt(&ciphertext).unwrap(), message);
+        assert_eq!(prepared.decrypt(&ciphertext).unwrap(), message);
 
         // Tampering fails authentication; malformed key material is InvalidKey.
         let mut tampered = ciphertext.clone();
         tampered[0] ^= 0x01;
         assert!(matches!(
-            key_wrap::rsa_oaep256_decrypt(&private_der, &tampered),
+            prepared.decrypt(&tampered),
             Err(CryptoError::AuthenticationFailed)
         ));
         assert!(matches!(
-            key_wrap::rsa_oaep256_decrypt(b"garbage", &ciphertext),
+            key_wrap::RsaOaep256PrivateKey::from_pkcs8(b"garbage"),
             Err(CryptoError::InvalidKey)
         ));
         assert!(matches!(

@@ -678,11 +678,11 @@ fn load_payload(
     )?;
     let request_object_der =
         crate::serialization::rsa_pkcs8_from_pem(&request_object_decryption_key)?;
-    nazo_crypto::key_wrap::validate_rsa_pkcs8(&request_object_der)?;
     let request_object_encryption_jwk =
-        crate::request_object_encryption::request_object_encryption_jwk(
-            &request_object_decryption_key,
-        )?;
+        crate::request_object_encryption::request_object_encryption_jwk(&request_object_der)?;
+    let request_object_decryption_key = Arc::new(
+        nazo_crypto::key_wrap::RsaOaep256PrivateKey::from_pkcs8(&request_object_der)?,
+    );
     let mut active = None;
     let mut active_alg = None;
     let mut verification_keys = Vec::new();

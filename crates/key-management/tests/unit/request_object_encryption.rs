@@ -27,6 +27,31 @@ async fn dedicated_request_object_key_decrypts_authenticated_nested_jwt() {
 }
 
 #[tokio::test]
+async fn request_object_decryption_uses_the_current_generation_recipient_key() {
+    let manager = crate::test_support::key_manager(settings()).await.unwrap();
+    let old_jwk = manager.snapshot().request_object_encryption_jwk.clone();
+    let old_compact = encrypt(&old_jwk, b"old.claims.signature");
+    assert_eq!(
+        manager.decrypt_request_object(&old_compact).unwrap(),
+        "old.claims.signature"
+    );
+    let replacement = crate::test_support::key_manager(settings()).await.unwrap();
+    let new_jwk = replacement.snapshot().request_object_encryption_jwk.clone();
+    assert_ne!(old_jwk["kid"], new_jwk["kid"]);
+    manager
+        .inner
+        .generation
+        .store(replacement.inner.generation.load_full());
+    assert!(manager.decrypt_request_object(&old_compact).is_err());
+    assert_eq!(
+        manager
+            .decrypt_request_object(&encrypt(&new_jwk, b"new.claims.signature"))
+            .unwrap(),
+        "new.claims.signature",
+    );
+}
+
+#[tokio::test]
 async fn request_object_decryption_rejects_tampered_ciphertext() {
     let manager = crate::test_support::key_manager(settings()).await.unwrap();
     let jwk = manager.snapshot().request_object_encryption_jwk.clone();
