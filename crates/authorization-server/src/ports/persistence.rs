@@ -17,7 +17,7 @@ use nazo_identity::ports::{
     GrantSummaryRepositoryPort, LoginAccountRepositoryPort, MfaRepositoryPort,
     MtlsTrustAnchorStore, PasskeyAccountRepositoryPort, PasskeyRepositoryPort,
     ProfileRepositoryPort, RegistrationAccountRepositoryPort, RememberedMfaDevicePort,
-    ScimCredentialAuditPort, ScimRepositoryPort, SessionAccountPort,
+    ScimCredentialPort, ScimRepositoryPort, SessionAccountPort,
 };
 
 /// All database capabilities required by one NazoAuth server process.
@@ -85,7 +85,7 @@ pub trait ServerPersistenceProvider: Send + Sync {
     fn access_requests(&self) -> Arc<dyn AccessRequestRepositoryPort>;
     fn admin_access_requests(&self) -> Arc<dyn nazo_persistence::AdminAccessRequestStore>;
     fn scim_repository(&self, event_retention_seconds: u64) -> Arc<dyn ScimRepositoryPort>;
-    fn scim_credential_audit(&self) -> Arc<dyn ScimCredentialAuditPort>;
+    fn scim_credentials(&self) -> Arc<dyn ScimCredentialPort>;
     fn scim_event_store(&self) -> Arc<dyn nazo_scim_events::EventStorePort>;
     fn logout_outbox(&self) -> Arc<dyn nazo_auth::BackchannelLogoutOutboxPort>;
     fn logout_delivery_store(&self) -> Arc<dyn nazo_persistence::BackchannelLogoutDeliveryStore>;

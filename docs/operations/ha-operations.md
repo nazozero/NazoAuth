@@ -115,7 +115,8 @@ instances from double-processing the same rows.
   instead of retrying in a tight loop. The worker is aborted and awaited
   during shutdown.
 - Covered state: expired consumed grants, consumed token-issuance rows, SCIM
-  security/audit events past retention, completed backchannel-logout
+  security events and historical SCIM audit rows past retention (successful
+  credential use now emits only the unified audit event), completed backchannel-logout
   deliveries, expired access-token revocations, and expired OpenID4VP
   presentation requests.
 

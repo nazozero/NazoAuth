@@ -38,10 +38,15 @@ Credential behavior:
 - Database tokens can expire or be revoked independently.
 - Read endpoints require `scim:read` or `scim:*`.
 - Create, replace, patch, and delete endpoints require `scim:write` or `scim:*`.
-- Successful database-token use updates `last_used_at` and inserts `scim_audit_events`.
-- Successful and denied SCIM token checks emit structured audit events without raw token material.
+- Successful token checks emit the unified `scim_token_used` event with token ID,
+  tenant ID, required scope, credential source, source-IP hash, and user-agent
+  hash. They do not update the credential row or write a second audit table.
+- Denied token checks require a durable `scim_token_denied` event before returning
+  the rejection; an audit outage fails closed. No event contains raw token material.
+- Historical `last_used_at` values and `scim_audit_events` rows remain readable,
+  but successful use no longer refreshes or inserts them.
 - The process-level security-state maintenance worker invokes
-  `nazo_oauth_cleanup_expired_security_state()`, which removes SCIM audit events
+  `nazo_oauth_cleanup_expired_security_state()`, which removes historical SCIM audit events
   older than 180 days together with expired security state. This keeps audit
   retention bounded while preserving a compromise investigation window.
 

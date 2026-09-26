@@ -1689,7 +1689,7 @@ async fn authorization_replay_waits_for_concurrent_refresh_rotation_before_compe
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
+async fn audit_repository_reads_active_scim_credentials_and_drives_logout_outbox() {
     let _claim_guard = BACKCHANNEL_CLAIM_TEST_LOCK.lock().await;
     let Some(database_url) = database_url() else {
         return;
@@ -1710,23 +1710,46 @@ async fn audit_repository_records_scim_use_and_drives_logout_outbox() {
         .await
         .expect("SCIM credential should load")
         .expect("SCIM credential should exist");
-    repository
-        .record_scim_token_use(
-            credential.id,
-            credential.tenant_id,
-            &["scim:read".to_owned()],
-            Some("a".repeat(64)),
-            Some("b".repeat(64)),
-        )
-        .await
-        .expect("SCIM use audit should commit");
-    let count =
-        sql_query("SELECT COUNT(*) AS count FROM scim_audit_events WHERE scim_token_id = $1")
-            .bind::<SqlUuid, _>(credential.id)
-            .get_result::<CountRow>(&mut connection)
-            .await
-            .expect("SCIM audit count should load");
+    assert_eq!(credential.tenant_id, tenant_id);
+    assert_eq!(credential.scopes, ["scim:read"]);
+    let count = sql_query(
+        "SELECT COUNT(*) AS count FROM scim_tokens \
+         WHERE id = $1 AND last_used_at IS NULL \
+           AND NOT EXISTS (SELECT 1 FROM scim_audit_events WHERE scim_token_id = $1)",
+    )
+    .bind::<SqlUuid, _>(credential.id)
+    .get_result::<CountRow>(&mut connection)
+    .await
+    .expect("SCIM lookup must not write use metadata");
     assert_eq!(count.count, 1);
+    sql_query(
+        "UPDATE scim_tokens SET expires_at = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(credential.id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    assert!(
+        repository
+            .active_scim_credential(&token_hash)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    sql_query(
+        "UPDATE scim_tokens SET expires_at = NULL, revoked_at = CURRENT_TIMESTAMP WHERE id = $1",
+    )
+    .bind::<SqlUuid, _>(credential.id)
+    .execute(&mut connection)
+    .await
+    .unwrap();
+    assert!(
+        repository
+            .active_scim_credential(&token_hash)
+            .await
+            .unwrap()
+            .is_none()
+    );
 
     let logout_token = format!("logout-token-test-{}", Uuid::now_v7());
     repository

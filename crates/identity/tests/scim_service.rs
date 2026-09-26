@@ -2,8 +2,8 @@ use std::sync::{Arc, Mutex};
 
 use chrono::Utc;
 use nazo_identity::ports::{
-    NewScimUser, PasswordHashInput, RepositoryError, RepositoryFuture, ScimCredentialAuditPort,
-    ScimCredentialUse, ScimListQuery, ScimRepositoryPort, UserPage,
+    NewScimUser, PasswordHashInput, RepositoryError, RepositoryFuture, ScimCredentialPort,
+    ScimListQuery, ScimRepositoryPort, UserPage,
 };
 use nazo_identity::scim::{NormalizedScimUser, ScimPatch, ScimService, ScimTokenCredential};
 use nazo_identity::{
@@ -70,24 +70,16 @@ impl ScimRepositoryPort for RecordingScimRepository {
 }
 
 #[derive(Default)]
-struct RecordingCredentialAudit {
+struct RecordingCredentials {
     credential: Option<ScimTokenCredential>,
-    usage: Mutex<Option<ScimCredentialUse>>,
 }
 
-impl ScimCredentialAuditPort for RecordingCredentialAudit {
+impl ScimCredentialPort for RecordingCredentials {
     fn active_credential<'a>(
         &'a self,
         _token_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<ScimTokenCredential>> {
         Box::pin(async move { Ok(self.credential.clone()) })
-    }
-
-    fn record_use<'a>(&'a self, usage: ScimCredentialUse) -> RepositoryFuture<'a, ()> {
-        Box::pin(async move {
-            *self.usage.lock().expect("usage recorder poisoned") = Some(usage);
-            Ok(())
-        })
     }
 }
 
@@ -104,7 +96,7 @@ async fn list_users_builds_a_tenant_scoped_repository_query() {
     let repository = RecordingScimRepository::default();
     let service = ScimService::new(
         Arc::new(repository.clone()),
-        Arc::new(RecordingCredentialAudit::default()),
+        Arc::new(RecordingCredentials::default()),
     );
     let tenant = TenantContext::default_system();
 
@@ -128,18 +120,17 @@ async fn list_users_builds_a_tenant_scoped_repository_query() {
 }
 
 #[tokio::test]
-async fn credential_lookup_and_usage_are_delegated_to_the_audit_port() {
+async fn credential_lookup_is_delegated_to_the_credential_port() {
     let credential = ScimTokenCredential {
         id: Uuid::from_u128(11),
         tenant_id: Uuid::from_u128(12),
         scopes: vec!["scim:read".to_owned()],
         event_audience: None,
     };
-    let audit = Arc::new(RecordingCredentialAudit {
+    let credentials = Arc::new(RecordingCredentials {
         credential: Some(credential.clone()),
-        usage: Mutex::new(None),
     });
-    let service = ScimService::new(Arc::new(RecordingScimRepository::default()), audit.clone());
+    let service = ScimService::new(Arc::new(RecordingScimRepository::default()), credentials);
 
     assert_eq!(
         service
@@ -147,22 +138,6 @@ async fn credential_lookup_and_usage_are_delegated_to_the_audit_port() {
             .await
             .expect("credential lookup should succeed"),
         Some(credential.clone())
-    );
-
-    let usage = ScimCredentialUse {
-        token_id: credential.id,
-        tenant_id: credential.tenant_id,
-        scopes: credential.scopes,
-        ip_hash: Some("ip-hash".to_owned()),
-        user_agent_hash: Some("ua-hash".to_owned()),
-    };
-    service
-        .record_credential_use(usage.clone())
-        .await
-        .expect("credential usage should record");
-    assert_eq!(
-        audit.usage.lock().expect("usage recorder poisoned").clone(),
-        Some(usage)
     );
 }
 
@@ -290,7 +265,7 @@ async fn get_post_put_patch_and_delete_use_the_single_scim_repository_boundary()
     });
     let service = ScimService::new(
         repository.clone(),
-        Arc::new(RecordingCredentialAudit::default()),
+        Arc::new(RecordingCredentials::default()),
     );
 
     assert!(service.user(tenant, user_id).await.unwrap().is_some());

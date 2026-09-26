@@ -210,7 +210,7 @@ impl ServerPersistenceProvider for PostgresProvider {
         ))
     }
 
-    fn scim_credential_audit(&self) -> Arc<dyn nazo_identity::ports::ScimCredentialAuditPort> {
+    fn scim_credentials(&self) -> Arc<dyn nazo_identity::ports::ScimCredentialPort> {
         Arc::new(AuditRepository::new(self.pool.clone()))
     }
 

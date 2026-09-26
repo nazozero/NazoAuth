@@ -5,9 +5,7 @@ use nazo_auth::{
     BackchannelLogoutDelivery, BackchannelLogoutOutboxPort, IdempotentBackchannelLogoutDelivery,
     LogoutDependencyError, LogoutFuture, PendingBackchannelLogoutDelivery,
 };
-use nazo_identity::ports::{
-    RepositoryError, RepositoryFuture, ScimCredentialAuditPort, ScimCredentialUse,
-};
+use nazo_identity::ports::{RepositoryError, RepositoryFuture, ScimCredentialPort};
 use nazo_identity::scim::ScimTokenCredential;
 use nazo_identity::{
     IdentitySecurityEvent, IdentitySecurityEventType, IdentitySecurityOutcome,
@@ -21,7 +19,7 @@ use crate::{
     rows::auth::BackchannelLogoutDeliveryRow,
     schema::{
         backchannel_logout_deliveries, identity_security_events, runtime_module_state_events,
-        scim_audit_events, scim_tokens, users,
+        scim_tokens, users,
     },
 };
 
@@ -74,41 +72,6 @@ impl AuditRepository {
                     },
                 )
             })
-            .map_err(map_error)
-    }
-
-    pub async fn record_scim_token_use(
-        &self,
-        token_id: Uuid,
-        tenant_id: Uuid,
-        scopes: &[String],
-        ip_hash: Option<String>,
-        user_agent_hash: Option<String>,
-    ) -> Result<(), RepositoryError> {
-        let mut connection = self.connection().await?;
-        connection
-            .transaction::<(), diesel::result::Error, _>(async |connection| {
-                diesel::update(scim_tokens::table.find(token_id))
-                    .set((
-                        scim_tokens::last_used_at.eq(diesel::dsl::now),
-                        scim_tokens::updated_at.eq(diesel::dsl::now),
-                    ))
-                    .execute(connection)
-                    .await?;
-                diesel::insert_into(scim_audit_events::table)
-                    .values((
-                        scim_audit_events::tenant_id.eq(tenant_id),
-                        scim_audit_events::scim_token_id.eq(Some(token_id)),
-                        scim_audit_events::event_type.eq("scim_token_used"),
-                        scim_audit_events::scopes.eq(serde_json::json!(scopes)),
-                        scim_audit_events::ip_hash.eq(ip_hash),
-                        scim_audit_events::user_agent_hash.eq(user_agent_hash),
-                    ))
-                    .execute(connection)
-                    .await?;
-                Ok(())
-            })
-            .await
             .map_err(map_error)
     }
 
@@ -386,26 +349,12 @@ impl nazo_persistence::BackchannelLogoutDeliveryStore for AuditRepository {
     }
 }
 
-impl ScimCredentialAuditPort for AuditRepository {
+impl ScimCredentialPort for AuditRepository {
     fn active_credential<'a>(
         &'a self,
         token_hash: &'a str,
     ) -> RepositoryFuture<'a, Option<ScimTokenCredential>> {
         Box::pin(async move { Self::active_scim_credential(self, token_hash).await })
-    }
-
-    fn record_use<'a>(&'a self, usage: ScimCredentialUse) -> RepositoryFuture<'a, ()> {
-        Box::pin(async move {
-            Self::record_scim_token_use(
-                self,
-                usage.token_id,
-                usage.tenant_id,
-                &usage.scopes,
-                usage.ip_hash,
-                usage.user_agent_hash,
-            )
-            .await
-        })
     }
 }
 
