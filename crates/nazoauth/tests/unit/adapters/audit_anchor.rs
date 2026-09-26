@@ -18,7 +18,8 @@ use nazo_crypto::ed25519::VerifyingKey;
 use nazo_identity::ports::{RepositoryError, RepositoryFuture};
 use nazo_persistence::{
     SecurityAuditAnchorHealth, SecurityAuditBatch, SecurityAuditBatchAck, SecurityAuditBatchClaim,
-    SecurityAuditBatchLease, SecurityAuditOutboxDelivery, audit_chain::security_audit_batch_digest,
+    SecurityAuditBatchLease, SecurityAuditPendingDelivery,
+    audit_chain::security_audit_batch_digest,
 };
 use nazo_postgres::AuditLedgerRepository;
 use serde_json::{Value, json};
@@ -68,8 +69,8 @@ fn health_snapshot() -> SecurityAuditAnchorHealth {
     }
 }
 
-fn delivery(sequence: i64) -> SecurityAuditOutboxDelivery {
-    SecurityAuditOutboxDelivery {
+fn delivery(sequence: i64) -> SecurityAuditPendingDelivery {
+    SecurityAuditPendingDelivery {
         event_id: Uuid::from_u128(sequence as u128),
         sequence,
         event_type: "admin_user_updated".to_owned(),
@@ -81,7 +82,7 @@ fn delivery(sequence: i64) -> SecurityAuditOutboxDelivery {
     }
 }
 
-fn batch(deliveries: Vec<SecurityAuditOutboxDelivery>) -> SecurityAuditBatch {
+fn batch(deliveries: Vec<SecurityAuditPendingDelivery>) -> SecurityAuditBatch {
     let first = deliveries.first().expect("batch has events");
     let last = deliveries.last().expect("batch has events");
     let event_hashes: Vec<[u8; 32]> = deliveries

@@ -239,8 +239,7 @@ pub async fn configure_runtime_role(database_url: &str, runtime_role: &str) -> a
                          public.__diesel_schema_migrations, \
                          public.security_audit_chain_state, \
                          public.security_audit_events, \
-                         public.security_audit_chain_entries, \
-                         public.security_audit_event_outbox \
+                         public.security_audit_chain_entries \
                      FROM {quoted_role};\
                      REVOKE ALL ON FUNCTION \
                          public.nazo_reject_security_audit_event_mutation(), \

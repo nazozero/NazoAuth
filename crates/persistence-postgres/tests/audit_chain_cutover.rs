@@ -294,7 +294,7 @@ async fn audit_cutover_preserves_history_and_moves_chain_authority_to_exporter()
             .await
             .is_err()
     );
-    let failed_state = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox WHERE event_id IN ($1, $2)")
+    let failed_state = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_events WHERE event_id IN ($1, $2)")
         .bind::<SqlUuid, _>(good.event_id).bind::<SqlUuid, _>(rejected.event_id)
         .get_result::<Count>(&mut owner).await.unwrap();
     assert_eq!(
@@ -488,7 +488,7 @@ async fn cancellation_and_lost_result(
     // from that pool: recycling a returned connection must not be the cleanup.
     owner.batch_execute("SET statement_timeout = '2s'; BEGIN; SELECT * FROM public.nazo_security_audit_chain_head_for_update(); COMMIT").await
         .expect("an independent connection must acquire the head after cancellation");
-    let unchanged = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_event_outbox o WHERE event_id = $1 AND NOT EXISTS (SELECT 1 FROM public.security_audit_chain_entries c WHERE c.event_id = o.event_id)")
+    let unchanged = sql_query("SELECT count(*)::bigint AS value FROM public.security_audit_events o WHERE event_id = $1 AND NOT EXISTS (SELECT 1 FROM public.security_audit_chain_entries c WHERE c.event_id = o.event_id)")
         .bind::<SqlUuid, _>(pending.event_id).get_result::<Count>(owner).await.unwrap();
     assert_eq!(
         unchanged.value, 1,

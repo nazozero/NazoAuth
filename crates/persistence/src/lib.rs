@@ -69,7 +69,7 @@ pub struct SecurityAuditAnchorHealth {
     pub head_sequence: i64,
     pub head_hash: Vec<u8>,
     /// Exact pending/non-pending signal; the backlog size is only an estimate
-    /// so health checks never scan the whole outbox.
+    /// so health checks never scan the whole pending set.
     pub pending_exists: bool,
     pub pending_estimate: i64,
     /// Legacy residual: chained rows below the anchor that the retired
@@ -101,7 +101,7 @@ pub struct SecurityAuditBatchLease {
 }
 
 #[derive(Clone, Debug)]
-pub struct SecurityAuditOutboxDelivery {
+pub struct SecurityAuditPendingDelivery {
     pub event_id: uuid::Uuid,
     pub sequence: i64,
     pub event_type: String,
@@ -127,7 +127,7 @@ pub struct SecurityAuditBatch {
     pub last_hash: Vec<u8>,
     pub digest: Vec<u8>,
     pub attempts: i32,
-    pub deliveries: Vec<SecurityAuditOutboxDelivery>,
+    pub deliveries: Vec<SecurityAuditPendingDelivery>,
 }
 
 impl SecurityAuditBatch {

@@ -1,15 +1,16 @@
 # External audit-ledger anchoring
 
 Committed security events enter the append-only `security_audit_events`
-ledger and its durable outbox. Application emission is not always synchronous;
+ledger, whose rows are also the pending-delivery set until acknowledgement.
+Application emission is not always synchronous;
 see [Security Events](security-events.md) for queue loss, required append, and
 transactional producer boundaries. An independent `nazoauth audit-anchor-worker`
-(or equivalent sidecar) claims that outbox in bounded batches and sends one
+(or equivalent sidecar) claims the pending set in bounded batches and sends one
 signed batch checkpoint per claim to `AUDIT_ANCHOR_URL` over HTTPS. The
 exporter assigns sequence and BLAKE3 hashes to committed events in immutable
 `security_audit_chain_entries`, atomically with its bounded batch claim (at
 most 256 events and at most `AUDIT_ANCHOR_MAX_ENVELOPE_BYTES` wire bytes). A
-business transaction writes the event and outbox without locking the global
+business transaction writes only the event without locking the global
 chain head. Retries reuse the identical committed batch: the chain-state row
 pins the sequence range, member content digest, generation, and lease. The
 server process does not run this exporter and does not receive its database
@@ -68,7 +69,7 @@ acceptance; `duplicate` acknowledges an already-persisted identical batch; a
 `rejected` receipt with `permanent=true` blocks the batch until an operator
 runs `nazo_unblock_security_audit_batch()`, while a transient rejection or any
 missing/invalid receipt reschedules it. Acknowledgement deletes the batch's
-outbox, chain-entry, and event rows in the same transaction that advances
+chain-entry and event rows in the same transaction that advances
 the anchor checkpoint — the accepted checkpoint is the durable evidence, so
 no delivered row is retained and no separate sweeper reclaims it.
 Transport and transient failures are rescheduled with bounded backoff. Claim,
@@ -103,8 +104,7 @@ not.
 
 Delivery is the retention boundary. The acknowledgement transaction that
 advances the durable anchor also removes the batch's rows from
-`security_audit_event_outbox`, `security_audit_chain_entries`, and
-`security_audit_events`. The receiver already holds the complete, verified,
+`security_audit_chain_entries` and `security_audit_events`. The receiver already holds the complete, verified,
 independently persisted history, so the OLTP database keeps no second copy
 and there is no archival sweep: delivered audit state is bounded by the
 in-flight batch, not by a clock.
@@ -134,7 +134,7 @@ Recommended production separation:
   `NAZOAUTH_MIGRATION_RUNTIME_ROLE` naming the server-writer role; migration
   resets that role's direct `public` schema/table/sequence privileges, grants
   application DML, and grants only ledger append/check-availability functions;
-* give the worker exporter role only chain assignment and outbox claim/ack/health rights;
+* give the worker exporter role only chain assignment and pending-claim/ack/health rights;
 * provide the worker `AUDIT_ANCHOR_DATABASE_URL` and `AUDIT_ANCHOR_TOKEN` (or
   its secret-file form), while the server receives only the deployment identity;
 * use the [ledger role provisioning runbook](../operations/security-audit-ledger-roles.md)
@@ -182,7 +182,7 @@ observations, a mismatched deployment, invalid checkpoints, or excessive oldest
 pending age. It gates callers of management preflight; it is not a promise that
 every HTTP response waits for its own external checkpoint.
 
-After database restore, reconcile the local chain and outbox with the receiver's
+After database restore, reconcile the local chain and pending events with the receiver's
 already accepted deployment sequence before resuming export. Do not erase the
 receiver's history or reset deployment identity merely to make a fork appear
 continuous. Database ownership can rewrite unanchored local state; only
