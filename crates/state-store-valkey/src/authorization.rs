@@ -136,22 +136,8 @@ impl AuthorizationStore {
     pub async fn load_par(
         &self,
         request_uri: &str,
-    ) -> Result<Option<PushedAuthorizationRequest>, Error> {
-        self.load_json(keys::par(request_uri)).await
-    }
-
-    pub async fn load_par_snapshot(
-        &self,
-        request_uri: &str,
     ) -> Result<Option<AuthorizationStateSnapshot<PushedAuthorizationRequest>>, Error> {
         self.load_snapshot(keys::par(request_uri)).await
-    }
-
-    pub async fn take_par(
-        &self,
-        request_uri: &str,
-    ) -> Result<Option<PushedAuthorizationRequest>, Error> {
-        self.take_json(keys::par(request_uri)).await
     }
 
     pub async fn compare_and_delete_par(

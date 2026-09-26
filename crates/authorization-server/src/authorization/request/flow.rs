@@ -54,6 +54,7 @@ pub(crate) async fn authorize_request_with_context(
     let mut used_pushed_authorization_request = false;
     let mut pending_pushed_request_uri = None;
     let mut pending_pushed_request_digest = None;
+    let mut pending_pushed_request_version = None;
     let mut pending_external_request_uri = None;
     if let Some(request_uri) = q.get("request_uri").cloned() {
         if !is_pushed_authorization_request_uri(&request_uri) {
@@ -81,7 +82,8 @@ pub(crate) async fn authorize_request_with_context(
                     ));
                 }
             };
-            if let Some(pushed) = pushed {
+            if let Some(snapshot) = pushed {
+                let pushed = snapshot.payload;
                 if q.get("client_id")
                     .is_some_and(|client_id| client_id != &pushed.client_id)
                 {
@@ -109,6 +111,7 @@ pub(crate) async fn authorize_request_with_context(
                         used_pushed_authorization_request = true;
                         pending_pushed_request_uri = Some(request_uri);
                         pending_pushed_request_digest = Some(digest);
+                        pending_pushed_request_version = Some(snapshot.version);
                         *q = pushed.params;
                     }
                 }
@@ -545,7 +548,10 @@ pub(crate) async fn authorize_request_with_context(
         {
             Ok(true) => {
                 return issue_authorization_code_without_interaction_with_context(
-                    context, facts, payload,
+                    context,
+                    facts,
+                    payload,
+                    pending_pushed_request_version.as_deref(),
                 )
                 .await;
             }

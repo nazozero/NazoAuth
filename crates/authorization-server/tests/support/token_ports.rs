@@ -193,12 +193,6 @@ impl AuthorizationStateStorePort for HolderFixture {
     {
         panic!("unexpected AuthorizationStateStorePort::load_par call")
     }
-    fn take_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        panic!("unexpected AuthorizationStateStorePort::take_par call")
-    }
     fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,

@@ -87,7 +87,7 @@ fn consent_payload(request_id: &str, user_id: uuid::Uuid) -> ConsentPayload {
 }
 
 #[tokio::test]
-async fn par_preserves_exact_hashed_key_json_ttl_and_one_time_take() {
+async fn par_preserves_exact_hashed_key_json_ttl_and_one_time_claim() {
     let Some((store, inspector)) = setup().await else {
         return;
     };
@@ -112,8 +112,19 @@ async fn par_preserves_exact_hashed_key_json_ttl_and_one_time_take() {
         serde_json::to_value(&payload).unwrap()
     );
     assert!((1..=30).contains(&inspector.ttl::<i64, _>(&key).await.unwrap()));
-    assert!(store.take_par(&request_uri).await.unwrap().is_some());
-    assert!(store.take_par(&request_uri).await.unwrap().is_none());
+    let snapshot = store.load_par(&request_uri).await.unwrap().unwrap();
+    assert!(
+        store
+            .compare_and_delete_par(&request_uri, &snapshot.version)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !store
+            .compare_and_delete_par(&request_uri, &snapshot.version)
+            .await
+            .unwrap()
+    );
 }
 
 #[tokio::test]
@@ -260,11 +271,7 @@ async fn par_compare_delete_preserves_a_concurrent_replacement() {
     let mut replacement = observed.clone();
     replacement.client_id = "client-b".to_owned();
     store.store_par(&request_uri, &observed, 30).await.unwrap();
-    let snapshot = store
-        .load_par_snapshot(&request_uri)
-        .await
-        .unwrap()
-        .unwrap();
+    let snapshot = store.load_par(&request_uri).await.unwrap().unwrap();
     store
         .store_par(&request_uri, &replacement, 30)
         .await
@@ -282,6 +289,7 @@ async fn par_compare_delete_preserves_a_concurrent_replacement() {
             .await
             .unwrap()
             .unwrap()
+            .payload
             .client_id,
         replacement.client_id
     );
@@ -323,11 +331,7 @@ async fn par_snapshot_consumes_legacy_wire_with_reordered_multi_parameter_json()
         .set::<(), _, _>(&key, reordered.clone(), None, None, false)
         .await
         .unwrap();
-    let snapshot = store
-        .load_par_snapshot(&request_uri)
-        .await
-        .unwrap()
-        .unwrap();
+    let snapshot = store.load_par(&request_uri).await.unwrap().unwrap();
     assert_eq!(snapshot.version, reordered);
     assert_eq!(snapshot.payload.params, observed.params);
 

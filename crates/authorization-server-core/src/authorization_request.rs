@@ -651,7 +651,6 @@ pub fn validate_expanded_par_admission(
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PushedAuthorizationRequestConsumeError {
     Missing,
-    Malformed,
     Dependency(AuthorizationPortError),
 }
 

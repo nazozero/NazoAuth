@@ -166,18 +166,22 @@ impl AuthorizationStateStorePort for Ports {
                 }))
         })
     }
-    fn take_par<'a>(
-        &'a self,
-        _request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        panic!("unexpected AuthorizationStateStorePort::take_par call")
-    }
     fn compare_and_delete_par<'a>(
         &'a self,
-        _request_uri: &'a str,
-        _expected: &'a str,
+        request_uri: &'a str,
+        expected: &'a str,
     ) -> AuthorizationFuture<'a, bool> {
-        panic!("unexpected AuthorizationStateStorePort::compare_and_delete_par call")
+        self.record("consume_par");
+        Box::pin(async move {
+            let mut stored = self.stored_par.lock().unwrap();
+            let Some(index) = stored.iter().position(|(uri, request, _)| {
+                uri == request_uri && serde_json::to_value(request).unwrap().to_string() == expected
+            }) else {
+                return Ok(false);
+            };
+            stored.remove(index);
+            Ok(true)
+        })
     }
     fn store_par<'a>(
         &'a self,

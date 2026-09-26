@@ -110,15 +110,6 @@ impl AuthorizationStateStorePort for FakeStore {
         })
     }
 
-    fn take_par<'a>(
-        &'a self,
-        _request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
-        self.0.pushed_takes.fetch_add(1, Ordering::Relaxed);
-        let pushed = self.0.pushed.lock().unwrap().take();
-        Box::pin(async move { Ok(pushed) })
-    }
-
     fn compare_and_delete_par<'a>(
         &'a self,
         _request_uri: &'a str,

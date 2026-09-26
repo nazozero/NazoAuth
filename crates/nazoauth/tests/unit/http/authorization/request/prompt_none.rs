@@ -26,6 +26,7 @@ pub(super) enum Fault {
     CodeWrite,
     ParMissing,
     ParMalformed,
+    ParReplaced,
     ParRead,
 }
 struct GrantFailureRepository {
@@ -85,10 +86,11 @@ impl AuthorizationStateStorePort for PromptNoneStore {
     {
         self.live.load_par(request_uri)
     }
-    fn take_par<'a>(
+    fn compare_and_delete_par<'a>(
         &'a self,
         request_uri: &'a str,
-    ) -> AuthorizationFuture<'a, Option<PushedAuthorizationRequest>> {
+        expected: &'a str,
+    ) -> AuthorizationFuture<'a, bool> {
         Box::pin(async move {
             self.reached.fetch_add(1, Ordering::SeqCst);
             match self.fault {
@@ -107,18 +109,25 @@ impl AuthorizationStateStorePort for PromptNoneStore {
                     .await
                     .expect("corrupt PAR between validation and consumption");
                 }
-                Fault::ParRead => return self.failed.take_par(request_uri).await,
+                Fault::ParReplaced => {
+                    let mut replacement = self.live.load_par(request_uri).await?.unwrap().payload;
+                    replacement
+                        .params
+                        .insert("state".into(), "replacement-state".into());
+                    self.live.store_par(request_uri, &replacement, 60).await?;
+                }
+                Fault::ParRead => {
+                    return self
+                        .failed
+                        .compare_and_delete_par(request_uri, expected)
+                        .await;
+                }
                 _ => {}
             }
-            self.live.take_par(request_uri).await
+            self.live
+                .compare_and_delete_par(request_uri, expected)
+                .await
         })
-    }
-    fn compare_and_delete_par<'a>(
-        &'a self,
-        request_uri: &'a str,
-        expected: &'a str,
-    ) -> AuthorizationFuture<'a, bool> {
-        self.live.compare_and_delete_par(request_uri, expected)
     }
     fn store_par<'a>(
         &'a self,
@@ -612,10 +621,38 @@ async fn prompt_none_redirects_invalid_request_uri_when_request_uri_is_missing()
     assert_par_consumption_failure(Fault::ParMissing, "invalid_request_uri").await;
 }
 #[actix_web::test]
-async fn prompt_none_redirects_server_error_when_request_uri_is_malformed() {
-    assert_par_consumption_failure(Fault::ParMalformed, "server_error").await;
+async fn prompt_none_rejects_request_uri_corrupted_after_validation() {
+    assert_par_consumption_failure(Fault::ParMalformed, "invalid_request_uri").await;
 }
 #[actix_web::test]
 async fn prompt_none_redirects_server_error_when_request_uri_read_fails() {
     assert_par_consumption_failure(Fault::ParRead, "server_error").await;
+}
+
+#[actix_web::test]
+async fn prompt_none_preserves_par_replaced_after_validation_without_issuing_code() {
+    let Some(mut fixture) = PromptNoneFixture::new(Fault::ParReplaced, None).await else {
+        return;
+    };
+    let uri = fixture.push().await;
+    let query = redirect_query(&fixture.authorize().await);
+    assert_eq!(
+        query.get("error").map(String::as_str),
+        Some("invalid_request_uri")
+    );
+    assert_eq!(query.get("state").map(String::as_str), Some("opaque-state"));
+    assert!(!query.contains_key("code"));
+    let retained = fixture
+        .dependencies
+        .fixture
+        .service
+        .load_par(&uri)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        retained.payload.params.get("state").map(String::as_str),
+        Some("replacement-state")
+    );
+    assert_eq!(fixture.reached.as_ref().load(Ordering::SeqCst), 1);
 }
