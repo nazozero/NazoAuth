@@ -2,7 +2,7 @@
 
 原始静态审查基准：`8140acc077e3cc58dabc66507b1f26fdc24b358f`；审查报告 checkpoint：`1615707`。审查开始时已核对远端 [PR #222](https://github.com/nazozero/NazoAuth/pull/222) 仍为 open，分支为 `perf/db-hotpath-minimal-0c70d746`，本地与远端一致。首次审查按“继续静态审查、确认更多问题”的要求执行，只提交调查结果，没有修改生产代码或运行测试。上一轮已完成项和历史性能证据见 [前一份报告](2026-09-26-pr222-performance-audit.md)。
 
-**后续修复状态：**用户随后授权实施、反复复核和最小测试。本文件第一至四节保留原始发现及当时的判断，不代表当前代码仍有全部问题；第五节记录修复及保留项，第六节区分已经执行的定向测试、仅编译的存储测试与未完成的验证。F01–F06、F08–F14、F16–F17 已实施，F07 仅处理分页查询与索引；F15、F18 尚未实施。没有新增压测、吞吐或尾延迟收益结论。
+**后续修复状态：**用户随后授权实施、反复复核和最小测试。本文件第一至四节保留原始发现及当时的判断，不代表当前代码仍有全部问题；第五节记录修复及保留项，第六节记录上一阶段定向验证，第七节补充 `9035aa5` 之后的 CI 失败定位、重复复核与 checkpoint。F01–F06、F08–F14、F16–F17 已实施，F07 仅处理分页查询与索引；F15、F18 尚未实施。没有新增压测、吞吐或尾延迟收益结论。
 
 ## 结论与证据边界
 
@@ -162,8 +162,8 @@
 | 已实施 | 授权服务器 DPoP 复用已解码签名与原 compact signing-input 切片；不删验签、时间或 replay 检查。 |
 | 已实施 | VC dataset/VP request 解密前归还连接；VP complete 加密后借连接；SD-JWT 一次构造摘要集合，保留非法或重复 disclosure/claim 拒绝。 |
 | 已实施 | CIBA/Device 的 JSON 包裹 raw JSON 改原子 RESP tuple（`4bedcf8`）；保持 raw CAS 字节、missing/无 TTL/损坏拒绝以及秒/毫秒绝对过期语义，目标仅编译。 |
-| 未实施 | mTLS anchor verifier、external signer 回验公钥及同一 VC signing lease 的重复证书准备。材料生命周期、信任/有效期逐次检查与缓存失效边界需要分别确认，不能合并成“验证结果可缓存”。 |
-| 未实施 | SMTP transport/连接池复用；当前依赖未启用 pool，仅移动构造并不证明 SMTP 连接复用。独立 resource-server 本地 replay 全表扫描也未改；NazoAuth 主服务使用外部 replay store，不能将此成本归因主服务基准。 |
+| 部分实施 | external signer 回验公钥已按 generation 复用（`ed62692`）；mTLS anchor verifier 和同一 VC signing lease 重复证书处理仍保留，不能缓存信任/时间判定，见第七节。 |
+| 已实施/保留 | SMTP transport 已在服务启动准备（`c4543b2`），逐封连接语义保留，未启用 pool；独立 resource-server replay 全表扫描已改到期索引（`297b04b`），不将其成本归因主服务外部 replay 基准，见第七节。 |
 
 ## 六、最小验证、CI 与剩余边界
 
@@ -183,3 +183,44 @@
 复核还修正了两处新增测试质量问题（`80d78cc`）：格式与 type-complexity；原测试断言不变。查询该提交的远端工作流时，7 个均仍为 queued，不能声明远端 CI 全绿。后续文档提交将再次触发工作流，PR 评论记录每次 checkpoint 的实际验证范围。F07 的精确总数成本、F15 的计划选择、F18 的安全更新契约，以及上表尚未实施的小项仍有明确边界。**当前结论是已完成多项原则性修复并取得有限定向验证，不是所有候选均已关闭，也不是已经测得项目整体性能收益。**
 
 构建过程中一次因可重建缓存耗尽磁盘而失败；按包清理 Cargo 缓存后重跑有效目标通过。一次未启用 jose feature 的过滤命令运行了 0 项，随后以正确 feature 执行 OAEP 互操作 1 项通过，0 项未计作验证。上述环境/命令修正没有改变生产安全语义。
+
+## 七、最新 CI 失败定位与再次复核
+
+本节审查起点是 `9035aa5194406ed8b82f79827e866fc7f1399cef`，仍在同一个 PR 分支。读取 [code-quality run 36251734705](https://github.com/nazozero/NazoAuth/actions/runs/36251734705) / Rust job `108430916275` 的完整日志及 run 元数据，确认运行对应该提交。它已完成并以 101 退出，不是仍在等待 runtime setup；格式、Clippy 和隔离 schema 准备成功，全量测试收集到恰好两个失败 target：
+
+- `nazo-valkey --test authorization_contract` 的 consent raw-wire 回归把 `actions` 写成对象，触发正确的 authorization-details 校验（该 target 8 通过、1 失败）。
+- `nazoauth --lib` 的旧 SCIM bootstrap 测试仍要求每次生成不同 hash，与 F02 的未知秘密预准备契约矛盾（1329 通过、1 失败、3 ignored）。新 provider 回归已通过，但旧断言未同步。
+
+`1336a5a` 修复测试输入与契约：`actions` 改合法字符串数组，对 payment 的嵌套对象改变字段顺序，仍检查原始 wire CAS；合并重复 bootstrap 测试，保留合法 PHC、重复调用、SCIM/Federation 使用预准备 hash 和常见猜测不匹配。没有放宽生产解析器、跳过测试或修改 CI 门禁。
+
+该次 CI 实际运行了 PostgreSQL/Valkey 测试，因此第六节“本地仅编译”的边界不能误读为从未获得远端存储执行证据；但失败 run 也不能当作全绿验收，其结果不能替代下表新增代码的执行证据。
+
+| Checkpoint | 本轮确定修复 | 复核重点 |
+| --- | --- | --- |
+| `74975a9` | VP nonce bind/result、VCI offer lookup/notification response 共四处 SQL 完成后归还连接，再解密/转换 owned row。 | 不改 SQL、租户/有效期/信任谓词或 nonce 写入；需要损坏输入回滚的 deferred 事务未动。 |
+| `297b04b` | embedded resource-server replay 用键集合和绝对到期桶，删除每 proof 锁内全表 retain。 | 未过期记录不驱逐；先 replay 后容量拒绝、精确到期边界、回拨乱序及 clone 原子共享保留。新增两个定向回归。 |
+| `ed62692` | external signer 回验复用同 generation 的 prepared key，删除逐响应 JWK 重建。 | 四个调用点均固定 selected/snapshot generation；每次仍验证消息/算法/签名，保留 key_ops、RSA 强度与 EC point normalization。非法点在 generation 发布时提前拒绝。 |
+| `f34e529` | OIDC issuance 将 prepared/owned SubjectClaims 直接移动到消费者，删除两处完整 profile clone。 | tenant/subject 校验、错误审计次序和 principal 锁不变；后续没有 prepared_subject 消费者。 |
+| `c4543b2` | SMTP adapter 在服务启动准备并持有 transport，省去逐邮件构造配置/TLS 材料。 | 仍逐封独立连接；不启用 pool、不增加任务/配置/依赖。构造失败前移启动已更新配置文档；发送失败清理路径不变。 |
+| `5875cb5` | embedded DPoP 借用原 compact signing-input 和 JWK Map，删除字符串重建与 JSON 深拷贝。 | 原段数/空段、签名/claims 解码次序、私钥字段和算法/曲线拒绝保持。 |
+
+作者多轮推演后，独立审阅再次检查 replay 原子性/回拨、generation 固定、owned row 连接寿命、OIDC 所有权及 SMTP 取消路径。没有发现这些改动的新阻塞性缺陷；这不是全仓逐行证明。另重新核对了已修 CIBA/logout 的满扫描继续、并发界限、claim fencing、DNS 整体超时，以及维护流程的有界扫描，未删除协议必需等待或锁。
+
+### 保留项与新确认的规模风险
+
+| 范围 | 当前判断与最小后续证据 |
+| --- | --- |
+| F07 精确计数、F15 owner 撤销扫描 | 精确 total 是现有接口契约，owner 索引要权衡目标选择率与签发写成本。保留锁及同步撤销；需要窄数据分布的真实 EXPLAIN，不能靠静态添加宽索引宣布完成。 |
+| F18 VP nonce 第二读 | 写前 JSON 校验与最新状态语义仍有消费者；直接 JSONB UPDATE 或缓存旧读结果不能等价替代。 |
+| mTLS/VC 证书准备 | 当前 anchor 查询必须保留撤销时效；VC client ID 与签名之间跨存储 await，后次有效期检查不能复用先前成功判定。只共享静态 DER 需要进一步确认资源生命周期及收益，不以新跨层缓存替代当前事实源。 |
+| SMTP 连接池 | 独立核对 lettre v0.11.23 的 `pool/async_impl.rs` 与 `client/async_connection.rs`：中途取消可能绕过 Err→abort，而 Drop 仍 recycle，仅靠 has_broken/NOOP 不能证明 SMTP 事务干净。故没有启用 pool；本轮没有 SMTP 握手削减结论。 |
+| Grant 撤销 family 锁 | [grants.rs](../../../../crates/persistence-postgres/src/repositories/grants.rs) 的 N 个 family 仍逐个 advisory lock，存在 N 次往返。批量化必须证明相同锁 key、UUID 顺序以及锁后新快照；未在缺少真实并发证据时改动。 |
+| SCIM event 已确认前缀 | [scim_events.rs](../../../../crates/persistence-postgres/src/repositories/scim_events.rs) 的 poll 从 token 创建时间起 anti-join receipts；默认 7 天保留期内，即使无未确认事件也可能反复排除大量已确认事件。这是新确认的扫描量风险，不是已测瓶颈。不能用最大 ACK 作游标：乱序 ACK、晚提交及多个 receiver 会漏投；需要单独证明投递状态/连续水位契约。 |
+
+因此本轮收敛到“确定、可保持契约的直接冗余已继续处理；剩余项按安全契约或实测计划证据隔离”，不宣称“几乎没有性能问题”。是否存在真实热点还取决于流量组合、数据量和并发，不能把上述低频成本解释成全部项目进度的根因。
+
+### 本轮验证边界
+
+当前工作区没有 Cargo/rustc/rustfmt，没有重装运行时、数据库，也没有手动启动全套、容量矩阵或 soak。`git diff --check`、`verify_static_contracts.py --check`、`check_crypto_boundary.py`、`check_perf_results_layout.py` 通过；依赖图脚本调用 Cargo，因可执行文件不存在而未能运行，不能记为通过。辅助 replay 状态机对旧/新模型进行 30000 次固定种子操作对比一致；这只支持推演，不等于 Rust 测试或性能实测。
+
+新增 Rust 回归、编译和 Clippy 由提交触发的现有远端 CI 验证。检查 `ed62692` 的 run `36255371844` 时格式、静态边界与依赖隔离已通过，Clippy 仍在运行；这些中间状态不等于最终 head 全绿。所有提交均有独立 PR 回复，最终 CI 状态以对应 head 的 Checks 为准。
