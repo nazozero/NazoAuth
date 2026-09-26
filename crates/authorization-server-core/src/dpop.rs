@@ -386,7 +386,7 @@ fn validate_claims(
     Ok(())
 }
 
-fn decode_proof(raw: &str) -> Result<(DpopHeader, DpopClaims, String, String), DpopError> {
+fn decode_proof(raw: &str) -> Result<(DpopHeader, DpopClaims, &str, Vec<u8>), DpopError> {
     let mut parts = raw.split('.');
     let encoded_header = nonempty_segment(parts.next())?;
     let encoded_payload = nonempty_segment(parts.next())?;
@@ -406,14 +406,14 @@ fn decode_proof(raw: &str) -> Result<(DpopHeader, DpopClaims, String, String), D
             .map_err(|_| DpopError::MalformedProof)?,
     )
     .map_err(|_| DpopError::MalformedProof)?;
-    URL_SAFE_NO_PAD
+    let signature = URL_SAFE_NO_PAD
         .decode(encoded_signature)
         .map_err(|_| DpopError::MalformedProof)?;
     Ok((
         header,
         claims,
-        format!("{encoded_header}.{encoded_payload}"),
-        encoded_signature.to_owned(),
+        &raw[..encoded_header.len() + 1 + encoded_payload.len()],
+        signature,
     ))
 }
 
@@ -522,12 +522,9 @@ fn verify_signature(
     algorithm: Algorithm,
     decoding_key: &JwtVerificationKey,
     signing_input: &[u8],
-    signature: &str,
+    signature: &[u8],
 ) -> Result<(), DpopError> {
-    let raw = URL_SAFE_NO_PAD
-        .decode(signature)
-        .map_err(|_| DpopError::MalformedProof)?;
-    match nazo_crypto::signature::verify(algorithm, decoding_key, signing_input, &raw) {
+    match nazo_crypto::signature::verify(algorithm, decoding_key, signing_input, signature) {
         Ok(()) => Ok(()),
         Err(nazo_crypto::CryptoError::InvalidSignature) => Err(DpopError::InvalidProof),
         Err(_) => Err(DpopError::MalformedProof),
