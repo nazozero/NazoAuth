@@ -214,4 +214,12 @@ jobs:
           python-version: "3.14"
 
       - name: Compile Python scripts
-        run: python -m compileall -q scripts
+        run: python -m compileall -q scripts perf
+
+      - name: Verify performance measurement and acceptance regressions
+        run: |
+          node --version
+          python -m unittest \
+            perf.tests.test_capacity_window perf.tests.test_capacity_producer \
+            perf.tests.test_stream_cohort perf.tests.test_single_instance_scaling \
+            perf.tests.test_pool_size_ab perf.tests.test_issuance_maintenance
