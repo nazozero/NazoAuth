@@ -118,9 +118,9 @@ def main():
         raw, _ = gate.k6_metrics(summary)
         metrics["complete_operation_latency_ms"] = gate._trend(raw, "cap_iter_ms")
         health = points._health_checks(rec, mixed=scenario == "cap_mixed")
-        # Only the mixed and issuance scenarios promise per-operation audit
-        # evidence. Read-only scenarios still retain collected audit diagnostics.
-        if scenario in ("cap_mixed", "cap_client_credentials") and not all(health.values()):
+        # Every point must retain runtime health and durable audit continuity.
+        # Only clean client-credentials has a one-to-one issuance count gate.
+        if not all(health.values()):
             m = rec.get("metrics") or {}
             collected = (rec.get("ok") is True
                          and m.get("oom_killed") is not None
@@ -128,9 +128,17 @@ def main():
                          and (m.get("audit_log_scan") or {}).get("collected") is True
                          and (rec.get("audit_state_check", {}).get("checks") or {}).get("collected") is True
                          and (rec.get("journal_stats") or {}).get("collected") is True)
+            if scenario == "cap_mixed":
+                collected = collected and rec.get("audit_queue_post_drain", {}).get("collected") is True
             verdict = "FAIL" if collected else "INVALID"
             metrics["failed_health_checks"] = [k for k, v in health.items() if not v]
             metrics["health_evidence_collected"] = collected
+        if scenario == "cap_mixed":
+            common = (rec.get("metrics") or {}).get("common_window_s") or {}
+            metrics["all_load_common_window"] = common
+            if common.get("seconds") is None or common["seconds"] < window:
+                verdict = "INVALID"
+                metrics["reason"] = "full_sidecar_measurement_window_unavailable"
         maintenance = None
         if confirmation:
             m = rec.get("metrics") or {}
