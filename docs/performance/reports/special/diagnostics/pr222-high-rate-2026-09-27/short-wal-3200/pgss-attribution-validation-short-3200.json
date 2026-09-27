@@ -1,0 +1,68 @@
+{
+  "delta_rule": "Subtract only rows with identical full identity and identical stats_since; do not impute absent pre rows as zero.",
+  "identity_fields": [
+    "dbid",
+    "userid",
+    "toplevel",
+    "queryid"
+  ],
+  "interpretation": "Top10 is unavailable because most post rows have no matching pre row. Post-only rows are excluded, not treated as zero-baseline deltas.",
+  "points": [
+    {
+      "duplicate_identity_rows": 0,
+      "matched_rows_wal_bytes_delta_sum": 0.0,
+      "pgss_dealloc_post": "0",
+      "pgss_dealloc_pre": "0",
+      "pgss_interval": {
+        "end_epoch_s": 1790497851.7252707,
+        "end_utc": "2026-09-27T16:30:51.725271+08:00",
+        "seconds": 781.454,
+        "start_epoch_s": 1790497070.2712266,
+        "start_utc": "2026-09-27T16:17:50.271227+08:00"
+      },
+      "post_only_rows_excluded_not_zero_filled": 169,
+      "post_rows": 172,
+      "pre_only_rows": 0,
+      "pre_rows": 3,
+      "raw_sha256": {
+        "pgss_post": "a9f36983017929934dbcf3ff264990dc72e99ff1d863b8ed413860ae8cffea24",
+        "pgss_pre": "f28af705b2a51d646d5b5628d641735e1277dc47f0f9f07c68b0e81e3d3a6f06"
+      },
+      "run": "formal-a-3200",
+      "same_identity_and_stats_since_rows": 3,
+      "same_identity_stats_since_mismatch_rows": 0,
+      "stats_reset_unchanged": true,
+      "status": "INVALID_INCOMPLETE_BASELINE",
+      "top10_delta": []
+    },
+    {
+      "duplicate_identity_rows": 0,
+      "matched_rows_wal_bytes_delta_sum": 0.0,
+      "pgss_dealloc_post": "0",
+      "pgss_dealloc_pre": "0",
+      "pgss_interval": {
+        "end_epoch_s": 1790498798.6506093,
+        "end_utc": "2026-09-27T16:46:38.650609+08:00",
+        "seconds": 781.534,
+        "start_epoch_s": 1790498017.1163452,
+        "start_utc": "2026-09-27T16:33:37.116345+08:00"
+      },
+      "post_only_rows_excluded_not_zero_filled": 168,
+      "post_rows": 171,
+      "pre_only_rows": 0,
+      "pre_rows": 3,
+      "raw_sha256": {
+        "pgss_post": "10334fa60abdc45bf037477aa1b0cae6fc3f4b54db2c763e11ad52e5d6316442",
+        "pgss_pre": "09870ebcdcdf472215d1c24c35716654ad3a86412663cd0cfee7b39813dbb5fa"
+      },
+      "run": "formal-b-3200",
+      "same_identity_and_stats_since_rows": 3,
+      "same_identity_stats_since_mismatch_rows": 0,
+      "stats_reset_unchanged": true,
+      "status": "INVALID_INCOMPLETE_BASELINE",
+      "top10_delta": []
+    }
+  ],
+  "query_text_included": false,
+  "stage": "pgss-attribution-validation-short-3200"
+}

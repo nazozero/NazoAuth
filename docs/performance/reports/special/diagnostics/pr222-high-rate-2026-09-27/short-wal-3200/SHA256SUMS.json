@@ -1,13 +1,13 @@
 [
   {
-    "file": "pgss-top10-short-3200.json",
-    "sha256": "4e205bc297363c3a8609dce1425f6aa93a44919be26115cbb5d6339be4965ab3",
-    "bytes": 14041
+    "file": "pgss-attribution-validation-short-3200.json",
+    "sha256": "cfddb660cecf0a8543f9507c0f26cd884fe3383cb8389a16d3cf19efb2a06b93",
+    "bytes": 2459
   },
   {
     "file": "README.md",
-    "sha256": "01f6ee99339c453eba8cec46b402b4d53bd2343312f8a4d4ef5c10bfe9a55dd0",
-    "bytes": 1188
+    "sha256": "c44e4c93c810d655f1ad87778ebbea9f9fb103281c4b8749845c9bb2651fc0e8",
+    "bytes": 1122
   },
   {
     "file": "wait-checkpoint-short-3200.json",
