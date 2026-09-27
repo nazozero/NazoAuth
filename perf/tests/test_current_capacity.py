@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "tools"))
-from current_capacity import bounds
+from current_capacity import SCENARIOS, bounds, point_name
 
 
 def record(rate, verdict, seconds):
@@ -35,3 +35,17 @@ class CapacityBoundsTests(unittest.TestCase):
     def test_first_failure_is_above_highest_passing_load(self):
         self.assertEqual(self.bound(record(100, "FAIL", 60), record(200, "PASS", 180),
                                     record(400, "FAIL", 60), record(300, "FAIL", 60)), (200, 300))
+
+    def test_receiver_names_fit_dns_labels_at_all_search_rates_and_windows(self):
+        for scenario, initial in SCENARIOS.items():
+            for mode, cores in (("single", 1), ("multi", 16)):
+                for window in (60, 180, 660):
+                    with self.subTest(scenario=scenario, mode=mode, window=window):
+                        name = "sis-rcv-" + point_name(
+                            mode, scenario, initial * cores * 2**8, window, 1790543188)
+                        self.assertLessEqual(len(name.encode("idna")), 63)
+
+    def test_point_names_distinguish_every_scene_and_cpu_mode(self):
+        names = {point_name(mode, scenario, 20, 180, 1790543188)
+                 for mode in ("single", "multi") for scenario in SCENARIOS}
+        self.assertEqual(len(names), 2 * len(SCENARIOS))

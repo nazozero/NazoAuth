@@ -33,6 +33,16 @@ def save(path, value):
     path.write_text(json.dumps(value, indent=2) + "\n")
 
 
+def point_name(mode, scenario, rate, window, timestamp):
+    # The receiver uses this identifier in a single DNS label. The full
+    # FAPI scenario plus the 180-second suffix exceeds its 63-byte limit;
+    # signed PAR also exceeds it at the configured ladder's high rates.
+    slug = {"fapi2_logged_in_high_security": "fapi2-high-security",
+            "par_signed_request_object": "par-signed-request"}.get(
+                scenario, scenario.replace("_", "-"))
+    return f"{mode}-{slug}-r{rate}-w{window}-{int(timestamp)}"
+
+
 def bounds(state, key):
     chosen = {}
     for record in state.get(key, []):
@@ -113,7 +123,7 @@ def main():
             raise TimeoutError("reserved finalization time reached")
         warmup = 60 if scenario == "cap_mixed" else 15
         duration = window + warmup
-        name = f"{mode}-{scenario.replace('_', '-')}-r{rate}-w{window}-{int(time.time())}"
+        name = point_name(mode, scenario, rate, window, time.time())
         point = {"name": name, "phase": mode, "image": config["app_image"],
                  "app_cpus": cpus[mode], "postgres_cpus": cpus["postgres"],
                  "valkey_cpus": cpus["valkey"], "infra_cpus": cpus["generator"],
