@@ -1,0 +1,17 @@
+{
+  "container_destroyed_reported_by_user": true,
+  "final_log_exit_code_point_json_available": false,
+  "launch_utc": "2026-09-27T10:37:30Z",
+  "process_observed_running_utc": "2026-09-27T10:37:53Z",
+  "profile_sha256": "e459bfe9e77c2bbd043cd1f9ed31627345b0450cbcd77e160298691e9667ef0b",
+  "reason": "The original test container was destroyed before final output was retrieved. The replacement container had no /tmp/pr222-high-rate-20260927-051325 task directory or A3000 result files. The fixed no-new-load cutoff is 2026-09-27T11:43:25Z, so the point was not restarted. No performance conclusion is inferred.",
+  "replacement_container_checked_utc": "2026-09-27T11:37:41Z",
+  "requested_effective_measurement_seconds": 1800,
+  "requested_warmup_seconds": 120,
+  "restarted_or_overwritten": false,
+  "run": "formal-a-3000-steady",
+  "status": "BLOCKED_UNVERIFIED",
+  "target_success_ops_s": 3000,
+  "task_directory_present_on_replacement_container": false,
+  "variant": "A"
+}

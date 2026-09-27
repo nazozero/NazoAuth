@@ -49,13 +49,13 @@ The following attempts produced no business load and are retained as `INVALID_TO
 
 **Completed since the calibration checkpoint:** all six prescribed 600-second points, in order A2400 → B2400 → B3000 → A3000 → A3200 → B3200. Every point used 120 seconds warmup plus 600 seconds effective measurement. All six main gates passed. The requested target range is validated through 3200 successful logical operations/s; a maximum-capacity boundary was not searched or established.
 
-**Completed since the calibration checkpoint:** all six prescribed 600-second points, in order A2400 → B2400 → B3000 → A3000 → A3200 → B3200, plus the B3000 steady point with 120 seconds warmup and 1800 seconds effective measurement. All six short main gates passed. B3000 steady main and separately evaluated refresh-capacity gates passed; its evidence is being added. The requested short-point target range is validated through 3200 successful logical operations/s; a maximum-capacity boundary was not searched or established.
+**Completed since the calibration checkpoint:** all six prescribed 600-second points, in order A2400 → B2400 → B3000 → A3000 → A3200 → B3200, plus the B3000 steady point with 120 seconds warmup and 1800 seconds effective measurement. All six short main gates passed. B3000 steady main and separately evaluated refresh-capacity gates passed; its evidence is committed. The requested short-point target range is validated through 3200 successful logical operations/s; a maximum-capacity boundary was not searched or established.
 
 **Completed since the calibration checkpoint:** all six prescribed 600-second points and the B3000 steady point (120 seconds warmup + 1800 seconds measured). The six short main gates and B3000 main/refresh gates passed. The B3000 result and its WAL evidence are recorded below. A3200 steady completed as a valid FAIL: 3187.346 successful ops/s, complete-iteration P95/P99 283/985 ms, 0.3954% measured drops, refresh/Argon2/FAPI gate misses, 1748 audit queue full/drops, and issuance expiry age up to 608.5 seconds against the predeclared 120-second SLO. Required audit drops remained zero and the journal reconciled, but the all-queue health gate failed.
 
-**Current run state (10:37:30 UTC):** A3000 steady is running with the unchanged common profile, 120 s warmup plus 1800 s effective measurement, to compare against the already passing B3000 steady point. B3200 steady is NOT_RUN after A3200 audit/issuance constraints failed; no higher-pressure run was started.
+**Current run state:** A3000 steady was launched at 10:37:30 UTC and confirmed active at 10:37:53, but the original container was subsequently destroyed. The replacement container has no task directory or final A3000 artifacts. A3000 is BLOCKED/UNVERIFIED and was not restarted because the fixed no-new-load cutoff is 11:43:25 UTC. B3200 steady is NOT_RUN after A3200 audit/issuance constraints failed; no higher-pressure run was started.
 
-**Remaining at this checkpoint:** A3200 sanitized evidence/report checkpoint; A3000 1800-second steady point is in progress; B3200 1800-second steady point is NOT_RUN for the safety-gate reason above; final archive and report remain. PGSS statement Top10 remains INVALID/INCOMPLETE for short, B3000 long and A3200 long snapshots.
+**Remaining at this checkpoint:** A3200 sanitized evidence/report checkpoint is complete. A3000 steady is BLOCKED/UNVERIFIED after original-container destruction; its replacement-container status record is committed, with no metric inferred. B3200 1800-second steady is NOT_RUN for the safety-gate reason above. The final summary checkpoint remains. PGSS statement Top10 remains INVALID/INCOMPLETE for short, B3000 long and A3200 long snapshots.
 
 ## Six-point formal short matrix
 
@@ -147,6 +147,12 @@ During the 1795.522 s process-detail sampling interval, average CPU use was app 
 
 The sanitized evidence archive is in `diagnostics/pr222-high-rate-2026-09-27/steady-a-3200/`; SHA-256 `72477b9780627e5bb72bda8923db6b7d42e9e5202b2fd00ab372d9f3886951ee`. Raw PGSS SQL rows, request diagnostics, soak rows and raw audit material are excluded.
 
+## A3000 steady point: BLOCKED/UNVERIFIED
+
+A3000 at 3000/s was launched on the original CNB test container at 10:37:30 UTC with 120 s warmup plus 1800 s effective measurement and the frozen common profile. Its process was confirmed running at 10:37:53 UTC. The user later reported the original container had been destroyed. The replacement container was checked at 11:37:41 UTC; it had no `/tmp/pr222-high-rate-20260927-051325` task directory, A3000 log, exit code or point result. SSH to the original endpoint had been disconnecting during authentication since 10:45 UTC.
+
+The point was not restarted or overwritten. The fixed no-new-load cutoff is 11:43:25 UTC, leaving insufficient time for a fresh 120+1800 s run. Therefore A3000 steady is **BLOCKED/UNVERIFIED**, not NOT_RUN and not a performance PASS/FAIL. No A3000 steady P95/P99, successful throughput, WAL, queue, audit or resource conclusion is inferred. Its availability record is under `diagnostics/pr222-high-rate-2026-09-27/steady-a-3000-status/`.
+
 ## Global WAL counters from the six effective windows
 
 The WAL counters below are concurrent database-wide observations across the exact point's effective 600-second window, including the fixed sidecars and database background work; they are not per-main-operation attribution. Byte units are GiB (2^30 bytes). PostgreSQL's reported write-time and fsync-time counters were raw zero in every snapshot and are therefore N/A, not zero wait. The write-to-generated ratio is not itself an attribution or disk-usage measure.
@@ -180,7 +186,7 @@ The sanitized PGSS/wait evidence and checksums are in diagnostics/pr222-high-rat
 
 ## Current evidence and remaining attribution
 
-The six short points are preserved under `diagnostics/pr222-high-rate-2026-09-27/short-points/`. B3000 steady passed the main and refresh gates with evidence under `steady-b-3000/`. A3200 steady is a valid FAIL across main latency/drop, sidecars, queue health and issuance expiry-age SLO; its complete sanitized attribution bundle is under `steady-a-3200/`. B3200 steady is NOT_RUN after the A3200 safety/retention failures. The unchanged-profile A3000 steady comparison is currently running. PGSS Top10 remains INVALID/INCOMPLETE for short, B3000 and A3200 snapshots; PG18 pg_stat_io shows client backends dominate broad WAL write bytes, but exact SQL identity and WALWrite/WALSync wait timing remain unresolved.
+The six short points are preserved under `diagnostics/pr222-high-rate-2026-09-27/short-points/`. B3000 steady passed the main and refresh gates with evidence under `steady-b-3000/`. A3200 steady is a valid FAIL across main latency/drop, sidecars, queue health and issuance expiry-age SLO; its complete sanitized attribution bundle is under `steady-a-3200/`. B3200 steady is NOT_RUN after the A3200 safety/retention failures. The A3000 steady comparison was launched and observed active, but is BLOCKED/UNVERIFIED because the original container was destroyed before evidence retrieval; the replacement had no task directory and the cutoff prevented a rerun. Its status record is under `steady-a-3000-status/`. PGSS Top10 remains INVALID/INCOMPLETE for short, B3000 and A3200 snapshots; PG18 pg_stat_io shows client backends dominate broad WAL write bytes, but exact SQL identity and WALWrite/WALSync wait timing remain unresolved.
 
 ## Evidence
 
