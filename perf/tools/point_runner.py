@@ -291,14 +291,15 @@ def journal_event_counts(run_id: str, deployment: str,
 
 def reconcile_audit_state(pre: dict, post: dict, point_name: str,
                           expected_issuances: int | None,
-                          journal: dict | None) -> dict:
+                          journal: dict | None, *, allow_empty_prefix: bool = False) -> dict:
     """Two-sided persisted-prefix check for one point.
 
     Passes only when ALL hold:
       pending == 0; DB last==anchor (sequence AND hash); receiver
       checkpoint sequence/hash equal the DB anchor; receiver and DB
       deployment identity match the run deployment; receiver fault none;
-      the receiver checkpoint advanced across the load; the receiver
+      the receiver checkpoint advanced across the load (or retained the
+      same sequence and hash for an explicitly audit-free PAR workload); the receiver
       journal is readable, carries only this deployment, has a contiguous
       non-duplicated sequence range matching the checkpoint delta and the
       receiver's own accepted_events increment.
@@ -346,9 +347,15 @@ def reconcile_audit_state(pre: dict, post: dict, point_name: str,
     pre_ckpt = pre.get("receiver_checkpoint") or {}
     pre_seq = pre_ckpt.get("last_sequence")
     post_seq = ckpt.get("last_sequence")
-    checks["checkpoint_advanced"] = (
+    advanced = (
         isinstance(pre_seq, int) and isinstance(post_seq, int)
         and post_seq > pre_seq)
+    result["checkpoint_advanced"] = advanced
+    result["empty_prefix_allowed"] = allow_empty_prefix
+    checks["checkpoint_progress_valid"] = advanced or (
+        allow_empty_prefix and isinstance(pre_seq, int) and post_seq == pre_seq
+        and _wire_hash_bytes(pre_ckpt.get("last_hash")) is not None
+        and _wire_hash_bytes(pre_ckpt.get("last_hash")) == rcv_hash)
     delta = (post_seq - pre_seq
              if isinstance(pre_seq, int) and isinstance(post_seq, int)
              else None)
@@ -822,7 +829,11 @@ def run_ab_point(point: dict) -> dict:
         expected = m.get("iterations_completed") if clean_run else None
         rec["audit_state_check"] = reconcile_audit_state(
             rec["audit_state_pre"], rec["audit_state_post"], run_id,
-            expected, rec["journal_stats"])
+            expected, rec["journal_stats"],
+            # Successful PAR stores the request in transient state; it does
+            # not emit an audit event. All two-sided reconciliation remains.
+            allow_empty_prefix=(point["scenario"] == "par_signed_request_object"
+                                and not point.get("sidecars")))
         rec["ok"] = True
     except Exception as e:  # noqa: BLE001 - evidence path
         rec["ok"] = False
