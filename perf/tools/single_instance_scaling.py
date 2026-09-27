@@ -1402,13 +1402,14 @@ def run_load(point: dict, run_id: str, out_dir: Path) -> dict:
                                       ("PERF_SCENARIO", "PERF_RATE",
                                        "PERF_VUS", "PERF_PRE_ALLOCATED",
                                        "PERF_MAX_VUS", "PERF_DURATION",
-                                       "PERF_USER_COUNT"))
+                                       "PERF_USER_COUNT", "CAP_WARMUP_MS"))
             sc_env += [
                 "-e", f"PERF_SCENARIO={sc['scenario']}",
                 "-e", f"PERF_RATE={sc['rate']}",
                 "-e", f"PERF_PRE_ALLOCATED_VUS={sc['pre_vus']}",
                 "-e", f"PERF_MAX_VUS={sc['max_vus']}",
                 "-e", f"PERF_DURATION={sc['duration']}",
+                "-e", f"CAP_WARMUP_MS={sc.get('warmup_ms', 15000)}",
                 "-e", f"PERF_USER_COUNT={sc.get('user_count', 64)}",
                 "-e", "PERF_VECTOR_COUNT=2000",
                 "-e", "PERF_SKIP_SEED=1",

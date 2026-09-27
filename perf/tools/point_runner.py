@@ -673,6 +673,11 @@ def run_ab_point(point: dict) -> dict:
             sis._spend_load_budget(run_id, rec)
 
         rec["audit_drain"] = sis.audit_drain()
+        queue_path = out_dir / "perf-metrics-post-drain.json"
+        queue_schema = sis.app_perf_schema(out_path=queue_path)
+        queue_body = json.loads(queue_path.read_text()).get("response") or {}
+        rec["audit_queue_post_drain"] = dict(queue_body.get("audit_queue") or {})
+        rec["audit_queue_post_drain"]["collected"] = queue_schema["ok"]
         rec["audit_state_post"] = audit_state_snapshot(run_id)
         rec["audit_state_post"]["deployment_id"] = depid
 
