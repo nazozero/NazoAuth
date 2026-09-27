@@ -1,0 +1,9 @@
+{
+  "fixed_taskbook_commit": "dc72cf469a2c5465cbb8a8185e0cff7d9999ad96",
+  "taskbook_wrapper_sha256": "496d3c367e132b1a39c84d2bac88788f0c3b2d0a24f1c0064235a4d93bd3f75c",
+  "patched_wrapper_sha256": "c020eb63f2acbbb4e8a4ca6393189de1d40e8ff9e28ed9bcca3b44cbe72321dc",
+  "change": "When pilot_peak_bytes is null, set the optional generator_mem_min_gib estimate to 0.",
+  "reason": "The resume revision permits disabling only the unavailable optional estimate; do not infer memory is zero.",
+  "retained_gates": ["runtime resource/OOM monitoring", "k6 stream evidence", "performance evaluator", "health", "sidecars", "audit and refresh invariants"],
+  "load_or_resource_configuration_changed": false
+}
