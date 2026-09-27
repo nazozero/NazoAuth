@@ -135,6 +135,8 @@ def main():
                  "issuance_max_expired_age_seconds": 120}
         if scenario == "cap_mixed":
             point.update(sidecars=sidecars(len(cpus[mode]), duration), sidecar_delay_s=0)
+        if confirmation:
+            point["capture_audit_journal"] = True
         rec = points.run_ab_point(point)
         out = sis.RESULTS / mode / name
         summary = out / "load" / "latest.json"

@@ -834,6 +834,15 @@ def run_ab_point(point: dict) -> dict:
             # not emit an audit event. All two-sided reconciliation remains.
             allow_empty_prefix=(point["scenario"] == "par_signed_request_object"
                                 and not point.get("sidecars")))
+        if point.get("capture_audit_journal"):
+            journal_path = out_dir / "audit-journal.jsonl"
+            sis.dc("cp", f"sis-rcv-{run_id}:/data/journal.jsonl", str(journal_path))
+            digest = hashlib.sha256(journal_path.read_bytes()).hexdigest()
+            if digest != rec["journal_stats"].get("journal_sha256"):
+                raise RuntimeError("archived audit journal differs from reconciled journal")
+            rec["audit_journal_archive"] = {
+                "collected": True, "file": str(journal_path), "sha256": digest,
+                "bytes": journal_path.stat().st_size, "source_hash_match": True}
         rec["ok"] = True
     except Exception as e:  # noqa: BLE001 - evidence path
         rec["ok"] = False
