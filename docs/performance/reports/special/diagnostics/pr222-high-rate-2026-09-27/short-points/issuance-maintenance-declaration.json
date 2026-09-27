@@ -1,0 +1,28 @@
+{
+  "basis": {
+    "access_token_ttl_seconds": 300,
+    "authorization_code_ttl_seconds": 60,
+    "effective_config": "no TTL environment overrides and no external config-file mount; fixed B binary defaults apply",
+    "longer_single_use_grants_not_in_mix": [
+      "device authorization",
+      "CIBA",
+      "JWT bearer"
+    ],
+    "longest_single_use_grant_in_mix": "authorization_code at 60 seconds",
+    "maximum_access_token_clock_skew_seconds": 60,
+    "retain_until_rule": "max(access-token expiry plus verifier skew, one-time grant expiry)",
+    "tested_flow_mix": [
+      "userinfo",
+      "client_credentials",
+      "authorization_code",
+      "refresh",
+      "token_exchange"
+    ]
+  },
+  "declared_utc": "2026-09-27T08:53:46.293931+00:00",
+  "for_long_steady_points_only": true,
+  "issuance_max_expired_age_seconds": 120,
+  "issuance_retention_seconds": 360,
+  "mature_window_rule": "starts at effective measurement start plus 360 seconds; require at least 180 seconds thereafter",
+  "status": "PREDECLARED_BEFORE_LONG_STEADY"
+}
