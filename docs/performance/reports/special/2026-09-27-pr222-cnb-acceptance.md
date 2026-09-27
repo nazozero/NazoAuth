@@ -1,6 +1,8 @@
-# PR #222 CNB 性能验收：资源门槛检查点
+# PR #222 CNB 性能验收：续跑报告（2026-09-27）
 
-**状态：BLOCKED_RESOURCE_LIMIT_EVIDENCE。** 这是环境阻塞记录，不是性能 PASS 或业务 FAIL；没有启动 A/B 负载。
+**当前状态：`PARTIAL_NOT_PASS_MIXED_ABBA_SIDECAR_GATE`。** 单核 client_credentials ABBA 四点全部通过；多核 mixed ABBA 的主门槛四点通过，但 B1 sidecar gate 未通过；A/B 多核共同稳态各完成1800秒且通过。容量探索和额外场景为 `NOT_RUN_TIME_BUDGET`，没有证据判定最大容量边界。
+
+原 `BLOCKED_RESOURCE_LIMIT_EVIDENCE` 是旧任务书下的历史状态，已由续跑修订取代，不再作为执行前置。以下时间段的状态描述按当时记录保留；最终结果见文末。
 
 ## 固定版本
 
@@ -54,14 +56,14 @@
 
 - A=`0c70d7464576138af0b3f8a39530d6615ee7a363`，B/H=`462626b29be202c04f2e4482ade6ab5f5f6267c5`。A、B 实际二进制 SHA256 分别为 `0013eec95c96aa04e563a62b7677329d9e72f9af3625cac637deef1470daf15d` 与 `13925e2219045119dc89d820ac6524e63b4cf5b6bc988d21ef55fda178cc394b`。
 - 执行顺序 A1/B1/B2/A2，`cap_client_credentials`，共同速率32逻辑操作/秒；每点预热120秒，正式窗口120秒。应用 affinity 集合大小为1个逻辑CPU；不据此声称物理核独占。profile SHA256 `d00ecf53ce2ec9f825a3616fbcdd60c2f6c8e0d4518265b03a11b98b591e3723`，`pool_size=90`、users=64、vectors=12288、主场景预分配16 VU。pilot 峰值内存没有可信聚合采样，profile 明确标记 `UNMEASURED_ESTIMATE`；此组不是内存或最大容量证明。
-- 每行 P95/P99 均是该运行正式窗口的完整逻辑迭代分位数，不跨运行平均。HTTP 请求单独列出，计数覆盖该点预热及正式窗口。
+- P50/P95/P99 使用 `point.json.metrics.iter_pXX_ms`，为该运行正式窗口的完整逻辑迭代分位数，不跨运行平均。HTTP 请求单独列出，计数覆盖该点预热及正式窗口。
 
 | 点 | 有效窗口成功逻辑操作 | 成功操作/秒 | HTTP请求数 | P50/P95/P99（ms） | 丢弃/预期拒绝/意外错误 | 点门槛 |
 | --- | ---: | ---: | --- | --- | --- | --- |
-| A1 | 3840/3840 | 32.000 | 7680 | 4.423 / 11.339 / 27.306 | 0 / 0 / 0 | PASS |
-| B1 | 3840/3840 | 32.000 | 7681 | 4.308 / 8.589 / 16.174 | 0 / 0 / 0 | PASS |
-| B2 | 3840/3840 | 32.000 | 7681 | 4.040 / 7.950 / 14.292 | 0 / 0 / 0 | PASS |
-| A2 | 3840/3840 | 32.000 | 7680 | 4.009 / 8.509 / 18.902 | 0 / 0 / 0 | PASS |
+| A1 | 3840/3840 | 32.000 | 7680 | 5.000 / 12.000 / 29.610 | 0 / 0 / 0 | PASS |
+| B1 | 3840/3840 | 32.000 | 7681 | 5.000 / 9.000 / 13.000 | 0 / 0 / 0 | PASS |
+| B2 | 3840/3840 | 32.000 | 7681 | 4.000 / 9.000 / 16.610 | 0 / 0 / 0 | PASS |
+| A2 | 3840/3840 | 32.000 | 7680 | 4.000 / 9.000 / 17.610 | 0 / 0 / 0 | PASS |
 
 四点均为120秒有效窗口，capacity gate 与全部点健康检查通过，审计状态检查 PASS；该场景未产生审计事件，审计队列前后均为空。ABBA 阶段完成。首次 A1 启动尝试因 SSH 调用未传递固定 `A/B` 环境变量，在负载前退出，日志 `formal-single-cc-a1-attempt1.log` 单独保留，不计作测试点；随后以固定 SHA 启动的 A1 有效通过。
 
@@ -79,10 +81,10 @@
 
 | 点 | 主成功 ops/s | 主逻辑 P50/P95/P99（ms） | 主 HTTP 请求（全点） | 主窗口丢弃 | 审计事件增量 | Sidecar gate |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| A1 | 1024.000 | 3.429 / 10.920 / 28.968 | 358310 | 0 | 353823 | PASS |
-| B1 | 1024.000 | 3.372 / 11.958 / 146.862 | 357298 | 0 | 352872 | NOT_PASS |
-| B2 | 1024.000 | 3.228 / 9.109 / 28.660 | 358086 | 0 | 353663 | PASS |
-| A2 | 1024.000 | 3.355 / 9.860 / 26.509 | 357874 | 0 | 353351 | PASS |
+| A1 | 1024.000 | 4.000 / 21.000 / 45.000 | 358310 | 0 | 353823 | PASS |
+| B1 | 1024.000 | 4.000 / 18.000 / 27.000 | 357298 | 0 | 352872 | NOT_PASS |
+| B2 | 1024.000 | 4.000 / 17.000 / 35.000 | 358086 | 0 | 353663 | PASS |
+| A2 | 1024.000 | 4.000 / 20.000 / 45.000 | 357874 | 0 | 353351 | PASS |
 
 B1 主 load 的 full-run dropped 计数为666，但完整测量窗口队列仍为0；该主点 capacity gate 通过。B1 sidecars 的全程摘要分别为 Argon2 3 drops、FAPI 1 drop、refresh 204 drops，状态 `target_miss`；均自然结束、summary完整、k6 exit0、无协议错误。refresh 测量窗口单独有效，205 ops/s，完整逻辑迭代 P95/P99=10/22ms，窗口内drop/error=0。由于固定sidecar gate要求全程零drop，B1 sidecar gate未通过；不把它改写为业务容量失败，也不调整本组参数。A1/B2/A2 四个sidecar均自然结束、summary完整、exit0、全程零drop并通过gate。因此本ABBA主负载四点通过，但混合组整体为 `NOT_PASS_SIDECAR_GATE`，B1原始证据保留。
 
@@ -91,3 +93,46 @@ B1 主 load 的 full-run dropped 计数为666，但完整测量窗口队列仍�
 有效共同短点包括 A1 与 B2 的相同1024 ops/s配置，故已按计划启动 A 版共同mixed稳态：预热120秒、有效窗口1800秒；证据目录 `results/acceptance/steady-common-a/`，日志 `logs/formal-steady-common-a.log`。B 版稳态待A点完整结束后启动，并受原04:20 UTC停止新负载时间约束。
 
 多核ABBA原始点在测试容器 `/tmp/pr222-acceptance-kMhxkB/results/acceptance/multi-mixed-{a1,b1,b2,a2}/`；每点摘要文件SHA256与精简统计见旁侧 `multi-mixed-abba.json`。整体验收仍为 `IN_PROGRESS`，尚未完成1800秒A/B稳态或容量搜索。
+
+
+## 2026-09-27 04:25 UTC 最终续跑检查点
+
+### 完成状态与口径更正
+
+- 固定源码 A/B 与共同 harness H 未变。配置沿用冻结 profile `d00ecf53ce2ec9f825a3616fbcdd60c2f6c8e0d4518265b03a11b98b591e3723`；单核定义是应用绑定1个逻辑 CPU，多核应用 affinity 为32个逻辑 CPU。不据此声明物理核独占，也未查询宿主或隐藏父级资源。
+- 更正前两次检查点的 P50/P95/P99 表格：此前误用了 `acceptance.json.capacity_metrics.pXX`，它们不是本任务要求的完整逻辑迭代分位数。下方表格和两个 ABBA JSON 已改用同一点 `point.json.metrics.iter_p50_ms/iter_p95_ms/iter_p99_ms`。原始点文件和 SHA 不变；PR 先前评论中的这些延迟值由本检查点更正。所有分位数逐点保留，不跨运行平均。
+- 单核 client_credentials ABBA 四点均 PASS。多核 mixed ABBA 主点四点均 PASS，但 B1 sidecar gate 因全程 sidecar drops 未通过，故该 ABBA 组状态仍为 `NOT_PASS_SIDECAR_GATE`。A/B 两个共同多核稳态点均完成1800秒有效窗口并通过主、sidecar、健康和审计门槛。
+
+### A/B 共同稳态（multi / cap_mixed）
+
+固定负载为1024逻辑操作/秒，预热120秒另计，正式窗口1800秒；pool90、users64、vectors12288、四个 sidecar 与冻结 profile 相同。表中 P50/P95/P99 是完整逻辑迭代分位数；成功逻辑操作与 HTTP 请求分别列示。
+
+| 点 | 窗口成功逻辑操作 | 成功逻辑操作/秒 | HTTP 请求数（含预热） | 全点 HTTP RPS | 完整迭代 P50/P95/P99（ms） | 窗口 drops / 预期拒绝 / 意外错误 | 点门槛 |
+| --- | ---: | ---: | ---: | ---: | --- | --- | --- |
+| A | 1,842,271 / 1,843,201 scheduled | 1023.484 | 2,852,874 | 1485.856 | 4 / 19 / 37 | 930 / 0 / 0 | PASS |
+| B | 1,843,201 / 1,843,201 scheduled | 1024.001 | 2,851,569 | 1485.188 | 4 / 17 / 25 | 0 / 0 / 0 | PASS |
+
+A 的精确 cohort 汇总为1,843,201 scheduled、1,842,271 completed，故精确 drops=930、drop fraction=0.0505%；`point.json.metrics.measure_dropped` 记录929，二者相差1。两种计数口径都低于0.1%阈值，原始差异保留，不抹平。B 精确 cohort 无 drop。两点 expected rejection、unexpected error、prepare SUT failure 均为0；A/B 主 capacity gate、sidecar timing、健康检查、自然结束、无重启/OOM均 PASS。
+
+A 的 Argon2、metadata、FAPI sidecar 均 PASS 且全程零 drop。Refresh 原始状态是 `target_miss`，但适用固定 refresh cap gate：有效测量204.828 ops/s，314/375,150 drop（0.0837%）、错误0、完整迭代 P95/P99=11/33ms，低于0.1% drop 门槛，故该 sidecar 按 cap gate PASS。B 四个 sidecar 均 PASS、全程零 drop；refresh 有效测量205 ops/s、零 drop/error、完整迭代 P95/P99=10/18ms。A/B sidecar 的 HTTP P95/P99 和各自 request/rate 记录在 `steady-common.json` 与原始 acceptance 文件。
+
+### 审计、刷新不变量及数据库采样
+
+A/B 两点的审计校验均 PASS。A 的 accepted event delta 与 journal 范围均为2,791,092；B 为2,788,573。两条 journal 均连续，malformed/foreign/gap/duplicate 均为0，DB head、receiver checkpoint 与锚点一致。A 队列 enqueued=persisted=327,055；B 为326,317；两点 drain 后 pending=0、dropped=0。刷新族约束 `max_active_per_scope=10`、`spent_max_per_family=64`、`expired_backlog=0` 均成立。
+
+| 点 | 2秒采样数 | 窗口 WAL bytes 增量 | 窗口 WAL write bytes 增量 | pool wait 累计增量 | 等待者峰值 | 最大采样 wait | Lock 等待采样 | LWLock 峰值 | deadlocks |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| A | 881 | 8.542 GB | 24.349 GB | 2,629,193,105,682 ns | 533 | 1.179 s | 4 / 881 | 91 | 0 |
+| B | 878 | 7.916 GB | 23.792 GB | 229,285,661,671 ns | 0 | 0.487 s | 1 / 878 | 54 | 0 |
+
+Lock/LWLock 数值是2秒采样快照；它们只说明采样时观察到的等待，不外推未采样区间。两点 checkpoint delta 均为 timed=6、requested=0、done=5；`wal_buffers_full=0`。Valkey 内部采样内存范围 A 为12.32–29.16 MB、B 为12.26–29.06 MB。两点进程归因采集健康且文件已回收，但 `proc-detail` 的 app/Postgres/Valkey targets 均为 null；Docker 统计接口对这些容器返回0B/0B，不能解释为实际资源使用为零。因此 per-process CPU/RSS/PSS 与 task-owned 聚合内存峰值标为 N/A/未测；pilot 峰值仍是 `UNMEASURED_ESTIMATE`。各组件显式 Docker CPU/内存配置字段为0（未设置）；这不代表有效限制为无限。本轮未查询宿主或父级限制。
+
+### 未完成与证据
+
+- 容量探索、最大容量边界及额外场景：`NOT_RUN_TIME_BUDGET`。1024 ops/s 是已验证负载点，不是容量上限或容量边界。
+- 任务书优先级以外的完整扩展矩阵：`NOT_RUN_TIME_BUDGET`。全 workspace 测试：`NOT_RUN_OUT_OF_SCOPE`。
+- B 稳态只在窗口结束后读取与汇总；04:20 UTC 后没有开启新负载。报告交付截止保持04:50 UTC。
+- 原始单点证据可从测试容器 `/tmp/pr222-acceptance-kMhxkB/results/acceptance/{single-cc-*,multi-mixed-*,steady-common-*}/` 取回。精简、脱敏证据为本报告旁的 `single-cc-abba.json`、`multi-mixed-abba.json`、`steady-common.json`；每个 `acceptance.json`、`point.json` 的 SHA256、审计 journal SHA256/字节数及原始目录列于这些文件。
+- 为使 B 稳态点能在截止前按冻结参数启动，测试结束后仅把 task-local `point.py` 的启动预留从480秒改为120秒；这是调度截止守卫，不改变负载、资源配置、阈值、预热或1800秒窗口，也未修改业务源码。A 使用脚本 SHA256 `b22f8a0384ee74e0c27d7d986caa90de6445ef5a7d7f21603e9cb8ef9597184f`；B 使用 `96b63c012c4808210ad52b69d9c939cc16827630e194c59e9d9d57b8594a816a`，备份位于测试容器 `patches/point.py.pre-steady-b.py`。
+
+本检查点的结构化证据：`single-cc-abba.json`、`multi-mixed-abba.json`、`steady-common.json`。整体状态为 `PARTIAL_NOT_PASS_MIXED_ABBA_SIDECAR_GATE`；稳态 A/B 两点通过，不抵消多核 mixed ABBA B1 固定 sidecar gate 未通过，也不构成最大容量结论。
