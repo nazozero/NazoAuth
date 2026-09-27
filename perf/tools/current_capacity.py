@@ -67,6 +67,7 @@ def main():
     parser.add_argument("--smoke", action="store_true")
     args = parser.parse_args()
     stop_at = datetime.fromisoformat(args.stop_at).timestamp()
+    os.environ.setdefault("SIS_SOURCE_SHA", os.environ["SIS_APP_SHA"])
     sis.RESULTS.mkdir(parents=True, exist_ok=True)
     cpus = allocations()
     points.KEYSET_VOLUME = f"{sis.PROJECT}-keys"
@@ -114,11 +115,22 @@ def main():
         summary = out / "load" / "latest.json"
         verdict, metrics = gate.evaluate(gate.load_summary(summary), summary,
                                         rate, duration, scenario, require_stream=True)
+        raw, _ = gate.k6_metrics(summary)
+        metrics["complete_operation_latency_ms"] = gate._trend(raw, "cap_iter_ms")
         health = points._health_checks(rec, mixed=scenario == "cap_mixed")
         # Only the mixed and issuance scenarios promise per-operation audit
         # evidence. Read-only scenarios still retain collected audit diagnostics.
         if scenario in ("cap_mixed", "cap_client_credentials") and not all(health.values()):
-            verdict = "FAIL" if rec.get("ok") else "INVALID"
+            m = rec.get("metrics") or {}
+            collected = (rec.get("ok") is True
+                         and m.get("oom_killed") is not None
+                         and m.get("restart_count") is not None
+                         and (m.get("audit_log_scan") or {}).get("collected") is True
+                         and (rec.get("audit_state_check", {}).get("checks") or {}).get("collected") is True
+                         and (rec.get("journal_stats") or {}).get("collected") is True)
+            verdict = "FAIL" if collected else "INVALID"
+            metrics["failed_health_checks"] = [k for k, v in health.items() if not v]
+            metrics["health_evidence_collected"] = collected
         maintenance = None
         if confirmation:
             m = rec.get("metrics") or {}
@@ -140,6 +152,13 @@ def main():
 
     def bounds(key):
         records = state.get(key, [])
+        chosen = {}
+        for record in records:
+            rate = record["rate"]
+            window = record["metrics"].get("window_seconds", 0)
+            if rate not in chosen or window >= chosen[rate]["metrics"].get("window_seconds", 0):
+                chosen[rate] = record
+        records = list(chosen.values())
         passed = [r["rate"] for r in records if r["verdict"] == "PASS"]
         lower = max(passed, default=0)
         upper = min((r["rate"] for r in records if r["verdict"] == "FAIL" and r["rate"] > lower), default=None)
@@ -166,10 +185,17 @@ def main():
                 rate = SCENARIOS[scenario] * len(cpus[mode])
             run(mode, scenario, rate)
         lower, _ = bounds(key)
-        if lower and not any(r["verdict"] == "PASS" and r["rate"] == lower
-                             and r["metrics"].get("window_seconds", 0) >= 180
-                             for r in state.get(key, [])):
-            run(mode, scenario, lower, window=180)
+        for _ in range(3):
+            lower, upper = bounds(key)
+            if not lower or any(r["verdict"] == "PASS" and r["rate"] == lower
+                                and r["metrics"].get("window_seconds", 0) >= 180
+                                for r in state.get(key, [])):
+                break
+            if run(mode, scenario, lower, window=180)["verdict"] == "PASS":
+                break
+            lower, upper = bounds(key)
+            if upper and not lower:
+                run(mode, scenario, max(1, upper * 3 // 4), window=180)
 
     try:
         if args.smoke:
