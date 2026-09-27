@@ -192,6 +192,10 @@ def main():
             records = state.get(key, [])
             if lower and upper and upper / lower <= 1.25:
                 break
+            # Do not create a higher short-window candidate when there is
+            # insufficient time to recheck it for three minutes as well.
+            if time.time() + 60 + 240 + 180 + 240 >= stop_at:
+                break
             if records and records[-1]["verdict"] not in ("PASS", "FAIL"):
                 break
             if lower and upper:
